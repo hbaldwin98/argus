@@ -191,6 +191,15 @@ impl PaneRuntime {
     pub fn subscribe(&self) -> broadcast::Receiver<ServerMsg> {
         self.damage_tx.subscribe()
     }
+
+    /// Pushes a fresh full-grid snapshot to whoever is currently subscribed.
+    /// Used after a resize, since a subscriber's cached grid can only be
+    /// grown or shrunk by replacing it wholesale — incremental Damage spans
+    /// referencing indices outside its current size are meaningless to it.
+    pub fn broadcast_snapshot(&self, pane: PaneId) {
+        let (rows, cols, cells) = self.full_snapshot();
+        let _ = self.damage_tx.send(ServerMsg::PaneSnapshot { pane, rows, cols, cells });
+    }
 }
 
 fn snapshot_grid(parser: &vt100::Parser) -> Vec<Vec<Cell>> {

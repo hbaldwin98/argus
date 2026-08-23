@@ -247,7 +247,15 @@ impl Daemon {
     pub fn resize_pane(&self, pane: PaneId, rows: u16, cols: u16) -> anyhow::Result<()> {
         let inner = self.inner.lock().unwrap();
         let p = find_pane_ref(&inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
-        p.runtime.resize(rows, cols)
+        p.runtime.resize(rows, cols)?;
+        // A subscribed client's cached grid is only ever sized by whatever
+        // snapshot it last received; incremental Damage can't grow it.
+        // Push a fresh full snapshot at the new size so growing a pane
+        // (very common — new panes start at a hardcoded default far
+        // smaller than most terminal heights) doesn't leave the newly
+        // exposed area permanently blank.
+        p.runtime.broadcast_snapshot(pane);
+        Ok(())
     }
 
     pub fn subscribe_pane(&self, pane: PaneId) -> anyhow::Result<PaneSubscription> {
