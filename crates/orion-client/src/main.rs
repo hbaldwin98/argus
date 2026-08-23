@@ -1,0 +1,109 @@
+mod app;
+mod grid;
+mod keys;
+mod launch;
+mod ui;
+
+use std::io;
+
+use crossterm::event::{Event, EventStream, KeyEventKind};
+use crossterm::execute;
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use futures::StreamExt;
+use orion_protocol::{read_msg, write_msg, ClientMsg, ServerMsg};
+use ratatui::backend::CrosstermBackend;
+use ratatui::Terminal;
+use tokio::io::split;
+use tokio::sync::mpsc;
+
+use app::App;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let stream = launch::ensure_daemon_and_connect().await?;
+    let (mut rd, wr) = split(stream);
+
+    let (in_tx, mut in_rx) = mpsc::unbounded_channel::<ClientMsg>();
+    let (out_tx, mut out_rx) = mpsc::unbounded_channel::<ServerMsg>();
+
+    tokio::spawn(async move {
+        let mut wr = wr;
+        while let Some(msg) = in_rx.recv().await {
+            if write_msg(&mut wr, &msg).await.is_err() {
+                break;
+            }
+        }
+    });
+    tokio::spawn(async move {
+        while let Ok(msg) = read_msg::<_, ServerMsg>(&mut rd).await {
+            if out_tx.send(msg).is_err() {
+                break;
+            }
+        }
+    });
+
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    let result = run(&mut terminal, in_tx, &mut out_rx).await;
+
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    terminal.show_cursor()?;
+
+    result
+}
+
+async fn run(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    in_tx: mpsc::UnboundedSender<ClientMsg>,
+    out_rx: &mut mpsc::UnboundedReceiver<ServerMsg>,
+) -> anyhow::Result<()> {
+    let mut app = App::new(in_tx);
+    let mut events = EventStream::new();
+    let mut last_pane_area: Option<(u16, u16)> = None;
+
+    terminal.draw(|f| ui::render(f, &app))?;
+
+    loop {
+        tokio::select! {
+            maybe_event = events.next() => {
+                match maybe_event {
+                    Some(Ok(Event::Key(key))) => {
+                        if key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat {
+                            app.on_key(key);
+                        }
+                    }
+                    Some(Ok(_)) => {}
+                    Some(Err(_)) | None => break,
+                }
+            }
+            Some(msg) = out_rx.recv() => {
+                app.on_server_msg(msg);
+            }
+        }
+
+        if app.should_quit {
+            break;
+        }
+
+        terminal.draw(|f| ui::render(f, &app))?;
+
+        if app.focus == app::Focus::PaneContent {
+            let size = terminal.size()?;
+            let rows = size.height.saturating_sub(3);
+            let cols = size.width.saturating_sub(2);
+            if last_pane_area != Some((rows, cols)) && rows > 0 && cols > 0 {
+                last_pane_area = Some((rows, cols));
+                app.resize_pane(rows, cols);
+            }
+        } else {
+            last_pane_area = None;
+        }
+    }
+
+    Ok(())
+}

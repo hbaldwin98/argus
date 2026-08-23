@@ -1,0 +1,33 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/orion-protocol",
+    "crates/oriond",
+    "crates/orion-client",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "process", "fs"] }
+serde = { version = "1", features = ["derive"] }
+rmp-serde = "1"
+anyhow = "1"
+thiserror = "1"
+directories = "5"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+orion-protocol = { path = "crates/orion-protocol" }
+portable-pty = "0.8"
+vt100 = "0.15"
+ratatui = "0.28"
+crossterm = "0.28"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

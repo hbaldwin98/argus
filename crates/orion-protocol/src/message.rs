@@ -1,0 +1,40 @@
+use serde::{Deserialize, Serialize};
+
+use crate::cell::{Cell, CellSpan};
+use crate::ids::{CheckoutId, PaneId};
+use crate::tree::ProjectInfo;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ClientMsg {
+    /// Ask the daemon to start streaming this pane's screen. The daemon
+    /// replies with a full PaneSnapshot, then incremental Damage.
+    Subscribe { pane: PaneId },
+    /// Stop streaming a pane's screen.
+    Unsubscribe { pane: PaneId },
+    /// Raw input bytes to forward to the pane's pty.
+    Input { pane: PaneId, bytes: Vec<u8> },
+    /// The client's view of a pane has been resized.
+    Resize { pane: PaneId, rows: u16, cols: u16 },
+    /// Spawn a shell pane cwd'd into a checkout.
+    SpawnShell { checkout: CheckoutId },
+    /// Kill a pane's process and remove it.
+    Kill { pane: PaneId },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ServerMsg {
+    /// Full project/checkout/pane tree, sent on connect and after any change.
+    Tree(Vec<ProjectInfo>),
+    /// Full-grid snapshot of a pane, sent once right after Subscribe.
+    PaneSnapshot {
+        pane: PaneId,
+        rows: u16,
+        cols: u16,
+        cells: Vec<Vec<Cell>>,
+    },
+    /// Incremental changed spans since the last snapshot/damage for a pane.
+    Damage { pane: PaneId, spans: Vec<CellSpan> },
+    /// A pane's process exited.
+    PaneClosed { pane: PaneId, code: Option<i32> },
+    Error { message: String },
+}

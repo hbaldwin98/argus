@@ -1,0 +1,11 @@
+[package]
+name = "orion-protocol"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+rmp-serde = { workspace = true }
+directories = { workspace = true }
+thiserror = { workspace = true }
