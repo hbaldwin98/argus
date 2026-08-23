@@ -17,6 +17,8 @@ pub enum ClientMsg {
     Resize { pane: PaneId, rows: u16, cols: u16 },
     /// Spawn a shell pane cwd'd into a checkout.
     SpawnShell { checkout: CheckoutId },
+    /// Spawn an agent pane from a named template, cwd'd into a checkout.
+    SpawnAgent { checkout: CheckoutId, template: String },
     /// Kill a pane's process and remove it.
     Kill { pane: PaneId },
 }
@@ -25,6 +27,8 @@ pub enum ClientMsg {
 pub enum ServerMsg {
     /// Full project/checkout/pane tree, sent on connect and after any change.
     Tree(Vec<ProjectInfo>),
+    /// Names of the configured agent templates, sent once on connect.
+    Templates(Vec<String>),
     /// Full-grid snapshot of a pane, sent once right after Subscribe.
     PaneSnapshot {
         pane: PaneId,

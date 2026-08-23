@@ -1,9 +1,11 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use orion_protocol::{CheckoutInfo, ClientMsg, PaneId, PaneInfo, ProjectInfo, ServerMsg};
+use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::grid::Grid;
 use crate::keys::{encode_key, is_leader};
+use crate::mouse::encode_mouse;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -13,8 +15,36 @@ pub enum Focus {
     PaneContent,
 }
 
+/// Screen regions from the most recent render, so mouse clicks can be mapped
+/// back onto tree rows / pane cells without duplicating layout math.
+#[derive(Debug, Clone, Copy)]
+pub struct Layout {
+    pub projects: Rect,
+    pub checkouts: Rect,
+    pub panes: Rect,
+    pub content: Rect,
+}
+
+impl Default for Layout {
+    fn default() -> Self {
+        let zero = Rect::new(0, 0, 0, 0);
+        Layout {
+            projects: zero,
+            checkouts: zero,
+            panes: zero,
+            content: zero,
+        }
+    }
+}
+
+pub struct Picker {
+    pub items: Vec<String>,
+    pub sel: usize,
+}
+
 pub struct App {
     pub tree: Vec<ProjectInfo>,
+    pub templates: Vec<String>,
     pub focus: Focus,
     pub sel_project: usize,
     pub sel_checkout: usize,
@@ -24,6 +54,9 @@ pub struct App {
     pub leader_pending: bool,
     pub should_quit: bool,
     pub status: String,
+    pub layout: Layout,
+    pub picker: Option<Picker>,
+    pending_focus_new: bool,
     out: UnboundedSender<ClientMsg>,
 }
 
@@ -31,6 +64,7 @@ impl App {
     pub fn new(out: UnboundedSender<ClientMsg>) -> Self {
         App {
             tree: Vec::new(),
+            templates: Vec::new(),
             focus: Focus::Projects,
             sel_project: 0,
             sel_checkout: 0,
@@ -39,7 +73,11 @@ impl App {
             grid: None,
             leader_pending: false,
             should_quit: false,
-            status: "j/k move  l/enter open  h/esc back  s: shell  x: kill  q: detach".to_string(),
+            status: "j/k move  l/enter open  h/esc back  s: shell  a: agent  x: kill  q: detach"
+                .to_string(),
+            layout: Layout::default(),
+            picker: None,
+            pending_focus_new: false,
             out,
         }
     }
@@ -83,6 +121,18 @@ impl App {
             ServerMsg::Tree(t) => {
                 self.tree = t;
                 self.clamp();
+                if self.pending_focus_new {
+                    self.pending_focus_new = false;
+                    let n = self.current_checkout().map(|c| c.panes.len()).unwrap_or(0);
+                    if n > 0 {
+                        self.sel_pane = n - 1;
+                        self.focus = Focus::Panes;
+                        self.descend();
+                    }
+                }
+            }
+            ServerMsg::Templates(names) => {
+                self.templates = names;
             }
             ServerMsg::PaneSnapshot { pane, cells, .. } => {
                 if self.subscribed == Some(pane) {
@@ -108,10 +158,32 @@ impl App {
     }
 
     pub fn on_key(&mut self, key: KeyEvent) {
-        if self.focus == Focus::PaneContent {
+        if self.picker.is_some() {
+            self.on_key_picker(key);
+        } else if self.focus == Focus::PaneContent {
             self.on_key_pane_content(key);
         } else {
             self.on_key_nav(key);
+        }
+    }
+
+    fn on_key_picker(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => {
+                if let Some(p) = &mut self.picker {
+                    if p.sel + 1 < p.items.len() {
+                        p.sel += 1;
+                    }
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                if let Some(p) = &mut self.picker {
+                    p.sel = p.sel.saturating_sub(1);
+                }
+            }
+            KeyCode::Enter => self.confirm_picker(),
+            KeyCode::Esc | KeyCode::Char('q') => self.picker = None,
+            _ => {}
         }
     }
 
@@ -142,8 +214,69 @@ impl App {
             KeyCode::Char('l') | KeyCode::Enter | KeyCode::Right => self.descend(),
             KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc => self.ascend(),
             KeyCode::Char('s') => self.spawn_shell(),
+            KeyCode::Char('a') => self.open_picker(),
             KeyCode::Char('x') => self.kill_selected(),
             _ => {}
+        }
+    }
+
+    pub fn on_mouse(&mut self, ev: MouseEvent) {
+        if self.picker.is_some() {
+            return;
+        }
+        if self.focus == Focus::PaneContent {
+            if let Some(pane) = self.subscribed {
+                if let Some(bytes) = encode_mouse(&ev, self.layout.content) {
+                    let _ = self.out.send(ClientMsg::Input { pane, bytes });
+                }
+            }
+            return;
+        }
+        match ev.kind {
+            MouseEventKind::Down(MouseButton::Left) => self.click_nav(ev.column, ev.row),
+            MouseEventKind::ScrollUp => self.move_selection(-1),
+            MouseEventKind::ScrollDown => self.move_selection(1),
+            _ => {}
+        }
+    }
+
+    fn click_nav(&mut self, x: u16, y: u16) {
+        if let Some(idx) = row_in(self.layout.projects, x, y) {
+            if idx < self.tree.len() {
+                let already = self.focus == Focus::Projects && self.sel_project == idx;
+                self.sel_project = idx;
+                self.focus = Focus::Projects;
+                self.clamp();
+                if already {
+                    self.descend();
+                }
+            }
+            return;
+        }
+        if let Some(idx) = row_in(self.layout.checkouts, x, y) {
+            let n = self.current_project().map(|p| p.checkouts.len()).unwrap_or(0);
+            if idx < n {
+                let already = self.focus == Focus::Checkouts && self.sel_checkout == idx;
+                self.sel_checkout = idx;
+                self.focus = Focus::Checkouts;
+                self.clamp();
+                if already {
+                    self.descend();
+                }
+            }
+            return;
+        }
+        if let Some(idx) = row_in(self.layout.panes, x, y) {
+            let n = self.current_checkout().map(|c| c.panes.len()).unwrap_or(0);
+            if idx < n {
+                let already = self.focus == Focus::Panes && self.sel_pane == idx;
+                self.sel_pane = idx;
+                self.focus = Focus::Panes;
+                self.clamp();
+                if already {
+                    self.descend();
+                }
+            }
         }
     }
 
@@ -207,6 +340,29 @@ impl App {
     fn spawn_shell(&mut self) {
         if let Some(checkout) = self.current_checkout() {
             let _ = self.out.send(ClientMsg::SpawnShell { checkout: checkout.id });
+            self.pending_focus_new = true;
+        }
+    }
+
+    fn open_picker(&mut self) {
+        if self.templates.is_empty() || self.current_checkout().is_none() {
+            return;
+        }
+        self.picker = Some(Picker {
+            items: self.templates.clone(),
+            sel: 0,
+        });
+    }
+
+    fn confirm_picker(&mut self) {
+        let Some(picker) = self.picker.take() else { return };
+        let Some(name) = picker.items.get(picker.sel) else { return };
+        if let Some(checkout) = self.current_checkout() {
+            let _ = self.out.send(ClientMsg::SpawnAgent {
+                checkout: checkout.id,
+                template: name.clone(),
+            });
+            self.pending_focus_new = true;
         }
     }
 
@@ -223,4 +379,11 @@ impl App {
             let _ = self.out.send(ClientMsg::Resize { pane, rows, cols });
         }
     }
+}
+
+fn row_in(area: Rect, x: u16, y: u16) -> Option<usize> {
+    if x < area.x || x >= area.x + area.width || y < area.y || y >= area.y + area.height {
+        return None;
+    }
+    Some((y - area.y) as usize)
 }

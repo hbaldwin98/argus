@@ -3,13 +3,13 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Widget};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Widget};
 use ratatui::Frame;
 
 use crate::app::{App, Focus};
 use crate::grid::Grid;
 
-pub fn render(f: &mut Frame, app: &App) {
+pub fn render(f: &mut Frame, app: &mut App) {
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
@@ -21,9 +21,13 @@ pub fn render(f: &mut Frame, app: &App) {
         render_columns(f, app, root[0]);
     }
     render_status(f, app, root[1]);
+
+    if app.picker.is_some() {
+        render_picker(f, app, f.area());
+    }
 }
 
-fn render_columns(f: &mut Frame, app: &App, area: Rect) {
+fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -41,7 +45,7 @@ fn render_columns(f: &mut Frame, app: &App, area: Rect) {
             ListItem::new(format!("{}  {} checkouts, {} panes", p.name, p.checkouts.len(), agents))
         })
         .collect();
-    render_column(
+    app.layout.projects = render_column(
         f,
         cols[0],
         "projects",
@@ -64,7 +68,7 @@ fn render_columns(f: &mut Frame, app: &App, area: Rect) {
         })
         .unwrap_or_default();
     let ncheck = app.current_project().map(|p| p.checkouts.len()).unwrap_or(0);
-    render_column(
+    app.layout.checkouts = render_column(
         f,
         cols[1],
         "checkouts",
@@ -79,14 +83,14 @@ fn render_columns(f: &mut Frame, app: &App, area: Rect) {
             c.panes
                 .iter()
                 .map(|p| {
-                    ListItem::new(format!("{} {:?} #{}", status_glyph(Some(p.status)), p.kind, p.id.0))
+                    ListItem::new(format!("{} {} #{}", status_glyph(Some(p.status)), p.title, p.id.0))
                         .style(status_style(Some(p.status)))
                 })
                 .collect()
         })
         .unwrap_or_default();
     let npane = app.current_checkout().map(|c| c.panes.len()).unwrap_or(0);
-    render_column(
+    app.layout.panes = render_column(
         f,
         cols[2],
         "panes",
@@ -96,6 +100,8 @@ fn render_columns(f: &mut Frame, app: &App, area: Rect) {
     );
 }
 
+/// Renders a bordered column and returns its inner (post-border) area, so
+/// the caller can hit-test mouse clicks against the same rows drawn here.
 fn render_column(
     f: &mut Frame,
     area: Rect,
@@ -103,7 +109,7 @@ fn render_column(
     items: Vec<ListItem>,
     active: bool,
     selected: Option<usize>,
-) {
+) -> Rect {
     let border_style = if active {
         Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
     } else {
@@ -128,11 +134,12 @@ fn render_column(
         })
         .collect();
     f.render_widget(List::new(items), inner);
+    inner
 }
 
-fn render_pane_content(f: &mut Frame, app: &App, area: Rect) {
+fn render_pane_content(f: &mut Frame, app: &mut App, area: Rect) {
     let title = match (app.current_project(), app.current_checkout(), app.current_pane()) {
-        (Some(p), Some(c), Some(pane)) => format!(" {} / {} / {:?} #{} ", p.name, c.name, pane.kind, pane.id.0),
+        (Some(p), Some(c), Some(pane)) => format!(" {} / {} / {} #{} ", p.name, c.name, pane.title, pane.id.0),
         _ => " pane ".to_string(),
     };
     let block = Block::default()
@@ -142,19 +149,58 @@ fn render_pane_content(f: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(area);
     f.render_widget(block, area);
     f.render_widget(TermView { grid: &app.grid }, inner);
+    app.layout.content = inner;
 }
 
 fn render_status(f: &mut Frame, app: &App, area: Rect) {
-    let hint = if app.focus == Focus::PaneContent {
+    let hint = if app.picker.is_some() {
+        "j/k move  enter: spawn  esc: cancel".to_string()
+    } else if app.focus == Focus::PaneContent {
         if app.leader_pending {
-            "leader…  esc: back to panes"
+            "leader…  esc: back to panes".to_string()
         } else {
-            "ctrl-space then esc: back to panes"
+            "ctrl-space then esc: back to panes".to_string()
         }
     } else {
-        app.status.as_str()
+        app.status.clone()
     };
     f.render_widget(Paragraph::new(Line::from(Span::raw(hint))), area);
+}
+
+fn render_picker(f: &mut Frame, app: &App, area: Rect) {
+    let Some(picker) = &app.picker else { return };
+    let height = (picker.items.len() as u16 + 2).min(area.height);
+    let width = 30.min(area.width);
+    let popup = centered_rect(width, height, area);
+
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .title(" spawn agent ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let items: Vec<ListItem> = picker
+        .items
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let item = ListItem::new(name.as_str());
+            if i == picker.sel {
+                item.style(Style::default().add_modifier(Modifier::REVERSED))
+            } else {
+                item
+            }
+        })
+        .collect();
+    f.render_widget(List::new(items), inner);
+}
+
+fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    Rect::new(x, y, width, height)
 }
 
 fn worst_pane_status(c: &orion_protocol::CheckoutInfo) -> Option<PaneStatus> {

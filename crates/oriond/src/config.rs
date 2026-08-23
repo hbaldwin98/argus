@@ -7,6 +7,8 @@ use serde::Deserialize;
 pub struct ConfigFile {
     #[serde(default, rename = "project")]
     pub projects: Vec<ProjectConfig>,
+    #[serde(default, rename = "agent")]
+    pub agents: Vec<AgentConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -14,6 +16,27 @@ pub struct ProjectConfig {
     pub name: String,
     #[serde(default)]
     pub repos: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AgentConfig {
+    pub name: String,
+    pub cmd: Vec<String>,
+    #[serde(default)]
+    pub env: std::collections::HashMap<String, String>,
+}
+
+/// Built-in agent templates used when the config has no `[[agent]]` entries,
+/// so spawning a known agent CLI works zero-config.
+pub fn default_agents() -> Vec<AgentConfig> {
+    ["claude", "codex", "opencode"]
+        .into_iter()
+        .map(|name| AgentConfig {
+            name: name.to_string(),
+            cmd: vec![name.to_string()],
+            env: Default::default(),
+        })
+        .collect()
 }
 
 pub fn config_path() -> PathBuf {
@@ -27,6 +50,15 @@ const DEFAULT_CONFIG: &str = r#"# Orion projects. Each project groups one or mor
 # [[project]]
 # name = "orion"
 # repos = ["~/src/orion"]
+
+# Agent templates available from the "a" picker. claude/codex/opencode are
+# already built in with no config needed; add [[agent]] entries here to
+# override them or add your own.
+#
+# [[agent]]
+# name = "claude"
+# cmd = ["claude"]
+# env = { CLAUDE_PROJECT_DIR = "." }
 "#;
 
 pub fn load() -> Result<ConfigFile> {

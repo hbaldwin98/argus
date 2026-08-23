@@ -7,8 +7,8 @@ use orion_protocol::{
 };
 use tokio::sync::broadcast;
 
-use crate::config::{self, ConfigFile};
-use crate::pty::PaneRuntime;
+use crate::config::{self, AgentConfig, ConfigFile};
+use crate::pty::{self, PaneRuntime};
 
 struct Pane {
     id: PaneId,
@@ -39,6 +39,7 @@ struct Inner {
 pub struct Daemon {
     inner: StdMutex<Inner>,
     tree_tx: broadcast::Sender<Vec<ProjectInfo>>,
+    templates: Vec<AgentConfig>,
 }
 
 type PaneSubscription = (u16, u16, Vec<Vec<Cell>>, broadcast::Receiver<ServerMsg>);
@@ -72,11 +73,22 @@ impl Daemon {
             })
             .collect();
 
+        let templates = if config.agents.is_empty() {
+            config::default_agents()
+        } else {
+            config.agents
+        };
+
         let (tree_tx, _) = broadcast::channel(32);
         Arc::new(Daemon {
             inner: StdMutex::new(Inner { projects, ids }),
             tree_tx,
+            templates,
         })
+    }
+
+    pub fn template_names(&self) -> Vec<String> {
+        self.templates.iter().map(|t| t.name.clone()).collect()
     }
 
     pub fn snapshot(&self) -> Vec<ProjectInfo> {
@@ -132,7 +144,7 @@ impl Daemon {
         };
 
         let daemon = self.clone();
-        let runtime = PaneRuntime::spawn(id, &path, move |code| {
+        let runtime = PaneRuntime::spawn(id, &path, pty::Spawn::DefaultShell, move |code| {
             daemon.mark_pane_exited(id, code);
         })?;
 
@@ -143,6 +155,56 @@ impl Daemon {
                     id,
                     kind: PaneKind::Shell,
                     title: "shell".to_string(),
+                    status: PaneStatus::Running,
+                    runtime,
+                });
+            }
+        }
+        self.broadcast_tree();
+        Ok(id)
+    }
+
+    pub fn spawn_agent(self: &Arc<Self>, checkout: CheckoutId, template_name: &str) -> anyhow::Result<PaneId> {
+        let template = self
+            .templates
+            .iter()
+            .find(|t| t.name == template_name)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("no such agent template: {template_name}"))?;
+        let Some((program, rest)) = template.cmd.split_first() else {
+            anyhow::bail!("agent template {template_name} has an empty cmd");
+        };
+
+        let path = {
+            let inner = self.inner.lock().unwrap();
+            find_checkout_ref(&inner.projects, checkout)
+                .map(|c| c.path.clone())
+                .ok_or_else(|| anyhow::anyhow!("no such checkout"))?
+        };
+
+        let id = {
+            let mut inner = self.inner.lock().unwrap();
+            PaneId(inner.ids.alloc())
+        };
+
+        let spec = pty::Spawn::Program {
+            program: program.clone(),
+            args: rest.to_vec(),
+            env: template.env.into_iter().collect(),
+        };
+
+        let daemon = self.clone();
+        let runtime = PaneRuntime::spawn(id, &path, spec, move |code| {
+            daemon.mark_pane_exited(id, code);
+        })?;
+
+        {
+            let mut inner = self.inner.lock().unwrap();
+            if let Some(c) = find_checkout(&mut inner.projects, checkout) {
+                c.panes.push(Pane {
+                    id,
+                    kind: PaneKind::Agent,
+                    title: template.name.clone(),
                     status: PaneStatus::Running,
                     runtime,
                 });

@@ -18,6 +18,12 @@ where
     if out_tx.send(ServerMsg::Tree(daemon.snapshot())).is_err() {
         return;
     }
+    if out_tx
+        .send(ServerMsg::Templates(daemon.template_names()))
+        .is_err()
+    {
+        return;
+    }
 
     let mut tree_rx = daemon.subscribe_tree();
     let mut damage_rx: Option<broadcast::Receiver<ServerMsg>> = None;
@@ -65,6 +71,9 @@ fn handle_client_msg(
         ClientMsg::Input { pane, bytes } => daemon.write_pane(pane, &bytes),
         ClientMsg::Resize { pane, rows, cols } => daemon.resize_pane(pane, rows, cols),
         ClientMsg::SpawnShell { checkout } => daemon.spawn_shell(checkout).map(|_| ()),
+        ClientMsg::SpawnAgent { checkout, template } => {
+            daemon.spawn_agent(checkout, &template).map(|_| ())
+        }
         ClientMsg::Kill { pane } => daemon.kill_pane(pane),
     };
     if let Err(e) = result {

@@ -16,6 +16,37 @@ const DEFAULT_COLS: u16 = 80;
 const SCROLLBACK_LINES: usize = 4000;
 const FRAME_INTERVAL: Duration = Duration::from_millis(16);
 
+/// What to run in a newly-opened pty: the user's shell, or a named program
+/// (an agent CLI) with its own args and extra environment variables.
+pub enum Spawn {
+    DefaultShell,
+    Program {
+        program: String,
+        args: Vec<String>,
+        env: Vec<(String, String)>,
+    },
+}
+
+/// Builds the command to run a named program with args. On Windows this
+/// routes through `cmd.exe /C` so PATHEXT resolution finds `.cmd`/`.bat`
+/// shims (e.g. npm-installed CLIs) the same way a typed command would;
+/// `CreateProcess` alone only resolves bare `.exe` targets.
+#[cfg(windows)]
+fn program_command(program: &str, args: &[String]) -> CommandBuilder {
+    let mut c = CommandBuilder::new("cmd.exe");
+    c.arg("/C");
+    c.arg(program);
+    c.args(args);
+    c
+}
+
+#[cfg(unix)]
+fn program_command(program: &str, args: &[String]) -> CommandBuilder {
+    let mut c = CommandBuilder::new(program);
+    c.args(args);
+    c
+}
+
 pub struct PaneRuntime {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
@@ -30,6 +61,7 @@ impl PaneRuntime {
     pub fn spawn(
         id: PaneId,
         cwd: &Path,
+        spec: Spawn,
         on_exit: impl FnOnce(Option<i32>) + Send + 'static,
     ) -> anyhow::Result<Self> {
         let pty_system = native_pty_system();
@@ -40,7 +72,16 @@ impl PaneRuntime {
             pixel_height: 0,
         })?;
 
-        let mut cmd = CommandBuilder::new_default_prog();
+        let mut cmd = match spec {
+            Spawn::DefaultShell => CommandBuilder::new_default_prog(),
+            Spawn::Program { program, args, env } => {
+                let mut c = program_command(&program, &args);
+                for (k, v) in env {
+                    c.env(k, v);
+                }
+                c
+            }
+        };
         cmd.cwd(cwd);
 
         let child = pair.slave.spawn_command(cmd)?;

@@ -2,11 +2,12 @@ mod app;
 mod grid;
 mod keys;
 mod launch;
+mod mouse;
 mod ui;
 
 use std::io;
 
-use crossterm::event::{Event, EventStream, KeyEventKind};
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyEventKind};
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use futures::StreamExt;
@@ -44,14 +45,14 @@ async fn main() -> anyhow::Result<()> {
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     let result = run(&mut terminal, in_tx, &mut out_rx).await;
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(terminal.backend_mut(), DisableMouseCapture, LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     result
@@ -66,7 +67,7 @@ async fn run(
     let mut events = EventStream::new();
     let mut last_pane_area: Option<(u16, u16)> = None;
 
-    terminal.draw(|f| ui::render(f, &app))?;
+    terminal.draw(|f| ui::render(f, &mut app))?;
 
     loop {
         tokio::select! {
@@ -76,6 +77,9 @@ async fn run(
                         if key.kind == KeyEventKind::Press || key.kind == KeyEventKind::Repeat {
                             app.on_key(key);
                         }
+                    }
+                    Some(Ok(Event::Mouse(ev))) => {
+                        app.on_mouse(ev);
                     }
                     Some(Ok(_)) => {}
                     Some(Err(_)) | None => break,
@@ -90,15 +94,14 @@ async fn run(
             break;
         }
 
-        terminal.draw(|f| ui::render(f, &app))?;
+        terminal.draw(|f| ui::render(f, &mut app))?;
 
         if app.focus == app::Focus::PaneContent {
-            let size = terminal.size()?;
-            let rows = size.height.saturating_sub(3);
-            let cols = size.width.saturating_sub(2);
-            if last_pane_area != Some((rows, cols)) && rows > 0 && cols > 0 {
-                last_pane_area = Some((rows, cols));
-                app.resize_pane(rows, cols);
+            let area = app.layout.content;
+            let dims = (area.height, area.width);
+            if last_pane_area != Some(dims) && area.height > 0 && area.width > 0 {
+                last_pane_area = Some(dims);
+                app.resize_pane(area.height, area.width);
             }
         } else {
             last_pane_area = None;
