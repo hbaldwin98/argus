@@ -1,4 +1,4 @@
-use orion_protocol::{Color as PColor, PaneStatus};
+use orion_protocol::{Color as PColor, GitStatus, PaneStatus};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -61,8 +61,14 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
                 .iter()
                 .map(|c| {
                     let status = worst_pane_status(c);
-                    ListItem::new(format!("{} {}  {}", status_glyph(status), c.name, c.panes.len()))
-                        .style(status_style(status))
+                    let line = format!(
+                        "{} {}{}  {}p",
+                        status_glyph(status),
+                        c.name,
+                        git_suffix(c.git.as_ref()),
+                        c.panes.len()
+                    );
+                    ListItem::new(line).style(status_style(status))
                 })
                 .collect()
         })
@@ -220,6 +226,31 @@ fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     Rect::new(x, y, width, height)
+}
+
+/// Compact " branch ↑2 ↓1 *3" suffix appended to a checkout row: branch name
+/// (or "(detached)"), commits ahead/behind the upstream, and a dirty marker
+/// with a changed-file count. Empty when the checkout isn't a git repo.
+fn git_suffix(git: Option<&GitStatus>) -> String {
+    let Some(g) = git else { return String::new() };
+    let mut s = String::new();
+    match &g.branch {
+        Some(branch) => {
+            s.push(' ');
+            s.push_str(branch);
+        }
+        None => s.push_str(" (detached)"),
+    }
+    if g.ahead > 0 {
+        s.push_str(&format!(" ↑{}", g.ahead));
+    }
+    if g.behind > 0 {
+        s.push_str(&format!(" ↓{}", g.behind));
+    }
+    if g.dirty {
+        s.push_str(&format!(" *{}", g.changed_files));
+    }
+    s
 }
 
 fn worst_pane_status(c: &orion_protocol::CheckoutInfo) -> Option<PaneStatus> {

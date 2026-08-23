@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
+use std::time::Duration;
 
 use orion_protocol::{
     Cell, CheckoutId, CheckoutInfo, IdGen, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId,
@@ -116,6 +117,7 @@ impl Daemon {
                                 status: pane.status,
                             })
                             .collect(),
+                        git: crate::git::status(&c.path),
                     })
                     .collect(),
             })
@@ -264,6 +266,25 @@ impl Daemon {
         let (rows, cols, cells) = p.runtime.full_snapshot();
         let rx = p.runtime.subscribe();
         Ok((rows, cols, cells, rx))
+    }
+
+    /// Periodically re-broadcasts the tree so checkout rows pick up git
+    /// status changes (a commit, a stash, an agent editing a file) without
+    /// needing a pane event to trigger it. `git::status` shells out to
+    /// libgit2, so each tick runs on a blocking-pool thread rather than the
+    /// async runtime's own workers (see DESIGN.md §8, "never on the input
+    /// thread"). A real file watcher is a sharper version of this same idea
+    /// for later — this poll is the read-only M2 slice.
+    pub fn start_git_poll(self: &Arc<Self>) {
+        let daemon = self.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(2));
+            loop {
+                interval.tick().await;
+                let daemon = daemon.clone();
+                let _ = tokio::task::spawn_blocking(move || daemon.broadcast_tree()).await;
+            }
+        });
     }
 }
 

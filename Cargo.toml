@@ -23,6 +23,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 orion-protocol = { path = "crates/orion-protocol" }
 portable-pty = "0.8"
 vt100 = "0.15"
+git2 = "0.19"
 ratatui = "0.28"
 crossterm = "0.28"
 

@@ -1,5 +1,6 @@
 mod config;
 mod conn;
+mod git;
 mod pty;
 mod state;
 
@@ -14,6 +15,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cfg = config::load()?;
     let daemon = state::Daemon::new(cfg);
+    daemon.start_git_poll();
 
     let mut listener = orion_protocol::transport::Listener::bind().await?;
     tracing::info!("oriond listening");
