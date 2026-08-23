@@ -11,7 +11,7 @@ use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event, EventStre
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use futures::StreamExt;
-use orion_protocol::{read_msg, write_msg, ClientMsg, ServerMsg};
+use orion_protocol::{read_msg, write_msg, ClientMsg, PaneId, ServerMsg};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use tokio::io::split;
@@ -65,7 +65,10 @@ async fn run(
 ) -> anyhow::Result<()> {
     let mut app = App::new(in_tx);
     let mut events = EventStream::new();
-    let mut last_pane_area: Option<(u16, u16)> = None;
+    // Keyed by pane id, not just dimensions — switching to a different pane
+    // at the same on-screen size still needs its own Resize, since each
+    // pane's pty starts at a hardcoded default until told otherwise.
+    let mut last_pane_area: Option<(PaneId, u16, u16)> = None;
 
     terminal.draw(|f| ui::render(f, &mut app))?;
 
@@ -96,11 +99,11 @@ async fn run(
 
         terminal.draw(|f| ui::render(f, &mut app))?;
 
-        if app.subscribed.is_some() {
+        if let Some(pane) = app.subscribed {
             let area = app.layout.content;
-            let dims = (area.height, area.width);
-            if last_pane_area != Some(dims) && area.height > 0 && area.width > 0 {
-                last_pane_area = Some(dims);
+            let key = (pane, area.height, area.width);
+            if last_pane_area != Some(key) && area.height > 0 && area.width > 0 {
+                last_pane_area = Some(key);
                 app.resize_pane(area.height, area.width);
             }
         } else {

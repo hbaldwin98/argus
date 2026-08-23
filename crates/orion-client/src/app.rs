@@ -75,7 +75,7 @@ impl App {
             grid: None,
             leader_pending: false,
             should_quit: false,
-            status: "j/k move  l/enter open  h/esc back  s: shell  a: agent  x: kill  q: detach"
+            status: "j/k move  l/enter open  h/esc back  s: shell  a: agent  x: close  q: detach"
                 .to_string(),
             layout: Layout::default(),
             picker: None,
@@ -212,8 +212,10 @@ impl App {
     fn on_key_pane_content(&mut self, key: KeyEvent) {
         if self.leader_pending {
             self.leader_pending = false;
-            if key.code == KeyCode::Esc {
-                self.ascend();
+            match key.code {
+                KeyCode::Esc => self.ascend(),
+                KeyCode::Char('x') => self.close_current(),
+                _ => {}
             }
             return;
         }
@@ -412,9 +414,22 @@ impl App {
 
     fn kill_selected(&mut self) {
         if self.focus == Focus::Panes {
-            if let Some(pane) = self.current_pane() {
-                let _ = self.out.send(ClientMsg::Kill { pane: pane.id });
-            }
+            self.close_current();
+        }
+    }
+
+    /// Closes whatever pane is currently shown in the live view — reachable
+    /// both from the open-agents list (`x`) and, via the leader chord, from
+    /// inside the pane itself (`<leader>x`), since a bare `x` there is just
+    /// a character typed at the child.
+    fn close_current(&mut self) {
+        if let Some(pane) = self.current_pane() {
+            let _ = self.out.send(ClientMsg::Kill { pane: pane.id });
+            // Land back in the open-agents list rather than staying "in"
+            // PaneContent — the pane at this index may now be a different
+            // one once the removal lands, and typing should never go to a
+            // pane the user didn't choose.
+            self.focus = Focus::Panes;
         }
     }
 

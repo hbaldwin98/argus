@@ -74,7 +74,7 @@ fn handle_client_msg(
         ClientMsg::SpawnAgent { checkout, template } => {
             daemon.spawn_agent(checkout, &template).map(|_| ())
         }
-        ClientMsg::Kill { pane } => daemon.kill_pane(pane),
+        ClientMsg::Kill { pane } => daemon.close_pane(pane),
     };
     if let Err(e) = result {
         let _ = out_tx.send(ServerMsg::Error {

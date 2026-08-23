@@ -176,9 +176,9 @@ fn render_status(f: &mut Frame, app: &App, area: Rect) {
         "j/k move  enter: spawn  esc: cancel".to_string()
     } else if app.focus == Focus::PaneContent {
         if app.leader_pending {
-            "leader…  esc: back to panes".to_string()
+            "leader…  esc: back to panes  x: close pane".to_string()
         } else {
-            "ctrl-space then esc: back to panes".to_string()
+            "ctrl-space then esc: back to panes, x: close".to_string()
         }
     } else {
         app.status.clone()

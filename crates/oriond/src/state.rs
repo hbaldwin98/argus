@@ -224,10 +224,18 @@ impl Daemon {
         self.broadcast_tree();
     }
 
-    pub fn kill_pane(&self, pane: PaneId) -> anyhow::Result<()> {
-        let inner = self.inner.lock().unwrap();
-        let p = find_pane_ref(&inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
-        p.runtime.kill()
+    /// Kills the pane's process (best-effort — it may already have exited)
+    /// and removes it from the tree entirely, so a closed pane actually
+    /// disappears instead of lingering as a dead row the user can't clear.
+    pub fn close_pane(&self, pane: PaneId) -> anyhow::Result<()> {
+        let removed = {
+            let mut inner = self.inner.lock().unwrap();
+            remove_pane(&mut inner.projects, pane)
+        };
+        let removed = removed.ok_or_else(|| anyhow::anyhow!("no such pane"))?;
+        let _ = removed.runtime.kill();
+        self.broadcast_tree();
+        Ok(())
     }
 
     pub fn write_pane(&self, pane: PaneId, bytes: &[u8]) -> anyhow::Result<()> {
@@ -279,4 +287,15 @@ fn find_pane_ref(projects: &[Project], id: PaneId) -> Option<&Pane> {
         .flat_map(|p| p.checkouts.iter())
         .flat_map(|c| c.panes.iter())
         .find(|p| p.id == id)
+}
+
+fn remove_pane(projects: &mut [Project], id: PaneId) -> Option<Pane> {
+    for project in projects.iter_mut() {
+        for checkout in project.checkouts.iter_mut() {
+            if let Some(pos) = checkout.panes.iter().position(|p| p.id == id) {
+                return Some(checkout.panes.remove(pos));
+            }
+        }
+    }
+    None
 }
