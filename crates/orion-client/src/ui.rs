@@ -15,11 +15,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         .constraints([Constraint::Min(1), Constraint::Length(1)])
         .split(f.area());
 
-    if app.focus == Focus::PaneContent {
-        render_pane_content(f, app, root[0]);
-    } else {
-        render_columns(f, app, root[0]);
-    }
+    render_columns(f, app, root[0]);
     render_status(f, app, root[1]);
 
     if app.picker.is_some() {
@@ -27,13 +23,17 @@ pub fn render(f: &mut Frame, app: &mut App) {
     }
 }
 
+/// Always draws all four columns side by side — projects, checkouts, open
+/// agents/shells, and the live pane view — so an agent's output stays
+/// visible next to the rest of the tree instead of taking over the screen.
 fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(28),
-            Constraint::Percentage(36),
-            Constraint::Percentage(36),
+            Constraint::Percentage(16),
+            Constraint::Percentage(20),
+            Constraint::Percentage(22),
+            Constraint::Percentage(42),
         ])
         .split(area);
 
@@ -93,11 +93,13 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
     app.layout.panes = render_column(
         f,
         cols[2],
-        "panes",
+        "open agents",
         pane_items,
         app.focus == Focus::Panes,
         Some(app.sel_pane).filter(|_| npane > 0),
     );
+
+    render_content(f, app, cols[3]);
 }
 
 /// Renders a bordered column and returns its inner (post-border) area, so
@@ -137,18 +139,35 @@ fn render_column(
     inner
 }
 
-fn render_pane_content(f: &mut Frame, app: &mut App, area: Rect) {
+/// The rightmost column: the selected pane's live terminal content, always
+/// rendered alongside the other three columns rather than taking over the
+/// screen. Which pane that is follows the "open agents" column's selection.
+fn render_content(f: &mut Frame, app: &mut App, area: Rect) {
+    let active = matches!(app.focus, Focus::Panes | Focus::PaneContent);
+    let border_style = if active {
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
     let title = match (app.current_project(), app.current_checkout(), app.current_pane()) {
         (Some(p), Some(c), Some(pane)) => format!(" {} / {} / {} #{} ", p.name, c.name, pane.title, pane.id.0),
-        _ => " pane ".to_string(),
+        _ => " agent ".to_string(),
     };
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
+        .border_style(border_style);
     let inner = block.inner(area);
     f.render_widget(block, area);
-    f.render_widget(TermView { grid: &app.grid }, inner);
+
+    if app.current_pane().is_none() {
+        f.render_widget(
+            Paragraph::new("no pane selected — s: shell   a: agent").style(Style::default().fg(Color::DarkGray)),
+            inner,
+        );
+    } else {
+        f.render_widget(TermView { grid: &app.grid }, inner);
+    }
     app.layout.content = inner;
 }
 

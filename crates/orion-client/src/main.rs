@@ -96,7 +96,7 @@ async fn run(
 
         terminal.draw(|f| ui::render(f, &mut app))?;
 
-        if app.focus == app::Focus::PaneContent {
+        if app.subscribed.is_some() {
             let area = app.layout.content;
             let dims = (area.height, area.width);
             if last_pane_area != Some(dims) && area.height > 0 && area.width > 0 {

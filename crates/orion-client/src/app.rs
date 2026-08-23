@@ -17,6 +17,8 @@ pub enum Focus {
 
 /// Screen regions from the most recent render, so mouse clicks can be mapped
 /// back onto tree rows / pane cells without duplicating layout math.
+/// `panes` is the pane-tab strip atop the live view; `content` is the live
+/// view itself. Both live in the always-visible rightmost column.
 #[derive(Debug, Clone, Copy)]
 pub struct Layout {
     pub projects: Rect,
@@ -114,6 +116,26 @@ impl App {
         } else if self.sel_pane >= npane {
             self.sel_pane = npane - 1;
         }
+        self.sync_subscription();
+    }
+
+    /// Keeps the live view subscribed to whatever pane current navigation
+    /// state implies, independent of `focus` — the rightmost column always
+    /// shows this pane's content alongside the project/checkout columns,
+    /// it never takes over the whole screen.
+    fn sync_subscription(&mut self) {
+        let want = self.current_pane().map(|p| p.id);
+        if want == self.subscribed {
+            return;
+        }
+        if let Some(old) = self.subscribed.take() {
+            let _ = self.out.send(ClientMsg::Unsubscribe { pane: old });
+        }
+        self.grid = None;
+        if let Some(id) = want {
+            self.subscribed = Some(id);
+            let _ = self.out.send(ClientMsg::Subscribe { pane: id });
+        }
     }
 
     pub fn on_server_msg(&mut self, msg: ServerMsg) {
@@ -126,8 +148,8 @@ impl App {
                     let n = self.current_checkout().map(|c| c.panes.len()).unwrap_or(0);
                     if n > 0 {
                         self.sel_pane = n - 1;
-                        self.focus = Focus::Panes;
-                        self.descend();
+                        self.sync_subscription();
+                        self.focus = Focus::PaneContent;
                     }
                 }
             }
@@ -224,20 +246,44 @@ impl App {
         if self.picker.is_some() {
             return;
         }
-        if self.focus == Focus::PaneContent {
+        // The live view is always visible in the rightmost column, so a
+        // click landing on it both forwards to the child and (for presses)
+        // switches into typing mode, regardless of what was focused before.
+        if let Some(bytes) = encode_mouse(&ev, self.layout.content) {
+            if matches!(ev.kind, MouseEventKind::Down(_)) {
+                self.focus = Focus::PaneContent;
+            }
             if let Some(pane) = self.subscribed {
-                if let Some(bytes) = encode_mouse(&ev, self.layout.content) {
-                    let _ = self.out.send(ClientMsg::Input { pane, bytes });
-                }
+                let _ = self.out.send(ClientMsg::Input { pane, bytes });
             }
             return;
         }
+        // Anything outside the live view always navigates, even while
+        // "inside" a pane for typing — a click on another column should
+        // switch to it, not get swallowed by the pane that currently has
+        // keyboard focus.
         match ev.kind {
             MouseEventKind::Down(MouseButton::Left) => self.click_nav(ev.column, ev.row),
-            MouseEventKind::ScrollUp => self.move_selection(-1),
-            MouseEventKind::ScrollDown => self.move_selection(1),
+            MouseEventKind::ScrollUp => self.scroll_at(ev.column, ev.row, -1),
+            MouseEventKind::ScrollDown => self.scroll_at(ev.column, ev.row, 1),
             _ => {}
         }
+    }
+
+    /// Scroll-wheel selection change for whichever list column the cursor is
+    /// over, independent of `focus` — so scrolling a background column
+    /// doesn't steal focus away from a pane you're typing into.
+    fn scroll_at(&mut self, x: u16, y: u16, delta: i32) {
+        let target = if in_rect(self.layout.projects, x, y) {
+            Focus::Projects
+        } else if in_rect(self.layout.checkouts, x, y) {
+            Focus::Checkouts
+        } else if in_rect(self.layout.panes, x, y) {
+            Focus::Panes
+        } else {
+            return;
+        };
+        self.adjust_selection(target, delta);
     }
 
     fn click_nav(&mut self, x: u16, y: u16) {
@@ -281,7 +327,11 @@ impl App {
     }
 
     fn move_selection(&mut self, delta: i32) {
-        let sel = match self.focus {
+        self.adjust_selection(self.focus, delta);
+    }
+
+    fn adjust_selection(&mut self, target: Focus, delta: i32) {
+        let sel = match target {
             Focus::Projects => &mut self.sel_project,
             Focus::Checkouts => &mut self.sel_checkout,
             Focus::Panes => &mut self.sel_pane,
@@ -309,11 +359,7 @@ impl App {
                 }
             }
             Focus::Panes => {
-                if let Some(pane) = self.current_pane() {
-                    let id = pane.id;
-                    self.subscribed = Some(id);
-                    self.grid = None;
-                    let _ = self.out.send(ClientMsg::Subscribe { pane: id });
+                if self.current_pane().is_some() {
                     self.focus = Focus::PaneContent;
                 }
             }
@@ -324,10 +370,8 @@ impl App {
     fn ascend(&mut self) {
         match self.focus {
             Focus::PaneContent => {
-                if let Some(pane) = self.subscribed.take() {
-                    let _ = self.out.send(ClientMsg::Unsubscribe { pane });
-                }
-                self.grid = None;
+                // Deliberately does not unsubscribe: the live view keeps
+                // showing this pane in the rightmost column while browsing.
                 self.leader_pending = false;
                 self.focus = Focus::Panes;
             }
@@ -382,8 +426,12 @@ impl App {
 }
 
 fn row_in(area: Rect, x: u16, y: u16) -> Option<usize> {
-    if x < area.x || x >= area.x + area.width || y < area.y || y >= area.y + area.height {
+    if !in_rect(area, x, y) {
         return None;
     }
     Some((y - area.y) as usize)
+}
+
+fn in_rect(area: Rect, x: u16, y: u16) -> bool {
+    x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height
 }
