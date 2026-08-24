@@ -524,8 +524,20 @@ not have to leave the tool.
 **M5 — notes & context server.** Markdown notes, todo rollups, forwarding, then the read side of
 the context server, then the write side behind policy.
 
-**M6 — polish.** Sandboxing, scrollback spill, config reload, and session restore across
-reboots. The UI is done for now:
+**M6 — polish.** Sandboxing, scrollback spill, and config reload.
+
+Session restore is in: `session.json` beside the config records what was running, rewritten on
+every structural change, and the daemon starts it all again on launch. Checkouts are matched by
+path and projects by name, since ids are reissued every run. Editors are skipped — one belongs
+to the floating window it opened in — and so is any pane whose checkout or agent template has
+since left the config; a failure costs that pane, never the startup. `ARGUS_NO_RESTORE` starts
+clean, for when the restore is itself the problem. Recording is opt-in and only `main` enables
+it, so no test can write over a real session.
+
+A restored agent is a *fresh* process in the right checkout, not its previous conversation.
+Resuming that needs the per-harness session ids described in §11.
+
+The UI is done for now:
 
 - `theme.rs` keys every color to a semantic role — three elevations (`bg` / `surface` /
   `surface_focus`), accent, text, muted/dim, ok/warn/err, edge, and the two selection fills.

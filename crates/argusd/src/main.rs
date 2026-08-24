@@ -7,6 +7,7 @@ mod conn;
 mod git;
 mod hooks;
 mod pty;
+mod session;
 mod state;
 
 use tracing_subscriber::EnvFilter;
@@ -25,6 +26,9 @@ async fn main() -> anyhow::Result<()> {
     daemon.sweep_stale_hooks();
     daemon.start_hook_server()?;
     daemon.start_git_poll();
+    // After the hook server, so a restored agent gets working hooks.
+    daemon.restore_session();
+    daemon.persist_session();
 
     let mut listener = argus_protocol::transport::Listener::bind().await?;
     tracing::info!("argusd listening");

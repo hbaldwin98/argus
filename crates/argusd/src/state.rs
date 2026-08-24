@@ -67,6 +67,13 @@ pub struct Daemon {
     /// the server only ever binds to loopback — just enough that a stray
     /// local process can't spoof pane status.
     hook_token: String,
+    /// True while `restore_session` is spawning, so the panes it makes
+    /// don't each rewrite the file it is reading from.
+    restoring: std::sync::atomic::AtomicBool,
+    /// Off unless `main` turns it on. A daemon built in a test must not
+    /// write over the real user's session file, and every structural
+    /// change would otherwise do exactly that.
+    persist: std::sync::atomic::AtomicBool,
 }
 
 type PaneSubscription = (u16, u16, Vec<Vec<Cell>>, broadcast::Receiver<ServerMsg>);
@@ -154,6 +161,8 @@ impl Daemon {
             templates,
             hook_port: std::sync::atomic::AtomicU16::new(0),
             hook_token: gen_token(),
+            restoring: std::sync::atomic::AtomicBool::new(false),
+            persist: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -295,7 +304,102 @@ impl Daemon {
     }
 
     fn broadcast_tree(&self) {
+        // Structural changes only — pane output never reaches here — so
+        // recording the session on the same edge is cheap and means the
+        // file is never more than one spawn or close out of date.
+        self.record_session();
         let _ = self.tree_tx.send(self.snapshot());
+    }
+
+    /// What is running, in a form that survives ids being reissued.
+    fn session(&self) -> crate::session::Session {
+        let inner = self.inner.lock().unwrap();
+        crate::session::Session {
+            panes: inner
+                .projects
+                .iter()
+                .flat_map(|p| p.checkouts.iter())
+                .flat_map(|c| {
+                    c.panes.iter().map(|pane| crate::session::SessionPane {
+                        checkout_path: c.path.clone(),
+                        kind: pane.kind,
+                        title: pane.title.clone(),
+                    })
+                })
+                .collect(),
+        }
+    }
+
+    /// Records the session from here on, and remembers this one. Only
+    /// `main` calls it; everything else runs without touching disk.
+    pub fn persist_session(&self) {
+        self.persist
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.record_session();
+    }
+
+    fn record_session(&self) {
+        // Half a restore is not a session worth remembering.
+        let ord = std::sync::atomic::Ordering::Relaxed;
+        if !self.persist.load(ord) || self.restoring.load(ord) {
+            return;
+        }
+        crate::session::save(&self.session());
+    }
+
+    /// Starts again whatever was running when the daemon last stopped.
+    ///
+    /// Failures are per pane and never fatal: a template that has since
+    /// stopped working should cost you that pane, not the whole session.
+    pub fn restore_session(self: &Arc<Self>) {
+        let saved = crate::session::load();
+        if saved.panes.is_empty() {
+            return;
+        }
+        let known = self.checkout_paths();
+        let wanted: Vec<crate::session::SessionPane> = crate::session::restorable(&saved, &known)
+            .cloned()
+            .collect();
+        if wanted.is_empty() {
+            return;
+        }
+
+        self.restoring
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let mut restored = 0usize;
+        for pane in &wanted {
+            let Some(checkout) = self.checkout_at(&pane.checkout_path) else {
+                continue;
+            };
+            let result = match pane.kind {
+                PaneKind::Agent => self.spawn_agent(checkout, &pane.title).map(|_| ()),
+                _ => self.spawn_shell(checkout).map(|_| ()),
+            };
+            match result {
+                Ok(()) => restored += 1,
+                Err(e) => tracing::warn!(
+                    "could not restore {} in {}: {e}",
+                    pane.title,
+                    pane.checkout_path.display()
+                ),
+            }
+        }
+        self.restoring
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+
+        tracing::info!("restored {restored} of {} panes", wanted.len());
+        self.broadcast_tree();
+    }
+
+    /// The checkout at `path`, whatever workspace it is in.
+    fn checkout_at(&self, path: &std::path::Path) -> Option<CheckoutId> {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .projects
+            .iter()
+            .flat_map(|p| p.checkouts.iter())
+            .find(|c| c.path == path || c.path.canonicalize().ok() == path.canonicalize().ok())
+            .map(|c| c.id)
     }
 
     fn broadcast_workspaces(&self) {
@@ -1896,6 +2000,201 @@ mod tests {
                 "a GUI editor must not become a pane"
             );
         }
+    }
+
+    // --- session restore ----------------------------------------------------
+
+    /// A daemon whose only project is `dir`, with one agent template that
+    /// runs the platform shell so restoring one actually starts something.
+    fn daemon_for_restore(dir: &std::path::Path) -> Arc<Daemon> {
+        Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                repos: vec![dir.to_string_lossy().to_string()],
+                workspace: None,
+            }],
+            agents: vec![AgentConfig {
+                name: "test-agent".to_string(),
+                cmd: vec![if cfg!(windows) { "cmd" } else { "sh" }.to_string()],
+                env: Default::default(),
+            }],
+        })
+    }
+
+    /// Writes a session file as a previous daemon would have left it.
+    /// Cheaper and more exact than running one: what is being tested is
+    /// what the daemon does with the file, not the file format twice.
+    fn record(panes: &[(PaneKind, &str)], checkout: &std::path::Path) {
+        crate::session::save(&crate::session::Session {
+            panes: panes
+                .iter()
+                .map(|(kind, title)| crate::session::SessionPane {
+                    checkout_path: checkout.to_path_buf(),
+                    kind: *kind,
+                    title: title.to_string(),
+                })
+                .collect(),
+        });
+    }
+
+    fn close_all(d: &Daemon) {
+        for p in &d.snapshot()[0].checkouts[0].panes {
+            let _ = d.close_pane(p.id);
+        }
+    }
+
+    fn saved_panes() -> Vec<crate::session::SessionPane> {
+        crate::session::load().panes
+    }
+
+    #[test]
+    fn nothing_recorded_means_nothing_restored() {
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            let d = daemon_for_restore(dir.path());
+            d.restore_session();
+            assert!(d.snapshot()[0].checkouts[0].panes.is_empty());
+        });
+    }
+
+    #[tokio::test]
+    async fn what_is_running_is_written_down() {
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            let d = daemon_for_restore(dir.path());
+            d.persist_session();
+            let checkout = d.snapshot()[0].checkouts[0].id;
+            d.spawn_shell(checkout).unwrap();
+
+            let saved = saved_panes();
+            assert_eq!(saved.len(), 1);
+            assert_eq!(saved[0].kind, PaneKind::Shell);
+
+            close_all(&d);
+        });
+    }
+
+    #[tokio::test]
+    async fn what_was_running_comes_back_after_a_restart() {
+        // The point of the feature: a reboot should not cost you the panes
+        // you had open.
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            record(
+                &[(PaneKind::Shell, "shell"), (PaneKind::Agent, "test-agent")],
+                dir.path(),
+            );
+
+            let d = daemon_for_restore(dir.path());
+            d.restore_session();
+
+            let kinds: Vec<PaneKind> = d.snapshot()[0].checkouts[0]
+                .panes
+                .iter()
+                .map(|p| p.kind)
+                .collect();
+            assert_eq!(kinds.len(), 2, "both panes came back: {kinds:?}");
+            assert!(kinds.contains(&PaneKind::Shell));
+            assert!(kinds.contains(&PaneKind::Agent));
+
+            close_all(&d);
+        });
+    }
+
+    #[tokio::test]
+    async fn an_agent_comes_back_as_the_template_it_was() {
+        // The title is how a restored agent knows what to launch.
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            record(&[(PaneKind::Agent, "test-agent")], dir.path());
+
+            let d = daemon_for_restore(dir.path());
+            d.restore_session();
+
+            assert_eq!(d.snapshot()[0].checkouts[0].panes[0].title, "test-agent");
+            close_all(&d);
+        });
+    }
+
+    #[test]
+    fn an_agent_whose_template_is_gone_costs_only_that_pane() {
+        // Templates come from config, which changes between runs.
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            record(&[(PaneKind::Agent, "no-such-template")], dir.path());
+
+            let d = daemon_for_restore(dir.path());
+            d.restore_session();
+
+            assert!(
+                d.snapshot()[0].checkouts[0].panes.is_empty(),
+                "skipped, not fatal"
+            );
+        });
+    }
+
+    #[test]
+    fn an_editor_is_never_restored() {
+        // It belonged to a floating window that no longer exists.
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            record(&[(PaneKind::Editor, "a.rs")], dir.path());
+
+            let d = daemon_for_restore(dir.path());
+            d.restore_session();
+
+            assert!(d.snapshot()[0].checkouts[0].panes.is_empty());
+        });
+    }
+
+    #[test]
+    fn the_escape_hatch_starts_clean() {
+        // For the case where the restore is itself the problem.
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            record(&[(PaneKind::Shell, "shell")], dir.path());
+
+            std::env::set_var(crate::session::NO_RESTORE, "1");
+            let d = daemon_for_restore(dir.path());
+            d.restore_session();
+            std::env::remove_var(crate::session::NO_RESTORE);
+
+            assert!(d.snapshot()[0].checkouts[0].panes.is_empty());
+        });
+    }
+
+    #[tokio::test]
+    async fn a_daemon_that_was_never_told_to_persist_records_nothing() {
+        // Every test builds a daemon; none of them may write over the real
+        // user's session.
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|cfg| {
+            let d = daemon_for_restore(dir.path());
+            let checkout = d.snapshot()[0].checkouts[0].id;
+            d.spawn_shell(checkout).unwrap();
+            close_all(&d);
+
+            assert!(
+                !cfg.join("session.json").exists(),
+                "persistence must be opt-in"
+            );
+        });
+    }
+
+    #[tokio::test]
+    async fn a_pane_you_closed_does_not_come_back() {
+        // The file follows the tree, so closing one forgets it.
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            let d = daemon_for_restore(dir.path());
+            d.persist_session();
+            let checkout = d.snapshot()[0].checkouts[0].id;
+            let pane = d.spawn_shell(checkout).unwrap();
+            let _ = d.close_pane(pane);
+
+            assert!(saved_panes().is_empty());
+        });
     }
 
 }
