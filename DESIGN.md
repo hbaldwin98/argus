@@ -97,6 +97,12 @@ settings panel with room to say what each option does. Those open as an overlay 
 above the columns, with the tree still framing it, because losing your place is what the whole
 layout exists to prevent.
 
+An editor is **not a pane in the tree**. It is a way of looking at a file, not something
+running in the checkout that you would come back to, so it is left out of the panes column and
+out of every count and status rollup. That in turn makes its window the only handle on it —
+which is why closing the window ends the editor, while a window over a *listed* pane (a shell,
+an agent) only stops you looking at it.
+
 A floating pane streams *alongside* the column, never instead of it: a connection carries one
 subscription per pane on screen, and each pty is sized from where that pane is actually drawn.
 Opening a file must not cost you sight of the agent running behind it, so opening one also

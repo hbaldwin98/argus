@@ -44,6 +44,15 @@ pub struct GitStatus {
     pub behind: usize,
 }
 
+impl CheckoutInfo {
+    /// The panes the tree lists. An editor belongs to the window it opened
+    /// in, not to the checkout's pane list — it is a way of looking at a
+    /// file, not something running here that you might come back to.
+    pub fn listed_panes(&self) -> impl Iterator<Item = &PaneInfo> {
+        self.panes.iter().filter(|p| p.kind != PaneKind::Editor)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckoutInfo {
     pub id: CheckoutId,

@@ -173,7 +173,14 @@ impl Picker {
 pub enum Overlay {
     /// A pty pane, drawn large. The title is carried rather than looked up
     /// so it survives the pane leaving the tree.
-    Pane { pane: PaneId, title: String },
+    Pane {
+        pane: PaneId,
+        title: String,
+        /// Kill the pane when the window closes. True for editors: they
+        /// are not listed in the panes column, so a surviving one would be
+        /// a process with no window and no way back to it.
+        ephemeral: bool,
+    },
     /// Preferences, with room to say what each one does.
     Settings { sel: usize },
 }
@@ -340,7 +347,8 @@ impl App {
     }
 
     pub fn current_pane(&self) -> Option<&PaneInfo> {
-        self.current_checkout().and_then(|c| c.panes.get(self.sel_pane))
+        self.current_checkout()
+            .and_then(|c| c.listed_panes().nth(self.sel_pane))
     }
 
     fn clamp(&mut self) {
@@ -356,7 +364,7 @@ impl App {
         } else if self.sel_checkout >= ncheck {
             self.sel_checkout = ncheck - 1;
         }
-        let npane = self.current_checkout().map(|c| c.panes.len()).unwrap_or(0);
+        let npane = self.visible_pane_count();
         if npane == 0 {
             self.sel_pane = 0;
         } else if self.sel_pane >= npane {
@@ -369,6 +377,12 @@ impl App {
     /// state implies, independent of `focus` — the rightmost column always
     /// shows this pane's content alongside the project/checkout columns,
     /// it never takes over the whole screen.
+    fn visible_pane_count(&self) -> usize {
+        self.current_checkout()
+            .map(|c| c.listed_panes().count())
+            .unwrap_or(0)
+    }
+
     /// The pane the rightmost column draws: whatever the tree selection
     /// implies, untouched by anything floating above it.
     pub fn column_pane(&self) -> Option<PaneId> {
@@ -451,11 +465,9 @@ impl App {
                             // columns keep showing whatever you were
                             // watching, and closing the window puts you
                             // back there rather than on the editor.
-                            self.open_overlay_pane(id, title);
+                            self.open_overlay_pane(id, title, true);
                         } else {
-                            let n =
-                                self.current_checkout().map(|c| c.panes.len()).unwrap_or(1);
-                            self.sel_pane = n - 1;
+                            self.sel_pane = self.visible_pane_count().saturating_sub(1);
                             self.sync_subscription();
                             self.focus = Focus::PaneContent;
                         }
@@ -801,14 +813,29 @@ impl App {
         }
     }
 
-    /// Opens `pane` in a floating window and moves the live view to it.
-    pub fn open_overlay_pane(&mut self, pane: PaneId, title: String) {
-        self.overlay = Some(Overlay::Pane { pane, title });
+    /// Opens `pane` in a floating window alongside whatever the columns
+    /// are showing. `ephemeral` panes are killed when the window closes.
+    pub fn open_overlay_pane(&mut self, pane: PaneId, title: String, ephemeral: bool) {
+        self.overlay = Some(Overlay::Pane {
+            pane,
+            title,
+            ephemeral,
+        });
         self.focus = Focus::Overlay;
         self.sync_subscription();
     }
 
     pub fn close_overlay(&mut self) {
+        // An editor is its window. Nothing lists it once the window is
+        // gone, so leaving it running would strand the process.
+        if let Some(Overlay::Pane {
+            pane,
+            ephemeral: true,
+            ..
+        }) = self.overlay
+        {
+            let _ = self.out.send(ClientMsg::Kill { pane });
+        }
         self.overlay = None;
         self.leader_pending = false;
         if self.focus == Focus::Overlay {
@@ -1131,7 +1158,7 @@ impl App {
         let count = match target {
             Focus::Projects => self.tree.len(),
             Focus::Checkouts => self.current_project().map(|p| p.checkouts.len()).unwrap_or(0),
-            _ => self.current_checkout().map(|c| c.panes.len()).unwrap_or(0),
+            _ => self.visible_pane_count(),
         };
 
         let hit = row_in(inner, x, y).filter(|idx| *idx < count);
@@ -2260,7 +2287,7 @@ mod tests {
         // sizing both from one of them wraps the other wrongly.
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.app.open_overlay_pane(PaneId(700), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(700), "vim".to_string(), false);
         h.app.layout.overlay = Panel {
             outer: Rect::new(2, 1, 60, 20),
             inner: Rect::new(3, 2, 58, 18),
@@ -3089,7 +3116,7 @@ mod tests {
         h.sent();
         let column = h.app.column_pane().unwrap();
 
-        h.app.open_overlay_pane(PaneId(700), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(700), "vim".to_string(), false);
 
         assert_eq!(h.app.overlay_pane(), Some(PaneId(700)));
         assert_eq!(h.app.column_pane(), Some(column), "the column is untouched");
@@ -3104,7 +3131,7 @@ mod tests {
     #[test]
     fn typing_in_a_floating_pane_reaches_its_child() {
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.sent();
 
         h.keys("iabc");
@@ -3125,7 +3152,7 @@ mod tests {
     fn nav_keys_do_not_leak_out_of_a_floating_pane() {
         // Every key belongs to the editor while it is up — `q` especially.
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.keys("q");
         assert!(!h.app.should_quit, "q is the editor's, not ours");
         assert!(h.app.overlay.is_some());
@@ -3134,7 +3161,7 @@ mod tests {
     #[test]
     fn the_leader_closes_a_floating_pane_and_leaves_it_running() {
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.sent();
 
         h.leader();
@@ -3150,7 +3177,7 @@ mod tests {
     #[test]
     fn the_leader_can_also_kill_the_pane_in_a_floating_window() {
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.sent();
 
         h.leader();
@@ -3167,7 +3194,7 @@ mod tests {
         h.sent();
         let was = h.app.column_pane();
 
-        h.app.open_overlay_pane(PaneId(999), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(999), "vim".to_string(), false);
         h.leader();
         h.key(KeyCode::Esc);
 
@@ -3181,7 +3208,7 @@ mod tests {
         laid_out(&mut h);
         assert_eq!(h.app.live_panes()[0].1, h.app.layout.content.inner);
 
-        h.app.open_overlay_pane(PaneId(700), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(700), "vim".to_string(), false);
         h.app.layout.overlay = Panel {
             outer: Rect::new(2, 1, 40, 20),
             inner: Rect::new(3, 2, 38, 18),
@@ -3351,7 +3378,7 @@ mod tests {
         // floating pane swallows every other key on purpose. When both fail
         // there has to be something left to press.
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.sent();
 
         h.key(KeyCode::F(12));
@@ -3375,7 +3402,7 @@ mod tests {
     fn clicking_outside_a_floating_window_dismisses_it() {
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.app.layout.overlay = Panel {
             outer: Rect::new(10, 4, 20, 10),
             inner: Rect::new(11, 5, 18, 8),
@@ -3390,7 +3417,7 @@ mod tests {
     fn a_click_inside_the_window_belongs_to_its_pane() {
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.app.layout.overlay = Panel {
             outer: Rect::new(10, 4, 20, 10),
             inner: Rect::new(11, 5, 18, 8),
@@ -3409,7 +3436,7 @@ mod tests {
         // still went to the overlay, leaving no way in and no way out.
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.app.layout.overlay = Panel {
             outer: Rect::new(10, 4, 20, 10),
             inner: Rect::new(11, 5, 18, 8),
@@ -3426,7 +3453,7 @@ mod tests {
         // Otherwise it sits there showing a dead grid — the shape of a hung
         // editor, with no sign anything is wrong.
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
 
         h.app.on_server_msg(ServerMsg::PaneClosed {
             pane: PaneId(101),
@@ -3439,7 +3466,7 @@ mod tests {
     #[test]
     fn another_panes_exit_leaves_the_window_alone() {
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.app.on_server_msg(ServerMsg::PaneClosed {
             pane: PaneId(100),
             code: Some(0),
@@ -3451,7 +3478,7 @@ mod tests {
     fn a_window_whose_pane_vanishes_from_the_tree_closes_itself() {
         // Killed from another client, or reaped while we were not looking.
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
 
         let mut t = tree();
         t[0].checkouts[0].panes.retain(|p| p.id != PaneId(101));
@@ -3602,6 +3629,84 @@ mod tests {
 
         assert_eq!(h.app.column_pane(), watching);
         assert!(h.app.overlay.is_none());
+    }
+
+    // --- editors are not panes ----------------------------------------------
+
+    /// A tree whose first checkout has a shell, an agent, and an editor.
+    fn tree_with_editor() -> Vec<ProjectInfo> {
+        let mut t = tree();
+        t[0].checkouts[0].panes.push(PaneInfo {
+            id: PaneId(700),
+            kind: PaneKind::Editor,
+            title: "a.rs".to_string(),
+            status: PaneStatus::Idle,
+        });
+        t
+    }
+
+    #[test]
+    fn an_editor_is_not_listed_among_the_panes() {
+        // It is a way of looking at a file, not something running here that
+        // you would come back to.
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Tree(tree_with_editor()));
+
+        let listed: Vec<PaneId> = h.app.tree[0].checkouts[0]
+            .listed_panes()
+            .map(|p| p.id)
+            .collect();
+        assert!(!listed.contains(&PaneId(700)), "{listed:?}");
+        assert_eq!(listed.len(), 2, "the shell and the agent remain");
+    }
+
+    #[test]
+    fn navigation_skips_over_editors() {
+        // Otherwise j/k walks onto a row nothing draws.
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Tree(tree_with_editor()));
+        h.keys("ll");
+        for _ in 0..5 {
+            h.key(KeyCode::Char('j'));
+        }
+        assert_eq!(h.app.sel_pane, 1, "clamped to the last listed pane");
+        assert_ne!(h.app.column_pane(), Some(PaneId(700)));
+    }
+
+    #[test]
+    fn an_editor_does_not_inflate_the_pane_counts() {
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Tree(tree_with_editor()));
+        assert_eq!(h.app.tree[0].checkouts[0].listed_panes().count(), 2);
+    }
+
+    #[test]
+    fn closing_an_editors_window_ends_the_editor() {
+        // Nothing lists it afterwards, so a survivor would be a process
+        // with no window and no way back to it.
+        let mut h = Harness::new();
+        h.app.open_overlay_pane(PaneId(700), "a.rs".to_string(), true);
+        h.sent();
+
+        h.key(KeyCode::F(12));
+
+        assert!(h
+            .sent()
+            .iter()
+            .any(|m| matches!(m, ClientMsg::Kill { pane } if *pane == PaneId(700))));
+    }
+
+    #[test]
+    fn closing_a_window_over_a_listed_pane_leaves_it_running() {
+        // A shell or agent shown floating is still in the panes column, so
+        // closing the window is only ever "stop looking at it".
+        let mut h = Harness::new();
+        h.app.open_overlay_pane(PaneId(101), "shell".to_string(), false);
+        h.sent();
+
+        h.key(KeyCode::F(12));
+
+        assert!(!h.sent().iter().any(|m| matches!(m, ClientMsg::Kill { .. })));
     }
 
 }

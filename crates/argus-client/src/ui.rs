@@ -119,7 +119,7 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
         .tree
         .iter()
         .map(|p| {
-            let panes: usize = p.checkouts.iter().map(|c| c.panes.len()).sum();
+            let panes: usize = p.checkouts.iter().map(|c| c.listed_panes().count()).sum();
             let status = p
                 .checkouts
                 .iter()
@@ -198,11 +198,11 @@ n  add one",
                         ],
                         detail,
                     )
-                    .badged(if c.panes.is_empty() {
+                    .badged(if c.listed_panes().next().is_none() {
                         Vec::new()
                     } else {
                         vec![Span::styled(
-                            format!("{} ▣", c.panes.len()),
+                            format!("{} ▣", c.listed_panes().count()),
                             Style::default().fg(th.dim),
                         )]
                     })
@@ -225,8 +225,7 @@ n  add one",
     let pane_rows: Vec<Item> = app
         .current_checkout()
         .map(|c| {
-            c.panes
-                .iter()
+            c.listed_panes()
                 .map(|p| {
                     Item::new(
                         vec![
@@ -250,7 +249,10 @@ n  add one",
                 .collect()
         })
         .unwrap_or_default();
-    let npane = app.current_checkout().map(|c| c.panes.len()).unwrap_or(0);
+    let npane = app
+        .current_checkout()
+        .map(|c| c.listed_panes().count())
+        .unwrap_or(0);
     app.layout.panes = render_column(
         f,
         cols[2],
@@ -1022,7 +1024,7 @@ fn exit_note(status: PaneStatus) -> String {
 }
 
 fn worst_pane_status(c: &argus_protocol::CheckoutInfo) -> Option<PaneStatus> {
-    c.panes.iter().map(|p| p.status).max_by_key(rank)
+    c.listed_panes().map(|p| p.status).max_by_key(rank)
 }
 
 /// Parents show the worst child (DESIGN.md §8b): `Waiting` outranks
@@ -1874,6 +1876,22 @@ mod tests {
         app.open_settings();
         let out = lines(&draw(&mut app)).join("\n");
         assert!(out.contains("client.toml"), "{out}");
+    }
+
+    #[test]
+    fn an_editor_never_appears_in_the_panes_column() {
+        let mut app = app_with_tree();
+        if let Some(c) = app.tree[0].checkouts.get_mut(0) {
+            c.panes.push(PaneInfo {
+                id: PaneId(700),
+                kind: PaneKind::Editor,
+                title: "zzz-editor.rs".to_string(),
+                status: PaneStatus::Idle,
+            });
+        }
+        let out = lines(&draw(&mut app)).join("\n");
+        assert!(!out.contains("zzz-editor"), "editors are not panes:\n{out}");
+        assert!(out.contains("claude"), "the agent still is:\n{out}");
     }
 
 }
