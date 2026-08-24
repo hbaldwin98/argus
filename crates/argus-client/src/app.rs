@@ -183,13 +183,17 @@ pub enum Overlay {
     },
     /// Preferences, with room to say what each one does.
     Settings { sel: usize },
+    /// The diff. The view itself lives on `App::review`; this only says
+    /// which window is up. Floating rather than in the column so reading a
+    /// diff never costs you sight of the agent that produced it.
+    Review,
 }
 
 impl Overlay {
     fn pane(&self) -> Option<PaneId> {
         match self {
             Overlay::Pane { pane, .. } => Some(*pane),
-            Overlay::Settings { .. } => None,
+            Overlay::Settings { .. } | Overlay::Review => None,
         }
     }
 }
@@ -520,6 +524,7 @@ impl App {
                     self.status = "no uncommitted changes".to_string();
                 } else {
                     self.review = Some(view);
+                    self.overlay = Some(Overlay::Review);
                     self.focus = Focus::Review;
                     self.status = format!("{files} changed vs {}", self.review_base.label());
                 }
@@ -720,6 +725,10 @@ impl App {
     /// An overlay holding a pane is a typing surface like the content
     /// column, so the same leader gets you out of it.
     fn on_key_overlay(&mut self, key: KeyEvent) {
+        if matches!(self.overlay, Some(Overlay::Review)) {
+            self.on_key_review(key);
+            return;
+        }
         if let Some(Overlay::Settings { sel }) = &mut self.overlay {
             let sel = *sel;
             match key.code {
@@ -836,11 +845,17 @@ impl App {
         {
             let _ = self.out.send(ClientMsg::Kill { pane });
         }
+        self.review = None;
+        self.review_wanted = None;
         self.overlay = None;
         self.leader_pending = false;
-        if self.focus == Focus::Overlay {
-            self.focus = Focus::Panes;
-        }
+        self.focus = match self.focus {
+            Focus::Overlay => Focus::Panes,
+            // A diff was opened from a checkout, so that is where closing
+            // it puts you back.
+            Focus::Review => Focus::Checkouts,
+            other => other,
+        };
         self.sync_subscription();
     }
 
@@ -961,6 +976,7 @@ impl App {
     fn close_review(&mut self) {
         self.review = None;
         self.review_wanted = None;
+        self.overlay = None;
         self.focus = Focus::Checkouts;
     }
 
@@ -3707,6 +3723,51 @@ mod tests {
         h.key(KeyCode::F(12));
 
         assert!(!h.sent().iter().any(|m| matches!(m, ClientMsg::Kill { .. })));
+    }
+
+    #[test]
+    fn a_diff_opens_in_a_window_and_leaves_the_column_alone() {
+        // Reading a diff should not cost you sight of the agent that
+        // produced it.
+        let mut h = Harness::new();
+        h.keys("ll");
+        h.sent();
+        let watching = h.app.column_pane();
+
+        let checkout = h.app.tree[0].checkouts[0].id;
+        h.app.review_for_test(checkout);
+        h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
+
+        assert!(matches!(h.app.overlay, Some(Overlay::Review)));
+        assert_eq!(h.app.column_pane(), watching, "column untouched");
+        assert!(h.app.grids.contains_key(&watching.unwrap()), "still streaming");
+    }
+
+    #[test]
+    fn closing_a_diff_puts_you_back_on_the_checkout() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        h.app.review_for_test(checkout);
+        h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
+
+        h.key(KeyCode::Esc);
+
+        assert!(h.app.overlay.is_none());
+        assert!(h.app.review.is_none());
+        assert_eq!(h.app.focus, Focus::Checkouts);
+    }
+
+    #[test]
+    fn f12_also_gets_you_out_of_a_diff() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        h.app.review_for_test(checkout);
+        h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
+
+        h.key(KeyCode::F(12));
+
+        assert!(h.app.overlay.is_none());
+        assert!(h.app.review.is_none(), "and the diff goes with it");
     }
 
 }

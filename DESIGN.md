@@ -97,6 +97,9 @@ settings panel with room to say what each option does. Those open as an overlay 
 above the columns, with the tree still framing it, because losing your place is what the whole
 layout exists to prevent.
 
+The review is a floating window too, for the same reason: reading a diff should not cost you
+sight of the agent that produced it. Only the live pane ever occupies the rightmost column.
+
 An editor is **not a pane in the tree**. It is a way of looking at a file, not something
 running in the checkout that you would come back to, so it is left out of the panes column and
 out of every count and status rollup. That in turn makes its window the only handle on it —
@@ -499,7 +502,7 @@ file watcher.
 jump-to-editor. Concretely, the shape wanted here:
 
 - Enumerate a checkout's changes as a navigable list of files and hunks, inside the client.
-  *(landed)* `R` on a checkout opens the working tree against HEAD in the rightmost column,
+  *(landed)* `R` on a checkout opens the working tree against HEAD in a floating window,
   untracked files included; `]`/`[` move between files, `v` extends a selection over a range.
 - Attach a comment to a line or a *range* of lines, the way a pull-request review does, and
   send it straight to the agent working that checkout. *(landed)* `c` in the review composes

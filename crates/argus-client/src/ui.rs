@@ -417,10 +417,6 @@ fn row_rect_of(inner: Rect, i: usize, height: u16) -> Option<Rect> {
 /// alongside the other three rather than taking over the screen. Which pane
 /// that is follows the panes column's selection.
 fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
-    if app.review.is_some() {
-        render_review(f, app, area, th);
-        return;
-    }
     // Typing focus is what the accent border promises here, so only
     // PaneContent lights it up — merely selecting a pane does not.
     let focused = app.focus == Focus::PaneContent;
@@ -449,21 +445,11 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
 
 /// Drawn in the column the live pane uses, so the nav columns stay put
 /// (DESIGN.md §9 M4).
+/// The diff itself. The window around it is drawn by `render_overlay`,
+/// which owns the border and the title.
 fn render_review(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
-    let focused = app.focus == Focus::Review;
-    let title = match app.review.as_ref() {
-        // The file count is already on the status line; the base is the
-        // thing you can't tell from the diff itself.
-        Some(v) => format!("review · {}", v.review.base.label()),
-        None => "review".to_string(),
-    };
-    let block = panel_block(&title, focused, th);
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-    app.layout.content = Panel { outer: area, inner };
-
     let Some(view) = app.review.as_mut() else { return };
-    view.scroll_into_view(inner.height as usize);
+    view.scroll_into_view(area.height as usize);
     let (from, to) = view.selection();
 
     let lines: Vec<Line> = view
@@ -471,11 +457,11 @@ fn render_review(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         .iter()
         .enumerate()
         .skip(view.top)
-        .take(inner.height as usize)
+        .take(area.height as usize)
         .map(|(i, row)| review_line(view, *row, i >= from && i <= to, th))
         .collect();
 
-    f.render_widget(Paragraph::new(lines), inner);
+    f.render_widget(Paragraph::new(lines), area);
 }
 
 /// Four digits covers nearly every file; the code matters more than the rest.
@@ -575,10 +561,10 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         ("leader…   esc back to panes   x close pane", th.accent)
     } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
         ("j/k move   h/l change   esc close", th.dim)
+    } else if matches!(app.overlay, Some(Overlay::Review)) {
+        ("j/k  ]/[ file  f jump  v range  c comment  e edit  b base  esc close", th.dim)
     } else if app.overlay.is_some() {
         ("floating — ctrl-space then esc to close, x to kill", th.dim)
-    } else if app.focus == Focus::Review {
-        ("j/k  ]/[ file  f jump  v range  c comment  e edit  b base  esc close", th.dim)
     } else if app.focus == Focus::PaneContent {
         ("typing — ctrl-space then esc to leave, x to close", th.dim)
     } else {
@@ -657,6 +643,10 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let title = match overlay {
         Overlay::Pane { title, .. } => format!("{title}  ·  ctrl-space esc / F12 to close"),
         Overlay::Settings { .. } => "settings".to_string(),
+        Overlay::Review => match app.review.as_ref() {
+            Some(v) => format!("review · {}", v.review.base.label()),
+            None => "review".to_string(),
+        },
     };
 
     f.render_widget(Clear, popup);
@@ -678,6 +668,7 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
             );
         }
         Overlay::Settings { sel } => render_settings(f, app, inner, *sel, th),
+        Overlay::Review => render_review(f, app, inner, th),
     }
 }
 
@@ -1670,6 +1661,7 @@ mod tests {
                 note: None,
             }],
         }));
+        app.overlay = Some(Overlay::Review);
         app.focus = Focus::Review;
         app
     }
