@@ -123,6 +123,18 @@ impl ReviewView {
         }
     }
 
+    /// Puts the cursor on the first line of file `file`.
+    pub fn jump_to_file(&mut self, file: usize) {
+        if let Some(i) = self
+            .rows
+            .iter()
+            .position(|r| r.is_line() && r.file() == file)
+        {
+            self.sel = i;
+            self.mark = None;
+        }
+    }
+
     pub fn top_of_diff(&mut self) {
         self.sel = self.rows.iter().position(|r| r.is_line()).unwrap_or(0);
         self.mark = None;

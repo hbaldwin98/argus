@@ -1,3 +1,4 @@
+mod browse;
 mod command;
 mod diff;
 mod editor;

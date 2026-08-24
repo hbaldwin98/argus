@@ -38,6 +38,15 @@ pub enum ClientMsg {
         checkout: CheckoutId,
         base: ReviewBase,
     },
+    /// Ask for what this checkout contains, for the fuzzy pickers.
+    ListBranches { checkout: CheckoutId },
+    ListFiles { checkout: CheckoutId },
+    /// `git switch` this checkout to an existing branch.
+    SwitchBranch { checkout: CheckoutId, branch: String },
+    /// `git switch -c`: a new branch on this checkout, in place. Distinct
+    /// from `CreateWorktree`, which puts the new branch in a directory of
+    /// its own and leaves this one where it was.
+    CreateBranch { checkout: CheckoutId, branch: String },
     /// Open `path` (repo-relative) in the user's editor as a pane.
     OpenInEditor {
         checkout: CheckoutId,
@@ -70,6 +79,17 @@ pub enum ServerMsg {
     Damage { pane: PaneId, spans: Vec<CellSpan> },
     /// The answer to `ClientMsg::Review`.
     Review(Review),
+    /// The answer to `ClientMsg::ListBranches`. `current` is the branch the
+    /// checkout is on, and is the first entry of `branches`.
+    Branches {
+        checkout: CheckoutId,
+        branches: Vec<String>,
+    },
+    /// The answer to `ClientMsg::ListFiles`, repo-relative.
+    Files {
+        checkout: CheckoutId,
+        files: Vec<String>,
+    },
     /// A pane's process exited.
     PaneClosed { pane: PaneId, code: Option<i32> },
     Error { message: String },

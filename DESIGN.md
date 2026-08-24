@@ -92,6 +92,20 @@ Target: ~1.5 MB resident per idle pane, ~40 MB daemon with 16 panes, ~25 MB clie
 
 ## 4. The three levels
 
+**Fuzzy pickers.** `b` switches branch, `f` opens a file, and `f` inside the review jumps to a
+changed file. All three filter as you type. Ranking is `nucleo-matcher` — fzf's algorithm as a
+library — and the file list comes from `ignore`, the crate ripgrep and fd are built on, so
+`.gitignore` is honoured with the rules the user already expects. Both are in-process
+deliberately: shelling out would mean a console window per invocation on Windows, where the
+daemon owns no console (§9 M4, and the note on `git::list_worktrees`), and would make the
+features depend on tools that may not be installed. `fzf` itself is not usable here at all —
+it is an interactive program that wants a terminal of its own.
+
+Typing a branch name that doesn't exist adds a `+ create` row below the matches, so making a
+branch and switching to one are the same gesture. It is a row you can see and aim at, never an
+implicit consequence of pressing Enter on an empty list. This is `git switch -c` in place —
+distinct from `n`, which puts the new branch in a worktree of its own.
+
 **Mouse.** The two gestures are separate on purpose: clicking anywhere on a card moves focus to
 it and leaves every selection where it was, while clicking a row selects that row — and clicking
 an already-selected row a second time descends into it, the way `l` would. Moving focus never

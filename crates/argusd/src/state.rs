@@ -702,6 +702,58 @@ impl Daemon {
     /// (DESIGN.md §4 Level 2), regardless of which checkout `base` itself
     /// is — so worktrees always nest under the one directory, not under
     /// each other.
+    /// Moves this checkout onto an existing branch. `git` refuses when the
+    /// switch would clobber uncommitted work, and that refusal is exactly
+    /// what should reach the user, so its stderr is passed through.
+    pub async fn switch_branch(&self, checkout: CheckoutId, branch: &str) -> anyhow::Result<()> {
+        self.git_switch(checkout, &["switch", branch], branch).await
+    }
+
+    /// Creates a branch here and moves onto it, leaving the checkout where
+    /// it is — unlike `create_worktree`, which makes a directory for it.
+    pub async fn create_branch(&self, checkout: CheckoutId, branch: &str) -> anyhow::Result<()> {
+        self.git_switch(checkout, &["switch", "-c", branch], branch).await
+    }
+
+    async fn git_switch(
+        &self,
+        checkout: CheckoutId,
+        args: &[&str],
+        branch: &str,
+    ) -> anyhow::Result<()> {
+        let branch = branch.trim();
+        if branch.is_empty() {
+            anyhow::bail!("branch name can't be empty");
+        }
+        // Leading dashes would be read as flags, and git's own refname
+        // rules reject the rest.
+        if branch.starts_with('-') {
+            anyhow::bail!("not a valid branch name: {branch}");
+        }
+        let path = self.checkout_path(checkout)?;
+
+        let output = crate::command::git()
+            .args(args)
+            .current_dir(&path)
+            .output()
+            .await?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("{}", stderr.trim());
+        }
+
+        // The checkout's name follows the branch it sits on, the way it did
+        // when the worktree was created.
+        {
+            let mut inner = self.inner.lock().unwrap();
+            if let Some(c) = find_checkout(&mut inner.projects, checkout) {
+                c.name = branch.to_string();
+            }
+        }
+        self.broadcast_tree();
+        Ok(())
+    }
+
     pub async fn create_worktree(self: &Arc<Self>, base: CheckoutId, branch: String) -> anyhow::Result<()> {
         let branch = branch.trim().to_string();
         if branch.is_empty() {
@@ -1673,6 +1725,134 @@ mod tests {
                 "{bad:?} should be refused"
             );
         }
+    }
+
+    // --- branches -----------------------------------------------------------
+
+    /// A real repo with one commit, and a daemon whose only checkout is it.
+    fn daemon_on_a_repo() -> (tempfile::TempDir, Arc<Daemon>) {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        std::fs::write(dir.path().join("a.txt"), "one\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("a.txt")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = git2::Signature::now("t", "t@example.com").unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "first", &tree, &[])
+            .unwrap();
+        drop(tree);
+        drop(index);
+        drop(repo);
+
+        let d = daemon_with_primary(&dir.path().to_string_lossy());
+        (dir, d)
+    }
+
+    fn head_of(path: &std::path::Path) -> String {
+        git2::Repository::open(path)
+            .unwrap()
+            .head()
+            .unwrap()
+            .shorthand()
+            .unwrap()
+            .to_string()
+    }
+
+    #[tokio::test]
+    async fn creating_a_branch_moves_this_checkout_onto_it() {
+        // Unlike `create_worktree`, which puts the branch in a directory of
+        // its own and leaves this checkout where it was.
+        let (dir, d) = daemon_on_a_repo();
+        let checkout = d.snapshot()[0].checkouts[0].id;
+
+        d.create_branch(checkout, "feature/x").await.unwrap();
+
+        assert_eq!(head_of(dir.path()), "feature/x");
+        assert_eq!(
+            d.snapshot()[0].checkouts.len(),
+            1,
+            "no new checkout — that is what a worktree is for"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_checkouts_name_follows_the_branch_it_moves_to() {
+        let (_dir, d) = daemon_on_a_repo();
+        let checkout = d.snapshot()[0].checkouts[0].id;
+
+        d.create_branch(checkout, "feature/x").await.unwrap();
+
+        assert_eq!(d.snapshot()[0].checkouts[0].name, "feature/x");
+    }
+
+    #[tokio::test]
+    async fn switching_moves_between_branches_that_already_exist() {
+        let (dir, d) = daemon_on_a_repo();
+        let checkout = d.snapshot()[0].checkouts[0].id;
+        let start = head_of(dir.path());
+        d.create_branch(checkout, "other").await.unwrap();
+
+        d.switch_branch(checkout, &start).await.unwrap();
+
+        assert_eq!(head_of(dir.path()), start);
+        assert_eq!(d.snapshot()[0].checkouts[0].name, start);
+    }
+
+    #[tokio::test]
+    async fn switching_pushes_a_new_tree_so_every_client_sees_the_move() {
+        let (_dir, d) = daemon_on_a_repo();
+        let checkout = d.snapshot()[0].checkouts[0].id;
+        let mut rx = d.subscribe_tree();
+
+        d.create_branch(checkout, "feature/x").await.unwrap();
+
+        let tree = rx.try_recv().expect("clients need to be told");
+        assert_eq!(tree[0].checkouts[0].name, "feature/x");
+    }
+
+    #[tokio::test]
+    async fn switching_to_a_branch_that_does_not_exist_reports_gits_own_words() {
+        let (_dir, d) = daemon_on_a_repo();
+        let checkout = d.snapshot()[0].checkouts[0].id;
+
+        let err = d
+            .switch_branch(checkout, "no-such-branch")
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(!err.is_empty(), "git's refusal is what the user needs to read");
+    }
+
+    #[tokio::test]
+    async fn creating_a_branch_that_already_exists_is_refused() {
+        let (_dir, d) = daemon_on_a_repo();
+        let checkout = d.snapshot()[0].checkouts[0].id;
+        d.create_branch(checkout, "taken").await.unwrap();
+
+        assert!(d.create_branch(checkout, "taken").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn an_empty_or_flag_like_branch_name_never_reaches_git() {
+        // A leading dash would be parsed as an option rather than a name.
+        let (_dir, d) = daemon_on_a_repo();
+        let checkout = d.snapshot()[0].checkouts[0].id;
+
+        for bad in ["", "   ", "--force", "-b"] {
+            assert!(
+                d.create_branch(checkout, bad).await.is_err(),
+                "{bad:?} should be refused"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_branch_operation_on_a_checkout_that_is_gone_errors() {
+        let (_dir, d) = daemon_on_a_repo();
+        assert!(d.create_branch(CheckoutId(9999), "x").await.is_err());
+        assert!(d.switch_branch(CheckoutId(9999), "x").await.is_err());
     }
 
 }

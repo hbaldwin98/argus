@@ -555,6 +555,11 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             PickerKind::Agent => "j/k move   enter spawn   esc cancel",
             PickerKind::Workspace(_) => "j/k move   enter open   esc cancel",
             PickerKind::Theme => "j/k move   enter apply   esc cancel",
+            PickerKind::Branch { .. } => {
+                "type to filter   ↑/↓ move   enter switch   esc cancel"
+            }
+            PickerKind::File { .. } => "type to filter   ↑/↓ move   enter open   esc cancel",
+            PickerKind::Change => "type to filter   ↑/↓ move   enter jump   esc cancel",
         };
         (hint, th.dim)
     } else if app.prompt.is_some() {
@@ -562,14 +567,20 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     } else if app.leader_pending {
         ("leader…   esc back to panes   x close pane", th.accent)
     } else if app.focus == Focus::Review {
-        ("j/k  ]/[ file  v range  c comment  e edit  b base  r refresh  esc close", th.dim)
+        ("j/k  ]/[ file  f jump  v range  c comment  e edit  b base  esc close", th.dim)
     } else if app.focus == Focus::PaneContent {
         ("typing — ctrl-space then esc to leave, x to close", th.dim)
     } else {
-        (
-            "j/k move  l/h in/out  s shell  a agent  n new  R review  w wksp  t theme  x close  q detach",
-            th.dim,
-        )
+        // Per column rather than one list of everything: the bar cannot
+        // hold every key at once, and most of them only apply somewhere.
+        let keys = match app.focus {
+            Focus::Projects => "j/k move  l open  n add project  w wksp  t theme  q detach",
+            Focus::Checkouts => {
+                "j/k move  l open  b branch  f file  R review  n worktree  D rm  q detach"
+            }
+            _ => "j/k move  l open  s shell  a agent  b branch  f file  R review  x close  q detach",
+        };
+        (keys, th.dim)
     };
 
     // A daemon error or a pane exit lands in `status`. That is the one
@@ -615,34 +626,95 @@ fn breadcrumb(app: &App) -> String {
     }
 }
 
+/// Rows a fuzzy picker will show at once. Past this it scrolls, so a
+/// 5000-file list is still a modal and not a wall.
+const PICKER_ROWS: usize = 12;
+
 fn render_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     let Some(picker) = &app.picker else { return };
-    // A picker row is just a name, so it stays one line — two would make a
-    // four-item list sprawl down half the screen.
-    let height = (picker.items.len() as u16 + 3).min(area.height);
+    let fuzzy = picker.is_fuzzy();
+
+    let rows = picker.len().min(if fuzzy { PICKER_ROWS } else { usize::MAX });
+    // Borders, the top pad, and the query line with its own blank beneath.
+    let chrome = 3 + if fuzzy { 2 } else { 0 };
+    let height = (rows as u16 + chrome as u16).min(area.height);
     let widest = picker.items.iter().map(|i| i.chars().count()).max().unwrap_or(0);
-    let width = (widest as u16 + 8).clamp(28, 52).min(area.width);
+    let floor = if fuzzy { 44 } else { 28 };
+    let width = (widest as u16 + 8).clamp(floor, 72).min(area.width);
     let popup = centered_rect(width, height, area);
 
     f.render_widget(Clear, popup);
     let block = panel_block(picker.title, true, th);
     let inner = block.inner(popup);
     f.render_widget(block, popup);
+    if inner.height == 0 {
+        return;
+    }
 
-    for (i, name) in picker.items.iter().enumerate() {
-        let Some(row) = row_rect_of(inner, i, 1) else { break };
-        render_row(
-            f,
-            row,
-            Item::new(
-                vec![Span::styled(name.clone(), Style::default().fg(th.text))],
-                Vec::new(),
-            ),
-            i == picker.sel,
-            true,
-            th,
+    let list = if fuzzy {
+        let mut spans = vec![Span::styled("› ", Style::default().fg(th.accent))];
+        spans.extend(field(&picker.query, th).spans);
+        if picker.query.is_empty() {
+            spans.push(Span::styled(
+                " type to filter",
+                Style::default().fg(th.dim),
+            ));
+        }
+        f.render_widget(
+            Paragraph::new(Line::from(spans)),
+            Rect { height: 1, ..inner },
+        );
+        // Skip the query line and the blank under it.
+        Rect {
+            y: inner.y + 2,
+            height: inner.height.saturating_sub(2),
+            ..inner
+        }
+    } else {
+        inner
+    };
+
+    // Scroll so the cursor stays on screen once the list outgrows the box.
+    let visible = list.height as usize;
+    let first = if picker.sel >= visible {
+        picker.sel + 1 - visible
+    } else {
+        0
+    };
+
+    for slot in 0..visible {
+        let i = first + slot;
+        if i >= picker.len() {
+            break;
+        }
+        let Some(row) = row_rect_of(list, slot, 1) else { break };
+        render_row(f, row, picker_item(picker, i, th), i == picker.sel, true, th);
+    }
+}
+
+/// One picker row. The last row of a branch picker can be the offer to
+/// create the branch whose name you just typed.
+fn picker_item<'a>(picker: &'a crate::app::Picker, i: usize, th: Theme) -> Item<'a> {
+    if let (Some(name), true) = (&picker.create, i == picker.shown.len()) {
+        return Item::new(
+            vec![
+                Span::styled("+ ", Style::default().fg(th.ok)),
+                Span::styled("create ", Style::default().fg(th.dim)),
+                Span::styled(name.clone(), Style::default().fg(th.ok)),
+            ],
+            Vec::new(),
         );
     }
+    let name = picker
+        .shown
+        .get(i)
+        .and_then(|idx| picker.items.get(*idx))
+        .cloned()
+        .unwrap_or_default();
+    Item::new(
+        vec![Span::styled(name, Style::default().fg(th.text))],
+        Vec::new(),
+    )
 }
 
 /// The modal for all three prompts, drawn over everything else. Destructive
@@ -1380,12 +1452,17 @@ mod tests {
     fn dump_picker() {
         let mut app = app_with_tree();
         app.theme = Theme::default();
-        app.picker = Some(crate::app::Picker {
-            kind: PickerKind::Theme,
-            title: "theme",
-            items: crate::theme::THEMES.iter().map(|t| t.to_string()).collect(),
-            sel: 1,
-        });
+        let mut p = crate::app::Picker::new(
+            PickerKind::Branch { checkout: CheckoutId(10) },
+            "switch branch",
+            ["feature/login", "feature/logout", "hotfix", "release/2.1"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            0,
+        );
+        p.type_query("log");
+        app.picker = Some(p);
         for line in lines(&draw_at(&mut app, 100, 20)) {
             println!("|{line}");
         }
@@ -1534,8 +1611,96 @@ mod tests {
     #[test]
     fn the_tree_keymap_advertises_review() {
         let mut app = app_with_tree();
+        app.focus = Focus::Checkouts;
         let out = lines(&draw(&mut app)).join("\n");
         assert!(out.contains("R review"), "{out}");
+    }
+
+    // --- the fuzzy picker ---------------------------------------------------
+
+    fn app_with_branch_picker(query: &str) -> App {
+        let mut app = app_with_tree();
+        let mut p = crate::app::Picker::new(
+            PickerKind::Branch {
+                checkout: CheckoutId(10),
+            },
+            "switch branch",
+            ["feature/login", "feature/logout", "hotfix"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            0,
+        );
+        p.type_query(query);
+        app.picker = Some(p);
+        app
+    }
+
+    #[test]
+    fn a_fuzzy_picker_shows_what_has_been_typed() {
+        let mut app = app_with_branch_picker("log");
+        let out = lines(&draw(&mut app)).join("\n");
+        assert!(out.contains("› log"), "the query line:\n{out}");
+    }
+
+    #[test]
+    fn an_empty_query_says_what_the_line_is_for() {
+        let mut app = app_with_branch_picker("");
+        let out = lines(&draw(&mut app)).join("\n");
+        assert!(out.contains("type to filter"), "{out}");
+    }
+
+    #[test]
+    fn only_the_matching_rows_are_drawn() {
+        let mut app = app_with_branch_picker("log");
+        let out = lines(&draw(&mut app)).join("\n");
+        assert!(out.contains("feature/login"), "{out}");
+        assert!(!out.contains("hotfix"), "a non-match should be gone:\n{out}");
+    }
+
+    #[test]
+    fn the_create_row_is_visible_rather_than_implied() {
+        // Creating a branch by pressing Enter on nothing would be a
+        // surprise; it gets a row you can see and aim at.
+        let mut app = app_with_branch_picker("brand-new");
+        let out = lines(&draw(&mut app)).join("\n");
+        assert!(out.contains("create brand-new"), "{out}");
+    }
+
+    #[test]
+    fn a_long_list_scrolls_instead_of_filling_the_screen() {
+        let mut app = app_with_tree();
+        let items: Vec<String> = (0..200).map(|i| format!("branch-{i:03}")).collect();
+        let mut p = crate::app::Picker::new(
+            PickerKind::Branch {
+                checkout: CheckoutId(10),
+            },
+            "switch branch",
+            items,
+            0,
+        );
+        p.type_query("");
+        app.picker = Some(p);
+
+        let buf = draw_at(&mut app, 100, 24);
+        let out = lines(&buf).join("\n");
+        assert!(out.contains("branch-000"), "{out}");
+        assert!(!out.contains("branch-199"), "the box must stay a modal:\n{out}");
+    }
+
+    #[test]
+    fn the_short_pickers_keep_their_plain_list() {
+        // A query line over four theme names would be clutter.
+        let mut app = app_with_tree();
+        app.picker = Some(crate::app::Picker::new(
+            PickerKind::Theme,
+            "theme",
+            crate::theme::THEMES.iter().map(|t| t.to_string()).collect(),
+            1,
+        ));
+        let out = lines(&draw(&mut app)).join("\n");
+        assert!(!out.contains("type to filter"), "{out}");
+        assert!(out.contains("mocha"), "{out}");
     }
 
 }

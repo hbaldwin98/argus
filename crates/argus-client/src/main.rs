@@ -1,4 +1,5 @@
 mod app;
+mod fuzzy;
 mod grid;
 mod keys;
 mod launch;

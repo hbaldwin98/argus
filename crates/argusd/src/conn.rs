@@ -112,6 +112,39 @@ fn handle_client_msg(
         }
         ClientMsg::OpenWorkspace { workspace } => daemon.open_workspace(workspace),
         // Filesystem work, so off the message loop like the two above.
+        // Listing walks a working tree, so it goes off the message loop.
+        ClientMsg::ListBranches { checkout } => {
+            reply_with(daemon, out_tx, checkout, move |path| ServerMsg::Branches {
+                checkout,
+                branches: crate::browse::branches(&path),
+            })
+        }
+        ClientMsg::ListFiles { checkout } => {
+            reply_with(daemon, out_tx, checkout, move |path| ServerMsg::Files {
+                checkout,
+                files: crate::browse::files(&path),
+            })
+        }
+        ClientMsg::SwitchBranch { checkout, branch } => {
+            let daemon = daemon.clone();
+            let out_tx = out_tx.clone();
+            tokio::spawn(async move {
+                if let Err(e) = daemon.switch_branch(checkout, &branch).await {
+                    let _ = out_tx.send(ServerMsg::Error { message: e.to_string() });
+                }
+            });
+            Ok(())
+        }
+        ClientMsg::CreateBranch { checkout, branch } => {
+            let daemon = daemon.clone();
+            let out_tx = out_tx.clone();
+            tokio::spawn(async move {
+                if let Err(e) = daemon.create_branch(checkout, &branch).await {
+                    let _ = out_tx.send(ServerMsg::Error { message: e.to_string() });
+                }
+            });
+            Ok(())
+        }
         ClientMsg::OpenInEditor { checkout, path, line } => {
             daemon.spawn_editor(checkout, &path, line).map(|_| ())
         }
@@ -131,6 +164,21 @@ fn handle_client_msg(
             message: e.to_string(),
         });
     }
+}
+
+/// Resolves a checkout to its path, then answers on a blocking thread.
+fn reply_with(
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    checkout: argus_protocol::CheckoutId,
+    build: impl FnOnce(std::path::PathBuf) -> ServerMsg + Send + 'static,
+) -> anyhow::Result<()> {
+    let path = daemon.checkout_path(checkout)?;
+    let out_tx = out_tx.clone();
+    tokio::task::spawn_blocking(move || {
+        let _ = out_tx.send(build(path));
+    });
+    Ok(())
 }
 
 async fn recv_optional(rx: &mut Option<broadcast::Receiver<ServerMsg>>) -> Option<ServerMsg> {

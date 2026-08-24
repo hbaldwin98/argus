@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use argus_protocol::{
     CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, ProjectInfo, ServerMsg, WorkspaceId,
     WorkspaceInfo,
@@ -6,6 +6,7 @@ use argus_protocol::{
 use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::fuzzy::Fuzzy;
 use crate::grid::Grid;
 use crate::review::{Anchor, ReviewView};
 use argus_protocol::ReviewBase;
@@ -52,13 +53,110 @@ pub enum PickerKind {
     Workspace(Vec<WorkspaceId>),
     /// Switch the color theme.
     Theme,
+    /// `git switch` the current checkout to the chosen branch. The last
+    /// row is a synthetic "create" entry when the query names no existing
+    /// branch, so making one is the same gesture as picking one.
+    Branch { checkout: CheckoutId },
+    /// Open the chosen file in the user's editor.
+    File { checkout: CheckoutId },
+    /// Jump the review cursor to the chosen changed file.
+    Change,
+}
+
+impl PickerKind {
+    /// Whether typing filters the list. The short lists don't need it, and
+    /// a query line over four themes would be clutter.
+    pub fn is_fuzzy(&self) -> bool {
+        matches!(
+            self,
+            PickerKind::Branch { .. } | PickerKind::File { .. } | PickerKind::Change
+        )
+    }
+
+    /// Paths score differently from plain words.
+    fn matcher(&self) -> Fuzzy {
+        match self {
+            PickerKind::File { .. } | PickerKind::Change => Fuzzy::paths(),
+            _ => Fuzzy::new(),
+        }
+    }
 }
 
 pub struct Picker {
     pub kind: PickerKind,
     pub title: &'static str,
+    /// Everything on offer, in the order the daemon sent it.
     pub items: Vec<String>,
+    /// What the user has typed, on a fuzzy picker.
+    pub query: String,
+    /// Indices into `items`, best match first. `sel` indexes into *this*.
+    pub shown: Vec<usize>,
     pub sel: usize,
+    /// An extra row offered below the matches — creating the branch you
+    /// just typed the name of.
+    pub create: Option<String>,
+}
+
+impl Picker {
+    pub fn new(kind: PickerKind, title: &'static str, items: Vec<String>, sel: usize) -> Self {
+        let shown = (0..items.len()).collect();
+        Picker {
+            kind,
+            title,
+            items,
+            query: String::new(),
+            shown,
+            sel,
+            create: None,
+        }
+    }
+
+    /// The item under the cursor, or `None` when the cursor is on the
+    /// create row.
+    pub fn selected(&self) -> Option<&str> {
+        let idx = *self.shown.get(self.sel)?;
+        self.items.get(idx).map(String::as_str)
+    }
+
+    /// How many rows are on screen, the create row included.
+    pub fn len(&self) -> usize {
+        self.shown.len() + usize::from(self.create.is_some())
+    }
+
+    pub fn is_fuzzy(&self) -> bool {
+        self.kind.is_fuzzy()
+    }
+
+    /// Sets the query and re-filters. For tests and dumps; the app itself
+    /// goes through the key handler.
+    #[cfg(test)]
+    pub fn type_query(&mut self, q: &str) {
+        self.query = q.to_string();
+        self.refilter();
+    }
+
+    fn on_create_row(&self) -> bool {
+        self.create.is_some() && self.sel == self.shown.len()
+    }
+
+    /// Re-filters after a keystroke, keeping the cursor in range. The
+    /// cursor goes back to the top: after a new query the old position
+    /// refers to a row that is no longer there.
+    fn refilter(&mut self) {
+        let mut matcher = self.kind.matcher();
+        self.shown = matcher.filter(&self.query, &self.items);
+
+        // Offering to create a branch that already exists would be a
+        // second, worse way to switch to it.
+        self.create = match self.kind {
+            PickerKind::Branch { .. } => {
+                let q = self.query.trim();
+                (!q.is_empty() && !self.items.iter().any(|b| b == q)).then(|| q.to_string())
+            }
+            _ => None,
+        };
+        self.sel = 0;
+    }
 }
 
 /// A modal text/confirm prompt, mutually exclusive with `Picker`. Both new
@@ -96,6 +194,8 @@ pub struct App {
     /// What the outstanding request was for; a diff for anything else is
     /// stale and dropped.
     review_wanted: Option<CheckoutId>,
+    /// Same, for a branch or file list.
+    list_wanted: Option<CheckoutId>,
     /// Sticky across reopens, so `b` is a setting rather than a per-visit
     /// choice.
     pub review_base: ReviewBase,
@@ -130,6 +230,7 @@ impl App {
             picker: None,
             review: None,
             review_wanted: None,
+            list_wanted: None,
             review_base: ReviewBase::WorkingTree,
             prompt: None,
             theme: Theme::from_env(),
@@ -269,6 +370,39 @@ impl App {
                     self.status = format!("{files} changed vs {}", self.review_base.label());
                 }
             }
+            ServerMsg::Branches { checkout, branches } => {
+                if self.list_wanted != Some(checkout) {
+                    return;
+                }
+                self.list_wanted = None;
+                // The head of the list is the branch we are already on, and
+                // switching to it is a no-op — it stays as a label only.
+                let current = branches.first().cloned().unwrap_or_default();
+                let rest: Vec<String> = branches.into_iter().skip(1).collect();
+                self.picker = Some(Picker::new(
+                    PickerKind::Branch { checkout },
+                    "switch branch",
+                    rest,
+                    0,
+                ));
+                self.status = format!("on {current}");
+            }
+            ServerMsg::Files { checkout, files } => {
+                if self.list_wanted != Some(checkout) {
+                    return;
+                }
+                self.list_wanted = None;
+                if files.is_empty() {
+                    self.status = "no files here".to_string();
+                    return;
+                }
+                self.picker = Some(Picker::new(
+                    PickerKind::File { checkout },
+                    "open file",
+                    files,
+                    0,
+                ));
+            }
             ServerMsg::Error { message } => {
                 self.status = format!("error: {message}");
             }
@@ -353,23 +487,43 @@ impl App {
     }
 
     fn on_key_picker(&mut self, key: KeyEvent) {
+        let fuzzy = self.picker.as_ref().is_some_and(|p| p.kind.is_fuzzy());
+        // On a fuzzy picker every printable key is query text, so movement
+        // moves to the arrows and ctrl-n/p. On a plain one j/k still work.
         match key.code {
-            KeyCode::Char('j') | KeyCode::Down => {
-                if let Some(p) = &mut self.picker {
-                    if p.sel + 1 < p.items.len() {
-                        p.sel += 1;
-                    }
-                }
+            KeyCode::Down => self.move_picker(1),
+            KeyCode::Up => self.move_picker(-1),
+            KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.move_picker(1)
             }
-            KeyCode::Char('k') | KeyCode::Up => {
-                if let Some(p) = &mut self.picker {
-                    p.sel = p.sel.saturating_sub(1);
-                }
+            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.move_picker(-1)
             }
+            KeyCode::Char('j') if !fuzzy => self.move_picker(1),
+            KeyCode::Char('k') if !fuzzy => self.move_picker(-1),
             KeyCode::Enter => self.confirm_picker(),
-            KeyCode::Esc | KeyCode::Char('q') => self.picker = None,
+            KeyCode::Esc => self.picker = None,
+            KeyCode::Char('q') if !fuzzy => self.picker = None,
+            KeyCode::Backspace if fuzzy => {
+                if let Some(p) = &mut self.picker {
+                    p.query.pop();
+                    p.refilter();
+                }
+            }
+            KeyCode::Char(c) if fuzzy => {
+                if let Some(p) = &mut self.picker {
+                    p.query.push(c);
+                    p.refilter();
+                }
+            }
             _ => {}
         }
+    }
+
+    fn move_picker(&mut self, delta: isize) {
+        let Some(p) = &mut self.picker else { return };
+        let last = p.len().saturating_sub(1);
+        p.sel = (p.sel as isize + delta).clamp(0, last as isize) as usize;
     }
 
     fn on_key_pane_content(&mut self, key: KeyEvent) {
@@ -407,6 +561,8 @@ impl App {
             KeyCode::Char('D') => self.remove_checkout_prompt(),
             KeyCode::Char('w') => self.open_workspace_picker(),
             KeyCode::Char('t') => self.open_theme_picker(),
+            KeyCode::Char('b') => self.open_branch_picker(),
+            KeyCode::Char('f') => self.open_file_picker(),
             KeyCode::Char('R') | KeyCode::Tab => self.open_review(),
             KeyCode::Char('x') => self.kill_selected(),
             _ => {}
@@ -415,12 +571,12 @@ impl App {
 
     fn open_theme_picker(&mut self) {
         let here = self.theme.name();
-        self.picker = Some(Picker {
-            kind: PickerKind::Theme,
-            title: "theme",
-            items: crate::theme::THEMES.iter().map(|t| t.to_string()).collect(),
-            sel: crate::theme::THEMES.iter().position(|t| *t == here).unwrap_or(0),
-        });
+        self.picker = Some(Picker::new(
+            PickerKind::Theme,
+            "theme",
+            crate::theme::THEMES.iter().map(|t| t.to_string()).collect(),
+            crate::theme::THEMES.iter().position(|t| *t == here).unwrap_or(0),
+        ));
     }
 
     /// Works from any column that still implies a checkout.
@@ -478,6 +634,7 @@ impl App {
                 self.review_base = self.review_base.next();
                 return self.open_review();
             }
+            KeyCode::Char('f') => return self.open_change_picker(),
             KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc | KeyCode::Char('q') => {
                 return self.close_review()
             }
@@ -741,12 +898,12 @@ impl App {
         if self.templates.is_empty() || self.current_checkout().is_none() {
             return;
         }
-        self.picker = Some(Picker {
-            kind: PickerKind::Agent,
-            title: "spawn agent",
-            items: self.templates.clone(),
-            sel: 0,
-        });
+        self.picker = Some(Picker::new(
+            PickerKind::Agent,
+            "spawn agent",
+            self.templates.clone(),
+            0,
+        ));
     }
 
     /// `w` switches workspace — the scope of the whole project column, and
@@ -761,40 +918,112 @@ impl App {
             return;
         }
         let sel = self.workspaces.iter().position(|w| w.open).unwrap_or(0);
-        self.picker = Some(Picker {
-            kind: PickerKind::Workspace(self.workspaces.iter().map(|w| w.id).collect()),
-            title: "open workspace",
-            items: self
-                .workspaces
-                .iter()
-                .map(|w| {
-                    let panes = if w.panes > 0 {
-                        format!("  {}▣", w.panes)
-                    } else {
-                        String::new()
-                    };
-                    format!("{}  {}⑂{}", w.name, w.projects, panes)
-                })
-                .collect(),
+        let items = self
+            .workspaces
+            .iter()
+            .map(|w| {
+                let panes = if w.panes > 0 {
+                    format!("  {}▣", w.panes)
+                } else {
+                    String::new()
+                };
+                format!("{}  {}⑂{}", w.name, w.projects, panes)
+            })
+            .collect();
+        self.picker = Some(Picker::new(
+            PickerKind::Workspace(self.workspaces.iter().map(|w| w.id).collect()),
+            "open workspace",
+            items,
             sel,
-        });
+        ));
+    }
+
+    /// `b` asks the daemon for this checkout's branches; the picker opens
+    /// when they arrive, so it never shows a stale list.
+    fn open_branch_picker(&mut self) {
+        let Some(id) = self.current_checkout().map(|c| c.id) else {
+            self.status = "no checkout selected".to_string();
+            return;
+        };
+        self.list_wanted = Some(id);
+        let _ = self.out.send(ClientMsg::ListBranches { checkout: id });
+    }
+
+    fn open_file_picker(&mut self) {
+        let Some(id) = self.current_checkout().map(|c| c.id) else {
+            self.status = "no checkout selected".to_string();
+            return;
+        };
+        self.list_wanted = Some(id);
+        let _ = self.out.send(ClientMsg::ListFiles { checkout: id });
+    }
+
+    /// The changed files of the review that is already open — no round
+    /// trip, since the diff is in hand.
+    fn open_change_picker(&mut self) {
+        let Some(view) = &self.review else { return };
+        let items: Vec<String> = view
+            .review
+            .files
+            .iter()
+            .map(|f| format!("{} {}", f.kind.marker(), f.path))
+            .collect();
+        if items.is_empty() {
+            return;
+        }
+        self.picker = Some(Picker::new(PickerKind::Change, "jump to change", items, 0));
     }
 
     fn confirm_picker(&mut self) {
         let Some(picker) = self.picker.take() else { return };
+        // A branch picker's create row carries the typed name rather than a
+        // list entry, so it is handled before anything reads the selection.
+        if let (PickerKind::Branch { checkout }, true) = (&picker.kind, picker.on_create_row()) {
+            if let Some(branch) = picker.create.clone() {
+                let _ = self.out.send(ClientMsg::CreateBranch {
+                    checkout: *checkout,
+                    branch,
+                });
+            }
+            return;
+        }
         match &picker.kind {
+            PickerKind::Branch { checkout } => {
+                let Some(branch) = picker.selected() else { return };
+                let _ = self.out.send(ClientMsg::SwitchBranch {
+                    checkout: *checkout,
+                    branch: branch.to_string(),
+                });
+            }
+            PickerKind::File { checkout } => {
+                let Some(path) = picker.selected() else { return };
+                let _ = self.out.send(ClientMsg::OpenInEditor {
+                    checkout: *checkout,
+                    path: path.to_string(),
+                    line: None,
+                });
+                self.pending_focus_new = true;
+            }
+            PickerKind::Change => {
+                let Some(idx) = picker.shown.get(picker.sel).copied() else { return };
+                if let Some(view) = &mut self.review {
+                    view.jump_to_file(idx);
+                }
+            }
             PickerKind::Agent => {
-                let Some(name) = picker.items.get(picker.sel) else { return };
+                let Some(name) = picker.selected() else { return };
                 if let Some(checkout) = self.current_checkout() {
                     let _ = self.out.send(ClientMsg::SpawnAgent {
                         checkout: checkout.id,
-                        template: name.clone(),
+                        template: name.to_string(),
                     });
                     self.pending_focus_new = true;
                 }
             }
             PickerKind::Workspace(ids) => {
-                let Some(id) = ids.get(picker.sel) else { return };
+                let Some(id) = picker.shown.get(picker.sel).and_then(|i| ids.get(*i)) else {
+                    return;
+                };
                 let _ = self.out.send(ClientMsg::OpenWorkspace { workspace: *id });
                 // The incoming tree is a different set of projects, so
                 // start at the top rather than keeping an index that meant
@@ -805,7 +1034,7 @@ impl App {
                 self.focus = Focus::Projects;
             }
             PickerKind::Theme => {
-                let Some(name) = picker.items.get(picker.sel) else { return };
+                let Some(name) = picker.selected() else { return };
                 self.theme = crate::theme::Theme::by_name(name);
                 self.status = format!("theme: {name}");
             }
@@ -2248,6 +2477,248 @@ mod tests {
 
         assert_eq!(h.app.focus, Focus::Projects);
         assert_eq!(h.app.subscribed, watching, "still showing the same pane");
+    }
+
+    // --- fuzzy pickers ------------------------------------------------------
+
+    fn branches_arrive(h: &mut Harness, list: &[&str]) {
+        h.key(KeyCode::Char('l')); // into the checkouts column
+        h.key(KeyCode::Char('b'));
+        let checkout = match h.sent().into_iter().next() {
+            Some(ClientMsg::ListBranches { checkout }) => checkout,
+            other => panic!("unexpected {other:?}"),
+        };
+        h.app.on_server_msg(ServerMsg::Branches {
+            checkout,
+            branches: list.iter().map(|s| s.to_string()).collect(),
+        });
+    }
+
+    #[test]
+    fn b_asks_for_the_branches_and_opens_only_when_they_arrive() {
+        let mut h = Harness::new();
+        h.key(KeyCode::Char('l'));
+        h.key(KeyCode::Char('b'));
+        assert!(h.app.picker.is_none(), "no picker until the list is in hand");
+        assert!(matches!(h.sent()[0], ClientMsg::ListBranches { .. }));
+    }
+
+    #[test]
+    fn the_branch_you_are_on_is_a_label_not_a_row_to_switch_to() {
+        // Switching to the branch you are already on does nothing, so
+        // offering it is a row that can only waste a keystroke.
+        let mut h = Harness::new();
+        branches_arrive(&mut h, &["master", "feature/login", "hotfix"]);
+
+        let p = h.app.picker.as_ref().unwrap();
+        assert_eq!(p.items, vec!["feature/login", "hotfix"]);
+        assert!(h.app.status.contains("on master"), "{}", h.app.status);
+    }
+
+    #[test]
+    fn typing_filters_the_branches() {
+        let mut h = Harness::new();
+        branches_arrive(&mut h, &["master", "feature/login", "hotfix"]);
+        h.keys("log");
+        assert_eq!(h.app.picker.as_ref().unwrap().selected(), Some("feature/login"));
+    }
+
+    #[test]
+    fn enter_switches_to_the_branch_under_the_cursor() {
+        let mut h = Harness::new();
+        branches_arrive(&mut h, &["master", "feature/login", "hotfix"]);
+        h.keys("hot");
+        h.key(KeyCode::Enter);
+
+        match &h.sent()[0] {
+            ClientMsg::SwitchBranch { branch, .. } => assert_eq!(branch, "hotfix"),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_query_naming_no_branch_offers_to_create_it() {
+        // Making a branch and switching to one are the same intent, so they
+        // are the same gesture — but the row is explicit, never implied.
+        let mut h = Harness::new();
+        branches_arrive(&mut h, &["master", "hotfix"]);
+        h.keys("wip");
+
+        let p = h.app.picker.as_ref().unwrap();
+        assert_eq!(p.create.as_deref(), Some("wip"));
+        assert!(p.shown.is_empty(), "nothing existing matches");
+    }
+
+    #[test]
+    fn a_query_that_names_an_existing_branch_does_not_offer_to_create_it() {
+        let mut h = Harness::new();
+        branches_arrive(&mut h, &["master", "hotfix"]);
+        h.keys("hotfix");
+        assert_eq!(h.app.picker.as_ref().unwrap().create, None);
+    }
+
+    #[test]
+    fn choosing_the_create_row_makes_the_branch_here() {
+        let mut h = Harness::new();
+        branches_arrive(&mut h, &["master", "hotfix"]);
+        h.keys("wip");
+        h.key(KeyCode::Enter);
+
+        match &h.sent()[0] {
+            ClientMsg::CreateBranch { branch, .. } => assert_eq!(branch, "wip"),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_create_row_sits_below_the_matches_rather_than_replacing_them() {
+        let mut h = Harness::new();
+        branches_arrive(&mut h, &["master", "hotfix", "hotfix-2"]);
+        h.keys("hotfix-");
+
+        let p = h.app.picker.as_ref().unwrap();
+        assert_eq!(p.selected(), Some("hotfix-2"), "the match is still first");
+        assert_eq!(p.create.as_deref(), Some("hotfix-"));
+
+        // Enter on the top row switches; you have to move down to create.
+        h.key(KeyCode::Down);
+        h.key(KeyCode::Enter);
+        assert!(matches!(h.sent()[0], ClientMsg::CreateBranch { .. }));
+    }
+
+    #[test]
+    fn backspace_widens_the_query_again() {
+        let mut h = Harness::new();
+        branches_arrive(&mut h, &["master", "feature/login", "hotfix"]);
+        h.keys("log");
+        assert_eq!(h.app.picker.as_ref().unwrap().shown.len(), 1);
+
+        for _ in 0..3 {
+            h.key(KeyCode::Backspace);
+        }
+        assert_eq!(h.app.picker.as_ref().unwrap().shown.len(), 2);
+    }
+
+    #[test]
+    fn j_and_k_are_text_in_a_fuzzy_picker() {
+        // A branch with a j or a k in its name has to be typeable.
+        let mut h = Harness::new();
+        branches_arrive(&mut h, &["master", "jkl", "other"]);
+        h.keys("jk");
+        assert_eq!(h.app.picker.as_ref().unwrap().query, "jk");
+        assert_eq!(h.app.picker.as_ref().unwrap().selected(), Some("jkl"));
+    }
+
+    #[test]
+    fn j_and_k_still_move_in_the_short_pickers() {
+        let mut h = Harness::new();
+        h.key(KeyCode::Char('t'));
+        h.key(KeyCode::Char('j'));
+        assert_eq!(h.app.picker.as_ref().unwrap().sel, 1);
+    }
+
+    #[test]
+    fn esc_closes_a_fuzzy_picker_without_switching_anything() {
+        let mut h = Harness::new();
+        branches_arrive(&mut h, &["master", "hotfix"]);
+        h.keys("hot");
+        h.key(KeyCode::Esc);
+        assert!(h.app.picker.is_none());
+        assert!(h.sent().is_empty());
+    }
+
+    #[test]
+    fn a_stale_branch_list_is_dropped() {
+        let mut h = Harness::new();
+        h.key(KeyCode::Char('l'));
+        h.key(KeyCode::Char('b'));
+        h.sent();
+        h.app.on_server_msg(ServerMsg::Branches {
+            checkout: CheckoutId(9999),
+            branches: vec!["whatever".to_string()],
+        });
+        assert!(h.app.picker.is_none());
+    }
+
+    // --- files --------------------------------------------------------------
+
+    fn files_arrive(h: &mut Harness, list: &[&str]) {
+        h.key(KeyCode::Char('l'));
+        h.key(KeyCode::Char('f'));
+        let checkout = match h.sent().into_iter().next() {
+            Some(ClientMsg::ListFiles { checkout }) => checkout,
+            other => panic!("unexpected {other:?}"),
+        };
+        h.app.on_server_msg(ServerMsg::Files {
+            checkout,
+            files: list.iter().map(|s| s.to_string()).collect(),
+        });
+    }
+
+    #[test]
+    fn f_opens_the_chosen_file_in_the_editor() {
+        let mut h = Harness::new();
+        files_arrive(&mut h, &["src/app.rs", "src/ui.rs", "README.md"]);
+        h.keys("ui");
+        h.key(KeyCode::Enter);
+
+        match &h.sent()[0] {
+            ClientMsg::OpenInEditor { path, line, .. } => {
+                assert_eq!(path, "src/ui.rs");
+                assert_eq!(*line, None, "no particular line was asked for");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_checkout_with_no_files_says_so_rather_than_opening_an_empty_picker() {
+        let mut h = Harness::new();
+        files_arrive(&mut h, &[]);
+        assert!(h.app.picker.is_none());
+        assert!(h.app.status.contains("no files"), "{}", h.app.status);
+    }
+
+    #[test]
+    fn the_file_picker_never_offers_to_create_anything() {
+        // That row belongs to branches; a typo here should find nothing,
+        // not offer to invent a file.
+        let mut h = Harness::new();
+        files_arrive(&mut h, &["src/app.rs"]);
+        h.keys("zzzz");
+        let p = h.app.picker.as_ref().unwrap();
+        assert_eq!(p.create, None);
+        assert_eq!(p.len(), 0);
+    }
+
+    // --- changes ------------------------------------------------------------
+
+    #[test]
+    fn f_in_the_review_jumps_the_cursor_to_the_chosen_file() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        let mut review = diff_of(checkout);
+        let mut second = review.files[0].clone();
+        second.path = "src/other.rs".to_string();
+        review.files.push(second);
+        open_review(&mut h, review);
+
+        h.key(KeyCode::Char('f'));
+        h.keys("other");
+        h.key(KeyCode::Enter);
+
+        let a = h.app.review.as_ref().unwrap().anchor().unwrap();
+        assert_eq!(a.path, "src/other.rs");
+        assert!(h.app.picker.is_none());
+    }
+
+    #[test]
+    fn the_change_picker_lists_the_files_with_their_markers() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(&mut h, diff_of(checkout));
+        h.key(KeyCode::Char('f'));
+        assert_eq!(h.app.picker.as_ref().unwrap().items, vec!["M src/a.rs"]);
     }
 
 }
