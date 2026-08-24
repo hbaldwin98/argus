@@ -75,6 +75,31 @@ fn handle_client_msg(
             daemon.spawn_agent(checkout, &template).map(|_| ())
         }
         ClientMsg::Kill { pane } => daemon.close_pane(pane),
+        ClientMsg::AddProject { path } => daemon.add_project(&path),
+        // Both do real subprocess I/O (`git worktree add`/`remove`), so they
+        // run on their own task instead of blocking this connection's
+        // message loop — a slow worktree op must not stall keystrokes going
+        // to some other pane. Each reports its own error asynchronously.
+        ClientMsg::CreateWorktree { checkout, branch } => {
+            let daemon = daemon.clone();
+            let out_tx = out_tx.clone();
+            tokio::spawn(async move {
+                if let Err(e) = daemon.create_worktree(checkout, branch).await {
+                    let _ = out_tx.send(ServerMsg::Error { message: e.to_string() });
+                }
+            });
+            Ok(())
+        }
+        ClientMsg::RemoveCheckout { checkout } => {
+            let daemon = daemon.clone();
+            let out_tx = out_tx.clone();
+            tokio::spawn(async move {
+                if let Err(e) = daemon.remove_checkout(checkout).await {
+                    let _ = out_tx.send(ServerMsg::Error { message: e.to_string() });
+                }
+            });
+            Ok(())
+        }
     };
     if let Err(e) = result {
         let _ = out_tx.send(ServerMsg::Error {

@@ -1,5 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
-use orion_protocol::{CheckoutInfo, ClientMsg, PaneId, PaneInfo, ProjectInfo, ServerMsg};
+use orion_protocol::{CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, ProjectInfo, ServerMsg};
 use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -44,6 +44,15 @@ pub struct Picker {
     pub sel: usize,
 }
 
+/// A modal text/confirm prompt, mutually exclusive with `Picker`. Both new
+/// worktree (free text) and remove-checkout (yes/no) go through this so
+/// there's one input path and one place `on_mouse` has to know to ignore.
+pub enum Prompt {
+    NewWorktree { base: CheckoutId, input: String },
+    ConfirmRemoveCheckout { checkout: CheckoutId, label: String },
+    AddProject { input: String },
+}
+
 pub struct App {
     pub tree: Vec<ProjectInfo>,
     pub templates: Vec<String>,
@@ -58,7 +67,10 @@ pub struct App {
     pub status: String,
     pub layout: Layout,
     pub picker: Option<Picker>,
+    pub prompt: Option<Prompt>,
     pending_focus_new: bool,
+    pending_focus_new_checkout: bool,
+    pending_focus_new_project: bool,
     out: UnboundedSender<ClientMsg>,
 }
 
@@ -75,11 +87,14 @@ impl App {
             grid: None,
             leader_pending: false,
             should_quit: false,
-            status: "j/k move  l/enter open  h/esc back  s: shell  a: agent  x: close  q: detach"
+            status: "j/k move  l/enter open  h/esc back  s: shell  a: agent  n: new  D: rm-checkout  x: close  q: detach"
                 .to_string(),
             layout: Layout::default(),
             picker: None,
+            prompt: None,
             pending_focus_new: false,
+            pending_focus_new_checkout: false,
+            pending_focus_new_project: false,
             out,
         }
     }
@@ -143,6 +158,22 @@ impl App {
             ServerMsg::Tree(t) => {
                 self.tree = t;
                 self.clamp();
+                if self.pending_focus_new_project {
+                    self.pending_focus_new_project = false;
+                    let n = self.tree.len();
+                    if n > 0 {
+                        self.sel_project = n - 1;
+                        self.clamp();
+                    }
+                }
+                if self.pending_focus_new_checkout {
+                    self.pending_focus_new_checkout = false;
+                    let n = self.current_project().map(|p| p.checkouts.len()).unwrap_or(0);
+                    if n > 0 {
+                        self.sel_checkout = n - 1;
+                        self.clamp();
+                    }
+                }
                 if self.pending_focus_new {
                     self.pending_focus_new = false;
                     let n = self.current_checkout().map(|c| c.panes.len()).unwrap_or(0);
@@ -180,12 +211,61 @@ impl App {
     }
 
     pub fn on_key(&mut self, key: KeyEvent) {
-        if self.picker.is_some() {
+        if self.prompt.is_some() {
+            self.on_key_prompt(key);
+        } else if self.picker.is_some() {
             self.on_key_picker(key);
         } else if self.focus == Focus::PaneContent {
             self.on_key_pane_content(key);
         } else {
             self.on_key_nav(key);
+        }
+    }
+
+    fn on_key_prompt(&mut self, key: KeyEvent) {
+        let Some(prompt) = &mut self.prompt else { return };
+        match prompt {
+            Prompt::NewWorktree { base, input } => match key.code {
+                KeyCode::Enter => {
+                    let branch = input.trim().to_string();
+                    let base = *base;
+                    self.prompt = None;
+                    if !branch.is_empty() {
+                        let _ = self.out.send(ClientMsg::CreateWorktree { checkout: base, branch });
+                        self.pending_focus_new_checkout = true;
+                    }
+                }
+                KeyCode::Esc => self.prompt = None,
+                KeyCode::Backspace => {
+                    input.pop();
+                }
+                KeyCode::Char(c) => input.push(c),
+                _ => {}
+            },
+            Prompt::ConfirmRemoveCheckout { checkout, .. } => match key.code {
+                KeyCode::Char('y') | KeyCode::Enter => {
+                    let _ = self.out.send(ClientMsg::RemoveCheckout { checkout: *checkout });
+                    self.prompt = None;
+                }
+                KeyCode::Esc | KeyCode::Char('n') => self.prompt = None,
+                _ => {}
+            },
+            Prompt::AddProject { input } => match key.code {
+                KeyCode::Enter => {
+                    let path = input.trim().to_string();
+                    self.prompt = None;
+                    if !path.is_empty() {
+                        let _ = self.out.send(ClientMsg::AddProject { path });
+                        self.pending_focus_new_project = true;
+                    }
+                }
+                KeyCode::Esc => self.prompt = None,
+                KeyCode::Backspace => {
+                    input.pop();
+                }
+                KeyCode::Char(c) => input.push(c),
+                _ => {}
+            },
         }
     }
 
@@ -239,13 +319,56 @@ impl App {
             KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc => self.ascend(),
             KeyCode::Char('s') => self.spawn_shell(),
             KeyCode::Char('a') => self.open_picker(),
+            KeyCode::Char('n') => self.new_prompt(),
+            KeyCode::Char('D') => self.remove_checkout_prompt(),
             KeyCode::Char('x') => self.kill_selected(),
             _ => {}
         }
     }
 
+    /// `n` is contextual on which column has focus: a new project (any
+    /// directory, not just preconfigured ones) from the projects column, or
+    /// a new worktree branched off the selected checkout from the
+    /// checkouts column. No-op elsewhere — there's no "current checkout"
+    /// to branch from once you're inside the panes/content columns.
+    fn new_prompt(&mut self) {
+        match self.focus {
+            Focus::Projects => {
+                self.prompt = Some(Prompt::AddProject { input: String::new() });
+            }
+            Focus::Checkouts => {
+                if let Some(c) = self.current_checkout() {
+                    self.prompt = Some(Prompt::NewWorktree {
+                        base: c.id,
+                        input: String::new(),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Opens a confirmation to remove the selected checkout. Refused
+    /// client-side for the primary checkout — the repo the user already
+    /// had, not Orion's to delete — so there's no round-trip just to be
+    /// told no (the daemon refuses it too, as defense in depth).
+    fn remove_checkout_prompt(&mut self) {
+        if self.focus != Focus::Checkouts {
+            return;
+        }
+        let Some(c) = self.current_checkout() else { return };
+        if c.primary {
+            self.status = "can't remove the primary checkout".to_string();
+            return;
+        }
+        self.prompt = Some(Prompt::ConfirmRemoveCheckout {
+            checkout: c.id,
+            label: c.name.clone(),
+        });
+    }
+
     pub fn on_mouse(&mut self, ev: MouseEvent) {
-        if self.picker.is_some() {
+        if self.picker.is_some() || self.prompt.is_some() {
             return;
         }
         // The live view is always visible in the rightmost column, so a

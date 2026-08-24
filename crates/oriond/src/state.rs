@@ -23,6 +23,9 @@ struct Checkout {
     id: CheckoutId,
     name: String,
     path: PathBuf,
+    /// True for a repo's configured working directory, false for a linked
+    /// worktree created via `create_worktree`. Gates removal (§4 Level 2).
+    primary: bool,
     panes: Vec<Pane>,
 }
 
@@ -67,6 +70,7 @@ impl Daemon {
                             id: CheckoutId(ids.alloc()),
                             name,
                             path,
+                            primary: true,
                             panes: Vec::new(),
                         }
                     })
@@ -118,6 +122,7 @@ impl Daemon {
                             })
                             .collect(),
                         git: crate::git::status(&c.path),
+                        primary: c.primary,
                     })
                     .collect(),
             })
@@ -286,6 +291,142 @@ impl Daemon {
             }
         });
     }
+
+    /// Adds a brand-new project rooted at an arbitrary directory — not
+    /// restricted to whatever's already in `projects.toml` or wherever the
+    /// daemon happens to be running from — and persists it so it survives
+    /// a restart. The project gets exactly one (primary) checkout, at
+    /// `path` itself.
+    pub fn add_project(&self, path: &str) -> anyhow::Result<()> {
+        let expanded = config::expand_home(path);
+        if !expanded.is_dir() {
+            anyhow::bail!("not a directory: {}", expanded.display());
+        }
+        let name = expanded
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string());
+
+        config::append_project(&name, &expanded)?;
+
+        {
+            let mut inner = self.inner.lock().unwrap();
+            let project_id = ProjectId(inner.ids.alloc());
+            let checkout_id = CheckoutId(inner.ids.alloc());
+            inner.projects.push(Project {
+                id: project_id,
+                name: name.clone(),
+                checkouts: vec![Checkout {
+                    id: checkout_id,
+                    name,
+                    path: expanded,
+                    primary: true,
+                    panes: Vec::new(),
+                }],
+            });
+        }
+        self.broadcast_tree();
+        Ok(())
+    }
+
+    /// `git worktree add`s a new checkout in `base`'s project, branched off
+    /// `base`'s current HEAD, and appends it to the tree. Placed under
+    /// `.orion/worktrees/<branch>` beside the project's primary checkout
+    /// (DESIGN.md §4 Level 2), regardless of which checkout `base` itself
+    /// is — so worktrees always nest under the one directory, not under
+    /// each other.
+    pub async fn create_worktree(self: &Arc<Self>, base: CheckoutId, branch: String) -> anyhow::Result<()> {
+        let branch = branch.trim().to_string();
+        if branch.is_empty() {
+            anyhow::bail!("branch name can't be empty");
+        }
+
+        let (project_id, base_path, primary_path) = {
+            let inner = self.inner.lock().unwrap();
+            find_checkout_context(&inner.projects, base).ok_or_else(|| anyhow::anyhow!("no such checkout"))?
+        };
+        let dest = primary_path.join(".orion").join("worktrees").join(&branch);
+
+        let output = tokio::process::Command::new("git")
+            .args(["worktree", "add", "-b", &branch])
+            .arg(&dest)
+            .current_dir(&base_path)
+            .output()
+            .await?;
+        if !output.status.success() {
+            anyhow::bail!("git worktree add failed: {}", String::from_utf8_lossy(&output.stderr).trim());
+        }
+
+        {
+            let mut inner = self.inner.lock().unwrap();
+            let id = CheckoutId(inner.ids.alloc());
+            if let Some(p) = find_project(&mut inner.projects, project_id) {
+                p.checkouts.push(Checkout {
+                    id,
+                    name: branch,
+                    path: dest,
+                    primary: false,
+                    panes: Vec::new(),
+                });
+            }
+        }
+        self.broadcast_tree();
+        Ok(())
+    }
+
+    /// Kills every pane in a linked-worktree checkout, `git worktree
+    /// remove`s and deletes its branch (both best-effort — the checkout
+    /// leaves the tree regardless), and refuses outright on the primary
+    /// checkout, which is the repo the user already had, not Orion's to
+    /// delete (DESIGN.md §4 Level 2).
+    pub async fn remove_checkout(&self, checkout: CheckoutId) -> anyhow::Result<()> {
+        let (path, primary, primary_path, pane_ids) = {
+            let inner = self.inner.lock().unwrap();
+            let c = find_checkout_ref(&inner.projects, checkout).ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
+            let (_, _, primary_path) =
+                find_checkout_context(&inner.projects, checkout).ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
+            (
+                c.path.clone(),
+                c.primary,
+                primary_path,
+                c.panes.iter().map(|p| p.id).collect::<Vec<_>>(),
+            )
+        };
+        if primary {
+            anyhow::bail!("refusing to remove the primary checkout");
+        }
+
+        let branch = crate::git::status(&path).and_then(|s| s.branch);
+
+        for pane in pane_ids {
+            let _ = self.close_pane(pane);
+        }
+
+        let output = tokio::process::Command::new("git")
+            .args(["worktree", "remove", "--force"])
+            .arg(&path)
+            .current_dir(&primary_path)
+            .output()
+            .await?;
+        if !output.status.success() {
+            anyhow::bail!("git worktree remove failed: {}", String::from_utf8_lossy(&output.stderr).trim());
+        }
+
+        if let Some(branch) = branch {
+            let _ = tokio::process::Command::new("git")
+                .args(["branch", "-D", &branch])
+                .current_dir(&primary_path)
+                .output()
+                .await;
+        }
+
+        {
+            let mut inner = self.inner.lock().unwrap();
+            remove_checkout_entry(&mut inner.projects, checkout);
+        }
+        self.broadcast_tree();
+        Ok(())
+    }
 }
 
 fn find_checkout(projects: &mut [Project], id: CheckoutId) -> Option<&mut Checkout> {
@@ -300,6 +441,30 @@ fn find_checkout_ref(projects: &[Project], id: CheckoutId) -> Option<&Checkout> 
         .iter()
         .flat_map(|p| p.checkouts.iter())
         .find(|c| c.id == id)
+}
+
+fn find_project(projects: &mut [Project], id: ProjectId) -> Option<&mut Project> {
+    projects.iter_mut().find(|p| p.id == id)
+}
+
+/// For a checkout, the id of its owning project, that checkout's own path
+/// (the base to branch off / run `git worktree` commands from), and its
+/// project's primary checkout path (where new worktrees get placed).
+fn find_checkout_context(projects: &[Project], id: CheckoutId) -> Option<(ProjectId, PathBuf, PathBuf)> {
+    projects.iter().find_map(|p| {
+        let base = p.checkouts.iter().find(|c| c.id == id)?;
+        let primary = p.checkouts.iter().find(|c| c.primary).unwrap_or(base);
+        Some((p.id, base.path.clone(), primary.path.clone()))
+    })
+}
+
+fn remove_checkout_entry(projects: &mut [Project], id: CheckoutId) -> Option<Checkout> {
+    for project in projects.iter_mut() {
+        if let Some(pos) = project.checkouts.iter().position(|c| c.id == id) {
+            return Some(project.checkouts.remove(pos));
+        }
+    }
+    None
 }
 
 fn find_pane(projects: &mut [Project], id: PaneId) -> Option<&mut Pane> {

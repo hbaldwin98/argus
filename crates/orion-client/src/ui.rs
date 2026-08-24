@@ -6,7 +6,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Widget};
 use ratatui::Frame;
 
-use crate::app::{App, Focus};
+use crate::app::{App, Focus, Prompt};
 use crate::grid::Grid;
 
 pub fn render(f: &mut Frame, app: &mut App) {
@@ -20,6 +20,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     if app.picker.is_some() {
         render_picker(f, app, f.area());
+    }
+    if app.prompt.is_some() {
+        render_prompt(f, app, f.area());
     }
 }
 
@@ -62,8 +65,9 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
                 .map(|c| {
                     let status = worst_pane_status(c);
                     let line = format!(
-                        "{} {}{}  {}p",
+                        "{}{} {}{}  {}p",
                         status_glyph(status),
+                        if c.primary { "⌂" } else { "⧉" },
                         c.name,
                         git_suffix(c.git.as_ref()),
                         c.panes.len()
@@ -220,6 +224,58 @@ fn render_picker(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
     f.render_widget(List::new(items), inner);
+}
+
+/// The modal for `Prompt::NewWorktree` (a text field) and
+/// `Prompt::ConfirmRemoveCheckout` (a yes/no), drawn over everything else
+/// the same way `render_picker` is.
+fn render_prompt(f: &mut Frame, app: &App, area: Rect) {
+    let Some(prompt) = &app.prompt else { return };
+    let (title, lines): (&str, Vec<Line>) = match prompt {
+        Prompt::NewWorktree { input, .. } => (
+            " new worktree — branch name ",
+            vec![
+                Line::from(Span::raw(format!("{input}▏"))),
+                Line::from(Span::styled(
+                    "enter: create   esc: cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+        ),
+        Prompt::ConfirmRemoveCheckout { label, .. } => (
+            " remove checkout? ",
+            vec![
+                Line::from(Span::raw(format!("{label}  (worktree, branch, and its panes)"))),
+                Line::from(Span::styled(
+                    "y/enter: remove   n/esc: cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+        ),
+        Prompt::AddProject { input } => (
+            " add project — directory path ",
+            vec![
+                Line::from(Span::raw(format!("{input}▏"))),
+                Line::from(Span::styled(
+                    "enter: add   esc: cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ],
+        ),
+    };
+
+    let width = 50.min(area.width.saturating_sub(2));
+    let height = 4.min(area.height);
+    let popup = centered_rect(width, height, area);
+
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    f.render_widget(Paragraph::new(lines), inner);
 }
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {

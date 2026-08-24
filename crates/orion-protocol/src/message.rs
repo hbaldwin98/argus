@@ -21,6 +21,16 @@ pub enum ClientMsg {
     SpawnAgent { checkout: CheckoutId, template: String },
     /// Kill a pane's process and remove it.
     Kill { pane: PaneId },
+    /// `git worktree add` a new checkout in `base`'s project, branched off
+    /// `base`'s current HEAD, and add it to the tree.
+    CreateWorktree { checkout: CheckoutId, branch: String },
+    /// Kill every pane in a (non-primary) checkout, `git worktree remove`
+    /// it, delete its branch, and drop it from the tree.
+    RemoveCheckout { checkout: CheckoutId },
+    /// Add a new project rooted at an arbitrary directory — not limited to
+    /// whatever's already in `projects.toml` or under the daemon's cwd.
+    /// Persisted to config so it survives a daemon restart.
+    AddProject { path: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
