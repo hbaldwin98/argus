@@ -314,6 +314,7 @@ impl App {
             Ok(_) => Theme::from_env(),
             Err(_) => Theme::by_name(&settings.theme),
         };
+        let column_widths = settings.column_widths;
         App {
             tree: Vec::new(),
             templates: Vec::new(),
@@ -329,7 +330,7 @@ impl App {
             status: "j/k move  l/enter open  h/esc back  s: shell  a: agent  n: new  D: rm-checkout  x: close  q: detach"
                 .to_string(),
             layout: Layout::default(),
-            column_widths: None,
+            column_widths,
             resizing_gutter: None,
             picker: None,
             overlay: None,
@@ -1180,10 +1181,14 @@ impl App {
             }
             return;
         }
-        if matches!(ev.kind, MouseEventKind::Up(MouseButton::Left))
-            && self.resizing_gutter.take().is_some()
-        {
-            return;
+        if matches!(ev.kind, MouseEventKind::Up(MouseButton::Left)) {
+            if self.resizing_gutter.take().is_some() {
+                self.settings.column_widths = self.column_widths;
+                if self.persist_settings {
+                    crate::settings::save(&self.settings);
+                }
+                return;
+            }
         }
         if let MouseEventKind::Drag(MouseButton::Left) = ev.kind {
             if let Some(gutter) = self.resizing_gutter {
@@ -2349,8 +2354,28 @@ mod tests {
 
         h.app.on_mouse(click(12, 3));
         h.app.on_mouse(drag(16, 3));
+        h.app.on_mouse(MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: 16,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        });
 
         assert_eq!(h.app.column_widths, Some([16, 8, 12, 20]));
+        assert_eq!(h.app.settings.column_widths, h.app.column_widths);
+    }
+
+    #[test]
+    fn saved_column_widths_are_restored_at_startup() {
+        let (tx, _rx) = unbounded_channel();
+        let settings = crate::settings::Settings {
+            column_widths: Some([10, 20, 30, 40]),
+            ..crate::settings::Settings::default()
+        };
+
+        let app = App::build(tx, settings, false);
+
+        assert_eq!(app.column_widths, Some([10, 20, 30, 40]));
     }
 
     #[test]

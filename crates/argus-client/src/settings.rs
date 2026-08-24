@@ -70,6 +70,9 @@ pub struct Settings {
     pub editor_cmd: String,
     /// A preset name from `theme::THEMES`.
     pub theme: String,
+    /// Preferred outer widths for projects, checkouts, panes, and content.
+    /// Absent until the user first drags a column separator.
+    pub column_widths: Option<[u16; 4]>,
 }
 
 impl Default for Settings {
@@ -78,6 +81,7 @@ impl Default for Settings {
             editor: EditorMode::Overlay,
             editor_cmd: String::new(),
             theme: crate::theme::THEMES[0].to_string(),
+            column_widths: None,
         }
     }
 }
@@ -175,6 +179,7 @@ mod tests {
             editor: EditorMode::External,
             editor_cmd: "code -w".to_string(),
             theme: "latte".to_string(),
+            column_widths: Some([12, 18, 24, 46]),
         };
         let back: Settings = toml::from_str(&toml::to_string_pretty(&s).unwrap()).unwrap();
         assert_eq!(back, s);
@@ -186,6 +191,7 @@ mod tests {
         let s: Settings = toml::from_str(r#"theme = "frappe""#).unwrap();
         assert_eq!(s.theme, "frappe");
         assert_eq!(s.editor, Settings::default().editor);
+        assert_eq!(s.column_widths, None);
     }
 
     #[test]
