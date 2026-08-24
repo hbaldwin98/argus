@@ -103,12 +103,14 @@ Automatic `Idle` events do not erase `Waiting`, `NeedsReview`, `Done`, or `Faile
 `Working` when it resumes.
 
 When the client itself runs in a Herdr pane, it reports one aggregate `argus` agent for the open
-workspace. `Waiting`, `NeedsReview`, and `Failed` map to Herdr's blocked state, `Done` maps to idle,
-and `Working` takes precedence over idle; the blocked pane's note or title explains why. A newly
-attached client reports the tree it receives even when every agent was already running, and releases
-the report when it detaches. Herdr context is removed from nested PTY processes so individual
-harness integrations cannot claim the outer pane. This aggregate is limited to the open workspace
-because background workspace summaries carry pane counts, not individual statuses.
+workspace. Its message names that workspace and groups every live pane by harness, with each pane's
+name and status. `Waiting`, `NeedsReview`, and `Failed` map to Herdr's blocked state, `Done` maps to
+idle, and `Working` takes precedence over idle; a blocked pane's name and note lead the message so
+truncation cannot hide why it needs attention. A newly attached client reports the tree it receives
+even when every agent was already running, and releases the report when it detaches. Herdr context
+is removed from nested PTY processes so individual harness integrations cannot claim the outer pane.
+This aggregate is limited to the open workspace because background workspace summaries carry pane
+counts, not individual statuses.
 
 Status is harness-agnostic. A *harness* is a description of how a particular agent CLI can be
 asked to report, and there are three mechanisms; a harness may use any combination of them.

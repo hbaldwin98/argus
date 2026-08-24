@@ -198,7 +198,7 @@ fn handle_key_event(app: &mut App, key: crossterm::event::KeyEvent) {
 
 fn update_herdr(reporter: &mut Option<herdr::HerdrReporter>, app: &App) {
     if let Some(reporter) = reporter {
-        reporter.update(&app.tree);
+        reporter.update(&app.tree, &app.open_workspace);
     }
 }
 
