@@ -419,7 +419,9 @@ jump-to-editor.
 **M5 — notes & context server.** Markdown notes, todo rollups, forwarding, then the read side of
 the context server, then the write side behind policy.
 
-**M6 — polish.** Sandboxing, scrollback spill, config reload, session restore across reboots.
+**M6 — polish.** Sandboxing, scrollback spill, config reload, session restore across reboots,
+and a real UI theme pass — the working layout is deliberately plain so far and needs an actual
+palette, not just terminal defaults.
 
 ---
 
@@ -434,3 +436,42 @@ the context server, then the write side behind policy.
 - **Agents spawning agents.** `agent.spawn` is genuinely useful and genuinely a way to wake up to
   forty panes. Is a fan-out cap enough, or should delegation require interactive approval?
 - **Windows.** ConPTY works but is slower and its resize semantics differ. Ship Unix-first?
+
+---
+
+## 11. Direction: Nebula
+
+[Nebula](https://github.com/AgentSystemLabs/nebula) is a near-identical bet — daemon + ratatui
+client, one binary, portable-pty, length-prefixed msgpack over a socket, PTY ring buffers, git
+worktrees as the isolation unit. Orion is deliberately heading the same direction; where the two
+diverge, Nebula's choices are the default unless there's a reason here to depart. Concretely:
+
+- **A workspace layer above projects.** Nebula nests Workspace → Project → Worktree → Session,
+  with exactly one workspace *open* at a time (daemon-global, switched from the TUI, broadcast to
+  every client) — other workspaces' sessions keep running in the background but drop out of the
+  Projects panel and `/` search. Orion's tree currently starts at Project; adding Workspace above
+  it is the next structural change to the tree, ahead of M2's remaining pieces.
+- **Status via hooks, not scraping.** This is the real answer to the M3/§8b open question above.
+  At spawn, install managed hooks (`.claude/settings.local.json`, `.codex/hooks.json`,
+  `.cursor/hooks.json`) that `curl` a loopback HTTP server with a per-boot bearer token.
+  `UserPromptSubmit` / `Stop` / `PermissionRequest` / `SubagentStart` drive the state machine
+  directly — `Stop` gated on active subagents so a turn isn't marked done while workers are still
+  going. `idle_when` output-pattern scraping becomes the fallback for agents with no hook support,
+  not the primary mechanism.
+- **SQLite, not TOML-only.** `projects.toml` remains the *declared* config, but runtime state that
+  accumulates — notes, links, last UI selection, an agent's resumable session id — needs real
+  persistence, not repeated appends to a TOML file. `add_project`'s append-to-file approach (this
+  session) is a stopgap; the SQLite move in M5/M6 should absorb it.
+- **Worktree auto-discovery.** Nebula's daemon polls git metadata so worktrees created outside the
+  tool (a bare `git worktree add` from a shell) still show up. Orion only shows worktrees it
+  created itself — same gap as the "branches without a checkout" row from §4, worth closing
+  together.
+- **Notes and links per checkout**, with a PR row looked up client-side (`gh pr view`) on the git
+  poll tick, shown above the stored links but not itself editable — it's derived, not owned.
+- **Session resume and auto-titling** via `--resume <session-id>` (stored per agent) and a
+  hook-injected instruction that has a freshly spawned agent rename itself once, arbitrated by a
+  daemon-side flag so a manual rename always wins.
+- **Remote hosts.** `nebula ssh host [dir]` execs a self-installing remote session over `ssh -t`,
+  with a small recents list the TUI can pick from. Not urgent, but the kind of thing that's easy
+  to bolt on once the core loop is solid — worth keeping the socket/protocol layer host-agnostic
+  so it isn't a rewrite later.
