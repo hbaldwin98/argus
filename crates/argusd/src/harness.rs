@@ -144,6 +144,14 @@ pub struct Harness {
     /// A module to drop into the checkout, for a harness that extends
     /// through code rather than through JSON.
     pub plugin: Option<Plugin>,
+    /// What turns this CLI's start command into "pick up where we left
+    /// off", appended to the template's `cmd` — `["--continue"]` and the
+    /// like. Only ever used when Argus restarts a pane it recorded, never
+    /// when the user asks for an agent: a new pane is a new conversation.
+    ///
+    /// Empty means Argus has no way to ask this CLI to resume, and the
+    /// pane comes back the old way: running, with nothing behind it.
+    pub resume: Vec<String>,
 }
 
 impl Harness {
@@ -161,6 +169,7 @@ impl Harness {
             events: Vec::new(),
             context_event: None,
             plugin: None,
+            resume: Vec::new(),
         }
     }
 
@@ -190,6 +199,28 @@ impl Harness {
             ],
             context_event: Some("SessionStart".to_string()),
             plugin: None,
+            // Picks up the most recent conversation in the checkout, which
+            // is the one the pane had: Argus starts each agent in its own
+            // checkout's directory.
+            resume: vec!["--continue".to_string()],
+        }
+    }
+
+    /// Codex has no hook table and no plugin point Argus can write to, so
+    /// its panes only report if the agent runs `argus-hook` itself. It is
+    /// a harness all the same, for the one thing Argus does know how to
+    /// ask it: `codex resume --last`, which reopens the session it had
+    /// rather than the picker a bare `codex resume` would show.
+    pub fn codex() -> Harness {
+        Harness {
+            name: "codex".to_string(),
+            settings: None,
+            hooks_key: "hooks".to_string(),
+            shape: Shape::Flat,
+            events: Vec::new(),
+            context_event: None,
+            plugin: None,
+            resume: vec!["resume".to_string(), "--last".to_string()],
         }
     }
 
@@ -214,13 +245,19 @@ impl Harness {
                 path: PathBuf::from(".opencode").join("plugin").join(PLUGIN_FILE),
                 source: include_str!("opencode-plugin.js"),
             }),
+            resume: vec!["--continue".to_string()],
         }
     }
 
     /// Harnesses Argus ships with. A `[[harness]]` block of the same name
     /// in the user's config replaces the built-in entirely.
     pub fn builtins() -> Vec<Harness> {
-        vec![Harness::claude(), Harness::opencode(), Harness::generic()]
+        vec![
+            Harness::claude(),
+            Harness::codex(),
+            Harness::opencode(),
+            Harness::generic(),
+        ]
     }
 
     fn settings_path(&self, checkout: &Path) -> Option<PathBuf> {
@@ -594,7 +631,26 @@ mod tests {
             ],
             context_event: None,
             plugin: None,
+            resume: Vec::new(),
         }
+    }
+
+    #[test]
+    fn the_built_in_harnesses_know_how_to_be_continued() {
+        // What restore appends to each template's command. Wrong flags here
+        // mean an agent that comes back with nothing behind it, or one that
+        // refuses to start at all.
+        assert_eq!(Harness::claude().resume, ["--continue"]);
+        assert_eq!(Harness::opencode().resume, ["--continue"]);
+        assert_eq!(
+            Harness::codex().resume,
+            ["resume", "--last"],
+            "the last session, not the picker a bare `codex resume` opens"
+        );
+        assert!(
+            Harness::generic().resume.is_empty(),
+            "a CLI Argus knows nothing about is asked for nothing"
+        );
     }
 
     #[test]

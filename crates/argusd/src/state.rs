@@ -23,7 +23,42 @@ struct Pane {
     /// The agent template this pane was started from, kept because the
     /// title no longer answers that — an agent may have renamed it.
     template: Option<String>,
+    /// Set while this pane is a conversation Argus asked a CLI to reopen,
+    /// and it is too early to be sure it could. See [`Resumed`].
+    resumed: Option<Resumed>,
     runtime: PaneRuntime,
+}
+
+/// A pane started with its harness's resume arguments, and what to start
+/// instead if that turns out to have been a lie.
+///
+/// The CLIs answer "there is nothing to continue" by refusing to start:
+/// `claude --continue` in a checkout that has never held a conversation
+/// prints a line and exits. Restoring a pane must not leave a dead row
+/// where an agent should be, so an immediate failure is taken as that
+/// answer and the pane comes back as a plain new agent.
+struct Resumed {
+    checkout: CheckoutId,
+    template: String,
+    at: std::time::Instant,
+}
+
+/// How long after a resumed spawn a failure still reads as "there was
+/// nothing to resume" rather than as the user quitting.
+///
+/// Long enough for a node CLI to start and give up, short enough that
+/// quitting an agent you did not want back — which restore has just put in
+/// front of you — is not misread as one. A false positive costs a fresh
+/// agent pane, which is exactly what restore did before it could resume at
+/// all; a false negative costs a dead row.
+const RESUME_GRACE: Duration = Duration::from_secs(5);
+
+/// Whether a spawn opens a new conversation or continues the one the pane
+/// had before the daemon stopped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Start {
+    Fresh,
+    Resuming,
 }
 
 struct Checkout {
@@ -392,7 +427,8 @@ impl Daemon {
         crate::session::save(&self.session());
     }
 
-    /// Starts again whatever was running when the daemon last stopped.
+    /// Starts again whatever was running when the daemon last stopped, and
+    /// asks each agent CLI to reopen the conversation it had.
     ///
     /// Failures are per pane and never fatal: a template that has since
     /// stopped working should cost you that pane, not the whole session.
@@ -403,6 +439,11 @@ impl Daemon {
         if saved.panes.is_empty() {
             return true;
         }
+        // Only primary checkouts come from the config; a worktree is
+        // discovered from git by a poll that has not run yet. Without this,
+        // every pane in a worktree looks like a pane whose checkout is
+        // gone, and is dropped.
+        self.reconcile_worktrees();
         let known = self.checkout_paths();
         let wanted: Vec<crate::session::SessionPane> = crate::session::restorable(&saved, &known)
             .cloned()
@@ -414,12 +455,27 @@ impl Daemon {
         self.restoring
             .store(true, std::sync::atomic::Ordering::Relaxed);
         let mut restored = 0usize;
+        let mut claimed: Vec<(PathBuf, &str)> = Vec::new();
         for pane in &wanted {
             let Some(checkout) = self.checkout_at(&pane.checkout_path) else {
                 continue;
             };
             let result = match pane.kind {
-                PaneKind::Agent => self.spawn_agent(checkout, pane.template()).map(|_| ()),
+                PaneKind::Agent => {
+                    // A resume argument names "the last conversation here",
+                    // not a particular one, so two panes of the same agent
+                    // in one checkout would both reopen the same session
+                    // and write over each other. The first pane claims it;
+                    // the rest come back as new agents.
+                    let key = (pane.checkout_path.clone(), pane.template());
+                    let start = if claimed.contains(&key) {
+                        Start::Fresh
+                    } else {
+                        claimed.push(key);
+                        Start::Resuming
+                    };
+                    self.start_agent(checkout, pane.template(), start).map(|_| ())
+                }
                 _ => self.spawn_shell(checkout).map(|_| ()),
             };
             match result {
@@ -482,6 +538,7 @@ impl Daemon {
                     status: PaneStatus::Idle,
                     note: None,
                     template: None,
+                    resumed: None,
                     runtime,
                 });
             }
@@ -561,6 +618,7 @@ impl Daemon {
                     status: PaneStatus::Idle,
                     note: None,
                     template: None,
+                    resumed: None,
                     runtime,
                 });
             }
@@ -569,10 +627,21 @@ impl Daemon {
         Ok(id)
     }
 
+    /// Starts a new agent, and with it a new conversation. What the user
+    /// gets from the template picker.
     pub fn spawn_agent(
         self: &Arc<Self>,
         checkout: CheckoutId,
         template_name: &str,
+    ) -> anyhow::Result<PaneId> {
+        self.start_agent(checkout, template_name, Start::Fresh)
+    }
+
+    fn start_agent(
+        self: &Arc<Self>,
+        checkout: CheckoutId,
+        template_name: &str,
+        start: Start,
     ) -> anyhow::Result<PaneId> {
         let template = self
             .templates
@@ -616,9 +685,11 @@ impl Daemon {
         env.retain(|(k, _)| !template.env.contains_key(k));
         env.extend(template.env.clone());
 
+        let (args, resuming) = agent_args(rest, &harness.resume, start);
+
         let spec = pty::Spawn::Program {
             program: program.clone(),
-            args: rest.to_vec(),
+            args,
             env,
         };
 
@@ -637,6 +708,11 @@ impl Daemon {
                     status: PaneStatus::Idle,
                     note: None,
                     template: Some(template.name.clone()),
+                    resumed: resuming.then(|| Resumed {
+                        checkout,
+                        template: template.name.clone(),
+                        at: std::time::Instant::now(),
+                    }),
                     runtime,
                 });
             }
@@ -645,15 +721,45 @@ impl Daemon {
         Ok(id)
     }
 
-    pub fn mark_pane_exited(&self, pane: PaneId, code: Option<i32>) {
-        {
+    pub fn mark_pane_exited(self: &Arc<Self>, pane: PaneId, code: Option<i32>) {
+        let retry = {
             let mut inner = self.inner.lock().unwrap();
-            if let Some(p) = find_pane(&mut inner.projects, pane) {
-                p.status = PaneStatus::Exited { code };
-                p.note = None;
+            match find_pane(&mut inner.projects, pane) {
+                Some(p) => {
+                    p.status = PaneStatus::Exited { code };
+                    p.note = None;
+                    p.resumed
+                        .take()
+                        .filter(|r| nothing_to_resume(code, r.at.elapsed()))
+                }
+                None => None,
             }
+        };
+
+        if let Some(r) = retry {
+            // The CLI has just told us there was no conversation to
+            // continue. Take the dead row out rather than leaving it beside
+            // its replacement, and give the user the agent they had.
+            tracing::info!(
+                "{} had nothing to resume in this checkout; starting it fresh",
+                r.template
+            );
+            let _ = self.remove_pane(pane);
+            if let Err(e) = self.start_agent(r.checkout, &r.template, Start::Fresh) {
+                tracing::warn!("could not start {} after a failed resume: {e}", r.template);
+            }
+            return;
         }
+
         self.broadcast_tree();
+    }
+
+    /// Drops a pane from the tree without touching the checkout's managed
+    /// hooks — for a pane being replaced in place, where an agent is about
+    /// to take its seat and would only have to write them back.
+    fn remove_pane(&self, pane: PaneId) -> Option<Pane> {
+        let mut inner = self.inner.lock().unwrap();
+        remove_pane_with_checkout(&mut inner.projects, pane).map(|(p, _)| p)
     }
 
     /// Kills the pane's process (best-effort — it may already have exited)
@@ -1342,6 +1448,32 @@ fn gen_token() -> String {
 fn has_windows_drive_prefix(path: &str) -> bool {
     let bytes = path.as_bytes();
     bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+}
+
+/// The arguments an agent pane starts with, and whether that command asks
+/// the CLI to continue a conversation rather than open a new one.
+///
+/// Restoring a pane means restoring what was in it, so the harness's resume
+/// arguments go on the end of the template's own command — the user's flags
+/// still apply to the conversation being continued. A harness Argus cannot
+/// ask to resume leaves the command exactly as it was, and the pane is not
+/// treated as resumed: there is nothing for a failure to fall back from.
+fn agent_args(configured: &[String], resume: &[String], start: Start) -> (Vec<String>, bool) {
+    let mut args = configured.to_vec();
+    if start == Start::Fresh || resume.is_empty() {
+        return (args, false);
+    }
+    args.extend(resume.iter().cloned());
+    (args, true)
+}
+
+/// Whether a resumed agent's exit reads as "there was no conversation to
+/// continue" rather than as an agent the user is done with.
+///
+/// A clean exit is always the user's: every one of these CLIs exits 0 when
+/// you leave it, and refuses with a status when it cannot start.
+fn nothing_to_resume(code: Option<i32>, ran_for: Duration) -> bool {
+    code != Some(0) && ran_for < RESUME_GRACE
 }
 
 fn same_path(a: &std::path::Path, b: &std::path::Path) -> bool {
@@ -2640,5 +2772,194 @@ mod tests {
             assert!(saved_panes().is_empty());
             close_all(&d);
         });
+    }
+
+    #[tokio::test]
+    async fn a_pane_in_a_worktree_comes_back_too() {
+        // Regression: a worktree is discovered from git by a poll that has
+        // not run yet when restore does, so a pane in one looked like a
+        // pane whose checkout was gone — and was silently dropped.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = real_repo(dir.path());
+        let worktree = dir.path().join("wt-feature");
+        repo.worktree("feature", &worktree, None).unwrap();
+
+        with_temp_config(|_| {
+            record(&[(PaneKind::Shell, "shell")], &worktree);
+
+            let d = daemon_for_restore(dir.path());
+            d.restore_session();
+
+            let checkouts = d.snapshot().remove(0).checkouts;
+            let restored = checkouts
+                .iter()
+                .find(|c| same_path(std::path::Path::new(&c.path), &worktree))
+                .expect("the worktree should have joined the tree");
+            assert_eq!(restored.panes.len(), 1, "its pane should have come back");
+
+            for c in &checkouts {
+                for p in &c.panes {
+                    let _ = d.close_pane(p.id);
+                }
+            }
+        });
+    }
+
+    // --- resuming a conversation --------------------------------------------
+
+    /// How many panes are currently holding a reopened conversation. Not
+    /// in the snapshot: it is bookkeeping for the fallback, not something
+    /// a row shows.
+    fn resuming_panes(d: &Daemon) -> usize {
+        d.inner
+            .lock()
+            .unwrap()
+            .projects
+            .iter()
+            .flat_map(|p| p.checkouts.iter())
+            .flat_map(|c| c.panes.iter())
+            .filter(|p| p.resumed.is_some())
+            .count()
+    }
+
+    #[tokio::test]
+    async fn only_one_pane_per_checkout_reopens_the_conversation() {
+        // `--continue` means "the last conversation in this directory", so
+        // two of them would land on the same session and write over each
+        // other. Both agents come back; only one carries the old thread.
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            record(
+                &[(PaneKind::Agent, "claude"), (PaneKind::Agent, "claude")],
+                dir.path(),
+            );
+
+            let d = daemon_with_fake_claude(dir.path());
+            d.restore_session();
+
+            let panes = d.snapshot().remove(0).checkouts.remove(0).panes;
+            assert_eq!(panes.len(), 2, "both agents came back");
+            assert_eq!(resuming_panes(&d), 1, "one conversation, one claimant");
+
+            close_all(&d);
+        });
+    }
+
+    #[test]
+    fn a_new_agent_is_a_new_conversation() {
+        // Resume arguments belong to restore alone: asking for an agent
+        // means asking for one, not for the last one back.
+        let (args, resuming) = agent_args(
+            &["--model".to_string(), "opus".to_string()],
+            &["--continue".to_string()],
+            Start::Fresh,
+        );
+        assert_eq!(args, vec!["--model", "opus"]);
+        assert!(!resuming);
+    }
+
+    #[test]
+    fn a_restored_agent_is_asked_to_continue_where_it_left_off() {
+        let (args, resuming) = agent_args(
+            &["--model".to_string(), "opus".to_string()],
+            &["--continue".to_string()],
+            Start::Resuming,
+        );
+        assert_eq!(
+            args,
+            vec!["--model", "opus", "--continue"],
+            "after the template's own flags, which still apply"
+        );
+        assert!(resuming);
+    }
+
+    #[test]
+    fn a_harness_that_cannot_resume_restores_the_old_way() {
+        // Nothing to append, and nothing for a failed start to fall back
+        // from — the pane must not be treated as a resume that went wrong.
+        let (args, resuming) = agent_args(&["-q".to_string()], &[], Start::Resuming);
+        assert_eq!(args, vec!["-q"]);
+        assert!(!resuming);
+    }
+
+    #[test]
+    fn an_immediate_refusal_reads_as_nothing_to_resume() {
+        assert!(nothing_to_resume(Some(1), Duration::from_millis(300)));
+        assert!(
+            nothing_to_resume(None, Duration::from_millis(300)),
+            "no exit code at all is still a start that did not take"
+        );
+    }
+
+    #[test]
+    fn a_restored_agent_that_ran_is_not_a_failed_resume() {
+        assert!(
+            !nothing_to_resume(Some(0), Duration::from_millis(300)),
+            "these CLIs leave cleanly when you quit them"
+        );
+        assert!(
+            !nothing_to_resume(Some(1), RESUME_GRACE + Duration::from_secs(1)),
+            "it was up long enough to have been the conversation"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_resume_with_nothing_behind_it_comes_back_as_a_fresh_agent() {
+        // The cost of guessing wrong about what a CLI can continue: the
+        // user gets the agent they had, not a dead row where one should be.
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_fake_claude(dir.path());
+        let pane = d
+            .start_agent(only_checkout(&d), "claude", Start::Resuming)
+            .unwrap();
+
+        d.mark_pane_exited(pane, Some(1));
+
+        let panes = d.snapshot().remove(0).checkouts.remove(0).panes;
+        assert_eq!(panes.len(), 1, "the dead row goes, it does not pile up");
+        assert_ne!(panes[0].id, pane, "a new agent took its place");
+        assert_eq!(panes[0].status, PaneStatus::Idle);
+
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn an_agent_that_starts_and_fails_again_is_left_alone() {
+        // One retry, never a loop: the replacement is a plain agent, so its
+        // own failure is just a failure.
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_fake_claude(dir.path());
+        let pane = d
+            .start_agent(only_checkout(&d), "claude", Start::Resuming)
+            .unwrap();
+
+        d.mark_pane_exited(pane, Some(1));
+        let replacement = d.snapshot().remove(0).checkouts.remove(0).panes[0].id;
+        d.mark_pane_exited(replacement, Some(1));
+
+        let panes = d.snapshot().remove(0).checkouts.remove(0).panes;
+        assert_eq!(panes.len(), 1);
+        assert_eq!(panes[0].id, replacement, "no third attempt");
+        assert_eq!(panes[0].status, PaneStatus::Exited { code: Some(1) });
+
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn quitting_a_restored_agent_leaves_it_quit() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_fake_claude(dir.path());
+        let pane = d
+            .start_agent(only_checkout(&d), "claude", Start::Resuming)
+            .unwrap();
+
+        d.mark_pane_exited(pane, Some(0));
+
+        let panes = d.snapshot().remove(0).checkouts.remove(0).panes;
+        assert_eq!(panes.len(), 1);
+        assert_eq!(panes[0].id, pane, "still the pane the user closed");
+        assert_eq!(panes[0].status, PaneStatus::Exited { code: Some(0) });
+
+        close_all(&d);
     }
 }

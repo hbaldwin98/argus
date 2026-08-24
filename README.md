@@ -22,7 +22,8 @@ The workspace builds three executables:
 - Reviews uncommitted work, branch work, or changes since the last explicitly accepted snapshot.
 - Captures staged, unstaged, deleted, renamed, and non-ignored untracked content for review.
 - Opens files in a floating terminal editor, the terminal column, or an external editor.
-- Restores non-exited shell and agent descriptions after a daemon restart.
+- Restores non-exited shell and agent panes after a daemon restart, reopening each agent's last
+  conversation where its CLI can be asked to.
 - Supports multiple daemon-wide workspaces and multiple attached clients.
 
 See [`DESIGN.md`](DESIGN.md) for exact current behavior, [`TARGET.md`](TARGET.md) for the intended
@@ -221,6 +222,7 @@ settings = ".herdr/hooks.json"
 hooks_key = "hooks"
 shape = "flat" # use "matcher" for Claude Code-style nesting
 context_event = "session_start"
+resume = ["--continue"] # appended to the agent command when a pane is restored
 
 [harness.events]
 turn_start = "working"
@@ -235,8 +237,10 @@ harness = "herdr"
 
 `settings` is relative to the checkout. Event values are `working`, `idle`, `waiting`, or `failed`.
 Set `note = true` when the harness sends a useful JSON or text explanation to the hook on stdin.
-Omit `settings` for an environment-only harness. A block that reuses a built-in name replaces it
-outright, including a plugin module the built-in shipped.
+Omit `settings` for an environment-only harness. Omit `resume` for a CLI that cannot be asked to
+continue its last conversation; its panes still come back, just empty. A block that reuses a
+built-in name replaces it outright, including a plugin module and resume arguments the built-in
+shipped.
 
 ### `client.toml`
 
@@ -330,9 +334,15 @@ does not advance the last-looked baseline.
 
 ## Sessions and Git Data
 
-Argus records non-exited shell and agent panes. After a daemon restart it launches fresh processes in
-the recorded checkouts; it does not reattach old PIDs or resume agent conversations. Editors are not
-restored. Set `ARGUS_NO_RESTORE=1` to start clean.
+Argus records non-exited shell and agent panes, in worktrees as well as primary checkouts. After a
+daemon restart it launches fresh processes in the recorded checkouts; it does not reattach old PIDs.
+Each agent is asked to continue its last conversation by appending its harness's `resume` arguments
+to the template command — `--continue` for Claude Code and OpenCode, `resume --last` for Codex, and
+nothing for a harness that declares none. Those arguments mean "the last conversation in this
+directory", so when a checkout had two panes of the same agent only the first resumes and the rest
+start new. An agent that exits non-zero within five seconds of a resumed start is taken to have had
+nothing to continue and is replaced by a plain new agent. Editors are not restored. Set
+`ARGUS_NO_RESTORE=1` to start clean.
 
 Review captures write blobs and trees to the repository's Git object database. Accepted last-looked
 baselines are retained under worktree-specific `refs/argus/review/...` refs. Argus does not change
@@ -363,7 +373,8 @@ Every agent pane receives `ARGUS_HOOK`, `ARGUS_HOOK_URL`, `ARGUS_HOOK_TOKEN`, `A
 agent's context. Other forms are silent and always exit successfully so a stopped daemon cannot break
 an agent turn.
 
-Claude Code and the generic environment-only harness are built in. The Claude harness manages
+Claude Code, Codex, OpenCode, and the generic environment-only harness are built in; the Codex one
+exists only to record how that CLI resumes. The Claude harness manages
 `UserPromptSubmit`, `Stop`, `Notification`, and `SessionStart` entries in
 `<checkout>/.claude/settings.local.json`; managed entries are removed when the last agent pane closes
 or during the next daemon startup sweep. A same-named `[[harness]]` block replaces a built-in.

@@ -75,6 +75,10 @@ pub struct HarnessConfig {
     /// An event whose command's stdout the harness feeds to the model.
     #[serde(default)]
     pub context_event: Option<String>,
+    /// Arguments that make this CLI continue its last conversation, added
+    /// to the agent's `cmd` when Argus restores a recorded pane.
+    #[serde(default)]
+    pub resume: Vec<String>,
 }
 
 /// A bare status is the common case; the table form is for an event that
@@ -131,6 +135,7 @@ impl From<HarnessConfig> for crate::harness::Harness {
             // A plugin is a program, not a dialect, so it can only come
             // from a built-in. See `harness::Plugin`.
             plugin: None,
+            resume: c.resume,
         }
     }
 }
@@ -193,6 +198,8 @@ const DEFAULT_CONFIG: &str = r#"# Argus projects. Each project groups one or mor
 # settings = ".herdr/hooks.json"
 # hooks_key = "hooks"
 # shape = "flat"            # or "matcher" for Claude Code's nesting
+#
+# resume = ["--continue"]   # how to reopen its last conversation on restart
 #
 # [harness.events]
 # turn_start = "working"
@@ -281,4 +288,51 @@ pub fn expand_home(path: &str) -> PathBuf {
         }
     }
     PathBuf::from(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(raw: &str) -> ConfigFile {
+        toml::from_str(raw).expect("the test config should parse")
+    }
+
+    #[test]
+    fn a_harness_block_can_say_how_its_cli_resumes() {
+        // The point of the key: a CLI Argus ships no knowledge of can still
+        // come back holding the conversation it had.
+        let cfg = parse(
+            r#"
+[[harness]]
+name = "herdr"
+resume = ["--continue"]
+"#,
+        );
+        let herdr = harnesses(cfg.harnesses)
+            .into_iter()
+            .find(|h| h.name == "herdr")
+            .expect("a configured harness joins the built-ins");
+        assert_eq!(herdr.resume, ["--continue"]);
+    }
+
+    #[test]
+    fn a_block_that_replaces_a_built_in_replaces_what_it_knew_about_resuming() {
+        // Same rule as its plugin: a same-named block is the whole harness,
+        // so a user overriding `claude` has to restate `resume` to keep it.
+        let cfg = parse(
+            r#"
+[[harness]]
+name = "claude"
+"#,
+        );
+        let all = harnesses(cfg.harnesses);
+        assert_eq!(all.iter().filter(|h| h.name == "claude").count(), 1);
+        assert!(all
+            .iter()
+            .find(|h| h.name == "claude")
+            .expect("still there, just theirs now")
+            .resume
+            .is_empty());
+    }
 }

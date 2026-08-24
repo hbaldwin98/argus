@@ -91,6 +91,14 @@ it is in — the question it is blocked on, or what failed — drawn as the row'
 stalled pane explains itself without being opened. A note is set alongside a status report and
 cleared by the next report that carries none, so it can never outlive the state it explains.
 
+When the client itself runs in a Herdr pane, it reports one aggregate `argus` agent for the open
+workspace. `Waiting` and `Failed` map to Herdr's blocked state, then `Working` takes precedence over
+`Idle`; the blocked pane's note or title explains why. A newly attached client reports the tree it
+receives even when every agent was already running, and releases the report when it detaches. Herdr
+context is removed from nested PTY processes so individual harness integrations cannot claim the
+outer pane. This aggregate is limited to the open workspace because background workspace summaries
+carry pane counts, not individual statuses.
+
 Status is harness-agnostic. A *harness* is a description of how a particular agent CLI can be
 asked to report, and there are three mechanisms; a harness may use any combination of them.
 
@@ -103,10 +111,13 @@ Code, `flat` otherwise), and `events` maps the harness's own event names onto th
 draws. Third, a harness that extends through code rather than through JSON can have Argus write a
 plugin module into the checkout and remove it on the same schedule. OpenCode is the built-in case:
 it has no hook table, so its module carries the event mapping itself and reads `ARGUS_HOOK_URL`
-and `ARGUS_HOOK_TOKEN` at run time rather than having a pane baked into it. Claude Code, OpenCode
-and `generic` are built in; a `[[harness]]` block in `projects.toml` adds or replaces one, and an
-`[[agent]]` template selects one with `harness = "..."`, defaulting to a harness matching its own
-name. A block cannot supply a plugin, so replacing a built-in by name also gives up its module.
+and `ARGUS_HOOK_TOKEN` at run time rather than having a pane baked into it. A harness also carries
+`resume`, the arguments that make its CLI continue its last conversation, used only when a recorded
+pane is restored — see Session restore. Claude Code, Codex, OpenCode and `generic` are built in;
+Codex is there only to say how it resumes, having no hook mechanism at all. A `[[harness]]` block
+in `projects.toml` adds or replaces one, and an `[[agent]]` template selects one with
+`harness = "..."`, defaulting to a harness matching its own name. A block cannot supply a plugin,
+so replacing a built-in by name also gives up its module and its resume arguments.
 
 The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
 /pane/<id>/status/<working|idle|waiting|failed>` with an optional body as the note, and `POST
@@ -135,15 +146,28 @@ write the user's session.
 
 On daemon startup:
 
+- linked worktrees are reconciled against Git first, because only primary checkouts come from the
+  config and a pane in a worktree would otherwise look like a pane whose checkout is gone;
 - editors are skipped;
 - panes whose checkout no longer exists are skipped;
 - shells start as new default shells;
-- agents start as new processes from the saved template name;
+- agents start as new processes from the saved template name, with their harness's `resume`
+  arguments appended to the template's own command;
+- one pane per checkout and template resumes; a second agent of the same kind in the same checkout
+  starts fresh, because a resume argument names the last conversation in a directory rather than a
+  particular one;
+- an agent started that way that exits non-zero within five seconds is taken to have had nothing to
+  continue, and is replaced by a plain new agent in the same checkout;
 - a missing or broken pane does not abort restoration;
 - `ARGUS_NO_RESTORE` starts without restoring panes.
 
-This is relaunch, not process reattachment or conversation resume. PIDs and harness session IDs
-are not stored. Exited panes are omitted. Session replacement uses a same-directory temporary file,
+`claude` and `opencode` resume with `--continue`, `codex` with `resume --last`, and `generic` not at
+all; a `[[harness]]` block sets its own `resume`, and a block that replaces a built-in by name gives
+up the built-in's along with its plugin.
+
+This is relaunch, not process reattachment. PIDs are not stored, and neither are harness session
+IDs: the conversation comes back only as far as a CLI's own "continue the last session" flag
+reaches. Exited panes are omitted. Session replacement uses a same-directory temporary file,
 flush, and atomic rename; on Unix it also syncs the parent directory. A read or parse failure disables
 recording for that daemon run so the recoverable file is not overwritten.
 
