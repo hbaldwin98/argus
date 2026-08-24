@@ -6,6 +6,32 @@ use serde::{Deserialize, Serialize};
 
 use crate::ids::CheckoutId;
 
+/// What a review is a diff *against* (DESIGN.md §5), cycled with `b`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReviewBase {
+    /// Uncommitted edits: `HEAD` against the working tree.
+    WorkingTree,
+    /// Everything this branch did: its fork point against the working tree,
+    /// falling back to the upstream branch where there is no fork point.
+    BranchPoint,
+}
+
+impl ReviewBase {
+    pub fn next(self) -> Self {
+        match self {
+            ReviewBase::WorkingTree => ReviewBase::BranchPoint,
+            ReviewBase::BranchPoint => ReviewBase::WorkingTree,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ReviewBase::WorkingTree => "uncommitted",
+            ReviewBase::BranchPoint => "this branch",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChangeKind {
     Added,
@@ -86,6 +112,7 @@ impl FileDiff {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Review {
     pub checkout: CheckoutId,
+    pub base: ReviewBase,
     pub files: Vec<FileDiff>,
 }
 

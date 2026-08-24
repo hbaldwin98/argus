@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cell::{Cell, CellSpan};
 use crate::ids::{CheckoutId, PaneId, WorkspaceId};
-use crate::review::Review;
+use crate::review::{Review, ReviewBase};
 use crate::tree::{ProjectInfo, WorkspaceInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,7 +34,10 @@ pub enum ClientMsg {
     /// Ask for this checkout's uncommitted changes, for the review viewer
     /// (DESIGN.md §9 M4). A request rather than a subscription: a diff is
     /// expensive to compute and only interesting while it's on screen.
-    Review { checkout: CheckoutId },
+    Review {
+        checkout: CheckoutId,
+        base: ReviewBase,
+    },
     /// Open `path` (repo-relative) in the user's editor as a pane.
     OpenInEditor {
         checkout: CheckoutId,

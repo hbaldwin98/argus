@@ -5,7 +5,7 @@
 use std::cell::RefCell;
 use std::path::Path;
 
-use orion_protocol::{ChangeKind, DiffLine, FileDiff, Hunk, LineKind};
+use orion_protocol::{ChangeKind, DiffLine, FileDiff, Hunk, LineKind, ReviewBase};
 
 /// Past this a file is reported as changed but not rendered — nobody reads
 /// a 20k-line diff, and shipping it is pure waste.
@@ -16,7 +16,7 @@ const TOO_LARGE_NOTE: &str = "too large to display";
 
 /// Every change in the working tree at `path` against `HEAD`, untracked
 /// files included. Empty when `path` isn't a repo — not worth an error.
-pub fn working_tree(path: &Path) -> Vec<FileDiff> {
+pub fn working_tree(path: &Path, base: ReviewBase) -> Vec<FileDiff> {
     let Ok(repo) = git2::Repository::open(path) else {
         return Vec::new();
     };
@@ -31,12 +31,9 @@ pub fn working_tree(path: &Path) -> Vec<FileDiff> {
 
     // Against HEAD's tree, or against nothing at all in a repo whose first
     // commit hasn't happened yet — where every file is legitimately new.
-    let head_tree = repo
-        .head()
-        .ok()
-        .and_then(|h| h.peel_to_tree().ok());
+    let base_tree = base_tree(&repo, base);
 
-    let Ok(diff) = repo.diff_tree_to_workdir_with_index(head_tree.as_ref(), Some(&mut opts)) else {
+    let Ok(diff) = repo.diff_tree_to_workdir_with_index(base_tree.as_ref(), Some(&mut opts)) else {
         return Vec::new();
     };
 
@@ -94,6 +91,51 @@ pub fn working_tree(path: &Path) -> Vec<FileDiff> {
     );
 
     files.into_inner()
+}
+
+/// The tree the working directory is compared against. `None` in a repo
+/// whose first commit hasn't happened, where every file is legitimately new.
+fn base_tree(repo: &git2::Repository, base: ReviewBase) -> Option<git2::Tree<'_>> {
+    let head = repo.head().ok()?;
+    match base {
+        ReviewBase::WorkingTree => head.peel_to_tree().ok(),
+        ReviewBase::BranchPoint => {
+            // With no fork point — on the default branch, typically — fall
+            // back to HEAD. An empty diff would read as "this branch
+            // changed nothing", which is a different claim.
+            let fork = || {
+                let mine = head.peel_to_commit().ok()?.id();
+                let other = fork_candidate(repo, &head)?;
+                let base = repo.merge_base(mine, other).ok()?;
+                repo.find_commit(base).ok()?.tree().ok()
+            };
+            fork().or_else(|| head.peel_to_tree().ok())
+        }
+    }
+}
+
+/// What this branch forked from: its upstream if it has one, else whichever
+/// of the usual default branches exists and isn't the branch itself.
+fn fork_candidate(repo: &git2::Repository, head: &git2::Reference) -> Option<git2::Oid> {
+    let name = head.shorthand().unwrap_or_default().to_string();
+    if let Some(upstream) = repo
+        .find_branch(&name, git2::BranchType::Local)
+        .ok()
+        .and_then(|b| b.upstream().ok())
+    {
+        return upstream.get().peel_to_commit().ok().map(|c| c.id());
+    }
+    ["main", "master", "develop", "trunk"]
+        .iter()
+        .filter(|d| **d != name)
+        .find_map(|d| {
+            repo.find_branch(d, git2::BranchType::Local)
+                .ok()?
+                .get()
+                .peel_to_commit()
+                .ok()
+                .map(|c| c.id())
+        })
 }
 
 fn new_file(delta: &git2::DiffDelta) -> FileDiff {
@@ -185,13 +227,13 @@ mod tests {
     #[test]
     fn a_clean_checkout_has_nothing_to_review() {
         let (_d, path) = repo_with(&[("a.txt", "one\n")]);
-        assert!(working_tree(&path).is_empty());
+        assert!(working_tree(&path, ReviewBase::WorkingTree).is_empty());
     }
 
     #[test]
     fn a_directory_that_is_not_a_repo_is_not_an_error() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(working_tree(dir.path()).is_empty());
+        assert!(working_tree(dir.path(), ReviewBase::WorkingTree).is_empty());
     }
 
     #[test]
@@ -199,7 +241,7 @@ mod tests {
         let (_d, path) = repo_with(&[("a.txt", "one\ntwo\nthree\n")]);
         write(&path, "a.txt", "one\nTWO\nthree\n");
 
-        let files = working_tree(&path);
+        let files = working_tree(&path, ReviewBase::WorkingTree);
         let f = find(&files, "a.txt");
         assert_eq!(f.kind, ChangeKind::Modified);
         assert_eq!((f.added_lines(), f.removed_lines()), (1, 1));
@@ -219,7 +261,7 @@ mod tests {
         // would double it up and break any comment that quotes the line.
         let (_d, path) = repo_with(&[("a.txt", "one\n")]);
         write(&path, "a.txt", "two\n");
-        for line in &working_tree(&path)[0].hunks[0].lines {
+        for line in &working_tree(&path, ReviewBase::WorkingTree)[0].hunks[0].lines {
             assert!(!line.text.starts_with(['+', '-']), "{line:?}");
             assert!(!line.text.ends_with('\n'), "{line:?}");
         }
@@ -232,7 +274,7 @@ mod tests {
         let (_d, path) = repo_with(&[("a.txt", "one\n")]);
         write(&path, "new.txt", "hello\n");
 
-        let files = working_tree(&path);
+        let files = working_tree(&path, ReviewBase::WorkingTree);
         let f = find(&files, "new.txt");
         assert_eq!(f.kind, ChangeKind::Untracked);
         assert_eq!(f.added_lines(), 1);
@@ -246,7 +288,7 @@ mod tests {
         let (_d, path) = repo_with(&[("a.txt", "one\n")]);
         write(&path, "sub/deep/x.txt", "x\n");
 
-        let files = working_tree(&path);
+        let files = working_tree(&path, ReviewBase::WorkingTree);
         assert_eq!(paths(&files), vec!["sub/deep/x.txt"]);
     }
 
@@ -254,7 +296,7 @@ mod tests {
     fn paths_are_forward_slashed_so_an_agent_can_use_them_verbatim() {
         let (_d, path) = repo_with(&[("sub/a.txt", "one\n")]);
         write(&path, "sub/a.txt", "two\n");
-        assert_eq!(paths(&working_tree(&path)), vec!["sub/a.txt"]);
+        assert_eq!(paths(&working_tree(&path, ReviewBase::WorkingTree)), vec!["sub/a.txt"]);
     }
 
     #[test]
@@ -262,7 +304,7 @@ mod tests {
         let (_d, path) = repo_with(&[("a.txt", "one\n"), ("b.txt", "b\n")]);
         std::fs::remove_file(path.join("a.txt")).unwrap();
 
-        let files = working_tree(&path);
+        let files = working_tree(&path, ReviewBase::WorkingTree);
         let f = find(&files, "a.txt");
         assert_eq!(f.kind, ChangeKind::Deleted);
         assert_eq!(f.removed_lines(), 1);
@@ -273,7 +315,7 @@ mod tests {
         let (_d, path) = repo_with(&[("a.txt", "one\n")]);
         std::fs::write(path.join("blob.bin"), [0u8, 159, 146, 150, 0]).unwrap();
 
-        let files = working_tree(&path);
+        let files = working_tree(&path, ReviewBase::WorkingTree);
         let f = find(&files, "blob.bin");
         assert_eq!(
             f.note.as_deref(),
@@ -291,7 +333,7 @@ mod tests {
             .collect();
         write(&path, "big.txt", &big);
 
-        let f = &working_tree(&path)[0];
+        let f = &working_tree(&path, ReviewBase::WorkingTree)[0];
         assert_eq!(f.path, "big.txt");
         assert_eq!(f.note.as_deref(), Some(TOO_LARGE_NOTE));
         assert!(f.hunks.is_empty(), "the point is not to ship it");
@@ -304,7 +346,7 @@ mod tests {
         write(&path, "b.txt", "B\n");
         write(&path, "c.txt", "C\n");
 
-        let files = working_tree(&path);
+        let files = working_tree(&path, ReviewBase::WorkingTree);
         assert_eq!(paths(&files), vec!["a.txt", "b.txt", "c.txt"]);
     }
 
@@ -313,7 +355,7 @@ mod tests {
         // A comment that quotes it should match what `git diff` would show.
         let (_d, path) = repo_with(&[("a.txt", "one\ntwo\nthree\n")]);
         write(&path, "a.txt", "one\nTWO\nthree\n");
-        let header = &working_tree(&path)[0].hunks[0].header;
+        let header = &working_tree(&path, ReviewBase::WorkingTree)[0].hunks[0].header;
         assert!(header.starts_with("@@"), "{header:?}");
         assert!(!header.ends_with('\n'));
     }
@@ -324,8 +366,70 @@ mod tests {
         git2::Repository::init(dir.path()).unwrap();
         std::fs::write(dir.path().join("a.txt"), "one\n").unwrap();
 
-        let files = working_tree(dir.path());
+        let files = working_tree(dir.path(), ReviewBase::WorkingTree);
         assert_eq!(paths(&files), vec!["a.txt"]);
         assert_eq!(files[0].added_lines(), 1);
     }
+    // --- diff bases ---------------------------------------------------------
+
+    /// Commits `files` on a new branch off the current HEAD.
+    fn commit_on_branch(path: &Path, branch: &str, files: &[(&str, &str)]) {
+        let repo = git2::Repository::open(path).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch(branch, &head, false).unwrap();
+        repo.set_head(&format!("refs/heads/{branch}")).unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
+        for (name, body) in files {
+            write(path, name, body);
+        }
+        let mut index = repo.index().unwrap();
+        index
+            .add_all(["*"], git2::IndexAddOption::DEFAULT, None)
+            .unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = git2::Signature::now("t", "t@example.com").unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "work", &tree, &[&head])
+            .unwrap();
+    }
+
+    #[test]
+    fn the_working_tree_base_ignores_what_the_branch_already_committed() {
+        let (_d, path) = repo_with(&[("a.txt", "one\n")]);
+        commit_on_branch(&path, "feature", &[("b.txt", "committed\n")]);
+
+        assert!(
+            working_tree(&path, ReviewBase::WorkingTree).is_empty(),
+            "committed work is not uncommitted work"
+        );
+    }
+
+    #[test]
+    fn the_branch_point_base_shows_everything_the_branch_did() {
+        let (_d, path) = repo_with(&[("a.txt", "one\n")]);
+        commit_on_branch(&path, "feature", &[("b.txt", "committed\n")]);
+        write(&path, "c.txt", "uncommitted\n");
+
+        let files = working_tree(&path, ReviewBase::BranchPoint);
+        let mut names = paths(&files);
+        names.sort();
+        assert_eq!(
+            names,
+            vec!["b.txt", "c.txt"],
+            "both what it committed and what it hasn't"
+        );
+    }
+
+    #[test]
+    fn a_branch_with_no_fork_point_falls_back_to_uncommitted_work() {
+        // On the default branch there is nothing to have forked from, and
+        // an empty diff would read as "this branch changed nothing".
+        let (_d, path) = repo_with(&[("a.txt", "one\n")]);
+        write(&path, "a.txt", "two\n");
+
+        let files = working_tree(&path, ReviewBase::BranchPoint);
+        assert_eq!(paths(&files), vec!["a.txt"]);
+    }
+
 }

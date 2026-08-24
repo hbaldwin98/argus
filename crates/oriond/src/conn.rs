@@ -115,12 +115,13 @@ fn handle_client_msg(
         ClientMsg::OpenInEditor { checkout, path, line } => {
             daemon.spawn_editor(checkout, &path, line).map(|_| ())
         }
-        ClientMsg::Review { checkout } => daemon.checkout_path(checkout).map(|path| {
+        ClientMsg::Review { checkout, base } => daemon.checkout_path(checkout).map(|path| {
             let out_tx = out_tx.clone();
             tokio::task::spawn_blocking(move || {
                 let _ = out_tx.send(ServerMsg::Review(orion_protocol::Review {
                     checkout,
-                    files: crate::diff::working_tree(&path),
+                    base,
+                    files: crate::diff::working_tree(&path, base),
                 }));
             });
         }),

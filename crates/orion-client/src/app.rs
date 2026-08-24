@@ -8,6 +8,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::grid::Grid;
 use crate::review::{Anchor, ReviewView};
+use orion_protocol::ReviewBase;
 use crate::theme::Theme;
 use crate::keys::{encode_key, is_leader};
 use crate::mouse::encode_mouse;
@@ -98,6 +99,9 @@ pub struct App {
     /// What the outstanding request was for; a diff for anything else is
     /// stale and dropped.
     review_wanted: Option<CheckoutId>,
+    /// Sticky across reopens, so `b` is a setting rather than a per-visit
+    /// choice.
+    pub review_base: ReviewBase,
     pub prompt: Option<Prompt>,
     /// Active color theme. Every color the UI draws comes from here, so a
     /// preset swap is one assignment rather than a sweep of call sites.
@@ -129,6 +133,7 @@ impl App {
             picker: None,
             review: None,
             review_wanted: None,
+            review_base: ReviewBase::WorkingTree,
             prompt: None,
             theme: Theme::from_env(),
             pending_focus_new: false,
@@ -264,8 +269,7 @@ impl App {
                 } else {
                     self.review = Some(view);
                     self.focus = Focus::Review;
-                    self.status =
-                        format!("{files} changed  j/k move  ]/[ file  v range  esc close");
+                    self.status = format!("{files} changed vs {}", self.review_base.label());
                 }
             }
             ServerMsg::Error { message } => {
@@ -418,7 +422,10 @@ impl App {
         };
         self.review_wanted = Some(id);
         self.status = "loading diff…".to_string();
-        let _ = self.out.send(ClientMsg::Review { checkout: id });
+        let _ = self.out.send(ClientMsg::Review {
+            checkout: id,
+            base: self.review_base,
+        });
     }
 
     /// Typed at the agent as if by hand, so it works with any harness
@@ -479,6 +486,10 @@ impl App {
             KeyCode::Char('g') | KeyCode::Home => v.top_of_diff(),
             KeyCode::Char('G') | KeyCode::End => v.bottom_of_diff(),
             KeyCode::Char('V') | KeyCode::Char('v') => v.toggle_mark(),
+            KeyCode::Char('b') => {
+                self.review_base = self.review_base.next();
+                return self.open_review();
+            }
             KeyCode::Char('e') => {
                 let checkout = v.review.checkout;
                 if let Some(a) = v.anchor() {
@@ -1710,6 +1721,7 @@ mod tests {
     fn diff_of(checkout: CheckoutId) -> orion_protocol::Review {
         orion_protocol::Review {
             checkout,
+            base: orion_protocol::ReviewBase::WorkingTree,
             files: vec![orion_protocol::FileDiff {
                 path: "src/a.rs".to_string(),
                 old_path: None,
@@ -1752,7 +1764,7 @@ mod tests {
         h.key(KeyCode::Char('R'));
 
         match &h.sent()[0] {
-            ClientMsg::Review { checkout: c } => assert_eq!(*c, checkout),
+            ClientMsg::Review { checkout: c, .. } => assert_eq!(*c, checkout),
             other => panic!("unexpected {other:?}"),
         }
     }
@@ -1799,7 +1811,11 @@ mod tests {
         let checkout = h.app.tree[0].checkouts[0].id;
         open_review(
             &mut h,
-            orion_protocol::Review { checkout, files: Vec::new() },
+            orion_protocol::Review {
+                checkout,
+                base: orion_protocol::ReviewBase::WorkingTree,
+                files: Vec::new(),
+            },
         );
         assert!(h.app.review.is_none());
         assert_ne!(h.app.focus, Focus::Review);
@@ -2021,6 +2037,36 @@ mod tests {
         let mut h = review_with_agent();
         h.key(KeyCode::Char('e'));
         assert!(h.app.review.is_none());
+    }
+
+    #[test]
+    fn b_cycles_the_diff_base_and_asks_again() {
+        let mut h = review_with_agent();
+        h.key(KeyCode::Char('b'));
+
+        match &h.sent()[0] {
+            ClientMsg::Review { base, .. } => {
+                assert_eq!(*base, orion_protocol::ReviewBase::BranchPoint)
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_chosen_base_sticks_across_reopens() {
+        // `b` is a setting, not a per-visit choice.
+        let mut h = review_with_agent();
+        h.key(KeyCode::Char('b'));
+        h.key(KeyCode::Esc);
+        h.sent();
+
+        h.key(KeyCode::Char('R'));
+        match &h.sent()[0] {
+            ClientMsg::Review { base, .. } => {
+                assert_eq!(*base, orion_protocol::ReviewBase::BranchPoint)
+            }
+            other => panic!("unexpected {other:?}"),
+        }
     }
 
 }

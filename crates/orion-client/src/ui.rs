@@ -334,7 +334,11 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
 fn render_review(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let focused = app.focus == Focus::Review;
     let title = match app.review.as_ref() {
-        Some(v) => format!("review › {} changed", v.review.files.len()),
+        Some(v) => format!(
+            "review › {} changed vs {}",
+            v.review.files.len(),
+            v.review.base.label()
+        ),
         None => "review".to_string(),
     };
     let block = panel_block(&title, focused, th);
@@ -442,7 +446,7 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     } else if app.leader_pending {
         ("leader…   esc back to panes   x close pane", th.accent)
     } else if app.focus == Focus::Review {
-        ("j/k move  ]/[ file  v range  c comment  e edit  r refresh  esc close", th.dim)
+        ("j/k  ]/[ file  v range  c comment  e edit  b base  r refresh  esc close", th.dim)
     } else if app.focus == Focus::PaneContent {
         ("typing — ctrl-space then esc to leave, x to close", th.dim)
     } else {
@@ -1224,6 +1228,7 @@ mod tests {
         let mut app = app_with_tree();
         app.review = Some(crate::review::ReviewView::new(orion_protocol::Review {
             checkout: CheckoutId(1),
+            base: orion_protocol::ReviewBase::WorkingTree,
             files: vec![orion_protocol::FileDiff {
                 path: "src/thing.rs".to_string(),
                 old_path: None,

@@ -286,6 +286,7 @@ mod tests {
     fn view(files: Vec<FileDiff>) -> ReviewView {
         ReviewView::new(Review {
             checkout: CheckoutId(1),
+            base: orion_protocol::ReviewBase::WorkingTree,
             files,
         })
     }

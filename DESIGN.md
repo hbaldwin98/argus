@@ -450,9 +450,13 @@ jump-to-editor. Concretely, the shape wanted here:
   one; it is typed at the agent's pty as `path:line \`+the line\`: your comment`, so it works
   with any harness rather than needing one to know about Orion.
 - Open any of them in the user's real editor (`$EDITOR` — vim, nvim, helix, whatever), as a
-  pane rather than a shell-out that blanks the screen (§6). *(next)*
-- Still open: the three bases (HEAD / merge-base / last-vetted), vetted tracking, and
-  stage/revert from the review itself.
+  pane rather than a shell-out that blanks the screen (§6). *(landed)* `e` on a line opens it
+  at that line; the flag syntax is per editor, and an unrecognised one just gets the path.
+- Two of the three bases (§5) are in, cycled with `b`: **uncommitted** (HEAD against the
+  working tree) and **this branch** (its fork point against the working tree, using the
+  upstream where there is one and falling back to HEAD where there is no fork point at all).
+- Still open: **since I last looked** — it needs a tree snapshot per checkout, so it waits on
+  persistence — plus vetted tracking and stage/revert from the review itself.
 
 That last point is the payoff and the reason review is the part that has to be good: the
 review surface and the agent are already side by side in the same tree, so feedback should
