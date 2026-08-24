@@ -32,6 +32,9 @@ pub struct SessionPane {
     pub status: PaneStatus,
     #[serde(default)]
     pub note: Option<String>,
+    /// The harness's stable conversation identity. Absent in legacy files.
+    #[serde(default)]
+    pub harness_session_id: Option<String>,
 }
 
 fn idle_status() -> PaneStatus {
@@ -153,16 +156,16 @@ mod tests {
             template: None,
             status: PaneStatus::Idle,
             note: None,
+            harness_session_id: None,
         }
     }
 
     #[test]
     fn a_session_survives_a_round_trip() {
+        let mut agent = pane("/repo", PaneKind::Agent, "claude");
+        agent.harness_session_id = Some("session-123".to_string());
         let s = Session {
-            panes: vec![
-                pane("/repo", PaneKind::Agent, "claude"),
-                pane("/repo", PaneKind::Shell, "shell"),
-            ],
+            panes: vec![agent, pane("/repo", PaneKind::Shell, "shell")],
         };
         let back: Session = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert_eq!(back, s);
@@ -204,6 +207,7 @@ mod tests {
         .unwrap();
         assert_eq!(s.panes[0].status, PaneStatus::Idle);
         assert_eq!(s.panes[0].note, None);
+        assert_eq!(s.panes[0].harness_session_id, None);
     }
 
     #[test]
@@ -251,6 +255,7 @@ mod tests {
                 template: None,
                 status: PaneStatus::Idle,
                 note: None,
+                harness_session_id: None,
             }],
         };
         assert_eq!(restorable(&s, &known).count(), 1);
@@ -268,6 +273,7 @@ mod tests {
             template: Some("claude".to_string()),
             status: PaneStatus::NeedsReview,
             note: Some("ready to inspect".to_string()),
+            harness_session_id: Some("session-123".to_string()),
         };
         assert_eq!(p.template(), "claude");
     }

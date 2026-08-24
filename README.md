@@ -207,11 +207,13 @@ inherited `PATH`. Custom commands are argument arrays; the first item is the exe
 optional `harness` selects a matching built-in or configured harness; without it, Argus tries the
 agent name and then falls back to the generic environment-only harness.
 
-Claude Code reports through hooks Argus writes into `.claude/settings.local.json`, and OpenCode
-through a plugin module Argus writes to `.opencode/plugin/argus-status.js`. Both are removed when
+Claude Code reports through hooks Argus writes into `.claude/settings.local.json`, Codex through a
+SessionStart adapter in `.codex/hooks.json`, and OpenCode through a plugin module Argus writes to
+`.opencode/plugin/argus-status.js`. All are removed when
 the last agent pane in the checkout closes and swept from every configured checkout at startup;
 adding them to a repository's `.gitignore` keeps them out of its status while an agent is running.
-Codex has no hook mechanism, so its panes report only if the agent runs `argus-hook` itself.
+Codex treats project hooks as untrusted until the user approves them. Argus writes the correct hook,
+but cannot approve that trust decision; exact Codex identity capture starts after approval.
 
 Custom JSON-hook harnesses use this schema:
 
@@ -223,11 +225,13 @@ hooks_key = "hooks"
 shape = "flat" # use "matcher" for Claude Code-style nesting
 context_event = "session_start"
 resume = ["--continue"] # appended to the agent command when a pane is restored
+resume_id = ["--resume", "{session_id}"] # exact resume when identity was captured
 
 [harness.events]
 turn_start = "working"
 turn_end = "idle"
 ask = { reports = "waiting", note = true }
+start = { reports = "idle", session_id = "session_id" }
 
 [[agent]]
 name = "herdr"
@@ -238,6 +242,9 @@ harness = "herdr"
 `settings` is relative to the checkout. Event values are `working`, `idle`, `waiting`,
 `needs-review`, `done`, or `failed`.
 Set `note = true` when the harness sends a useful JSON or text explanation to the hook on stdin.
+Set `session_id` to the top-level stdin JSON key containing its stable conversation identity.
+`resume_id` is an argv template; every `{session_id}` placeholder is replaced without invoking a
+shell. `resume` remains the broad fallback for session records created before identity capture.
 Omit `settings` for an environment-only harness. Omit `resume` for a CLI that cannot be asked to
 continue its last conversation; its panes still come back, just empty. A block that reuses a
 built-in name replaces it outright, including a plugin module and resume arguments the built-in
@@ -337,11 +344,13 @@ does not advance the last-looked baseline.
 
 Argus records non-exited shell and agent panes, in worktrees as well as primary checkouts. After a
 daemon restart it launches fresh processes in the recorded checkouts; it does not reattach old PIDs.
-Each agent is asked to continue its last conversation by appending its harness's `resume` arguments
-to the template command — `--continue` for Claude Code and OpenCode, `resume --last` for Codex, and
-nothing for a harness that declares none. Those arguments mean "the last conversation in this
-directory", so when a checkout had two panes of the same agent only the first resumes and the rest
-start new. An agent that exits non-zero within five seconds of a resumed start is taken to have had
+When a pane has a captured harness session ID, Argus appends the harness's exact `resume_id`
+arguments: `--resume <id>` for Claude Code, `resume <id>` for Codex, and `--session <id>` for
+OpenCode. Every identified pane resumes independently, including several of one harness in the same
+checkout. Legacy records without an ID use the broad `resume` arguments (`--continue`,
+`resume --last`, or none). Because those mean "the last conversation in this directory", only one
+legacy pane per checkout and harness may claim broad resume; aliases of the same harness share that
+claim. An agent that exits non-zero within five seconds of a resumed start is taken to have had
 nothing to continue and is replaced by a plain new agent. Editors are not restored. Set
 `ARGUS_NO_RESTORE=1` to start clean.
 
@@ -371,6 +380,7 @@ Every agent pane receives `ARGUS_HOOK`, `ARGUS_HOOK_URL`, `ARGUS_HOOK_TOKEN`, `A
 "$ARGUS_HOOK" status failed "tests failed"
 "$ARGUS_HOOK" title "repairing session restore"
 "$ARGUS_HOOK" checkout
+"$ARGUS_HOOK" session "harness-session-id"
 ```
 
 `argus-hook say "text"` writes text to stdout for harnesses that inject command output into the
@@ -380,15 +390,18 @@ Argus moves the existing pane under that checkout without restarting it. An expl
 `checkout`, but reporting the current directory is the normal form. `needs-review` marks work ready
 to inspect; `done` marks reviewed, completed work. A later `working` report resumes either state.
 
-Claude Code, Codex, OpenCode, and the generic environment-only harness are built in; the Codex one
-exists only to record how that CLI resumes. The Claude harness manages
+Claude Code, Codex, OpenCode, and the generic environment-only harness are built in. The Claude
+harness manages
 `UserPromptSubmit`, `Stop`, `Notification`, and `SessionStart` entries in
-`<checkout>/.claude/settings.local.json`; managed entries are removed when the last agent pane closes
-or during the next daemon startup sweep. A same-named `[[harness]]` block replaces a built-in.
+`<checkout>/.claude/settings.local.json`; its SessionStart hook captures top-level `session_id`.
+Codex uses `<checkout>/.codex/hooks.json` with its required command-string handler shape. OpenCode's
+plugin reports the root session ID and updates it when the process creates a new root. Managed
+entries preserve user settings and are removed when the last agent pane closes or during the next
+daemon startup sweep. A same-named `[[harness]]` block replaces a built-in.
 
-Hook files are checkout-wide. Concurrent panes using the same file-backed harness in one checkout do
-not yet have independent routing; the newest installed pane receives those events. Environment-driven
-reports remain pane-specific.
+Hook files are checkout-wide, but the helper rebases their generated loopback URL to the valid
+pane-specific `ARGUS_HOOK_URL` inherited by each process. Concurrent panes therefore report to their
+own rows even when the newest install rewrote the shared file.
 
 ## Development
 

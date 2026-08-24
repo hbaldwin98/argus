@@ -31,8 +31,6 @@ contract is in [`TARGET.md`](TARGET.md).
 - Make hook events pane-specific and subagent-aware.
 - Define fallback state detection for unsupported harnesses.
 - Add accessible glyphs, transition flashes, and optional notifications.
-- Record each pane's harness session id and resume by it, rather than by the CLI's own "continue the
-  last conversation here" flag, which cannot tell two agents in one checkout apart.
 - Add daemon-arbitrated auto-titling.
 - Expand the template schema only after lifecycle and permission semantics are stable.
 

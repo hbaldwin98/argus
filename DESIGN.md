@@ -123,25 +123,29 @@ draws. Third, a harness that extends through code rather than through JSON can h
 plugin module into the checkout and remove it on the same schedule. OpenCode is the built-in case:
 it has no hook table, so its module carries the event mapping itself and reads `ARGUS_HOOK_URL`
 and `ARGUS_HOOK_TOKEN` at run time rather than having a pane baked into it. A harness also carries
-`resume`, the arguments that make its CLI continue its last conversation, used only when a recorded
-pane is restored — see Session restore. Claude Code, Codex, OpenCode and `generic` are built in;
-Codex is there only to say how it resumes, having no hook mechanism at all. A `[[harness]]` block
-in `projects.toml` adds or replaces one, and an `[[agent]]` template selects one with
+`resume`, the legacy arguments that continue the last conversation, and `resume_id`, an exact argv
+template containing `{session_id}`. Both are used only when a recorded pane is restored. Claude
+Code, Codex, OpenCode and `generic` are built in. Codex uses a project-local `.codex/hooks.json`
+SessionStart adapter; Codex requires the user to trust project hooks before it runs. A `[[harness]]`
+block in `projects.toml` adds or replaces one, and an `[[agent]]` template selects one with
 `harness = "..."`, defaulting to a harness matching its own name. A block cannot supply a plugin,
 so replacing a built-in by name also gives up its module and its resume arguments.
 
 The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
 /pane/<id>/status/<working|idle|waiting|needs-review|done|failed>` with an optional body as the note,
-`POST /pane/<id>/title`, and `POST /pane/<id>/checkout` with a known checkout path. The checkout
+`POST /pane/<id>/title`, `POST /pane/<id>/session` with a validated harness session ID, and `POST
+/pane/<id>/checkout` with a known checkout path. The checkout
 endpoint changes affiliation only: the agent runs `argus-hook checkout` from the directory it has
 already moved to. The status is named in the URL rather than the harness's event name, because the
 installer already resolved that — which is what makes a new harness config instead of a match arm. Managed
 blocks are per-boot: they name an ephemeral port and a per-boot token, so they are swept from every
 configured checkout at startup and removed when the last agent pane in a checkout goes away, along
 with any directory Argus made only to hold them. Moving a pane performs the same cleanup in its old
-checkout and installs its harness in the new one. Hook files are checkout-wide, so concurrent panes
-of the same harness in one checkout do not yet have independent hook routing; a plugin module does
-not have that problem, because it reads the pane out of its own environment.
+checkout and installs its harness in the new one. Hook files are checkout-wide; the helper rebases a
+generated URL to a valid `ARGUS_HOOK_URL` on the same loopback listener, so each process still routes
+to its own pane. The helper reads hook stdin once and can extract both a note and a configured
+top-level session ID key. Claude captures `session_id` at SessionStart. OpenCode's plugin reports only
+the root ID and reports again when a newly created root replaces it.
 
 Agents name their own rows. At session start a harness with a `context_event` is handed
 instructions telling it to run `argus-hook title "..."` once it knows what it is working on, and
@@ -156,7 +160,8 @@ CLI each one is.
 
 ## Session restore
 
-`session.json` records each pane's checkout path, kind, title, status, and note when the daemon
+`session.json` records each pane's checkout path, kind, title, status, note, and optional harness
+session ID when the daemon
 broadcasts a structural tree change. Recording is enabled by `main` only after startup restore, so
 tests do not write the user's session. Older files without status fields restore panes as `Idle`.
 
@@ -168,23 +173,23 @@ On daemon startup:
 - panes whose checkout no longer exists are skipped;
 - shells start as new default shells;
 - the saved status and note are reapplied after each pane starts;
-- agents start as new processes from the saved template name, with their harness's `resume`
-  arguments appended to the template's own command;
-- one pane per checkout and template resumes; a second agent of the same kind in the same checkout
-  starts fresh, because a resume argument names the last conversation in a directory rather than a
-  particular one;
+- an agent with an ID starts with its harness's `resume_id` argv template expanded to that exact ID;
+- every identified pane resumes independently;
+- records without an ID retain broad `resume`; one legacy pane per checkout and harness claims it,
+  so different template aliases of one harness cannot reopen the same last conversation;
 - an agent started that way that exits non-zero within five seconds is taken to have had nothing to
   continue, and is replaced by a plain new agent in the same checkout;
 - a missing or broken pane does not abort restoration;
 - `ARGUS_NO_RESTORE` starts without restoring panes.
 
-`claude` and `opencode` resume with `--continue`, `codex` with `resume --last`, and `generic` not at
-all; a `[[harness]]` block sets its own `resume`, and a block that replaces a built-in by name gives
-up the built-in's along with its plugin.
+Exact templates are Claude `--resume {session_id}`, Codex `resume {session_id}`, and OpenCode
+`--session {session_id}`. Their legacy broad forms are `--continue`, `resume --last`, and
+`--continue`; `generic` has neither. A `[[harness]]` block sets `resume_id`, `resume`, and an
+event-level `session_id` stdin JSON key. Replacing a built-in gives up all of its defaults.
 
-This is relaunch, not process reattachment. PIDs are not stored, and neither are harness session
-IDs: the conversation comes back only as far as a CLI's own "continue the last session" flag
-reaches. Exited panes are omitted. Session replacement uses a same-directory temporary file,
+This is relaunch, not process reattachment. PIDs are not stored. Captured IDs are nonempty, bounded,
+and control-free, and enter the child command as argv rather than shell interpolation. Exited panes
+are omitted. Session replacement uses a same-directory temporary file,
 flush, and atomic rename; on Unix it also syncs the parent directory. A read or parse failure disables
 recording for that daemon run so the recoverable file is not overwritten.
 

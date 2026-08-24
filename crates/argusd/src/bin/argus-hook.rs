@@ -8,6 +8,7 @@
 //! argus-hook status done "reviewed and complete"
 //! argus-hook status working
 //! argus-hook checkout                            # reports the current directory
+//! argus-hook session <id>                        # records exact resume identity
 //! argus-hook say "text"                       # prints, calls nobody
 //! argus-hook <url> <token> [--note-from-stdin]  # the installed hook form
 //! ```
@@ -48,6 +49,7 @@ use std::time::Duration;
 
 const TIMEOUT: Duration = Duration::from_secs(2);
 const NOTE_FLAG: &str = "--note-from-stdin";
+const SESSION_KEY_FLAG: &str = "--session-id-from-stdin";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -57,51 +59,107 @@ fn main() {
         .iter()
         .map(String::as_str)
         .collect::<Vec<_>>();
-    match args.first().map(String::as_str) {
-        Some("say") => {
-            // Deliberately on stdout: this is context for the model.
-            let mut out = std::io::stdout();
-            let _ = writeln!(out, "{}", rest.join(" "));
-            let _ = out.flush();
-        }
-        Some("title") => {
-            let text = rest.join(" ");
-            if !text.trim().is_empty() {
-                let _ = post(&format!("{}/title", env_url()), &env_token(), &text);
+    dispatch(args.first().map(String::as_str), &rest);
+}
+
+type NamedHandler = fn(&[&str]);
+
+const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
+    ("say", say),
+    ("title", title),
+    ("status", status),
+    ("checkout", checkout),
+    ("session", session),
+];
+
+fn dispatch(command: Option<&str>, rest: &[&str]) {
+    match command {
+        // The installed-hook form uses an absolute URL and token because a
+        // harness's hook config cannot count on inheriting the environment.
+        Some(url) if url.starts_with("http://") => installed_hook(url, rest),
+        Some(name) => {
+            if let Some((_, handler)) = NAMED_HANDLERS.iter().find(|(key, _)| *key == name) {
+                handler(rest);
             }
         }
-        Some("status") => {
-            let Some(state) = rest.first() else { return };
-            // Anything after the state is the reason, so
-            // `status waiting "needs a password"` reads the way you'd say it.
-            let note = rest[1..].join(" ");
-            let _ = post(
-                &format!("{}/status/{state}", env_url()),
-                &env_token(),
-                &note,
-            );
-        }
-        Some("checkout") => {
-            if let Some(path) = reported_checkout(&rest) {
-                let _ = post(
-                    &format!("{}/checkout", env_url()),
-                    &env_token(),
-                    &path.to_string_lossy(),
-                );
-            }
-        }
-        // The installed-hook form: an absolute URL and the token, because a
-        // harness's hook config can't count on the environment reaching it.
-        Some(url) if url.starts_with("http://") => {
-            let Some(token) = rest.first() else { return };
-            let note = if rest.contains(&NOTE_FLAG) {
-                read_note()
-            } else {
-                String::new()
-            };
-            let _ = post(url, token, &note);
-        }
-        _ => {}
+        None => {}
+    }
+}
+
+fn say(rest: &[&str]) {
+    // Deliberately on stdout: this is context for the model.
+    let mut out = std::io::stdout();
+    let _ = writeln!(out, "{}", rest.join(" "));
+    let _ = out.flush();
+}
+
+fn title(rest: &[&str]) {
+    let text = rest.join(" ");
+    if !text.trim().is_empty() {
+        let _ = post(&format!("{}/title", env_url()), &env_token(), &text);
+    }
+}
+
+fn status(rest: &[&str]) {
+    let Some(state) = rest.first() else { return };
+    // Anything after the state is the reason, so
+    // `status waiting "needs a password"` reads the way you'd say it.
+    let note = rest[1..].join(" ");
+    let _ = post(
+        &format!("{}/status/{state}", env_url()),
+        &env_token(),
+        &note,
+    );
+}
+
+fn checkout(rest: &[&str]) {
+    if let Some(path) = reported_checkout(rest) {
+        let _ = post(
+            &format!("{}/checkout", env_url()),
+            &env_token(),
+            &path.to_string_lossy(),
+        );
+    }
+}
+
+fn session(rest: &[&str]) {
+    let id = rest.join(" ");
+    if !id.is_empty() {
+        let _ = post(&format!("{}/session", env_url()), &env_token(), &id);
+    }
+}
+
+fn installed_hook(url: &str, rest: &[&str]) {
+    let Some(token) = rest.first() else { return };
+    let (key, raw, note) = installed_input(rest);
+    let inherited_url = env_url();
+    let inherited_token = env_token();
+    let (url, token) = routed_hook(url, token, &inherited_url, &inherited_token);
+    let _ = post(&url, &token, &note);
+    post_session_id(&url, &token, key, raw.as_deref());
+}
+
+fn installed_input<'a>(rest: &'a [&str]) -> (Option<&'a str>, Option<String>, String) {
+    let key = rest
+        .iter()
+        .position(|arg| *arg == SESSION_KEY_FLAG)
+        .and_then(|index| rest.get(index + 1))
+        .copied();
+    let raw = (rest.contains(&NOTE_FLAG) || key.is_some()).then(read_stdin);
+    let note = if rest.contains(&NOTE_FLAG) {
+        raw.as_deref().map(note_from).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    (key, raw, note)
+}
+
+fn post_session_id(url: &str, token: &str, key: Option<&str>, raw: Option<&str>) {
+    let Some(id) = key.and_then(|key| raw.and_then(|raw| json_string(raw, key))) else {
+        return;
+    };
+    if let Some(base) = pane_base(url) {
+        let _ = post(&format!("{base}/session"), token, &id);
     }
 }
 
@@ -124,12 +182,69 @@ fn env_token() -> String {
 /// The message a harness hands its hook on stdin, reduced to the one line
 /// worth showing under a pane. Only called when Argus wrote the flag asking
 /// for it, so there is always a writer on the other end.
-fn read_note() -> String {
+fn read_stdin() -> String {
     let mut raw = String::new();
     if std::io::stdin().read_to_string(&mut raw).is_err() {
         return String::new();
     }
-    note_from(&raw)
+    raw
+}
+
+fn json_string(raw: &str, key: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(raw)
+        .ok()?
+        .get(key)?
+        .as_str()
+        .map(str::to_string)
+}
+
+/// Repoint a checkout-wide managed hook at the pane-specific URL inherited
+/// by this process. Both URLs must name panes on the same loopback listener.
+fn rebase_hook_url(configured: &str, inherited: &str) -> Option<String> {
+    let configured_base = pane_base(configured)?;
+    let inherited_base = pane_base(inherited)?;
+    if authority(&configured_base)? != authority(&inherited_base)? {
+        return None;
+    }
+    let suffix = configured.strip_prefix(&configured_base)?;
+    (!suffix.is_empty()).then(|| format!("{inherited_base}{suffix}"))
+}
+
+fn routed_hook(
+    configured_url: &str,
+    configured_token: &str,
+    inherited_url: &str,
+    inherited_token: &str,
+) -> (String, String) {
+    match (
+        rebase_hook_url(configured_url, inherited_url),
+        !inherited_token.is_empty(),
+    ) {
+        (Some(url), true) => (url, inherited_token.to_string()),
+        _ => (configured_url.to_string(), configured_token.to_string()),
+    }
+}
+
+fn authority(url: &str) -> Option<&str> {
+    url.strip_prefix("http://")?.split('/').next()
+}
+
+fn pane_base(url: &str) -> Option<String> {
+    let rest = url.strip_prefix("http://")?;
+    let (authority, path) = rest.split_once('/')?;
+    let mut parts = path.split('/');
+    if parts.next()? != "pane" {
+        return None;
+    }
+    parts.next()?.parse::<u64>().ok()?;
+    let host = authority.split(':').next()?;
+    if host != "127.0.0.1" || authority.rsplit_once(':')?.1.parse::<u16>().is_err() {
+        return None;
+    }
+    Some(format!(
+        "http://{authority}/pane/{}",
+        path.split('/').nth(1)?
+    ))
 }
 
 /// Harnesses hand hooks a JSON event where they can. `message` is Claude
@@ -185,15 +300,90 @@ mod tests {
     #[test]
     fn a_json_event_gives_up_the_message_a_human_would_read() {
         assert_eq!(
-            note_from(r#"{"session_id":"x","message":"Claude needs your permission to run tests"}"#),
+            note_from(
+                r#"{"session_id":"x","message":"Claude needs your permission to run tests"}"#
+            ),
             "Claude needs your permission to run tests"
+        );
+    }
+
+    #[test]
+    fn one_json_event_can_supply_a_note_and_session_id() {
+        let raw = r#"{"session_id":"session-123","message":"waiting"}"#;
+        assert_eq!(note_from(raw), "waiting");
+        assert_eq!(
+            json_string(raw, "session_id").as_deref(),
+            Some("session-123")
+        );
+    }
+
+    #[test]
+    fn a_checkout_wide_hook_url_rebases_to_the_process_pane() {
+        assert_eq!(
+            rebase_hook_url(
+                "http://127.0.0.1:4242/pane/1/status/idle",
+                "http://127.0.0.1:4242/pane/9"
+            )
+            .as_deref(),
+            Some("http://127.0.0.1:4242/pane/9/status/idle")
+        );
+        assert!(rebase_hook_url(
+            "http://127.0.0.1:4242/pane/1/status/idle",
+            "http://127.0.0.1:9999/pane/9"
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn a_rebased_hook_uses_the_process_token_too() {
+        assert_eq!(
+            routed_hook(
+                "http://127.0.0.1:4242/pane/1/status/idle",
+                "configured-token",
+                "http://127.0.0.1:4242/pane/9",
+                "process-token"
+            ),
+            (
+                "http://127.0.0.1:4242/pane/9/status/idle".to_string(),
+                "process-token".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn an_incomplete_or_foreign_process_pair_keeps_the_configured_pair() {
+        let configured = "http://127.0.0.1:4242/pane/1/status/idle";
+        assert_eq!(
+            routed_hook(configured, "configured-token", "", "process-token"),
+            (configured.to_string(), "configured-token".to_string())
+        );
+        assert_eq!(
+            routed_hook(
+                configured,
+                "configured-token",
+                "http://127.0.0.1:9999/pane/9",
+                "process-token"
+            ),
+            (configured.to_string(), "configured-token".to_string())
+        );
+        assert_eq!(
+            routed_hook(
+                configured,
+                "configured-token",
+                "http://127.0.0.1:4242/pane/9",
+                ""
+            ),
+            (configured.to_string(), "configured-token".to_string())
         );
     }
 
     #[test]
     fn plain_text_falls_back_to_its_first_real_line() {
         // A harness that hands its hooks text rather than JSON.
-        assert_eq!(note_from("\n\n  waiting on review  \nmore"), "waiting on review");
+        assert_eq!(
+            note_from("\n\n  waiting on review  \nmore"),
+            "waiting on review"
+        );
     }
 
     #[test]

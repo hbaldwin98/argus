@@ -4,5 +4,6 @@
 # the daemon that wrote them exits).
 /.argus/
 .claude/settings.local.json
+.codex/hooks.json
 .opencode/plugin/argus-status.js
 cov.xml

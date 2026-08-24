@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
@@ -23,6 +24,8 @@ struct Pane {
     /// The agent template this pane was started from, kept because the
     /// title no longer answers that — an agent may have renamed it.
     template: Option<String>,
+    /// Stable conversation identity reported by the harness.
+    harness_session_id: Option<String>,
     /// Set while this pane is a conversation Argus asked a CLI to reopen,
     /// and it is too early to be sure it could. See [`Resumed`].
     resumed: Option<Resumed>,
@@ -96,6 +99,9 @@ struct Inner {
 
 pub struct Daemon {
     inner: StdMutex<Inner>,
+    /// SessionStart can fire after the child is spawned but before its pane
+    /// is inserted into `inner`. Keep that first identity until insertion.
+    starting_agents: StdMutex<HashMap<PaneId, Option<String>>>,
     tree_tx: broadcast::Sender<Vec<ProjectInfo>>,
     workspaces_tx: broadcast::Sender<Vec<WorkspaceInfo>>,
     templates: Vec<AgentConfig>,
@@ -207,6 +213,7 @@ impl Daemon {
                 ids,
                 open,
             }),
+            starting_agents: StdMutex::new(HashMap::new()),
             workspaces_tx,
             tree_tx,
             templates,
@@ -414,6 +421,7 @@ impl Daemon {
                             template: pane.template.clone(),
                             status: pane.status,
                             note: pane.note.clone(),
+                            harness_session_id: pane.harness_session_id.clone(),
                         })
                 })
                 .collect(),
@@ -465,26 +473,38 @@ impl Daemon {
         self.restoring
             .store(true, std::sync::atomic::Ordering::Relaxed);
         let mut restored = 0usize;
-        let mut claimed: Vec<(PathBuf, &str)> = Vec::new();
+        let mut claimed: Vec<(PathBuf, String)> = Vec::new();
         for pane in &wanted {
             let Some(checkout) = self.checkout_at(&pane.checkout_path) else {
                 continue;
             };
             let result = match pane.kind {
                 PaneKind::Agent => {
-                    // A resume argument names "the last conversation here",
-                    // not a particular one, so two panes of the same agent
-                    // in one checkout would both reopen the same session
-                    // and write over each other. The first pane claims it;
-                    // the rest come back as new agents.
-                    let key = (pane.checkout_path.clone(), pane.template());
-                    let start = if claimed.contains(&key) {
-                        Start::Fresh
-                    } else {
-                        claimed.push(key);
+                    let session_id = pane
+                        .harness_session_id
+                        .as_deref()
+                        .and_then(valid_session_id);
+                    // Exact IDs are independent. Only old records need to
+                    // claim a checkout's broad "last conversation" resume.
+                    let start = if session_id.is_some() {
                         Start::Resuming
+                    } else {
+                        let harness = self
+                            .templates
+                            .iter()
+                            .find(|template| template.name == pane.template())
+                            .map(|template| self.harness_for(template).name);
+                        let key = harness.map(|harness| (pane.checkout_path.clone(), harness));
+                        if key.as_ref().is_some_and(|key| claimed.contains(key)) {
+                            Start::Fresh
+                        } else {
+                            if let Some(key) = key {
+                                claimed.push(key);
+                            }
+                            Start::Resuming
+                        }
                     };
-                    self.start_agent(checkout, pane.template(), start)
+                    self.start_agent(checkout, pane.template(), start, session_id)
                 }
                 _ => self.spawn_shell(checkout),
             };
@@ -551,6 +571,7 @@ impl Daemon {
                     status: PaneStatus::Idle,
                     note: None,
                     template: None,
+                    harness_session_id: None,
                     resumed: None,
                     runtime,
                 });
@@ -631,6 +652,7 @@ impl Daemon {
                     status: PaneStatus::Idle,
                     note: None,
                     template: None,
+                    harness_session_id: None,
                     resumed: None,
                     runtime,
                 });
@@ -647,7 +669,7 @@ impl Daemon {
         checkout: CheckoutId,
         template_name: &str,
     ) -> anyhow::Result<PaneId> {
-        self.start_agent(checkout, template_name, Start::Fresh)
+        self.start_agent(checkout, template_name, Start::Fresh, None)
     }
 
     fn start_agent(
@@ -655,6 +677,7 @@ impl Daemon {
         checkout: CheckoutId,
         template_name: &str,
         start: Start,
+        harness_session_id: Option<String>,
     ) -> anyhow::Result<PaneId> {
         let template = self
             .templates
@@ -677,6 +700,7 @@ impl Daemon {
             let mut inner = self.inner.lock().unwrap();
             PaneId(inner.ids.alloc())
         };
+        self.starting_agents.lock().unwrap().insert(id, None);
 
         // Must land before the process starts: a harness reads its hook
         // config at its own startup, not on later file changes.
@@ -698,7 +722,13 @@ impl Daemon {
         env.retain(|(k, _)| !template.env.contains_key(k));
         env.extend(template.env.clone());
 
-        let (args, resuming) = agent_args(rest, &harness.resume, start);
+        let (args, resuming) = agent_args(
+            rest,
+            &harness.resume,
+            &harness.resume_id,
+            start,
+            harness_session_id.as_deref(),
+        );
 
         let spec = pty::Spawn::Program {
             program: program.clone(),
@@ -707,12 +737,22 @@ impl Daemon {
         };
 
         let daemon = self.clone();
-        let runtime = PaneRuntime::spawn(id, &path, spec, move |code| {
+        let runtime = match PaneRuntime::spawn(id, &path, spec, move |code| {
             daemon.mark_pane_exited(id, code);
-        })?;
+        }) {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                self.starting_agents.lock().unwrap().remove(&id);
+                return Err(error);
+            }
+        };
 
         {
+            // Lock in this order everywhere that spans the pre-spawn mailbox
+            // and pane tree, so an arriving hook cannot slip between them.
+            let mut starting = self.starting_agents.lock().unwrap();
             let mut inner = self.inner.lock().unwrap();
+            let reported_session_id = starting.remove(&id).flatten();
             if let Some(c) = find_checkout(&mut inner.projects, checkout) {
                 c.panes.push(Pane {
                     id,
@@ -721,6 +761,7 @@ impl Daemon {
                     status: PaneStatus::Idle,
                     note: None,
                     template: Some(template.name.clone()),
+                    harness_session_id: reported_session_id.or(harness_session_id),
                     resumed: resuming.then(|| Resumed {
                         checkout,
                         template: template.name.clone(),
@@ -758,7 +799,7 @@ impl Daemon {
                 r.template
             );
             let _ = self.remove_pane(pane);
-            if let Err(e) = self.start_agent(r.checkout, &r.template, Start::Fresh) {
+            if let Err(e) = self.start_agent(r.checkout, &r.template, Start::Fresh, None) {
                 tracing::warn!("could not start {} after a failed resume: {e}", r.template);
             }
             return;
@@ -924,6 +965,36 @@ impl Daemon {
                     true
                 }
                 _ => false,
+            }
+        };
+        if changed {
+            self.broadcast_tree();
+        }
+    }
+
+    fn set_pane_session_id(&self, pane: PaneId, raw: &str) {
+        let Some(session_id) = valid_session_id(raw) else {
+            return;
+        };
+        let changed = {
+            let mut starting = self.starting_agents.lock().unwrap();
+            let mut inner = self.inner.lock().unwrap();
+            match find_pane(&mut inner.projects, pane) {
+                Some(p)
+                    if !matches!(p.status, PaneStatus::Exited { .. })
+                        && p.harness_session_id.as_deref() != Some(&session_id) =>
+                {
+                    p.harness_session_id = Some(session_id);
+                    true
+                }
+                Some(_) => false,
+                None => match starting.get_mut(&pane) {
+                    Some(pending) if pending.as_deref() != Some(&session_id) => {
+                        *pending = Some(session_id);
+                        true
+                    }
+                    _ => false,
+                },
             }
         };
         if changed {
@@ -1495,6 +1566,9 @@ async fn handle_hook_request(
                     tracing::warn!("pane {} could not move checkout: {error}", pane.0);
                 }
             }
+            Some((pane, Endpoint::Session)) => {
+                daemon.set_pane_session_id(pane, &String::from_utf8_lossy(&body))
+            }
             None => {}
         }
         wr.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
@@ -1516,6 +1590,7 @@ enum Endpoint {
     Status(crate::harness::Report),
     Title,
     Checkout,
+    Session,
 }
 
 /// `/pane/<id>/status/<working|idle|waiting|needs-review|done|failed>`,
@@ -1535,6 +1610,7 @@ fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "status" => Endpoint::Status(crate::harness::Report::parse(parts.next()?)?),
         "title" => Endpoint::Title,
         "checkout" => Endpoint::Checkout,
+        "session" => Endpoint::Session,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -1553,6 +1629,12 @@ fn clean_title(raw: &str) -> String {
         Some((i, _)) => format!("{}…", flat[..i].trim_end()),
         None => flat,
     }
+}
+
+fn valid_session_id(raw: &str) -> Option<String> {
+    const MAX: usize = 512;
+    let id = raw.trim();
+    (!id.is_empty() && id.len() <= MAX && !id.chars().any(char::is_control)).then(|| id.to_string())
 }
 
 /// Not cryptographically strong — see `Daemon::hook_token`'s doc comment —
@@ -1584,12 +1666,32 @@ fn has_windows_drive_prefix(path: &str) -> bool {
 /// still apply to the conversation being continued. A harness Argus cannot
 /// ask to resume leaves the command exactly as it was, and the pane is not
 /// treated as resumed: there is nothing for a failure to fall back from.
-fn agent_args(configured: &[String], resume: &[String], start: Start) -> (Vec<String>, bool) {
+fn agent_args(
+    configured: &[String],
+    resume: &[String],
+    resume_id: &[String],
+    start: Start,
+    session_id: Option<&str>,
+) -> (Vec<String>, bool) {
     let mut args = configured.to_vec();
-    if start == Start::Fresh || resume.is_empty() {
+    if start == Start::Fresh {
         return (args, false);
     }
-    args.extend(resume.iter().cloned());
+    if let Some(session_id) = session_id {
+        if resume_id.is_empty() {
+            return (args, false);
+        }
+        args.extend(
+            resume_id
+                .iter()
+                .map(|arg| arg.replace("{session_id}", session_id)),
+        );
+    } else {
+        if resume.is_empty() {
+            return (args, false);
+        }
+        args.extend(resume.iter().cloned());
+    }
     (args, true)
 }
 
@@ -1675,16 +1777,32 @@ mod tests {
             parse_pane_path("/pane/7/checkout"),
             Some((PaneId(7), Endpoint::Checkout))
         );
+        assert_eq!(
+            parse_pane_path("/pane/7/session"),
+            Some((PaneId(7), Endpoint::Session))
+        );
     }
 
     #[test]
     fn a_pane_path_rejects_junk() {
-        assert_eq!(parse_pane_path("/pane/7/status/Stop"), None, "an event name");
-        assert_eq!(parse_pane_path("/pane/7/status/exited"), None, "ours to decide");
+        assert_eq!(
+            parse_pane_path("/pane/7/status/Stop"),
+            None,
+            "an event name"
+        );
+        assert_eq!(
+            parse_pane_path("/pane/7/status/exited"),
+            None,
+            "ours to decide"
+        );
         assert_eq!(parse_pane_path("/nope/7/title"), None, "wrong prefix");
         assert_eq!(parse_pane_path("/pane/abc/title"), None, "non-numeric pane");
         assert_eq!(parse_pane_path("/pane/7"), None, "no endpoint");
-        assert_eq!(parse_pane_path("/pane/7/title/extra"), None, "trailing junk");
+        assert_eq!(
+            parse_pane_path("/pane/7/title/extra"),
+            None,
+            "trailing junk"
+        );
         assert_eq!(parse_pane_path(""), None, "empty path");
     }
 
@@ -1692,9 +1810,24 @@ mod tests {
     fn a_title_from_a_model_is_flattened_and_cut_to_fit_a_row() {
         assert_eq!(clean_title("  fixing\n the   pty  "), "fixing the pty");
         let long = clean_title(&"x".repeat(200));
-        assert!(long.chars().count() <= 49, "got {} chars", long.chars().count());
+        assert!(
+            long.chars().count() <= 49,
+            "got {} chars",
+            long.chars().count()
+        );
         assert!(long.ends_with('…'));
         assert_eq!(clean_title("   "), "");
+    }
+
+    #[test]
+    fn session_ids_are_validated_without_restricting_cli_specific_syntax() {
+        assert_eq!(
+            valid_session_id("  thread/abc:123  ").as_deref(),
+            Some("thread/abc:123")
+        );
+        assert!(valid_session_id("").is_none());
+        assert!(valid_session_id("bad\nid").is_none());
+        assert!(valid_session_id(&"x".repeat(513)).is_none());
     }
 
     /// A daemon holding one live agent pane, and that pane's id.
@@ -1779,7 +1912,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (d, pane) = daemon_with_an_agent(dir.path()).await;
 
-        d.set_pane_hook_status(pane, PaneStatus::Failed, Some("cargo test won't build".into()));
+        d.set_pane_hook_status(
+            pane,
+            PaneStatus::Failed,
+            Some("cargo test won't build".into()),
+        );
         let info = pane_info(&d, pane);
         assert_eq!(info.status, PaneStatus::Failed);
         assert!(info.note.is_some());
@@ -1929,6 +2066,65 @@ mod tests {
         assert!(response.starts_with(b"HTTP/1.1 200 OK"));
         assert_eq!(d.snapshot()[0].checkouts[1].panes[0].id, pane);
         d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_authorized_session_hook_records_exact_identity() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_fake_claude(dir.path());
+        d.start_hook_server().unwrap();
+        let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+        let body = "session-123";
+        let request = format!(
+            "POST /pane/{}/session HTTP/1.1\r\nAuthorization: Bearer {}\r\nContent-Length: {}\r\n\r\n{}",
+            pane.0,
+            d.hook_token,
+            body.len(),
+            body
+        );
+        let port = d.hook_port.load(std::sync::atomic::Ordering::Relaxed);
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        stream.write_all(request.as_bytes()).await.unwrap();
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).await.unwrap();
+
+        assert!(response.starts_with(b"HTTP/1.1 200 OK"));
+        assert_eq!(
+            d.session().panes[0].harness_session_id.as_deref(),
+            Some(body)
+        );
+        d.close_pane(pane).unwrap();
+    }
+
+    #[test]
+    fn session_identity_arriving_before_pane_registration_is_retained() {
+        let d = daemon_with_primary("/repo");
+        let pane = PaneId(42);
+        d.starting_agents.lock().unwrap().insert(pane, None);
+
+        d.set_pane_session_id(pane, "session-early");
+
+        assert_eq!(
+            d.starting_agents
+                .lock()
+                .unwrap()
+                .get(&pane)
+                .and_then(Option::as_deref),
+            Some("session-early")
+        );
+    }
+
+    #[test]
+    fn session_identity_for_an_unknown_pane_is_ignored() {
+        let d = daemon_with_primary("/repo");
+
+        d.set_pane_session_id(PaneId(42), "session-unowned");
+
+        assert!(d.starting_agents.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -2107,11 +2303,6 @@ mod tests {
                 harness: None,
             };
             let h = d.harness_for(&template);
-            // `codex` is the honest exception: it has no hook mechanism at
-            // all, so the environment really is all it gets.
-            if name == "codex" {
-                continue;
-            }
             assert_ne!(
                 h.name, "generic",
                 "{name} has no harness, so its pane can never report"
@@ -2785,19 +2976,48 @@ mod tests {
         let checkout = d.snapshot()[0].checkouts[0].id;
         std::fs::write(dir.path().join("a.txt"), "x").unwrap();
 
-        let made = d.spawn_editor(
-            checkout,
-            "a.txt",
-            None,
-            false,
-            Some("missing/notepad.exe"),
-        );
+        let made = d.spawn_editor(checkout, "a.txt", None, false, Some("missing/notepad.exe"));
 
-        assert!(made.is_err(), "the deliberately missing editor must not launch");
+        assert!(
+            made.is_err(),
+            "the deliberately missing editor must not launch"
+        );
         assert!(
             d.snapshot()[0].checkouts[0].panes.is_empty(),
             "a GUI editor must not become a pane"
         );
+    }
+
+    #[tokio::test]
+    async fn a_terminal_editor_pane_has_no_harness_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_primary(&dir.path().to_string_lossy());
+        let checkout = d.snapshot()[0].checkouts[0].id;
+        std::fs::write(dir.path().join("a.txt"), "x").unwrap();
+        let editor = std::env::current_exe().unwrap();
+
+        let pane = d
+            .spawn_editor(
+                checkout,
+                "a.txt",
+                None,
+                false,
+                Some(&editor.to_string_lossy()),
+            )
+            .unwrap();
+
+        let stored = d
+            .inner
+            .lock()
+            .unwrap()
+            .projects
+            .iter()
+            .flat_map(|project| &project.checkouts)
+            .flat_map(|checkout| &checkout.panes)
+            .find(|candidate| candidate.id == pane)
+            .map(|pane| (pane.kind, pane.harness_session_id.clone()));
+        assert_eq!(stored, Some((PaneKind::Editor, None)));
+        d.close_pane(pane).unwrap();
     }
 
     // --- session restore ----------------------------------------------------
@@ -2836,6 +3056,58 @@ mod tests {
                     template: Some(title.to_string()),
                     status: PaneStatus::Idle,
                     note: None,
+                    harness_session_id: None,
+                })
+                .collect(),
+        });
+    }
+
+    fn persistent_agent_command() -> Vec<String> {
+        if cfg!(windows) {
+            vec!["cmd".into(), "/K".into(), "rem".into()]
+        } else {
+            vec![
+                "sh".into(),
+                "-c".into(),
+                "sleep 30".into(),
+                "argus-test".into(),
+            ]
+        }
+    }
+
+    fn daemon_with_claude_aliases(dir: &std::path::Path, names: &[&str]) -> Arc<Daemon> {
+        Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
+            projects: vec![ProjectConfig {
+                name: "proj".into(),
+                repos: vec![dir.to_string_lossy().to_string()],
+                workspace: None,
+            }],
+            agents: names
+                .iter()
+                .map(|name| AgentConfig {
+                    name: (*name).into(),
+                    cmd: persistent_agent_command(),
+                    env: Default::default(),
+                    harness: Some("claude".into()),
+                })
+                .collect(),
+            harnesses: Vec::new(),
+        })
+    }
+
+    fn record_agents(checkout: &std::path::Path, agents: &[(&str, Option<&str>)]) {
+        crate::session::save(&crate::session::Session {
+            panes: agents
+                .iter()
+                .map(|(template, session_id)| crate::session::SessionPane {
+                    checkout_path: checkout.to_path_buf(),
+                    kind: PaneKind::Agent,
+                    title: (*template).into(),
+                    template: Some((*template).into()),
+                    status: PaneStatus::Idle,
+                    note: None,
+                    harness_session_id: session_id.map(str::to_string),
                 })
                 .collect(),
         });
@@ -2917,6 +3189,7 @@ mod tests {
                     template: Some("test-agent".to_string()),
                     status: PaneStatus::NeedsReview,
                     note: Some("ready to inspect".to_string()),
+                    harness_session_id: None,
                 }],
             });
 
@@ -2960,6 +3233,7 @@ mod tests {
                     template: Some("test-agent".to_string()),
                     status: PaneStatus::Idle,
                     note: None,
+                    harness_session_id: None,
                 }],
             });
 
@@ -2968,7 +3242,10 @@ mod tests {
 
             let panes = &d.snapshot()[0].checkouts[0].panes;
             assert_eq!(panes.len(), 1, "the renamed agent should be back");
-            assert_eq!(panes[0].title, "test-agent", "back under its template's name");
+            assert_eq!(
+                panes[0].title, "test-agent",
+                "back under its template's name"
+            );
 
             close_all(&d);
         });
@@ -3162,7 +3439,9 @@ mod tests {
         let (args, resuming) = agent_args(
             &["--model".to_string(), "opus".to_string()],
             &["--continue".to_string()],
+            &["--resume".to_string(), "{session_id}".to_string()],
             Start::Fresh,
+            None,
         );
         assert_eq!(args, vec!["--model", "opus"]);
         assert!(!resuming);
@@ -3173,7 +3452,9 @@ mod tests {
         let (args, resuming) = agent_args(
             &["--model".to_string(), "opus".to_string()],
             &["--continue".to_string()],
+            &["--resume".to_string(), "{session_id}".to_string()],
             Start::Resuming,
+            None,
         );
         assert_eq!(
             args,
@@ -3183,11 +3464,74 @@ mod tests {
         assert!(resuming);
     }
 
+    #[tokio::test]
+    async fn distinct_exact_ids_in_one_checkout_restore_independently() {
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            record_agents(
+                dir.path(),
+                &[("first", Some("session-a")), ("second", Some("session-b"))],
+            );
+            let d = daemon_with_claude_aliases(dir.path(), &["first", "second"]);
+            d.restore_session();
+
+            assert_eq!(resuming_panes(&d), 2, "exact IDs need no broad claim guard");
+            let mut ids: Vec<_> = d
+                .session()
+                .panes
+                .into_iter()
+                .filter_map(|pane| pane.harness_session_id)
+                .collect();
+            ids.sort();
+            assert_eq!(ids, ["session-a", "session-b"]);
+            close_all(&d);
+        });
+    }
+
+    #[tokio::test]
+    async fn aliases_of_one_harness_share_the_legacy_broad_claim() {
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            record_agents(dir.path(), &[("first", None), ("second", None)]);
+            let d = daemon_with_claude_aliases(dir.path(), &["first", "second"]);
+            d.restore_session();
+
+            assert_eq!(d.snapshot()[0].checkouts[0].panes.len(), 2);
+            assert_eq!(
+                resuming_panes(&d),
+                1,
+                "claim is checkout plus harness, not template"
+            );
+            close_all(&d);
+        });
+    }
+
+    #[test]
+    fn exact_resume_expands_the_id_as_argv_not_shell_text() {
+        let (args, resuming) = agent_args(
+            &["--model".to_string(), "opus".to_string()],
+            &["--continue".to_string()],
+            &["--resume".to_string(), "{session_id}".to_string()],
+            Start::Resuming,
+            Some("session with spaces;still-one-arg"),
+        );
+        assert_eq!(
+            args,
+            [
+                "--model",
+                "opus",
+                "--resume",
+                "session with spaces;still-one-arg"
+            ]
+        );
+        assert!(resuming);
+    }
+
     #[test]
     fn a_harness_that_cannot_resume_restores_the_old_way() {
         // Nothing to append, and nothing for a failed start to fall back
         // from — the pane must not be treated as a resume that went wrong.
-        let (args, resuming) = agent_args(&["-q".to_string()], &[], Start::Resuming);
+        let (args, resuming) = agent_args(&["-q".to_string()], &[], &[], Start::Resuming, None);
         assert_eq!(args, vec!["-q"]);
         assert!(!resuming);
     }
@@ -3220,7 +3564,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let d = daemon_with_fake_claude(dir.path());
         let pane = d
-            .start_agent(only_checkout(&d), "claude", Start::Resuming)
+            .start_agent(only_checkout(&d), "claude", Start::Resuming, None)
             .unwrap();
 
         d.mark_pane_exited(pane, Some(1));
@@ -3240,7 +3584,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let d = daemon_with_fake_claude(dir.path());
         let pane = d
-            .start_agent(only_checkout(&d), "claude", Start::Resuming)
+            .start_agent(only_checkout(&d), "claude", Start::Resuming, None)
             .unwrap();
 
         d.mark_pane_exited(pane, Some(1));
@@ -3260,7 +3604,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let d = daemon_with_fake_claude(dir.path());
         let pane = d
-            .start_agent(only_checkout(&d), "claude", Start::Resuming)
+            .start_agent(only_checkout(&d), "claude", Start::Resuming, None)
             .unwrap();
 
         d.mark_pane_exited(pane, Some(0));

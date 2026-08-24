@@ -79,6 +79,10 @@ pub struct HarnessConfig {
     /// to the agent's `cmd` when Argus restores a recorded pane.
     #[serde(default)]
     pub resume: Vec<String>,
+    /// Arguments for reopening one exact conversation. Every occurrence of
+    /// `{session_id}` is replaced with the captured ID and passed as argv.
+    #[serde(default)]
+    pub resume_id: Vec<String>,
 }
 
 /// A bare status is the common case; the table form is for an event that
@@ -93,6 +97,9 @@ pub enum EventConfig {
         note: bool,
         #[serde(default)]
         matcher: Option<String>,
+        /// Top-level stdin JSON key containing the harness session ID.
+        #[serde(default)]
+        session_id: Option<String>,
     },
 }
 
@@ -104,16 +111,19 @@ impl EventConfig {
                 reports,
                 matcher: None,
                 note_from_stdin: false,
+                session_id_key: None,
             },
             EventConfig::Detailed {
                 reports,
                 note,
                 matcher,
+                session_id,
             } => crate::harness::Event {
                 name,
                 reports,
                 matcher,
                 note_from_stdin: note,
+                session_id_key: session_id,
             },
         }
     }
@@ -144,6 +154,8 @@ impl From<HarnessConfig> for crate::harness::Harness {
             // from a built-in. See `harness::Plugin`.
             plugin: None,
             resume: c.resume,
+            resume_id: c.resume_id,
+            command_string: false,
         }
     }
 }
@@ -207,12 +219,14 @@ const DEFAULT_CONFIG: &str = r#"# Argus projects. Each project groups one or mor
 # hooks_key = "hooks"
 # shape = "flat"            # or "matcher" for Claude Code's nesting
 #
-# resume = ["--continue"]   # how to reopen its last conversation on restart
+# resume = ["--continue"]   # legacy: reopen the last conversation
+# resume_id = ["--resume", "{session_id}"] # reopen one exact conversation
 #
 # [harness.events]
 # turn_start = "working"
 # turn_end = "idle"
 # ask = { reports = "waiting", note = true }   # note: stdin explains why
+# start = { reports = "idle", session_id = "session_id" }
 #
 # [[agent]]
 # name = "herdr"
@@ -230,8 +244,8 @@ pub fn load() -> Result<ConfigFile> {
         std::fs::write(&path, DEFAULT_CONFIG)
             .with_context(|| format!("writing default config to {}", path.display()))?;
     }
-    let raw = std::fs::read_to_string(&path)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let raw =
+        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
     let file: ConfigFile =
         toml::from_str(&raw).with_context(|| format!("parsing {}", path.display()))?;
     Ok(file)
@@ -322,6 +336,26 @@ resume = ["--continue"]
             .find(|h| h.name == "herdr")
             .expect("a configured harness joins the built-ins");
         assert_eq!(herdr.resume, ["--continue"]);
+    }
+
+    #[test]
+    fn a_custom_harness_can_capture_and_resume_an_exact_session() {
+        let cfg = parse(
+            r#"
+[[harness]]
+name = "herdr"
+resume_id = ["--session", "{session_id}"]
+
+[harness.events]
+start = { reports = "idle", session_id = "conversation_id" }
+"#,
+        );
+        let harness: crate::harness::Harness = cfg.harnesses.into_iter().next().unwrap().into();
+        assert_eq!(harness.resume_id, ["--session", "{session_id}"]);
+        assert_eq!(
+            harness.events[0].session_id_key.as_deref(),
+            Some("conversation_id")
+        );
     }
 
     #[test]

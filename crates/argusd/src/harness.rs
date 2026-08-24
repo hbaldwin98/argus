@@ -110,6 +110,9 @@ pub struct Event {
     /// the text saying what it is waiting for.
     #[serde(default)]
     pub note_from_stdin: bool,
+    /// Optional top-level JSON key whose string value identifies the session.
+    #[serde(default)]
+    pub session_id_key: Option<String>,
 }
 
 /// How a hook entry is nested inside the harness's settings file.
@@ -164,6 +167,11 @@ pub struct Harness {
     /// Empty means Argus has no way to ask this CLI to resume, and the
     /// pane comes back the old way: running, with nothing behind it.
     pub resume: Vec<String>,
+    /// Exact resume argv template. `{session_id}` is expanded without a shell.
+    pub resume_id: Vec<String>,
+    /// Codex command hooks accept one command string, unlike Claude's
+    /// `command` plus `args` shape.
+    pub command_string: bool,
 }
 
 impl Harness {
@@ -182,6 +190,8 @@ impl Harness {
             context_event: None,
             plugin: None,
             resume: Vec::new(),
+            resume_id: Vec::new(),
+            command_string: false,
         }
     }
 
@@ -197,12 +207,14 @@ impl Harness {
                     reports: Report::Working,
                     matcher: None,
                     note_from_stdin: false,
+                    session_id_key: None,
                 },
                 Event {
                     name: "Stop".into(),
                     reports: Report::Idle,
                     matcher: None,
                     note_from_stdin: false,
+                    session_id_key: None,
                 },
                 Event {
                     name: "Notification".into(),
@@ -210,6 +222,7 @@ impl Harness {
                     matcher: None,
                     // Carries the text of what it is asking for.
                     note_from_stdin: true,
+                    session_id_key: None,
                 },
                 Event {
                     name: "SessionStart".into(),
@@ -218,6 +231,7 @@ impl Harness {
                     // is still running, so it must not make the pane idle.
                     matcher: Some("startup|resume|clear|fork".into()),
                     note_from_stdin: false,
+                    session_id_key: Some("session_id".into()),
                 },
             ],
             context_event: Some("SessionStart".to_string()),
@@ -226,24 +240,31 @@ impl Harness {
             // is the one the pane had: Argus starts each agent in its own
             // checkout's directory.
             resume: vec!["--continue".to_string()],
+            resume_id: vec!["--resume".to_string(), "{session_id}".to_string()],
+            command_string: false,
         }
     }
 
-    /// Codex has no hook table and no plugin point Argus can write to, so
-    /// its panes only report if the agent runs `argus-hook` itself. It is
-    /// a harness all the same, for the one thing Argus does know how to
-    /// ask it: `codex resume --last`, which reopens the session it had
-    /// rather than the picker a bare `codex resume` would show.
+    /// Codex discovers project hooks in `.codex/hooks.json`. Its command
+    /// handler is a string rather than Claude's command-plus-args object.
     pub fn codex() -> Harness {
         Harness {
             name: "codex".to_string(),
-            settings: None,
+            settings: Some(PathBuf::from(".codex").join("hooks.json")),
             hooks_key: "hooks".to_string(),
-            shape: Shape::Flat,
-            events: Vec::new(),
+            shape: Shape::Matcher,
+            events: vec![Event {
+                name: "SessionStart".into(),
+                reports: Report::Idle,
+                matcher: Some("startup|resume|clear".into()),
+                note_from_stdin: false,
+                session_id_key: Some("session_id".into()),
+            }],
             context_event: None,
             plugin: None,
             resume: vec!["resume".to_string(), "--last".to_string()],
+            resume_id: vec!["resume".to_string(), "{session_id}".to_string()],
+            command_string: true,
         }
     }
 
@@ -269,6 +290,8 @@ impl Harness {
                 source: include_str!("opencode-plugin.js"),
             }),
             resume: vec!["--continue".to_string()],
+            resume_id: vec!["--session".to_string(), "{session_id}".to_string()],
+            command_string: false,
         }
     }
 
@@ -353,16 +376,29 @@ impl Harness {
 
         let command = helper_path();
         for event in &self.events {
-            let entry = status_entry(&command, pane, port, token, event);
-            hooks_obj.insert(
-                event.name.clone(),
-                self.shape.wrap(entry, event.matcher.as_deref()),
-            );
+            let entry = status_entry(&command, pane, port, token, event, self.command_string);
+            match hooks_obj.get_mut(&event.name) {
+                Some(existing) => {
+                    remove_managed(existing);
+                    self.shape.append(existing, entry, event.matcher.as_deref());
+                }
+                None => {
+                    hooks_obj.insert(
+                        event.name.clone(),
+                        self.shape.wrap(entry, event.matcher.as_deref()),
+                    );
+                }
+            }
         }
         if let Some(name) = &self.context_event {
             let entry = say_entry(&command, &instructions());
             match hooks_obj.get_mut(name) {
-                Some(existing) => self.shape.append(existing, entry, None),
+                Some(existing) => {
+                    if !self.events.iter().any(|event| &event.name == name) {
+                        remove_managed(existing);
+                    }
+                    self.shape.append(existing, entry, None)
+                }
                 None => {
                     hooks_obj.insert(name.clone(), self.shape.wrap(entry, None));
                 }
@@ -428,9 +464,11 @@ impl Harness {
             for event in self.managed_events() {
                 // Only drop an entry we recognize as ours. A user who wrote
                 // their own Stop hook keeps it.
-                if hooks.get(event).is_some_and(is_managed_entry) {
-                    hooks.remove(event);
-                    removed = true;
+                if let Some(value) = hooks.get_mut(event) {
+                    removed |= remove_managed(value);
+                    if value.as_array().is_some_and(Vec::is_empty) {
+                        hooks.remove(event);
+                    }
                 }
             }
             if hooks.is_empty() {
@@ -563,7 +601,11 @@ pub fn instructions() -> String {
 /// nothing installs these binaries system-wide. Falls back to the bare name
 /// if the daemon's own path can't be read.
 pub fn helper_path() -> String {
-    let exe = if cfg!(windows) { "argus-hook.exe" } else { "argus-hook" };
+    let exe = if cfg!(windows) {
+        "argus-hook.exe"
+    } else {
+        "argus-hook"
+    };
     std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.join(exe)))
@@ -571,13 +613,32 @@ pub fn helper_path() -> String {
         .unwrap_or_else(|| exe.to_string())
 }
 
-fn status_entry(command: &str, pane: PaneId, port: u16, token: &str, event: &Event) -> Value {
+fn status_entry(
+    command: &str,
+    pane: PaneId,
+    port: u16,
+    token: &str,
+    event: &Event,
+    command_string: bool,
+) -> Value {
     let mut args = vec![
         format!("{}/status/{}", pane_url(pane, port), event.reports.as_str()),
         token.to_string(),
     ];
     if event.note_from_stdin {
         args.push(NOTE_FLAG.to_string());
+    }
+    if let Some(key) = &event.session_id_key {
+        args.push(SESSION_KEY_FLAG.to_string());
+        args.push(key.clone());
+    }
+    if command_string {
+        return json!({
+            "type": "command",
+            "command": command_line(command, &args, false),
+            "commandWindows": command_line(command, &args, true),
+            "timeout": 5
+        });
     }
     json!({
         "type": "command",
@@ -601,6 +662,21 @@ const PLUGIN_MARKER: &str = "argus:managed-plugin";
 /// the pane's note. Only passed on events that actually supply one — the
 /// helper must never block on a stdin nobody is writing to.
 pub const NOTE_FLAG: &str = "--note-from-stdin";
+pub const SESSION_KEY_FLAG: &str = "--session-id-from-stdin";
+
+fn command_line(command: &str, args: &[String], windows: bool) -> String {
+    std::iter::once(command)
+        .chain(args.iter().map(String::as_str))
+        .map(|part| {
+            if windows {
+                format!("\"{}\"", part.replace('"', "\\\""))
+            } else {
+                format!("'{}'", part.replace('\'', "'\"'\"'"))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 
 /// A hook that only prints. `say` needs no daemon and no network, so the
 /// context an agent starts with doesn't depend on the status port being up.
@@ -627,28 +703,31 @@ fn read_settings(path: &Path) -> Value {
     root
 }
 
-/// Whether an event's value is a block Argus wrote: every command in it
-/// names our helper. Anything else — a user's own hook, or a block we only
-/// partly recognize — is left alone. Accepts either [`Shape`], so changing
-/// a harness's shape between runs still leaves its old block removable.
-fn is_managed_entry(value: &Value) -> bool {
-    let Some(items) = value.as_array() else {
-        return false;
-    };
-    if items.is_empty() {
-        return false;
-    }
-    items.iter().all(|item| match item.get("hooks") {
+fn is_managed_item(item: &Value) -> bool {
+    match item.get("hooks") {
         Some(Value::Array(inner)) => !inner.is_empty() && inner.iter().all(names_helper),
         _ => names_helper(item),
-    })
+    }
+}
+
+fn remove_managed(value: &mut Value) -> bool {
+    let Some(items) = value.as_array_mut() else {
+        return false;
+    };
+    let before = items.len();
+    items.retain(|item| !is_managed_item(item));
+    items.len() != before
 }
 
 fn names_helper(entry: &Value) -> bool {
     entry
         .get("command")
         .and_then(Value::as_str)
-        .is_some_and(is_hook_helper)
+        .is_some_and(|command| {
+            is_hook_helper(command)
+                || command.contains("argus-hook")
+                || command.contains("orion-hook")
+        })
 }
 
 /// Matches our helper by file name, so a block written by a daemon that
@@ -682,17 +761,21 @@ mod tests {
                     reports: Report::Working,
                     matcher: None,
                     note_from_stdin: false,
+                    session_id_key: None,
                 },
                 Event {
                     name: "turn_end".into(),
                     reports: Report::Idle,
                     matcher: None,
                     note_from_stdin: false,
+                    session_id_key: None,
                 },
             ],
             context_event: None,
             plugin: None,
             resume: Vec::new(),
+            resume_id: Vec::new(),
+            command_string: false,
         }
     }
 
@@ -712,6 +795,9 @@ mod tests {
             Harness::generic().resume.is_empty(),
             "a CLI Argus knows nothing about is asked for nothing"
         );
+        assert_eq!(Harness::claude().resume_id, ["--resume", "{session_id}"]);
+        assert_eq!(Harness::codex().resume_id, ["resume", "{session_id}"]);
+        assert_eq!(Harness::opencode().resume_id, ["--session", "{session_id}"]);
     }
 
     #[test]
@@ -797,15 +883,20 @@ mod tests {
         let entry = starts
             .iter()
             .find_map(|matcher| {
-                matcher["hooks"].as_array()?.iter().find(|hook| {
-                    hook["args"][0] == "say"
-                })
+                matcher["hooks"]
+                    .as_array()?
+                    .iter()
+                    .find(|hook| hook["args"][0] == "say")
             })
             .unwrap()
             .clone();
         let args: Vec<String> = serde_json::from_value(entry["args"].clone()).unwrap();
         assert_eq!(args[0], "say");
-        assert!(args[1].contains("title"), "should teach renaming: {}", args[1]);
+        assert!(
+            args[1].contains("title"),
+            "should teach renaming: {}",
+            args[1]
+        );
         assert!(
             args[1].contains("checkout"),
             "should teach checkout affiliation: {}",
@@ -844,6 +935,15 @@ mod tests {
             })
             .expect("SessionStart should clear the previous conversation's status");
         assert_eq!(status["matcher"], "startup|resume|clear|fork");
+        assert_eq!(
+            status["hooks"][0]["args"],
+            json!([
+                "http://127.0.0.1:5555/pane/1/status/idle",
+                "tok",
+                SESSION_KEY_FLAG,
+                "session_id"
+            ])
+        );
         let context = starts
             .iter()
             .find(|matcher| matcher["hooks"][0]["args"][0] == "say")
@@ -906,6 +1006,48 @@ mod tests {
     }
 
     #[test]
+    fn codex_uses_its_project_hook_shape_and_cleans_up_only_its_handler() {
+        let dir = tempfile::tempdir().unwrap();
+        let codex = dir.path().join(".codex");
+        std::fs::create_dir_all(&codex).unwrap();
+        std::fs::write(
+            codex.join("hooks.json"),
+            r#"{"description":"mine","hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"my-hook"}]}]}}"#,
+        )
+        .unwrap();
+
+        let h = Harness::codex();
+        h.install(dir.path(), PaneId(8), 4242, "tok").unwrap();
+        let root = settings_of(dir.path(), &h);
+        assert_eq!(root["description"], "mine");
+        let groups = root["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(groups.len(), 2, "the user's SessionStart hook survives");
+        let ours = groups
+            .iter()
+            .find(|group| group["matcher"] == "startup|resume|clear")
+            .unwrap();
+        let command = &ours["hooks"][0];
+        assert!(command["command"]
+            .as_str()
+            .unwrap()
+            .contains(SESSION_KEY_FLAG));
+        assert!(command["commandWindows"].is_string());
+        assert!(
+            command.get("args").is_none(),
+            "Codex requires one command string"
+        );
+
+        h.uninstall(dir.path()).unwrap();
+        let root = settings_of(dir.path(), &h);
+        assert_eq!(root["description"], "mine");
+        assert_eq!(root["hooks"]["SessionStart"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            root["hooks"]["SessionStart"][0]["hooks"][0]["command"],
+            "my-hook"
+        );
+    }
+
+    #[test]
     fn reinstalling_replaces_rather_than_appends() {
         // Every agent spawn rewrites these; a stale entry pointing at a dead
         // port/pane must not accumulate across spawns.
@@ -916,7 +1058,8 @@ mod tests {
 
         let stop = settings_of(dir.path(), &h)["hooks"]["Stop"].clone();
         assert_eq!(stop.as_array().unwrap().len(), 1, "no duplicate matchers");
-        let args: Vec<String> = serde_json::from_value(stop[0]["hooks"][0]["args"].clone()).unwrap();
+        let args: Vec<String> =
+            serde_json::from_value(stop[0]["hooks"][0]["args"].clone()).unwrap();
         assert!(args[0].contains("/pane/2/"));
         assert!(args[0].contains("2222"));
     }
@@ -952,7 +1095,11 @@ mod tests {
         Harness::claude()
             .install(dir.path(), PaneId(1), 1234, "tok")
             .unwrap();
-        assert!(dir.path().join(".claude").join("settings.local.json").is_file());
+        assert!(dir
+            .path()
+            .join(".claude")
+            .join("settings.local.json")
+            .is_file());
     }
 
     // --- uninstall ----------------------------------------------------------
@@ -1007,7 +1154,10 @@ mod tests {
 
         let root = settings_of(dir.path(), &h);
         assert_eq!(root["permissions"]["allow"][0], "Bash");
-        assert!(root["hooks"]["PreToolUse"].is_array(), "the user's hook survives");
+        assert!(
+            root["hooks"]["PreToolUse"].is_array(),
+            "the user's hook survives"
+        );
         for event in h.managed_events() {
             assert!(root["hooks"].get(event).is_none(), "{event} should be gone");
         }
@@ -1040,7 +1190,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let h = Harness::claude();
         h.uninstall(dir.path()).unwrap();
-        assert!(!dir.path().join(".claude").exists(), "must not create anything");
+        assert!(
+            !dir.path().join(".claude").exists(),
+            "must not create anything"
+        );
 
         h.install(dir.path(), PaneId(1), 5555, "tok").unwrap();
         h.uninstall(dir.path()).unwrap();
@@ -1072,7 +1225,11 @@ mod tests {
         h.install(dir.path(), PaneId(1), 5555, "tok").unwrap();
         h.uninstall(dir.path()).unwrap();
 
-        assert_eq!(settings_of(dir.path(), &h), original, "no residue left behind");
+        assert_eq!(
+            settings_of(dir.path(), &h),
+            original,
+            "no residue left behind"
+        );
     }
 
     #[test]
@@ -1189,7 +1346,12 @@ mod tests {
         // Completion states are explicit agent reports taught through the
         // injected instructions; lifecycle events supply only these states.
         let source = Harness::opencode().plugin.unwrap().source;
-        for r in [Report::Working, Report::Idle, Report::Waiting, Report::Failed] {
+        for r in [
+            Report::Working,
+            Report::Idle,
+            Report::Waiting,
+            Report::Failed,
+        ] {
             assert!(
                 source.contains(&format!("\"{}\"", r.as_str())),
                 "the opencode plugin never reports {}",
@@ -1265,8 +1427,10 @@ process.stdout.write(JSON.stringify(reports));
         assert_eq!(
             reports,
             json!([
+                { "status": "session", "note": "old" },
                 { "status": "working", "note": "" },
                 { "status": "failed", "note": "PermissionDenied" },
+                { "status": "session", "note": "new" },
                 { "status": "idle", "note": "" },
                 { "status": "working", "note": "" },
             ])
@@ -1291,7 +1455,11 @@ process.stdout.write(JSON.stringify(reports));
         for r in Report::ALL {
             assert_eq!(Report::parse(r.as_str()), Some(r));
         }
-        assert_eq!(Report::parse("exited"), None, "only the daemon decides that");
+        assert_eq!(
+            Report::parse("exited"),
+            None,
+            "only the daemon decides that"
+        );
         assert_eq!(Report::parse(""), None);
     }
 

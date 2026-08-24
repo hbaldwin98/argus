@@ -20,6 +20,7 @@ const children = new Set();
 
 // Several of these fire per turn, and the row only changes on a change.
 let lastSent;
+let lastSessionSent;
 
 async function report(status, note = "") {
   if (!BASE || !TOKEN) return;
@@ -37,6 +38,21 @@ async function report(status, note = "") {
     // Deliberately silent. The daemon that wrote this file may already have
     // exited, and a port that now belongs to nobody must degrade to a stale
     // row — never to an error the user sees in the middle of a turn.
+  }
+}
+
+async function reportSession(sessionID) {
+  if (!BASE || !TOKEN || !sessionID || sessionID === lastSessionSent) return;
+  lastSessionSent = sessionID;
+  try {
+    await fetch(`${BASE}/session`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}` },
+      body: sessionID,
+      signal: AbortSignal.timeout(2000),
+    });
+  } catch {
+    // Session identity is best-effort for the same reason as status.
   }
 }
 
@@ -68,7 +84,10 @@ export const ArgusStatus = async () => {
     // The instant signal: this fires when the prompt is submitted, before
     // any model call, which is what turns the row over as you hit enter.
     "chat.message": async ({ sessionID }) => {
-      if (ownedByPane(sessionID)) await report("working");
+      if (ownedByPane(sessionID)) {
+        await reportSession(rootSession);
+        await report("working");
+      }
     },
 
     // Where the agent is told it can name its own row. opencode has no
@@ -93,10 +112,12 @@ export const ArgusStatus = async () => {
       // be mistaken for another session and the previous status would stick.
       if (type === "session.created" && props.info?.id && !props.info.parentID) {
         rootSession = props.info.id;
+        await reportSession(rootSession);
         await report("idle");
         return;
       }
       if (!ownedByPane(sessionID)) return;
+      await reportSession(rootSession);
 
       switch (type) {
         // The authoritative one. opencode drops the session to `idle` both
