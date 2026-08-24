@@ -249,8 +249,11 @@ impl Daemon {
             .workspaces
             .iter()
             .map(|w| {
-                let projects: Vec<&Project> =
-                    inner.projects.iter().filter(|p| p.workspace == w.id).collect();
+                let projects: Vec<&Project> = inner
+                    .projects
+                    .iter()
+                    .filter(|p| p.workspace == w.id)
+                    .collect();
                 WorkspaceInfo {
                     id: w.id,
                     name: w.name.clone(),
@@ -320,11 +323,14 @@ impl Daemon {
                 .iter()
                 .flat_map(|p| p.checkouts.iter())
                 .flat_map(|c| {
-                    c.panes.iter().map(|pane| crate::session::SessionPane {
-                        checkout_path: c.path.clone(),
-                        kind: pane.kind,
-                        title: pane.title.clone(),
-                    })
+                    c.panes
+                        .iter()
+                        .filter(|pane| !matches!(pane.status, PaneStatus::Exited { .. }))
+                        .map(|pane| crate::session::SessionPane {
+                            checkout_path: c.path.clone(),
+                            kind: pane.kind,
+                            title: pane.title.clone(),
+                        })
                 })
                 .collect(),
         }
@@ -351,17 +357,19 @@ impl Daemon {
     ///
     /// Failures are per pane and never fatal: a template that has since
     /// stopped working should cost you that pane, not the whole session.
-    pub fn restore_session(self: &Arc<Self>) {
-        let saved = crate::session::load();
+    pub fn restore_session(self: &Arc<Self>) -> bool {
+        let Some(saved) = crate::session::load() else {
+            return false;
+        };
         if saved.panes.is_empty() {
-            return;
+            return true;
         }
         let known = self.checkout_paths();
         let wanted: Vec<crate::session::SessionPane> = crate::session::restorable(&saved, &known)
             .cloned()
             .collect();
         if wanted.is_empty() {
-            return;
+            return true;
         }
 
         self.restoring
@@ -389,6 +397,7 @@ impl Daemon {
 
         tracing::info!("restored {restored} of {} panes", wanted.len());
         self.broadcast_tree();
+        true
     }
 
     /// The checkout at `path`, whatever workspace it is in.
@@ -516,7 +525,11 @@ impl Daemon {
         Ok(id)
     }
 
-    pub fn spawn_agent(self: &Arc<Self>, checkout: CheckoutId, template_name: &str) -> anyhow::Result<PaneId> {
+    pub fn spawn_agent(
+        self: &Arc<Self>,
+        checkout: CheckoutId,
+        template_name: &str,
+    ) -> anyhow::Result<PaneId> {
         let template = self
             .templates
             .iter()
@@ -546,7 +559,9 @@ impl Daemon {
         if template.name == "claude" {
             let port = self.hook_port.load(std::sync::atomic::Ordering::Relaxed);
             if port != 0 {
-                if let Err(e) = crate::hooks::install_claude_hooks(&path, id, port, &self.hook_token) {
+                if let Err(e) =
+                    crate::hooks::install_claude_hooks(&path, id, port, &self.hook_token)
+                {
                     tracing::warn!("failed to install claude hooks in {}: {e}", path.display());
                 }
             }
@@ -618,13 +633,15 @@ impl Daemon {
 
     pub fn write_pane(&self, pane: PaneId, bytes: &[u8]) -> anyhow::Result<()> {
         let mut inner = self.inner.lock().unwrap();
-        let p = find_pane(&mut inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
+        let p =
+            find_pane(&mut inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
         p.runtime.write_input(bytes)
     }
 
     pub fn resize_pane(&self, pane: PaneId, rows: u16, cols: u16) -> anyhow::Result<()> {
         let inner = self.inner.lock().unwrap();
-        let p = find_pane_ref(&inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
+        let p =
+            find_pane_ref(&inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
         p.runtime.resize(rows, cols)?;
         // A subscribed client's cached grid is only ever sized by whatever
         // snapshot it last received; incremental Damage can't grow it.
@@ -638,7 +655,8 @@ impl Daemon {
 
     pub fn subscribe_pane(&self, pane: PaneId) -> anyhow::Result<PaneSubscription> {
         let inner = self.inner.lock().unwrap();
-        let p = find_pane_ref(&inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
+        let p =
+            find_pane_ref(&inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
         let (rows, cols, cells) = p.runtime.full_snapshot();
         let rx = p.runtime.subscribe();
         Ok((rows, cols, cells, rx))
@@ -653,13 +671,16 @@ impl Daemon {
         let std_listener = std::net::TcpListener::bind("127.0.0.1:0")?;
         std_listener.set_nonblocking(true)?;
         let port = std_listener.local_addr()?.port();
-        self.hook_port.store(port, std::sync::atomic::Ordering::Relaxed);
+        self.hook_port
+            .store(port, std::sync::atomic::Ordering::Relaxed);
         let listener = tokio::net::TcpListener::from_std(std_listener)?;
 
         let daemon = self.clone();
         tokio::spawn(async move {
             loop {
-                let Ok((stream, _)) = listener.accept().await else { break };
+                let Ok((stream, _)) = listener.accept().await else {
+                    break;
+                };
                 let daemon = daemon.clone();
                 tokio::spawn(async move {
                     let _ = handle_hook_request(stream, daemon).await;
@@ -707,7 +728,7 @@ impl Daemon {
                 let daemon = daemon.clone();
                 let _ = tokio::task::spawn_blocking(move || {
                     daemon.reconcile_worktrees();
-                    daemon.broadcast_tree();
+                    let _ = daemon.tree_tx.send(daemon.snapshot());
                 })
                 .await;
             }
@@ -733,7 +754,11 @@ impl Daemon {
             let mut guard = self.inner.lock().unwrap();
             let Inner { projects, ids, .. } = &mut *guard;
             for project in projects.iter_mut() {
-                let Some(primary_path) = project.checkouts.iter().find(|c| c.primary).map(|c| c.path.clone())
+                let Some(primary_path) = project
+                    .checkouts
+                    .iter()
+                    .find(|c| c.primary)
+                    .map(|c| c.path.clone())
                 else {
                     continue;
                 };
@@ -763,7 +788,8 @@ impl Daemon {
 
                 let mut i = 0;
                 while i < project.checkouts.len() {
-                    let gone = !project.checkouts[i].primary && !listed.contains(&project.checkouts[i].path);
+                    let gone = !project.checkouts[i].primary
+                        && !listed.contains(&project.checkouts[i].path);
                     if gone {
                         orphaned_panes.extend(project.checkouts.remove(i).panes);
                     } else {
@@ -836,7 +862,8 @@ impl Daemon {
     /// Creates a branch here and moves onto it, leaving the checkout where
     /// it is — unlike `create_worktree`, which makes a directory for it.
     pub async fn create_branch(&self, checkout: CheckoutId, branch: &str) -> anyhow::Result<()> {
-        self.git_switch(checkout, &["switch", "-c", branch], branch).await
+        self.git_switch(checkout, &["switch", "-c", branch], branch)
+            .await
     }
 
     async fn git_switch(
@@ -878,7 +905,11 @@ impl Daemon {
         Ok(())
     }
 
-    pub async fn create_worktree(self: &Arc<Self>, base: CheckoutId, branch: String) -> anyhow::Result<()> {
+    pub async fn create_worktree(
+        self: &Arc<Self>,
+        base: CheckoutId,
+        branch: String,
+    ) -> anyhow::Result<()> {
         let branch = branch.trim().to_string();
         if branch.is_empty() {
             anyhow::bail!("branch name can't be empty");
@@ -886,7 +917,8 @@ impl Daemon {
 
         let (project_id, base_path, primary_path) = {
             let inner = self.inner.lock().unwrap();
-            find_checkout_context(&inner.projects, base).ok_or_else(|| anyhow::anyhow!("no such checkout"))?
+            find_checkout_context(&inner.projects, base)
+                .ok_or_else(|| anyhow::anyhow!("no such checkout"))?
         };
         let dest = primary_path.join(".argus").join("worktrees").join(&branch);
 
@@ -897,7 +929,10 @@ impl Daemon {
             .output()
             .await?;
         if !output.status.success() {
-            anyhow::bail!("git worktree add failed: {}", String::from_utf8_lossy(&output.stderr).trim());
+            anyhow::bail!(
+                "git worktree add failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
         }
 
         {
@@ -933,9 +968,10 @@ impl Daemon {
     pub async fn remove_checkout(&self, checkout: CheckoutId) -> anyhow::Result<()> {
         let (path, primary, primary_path, pane_ids) = {
             let inner = self.inner.lock().unwrap();
-            let c = find_checkout_ref(&inner.projects, checkout).ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
-            let (_, _, primary_path) =
-                find_checkout_context(&inner.projects, checkout).ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
+            let c = find_checkout_ref(&inner.projects, checkout)
+                .ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
+            let (_, _, primary_path) = find_checkout_context(&inner.projects, checkout)
+                .ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
             (
                 c.path.clone(),
                 c.primary,
@@ -960,7 +996,10 @@ impl Daemon {
             .output()
             .await?;
         if !output.status.success() {
-            anyhow::bail!("git worktree remove failed: {}", String::from_utf8_lossy(&output.stderr).trim());
+            anyhow::bail!(
+                "git worktree remove failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
         }
 
         if let Some(branch) = branch {
@@ -1001,7 +1040,10 @@ fn find_project(projects: &mut [Project], id: ProjectId) -> Option<&mut Project>
 /// For a checkout, the id of its owning project, that checkout's own path
 /// (the base to branch off / run `git worktree` commands from), and its
 /// project's primary checkout path (where new worktrees get placed).
-fn find_checkout_context(projects: &[Project], id: CheckoutId) -> Option<(ProjectId, PathBuf, PathBuf)> {
+fn find_checkout_context(
+    projects: &[Project],
+    id: CheckoutId,
+) -> Option<(ProjectId, PathBuf, PathBuf)> {
     projects.iter().find_map(|p| {
         let base = p.checkouts.iter().find(|c| c.id == id)?;
         let primary = p.checkouts.iter().find(|c| c.primary).unwrap_or(base);
@@ -1079,7 +1121,10 @@ fn remove_pane_with_checkout(projects: &mut [Project], id: PaneId) -> Option<(Pa
 /// the request shape is entirely our own (we generate every hook command
 /// that ever calls this), so there's nothing to be robust against beyond
 /// "well-formed or ignored".
-async fn handle_hook_request(stream: tokio::net::TcpStream, daemon: Arc<Daemon>) -> anyhow::Result<()> {
+async fn handle_hook_request(
+    stream: tokio::net::TcpStream,
+    daemon: Arc<Daemon>,
+) -> anyhow::Result<()> {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
     let (rd, mut wr) = tokio::io::split(stream);
@@ -1101,8 +1146,13 @@ async fn handle_hook_request(stream: tokio::net::TcpStream, daemon: Arc<Daemon>)
         if n == 0 || line == "\r\n" || line == "\n" {
             break;
         }
-        if let Some(v) = line.strip_prefix("Authorization:").or_else(|| line.strip_prefix("authorization:")) {
-            authorized = v.trim().eq_ignore_ascii_case(&format!("Bearer {}", daemon.hook_token));
+        if let Some(v) = line
+            .strip_prefix("Authorization:")
+            .or_else(|| line.strip_prefix("authorization:"))
+        {
+            authorized = v
+                .trim()
+                .eq_ignore_ascii_case(&format!("Bearer {}", daemon.hook_token));
         } else if let Some(v) = line
             .strip_prefix("Content-Length:")
             .or_else(|| line.strip_prefix("content-length:"))
@@ -1119,10 +1169,13 @@ async fn handle_hook_request(stream: tokio::net::TcpStream, daemon: Arc<Daemon>)
         if let Some((pane, status)) = parse_hook_path(&path) {
             daemon.set_pane_hook_status(pane, status);
         }
-        wr.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await?;
-    } else {
-        wr.write_all(b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        wr.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
             .await?;
+    } else {
+        wr.write_all(
+            b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        )
+        .await?;
     }
     Ok(())
 }
@@ -1164,7 +1217,11 @@ fn gen_token() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let mut hasher = DefaultHasher::new();
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos().hash(&mut hasher);
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos()
+        .hash(&mut hasher);
     std::process::id().hash(&mut hasher);
     let a = hasher.finish();
     std::thread::current().id().hash(&mut hasher);
@@ -1212,7 +1269,10 @@ mod tests {
             parse_hook_path("/hook/7/UserPromptSubmit"),
             Some((PaneId(7), PaneStatus::Working))
         );
-        assert_eq!(parse_hook_path("/hook/7/Stop"), Some((PaneId(7), PaneStatus::Idle)));
+        assert_eq!(
+            parse_hook_path("/hook/7/Stop"),
+            Some((PaneId(7), PaneStatus::Idle))
+        );
         assert_eq!(
             parse_hook_path("/hook/7/Notification"),
             Some((PaneId(7), PaneStatus::Waiting))
@@ -1221,9 +1281,17 @@ mod tests {
 
     #[test]
     fn hook_path_rejects_junk() {
-        assert_eq!(parse_hook_path("/hook/7/SessionStart"), None, "unmanaged event");
+        assert_eq!(
+            parse_hook_path("/hook/7/SessionStart"),
+            None,
+            "unmanaged event"
+        );
         assert_eq!(parse_hook_path("/nope/7/Stop"), None, "wrong prefix");
-        assert_eq!(parse_hook_path("/hook/abc/Stop"), None, "non-numeric pane id");
+        assert_eq!(
+            parse_hook_path("/hook/abc/Stop"),
+            None,
+            "non-numeric pane id"
+        );
         assert_eq!(parse_hook_path("/hook/7"), None, "missing event");
         assert_eq!(parse_hook_path(""), None, "empty path");
     }
@@ -1266,7 +1334,11 @@ mod tests {
         d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/.argus/worktrees/feat"]));
 
         let paths = checkout_paths(&d);
-        assert_eq!(paths.len(), 2, "discovered worktree should join the tree: {paths:?}");
+        assert_eq!(
+            paths.len(),
+            2,
+            "discovered worktree should join the tree: {paths:?}"
+        );
         assert!(paths.iter().any(|p| p.ends_with("feat")));
     }
 
@@ -1279,7 +1351,10 @@ mod tests {
         let primary = checkouts.iter().find(|c| c.path == "/repo").unwrap();
         let linked = checkouts.iter().find(|c| c.path == "/repo/wt").unwrap();
         assert!(primary.primary, "the configured checkout stays primary");
-        assert!(!linked.primary, "a discovered worktree is removable, not primary");
+        assert!(
+            !linked.primary,
+            "a discovered worktree is removable, not primary"
+        );
     }
 
     #[test]
@@ -1288,7 +1363,11 @@ mod tests {
         for _ in 0..3 {
             d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
         }
-        assert_eq!(checkout_paths(&d).len(), 2, "repeated ticks must not duplicate rows");
+        assert_eq!(
+            checkout_paths(&d).len(),
+            2,
+            "repeated ticks must not duplicate rows"
+        );
     }
 
     #[test]
@@ -1347,8 +1426,14 @@ mod tests {
     #[test]
     fn worktree_display_name_falls_back_to_the_directory_name() {
         // Non-repo path: no branch to read, so the leaf directory names it.
-        assert_eq!(worktree_display_name(std::path::Path::new("/repo/wt/feat-x"), false), "feat-x");
-        assert_eq!(worktree_display_name(std::path::Path::new("/repo"), true), "repo");
+        assert_eq!(
+            worktree_display_name(std::path::Path::new("/repo/wt/feat-x"), false),
+            "feat-x"
+        );
+        assert_eq!(
+            worktree_display_name(std::path::Path::new("/repo"), true),
+            "repo"
+        );
     }
 
     // --- tree broadcast ----------------------------------------------------
@@ -1360,7 +1445,9 @@ mod tests {
         d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
         d.broadcast_tree();
 
-        let tree = rx.try_recv().expect("a tree snapshot should have been broadcast");
+        let tree = rx
+            .try_recv()
+            .expect("a tree snapshot should have been broadcast");
         assert_eq!(tree[0].checkouts.len(), 2);
     }
 
@@ -1427,7 +1514,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let d = daemon_with_fake_claude(dir.path());
         d.sweep_stale_hooks();
-        assert!(!dir.path().join(".claude").exists(), "must not create anything");
+        assert!(
+            !dir.path().join(".claude").exists(),
+            "must not create anything"
+        );
     }
 
     #[tokio::test]
@@ -1491,7 +1581,8 @@ mod tests {
         index.write().unwrap();
         let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
         let sig = git2::Signature::now("t", "t@example.com").unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[]).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .unwrap();
         drop(tree);
         repo
     }
@@ -1550,11 +1641,16 @@ mod tests {
         assert_eq!(d.snapshot()[0].checkouts.len(), 1);
 
         // Someone runs `git worktree add` in a shell.
-        repo.worktree("feature", &dir.path().join("wt-feature"), None).unwrap();
+        repo.worktree("feature", &dir.path().join("wt-feature"), None)
+            .unwrap();
 
         d.reconcile_worktrees();
         let checkouts = &d.snapshot()[0].checkouts;
-        assert_eq!(checkouts.len(), 2, "the new worktree should appear: {checkouts:?}");
+        assert_eq!(
+            checkouts.len(),
+            2,
+            "the new worktree should appear: {checkouts:?}"
+        );
         assert!(
             checkouts.iter().any(|c| !c.primary),
             "and be removable, not marked primary"
@@ -1650,7 +1746,11 @@ mod tests {
     fn the_tree_is_scoped_to_the_open_workspace() {
         with_temp_config(|_| {
             let d = Daemon::new(config_with_workspaces());
-            assert_eq!(names_of(&d), vec!["home-thing"], "only the default workspace");
+            assert_eq!(
+                names_of(&d),
+                vec!["home-thing"],
+                "only the default workspace"
+            );
 
             d.open_workspace(workspace_named(&d, "work")).unwrap();
             assert_eq!(names_of(&d), vec!["day-job"]);
@@ -1734,7 +1834,8 @@ mod tests {
 
             // The user deletes that workspace's project from their config.
             let mut cfg = config_with_workspaces();
-            cfg.projects.retain(|p| p.workspace.as_deref() != Some("weekend"));
+            cfg.projects
+                .retain(|p| p.workspace.as_deref() != Some("weekend"));
             let next = Daemon::new(cfg);
             assert_eq!(
                 next.workspaces().into_iter().find(|w| w.open).unwrap().name,
@@ -1790,7 +1891,10 @@ mod tests {
 
             let rollup = d.workspaces();
             let other_ws = rollup.iter().find(|w| w.name == "other").unwrap();
-            assert_eq!(other_ws.panes, 1, "the pane is still running and still counted");
+            assert_eq!(
+                other_ws.panes, 1,
+                "the pane is still running and still counted"
+            );
 
             let _ = d.close_pane(pane);
         });
@@ -1806,10 +1910,16 @@ mod tests {
             d.add_project(&repo.path().to_string_lossy()).unwrap();
 
             assert!(
-                names_of(&d).iter().any(|n| n == repo.path().file_name().unwrap().to_str().unwrap()),
+                names_of(&d)
+                    .iter()
+                    .any(|n| n == repo.path().file_name().unwrap().to_str().unwrap()),
                 "a project added while looking at a workspace belongs to it"
             );
-            let work = d.workspaces().into_iter().find(|w| w.name == "work").unwrap();
+            let work = d
+                .workspaces()
+                .into_iter()
+                .find(|w| w.name == "work")
+                .unwrap();
             assert_eq!(work.projects, 2);
         });
     }
@@ -1946,7 +2056,10 @@ mod tests {
             .unwrap_err()
             .to_string();
 
-        assert!(!err.is_empty(), "git's refusal is what the user needs to read");
+        assert!(
+            !err.is_empty(),
+            "git's refusal is what the user needs to read"
+        );
     }
 
     #[tokio::test]
@@ -2045,7 +2158,7 @@ mod tests {
     }
 
     fn saved_panes() -> Vec<crate::session::SessionPane> {
-        crate::session::load().panes
+        crate::session::load().unwrap().panes
     }
 
     #[test]
@@ -2164,6 +2277,20 @@ mod tests {
         });
     }
 
+    #[test]
+    fn a_broken_session_is_left_untouched_for_recovery() {
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|cfg| {
+            let path = cfg.join("session.json");
+            let broken = b"{ incomplete";
+            std::fs::write(&path, broken).unwrap();
+
+            let d = daemon_for_restore(dir.path());
+            assert!(!d.restore_session(), "main must not enable persistence");
+            assert_eq!(std::fs::read(&path).unwrap(), broken);
+        });
+    }
+
     #[tokio::test]
     async fn a_daemon_that_was_never_told_to_persist_records_nothing() {
         // Every test builds a daemon; none of them may write over the real
@@ -2197,4 +2324,19 @@ mod tests {
         });
     }
 
+    #[tokio::test]
+    async fn an_exited_pane_is_not_recorded_as_running() {
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            let d = daemon_for_restore(dir.path());
+            d.persist_session();
+            let checkout = d.snapshot()[0].checkouts[0].id;
+            let pane = d.spawn_shell(checkout).unwrap();
+
+            d.mark_pane_exited(pane, Some(0));
+
+            assert!(saved_panes().is_empty());
+            close_all(&d);
+        });
+    }
 }

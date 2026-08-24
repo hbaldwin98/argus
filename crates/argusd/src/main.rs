@@ -1,9 +1,9 @@
 mod browse;
 mod command;
-mod diff;
-mod editor;
 mod config;
 mod conn;
+mod diff;
+mod editor;
 mod git;
 mod hooks;
 mod pty;
@@ -15,7 +15,9 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .with_writer(std::io::stderr)
         .init();
 
@@ -27,8 +29,9 @@ async fn main() -> anyhow::Result<()> {
     daemon.start_hook_server()?;
     daemon.start_git_poll();
     // After the hook server, so a restored agent gets working hooks.
-    daemon.restore_session();
-    daemon.persist_session();
+    if daemon.restore_session() {
+        daemon.persist_session();
+    }
 
     let mut listener = argus_protocol::transport::Listener::bind().await?;
     tracing::info!("argusd listening");

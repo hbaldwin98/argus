@@ -265,7 +265,8 @@ pub struct App {
     pub review: Option<ReviewView>,
     /// What the outstanding request was for; a diff for anything else is
     /// stale and dropped.
-    review_wanted: Option<CheckoutId>,
+    review_wanted: Option<(CheckoutId, u64)>,
+    next_review_request: u64,
     /// Same, for a branch or file list.
     list_wanted: Option<CheckoutId>,
     /// Sticky across reopens, so `b` is a setting rather than a per-visit
@@ -330,6 +331,7 @@ impl App {
             pending_overlay_new: false,
             review: None,
             review_wanted: None,
+            next_review_request: 1,
             list_wanted: None,
             review_base: ReviewBase::WorkingTree,
             prompt: None,
@@ -502,32 +504,30 @@ impl App {
                 }
             }
             ServerMsg::PaneClosed { pane, code } => {
-                // Otherwise the window sits there showing a dead grid,
-                // which is exactly what a hung editor looks like.
-                if self.overlay_pane() == Some(pane) {
-                    self.close_overlay();
-                }
-                self.grids.remove(&pane);
-                if self.column_pane() == Some(pane) {
-                    self.status = format!("pane exited ({code:?})");
-                }
+                self.receive_pane_closed(pane, code);
             }
             ServerMsg::Review(review) => {
-                if self.review_wanted != Some(review.checkout) {
-                    return;
-                }
-                self.review_wanted = None;
-                let files = review.files.len();
-                let view = ReviewView::new(review);
-                if view.is_empty() {
-                    self.review = None;
-                    self.status = "no uncommitted changes".to_string();
-                } else {
-                    self.review = Some(view);
-                    self.overlay = Some(Overlay::Review);
-                    self.focus = Focus::Review;
-                    self.status = format!("{files} changed vs {}", self.review_base.label());
-                }
+                self.receive_review(review);
+            }
+            ServerMsg::ReviewFailed {
+                request_id,
+                checkout,
+                message,
+            } => {
+                self.receive_review_failure(request_id, checkout, message);
+            }
+            ServerMsg::ReviewAcknowledged {
+                checkout,
+                target_snapshot,
+            } => {
+                self.receive_review_acknowledgement(checkout, &target_snapshot, None);
+            }
+            ServerMsg::ReviewAcknowledgeFailed {
+                checkout,
+                target_snapshot,
+                message,
+            } => {
+                self.receive_review_acknowledgement(checkout, &target_snapshot, Some(message));
             }
             ServerMsg::Branches { checkout, branches } => {
                 if self.list_wanted != Some(checkout) {
@@ -565,6 +565,63 @@ impl App {
             ServerMsg::Error { message } => {
                 self.status = format!("error: {message}");
             }
+        }
+    }
+
+    fn receive_pane_closed(&mut self, pane: PaneId, code: Option<i32>) {
+        // Otherwise the window sits there showing a dead grid, which is
+        // exactly what a hung editor looks like.
+        if self.overlay_pane() == Some(pane) {
+            self.close_overlay();
+        }
+        self.grids.remove(&pane);
+        if self.column_pane() == Some(pane) {
+            self.status = format!("pane exited ({code:?})");
+        }
+    }
+
+    fn receive_review(&mut self, review: argus_protocol::Review) {
+        if self.review_wanted != Some((review.checkout, review.request_id)) {
+            return;
+        }
+        self.review_wanted = None;
+        let files = review.files.len();
+        let base = review.base;
+        let view = ReviewView::new(review);
+        if view.is_empty() && base != ReviewBase::SinceLastLooked {
+            self.review = None;
+            self.status = format!("no changes vs {}", base.label());
+            return;
+        }
+        self.review = Some(view);
+        self.overlay = Some(Overlay::Review);
+        self.focus = Focus::Review;
+        self.status = format!("{files} changed vs {}", base.label());
+    }
+
+    fn receive_review_failure(&mut self, request_id: u64, checkout: CheckoutId, message: String) {
+        if self.review_wanted == Some((checkout, request_id)) {
+            self.review_wanted = None;
+            self.status = format!("error: {message}");
+        }
+    }
+
+    fn receive_review_acknowledgement(
+        &mut self,
+        checkout: CheckoutId,
+        target_snapshot: &str,
+        error: Option<String>,
+    ) {
+        let Some(view) = self.review.as_mut().filter(|view| {
+            view.review.checkout == checkout && view.review.target_snapshot == target_snapshot
+        }) else {
+            return;
+        };
+        if let Some(message) = error {
+            self.status = format!("error: {message}");
+        } else {
+            view.review.baseline_snapshot = Some(target_snapshot.to_string());
+            self.status = "review baseline accepted".to_string();
         }
     }
 
@@ -772,7 +829,7 @@ impl App {
     /// column selection by navigating to it.
     #[cfg(test)]
     pub fn review_for_test(&mut self, checkout: CheckoutId) {
-        self.review_wanted = Some(checkout);
+        self.review_wanted = Some((checkout, 1));
     }
 
     pub fn open_settings(&mut self) {
@@ -919,9 +976,12 @@ impl App {
             self.status = "nothing to review".to_string();
             return;
         };
-        self.review_wanted = Some(id);
+        let request_id = self.next_review_request;
+        self.next_review_request = self.next_review_request.wrapping_add(1).max(1);
+        self.review_wanted = Some((id, request_id));
         self.status = "loading diff…".to_string();
         let _ = self.out.send(ClientMsg::Review {
+            request_id,
             checkout: id,
             base: self.review_base,
         });
@@ -987,6 +1047,17 @@ impl App {
             KeyCode::Char('b') => {
                 self.review_base = self.review_base.next();
                 return self.open_review();
+            }
+            KeyCode::Char('A') => {
+                if let Some(view) = &self.review {
+                    let _ = self.out.send(ClientMsg::AcknowledgeReview {
+                        checkout: view.review.checkout,
+                        target_snapshot: view.review.target_snapshot.clone(),
+                        expected_baseline: view.review.baseline_snapshot.clone(),
+                    });
+                    self.status = "accepting review baseline…".to_string();
+                }
+                return;
             }
             KeyCode::Char('f') => return self.open_change_picker(),
             KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc | KeyCode::Char('q') => {
@@ -2438,8 +2509,11 @@ mod tests {
 
     fn diff_of(checkout: CheckoutId) -> argus_protocol::Review {
         argus_protocol::Review {
+            request_id: 1,
             checkout,
             base: argus_protocol::ReviewBase::WorkingTree,
+            target_snapshot: "target-1".to_string(),
+            baseline_snapshot: None,
             files: vec![argus_protocol::FileDiff {
                 path: "src/a.rs".to_string(),
                 old_path: None,
@@ -2515,6 +2589,24 @@ mod tests {
     }
 
     #[test]
+    fn only_the_exact_latest_review_request_is_accepted() {
+        let mut h = Harness::new();
+        h.key(KeyCode::Char('l'));
+        h.key(KeyCode::Char('R'));
+        h.key(KeyCode::Char('R'));
+        h.sent();
+        let checkout = h.app.current_checkout().unwrap().id;
+
+        h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
+        assert!(h.app.review.is_none());
+
+        let mut latest = diff_of(checkout);
+        latest.request_id = 2;
+        h.app.on_server_msg(ServerMsg::Review(latest));
+        assert!(h.app.review.is_some());
+    }
+
+    #[test]
     fn an_unsolicited_diff_never_hijacks_the_screen() {
         let mut h = Harness::new();
         let checkout = h.app.tree[0].checkouts[0].id;
@@ -2530,14 +2622,100 @@ mod tests {
         open_review(
             &mut h,
             argus_protocol::Review {
+                request_id: 1,
                 checkout,
                 base: argus_protocol::ReviewBase::WorkingTree,
+                target_snapshot: "target-1".to_string(),
+                baseline_snapshot: None,
                 files: Vec::new(),
             },
         );
         assert!(h.app.review.is_none());
         assert_ne!(h.app.focus, Focus::Review);
-        assert!(h.app.status.contains("no uncommitted changes"), "{}", h.app.status);
+        assert!(h.app.status.contains("no changes vs uncommitted"), "{}", h.app.status);
+    }
+
+    #[test]
+    fn an_empty_first_since_last_looked_review_can_be_acknowledged() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        let mut review = diff_of(checkout);
+        review.base = ReviewBase::SinceLastLooked;
+        review.files.clear();
+        open_review(&mut h, review);
+        assert!(h.app.review.is_some(), "empty view keeps the explicit action reachable");
+
+        h.key(KeyCode::Char('A'));
+        assert!(matches!(
+            &h.sent()[0],
+            ClientMsg::AcknowledgeReview {
+                checkout: id,
+                target_snapshot,
+                expected_baseline: None,
+            } if *id == checkout && target_snapshot == "target-1"
+        ));
+    }
+
+    #[test]
+    fn acknowledgement_updates_only_the_review_snapshot_that_was_displayed() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(&mut h, diff_of(checkout));
+
+        h.app.on_server_msg(ServerMsg::ReviewAcknowledged {
+            checkout,
+            target_snapshot: "stale-target".to_string(),
+        });
+        assert_eq!(
+            h.app.review.as_ref().unwrap().review.baseline_snapshot,
+            None,
+            "a delayed acknowledgement must not mutate a newer review"
+        );
+
+        h.app.on_server_msg(ServerMsg::ReviewAcknowledged {
+            checkout,
+            target_snapshot: "target-1".to_string(),
+        });
+        assert_eq!(
+            h.app.review.as_ref().unwrap().review.baseline_snapshot.as_deref(),
+            Some("target-1")
+        );
+        assert_eq!(h.app.status, "review baseline accepted");
+    }
+
+    #[test]
+    fn acknowledgement_failure_is_shown_only_for_the_displayed_snapshot() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(&mut h, diff_of(checkout));
+        let before = h.app.status.clone();
+
+        h.app.on_server_msg(ServerMsg::ReviewAcknowledgeFailed {
+            checkout,
+            target_snapshot: "stale-target".to_string(),
+            message: "conflict".to_string(),
+        });
+        assert_eq!(h.app.status, before);
+
+        h.app.on_server_msg(ServerMsg::ReviewAcknowledgeFailed {
+            checkout,
+            target_snapshot: "target-1".to_string(),
+            message: "conflict".to_string(),
+        });
+        assert_eq!(h.app.status, "error: conflict");
+    }
+
+    #[test]
+    fn closing_and_refreshing_never_acknowledge_a_review() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(&mut h, diff_of(checkout));
+        h.key(KeyCode::Char('r'));
+        h.key(KeyCode::Esc);
+        assert!(h.sent().iter().all(|message| !matches!(
+            message,
+            ClientMsg::AcknowledgeReview { .. }
+        )));
     }
 
     #[test]

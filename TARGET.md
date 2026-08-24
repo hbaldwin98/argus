@@ -1,0 +1,131 @@
+# Argus: Target Design
+
+This document defines the intended product. It does not claim these systems are implemented;
+[`DESIGN.md`](DESIGN.md) is the current behavior and [`ROADMAP.md`](ROADMAP.md) orders the gap.
+
+## Product boundary
+
+Argus is a terminal workspace built around one navigation spine:
+
+```text
+Project -> Repository -> Checkout -> Agent, shell, or editor
+```
+
+A workspace scopes the visible projects without adding another column. Argus is not a general
+tmux replacement, a GUI, an agent host, or a Git porcelain. It runs existing command-line
+harnesses and makes their checkouts, state, and review work visible.
+
+The target budgets are sub-16 ms client frames, less than 50 MiB client RSS with twelve active
+panes, about 1.5 MiB resident per idle pane, and less than 30 ms to first paint against a warm
+daemon.
+
+## Ownership and persistence
+
+The daemon owns PTYs, scrollback, runtime state, Git observation, and agent integration. Clients
+are replaceable renderers. Closing a client never stops a pane.
+
+Runtime persistence must be atomic and recoverable. It must distinguish:
+
+- an open pane from a running child;
+- a process that exited from one that should restart;
+- a fresh relaunch from a resumable harness session;
+- display title from template and harness identity.
+
+Argus must choose and document one crash policy: reattach surviving processes, or guarantee that
+daemon children cannot survive and relaunch/resume them. It must never duplicate an untracked
+surviving child.
+
+## Repository and checkout model
+
+A project groups repositories. A repository owns its primary checkout, linked worktrees, and
+branches without a checkout. The UI may show, for example:
+
+```text
+acme-api
+  main              primary     clean
+  feat/rate-limit   worktree    +142 -18   needs review
+  hotfix/tls-expiry no checkout
+```
+
+Selecting a branch without a checkout offers to switch a clean primary checkout or create a
+worktree. Switching a dirty primary checkout is refused when it could obscure work, with worktree
+creation offered instead. Worktree roots and setup hooks are configurable.
+
+One agent per checkout is the default, not a hidden assumption. Multiple agents are allowed but
+shown as shared; optional project exclusivity can make that a hard block.
+
+## Agent templates and state
+
+Templates may define command arguments, environment, prompt interpolation, pinned notes,
+permissions, one-shot behavior, sandboxing, redaction, and harness-specific resume behavior.
+Template identity and display title are separate persisted fields.
+
+The target state model is:
+
+| State | Meaning |
+|---|---|
+| `idle` | Running without current work |
+| `working` | Producing or processing work |
+| `waiting` | Requires operator input |
+| `needs-review` | Changed files have not been acknowledged |
+| `done` | Finished and reviewed |
+| `failed` | Non-zero exit or explicit block/failure |
+
+Explicit harness events are authoritative, process state is next, and output matching is only a
+fallback. Events must identify a pane even when several harnesses share a checkout. Parent rows
+show the highest-severity descendant with distinct glyphs as well as color.
+
+## Review contract
+
+Review compares one stable checkout endpoint against three bases:
+
+- uncommitted work;
+- the branch point;
+- the last explicitly acknowledged review snapshot.
+
+The endpoint includes committed, staged, unstaged, deleted, renamed, and non-ignored untracked
+content. All bases for one response compare against the same captured endpoint.
+
+“Since I last looked” advances only when the operator explicitly acknowledges the exact snapshot
+currently displayed. Closing, refreshing, changing base, opening an editor, commenting, losing a
+connection, or receiving an empty/error/stale response does not advance it. Compare-and-swap
+prevents two clients from moving a baseline backward. Changes made after the displayed snapshot
+remain visible on the next review.
+
+Review eventually supports vetted state keyed by content identity, stage/unstage/revert by hunk,
+durable line or range comments, agent selection, and lazy syntax highlighting. Re-editing a vetted
+file invalidates its vetted state.
+
+## Notes and context
+
+Projects and checkouts can hold plain Markdown notes. Checkbox lines provide open, done, and
+pinned states whose counts roll up the tree. Forwarding to an agent is explicit except for a
+template's opt-in pinned-note injection.
+
+The daemon exposes the same scoped context through MCP, HTTP, and `argus ctx`. A per-checkout token
+limits every agent to approved read and write calls. Write operations such as note changes,
+review requests, worktree creation, and delegation are audited and template-policy gated.
+Delegation has a bounded fan-out and may require approval.
+
+## Terminal and memory model
+
+The live screen is a dense grid. Scrollback uses packed text and style runs with a byte budget,
+oldest-first eviction, cold-pane decoding, and optional memory-mapped spill. Spill files are
+private and template redaction runs before persistence.
+
+The terminal path supports child-negotiated mouse reporting, bracketed paste, focus events, OSC
+52 forwarding, extended keys, and usable scrollback navigation. Output queues and parsing work are
+bounded under a noisy child.
+
+With several clients, PTY size has deterministic ownership or arbitration. A smaller background
+view cannot continuously resize a pane away from the active owner.
+
+## Protocol and safety
+
+The protocol remains host-agnostic and gains version/capability negotiation before remote use.
+Socket or pipe access is restricted to the user. Slow or lagged clients recover with a full
+snapshot rather than retaining silently corrupted grids.
+
+Argus never auto-pushes, auto-merges, or silently deletes work. Destructive actions name the
+affected checkout, branch, panes, and dirty files before confirmation. Optional per-template
+sandboxing limits writes outside the checkout.

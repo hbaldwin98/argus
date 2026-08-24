@@ -200,14 +200,54 @@ fn handle_client_msg(
         } => daemon
             .spawn_editor(checkout, &path, line, external, command.as_deref())
             .map(|_| ()),
-        ClientMsg::Review { checkout, base } => daemon.checkout_path(checkout).map(|path| {
+        ClientMsg::Review {
+            request_id,
+            checkout,
+            base,
+        } => daemon.checkout_path(checkout).map(|path| {
             let out_tx = out_tx.clone();
             tokio::task::spawn_blocking(move || {
-                let _ = out_tx.send(ServerMsg::Review(argus_protocol::Review {
-                    checkout,
-                    base,
-                    files: crate::diff::working_tree(&path, base),
-                }));
+                let message = match crate::diff::generate(&path, base) {
+                    Ok(generated) => ServerMsg::Review(argus_protocol::Review {
+                        request_id,
+                        checkout,
+                        base,
+                        target_snapshot: generated.target_snapshot,
+                        baseline_snapshot: generated.baseline_snapshot,
+                        files: generated.files,
+                    }),
+                    Err(error) => ServerMsg::ReviewFailed {
+                        request_id,
+                        checkout,
+                        message: error.to_string(),
+                    },
+                };
+                let _ = out_tx.send(message);
+            });
+        }),
+        ClientMsg::AcknowledgeReview {
+            checkout,
+            target_snapshot,
+            expected_baseline,
+        } => daemon.checkout_path(checkout).map(|path| {
+            let out_tx = out_tx.clone();
+            tokio::task::spawn_blocking(move || {
+                let message = match crate::diff::acknowledge(
+                    &path,
+                    &target_snapshot,
+                    expected_baseline.as_deref(),
+                ) {
+                    Ok(()) => ServerMsg::ReviewAcknowledged {
+                        checkout,
+                        target_snapshot,
+                    },
+                    Err(error) => ServerMsg::ReviewAcknowledgeFailed {
+                        checkout,
+                        target_snapshot,
+                        message: error.to_string(),
+                    },
+                };
+                let _ = out_tx.send(message);
             });
         }),
     };
@@ -354,6 +394,7 @@ mod tests {
         let mut h = Harness::new(dir.path());
         let checkout = h.checkout();
         h.send(ClientMsg::Review {
+            request_id: 42,
             checkout,
             base: ReviewBase::WorkingTree,
         });
@@ -366,6 +407,7 @@ mod tests {
         match reply {
             ServerMsg::Review(r) => {
                 assert_eq!(r.checkout, checkout);
+                assert_eq!(r.request_id, 42);
                 assert_eq!(r.base, ReviewBase::WorkingTree);
                 assert_eq!(r.files[0].path, "a.txt");
             }
@@ -378,6 +420,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut h = Harness::new(dir.path());
         h.send(ClientMsg::Review {
+            request_id: 1,
             checkout: CheckoutId(9999),
             base: ReviewBase::WorkingTree,
         });

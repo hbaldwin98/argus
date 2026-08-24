@@ -562,7 +562,7 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
         ("j/k move   h/l change   esc close", th.dim)
     } else if matches!(app.overlay, Some(Overlay::Review)) {
-        ("j/k  ]/[ file  f jump  v range  c comment  e edit  b base  esc close", th.dim)
+        ("j/k  ]/[ file  f jump  c comment  e edit  b base  A accept  esc close", th.dim)
     } else if app.overlay.is_some() {
         ("floating — ctrl-space then esc to close, x to kill", th.dim)
     } else if app.focus == Focus::PaneContent {
@@ -1629,8 +1629,11 @@ mod tests {
     fn app_with_review() -> App {
         let mut app = app_with_tree();
         app.review = Some(crate::review::ReviewView::new(argus_protocol::Review {
+            request_id: 1,
             checkout: CheckoutId(1),
             base: argus_protocol::ReviewBase::WorkingTree,
+            target_snapshot: "target-1".to_string(),
+            baseline_snapshot: None,
             files: vec![argus_protocol::FileDiff {
                 path: "src/thing.rs".to_string(),
                 old_path: None,
@@ -1751,6 +1754,7 @@ mod tests {
         let mut app = app_with_review();
         let out = lines(&draw(&mut app)).join("\n");
         assert!(out.contains("c comment"), "{out}");
+        assert!(out.contains("A accept"), "{out}");
         assert!(!out.contains("s shell"), "not the tree keymap:\n{out}");
     }
 

@@ -28,6 +28,6 @@ portable-pty = { workspace = true }
 vt100 = { workspace = true }
 git2 = { workspace = true }
 ignore = "0.4"
+tempfile = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }

@@ -9,6 +9,7 @@
 //! Checkouts are identified by path and projects by name, because ids are
 //! handed out fresh on every start and mean nothing across one.
 
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use argus_protocol::PaneKind;
@@ -37,39 +38,62 @@ pub fn path() -> PathBuf {
     argus_protocol::config_dir().join("session.json")
 }
 
-/// What was running last time. Empty when there is no file, when it can't
-/// be parsed, or when [`NO_RESTORE`] is set — none of which is worth
-/// refusing to start over.
-pub fn load() -> Session {
+/// What was running last time. `None` means the existing file could not be
+/// read safely and must not be overwritten during this daemon run.
+pub fn load() -> Option<Session> {
     if std::env::var_os(NO_RESTORE).is_some() {
         tracing::info!("{NO_RESTORE} is set; starting with nothing running");
-        return Session::default();
+        return Some(Session::default());
     }
-    let Ok(raw) = std::fs::read_to_string(path()) else {
-        return Session::default();
+    let p = path();
+    let raw = match std::fs::read_to_string(&p) {
+        Ok(raw) => raw,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Some(Session::default()),
+        Err(e) => {
+            tracing::warn!(
+                "could not read {}: {e}; session recording is disabled",
+                p.display()
+            );
+            return None;
+        }
     };
     match serde_json::from_str(&raw) {
-        Ok(s) => s,
+        Ok(s) => Some(s),
         Err(e) => {
-            tracing::warn!("ignoring {}: {e}", path().display());
-            Session::default()
+            tracing::warn!(
+                "could not parse {}: {e}; session recording is disabled",
+                p.display()
+            );
+            None
         }
     }
 }
 
 pub fn save(session: &Session) {
     let p = path();
-    if let Some(parent) = p.parent() {
-        let _ = std::fs::create_dir_all(parent);
+    if let Err(e) = save_to(&p, session) {
+        tracing::warn!("could not record the session in {}: {e}", p.display());
     }
-    match serde_json::to_string_pretty(session) {
-        Ok(text) => {
-            if let Err(e) = std::fs::write(&p, text) {
-                tracing::warn!("could not record the session in {}: {e}", p.display());
-            }
-        }
-        Err(e) => tracing::warn!("could not serialize the session: {e}"),
-    }
+}
+
+fn save_to(path: &Path, session: &Session) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "session path has no parent"))?;
+    std::fs::create_dir_all(parent)?;
+
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+    serde_json::to_writer_pretty(temp.as_file_mut(), session)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    temp.as_file_mut().write_all(b"\n")?;
+    temp.as_file().sync_all()?;
+    temp.persist(path).map_err(|e| e.error)?;
+
+    // A synced file plus rename protects its contents. Syncing the directory
+    // also makes the new directory entry durable on Unix filesystems.
+    #[cfg(unix)]
+    std::fs::File::open(parent)?.sync_all()?;
+    Ok(())
 }
 
 /// Panes worth starting again.
@@ -117,6 +141,26 @@ mod tests {
         };
         let back: Session = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert_eq!(back, s);
+    }
+
+    #[test]
+    fn save_replaces_the_session_without_leaving_a_partial_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.json");
+        let old = Session {
+            panes: vec![pane("/old", PaneKind::Shell, "shell")],
+        };
+        let new = Session {
+            panes: vec![pane("/new", PaneKind::Agent, "claude")],
+        };
+
+        save_to(&path, &old).unwrap();
+        save_to(&path, &new).unwrap();
+
+        let stored: Session =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        assert_eq!(stored, new);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     #[test]

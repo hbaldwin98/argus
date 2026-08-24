@@ -1,121 +1,239 @@
-//! Enumerating a checkout's uncommitted work for the review viewer
-//! (DESIGN.md §9 M4). Read-only, in-process libgit2 for the same reason
-//! `git::list_worktrees` is — see the note there about console windows.
+//! Stable review snapshots and diffs. Capturing writes blobs and trees to the
+//! Git object database, but never changes HEAD, branches, the real index, or
+//! the working directory.
 
 use std::cell::RefCell;
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
+use anyhow::{anyhow, Context};
 use argus_protocol::{ChangeKind, DiffLine, FileDiff, Hunk, LineKind, ReviewBase};
 
-/// Past this a file is reported as changed but not rendered — nobody reads
-/// a 20k-line diff, and shipping it is pure waste.
 const MAX_LINES_PER_FILE: usize = 5_000;
-
 const BINARY_NOTE: &str = "binary file";
 const TOO_LARGE_NOTE: &str = "too large to display";
 
-/// Every change in the working tree at `path` against `HEAD`, untracked
-/// files included. Empty when `path` isn't a repo — not worth an error.
-pub fn working_tree(path: &Path, base: ReviewBase) -> Vec<FileDiff> {
-    let Ok(repo) = git2::Repository::open(path) else {
-        return Vec::new();
-    };
-
-    let mut opts = git2::DiffOptions::new();
-    opts.include_untracked(true)
-        // Without this an untracked *directory* collapses to a single entry
-        // for the directory itself, which is not something you can review.
-        .recurse_untracked_dirs(true)
-        .show_untracked_content(true)
-        .context_lines(3);
-
-    // Against HEAD's tree, or against nothing at all in a repo whose first
-    // commit hasn't happened yet — where every file is legitimately new.
-    let base_tree = base_tree(&repo, base);
-
-    let Ok(diff) = repo.diff_tree_to_workdir_with_index(base_tree.as_ref(), Some(&mut opts)) else {
-        return Vec::new();
-    };
-
-    // `foreach` holds all three callbacks at once, though their borrows
-    // never actually overlap.
-    let files: RefCell<Vec<FileDiff>> = RefCell::new(Vec::new());
-    let _ = diff.foreach(
-        &mut |delta, _| {
-            files.borrow_mut().push(new_file(&delta));
-            true
-        },
-        None,
-        Some(&mut |_, hunk| {
-            if let Some(file) = files.borrow_mut().last_mut() {
-                if file.note.is_none() {
-                    file.hunks.push(Hunk {
-                        header: String::from_utf8_lossy(hunk.header()).trim_end().to_string(),
-                        lines: Vec::new(),
-                    });
-                }
-            }
-            true
-        }),
-        Some(&mut |_, _, line| {
-            let mut files = files.borrow_mut();
-            let Some(file) = files.last_mut() else {
-                return true;
-            };
-            if file.note.is_some() {
-                return true;
-            }
-            let kind = match line.origin() {
-                '+' => LineKind::Added,
-                '-' => LineKind::Removed,
-                ' ' => LineKind::Context,
-                // Headers, and "no newline at end of file".
-                _ => return true,
-            };
-            if let Some(hunk) = file.hunks.last_mut() {
-                hunk.lines.push(DiffLine {
-                    kind,
-                    old_lineno: line.old_lineno(),
-                    new_lineno: line.new_lineno(),
-                    text: String::from_utf8_lossy(line.content())
-                        .trim_end_matches(['\n', '\r'])
-                        .to_string(),
-                });
-            }
-            if total_lines(file) > MAX_LINES_PER_FILE {
-                file.hunks.clear();
-                file.note = Some(TOO_LARGE_NOTE.to_string());
-            }
-            true
-        }),
-    );
-
-    files.into_inner()
+pub struct GeneratedReview {
+    pub target_snapshot: String,
+    pub baseline_snapshot: Option<String>,
+    pub files: Vec<FileDiff>,
 }
 
-/// The tree the working directory is compared against. `None` in a repo
-/// whose first commit hasn't happened, where every file is legitimately new.
-fn base_tree(repo: &git2::Repository, base: ReviewBase) -> Option<git2::Tree<'_>> {
-    let head = repo.head().ok()?;
-    match base {
-        ReviewBase::WorkingTree => head.peel_to_tree().ok(),
-        ReviewBase::BranchPoint => {
-            // With no fork point — on the default branch, typically — fall
-            // back to HEAD. An empty diff would read as "this branch
-            // changed nothing", which is a different claim.
-            let fork = || {
-                let mine = head.peel_to_commit().ok()?.id();
-                let other = fork_candidate(repo, &head)?;
-                let base = repo.merge_base(mine, other).ok()?;
-                repo.find_commit(base).ok()?.tree().ok()
-            };
-            fork().or_else(|| head.peel_to_tree().ok())
+struct Snapshot {
+    tree: git2::Oid,
+    untracked: HashSet<String>,
+}
+
+pub fn generate(path: &Path, base: ReviewBase) -> anyhow::Result<GeneratedReview> {
+    let repo = git2::Repository::open(path)
+        .with_context(|| format!("could not open Git repository at {}", path.display()))?;
+    let target = capture(&repo)?;
+    let baseline = baseline(&repo)?;
+    let old = match base {
+        ReviewBase::WorkingTree => head_tree(&repo),
+        ReviewBase::BranchPoint => branch_point_tree(&repo),
+        // First use deliberately falls back to uncommitted work. It does not
+        // establish a baseline until the client explicitly acknowledges it.
+        ReviewBase::SinceLastLooked => baseline.or_else(|| head_tree(&repo)),
+    };
+    let files = render_diff(&repo, old, target.tree, &target.untracked)?;
+    Ok(GeneratedReview {
+        target_snapshot: target.tree.to_string(),
+        baseline_snapshot: baseline.map(|oid| oid.to_string()),
+        files,
+    })
+}
+
+/// Move the hidden per-worktree ref only if its current value is exactly what
+/// the displayed review said it was.
+pub fn acknowledge(path: &Path, target: &str, expected: Option<&str>) -> anyhow::Result<()> {
+    let repo = git2::Repository::open(path)?;
+    let target = git2::Oid::from_str(target).context("invalid review snapshot")?;
+    repo.find_tree(target)
+        .context("review snapshot is no longer available")?;
+    let expected = expected
+        .map(git2::Oid::from_str)
+        .transpose()
+        .context("invalid expected review baseline")?;
+    let name = baseline_ref(&repo)?;
+    let mut tx = repo.transaction()?;
+    tx.lock_ref(&name)?;
+    let current = repo.find_reference(&name).ok().and_then(|r| r.target());
+    if current != expected {
+        return Err(anyhow!(
+            "review baseline changed; refresh before acknowledging"
+        ));
+    }
+    let sig = git2::Signature::now("Argus", "argus@localhost")?;
+    tx.set_target(&name, target, Some(&sig), "review acknowledged")?;
+    tx.commit()?;
+    Ok(())
+}
+
+fn capture(repo: &git2::Repository) -> anyhow::Result<Snapshot> {
+    let workdir = repo
+        .workdir()
+        .context("bare repositories cannot be reviewed")?;
+    let source = repo.index().context("could not read Git index")?;
+    let mut synthetic = git2::Index::new()?;
+    for entry in source.iter() {
+        synthetic.add(&entry)?;
+    }
+
+    let mut opts = git2::StatusOptions::new();
+    opts.include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .include_ignored(false);
+    let statuses = repo
+        .statuses(Some(&mut opts))
+        .context("could not inspect working tree")?;
+    let mut untracked = HashSet::new();
+    for status in statuses.iter() {
+        let path = status.path().context("review path is not valid UTF-8")?;
+        let flags = status.status();
+        if flags.contains(git2::Status::WT_DELETED) {
+            synthetic.remove_path(Path::new(path))?;
         }
+        if flags.intersects(
+            git2::Status::WT_NEW | git2::Status::WT_MODIFIED | git2::Status::WT_TYPECHANGE,
+        ) {
+            let full = workdir.join(path);
+            if full.is_dir() {
+                // A dirty submodule retains its indexed gitlink. Its internal
+                // worktree is a separate repository and review boundary.
+                continue;
+            }
+            let data = file_bytes(&full)
+                .with_context(|| format!("could not capture {}", full.display()))?;
+            let mut entry = source
+                .get_path(Path::new(path), 0)
+                .unwrap_or_else(|| new_entry(path, &full));
+            entry.path = path.as_bytes().to_vec();
+            entry.mode = worktree_mode(&full, entry.mode);
+            entry.id = repo.blob(&data)?;
+            entry.file_size = data.len().try_into().unwrap_or(u32::MAX);
+            synthetic.add(&entry)?;
+            if flags.contains(git2::Status::WT_NEW) {
+                untracked.insert(path.replace('\\', "/"));
+            }
+        }
+    }
+    let tree = synthetic
+        .write_tree_to(repo)
+        .context("could not write review snapshot")?;
+    Ok(Snapshot { tree, untracked })
+}
+
+fn file_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
+    #[cfg(unix)]
+    if path.symlink_metadata()?.file_type().is_symlink() {
+        return Ok(std::fs::read_link(path)?
+            .as_os_str()
+            .as_encoded_bytes()
+            .to_vec());
+    }
+    std::fs::read(path)
+}
+
+fn new_entry(path: &str, _full: &Path) -> git2::IndexEntry {
+    #[cfg(unix)]
+    let mode = {
+        use std::os::unix::fs::PermissionsExt;
+        if _full
+            .symlink_metadata()
+            .is_ok_and(|m| m.file_type().is_symlink())
+        {
+            0o120000
+        } else if _full
+            .metadata()
+            .is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
+        {
+            0o100755
+        } else {
+            0o100644
+        }
+    };
+    #[cfg(not(unix))]
+    let mode = 0o100644;
+    git2::IndexEntry {
+        ctime: git2::IndexTime::new(0, 0),
+        mtime: git2::IndexTime::new(0, 0),
+        dev: 0,
+        ino: 0,
+        mode,
+        uid: 0,
+        gid: 0,
+        file_size: 0,
+        id: git2::Oid::zero(),
+        flags: 0,
+        flags_extended: 0,
+        path: path.as_bytes().to_vec(),
     }
 }
 
-/// What this branch forked from: its upstream if it has one, else whichever
-/// of the usual default branches exists and isn't the branch itself.
+fn worktree_mode(_path: &Path, indexed: u32) -> u32 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let Ok(metadata) = _path.symlink_metadata() else {
+            return indexed;
+        };
+        if metadata.file_type().is_symlink() {
+            0o120000
+        } else if metadata.permissions().mode() & 0o111 != 0 {
+            0o100755
+        } else {
+            0o100644
+        }
+    }
+    #[cfg(not(unix))]
+    indexed
+}
+
+fn baseline(repo: &git2::Repository) -> anyhow::Result<Option<git2::Oid>> {
+    let name = baseline_ref(repo)?;
+    match repo.find_reference(&name) {
+        Ok(reference) => {
+            let oid = reference.target().context("review baseline is symbolic")?;
+            repo.find_tree(oid)
+                .context("review baseline does not name a tree")?;
+            Ok(Some(oid))
+        }
+        Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+fn baseline_ref(repo: &git2::Repository) -> anyhow::Result<String> {
+    let git_dir: PathBuf = repo
+        .path()
+        .canonicalize()
+        .unwrap_or_else(|_| repo.path().to_path_buf());
+    // Hashing the private worktree Git directory as a blob gives a stable,
+    // ref-safe identity and keeps linked worktrees in the common ref store apart.
+    let identity = repo.blob(git_dir.to_string_lossy().as_bytes())?;
+    Ok(format!("refs/argus/review/{identity}"))
+}
+
+fn head_tree(repo: &git2::Repository) -> Option<git2::Oid> {
+    repo.head().ok()?.peel_to_tree().ok().map(|tree| tree.id())
+}
+
+fn branch_point_tree(repo: &git2::Repository) -> Option<git2::Oid> {
+    let head = repo.head().ok()?;
+    let fork = || {
+        let mine = head.peel_to_commit().ok()?.id();
+        let other = fork_candidate(repo, &head)?;
+        let base = repo.merge_base(mine, other).ok()?;
+        repo.find_commit(base)
+            .ok()?
+            .tree()
+            .ok()
+            .map(|tree| tree.id())
+    };
+    fork().or_else(|| head.peel_to_tree().ok().map(|tree| tree.id()))
+}
+
 fn fork_candidate(repo: &git2::Repository, head: &git2::Reference) -> Option<git2::Oid> {
     let name = head.shorthand().unwrap_or_default().to_string();
     if let Some(upstream) = repo
@@ -138,45 +256,105 @@ fn fork_candidate(repo: &git2::Repository, head: &git2::Reference) -> Option<git
         })
 }
 
-fn new_file(delta: &git2::DiffDelta) -> FileDiff {
-    // Only a deletion leaves the new side empty.
+fn render_diff(
+    repo: &git2::Repository,
+    old: Option<git2::Oid>,
+    target: git2::Oid,
+    untracked: &HashSet<String>,
+) -> anyhow::Result<Vec<FileDiff>> {
+    let old_tree = old.map(|oid| repo.find_tree(oid)).transpose()?;
+    let target_tree = repo.find_tree(target)?;
+    let mut opts = git2::DiffOptions::new();
+    opts.context_lines(3);
+    let mut diff =
+        repo.diff_tree_to_tree(old_tree.as_ref(), Some(&target_tree), Some(&mut opts))?;
+    let mut find = git2::DiffFindOptions::new();
+    find.renames(true);
+    diff.find_similar(Some(&mut find))
+        .context("could not detect review renames")?;
+
+    let files: RefCell<Vec<FileDiff>> = RefCell::new(Vec::new());
+    diff.foreach(
+        &mut |delta, _| {
+            files.borrow_mut().push(new_file(&delta, untracked));
+            true
+        },
+        None,
+        Some(&mut |_, hunk| {
+            if let Some(file) = files.borrow_mut().last_mut() {
+                if file.note.is_none() {
+                    file.hunks.push(Hunk {
+                        header: String::from_utf8_lossy(hunk.header())
+                            .trim_end()
+                            .to_string(),
+                        lines: Vec::new(),
+                    });
+                }
+            }
+            true
+        }),
+        Some(&mut |_, _, line| {
+            let mut files = files.borrow_mut();
+            let Some(file) = files.last_mut() else {
+                return true;
+            };
+            if file.note.is_some() {
+                return true;
+            }
+            let kind = match line.origin() {
+                '+' => LineKind::Added,
+                '-' => LineKind::Removed,
+                ' ' => LineKind::Context,
+                _ => return true,
+            };
+            if let Some(hunk) = file.hunks.last_mut() {
+                hunk.lines.push(DiffLine {
+                    kind,
+                    old_lineno: line.old_lineno(),
+                    new_lineno: line.new_lineno(),
+                    text: String::from_utf8_lossy(line.content())
+                        .trim_end_matches(['\n', '\r'])
+                        .to_string(),
+                });
+            }
+            if total_lines(file) > MAX_LINES_PER_FILE {
+                file.hunks.clear();
+                file.note = Some(TOO_LARGE_NOTE.to_string());
+            }
+            true
+        }),
+    )?;
+    Ok(files.into_inner())
+}
+
+fn new_file(delta: &git2::DiffDelta, untracked: &HashSet<String>) -> FileDiff {
     let path = delta
         .new_file()
         .path()
         .or_else(|| delta.old_file().path())
         .map(slashed)
         .unwrap_or_default();
-
     let kind = match delta.status() {
+        git2::Delta::Added if untracked.contains(&path) => ChangeKind::Untracked,
         git2::Delta::Added => ChangeKind::Added,
         git2::Delta::Deleted => ChangeKind::Deleted,
         git2::Delta::Renamed => ChangeKind::Renamed,
-        git2::Delta::Untracked => ChangeKind::Untracked,
-        // Typechange has no better label, and reads as a modification.
         _ => ChangeKind::Modified,
     };
-
-    let old_path = (kind == ChangeKind::Renamed)
-        .then(|| delta.old_file().path().map(slashed))
-        .flatten();
-
     FileDiff {
+        old_path: (kind == ChangeKind::Renamed)
+            .then(|| delta.old_file().path().map(slashed))
+            .flatten(),
         path,
-        old_path,
         kind,
         hunks: Vec::new(),
-        note: delta
-            .flags()
-            .is_binary()
-            .then(|| BINARY_NOTE.to_string()),
+        note: delta.flags().is_binary().then(|| BINARY_NOTE.to_string()),
     }
 }
 
-/// Forward slashes everywhere, so a quoted path is one an agent can use.
-fn slashed(p: &Path) -> String {
-    p.to_string_lossy().replace('\\', "/")
+fn slashed(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }
-
 fn total_lines(file: &FileDiff) -> usize {
     file.hunks.iter().map(|h| h.lines.len()).sum()
 }
@@ -184,7 +362,6 @@ fn total_lines(file: &FileDiff) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     fn repo_with(files: &[(&str, &str)]) -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
@@ -193,6 +370,18 @@ mod tests {
         for (name, body) in files {
             write(&path, name, body);
         }
+        commit(&repo, "first");
+        drop(repo);
+        (dir, path)
+    }
+
+    fn write(root: &Path, name: &str, body: &str) {
+        let path = root.join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, body).unwrap();
+    }
+
+    fn commit(repo: &git2::Repository, message: &str) {
         let mut index = repo.index().unwrap();
         index
             .add_all(["*"], git2::IndexAddOption::DEFAULT, None)
@@ -200,179 +389,16 @@ mod tests {
         index.write().unwrap();
         let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
         let sig = git2::Signature::now("t", "t@example.com").unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "first", &tree, &[])
+        let parent = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
+        let parents: Vec<&git2::Commit> = parent.iter().collect();
+        repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)
             .unwrap();
-        drop(tree);
-        drop(index);
-        (dir, path)
-    }
-
-    fn write(root: &Path, name: &str, body: &str) {
-        let p = root.join(name);
-        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-        std::fs::write(p, body).unwrap();
     }
 
     fn find<'a>(files: &'a [FileDiff], path: &str) -> &'a FileDiff {
-        files
-            .iter()
-            .find(|f| f.path == path)
-            .unwrap_or_else(|| panic!("no {path:?} in {:?}", paths(files)))
+        files.iter().find(|f| f.path == path).unwrap()
     }
 
-    fn paths(files: &[FileDiff]) -> Vec<&str> {
-        files.iter().map(|f| f.path.as_str()).collect()
-    }
-
-    #[test]
-    fn a_clean_checkout_has_nothing_to_review() {
-        let (_d, path) = repo_with(&[("a.txt", "one\n")]);
-        assert!(working_tree(&path, ReviewBase::WorkingTree).is_empty());
-    }
-
-    #[test]
-    fn a_directory_that_is_not_a_repo_is_not_an_error() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(working_tree(dir.path(), ReviewBase::WorkingTree).is_empty());
-    }
-
-    #[test]
-    fn an_edited_file_reports_the_lines_on_both_sides() {
-        let (_d, path) = repo_with(&[("a.txt", "one\ntwo\nthree\n")]);
-        write(&path, "a.txt", "one\nTWO\nthree\n");
-
-        let files = working_tree(&path, ReviewBase::WorkingTree);
-        let f = find(&files, "a.txt");
-        assert_eq!(f.kind, ChangeKind::Modified);
-        assert_eq!((f.added_lines(), f.removed_lines()), (1, 1));
-
-        let lines = &f.hunks[0].lines;
-        let removed = lines.iter().find(|l| l.kind == LineKind::Removed).unwrap();
-        assert_eq!(removed.text, "two");
-        assert_eq!(removed.old_lineno, Some(2), "a comment needs the old side");
-        let added = lines.iter().find(|l| l.kind == LineKind::Added).unwrap();
-        assert_eq!(added.text, "TWO");
-        assert_eq!(added.new_lineno, Some(2));
-    }
-
-    #[test]
-    fn line_text_carries_no_diff_marker_or_newline() {
-        // The client draws the marker from `kind`; baking it into the text
-        // would double it up and break any comment that quotes the line.
-        let (_d, path) = repo_with(&[("a.txt", "one\n")]);
-        write(&path, "a.txt", "two\n");
-        for line in &working_tree(&path, ReviewBase::WorkingTree)[0].hunks[0].lines {
-            assert!(!line.text.starts_with(['+', '-']), "{line:?}");
-            assert!(!line.text.ends_with('\n'), "{line:?}");
-        }
-    }
-
-    #[test]
-    fn an_untracked_file_is_reviewable_with_its_contents() {
-        // The case most likely to be forgotten before a commit, so it must
-        // not be silently absent.
-        let (_d, path) = repo_with(&[("a.txt", "one\n")]);
-        write(&path, "new.txt", "hello\n");
-
-        let files = working_tree(&path, ReviewBase::WorkingTree);
-        let f = find(&files, "new.txt");
-        assert_eq!(f.kind, ChangeKind::Untracked);
-        assert_eq!(f.added_lines(), 1);
-        assert_eq!(f.hunks[0].lines[0].text, "hello");
-    }
-
-    #[test]
-    fn untracked_directories_are_listed_as_their_files() {
-        // libgit2's default collapses these to the directory, which is not
-        // something you can review.
-        let (_d, path) = repo_with(&[("a.txt", "one\n")]);
-        write(&path, "sub/deep/x.txt", "x\n");
-
-        let files = working_tree(&path, ReviewBase::WorkingTree);
-        assert_eq!(paths(&files), vec!["sub/deep/x.txt"]);
-    }
-
-    #[test]
-    fn paths_are_forward_slashed_so_an_agent_can_use_them_verbatim() {
-        let (_d, path) = repo_with(&[("sub/a.txt", "one\n")]);
-        write(&path, "sub/a.txt", "two\n");
-        assert_eq!(paths(&working_tree(&path, ReviewBase::WorkingTree)), vec!["sub/a.txt"]);
-    }
-
-    #[test]
-    fn a_deleted_file_is_reported_under_the_path_it_had() {
-        let (_d, path) = repo_with(&[("a.txt", "one\n"), ("b.txt", "b\n")]);
-        std::fs::remove_file(path.join("a.txt")).unwrap();
-
-        let files = working_tree(&path, ReviewBase::WorkingTree);
-        let f = find(&files, "a.txt");
-        assert_eq!(f.kind, ChangeKind::Deleted);
-        assert_eq!(f.removed_lines(), 1);
-    }
-
-    #[test]
-    fn a_binary_file_is_listed_but_not_rendered() {
-        let (_d, path) = repo_with(&[("a.txt", "one\n")]);
-        std::fs::write(path.join("blob.bin"), [0u8, 159, 146, 150, 0]).unwrap();
-
-        let files = working_tree(&path, ReviewBase::WorkingTree);
-        let f = find(&files, "blob.bin");
-        assert_eq!(
-            f.note.as_deref(),
-            Some(BINARY_NOTE),
-            "and not an empty, apparently-unchanged file"
-        );
-        assert!(f.hunks.is_empty());
-    }
-
-    #[test]
-    fn a_huge_file_is_listed_with_a_note_instead_of_its_lines() {
-        let (_d, path) = repo_with(&[("a.txt", "one\n")]);
-        let big: String = (0..MAX_LINES_PER_FILE + 10)
-            .map(|i| format!("line {i}\n"))
-            .collect();
-        write(&path, "big.txt", &big);
-
-        let f = &working_tree(&path, ReviewBase::WorkingTree)[0];
-        assert_eq!(f.path, "big.txt");
-        assert_eq!(f.note.as_deref(), Some(TOO_LARGE_NOTE));
-        assert!(f.hunks.is_empty(), "the point is not to ship it");
-    }
-
-    #[test]
-    fn several_changed_files_all_appear() {
-        let (_d, path) = repo_with(&[("a.txt", "a\n"), ("b.txt", "b\n")]);
-        write(&path, "a.txt", "A\n");
-        write(&path, "b.txt", "B\n");
-        write(&path, "c.txt", "C\n");
-
-        let files = working_tree(&path, ReviewBase::WorkingTree);
-        assert_eq!(paths(&files), vec!["a.txt", "b.txt", "c.txt"]);
-    }
-
-    #[test]
-    fn hunks_keep_gits_own_header() {
-        // A comment that quotes it should match what `git diff` would show.
-        let (_d, path) = repo_with(&[("a.txt", "one\ntwo\nthree\n")]);
-        write(&path, "a.txt", "one\nTWO\nthree\n");
-        let header = &working_tree(&path, ReviewBase::WorkingTree)[0].hunks[0].header;
-        assert!(header.starts_with("@@"), "{header:?}");
-        assert!(!header.ends_with('\n'));
-    }
-
-    #[test]
-    fn a_repo_with_no_commits_yet_treats_everything_as_new() {
-        let dir = tempfile::tempdir().unwrap();
-        git2::Repository::init(dir.path()).unwrap();
-        std::fs::write(dir.path().join("a.txt"), "one\n").unwrap();
-
-        let files = working_tree(dir.path(), ReviewBase::WorkingTree);
-        assert_eq!(paths(&files), vec!["a.txt"]);
-        assert_eq!(files[0].added_lines(), 1);
-    }
-    // --- diff bases ---------------------------------------------------------
-
-    /// Commits `files` on a new branch off the current HEAD.
     fn commit_on_branch(path: &Path, branch: &str, files: &[(&str, &str)]) {
         let repo = git2::Repository::open(path).unwrap();
         let head = repo.head().unwrap().peel_to_commit().unwrap();
@@ -383,53 +409,204 @@ mod tests {
         for (name, body) in files {
             write(path, name, body);
         }
+        commit(&repo, "branch work");
+    }
+
+    #[test]
+    fn snapshot_contains_staged_unstaged_untracked_and_deletions() {
+        let (_dir, path) = repo_with(&[
+            ("staged.txt", "old\n"),
+            ("unstaged.txt", "old\n"),
+            ("gone.txt", "old\n"),
+        ]);
+        write(&path, "staged.txt", "staged\n");
+        let repo = git2::Repository::open(&path).unwrap();
         let mut index = repo.index().unwrap();
-        index
-            .add_all(["*"], git2::IndexAddOption::DEFAULT, None)
-            .unwrap();
+        index.add_path(Path::new("staged.txt")).unwrap();
         index.write().unwrap();
-        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
-        let sig = git2::Signature::now("t", "t@example.com").unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "work", &tree, &[&head])
+        write(&path, "unstaged.txt", "working\n");
+        write(&path, "new.txt", "new\n");
+        std::fs::remove_file(path.join("gone.txt")).unwrap();
+
+        let review = generate(&path, ReviewBase::WorkingTree).unwrap();
+        assert_eq!(find(&review.files, "staged.txt").added_lines(), 1);
+        assert_eq!(find(&review.files, "unstaged.txt").added_lines(), 1);
+        assert_eq!(find(&review.files, "new.txt").kind, ChangeKind::Untracked);
+        assert_eq!(find(&review.files, "gone.txt").kind, ChangeKind::Deleted);
+    }
+
+    #[test]
+    fn rendered_lines_keep_numbers_without_markers_or_newlines() {
+        let (_dir, path) = repo_with(&[("a.txt", "one\ntwo\nthree\n")]);
+        write(&path, "a.txt", "one\nTWO\nthree\n");
+
+        let review = generate(&path, ReviewBase::WorkingTree).unwrap();
+        let file = find(&review.files, "a.txt");
+        let removed = file.hunks[0]
+            .lines
+            .iter()
+            .find(|line| line.kind == LineKind::Removed)
+            .unwrap();
+        let added = file.hunks[0]
+            .lines
+            .iter()
+            .find(|line| line.kind == LineKind::Added)
+            .unwrap();
+        assert_eq!((removed.old_lineno, removed.text.as_str()), (Some(2), "two"));
+        assert_eq!((added.new_lineno, added.text.as_str()), (Some(2), "TWO"));
+        assert!(file.hunks[0]
+            .lines
+            .iter()
+            .all(|line| !line.text.ends_with('\n')));
+    }
+
+    #[test]
+    fn untracked_directories_are_captured_as_files() {
+        let (_dir, path) = repo_with(&[("a.txt", "one\n")]);
+        write(&path, "sub/deep/new.txt", "new\n");
+        let review = generate(&path, ReviewBase::WorkingTree).unwrap();
+        assert_eq!(find(&review.files, "sub/deep/new.txt").kind, ChangeKind::Untracked);
+    }
+
+    #[test]
+    fn binary_and_oversized_files_are_listed_without_content() {
+        let (_dir, path) = repo_with(&[("a.txt", "one\n")]);
+        std::fs::write(path.join("blob.bin"), [0u8, 159, 146, 150, 0]).unwrap();
+        let big: String = (0..MAX_LINES_PER_FILE + 10)
+            .map(|line| format!("line {line}\n"))
+            .collect();
+        write(&path, "big.txt", &big);
+
+        let review = generate(&path, ReviewBase::WorkingTree).unwrap();
+        let binary = find(&review.files, "blob.bin");
+        assert_eq!(binary.note.as_deref(), Some(BINARY_NOTE));
+        assert!(binary.hunks.is_empty());
+        let big = find(&review.files, "big.txt");
+        assert_eq!(big.note.as_deref(), Some(TOO_LARGE_NOTE));
+        assert!(big.hunks.is_empty());
+    }
+
+    #[test]
+    fn an_unborn_repository_treats_everything_as_new() {
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        write(dir.path(), "a.txt", "one\n");
+        let review = generate(dir.path(), ReviewBase::WorkingTree).unwrap();
+        assert_eq!(find(&review.files, "a.txt").added_lines(), 1);
+    }
+
+    #[test]
+    fn branch_bases_keep_committed_work_out_of_uncommitted_review() {
+        let (_dir, path) = repo_with(&[("a.txt", "one\n")]);
+        commit_on_branch(&path, "feature", &[("b.txt", "committed\n")]);
+        write(&path, "c.txt", "working\n");
+
+        let uncommitted = generate(&path, ReviewBase::WorkingTree).unwrap();
+        assert!(uncommitted.files.iter().all(|file| file.path != "b.txt"));
+        let branch = generate(&path, ReviewBase::BranchPoint).unwrap();
+        assert_eq!(find(&branch.files, "b.txt").added_lines(), 1);
+        assert_eq!(find(&branch.files, "c.txt").added_lines(), 1);
+    }
+
+    #[test]
+    fn rename_detection_reports_both_paths() {
+        let (_dir, path) = repo_with(&[("old.txt", "same content\n")]);
+        std::fs::rename(path.join("old.txt"), path.join("new.txt")).unwrap();
+        let review = generate(&path, ReviewBase::WorkingTree).unwrap();
+        let file = find(&review.files, "new.txt");
+        assert_eq!(file.kind, ChangeKind::Renamed);
+        assert_eq!(file.old_path.as_deref(), Some("old.txt"));
+    }
+
+    #[test]
+    fn a_staged_rename_is_detected_from_the_synthetic_tree() {
+        let (_dir, path) = repo_with(&[("old.txt", "same content\n")]);
+        std::fs::rename(path.join("old.txt"), path.join("new.txt")).unwrap();
+        let repo = git2::Repository::open(&path).unwrap();
+        let mut index = repo.index().unwrap();
+        index.remove_path(Path::new("old.txt")).unwrap();
+        index.add_path(Path::new("new.txt")).unwrap();
+        index.write().unwrap();
+
+        let review = generate(&path, ReviewBase::WorkingTree).unwrap();
+        assert_eq!(find(&review.files, "new.txt").kind, ChangeKind::Renamed);
+    }
+
+    #[test]
+    fn ignored_untracked_content_is_not_captured() {
+        let (_dir, path) = repo_with(&[(".gitignore", "ignored.txt\n")]);
+        write(&path, "ignored.txt", "secret\n");
+        assert!(generate(&path, ReviewBase::WorkingTree)
+            .unwrap()
+            .files
+            .is_empty());
+    }
+
+    #[test]
+    fn first_since_last_looked_falls_back_without_creating_a_baseline() {
+        let (_dir, path) = repo_with(&[("a.txt", "old\n")]);
+        write(&path, "a.txt", "new\n");
+        let review = generate(&path, ReviewBase::SinceLastLooked).unwrap();
+        assert!(review.baseline_snapshot.is_none());
+        assert_eq!(review.files.len(), 1);
+        assert!(generate(&path, ReviewBase::SinceLastLooked)
+            .unwrap()
+            .baseline_snapshot
+            .is_none());
+    }
+
+    #[test]
+    fn acknowledged_baseline_is_durable_and_cas_protected() {
+        let (_dir, path) = repo_with(&[("a.txt", "old\n")]);
+        write(&path, "a.txt", "one\n");
+        let first = generate(&path, ReviewBase::SinceLastLooked).unwrap();
+        acknowledge(&path, &first.target_snapshot, None).unwrap();
+        drop(git2::Repository::open(&path).unwrap());
+        assert!(generate(&path, ReviewBase::SinceLastLooked)
+            .unwrap()
+            .files
+            .is_empty());
+
+        write(&path, "a.txt", "two\n");
+        let second = generate(&path, ReviewBase::SinceLastLooked).unwrap();
+        assert!(acknowledge(&path, &second.target_snapshot, None).is_err());
+        acknowledge(
+            &path,
+            &second.target_snapshot,
+            second.baseline_snapshot.as_deref(),
+        )
             .unwrap();
     }
 
     #[test]
-    fn the_working_tree_base_ignores_what_the_branch_already_committed() {
-        let (_d, path) = repo_with(&[("a.txt", "one\n")]);
-        commit_on_branch(&path, "feature", &[("b.txt", "committed\n")]);
+    fn acknowledging_a_displayed_snapshot_does_not_hide_later_edits() {
+        let (_dir, path) = repo_with(&[("a.txt", "old\n")]);
+        write(&path, "a.txt", "displayed\n");
+        let displayed = generate(&path, ReviewBase::SinceLastLooked).unwrap();
+        write(&path, "a.txt", "later\n");
 
-        assert!(
-            working_tree(&path, ReviewBase::WorkingTree).is_empty(),
-            "committed work is not uncommitted work"
-        );
+        acknowledge(&path, &displayed.target_snapshot, None).unwrap();
+        let remaining = generate(&path, ReviewBase::SinceLastLooked).unwrap();
+        let file = find(&remaining.files, "a.txt");
+        assert!(file.hunks.iter().flat_map(|hunk| &hunk.lines).any(|line| {
+            line.kind == LineKind::Added && line.text == "later"
+        }));
     }
 
     #[test]
-    fn the_branch_point_base_shows_everything_the_branch_did() {
-        let (_d, path) = repo_with(&[("a.txt", "one\n")]);
-        commit_on_branch(&path, "feature", &[("b.txt", "committed\n")]);
-        write(&path, "c.txt", "uncommitted\n");
-
-        let files = working_tree(&path, ReviewBase::BranchPoint);
-        let mut names = paths(&files);
-        names.sort();
-        assert_eq!(
-            names,
-            vec!["b.txt", "c.txt"],
-            "both what it committed and what it hasn't"
-        );
+    fn linked_worktrees_use_distinct_baseline_refs() {
+        let (_dir, path) = repo_with(&[("a.txt", "old\n")]);
+        let linked_root = tempfile::tempdir().unwrap();
+        let linked = linked_root.path().join("worktree");
+        let repo = git2::Repository::open(&path).unwrap();
+        repo.worktree("linked", &linked, None).unwrap();
+        let other = git2::Repository::open(&linked).unwrap();
+        assert_ne!(baseline_ref(&repo).unwrap(), baseline_ref(&other).unwrap());
     }
 
     #[test]
-    fn a_branch_with_no_fork_point_falls_back_to_uncommitted_work() {
-        // On the default branch there is nothing to have forked from, and
-        // an empty diff would read as "this branch changed nothing".
-        let (_d, path) = repo_with(&[("a.txt", "one\n")]);
-        write(&path, "a.txt", "two\n");
-
-        let files = working_tree(&path, ReviewBase::BranchPoint);
-        assert_eq!(paths(&files), vec!["a.txt"]);
+    fn capture_errors_are_not_successful_empty_reviews() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(generate(dir.path(), ReviewBase::WorkingTree).is_err());
     }
-
 }

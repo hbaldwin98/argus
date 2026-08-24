@@ -297,8 +297,11 @@ mod tests {
 
     fn view(files: Vec<FileDiff>) -> ReviewView {
         ReviewView::new(Review {
+            request_id: 1,
             checkout: CheckoutId(1),
             base: argus_protocol::ReviewBase::WorkingTree,
+            target_snapshot: "target-1".to_string(),
+            baseline_snapshot: None,
             files,
         })
     }

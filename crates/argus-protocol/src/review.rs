@@ -14,13 +14,16 @@ pub enum ReviewBase {
     /// Everything this branch did: its fork point against the working tree,
     /// falling back to the upstream branch where there is no fork point.
     BranchPoint,
+    /// Changes after the last snapshot the operator explicitly accepted.
+    SinceLastLooked,
 }
 
 impl ReviewBase {
     pub fn next(self) -> Self {
         match self {
             ReviewBase::WorkingTree => ReviewBase::BranchPoint,
-            ReviewBase::BranchPoint => ReviewBase::WorkingTree,
+            ReviewBase::BranchPoint => ReviewBase::SinceLastLooked,
+            ReviewBase::SinceLastLooked => ReviewBase::WorkingTree,
         }
     }
 
@@ -28,6 +31,7 @@ impl ReviewBase {
         match self {
             ReviewBase::WorkingTree => "uncommitted",
             ReviewBase::BranchPoint => "this branch",
+            ReviewBase::SinceLastLooked => "last looked",
         }
     }
 }
@@ -111,13 +115,29 @@ impl FileDiff {
 /// Carries the checkout id so a client that moved on can drop a stale reply.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Review {
+    pub request_id: u64,
     pub checkout: CheckoutId,
     pub base: ReviewBase,
+    /// Opaque identities understood only by the daemon.
+    pub target_snapshot: String,
+    pub baseline_snapshot: Option<String>,
     pub files: Vec<FileDiff>,
 }
 
 impl Review {
     pub fn is_empty(&self) -> bool {
         self.files.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ReviewBase;
+
+    #[test]
+    fn review_bases_cycle_through_all_three_choices() {
+        assert_eq!(ReviewBase::WorkingTree.next(), ReviewBase::BranchPoint);
+        assert_eq!(ReviewBase::BranchPoint.next(), ReviewBase::SinceLastLooked);
+        assert_eq!(ReviewBase::SinceLastLooked.next(), ReviewBase::WorkingTree);
     }
 }
