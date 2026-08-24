@@ -10,7 +10,7 @@ The workspace builds three executables:
 
 - `argus`: the terminal client.
 - `argusd`: the daemon that owns panes, Git state, and session restore.
-- `argus-hook`: a helper used for Claude Code status events.
+- `argus-hook`: a helper that lets agent harnesses report status, notes, and pane titles.
 
 ## Features
 
@@ -147,7 +147,7 @@ cargo install --locked --root /opt/argus --path crates/argus-client
 ```
 
 Then add `/opt/argus/bin` to `PATH`. Do not copy only `argus`: lazy daemon startup requires
-`argusd`, and Claude status hooks require `argus-hook` beside `argusd`.
+`argusd`, and agent harness integration requires `argus-hook` beside `argusd`.
 
 ## Configuration
 
@@ -162,7 +162,7 @@ The directory may contain:
 
 | File | Purpose |
 |---|---|
-| `projects.toml` | Workspaces, projects, repositories, and agent templates |
+| `projects.toml` | Workspaces, projects, repositories, agent templates, and harnesses |
 | `client.toml` | Editor and theme preferences |
 | `open-workspace` | Last daemon-wide workspace |
 | `session.json` | Pane descriptions used for relaunch |
@@ -202,7 +202,34 @@ When no `[[agent]]` entries exist, Argus supplies these templates:
 
 Adding any `[[agent]]` entry replaces the built-in list, so include every template you want to keep.
 Install and authenticate each agent CLI separately, and ensure it is available in the daemon's
-inherited `PATH`. Custom commands are argument arrays; the first item is the executable.
+inherited `PATH`. Custom commands are argument arrays; the first item is the executable. An agent's
+optional `harness` selects a matching built-in or configured harness; without it, Argus tries the
+agent name and then falls back to the generic environment-only harness.
+
+Custom JSON-hook harnesses use this schema:
+
+```toml
+[[harness]]
+name = "herdr"
+settings = ".herdr/hooks.json"
+hooks_key = "hooks"
+shape = "flat" # use "matcher" for Claude Code-style nesting
+context_event = "session_start"
+
+[harness.events]
+turn_start = "working"
+turn_end = "idle"
+ask = { reports = "waiting", note = true }
+
+[[agent]]
+name = "herdr"
+cmd = ["herdr"]
+harness = "herdr"
+```
+
+`settings` is relative to the checkout. Event values are `working`, `idle`, `waiting`, or `failed`.
+Set `note = true` when the harness sends a useful JSON or text explanation to the hook on stdin.
+Omit `settings` for an environment-only harness.
 
 ### `client.toml`
 
@@ -313,15 +340,30 @@ the `git` executable. Argus-created worktrees are stored under:
 
 Add `/.argus/` to the repository's ignore rules if it is not already ignored.
 
-## Claude Status Hooks
+## Agent Harnesses
 
-An agent template named exactly `claude` receives working, waiting, and idle updates. Argus manages
-three entries in `<checkout>/.claude/settings.local.json` and removes them when the last Claude pane
-closes or during the next daemon startup sweep.
+Every agent pane receives `ARGUS_HOOK`, `ARGUS_HOOK_URL`, `ARGUS_HOOK_TOKEN`, `ARGUS_PANE`, and
+`ARGUS_INSTRUCTIONS`. A CLI or wrapper can report without a configured hook file:
 
-Hook configuration is checkout-wide. Multiple Claude panes in one checkout currently route status to
-the newest pane, so their individual statuses are not reliable. Other agent templates expose process
-lifecycle state only.
+```sh
+"$ARGUS_HOOK" status working
+"$ARGUS_HOOK" status waiting "needs database access"
+"$ARGUS_HOOK" status failed "tests failed"
+"$ARGUS_HOOK" title "repairing session restore"
+```
+
+`argus-hook say "text"` writes text to stdout for harnesses that inject command output into the
+agent's context. Other forms are silent and always exit successfully so a stopped daemon cannot break
+an agent turn.
+
+Claude Code and the generic environment-only harness are built in. The Claude harness manages
+`UserPromptSubmit`, `Stop`, `Notification`, and `SessionStart` entries in
+`<checkout>/.claude/settings.local.json`; managed entries are removed when the last agent pane closes
+or during the next daemon startup sweep. A same-named `[[harness]]` block replaces a built-in.
+
+Hook files are checkout-wide. Concurrent panes using the same file-backed harness in one checkout do
+not yet have independent routing; the newest installed pane receives those events. Environment-driven
+reports remain pane-specific.
 
 ## Development
 

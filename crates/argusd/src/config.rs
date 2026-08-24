@@ -190,8 +190,11 @@ const DEFAULT_CONFIG: &str = r#"# Argus projects. Each project groups one or mor
 # settings = ".herdr/hooks.json"
 # hooks_key = "hooks"
 # shape = "flat"            # or "matcher" for Claude Code's nesting
-# events = { turn_start = "working", turn_end = "idle" }
-# events.ask = { reports = "waiting", note = true }   # note: stdin explains why
+#
+# [harness.events]
+# turn_start = "working"
+# turn_end = "idle"
+# ask = { reports = "waiting", note = true }   # note: stdin explains why
 #
 # [[agent]]
 # name = "herdr"
