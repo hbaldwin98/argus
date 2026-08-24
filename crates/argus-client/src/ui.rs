@@ -609,6 +609,10 @@ fn content_title(app: &App) -> String {
 /// The status bar: where you are on the left, what you can press on the
 /// right. Context-sensitive, because the same key means different things
 /// inside a pane and in the nav columns.
+///
+/// The left half is the breadcrumb's seat, on loan to whatever the last
+/// action reported. `App::on_key` hands it back on the next keypress, so a
+/// report is read once and then gets out of the way.
 fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     // `area` includes the blank padding row; the bar is its last row.
     let area = Rect {
@@ -656,14 +660,18 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         (keys, th.dim)
     };
 
-    // A daemon error or a pane exit lands in `status`. That is the one
-    // thing on this bar the user *must* read, so it outranks the keymap for
-    // space — unlike the breadcrumb, which yields.
-    let alert = app.status.starts_with("error:") || app.status.contains("exited");
-    let left = if alert {
-        Span::styled(app.status.clone(), Style::default().fg(th.err))
-    } else {
+    // An alert is the one thing on this bar the user *must* read, so it
+    // outranks the keymap for space. An ordinary report is news rather than
+    // an alarm: brighter than the breadcrumb it stands in for, but it yields
+    // to the keys the same way the breadcrumb does.
+    let alert = app.status_alert;
+    let left = if app.status.is_empty() {
         Span::styled(breadcrumb(app), Style::default().fg(th.muted))
+    } else {
+        Span::styled(
+            app.status.clone(),
+            Style::default().fg(if alert { th.err } else { th.text }),
+        )
     };
 
     let hint_span = Span::styled(hint, Style::default().fg(tone));
@@ -1564,6 +1572,18 @@ mod tests {
             .collect()
     }
 
+    /// The status bar's row: the one carrying the nav keymap.
+    fn bar_row(buf: &ratatui::buffer::Buffer) -> u16 {
+        lines(buf)
+            .iter()
+            .position(|r| r.contains("q detach"))
+            .expect("the status bar") as u16
+    }
+
+    fn bar(buf: &ratatui::buffer::Buffer) -> String {
+        lines(buf)[bar_row(buf) as usize].clone()
+    }
+
     fn app_with_tree() -> App {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         // Keep the receiver alive so sends don't fail during render setup.
@@ -1733,6 +1753,69 @@ mod tests {
         });
         let text = lines(&draw(&mut app)).join("\n");
         assert!(text.contains("git worktree add failed"), "errors must be read, not buried");
+    }
+
+    #[test]
+    fn an_error_hands_the_bar_back_once_a_key_acknowledges_it() {
+        let mut app = app_with_tree();
+        app.on_server_msg(argus_protocol::ServerMsg::Error {
+            message: "git worktree add failed".to_string(),
+        });
+        app.on_key(crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('j'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        let bar = bar(&draw(&mut app));
+        assert!(
+            !bar.contains("git worktree add failed"),
+            "a read error must not outlive the key that acknowledges it:
+{bar}"
+        );
+        assert!(bar.trim_start().starts_with("projects"), "the breadcrumb gets its seat back:
+{bar}");
+    }
+
+    #[test]
+    fn a_fresh_bar_shows_the_breadcrumb_not_a_message() {
+        let mut app = app_with_tree();
+        let bar = bar(&draw(&mut app));
+        assert!(
+            bar.trim_start().starts_with("projects"),
+            "nothing has happened yet, so the seat is the breadcrumb's:
+{bar}"
+        );
+    }
+
+    #[test]
+    fn an_ordinary_report_takes_the_breadcrumbs_seat_too() {
+        // Feedback the user asked for by pressing something — it is no use
+        // to anyone if only errors are allowed on screen.
+        let mut app = app_with_tree();
+        app.report("review baseline accepted");
+        let bar = bar(&draw(&mut app));
+        assert!(bar.contains("review baseline accepted"), "{bar}");
+    }
+
+    #[test]
+    fn only_an_alarm_is_colored_like_one() {
+        let th = Theme::default();
+        let mut app = app_with_tree();
+
+        app.report("review baseline accepted");
+        let buf = draw(&mut app);
+        let y = bar_row(&buf);
+        assert!(
+            (0..buf.area.width).all(|x| buf.cell((x, y)).unwrap().fg != th.err),
+            "an ordinary report is news, not an alarm"
+        );
+
+        app.alert("error: git worktree add failed");
+        let buf = draw(&mut app);
+        let y = bar_row(&buf);
+        assert!(
+            (0..buf.area.width).any(|x| buf.cell((x, y)).unwrap().fg == th.err),
+            "and an error still has to look like one"
+        );
     }
 
     #[test]

@@ -251,7 +251,13 @@ pub struct App {
     pub grids: std::collections::HashMap<PaneId, Grid>,
     pub leader_pending: bool,
     pub should_quit: bool,
+    /// The last thing worth saying on the status bar, and whether it is
+    /// something the user *must* read. The rank rides along rather than
+    /// being guessed from the words, because it decides both the color and
+    /// whether the message outranks the keymap for space. Set through
+    /// [`App::report`] and [`App::alert`].
     pub status: String,
+    pub status_alert: bool,
     pub layout: Layout,
     /// Preferred outer widths for the four main columns. `None` uses the
     /// initial proportional layout; dragging a gutter captures concrete
@@ -327,8 +333,10 @@ impl App {
             grids: std::collections::HashMap::new(),
             leader_pending: false,
             should_quit: false,
-            status: "j/k move  l/enter open  h/esc back  s: shell  a: agent  n: new  D: rm-checkout  x: close  q: detach"
-                .to_string(),
+            // Empty, not a keymap: the bar's left half is the breadcrumb's
+            // until something has actually happened to report.
+            status: String::new(),
+            status_alert: false,
             layout: Layout::default(),
             column_widths,
             resizing_gutter: None,
@@ -552,7 +560,7 @@ impl App {
                     rest,
                     0,
                 ));
-                self.status = format!("on {current}");
+                self.report(format!("on {current}"));
             }
             ServerMsg::Files { checkout, files } => {
                 if self.list_wanted != Some(checkout) {
@@ -560,7 +568,7 @@ impl App {
                 }
                 self.list_wanted = None;
                 if files.is_empty() {
-                    self.status = "no files here".to_string();
+                    self.report("no files here");
                     return;
                 }
                 self.picker = Some(Picker::new(
@@ -571,7 +579,7 @@ impl App {
                 ));
             }
             ServerMsg::Error { message } => {
-                self.status = format!("error: {message}");
+                self.alert(format!("error: {message}"));
             }
         }
     }
@@ -584,7 +592,14 @@ impl App {
         }
         self.grids.remove(&pane);
         if self.column_pane() == Some(pane) {
-            self.status = format!("pane exited ({code:?})");
+            // Ranked the way the pane rows rank an exit (§8b): a clean one is
+            // news — the column just emptied — while a failure or a kill is
+            // the thing on the bar you have to read.
+            match code {
+                Some(0) => self.report("pane exited"),
+                Some(c) => self.alert(format!("pane exited with code {c}")),
+                None => self.alert("pane was killed"),
+            }
         }
     }
 
@@ -598,19 +613,19 @@ impl App {
         let view = ReviewView::new(review);
         if view.is_empty() && base != ReviewBase::SinceLastLooked {
             self.review = None;
-            self.status = format!("no changes vs {}", base.label());
+            self.report(format!("no changes vs {}", base.label()));
             return;
         }
         self.review = Some(view);
         self.overlay = Some(Overlay::Review);
         self.focus = Focus::Review;
-        self.status = format!("{files} changed vs {}", base.label());
+        self.report(format!("{files} changed vs {}", base.label()));
     }
 
     fn receive_review_failure(&mut self, request_id: u64, checkout: CheckoutId, message: String) {
         if self.review_wanted == Some((checkout, request_id)) {
             self.review_wanted = None;
-            self.status = format!("error: {message}");
+            self.alert(format!("error: {message}"));
         }
     }
 
@@ -626,11 +641,31 @@ impl App {
             return;
         };
         if let Some(message) = error {
-            self.status = format!("error: {message}");
+            self.alert(format!("error: {message}"));
         } else {
             view.review.baseline_snapshot = Some(target_snapshot.to_string());
-            self.status = "review baseline accepted".to_string();
+            self.report("review baseline accepted");
         }
+    }
+
+    /// Ordinary news — what a keypress did, or what it could not do. Drawn
+    /// in plain text, and it yields the bar to the keymap when both will not
+    /// fit.
+    pub fn report(&mut self, message: impl Into<String>) {
+        self.status = message.into();
+        self.status_alert = false;
+    }
+
+    /// Something the user must read: a daemon error, a pane that died. Drawn
+    /// as an alarm, and it keeps the bar even when that costs the keymap.
+    pub fn alert(&mut self, message: impl Into<String>) {
+        self.status = message.into();
+        self.status_alert = true;
+    }
+
+    fn clear_status(&mut self) {
+        self.status.clear();
+        self.status_alert = false;
     }
 
     /// Shuts any floating window, from anywhere, whatever has focus.
@@ -646,10 +681,16 @@ impl App {
     }
 
     pub fn on_key(&mut self, key: KeyEvent) {
+        // The left of the bar is the breadcrumb's seat and a message only
+        // borrows it. Pressing anything is the acknowledgement that hands it
+        // back; without that, the last error or exit hides where you are for
+        // the rest of the session. Cleared before dispatch, so a handler is
+        // still free to set its own.
+        self.clear_status();
         if Self::is_panic_key(&key) {
             if self.overlay.is_some() {
                 self.close_overlay();
-                self.status = "closed the floating window".to_string();
+                self.report("closed the floating window");
             }
             return;
         }
@@ -981,13 +1022,13 @@ impl App {
     /// Works from any column that still implies a checkout.
     fn open_review(&mut self) {
         let Some(id) = self.current_checkout().map(|c| c.id) else {
-            self.status = "nothing to review".to_string();
+            self.report("nothing to review");
             return;
         };
         let request_id = self.next_review_request;
         self.next_review_request = self.next_review_request.wrapping_add(1).max(1);
         self.review_wanted = Some((id, request_id));
-        self.status = "loading diff…".to_string();
+        self.report("loading diff…");
         let _ = self.out.send(ClientMsg::Review {
             request_id,
             checkout: id,
@@ -999,14 +1040,14 @@ impl App {
     /// rather than needing one to know about Argus.
     fn send_to_agent(&mut self, message: String) {
         let Some(pane) = self.agent_in_current_checkout() else {
-            self.status = "no agent running in this checkout".to_string();
+            self.report("no agent running in this checkout");
             return;
         };
         let mut bytes = message.into_bytes();
         // What a terminal actually sends for Enter.
         bytes.push(b'\r');
         let _ = self.out.send(ClientMsg::Input { pane, bytes });
-        self.status = "comment sent".to_string();
+        self.report("comment sent");
     }
 
     /// Shells are skipped — a comment at a shell prompt is a failed command.
@@ -1063,7 +1104,7 @@ impl App {
                         target_snapshot: view.review.target_snapshot.clone(),
                         expected_baseline: view.review.baseline_snapshot.clone(),
                     });
-                    self.status = "accepting review baseline…".to_string();
+                    self.report("accepting review baseline…");
                 }
                 return;
             }
@@ -1149,7 +1190,7 @@ impl App {
         }
         let Some(c) = self.current_checkout() else { return };
         if c.primary {
-            self.status = "can't remove the primary checkout".to_string();
+            self.report("can't remove the primary checkout");
             return;
         }
         self.prompt = Some(Prompt::ConfirmRemoveCheckout {
@@ -1161,6 +1202,11 @@ impl App {
     pub fn on_mouse(&mut self, ev: MouseEvent) {
         if self.picker.is_some() || self.prompt.is_some() {
             return;
+        }
+        // Same acknowledgement as a keypress, but only for a deliberate one:
+        // a mouse crossing the terminal is not the user reading anything.
+        if matches!(ev.kind, MouseEventKind::Down(_)) {
+            self.clear_status();
         }
         // A floating window is modal: clicks inside it are its own, and a
         // click outside dismisses it. Without this a click would fall
@@ -1443,7 +1489,7 @@ impl App {
         if self.workspaces.len() < 2 {
             // One workspace is the zero-config case; a picker offering a
             // single choice is just a keystroke that does nothing.
-            self.status = "only one workspace".to_string();
+            self.report("only one workspace");
             return;
         }
         let sel = self.workspaces.iter().position(|w| w.open).unwrap_or(0);
@@ -1471,7 +1517,7 @@ impl App {
     /// when they arrive, so it never shows a stale list.
     fn open_branch_picker(&mut self) {
         let Some(id) = self.current_checkout().map(|c| c.id) else {
-            self.status = "no checkout selected".to_string();
+            self.report("no checkout selected");
             return;
         };
         self.list_wanted = Some(id);
@@ -1480,7 +1526,7 @@ impl App {
 
     fn open_file_picker(&mut self) {
         let Some(id) = self.current_checkout().map(|c| c.id) else {
-            self.status = "no checkout selected".to_string();
+            self.report("no checkout selected");
             return;
         };
         self.list_wanted = Some(id);
@@ -1567,7 +1613,7 @@ impl App {
             PickerKind::Theme => {
                 let Some(name) = picker.selected() else { return };
                 self.theme = crate::theme::Theme::by_name(name);
-                self.status = format!("theme: {name}");
+                self.report(format!("theme: {name}"));
             }
         }
     }
@@ -2266,7 +2312,33 @@ mod tests {
             pane: PaneId(100),
             code: Some(1),
         });
-        assert!(h.app.status.contains("exited"), "{}", h.app.status);
+        assert_eq!(
+            h.app.status, "pane exited with code 1",
+            "the bar is prose, not a Debug dump"
+        );
+        assert!(h.app.status_alert, "a failed exit is the thing you have to read");
+    }
+
+    #[test]
+    fn a_clean_exit_is_news_but_a_kill_is_an_alarm() {
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::PaneClosed {
+            pane: PaneId(100),
+            code: Some(0),
+        });
+        assert_eq!(h.app.status, "pane exited");
+        assert!(
+            !h.app.status_alert,
+            "a clean exit is no louder here than the ✓ on its row"
+        );
+
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::PaneClosed {
+            pane: PaneId(100),
+            code: None,
+        });
+        assert_eq!(h.app.status, "pane was killed");
+        assert!(h.app.status_alert);
     }
 
     #[test]
@@ -2276,6 +2348,40 @@ mod tests {
             message: "git worktree add failed".to_string(),
         });
         assert!(h.app.status.contains("git worktree add failed"));
+    }
+
+    #[test]
+    fn a_message_gives_the_bar_back_on_the_next_keypress() {
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Error {
+            message: "git worktree add failed".to_string(),
+        });
+        h.key(KeyCode::Char('j'));
+        assert!(
+            h.app.status.is_empty(),
+            "an unread error would hide the breadcrumb forever: {}",
+            h.app.status
+        );
+    }
+
+    #[test]
+    fn a_click_acknowledges_a_message_but_a_mouse_move_does_not() {
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        h.app.on_server_msg(ServerMsg::PaneClosed {
+            pane: PaneId(100),
+            code: Some(1),
+        });
+        h.app.on_mouse(MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: 2,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert!(!h.app.status.is_empty(), "drifting across the terminal is not reading it");
+
+        h.app.on_mouse(click(2, 3));
+        assert!(h.app.status.is_empty(), "{}", h.app.status);
     }
 
     #[test]
