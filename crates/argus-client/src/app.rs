@@ -234,8 +234,10 @@ pub struct App {
     pub sel_project: usize,
     pub sel_checkout: usize,
     pub sel_pane: usize,
-    pub subscribed: Option<PaneId>,
-    pub grid: Option<Grid>,
+    /// Every pane being streamed, and the screen of each. More than one,
+    /// because a floating editor must not cost you sight of the agent
+    /// running behind it.
+    pub grids: std::collections::HashMap<PaneId, Grid>,
     pub leader_pending: bool,
     pub should_quit: bool,
     pub status: String,
@@ -304,8 +306,7 @@ impl App {
             sel_project: 0,
             sel_checkout: 0,
             sel_pane: 0,
-            subscribed: None,
-            grid: None,
+            grids: std::collections::HashMap::new(),
             leader_pending: false,
             should_quit: false,
             status: "j/k move  l/enter open  h/esc back  s: shell  a: agent  n: new  D: rm-checkout  x: close  q: detach"
@@ -368,24 +369,40 @@ impl App {
     /// state implies, independent of `focus` — the rightmost column always
     /// shows this pane's content alongside the project/checkout columns,
     /// it never takes over the whole screen.
+    /// The pane the rightmost column draws: whatever the tree selection
+    /// implies, untouched by anything floating above it.
+    pub fn column_pane(&self) -> Option<PaneId> {
+        self.current_pane().map(|p| p.id)
+    }
+
+    pub fn overlay_pane(&self) -> Option<PaneId> {
+        self.overlay.as_ref().and_then(Overlay::pane)
+    }
+
+    /// Subscribes to everything currently on screen and drops the rest.
     fn sync_subscription(&mut self) {
-        // An overlay pane is the live view while it is up: the protocol
-        // carries one subscription per connection, and the floating window
-        // is the one the user is looking at.
-        let want = match &self.overlay {
-            Some(o) => o.pane(),
-            None => self.current_pane().map(|p| p.id),
-        };
-        if want == self.subscribed {
-            return;
+        let want: Vec<PaneId> = [self.column_pane(), self.overlay_pane()]
+            .into_iter()
+            .flatten()
+            .collect();
+
+        let stale: Vec<PaneId> = self
+            .grids
+            .keys()
+            .copied()
+            .filter(|id| !want.contains(id))
+            .collect();
+        for id in stale {
+            self.grids.remove(&id);
+            let _ = self.out.send(ClientMsg::Unsubscribe { pane: id });
         }
-        if let Some(old) = self.subscribed.take() {
-            let _ = self.out.send(ClientMsg::Unsubscribe { pane: old });
-        }
-        self.grid = None;
-        if let Some(id) = want {
-            self.subscribed = Some(id);
-            let _ = self.out.send(ClientMsg::Subscribe { pane: id });
+        for id in want {
+            // The entry doubles as the record that this pane has been
+            // asked for; the snapshot replaces the placeholder.
+            if let std::collections::hash_map::Entry::Vacant(slot) = self.grids.entry(id) {
+                slot.insert(Grid::new(Vec::new()));
+                let _ = self.out.send(ClientMsg::Subscribe { pane: id });
+            }
         }
     }
 
@@ -429,11 +446,16 @@ impl App {
                         .and_then(|c| c.panes.last())
                         .map(|p| (p.id, p.title.clone()));
                     if let Some((id, title)) = newest {
-                        let n = self.current_checkout().map(|c| c.panes.len()).unwrap_or(1);
-                        self.sel_pane = n - 1;
                         if std::mem::take(&mut self.pending_overlay_new) {
+                            // Deliberately leaves `sel_pane` alone: the
+                            // columns keep showing whatever you were
+                            // watching, and closing the window puts you
+                            // back there rather than on the editor.
                             self.open_overlay_pane(id, title);
                         } else {
+                            let n =
+                                self.current_checkout().map(|c| c.panes.len()).unwrap_or(1);
+                            self.sel_pane = n - 1;
                             self.sync_subscription();
                             self.focus = Focus::PaneContent;
                         }
@@ -452,13 +474,13 @@ impl App {
                 self.workspaces = list;
             }
             ServerMsg::PaneSnapshot { pane, cells, .. } => {
-                if self.subscribed == Some(pane) {
-                    self.grid = Some(Grid::new(cells));
+                if self.grids.contains_key(&pane) {
+                    self.grids.insert(pane, Grid::new(cells));
                 }
             }
             ServerMsg::Damage { pane, spans } => {
-                if self.subscribed == Some(pane) {
-                    if let Some(grid) = &mut self.grid {
+                {
+                    if let Some(grid) = self.grids.get_mut(&pane) {
                         grid.apply(&spans);
                     }
                 }
@@ -466,10 +488,11 @@ impl App {
             ServerMsg::PaneClosed { pane, code } => {
                 // Otherwise the window sits there showing a dead grid,
                 // which is exactly what a hung editor looks like.
-                if self.overlay.as_ref().and_then(Overlay::pane) == Some(pane) {
+                if self.overlay_pane() == Some(pane) {
                     self.close_overlay();
                 }
-                if self.subscribed == Some(pane) {
+                self.grids.remove(&pane);
+                if self.column_pane() == Some(pane) {
                     self.status = format!("pane exited ({code:?})");
                 }
             }
@@ -724,14 +747,11 @@ impl App {
         }
     }
 
-    /// Where the subscribed pane is actually drawn. The pty is sized from
-    /// this, so it has to follow the pane into a floating window.
-    pub fn live_area(&self) -> Rect {
-        if self.overlay.is_some() {
-            self.layout.overlay.inner
-        } else {
-            self.layout.content.inner
-        }
+    /// Puts a review up directly, for tests that must not disturb the
+    /// column selection by navigating to it.
+    #[cfg(test)]
+    pub fn review_for_test(&mut self, checkout: CheckoutId) {
+        self.review_wanted = Some(checkout);
     }
 
     pub fn open_settings(&mut self) {
@@ -791,8 +811,9 @@ impl App {
     pub fn close_overlay(&mut self) {
         self.overlay = None;
         self.leader_pending = false;
-        // Back to whatever the columns were showing, including its grid.
-        self.focus = Focus::Panes;
+        if self.focus == Focus::Overlay {
+            self.focus = Focus::Panes;
+        }
         self.sync_subscription();
     }
 
@@ -811,7 +832,7 @@ impl App {
             self.leader_pending = true;
             return;
         }
-        let Some(pane) = self.subscribed else { return };
+        let Some(pane) = self.column_pane() else { return };
         let bytes = encode_key(&key);
         if !bytes.is_empty() {
             let _ = self.out.send(ClientMsg::Input { pane, bytes });
@@ -1032,7 +1053,7 @@ impl App {
                 return;
             }
             if let Some(bytes) = encode_mouse(&ev, self.layout.overlay.inner) {
-                if let Some(pane) = self.subscribed {
+                if let Some(pane) = self.overlay_pane() {
                     let _ = self.out.send(ClientMsg::Input { pane, bytes });
                 }
             }
@@ -1045,7 +1066,7 @@ impl App {
             if matches!(ev.kind, MouseEventKind::Down(_)) {
                 self.focus = Focus::PaneContent;
             }
-            if let Some(pane) = self.subscribed {
+            if let Some(pane) = self.column_pane() {
                 let _ = self.out.send(ClientMsg::Input { pane, bytes });
             }
             return;
@@ -1374,10 +1395,22 @@ impl App {
         }
     }
 
-    pub fn resize_pane(&mut self, rows: u16, cols: u16) {
-        if let Some(pane) = self.subscribed {
-            let _ = self.out.send(ClientMsg::Resize { pane, rows, cols });
+    pub fn resize_pane(&mut self, pane: PaneId, rows: u16, cols: u16) {
+        let _ = self.out.send(ClientMsg::Resize { pane, rows, cols });
+    }
+
+    /// Every pane on screen with the area it is drawn in. Each pty is sized
+    /// from its own, so a floating editor and the column behind it do not
+    /// have to agree on a width.
+    pub fn live_panes(&self) -> Vec<(PaneId, Rect)> {
+        let mut out = Vec::new();
+        if let Some(id) = self.column_pane() {
+            out.push((id, self.layout.content.inner));
         }
+        if let Some(id) = self.overlay_pane() {
+            out.push((id, self.layout.overlay.inner));
+        }
+        out
     }
 }
 
@@ -1572,7 +1605,8 @@ mod tests {
         // The rightmost column always shows a pane; it never has to take
         // over the screen for content to be visible.
         let mut h = Harness::new();
-        assert_eq!(h.app.subscribed, Some(PaneId(100)), "first pane, from Projects focus");
+        assert_eq!(h.app.column_pane(), Some(PaneId(100)), "first pane, from Projects focus");
+        assert!(h.app.grids.contains_key(&PaneId(100)));
         assert!(h.sent().is_empty());
     }
 
@@ -1586,16 +1620,16 @@ mod tests {
             "{msgs:?}"
         );
         assert!(matches!(msgs[1], ClientMsg::Subscribe { pane: PaneId(101) }), "{msgs:?}");
-        assert_eq!(h.app.subscribed, Some(PaneId(101)));
+        assert_eq!(h.app.column_pane(), Some(PaneId(101)));
+        assert!(!h.app.grids.contains_key(&PaneId(100)), "the old grid is dropped");
     }
 
     #[test]
     fn selecting_a_paneless_checkout_unsubscribes_and_clears_the_grid() {
         let mut h = Harness::new();
-        h.app.grid = Some(crate::grid::Grid::new(vec![]));
         h.keys("lj");
-        assert_eq!(h.app.subscribed, None);
-        assert!(h.app.grid.is_none(), "stale content must not linger");
+        assert_eq!(h.app.column_pane(), None);
+        assert!(h.app.grids.is_empty(), "stale content must not linger");
         assert!(matches!(h.sent()[0], ClientMsg::Unsubscribe { .. }));
     }
 
@@ -1607,14 +1641,15 @@ mod tests {
         h.leader();
         h.key(KeyCode::Esc);
         assert_eq!(h.app.focus, Focus::Panes);
-        assert_eq!(h.app.subscribed, Some(PaneId(100)), "live view keeps showing it");
+        assert_eq!(h.app.column_pane(), Some(PaneId(100)), "live view keeps showing it");
         assert!(h.sent().is_empty(), "no resubscribe churn");
     }
 
     #[test]
     fn damage_for_an_unsubscribed_pane_is_ignored() {
         let mut h = Harness::new();
-        h.app.grid = Some(crate::grid::Grid::new(vec![vec![Cell::default()]]));
+        h.app.grids
+            .insert(PaneId(100), crate::grid::Grid::new(vec![vec![Cell::default()]]));
         h.app.on_server_msg(ServerMsg::Damage {
             pane: PaneId(999),
             spans: vec![CellSpan {
@@ -1626,7 +1661,7 @@ mod tests {
                 }],
             }],
         });
-        assert_eq!(h.app.grid.as_ref().unwrap().cells[0][0].ch, " ");
+        assert_eq!(h.app.grids[&PaneId(100)].cells[0][0].ch, " ");
     }
 
     #[test]
@@ -1638,7 +1673,7 @@ mod tests {
             cols: 1,
             cells: vec![vec![Cell::default()]],
         });
-        assert!(h.app.grid.is_some());
+        assert!(h.app.grids.contains_key(&PaneId(100)));
     }
 
     // --- typing into a pane ------------------------------------------------
@@ -1732,7 +1767,7 @@ mod tests {
         h.app.on_server_msg(ServerMsg::Tree(t));
         assert_eq!(h.app.sel_pane, 0);
         assert_eq!(h.app.focus, Focus::PaneContent, "drops you straight into it");
-        assert_eq!(h.app.subscribed, Some(PaneId(102)));
+        assert_eq!(h.app.column_pane(), Some(PaneId(102)));
     }
 
     #[test]
@@ -1743,7 +1778,7 @@ mod tests {
         let mut t = tree();
         t[0].checkouts[0].panes.push(pane(102, "shell"));
         h.app.on_server_msg(ServerMsg::Tree(t));
-        assert_eq!(h.app.subscribed, Some(PaneId(102)));
+        assert_eq!(h.app.column_pane(), Some(PaneId(102)));
     }
 
     #[test]
@@ -1994,7 +2029,7 @@ mod tests {
         t[0].checkouts[0].panes.pop();
         h.app.on_server_msg(ServerMsg::Tree(t));
         assert_eq!(h.app.sel_pane, 0);
-        assert_eq!(h.app.subscribed, Some(PaneId(100)));
+        assert_eq!(h.app.column_pane(), Some(PaneId(100)));
     }
 
     #[test]
@@ -2003,7 +2038,7 @@ mod tests {
         h.app.on_server_msg(ServerMsg::Tree(Vec::new()));
         assert!(h.app.current_project().is_none());
         assert_eq!(h.app.sel_project, 0);
-        assert_eq!(h.app.subscribed, None);
+        assert_eq!(h.app.column_pane(), None);
     }
 
     #[test]
@@ -2207,9 +2242,9 @@ mod tests {
     }
 
     #[test]
-    fn resize_is_forwarded_for_the_subscribed_pane() {
+    fn resize_is_forwarded_for_the_named_pane() {
         let mut h = Harness::new();
-        h.app.resize_pane(30, 100);
+        h.app.resize_pane(PaneId(100), 30, 100);
         match &h.sent()[0] {
             ClientMsg::Resize { pane, rows, cols } => {
                 assert_eq!(*pane, PaneId(100));
@@ -2220,11 +2255,21 @@ mod tests {
     }
 
     #[test]
-    fn resize_with_nothing_subscribed_sends_nothing() {
-        let (tx, mut rx) = unbounded_channel();
-        let mut app = App::new(tx);
-        app.resize_pane(30, 100);
-        assert!(rx.try_recv().is_err());
+    fn every_pane_on_screen_is_sized_from_its_own_area() {
+        // A floating editor and the column behind it are different widths;
+        // sizing both from one of them wraps the other wrongly.
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        h.app.open_overlay_pane(PaneId(700), "vim".to_string());
+        h.app.layout.overlay = Panel {
+            outer: Rect::new(2, 1, 60, 20),
+            inner: Rect::new(3, 2, 58, 18),
+        };
+
+        let live = h.app.live_panes();
+        assert_eq!(live.len(), 2, "the column's pane and the floating one");
+        assert_eq!(live[0].1, h.app.layout.content.inner);
+        assert_eq!(live[1].1, h.app.layout.overlay.inner);
     }
 
     // --- workspaces ---------------------------------------------------------
@@ -2783,13 +2828,13 @@ mod tests {
         laid_out(&mut h);
         h.keys("ll"); // down into the panes column, subscribing
         h.sent();
-        let watching = h.app.subscribed;
+        let watching = h.app.column_pane();
         assert!(watching.is_some(), "precondition: something is being shown");
 
         h.app.on_mouse(click(0, 0)); // all the way back to projects
 
         assert_eq!(h.app.focus, Focus::Projects);
-        assert_eq!(h.app.subscribed, watching, "still showing the same pane");
+        assert_eq!(h.app.column_pane(), watching, "still showing the same pane");
     }
 
     // --- fuzzy pickers ------------------------------------------------------
@@ -3037,20 +3082,22 @@ mod tests {
     // --- floating windows ---------------------------------------------------
 
     #[test]
-    fn an_overlay_pane_becomes_the_live_view() {
-        // The protocol carries one subscription per connection, so the
-        // floating window has to take it over.
+    fn a_floating_pane_streams_alongside_the_column_not_instead_of_it() {
+        // Opening a file must not cost you sight of the agent behind it.
         let mut h = Harness::new();
         h.keys("ll"); // watching the column's pane
         h.sent();
+        let column = h.app.column_pane().unwrap();
 
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(700), "vim".to_string());
 
-        assert_eq!(h.app.subscribed, Some(PaneId(101)));
+        assert_eq!(h.app.overlay_pane(), Some(PaneId(700)));
+        assert_eq!(h.app.column_pane(), Some(column), "the column is untouched");
+        assert!(h.app.grids.contains_key(&column), "and still streaming");
         assert_eq!(h.app.focus, Focus::Overlay);
         assert!(matches!(
             h.sent().last(),
-            Some(ClientMsg::Subscribe { pane: PaneId(101) })
+            Some(ClientMsg::Subscribe { pane: PaneId(700) })
         ));
     }
 
@@ -3118,28 +3165,30 @@ mod tests {
         let mut h = Harness::new();
         h.keys("ll");
         h.sent();
-        let was = h.app.subscribed;
+        let was = h.app.column_pane();
 
         h.app.open_overlay_pane(PaneId(999), "vim".to_string());
         h.leader();
         h.key(KeyCode::Esc);
 
-        assert_eq!(h.app.subscribed, was, "back to what the columns show");
+        assert_eq!(h.app.column_pane(), was, "back to what the columns show");
+        assert!(!h.app.grids.contains_key(&PaneId(999)), "and the editor is dropped");
     }
 
     #[test]
-    fn the_pty_is_sized_from_wherever_the_pane_is_drawn() {
-        // A floating editor sized to the narrow column would wrap wrongly.
+    fn a_floating_pane_and_the_column_are_sized_separately() {
         let mut h = Harness::new();
         laid_out(&mut h);
-        assert_eq!(h.app.live_area(), h.app.layout.content.inner);
+        assert_eq!(h.app.live_panes()[0].1, h.app.layout.content.inner);
 
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.open_overlay_pane(PaneId(700), "vim".to_string());
         h.app.layout.overlay = Panel {
             outer: Rect::new(2, 1, 40, 20),
             inner: Rect::new(3, 2, 38, 18),
         };
-        assert_eq!(h.app.live_area(), h.app.layout.overlay.inner);
+        let live = h.app.live_panes();
+        assert_eq!(live.len(), 2);
+        assert_eq!(live[1].1, h.app.layout.overlay.inner);
     }
 
     // --- settings -----------------------------------------------------------
@@ -3215,6 +3264,25 @@ mod tests {
     }
 
     // --- where an editor opens ----------------------------------------------
+
+    /// Opens an editor without disturbing where the columns are pointed —
+    /// `open_review` drives keys from the projects column, which would
+    /// move the selection this is trying to observe.
+    fn editor_arrives(h: &mut Harness) {
+        let checkout = h.app.tree[0].checkouts[0].id;
+        h.app.review_for_test(checkout);
+        h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
+        h.key(KeyCode::Char('e'));
+        h.sent();
+        let mut t = tree();
+        t[0].checkouts[0].panes.push(PaneInfo {
+            id: PaneId(700),
+            kind: PaneKind::Editor,
+            title: "a.rs".to_string(),
+            status: PaneStatus::Idle,
+        });
+        h.app.on_server_msg(ServerMsg::Tree(t));
+    }
 
     fn open_editor_from_review(h: &mut Harness) {
         let checkout = h.app.tree[0].checkouts[0].id;
@@ -3499,6 +3567,41 @@ mod tests {
             ClientMsg::OpenInEditor { command, .. } => assert_eq!(*command, None),
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    #[test]
+    fn opening_an_editor_does_not_move_the_pane_selection() {
+        // The agent you were watching stays selected and stays on screen;
+        // the editor is a window over the top, not a replacement for it.
+        let mut h = Harness::new();
+        h.keys("ll"); // sitting on the agent in the panes column
+        h.sent();
+        let watching = h.app.column_pane();
+        let where_ = h.app.sel_pane;
+
+        editor_arrives(&mut h);
+
+        assert_eq!(h.app.sel_pane, where_, "selection untouched");
+        assert_eq!(h.app.column_pane(), watching, "column still on the agent");
+        assert_eq!(h.app.overlay_pane(), Some(PaneId(700)), "editor is the window");
+        assert!(
+            h.app.grids.contains_key(&watching.unwrap()),
+            "and the agent is still streaming"
+        );
+    }
+
+    #[test]
+    fn closing_the_editor_leaves_you_back_on_the_agent() {
+        let mut h = Harness::new();
+        h.keys("ll");
+        h.sent();
+        let watching = h.app.column_pane();
+
+        editor_arrives(&mut h);
+        h.key(KeyCode::F(12));
+
+        assert_eq!(h.app.column_pane(), watching);
+        assert!(h.app.overlay.is_none());
     }
 
 }

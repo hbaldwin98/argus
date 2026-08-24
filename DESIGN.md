@@ -95,10 +95,14 @@ Target: ~1.5 MB resident per idle pane, ~40 MB daemon with 16 panes, ~25 MB clie
 **Floating windows.** Some things do not fit a 38%-wide column: a terminal editor, and a
 settings panel with room to say what each option does. Those open as an overlay — a large panel
 above the columns, with the tree still framing it, because losing your place is what the whole
-layout exists to prevent. An overlay holding a pane takes over the live subscription while it is
-up (the protocol carries one per connection) and hands it back on close; the pty is sized from
-wherever the pane is actually drawn, so a floating vim gets the floating window's dimensions.
-Every key belongs to the editor while it is up, `q` included — the leader is the way out.
+layout exists to prevent.
+
+A floating pane streams *alongside* the column, never instead of it: a connection carries one
+subscription per pane on screen, and each pty is sized from where that pane is actually drawn.
+Opening a file must not cost you sight of the agent running behind it, so opening one also
+leaves the pane selection alone — close the window and you are back where you were, not on the
+editor. Every key belongs to the editor while it is up, `q` included; the leader is the way
+out.
 
 A floating window must always be closable. The leader is the polite way out, but it depends on
 the terminal delivering Ctrl-Space and a floating pane deliberately swallows every other key, so

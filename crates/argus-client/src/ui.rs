@@ -439,7 +439,8 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
             inner,
         );
     } else {
-        f.render_widget(TermView { grid: &app.grid }, inner);
+        let grid = app.column_pane().and_then(|id| app.grids.get(&id));
+        f.render_widget(TermView { grid }, inner);
     }
     app.layout.content = Panel { outer: area, inner };
 }
@@ -666,8 +667,13 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     };
 
     match overlay {
-        Overlay::Pane { .. } => {
-            f.render_widget(TermView { grid: &app.grid }, inner);
+        Overlay::Pane { pane, .. } => {
+            f.render_widget(
+                TermView {
+                    grid: app.grids.get(pane),
+                },
+                inner,
+            );
         }
         Overlay::Settings { sel } => render_settings(f, app, inner, *sel, th),
     }
@@ -1046,7 +1052,7 @@ fn status_dot(status: Option<PaneStatus>, th: Theme) -> Span<'static> {
 }
 
 struct TermView<'a> {
-    grid: &'a Option<Grid>,
+    grid: Option<&'a Grid>,
 }
 
 impl Widget for TermView<'_> {

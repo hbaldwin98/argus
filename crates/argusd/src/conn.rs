@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use argus_protocol::{read_msg, write_msg, ClientMsg, ServerMsg};
+use argus_protocol::{read_msg, write_msg, ClientMsg, PaneId, ServerMsg};
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc};
 
@@ -33,13 +33,13 @@ where
 
     let mut tree_rx = daemon.subscribe_tree();
     let mut workspaces_rx = daemon.subscribe_workspaces();
-    let mut damage_rx: Option<broadcast::Receiver<ServerMsg>> = None;
+    let mut subs = Subscriptions::default();
 
     loop {
         tokio::select! {
             msg = read_msg::<_, ClientMsg>(&mut rd) => {
                 match msg {
-                    Ok(cmsg) => handle_client_msg(cmsg, &daemon, &out_tx, &mut damage_rx),
+                    Ok(cmsg) => handle_client_msg(cmsg, &daemon, &out_tx, &mut subs),
                     Err(_) => break,
                 }
             }
@@ -49,11 +49,57 @@ where
             Ok(ws) = workspaces_rx.recv() => {
                 let _ = out_tx.send(ServerMsg::Workspaces(ws));
             }
-            dmsg = recv_optional(&mut damage_rx) => {
-                if let Some(dmsg) = dmsg {
-                    let _ = out_tx.send(dmsg);
+        }
+    }
+}
+
+/// The panes this connection is streaming, one forwarding task each.
+///
+/// More than one at a time because the client draws more than one at a
+/// time: an editor in a floating window must not cost you sight of the
+/// agent running behind it.
+#[derive(Default)]
+struct Subscriptions(std::collections::HashMap<PaneId, tokio::task::JoinHandle<()>>);
+
+impl Subscriptions {
+    fn add(
+        &mut self,
+        pane: PaneId,
+        mut rx: broadcast::Receiver<ServerMsg>,
+        out_tx: mpsc::UnboundedSender<ServerMsg>,
+    ) {
+        self.remove(pane);
+        self.0.insert(
+            pane,
+            tokio::spawn(async move {
+                loop {
+                    match rx.recv().await {
+                        Ok(msg) => {
+                            if out_tx.send(msg).is_err() {
+                                break;
+                            }
+                        }
+                        // A slow client misses frames rather than losing
+                        // the stream; the next full repaint catches it up.
+                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(broadcast::error::RecvError::Closed) => break,
+                    }
                 }
-            }
+            }),
+        );
+    }
+
+    fn remove(&mut self, pane: PaneId) {
+        if let Some(task) = self.0.remove(&pane) {
+            task.abort();
+        }
+    }
+}
+
+impl Drop for Subscriptions {
+    fn drop(&mut self) {
+        for task in self.0.values() {
+            task.abort();
         }
     }
 }
@@ -62,11 +108,11 @@ fn handle_client_msg(
     msg: ClientMsg,
     daemon: &Arc<Daemon>,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
-    damage_rx: &mut Option<broadcast::Receiver<ServerMsg>>,
+    subs: &mut Subscriptions,
 ) {
     let result = match msg {
         ClientMsg::Subscribe { pane } => daemon.subscribe_pane(pane).map(|(rows, cols, cells, rx)| {
-            *damage_rx = Some(rx);
+            subs.add(pane, rx, out_tx.clone());
             let _ = out_tx.send(ServerMsg::PaneSnapshot {
                 pane,
                 rows,
@@ -74,8 +120,8 @@ fn handle_client_msg(
                 cells,
             });
         }),
-        ClientMsg::Unsubscribe { .. } => {
-            *damage_rx = None;
+        ClientMsg::Unsubscribe { pane } => {
+            subs.remove(pane);
             Ok(())
         }
         ClientMsg::Input { pane, bytes } => daemon.write_pane(pane, &bytes),
@@ -187,20 +233,6 @@ fn reply_with(
     Ok(())
 }
 
-async fn recv_optional(rx: &mut Option<broadcast::Receiver<ServerMsg>>) -> Option<ServerMsg> {
-    let r = match rx.as_mut() {
-        Some(r) => r,
-        None => return std::future::pending().await,
-    };
-    match r.recv().await {
-        Ok(m) => Some(m),
-        Err(broadcast::error::RecvError::Lagged(_)) => None,
-        Err(broadcast::error::RecvError::Closed) => {
-            *rx = None;
-            None
-        }
-    }
-}
 
 async fn writer_task<W>(mut wr: W, mut rx: mpsc::UnboundedReceiver<ServerMsg>)
 where
@@ -223,7 +255,7 @@ mod tests {
         daemon: Arc<Daemon>,
         tx: mpsc::UnboundedSender<ServerMsg>,
         rx: mpsc::UnboundedReceiver<ServerMsg>,
-        damage: Option<broadcast::Receiver<ServerMsg>>,
+        subs: Subscriptions,
     }
 
     impl Harness {
@@ -242,7 +274,7 @@ mod tests {
                 daemon,
                 tx,
                 rx,
-                damage: None,
+                subs: Subscriptions::default(),
             }
         }
 
@@ -251,7 +283,7 @@ mod tests {
         }
 
         fn send(&mut self, msg: ClientMsg) {
-            handle_client_msg(msg, &self.daemon, &self.tx, &mut self.damage);
+            handle_client_msg(msg, &self.daemon, &self.tx, &mut self.subs);
         }
 
         fn replies(&mut self) -> Vec<ServerMsg> {
@@ -295,10 +327,10 @@ mod tests {
             h.replies().first(),
             Some(ServerMsg::PaneSnapshot { .. })
         ));
-        assert!(h.damage.is_some(), "damage must flow after a subscribe");
+        assert!(h.subs.0.contains_key(&pane), "damage must flow after a subscribe");
 
         h.send(ClientMsg::Unsubscribe { pane });
-        assert!(h.damage.is_none());
+        assert!(!h.subs.0.contains_key(&pane));
 
         let _ = h.daemon.close_pane(pane);
     }
@@ -309,7 +341,7 @@ mod tests {
         let mut h = Harness::new(dir.path());
         h.send(ClientMsg::Subscribe { pane: PaneId(9999) });
         assert!(!h.error().is_empty());
-        assert!(h.damage.is_none());
+        assert!(h.subs.0.is_empty());
     }
 
     #[tokio::test]
@@ -392,4 +424,52 @@ mod tests {
         });
         assert!(!h.error().is_empty());
     }
+    #[tokio::test]
+    async fn two_panes_stream_at_once() {
+        // A floating editor must not cost the client sight of the agent
+        // behind it, so one connection carries more than one subscription.
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+        let checkout = h.checkout();
+        let a = h.daemon.spawn_shell(checkout).unwrap();
+        let b = h.daemon.spawn_shell(checkout).unwrap();
+
+        h.send(ClientMsg::Subscribe { pane: a });
+        h.send(ClientMsg::Subscribe { pane: b });
+        assert_eq!(h.subs.0.len(), 2);
+
+        // Both snapshots arrive, and neither subscription displaced the
+        // other.
+        let panes: Vec<PaneId> = h
+            .replies()
+            .into_iter()
+            .filter_map(|m| match m {
+                ServerMsg::PaneSnapshot { pane, .. } => Some(pane),
+                _ => None,
+            })
+            .collect();
+        assert!(panes.contains(&a) && panes.contains(&b), "{panes:?}");
+
+        h.send(ClientMsg::Unsubscribe { pane: a });
+        assert_eq!(h.subs.0.len(), 1, "only the one named is dropped");
+        assert!(h.subs.0.contains_key(&b));
+
+        let _ = h.daemon.close_pane(a);
+        let _ = h.daemon.close_pane(b);
+    }
+
+    #[tokio::test]
+    async fn subscribing_twice_to_one_pane_does_not_double_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+        let checkout = h.checkout();
+        let pane = h.daemon.spawn_shell(checkout).unwrap();
+
+        h.send(ClientMsg::Subscribe { pane });
+        h.send(ClientMsg::Subscribe { pane });
+        assert_eq!(h.subs.0.len(), 1);
+
+        let _ = h.daemon.close_pane(pane);
+    }
+
 }

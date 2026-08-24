@@ -72,7 +72,8 @@ async fn run(
     // Keyed by pane id, not just dimensions — switching to a different pane
     // at the same on-screen size still needs its own Resize, since each
     // pane's pty starts at a hardcoded default until told otherwise.
-    let mut last_pane_area: Option<(PaneId, u16, u16)> = None;
+    let mut last_sizes: std::collections::HashMap<PaneId, (u16, u16)> =
+        std::collections::HashMap::new();
 
     terminal.draw(|f| ui::render(f, &mut app))?;
 
@@ -103,16 +104,20 @@ async fn run(
 
         terminal.draw(|f| ui::render(f, &mut app))?;
 
-        if let Some(pane) = app.subscribed {
-            let area = app.live_area();
-            let key = (pane, area.height, area.width);
-            if last_pane_area != Some(key) && area.height > 0 && area.width > 0 {
-                last_pane_area = Some(key);
-                app.resize_pane(area.height, area.width);
+        // Every pane on screen is sized from where it is actually drawn,
+        // so a floating editor and the column behind it can differ.
+        let live = app.live_panes();
+        for (pane, area) in &live {
+            let size = (area.height, area.width);
+            if size.0 == 0 || size.1 == 0 {
+                continue;
             }
-        } else {
-            last_pane_area = None;
+            if last_sizes.get(pane) != Some(&size) {
+                last_sizes.insert(*pane, size);
+                app.resize_pane(*pane, size.0, size.1);
+            }
         }
+        last_sizes.retain(|pane, _| live.iter().any(|(id, _)| id == pane));
     }
 
     Ok(())
