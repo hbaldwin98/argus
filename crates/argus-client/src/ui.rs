@@ -649,8 +649,10 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let height = (area.height * OVERLAY_FRACTION.1 / 100).max(6.min(area.height));
     let popup = centered_rect(width, height, area);
 
+    // The way out is in the title because a floating pane eats every other
+    // key on purpose, and a window you cannot leave is worse than no window.
     let title = match overlay {
-        Overlay::Pane { title, .. } => title.clone(),
+        Overlay::Pane { title, .. } => format!("{title}  ·  ctrl-space esc / F12 to close"),
         Overlay::Settings { .. } => "settings".to_string(),
     };
 
@@ -687,6 +689,17 @@ fn render_settings(f: &mut Frame, app: &App, area: Rect, sel: usize, th: Theme) 
                 app.settings.editor.label().to_string(),
                 app.settings.editor.detail().to_string(),
             ),
+            Setting::EditorCmd => {
+                let value = if app.settings.editor_cmd.is_empty() {
+                    "(from $VISUAL / $EDITOR)".to_string()
+                } else {
+                    app.settings.editor_cmd.clone()
+                };
+                (
+                    value,
+                    "the command to run, flags and all — enter to change".to_string(),
+                )
+            }
             Setting::Theme => (
                 app.settings.theme.clone(),
                 "colours for the whole client".to_string(),
@@ -698,13 +711,17 @@ fn render_settings(f: &mut Frame, app: &App, area: Rect, sel: usize, th: Theme) 
         } else {
             Span::styled(GUTTER, bar)
         };
+        // Only a value you can cycle gets the arrows; free text would be
+        // promising a carousel that isn't there.
+        let cyclable = *setting != Setting::EditorCmd;
+        let (open, close) = if cyclable { ("‹ ", " ›") } else { ("  ", "") };
         lines.push(Line::from(vec![
             marker,
             Span::styled(
                 format!(" {:<16}", setting.label()),
                 Style::default().fg(th.text).patch(bar),
             ),
-            Span::styled("‹ ", Style::default().fg(th.dim).patch(bar)),
+            Span::styled(open, Style::default().fg(th.dim).patch(bar)),
             Span::styled(
                 value,
                 Style::default()
@@ -712,7 +729,7 @@ fn render_settings(f: &mut Frame, app: &App, area: Rect, sel: usize, th: Theme) 
                     .add_modifier(Modifier::BOLD)
                     .patch(bar),
             ),
-            Span::styled(" ›", Style::default().fg(th.dim).patch(bar)),
+            Span::styled(close, Style::default().fg(th.dim).patch(bar)),
         ]));
         lines.push(Line::from(vec![
             Span::styled(GUTTER, bar),
@@ -843,6 +860,12 @@ fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             "add project",
             field(input, th),
             "enter add   esc cancel",
+            false,
+        ),
+        Prompt::EditorCommand { input } => (
+            "editor command",
+            field(input, th),
+            "empty to use $EDITOR   enter save   esc cancel",
             false,
         ),
         Prompt::Comment { anchor, input } => (
@@ -1824,6 +1847,27 @@ mod tests {
         let out = lines(&draw(&mut app)).join("\n");
         assert!(!out.contains("type to filter"), "{out}");
         assert!(out.contains("mocha"), "{out}");
+    }
+
+    #[test]
+    fn only_a_cyclable_setting_shows_the_arrows() {
+        // Arrows on free text would promise a carousel that isn't there.
+        let mut app = app_with_tree();
+        app.open_settings();
+        let out = lines(&draw(&mut app)).join("\n");
+        assert!(out.contains("‹ floating window ›"), "{out}");
+        assert!(
+            !out.contains("‹ (from"),
+            "the command row is typed, not cycled:\n{out}"
+        );
+    }
+
+    #[test]
+    fn the_settings_panel_says_where_it_saves() {
+        let mut app = app_with_tree();
+        app.open_settings();
+        let out = lines(&draw(&mut app)).join("\n");
+        assert!(out.contains("client.toml"), "{out}");
     }
 
 }

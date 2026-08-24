@@ -2,7 +2,53 @@
 
 use std::path::Path;
 
-/// `$VISUAL`, then `$EDITOR`, then a platform default.
+/// Editors that draw their own window and cannot live in a pty. Putting
+/// one in a pane gives a blank grid and a child that never speaks — which
+/// is exactly what a hung editor looks like.
+const GUI_EDITORS: &[&str] = &[
+    "notepad",
+    "notepad++",
+    "wordpad",
+    "code",
+    "code-insiders",
+    "codium",
+    "cursor",
+    "windsurf",
+    "zed",
+    "subl",
+    "sublime_text",
+    "atom",
+    "gvim",
+    "mvim",
+    "devenv",
+    "idea",
+    "rider",
+    "pycharm",
+    "webstorm",
+];
+
+/// Terminal editors worth looking for when nothing is configured, best
+/// first. Only reached on a system with no `$VISUAL`/`$EDITOR` at all.
+const FALLBACKS: &[&str] = &["nvim", "vim", "hx", "helix", "micro", "nano", "vi"];
+
+/// Whether `editor` brings its own window. Matched on the program name, so
+/// a full path or a command with flags still resolves.
+pub fn is_gui(editor: &str) -> bool {
+    let program = editor.split_whitespace().next().unwrap_or(editor);
+    let stem = Path::new(program)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    GUI_EDITORS.contains(&stem.as_str())
+}
+
+/// `$VISUAL`, then `$EDITOR`, then whichever terminal editor is actually
+/// installed.
+///
+/// The last step matters most on Windows, which ships no terminal editor:
+/// the old fallback was `notepad`, and notepad in a pty is a blank pane
+/// with no way to tell it has failed. Falling back to a name that isn't
+/// installed at least fails loudly.
 pub fn resolve() -> String {
     for var in ["VISUAL", "EDITOR"] {
         if let Some(v) = std::env::var_os(var) {
@@ -12,7 +58,35 @@ pub fn resolve() -> String {
             }
         }
     }
-    if cfg!(windows) { "notepad" } else { "vi" }.to_string()
+    FALLBACKS
+        .iter()
+        .find(|e| on_path(e))
+        .map(|e| e.to_string())
+        // Nothing installed. On Windows notepad always is, and as a GUI
+        // editor it opens in its own window rather than a dead pane.
+        .unwrap_or_else(|| if cfg!(windows) { "notepad" } else { "vi" }.to_string())
+}
+
+/// Whether `program` is runnable, honouring `PATHEXT` on Windows — where a
+/// bare name matches `nvim.exe`, `nvim.cmd`, and friends.
+fn on_path(program: &str) -> bool {
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    let exts: Vec<String> = if cfg!(windows) {
+        std::env::var("PATHEXT")
+            .unwrap_or_else(|_| ".EXE;.CMD;.BAT;.COM".to_string())
+            .split(';')
+            .filter(|e| !e.is_empty())
+            .map(|e| e.to_lowercase())
+            .collect()
+    } else {
+        vec![String::new()]
+    };
+    std::env::split_paths(&path).any(|dir| {
+        exts.iter()
+            .any(|ext| dir.join(format!("{program}{ext}")).is_file())
+    })
 }
 
 /// The argv to open `path` at `line`. `editor` may carry its own flags
@@ -109,6 +183,22 @@ mod tests {
     #[test]
     fn an_empty_editor_setting_falls_back_rather_than_spawning_nothing() {
         assert_eq!(command("", "a.rs", None), ["vi", "a.rs"]);
+    }
+
+    #[test]
+    fn gui_editors_are_recognised_however_they_are_written() {
+        assert!(is_gui("notepad"));
+        assert!(is_gui("Notepad.exe"));
+        assert!(is_gui(r"C:\Windows\System32\notepad.exe"));
+        assert!(is_gui("code -w"));
+        assert!(is_gui("/usr/bin/subl"));
+    }
+
+    #[test]
+    fn terminal_editors_are_not_mistaken_for_gui_ones() {
+        for e in ["nvim", "vim", "hx", "nano", "emacs", "/usr/bin/nvim", "vim -u NONE"] {
+            assert!(!is_gui(e), "{e} belongs in a pane");
+        }
     }
 
     #[test]

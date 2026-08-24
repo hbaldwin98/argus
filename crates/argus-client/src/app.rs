@@ -191,15 +191,18 @@ impl Overlay {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Setting {
     Editor,
+    EditorCmd,
     Theme,
 }
 
 impl Setting {
-    pub const ALL: &'static [Setting] = &[Setting::Editor, Setting::Theme];
+    pub const ALL: &'static [Setting] =
+        &[Setting::Editor, Setting::EditorCmd, Setting::Theme];
 
     pub fn label(self) -> &'static str {
         match self {
             Setting::Editor => "editor opens",
+            Setting::EditorCmd => "editor command",
             Setting::Theme => "theme",
         }
     }
@@ -213,6 +216,8 @@ pub enum Prompt {
     ConfirmRemoveCheckout { checkout: CheckoutId, label: String },
     AddProject { input: String },
     Comment { anchor: Anchor, input: String },
+    /// The editor command, typed rather than cycled — it is free text.
+    EditorCommand { input: String },
 }
 
 pub struct App {
@@ -405,6 +410,18 @@ impl App {
                         self.clamp();
                     }
                 }
+                // A pane killed from elsewhere leaves its window orphaned.
+                if let Some(pane) = self.overlay.as_ref().and_then(Overlay::pane) {
+                    let alive = self
+                        .tree
+                        .iter()
+                        .flat_map(|p| p.checkouts.iter())
+                        .flat_map(|c| c.panes.iter())
+                        .any(|p| p.id == pane);
+                    if !alive {
+                        self.close_overlay();
+                    }
+                }
                 if self.pending_focus_new {
                     self.pending_focus_new = false;
                     let newest = self
@@ -447,6 +464,11 @@ impl App {
                 }
             }
             ServerMsg::PaneClosed { pane, code } => {
+                // Otherwise the window sits there showing a dead grid,
+                // which is exactly what a hung editor looks like.
+                if self.overlay.as_ref().and_then(Overlay::pane) == Some(pane) {
+                    self.close_overlay();
+                }
                 if self.subscribed == Some(pane) {
                     self.status = format!("pane exited ({code:?})");
                 }
@@ -506,7 +528,26 @@ impl App {
         }
     }
 
+    /// Shuts any floating window, from anywhere, whatever has focus.
+    ///
+    /// The leader is the *nice* way out, but it depends on the terminal
+    /// delivering Ctrl-Space, and a floating pane consumes every other key
+    /// on purpose. When that combination fails there is nothing left to
+    /// press, so this one is checked before any handler runs and is never
+    /// forwarded to a child. F-keys are reliably delivered and no terminal
+    /// editor binds F12 by default.
+    fn is_panic_key(key: &KeyEvent) -> bool {
+        key.code == KeyCode::F(12)
+    }
+
     pub fn on_key(&mut self, key: KeyEvent) {
+        if Self::is_panic_key(&key) {
+            if self.overlay.is_some() {
+                self.close_overlay();
+                self.status = "closed the floating window".to_string();
+            }
+            return;
+        }
         if self.prompt.is_some() {
             self.on_key_prompt(key);
         } else if self.picker.is_some() {
@@ -557,6 +598,22 @@ impl App {
                     self.prompt = None;
                     if !empty {
                         self.send_to_agent(message);
+                    }
+                }
+                KeyCode::Esc => self.prompt = None,
+                KeyCode::Backspace => {
+                    input.pop();
+                }
+                KeyCode::Char(c) => input.push(c),
+                _ => {}
+            },
+            Prompt::EditorCommand { input } => match key.code {
+                KeyCode::Enter => {
+                    let cmd = input.trim().to_string();
+                    self.prompt = None;
+                    self.settings.editor_cmd = cmd;
+                    if self.persist_settings {
+                        crate::settings::save(&self.settings);
                     }
                 }
                 KeyCode::Esc => self.prompt = None,
@@ -693,6 +750,12 @@ impl App {
     /// no separate save, so there is nothing to forget to press.
     fn cycle_setting(&mut self, sel: usize, delta: isize) {
         match Setting::ALL.get(sel) {
+            Some(Setting::EditorCmd) => {
+                self.prompt = Some(Prompt::EditorCommand {
+                    input: self.settings.editor_cmd.clone(),
+                });
+                return;
+            }
             Some(Setting::Editor) => {
                 self.settings.editor = if delta > 0 {
                     self.settings.editor.next()
@@ -828,6 +891,12 @@ impl App {
             .map(|p| p.id)
     }
 
+    /// The configured editor command, or `None` to leave it to the daemon.
+    fn editor_command(&self) -> Option<String> {
+        let cmd = self.settings.editor_cmd.trim();
+        (!cmd.is_empty()).then(|| cmd.to_string())
+    }
+
     /// Where the editor about to be spawned should land. Nothing at all
     /// for an external one: it has no pane to focus.
     fn want_editor(&mut self) {
@@ -885,6 +954,7 @@ impl App {
                         path: a.path,
                         line: a.start,
                         external: self.settings.editor.is_external(),
+                        command: self.editor_command(),
                     });
                     self.want_editor();
                     self.close_review();
@@ -947,6 +1017,25 @@ impl App {
 
     pub fn on_mouse(&mut self, ev: MouseEvent) {
         if self.picker.is_some() || self.prompt.is_some() {
+            return;
+        }
+        // A floating window is modal: clicks inside it are its own, and a
+        // click outside dismisses it. Without this a click would fall
+        // through to the columns underneath, moving focus while the keys
+        // still went to the overlay — no way in and no way out.
+        if self.overlay.is_some() {
+            let inside = in_rect(self.layout.overlay.outer, ev.column, ev.row);
+            if !inside {
+                if matches!(ev.kind, MouseEventKind::Down(_)) {
+                    self.close_overlay();
+                }
+                return;
+            }
+            if let Some(bytes) = encode_mouse(&ev, self.layout.overlay.inner) {
+                if let Some(pane) = self.subscribed {
+                    let _ = self.out.send(ClientMsg::Input { pane, bytes });
+                }
+            }
             return;
         }
         // The live view is always visible in the rightmost column, so a
@@ -1223,6 +1312,7 @@ impl App {
                     path: path.to_string(),
                     line: None,
                     external: self.settings.editor.is_external(),
+                    command: self.editor_command(),
                 });
                 self.want_editor();
             }
@@ -3080,7 +3170,9 @@ mod tests {
         // There is no save button, so there is nothing to forget to press.
         let mut h = Harness::new();
         h.app.open_settings();
-        h.key(KeyCode::Char('j')); // down to the theme row
+        for _ in 0..crate::app::Setting::ALL.len() {
+            h.key(KeyCode::Char('j')); // down to the theme row, wherever it is
+        }
         h.key(KeyCode::Char('l'));
 
         assert_eq!(h.app.theme, crate::theme::Theme::by_name(&h.app.settings.theme));
@@ -3181,6 +3273,232 @@ mod tests {
 
         assert!(h.app.overlay.is_none());
         assert_ne!(h.app.focus, Focus::PaneContent);
+    }
+
+    // --- getting out of a floating window -----------------------------------
+
+    #[test]
+    fn f12_closes_a_floating_window_from_anywhere() {
+        // The leader depends on the terminal delivering Ctrl-Space, and a
+        // floating pane swallows every other key on purpose. When both fail
+        // there has to be something left to press.
+        let mut h = Harness::new();
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.sent();
+
+        h.key(KeyCode::F(12));
+
+        assert!(h.app.overlay.is_none());
+        assert!(
+            !h.sent().iter().any(|m| matches!(m, ClientMsg::Input { .. })),
+            "and it is never forwarded to the child"
+        );
+    }
+
+    #[test]
+    fn f12_is_harmless_when_no_window_is_open() {
+        let mut h = Harness::new();
+        h.key(KeyCode::F(12));
+        assert!(!h.app.should_quit);
+        assert!(h.app.overlay.is_none());
+    }
+
+    #[test]
+    fn clicking_outside_a_floating_window_dismisses_it() {
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.layout.overlay = Panel {
+            outer: Rect::new(10, 4, 20, 10),
+            inner: Rect::new(11, 5, 18, 8),
+        };
+
+        h.app.on_mouse(click(1, 1)); // out on the projects column
+
+        assert!(h.app.overlay.is_none());
+    }
+
+    #[test]
+    fn a_click_inside_the_window_belongs_to_its_pane() {
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.layout.overlay = Panel {
+            outer: Rect::new(10, 4, 20, 10),
+            inner: Rect::new(11, 5, 18, 8),
+        };
+        h.sent();
+
+        h.app.on_mouse(click(15, 7));
+
+        assert!(h.app.overlay.is_some(), "still open");
+        assert!(h.sent().iter().any(|m| matches!(m, ClientMsg::Input { .. })));
+    }
+
+    #[test]
+    fn a_click_under_a_floating_window_never_reaches_the_columns() {
+        // The bug this exists for: focus moved to a column while the keys
+        // still went to the overlay, leaving no way in and no way out.
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.layout.overlay = Panel {
+            outer: Rect::new(10, 4, 20, 10),
+            inner: Rect::new(11, 5, 18, 8),
+        };
+        let before = h.app.sel_project;
+
+        h.app.on_mouse(click(1, 3)); // a project row, underneath
+
+        assert_eq!(h.app.sel_project, before, "the click dismissed, it did not select");
+    }
+
+    #[test]
+    fn a_window_whose_pane_exits_closes_itself() {
+        // Otherwise it sits there showing a dead grid — the shape of a hung
+        // editor, with no sign anything is wrong.
+        let mut h = Harness::new();
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+
+        h.app.on_server_msg(ServerMsg::PaneClosed {
+            pane: PaneId(101),
+            code: Some(0),
+        });
+
+        assert!(h.app.overlay.is_none());
+    }
+
+    #[test]
+    fn another_panes_exit_leaves_the_window_alone() {
+        let mut h = Harness::new();
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.on_server_msg(ServerMsg::PaneClosed {
+            pane: PaneId(100),
+            code: Some(0),
+        });
+        assert!(h.app.overlay.is_some());
+    }
+
+    #[test]
+    fn a_window_whose_pane_vanishes_from_the_tree_closes_itself() {
+        // Killed from another client, or reaped while we were not looking.
+        let mut h = Harness::new();
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+
+        let mut t = tree();
+        t[0].checkouts[0].panes.retain(|p| p.id != PaneId(101));
+        h.app.on_server_msg(ServerMsg::Tree(t));
+
+        assert!(h.app.overlay.is_none());
+    }
+
+    // --- choosing the editor ------------------------------------------------
+
+    /// Moves the settings cursor onto `want`.
+    fn settings_row(h: &mut Harness, want: crate::app::Setting) {
+        h.app.open_settings();
+        let target = crate::app::Setting::ALL
+            .iter()
+            .position(|s| *s == want)
+            .unwrap();
+        for _ in 0..target {
+            h.key(KeyCode::Char('j'));
+        }
+    }
+
+    #[test]
+    fn the_editor_command_is_typed_rather_than_cycled() {
+        let mut h = Harness::new();
+        settings_row(&mut h, crate::app::Setting::EditorCmd);
+        h.key(KeyCode::Char('l'));
+
+        assert!(
+            matches!(h.app.prompt, Some(Prompt::EditorCommand { .. })),
+            "free text needs a field, not a carousel"
+        );
+    }
+
+    #[test]
+    fn typing_a_command_stores_it() {
+        let mut h = Harness::new();
+        settings_row(&mut h, crate::app::Setting::EditorCmd);
+        h.key(KeyCode::Enter);
+        h.keys("nvim -p");
+        h.key(KeyCode::Enter);
+
+        assert_eq!(h.app.settings.editor_cmd, "nvim -p");
+        assert!(h.app.prompt.is_none());
+    }
+
+    #[test]
+    fn the_prompt_starts_from_the_command_already_set() {
+        // Retyping a long path to change one flag would be miserable.
+        let mut h = Harness::new();
+        h.app.settings.editor_cmd = "code -w".to_string();
+        settings_row(&mut h, crate::app::Setting::EditorCmd);
+        h.key(KeyCode::Enter);
+
+        match &h.app.prompt {
+            Some(Prompt::EditorCommand { input }) => assert_eq!(input, "code -w"),
+            other => panic!("unexpected {other:?}", other = other.is_some()),
+        }
+    }
+
+    #[test]
+    fn clearing_the_command_goes_back_to_the_environment() {
+        let mut h = Harness::new();
+        h.app.settings.editor_cmd = "nvim".to_string();
+        settings_row(&mut h, crate::app::Setting::EditorCmd);
+        h.key(KeyCode::Enter);
+        for _ in 0..4 {
+            h.key(KeyCode::Backspace);
+        }
+        h.key(KeyCode::Enter);
+
+        assert!(h.app.settings.editor_cmd.is_empty());
+    }
+
+    #[test]
+    fn escaping_the_command_prompt_changes_nothing() {
+        let mut h = Harness::new();
+        h.app.settings.editor_cmd = "nvim".to_string();
+        settings_row(&mut h, crate::app::Setting::EditorCmd);
+        h.key(KeyCode::Enter);
+        h.keys("zzz");
+        h.key(KeyCode::Esc);
+
+        assert_eq!(h.app.settings.editor_cmd, "nvim");
+    }
+
+    #[test]
+    fn the_chosen_command_is_sent_with_the_request() {
+        let mut h = Harness::new();
+        h.app.settings.editor_cmd = "hx".to_string();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(&mut h, diff_of(checkout));
+        h.key(KeyCode::Char('e'));
+
+        match &h.sent()[0] {
+            ClientMsg::OpenInEditor { command, .. } => {
+                assert_eq!(command.as_deref(), Some("hx"))
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn no_command_leaves_the_choice_to_the_daemon() {
+        // The daemon can see $VISUAL and what is installed; the client
+        // guessing would only be worse.
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(&mut h, diff_of(checkout));
+        h.key(KeyCode::Char('e'));
+
+        match &h.sent()[0] {
+            ClientMsg::OpenInEditor { command, .. } => assert_eq!(*command, None),
+            other => panic!("unexpected {other:?}"),
+        }
     }
 
 }

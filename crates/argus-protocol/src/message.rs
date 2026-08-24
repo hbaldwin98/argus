@@ -55,6 +55,9 @@ pub enum ClientMsg {
         /// Launch it outside Argus with no pty, for an editor that brings
         /// its own window.
         external: bool,
+        /// The editor to run, flags included. `None` leaves the daemon to
+        /// work it out from the environment.
+        command: Option<String>,
     },
     /// Add a new project rooted at an arbitrary directory — not limited to
     /// whatever's already in `projects.toml` or under the daemon's cwd.

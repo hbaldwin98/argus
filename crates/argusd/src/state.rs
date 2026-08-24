@@ -343,6 +343,7 @@ impl Daemon {
         rel_path: &str,
         line: Option<u32>,
         external: bool,
+        command: Option<&str>,
     ) -> anyhow::Result<PaneId> {
         let path = self.checkout_path(checkout)?;
         // Rejected here rather than trusted: `path` is spawned into a
@@ -357,11 +358,17 @@ impl Daemon {
             anyhow::bail!("not a path inside the checkout: {rel_path}");
         }
 
-        let editor = crate::editor::resolve();
+        let editor = match command.map(str::trim).filter(|c| !c.is_empty()) {
+            Some(c) => c.to_string(),
+            None => crate::editor::resolve(),
+        };
         let argv = crate::editor::command(&editor, rel_path, line);
         let (program, args) = argv.split_first().expect("never empty");
 
-        if external {
+        // A GUI editor cannot live in a pty whatever the client asked for:
+        // it would be a blank pane whose child never speaks, which is
+        // indistinguishable from a hung one.
+        if external || crate::editor::is_gui(&editor) {
             // No pty and no pane: this editor brings its own window, and
             // Argus has nothing to draw for it. Detached so closing the
             // daemon doesn't take the user's editor with it.
@@ -1734,7 +1741,7 @@ mod tests {
             r"C:\Windows\x",
         ] {
             assert!(
-                d.spawn_editor(checkout, bad, None, false).is_err(),
+                d.spawn_editor(checkout, bad, None, false, None).is_err(),
                 "{bad:?} should be refused"
             );
         }
@@ -1866,6 +1873,29 @@ mod tests {
         let (_dir, d) = daemon_on_a_repo();
         assert!(d.create_branch(CheckoutId(9999), "x").await.is_err());
         assert!(d.switch_branch(CheckoutId(9999), "x").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_gui_editor_never_gets_a_pane_even_when_a_pane_was_asked_for() {
+        // notepad in a pty is a blank grid and a child that never speaks —
+        // the shape of a hung editor, with a window that looks stuck.
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_primary(&dir.path().to_string_lossy());
+        let checkout = d.snapshot()[0].checkouts[0].id;
+        std::fs::write(dir.path().join("a.txt"), "x").unwrap();
+
+        std::env::set_var("VISUAL", "notepad");
+        let made = d.spawn_editor(checkout, "a.txt", None, false, None);
+        std::env::remove_var("VISUAL");
+
+        // Either it launched detached (no pane) or notepad isn't there to
+        // launch; what must never happen is a pane holding it.
+        if made.is_ok() {
+            assert!(
+                d.snapshot()[0].checkouts[0].panes.is_empty(),
+                "a GUI editor must not become a pane"
+            );
+        }
     }
 
 }

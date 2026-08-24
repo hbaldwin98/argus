@@ -100,11 +100,23 @@ up (the protocol carries one per connection) and hands it back on close; the pty
 wherever the pane is actually drawn, so a floating vim gets the floating window's dimensions.
 Every key belongs to the editor while it is up, `q` included — the leader is the way out.
 
+A floating window must always be closable. The leader is the polite way out, but it depends on
+the terminal delivering Ctrl-Space and a floating pane deliberately swallows every other key, so
+there are three independent escapes: **F12** is checked before any handler and never forwarded
+to a child, a **click outside** dismisses the window, and a window whose pane exits or leaves
+the tree closes itself. The title carries the way out, because a window you cannot leave is
+worse than no window at all.
+
 `S` opens settings. Changes apply and save as they are made, to `client.toml` beside the
 daemon's `projects.toml`: what exists is the daemon's business, how one client draws is not.
 `editor opens` chooses between the floating window (the default), the rightmost column, and
 outside Argus entirely — the last spawns detached with no pty, for editors that bring their own
-window.
+window. `editor command` names the program, flags and all; left empty it falls back to
+`$VISUAL`/`$EDITOR` and then to whichever terminal editor is actually installed.
+
+A **GUI editor is always launched externally**, whatever the mode says. One in a pty is a blank
+pane whose child never speaks — indistinguishable from a hung editor, which is precisely how
+`notepad` presented before this rule existed.
 
 **Fuzzy pickers.** `b` switches branch, `f` opens a file, and `f` inside the review jumps to a
 changed file. All three filter as you type. Ranking is `nucleo-matcher` — fzf's algorithm as a

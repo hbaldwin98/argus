@@ -64,6 +64,10 @@ impl EditorMode {
 #[serde(default)]
 pub struct Settings {
     pub editor: EditorMode,
+    /// The command to run, flags and all — `nvim`, `code -w`, or a full
+    /// path. Empty means fall back to `$VISUAL`/`$EDITOR`, then to
+    /// whichever terminal editor is installed.
+    pub editor_cmd: String,
     /// A preset name from `theme::THEMES`.
     pub theme: String,
 }
@@ -72,6 +76,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             editor: EditorMode::Overlay,
+            editor_cmd: String::new(),
             theme: crate::theme::THEMES[0].to_string(),
         }
     }
@@ -158,9 +163,17 @@ mod tests {
     }
 
     #[test]
+    fn an_unset_command_means_look_at_the_environment() {
+        // Not a default of "vi": the daemon's own resolution is better
+        // informed than any guess made here.
+        assert!(Settings::default().editor_cmd.is_empty());
+    }
+
+    #[test]
     fn settings_survive_a_round_trip_through_toml() {
         let s = Settings {
             editor: EditorMode::External,
+            editor_cmd: "code -w".to_string(),
             theme: "latte".to_string(),
         };
         let back: Settings = toml::from_str(&toml::to_string_pretty(&s).unwrap()).unwrap();

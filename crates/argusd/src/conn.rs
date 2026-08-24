@@ -150,8 +150,9 @@ fn handle_client_msg(
             path,
             line,
             external,
+            command,
         } => daemon
-            .spawn_editor(checkout, &path, line, external)
+            .spawn_editor(checkout, &path, line, external, command.as_deref())
             .map(|_| ()),
         ClientMsg::Review { checkout, base } => daemon.checkout_path(checkout).map(|path| {
             let out_tx = out_tx.clone();
@@ -377,6 +378,7 @@ mod tests {
             path: "../escape.rs".to_string(),
             line: None,
             external: false,
+            command: None,
         });
         assert!(h.error().contains("inside the checkout"), "{}", h.error());
     }
