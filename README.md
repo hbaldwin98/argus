@@ -367,11 +367,14 @@ Every agent pane receives `ARGUS_HOOK`, `ARGUS_HOOK_URL`, `ARGUS_HOOK_TOKEN`, `A
 "$ARGUS_HOOK" status waiting "needs database access"
 "$ARGUS_HOOK" status failed "tests failed"
 "$ARGUS_HOOK" title "repairing session restore"
+"$ARGUS_HOOK" checkout
 ```
 
 `argus-hook say "text"` writes text to stdout for harnesses that inject command output into the
 agent's context. Other forms are silent and always exit successfully so a stopped daemon cannot break
-an agent turn.
+an agent turn. Run `argus-hook checkout` after changing to another checkout in the same project;
+Argus moves the existing pane under that checkout without restarting it. An explicit path may follow
+`checkout`, but reporting the current directory is the normal form.
 
 Claude Code, Codex, OpenCode, and the generic environment-only harness are built in; the Codex one
 exists only to record how that CLI resumes. The Claude harness manages

@@ -282,24 +282,32 @@ impl Daemon {
                 checkouts: p
                     .checkouts
                     .iter()
-                    .map(|c| CheckoutInfo {
-                        id: c.id,
-                        name: c.name.clone(),
-                        path: c.path.to_string_lossy().to_string(),
-                        panes: c
-                            .panes
-                            .iter()
-                            .map(|pane| PaneInfo {
-                                id: pane.id,
-                                kind: pane.kind,
-                                title: pane.title.clone(),
-                                status: pane.status,
-                                note: pane.note.clone(),
-                                template: pane.template.clone(),
-                            })
-                            .collect(),
-                        git: crate::git::status(&c.path),
-                        primary: c.primary,
+                    .map(|c| {
+                        let git = crate::git::status(&c.path);
+                        CheckoutInfo {
+                            id: c.id,
+                            // A checkout names the branch currently occupying it,
+                            // including when a process switched outside Argus.
+                            name: git
+                                .as_ref()
+                                .and_then(|status| status.branch.clone())
+                                .unwrap_or_else(|| c.name.clone()),
+                            path: c.path.to_string_lossy().to_string(),
+                            panes: c
+                                .panes
+                                .iter()
+                                .map(|pane| PaneInfo {
+                                    id: pane.id,
+                                    kind: pane.kind,
+                                    title: pane.title.clone(),
+                                    status: pane.status,
+                                    note: pane.note.clone(),
+                                    template: pane.template.clone(),
+                                })
+                                .collect(),
+                            git,
+                            primary: c.primary,
+                        }
                     })
                     .collect(),
             })
@@ -908,6 +916,98 @@ impl Daemon {
         }
     }
 
+    /// Moves a live agent row to the known checkout it has started working
+    /// in. The PTY stays intact; this changes Argus's affiliation, not the
+    /// child process's working directory. The reporting command runs in the
+    /// destination directory, which is the evidence that the agent moved.
+    fn move_agent_to_checkout(
+        &self,
+        pane: PaneId,
+        destination: &std::path::Path,
+    ) -> anyhow::Result<()> {
+        let (source_path, target_path, template, source_has_agent) = {
+            let mut inner = self.inner.lock().unwrap();
+            let (project_index, source_index, pane_index) =
+                inner
+                    .projects
+                    .iter()
+                    .enumerate()
+                    .find_map(|(project_index, project)| {
+                        project.checkouts.iter().enumerate().find_map(
+                            |(checkout_index, checkout)| {
+                                checkout
+                                    .panes
+                                    .iter()
+                                    .position(|candidate| candidate.id == pane)
+                                    .map(|pane_index| (project_index, checkout_index, pane_index))
+                            },
+                        )
+                    })
+                    .ok_or_else(|| anyhow::anyhow!("no such pane"))?;
+
+            let project = &mut inner.projects[project_index];
+            let target_index = project
+                .checkouts
+                .iter()
+                .position(|checkout| same_path(&checkout.path, destination))
+                .ok_or_else(|| anyhow::anyhow!("destination is not a checkout in this project"))?;
+            if source_index == target_index {
+                return Ok(());
+            }
+
+            let moving = &project.checkouts[source_index].panes[pane_index];
+            if moving.kind != PaneKind::Agent {
+                anyhow::bail!("only agent panes can change checkout affiliation");
+            }
+            if matches!(moving.status, PaneStatus::Exited { .. }) {
+                anyhow::bail!("an exited pane cannot change checkout affiliation");
+            }
+
+            let source_path = project.checkouts[source_index].path.clone();
+            let target_path = project.checkouts[target_index].path.clone();
+            let moving = project.checkouts[source_index].panes.remove(pane_index);
+            let template = moving.template.clone();
+            project.checkouts[target_index].panes.push(moving);
+            let source_has_agent = project.checkouts[source_index]
+                .panes
+                .iter()
+                .any(|candidate| candidate.kind == PaneKind::Agent);
+            (source_path, target_path, template, source_has_agent)
+        };
+
+        if !source_has_agent {
+            for harness in &self.harnesses {
+                if let Err(error) = harness.uninstall(&source_path) {
+                    tracing::warn!(
+                        "failed to clear {} hooks in {}: {error}",
+                        harness.name,
+                        source_path.display()
+                    );
+                }
+            }
+        }
+
+        if let Some(template) = template
+            .as_deref()
+            .and_then(|name| self.templates.iter().find(|template| template.name == name))
+        {
+            let harness = self.harness_for(template);
+            let port = self.hook_port.load(std::sync::atomic::Ordering::Relaxed);
+            if port != 0 {
+                if let Err(error) = harness.install(&target_path, pane, port, &self.hook_token) {
+                    tracing::warn!(
+                        "failed to install {} hooks in {}: {error}",
+                        harness.name,
+                        target_path.display()
+                    );
+                }
+            }
+        }
+
+        self.broadcast_tree();
+        Ok(())
+    }
+
     /// Periodically re-broadcasts the tree so checkout rows pick up git
     /// status changes (a commit, a stash, an agent editing a file) without
     /// needing a pane event to trigger it. `git::status` shells out to
@@ -1313,9 +1413,8 @@ fn remove_pane_with_checkout(projects: &mut [Project], id: PaneId) -> Option<(Pa
     None
 }
 
-/// Reads one HTTP/1.1 request (headers only — the hook commands we install
-/// never send a body), checks the bearer token, and applies the status the
-/// path encodes. Hand-rolled rather than pulling in an HTTP server crate:
+/// Reads one HTTP/1.1 request, checks the bearer token, and applies the pane
+/// operation its path encodes. Hand-rolled rather than pulling in an HTTP server crate:
 /// the request shape is entirely our own (we generate every hook command
 /// that ever calls this), so there's nothing to be robust against beyond
 /// "well-formed or ignored".
@@ -1375,6 +1474,12 @@ async fn handle_hook_request(
             Some((pane, Endpoint::Title)) => {
                 daemon.set_pane_title(pane, &String::from_utf8_lossy(&body))
             }
+            Some((pane, Endpoint::Checkout)) => {
+                let destination = PathBuf::from(String::from_utf8_lossy(&body).trim());
+                if let Err(error) = daemon.move_agent_to_checkout(pane, &destination) {
+                    tracing::warn!("pane {} could not move checkout: {error}", pane.0);
+                }
+            }
             None => {}
         }
         wr.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
@@ -1395,9 +1500,11 @@ const MAX_BODY: usize = 4096;
 enum Endpoint {
     Status(crate::harness::Report),
     Title,
+    Checkout,
 }
 
-/// `/pane/<id>/status/<working|idle|waiting>` and `/pane/<id>/title`.
+/// `/pane/<id>/status/<working|idle|waiting>`, `/pane/<id>/title`, and
+/// `/pane/<id>/checkout`.
 ///
 /// The status is named in the URL rather than the harness's own event name:
 /// the installer already knows what each of its events means, so by the time
@@ -1412,6 +1519,7 @@ fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
     let endpoint = match parts.next()? {
         "status" => Endpoint::Status(crate::harness::Report::parse(parts.next()?)?),
         "title" => Endpoint::Title,
+        "checkout" => Endpoint::Checkout,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -1536,6 +1644,10 @@ mod tests {
         assert_eq!(
             parse_pane_path("/pane/7/title"),
             Some((PaneId(7), Endpoint::Title))
+        );
+        assert_eq!(
+            parse_pane_path("/pane/7/checkout"),
+            Some((PaneId(7), Endpoint::Checkout))
         );
     }
 
@@ -1695,6 +1807,111 @@ mod tests {
             .unwrap();
         assert!(url.contains(&port.to_string()));
         assert!(parse_pane_path("/pane/1/title").is_some());
+    }
+
+    fn daemon_with_two_agent_checkouts(
+        first: &std::path::Path,
+        second: &std::path::Path,
+    ) -> Arc<Daemon> {
+        Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                repos: vec![
+                    first.to_string_lossy().to_string(),
+                    second.to_string_lossy().to_string(),
+                ],
+                workspace: None,
+            }],
+            agents: vec![AgentConfig {
+                name: "claude".to_string(),
+                cmd: vec![if cfg!(windows) { "cmd" } else { "sh" }.to_string()],
+                env: Default::default(),
+                harness: None,
+            }],
+            harnesses: Vec::new(),
+        })
+    }
+
+    #[tokio::test]
+    async fn an_agent_can_move_its_live_pane_to_another_checkout() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let d = daemon_with_two_agent_checkouts(first.path(), second.path());
+        d.start_hook_server().unwrap();
+        let source = d.snapshot()[0].checkouts[0].id;
+        let pane = d.spawn_agent(source, "claude").unwrap();
+
+        d.move_agent_to_checkout(pane, second.path()).unwrap();
+
+        let tree = d.snapshot();
+        assert!(tree[0].checkouts[0].panes.is_empty());
+        assert_eq!(tree[0].checkouts[1].panes[0].id, pane);
+        assert_eq!(d.session().panes[0].checkout_path, second.path());
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_authorized_checkout_hook_moves_the_agent_pane() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let d = daemon_with_two_agent_checkouts(first.path(), second.path());
+        d.start_hook_server().unwrap();
+        let source = d.snapshot()[0].checkouts[0].id;
+        let pane = d.spawn_agent(source, "claude").unwrap();
+        let body = second.path().to_string_lossy();
+        let request = format!(
+            "POST /pane/{}/checkout HTTP/1.1\r\nAuthorization: Bearer {}\r\nContent-Length: {}\r\n\r\n{}",
+            pane.0,
+            d.hook_token,
+            body.len(),
+            body
+        );
+
+        let port = d.hook_port.load(std::sync::atomic::Ordering::Relaxed);
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        stream.write_all(request.as_bytes()).await.unwrap();
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).await.unwrap();
+
+        assert!(response.starts_with(b"HTTP/1.1 200 OK"));
+        assert_eq!(d.snapshot()[0].checkouts[1].panes[0].id, pane);
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn moving_the_last_agent_moves_managed_hook_routing_too() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let d = daemon_with_two_agent_checkouts(first.path(), second.path());
+        d.start_hook_server().unwrap();
+        let source = d.snapshot()[0].checkouts[0].id;
+        let pane = d.spawn_agent(source, "claude").unwrap();
+        assert!(settings_of(first.path()).exists());
+
+        d.move_agent_to_checkout(pane, second.path()).unwrap();
+
+        assert!(!settings_of(first.path()).exists());
+        assert!(settings_of(second.path()).exists());
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_pane_cannot_move_to_an_unknown_directory() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let unknown = tempfile::tempdir().unwrap();
+        let d = daemon_with_two_agent_checkouts(first.path(), second.path());
+        let source = d.snapshot()[0].checkouts[0].id;
+        let pane = d.spawn_agent(source, "claude").unwrap();
+
+        assert!(d.move_agent_to_checkout(pane, unknown.path()).is_err());
+        assert_eq!(d.snapshot()[0].checkouts[0].panes[0].id, pane);
+        d.close_pane(pane).unwrap();
     }
 
     // --- worktree reconciliation -------------------------------------------
@@ -2423,6 +2640,19 @@ mod tests {
         d.create_branch(checkout, "feature/x").await.unwrap();
 
         assert_eq!(d.snapshot()[0].checkouts[0].name, "feature/x");
+    }
+
+    #[test]
+    fn the_checkouts_name_follows_a_branch_switch_made_outside_argus() {
+        let (dir, d) = daemon_on_a_repo();
+        let repo = git2::Repository::open(dir.path()).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("outside", &head, false).unwrap();
+        repo.set_head("refs/heads/outside").unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
+
+        assert_eq!(d.snapshot()[0].checkouts[0].name, "outside");
     }
 
     #[tokio::test]

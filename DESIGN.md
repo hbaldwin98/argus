@@ -38,6 +38,12 @@ checkout under the project; there is no repository node in the protocol. Linked 
 discovered under the project, but multi-repository worktree operations still assume the first
 primary checkout.
 
+Checkout rows use the branch currently occupying their path as their display name, including when
+another process switches the branch outside Argus. A live agent can report that it has started
+working in another known checkout in the same project. Argus then moves the existing pane under that
+checkout without restarting its PTY or changing its id, title, status, or conversation. The client
+follows the pane when the pane list or terminal has focus; project and checkout navigation stays put.
+
 ## Configuration
 
 Configuration uses `ARGUS_CONFIG_DIR` when set and the platform config directory otherwise.
@@ -121,23 +127,27 @@ in `projects.toml` adds or replaces one, and an `[[agent]]` template selects one
 so replacing a built-in by name also gives up its module and its resume arguments.
 
 The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
-/pane/<id>/status/<working|idle|waiting|failed>` with an optional body as the note, and `POST
-/pane/<id>/title`. The status is named in the URL rather than the harness's event name, because
-the installer already resolved that — which is what makes a new harness config instead of a match
-arm. Managed blocks are per-boot: they name an ephemeral port and a per-boot token, so they are
-swept from every configured checkout at startup and removed when the last agent pane in a checkout
-goes away, along with any directory Argus made only to hold them. Hook files are checkout-wide, so
-concurrent panes of the same harness in one checkout do not yet have independent hook routing;
-a plugin module does not have that problem, because it reads the pane out of its own environment.
+/pane/<id>/status/<working|idle|waiting|failed>` with an optional body as the note, `POST
+/pane/<id>/title`, and `POST /pane/<id>/checkout` with a known checkout path. The checkout endpoint
+changes affiliation only: the agent runs `argus-hook checkout` from the directory it has already
+moved to. The status is named in the URL rather than the harness's event name, because the installer
+already resolved that — which is what makes a new harness config instead of a match arm. Managed
+blocks are per-boot: they name an ephemeral port and a per-boot token, so they are swept from every
+configured checkout at startup and removed when the last agent pane in a checkout goes away, along
+with any directory Argus made only to hold them. Moving a pane performs the same cleanup in its old
+checkout and installs its harness in the new one. Hook files are checkout-wide, so concurrent panes
+of the same harness in one checkout do not yet have independent hook routing; a plugin module does
+not have that problem, because it reads the pane out of its own environment.
 
 Agents name their own rows. At session start a harness with a `context_event` is handed
 instructions telling it to run `argus-hook title "..."` once it knows what it is working on, and
-`argus-hook status waiting "..."` when it needs a human; the same text is in `ARGUS_INSTRUCTIONS`,
+`argus-hook status waiting "..."` when it needs a human. The instructions also ask it to run
+`argus-hook checkout` after moving to another checkout. The same text is in `ARGUS_INSTRUCTIONS`,
 which is where a plugin harness picks it up — OpenCode's module appends it to the system prompt.
-Titles arriving from a model are flattened to one line and cut to 48 characters. Neither a rename
-nor a status report can touch a pane that has exited. A renamed row keeps showing its template on
-its second line, so a column of agents that have all named themselves still says which CLI each
-one is.
+Titles arriving from a model are flattened to one line and cut to 48 characters. Neither a rename,
+status report, nor checkout move can touch a pane that has exited. A renamed row keeps showing its
+template on its second line, so a column of agents that have all named themselves still says which
+CLI each one is.
 
 ## Session restore
 

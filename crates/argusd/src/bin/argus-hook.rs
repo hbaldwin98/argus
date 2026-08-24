@@ -5,6 +5,7 @@
 //! argus-hook title "fixing the pty deadlock"
 //! argus-hook status waiting "needs the staging database password"
 //! argus-hook status working
+//! argus-hook checkout                            # reports the current directory
 //! argus-hook say "text"                       # prints, calls nobody
 //! argus-hook <url> <token> [--note-from-stdin]  # the installed hook form
 //! ```
@@ -48,7 +49,12 @@ const NOTE_FLAG: &str = "--note-from-stdin";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let rest = &args[1..].iter().map(String::as_str).collect::<Vec<_>>()[..];
+    let rest = args
+        .get(1..)
+        .unwrap_or_default()
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
     match args.first().map(String::as_str) {
         Some("say") => {
             // Deliberately on stdout: this is context for the model.
@@ -73,6 +79,15 @@ fn main() {
                 &note,
             );
         }
+        Some("checkout") => {
+            if let Some(path) = reported_checkout(&rest) {
+                let _ = post(
+                    &format!("{}/checkout", env_url()),
+                    &env_token(),
+                    &path.to_string_lossy(),
+                );
+            }
+        }
         // The installed-hook form: an absolute URL and the token, because a
         // harness's hook config can't count on the environment reaching it.
         Some(url) if url.starts_with("http://") => {
@@ -85,6 +100,14 @@ fn main() {
             let _ = post(url, token, &note);
         }
         _ => {}
+    }
+}
+
+fn reported_checkout(args: &[&str]) -> Option<std::path::PathBuf> {
+    if args.is_empty() {
+        std::env::current_dir().ok()
+    } else {
+        Some(std::path::PathBuf::from(args.join(" ")))
     }
 }
 
@@ -176,5 +199,18 @@ mod tests {
         // Better an empty note than a wall of serialized event under a row.
         assert_eq!(note_from(r#"{"session_id":"x","cwd":"/tmp"}"#), "");
         assert_eq!(note_from(""), "");
+    }
+
+    #[test]
+    fn an_explicit_checkout_path_keeps_spaces() {
+        assert_eq!(
+            reported_checkout(&["C:\\Source\\my", "checkout"]),
+            Some(std::path::PathBuf::from("C:\\Source\\my checkout"))
+        );
+    }
+
+    #[test]
+    fn checkout_without_a_path_reports_the_current_directory() {
+        assert_eq!(reported_checkout(&[]), std::env::current_dir().ok());
     }
 }

@@ -527,6 +527,11 @@ pub fn instructions() -> String {
          Do that as soon as you know what the task is, and again whenever you move on \
          to something clearly different.\n\
          \n\
+         If you start working in another checkout, run this from that checkout so the \
+         pane moves under it in Argus:\n\
+         \n\
+         \x20 {hook} checkout\n\
+         \n\
          If you get blocked and need the human, say so in one line so they can see \
          why from the pane list without opening it:\n\
          \n\
@@ -786,6 +791,11 @@ mod tests {
         let args: Vec<String> = serde_json::from_value(entry["args"].clone()).unwrap();
         assert_eq!(args[0], "say");
         assert!(args[1].contains("title"), "should teach renaming: {}", args[1]);
+        assert!(
+            args[1].contains("checkout"),
+            "should teach checkout affiliation: {}",
+            args[1]
+        );
         assert!(
             !args[1].contains("http://"),
             "no network in the instruction hook"
