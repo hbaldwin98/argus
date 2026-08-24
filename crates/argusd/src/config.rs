@@ -91,6 +91,8 @@ pub enum EventConfig {
         reports: crate::harness::Report,
         #[serde(default)]
         note: bool,
+        #[serde(default)]
+        matcher: Option<String>,
     },
 }
 
@@ -100,11 +102,17 @@ impl EventConfig {
             EventConfig::Reports(reports) => crate::harness::Event {
                 name,
                 reports,
+                matcher: None,
                 note_from_stdin: false,
             },
-            EventConfig::Detailed { reports, note } => crate::harness::Event {
+            EventConfig::Detailed {
+                reports,
+                note,
+                matcher,
+            } => crate::harness::Event {
                 name,
                 reports,
+                matcher,
                 note_from_stdin: note,
             },
         }
@@ -314,6 +322,32 @@ resume = ["--continue"]
             .find(|h| h.name == "herdr")
             .expect("a configured harness joins the built-ins");
         assert_eq!(herdr.resume, ["--continue"]);
+    }
+
+    #[test]
+    fn a_matcher_shaped_harness_preserves_an_event_matcher() {
+        let cfg = parse(
+            r#"
+[[harness]]
+name = "custom-claude"
+shape = "matcher"
+
+[harness.events]
+SessionStart = { reports = "idle", matcher = "startup|resume|clear|fork" }
+"#,
+        );
+        let harness: crate::harness::Harness = cfg
+            .harnesses
+            .into_iter()
+            .next()
+            .expect("the configured harness should exist")
+            .into();
+
+        assert_eq!(harness.events.len(), 1);
+        assert_eq!(
+            harness.events[0].matcher.as_deref(),
+            Some("startup|resume|clear|fork")
+        );
     }
 
     #[test]

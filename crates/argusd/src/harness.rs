@@ -93,6 +93,9 @@ pub struct Event {
     /// The harness's name for it, e.g. Claude Code's `UserPromptSubmit`.
     pub name: String,
     pub reports: Report,
+    /// Optional event-specific matcher, used by matcher-shaped harnesses.
+    #[serde(default)]
+    pub matcher: Option<String>,
     /// Whether this event hands the hook command a message on stdin worth
     /// showing as the pane's note. Claude Code's `Notification` does: it is
     /// the text saying what it is waiting for.
@@ -183,18 +186,29 @@ impl Harness {
                 Event {
                     name: "UserPromptSubmit".into(),
                     reports: Report::Working,
+                    matcher: None,
                     note_from_stdin: false,
                 },
                 Event {
                     name: "Stop".into(),
                     reports: Report::Idle,
+                    matcher: None,
                     note_from_stdin: false,
                 },
                 Event {
                     name: "Notification".into(),
                     reports: Report::Waiting,
+                    matcher: None,
                     // Carries the text of what it is asking for.
                     note_from_stdin: true,
+                },
+                Event {
+                    name: "SessionStart".into(),
+                    reports: Report::Idle,
+                    // Compaction starts a fresh context while the same turn
+                    // is still running, so it must not make the pane idle.
+                    matcher: Some("startup|resume|clear|fork".into()),
+                    note_from_stdin: false,
                 },
             ],
             context_event: Some("SessionStart".to_string()),
@@ -331,11 +345,19 @@ impl Harness {
         let command = helper_path();
         for event in &self.events {
             let entry = status_entry(&command, pane, port, token, event);
-            hooks_obj.insert(event.name.clone(), self.shape.wrap(entry));
+            hooks_obj.insert(
+                event.name.clone(),
+                self.shape.wrap(entry, event.matcher.as_deref()),
+            );
         }
         if let Some(name) = &self.context_event {
             let entry = say_entry(&command, &instructions());
-            hooks_obj.insert(name.clone(), self.shape.wrap(entry));
+            match hooks_obj.get_mut(name) {
+                Some(existing) => self.shape.append(existing, entry, None),
+                None => {
+                    hooks_obj.insert(name.clone(), self.shape.wrap(entry, None));
+                }
+            }
         }
 
         std::fs::write(&path, serde_json::to_string_pretty(&root)?)?;
@@ -437,10 +459,27 @@ fn prune_empty_dirs(checkout: &Path, file: &Path) {
 }
 
 impl Shape {
-    fn wrap(self, entry: Value) -> Value {
+    fn wrap(self, entry: Value, matcher: Option<&str>) -> Value {
         match self {
-            Shape::Matcher => json!([{ "hooks": [entry] }]),
+            Shape::Matcher => {
+                let mut group = json!({ "hooks": [entry] });
+                if let Some(matcher) = matcher {
+                    group["matcher"] = Value::String(matcher.to_string());
+                }
+                json!([group])
+            }
             Shape::Flat => json!([entry]),
+        }
+    }
+
+    fn append(self, existing: &mut Value, entry: Value, matcher: Option<&str>) {
+        let Value::Array(mut addition) = self.wrap(entry, matcher) else {
+            unreachable!()
+        };
+        if let Some(items) = existing.as_array_mut() {
+            items.append(&mut addition);
+        } else {
+            *existing = Value::Array(addition);
         }
     }
 }
@@ -621,11 +660,13 @@ mod tests {
                 Event {
                     name: "turn_start".into(),
                     reports: Report::Working,
+                    matcher: None,
                     note_from_stdin: false,
                 },
                 Event {
                     name: "turn_end".into(),
                     reports: Report::Idle,
+                    matcher: None,
                     note_from_stdin: false,
                 },
             ],
@@ -729,13 +770,59 @@ mod tests {
         let h = Harness::claude();
         h.install(dir.path(), PaneId(1), 5555, "tok").unwrap();
 
-        let entry = settings_of(dir.path(), &h)["hooks"]["SessionStart"][0]["hooks"][0].clone();
+        let starts = settings_of(dir.path(), &h)["hooks"]["SessionStart"]
+            .as_array()
+            .unwrap()
+            .clone();
+        let entry = starts
+            .iter()
+            .find_map(|matcher| {
+                matcher["hooks"].as_array()?.iter().find(|hook| {
+                    hook["args"][0] == "say"
+                })
+            })
+            .unwrap()
+            .clone();
         let args: Vec<String> = serde_json::from_value(entry["args"].clone()).unwrap();
         assert_eq!(args[0], "say");
         assert!(args[1].contains("title"), "should teach renaming: {}", args[1]);
         assert!(
             !args[1].contains("http://"),
             "no network in the instruction hook"
+        );
+    }
+
+    #[test]
+    fn a_new_claude_conversation_clears_stale_status_without_idling_on_compaction() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = Harness::claude();
+        h.install(dir.path(), PaneId(1), 5555, "tok").unwrap();
+
+        let starts = settings_of(dir.path(), &h)["hooks"]["SessionStart"]
+            .as_array()
+            .unwrap()
+            .clone();
+        let status = starts
+            .iter()
+            .find(|matcher| {
+                matcher["hooks"][0]["args"][0]
+                    .as_str()
+                    .is_some_and(|arg| arg.ends_with("/status/idle"))
+            })
+            .expect("SessionStart should clear the previous conversation's status");
+        assert_eq!(status["matcher"], "startup|resume|clear|fork");
+        let context = starts
+            .iter()
+            .find(|matcher| matcher["hooks"][0]["args"][0] == "say")
+            .expect("the context hook must survive sharing SessionStart with status");
+        assert!(
+            context.get("matcher").is_none(),
+            "the context hook must still run for every SessionStart source"
+        );
+        assert_eq!(
+            starts.len(),
+            2,
+            "only the status and context hooks belong here"
         );
     }
 
@@ -1081,6 +1168,77 @@ mod tests {
         // on abort as well as on a finished turn.
         assert!(source.contains("session.status"));
         assert!(source.contains("chat.message"));
+    }
+
+    #[test]
+    fn a_new_opencode_conversation_clears_the_previous_sessions_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let plugin = dir.path().join("argus-status.mjs");
+        let runner = dir.path().join("runner.mjs");
+        std::fs::write(&plugin, Harness::opencode().plugin.unwrap().source).unwrap();
+        std::fs::write(
+            &runner,
+            r#"
+import { pathToFileURL } from "node:url";
+
+const reports = [];
+globalThis.fetch = async (url, init) => {
+  reports.push({ status: url.split("/").at(-1), note: init.body });
+};
+
+const { ArgusStatus } = await import(pathToFileURL(process.argv[2]));
+const hooks = await ArgusStatus();
+await hooks["chat.message"]({ sessionID: "old" });
+await hooks.event({
+  event: {
+    type: "session.error",
+    properties: { sessionID: "old", error: { name: "PermissionDenied" } },
+  },
+});
+await hooks.event({
+  event: {
+    type: "session.created",
+    properties: { sessionID: "child", info: { id: "child", parentID: "old" } },
+  },
+});
+await hooks.event({
+  event: {
+    type: "session.created",
+    properties: { sessionID: "new", info: { id: "new" } },
+  },
+});
+await hooks["chat.message"]({ sessionID: "new" });
+process.stdout.write(JSON.stringify(reports));
+"#,
+        )
+        .unwrap();
+
+        let output = match std::process::Command::new("node")
+            .arg(&runner)
+            .arg(&plugin)
+            .env("ARGUS_HOOK_URL", "http://127.0.0.1/pane/1")
+            .env("ARGUS_HOOK_TOKEN", "test-token")
+            .output()
+        {
+            Ok(output) => output,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+            Err(e) => panic!("could not run opencode plugin test: {e}"),
+        };
+        assert!(
+            output.status.success(),
+            "node failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let reports: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            reports,
+            json!([
+                { "status": "working", "note": "" },
+                { "status": "failed", "note": "PermissionDenied" },
+                { "status": "idle", "note": "" },
+                { "status": "working", "note": "" },
+            ])
+        );
     }
 
     #[test]

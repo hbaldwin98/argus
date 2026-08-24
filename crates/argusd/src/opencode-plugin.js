@@ -87,6 +87,15 @@ export const ArgusStatus = async () => {
       if (props.info?.id && props.info?.parentID) {
         children.add(props.info.id);
       }
+      // OpenCode keeps the same process and plugin when the user starts a
+      // new conversation. A newly created root replaces the root this pane
+      // is showing; otherwise every event from the new conversation would
+      // be mistaken for another session and the previous status would stick.
+      if (type === "session.created" && props.info?.id && !props.info.parentID) {
+        rootSession = props.info.id;
+        await report("idle");
+        return;
+      }
       if (!ownedByPane(sessionID)) return;
 
       switch (type) {
