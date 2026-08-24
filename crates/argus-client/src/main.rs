@@ -10,6 +10,7 @@ mod settings;
 mod theme;
 mod ui;
 
+use std::collections::HashSet;
 use std::io;
 
 use argus_protocol::{read_msg, write_msg, ClientMsg, PaneId, ServerMsg};
@@ -65,17 +66,10 @@ where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
     let (mut rd, wr) = split(stream);
-    let (in_tx, mut in_rx) = mpsc::unbounded_channel::<ClientMsg>();
+    let (in_tx, in_rx) = mpsc::unbounded_channel::<ClientMsg>();
     let (out_tx, out_rx) = mpsc::channel::<ServerMsg>(SERVER_QUEUE_MESSAGES);
 
-    tokio::spawn(async move {
-        let mut wr = wr;
-        while let Some(msg) = in_rx.recv().await {
-            if write_msg(&mut wr, &msg).await.is_err() {
-                break;
-            }
-        }
-    });
+    tokio::spawn(client_writer(wr, in_rx));
     tokio::spawn(async move {
         while let Ok(msg) = read_msg::<_, ServerMsg>(&mut rd).await {
             if out_tx.send(msg).await.is_err() {
@@ -85,6 +79,54 @@ where
     });
 
     (in_tx, out_rx)
+}
+
+async fn client_writer<W>(mut wr: W, mut rx: mpsc::UnboundedReceiver<ClientMsg>)
+where
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    let mut subscribed = HashSet::new();
+    while let Some(first) = rx.recv().await {
+        let subscription_change = is_subscription_change(&first);
+        let mut batch = vec![first];
+        if subscription_change {
+            // Selection can change many times inside one rendered frame. Let
+            // those changes settle before asking the daemon for full grids.
+            tokio::time::sleep(FRAME_INTERVAL).await;
+            batch.extend(std::iter::from_fn(|| rx.try_recv().ok()));
+        }
+        for msg in compact_subscriptions(batch, &mut subscribed) {
+            if write_msg(&mut wr, &msg).await.is_err() {
+                return;
+            }
+        }
+    }
+}
+
+fn is_subscription_change(msg: &ClientMsg) -> bool {
+    matches!(
+        msg,
+        ClientMsg::Subscribe { .. } | ClientMsg::Unsubscribe { .. }
+    )
+}
+
+fn compact_subscriptions(
+    mut batch: Vec<ClientMsg>,
+    subscribed: &mut HashSet<PaneId>,
+) -> Vec<ClientMsg> {
+    let mut seen = HashSet::new();
+    batch.reverse();
+    batch.retain(|msg| match msg {
+        ClientMsg::Subscribe { pane } | ClientMsg::Unsubscribe { pane } => seen.insert(*pane),
+        _ => true,
+    });
+    batch.reverse();
+    batch.retain(|msg| match msg {
+        ClientMsg::Subscribe { pane } => subscribed.insert(*pane),
+        ClientMsg::Unsubscribe { pane } => subscribed.remove(pane),
+        _ => true,
+    });
+    batch
 }
 
 async fn run(
@@ -183,5 +225,74 @@ fn resize_live_panes(
             app.resize_pane(*pane, size.0, size.1);
         }
     }
-    last_sizes.retain(|pane, _| live.iter().any(|(id, _)| id == pane));
+    last_sizes.retain(|pane, _| {
+        app.tree
+            .iter()
+            .flat_map(|project| &project.checkouts)
+            .flat_map(|checkout| &checkout.panes)
+            .any(|candidate| candidate.id == *pane)
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time::{timeout, Duration};
+
+    #[tokio::test]
+    async fn rapid_pane_swaps_do_not_reach_the_daemon_when_selection_returns_to_start() {
+        let (client, mut daemon) = tokio::io::duplex(1024 * 1024);
+        let (tx, _server_rx) = connection_channels(client);
+        let pane_a = PaneId(1);
+        let pane_b = PaneId(2);
+
+        tx.send(ClientMsg::Subscribe { pane: pane_a }).unwrap();
+        assert!(matches!(
+            read_msg::<_, ClientMsg>(&mut daemon).await.unwrap(),
+            ClientMsg::Subscribe { pane } if pane == pane_a
+        ));
+
+        for _ in 0..100 {
+            tx.send(ClientMsg::Unsubscribe { pane: pane_a }).unwrap();
+            tx.send(ClientMsg::Subscribe { pane: pane_b }).unwrap();
+            tx.send(ClientMsg::Unsubscribe { pane: pane_b }).unwrap();
+            tx.send(ClientMsg::Subscribe { pane: pane_a }).unwrap();
+        }
+
+        assert!(
+            timeout(
+                Duration::from_millis(50),
+                read_msg::<_, ClientMsg>(&mut daemon)
+            )
+            .await
+            .is_err(),
+            "intermediate pane selections were written to the daemon"
+        );
+    }
+
+    #[test]
+    fn subscription_compaction_keeps_the_final_selection() {
+        let pane_a = PaneId(1);
+        let pane_b = PaneId(2);
+        let mut subscribed = HashSet::from([pane_a]);
+        let batch = vec![
+            ClientMsg::Unsubscribe { pane: pane_a },
+            ClientMsg::Subscribe { pane: pane_b },
+            ClientMsg::Unsubscribe { pane: pane_b },
+            ClientMsg::Subscribe { pane: pane_a },
+            ClientMsg::Unsubscribe { pane: pane_a },
+            ClientMsg::Subscribe { pane: pane_b },
+        ];
+
+        let compacted = compact_subscriptions(batch, &mut subscribed);
+
+        assert!(matches!(
+            compacted.as_slice(),
+            [
+                ClientMsg::Unsubscribe { pane: first },
+                ClientMsg::Subscribe { pane: second }
+            ] if *first == pane_a && *second == pane_b
+        ));
+        assert_eq!(subscribed, HashSet::from([pane_b]));
+    }
 }
