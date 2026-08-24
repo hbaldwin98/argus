@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{CheckoutId, PaneId, ProjectId, WorkspaceId};
+use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PaneKind {
@@ -101,10 +101,17 @@ pub struct CheckoutInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepositoryInfo {
+    pub id: RepositoryId,
+    pub name: String,
+    pub checkouts: Vec<CheckoutInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectInfo {
     pub id: ProjectId,
     pub name: String,
-    pub checkouts: Vec<CheckoutInfo>,
+    pub repositories: Vec<RepositoryInfo>,
 }
 
 /// A named group of projects. Exactly one workspace is *open* at a time —

@@ -460,7 +460,7 @@ mod tests {
         }
 
         fn checkout(&self) -> CheckoutId {
-            self.daemon.snapshot()[0].checkouts[0].id
+            self.daemon.snapshot()[0].repositories[0].checkouts[0].id
         }
 
         fn send(&mut self, msg: ClientMsg) {

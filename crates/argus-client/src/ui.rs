@@ -1,4 +1,4 @@
-//! The renderer. Four columns, always all four (DESIGN.md §4): projects,
+//! The renderer. Five columns, always all five: projects, repositories,
 //! checkouts, open panes, and the selected pane's live view. Descending
 //! moves focus rightward; it never replaces the columns with a full-screen
 //! view, so an agent's output is always visible next to the tree it belongs
@@ -48,7 +48,7 @@ const GUTTER_COLS: u16 = 1;
 
 /// A dragged column cannot be collapsed beyond this outer width. The
 /// renderer scales the floor down only when the terminal itself is too
-/// narrow to fit four such columns.
+/// narrow to fit five such columns.
 pub const MIN_COLUMN_WIDTH: u16 = 8;
 
 /// One list item: what it is, a dimmer line of what's true about it, and
@@ -105,11 +105,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
     }
 }
 
-/// Always draws all four columns side by side, so an agent's output stays
+/// Always draws all five columns side by side, so an agent's output stays
 /// visible next to the rest of the tree instead of taking over the screen.
 fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
     let th = app.theme;
-    let constraints = column_constraints(area.width, app.column_widths);
+    let constraints = column_constraints(area.width, app.column_widths.as_deref());
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .spacing(GUTTER_COLS)
@@ -120,10 +120,16 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
         .tree
         .iter()
         .map(|p| {
-            let panes: usize = p.checkouts.iter().map(|c| c.listed_panes().count()).sum();
-            let status = p
-                .checkouts
+            let panes: usize = p
+                .repositories
                 .iter()
+                .flat_map(|r| r.checkouts.iter())
+                .map(|c| c.listed_panes().count())
+                .sum();
+            let status = p
+                .repositories
+                .iter()
+                .flat_map(|r| r.checkouts.iter())
                 .filter_map(worst_pane_status)
                 .max_by_key(rank);
             let item = Item::new(
@@ -135,7 +141,7 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
                     ),
                 ],
                 vec![Span::styled(
-                    plural(p.checkouts.len(), "checkout"),
+                    plural(p.repositories.len(), "repository"),
                     Style::default().fg(th.dim),
                 )],
             );
@@ -169,12 +175,59 @@ n  add one",
         th,
     );
 
-    let checkout_rows: Vec<Item> = app
+    let repository_rows: Vec<Item> = app
         .current_project()
         .map(|p| {
-            p.checkouts
+            p.repositories
                 .iter()
-                .map(|c| {
+                .map(|r| {
+                    let panes: usize = r.checkouts.iter().map(|c| c.listed_panes().count()).sum();
+                    let status = r
+                        .checkouts
+                        .iter()
+                        .filter_map(worst_pane_status)
+                        .max_by_key(rank);
+                    let item = Item::new(
+                        vec![
+                            status_dot(status, th),
+                            Span::styled(
+                                r.name.clone(),
+                                Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+                            ),
+                        ],
+                        vec![Span::styled(
+                            plural(r.checkouts.len(), "checkout"),
+                            Style::default().fg(th.dim),
+                        )],
+                    );
+                    if panes == 0 {
+                        item
+                    } else {
+                        item.badged(vec![Span::styled(
+                            format!("{panes} ▣"),
+                            Style::default().fg(th.dim),
+                        )])
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let nrepo = app.current_project().map(|p| p.repositories.len()).unwrap_or(0);
+    app.layout.repositories = render_column(
+        f,
+        cols[1],
+        "repositories",
+        repository_rows,
+        app.focus == Focus::Repositories,
+        (nrepo > 0).then_some(app.sel_repository),
+        "no repositories",
+        th,
+    );
+
+    let checkout_rows: Vec<Item> = app
+        .current_repository()
+        .map(|r| {
+            r.checkouts.iter().map(|c| {
                     // A checkout is usually sitting on the branch it's named
                     // after; repeating it ("master master") says nothing.
                     // Show the branch only when it actually differs.
@@ -207,14 +260,13 @@ n  add one",
                             Style::default().fg(th.dim),
                         )]
                     })
-                })
-                .collect()
+                }).collect()
         })
         .unwrap_or_default();
-    let ncheck = app.current_project().map(|p| p.checkouts.len()).unwrap_or(0);
+    let ncheck = app.current_repository().map(|r| r.checkouts.len()).unwrap_or(0);
     app.layout.checkouts = render_column(
         f,
-        cols[1],
+        cols[2],
         "checkouts",
         checkout_rows,
         app.focus == Focus::Checkouts,
@@ -253,7 +305,7 @@ n  add one",
         .unwrap_or(0);
     app.layout.panes = render_column(
         f,
-        cols[2],
+        cols[3],
         "panes",
         pane_rows,
         app.focus == Focus::Panes,
@@ -265,31 +317,32 @@ a  agent",
         th,
     );
 
-    render_content(f, app, cols[3], th);
+    render_content(f, app, cols[4], th);
 }
 
-fn column_constraints(total_width: u16, preferred: Option<[u16; 4]>) -> [Constraint; 4] {
-    let Some(mut widths) = preferred else {
-        return [
-            Constraint::Percentage(20),
-            Constraint::Percentage(21),
-            Constraint::Percentage(21),
-            Constraint::Percentage(38),
+fn column_constraints(total_width: u16, preferred: Option<&[u16]>) -> Vec<Constraint> {
+    let Some(mut widths) = preferred.filter(|widths| widths.len() == 5).map(<[u16]>::to_vec) else {
+        return vec![
+            Constraint::Percentage(16),
+            Constraint::Percentage(17),
+            Constraint::Percentage(17),
+            Constraint::Percentage(18),
+            Constraint::Percentage(32),
         ];
     };
 
-    let available = total_width.saturating_sub(GUTTER_COLS * 3);
+    let available = total_width.saturating_sub(GUTTER_COLS * 4);
     if available == 0 {
-        return [Constraint::Length(0); 4];
+        return vec![Constraint::Length(0); 5];
     }
-    let floor = MIN_COLUMN_WIDTH.min(available / 4).max(1);
+    let floor = MIN_COLUMN_WIDTH.min(available / 5).max(1);
     for width in &mut widths {
         *width = (*width).max(floor);
     }
 
     let mut sum: u16 = widths.iter().copied().sum();
     if sum < available {
-        widths[3] = widths[3].saturating_add(available - sum);
+        widths[4] = widths[4].saturating_add(available - sum);
     } else {
         for width in widths.iter_mut().rev() {
             if sum <= available {
@@ -300,7 +353,7 @@ fn column_constraints(total_width: u16, preferred: Option<[u16; 4]>) -> [Constra
             sum -= take;
         }
     }
-    widths.map(Constraint::Length)
+    widths.into_iter().map(Constraint::Length).collect()
 }
 
 /// Renders one bordered column of rows and returns its inner (post-border)
@@ -490,7 +543,7 @@ fn row_rect_of(inner: Rect, i: usize, height: u16) -> Option<Rect> {
 }
 
 /// The rightmost column: the selected pane's live terminal, always drawn
-/// alongside the other three rather than taking over the screen. Which pane
+/// alongside the other four rather than taking over the screen. Which pane
 /// that is follows the panes column's selection.
 fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     // Typing focus is what the accent border promises here, so only
@@ -598,10 +651,18 @@ fn review_line<'a>(view: &'a ReviewView, row: Row, selected: bool, th: Theme) ->
 /// `project / checkout / pane` for the live view's title, which doubles as
 /// the breadcrumb telling you where in the tree the content came from.
 fn content_title(app: &App) -> String {
-    match (app.current_project(), app.current_checkout(), app.current_pane()) {
-        (Some(p), Some(c), Some(pane)) => format!("{} › {} › {}", p.name, c.name, pane.title),
-        (Some(p), Some(c), None) => format!("{} › {}", p.name, c.name),
-        (Some(p), None, _) => p.name.clone(),
+    match (
+        app.current_project(),
+        app.current_repository(),
+        app.current_checkout(),
+        app.current_pane(),
+    ) {
+        (Some(p), Some(r), Some(c), Some(pane)) => {
+            format!("{} › {} › {} › {}", p.name, r.name, c.name, pane.title)
+        }
+        (Some(p), Some(r), Some(c), None) => format!("{} › {} › {}", p.name, r.name, c.name),
+        (Some(p), Some(r), None, _) => format!("{} › {}", p.name, r.name),
+        (Some(p), None, _, _) => p.name.clone(),
         _ => "live".to_string(),
     }
 }
@@ -652,6 +713,9 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         // hold every key at once, and most of them only apply somewhere.
         let keys = match app.focus {
             Focus::Projects => "j/k move  l open  n add project  w wksp  S settings  q detach",
+            Focus::Repositories => {
+                "j/k move  l open  s shell  a agent  b branch  f file  R review  q detach"
+            }
             Focus::Checkouts => {
                 "j/k move  l open  b branch  f file  R review  n worktree  D rm  q detach"
             }
@@ -1070,6 +1134,8 @@ fn git_spans(git: Option<&GitStatus>, th: Theme) -> Vec<Span<'static>> {
 fn plural(n: usize, noun: &str) -> String {
     if n == 1 {
         format!("{n} {noun}")
+    } else if let Some(stem) = noun.strip_suffix('y') {
+        format!("{n} {stem}ies")
     } else {
         format!("{n} {noun}s")
     }
@@ -1227,7 +1293,10 @@ fn to_ratatui_color(c: PColor) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use argus_protocol::{CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, ProjectId, ProjectInfo};
+    use argus_protocol::{
+        CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, ProjectId, ProjectInfo,
+        RepositoryId, RepositoryInfo,
+    };
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
@@ -1543,7 +1612,10 @@ mod tests {
         vec![ProjectInfo {
             id: ProjectId(1),
             name: "argus".to_string(),
-            checkouts: vec![
+            repositories: vec![RepositoryInfo {
+                id: RepositoryId(2),
+                name: "orion".to_string(),
+                checkouts: vec![
                 CheckoutInfo {
                     id: CheckoutId(10),
                     name: "master".to_string(),
@@ -1577,7 +1649,8 @@ mod tests {
                     git: None,
                     panes: vec![],
                 },
-            ],
+                ],
+            }],
         }]
     }
 
@@ -1627,13 +1700,13 @@ mod tests {
     }
 
     #[test]
-    fn all_four_columns_are_drawn_at_once() {
+    fn all_five_columns_are_drawn_at_once() {
         // The core navigational promise (§4): descending never replaces the
         // tree with a full-screen view.
         let mut app = app_with_tree();
         app.focus = Focus::PaneContent;
         let text = lines(&draw(&mut app)).join("\n");
-        for title in ["projects", "checkouts", "panes"] {
+        for title in ["projects", "repositories", "checkouts", "panes"] {
             assert!(text.contains(title), "{title} column missing while inside a pane");
         }
     }
@@ -1666,19 +1739,20 @@ mod tests {
     #[test]
     fn preferred_column_widths_are_used_and_keep_a_minimum() {
         let mut app = app_with_tree();
-        app.column_widths = Some([2, 30, 20, 45]);
+        app.column_widths = Some(vec![2, 18, 20, 20, 40]);
         draw(&mut app);
 
         assert_eq!(app.layout.projects.outer.width, MIN_COLUMN_WIDTH);
-        assert_eq!(app.layout.checkouts.outer.width, 30);
+        assert_eq!(app.layout.repositories.outer.width, 18);
+        assert_eq!(app.layout.checkouts.outer.width, 20);
         assert_eq!(app.layout.panes.outer.width, 20);
-        assert_eq!(app.layout.content.outer.width, 37);
+        assert_eq!(app.layout.content.outer.width, 28);
     }
 
     #[test]
     fn narrow_row_text_ends_in_an_ellipsis() {
         let mut app = app_with_tree();
-        app.column_widths = Some([8, 30, 20, 39]);
+        app.column_widths = Some(vec![8, 18, 18, 18, 34]);
         let text = lines(&draw(&mut app)).join("\n");
 
         assert!(
@@ -1694,6 +1768,45 @@ mod tests {
         assert!(text.contains("argus"), "project name");
         assert!(text.contains("master"), "checkout name");
         assert!(text.contains("claude"), "pane title");
+    }
+
+    #[test]
+    fn repository_rows_roll_up_checkout_counts_panes_and_status() {
+        let mut app = app_with_tree();
+        app.tree[0].repositories.push(RepositoryInfo {
+            id: RepositoryId(3),
+            name: "satellite".to_string(),
+            checkouts: vec![CheckoutInfo {
+                id: CheckoutId(12),
+                name: "main".to_string(),
+                path: "/satellite".to_string(),
+                primary: true,
+                git: None,
+                panes: vec![PaneInfo {
+                    id: PaneId(102),
+                    kind: PaneKind::Agent,
+                    title: "waiting".to_string(),
+                    status: PaneStatus::Waiting,
+                    note: None,
+                    template: None,
+                }],
+            }],
+        });
+
+        let buf = draw_at(&mut app, 140, 20);
+        let text = lines(&buf).join("\n");
+        assert!(text.contains("satellite"), "repository row missing:\n{text}");
+        assert!(text.contains("2 repositories"), "project rollup missing:\n{text}");
+        assert!(text.contains("1 ▣"), "repository pane rollup missing:\n{text}");
+
+        let status = buf
+            .cell((
+                app.layout.repositories.inner.x + 1,
+                app.layout.repositories.inner.y + ROW_HEIGHT,
+            ))
+            .unwrap();
+        assert_eq!(status.symbol(), "●");
+        assert_eq!(status.fg, app.theme.err);
     }
 
     #[test]
@@ -1774,12 +1887,8 @@ mod tests {
 
     #[test]
     fn the_live_view_titles_itself_with_the_path_through_the_tree() {
-        let mut app = app_with_tree();
-        let text = lines(&draw(&mut app)).join("\n");
-        assert!(
-            text.contains("argus › master › claude"),
-            "the live view should say where its content came from:\n{text}"
-        );
+        let app = app_with_tree();
+        assert_eq!(content_title(&app), "argus › orion › master › claude");
     }
 
     #[test]
@@ -2255,7 +2364,7 @@ mod tests {
     #[test]
     fn an_editor_never_appears_in_the_panes_column() {
         let mut app = app_with_tree();
-        if let Some(c) = app.tree[0].checkouts.get_mut(0) {
+        if let Some(c) = app.tree[0].repositories[0].checkouts.get_mut(0) {
             c.panes.push(PaneInfo {
                 id: PaneId(700),
                 kind: PaneKind::Editor,

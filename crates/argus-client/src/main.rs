@@ -228,7 +228,8 @@ fn resize_live_panes(
     last_sizes.retain(|pane, _| {
         app.tree
             .iter()
-            .flat_map(|project| &project.checkouts)
+            .flat_map(|project| &project.repositories)
+            .flat_map(|repository| &repository.checkouts)
             .flat_map(|checkout| &checkout.panes)
             .any(|candidate| candidate.id == *pane)
     });

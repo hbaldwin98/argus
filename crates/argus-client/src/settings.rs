@@ -70,9 +70,11 @@ pub struct Settings {
     pub editor_cmd: String,
     /// A preset name from `theme::THEMES`.
     pub theme: String,
-    /// Preferred outer widths for projects, checkouts, panes, and content.
+    /// Preferred outer widths for projects, repositories, checkouts, panes,
+    /// and content. A vector lets older four-column files deserialize; the
+    /// renderer discards lengths that do not match the current layout.
     /// Absent until the user first drags a column separator.
-    pub column_widths: Option<[u16; 4]>,
+    pub column_widths: Option<Vec<u16>>,
 }
 
 impl Default for Settings {
@@ -179,7 +181,7 @@ mod tests {
             editor: EditorMode::External,
             editor_cmd: "code -w".to_string(),
             theme: "latte".to_string(),
-            column_widths: Some([12, 18, 24, 46]),
+            column_widths: Some(vec![12, 16, 18, 24, 46]),
         };
         let back: Settings = toml::from_str(&toml::to_string_pretty(&s).unwrap()).unwrap();
         assert_eq!(back, s);
@@ -192,6 +194,12 @@ mod tests {
         assert_eq!(s.theme, "frappe");
         assert_eq!(s.editor, Settings::default().editor);
         assert_eq!(s.column_widths, None);
+    }
+
+    #[test]
+    fn old_four_column_widths_deserialize_for_safe_runtime_migration() {
+        let s: Settings = toml::from_str("column_widths = [12, 18, 24, 46]").unwrap();
+        assert_eq!(s.column_widths, Some(vec![12, 18, 24, 46]));
     }
 
     #[test]

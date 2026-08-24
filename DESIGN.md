@@ -26,17 +26,17 @@ There is no protocol negotiation or transport authentication.
 The runtime hierarchy is:
 
 ```text
-Workspace scope -> Project -> Checkout -> Pane
+Workspace scope -> Project -> Repository -> Checkout -> Pane
 ```
 
 A workspace is a daemon-wide scope, not a navigation column. Switching it changes every attached
-client. Panes in other workspaces continue to run. The TUI draws project, checkout, and pane
-columns followed by the selected pane's terminal.
+client. Panes in other workspaces continue to run. The TUI draws project, repository, checkout,
+and pane columns followed by the selected pane's terminal.
 
-A project configures one or more repository paths. Each path currently becomes a flat primary
-checkout under the project; there is no repository node in the protocol. Linked worktrees are
-discovered under the project, but multi-repository worktree operations still assume the first
-primary checkout.
+A project configures one or more repository paths. Each path becomes a repository with its own
+primary checkout and linked worktrees. Repository identity is carried through daemon state and the
+protocol, so worktree discovery, creation, and removal stay scoped to the repository that owns the
+selected checkout.
 
 Checkout rows use the branch currently occupying their path as their display name, including when
 another process switches the branch outside Argus. A live agent can report that it has started

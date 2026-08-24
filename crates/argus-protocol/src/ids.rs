@@ -18,6 +18,7 @@ macro_rules! id_type {
 
 id_type!(WorkspaceId);
 id_type!(ProjectId);
+id_type!(RepositoryId);
 id_type!(CheckoutId);
 id_type!(PaneId);
 

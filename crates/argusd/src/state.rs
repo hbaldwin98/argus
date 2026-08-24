@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use argus_protocol::{
     Cell, CheckoutId, CheckoutInfo, IdGen, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId,
-    ProjectInfo, ServerMsg, WorkspaceId, WorkspaceInfo,
+    ProjectInfo, RepositoryId, RepositoryInfo, ServerMsg, WorkspaceId, WorkspaceInfo,
 };
 use tokio::sync::broadcast;
 
@@ -74,13 +74,19 @@ struct Checkout {
     panes: Vec<Pane>,
 }
 
+struct Repository {
+    id: RepositoryId,
+    name: String,
+    checkouts: Vec<Checkout>,
+}
+
 struct Project {
     id: ProjectId,
     name: String,
     /// Which workspace this project is filed under. The tree a client sees
     /// is scoped to whichever workspace is open (DESIGN.md §11).
     workspace: WorkspaceId,
-    checkouts: Vec<Checkout>,
+    repositories: Vec<Repository>,
 }
 
 struct Workspace {
@@ -170,7 +176,7 @@ impl Daemon {
                     None => default_ws,
                 },
                 name: p.name,
-                checkouts: p
+                repositories: p
                     .repos
                     .into_iter()
                     .map(|repo| {
@@ -179,12 +185,19 @@ impl Daemon {
                             .file_name()
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or(repo);
-                        Checkout {
-                            id: CheckoutId(ids.alloc()),
+                        Repository {
+                            id: RepositoryId(ids.alloc()),
                             name,
-                            path,
-                            primary: true,
-                            panes: Vec::new(),
+                            checkouts: vec![Checkout {
+                                id: CheckoutId(ids.alloc()),
+                                name: path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| path.to_string_lossy().to_string()),
+                                path,
+                                primary: true,
+                                panes: Vec::new(),
+                            }],
                         }
                     })
                     .collect(),
@@ -250,7 +263,8 @@ impl Daemon {
         inner
             .projects
             .iter()
-            .flat_map(|p| p.checkouts.iter())
+            .flat_map(|p| p.repositories.iter())
+            .flat_map(|r| r.checkouts.iter())
             .map(|c| c.path.clone())
             .collect()
     }
@@ -286,35 +300,43 @@ impl Daemon {
             .map(|p| ProjectInfo {
                 id: p.id,
                 name: p.name.clone(),
-                checkouts: p
-                    .checkouts
+                repositories: p
+                    .repositories
                     .iter()
-                    .map(|c| {
-                        let git = crate::git::status(&c.path);
-                        CheckoutInfo {
-                            id: c.id,
-                            // A checkout names the branch currently occupying it,
-                            // including when a process switched outside Argus.
-                            name: git
-                                .as_ref()
-                                .and_then(|status| status.branch.clone())
-                                .unwrap_or_else(|| c.name.clone()),
-                            path: c.path.to_string_lossy().to_string(),
-                            panes: c
-                                .panes
-                                .iter()
-                                .map(|pane| PaneInfo {
-                                    id: pane.id,
-                                    kind: pane.kind,
-                                    title: pane.title.clone(),
-                                    status: pane.status,
-                                    note: pane.note.clone(),
-                                    template: pane.template.clone(),
-                                })
-                                .collect(),
-                            git,
-                            primary: c.primary,
-                        }
+                    .map(|r| RepositoryInfo {
+                        id: r.id,
+                        name: r.name.clone(),
+                        checkouts: r
+                            .checkouts
+                            .iter()
+                            .map(|c| {
+                                let git = crate::git::status(&c.path);
+                                CheckoutInfo {
+                                    id: c.id,
+                                    // A checkout names the branch currently occupying it,
+                                    // including when a process switched outside Argus.
+                                    name: git
+                                        .as_ref()
+                                        .and_then(|status| status.branch.clone())
+                                        .unwrap_or_else(|| c.name.clone()),
+                                    path: c.path.to_string_lossy().to_string(),
+                                    panes: c
+                                        .panes
+                                        .iter()
+                                        .map(|pane| PaneInfo {
+                                            id: pane.id,
+                                            kind: pane.kind,
+                                            title: pane.title.clone(),
+                                            status: pane.status,
+                                            note: pane.note.clone(),
+                                            template: pane.template.clone(),
+                                        })
+                                        .collect(),
+                                    git,
+                                    primary: c.primary,
+                                }
+                            })
+                            .collect(),
                     })
                     .collect(),
             })
@@ -348,7 +370,8 @@ impl Daemon {
                     projects: projects.len(),
                     panes: projects
                         .iter()
-                        .flat_map(|p| p.checkouts.iter())
+                        .flat_map(|p| p.repositories.iter())
+                        .flat_map(|r| r.checkouts.iter())
                         .map(|c| c.panes.len())
                         .sum(),
                     open: w.id == inner.open,
@@ -409,7 +432,8 @@ impl Daemon {
             panes: inner
                 .projects
                 .iter()
-                .flat_map(|p| p.checkouts.iter())
+                .flat_map(|p| p.repositories.iter())
+                .flat_map(|r| r.checkouts.iter())
                 .flat_map(|c| {
                     c.panes
                         .iter()
@@ -534,7 +558,8 @@ impl Daemon {
         inner
             .projects
             .iter()
-            .flat_map(|p| p.checkouts.iter())
+            .flat_map(|p| p.repositories.iter())
+            .flat_map(|r| r.checkouts.iter())
             .find(|c| c.path == path || c.path.canonicalize().ok() == path.canonicalize().ok())
             .map(|c| c.id)
     }
@@ -1013,35 +1038,53 @@ impl Daemon {
     ) -> anyhow::Result<()> {
         let (source_path, target_path, template, source_has_agent) = {
             let mut inner = self.inner.lock().unwrap();
-            let (project_index, source_index, pane_index) =
-                inner
-                    .projects
-                    .iter()
-                    .enumerate()
-                    .find_map(|(project_index, project)| {
-                        project.checkouts.iter().enumerate().find_map(
-                            |(checkout_index, checkout)| {
-                                checkout
-                                    .panes
-                                    .iter()
-                                    .position(|candidate| candidate.id == pane)
-                                    .map(|pane_index| (project_index, checkout_index, pane_index))
-                            },
-                        )
-                    })
-                    .ok_or_else(|| anyhow::anyhow!("no such pane"))?;
+            let (project_index, source_repository_index, source_index, pane_index) = inner
+                .projects
+                .iter()
+                .enumerate()
+                .find_map(|(project_index, project)| {
+                    project.repositories.iter().enumerate().find_map(
+                        |(repository_index, repository)| {
+                            repository.checkouts.iter().enumerate().find_map(
+                                |(checkout_index, checkout)| {
+                                    checkout
+                                        .panes
+                                        .iter()
+                                        .position(|candidate| candidate.id == pane)
+                                        .map(|pane_index| {
+                                            (
+                                                project_index,
+                                                repository_index,
+                                                checkout_index,
+                                                pane_index,
+                                            )
+                                        })
+                                },
+                            )
+                        },
+                    )
+                })
+                .ok_or_else(|| anyhow::anyhow!("no such pane"))?;
 
             let project = &mut inner.projects[project_index];
-            let target_index = project
-                .checkouts
+            let (target_repository_index, target_index) = project
+                .repositories
                 .iter()
-                .position(|checkout| same_path(&checkout.path, destination))
+                .enumerate()
+                .find_map(|(repository_index, repository)| {
+                    repository
+                        .checkouts
+                        .iter()
+                        .position(|checkout| same_path(&checkout.path, destination))
+                        .map(|checkout_index| (repository_index, checkout_index))
+                })
                 .ok_or_else(|| anyhow::anyhow!("destination is not a checkout in this project"))?;
-            if source_index == target_index {
+            if source_repository_index == target_repository_index && source_index == target_index {
                 return Ok(());
             }
 
-            let moving = &project.checkouts[source_index].panes[pane_index];
+            let moving = &project.repositories[source_repository_index].checkouts[source_index]
+                .panes[pane_index];
             if moving.kind != PaneKind::Agent {
                 anyhow::bail!("only agent panes can change checkout affiliation");
             }
@@ -1049,12 +1092,21 @@ impl Daemon {
                 anyhow::bail!("an exited pane cannot change checkout affiliation");
             }
 
-            let source_path = project.checkouts[source_index].path.clone();
-            let target_path = project.checkouts[target_index].path.clone();
-            let moving = project.checkouts[source_index].panes.remove(pane_index);
+            let source_path = project.repositories[source_repository_index].checkouts[source_index]
+                .path
+                .clone();
+            let target_path = project.repositories[target_repository_index].checkouts[target_index]
+                .path
+                .clone();
+            let moving = project.repositories[source_repository_index].checkouts[source_index]
+                .panes
+                .remove(pane_index);
             let template = moving.template.clone();
-            project.checkouts[target_index].panes.push(moving);
-            let source_has_agent = project.checkouts[source_index]
+            project.repositories[target_repository_index].checkouts[target_index]
+                .panes
+                .push(moving);
+            let source_has_agent = project.repositories[source_repository_index].checkouts
+                [source_index]
                 .panes
                 .iter()
                 .any(|candidate| candidate.kind == PaneKind::Agent);
@@ -1117,7 +1169,7 @@ impl Daemon {
         });
     }
 
-    /// Reconciles each project's checkouts against `git worktree list` on
+    /// Reconciles each repository's checkouts against `git worktree list` on
     /// its primary checkout, so a worktree created or removed outside
     /// Argus — a bare `git worktree add`/`remove` from a shell — still
     /// shows up, or disappears, without going through `create_worktree` /
@@ -1136,48 +1188,49 @@ impl Daemon {
             let mut guard = self.inner.lock().unwrap();
             let Inner { projects, ids, .. } = &mut *guard;
             for project in projects.iter_mut() {
-                let Some(primary_path) = project
-                    .checkouts
-                    .iter()
-                    .find(|c| c.primary)
-                    .map(|c| c.path.clone())
-                else {
-                    continue;
-                };
-                let listed = list(&primary_path);
-                if listed.is_empty() {
-                    // Not a git repo (or `git` failed) — nothing to
-                    // reconcile against, and never treat this as "every
-                    // worktree was removed".
-                    continue;
-                }
-
-                for path in &listed {
-                    if project.checkouts.iter().any(|c| same_path(&c.path, path)) {
+                for repository in project.repositories.iter_mut() {
+                    let Some(primary_path) = repository
+                        .checkouts
+                        .iter()
+                        .find(|c| c.primary)
+                        .map(|c| c.path.clone())
+                    else {
+                        continue;
+                    };
+                    let listed = list(&primary_path);
+                    if listed.is_empty() {
                         continue;
                     }
-                    let is_primary = same_path(path, &primary_path);
-                    let id = CheckoutId(ids.alloc());
-                    let name = worktree_display_name(path, is_primary);
-                    project.checkouts.push(Checkout {
-                        id,
-                        name,
-                        path: path.clone(),
-                        primary: is_primary,
-                        panes: Vec::new(),
-                    });
-                }
 
-                let mut i = 0;
-                while i < project.checkouts.len() {
-                    let gone = !project.checkouts[i].primary
-                        && !listed
+                    for path in &listed {
+                        if repository
+                            .checkouts
                             .iter()
-                            .any(|path| same_path(path, &project.checkouts[i].path));
-                    if gone {
-                        orphaned_panes.extend(project.checkouts.remove(i).panes);
-                    } else {
-                        i += 1;
+                            .any(|c| same_path(&c.path, path))
+                        {
+                            continue;
+                        }
+                        let is_primary = same_path(path, &primary_path);
+                        repository.checkouts.push(Checkout {
+                            id: CheckoutId(ids.alloc()),
+                            name: worktree_display_name(path, is_primary),
+                            path: path.clone(),
+                            primary: is_primary,
+                            panes: Vec::new(),
+                        });
+                    }
+
+                    let mut i = 0;
+                    while i < repository.checkouts.len() {
+                        let gone = !repository.checkouts[i].primary
+                            && !listed
+                                .iter()
+                                .any(|path| same_path(path, &repository.checkouts[i].path));
+                        if gone {
+                            orphaned_panes.extend(repository.checkouts.remove(i).panes);
+                        } else {
+                            i += 1;
+                        }
                     }
                 }
             }
@@ -1210,17 +1263,25 @@ impl Daemon {
         {
             let mut inner = self.inner.lock().unwrap();
             let project_id = ProjectId(inner.ids.alloc());
+            let repository_id = RepositoryId(inner.ids.alloc());
             let checkout_id = CheckoutId(inner.ids.alloc());
             inner.projects.push(Project {
                 id: project_id,
                 workspace,
                 name: name.clone(),
-                checkouts: vec![Checkout {
-                    id: checkout_id,
+                repositories: vec![Repository {
+                    id: repository_id,
                     name,
-                    path: expanded,
-                    primary: true,
-                    panes: Vec::new(),
+                    checkouts: vec![Checkout {
+                        id: checkout_id,
+                        name: expanded
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| expanded.to_string_lossy().to_string()),
+                        path: expanded,
+                        primary: true,
+                        panes: Vec::new(),
+                    }],
                 }],
             });
         }
@@ -1230,9 +1291,9 @@ impl Daemon {
         Ok(())
     }
 
-    /// `git worktree add`s a new checkout in `base`'s project, branched off
+    /// `git worktree add`s a new checkout in `base`'s repository, branched off
     /// `base`'s current HEAD, and appends it to the tree. Placed under
-    /// `.argus/worktrees/<branch>` beside the project's primary checkout
+    /// `.argus/worktrees/<branch>` beside the repository's primary checkout
     /// (DESIGN.md §4 Level 2), regardless of which checkout `base` itself
     /// is — so worktrees always nest under the one directory, not under
     /// each other.
@@ -1299,7 +1360,7 @@ impl Daemon {
             anyhow::bail!("branch name can't be empty");
         }
 
-        let (project_id, base_path, primary_path) = {
+        let (repository_id, base_path, primary_path) = {
             let inner = self.inner.lock().unwrap();
             find_checkout_context(&inner.projects, base)
                 .ok_or_else(|| anyhow::anyhow!("no such checkout"))?
@@ -1322,8 +1383,8 @@ impl Daemon {
         {
             let mut inner = self.inner.lock().unwrap();
             let id = CheckoutId(inner.ids.alloc());
-            if let Some(p) = find_project(&mut inner.projects, project_id) {
-                p.checkouts.push(Checkout {
+            if let Some(r) = find_repository(&mut inner.projects, repository_id) {
+                r.checkouts.push(Checkout {
                     id,
                     name: branch,
                     path: dest,
@@ -1406,33 +1467,41 @@ impl Daemon {
 fn find_checkout(projects: &mut [Project], id: CheckoutId) -> Option<&mut Checkout> {
     projects
         .iter_mut()
-        .flat_map(|p| p.checkouts.iter_mut())
+        .flat_map(|p| p.repositories.iter_mut())
+        .flat_map(|r| r.checkouts.iter_mut())
         .find(|c| c.id == id)
 }
 
 fn find_checkout_ref(projects: &[Project], id: CheckoutId) -> Option<&Checkout> {
     projects
         .iter()
-        .flat_map(|p| p.checkouts.iter())
+        .flat_map(|p| p.repositories.iter())
+        .flat_map(|r| r.checkouts.iter())
         .find(|c| c.id == id)
 }
 
-fn find_project(projects: &mut [Project], id: ProjectId) -> Option<&mut Project> {
-    projects.iter_mut().find(|p| p.id == id)
+fn find_repository(projects: &mut [Project], id: RepositoryId) -> Option<&mut Repository> {
+    projects
+        .iter_mut()
+        .flat_map(|p| p.repositories.iter_mut())
+        .find(|r| r.id == id)
 }
 
-/// For a checkout, the id of its owning project, that checkout's own path
+/// For a checkout, the id of its owning repository, that checkout's own path
 /// (the base to branch off / run `git worktree` commands from), and its
-/// project's primary checkout path (where new worktrees get placed).
+/// repository's primary checkout path (where new worktrees get placed).
 fn find_checkout_context(
     projects: &[Project],
     id: CheckoutId,
-) -> Option<(ProjectId, PathBuf, PathBuf)> {
-    projects.iter().find_map(|p| {
-        let base = p.checkouts.iter().find(|c| c.id == id)?;
-        let primary = p.checkouts.iter().find(|c| c.primary).unwrap_or(base);
-        Some((p.id, base.path.clone(), primary.path.clone()))
-    })
+) -> Option<(RepositoryId, PathBuf, PathBuf)> {
+    projects
+        .iter()
+        .flat_map(|p| p.repositories.iter())
+        .find_map(|r| {
+            let base = r.checkouts.iter().find(|c| c.id == id)?;
+            let primary = r.checkouts.iter().find(|c| c.primary).unwrap_or(base);
+            Some((r.id, base.path.clone(), primary.path.clone()))
+        })
 }
 
 /// Prefers the checked-out branch name for a newly-discovered worktree —
@@ -1451,8 +1520,10 @@ fn worktree_display_name(path: &std::path::Path, is_primary: bool) -> String {
 
 fn remove_checkout_entry(projects: &mut [Project], id: CheckoutId) -> Option<Checkout> {
     for project in projects.iter_mut() {
-        if let Some(pos) = project.checkouts.iter().position(|c| c.id == id) {
-            return Some(project.checkouts.remove(pos));
+        for repository in project.repositories.iter_mut() {
+            if let Some(pos) = repository.checkouts.iter().position(|c| c.id == id) {
+                return Some(repository.checkouts.remove(pos));
+            }
         }
     }
     None
@@ -1461,7 +1532,8 @@ fn remove_checkout_entry(projects: &mut [Project], id: CheckoutId) -> Option<Che
 fn find_pane(projects: &mut [Project], id: PaneId) -> Option<&mut Pane> {
     projects
         .iter_mut()
-        .flat_map(|p| p.checkouts.iter_mut())
+        .flat_map(|p| p.repositories.iter_mut())
+        .flat_map(|r| r.checkouts.iter_mut())
         .flat_map(|c| c.panes.iter_mut())
         .find(|p| p.id == id)
 }
@@ -1469,7 +1541,8 @@ fn find_pane(projects: &mut [Project], id: PaneId) -> Option<&mut Pane> {
 fn find_pane_ref(projects: &[Project], id: PaneId) -> Option<&Pane> {
     projects
         .iter()
-        .flat_map(|p| p.checkouts.iter())
+        .flat_map(|p| p.repositories.iter())
+        .flat_map(|r| r.checkouts.iter())
         .flat_map(|c| c.panes.iter())
         .find(|p| p.id == id)
 }
@@ -1480,7 +1553,8 @@ fn find_pane_ref(projects: &[Project], id: PaneId) -> Option<&Pane> {
 fn checkout_has_agent(projects: &[Project], path: &std::path::Path) -> bool {
     projects
         .iter()
-        .flat_map(|p| p.checkouts.iter())
+        .flat_map(|p| p.repositories.iter())
+        .flat_map(|r| r.checkouts.iter())
         .filter(|c| c.path == path)
         .any(|c| c.panes.iter().any(|p| p.kind == PaneKind::Agent))
 }
@@ -1490,9 +1564,11 @@ fn checkout_has_agent(projects: &[Project], path: &std::path::Path) -> bool {
 /// pane being gone by then.
 fn remove_pane_with_checkout(projects: &mut [Project], id: PaneId) -> Option<(Pane, PathBuf)> {
     for project in projects.iter_mut() {
-        for checkout in project.checkouts.iter_mut() {
-            if let Some(pos) = checkout.panes.iter().position(|p| p.id == id) {
-                return Some((checkout.panes.remove(pos), checkout.path.clone()));
+        for repository in project.repositories.iter_mut() {
+            for checkout in repository.checkouts.iter_mut() {
+                if let Some(pos) = checkout.panes.iter().position(|p| p.id == id) {
+                    return Some((checkout.panes.remove(pos), checkout.path.clone()));
+                }
             }
         }
     }
@@ -1732,10 +1808,24 @@ mod tests {
         })
     }
 
+    fn daemon_with_repositories(repositories: &[&str]) -> Arc<Daemon> {
+        Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                repos: repositories.iter().map(|path| path.to_string()).collect(),
+                workspace: None,
+            }],
+            agents: Vec::new(),
+            harnesses: Vec::new(),
+        })
+    }
+
     fn checkout_paths(d: &Daemon) -> Vec<String> {
         d.snapshot()
             .into_iter()
-            .flat_map(|p| p.checkouts)
+            .flat_map(|p| p.repositories)
+            .flat_map(|r| r.checkouts)
             .map(|c| c.path)
             .collect()
     }
@@ -1840,7 +1930,8 @@ mod tests {
     fn pane_info(d: &Daemon, pane: PaneId) -> PaneInfo {
         d.snapshot()
             .into_iter()
-            .flat_map(|p| p.checkouts)
+            .flat_map(|p| p.repositories)
+            .flat_map(|r| r.checkouts)
             .flat_map(|c| c.panes)
             .find(|p| p.id == pane)
             .expect("pane should still be in the tree")
@@ -2024,14 +2115,14 @@ mod tests {
         let second = tempfile::tempdir().unwrap();
         let d = daemon_with_two_agent_checkouts(first.path(), second.path());
         d.start_hook_server().unwrap();
-        let source = d.snapshot()[0].checkouts[0].id;
+        let source = d.snapshot()[0].repositories[0].checkouts[0].id;
         let pane = d.spawn_agent(source, "claude").unwrap();
 
         d.move_agent_to_checkout(pane, second.path()).unwrap();
 
         let tree = d.snapshot();
-        assert!(tree[0].checkouts[0].panes.is_empty());
-        assert_eq!(tree[0].checkouts[1].panes[0].id, pane);
+        assert!(tree[0].repositories[0].checkouts[0].panes.is_empty());
+        assert_eq!(tree[0].repositories[1].checkouts[0].panes[0].id, pane);
         assert_eq!(d.session().panes[0].checkout_path, second.path());
         d.close_pane(pane).unwrap();
     }
@@ -2044,7 +2135,7 @@ mod tests {
         let second = tempfile::tempdir().unwrap();
         let d = daemon_with_two_agent_checkouts(first.path(), second.path());
         d.start_hook_server().unwrap();
-        let source = d.snapshot()[0].checkouts[0].id;
+        let source = d.snapshot()[0].repositories[0].checkouts[0].id;
         let pane = d.spawn_agent(source, "claude").unwrap();
         let body = second.path().to_string_lossy();
         let request = format!(
@@ -2064,7 +2155,10 @@ mod tests {
         stream.read_to_end(&mut response).await.unwrap();
 
         assert!(response.starts_with(b"HTTP/1.1 200 OK"));
-        assert_eq!(d.snapshot()[0].checkouts[1].panes[0].id, pane);
+        assert_eq!(
+            d.snapshot()[0].repositories[1].checkouts[0].panes[0].id,
+            pane
+        );
         d.close_pane(pane).unwrap();
     }
 
@@ -2133,7 +2227,7 @@ mod tests {
         let second = tempfile::tempdir().unwrap();
         let d = daemon_with_two_agent_checkouts(first.path(), second.path());
         d.start_hook_server().unwrap();
-        let source = d.snapshot()[0].checkouts[0].id;
+        let source = d.snapshot()[0].repositories[0].checkouts[0].id;
         let pane = d.spawn_agent(source, "claude").unwrap();
         assert!(settings_of(first.path()).exists());
 
@@ -2150,15 +2244,60 @@ mod tests {
         let second = tempfile::tempdir().unwrap();
         let unknown = tempfile::tempdir().unwrap();
         let d = daemon_with_two_agent_checkouts(first.path(), second.path());
-        let source = d.snapshot()[0].checkouts[0].id;
+        let source = d.snapshot()[0].repositories[0].checkouts[0].id;
         let pane = d.spawn_agent(source, "claude").unwrap();
 
         assert!(d.move_agent_to_checkout(pane, unknown.path()).is_err());
-        assert_eq!(d.snapshot()[0].checkouts[0].panes[0].id, pane);
+        assert_eq!(
+            d.snapshot()[0].repositories[0].checkouts[0].panes[0].id,
+            pane
+        );
         d.close_pane(pane).unwrap();
     }
 
     // --- worktree reconciliation -------------------------------------------
+
+    #[test]
+    fn snapshot_keeps_configured_repositories_separate() {
+        let d = daemon_with_repositories(&["/first", "/second"]);
+
+        let tree = d.snapshot();
+        assert_eq!(tree[0].repositories.len(), 2);
+        assert_eq!(tree[0].repositories[0].name, "first");
+        assert_eq!(tree[0].repositories[0].checkouts.len(), 1);
+        assert_eq!(tree[0].repositories[0].checkouts[0].path, "/first");
+        assert_eq!(tree[0].repositories[1].name, "second");
+        assert_eq!(tree[0].repositories[1].checkouts.len(), 1);
+        assert_eq!(tree[0].repositories[1].checkouts[0].path, "/second");
+    }
+
+    #[test]
+    fn reconciliation_is_isolated_per_repository() {
+        let d = daemon_with_repositories(&["/first", "/second"]);
+        d.reconcile_worktrees_with(|primary| match primary.to_string_lossy().as_ref() {
+            "/first" => listing(&["/first", "/first/wt-a"]),
+            "/second" => listing(&["/second", "/second/wt-b"]),
+            _ => Vec::new(),
+        });
+
+        let tree = d.snapshot();
+        let first = &tree[0].repositories[0].checkouts;
+        let second = &tree[0].repositories[1].checkouts;
+        assert_eq!(first.len(), 2);
+        assert!(first.iter().any(|c| c.path == "/first/wt-a"));
+        assert!(!first.iter().any(|c| c.path == "/second/wt-b"));
+        assert_eq!(second.len(), 2);
+        assert!(second.iter().any(|c| c.path == "/second/wt-b"));
+
+        d.reconcile_worktrees_with(|primary| match primary.to_string_lossy().as_ref() {
+            "/first" => listing(&["/first"]),
+            "/second" => listing(&["/second", "/second/wt-b"]),
+            _ => Vec::new(),
+        });
+        let tree = d.snapshot();
+        assert_eq!(tree[0].repositories[0].checkouts.len(), 1);
+        assert_eq!(tree[0].repositories[1].checkouts.len(), 2);
+    }
 
     #[test]
     fn reconcile_adds_a_worktree_created_outside_argus() {
@@ -2179,7 +2318,12 @@ mod tests {
         let d = daemon_with_primary("/repo");
         d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
 
-        let checkouts: Vec<_> = d.snapshot().into_iter().flat_map(|p| p.checkouts).collect();
+        let checkouts: Vec<_> = d
+            .snapshot()
+            .into_iter()
+            .flat_map(|p| p.repositories)
+            .flat_map(|r| r.checkouts)
+            .collect();
         let primary = checkouts.iter().find(|c| c.path == "/repo").unwrap();
         let linked = checkouts.iter().find(|c| c.path == "/repo/wt").unwrap();
         assert!(primary.primary, "the configured checkout stays primary");
@@ -2244,7 +2388,8 @@ mod tests {
         let ids: Vec<_> = d
             .snapshot()
             .into_iter()
-            .flat_map(|p| p.checkouts)
+            .flat_map(|p| p.repositories)
+            .flat_map(|r| r.checkouts)
             .map(|c| c.id)
             .collect();
         let mut uniq = ids.clone();
@@ -2280,7 +2425,7 @@ mod tests {
         let tree = rx
             .try_recv()
             .expect("a tree snapshot should have been broadcast");
-        assert_eq!(tree[0].checkouts.len(), 2);
+        assert_eq!(tree[0].repositories[0].checkouts.len(), 2);
     }
 
     #[test]
@@ -2344,7 +2489,7 @@ mod tests {
     }
 
     fn only_checkout(d: &Daemon) -> CheckoutId {
-        d.snapshot()[0].checkouts[0].id
+        d.snapshot()[0].repositories[0].checkouts[0].id
     }
 
     #[test]
@@ -2471,7 +2616,7 @@ mod tests {
         for _ in 0..3 {
             d.reconcile_worktrees();
         }
-        let checkouts = &d.snapshot()[0].checkouts;
+        let checkouts = &d.snapshot()[0].repositories[0].checkouts;
         assert_eq!(
             checkouts.len(),
             1,
@@ -2497,14 +2642,14 @@ mod tests {
             harnesses: Vec::new(),
         });
         d.reconcile_worktrees();
-        assert_eq!(d.snapshot()[0].checkouts.len(), 1);
+        assert_eq!(d.snapshot()[0].repositories[0].checkouts.len(), 1);
 
         // Someone runs `git worktree add` in a shell.
         repo.worktree("feature", &dir.path().join("wt-feature"), None)
             .unwrap();
 
         d.reconcile_worktrees();
-        let checkouts = &d.snapshot()[0].checkouts;
+        let checkouts = &d.snapshot()[0].repositories[0].checkouts;
         assert_eq!(
             checkouts.len(),
             2,
@@ -2744,7 +2889,7 @@ mod tests {
             // Spawn a pane in the *other* workspace, then look away.
             let other = workspace_named(&d, "other");
             d.open_workspace(other).unwrap();
-            let checkout = d.snapshot()[0].checkouts[0].id;
+            let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
             let pane = d.spawn_shell(checkout).unwrap();
 
             d.open_workspace(workspace_named(&d, "default")).unwrap();
@@ -2805,7 +2950,7 @@ mod tests {
         // `path` comes from a client and lands on a command line.
         let dir = tempfile::tempdir().unwrap();
         let d = daemon_with_primary(&dir.path().to_string_lossy());
-        let checkout = d.snapshot()[0].checkouts[0].id;
+        let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
 
         for bad in [
             "",
@@ -2855,17 +3000,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn creating_a_worktree_adds_it_to_its_repository() {
+        let (dir, d) = daemon_on_a_repo();
+        let base = d.snapshot()[0].repositories[0].checkouts[0].id;
+
+        d.create_worktree(base, "feature-x".to_string())
+            .await
+            .unwrap();
+
+        let snapshot = d.snapshot();
+        let checkouts = &snapshot[0].repositories[0].checkouts;
+        assert_eq!(checkouts.len(), 2);
+        assert_eq!(checkouts[1].name, "feature-x");
+        assert!(!checkouts[1].primary);
+        let path = std::path::Path::new(&checkouts[1].path);
+        assert_eq!(head_of(path), "feature-x");
+        assert!(path.starts_with(dir.path()));
+    }
+
+    #[tokio::test]
     async fn creating_a_branch_moves_this_checkout_onto_it() {
         // Unlike `create_worktree`, which puts the branch in a directory of
         // its own and leaves this checkout where it was.
         let (dir, d) = daemon_on_a_repo();
-        let checkout = d.snapshot()[0].checkouts[0].id;
+        let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
 
         d.create_branch(checkout, "feature/x").await.unwrap();
 
         assert_eq!(head_of(dir.path()), "feature/x");
         assert_eq!(
-            d.snapshot()[0].checkouts.len(),
+            d.snapshot()[0].repositories[0].checkouts.len(),
             1,
             "no new checkout — that is what a worktree is for"
         );
@@ -2874,11 +3038,14 @@ mod tests {
     #[tokio::test]
     async fn the_checkouts_name_follows_the_branch_it_moves_to() {
         let (_dir, d) = daemon_on_a_repo();
-        let checkout = d.snapshot()[0].checkouts[0].id;
+        let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
 
         d.create_branch(checkout, "feature/x").await.unwrap();
 
-        assert_eq!(d.snapshot()[0].checkouts[0].name, "feature/x");
+        assert_eq!(
+            d.snapshot()[0].repositories[0].checkouts[0].name,
+            "feature/x"
+        );
     }
 
     #[test]
@@ -2891,38 +3058,38 @@ mod tests {
         repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
             .unwrap();
 
-        assert_eq!(d.snapshot()[0].checkouts[0].name, "outside");
+        assert_eq!(d.snapshot()[0].repositories[0].checkouts[0].name, "outside");
     }
 
     #[tokio::test]
     async fn switching_moves_between_branches_that_already_exist() {
         let (dir, d) = daemon_on_a_repo();
-        let checkout = d.snapshot()[0].checkouts[0].id;
+        let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
         let start = head_of(dir.path());
         d.create_branch(checkout, "other").await.unwrap();
 
         d.switch_branch(checkout, &start).await.unwrap();
 
         assert_eq!(head_of(dir.path()), start);
-        assert_eq!(d.snapshot()[0].checkouts[0].name, start);
+        assert_eq!(d.snapshot()[0].repositories[0].checkouts[0].name, start);
     }
 
     #[tokio::test]
     async fn switching_pushes_a_new_tree_so_every_client_sees_the_move() {
         let (_dir, d) = daemon_on_a_repo();
-        let checkout = d.snapshot()[0].checkouts[0].id;
+        let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
         let mut rx = d.subscribe_tree();
 
         d.create_branch(checkout, "feature/x").await.unwrap();
 
         let tree = rx.try_recv().expect("clients need to be told");
-        assert_eq!(tree[0].checkouts[0].name, "feature/x");
+        assert_eq!(tree[0].repositories[0].checkouts[0].name, "feature/x");
     }
 
     #[tokio::test]
     async fn switching_to_a_branch_that_does_not_exist_reports_gits_own_words() {
         let (_dir, d) = daemon_on_a_repo();
-        let checkout = d.snapshot()[0].checkouts[0].id;
+        let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
 
         let err = d
             .switch_branch(checkout, "no-such-branch")
@@ -2939,7 +3106,7 @@ mod tests {
     #[tokio::test]
     async fn creating_a_branch_that_already_exists_is_refused() {
         let (_dir, d) = daemon_on_a_repo();
-        let checkout = d.snapshot()[0].checkouts[0].id;
+        let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
         d.create_branch(checkout, "taken").await.unwrap();
 
         assert!(d.create_branch(checkout, "taken").await.is_err());
@@ -2949,7 +3116,7 @@ mod tests {
     async fn an_empty_or_flag_like_branch_name_never_reaches_git() {
         // A leading dash would be parsed as an option rather than a name.
         let (_dir, d) = daemon_on_a_repo();
-        let checkout = d.snapshot()[0].checkouts[0].id;
+        let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
 
         for bad in ["", "   ", "--force", "-b"] {
             assert!(
@@ -2973,7 +3140,7 @@ mod tests {
         // exercises that branch without opening a real window.
         let dir = tempfile::tempdir().unwrap();
         let d = daemon_with_primary(&dir.path().to_string_lossy());
-        let checkout = d.snapshot()[0].checkouts[0].id;
+        let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
         std::fs::write(dir.path().join("a.txt"), "x").unwrap();
 
         let made = d.spawn_editor(checkout, "a.txt", None, false, Some("missing/notepad.exe"));
@@ -2983,7 +3150,9 @@ mod tests {
             "the deliberately missing editor must not launch"
         );
         assert!(
-            d.snapshot()[0].checkouts[0].panes.is_empty(),
+            d.snapshot()[0].repositories[0].checkouts[0]
+                .panes
+                .is_empty(),
             "a GUI editor must not become a pane"
         );
     }
@@ -2992,7 +3161,7 @@ mod tests {
     async fn a_terminal_editor_pane_has_no_harness_session() {
         let dir = tempfile::tempdir().unwrap();
         let d = daemon_with_primary(&dir.path().to_string_lossy());
-        let checkout = d.snapshot()[0].checkouts[0].id;
+        let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
         std::fs::write(dir.path().join("a.txt"), "x").unwrap();
         let editor = std::env::current_exe().unwrap();
 
@@ -3012,7 +3181,8 @@ mod tests {
             .unwrap()
             .projects
             .iter()
-            .flat_map(|project| &project.checkouts)
+            .flat_map(|project| &project.repositories)
+            .flat_map(|repository| &repository.checkouts)
             .flat_map(|checkout| &checkout.panes)
             .find(|candidate| candidate.id == pane)
             .map(|pane| (pane.kind, pane.harness_session_id.clone()));
@@ -3114,7 +3284,7 @@ mod tests {
     }
 
     fn close_all(d: &Daemon) {
-        for p in &d.snapshot()[0].checkouts[0].panes {
+        for p in &d.snapshot()[0].repositories[0].checkouts[0].panes {
             let _ = d.close_pane(p.id);
         }
     }
@@ -3129,7 +3299,9 @@ mod tests {
         with_temp_config(|_| {
             let d = daemon_for_restore(dir.path());
             d.restore_session();
-            assert!(d.snapshot()[0].checkouts[0].panes.is_empty());
+            assert!(d.snapshot()[0].repositories[0].checkouts[0]
+                .panes
+                .is_empty());
         });
     }
 
@@ -3139,7 +3311,7 @@ mod tests {
         with_temp_config(|_| {
             let d = daemon_for_restore(dir.path());
             d.persist_session();
-            let checkout = d.snapshot()[0].checkouts[0].id;
+            let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
             d.spawn_shell(checkout).unwrap();
 
             let saved = saved_panes();
@@ -3164,7 +3336,7 @@ mod tests {
             let d = daemon_for_restore(dir.path());
             d.restore_session();
 
-            let kinds: Vec<PaneKind> = d.snapshot()[0].checkouts[0]
+            let kinds: Vec<PaneKind> = d.snapshot()[0].repositories[0].checkouts[0]
                 .panes
                 .iter()
                 .map(|p| p.kind)
@@ -3196,7 +3368,7 @@ mod tests {
             let d = daemon_for_restore(dir.path());
             d.restore_session();
 
-            let pane = &d.snapshot()[0].checkouts[0].panes[0];
+            let pane = &d.snapshot()[0].repositories[0].checkouts[0].panes[0];
             assert_eq!(pane.status, PaneStatus::NeedsReview);
             assert_eq!(pane.note.as_deref(), Some("ready to inspect"));
             close_all(&d);
@@ -3213,7 +3385,10 @@ mod tests {
             let d = daemon_for_restore(dir.path());
             d.restore_session();
 
-            assert_eq!(d.snapshot()[0].checkouts[0].panes[0].title, "test-agent");
+            assert_eq!(
+                d.snapshot()[0].repositories[0].checkouts[0].panes[0].title,
+                "test-agent"
+            );
             close_all(&d);
         });
     }
@@ -3240,7 +3415,7 @@ mod tests {
             let d = daemon_for_restore(dir.path());
             d.restore_session();
 
-            let panes = &d.snapshot()[0].checkouts[0].panes;
+            let panes = &d.snapshot()[0].repositories[0].checkouts[0].panes;
             assert_eq!(panes.len(), 1, "the renamed agent should be back");
             assert_eq!(
                 panes[0].title, "test-agent",
@@ -3262,7 +3437,9 @@ mod tests {
             d.restore_session();
 
             assert!(
-                d.snapshot()[0].checkouts[0].panes.is_empty(),
+                d.snapshot()[0].repositories[0].checkouts[0]
+                    .panes
+                    .is_empty(),
                 "skipped, not fatal"
             );
         });
@@ -3278,7 +3455,9 @@ mod tests {
             let d = daemon_for_restore(dir.path());
             d.restore_session();
 
-            assert!(d.snapshot()[0].checkouts[0].panes.is_empty());
+            assert!(d.snapshot()[0].repositories[0].checkouts[0]
+                .panes
+                .is_empty());
         });
     }
 
@@ -3294,7 +3473,9 @@ mod tests {
             d.restore_session();
             std::env::remove_var(crate::session::NO_RESTORE);
 
-            assert!(d.snapshot()[0].checkouts[0].panes.is_empty());
+            assert!(d.snapshot()[0].repositories[0].checkouts[0]
+                .panes
+                .is_empty());
         });
     }
 
@@ -3319,7 +3500,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         with_temp_config(|cfg| {
             let d = daemon_for_restore(dir.path());
-            let checkout = d.snapshot()[0].checkouts[0].id;
+            let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
             d.spawn_shell(checkout).unwrap();
             close_all(&d);
 
@@ -3337,7 +3518,7 @@ mod tests {
         with_temp_config(|_| {
             let d = daemon_for_restore(dir.path());
             d.persist_session();
-            let checkout = d.snapshot()[0].checkouts[0].id;
+            let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
             let pane = d.spawn_shell(checkout).unwrap();
             let _ = d.close_pane(pane);
 
@@ -3351,7 +3532,7 @@ mod tests {
         with_temp_config(|_| {
             let d = daemon_for_restore(dir.path());
             d.persist_session();
-            let checkout = d.snapshot()[0].checkouts[0].id;
+            let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
             let pane = d.spawn_shell(checkout).unwrap();
 
             d.mark_pane_exited(pane, Some(0));
@@ -3377,7 +3558,7 @@ mod tests {
             let d = daemon_for_restore(dir.path());
             d.restore_session();
 
-            let checkouts = d.snapshot().remove(0).checkouts;
+            let checkouts = d.snapshot().remove(0).repositories.remove(0).checkouts;
             let restored = checkouts
                 .iter()
                 .find(|c| same_path(std::path::Path::new(&c.path), &worktree))
@@ -3403,7 +3584,8 @@ mod tests {
             .unwrap()
             .projects
             .iter()
-            .flat_map(|p| p.checkouts.iter())
+            .flat_map(|p| p.repositories.iter())
+            .flat_map(|r| r.checkouts.iter())
             .flat_map(|c| c.panes.iter())
             .filter(|p| p.resumed.is_some())
             .count()
@@ -3424,7 +3606,14 @@ mod tests {
             let d = daemon_with_fake_claude(dir.path());
             d.restore_session();
 
-            let panes = d.snapshot().remove(0).checkouts.remove(0).panes;
+            let panes = d
+                .snapshot()
+                .remove(0)
+                .repositories
+                .remove(0)
+                .checkouts
+                .remove(0)
+                .panes;
             assert_eq!(panes.len(), 2, "both agents came back");
             assert_eq!(resuming_panes(&d), 1, "one conversation, one claimant");
 
@@ -3496,7 +3685,7 @@ mod tests {
             let d = daemon_with_claude_aliases(dir.path(), &["first", "second"]);
             d.restore_session();
 
-            assert_eq!(d.snapshot()[0].checkouts[0].panes.len(), 2);
+            assert_eq!(d.snapshot()[0].repositories[0].checkouts[0].panes.len(), 2);
             assert_eq!(
                 resuming_panes(&d),
                 1,
@@ -3569,7 +3758,14 @@ mod tests {
 
         d.mark_pane_exited(pane, Some(1));
 
-        let panes = d.snapshot().remove(0).checkouts.remove(0).panes;
+        let panes = d
+            .snapshot()
+            .remove(0)
+            .repositories
+            .remove(0)
+            .checkouts
+            .remove(0)
+            .panes;
         assert_eq!(panes.len(), 1, "the dead row goes, it does not pile up");
         assert_ne!(panes[0].id, pane, "a new agent took its place");
         assert_eq!(panes[0].status, PaneStatus::Idle);
@@ -3588,10 +3784,25 @@ mod tests {
             .unwrap();
 
         d.mark_pane_exited(pane, Some(1));
-        let replacement = d.snapshot().remove(0).checkouts.remove(0).panes[0].id;
+        let replacement = d
+            .snapshot()
+            .remove(0)
+            .repositories
+            .remove(0)
+            .checkouts
+            .remove(0)
+            .panes[0]
+            .id;
         d.mark_pane_exited(replacement, Some(1));
 
-        let panes = d.snapshot().remove(0).checkouts.remove(0).panes;
+        let panes = d
+            .snapshot()
+            .remove(0)
+            .repositories
+            .remove(0)
+            .checkouts
+            .remove(0)
+            .panes;
         assert_eq!(panes.len(), 1);
         assert_eq!(panes[0].id, replacement, "no third attempt");
         assert_eq!(panes[0].status, PaneStatus::Exited { code: Some(1) });
@@ -3609,7 +3820,14 @@ mod tests {
 
         d.mark_pane_exited(pane, Some(0));
 
-        let panes = d.snapshot().remove(0).checkouts.remove(0).panes;
+        let panes = d
+            .snapshot()
+            .remove(0)
+            .repositories
+            .remove(0)
+            .checkouts
+            .remove(0)
+            .panes;
         assert_eq!(panes.len(), 1);
         assert_eq!(panes[0].id, pane, "still the pane the user closed");
         assert_eq!(panes[0].status, PaneStatus::Exited { code: Some(0) });

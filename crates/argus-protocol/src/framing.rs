@@ -48,9 +48,11 @@ where
 mod tests {
     use super::*;
     use crate::cell::{Cell, CellSpan, Cursor};
-    use crate::ids::{CheckoutId, PaneId};
+    use crate::ids::{CheckoutId, PaneId, RepositoryId};
     use crate::message::{ClientMsg, ServerMsg};
-    use crate::tree::{CheckoutInfo, GitStatus, PaneInfo, PaneKind, PaneStatus, ProjectInfo};
+    use crate::tree::{
+        CheckoutInfo, GitStatus, PaneInfo, PaneKind, PaneStatus, ProjectInfo, RepositoryInfo,
+    };
     use crate::ProjectId;
 
     async fn roundtrip<T>(msg: &T) -> T
@@ -120,32 +122,36 @@ mod tests {
         let sent = ServerMsg::Tree(vec![ProjectInfo {
             id: ProjectId(1),
             name: "argus".to_string(),
-            checkouts: vec![CheckoutInfo {
-                id: CheckoutId(2),
-                name: "master".to_string(),
-                path: "C:/src/argus".to_string(),
-                primary: true,
-                git: Some(GitStatus {
-                    branch: Some("master".to_string()),
-                    dirty: true,
-                    changed_files: 3,
-                    ahead: 1,
-                    behind: 2,
-                }),
-                panes: vec![PaneInfo {
-                    id: PaneId(3),
-                    kind: PaneKind::Agent,
-                    title: "claude".to_string(),
-                    status: PaneStatus::Waiting,
-                    note: None,
-                    template: None,
+            repositories: vec![RepositoryInfo {
+                id: RepositoryId(2),
+                name: "orion".to_string(),
+                checkouts: vec![CheckoutInfo {
+                    id: CheckoutId(3),
+                    name: "master".to_string(),
+                    path: "C:/src/argus".to_string(),
+                    primary: true,
+                    git: Some(GitStatus {
+                        branch: Some("master".to_string()),
+                        dirty: true,
+                        changed_files: 3,
+                        ahead: 1,
+                        behind: 2,
+                    }),
+                    panes: vec![PaneInfo {
+                        id: PaneId(4),
+                        kind: PaneKind::Agent,
+                        title: "claude".to_string(),
+                        status: PaneStatus::Waiting,
+                        note: None,
+                        template: None,
+                    }],
                 }],
             }],
         }]);
         let ServerMsg::Tree(tree) = roundtrip(&sent).await else {
             panic!("variant changed across the wire");
         };
-        let c = &tree[0].checkouts[0];
+        let c = &tree[0].repositories[0].checkouts[0];
         assert!(c.primary);
         assert_eq!(c.git.as_ref().unwrap().changed_files, 3);
         assert_eq!(c.panes[0].status, PaneStatus::Waiting);

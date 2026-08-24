@@ -14,8 +14,6 @@ contract is in [`TARGET.md`](TARGET.md).
 
 ## P2: Repository Model
 
-- Add repository identity and repository nodes to daemon state and protocol.
-- Correct worktree discovery and mutation for multi-repository projects.
 - Show branches without checkouts and offer switch or worktree creation.
 - Add explicit dirty-primary protection.
 - Add configurable worktree roots and setup hooks.

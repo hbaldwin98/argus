@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, ProjectInfo, ServerMsg, WorkspaceId,
-    WorkspaceInfo,
+    CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, ProjectInfo, RepositoryId,
+    RepositoryInfo, ServerMsg, WorkspaceId, WorkspaceInfo,
 };
 use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
@@ -17,6 +17,7 @@ use crate::mouse::encode_mouse;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
     Projects,
+    Repositories,
     Checkouts,
     Panes,
     PaneContent,
@@ -40,6 +41,7 @@ pub struct Panel {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Layout {
     pub projects: Panel,
+    pub repositories: Panel,
     pub checkouts: Panel,
     pub panes: Panel,
     pub content: Panel,
@@ -163,7 +165,7 @@ impl Picker {
     }
 }
 
-/// A window floating above the columns, for things the four-column spine
+/// A window floating above the columns, for things the five-column spine
 /// has no room for. Unlike a picker it can be large and can hold a live
 /// pane: a terminal editor in a 38%-wide column is unusable, and the whole
 /// point of `$EDITOR` support is that it be usable.
@@ -243,6 +245,7 @@ pub struct App {
     pub open_workspace: String,
     pub focus: Focus,
     pub sel_project: usize,
+    pub sel_repository: usize,
     pub sel_checkout: usize,
     pub sel_pane: usize,
     /// Every pane being streamed, and the screen of each. More than one,
@@ -259,10 +262,10 @@ pub struct App {
     pub status: String,
     pub status_alert: bool,
     pub layout: Layout,
-    /// Preferred outer widths for the four main columns. `None` uses the
+    /// Preferred outer widths for the five main columns. `None` uses the
     /// initial proportional layout; dragging a gutter captures concrete
     /// widths so the adjustment survives subsequent frames.
-    pub column_widths: Option<[u16; 4]>,
+    pub column_widths: Option<Vec<u16>>,
     resizing_gutter: Option<usize>,
     pub picker: Option<Picker>,
     pub overlay: Option<Overlay>,
@@ -288,7 +291,7 @@ pub struct App {
     /// preset swap is one assignment rather than a sweep of call sites.
     pub theme: Theme,
     pending_focus_new: bool,
-    pending_focus_new_checkout: bool,
+    pending_focus_new_checkout: Option<RepositoryId>,
     pending_focus_new_project: bool,
     out: UnboundedSender<ClientMsg>,
 }
@@ -320,7 +323,10 @@ impl App {
             Ok(_) => Theme::from_env(),
             Err(_) => Theme::by_name(&settings.theme),
         };
-        let column_widths = settings.column_widths;
+        let column_widths = settings
+            .column_widths
+            .clone()
+            .filter(|widths| widths.len() == 5);
         App {
             tree: Vec::new(),
             templates: Vec::new(),
@@ -328,6 +334,7 @@ impl App {
             open_workspace: String::new(),
             focus: Focus::Projects,
             sel_project: 0,
+            sel_repository: 0,
             sel_checkout: 0,
             sel_pane: 0,
             grids: std::collections::HashMap::new(),
@@ -353,7 +360,7 @@ impl App {
             prompt: None,
             theme,
             pending_focus_new: false,
-            pending_focus_new_checkout: false,
+            pending_focus_new_checkout: None,
             pending_focus_new_project: false,
             out,
         }
@@ -363,9 +370,14 @@ impl App {
         self.tree.get(self.sel_project)
     }
 
-    pub fn current_checkout(&self) -> Option<&CheckoutInfo> {
+    pub fn current_repository(&self) -> Option<&RepositoryInfo> {
         self.current_project()
-            .and_then(|p| p.checkouts.get(self.sel_checkout))
+            .and_then(|p| p.repositories.get(self.sel_repository))
+    }
+
+    pub fn current_checkout(&self) -> Option<&CheckoutInfo> {
+        self.current_repository()
+            .and_then(|r| r.checkouts.get(self.sel_checkout))
     }
 
     pub fn current_pane(&self) -> Option<&PaneInfo> {
@@ -380,7 +392,13 @@ impl App {
         } else if self.sel_project >= nproj {
             self.sel_project = nproj - 1;
         }
-        let ncheck = self.current_project().map(|p| p.checkouts.len()).unwrap_or(0);
+        let nrepo = self.current_project().map(|p| p.repositories.len()).unwrap_or(0);
+        if nrepo == 0 {
+            self.sel_repository = 0;
+        } else if self.sel_repository >= nrepo {
+            self.sel_repository = nrepo - 1;
+        }
+        let ncheck = self.current_repository().map(|r| r.checkouts.len()).unwrap_or(0);
         if ncheck == 0 {
             self.sel_checkout = 0;
         } else if self.sel_checkout >= ncheck {
@@ -542,19 +560,24 @@ impl App {
             .flatten();
         self.tree = tree;
         if let Some(selected_pane) = selected_pane {
-            if let Some((project, checkout, pane)) = self.tree.iter().enumerate().find_map(
+            if let Some((project, repository, checkout, pane)) = self.tree.iter().enumerate().find_map(
                 |(project_index, project)| {
-                    project.checkouts.iter().enumerate().find_map(
-                        |(checkout_index, checkout)| {
-                            checkout
-                                .listed_panes()
-                                .position(|candidate| candidate.id == selected_pane)
-                                .map(|pane_index| (project_index, checkout_index, pane_index))
-                        },
-                    )
+                    project.repositories.iter().enumerate().find_map(|(repository_index, repository)| {
+                        repository.checkouts.iter().enumerate().find_map(
+                            |(checkout_index, checkout)| {
+                                checkout
+                                    .listed_panes()
+                                    .position(|candidate| candidate.id == selected_pane)
+                                    .map(|pane_index| {
+                                        (project_index, repository_index, checkout_index, pane_index)
+                                    })
+                            },
+                        )
+                    })
                 },
             ) {
                 self.sel_project = project;
+                self.sel_repository = repository;
                 self.sel_checkout = checkout;
                 self.sel_pane = pane;
             }
@@ -568,11 +591,23 @@ impl App {
                 self.clamp();
             }
         }
-        if self.pending_focus_new_checkout {
-            self.pending_focus_new_checkout = false;
-            let n = self.current_project().map(|p| p.checkouts.len()).unwrap_or(0);
-            if n > 0 {
-                self.sel_checkout = n - 1;
+        if let Some(repository_id) = self.pending_focus_new_checkout.take() {
+            if let Some((project, repository)) = self.tree.iter().enumerate().find_map(
+                |(project_index, project)| {
+                    project.repositories.iter().enumerate().find_map(
+                        |(repository_index, repository)| {
+                            (repository.id == repository_id)
+                                .then_some((project_index, repository_index))
+                        },
+                    )
+                },
+            ) {
+                self.sel_project = project;
+                self.sel_repository = repository;
+                self.sel_checkout = self
+                    .current_repository()
+                    .map(|r| r.checkouts.len().saturating_sub(1))
+                    .unwrap_or(0);
                 self.clamp();
             }
         }
@@ -581,7 +616,8 @@ impl App {
             let alive = self
                 .tree
                 .iter()
-                .flat_map(|p| p.checkouts.iter())
+                .flat_map(|p| p.repositories.iter())
+                .flat_map(|r| r.checkouts.iter())
                 .flat_map(|c| c.panes.iter())
                 .any(|p| p.id == pane);
             if !alive {
@@ -744,7 +780,7 @@ impl App {
                     self.prompt = None;
                     if !branch.is_empty() {
                         let _ = self.out.send(ClientMsg::CreateWorktree { checkout: base, branch });
-                        self.pending_focus_new_checkout = true;
+                        self.pending_focus_new_checkout = self.current_repository().map(|r| r.id);
                     }
                 }
                 KeyCode::Esc => self.prompt = None,
@@ -1080,7 +1116,8 @@ impl App {
         let checkout = self.review.as_ref().map(|v| v.review.checkout)?;
         self.tree
             .iter()
-            .flat_map(|p| p.checkouts.iter())
+            .flat_map(|p| p.repositories.iter())
+            .flat_map(|r| r.checkouts.iter())
             .find(|c| c.id == checkout)?
             .panes
             .iter()
@@ -1255,7 +1292,7 @@ impl App {
         if matches!(ev.kind, MouseEventKind::Up(MouseButton::Left))
             && self.resizing_gutter.take().is_some()
         {
-            self.settings.column_widths = self.column_widths;
+            self.settings.column_widths = self.column_widths.clone();
             if self.persist_settings {
                 crate::settings::save(&self.settings);
             }
@@ -1298,17 +1335,18 @@ impl App {
         }
     }
 
-    fn panels(&self) -> [Panel; 4] {
+    fn panels(&self) -> [Panel; 5] {
         [
             self.layout.projects,
+            self.layout.repositories,
             self.layout.checkouts,
             self.layout.panes,
             self.layout.content,
         ]
     }
 
-    fn rendered_column_widths(&self) -> [u16; 4] {
-        self.panels().map(|panel| panel.outer.width)
+    fn rendered_column_widths(&self) -> Vec<u16> {
+        self.panels().iter().map(|panel| panel.outer.width).collect()
     }
 
     /// Returns the blank separator under the pointer. Separators remain one
@@ -1367,6 +1405,7 @@ impl App {
     fn column_at(&self, x: u16, y: u16) -> Option<(Focus, Rect)> {
         for (focus, panel) in [
             (Focus::Projects, self.layout.projects),
+            (Focus::Repositories, self.layout.repositories),
             (Focus::Checkouts, self.layout.checkouts),
             (Focus::Panes, self.layout.panes),
         ] {
@@ -1399,7 +1438,8 @@ impl App {
         };
         let count = match target {
             Focus::Projects => self.tree.len(),
-            Focus::Checkouts => self.current_project().map(|p| p.checkouts.len()).unwrap_or(0),
+            Focus::Repositories => self.current_project().map(|p| p.repositories.len()).unwrap_or(0),
+            Focus::Checkouts => self.current_repository().map(|r| r.checkouts.len()).unwrap_or(0),
             _ => self.visible_pane_count(),
         };
 
@@ -1418,6 +1458,7 @@ impl App {
     fn selection_in(&self, target: Focus) -> usize {
         match target {
             Focus::Projects => self.sel_project,
+            Focus::Repositories => self.sel_repository,
             Focus::Checkouts => self.sel_checkout,
             _ => self.sel_pane,
         }
@@ -1426,6 +1467,7 @@ impl App {
     fn selection_mut(&mut self, target: Focus) -> &mut usize {
         match target {
             Focus::Projects => &mut self.sel_project,
+            Focus::Repositories => &mut self.sel_repository,
             Focus::Checkouts => &mut self.sel_checkout,
             _ => &mut self.sel_pane,
         }
@@ -1438,6 +1480,7 @@ impl App {
     fn adjust_selection(&mut self, target: Focus, delta: i32) {
         let sel = match target {
             Focus::Projects => &mut self.sel_project,
+            Focus::Repositories => &mut self.sel_repository,
             Focus::Checkouts => &mut self.sel_checkout,
             Focus::Panes => &mut self.sel_pane,
             Focus::PaneContent | Focus::Review | Focus::Overlay => return,
@@ -1453,6 +1496,12 @@ impl App {
         match self.focus {
             Focus::Projects => {
                 if self.current_project().is_some() {
+                    self.sel_repository = 0;
+                    self.focus = Focus::Repositories;
+                }
+            }
+            Focus::Repositories => {
+                if self.current_repository().is_some() {
                     self.sel_checkout = 0;
                     self.focus = Focus::Checkouts;
                 }
@@ -1481,7 +1530,8 @@ impl App {
                 self.focus = Focus::Panes;
             }
             Focus::Panes => self.focus = Focus::Checkouts,
-            Focus::Checkouts => self.focus = Focus::Projects,
+            Focus::Checkouts => self.focus = Focus::Repositories,
+            Focus::Repositories => self.focus = Focus::Projects,
             Focus::Projects => {}
             Focus::Review | Focus::Overlay => self.focus = Focus::Checkouts,
         }
@@ -1631,6 +1681,7 @@ impl App {
                 // start at the top rather than keeping an index that meant
                 // something else.
                 self.sel_project = 0;
+                self.sel_repository = 0;
                 self.sel_checkout = 0;
                 self.sel_pane = 0;
                 self.focus = Focus::Projects;
@@ -1700,7 +1751,10 @@ fn in_rect(area: Rect, x: u16, y: u16) -> bool {
 mod tests {
     use super::*;
     use crossterm::event::KeyModifiers;
-    use argus_protocol::{Cell, CellSpan, CheckoutId, GitStatus, PaneKind, PaneStatus, ProjectId};
+    use argus_protocol::{
+        Cell, CellSpan, CheckoutId, GitStatus, PaneKind, PaneStatus, ProjectId, RepositoryId,
+        RepositoryInfo,
+    };
     use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 
     fn pane(id: u64, title: &str) -> PaneInfo {
@@ -1725,6 +1779,14 @@ mod tests {
         }
     }
 
+    fn repository(id: u64, name: &str, checkouts: Vec<CheckoutInfo>) -> RepositoryInfo {
+        RepositoryInfo {
+            id: RepositoryId(id),
+            name: name.to_string(),
+            checkouts,
+        }
+    }
+
     /// Two projects; the first has a primary checkout with two panes and a
     /// linked worktree with none, the second has a single empty checkout.
     fn tree() -> Vec<ProjectInfo> {
@@ -1732,15 +1794,19 @@ mod tests {
             ProjectInfo {
                 id: ProjectId(1),
                 name: "argus".to_string(),
-                checkouts: vec![
+                repositories: vec![repository(5, "orion", vec![
                     checkout(10, "master", true, vec![pane(100, "shell"), pane(101, "claude")]),
                     checkout(11, "feat", false, vec![]),
-                ],
+                ])],
             },
             ProjectInfo {
                 id: ProjectId(2),
                 name: "other".to_string(),
-                checkouts: vec![checkout(20, "main", true, vec![])],
+                repositories: vec![repository(
+                    6,
+                    "other-repo",
+                    vec![checkout(20, "main", true, vec![])],
+                )],
             },
         ]
     }
@@ -1799,7 +1865,7 @@ mod tests {
     #[test]
     fn l_descends_and_h_ascends_through_every_column() {
         let mut h = Harness::new();
-        for expected in [Focus::Checkouts, Focus::Panes, Focus::PaneContent] {
+        for expected in [Focus::Repositories, Focus::Checkouts, Focus::Panes, Focus::PaneContent] {
             h.key(KeyCode::Char('l'));
             assert_eq!(h.app.focus, expected);
         }
@@ -1808,7 +1874,7 @@ mod tests {
         h.leader();
         h.key(KeyCode::Esc);
         assert_eq!(h.app.focus, Focus::Panes);
-        for expected in [Focus::Checkouts, Focus::Projects] {
+        for expected in [Focus::Checkouts, Focus::Repositories, Focus::Projects] {
             h.key(KeyCode::Char('h'));
             assert_eq!(h.app.focus, expected);
         }
@@ -1824,9 +1890,9 @@ mod tests {
     #[test]
     fn cannot_descend_into_a_checkout_with_no_panes() {
         let mut h = Harness::new();
-        h.keys("lj"); // checkouts column, select the linked worktree
+        h.keys("llj"); // checkouts column, select the linked worktree
         assert_eq!(h.app.current_checkout().unwrap().name, "feat");
-        h.keys("ll");
+        h.keys("lll");
         assert_eq!(h.app.focus, Focus::Panes, "no pane to descend into");
     }
 
@@ -1852,17 +1918,17 @@ mod tests {
     #[test]
     fn descending_resets_the_child_columns_selection() {
         let mut h = Harness::new();
-        h.keys("llj"); // into panes, select the second pane
+        h.keys("lllj"); // into panes, select the second pane
         assert_eq!(h.app.sel_pane, 1);
-        h.keys("hh"); // back to projects
-        h.keys("ll"); // descend again
+        h.keys("hhh"); // back to projects
+        h.keys("lll"); // descend again
         assert_eq!(h.app.sel_pane, 0, "re-entering a column starts at the top");
     }
 
     #[test]
     fn moving_to_a_project_with_fewer_checkouts_clamps_the_selection() {
         let mut h = Harness::new();
-        h.keys("lj"); // checkouts, index 1
+        h.keys("llj"); // checkouts, index 1
         assert_eq!(h.app.sel_checkout, 1);
         h.app.sel_project = 1; // "other" has only one checkout
         h.key(KeyCode::Char('j'));
@@ -1884,7 +1950,7 @@ mod tests {
     #[test]
     fn changing_pane_selection_unsubscribes_the_old_and_subscribes_the_new() {
         let mut h = Harness::new();
-        h.keys("llj");
+        h.keys("lllj");
         let msgs = h.sent();
         assert!(
             matches!(msgs[0], ClientMsg::Unsubscribe { pane: PaneId(100) }),
@@ -1898,7 +1964,7 @@ mod tests {
     #[test]
     fn selecting_a_paneless_checkout_unsubscribes_and_clears_the_grid() {
         let mut h = Harness::new();
-        h.keys("lj");
+        h.keys("llj");
         assert_eq!(h.app.column_pane(), None);
         assert!(h.app.grids.is_empty(), "stale content must not linger");
         assert!(matches!(h.sent()[0], ClientMsg::Unsubscribe { .. }));
@@ -1907,7 +1973,7 @@ mod tests {
     #[test]
     fn ascending_out_of_a_pane_keeps_it_subscribed() {
         let mut h = Harness::new();
-        h.keys("lll");
+        h.keys("llll");
         h.sent();
         h.leader();
         h.key(KeyCode::Esc);
@@ -1958,7 +2024,7 @@ mod tests {
     #[test]
     fn keys_reach_the_child_when_inside_a_pane() {
         let mut h = Harness::new();
-        h.keys("lll");
+        h.keys("llll");
         h.sent();
         h.keys("echo");
         h.key(KeyCode::Enter);
@@ -1980,7 +2046,7 @@ mod tests {
     #[test]
     fn navigation_keys_are_typed_not_interpreted_inside_a_pane() {
         let mut h = Harness::new();
-        h.keys("lll");
+        h.keys("llll");
         h.sent();
         h.keys("hjkq");
         assert_eq!(h.app.focus, Focus::PaneContent, "still typing");
@@ -1991,7 +2057,7 @@ mod tests {
     #[test]
     fn leader_then_esc_leaves_the_pane_without_typing_anything() {
         let mut h = Harness::new();
-        h.keys("lll");
+        h.keys("llll");
         h.sent();
         h.leader();
         assert!(h.app.leader_pending);
@@ -2006,7 +2072,7 @@ mod tests {
     #[test]
     fn leader_then_x_closes_the_pane() {
         let mut h = Harness::new();
-        h.keys("lll");
+        h.keys("llll");
         h.sent();
         h.leader();
         h.key(KeyCode::Char('x'));
@@ -2017,7 +2083,7 @@ mod tests {
     #[test]
     fn an_unbound_leader_chord_is_swallowed_not_typed() {
         let mut h = Harness::new();
-        h.keys("lll");
+        h.keys("llll");
         h.sent();
         h.leader();
         h.key(KeyCode::Char('Q'));
@@ -2030,7 +2096,7 @@ mod tests {
     #[test]
     fn s_spawns_a_shell_in_the_selected_checkout_and_focuses_it() {
         let mut h = Harness::new();
-        h.keys("lj"); // the linked worktree, which has no panes
+        h.keys("llj"); // the linked worktree, which has no panes
         h.sent();
         h.key(KeyCode::Char('s'));
         assert!(
@@ -2040,7 +2106,7 @@ mod tests {
 
         // The daemon's next tree carries the new pane.
         let mut t = tree();
-        t[0].checkouts[1].panes.push(pane(102, "shell"));
+        t[0].repositories[0].checkouts[1].panes.push(pane(102, "shell"));
         h.app.on_server_msg(ServerMsg::Tree(t));
         assert_eq!(h.app.sel_pane, 0);
         assert_eq!(h.app.focus, Focus::PaneContent, "drops you straight into it");
@@ -2053,7 +2119,7 @@ mod tests {
         h.key(KeyCode::Char('s'));
         h.sent();
         let mut t = tree();
-        t[0].checkouts[0].panes.push(pane(102, "shell"));
+        t[0].repositories[0].checkouts[0].panes.push(pane(102, "shell"));
         h.app.on_server_msg(ServerMsg::Tree(t));
         assert_eq!(h.app.column_pane(), Some(PaneId(102)));
     }
@@ -2066,11 +2132,32 @@ mod tests {
         assert_eq!(h.app.column_pane(), Some(PaneId(101)));
 
         let mut moved = tree();
-        let pane = moved[0].checkouts[0].panes.remove(1);
-        moved[0].checkouts[1].panes.push(pane);
+        let pane = moved[0].repositories[0].checkouts[0].panes.remove(1);
+        moved[0].repositories[0].checkouts[1].panes.push(pane);
         h.app.on_server_msg(ServerMsg::Tree(moved));
 
         assert_eq!(h.app.sel_checkout, 1);
+        assert_eq!(h.app.column_pane(), Some(PaneId(101)));
+        assert_eq!(h.app.focus, Focus::PaneContent);
+    }
+
+    #[test]
+    fn a_selected_pane_is_followed_when_it_moves_to_another_repository() {
+        let mut h = Harness::new();
+        h.app.focus = Focus::PaneContent;
+        h.app.sel_pane = 1;
+
+        let mut moved = tree();
+        let pane = moved[0].repositories[0].checkouts[0].panes.remove(1);
+        moved[0].repositories.push(repository(
+            7,
+            "satellite",
+            vec![checkout(30, "main", true, vec![pane])],
+        ));
+        h.app.on_server_msg(ServerMsg::Tree(moved));
+
+        assert_eq!(h.app.sel_repository, 1);
+        assert_eq!(h.app.current_repository().unwrap().name, "satellite");
         assert_eq!(h.app.column_pane(), Some(PaneId(101)));
         assert_eq!(h.app.focus, Focus::PaneContent);
     }
@@ -2081,8 +2168,8 @@ mod tests {
         h.app.focus = Focus::Projects;
 
         let mut moved = tree();
-        let pane = moved[0].checkouts[0].panes.remove(0);
-        moved[0].checkouts[1].panes.push(pane);
+        let pane = moved[0].repositories[0].checkouts[0].panes.remove(0);
+        moved[0].repositories[0].checkouts[1].panes.push(pane);
         h.app.on_server_msg(ServerMsg::Tree(moved));
 
         assert_eq!(h.app.sel_checkout, 0);
@@ -2130,7 +2217,7 @@ mod tests {
     fn the_picker_swallows_navigation_keys() {
         let mut h = Harness::new();
         h.key(KeyCode::Char('a'));
-        h.key(KeyCode::Char('l'));
+        h.keys("ll");
         assert_eq!(h.app.focus, Focus::Projects, "column focus must not move behind the modal");
     }
 
@@ -2163,7 +2250,11 @@ mod tests {
         t.push(ProjectInfo {
             id: ProjectId(3),
             name: "new".to_string(),
-            checkouts: vec![checkout(30, "new", true, vec![])],
+            repositories: vec![repository(
+                7,
+                "new-repo",
+                vec![checkout(30, "new", true, vec![])],
+            )],
         });
         h.app.on_server_msg(ServerMsg::Tree(t));
         assert_eq!(h.app.current_project().unwrap().name, "new");
@@ -2172,7 +2263,7 @@ mod tests {
     #[test]
     fn n_in_the_checkouts_column_prompts_for_a_branch() {
         let mut h = Harness::new();
-        h.key(KeyCode::Char('l'));
+        h.keys("ll");
         h.sent();
         h.key(KeyCode::Char('n'));
         assert!(matches!(h.app.prompt, Some(Prompt::NewWorktree { .. })));
@@ -2189,23 +2280,81 @@ mod tests {
     }
 
     #[test]
+    fn a_worktree_prompt_can_be_edited_and_cancelled() {
+        let mut h = Harness::new();
+        h.keys("lln");
+        h.key(KeyCode::Up);
+        h.keys("draft");
+        h.key(KeyCode::Backspace);
+
+        match &h.app.prompt {
+            Some(Prompt::NewWorktree { input, .. }) => assert_eq!(input, "draf"),
+            _ => panic!("expected a worktree prompt"),
+        }
+
+        h.key(KeyCode::Esc);
+        assert!(h.app.prompt.is_none());
+        assert!(
+            h.sent().is_empty(),
+            "cancelling must not create a worktree"
+        );
+    }
+
+    #[test]
     fn a_new_worktree_becomes_the_selected_checkout() {
         let mut h = Harness::new();
-        h.keys("ln");
+        h.keys("lln");
         h.keys("x");
         h.key(KeyCode::Enter);
         h.sent();
 
         let mut t = tree();
-        t[0].checkouts.push(checkout(12, "x", false, vec![]));
+        t[0].repositories[0].checkouts.push(checkout(12, "x", false, vec![]));
         h.app.on_server_msg(ServerMsg::Tree(t));
         assert_eq!(h.app.current_checkout().unwrap().name, "x");
     }
 
     #[test]
+    fn a_new_worktree_selects_its_repository_even_if_navigation_moved() {
+        let mut h = Harness::new();
+        h.keys("lln");
+        h.keys("x");
+        h.key(KeyCode::Enter);
+        h.sent();
+
+        let mut t = tree();
+        t[0].repositories.push(repository(
+            7,
+            "satellite",
+            vec![checkout(30, "main", true, vec![])],
+        ));
+        t[0].repositories[0].checkouts.push(checkout(12, "x", false, vec![]));
+        h.app.sel_repository = 1;
+        h.app.on_server_msg(ServerMsg::Tree(t));
+
+        assert_eq!(h.app.current_repository().unwrap().id, RepositoryId(5));
+        assert_eq!(h.app.current_checkout().unwrap().name, "x");
+    }
+
+    #[test]
+    fn checkout_commands_use_the_repository_selections_current_checkout() {
+        let mut h = Harness::new();
+        h.key(KeyCode::Char('l'));
+        assert_eq!(h.app.focus, Focus::Repositories);
+        h.sent();
+
+        h.key(KeyCode::Char('s'));
+
+        assert!(matches!(
+            h.sent().as_slice(),
+            [ClientMsg::SpawnShell { checkout: CheckoutId(10) }]
+        ));
+    }
+
+    #[test]
     fn n_does_nothing_in_the_pane_columns() {
         let mut h = Harness::new();
-        h.keys("ll");
+        h.keys("lll");
         h.sent();
         h.key(KeyCode::Char('n'));
         assert!(h.app.prompt.is_none(), "no checkout context to branch from");
@@ -2250,7 +2399,7 @@ mod tests {
     #[test]
     fn the_primary_checkout_cannot_be_removed() {
         let mut h = Harness::new();
-        h.key(KeyCode::Char('l'));
+        h.keys("ll");
         h.sent();
         h.key(KeyCode::Char('D'));
         assert!(h.app.prompt.is_none(), "no confirmation is even offered");
@@ -2261,7 +2410,7 @@ mod tests {
     #[test]
     fn removing_a_linked_worktree_asks_first_then_sends() {
         let mut h = Harness::new();
-        h.keys("lj");
+        h.keys("llj");
         h.sent();
         h.key(KeyCode::Char('D'));
         match &h.app.prompt {
@@ -2287,7 +2436,7 @@ mod tests {
     fn declining_the_removal_sends_nothing() {
         for decline in ['n', 'q'] {
             let mut h = Harness::new();
-            h.keys("lj");
+            h.keys("llj");
             h.sent();
             h.key(KeyCode::Char('D'));
             h.key(KeyCode::Char(decline));
@@ -2310,7 +2459,7 @@ mod tests {
     #[test]
     fn x_closes_the_selected_pane_from_the_panes_column() {
         let mut h = Harness::new();
-        h.keys("ll");
+        h.keys("lll");
         h.sent();
         h.key(KeyCode::Char('x'));
         assert!(matches!(h.sent()[0], ClientMsg::Kill { pane: PaneId(100) }));
@@ -2331,10 +2480,10 @@ mod tests {
     #[test]
     fn a_shrinking_tree_clamps_the_selection_instead_of_dangling() {
         let mut h = Harness::new();
-        h.keys("llj"); // second pane of the first checkout
+        h.keys("lllj"); // second pane of the first checkout
         h.sent();
         let mut t = tree();
-        t[0].checkouts[0].panes.pop();
+        t[0].repositories[0].checkouts[0].panes.pop();
         h.app.on_server_msg(ServerMsg::Tree(t));
         assert_eq!(h.app.sel_pane, 0);
         assert_eq!(h.app.column_pane(), Some(PaneId(100)));
@@ -2450,7 +2599,7 @@ mod tests {
     fn git_status_rides_along_on_checkout_rows() {
         let mut h = Harness::new();
         let mut t = tree();
-        t[0].checkouts[0].git = Some(GitStatus {
+        t[0].repositories[0].checkouts[0].git = Some(GitStatus {
             branch: Some("master".to_string()),
             dirty: true,
             changed_files: 2,
@@ -2481,7 +2630,7 @@ mod tests {
         }
     }
 
-    /// Four cards side by side, each with a one-cell frame around its rows,
+    /// Five cards side by side, each with a one-cell frame around its rows,
     /// so tests can click both a row and the chrome around it.
     fn laid_out(h: &mut Harness) {
         let panel = |x: u16, w: u16| Panel {
@@ -2490,9 +2639,10 @@ mod tests {
         };
         h.app.layout = Layout {
             projects: panel(0, 12),
-            checkouts: panel(12, 12),
-            panes: panel(24, 12),
-            content: panel(36, 20),
+            repositories: panel(12, 12),
+            checkouts: panel(24, 12),
+            panes: panel(36, 12),
+            content: panel(48, 20),
             overlay: Panel::default(),
         };
     }
@@ -2515,9 +2665,10 @@ mod tests {
         };
         h.app.layout = Layout {
             projects: panel(0, 12),
-            checkouts: panel(13, 12),
-            panes: panel(26, 12),
-            content: panel(39, 20),
+            repositories: panel(13, 12),
+            checkouts: panel(26, 12),
+            panes: panel(39, 12),
+            content: panel(52, 20),
             overlay: Panel::default(),
         };
 
@@ -2530,21 +2681,34 @@ mod tests {
             modifiers: KeyModifiers::NONE,
         });
 
-        assert_eq!(h.app.column_widths, Some([16, 8, 12, 20]));
+        assert_eq!(h.app.column_widths, Some(vec![16, 8, 12, 12, 20]));
         assert_eq!(h.app.settings.column_widths, h.app.column_widths);
     }
 
     #[test]
-    fn saved_column_widths_are_restored_at_startup() {
+    fn old_four_column_widths_fall_back_to_the_five_column_layout() {
         let (tx, _rx) = unbounded_channel();
         let settings = crate::settings::Settings {
-            column_widths: Some([10, 20, 30, 40]),
+            column_widths: Some(vec![10, 20, 30, 40]),
             ..crate::settings::Settings::default()
         };
 
         let app = App::build(tx, settings, false);
 
-        assert_eq!(app.column_widths, Some([10, 20, 30, 40]));
+        assert_eq!(app.column_widths, None);
+    }
+
+    #[test]
+    fn saved_five_column_widths_are_restored_at_startup() {
+        let (tx, _rx) = unbounded_channel();
+        let settings = crate::settings::Settings {
+            column_widths: Some(vec![10, 15, 20, 25, 30]),
+            ..crate::settings::Settings::default()
+        };
+
+        let app = App::build(tx, settings, false);
+
+        assert_eq!(app.column_widths, Some(vec![10, 15, 20, 25, 30]));
     }
 
     #[test]
@@ -2556,23 +2720,24 @@ mod tests {
         };
         h.app.layout = Layout {
             projects: panel(0, 12),
-            checkouts: panel(13, 12),
-            panes: panel(26, 12),
-            content: panel(39, 20),
+            repositories: panel(13, 12),
+            checkouts: panel(26, 12),
+            panes: panel(39, 12),
+            content: panel(52, 20),
             overlay: Panel::default(),
         };
 
         h.app.on_mouse(click(12, 3));
         h.app.on_mouse(drag(30, 3));
 
-        assert_eq!(h.app.column_widths, Some([16, 8, 12, 20]));
+        assert_eq!(h.app.column_widths, Some(vec![16, 8, 12, 12, 20]));
     }
 
     #[test]
     fn clicking_a_row_selects_it_and_focuses_that_column() {
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.app.on_mouse(click(14, 3)); // the checkouts card, second row
+        h.app.on_mouse(click(26, 3)); // the checkouts card, second row
         assert_eq!(h.app.focus, Focus::Checkouts);
         assert_eq!(h.app.sel_checkout, 1);
     }
@@ -2587,14 +2752,14 @@ mod tests {
         assert_eq!(h.app.sel_project, 1);
         // Clicking the now-selected row again opens it.
         h.app.on_mouse(click(2, 3));
-        assert_eq!(h.app.focus, Focus::Checkouts, "second click opens it");
+        assert_eq!(h.app.focus, Focus::Repositories, "second click opens it");
     }
 
     #[test]
     fn clicking_past_the_last_row_keeps_the_selection() {
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.keys("ll"); // focus is off in the panes column
+        h.keys("lll"); // focus is off in the panes column
         h.sent();
 
         h.app.on_mouse(click(2, 6)); // empty space below the project rows
@@ -2646,7 +2811,7 @@ mod tests {
     fn scrolling_a_background_column_does_not_steal_focus() {
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.keys("lll"); // typing into a pane
+        h.keys("llll"); // typing into a pane
         h.sent();
         h.app.on_mouse(MouseEvent {
             kind: MouseEventKind::ScrollDown,
@@ -2662,7 +2827,7 @@ mod tests {
     fn clicking_the_live_view_switches_to_typing_and_forwards_the_click() {
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.app.on_mouse(click(40, 3));
+        h.app.on_mouse(click(54, 3));
         assert_eq!(h.app.focus, Focus::PaneContent);
         assert!(
             h.sent().iter().any(|m| matches!(m, ClientMsg::Input { .. })),
@@ -2676,7 +2841,7 @@ mod tests {
         laid_out(&mut h);
         h.app.on_mouse(MouseEvent {
             kind: MouseEventKind::Up(MouseButton::Left),
-            column: 40,
+            column: 54,
             row: 3,
             modifiers: KeyModifiers::NONE,
         });
@@ -2791,7 +2956,7 @@ mod tests {
         // that meant something else would land the user somewhere arbitrary.
         let mut h = Harness::new();
         h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
-        h.keys("llj"); // wander into the pane column
+        h.keys("lllj"); // wander into the pane column
         h.sent();
 
         h.key(KeyCode::Char('w'));
@@ -2909,7 +3074,7 @@ mod tests {
     #[test]
     fn the_arriving_diff_opens_the_viewer_and_takes_focus() {
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(&mut h, diff_of(checkout));
 
         assert!(h.app.review.is_some());
@@ -2921,7 +3086,7 @@ mod tests {
         // It was computed on a blocking thread; by the time it lands the
         // user may be looking at something else entirely.
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         h.key(KeyCode::Char('l'));
         h.key(KeyCode::Char('R'));
         h.sent();
@@ -2954,7 +3119,7 @@ mod tests {
     #[test]
     fn an_unsolicited_diff_never_hijacks_the_screen() {
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
         assert!(h.app.review.is_none());
         assert_eq!(h.app.focus, Focus::Projects);
@@ -2963,7 +3128,7 @@ mod tests {
     #[test]
     fn a_clean_checkout_says_so_instead_of_opening_an_empty_viewer() {
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(
             &mut h,
             argus_protocol::Review {
@@ -2983,7 +3148,7 @@ mod tests {
     #[test]
     fn an_empty_first_since_last_looked_review_can_be_acknowledged() {
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         let mut review = diff_of(checkout);
         review.base = ReviewBase::SinceLastLooked;
         review.files.clear();
@@ -3004,7 +3169,7 @@ mod tests {
     #[test]
     fn acknowledgement_updates_only_the_review_snapshot_that_was_displayed() {
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(&mut h, diff_of(checkout));
 
         h.app.on_server_msg(ServerMsg::ReviewAcknowledged {
@@ -3031,7 +3196,7 @@ mod tests {
     #[test]
     fn acknowledgement_failure_is_shown_only_for_the_displayed_snapshot() {
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(&mut h, diff_of(checkout));
         let before = h.app.status.clone();
 
@@ -3053,7 +3218,7 @@ mod tests {
     #[test]
     fn closing_and_refreshing_never_acknowledge_a_review() {
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(&mut h, diff_of(checkout));
         h.key(KeyCode::Char('r'));
         h.key(KeyCode::Esc);
@@ -3066,7 +3231,7 @@ mod tests {
     #[test]
     fn esc_closes_the_review_and_lands_back_on_the_checkout() {
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(&mut h, diff_of(checkout));
         h.key(KeyCode::Esc);
 
@@ -3077,7 +3242,7 @@ mod tests {
     #[test]
     fn navigation_keys_move_within_the_diff_not_the_tree() {
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(&mut h, diff_of(checkout));
         let before = (h.app.sel_project, h.app.sel_checkout, h.app.sel_pane);
 
@@ -3096,7 +3261,7 @@ mod tests {
     fn r_inside_the_review_re_requests_rather_than_reusing_a_stale_diff() {
         // An agent is very likely still editing the tree underneath it.
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(&mut h, diff_of(checkout));
 
         h.key(KeyCode::Char('r'));
@@ -3106,7 +3271,7 @@ mod tests {
     #[test]
     fn v_then_j_selects_a_range_of_lines() {
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(&mut h, diff_of(checkout));
 
         h.key(KeyCode::Char('v'));
@@ -3122,7 +3287,7 @@ mod tests {
         // The review shares its column with the live pane; a keystroke
         // leaking into the child would be silent and destructive.
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(&mut h, diff_of(checkout));
 
         h.keys("jkgG");
@@ -3135,7 +3300,7 @@ mod tests {
     /// A tree whose first checkout has an agent pane running in it.
     fn tree_with_agent() -> Vec<ProjectInfo> {
         let mut t = tree();
-        t[0].checkouts[0].panes = vec![
+        t[0].repositories[0].checkouts[0].panes = vec![
             PaneInfo {
                 id: PaneId(50),
                 kind: PaneKind::Shell,
@@ -3160,7 +3325,7 @@ mod tests {
         let mut h = Harness::new();
         h.app.on_server_msg(ServerMsg::Tree(tree_with_agent()));
         h.sent();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(&mut h, diff_of(checkout));
         h
     }
@@ -3199,7 +3364,7 @@ mod tests {
     #[test]
     fn a_comment_with_no_agent_to_read_it_says_so_and_sends_nothing() {
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(&mut h, diff_of(checkout));
         h.key(KeyCode::Char('c'));
         h.keys("hello");
@@ -3372,7 +3537,7 @@ mod tests {
     fn clicking_the_content_frame_returns_to_what_it_is_showing() {
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.app.on_mouse(click(36, 0)); // the card's corner, not the live grid
+        h.app.on_mouse(click(48, 0)); // the card's corner, not the live grid
         assert_eq!(h.app.focus, Focus::PaneContent);
     }
 
@@ -3381,8 +3546,8 @@ mod tests {
         // Focusing a pane that doesn't exist is a mode with no keys in it.
         let mut h = Harness::new();
         let mut t = tree();
-        t[0].checkouts[0].panes.clear();
-        t[0].checkouts[1].panes.clear();
+        t[0].repositories[0].checkouts[0].panes.clear();
+        t[0].repositories[0].checkouts[1].panes.clear();
         h.app.on_server_msg(ServerMsg::Tree(t));
         laid_out(&mut h);
         h.sent();
@@ -3396,7 +3561,7 @@ mod tests {
         // "Move over there" must not tear down the session you were on.
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.keys("ll"); // down into the panes column, subscribing
+        h.keys("lll"); // down into the panes column, subscribing
         h.sent();
         let watching = h.app.column_pane();
         assert!(watching.is_some(), "precondition: something is being shown");
@@ -3624,7 +3789,7 @@ mod tests {
     #[test]
     fn f_in_the_review_jumps_the_cursor_to_the_chosen_file() {
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         let mut review = diff_of(checkout);
         let mut second = review.files[0].clone();
         second.path = "src/other.rs".to_string();
@@ -3643,7 +3808,7 @@ mod tests {
     #[test]
     fn the_change_picker_lists_the_files_with_their_markers() {
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(&mut h, diff_of(checkout));
         h.key(KeyCode::Char('f'));
         assert_eq!(h.app.picker.as_ref().unwrap().items, vec!["M src/a.rs"]);
@@ -3655,7 +3820,7 @@ mod tests {
     fn a_floating_pane_streams_alongside_the_column_not_instead_of_it() {
         // Opening a file must not cost you sight of the agent behind it.
         let mut h = Harness::new();
-        h.keys("ll"); // watching the column's pane
+        h.keys("lll"); // watching the column's pane
         h.sent();
         let column = h.app.column_pane().unwrap();
 
@@ -3733,7 +3898,7 @@ mod tests {
     #[test]
     fn closing_a_floating_pane_puts_the_live_view_back_on_the_column() {
         let mut h = Harness::new();
-        h.keys("ll");
+        h.keys("lll");
         h.sent();
         let was = h.app.column_pane();
 
@@ -3824,7 +3989,7 @@ mod tests {
         // The panel shares the overlay slot with a live editor; leaking a
         // keystroke into a child would be silent and destructive.
         let mut h = Harness::new();
-        h.keys("ll");
+        h.keys("lll");
         h.sent();
         h.app.open_settings();
 
@@ -3839,13 +4004,13 @@ mod tests {
     /// `open_review` drives keys from the projects column, which would
     /// move the selection this is trying to observe.
     fn editor_arrives(h: &mut Harness) {
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         h.app.review_for_test(checkout);
         h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
         h.key(KeyCode::Char('e'));
         h.sent();
         let mut t = tree();
-        t[0].checkouts[0].panes.push(PaneInfo {
+        t[0].repositories[0].checkouts[0].panes.push(PaneInfo {
             id: PaneId(700),
             kind: PaneKind::Editor,
             title: "a.rs".to_string(),
@@ -3857,13 +4022,13 @@ mod tests {
     }
 
     fn open_editor_from_review(h: &mut Harness) {
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(h, diff_of(checkout));
         h.key(KeyCode::Char('e'));
         h.sent();
         // The daemon answers with a tree carrying the new editor pane.
         let mut t = tree();
-        t[0].checkouts[0].panes.push(PaneInfo {
+        t[0].repositories[0].checkouts[0].panes.push(PaneInfo {
             id: PaneId(700),
             kind: PaneKind::Editor,
             title: "a.rs".to_string(),
@@ -3895,7 +4060,7 @@ mod tests {
     fn an_external_editor_asks_the_daemon_not_to_make_a_pane() {
         let mut h = Harness::new();
         h.app.settings.editor = crate::settings::EditorMode::External;
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(&mut h, diff_of(checkout));
         h.key(KeyCode::Char('e'));
 
@@ -4028,7 +4193,7 @@ mod tests {
         h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
 
         let mut t = tree();
-        t[0].checkouts[0].panes.retain(|p| p.id != PaneId(101));
+        t[0].repositories[0].checkouts[0].panes.retain(|p| p.id != PaneId(101));
         h.app.on_server_msg(ServerMsg::Tree(t));
 
         assert!(h.app.overlay.is_none());
@@ -4116,7 +4281,7 @@ mod tests {
     fn the_chosen_command_is_sent_with_the_request() {
         let mut h = Harness::new();
         h.app.settings.editor_cmd = "hx".to_string();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(&mut h, diff_of(checkout));
         h.key(KeyCode::Char('e'));
 
@@ -4133,7 +4298,7 @@ mod tests {
         // The daemon can see $VISUAL and what is installed; the client
         // guessing would only be worse.
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         open_review(&mut h, diff_of(checkout));
         h.key(KeyCode::Char('e'));
 
@@ -4148,7 +4313,7 @@ mod tests {
         // The agent you were watching stays selected and stays on screen;
         // the editor is a window over the top, not a replacement for it.
         let mut h = Harness::new();
-        h.keys("ll"); // sitting on the agent in the panes column
+        h.keys("lll"); // sitting on the agent in the panes column
         h.sent();
         let watching = h.app.column_pane();
         let where_ = h.app.sel_pane;
@@ -4167,7 +4332,7 @@ mod tests {
     #[test]
     fn closing_the_editor_leaves_you_back_on_the_agent() {
         let mut h = Harness::new();
-        h.keys("ll");
+        h.keys("lll");
         h.sent();
         let watching = h.app.column_pane();
 
@@ -4183,7 +4348,7 @@ mod tests {
     /// A tree whose first checkout has a shell, an agent, and an editor.
     fn tree_with_editor() -> Vec<ProjectInfo> {
         let mut t = tree();
-        t[0].checkouts[0].panes.push(PaneInfo {
+        t[0].repositories[0].checkouts[0].panes.push(PaneInfo {
             id: PaneId(700),
             kind: PaneKind::Editor,
             title: "a.rs".to_string(),
@@ -4201,7 +4366,7 @@ mod tests {
         let mut h = Harness::new();
         h.app.on_server_msg(ServerMsg::Tree(tree_with_editor()));
 
-        let listed: Vec<PaneId> = h.app.tree[0].checkouts[0]
+        let listed: Vec<PaneId> = h.app.tree[0].repositories[0].checkouts[0]
             .listed_panes()
             .map(|p| p.id)
             .collect();
@@ -4214,7 +4379,7 @@ mod tests {
         // Otherwise j/k walks onto a row nothing draws.
         let mut h = Harness::new();
         h.app.on_server_msg(ServerMsg::Tree(tree_with_editor()));
-        h.keys("ll");
+        h.keys("lll");
         for _ in 0..5 {
             h.key(KeyCode::Char('j'));
         }
@@ -4226,7 +4391,7 @@ mod tests {
     fn an_editor_does_not_inflate_the_pane_counts() {
         let mut h = Harness::new();
         h.app.on_server_msg(ServerMsg::Tree(tree_with_editor()));
-        assert_eq!(h.app.tree[0].checkouts[0].listed_panes().count(), 2);
+        assert_eq!(h.app.tree[0].repositories[0].checkouts[0].listed_panes().count(), 2);
     }
 
     #[test]
@@ -4263,11 +4428,11 @@ mod tests {
         // Reading a diff should not cost you sight of the agent that
         // produced it.
         let mut h = Harness::new();
-        h.keys("ll");
+        h.keys("lll");
         h.sent();
         let watching = h.app.column_pane();
 
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         h.app.review_for_test(checkout);
         h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
 
@@ -4279,7 +4444,7 @@ mod tests {
     #[test]
     fn closing_a_diff_puts_you_back_on_the_checkout() {
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         h.app.review_for_test(checkout);
         h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
 
@@ -4293,7 +4458,7 @@ mod tests {
     #[test]
     fn f12_also_gets_you_out_of_a_diff() {
         let mut h = Harness::new();
-        let checkout = h.app.tree[0].checkouts[0].id;
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
         h.app.review_for_test(checkout);
         h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
 

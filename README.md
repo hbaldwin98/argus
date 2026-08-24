@@ -14,7 +14,7 @@ The workspace builds three executables:
 
 ## Features
 
-- Organizes projects into workspaces, checkouts, and shell or agent panes.
+- Organizes projects into workspaces, repositories, checkouts, and shell or agent panes.
 - Keeps panes running when the client closes.
 - Starts and discovers Git worktrees and switches branches from the TUI.
 - Runs Claude Code, Codex, OpenCode, or custom command-line agent templates.

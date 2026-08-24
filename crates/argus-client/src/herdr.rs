@@ -54,7 +54,8 @@ impl HerdrSync {
 fn aggregate(tree: &[ProjectInfo], workspace: &str) -> Option<Update> {
     let agents = tree
         .iter()
-        .flat_map(|project| &project.checkouts)
+        .flat_map(|project| &project.repositories)
+        .flat_map(|repository| &repository.checkouts)
         .flat_map(|checkout| &checkout.panes)
         .filter(|pane| pane.kind == PaneKind::Agent)
         .filter(|pane| !matches!(pane.status, PaneStatus::Exited { .. }))
@@ -245,6 +246,7 @@ impl HerdrReporter {
 mod tests {
     use argus_protocol::{
         CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId, ProjectInfo,
+        RepositoryId, RepositoryInfo,
     };
 
     use super::{AgentState, HerdrSync, Update};
@@ -253,24 +255,28 @@ mod tests {
         vec![ProjectInfo {
             id: ProjectId(1),
             name: "project".into(),
-            checkouts: vec![CheckoutInfo {
-                id: CheckoutId(2),
-                name: "checkout".into(),
-                path: "/repo".into(),
-                panes: statuses
-                    .iter()
-                    .enumerate()
-                    .map(|(i, status)| PaneInfo {
-                        id: PaneId(i as u64 + 3),
-                        kind: PaneKind::Agent,
-                        title: format!("agent-{i}"),
-                        status: *status,
-                        note: None,
-                        template: Some("opencode".into()),
-                    })
-                    .collect(),
-                git: None,
-                primary: true,
+            repositories: vec![RepositoryInfo {
+                id: RepositoryId(2),
+                name: "repo".into(),
+                checkouts: vec![CheckoutInfo {
+                    id: CheckoutId(3),
+                    name: "checkout".into(),
+                    path: "/repo".into(),
+                    panes: statuses
+                        .iter()
+                        .enumerate()
+                        .map(|(i, status)| PaneInfo {
+                            id: PaneId(i as u64 + 4),
+                            kind: PaneKind::Agent,
+                            title: format!("agent-{i}"),
+                            status: *status,
+                            note: None,
+                            template: Some("opencode".into()),
+                        })
+                        .collect(),
+                    git: None,
+                    primary: true,
+                }],
             }],
         }]
     }
@@ -333,6 +339,42 @@ mod tests {
     }
 
     #[test]
+    fn aggregation_includes_agents_from_every_repository() {
+        let mut agents = tree(&[PaneStatus::Working]);
+        agents[0].repositories.push(RepositoryInfo {
+            id: RepositoryId(20),
+            name: "second".into(),
+            checkouts: vec![CheckoutInfo {
+                id: CheckoutId(21),
+                name: "main".into(),
+                path: "/second".into(),
+                panes: vec![PaneInfo {
+                    id: PaneId(22),
+                    kind: PaneKind::Agent,
+                    title: "blocked elsewhere".into(),
+                    status: PaneStatus::Waiting,
+                    note: None,
+                    template: Some("opencode".into()),
+                }],
+                git: None,
+                primary: true,
+            }],
+        });
+        let mut sync = HerdrSync::default();
+
+        assert_eq!(
+            sync.next_update(&agents, "work"),
+            Some(Update::Report {
+                state: AgentState::Blocked,
+                message: Some(
+                    "work | blocked elsewhere: waiting | opencode: agent-0 [working], blocked elsewhere [waiting]"
+                        .into(),
+                ),
+            })
+        );
+    }
+
+    #[test]
     fn unchanged_trees_do_not_repeat_reports() {
         let agents = tree(&[PaneStatus::Working]);
         let mut sync = HerdrSync::default();
@@ -344,7 +386,7 @@ mod tests {
     #[test]
     fn the_message_groups_named_agents_by_harness() {
         let mut agents = tree(&[PaneStatus::Working, PaneStatus::Idle, PaneStatus::Failed]);
-        let panes = &mut agents[0].checkouts[0].panes;
+        let panes = &mut agents[0].repositories[0].checkouts[0].panes;
         panes[0].title = "auth".into();
         panes[1].title = "tests".into();
         panes[2].title = "review".into();
