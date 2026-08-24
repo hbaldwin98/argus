@@ -92,6 +92,12 @@ Target: ~1.5 MB resident per idle pane, ~40 MB daemon with 16 panes, ~25 MB clie
 
 ## 4. The three levels
 
+**Mouse.** The two gestures are separate on purpose: clicking anywhere on a card moves focus to
+it and leaves every selection where it was, while clicking a row selects that row — and clicking
+an already-selected row a second time descends into it, the way `l` would. Moving focus never
+disturbs the live pane, so the session you were watching keeps streaming in the rightmost column
+while you look around. Rows are two lines tall and either line counts as the same item.
+
 ### Level 1 — Projects
 
 A **project** is a named group of repositories. Not one repo — a group, because real work spans a

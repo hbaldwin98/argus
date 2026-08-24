@@ -28,7 +28,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget, Wrap};
 use ratatui::Frame;
 
-use crate::app::{App, Focus, PickerKind, Prompt};
+use crate::app::{App, Focus, Panel, PickerKind, Prompt};
 use crate::grid::Grid;
 use crate::review::{Row, ReviewView};
 use crate::theme::Theme;
@@ -38,8 +38,9 @@ use crate::theme::Theme;
 const MARKER: &str = "▌";
 const GUTTER: &str = " ";
 
-/// Every list item is a name line plus a detail line.
-const ROW_HEIGHT: u16 = 2;
+/// Every list item is a name line plus a detail line. `app` hit-tests
+/// clicks against this, so it is shared rather than local.
+pub const ROW_HEIGHT: u16 = 2;
 
 /// Blank columns between panels, and between the panels and the screen
 /// edge. Without it the cards touch and stop reading as separate surfaces.
@@ -275,9 +276,10 @@ fn render_column(
     selected: Option<usize>,
     empty_hint: &str,
     th: Theme,
-) -> Rect {
+) -> Panel {
     let block = panel_block(title, focused, th);
     let inner = block.inner(area);
+    let panel = Panel { outer: area, inner };
     f.render_widget(block, area);
 
     if rows.is_empty() {
@@ -289,7 +291,7 @@ fn render_column(
                 .wrap(Wrap { trim: true }),
             inner,
         );
-        return inner;
+        return panel;
     }
 
     // Scroll the window so the selection stays on screen in a long list.
@@ -303,7 +305,7 @@ fn render_column(
         let Some(row) = row_rect(inner, i - first) else { break };
         render_row(f, row, item, selected == Some(i), focused, th);
     }
-    inner
+    panel
 }
 
 /// A two-line item: name, then detail. The selection is a raised bar over
@@ -435,7 +437,7 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     } else {
         f.render_widget(TermView { grid: &app.grid }, inner);
     }
-    app.layout.content = inner;
+    app.layout.content = Panel { outer: area, inner };
 }
 
 /// Drawn in the column the live pane uses, so the nav columns stay put
@@ -451,7 +453,7 @@ fn render_review(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let block = panel_block(&title, focused, th);
     let inner = block.inner(area);
     f.render_widget(block, area);
-    app.layout.content = inner;
+    app.layout.content = Panel { outer: area, inner };
 
     let Some(view) = app.review.as_mut() else { return };
     view.scroll_into_view(inner.height as usize);
@@ -1182,8 +1184,7 @@ mod tests {
         app.focus = Focus::Checkouts;
         let buf = draw(&mut app);
 
-        // The panel's top-left corner, outside the border's own padding.
-        let corner = |r: Rect| buf.cell((r.x - 2, r.y - 2)).unwrap().fg;
+        let corner = |p: Panel| buf.cell((p.outer.x, p.outer.y)).unwrap().fg;
         assert_eq!(corner(app.layout.checkouts), th.accent, "focused column");
         assert_eq!(corner(app.layout.projects), th.edge, "unfocused column");
     }
@@ -1198,7 +1199,9 @@ mod tests {
         let buf = draw(&mut app);
 
         // A blank cell inside each panel, below the last row.
-        let blank = |r: Rect| buf.cell((r.x, r.y + r.height - 1)).unwrap().bg;
+        let blank = |p: Panel| {
+            buf.cell((p.inner.x, p.inner.y + p.inner.height - 1)).unwrap().bg
+        };
         assert_eq!(blank(app.layout.projects), th.surface_focus, "focused panel");
         assert_eq!(blank(app.layout.checkouts), th.surface, "unfocused panel");
         assert_eq!(buf.cell((0, 0)).unwrap().bg, th.bg, "the page behind them");
@@ -1212,7 +1215,7 @@ mod tests {
         app.sel_checkout = 1;
         let buf = draw(&mut app);
 
-        let inner = app.layout.checkouts;
+        let inner = app.layout.checkouts.inner;
         let marker = buf.cell((inner.x, inner.y + ROW_HEIGHT)).unwrap();
         assert_eq!(marker.symbol(), MARKER, "selection marker on the selected row");
         assert_eq!(marker.fg, th.accent);
@@ -1234,7 +1237,7 @@ mod tests {
         app.sel_checkout = 0;
         let buf = draw(&mut app);
 
-        let inner = app.layout.checkouts;
+        let inner = app.layout.checkouts.inner;
         let cell = buf.cell((inner.x + 1, inner.y)).unwrap();
         assert_eq!(cell.bg, th.sel_bg_dim, "you should still see where you were");
     }

@@ -23,28 +23,23 @@ pub enum Focus {
     Review,
 }
 
-/// Screen regions from the most recent render, so mouse clicks can be mapped
-/// back onto tree rows / pane cells without duplicating layout math.
-/// `panes` is the pane-tab strip atop the live view; `content` is the live
-/// view itself. Both live in the always-visible rightmost column.
-#[derive(Debug, Clone, Copy)]
-pub struct Layout {
-    pub projects: Rect,
-    pub checkouts: Rect,
-    pub panes: Rect,
-    pub content: Rect,
+/// One rendered panel: the whole card, and the padded area its rows live
+/// in. Both are needed — a click on a row selects it, but a click anywhere
+/// else on the card still moves focus there.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Panel {
+    pub outer: Rect,
+    pub inner: Rect,
 }
 
-impl Default for Layout {
-    fn default() -> Self {
-        let zero = Rect::new(0, 0, 0, 0);
-        Layout {
-            projects: zero,
-            checkouts: zero,
-            panes: zero,
-            content: zero,
-        }
-    }
+/// Screen regions from the most recent render, so mouse clicks can be
+/// mapped back onto tree rows / pane cells without duplicating layout math.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Layout {
+    pub projects: Panel,
+    pub checkouts: Panel,
+    pub panes: Panel,
+    pub content: Panel,
 }
 
 /// What confirming a picker selection does. The picker is one widget with
@@ -579,7 +574,7 @@ impl App {
         // The live view is always visible in the rightmost column, so a
         // click landing on it both forwards to the child and (for presses)
         // switches into typing mode, regardless of what was focused before.
-        if let Some(bytes) = encode_mouse(&ev, self.layout.content) {
+        if let Some(bytes) = encode_mouse(&ev, self.layout.content.inner) {
             if matches!(ev.kind, MouseEventKind::Down(_)) {
                 self.focus = Focus::PaneContent;
             }
@@ -604,55 +599,78 @@ impl App {
     /// over, independent of `focus` — so scrolling a background column
     /// doesn't steal focus away from a pane you're typing into.
     fn scroll_at(&mut self, x: u16, y: u16, delta: i32) {
-        let target = if in_rect(self.layout.projects, x, y) {
-            Focus::Projects
-        } else if in_rect(self.layout.checkouts, x, y) {
-            Focus::Checkouts
-        } else if in_rect(self.layout.panes, x, y) {
-            Focus::Panes
-        } else {
+        let Some((target, _)) = self.column_at(x, y) else {
             return;
         };
         self.adjust_selection(target, delta);
     }
 
+    /// Which list column a point falls in, anywhere on its card, and that
+    /// card's row area.
+    fn column_at(&self, x: u16, y: u16) -> Option<(Focus, Rect)> {
+        for (focus, panel) in [
+            (Focus::Projects, self.layout.projects),
+            (Focus::Checkouts, self.layout.checkouts),
+            (Focus::Panes, self.layout.panes),
+        ] {
+            if in_rect(panel.outer, x, y) {
+                return Some((focus, panel.inner));
+            }
+        }
+        None
+    }
+
+    /// A click on a card moves focus to it and leaves the selection alone;
+    /// a click that lands on a row selects that row as well. Clicking the
+    /// already-selected row a second time descends, the way `l` would.
     fn click_nav(&mut self, x: u16, y: u16) {
-        if let Some(idx) = row_in(self.layout.projects, x, y) {
-            if idx < self.tree.len() {
-                let already = self.focus == Focus::Projects && self.sel_project == idx;
-                self.sel_project = idx;
-                self.focus = Focus::Projects;
-                self.clamp();
-                if already {
-                    self.descend();
-                }
+        // The content column has no rows to hit — clicking its frame just
+        // puts keyboard focus back on whatever it is showing.
+        if in_rect(self.layout.content.outer, x, y) {
+            if self.review.is_some() {
+                self.focus = Focus::Review;
+            } else if self.current_pane().is_some() {
+                self.focus = Focus::PaneContent;
             }
+            // With nothing running there, focus would be a mode with no
+            // keys and no way out but the leader.
             return;
         }
-        if let Some(idx) = row_in(self.layout.checkouts, x, y) {
-            let n = self.current_project().map(|p| p.checkouts.len()).unwrap_or(0);
-            if idx < n {
-                let already = self.focus == Focus::Checkouts && self.sel_checkout == idx;
-                self.sel_checkout = idx;
-                self.focus = Focus::Checkouts;
-                self.clamp();
-                if already {
-                    self.descend();
-                }
-            }
+
+        let Some((target, inner)) = self.column_at(x, y) else {
             return;
+        };
+        let count = match target {
+            Focus::Projects => self.tree.len(),
+            Focus::Checkouts => self.current_project().map(|p| p.checkouts.len()).unwrap_or(0),
+            _ => self.current_checkout().map(|c| c.panes.len()).unwrap_or(0),
+        };
+
+        let hit = row_in(inner, x, y).filter(|idx| *idx < count);
+        let already = self.focus == target && hit == Some(self.selection_in(target));
+        if let Some(idx) = hit {
+            *self.selection_mut(target) = idx;
         }
-        if let Some(idx) = row_in(self.layout.panes, x, y) {
-            let n = self.current_checkout().map(|c| c.panes.len()).unwrap_or(0);
-            if idx < n {
-                let already = self.focus == Focus::Panes && self.sel_pane == idx;
-                self.sel_pane = idx;
-                self.focus = Focus::Panes;
-                self.clamp();
-                if already {
-                    self.descend();
-                }
-            }
+        self.focus = target;
+        self.clamp();
+        if already {
+            self.descend();
+        }
+    }
+
+    fn selection_in(&self, target: Focus) -> usize {
+        match target {
+            Focus::Projects => self.sel_project,
+            Focus::Checkouts => self.sel_checkout,
+            _ => self.sel_pane,
+        }
+    }
+
+    fn selection_mut(&mut self, target: Focus) -> &mut usize {
+        match target {
+            Focus::Projects => &mut self.sel_project,
+            Focus::Checkouts => &mut self.sel_checkout,
+            _ => &mut self.sel_pane,
         }
     }
 
@@ -822,11 +840,13 @@ impl App {
     }
 }
 
+/// Which list row a point falls on. Rows are [`crate::ui::ROW_HEIGHT`]
+/// lines tall, and either of an item's lines counts as that item.
 fn row_in(area: Rect, x: u16, y: u16) -> Option<usize> {
     if !in_rect(area, x, y) {
         return None;
     }
-    Some((y - area.y) as usize)
+    Some(((y - area.y) / crate::ui::ROW_HEIGHT) as usize)
 }
 
 fn in_rect(area: Rect, x: u16, y: u16) -> bool {
@@ -1517,12 +1537,18 @@ mod tests {
         }
     }
 
+    /// Four cards side by side, each with a one-cell frame around its rows,
+    /// so tests can click both a row and the chrome around it.
     fn laid_out(h: &mut Harness) {
+        let panel = |x: u16, w: u16| Panel {
+            outer: Rect::new(x, 0, w, 8),
+            inner: Rect::new(x + 1, 1, w - 2, 6),
+        };
         h.app.layout = Layout {
-            projects: Rect::new(0, 0, 10, 5),
-            checkouts: Rect::new(10, 0, 10, 5),
-            panes: Rect::new(20, 0, 10, 5),
-            content: Rect::new(30, 0, 20, 5),
+            projects: panel(0, 12),
+            checkouts: panel(12, 12),
+            panes: panel(24, 12),
+            content: panel(36, 20),
         };
     }
 
@@ -1530,7 +1556,7 @@ mod tests {
     fn clicking_a_row_selects_it_and_focuses_that_column() {
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.app.on_mouse(click(12, 1));
+        h.app.on_mouse(click(14, 3)); // the checkouts card, second row
         assert_eq!(h.app.focus, Focus::Checkouts);
         assert_eq!(h.app.sel_checkout, 1);
     }
@@ -1540,21 +1566,64 @@ mod tests {
         let mut h = Harness::new();
         laid_out(&mut h);
         // Row 1 isn't the current selection, so the first click only selects.
-        h.app.on_mouse(click(2, 1));
+        h.app.on_mouse(click(2, 3));
         assert_eq!(h.app.focus, Focus::Projects);
         assert_eq!(h.app.sel_project, 1);
         // Clicking the now-selected row again opens it.
-        h.app.on_mouse(click(2, 1));
+        h.app.on_mouse(click(2, 3));
         assert_eq!(h.app.focus, Focus::Checkouts, "second click opens it");
     }
 
     #[test]
-    fn clicking_past_the_last_row_changes_nothing() {
+    fn clicking_past_the_last_row_keeps_the_selection() {
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.app.on_mouse(click(2, 4));
-        assert_eq!(h.app.sel_project, 0);
+        h.keys("ll"); // focus is off in the panes column
+        h.sent();
+
+        h.app.on_mouse(click(2, 6)); // empty space below the project rows
+
+        assert_eq!(h.app.focus, Focus::Projects, "the click still moves focus");
+        assert_eq!(h.app.sel_project, 0, "but selects nothing new");
+    }
+
+    #[test]
+    fn clicking_a_cards_frame_moves_focus_without_touching_the_selection() {
+        // "Go there" and "pick that" are different gestures; only the
+        // second should move a cursor.
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        h.keys("l");
+        h.app.sel_checkout = 1;
+        h.sent();
+
+        h.app.on_mouse(click(0, 0)); // the projects card's top-left corner
+
         assert_eq!(h.app.focus, Focus::Projects);
+        assert_eq!(h.app.sel_checkout, 1, "the other column keeps its place");
+    }
+
+    #[test]
+    fn clicking_the_border_of_the_column_you_are_in_does_not_descend() {
+        // Only a click on the selected *row* opens it.
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        h.app.on_mouse(click(0, 0));
+        h.app.on_mouse(click(0, 0));
+        assert_eq!(h.app.focus, Focus::Projects);
+    }
+
+    #[test]
+    fn either_line_of_a_two_line_row_selects_that_row() {
+        // The detail line is part of the item, not a gap between items.
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        h.app.on_mouse(click(2, 3)); // name line of row 1
+        assert_eq!(h.app.sel_project, 1);
+
+        h.app.sel_project = 0;
+        h.app.on_mouse(click(2, 4)); // detail line of the same row
+        assert_eq!(h.app.sel_project, 1);
     }
 
     #[test]
@@ -1577,7 +1646,7 @@ mod tests {
     fn clicking_the_live_view_switches_to_typing_and_forwards_the_click() {
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.app.on_mouse(click(35, 2));
+        h.app.on_mouse(click(40, 3));
         assert_eq!(h.app.focus, Focus::PaneContent);
         assert!(
             h.sent().iter().any(|m| matches!(m, ClientMsg::Input { .. })),
@@ -1590,7 +1659,7 @@ mod tests {
         let mut h = Harness::new();
         laid_out(&mut h);
         h.key(KeyCode::Char('n'));
-        h.app.on_mouse(click(12, 1));
+        h.app.on_mouse(click(14, 3));
         assert_eq!(h.app.sel_checkout, 0, "click must not navigate behind the prompt");
         assert!(h.app.prompt.is_some());
     }
@@ -2140,6 +2209,45 @@ mod tests {
         h.key(KeyCode::Char('j'));
         h.key(KeyCode::Esc);
         assert_eq!(h.app.theme, before);
+    }
+
+    #[test]
+    fn clicking_the_content_frame_returns_to_what_it_is_showing() {
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        h.app.on_mouse(click(36, 0)); // the card's corner, not the live grid
+        assert_eq!(h.app.focus, Focus::PaneContent);
+    }
+
+    #[test]
+    fn clicking_an_empty_content_column_does_not_trap_focus_there() {
+        // Focusing a pane that doesn't exist is a mode with no keys in it.
+        let mut h = Harness::new();
+        let mut t = tree();
+        t[0].checkouts[0].panes.clear();
+        t[0].checkouts[1].panes.clear();
+        h.app.on_server_msg(ServerMsg::Tree(t));
+        laid_out(&mut h);
+        h.sent();
+
+        h.app.on_mouse(click(36, 0));
+        assert_ne!(h.app.focus, Focus::PaneContent);
+    }
+
+    #[test]
+    fn clicking_a_column_leaves_the_live_pane_subscribed() {
+        // "Move over there" must not tear down the session you were on.
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        h.keys("ll"); // down into the panes column, subscribing
+        h.sent();
+        let watching = h.app.subscribed;
+        assert!(watching.is_some(), "precondition: something is being shown");
+
+        h.app.on_mouse(click(0, 0)); // all the way back to projects
+
+        assert_eq!(h.app.focus, Focus::Projects);
+        assert_eq!(h.app.subscribed, watching, "still showing the same pane");
     }
 
 }

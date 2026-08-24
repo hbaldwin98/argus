@@ -102,7 +102,7 @@ async fn run(
         terminal.draw(|f| ui::render(f, &mut app))?;
 
         if let Some(pane) = app.subscribed {
-            let area = app.layout.content;
+            let area = app.layout.content.inner;
             let key = (pane, area.height, area.width);
             if last_pane_area != Some(key) && area.height > 0 && area.width > 0 {
                 last_pane_area = Some(key);
