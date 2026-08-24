@@ -35,11 +35,18 @@ const FALLBACKS: &[&str] = &["nvim", "vim", "hx", "helix", "micro", "nano", "vi"
 /// a full path or a command with flags still resolves.
 pub fn is_gui(editor: &str) -> bool {
     let program = editor.split_whitespace().next().unwrap_or(editor);
-    let stem = Path::new(program)
+    let stem = program_stem(program);
+    GUI_EDITORS.contains(&stem.as_str())
+}
+
+/// Extracts a program name from either Unix or Windows path syntax,
+/// regardless of which platform the daemon itself is running on.
+pub(crate) fn program_stem(program: &str) -> String {
+    let file = program.rsplit(['/', '\\']).next().unwrap_or(program);
+    Path::new(file)
         .file_stem()
         .map(|s| s.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-    GUI_EDITORS.contains(&stem.as_str())
+        .unwrap_or_default()
 }
 
 /// `$VISUAL`, then `$EDITOR`, then whichever terminal editor is actually
@@ -99,10 +106,7 @@ pub fn command(editor: &str, path: &str, line: Option<u32>) -> Vec<String> {
     if argv.is_empty() {
         argv.push("vi".to_string());
     }
-    let program = Path::new(&argv[0])
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
+    let program = program_stem(&argv[0]);
 
     match (line, program.as_str()) {
         (Some(n), "vi" | "vim" | "nvim" | "nano" | "emacs" | "emacsclient" | "gedit" | "kak") => {

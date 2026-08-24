@@ -149,11 +149,10 @@ fn is_managed_entry(value: &Value) -> bool {
 /// lived somewhere else on disk — an older build, a different target dir —
 /// is still recognized as ours and cleaned up.
 fn is_hook_helper(command: &str) -> bool {
-    Path::new(command).file_stem().is_some_and(|s| {
-        // `orion-hook` is the pre-rename name. A block naming it is still
-        // ours, and still fires on every turn until something removes it.
-        s.eq_ignore_ascii_case("argus-hook") || s.eq_ignore_ascii_case("orion-hook")
-    })
+    let stem = crate::editor::program_stem(command);
+    // `orion-hook` is the pre-rename name. A block naming it is still ours,
+    // and still fires on every turn until something removes it.
+    stem == "argus-hook" || stem == "orion-hook"
 }
 
 fn hook_entry(command: &str, pane: PaneId, port: u16, token: &str, event: &str) -> Value {

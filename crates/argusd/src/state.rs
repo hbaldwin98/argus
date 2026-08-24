@@ -466,6 +466,7 @@ impl Daemon {
         if rel_path.is_empty()
             || rel_path.starts_with(['/', '\\'])
             || std::path::Path::new(rel_path).is_absolute()
+            || has_windows_drive_prefix(rel_path)
             || rel_path.split(['/', '\\']).any(|c| c == "..")
         {
             anyhow::bail!("not a path inside the checkout: {rel_path}");
@@ -771,10 +772,10 @@ impl Daemon {
                 }
 
                 for path in &listed {
-                    if project.checkouts.iter().any(|c| &c.path == path) {
+                    if project.checkouts.iter().any(|c| same_path(&c.path, path)) {
                         continue;
                     }
-                    let is_primary = *path == primary_path;
+                    let is_primary = same_path(path, &primary_path);
                     let id = CheckoutId(ids.alloc());
                     let name = worktree_display_name(path, is_primary);
                     project.checkouts.push(Checkout {
@@ -789,7 +790,9 @@ impl Daemon {
                 let mut i = 0;
                 while i < project.checkouts.len() {
                     let gone = !project.checkouts[i].primary
-                        && !listed.contains(&project.checkouts[i].path);
+                        && !listed
+                            .iter()
+                            .any(|path| same_path(path, &project.checkouts[i].path));
                     if gone {
                         orphaned_panes.extend(project.checkouts.remove(i).panes);
                     } else {
@@ -1212,21 +1215,29 @@ fn hook_status_update(current: PaneStatus, incoming: PaneStatus) -> Option<PaneS
 /// Not cryptographically strong — see `Daemon::hook_token`'s doc comment —
 /// just enough entropy that it isn't a fixed, guessable string.
 fn gen_token() -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    let mut hasher = DefaultHasher::new();
-    SystemTime::now()
+    static NEXT_TOKEN: AtomicU64 = AtomicU64::new(0);
+
+    let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
-        .as_nanos()
-        .hash(&mut hasher);
-    std::process::id().hash(&mut hasher);
-    let a = hasher.finish();
-    std::thread::current().id().hash(&mut hasher);
-    let b = hasher.finish();
-    format!("{a:016x}{b:016x}")
+        .as_nanos() as u64;
+    let sequence = NEXT_TOKEN.fetch_add(1, Ordering::Relaxed);
+    format!("{now:016x}{sequence:016x}")
+}
+
+fn has_windows_drive_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+}
+
+fn same_path(a: &std::path::Path, b: &std::path::Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
 }
 
 #[cfg(test)]
