@@ -351,6 +351,29 @@ SessionStart = { reports = "idle", matcher = "startup|resume|clear|fork" }
     }
 
     #[test]
+    fn a_custom_harness_can_report_completion_states() {
+        let cfg = parse(
+            r#"
+[[harness]]
+name = "reviewer"
+
+[harness.events]
+ready = "needs-review"
+complete = "done"
+"#,
+        );
+        let harness: crate::harness::Harness = cfg.harnesses.into_iter().next().unwrap().into();
+        assert!(harness
+            .events
+            .iter()
+            .any(|e| e.reports == crate::harness::Report::NeedsReview));
+        assert!(harness
+            .events
+            .iter()
+            .any(|e| e.reports == crate::harness::Report::Done));
+    }
+
+    #[test]
     fn a_block_that_replaces_a_built_in_replaces_what_it_knew_about_resuming() {
         // Same rule as its plugin: a same-named block is the whole harness,
         // so a user overriding `claude` has to restate `resume` to keep it.

@@ -235,7 +235,8 @@ cmd = ["herdr"]
 harness = "herdr"
 ```
 
-`settings` is relative to the checkout. Event values are `working`, `idle`, `waiting`, or `failed`.
+`settings` is relative to the checkout. Event values are `working`, `idle`, `waiting`,
+`needs-review`, `done`, or `failed`.
 Set `note = true` when the harness sends a useful JSON or text explanation to the hook on stdin.
 Omit `settings` for an environment-only harness. Omit `resume` for a CLI that cannot be asked to
 continue its last conversation; its panes still come back, just empty. A block that reuses a
@@ -365,6 +366,8 @@ Every agent pane receives `ARGUS_HOOK`, `ARGUS_HOOK_URL`, `ARGUS_HOOK_TOKEN`, `A
 ```sh
 "$ARGUS_HOOK" status working
 "$ARGUS_HOOK" status waiting "needs database access"
+"$ARGUS_HOOK" status needs-review "ready for review"
+"$ARGUS_HOOK" status done "reviewed and complete"
 "$ARGUS_HOOK" status failed "tests failed"
 "$ARGUS_HOOK" title "repairing session restore"
 "$ARGUS_HOOK" checkout
@@ -374,7 +377,8 @@ Every agent pane receives `ARGUS_HOOK`, `ARGUS_HOOK_URL`, `ARGUS_HOOK_TOKEN`, `A
 agent's context. Other forms are silent and always exit successfully so a stopped daemon cannot break
 an agent turn. Run `argus-hook checkout` after changing to another checkout in the same project;
 Argus moves the existing pane under that checkout without restarting it. An explicit path may follow
-`checkout`, but reporting the current directory is the normal form.
+`checkout`, but reporting the current directory is the normal form. `needs-review` marks work ready
+to inspect; `done` marks reviewed, completed work. A later `working` report resumes either state.
 
 Claude Code, Codex, OpenCode, and the generic environment-only harness are built in; the Codex one
 exists only to record how that CLI resumes. The Claude harness manages

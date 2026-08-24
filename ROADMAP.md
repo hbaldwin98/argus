@@ -27,7 +27,7 @@ contract is in [`TARGET.md`](TARGET.md).
 ## P3: Agent State and Identity
 
 - Separate template, harness, display title, harness session id, and restart policy.
-- Add `needs-review`, `done`, and explicit `failed` semantics.
+- Add transitions and notifications around explicit agent states.
 - Make hook events pane-specific and subagent-aware.
 - Define fallback state detection for unsupported harnesses.
 - Add accessible glyphs, transition flashes, and optional notifications.

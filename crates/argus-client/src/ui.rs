@@ -1080,6 +1080,8 @@ fn status_word(status: PaneStatus) -> &'static str {
         PaneStatus::Idle => "idle",
         PaneStatus::Working => "working",
         PaneStatus::Waiting => "needs you",
+        PaneStatus::NeedsReview => "needs review",
+        PaneStatus::Done => "done",
         PaneStatus::Failed => "failed",
         PaneStatus::Exited { .. } => "exited",
     }
@@ -1131,18 +1133,18 @@ fn worst_pane_status(c: &argus_protocol::CheckoutInfo) -> Option<PaneStatus> {
     c.listed_panes().map(|p| p.status).max_by_key(rank)
 }
 
-/// Parents show the worst child (DESIGN.md §8b): `Waiting` outranks
-/// everything else since it's blocked specifically on you, then a failed
-/// exit, then the calm day-to-day states, then a clean exit last of all.
+/// Parents show the most urgent child (DESIGN.md §8b). Active work outranks
+/// completed work, while review, failure, and waiting remain actionable.
 fn rank(status: &PaneStatus) -> u8 {
     match status {
         PaneStatus::Exited { code: Some(0) } => 0,
-        PaneStatus::Idle | PaneStatus::Working => 1,
-        PaneStatus::Exited { .. } => 2,
-        // Both want you, and a live pane you can still answer wants you
-        // more than one that already gave up.
-        PaneStatus::Failed => 3,
-        PaneStatus::Waiting => 4,
+        PaneStatus::Idle => 1,
+        PaneStatus::Done => 2,
+        PaneStatus::Working => 3,
+        PaneStatus::Exited { .. } => 4,
+        PaneStatus::NeedsReview => 5,
+        PaneStatus::Failed => 6,
+        PaneStatus::Waiting => 7,
     }
 }
 
@@ -1154,6 +1156,8 @@ fn status_dot(status: Option<PaneStatus>, th: Theme) -> Span<'static> {
         Some(PaneStatus::Idle) => ("● ", th.ok),
         Some(PaneStatus::Working) => ("● ", th.warn),
         Some(PaneStatus::Waiting) => ("● ", th.err),
+        Some(PaneStatus::NeedsReview) => ("◆ ", th.err),
+        Some(PaneStatus::Done) => ("✓ ", th.ok),
         // Still running, unlike an exit — so a dot, not a cross.
         Some(PaneStatus::Failed) => ("● ", th.err),
         Some(PaneStatus::Exited { code: Some(0) }) => ("✓ ", th.dim),
@@ -1364,14 +1368,30 @@ mod tests {
         for s in [PaneStatus::Idle, PaneStatus::Working, PaneStatus::Waiting] {
             assert_eq!(status_dot(Some(s), th).content.trim(), "●", "for {s:?}");
         }
+        assert_eq!(
+            status_dot(Some(PaneStatus::NeedsReview), th).content.trim(),
+            "◆"
+        );
+        assert_eq!(status_dot(Some(PaneStatus::Done), th).content.trim(), "✓");
     }
 
     #[test]
     fn each_live_state_gets_its_own_color() {
         let th = Theme::default();
         assert_eq!(status_dot(Some(PaneStatus::Idle), th).style.fg, Some(th.ok));
-        assert_eq!(status_dot(Some(PaneStatus::Working), th).style.fg, Some(th.warn));
-        assert_eq!(status_dot(Some(PaneStatus::Waiting), th).style.fg, Some(th.err));
+        assert_eq!(
+            status_dot(Some(PaneStatus::Working), th).style.fg,
+            Some(th.warn)
+        );
+        assert_eq!(
+            status_dot(Some(PaneStatus::Waiting), th).style.fg,
+            Some(th.err)
+        );
+        assert_eq!(
+            status_dot(Some(PaneStatus::NeedsReview), th).style.fg,
+            Some(th.err)
+        );
+        assert_eq!(status_dot(Some(PaneStatus::Done), th).style.fg, Some(th.ok));
     }
 
     #[test]
@@ -1439,6 +1459,11 @@ mod tests {
             "needs you"
         );
         assert_eq!(text_of(&pane_detail(&pane(PaneStatus::Failed, None), th)), "failed");
+        assert_eq!(
+            text_of(&pane_detail(&pane(PaneStatus::NeedsReview, None), th)),
+            "needs review"
+        );
+        assert_eq!(text_of(&pane_detail(&pane(PaneStatus::Done, None), th)), "done");
     }
 
     #[test]
@@ -1497,6 +1522,9 @@ mod tests {
         // still answer wants you most.
         assert!(rank(&PaneStatus::Failed) > rank(&PaneStatus::Working));
         assert!(rank(&PaneStatus::Failed) > rank(&PaneStatus::Exited { code: Some(1) }));
+        assert!(
+            rank(&PaneStatus::NeedsReview) > rank(&PaneStatus::Exited { code: Some(1) })
+        );
         assert!(rank(&PaneStatus::Waiting) > rank(&PaneStatus::Failed));
     }
 

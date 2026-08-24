@@ -62,14 +62,16 @@ fn aggregate(tree: &[ProjectInfo]) -> Option<Update> {
     let mut message = None;
     for pane in agents {
         match pane.status {
-            PaneStatus::Waiting | PaneStatus::Failed => {
+            PaneStatus::Waiting | PaneStatus::NeedsReview | PaneStatus::Failed => {
                 state = Some(AgentState::Blocked);
                 message = Some(pane.note.clone().unwrap_or_else(|| pane.title.clone()));
                 break;
             }
             PaneStatus::Working => state = Some(AgentState::Working),
-            PaneStatus::Idle if state.is_none() => state = Some(AgentState::Idle),
-            PaneStatus::Idle | PaneStatus::Exited { .. } => {}
+            PaneStatus::Idle | PaneStatus::Done if state.is_none() => {
+                state = Some(AgentState::Idle)
+            }
+            PaneStatus::Idle | PaneStatus::Done | PaneStatus::Exited { .. } => {}
         }
     }
 
@@ -214,6 +216,27 @@ mod tests {
             Some(Update::Report {
                 state: AgentState::Blocked,
                 message: Some("agent-2".into()),
+            })
+        );
+    }
+
+    #[test]
+    fn review_is_blocked_and_done_is_idle_in_herdr() {
+        let mut review = HerdrSync::default();
+        assert_eq!(
+            review.next_update(&tree(&[PaneStatus::NeedsReview])),
+            Some(Update::Report {
+                state: AgentState::Blocked,
+                message: Some("agent-0".into()),
+            })
+        );
+
+        let mut done = HerdrSync::default();
+        assert_eq!(
+            done.next_update(&tree(&[PaneStatus::Done])),
+            Some(Update::Report {
+                state: AgentState::Idle,
+                message: None,
             })
         );
     }

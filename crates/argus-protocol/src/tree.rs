@@ -20,6 +20,10 @@ pub enum PaneStatus {
     Working,
     /// Stopped, needing a human. [`PaneInfo::note`] says what for.
     Waiting,
+    /// Work is ready for the operator to inspect.
+    NeedsReview,
+    /// Work is finished and has been reviewed.
+    Done,
     /// Still running, but something went wrong and the agent said so.
     /// Distinct from `Exited`: the process is alive, so the row is worth
     /// going to rather than worth closing.
@@ -31,7 +35,10 @@ impl PaneStatus {
     /// Whether this row is stalled on a human. What the eye should land on
     /// first when scanning a column of agents.
     pub fn needs_you(self) -> bool {
-        matches!(self, PaneStatus::Waiting | PaneStatus::Failed)
+        matches!(
+            self,
+            PaneStatus::Waiting | PaneStatus::NeedsReview | PaneStatus::Failed
+        )
     }
 }
 

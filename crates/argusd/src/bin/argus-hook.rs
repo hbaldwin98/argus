@@ -4,13 +4,15 @@
 //! ```text
 //! argus-hook title "fixing the pty deadlock"
 //! argus-hook status waiting "needs the staging database password"
+//! argus-hook status needs-review "ready for review"
+//! argus-hook status done "reviewed and complete"
 //! argus-hook status working
 //! argus-hook checkout                            # reports the current directory
 //! argus-hook say "text"                       # prints, calls nobody
 //! argus-hook <url> <token> [--note-from-stdin]  # the installed hook form
 //! ```
 //!
-//! The first two forms read `ARGUS_HOOK_URL` and `ARGUS_HOOK_TOKEN` from the
+//! The named forms read `ARGUS_HOOK_URL` and `ARGUS_HOOK_TOKEN` from the
 //! environment, which every agent pane is handed. That is what makes status
 //! harness-agnostic: a CLI that can run one command at some point in its
 //! lifecycle needs nothing from Argus but these variables. The explicit form
