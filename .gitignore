@@ -1,1 +1,6 @@
 /target
+# Runtime state Orion writes into a checkout: linked worktrees it created,
+# and per-boot agent status hooks (port + bearer token, meaningless after
+# the daemon that wrote them exits).
+/.orion/
+.claude/settings.local.json

@@ -8,9 +8,14 @@ pub enum PaneKind {
     Agent,
 }
 
+/// See DESIGN.md §8b. `Idle`/`Working`/`Waiting` come from agent hooks where
+/// supported (§11); templates with no hook support just sit at `Idle` until
+/// they `Exited` — coarse, but that's the accepted fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PaneStatus {
-    Running,
+    Idle,
+    Working,
+    Waiting,
     Exited { code: Option<i32> },
 }
 

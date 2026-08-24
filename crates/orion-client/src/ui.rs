@@ -313,18 +313,24 @@ fn worst_pane_status(c: &orion_protocol::CheckoutInfo) -> Option<PaneStatus> {
     c.panes.iter().map(|p| p.status).max_by_key(rank)
 }
 
+/// Parents show the worst child (DESIGN.md §8b): `Waiting` outranks
+/// everything else since it's blocked specifically on you, then a failed
+/// exit, then the calm day-to-day states, then a clean exit last of all.
 fn rank(status: &PaneStatus) -> u8 {
     match status {
-        PaneStatus::Running => 1,
-        PaneStatus::Exited { code } if *code == Some(0) => 0,
+        PaneStatus::Exited { code: Some(0) } => 0,
+        PaneStatus::Idle | PaneStatus::Working => 1,
         PaneStatus::Exited { .. } => 2,
+        PaneStatus::Waiting => 3,
     }
 }
 
 fn status_glyph(status: Option<PaneStatus>) -> &'static str {
     match status {
         None => "·",
-        Some(PaneStatus::Running) => "◐",
+        Some(PaneStatus::Idle) => "·",
+        Some(PaneStatus::Working) => "◐",
+        Some(PaneStatus::Waiting) => "?",
         Some(PaneStatus::Exited { code: Some(0) }) => "✓",
         Some(PaneStatus::Exited { .. }) => "✗",
     }
@@ -332,8 +338,9 @@ fn status_glyph(status: Option<PaneStatus>) -> &'static str {
 
 fn status_style(status: Option<PaneStatus>) -> Style {
     match status {
-        None => Style::default().fg(Color::DarkGray),
-        Some(PaneStatus::Running) => Style::default().fg(Color::Blue),
+        None | Some(PaneStatus::Idle) => Style::default().fg(Color::DarkGray),
+        Some(PaneStatus::Working) => Style::default().fg(Color::Blue),
+        Some(PaneStatus::Waiting) => Style::default().fg(Color::Yellow),
         Some(PaneStatus::Exited { code: Some(0) }) => Style::default().fg(Color::Green),
         Some(PaneStatus::Exited { .. }) => Style::default().fg(Color::Red),
     }

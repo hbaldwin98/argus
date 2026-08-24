@@ -44,6 +44,16 @@ pub struct Daemon {
     inner: StdMutex<Inner>,
     tree_tx: broadcast::Sender<Vec<ProjectInfo>>,
     templates: Vec<AgentConfig>,
+    /// Set once `start_hook_server` binds; 0 until then. Read by
+    /// `spawn_agent` when installing hooks — a spawn racing the bind (only
+    /// possible in the instant between daemon startup and the bind
+    /// completing, since both run synchronously before the socket accepts
+    /// any client) just skips hook installation rather than failing.
+    hook_port: std::sync::atomic::AtomicU16,
+    /// Per-boot bearer token the hook receiver checks. Not cryptographic —
+    /// the server only ever binds to loopback — just enough that a stray
+    /// local process can't spoof pane status.
+    hook_token: String,
 }
 
 type PaneSubscription = (u16, u16, Vec<Vec<Cell>>, broadcast::Receiver<ServerMsg>);
@@ -89,6 +99,8 @@ impl Daemon {
             inner: StdMutex::new(Inner { projects, ids }),
             tree_tx,
             templates,
+            hook_port: std::sync::atomic::AtomicU16::new(0),
+            hook_token: gen_token(),
         })
     }
 
@@ -162,7 +174,7 @@ impl Daemon {
                     id,
                     kind: PaneKind::Shell,
                     title: "shell".to_string(),
-                    status: PaneStatus::Running,
+                    status: PaneStatus::Idle,
                     runtime,
                 });
             }
@@ -194,6 +206,19 @@ impl Daemon {
             PaneId(inner.ids.alloc())
         };
 
+        // Claude Code is the only dialect this understands so far (§11);
+        // other templates stay on process-state status alone. Must land
+        // before the process starts — Claude only reads hooks at its own
+        // startup, not on later file changes.
+        if template.name == "claude" {
+            let port = self.hook_port.load(std::sync::atomic::Ordering::Relaxed);
+            if port != 0 {
+                if let Err(e) = crate::hooks::install_claude_hooks(&path, id, port, &self.hook_token) {
+                    tracing::warn!("failed to install claude hooks in {}: {e}", path.display());
+                }
+            }
+        }
+
         let spec = pty::Spawn::Program {
             program: program.clone(),
             args: rest.to_vec(),
@@ -212,7 +237,7 @@ impl Daemon {
                     id,
                     kind: PaneKind::Agent,
                     title: template.name.clone(),
-                    status: PaneStatus::Running,
+                    status: PaneStatus::Idle,
                     runtime,
                 });
             }
@@ -271,6 +296,50 @@ impl Daemon {
         let (rows, cols, cells) = p.runtime.full_snapshot();
         let rx = p.runtime.subscribe();
         Ok((rows, cols, cells, rx))
+    }
+
+    /// Binds the loopback HTTP status receiver hook commands POST to (see
+    /// `hooks::install_claude_hooks`) and starts serving it in the
+    /// background. The bind itself is synchronous so `hook_port` is set
+    /// before the daemon's client socket starts accepting — no window where
+    /// a client could spawn an agent whose hooks point nowhere.
+    pub fn start_hook_server(self: &Arc<Self>) -> anyhow::Result<()> {
+        let std_listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+        std_listener.set_nonblocking(true)?;
+        let port = std_listener.local_addr()?.port();
+        self.hook_port.store(port, std::sync::atomic::Ordering::Relaxed);
+        let listener = tokio::net::TcpListener::from_std(std_listener)?;
+
+        let daemon = self.clone();
+        tokio::spawn(async move {
+            loop {
+                let Ok((stream, _)) = listener.accept().await else { break };
+                let daemon = daemon.clone();
+                tokio::spawn(async move {
+                    let _ = handle_hook_request(stream, daemon).await;
+                });
+            }
+        });
+        Ok(())
+    }
+
+    /// Applies a hook-reported status, unless the pane has already exited —
+    /// a hook firing after the process died (e.g. `Stop` racing a crash) is
+    /// stale and shouldn't resurrect a dead pane's row.
+    fn set_pane_hook_status(&self, pane: PaneId, status: PaneStatus) {
+        let changed = {
+            let mut inner = self.inner.lock().unwrap();
+            match find_pane(&mut inner.projects, pane) {
+                Some(p) if !matches!(p.status, PaneStatus::Exited { .. }) => {
+                    p.status = status;
+                    true
+                }
+                _ => false,
+            }
+        };
+        if changed {
+            self.broadcast_tree();
+        }
     }
 
     /// Periodically re-broadcasts the tree so checkout rows pick up git
@@ -492,4 +561,92 @@ fn remove_pane(projects: &mut [Project], id: PaneId) -> Option<Pane> {
         }
     }
     None
+}
+
+/// Reads one HTTP/1.1 request (headers only — the hook commands we install
+/// never send a body), checks the bearer token, and applies the status the
+/// path encodes. Hand-rolled rather than pulling in an HTTP server crate:
+/// the request shape is entirely our own (we generate every hook command
+/// that ever calls this), so there's nothing to be robust against beyond
+/// "well-formed or ignored".
+async fn handle_hook_request(stream: tokio::net::TcpStream, daemon: Arc<Daemon>) -> anyhow::Result<()> {
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+
+    let (rd, mut wr) = tokio::io::split(stream);
+    let mut reader = BufReader::new(rd);
+
+    let mut request_line = String::new();
+    reader.read_line(&mut request_line).await?;
+    let path = request_line
+        .strip_prefix("POST ")
+        .and_then(|rest| rest.split(' ').next())
+        .unwrap_or("")
+        .to_string();
+
+    let mut authorized = false;
+    let mut content_length: usize = 0;
+    loop {
+        let mut line = String::new();
+        let n = reader.read_line(&mut line).await?;
+        if n == 0 || line == "\r\n" || line == "\n" {
+            break;
+        }
+        if let Some(v) = line.strip_prefix("Authorization:").or_else(|| line.strip_prefix("authorization:")) {
+            authorized = v.trim().eq_ignore_ascii_case(&format!("Bearer {}", daemon.hook_token));
+        } else if let Some(v) = line
+            .strip_prefix("Content-Length:")
+            .or_else(|| line.strip_prefix("content-length:"))
+        {
+            content_length = v.trim().parse().unwrap_or(0);
+        }
+    }
+    if content_length > 0 {
+        let mut discard = vec![0u8; content_length];
+        let _ = reader.read_exact(&mut discard).await;
+    }
+
+    if authorized {
+        if let Some((pane, status)) = parse_hook_path(&path) {
+            daemon.set_pane_hook_status(pane, status);
+        }
+        wr.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await?;
+    } else {
+        wr.write_all(b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            .await?;
+    }
+    Ok(())
+}
+
+/// `/hook/<pane_id>/<event>` -> which pane, and the status that event
+/// implies. Unrecognized events (anything we didn't ask `hooks.rs` to
+/// install) are ignored rather than erroring.
+fn parse_hook_path(path: &str) -> Option<(PaneId, PaneStatus)> {
+    let mut parts = path.trim_start_matches('/').split('/');
+    if parts.next()? != "hook" {
+        return None;
+    }
+    let pane = PaneId(parts.next()?.parse().ok()?);
+    let status = match parts.next()? {
+        "UserPromptSubmit" => PaneStatus::Working,
+        "Stop" => PaneStatus::Idle,
+        "Notification" => PaneStatus::Waiting,
+        _ => return None,
+    };
+    Some((pane, status))
+}
+
+/// Not cryptographically strong — see `Daemon::hook_token`'s doc comment —
+/// just enough entropy that it isn't a fixed, guessable string.
+fn gen_token() -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let mut hasher = DefaultHasher::new();
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos().hash(&mut hasher);
+    std::process::id().hash(&mut hasher);
+    let a = hasher.finish();
+    std::thread::current().id().hash(&mut hasher);
+    let b = hasher.finish();
+    format!("{a:016x}{b:016x}")
 }
