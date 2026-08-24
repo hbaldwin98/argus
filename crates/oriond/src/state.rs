@@ -104,6 +104,30 @@ impl Daemon {
         })
     }
 
+    /// Clears any managed agent hooks left in a configured checkout by a
+    /// previous daemon. They name that daemon's ephemeral port and per-boot
+    /// token, so every one of them is stale by definition the moment this
+    /// process starts — and a stale block fires on every turn of any agent
+    /// the user later runs in that directory by hand. Best-effort per
+    /// checkout: an unreadable or read-only one must not stop startup.
+    pub fn sweep_stale_hooks(&self) {
+        for path in self.checkout_paths() {
+            if let Err(e) = crate::hooks::uninstall_claude_hooks(&path) {
+                tracing::warn!("failed to clear stale hooks in {}: {e}", path.display());
+            }
+        }
+    }
+
+    fn checkout_paths(&self) -> Vec<PathBuf> {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .projects
+            .iter()
+            .flat_map(|p| p.checkouts.iter())
+            .map(|c| c.path.clone())
+            .collect()
+    }
+
     pub fn template_names(&self) -> Vec<String> {
         self.templates.iter().map(|t| t.name.clone()).collect()
     }
@@ -260,12 +284,25 @@ impl Daemon {
     /// and removes it from the tree entirely, so a closed pane actually
     /// disappears instead of lingering as a dead row the user can't clear.
     pub fn close_pane(&self, pane: PaneId) -> anyhow::Result<()> {
-        let removed = {
+        let (removed, orphaned_checkout) = {
             let mut inner = self.inner.lock().unwrap();
-            remove_pane(&mut inner.projects, pane)
+            let taken = remove_pane_with_checkout(&mut inner.projects, pane);
+            // Managed hooks belong to the checkout, not the pane, so they
+            // come out only once the last agent there is gone — closing one
+            // of two agent panes must not blind the other.
+            let orphaned = taken
+                .as_ref()
+                .map(|(_, path)| path.clone())
+                .filter(|path| !checkout_has_agent(&inner.projects, path));
+            (taken.map(|(p, _)| p), orphaned)
         };
         let removed = removed.ok_or_else(|| anyhow::anyhow!("no such pane"))?;
         let _ = removed.runtime.kill();
+        if let Some(path) = orphaned_checkout {
+            if let Err(e) = crate::hooks::uninstall_claude_hooks(&path) {
+                tracing::warn!("failed to clear hooks in {}: {e}", path.display());
+            }
+        }
         self.broadcast_tree();
         Ok(())
     }
@@ -636,11 +673,25 @@ fn find_pane_ref(projects: &[Project], id: PaneId) -> Option<&Pane> {
         .find(|p| p.id == id)
 }
 
-fn remove_pane(projects: &mut [Project], id: PaneId) -> Option<Pane> {
+/// Whether any agent pane is still open in the checkout at `path`. Gates
+/// tearing down that checkout's managed hooks, which are shared by every
+/// agent running there.
+fn checkout_has_agent(projects: &[Project], path: &std::path::Path) -> bool {
+    projects
+        .iter()
+        .flat_map(|p| p.checkouts.iter())
+        .filter(|c| c.path == path)
+        .any(|c| c.panes.iter().any(|p| p.kind == PaneKind::Agent))
+}
+
+/// Removes a pane from whichever checkout holds it, returning it along with
+/// that checkout's path — which the caller can't look up afterwards, the
+/// pane being gone by then.
+fn remove_pane_with_checkout(projects: &mut [Project], id: PaneId) -> Option<(Pane, PathBuf)> {
     for project in projects.iter_mut() {
         for checkout in project.checkouts.iter_mut() {
             if let Some(pos) = checkout.panes.iter().position(|p| p.id == id) {
-                return Some(checkout.panes.remove(pos));
+                return Some((checkout.panes.remove(pos), checkout.path.clone()));
             }
         }
     }
@@ -946,5 +997,106 @@ mod tests {
     fn gen_token_is_not_a_fixed_string() {
         assert_eq!(gen_token().len(), 32);
         assert_ne!(gen_token(), gen_token());
+    }
+
+    // --- managed hook lifecycle ---------------------------------------------
+
+    /// A daemon whose single checkout is `dir`, with a "claude" template
+    /// that is really just `echo` — enough to exercise the hook-install path
+    /// (which keys off the template *name*) without launching a real agent.
+    fn daemon_with_fake_claude(dir: &std::path::Path) -> Arc<Daemon> {
+        Daemon::new(ConfigFile {
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                repos: vec![dir.to_string_lossy().to_string()],
+            }],
+            agents: vec![AgentConfig {
+                name: "claude".to_string(),
+                cmd: vec!["echo".to_string(), "hi".to_string()],
+                env: Default::default(),
+            }],
+        })
+    }
+
+    fn settings_of(dir: &std::path::Path) -> std::path::PathBuf {
+        dir.join(".claude").join("settings.local.json")
+    }
+
+    fn only_checkout(d: &Daemon) -> CheckoutId {
+        d.snapshot()[0].checkouts[0].id
+    }
+
+    #[test]
+    fn startup_sweeps_hooks_left_by_a_previous_daemon() {
+        // Regression: a daemon's ephemeral port dies with it, so hooks left
+        // in a checkout fire against nobody — and break every later agent
+        // run in that directory, Orion-managed or not.
+        let dir = tempfile::tempdir().unwrap();
+        crate::hooks::install_claude_hooks(dir.path(), PaneId(4), 65140, "old").unwrap();
+        assert!(settings_of(dir.path()).exists());
+
+        let d = daemon_with_fake_claude(dir.path());
+        d.sweep_stale_hooks();
+        assert!(
+            !settings_of(dir.path()).exists(),
+            "a previous boot's hooks must not survive startup"
+        );
+    }
+
+    #[test]
+    fn sweeping_a_checkout_that_never_hosted_an_agent_is_harmless() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_fake_claude(dir.path());
+        d.sweep_stale_hooks();
+        assert!(!dir.path().join(".claude").exists(), "must not create anything");
+    }
+
+    #[tokio::test]
+    async fn closing_the_last_agent_pane_takes_its_hooks_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_fake_claude(dir.path());
+        d.start_hook_server().unwrap();
+
+        let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+        assert!(settings_of(dir.path()).exists(), "spawning installs hooks");
+
+        d.close_pane(pane).unwrap();
+        assert!(
+            !settings_of(dir.path()).exists(),
+            "the last agent leaving takes the hooks with it"
+        );
+    }
+
+    #[tokio::test]
+    async fn closing_one_of_two_agent_panes_leaves_the_hooks_alone() {
+        // Hooks belong to the checkout, not the pane — pulling them while a
+        // second agent is still running there would blind it.
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_fake_claude(dir.path());
+        d.start_hook_server().unwrap();
+        let checkout = only_checkout(&d);
+
+        let first = d.spawn_agent(checkout, "claude").unwrap();
+        let _second = d.spawn_agent(checkout, "claude").unwrap();
+
+        d.close_pane(first).unwrap();
+        assert!(
+            settings_of(dir.path()).exists(),
+            "the surviving agent still needs its status hooks"
+        );
+    }
+
+    #[tokio::test]
+    async fn closing_a_shell_pane_does_not_disturb_an_agents_hooks() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_fake_claude(dir.path());
+        d.start_hook_server().unwrap();
+        let checkout = only_checkout(&d);
+
+        let _agent = d.spawn_agent(checkout, "claude").unwrap();
+        let shell = d.spawn_shell(checkout).unwrap();
+
+        d.close_pane(shell).unwrap();
+        assert!(settings_of(dir.path()).exists());
     }
 }

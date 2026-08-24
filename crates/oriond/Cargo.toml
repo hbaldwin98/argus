@@ -7,6 +7,12 @@ edition.workspace = true
 name = "oriond"
 path = "src/main.rs"
 
+# The command Orion writes into managed agent hooks. Separate binary so a
+# hook never depends on a shell, and never reports failure. See hooks.rs.
+[[bin]]
+name = "orion-hook"
+path = "src/bin/orion-hook.rs"
+
 [dependencies]
 orion-protocol = { workspace = true }
 tokio = { workspace = true }
