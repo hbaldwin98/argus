@@ -443,12 +443,16 @@ file watcher.
 jump-to-editor. Concretely, the shape wanted here:
 
 - Enumerate a checkout's changes as a navigable list of files and hunks, inside the client.
+  *(landed)* `R` on a checkout opens the working tree against HEAD in the rightmost column,
+  untracked files included; `]`/`[` move between files, `v` extends a selection over a range.
+- Attach a comment to a line or a *range* of lines, the way a pull-request review does, and
+  send it straight to the agent working that checkout. *(landed)* `c` in the review composes
+  one; it is typed at the agent's pty as `path:line \`+the line\`: your comment`, so it works
+  with any harness rather than needing one to know about Orion.
 - Open any of them in the user's real editor (`$EDITOR` — vim, nvim, helix, whatever), as a
-  pane rather than a shell-out that blanks the screen (§6).
-- Attach a comment to a line or a *range* of lines, the way a pull-request review does.
-- Send those comments straight to the agent working that checkout, as a message on its stdin —
-  so "this loop is wrong, and here is the line" is a two-key operation rather than a
-  copy-paste of file paths and numbers into a prompt.
+  pane rather than a shell-out that blanks the screen (§6). *(next)*
+- Still open: the three bases (HEAD / merge-base / last-vetted), vetted tracking, and
+  stage/revert from the review itself.
 
 That last point is the payoff and the reason review is the part that has to be good: the
 review surface and the agent are already side by side in the same tree, so feedback should
@@ -482,6 +486,10 @@ runtime instead of by environment variable.
 ## 11. Further directions
 
 Additional directions for the roadmap, beyond what's in §9:
+
+- **Rename to `argus`.** The project, both binaries (`argus` / `argusd`), the crates, the
+  config directory, and the docs. Worth doing in one sweep rather than piecemeal, and worth
+  doing before there is anything on disk to migrate.
 
 - **Workspaces.** *(landed)* A named group of projects sitting above the project level, with
   exactly one open at a time — daemon-global, so every attached client re-scopes together.

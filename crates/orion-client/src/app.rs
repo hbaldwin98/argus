@@ -7,6 +7,7 @@ use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::grid::Grid;
+use crate::review::{Anchor, ReviewView};
 use crate::theme::Theme;
 use crate::keys::{encode_key, is_leader};
 use crate::mouse::encode_mouse;
@@ -17,6 +18,8 @@ pub enum Focus {
     Checkouts,
     Panes,
     PaneContent,
+    /// A mode of the rightmost column, not a fifth column of its own.
+    Review,
 }
 
 /// Screen regions from the most recent render, so mouse clicks can be mapped
@@ -67,6 +70,7 @@ pub enum Prompt {
     NewWorktree { base: CheckoutId, input: String },
     ConfirmRemoveCheckout { checkout: CheckoutId, label: String },
     AddProject { input: String },
+    Comment { anchor: Anchor, input: String },
 }
 
 pub struct App {
@@ -90,6 +94,10 @@ pub struct App {
     pub status: String,
     pub layout: Layout,
     pub picker: Option<Picker>,
+    pub review: Option<ReviewView>,
+    /// What the outstanding request was for; a diff for anything else is
+    /// stale and dropped.
+    review_wanted: Option<CheckoutId>,
     pub prompt: Option<Prompt>,
     /// Active color theme. Every color the UI draws comes from here, so a
     /// preset swap is one assignment rather than a sweep of call sites.
@@ -119,6 +127,8 @@ impl App {
                 .to_string(),
             layout: Layout::default(),
             picker: None,
+            review: None,
+            review_wanted: None,
             prompt: None,
             theme: Theme::from_env(),
             pending_focus_new: false,
@@ -241,6 +251,23 @@ impl App {
                     self.status = format!("pane exited ({code:?})");
                 }
             }
+            ServerMsg::Review(review) => {
+                if self.review_wanted != Some(review.checkout) {
+                    return;
+                }
+                self.review_wanted = None;
+                let files = review.files.len();
+                let view = ReviewView::new(review);
+                if view.is_empty() {
+                    self.review = None;
+                    self.status = "no uncommitted changes".to_string();
+                } else {
+                    self.review = Some(view);
+                    self.focus = Focus::Review;
+                    self.status =
+                        format!("{files} changed  j/k move  ]/[ file  v range  esc close");
+                }
+            }
             ServerMsg::Error { message } => {
                 self.status = format!("error: {message}");
             }
@@ -252,6 +279,8 @@ impl App {
             self.on_key_prompt(key);
         } else if self.picker.is_some() {
             self.on_key_picker(key);
+        } else if self.focus == Focus::Review {
+            self.on_key_review(key);
         } else if self.focus == Focus::PaneContent {
             self.on_key_pane_content(key);
         } else {
@@ -285,6 +314,22 @@ impl App {
                     self.prompt = None;
                 }
                 KeyCode::Esc | KeyCode::Char('n') => self.prompt = None,
+                _ => {}
+            },
+            Prompt::Comment { anchor, input } => match key.code {
+                KeyCode::Enter => {
+                    let message = anchor.message(input);
+                    let empty = input.trim().is_empty();
+                    self.prompt = None;
+                    if !empty {
+                        self.send_to_agent(message);
+                    }
+                }
+                KeyCode::Esc => self.prompt = None,
+                KeyCode::Backspace => {
+                    input.pop();
+                }
+                KeyCode::Char(c) => input.push(c),
                 _ => {}
             },
             Prompt::AddProject { input } => match key.code {
@@ -359,7 +404,91 @@ impl App {
             KeyCode::Char('n') => self.new_prompt(),
             KeyCode::Char('D') => self.remove_checkout_prompt(),
             KeyCode::Char('w') => self.open_workspace_picker(),
+            KeyCode::Char('R') => self.open_review(),
             KeyCode::Char('x') => self.kill_selected(),
+            _ => {}
+        }
+    }
+
+    /// Works from any column that still implies a checkout.
+    fn open_review(&mut self) {
+        let Some(id) = self.current_checkout().map(|c| c.id) else {
+            self.status = "nothing to review".to_string();
+            return;
+        };
+        self.review_wanted = Some(id);
+        self.status = "loading diff…".to_string();
+        let _ = self.out.send(ClientMsg::Review { checkout: id });
+    }
+
+    /// Typed at the agent as if by hand, so it works with any harness
+    /// rather than needing one to know about Orion.
+    fn send_to_agent(&mut self, message: String) {
+        let Some(pane) = self.agent_in_current_checkout() else {
+            self.status = "no agent running in this checkout".to_string();
+            return;
+        };
+        let mut bytes = message.into_bytes();
+        // What a terminal actually sends for Enter.
+        bytes.push(b'\r');
+        let _ = self.out.send(ClientMsg::Input { pane, bytes });
+        self.status = "comment sent".to_string();
+    }
+
+    /// Shells are skipped — a comment at a shell prompt is a failed command.
+    fn agent_in_current_checkout(&self) -> Option<PaneId> {
+        let checkout = self.review.as_ref().map(|v| v.review.checkout)?;
+        self.tree
+            .iter()
+            .flat_map(|p| p.checkouts.iter())
+            .find(|c| c.id == checkout)?
+            .panes
+            .iter()
+            .find(|p| p.kind == orion_protocol::PaneKind::Agent)
+            .map(|p| p.id)
+    }
+
+    fn close_review(&mut self) {
+        self.review = None;
+        self.review_wanted = None;
+        self.focus = Focus::Checkouts;
+    }
+
+    fn on_key_review(&mut self, key: KeyEvent) {
+        // Taken first so they don't sit inside the view borrow.
+        match key.code {
+            KeyCode::Char('R') | KeyCode::Char('r') => return self.open_review(),
+            KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc | KeyCode::Char('q') => {
+                return self.close_review()
+            }
+            _ => {}
+        }
+        let Some(v) = &mut self.review else {
+            // Focus without a view would trap every keystroke; the only
+            // honest thing is to leave.
+            self.focus = Focus::Checkouts;
+            return;
+        };
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => v.move_by(1),
+            KeyCode::Char('k') | KeyCode::Up => v.move_by(-1),
+            KeyCode::Char('d') | KeyCode::PageDown => v.move_by(10),
+            KeyCode::Char('u') | KeyCode::PageUp => v.move_by(-10),
+            KeyCode::Char(']') => v.jump_file(true),
+            KeyCode::Char('[') => v.jump_file(false),
+            KeyCode::Char('g') | KeyCode::Home => v.top_of_diff(),
+            KeyCode::Char('G') | KeyCode::End => v.bottom_of_diff(),
+            KeyCode::Char('V') | KeyCode::Char('v') => v.toggle_mark(),
+            KeyCode::Char('c') => {
+                let anchor = v.anchor();
+                if let Some(anchor) = anchor {
+                    self.prompt = Some(Prompt::Comment {
+                        anchor,
+                        input: String::new(),
+                    });
+                }
+            }
+            // The tree has likely moved on under an agent still editing it.
             _ => {}
         }
     }
@@ -498,7 +627,7 @@ impl App {
             Focus::Projects => &mut self.sel_project,
             Focus::Checkouts => &mut self.sel_checkout,
             Focus::Panes => &mut self.sel_pane,
-            Focus::PaneContent => return,
+            Focus::PaneContent | Focus::Review => return,
         };
         let new = *sel as i32 + delta;
         if new >= 0 {
@@ -526,7 +655,7 @@ impl App {
                     self.focus = Focus::PaneContent;
                 }
             }
-            Focus::PaneContent => {}
+            Focus::PaneContent | Focus::Review => {}
         }
     }
 
@@ -541,6 +670,7 @@ impl App {
             Focus::Panes => self.focus = Focus::Checkouts,
             Focus::Checkouts => self.focus = Focus::Projects,
             Focus::Projects => {}
+            Focus::Review => self.focus = Focus::Checkouts,
         }
     }
 
@@ -1562,4 +1692,300 @@ mod tests {
         h.key(KeyCode::Enter);
         assert!(matches!(h.sent()[0], ClientMsg::SpawnAgent { .. }));
     }
+    // --- review -------------------------------------------------------------
+
+    fn diff_of(checkout: CheckoutId) -> orion_protocol::Review {
+        orion_protocol::Review {
+            checkout,
+            files: vec![orion_protocol::FileDiff {
+                path: "src/a.rs".to_string(),
+                old_path: None,
+                kind: orion_protocol::ChangeKind::Modified,
+                hunks: vec![orion_protocol::Hunk {
+                    header: "@@ -1,2 +1,2 @@".to_string(),
+                    lines: vec![
+                        orion_protocol::DiffLine {
+                            kind: orion_protocol::LineKind::Context,
+                            old_lineno: Some(1),
+                            new_lineno: Some(1),
+                            text: "keep".to_string(),
+                        },
+                        orion_protocol::DiffLine {
+                            kind: orion_protocol::LineKind::Added,
+                            old_lineno: None,
+                            new_lineno: Some(2),
+                            text: "new".to_string(),
+                        },
+                    ],
+                }],
+                note: None,
+            }],
+        }
+    }
+
+    /// Presses `R` on the first checkout and answers with `review`.
+    fn open_review(h: &mut Harness, review: orion_protocol::Review) {
+        h.key(KeyCode::Char('l'));
+        h.key(KeyCode::Char('R'));
+        h.sent();
+        h.app.on_server_msg(ServerMsg::Review(review));
+    }
+
+    #[test]
+    fn r_asks_the_daemon_for_the_selected_checkouts_diff() {
+        let mut h = Harness::new();
+        h.key(KeyCode::Char('l')); // into the checkouts column
+        let checkout = h.app.current_checkout().unwrap().id;
+        h.key(KeyCode::Char('R'));
+
+        match &h.sent()[0] {
+            ClientMsg::Review { checkout: c } => assert_eq!(*c, checkout),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_arriving_diff_opens_the_viewer_and_takes_focus() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(&mut h, diff_of(checkout));
+
+        assert!(h.app.review.is_some());
+        assert_eq!(h.app.focus, Focus::Review);
+    }
+
+    #[test]
+    fn a_diff_for_a_checkout_the_user_left_is_dropped() {
+        // It was computed on a blocking thread; by the time it lands the
+        // user may be looking at something else entirely.
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        h.key(KeyCode::Char('l'));
+        h.key(KeyCode::Char('R'));
+        h.sent();
+
+        h.app.on_server_msg(ServerMsg::Review(diff_of(CheckoutId(9999))));
+        assert!(h.app.review.is_none(), "not for the checkout we asked about");
+
+        h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
+        assert!(h.app.review.is_some());
+    }
+
+    #[test]
+    fn an_unsolicited_diff_never_hijacks_the_screen() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
+        assert!(h.app.review.is_none());
+        assert_eq!(h.app.focus, Focus::Projects);
+    }
+
+    #[test]
+    fn a_clean_checkout_says_so_instead_of_opening_an_empty_viewer() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(
+            &mut h,
+            orion_protocol::Review { checkout, files: Vec::new() },
+        );
+        assert!(h.app.review.is_none());
+        assert_ne!(h.app.focus, Focus::Review);
+        assert!(h.app.status.contains("no uncommitted changes"), "{}", h.app.status);
+    }
+
+    #[test]
+    fn esc_closes_the_review_and_lands_back_on_the_checkout() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(&mut h, diff_of(checkout));
+        h.key(KeyCode::Esc);
+
+        assert!(h.app.review.is_none());
+        assert_eq!(h.app.focus, Focus::Checkouts);
+    }
+
+    #[test]
+    fn navigation_keys_move_within_the_diff_not_the_tree() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(&mut h, diff_of(checkout));
+        let before = (h.app.sel_project, h.app.sel_checkout, h.app.sel_pane);
+
+        h.key(KeyCode::Char('j'));
+
+        assert_eq!(
+            (h.app.sel_project, h.app.sel_checkout, h.app.sel_pane),
+            before,
+            "j belongs to the diff while it's up"
+        );
+        let v = h.app.review.as_ref().unwrap();
+        assert_eq!(v.anchor().unwrap().text, vec!["+new"]);
+    }
+
+    #[test]
+    fn r_inside_the_review_re_requests_rather_than_reusing_a_stale_diff() {
+        // An agent is very likely still editing the tree underneath it.
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(&mut h, diff_of(checkout));
+
+        h.key(KeyCode::Char('r'));
+        assert!(matches!(h.sent()[0], ClientMsg::Review { .. }));
+    }
+
+    #[test]
+    fn v_then_j_selects_a_range_of_lines() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(&mut h, diff_of(checkout));
+
+        h.key(KeyCode::Char('v'));
+        h.key(KeyCode::Char('j'));
+
+        let a = h.app.review.as_ref().unwrap().anchor().unwrap();
+        assert_eq!(a.path, "src/a.rs");
+        assert_eq!(a.text, vec![" keep", "+new"]);
+    }
+
+    #[test]
+    fn typing_in_the_review_never_reaches_a_pane() {
+        // The review shares its column with the live pane; a keystroke
+        // leaking into the child would be silent and destructive.
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(&mut h, diff_of(checkout));
+
+        h.keys("jkgG");
+        assert!(
+            !h.sent().iter().any(|m| matches!(m, ClientMsg::Input { .. })),
+            "no input should be forwarded"
+        );
+    }
+
+    /// A tree whose first checkout has an agent pane running in it.
+    fn tree_with_agent() -> Vec<ProjectInfo> {
+        let mut t = tree();
+        t[0].checkouts[0].panes = vec![
+            PaneInfo {
+                id: PaneId(50),
+                kind: PaneKind::Shell,
+                title: "sh".to_string(),
+                status: PaneStatus::Idle,
+            },
+            PaneInfo {
+                id: PaneId(51),
+                kind: PaneKind::Agent,
+                title: "claude".to_string(),
+                status: PaneStatus::Idle,
+            },
+        ];
+        t
+    }
+
+    fn review_with_agent() -> Harness {
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Tree(tree_with_agent()));
+        h.sent();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(&mut h, diff_of(checkout));
+        h
+    }
+
+    #[test]
+    fn c_opens_a_comment_prompt_anchored_to_the_cursor() {
+        let mut h = review_with_agent();
+        h.key(KeyCode::Char('c'));
+        match &h.app.prompt {
+            Some(Prompt::Comment { anchor, .. }) => assert_eq!(anchor.path, "src/a.rs"),
+            _ => panic!("no comment prompt"),
+        }
+    }
+
+    #[test]
+    fn a_comment_is_typed_at_the_agent_and_submitted() {
+        let mut h = review_with_agent();
+        h.key(KeyCode::Char('j'));
+        h.key(KeyCode::Char('c'));
+        h.keys("fix this");
+        h.key(KeyCode::Enter);
+
+        match &h.sent()[0] {
+            ClientMsg::Input { pane, bytes } => {
+                assert_eq!(*pane, PaneId(51), "the agent, not the shell");
+                assert_eq!(
+                    String::from_utf8_lossy(bytes),
+                    "src/a.rs:2 `+new`: fix this\r"
+                );
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(h.app.prompt.is_none());
+    }
+
+    #[test]
+    fn a_comment_with_no_agent_to_read_it_says_so_and_sends_nothing() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(&mut h, diff_of(checkout));
+        h.key(KeyCode::Char('c'));
+        h.keys("hello");
+        h.key(KeyCode::Enter);
+
+        assert!(h.sent().is_empty());
+        assert!(h.app.status.contains("no agent"), "{}", h.app.status);
+    }
+
+    #[test]
+    fn an_empty_comment_sends_nothing() {
+        let mut h = review_with_agent();
+        h.key(KeyCode::Char('c'));
+        h.key(KeyCode::Enter);
+        assert!(h.sent().is_empty());
+        assert!(h.app.prompt.is_none());
+    }
+
+    #[test]
+    fn escaping_the_comment_prompt_sends_nothing_and_leaves_the_review_up() {
+        let mut h = review_with_agent();
+        h.key(KeyCode::Char('c'));
+        h.keys("never mind");
+        h.key(KeyCode::Esc);
+
+        assert!(h.sent().is_empty());
+        assert!(h.app.prompt.is_none());
+        assert!(h.app.review.is_some());
+        assert_eq!(h.app.focus, Focus::Review);
+    }
+
+    #[test]
+    fn a_comment_on_a_range_is_sent_as_one_message() {
+        let mut h = review_with_agent();
+        h.key(KeyCode::Char('v'));
+        h.key(KeyCode::Char('j'));
+        h.key(KeyCode::Char('c'));
+        h.keys("both lines");
+        h.key(KeyCode::Enter);
+
+        let sent = h.sent();
+        assert_eq!(sent.len(), 1);
+        match &sent[0] {
+            ClientMsg::Input { bytes, .. } => assert_eq!(
+                String::from_utf8_lossy(bytes),
+                "src/a.rs:1-2 (2 lines): both lines\r"
+            ),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn review_keys_do_not_leak_into_the_comment_being_typed() {
+        let mut h = review_with_agent();
+        h.key(KeyCode::Char('c'));
+        h.keys("jkgG");
+        match &h.app.prompt {
+            Some(Prompt::Comment { input, .. }) => assert_eq!(input, "jkgG"),
+            _ => panic!("no comment prompt"),
+        }
+    }
+
 }

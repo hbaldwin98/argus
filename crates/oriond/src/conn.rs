@@ -111,6 +111,16 @@ fn handle_client_msg(
             Ok(())
         }
         ClientMsg::OpenWorkspace { workspace } => daemon.open_workspace(workspace),
+        // Filesystem work, so off the message loop like the two above.
+        ClientMsg::Review { checkout } => daemon.checkout_path(checkout).map(|path| {
+            let out_tx = out_tx.clone();
+            tokio::task::spawn_blocking(move || {
+                let _ = out_tx.send(ServerMsg::Review(orion_protocol::Review {
+                    checkout,
+                    files: crate::diff::working_tree(&path),
+                }));
+            });
+        }),
     };
     if let Err(e) = result {
         let _ = out_tx.send(ServerMsg::Error {

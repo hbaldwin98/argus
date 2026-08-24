@@ -690,6 +690,14 @@ impl Daemon {
     /// leaves the tree regardless), and refuses outright on the primary
     /// checkout, which is the repo the user already had, not Orion's to
     /// delete (DESIGN.md §4 Level 2).
+    /// Errors rather than `None`, so a stale id reaches the user as text.
+    pub fn checkout_path(&self, checkout: CheckoutId) -> anyhow::Result<PathBuf> {
+        let inner = self.inner.lock().unwrap();
+        find_checkout_ref(&inner.projects, checkout)
+            .map(|c| c.path.clone())
+            .ok_or_else(|| anyhow::anyhow!("no such checkout"))
+    }
+
     pub async fn remove_checkout(&self, checkout: CheckoutId) -> anyhow::Result<()> {
         let (path, primary, primary_path, pane_ids) = {
             let inner = self.inner.lock().unwrap();

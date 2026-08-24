@@ -15,7 +15,7 @@
 //! - **State** is a single `●` dot in the row's status color (§8b), rolled
 //!   up to parents by the worst child.
 
-use orion_protocol::{Color as PColor, GitStatus, PaneStatus};
+use orion_protocol::{Color as PColor, GitStatus, LineKind, PaneStatus};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -25,6 +25,7 @@ use ratatui::Frame;
 
 use crate::app::{App, Focus, Prompt};
 use crate::grid::Grid;
+use crate::review::{Row, ReviewView};
 use crate::theme::Theme;
 
 /// The selection marker, and the blank gutter every other row gets so text
@@ -299,6 +300,10 @@ fn row_rect(inner: Rect, i: usize) -> Option<Rect> {
 /// alongside the other three rather than taking over the screen. Which pane
 /// that is follows the panes column's selection.
 fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    if app.review.is_some() {
+        render_review(f, app, area, th);
+        return;
+    }
     // Typing focus is what the accent border promises here, so only
     // PaneContent lights it up — merely selecting a pane does not.
     let focused = app.focus == Focus::PaneContent;
@@ -322,6 +327,90 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         f.render_widget(TermView { grid: &app.grid }, inner);
     }
     app.layout.content = inner;
+}
+
+/// Drawn in the column the live pane uses, so the nav columns stay put
+/// (DESIGN.md §9 M4).
+fn render_review(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    let focused = app.focus == Focus::Review;
+    let title = match app.review.as_ref() {
+        Some(v) => format!("review › {} changed", v.review.files.len()),
+        None => "review".to_string(),
+    };
+    let block = panel_block(&title, focused, th);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    app.layout.content = inner;
+
+    let Some(view) = app.review.as_mut() else { return };
+    view.scroll_into_view(inner.height as usize);
+    let (from, to) = view.selection();
+
+    let lines: Vec<Line> = view
+        .rows
+        .iter()
+        .enumerate()
+        .skip(view.top)
+        .take(inner.height as usize)
+        .map(|(i, row)| review_line(view, *row, i >= from && i <= to, th))
+        .collect();
+
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// Four digits covers nearly every file; the code matters more than the rest.
+const LINENO_WIDTH: usize = 4;
+
+fn review_line<'a>(view: &'a ReviewView, row: Row, selected: bool, th: Theme) -> Line<'a> {
+    let file = &view.review.files[row.file()];
+    let pad = " ".repeat(LINENO_WIDTH + 1);
+
+    let spans = match row {
+        Row::File { .. } => {
+            let mut v = vec![
+                Span::styled(format!(" {} ", file.kind.marker()), Style::default().fg(th.on_accent).bg(th.accent)),
+                Span::styled(format!(" {}", file.path), Style::default().fg(th.text).add_modifier(Modifier::BOLD)),
+            ];
+            if file.added_lines() + file.removed_lines() > 0 {
+                v.push(Span::styled(format!("  +{}", file.added_lines()), Style::default().fg(th.ok)));
+                v.push(Span::styled(format!(" -{}", file.removed_lines()), Style::default().fg(th.err)));
+            }
+            v
+        }
+        Row::Hunk { hunk, .. } => vec![Span::styled(
+            format!("{pad}{}", file.hunks[hunk].header),
+            Style::default().fg(th.muted),
+        )],
+        Row::Note { .. } => vec![Span::styled(
+            format!("{pad}{}", file.note.as_deref().unwrap_or("")),
+            Style::default().fg(th.dim).add_modifier(Modifier::ITALIC),
+        )],
+        Row::Line { hunk, line, .. } => {
+            let l = &file.hunks[hunk].lines[line];
+            // The old side's number only where there is no new one.
+            let no = match l.new_lineno.or(l.old_lineno) {
+                Some(n) => format!("{n:>LINENO_WIDTH$}"),
+                None => " ".repeat(LINENO_WIDTH),
+            };
+            let fg = match l.kind {
+                LineKind::Added => th.ok,
+                LineKind::Removed => th.err,
+                LineKind::Context => th.text,
+            };
+            vec![
+                Span::styled(format!("{no} "), Style::default().fg(th.dim)),
+                Span::styled(format!("{}{}", crate::review::marker(l.kind), l.text), Style::default().fg(fg)),
+            ]
+        }
+    };
+
+    // A wash rather than a marker column: the left edge is already spent,
+    // and a range should read as one block.
+    let mut line = Line::from(spans);
+    if selected && row.is_line() {
+        line = line.style(Style::default().bg(th.sel_bg));
+    }
+    line
 }
 
 /// `project / checkout / pane` for the live view's title, which doubles as
@@ -445,6 +534,19 @@ fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             "add project",
             field(input, th),
             "enter add   esc cancel",
+            false,
+        ),
+        Prompt::Comment { anchor, input } => (
+            "comment to the agent",
+            Line::from(vec![
+                Span::styled(
+                    anchor.message(""),
+                    Style::default().fg(th.muted),
+                ),
+                Span::raw("  "),
+                field(input, th).spans.remove(0),
+            ]),
+            "enter send   esc cancel",
             false,
         ),
         Prompt::ConfirmRemoveCheckout { label, .. } => (
@@ -1114,4 +1216,124 @@ mod tests {
         assert!(text.contains("no projects"), "a first run should say the tree is empty");
         assert!(text.contains("add"), "and how to start:\n{text}");
     }
+    // --- review viewer ------------------------------------------------------
+
+    fn app_with_review() -> App {
+        let mut app = app_with_tree();
+        app.review = Some(crate::review::ReviewView::new(orion_protocol::Review {
+            checkout: CheckoutId(1),
+            files: vec![orion_protocol::FileDiff {
+                path: "src/thing.rs".to_string(),
+                old_path: None,
+                kind: orion_protocol::ChangeKind::Modified,
+                hunks: vec![orion_protocol::Hunk {
+                    header: "@@ -10,3 +10,3 @@ fn f()".to_string(),
+                    lines: vec![
+                        orion_protocol::DiffLine {
+                            kind: orion_protocol::LineKind::Context,
+                            old_lineno: Some(10),
+                            new_lineno: Some(10),
+                            text: "unchanged".to_string(),
+                        },
+                        orion_protocol::DiffLine {
+                            kind: orion_protocol::LineKind::Removed,
+                            old_lineno: Some(11),
+                            new_lineno: None,
+                            text: "gone".to_string(),
+                        },
+                        orion_protocol::DiffLine {
+                            kind: orion_protocol::LineKind::Added,
+                            old_lineno: None,
+                            new_lineno: Some(11),
+                            text: "arrived".to_string(),
+                        },
+                    ],
+                }],
+                note: None,
+            }],
+        }));
+        app.focus = Focus::Review;
+        app
+    }
+
+    #[test]
+    fn the_review_never_hides_the_nav_columns() {
+        // The standing rule for every view Orion has: one thing opening
+        // must not take the others off screen.
+        let mut app = app_with_review();
+        let out = lines(&draw(&mut app)).join("\n");
+        assert!(out.contains("orion"), "the project is still listed:\n{out}");
+        assert!(out.contains("src/thing.rs"), "and the diff is up too:\n{out}");
+    }
+
+    #[test]
+    fn a_file_header_shows_its_marker_path_and_line_counts() {
+        let mut app = app_with_review();
+        let out = lines(&draw(&mut app)).join("\n");
+        assert!(out.contains("src/thing.rs"), "{out}");
+        assert!(out.contains("+1"), "one line added:\n{out}");
+        assert!(out.contains("-1"), "one line removed:\n{out}");
+    }
+
+    #[test]
+    fn diff_lines_keep_gits_markers_and_line_numbers() {
+        let mut app = app_with_review();
+        let out = lines(&draw(&mut app)).join("\n");
+        assert!(out.contains("+arrived"), "{out}");
+        assert!(out.contains("-gone"), "{out}");
+        assert!(out.contains("@@ -10,3 +10,3 @@"), "the hunk header too:\n{out}");
+    }
+
+    #[test]
+    fn added_and_removed_lines_are_told_apart_by_color() {
+        // The markers alone are one character wide; color is what makes a
+        // diff scannable.
+        let mut app = app_with_review();
+        let buf = draw(&mut app);
+        let th = app.theme;
+        assert_eq!(fg_of(&buf, "+arrived"), Some(th.ok));
+        assert_eq!(fg_of(&buf, "-gone"), Some(th.err));
+    }
+
+    #[test]
+    fn the_selected_line_is_washed_so_a_range_reads_as_one_block() {
+        let mut app = app_with_review();
+        app.review.as_mut().unwrap().toggle_mark();
+        app.review.as_mut().unwrap().move_by(1);
+        let buf = draw(&mut app);
+        assert_eq!(bg_of(&buf, "unchanged"), Some(app.theme.sel_bg));
+        assert_eq!(bg_of(&buf, "-gone"), Some(app.theme.sel_bg), "the whole range");
+        assert_ne!(bg_of(&buf, "+arrived"), Some(app.theme.sel_bg), "but no further");
+    }
+
+    #[test]
+    fn a_diff_taller_than_the_column_scrolls_to_keep_the_cursor_visible() {
+        let mut app = app_with_review();
+        app.review.as_mut().unwrap().bottom_of_diff();
+        let out = lines(&draw_at(&mut app, 100, 10)).join("\n");
+        assert!(out.contains("+arrived"), "the cursor's line is on screen:\n{out}");
+    }
+
+    fn fg_of(buf: &ratatui::buffer::Buffer, needle: &str) -> Option<Color> {
+        cell_at(buf, needle).map(|c| c.fg)
+    }
+
+    fn bg_of(buf: &ratatui::buffer::Buffer, needle: &str) -> Option<Color> {
+        cell_at(buf, needle).map(|c| c.bg)
+    }
+
+    fn cell_at<'a>(buf: &'a ratatui::buffer::Buffer, needle: &str) -> Option<&'a ratatui::buffer::Cell> {
+        // Cell-wise: multi-byte glyphs make byte offsets lie.
+        let needle: Vec<&str> = needle.split("").filter(|s| !s.is_empty()).collect();
+        for y in 0..buf.area.height {
+            let row: Vec<&str> = (0..buf.area.width)
+                .map(|x| buf.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "))
+                .collect();
+            if let Some(x) = row.windows(needle.len()).position(|w| w == needle) {
+                return buf.cell((x as u16, y));
+            }
+        }
+        None
+    }
+
 }

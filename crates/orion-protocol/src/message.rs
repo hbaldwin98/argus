@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cell::{Cell, CellSpan};
 use crate::ids::{CheckoutId, PaneId, WorkspaceId};
+use crate::review::Review;
 use crate::tree::{ProjectInfo, WorkspaceInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +31,10 @@ pub enum ClientMsg {
     /// Switch which workspace is open. Daemon-global: every connected
     /// client's tree re-scopes to it.
     OpenWorkspace { workspace: WorkspaceId },
+    /// Ask for this checkout's uncommitted changes, for the review viewer
+    /// (DESIGN.md §9 M4). A request rather than a subscription: a diff is
+    /// expensive to compute and only interesting while it's on screen.
+    Review { checkout: CheckoutId },
     /// Add a new project rooted at an arbitrary directory — not limited to
     /// whatever's already in `projects.toml` or under the daemon's cwd.
     /// Persisted to config so it survives a daemon restart.
@@ -54,6 +59,8 @@ pub enum ServerMsg {
     },
     /// Incremental changed spans since the last snapshot/damage for a pane.
     Damage { pane: PaneId, spans: Vec<CellSpan> },
+    /// The answer to `ClientMsg::Review`.
+    Review(Review),
     /// A pane's process exited.
     PaneClosed { pane: PaneId, code: Option<i32> },
     Error { message: String },

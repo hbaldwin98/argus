@@ -1,4 +1,5 @@
 mod command;
+mod diff;
 mod config;
 mod conn;
 mod git;
