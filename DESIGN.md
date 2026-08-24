@@ -445,9 +445,11 @@ jump-to-editor.
 **M5 — notes & context server.** Markdown notes, todo rollups, forwarding, then the read side of
 the context server, then the write side behind policy.
 
-**M6 — polish.** Sandboxing, scrollback spill, config reload, session restore across reboots,
-and a real UI theme pass — the working layout is deliberately plain so far and needs an actual
-palette, not just terminal defaults.
+**M6 — polish.** Sandboxing, scrollback spill, config reload, and session restore across
+reboots. The UI theme pass is done: `theme.rs` keys every color to a semantic role (accent,
+text, muted/dim, ok/warn/err, edge, the two selection fills, the focus wash) with presets
+selectable via `ORION_THEME`. What is left here is a settings overlay to switch them at
+runtime instead of by environment variable.
 
 ---
 
