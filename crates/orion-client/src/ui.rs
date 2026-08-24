@@ -441,11 +441,13 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         ("type to edit   enter confirm   esc cancel", th.dim)
     } else if app.leader_pending {
         ("leader…   esc back to panes   x close pane", th.accent)
+    } else if app.focus == Focus::Review {
+        ("j/k move   ]/[ file   v range   c comment   r refresh   esc close", th.dim)
     } else if app.focus == Focus::PaneContent {
         ("typing — ctrl-space then esc to leave, x to close", th.dim)
     } else {
         (
-            "j/k move   l/h in/out   s shell   a agent   n new   w workspace   D rm   x close   q detach",
+            "j/k move  l/h in/out  s shell  a agent  n new  R review  w wksp  D rm  x close  q detach",
             th.dim,
         )
     };
@@ -1334,6 +1336,21 @@ mod tests {
             }
         }
         None
+    }
+
+    #[test]
+    fn the_status_bar_offers_the_reviews_own_keys_while_it_is_up() {
+        let mut app = app_with_review();
+        let out = lines(&draw(&mut app)).join("\n");
+        assert!(out.contains("c comment"), "{out}");
+        assert!(!out.contains("s shell"), "not the tree keymap:\n{out}");
+    }
+
+    #[test]
+    fn the_tree_keymap_advertises_review() {
+        let mut app = app_with_tree();
+        let out = lines(&draw(&mut app)).join("\n");
+        assert!(out.contains("R review"), "{out}");
     }
 
 }
