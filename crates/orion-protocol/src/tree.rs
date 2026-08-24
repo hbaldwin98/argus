@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{CheckoutId, PaneId, ProjectId};
+use crate::ids::{CheckoutId, PaneId, ProjectId, WorkspaceId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PaneKind {
@@ -60,4 +60,26 @@ pub struct ProjectInfo {
     pub id: ProjectId,
     pub name: String,
     pub checkouts: Vec<CheckoutInfo>,
+}
+
+/// A named group of projects. Exactly one workspace is *open* at a time —
+/// daemon-global state, broadcast to every client — and the project tree a
+/// client sees is scoped to it. Other workspaces' panes keep running in the
+/// background; they are simply not shown.
+///
+/// Deliberately not a fourth navigation column: the left-to-right spine is
+/// project → checkout → pane (DESIGN.md §4), and workspaces sit *above*
+/// that as a scope switch rather than another step along it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceInfo {
+    pub id: WorkspaceId,
+    pub name: String,
+    /// How many projects this workspace holds, so the picker can show it
+    /// without the client having to hold every workspace's tree.
+    pub projects: usize,
+    /// Live panes across the whole workspace, open or not — the reason to
+    /// show this at all is spotting an agent still working somewhere you
+    /// are not currently looking.
+    pub panes: usize,
+    pub open: bool,
 }

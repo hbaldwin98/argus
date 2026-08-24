@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use orion_protocol::{
     Cell, CheckoutId, CheckoutInfo, IdGen, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId,
-    ProjectInfo, ServerMsg,
+    ProjectInfo, ServerMsg, WorkspaceId, WorkspaceInfo,
 };
 use tokio::sync::broadcast;
 
@@ -32,17 +32,30 @@ struct Checkout {
 struct Project {
     id: ProjectId,
     name: String,
+    /// Which workspace this project is filed under. The tree a client sees
+    /// is scoped to whichever workspace is open (DESIGN.md §11).
+    workspace: WorkspaceId,
     checkouts: Vec<Checkout>,
 }
 
+struct Workspace {
+    id: WorkspaceId,
+    name: String,
+}
+
 struct Inner {
+    workspaces: Vec<Workspace>,
     projects: Vec<Project>,
     ids: IdGen,
+    /// Exactly one workspace is open at a time, daemon-global. Panes in the
+    /// others keep running; they are just not in the tree clients render.
+    open: WorkspaceId,
 }
 
 pub struct Daemon {
     inner: StdMutex<Inner>,
     tree_tx: broadcast::Sender<Vec<ProjectInfo>>,
+    workspaces_tx: broadcast::Sender<Vec<WorkspaceInfo>>,
     templates: Vec<AgentConfig>,
     /// Set once `start_hook_server` binds; 0 until then. Read by
     /// `spawn_agent` when installing hooks — a spawn racing the bind (only
@@ -61,11 +74,38 @@ type PaneSubscription = (u16, u16, Vec<Vec<Cell>>, broadcast::Receiver<ServerMsg
 impl Daemon {
     pub fn new(config: ConfigFile) -> Arc<Self> {
         let mut ids = IdGen::default();
+
+        // Workspaces come from three places, in this order: the built-in
+        // default (always present, so a config that predates workspaces
+        // keeps working), any `[[workspace]]` blocks, and any name a
+        // project refers to without declaring. Declaring is therefore
+        // optional — `workspace = "x"` on a project is enough to create it.
+        let mut workspaces: Vec<Workspace> = Vec::new();
+        let intern = |ws: &mut Vec<Workspace>, ids: &mut IdGen, name: &str| -> WorkspaceId {
+            if let Some(w) = ws.iter().find(|w| w.name == name) {
+                return w.id;
+            }
+            let id = WorkspaceId(ids.alloc());
+            ws.push(Workspace {
+                id,
+                name: name.to_string(),
+            });
+            id
+        };
+        let default_ws = intern(&mut workspaces, &mut ids, config::DEFAULT_WORKSPACE);
+        for w in &config.workspaces {
+            intern(&mut workspaces, &mut ids, &w.name);
+        }
+
         let projects = config
             .projects
             .into_iter()
             .map(|p| Project {
                 id: ProjectId(ids.alloc()),
+                workspace: match p.workspace.as_deref() {
+                    Some(name) => intern(&mut workspaces, &mut ids, name),
+                    None => default_ws,
+                },
                 name: p.name,
                 checkouts: p
                     .repos
@@ -94,9 +134,22 @@ impl Daemon {
             config.agents
         };
 
+        // Reopen whatever was open last time, if that workspace still
+        // exists — a name can disappear from the config between runs.
+        let open = config::load_open_workspace()
+            .and_then(|name| workspaces.iter().find(|w| w.name == name).map(|w| w.id))
+            .unwrap_or(default_ws);
+
         let (tree_tx, _) = broadcast::channel(32);
+        let (workspaces_tx, _) = broadcast::channel(32);
         Arc::new(Daemon {
-            inner: StdMutex::new(Inner { projects, ids }),
+            inner: StdMutex::new(Inner {
+                workspaces,
+                projects,
+                ids,
+                open,
+            }),
+            workspaces_tx,
             tree_tx,
             templates,
             hook_port: std::sync::atomic::AtomicU16::new(0),
@@ -132,11 +185,17 @@ impl Daemon {
         self.templates.iter().map(|t| t.name.clone()).collect()
     }
 
+    /// The tree as clients see it: only the open workspace's projects.
+    /// Panes in the other workspaces are still alive and still updating —
+    /// their rollups show up in [`Daemon::workspaces`] so a working agent
+    /// somewhere you are not looking is still visible.
     pub fn snapshot(&self) -> Vec<ProjectInfo> {
         let inner = self.inner.lock().unwrap();
+        let open = inner.open;
         inner
             .projects
             .iter()
+            .filter(|p| p.workspace == open)
             .map(|p| ProjectInfo {
                 id: p.id,
                 name: p.name.clone(),
@@ -169,8 +228,78 @@ impl Daemon {
         self.tree_tx.subscribe()
     }
 
+    pub fn subscribe_workspaces(&self) -> broadcast::Receiver<Vec<WorkspaceInfo>> {
+        self.workspaces_tx.subscribe()
+    }
+
+    /// Every workspace with its rollup, open flag included. Ordered as
+    /// configured so the picker doesn't reshuffle under the user.
+    pub fn workspaces(&self) -> Vec<WorkspaceInfo> {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .workspaces
+            .iter()
+            .map(|w| {
+                let projects: Vec<&Project> =
+                    inner.projects.iter().filter(|p| p.workspace == w.id).collect();
+                WorkspaceInfo {
+                    id: w.id,
+                    name: w.name.clone(),
+                    projects: projects.len(),
+                    panes: projects
+                        .iter()
+                        .flat_map(|p| p.checkouts.iter())
+                        .map(|c| c.panes.len())
+                        .sum(),
+                    open: w.id == inner.open,
+                }
+            })
+            .collect()
+    }
+
+    /// Switches which workspace is open, for every connected client at
+    /// once. A no-op if it is already open, so a stray keypress doesn't
+    /// churn the tree. Remembered on disk for the next daemon.
+    pub fn open_workspace(&self, workspace: WorkspaceId) -> anyhow::Result<()> {
+        let name = {
+            let mut inner = self.inner.lock().unwrap();
+            if inner.open == workspace {
+                return Ok(());
+            }
+            let name = inner
+                .workspaces
+                .iter()
+                .find(|w| w.id == workspace)
+                .map(|w| w.name.clone())
+                .ok_or_else(|| anyhow::anyhow!("no such workspace"))?;
+            inner.open = workspace;
+            name
+        };
+        config::save_open_workspace(&name);
+        self.broadcast_tree();
+        self.broadcast_workspaces();
+        Ok(())
+    }
+
+    /// The open workspace's id and name — what `add_project` files new
+    /// projects under, and what the client shows above the project list.
+    fn open_workspace_ref(&self) -> (WorkspaceId, String) {
+        let inner = self.inner.lock().unwrap();
+        let name = inner
+            .workspaces
+            .iter()
+            .find(|w| w.id == inner.open)
+            .map(|w| w.name.clone())
+            .unwrap_or_else(|| config::DEFAULT_WORKSPACE.to_string());
+        (inner.open, name)
+    }
+
     fn broadcast_tree(&self) {
         let _ = self.tree_tx.send(self.snapshot());
+    }
+
+    fn broadcast_workspaces(&self) {
+        let _ = self.workspaces_tx.send(self.workspaces());
     }
 
     pub fn spawn_shell(self: &Arc<Self>, checkout: CheckoutId) -> anyhow::Result<PaneId> {
@@ -422,7 +551,7 @@ impl Daemon {
         let mut orphaned_panes: Vec<Pane> = Vec::new();
         {
             let mut guard = self.inner.lock().unwrap();
-            let Inner { projects, ids } = &mut *guard;
+            let Inner { projects, ids, .. } = &mut *guard;
             for project in projects.iter_mut() {
                 let Some(primary_path) = project.checkouts.iter().find(|c| c.primary).map(|c| c.path.clone())
                 else {
@@ -483,7 +612,10 @@ impl Daemon {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| path.to_string());
 
-        config::append_project(&name, &expanded)?;
+        // New projects land in whichever workspace is open, so "add this
+        // directory" means "add it to what I am looking at".
+        let (workspace, workspace_name) = self.open_workspace_ref();
+        config::append_project(&name, &expanded, &workspace_name)?;
 
         {
             let mut inner = self.inner.lock().unwrap();
@@ -491,6 +623,7 @@ impl Daemon {
             let checkout_id = CheckoutId(inner.ids.alloc());
             inner.projects.push(Project {
                 id: project_id,
+                workspace,
                 name: name.clone(),
                 checkouts: vec![Checkout {
                     id: checkout_id,
@@ -502,6 +635,8 @@ impl Daemon {
             });
         }
         self.broadcast_tree();
+        // The rollup counts changed too.
+        self.broadcast_workspaces();
         Ok(())
     }
 
@@ -807,9 +942,11 @@ mod tests {
     /// and every test below injects its own worktree listing.
     fn daemon_with_primary(primary: &str) -> Arc<Daemon> {
         Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
             projects: vec![ProjectConfig {
                 name: "proj".to_string(),
                 repos: vec![primary.to_string()],
+                workspace: None,
             }],
             agents: Vec::new(),
         })
@@ -1006,9 +1143,11 @@ mod tests {
     /// (which keys off the template *name*) without launching a real agent.
     fn daemon_with_fake_claude(dir: &std::path::Path) -> Arc<Daemon> {
         Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
             projects: vec![ProjectConfig {
                 name: "proj".to_string(),
                 repos: vec![dir.to_string_lossy().to_string()],
+                workspace: None,
             }],
             agents: vec![AgentConfig {
                 name: "claude".to_string(),
@@ -1131,9 +1270,11 @@ mod tests {
         let configured = dir.path().to_string_lossy().replace('\\', "/");
 
         let d = Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
             projects: vec![ProjectConfig {
                 name: "proj".to_string(),
                 repos: vec![configured],
+                workspace: None,
             }],
             agents: Vec::new(),
         });
@@ -1157,9 +1298,11 @@ mod tests {
         let repo = real_repo(dir.path());
 
         let d = Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
             projects: vec![ProjectConfig {
                 name: "proj".to_string(),
                 repos: vec![dir.path().to_string_lossy().to_string()],
+                workspace: None,
             }],
             agents: Vec::new(),
         });
@@ -1176,5 +1319,274 @@ mod tests {
             checkouts.iter().any(|c| !c.primary),
             "and be removable, not marked primary"
         );
+    }
+
+    // --- workspaces ---------------------------------------------------------
+
+    /// `ORION_CONFIG_DIR` is process-global, so tests that read or write
+    /// config take this lock and restore the variable afterwards.
+    static CONFIG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Runs `f` with the config directory pointed at a fresh temp dir, so
+    /// nothing here can see — or corrupt — the real user's config.
+    fn with_temp_config<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
+        let _guard = CONFIG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let previous = std::env::var_os("ORION_CONFIG_DIR");
+        std::env::set_var("ORION_CONFIG_DIR", dir.path());
+        let out = f(dir.path());
+        match previous {
+            Some(v) => std::env::set_var("ORION_CONFIG_DIR", v),
+            None => std::env::remove_var("ORION_CONFIG_DIR"),
+        }
+        out
+    }
+
+    fn config_with_workspaces() -> ConfigFile {
+        ConfigFile {
+            workspaces: vec![crate::config::WorkspaceConfig {
+                name: "work".to_string(),
+            }],
+            projects: vec![
+                ProjectConfig {
+                    name: "home-thing".to_string(),
+                    repos: vec!["/home-thing".to_string()],
+                    workspace: None,
+                },
+                ProjectConfig {
+                    name: "day-job".to_string(),
+                    repos: vec!["/day-job".to_string()],
+                    workspace: Some("work".to_string()),
+                },
+                ProjectConfig {
+                    name: "side".to_string(),
+                    repos: vec!["/side".to_string()],
+                    workspace: Some("weekend".to_string()),
+                },
+            ],
+            agents: Vec::new(),
+        }
+    }
+
+    fn names_of(d: &Daemon) -> Vec<String> {
+        d.snapshot().into_iter().map(|p| p.name).collect()
+    }
+
+    fn workspace_named(d: &Daemon, name: &str) -> WorkspaceId {
+        d.workspaces()
+            .into_iter()
+            .find(|w| w.name == name)
+            .unwrap_or_else(|| panic!("no workspace {name:?}"))
+            .id
+    }
+
+    #[test]
+    fn a_config_that_never_heard_of_workspaces_still_works() {
+        // Every existing projects.toml has no workspace keys at all; those
+        // projects must land somewhere visible, not vanish.
+        with_temp_config(|_| {
+            let d = daemon_with_primary("/repo");
+            assert_eq!(d.workspaces().len(), 1, "just the built-in default");
+            assert!(d.workspaces()[0].open);
+            assert_eq!(d.workspaces()[0].name, crate::config::DEFAULT_WORKSPACE);
+            assert_eq!(names_of(&d).len(), 1, "and its project is visible");
+        });
+    }
+
+    #[test]
+    fn workspaces_come_from_declarations_and_from_project_references() {
+        with_temp_config(|_| {
+            let d = Daemon::new(config_with_workspaces());
+            let names: Vec<String> = d.workspaces().into_iter().map(|w| w.name).collect();
+            assert_eq!(
+                names,
+                vec!["default", "work", "weekend"],
+                "declared and implied alike, in config order"
+            );
+        });
+    }
+
+    #[test]
+    fn the_tree_is_scoped_to_the_open_workspace() {
+        with_temp_config(|_| {
+            let d = Daemon::new(config_with_workspaces());
+            assert_eq!(names_of(&d), vec!["home-thing"], "only the default workspace");
+
+            d.open_workspace(workspace_named(&d, "work")).unwrap();
+            assert_eq!(names_of(&d), vec!["day-job"]);
+
+            d.open_workspace(workspace_named(&d, "weekend")).unwrap();
+            assert_eq!(names_of(&d), vec!["side"]);
+        });
+    }
+
+    #[test]
+    fn switching_workspace_pushes_a_new_tree_and_workspace_list() {
+        with_temp_config(|_| {
+            let d = Daemon::new(config_with_workspaces());
+            let mut tree_rx = d.subscribe_tree();
+            let mut ws_rx = d.subscribe_workspaces();
+
+            d.open_workspace(workspace_named(&d, "work")).unwrap();
+
+            let tree = tree_rx.try_recv().expect("clients need the re-scoped tree");
+            assert_eq!(tree[0].name, "day-job");
+            let ws = ws_rx.try_recv().expect("and the new open flag");
+            assert!(ws.iter().find(|w| w.name == "work").unwrap().open);
+            assert!(!ws.iter().find(|w| w.name == "default").unwrap().open);
+        });
+    }
+
+    #[test]
+    fn exactly_one_workspace_is_open_at_a_time() {
+        with_temp_config(|_| {
+            let d = Daemon::new(config_with_workspaces());
+            d.open_workspace(workspace_named(&d, "work")).unwrap();
+            assert_eq!(d.workspaces().iter().filter(|w| w.open).count(), 1);
+        });
+    }
+
+    #[test]
+    fn reopening_the_already_open_workspace_changes_nothing() {
+        with_temp_config(|_| {
+            let d = Daemon::new(config_with_workspaces());
+            let mut tree_rx = d.subscribe_tree();
+            let open = d.workspaces().into_iter().find(|w| w.open).unwrap().id;
+
+            d.open_workspace(open).unwrap();
+            assert!(
+                tree_rx.try_recv().is_err(),
+                "a no-op switch must not churn every client's tree"
+            );
+        });
+    }
+
+    #[test]
+    fn switching_to_a_workspace_that_does_not_exist_is_an_error() {
+        with_temp_config(|_| {
+            let d = Daemon::new(config_with_workspaces());
+            assert!(d.open_workspace(WorkspaceId(9999)).is_err());
+        });
+    }
+
+    #[test]
+    fn the_open_workspace_is_remembered_for_the_next_daemon() {
+        with_temp_config(|_| {
+            let d = Daemon::new(config_with_workspaces());
+            d.open_workspace(workspace_named(&d, "work")).unwrap();
+            drop(d);
+
+            let next = Daemon::new(config_with_workspaces());
+            assert_eq!(
+                next.workspaces().into_iter().find(|w| w.open).unwrap().name,
+                "work",
+                "restarting should land you back where you were"
+            );
+        });
+    }
+
+    #[test]
+    fn a_remembered_workspace_that_no_longer_exists_falls_back_to_default() {
+        with_temp_config(|_| {
+            let d = Daemon::new(config_with_workspaces());
+            d.open_workspace(workspace_named(&d, "weekend")).unwrap();
+            drop(d);
+
+            // The user deletes that workspace's project from their config.
+            let mut cfg = config_with_workspaces();
+            cfg.projects.retain(|p| p.workspace.as_deref() != Some("weekend"));
+            let next = Daemon::new(cfg);
+            assert_eq!(
+                next.workspaces().into_iter().find(|w| w.open).unwrap().name,
+                crate::config::DEFAULT_WORKSPACE,
+                "a dangling name must not leave every client staring at nothing"
+            );
+        });
+    }
+
+    #[test]
+    fn workspace_rollups_count_projects_and_panes_across_the_whole_workspace() {
+        with_temp_config(|_| {
+            let d = Daemon::new(config_with_workspaces());
+            let ws = d.workspaces();
+            let default = ws.iter().find(|w| w.name == "default").unwrap();
+            assert_eq!(default.projects, 1);
+            assert_eq!(default.panes, 0);
+        });
+    }
+
+    #[tokio::test]
+    async fn panes_in_a_closed_workspace_keep_running_and_stay_counted() {
+        // The whole point of scoping rather than unloading: an agent in a
+        // workspace you are not looking at is still working, and you should
+        // still be able to see that it is.
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            let d = Daemon::new(ConfigFile {
+                workspaces: Vec::new(),
+                projects: vec![
+                    ProjectConfig {
+                        name: "here".to_string(),
+                        repos: vec![dir.path().to_string_lossy().to_string()],
+                        workspace: None,
+                    },
+                    ProjectConfig {
+                        name: "elsewhere".to_string(),
+                        repos: vec![dir.path().to_string_lossy().to_string()],
+                        workspace: Some("other".to_string()),
+                    },
+                ],
+                agents: Vec::new(),
+            });
+
+            // Spawn a pane in the *other* workspace, then look away.
+            let other = workspace_named(&d, "other");
+            d.open_workspace(other).unwrap();
+            let checkout = d.snapshot()[0].checkouts[0].id;
+            let pane = d.spawn_shell(checkout).unwrap();
+
+            d.open_workspace(workspace_named(&d, "default")).unwrap();
+            assert_eq!(names_of(&d), vec!["here"], "the tree re-scoped");
+
+            let rollup = d.workspaces();
+            let other_ws = rollup.iter().find(|w| w.name == "other").unwrap();
+            assert_eq!(other_ws.panes, 1, "the pane is still running and still counted");
+
+            let _ = d.close_pane(pane);
+        });
+    }
+
+    #[test]
+    fn adding_a_project_files_it_under_the_open_workspace() {
+        let repo = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            let d = Daemon::new(config_with_workspaces());
+            d.open_workspace(workspace_named(&d, "work")).unwrap();
+
+            d.add_project(&repo.path().to_string_lossy()).unwrap();
+
+            assert!(
+                names_of(&d).iter().any(|n| n == repo.path().file_name().unwrap().to_str().unwrap()),
+                "a project added while looking at a workspace belongs to it"
+            );
+            let work = d.workspaces().into_iter().find(|w| w.name == "work").unwrap();
+            assert_eq!(work.projects, 2);
+        });
+    }
+
+    #[test]
+    fn an_added_projects_workspace_is_persisted_so_it_survives_a_restart() {
+        let repo = tempfile::tempdir().unwrap();
+        with_temp_config(|dir| {
+            let d = Daemon::new(config_with_workspaces());
+            d.open_workspace(workspace_named(&d, "work")).unwrap();
+            d.add_project(&repo.path().to_string_lossy()).unwrap();
+
+            let written = std::fs::read_to_string(dir.join("projects.toml")).unwrap();
+            assert!(
+                written.contains(r#"workspace = "work""#),
+                "the workspace must be written out, not just held in memory:\n{written}"
+            );
+        });
     }
 }

@@ -24,8 +24,15 @@ where
     {
         return;
     }
+    if out_tx
+        .send(ServerMsg::Workspaces(daemon.workspaces()))
+        .is_err()
+    {
+        return;
+    }
 
     let mut tree_rx = daemon.subscribe_tree();
+    let mut workspaces_rx = daemon.subscribe_workspaces();
     let mut damage_rx: Option<broadcast::Receiver<ServerMsg>> = None;
 
     loop {
@@ -38,6 +45,9 @@ where
             }
             Ok(tree) = tree_rx.recv() => {
                 let _ = out_tx.send(ServerMsg::Tree(tree));
+            }
+            Ok(ws) = workspaces_rx.recv() => {
+                let _ = out_tx.send(ServerMsg::Workspaces(ws));
             }
             dmsg = recv_optional(&mut damage_rx) => {
                 if let Some(dmsg) = dmsg {
@@ -100,6 +110,7 @@ fn handle_client_msg(
             });
             Ok(())
         }
+        ClientMsg::OpenWorkspace { workspace } => daemon.open_workspace(workspace),
     };
     if let Err(e) = result {
         let _ = out_tx.send(ServerMsg::Error {

@@ -1,5 +1,8 @@
 use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
-use orion_protocol::{CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, ProjectInfo, ServerMsg};
+use orion_protocol::{
+    CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, ProjectInfo, ServerMsg, WorkspaceId,
+    WorkspaceInfo,
+};
 use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -40,7 +43,19 @@ impl Default for Layout {
     }
 }
 
+/// What confirming a picker selection does. The picker is one widget with
+/// one set of keys; this is the only thing that differs between uses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PickerKind {
+    /// Spawn the chosen agent template in the selected checkout.
+    Agent,
+    /// Switch to the chosen workspace, carrying its id per row.
+    Workspace(Vec<WorkspaceId>),
+}
+
 pub struct Picker {
+    pub kind: PickerKind,
+    pub title: &'static str,
     pub items: Vec<String>,
     pub sel: usize,
 }
@@ -57,6 +72,13 @@ pub enum Prompt {
 pub struct App {
     pub tree: Vec<ProjectInfo>,
     pub templates: Vec<String>,
+    /// Every workspace, not just the open one — the picker lists them all,
+    /// and their pane counts are how an agent working in a workspace you
+    /// are not looking at stays visible.
+    pub workspaces: Vec<WorkspaceInfo>,
+    /// Name of the open workspace, shown above the project list so the
+    /// scope of that column is never a guess.
+    pub open_workspace: String,
     pub focus: Focus,
     pub sel_project: usize,
     pub sel_checkout: usize,
@@ -83,6 +105,8 @@ impl App {
         App {
             tree: Vec::new(),
             templates: Vec::new(),
+            workspaces: Vec::new(),
+            open_workspace: String::new(),
             focus: Focus::Projects,
             sel_project: 0,
             sel_checkout: 0,
@@ -191,6 +215,14 @@ impl App {
             }
             ServerMsg::Templates(names) => {
                 self.templates = names;
+            }
+            ServerMsg::Workspaces(list) => {
+                self.open_workspace = list
+                    .iter()
+                    .find(|w| w.open)
+                    .map(|w| w.name.clone())
+                    .unwrap_or_default();
+                self.workspaces = list;
             }
             ServerMsg::PaneSnapshot { pane, cells, .. } => {
                 if self.subscribed == Some(pane) {
@@ -326,6 +358,7 @@ impl App {
             KeyCode::Char('a') => self.open_picker(),
             KeyCode::Char('n') => self.new_prompt(),
             KeyCode::Char('D') => self.remove_checkout_prompt(),
+            KeyCode::Char('w') => self.open_workspace_picker(),
             KeyCode::Char('x') => self.kill_selected(),
             _ => {}
         }
@@ -523,20 +556,68 @@ impl App {
             return;
         }
         self.picker = Some(Picker {
+            kind: PickerKind::Agent,
+            title: "spawn agent",
             items: self.templates.clone(),
             sel: 0,
         });
     }
 
+    /// `w` switches workspace — the scope of the whole project column, and
+    /// daemon-global, so every attached client follows. Opens on the one
+    /// that's already open rather than the top of the list, since "look at
+    /// where I am, then move" is the usual reason to press it.
+    fn open_workspace_picker(&mut self) {
+        if self.workspaces.len() < 2 {
+            // One workspace is the zero-config case; a picker offering a
+            // single choice is just a keystroke that does nothing.
+            self.status = "only one workspace".to_string();
+            return;
+        }
+        let sel = self.workspaces.iter().position(|w| w.open).unwrap_or(0);
+        self.picker = Some(Picker {
+            kind: PickerKind::Workspace(self.workspaces.iter().map(|w| w.id).collect()),
+            title: "open workspace",
+            items: self
+                .workspaces
+                .iter()
+                .map(|w| {
+                    let panes = if w.panes > 0 {
+                        format!("  {}▣", w.panes)
+                    } else {
+                        String::new()
+                    };
+                    format!("{}  {}⑂{}", w.name, w.projects, panes)
+                })
+                .collect(),
+            sel,
+        });
+    }
+
     fn confirm_picker(&mut self) {
         let Some(picker) = self.picker.take() else { return };
-        let Some(name) = picker.items.get(picker.sel) else { return };
-        if let Some(checkout) = self.current_checkout() {
-            let _ = self.out.send(ClientMsg::SpawnAgent {
-                checkout: checkout.id,
-                template: name.clone(),
-            });
-            self.pending_focus_new = true;
+        match &picker.kind {
+            PickerKind::Agent => {
+                let Some(name) = picker.items.get(picker.sel) else { return };
+                if let Some(checkout) = self.current_checkout() {
+                    let _ = self.out.send(ClientMsg::SpawnAgent {
+                        checkout: checkout.id,
+                        template: name.clone(),
+                    });
+                    self.pending_focus_new = true;
+                }
+            }
+            PickerKind::Workspace(ids) => {
+                let Some(id) = ids.get(picker.sel) else { return };
+                let _ = self.out.send(ClientMsg::OpenWorkspace { workspace: *id });
+                // The incoming tree is a different set of projects, so
+                // start at the top rather than keeping an index that meant
+                // something else.
+                self.sel_project = 0;
+                self.sel_checkout = 0;
+                self.sel_pane = 0;
+                self.focus = Focus::Projects;
+            }
         }
     }
 
@@ -1360,5 +1441,125 @@ mod tests {
         let mut app = App::new(tx);
         app.resize_pane(30, 100);
         assert!(rx.try_recv().is_err());
+    }
+
+    // --- workspaces ---------------------------------------------------------
+
+    fn workspaces(open: &str) -> Vec<orion_protocol::WorkspaceInfo> {
+        ["default", "work", "weekend"]
+            .iter()
+            .enumerate()
+            .map(|(i, name)| orion_protocol::WorkspaceInfo {
+                id: orion_protocol::WorkspaceId(i as u64 + 1),
+                name: name.to_string(),
+                projects: i + 1,
+                panes: i,
+                open: *name == open,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_open_workspace_is_remembered_from_the_daemons_list() {
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("work")));
+        assert_eq!(h.app.open_workspace, "work");
+        assert_eq!(h.app.workspaces.len(), 3);
+    }
+
+    #[test]
+    fn w_opens_a_picker_positioned_on_the_workspace_already_open() {
+        // "Look at where I am, then move" is the reason to press it, so
+        // starting at the top of the list would be the wrong default.
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("work")));
+        h.key(KeyCode::Char('w'));
+
+        let picker = h.app.picker.as_ref().expect("w should open the picker");
+        assert_eq!(picker.sel, 1, "starts on the open one");
+        assert!(picker.items[1].starts_with("work"));
+    }
+
+    #[test]
+    fn choosing_a_workspace_asks_the_daemon_to_switch() {
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
+        h.key(KeyCode::Char('w'));
+        h.key(KeyCode::Char('j'));
+        h.key(KeyCode::Enter);
+
+        match &h.sent()[0] {
+            ClientMsg::OpenWorkspace { workspace } => {
+                assert_eq!(*workspace, orion_protocol::WorkspaceId(2), "the 'work' row");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(h.app.picker.is_none());
+    }
+
+    #[test]
+    fn switching_workspace_resets_navigation_to_the_top() {
+        // The incoming tree is a different set of projects; keeping an index
+        // that meant something else would land the user somewhere arbitrary.
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
+        h.keys("llj"); // wander into the pane column
+        h.sent();
+
+        h.key(KeyCode::Char('w'));
+        h.key(KeyCode::Char('j'));
+        h.key(KeyCode::Enter);
+
+        assert_eq!(h.app.focus, Focus::Projects);
+        assert_eq!((h.app.sel_project, h.app.sel_checkout, h.app.sel_pane), (0, 0, 0));
+    }
+
+    #[test]
+    fn escaping_the_workspace_picker_switches_nothing() {
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
+        h.key(KeyCode::Char('w'));
+        h.key(KeyCode::Char('j'));
+        h.key(KeyCode::Esc);
+        assert!(h.app.picker.is_none());
+        assert!(h.sent().is_empty());
+    }
+
+    #[test]
+    fn w_does_nothing_useful_when_there_is_only_one_workspace() {
+        // The zero-config case. A picker offering a single choice is just a
+        // keystroke that does nothing, so say so instead.
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Workspaces(vec![orion_protocol::WorkspaceInfo {
+            id: orion_protocol::WorkspaceId(1),
+            name: "default".to_string(),
+            projects: 1,
+            panes: 0,
+            open: true,
+        }]));
+        h.key(KeyCode::Char('w'));
+        assert!(h.app.picker.is_none());
+        assert!(h.sent().is_empty());
+        assert!(h.app.status.contains("one workspace"), "{}", h.app.status);
+    }
+
+    #[test]
+    fn the_picker_shows_how_much_is_running_in_each_workspace() {
+        // The reason to surface counts at all: an agent working somewhere
+        // you are not looking should still be visible.
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
+        h.key(KeyCode::Char('w'));
+        let items = &h.app.picker.as_ref().unwrap().items;
+        assert!(items[2].contains("2▣"), "weekend has two live panes: {items:?}");
+        assert!(!items[0].contains('▣'), "an idle workspace stays quiet: {items:?}");
+    }
+
+    #[test]
+    fn the_agent_picker_still_spawns_after_the_picker_grew_a_second_use() {
+        let mut h = Harness::new();
+        h.key(KeyCode::Char('a'));
+        h.key(KeyCode::Enter);
+        assert!(matches!(h.sent()[0], ClientMsg::SpawnAgent { .. }));
     }
 }

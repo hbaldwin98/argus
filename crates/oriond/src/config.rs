@@ -4,19 +4,38 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct ConfigFile {
+    #[serde(default, rename = "workspace")]
+    pub workspaces: Vec<WorkspaceConfig>,
     #[serde(default, rename = "project")]
     pub projects: Vec<ProjectConfig>,
     #[serde(default, rename = "agent")]
     pub agents: Vec<AgentConfig>,
 }
 
+/// A named group of projects (DESIGN.md §11). Declaring one is optional —
+/// a project's `workspace` key creates it implicitly, and projects with no
+/// key at all land in [`DEFAULT_WORKSPACE`].
+#[derive(Debug, Deserialize)]
+pub struct WorkspaceConfig {
+    pub name: String,
+}
+
+/// Every install has this workspace, whether or not the config names it.
+/// It is where unassigned projects go, so a config that has never heard of
+/// workspaces keeps working unchanged.
+pub const DEFAULT_WORKSPACE: &str = "default";
+
 #[derive(Debug, Deserialize)]
 pub struct ProjectConfig {
     pub name: String,
     #[serde(default)]
     pub repos: Vec<String>,
+    /// Which workspace this project belongs to. Absent means
+    /// [`DEFAULT_WORKSPACE`].
+    #[serde(default)]
+    pub workspace: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -40,10 +59,21 @@ pub fn default_agents() -> Vec<AgentConfig> {
         .collect()
 }
 
-pub fn config_path() -> PathBuf {
+/// Where Orion keeps its configuration. `ORION_CONFIG_DIR` overrides the
+/// platform location — needed by tests, which must not read or scribble on
+/// the real user's config, and handy for running a throwaway instance
+/// alongside a real one.
+pub fn config_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("ORION_CONFIG_DIR") {
+        return PathBuf::from(dir);
+    }
     directories::ProjectDirs::from("", "", "orion")
-        .map(|d| d.config_dir().join("projects.toml"))
-        .unwrap_or_else(|| PathBuf::from("projects.toml"))
+        .map(|d| d.config_dir().to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+pub fn config_path() -> PathBuf {
+    config_dir().join("projects.toml")
 }
 
 const DEFAULT_CONFIG: &str = r#"# Orion projects. Each project groups one or more repositories.
@@ -84,12 +114,13 @@ pub fn load() -> Result<ConfigFile> {
 /// not just ones already configured) survives a daemon restart. Appends
 /// raw text rather than round-tripping through serde so a user's existing
 /// comments in the file aren't clobbered.
-pub fn append_project(name: &str, repo_path: &Path) -> Result<()> {
+pub fn append_project(name: &str, repo_path: &Path, workspace: &str) -> Result<()> {
     let cfg_path = config_path();
     let repo = repo_path.to_string_lossy().replace('\\', "/");
     // `{:?}` on a &str produces a properly quote/backslash-escaped literal,
     // which is also valid TOML basic-string syntax.
-    let block = format!("\n[[project]]\nname = {name:?}\nrepos = [{repo:?}]\n");
+    let block =
+        format!("\n[[project]]\nname = {name:?}\nrepos = [{repo:?}]\nworkspace = {workspace:?}\n");
     let mut f = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -98,6 +129,36 @@ pub fn append_project(name: &str, repo_path: &Path) -> Result<()> {
     f.write_all(block.as_bytes())
         .with_context(|| format!("appending project to {}", cfg_path.display()))?;
     Ok(())
+}
+
+/// Where the name of the open workspace is remembered. A file of its own
+/// rather than a key in `projects.toml`: that file is the user's, edited by
+/// hand and full of their comments, and `append_project` deliberately only
+/// ever appends to it. Which workspace happens to be open is Orion's
+/// bookkeeping, not configuration, so it lives beside it instead.
+fn open_workspace_path() -> PathBuf {
+    config_path().with_file_name("open-workspace")
+}
+
+/// The workspace that was open when the daemon last exited, if it was ever
+/// recorded. The caller resolves it against the workspaces that actually
+/// exist — the name may since have been removed from the config.
+pub fn load_open_workspace() -> Option<String> {
+    let raw = std::fs::read_to_string(open_workspace_path()).ok()?;
+    let name = raw.trim().to_string();
+    (!name.is_empty()).then_some(name)
+}
+
+/// Best-effort: failing to remember the open workspace is not worth
+/// failing the switch the user just asked for.
+pub fn save_open_workspace(name: &str) {
+    let path = open_workspace_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Err(e) = std::fs::write(&path, name) {
+        tracing::warn!("could not remember the open workspace: {e}");
+    }
 }
 
 pub fn expand_home(path: &str) -> PathBuf {

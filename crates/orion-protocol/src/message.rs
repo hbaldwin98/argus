@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::cell::{Cell, CellSpan};
-use crate::ids::{CheckoutId, PaneId};
-use crate::tree::ProjectInfo;
+use crate::ids::{CheckoutId, PaneId, WorkspaceId};
+use crate::tree::{ProjectInfo, WorkspaceInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientMsg {
@@ -27,6 +27,9 @@ pub enum ClientMsg {
     /// Kill every pane in a (non-primary) checkout, `git worktree remove`
     /// it, delete its branch, and drop it from the tree.
     RemoveCheckout { checkout: CheckoutId },
+    /// Switch which workspace is open. Daemon-global: every connected
+    /// client's tree re-scopes to it.
+    OpenWorkspace { workspace: WorkspaceId },
     /// Add a new project rooted at an arbitrary directory — not limited to
     /// whatever's already in `projects.toml` or under the daemon's cwd.
     /// Persisted to config so it survives a daemon restart.
@@ -39,6 +42,9 @@ pub enum ServerMsg {
     Tree(Vec<ProjectInfo>),
     /// Names of the configured agent templates, sent once on connect.
     Templates(Vec<String>),
+    /// Every workspace, with which one is open. Sent on connect and after
+    /// any switch.
+    Workspaces(Vec<WorkspaceInfo>),
     /// Full-grid snapshot of a pane, sent once right after Subscribe.
     PaneSnapshot {
         pane: PaneId,

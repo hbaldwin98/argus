@@ -85,10 +85,17 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
             ]
         })
         .collect();
+    // The projects column is scoped to the open workspace, so it says so
+    // in its own title rather than leaving the scope to be inferred.
+    let projects_title = if app.open_workspace.is_empty() {
+        "projects".to_string()
+    } else {
+        format!("projects · {}", app.open_workspace)
+    };
     app.layout.projects = render_column(
         f,
         cols[0],
-        "projects",
+        &projects_title,
         project_rows,
         app.focus == Focus::Projects,
         Some(app.sel_project).filter(|_| !app.tree.is_empty()),
@@ -349,7 +356,7 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         ("typing — ctrl-space then esc to leave, x to close", th.dim)
     } else {
         (
-            "j/k move   l/h in/out   s shell   a agent   n new   D rm   x close   q detach",
+            "j/k move   l/h in/out   s shell   a agent   n new   w workspace   D rm   x close   q detach",
             th.dim,
         )
     };
@@ -400,11 +407,12 @@ fn breadcrumb(app: &App) -> String {
 fn render_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     let Some(picker) = &app.picker else { return };
     let height = (picker.items.len() as u16 + 2).min(area.height);
-    let width = 32.min(area.width);
+    let widest = picker.items.iter().map(|i| i.chars().count()).max().unwrap_or(0);
+    let width = (widest as u16 + 6).clamp(24, 48).min(area.width);
     let popup = centered_rect(width, height, area);
 
     f.render_widget(Clear, popup);
-    let block = panel_block("spawn agent", true, th);
+    let block = panel_block(picker.title, true, th);
     let inner = block.inner(popup);
     f.render_widget(block, popup);
 
