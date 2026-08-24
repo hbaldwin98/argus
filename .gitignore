@@ -4,3 +4,4 @@
 # the daemon that wrote them exits).
 /.orion/
 .claude/settings.local.json
+cov.xml
