@@ -164,14 +164,35 @@ fn dispatch_pane(
         }
         ClientMsg::Input { pane, bytes } => daemon.write_pane(pane, &bytes),
         ClientMsg::Resize { pane, rows, cols } => daemon.resize_pane(pane, rows, cols),
-        ClientMsg::SpawnShell { checkout } => daemon.spawn_shell(checkout).map(|_| ()),
+        ClientMsg::SpawnShell { checkout } => {
+            let daemon = daemon.clone();
+            spawn_pane(out_tx, move || daemon.spawn_shell(checkout).map(|_| ()))
+        }
         ClientMsg::SpawnAgent { checkout, template } => {
-            daemon.spawn_agent(checkout, &template).map(|_| ())
+            let daemon = daemon.clone();
+            spawn_pane(out_tx, move || {
+                daemon.spawn_agent(checkout, &template).map(|_| ())
+            })
         }
         ClientMsg::Kill { pane } => daemon.close_pane(pane),
         msg => return Err(msg),
     };
     Ok(result)
+}
+
+fn spawn_pane(
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    spawn: impl FnOnce() -> anyhow::Result<()> + Send + 'static,
+) -> anyhow::Result<()> {
+    let out_tx = out_tx.clone();
+    tokio::task::spawn_blocking(move || {
+        if let Err(error) = spawn() {
+            let _ = out_tx.send(ServerMsg::Error {
+                message: error.to_string(),
+            });
+        }
+    });
+    Ok(())
 }
 
 fn dispatch_workspace(
@@ -284,9 +305,14 @@ fn dispatch_branch_or_editor(
             line,
             external,
             command,
-        } => daemon
-            .spawn_editor(checkout, &path, line, external, command.as_deref())
-            .map(|_| ()),
+        } => {
+            let daemon = daemon.clone();
+            spawn_pane(out_tx, move || {
+                daemon
+                    .spawn_editor(checkout, &path, line, external, command.as_deref())
+                    .map(|_| ())
+            })
+        }
         msg => return Err(msg),
     };
     Ok(result)
@@ -455,8 +481,11 @@ mod tests {
             out
         }
 
-        fn error(&mut self) -> String {
-            match self.replies().into_iter().next() {
+        async fn error(&mut self) -> String {
+            let reply = tokio::time::timeout(std::time::Duration::from_secs(5), self.rx.recv())
+                .await
+                .expect("an error reply should arrive");
+            match reply {
                 Some(ServerMsg::Error { message }) => message,
                 other => panic!("expected an error, got {other:?}"),
             }
@@ -472,7 +501,26 @@ mod tests {
         h.send(ClientMsg::SpawnShell {
             checkout: CheckoutId(9999),
         });
-        assert!(h.error().contains("no such checkout"), "{}", h.error());
+        let error = h.error().await;
+        assert!(error.contains("no such checkout"), "{error}");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_blocked_pane_launch_does_not_block_the_connection_task() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let started = std::time::Instant::now();
+
+        spawn_pane(&tx, || {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            Ok(())
+        })
+        .unwrap();
+
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(100),
+            "pane launch held the connection task for {:?}",
+            started.elapsed()
+        );
     }
 
     #[tokio::test]
@@ -501,7 +549,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut h = Harness::new(dir.path());
         h.send(ClientMsg::Subscribe { pane: PaneId(9999) });
-        assert!(!h.error().is_empty());
+        assert!(!h.error().await.is_empty());
         assert!(h.subs.0.is_empty());
     }
 
@@ -579,7 +627,7 @@ mod tests {
             checkout: CheckoutId(9999),
             base: ReviewBase::WorkingTree,
         });
-        assert!(h.error().contains("no such checkout"));
+        assert!(h.error().await.contains("no such checkout"));
     }
 
     #[tokio::test]
@@ -610,7 +658,8 @@ mod tests {
             external: false,
             command: None,
         });
-        assert!(h.error().contains("inside the checkout"), "{}", h.error());
+        let error = h.error().await;
+        assert!(error.contains("inside the checkout"), "{error}");
     }
 
     #[tokio::test]
@@ -620,7 +669,7 @@ mod tests {
         h.send(ClientMsg::OpenWorkspace {
             workspace: argus_protocol::WorkspaceId(9999),
         });
-        assert!(!h.error().is_empty());
+        assert!(!h.error().await.is_empty());
     }
     #[tokio::test]
     async fn two_panes_stream_at_once() {
