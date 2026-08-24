@@ -158,3 +158,182 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{ConfigFile, ProjectConfig};
+    use orion_protocol::{CheckoutId, PaneId, ReviewBase};
+
+    struct Harness {
+        daemon: Arc<Daemon>,
+        tx: mpsc::UnboundedSender<ServerMsg>,
+        rx: mpsc::UnboundedReceiver<ServerMsg>,
+        damage: Option<broadcast::Receiver<ServerMsg>>,
+    }
+
+    impl Harness {
+        fn new(repo: &std::path::Path) -> Self {
+            let daemon = Daemon::new(ConfigFile {
+                workspaces: Vec::new(),
+                projects: vec![ProjectConfig {
+                    name: "proj".to_string(),
+                    repos: vec![repo.to_string_lossy().to_string()],
+                    workspace: None,
+                }],
+                agents: Vec::new(),
+            });
+            let (tx, rx) = mpsc::unbounded_channel();
+            Harness {
+                daemon,
+                tx,
+                rx,
+                damage: None,
+            }
+        }
+
+        fn checkout(&self) -> CheckoutId {
+            self.daemon.snapshot()[0].checkouts[0].id
+        }
+
+        fn send(&mut self, msg: ClientMsg) {
+            handle_client_msg(msg, &self.daemon, &self.tx, &mut self.damage);
+        }
+
+        fn replies(&mut self) -> Vec<ServerMsg> {
+            let mut out = Vec::new();
+            while let Ok(m) = self.rx.try_recv() {
+                out.push(m);
+            }
+            out
+        }
+
+        fn error(&mut self) -> String {
+            match self.replies().into_iter().next() {
+                Some(ServerMsg::Error { message }) => message,
+                other => panic!("expected an error, got {other:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_message_reaches_the_client_as_an_error() {
+        // Every arm funnels its `Err` here; a silent failure would leave the
+        // user pressing a key that does nothing.
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+        h.send(ClientMsg::SpawnShell {
+            checkout: CheckoutId(9999),
+        });
+        assert!(h.error().contains("no such checkout"), "{}", h.error());
+    }
+
+    #[tokio::test]
+    async fn subscribing_sends_a_snapshot_and_arms_the_damage_stream() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+        let checkout = h.checkout();
+        let pane = h.daemon.spawn_shell(checkout).unwrap();
+
+        h.send(ClientMsg::Subscribe { pane });
+
+        assert!(matches!(
+            h.replies().first(),
+            Some(ServerMsg::PaneSnapshot { .. })
+        ));
+        assert!(h.damage.is_some(), "damage must flow after a subscribe");
+
+        h.send(ClientMsg::Unsubscribe { pane });
+        assert!(h.damage.is_none());
+
+        let _ = h.daemon.close_pane(pane);
+    }
+
+    #[tokio::test]
+    async fn subscribing_to_a_pane_that_is_gone_is_an_error_not_a_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+        h.send(ClientMsg::Subscribe { pane: PaneId(9999) });
+        assert!(!h.error().is_empty());
+        assert!(h.damage.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_review_request_answers_with_that_checkouts_diff() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        std::fs::write(dir.path().join("a.txt"), "one\n").unwrap();
+        drop(repo);
+
+        let mut h = Harness::new(dir.path());
+        let checkout = h.checkout();
+        h.send(ClientMsg::Review {
+            checkout,
+            base: ReviewBase::WorkingTree,
+        });
+
+        // The diff runs on a blocking thread, so the reply is not immediate.
+        let reply = tokio::time::timeout(std::time::Duration::from_secs(5), h.rx.recv())
+            .await
+            .expect("the diff should arrive")
+            .expect("channel open");
+        match reply {
+            ServerMsg::Review(r) => {
+                assert_eq!(r.checkout, checkout);
+                assert_eq!(r.base, ReviewBase::WorkingTree);
+                assert_eq!(r.files[0].path, "a.txt");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_review_of_a_checkout_that_is_gone_errors_without_spawning_work() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+        h.send(ClientMsg::Review {
+            checkout: CheckoutId(9999),
+            base: ReviewBase::WorkingTree,
+        });
+        assert!(h.error().contains("no such checkout"));
+    }
+
+    #[tokio::test]
+    async fn input_and_resize_for_a_dead_pane_do_not_take_the_connection_down() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+        h.send(ClientMsg::Input {
+            pane: PaneId(9999),
+            bytes: b"hello".to_vec(),
+        });
+        h.send(ClientMsg::Resize {
+            pane: PaneId(9999),
+            rows: 10,
+            cols: 40,
+        });
+        assert_eq!(h.replies().len(), 2, "one error each, and still running");
+    }
+
+    #[tokio::test]
+    async fn opening_an_editor_on_a_path_outside_the_checkout_is_refused_here_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+        let checkout = h.checkout();
+        h.send(ClientMsg::OpenInEditor {
+            checkout,
+            path: "../escape.rs".to_string(),
+            line: None,
+        });
+        assert!(h.error().contains("inside the checkout"), "{}", h.error());
+    }
+
+    #[tokio::test]
+    async fn switching_to_a_workspace_that_does_not_exist_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+        h.send(ClientMsg::OpenWorkspace {
+            workspace: orion_protocol::WorkspaceId(9999),
+        });
+        assert!(!h.error().is_empty());
+    }
+}

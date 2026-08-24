@@ -380,6 +380,7 @@ impl App {
             self.leader_pending = false;
             match key.code {
                 KeyCode::Esc => self.ascend(),
+                KeyCode::Tab => self.open_review(),
                 KeyCode::Char('x') => self.close_current(),
                 _ => {}
             }
@@ -408,7 +409,7 @@ impl App {
             KeyCode::Char('n') => self.new_prompt(),
             KeyCode::Char('D') => self.remove_checkout_prompt(),
             KeyCode::Char('w') => self.open_workspace_picker(),
-            KeyCode::Char('R') => self.open_review(),
+            KeyCode::Char('R') | KeyCode::Tab => self.open_review(),
             KeyCode::Char('x') => self.kill_selected(),
             _ => {}
         }
@@ -465,6 +466,10 @@ impl App {
         // Taken first so they don't sit inside the view borrow.
         match key.code {
             KeyCode::Char('R') | KeyCode::Char('r') => return self.open_review(),
+            KeyCode::Char('b') => {
+                self.review_base = self.review_base.next();
+                return self.open_review();
+            }
             KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc | KeyCode::Char('q') => {
                 return self.close_review()
             }
@@ -486,10 +491,6 @@ impl App {
             KeyCode::Char('g') | KeyCode::Home => v.top_of_diff(),
             KeyCode::Char('G') | KeyCode::End => v.bottom_of_diff(),
             KeyCode::Char('V') | KeyCode::Char('v') => v.toggle_mark(),
-            KeyCode::Char('b') => {
-                self.review_base = self.review_base.next();
-                return self.open_review();
-            }
             KeyCode::Char('e') => {
                 let checkout = v.review.checkout;
                 if let Some(a) = v.anchor() {
@@ -2067,6 +2068,27 @@ mod tests {
             }
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    #[test]
+    fn tab_reaches_the_review_from_the_tree_and_from_inside_a_pane() {
+        // §5's entry point. Inside a pane it needs the leader, since a bare
+        // Tab there belongs to the child.
+        let mut h = Harness::new();
+        h.key(KeyCode::Char('l'));
+        h.key(KeyCode::Tab);
+        assert!(matches!(h.sent()[0], ClientMsg::Review { .. }));
+
+        h.keys("l");
+        h.key(KeyCode::Char('s'));
+        h.sent();
+        h.app.focus = Focus::PaneContent;
+        h.leader();
+        h.key(KeyCode::Tab);
+        assert!(
+            h.sent().iter().any(|m| matches!(m, ClientMsg::Review { .. })),
+            "leader-Tab should ask for the diff"
+        );
     }
 
 }
