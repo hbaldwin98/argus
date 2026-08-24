@@ -1227,14 +1227,14 @@ impl App {
             }
             return;
         }
-        if matches!(ev.kind, MouseEventKind::Up(MouseButton::Left)) {
-            if self.resizing_gutter.take().is_some() {
-                self.settings.column_widths = self.column_widths;
-                if self.persist_settings {
-                    crate::settings::save(&self.settings);
-                }
-                return;
+        if matches!(ev.kind, MouseEventKind::Up(MouseButton::Left))
+            && self.resizing_gutter.take().is_some()
+        {
+            self.settings.column_widths = self.column_widths;
+            if self.persist_settings {
+                crate::settings::save(&self.settings);
             }
+            return;
         }
         if let MouseEventKind::Drag(MouseButton::Left) = ev.kind {
             if let Some(gutter) = self.resizing_gutter {
