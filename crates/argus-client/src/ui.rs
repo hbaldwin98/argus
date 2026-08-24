@@ -161,7 +161,7 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
         &projects_title,
         project_rows,
         app.focus == Focus::Projects,
-        Some(app.sel_project).filter(|_| !app.tree.is_empty()),
+        (!app.tree.is_empty()).then_some(app.sel_project),
         "no projects yet
 
 n  add one",
@@ -217,7 +217,7 @@ n  add one",
         "checkouts",
         checkout_rows,
         app.focus == Focus::Checkouts,
-        Some(app.sel_checkout).filter(|_| ncheck > 0),
+        (ncheck > 0).then_some(app.sel_checkout),
         "no checkouts",
         th,
     );
@@ -256,7 +256,7 @@ n  add one",
         "panes",
         pane_rows,
         app.focus == Focus::Panes,
-        Some(app.sel_pane).filter(|_| npane > 0),
+        (npane > 0).then_some(app.sel_pane),
         "nothing running
 
 s  shell
