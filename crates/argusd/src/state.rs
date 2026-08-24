@@ -2331,25 +2331,27 @@ mod tests {
 
     #[tokio::test]
     async fn a_gui_editor_never_gets_a_pane_even_when_a_pane_was_asked_for() {
-        // notepad in a pty is a blank grid and a child that never speaks —
-        // the shape of a hung editor, with a window that looks stuck.
+        // A GUI editor in a pty is a blank grid and a child that never speaks.
+        // Use a missing executable with a known GUI-editor name so this test
+        // exercises that branch without opening a real window.
         let dir = tempfile::tempdir().unwrap();
         let d = daemon_with_primary(&dir.path().to_string_lossy());
         let checkout = d.snapshot()[0].checkouts[0].id;
         std::fs::write(dir.path().join("a.txt"), "x").unwrap();
 
-        std::env::set_var("VISUAL", "notepad");
-        let made = d.spawn_editor(checkout, "a.txt", None, false, None);
-        std::env::remove_var("VISUAL");
+        let made = d.spawn_editor(
+            checkout,
+            "a.txt",
+            None,
+            false,
+            Some("missing/notepad.exe"),
+        );
 
-        // Either it launched detached (no pane) or notepad isn't there to
-        // launch; what must never happen is a pane holding it.
-        if made.is_ok() {
-            assert!(
-                d.snapshot()[0].checkouts[0].panes.is_empty(),
-                "a GUI editor must not become a pane"
-            );
-        }
+        assert!(made.is_err(), "the deliberately missing editor must not launch");
+        assert!(
+            d.snapshot()[0].checkouts[0].panes.is_empty(),
+            "a GUI editor must not become a pane"
+        );
     }
 
     // --- session restore ----------------------------------------------------
