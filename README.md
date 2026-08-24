@@ -1,5 +1,7 @@
 # Argus
 
+[![CI](https://github.com/hbaldwin98/argus/actions/workflows/ci.yml/badge.svg)](https://github.com/hbaldwin98/argus/actions/workflows/ci.yml)
+
 Argus is a terminal workspace for running shells and AI command-line agents across Git checkouts.
 One persistent daemon owns the processes and PTYs; the TUI can detach and reconnect without stopping
 them.
@@ -36,6 +38,7 @@ Install:
   recommended installer and includes Cargo.
 - Git on `PATH`.
 - A native C/C++ build toolchain.
+- Perl, used to compile the vendored OpenSSL dependency.
 - A full-screen terminal with true-color support.
 
 Common platform setup:
@@ -44,7 +47,7 @@ Common platform setup:
 
 ```sh
 sudo apt update
-sudo apt install build-essential pkg-config libssl-dev git curl
+sudo apt install build-essential pkg-config git curl perl
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
@@ -52,7 +55,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 ```sh
 xcode-select --install
-brew install git pkg-config openssl@3
+brew install git pkg-config perl
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
@@ -60,11 +63,11 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 1. Install Git for Windows.
 2. Install Visual Studio 2022 Build Tools with **Desktop development with C++**.
-3. Install Rust from [rustup.rs](https://rustup.rs/) using the default MSVC toolchain.
-4. Run the following commands from PowerShell or Windows Terminal.
+3. Install Strawberry Perl and ensure `perl` is on `PATH`.
+4. Install Rust from [rustup.rs](https://rustup.rs/) using the default MSVC toolchain.
+5. Run the following commands from PowerShell or Windows Terminal.
 
-If `openssl-sys` cannot find OpenSSL on Windows, install OpenSSL through `vcpkg` and set
-`VCPKG_ROOT`, or set the `OPENSSL_DIR` environment variable to an existing OpenSSL installation.
+OpenSSL is built from vendored source, so a separate OpenSSL installation is not required.
 
 This repository does not pin a minimum Rust version. Use the current stable toolchain:
 
@@ -108,6 +111,23 @@ The client starts `argusd` in the background when needed. Press `q` from the nav
 detach; existing panes continue running.
 
 ## Install on `PATH`
+
+### Release archive
+
+Download the archive for your platform from [GitHub Releases](https://github.com/hbaldwin98/argus/releases):
+
+- Linux: `x86_64-unknown-linux-gnu` or `aarch64-unknown-linux-gnu` `.tar.gz`.
+- macOS: `x86_64-apple-darwin` or `aarch64-apple-darwin` `.tar.gz`.
+- Windows: `x86_64-pc-windows-msvc` `.zip`.
+
+Each archive contains `argus`, `argusd`, and `argus-hook` together. Extract the archive and add its
+directory to `PATH`; do not move only one executable. A matching `.sha256` file is published for
+each archive.
+
+Linux and macOS binaries are not code-signed. macOS may require approval in Privacy & Security after
+the first launch. Windows binaries are not Authenticode-signed and may show a SmartScreen warning.
+
+### Build from source
 
 Install both packages so all three executables share Cargo's binary directory:
 
@@ -305,6 +325,14 @@ lifecycle state only.
 
 ## Development
 
+GitHub Actions runs check, tests, and clippy on Linux x86_64, macOS arm64, and Windows x86_64 for
+pull requests and pushes to `main`. The workflow intentionally omits rustfmt until the existing
+workspace-wide formatting drift is resolved.
+
+To make CI mandatory, create a branch ruleset for `main` under **Settings > Rules > Rulesets** and
+require the `Linux x86_64`, `macOS arm64`, and `Windows x86_64` status checks. A workflow reports
+failures, but repository rules are what prevent an unverified merge.
+
 Useful checks from the repository root:
 
 ```sh
@@ -320,3 +348,25 @@ test process briefly delays command teardown.
 The repository currently has pre-existing rustfmt drift, so `cargo fmt --all -- --check` may report
 files unrelated to a change. Avoid applying a workspace-wide format pass in an otherwise focused
 patch.
+
+## Publishing a Release
+
+Releases are created from version tags. The tag must exactly match `workspace.package.version` in
+`Cargo.toml`; for version `0.1.0`, use `v0.1.0`.
+
+1. Update `workspace.package.version` and commit the change.
+2. Ensure CI passes on `main`.
+3. Create and push the matching tag:
+
+```sh
+git tag -a v0.1.0 -m "Argus 0.1.0"
+git push origin v0.1.0
+```
+
+The release workflow builds five native packages, generates SHA-256 checksums, and creates a GitHub
+Release with generated notes. A mismatched tag fails before any packages are built.
+
+## License
+
+Argus is licensed under either the [Apache License, Version 2.0](LICENSE-APACHE) or the
+[MIT License](LICENSE-MIT), at your option.
