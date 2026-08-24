@@ -2,11 +2,12 @@ use std::ffi::OsString;
 use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use argus_protocol::{PaneKind, PaneStatus, ProjectInfo};
+use argus_protocol::{PaneInfo, PaneKind, PaneStatus, ProjectInfo};
 use tokio::process::Command;
 
 const SOURCE: &str = "argus:client";
 const AGENT: &str = "argus";
+const MAX_MESSAGE_CHARS: usize = 240;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AgentState {
@@ -40,8 +41,8 @@ struct HerdrSync {
 }
 
 impl HerdrSync {
-    fn next_update(&mut self, tree: &[ProjectInfo]) -> Option<Update> {
-        let update = aggregate(tree).unwrap_or(Update::Release);
+    fn next_update(&mut self, tree: &[ProjectInfo], workspace: &str) -> Option<Update> {
+        let update = aggregate(tree, workspace).unwrap_or(Update::Release);
         if self.last.as_ref() == Some(&update) {
             return None;
         }
@@ -50,32 +51,116 @@ impl HerdrSync {
     }
 }
 
-fn aggregate(tree: &[ProjectInfo]) -> Option<Update> {
+fn aggregate(tree: &[ProjectInfo], workspace: &str) -> Option<Update> {
     let agents = tree
         .iter()
         .flat_map(|project| &project.checkouts)
         .flat_map(|checkout| &checkout.panes)
         .filter(|pane| pane.kind == PaneKind::Agent)
-        .filter(|pane| !matches!(pane.status, PaneStatus::Exited { .. }));
+        .filter(|pane| !matches!(pane.status, PaneStatus::Exited { .. }))
+        .collect::<Vec<_>>();
 
-    let mut state = None;
-    let mut message = None;
-    for pane in agents {
-        match pane.status {
-            PaneStatus::Waiting | PaneStatus::NeedsReview | PaneStatus::Failed => {
-                state = Some(AgentState::Blocked);
-                message = Some(pane.note.clone().unwrap_or_else(|| pane.title.clone()));
-                break;
-            }
-            PaneStatus::Working => state = Some(AgentState::Working),
-            PaneStatus::Idle | PaneStatus::Done if state.is_none() => {
-                state = Some(AgentState::Idle)
-            }
-            PaneStatus::Idle | PaneStatus::Done | PaneStatus::Exited { .. } => {}
-        }
+    if agents.is_empty() {
+        return None;
     }
 
-    state.map(|state| Update::Report { state, message })
+    let attention = agents.iter().find_map(|pane| attention_message(pane));
+    let state = if attention.is_some() {
+        AgentState::Blocked
+    } else if agents.iter().any(|pane| pane.status == PaneStatus::Working) {
+        AgentState::Working
+    } else {
+        AgentState::Idle
+    };
+
+    let message = format_message(workspace, attention, group_agents(agents));
+    Some(Update::Report {
+        state,
+        message: Some(message),
+    })
+}
+
+fn attention_message(pane: &PaneInfo) -> Option<String> {
+    pane.status.needs_you().then(|| {
+        format!(
+            "{}: {}",
+            pane.title,
+            pane.note
+                .as_deref()
+                .unwrap_or_else(|| status_label(pane.status))
+        )
+    })
+}
+
+fn group_agents(agents: Vec<&PaneInfo>) -> Vec<(&str, Vec<String>)> {
+    let mut groups: Vec<(&str, Vec<String>)> = Vec::new();
+    for pane in agents {
+        let harness = pane.template.as_deref().unwrap_or("agent");
+        let entry = format!("{} [{}]", pane.title, status_label(pane.status));
+        if let Some((_, panes)) = groups.iter_mut().find(|(name, _)| *name == harness) {
+            panes.push(entry);
+        } else {
+            groups.push((harness, vec![entry]));
+        }
+    }
+    groups
+}
+
+fn format_message(
+    workspace: &str,
+    attention: Option<String>,
+    groups: Vec<(&str, Vec<String>)>,
+) -> String {
+    let mut parts = Vec::new();
+    if !workspace.is_empty() {
+        parts.push(workspace.to_string());
+    }
+    if let Some(attention) = attention {
+        parts.push(attention);
+    }
+    parts.extend(
+        groups
+            .into_iter()
+            .map(|(harness, panes)| format!("{harness}: {}", panes.join(", "))),
+    );
+    truncate_message(parts.join(" | "))
+}
+
+fn status_label(status: PaneStatus) -> &'static str {
+    if status == PaneStatus::Idle {
+        "idle"
+    } else if status == PaneStatus::Working {
+        "working"
+    } else if status == PaneStatus::Waiting {
+        "waiting"
+    } else {
+        finished_status_label(status)
+    }
+}
+
+fn finished_status_label(status: PaneStatus) -> &'static str {
+    if status == PaneStatus::NeedsReview {
+        "review"
+    } else if status == PaneStatus::Done {
+        "done"
+    } else if status == PaneStatus::Failed {
+        "failed"
+    } else {
+        debug_assert!(matches!(status, PaneStatus::Exited { .. }));
+        "exited"
+    }
+}
+
+fn truncate_message(message: String) -> String {
+    if message.chars().count() <= MAX_MESSAGE_CHARS {
+        return message;
+    }
+
+    message
+        .chars()
+        .take(MAX_MESSAGE_CHARS - 3)
+        .chain("...".chars())
+        .collect()
 }
 
 pub struct HerdrReporter {
@@ -103,8 +188,8 @@ impl HerdrReporter {
         })
     }
 
-    pub fn update(&mut self, tree: &[ProjectInfo]) {
-        if let Some(update) = self.sync.next_update(tree) {
+    pub fn update(&mut self, tree: &[ProjectInfo], workspace: &str) {
+        if let Some(update) = self.sync.next_update(tree, workspace) {
             self.send(update);
         }
     }
@@ -195,10 +280,10 @@ mod tests {
         let mut sync = HerdrSync::default();
 
         assert_eq!(
-            sync.next_update(&tree(&[PaneStatus::Idle])),
+            sync.next_update(&tree(&[PaneStatus::Idle]), "work"),
             Some(Update::Report {
                 state: AgentState::Idle,
-                message: None,
+                message: Some("work | opencode: agent-0 [idle]".into()),
             })
         );
     }
@@ -208,14 +293,20 @@ mod tests {
         let mut sync = HerdrSync::default();
 
         assert_eq!(
-            sync.next_update(&tree(&[
-                PaneStatus::Idle,
-                PaneStatus::Working,
-                PaneStatus::Waiting,
-            ])),
+            sync.next_update(
+                &tree(&[
+                    PaneStatus::Idle,
+                    PaneStatus::Working,
+                    PaneStatus::Waiting,
+                ]),
+                "work",
+            ),
             Some(Update::Report {
                 state: AgentState::Blocked,
-                message: Some("agent-2".into()),
+                message: Some(
+                    "work | agent-2: waiting | opencode: agent-0 [idle], agent-1 [working], agent-2 [waiting]"
+                        .into(),
+                ),
             })
         );
     }
@@ -224,19 +315,19 @@ mod tests {
     fn review_is_blocked_and_done_is_idle_in_herdr() {
         let mut review = HerdrSync::default();
         assert_eq!(
-            review.next_update(&tree(&[PaneStatus::NeedsReview])),
+            review.next_update(&tree(&[PaneStatus::NeedsReview]), "work"),
             Some(Update::Report {
                 state: AgentState::Blocked,
-                message: Some("agent-0".into()),
+                message: Some("work | agent-0: review | opencode: agent-0 [review]".into()),
             })
         );
 
         let mut done = HerdrSync::default();
         assert_eq!(
-            done.next_update(&tree(&[PaneStatus::Done])),
+            done.next_update(&tree(&[PaneStatus::Done]), "work"),
             Some(Update::Report {
                 state: AgentState::Idle,
-                message: None,
+                message: Some("work | opencode: agent-0 [done]".into()),
             })
         );
     }
@@ -246,16 +337,66 @@ mod tests {
         let agents = tree(&[PaneStatus::Working]);
         let mut sync = HerdrSync::default();
 
-        assert!(sync.next_update(&agents).is_some());
-        assert_eq!(sync.next_update(&agents), None);
+        assert!(sync.next_update(&agents, "work").is_some());
+        assert_eq!(sync.next_update(&agents, "work"), None);
+    }
+
+    #[test]
+    fn the_message_groups_named_agents_by_harness() {
+        let mut agents = tree(&[PaneStatus::Working, PaneStatus::Idle, PaneStatus::Failed]);
+        let panes = &mut agents[0].checkouts[0].panes;
+        panes[0].title = "auth".into();
+        panes[1].title = "tests".into();
+        panes[2].title = "review".into();
+        panes[2].template = Some("codex".into());
+        panes[2].note = Some("cargo test failed".into());
+
+        assert_eq!(
+            HerdrSync::default().next_update(&agents, "platform"),
+            Some(Update::Report {
+                state: AgentState::Blocked,
+                message: Some(
+                    "platform | review: cargo test failed | opencode: auth [working], tests [idle] | codex: review [failed]"
+                        .into(),
+                ),
+            })
+        );
+    }
+
+    #[test]
+    fn long_unicode_messages_are_safely_bounded() {
+        let workspace = "fold-".repeat(60) + "脑";
+        let Some(Update::Report { message, .. }) =
+            HerdrSync::default().next_update(&tree(&[PaneStatus::Idle]), &workspace)
+        else {
+            panic!("a live agent should be reported");
+        };
+        let message = message.unwrap();
+
+        assert_eq!(message.chars().count(), super::MAX_MESSAGE_CHARS);
+        assert!(message.ends_with("..."));
+    }
+
+    #[test]
+    fn exited_agents_are_omitted_from_the_aggregate() {
+        assert_eq!(
+            HerdrSync::default().next_update(
+                &tree(&[PaneStatus::Exited { code: Some(0) }, PaneStatus::Working,]),
+                "work",
+            ),
+            Some(Update::Report {
+                state: AgentState::Working,
+                message: Some("work | opencode: agent-1 [working]".into()),
+            })
+        );
     }
 
     #[test]
     fn losing_the_last_live_agent_releases_argus_from_herdr() {
         let mut sync = HerdrSync::default();
-        sync.next_update(&tree(&[PaneStatus::Idle]));
+        sync.next_update(&tree(&[PaneStatus::Idle]), "work");
 
-        assert_eq!(sync.next_update(&tree(&[])), Some(Update::Release));
-        assert_eq!(sync.next_update(&tree(&[])), None);
+        assert_eq!(sync.next_update(&tree(&[]), "work"), Some(Update::Release));
+        assert_eq!(sync.next_update(&tree(&[]), "work"), None);
     }
 }
