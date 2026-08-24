@@ -523,7 +523,7 @@ impl Daemon {
         };
         let dest = primary_path.join(".orion").join("worktrees").join(&branch);
 
-        let output = tokio::process::Command::new("git")
+        let output = crate::command::git()
             .args(["worktree", "add", "-b", &branch])
             .arg(&dest)
             .current_dir(&base_path)
@@ -578,7 +578,7 @@ impl Daemon {
             let _ = self.close_pane(pane);
         }
 
-        let output = tokio::process::Command::new("git")
+        let output = crate::command::git()
             .args(["worktree", "remove", "--force"])
             .arg(&path)
             .current_dir(&primary_path)
@@ -589,7 +589,7 @@ impl Daemon {
         }
 
         if let Some(branch) = branch {
-            let _ = tokio::process::Command::new("git")
+            let _ = crate::command::git()
                 .args(["branch", "-D", &branch])
                 .current_dir(&primary_path)
                 .output()
@@ -1098,5 +1098,83 @@ mod tests {
 
         d.close_pane(shell).unwrap();
         assert!(settings_of(dir.path()).exists());
+    }
+
+    // --- reconciliation against a real repo ---------------------------------
+
+    /// Builds a real repo with one commit, so `git::list_worktrees` has
+    /// something truthful to return. Mirrors `git::tests::repo_with_a_commit`.
+    fn real_repo(dir: &std::path::Path) -> git2::Repository {
+        let repo = git2::Repository::init(dir).unwrap();
+        std::fs::write(dir.join("a.txt"), "hello").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("a.txt")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let sig = git2::Signature::now("t", "t@example.com").unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[]).unwrap();
+        drop(tree);
+        repo
+    }
+
+    #[test]
+    fn reconciling_a_real_repo_does_not_duplicate_the_primary_checkout() {
+        // The listing and the configured path are produced by different
+        // things — libgit2's workdir (canonicalized, trailing separator,
+        // native separators) versus whatever the user wrote in the config.
+        // If those two ever stop comparing equal, every poll tick decides
+        // the primary is a newly-discovered worktree and adds another row.
+        let dir = tempfile::tempdir().unwrap();
+        let _repo = real_repo(dir.path());
+        // Deliberately configured with forward slashes, the way the config
+        // file and `add_project` write them on Windows.
+        let configured = dir.path().to_string_lossy().replace('\\', "/");
+
+        let d = Daemon::new(ConfigFile {
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                repos: vec![configured],
+            }],
+            agents: Vec::new(),
+        });
+
+        for _ in 0..3 {
+            d.reconcile_worktrees();
+        }
+        let checkouts = &d.snapshot()[0].checkouts;
+        assert_eq!(
+            checkouts.len(),
+            1,
+            "the primary must match its own listing, not clone itself: {:?}",
+            checkouts.iter().map(|c| &c.path).collect::<Vec<_>>()
+        );
+        assert!(checkouts[0].primary);
+    }
+
+    #[test]
+    fn a_worktree_made_outside_orion_is_discovered_against_a_real_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = real_repo(dir.path());
+
+        let d = Daemon::new(ConfigFile {
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                repos: vec![dir.path().to_string_lossy().to_string()],
+            }],
+            agents: Vec::new(),
+        });
+        d.reconcile_worktrees();
+        assert_eq!(d.snapshot()[0].checkouts.len(), 1);
+
+        // Someone runs `git worktree add` in a shell.
+        repo.worktree("feature", &dir.path().join("wt-feature"), None).unwrap();
+
+        d.reconcile_worktrees();
+        let checkouts = &d.snapshot()[0].checkouts;
+        assert_eq!(checkouts.len(), 2, "the new worktree should appear: {checkouts:?}");
+        assert!(
+            checkouts.iter().any(|c| !c.primary),
+            "and be removable, not marked primary"
+        );
     }
 }

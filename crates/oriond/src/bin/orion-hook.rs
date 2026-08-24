@@ -14,6 +14,16 @@
 //! It also writes nothing to stdout. Some agent CLIs inject a hook's stdout
 //! into the model's context on success, so staying silent keeps Orion's
 //! bookkeeping out of the conversation.
+//!
+//! On Windows it is a GUI-subsystem binary. Not because it has a UI — it
+//! has none — but because the agent CLI that runs it decides how it is
+//! spawned, and we cannot ask that CLI to pass `CREATE_NO_WINDOW`. A
+//! console-subsystem binary spawned from a process without a console gets
+//! its own console *window*, which flashes on screen on every hook event.
+//! Declaring the GUI subsystem means no console is ever allocated. Safe
+//! precisely because this program reads and writes nothing on stdio.
+
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 use std::io::Write;
 use std::net::TcpStream;
