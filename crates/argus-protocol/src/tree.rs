@@ -10,15 +10,29 @@ pub enum PaneKind {
     Editor,
 }
 
-/// See DESIGN.md §8b. `Idle`/`Working`/`Waiting` come from agent hooks where
-/// supported (§11); templates with no hook support just sit at `Idle` until
-/// they `Exited` — coarse, but that's the accepted fallback.
+/// See DESIGN.md §8b. Everything but `Exited` comes from the agent itself,
+/// through whatever hook mechanism its harness supports (§11); a harness
+/// that reports nothing sits at `Idle` until it `Exited` — coarse, but
+/// that's the accepted fallback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PaneStatus {
     Idle,
     Working,
+    /// Stopped, needing a human. [`PaneInfo::note`] says what for.
     Waiting,
+    /// Still running, but something went wrong and the agent said so.
+    /// Distinct from `Exited`: the process is alive, so the row is worth
+    /// going to rather than worth closing.
+    Failed,
     Exited { code: Option<i32> },
+}
+
+impl PaneStatus {
+    /// Whether this row is stalled on a human. What the eye should land on
+    /// first when scanning a column of agents.
+    pub fn needs_you(self) -> bool {
+        matches!(self, PaneStatus::Waiting | PaneStatus::Failed)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +41,12 @@ pub struct PaneInfo {
     pub kind: PaneKind,
     pub title: String,
     pub status: PaneStatus,
+    /// One line from the agent about its current state — the question it is
+    /// blocked on, or what failed. The point of a status column is knowing
+    /// whether to go somewhere; the point of this is knowing why, without
+    /// having to.
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 /// Read-only git status for a checkout, polled from the working directory

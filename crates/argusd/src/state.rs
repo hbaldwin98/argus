@@ -16,6 +16,13 @@ struct Pane {
     kind: PaneKind,
     title: String,
     status: PaneStatus,
+    /// The agent's own line about why it is where it is. Set alongside a
+    /// status report and cleared by the next one that carries none, so it
+    /// can never outlive the state it explains.
+    note: Option<String>,
+    /// The agent template this pane was started from, kept because the
+    /// title no longer answers that — an agent may have renamed it.
+    template: Option<String>,
     runtime: PaneRuntime,
 }
 
@@ -57,6 +64,8 @@ pub struct Daemon {
     tree_tx: broadcast::Sender<Vec<ProjectInfo>>,
     workspaces_tx: broadcast::Sender<Vec<WorkspaceInfo>>,
     templates: Vec<AgentConfig>,
+    /// Every harness this run knows about, built-in or configured.
+    harnesses: Vec<crate::harness::Harness>,
     /// Set once `start_hook_server` binds; 0 until then. Read by
     /// `spawn_agent` when installing hooks — a spawn racing the bind (only
     /// possible in the instant between daemon startup and the bind
@@ -140,6 +149,7 @@ impl Daemon {
         } else {
             config.agents
         };
+        let harnesses = config::harnesses(config.harnesses);
 
         // Reopen whatever was open last time, if that workspace still
         // exists — a name can disappear from the config between runs.
@@ -159,6 +169,7 @@ impl Daemon {
             workspaces_tx,
             tree_tx,
             templates,
+            harnesses,
             hook_port: std::sync::atomic::AtomicU16::new(0),
             hook_token: gen_token(),
             restoring: std::sync::atomic::AtomicBool::new(false),
@@ -174,8 +185,14 @@ impl Daemon {
     /// checkout: an unreadable or read-only one must not stop startup.
     pub fn sweep_stale_hooks(&self) {
         for path in self.checkout_paths() {
-            if let Err(e) = crate::hooks::uninstall_claude_hooks(&path) {
-                tracing::warn!("failed to clear stale hooks in {}: {e}", path.display());
+            for h in &self.harnesses {
+                if let Err(e) = h.uninstall(&path) {
+                    tracing::warn!(
+                        "failed to clear stale {} hooks in {}: {e}",
+                        h.name,
+                        path.display()
+                    );
+                }
             }
         }
     }
@@ -188,6 +205,19 @@ impl Daemon {
             .flat_map(|p| p.checkouts.iter())
             .map(|c| c.path.clone())
             .collect()
+    }
+
+    /// The harness an agent template speaks. A template that names none
+    /// falls back to one matching its own name, so `name = "claude"` needs
+    /// no extra key; anything unrecognized gets [`Harness::generic`], which
+    /// installs nothing but still hands the pane the environment.
+    fn harness_for(&self, template: &AgentConfig) -> crate::harness::Harness {
+        let wanted = template.harness.as_deref().unwrap_or(&template.name);
+        self.harnesses
+            .iter()
+            .find(|h| h.name == wanted)
+            .cloned()
+            .unwrap_or_else(crate::harness::Harness::generic)
     }
 
     pub fn template_names(&self) -> Vec<String> {
@@ -223,6 +253,7 @@ impl Daemon {
                                 kind: pane.kind,
                                 title: pane.title.clone(),
                                 status: pane.status,
+                                note: pane.note.clone(),
                             })
                             .collect(),
                         git: crate::git::status(&c.path),
@@ -330,6 +361,7 @@ impl Daemon {
                             checkout_path: c.path.clone(),
                             kind: pane.kind,
                             title: pane.title.clone(),
+                            template: pane.template.clone(),
                         })
                 })
                 .collect(),
@@ -380,7 +412,7 @@ impl Daemon {
                 continue;
             };
             let result = match pane.kind {
-                PaneKind::Agent => self.spawn_agent(checkout, &pane.title).map(|_| ()),
+                PaneKind::Agent => self.spawn_agent(checkout, pane.template()).map(|_| ()),
                 _ => self.spawn_shell(checkout).map(|_| ()),
             };
             match result {
@@ -441,6 +473,8 @@ impl Daemon {
                     kind: PaneKind::Shell,
                     title: "shell".to_string(),
                     status: PaneStatus::Idle,
+                    note: None,
+                    template: None,
                     runtime,
                 });
             }
@@ -517,6 +551,8 @@ impl Daemon {
                     kind: PaneKind::Editor,
                     title: rel_path.rsplit('/').next().unwrap_or(rel_path).to_string(),
                     status: PaneStatus::Idle,
+                    note: None,
+                    template: None,
                     runtime,
                 });
             }
@@ -552,25 +588,30 @@ impl Daemon {
             PaneId(inner.ids.alloc())
         };
 
-        // Claude Code is the only dialect this understands so far (§11);
-        // other templates stay on process-state status alone. Must land
-        // before the process starts — Claude only reads hooks at its own
-        // startup, not on later file changes.
-        if template.name == "claude" {
-            let port = self.hook_port.load(std::sync::atomic::Ordering::Relaxed);
-            if port != 0 {
-                if let Err(e) =
-                    crate::hooks::install_claude_hooks(&path, id, port, &self.hook_token)
-                {
-                    tracing::warn!("failed to install claude hooks in {}: {e}", path.display());
-                }
+        // Must land before the process starts: a harness reads its hook
+        // config at its own startup, not on later file changes.
+        let harness = self.harness_for(&template);
+        let port = self.hook_port.load(std::sync::atomic::Ordering::Relaxed);
+        if port != 0 {
+            if let Err(e) = harness.install(&path, id, port, &self.hook_token) {
+                tracing::warn!(
+                    "failed to install {} hooks in {}: {e}",
+                    harness.name,
+                    path.display()
+                );
             }
         }
+
+        // The template's own env wins: a user who set one of these by hand
+        // meant it.
+        let mut env = crate::harness::env(id, port, &self.hook_token);
+        env.retain(|(k, _)| !template.env.contains_key(k));
+        env.extend(template.env.clone());
 
         let spec = pty::Spawn::Program {
             program: program.clone(),
             args: rest.to_vec(),
-            env: template.env.into_iter().collect(),
+            env,
         };
 
         let daemon = self.clone();
@@ -586,6 +627,8 @@ impl Daemon {
                     kind: PaneKind::Agent,
                     title: template.name.clone(),
                     status: PaneStatus::Idle,
+                    note: None,
+                    template: Some(template.name.clone()),
                     runtime,
                 });
             }
@@ -599,6 +642,7 @@ impl Daemon {
             let mut inner = self.inner.lock().unwrap();
             if let Some(p) = find_pane(&mut inner.projects, pane) {
                 p.status = PaneStatus::Exited { code };
+                p.note = None;
             }
         }
         self.broadcast_tree();
@@ -623,8 +667,14 @@ impl Daemon {
         let removed = removed.ok_or_else(|| anyhow::anyhow!("no such pane"))?;
         let _ = removed.runtime.kill();
         if let Some(path) = orphaned_checkout {
-            if let Err(e) = crate::hooks::uninstall_claude_hooks(&path) {
-                tracing::warn!("failed to clear hooks in {}: {e}", path.display());
+            for h in &self.harnesses {
+                if let Err(e) = h.uninstall(&path) {
+                    tracing::warn!(
+                        "failed to clear {} hooks in {}: {e}",
+                        h.name,
+                        path.display()
+                    );
+                }
             }
         }
         self.broadcast_tree();
@@ -693,18 +743,47 @@ impl Daemon {
     /// Applies a hook-reported status, unless the pane has already exited —
     /// a hook firing after the process died (e.g. `Stop` racing a crash) is
     /// stale and shouldn't resurrect a dead pane's row.
-    fn set_pane_hook_status(&self, pane: PaneId, status: PaneStatus) {
+    fn set_pane_hook_status(&self, pane: PaneId, status: PaneStatus, note: Option<String>) {
         let changed = {
             let mut inner = self.inner.lock().unwrap();
             match find_pane(&mut inner.projects, pane) {
-                Some(p) => match hook_status_update(p.status, status) {
-                    Some(next) => {
-                        p.status = next;
-                        true
-                    }
-                    None => false,
-                },
-                None => false,
+                Some(p) if !matches!(p.status, PaneStatus::Exited { .. }) => {
+                    // A note explains one state; the report that leaves that
+                    // state takes it away with it, so a stale "waiting for
+                    // the db password" can't sit under a working row.
+                    let note = note.map(|n| clean_title(&n)).filter(|n| !n.is_empty());
+                    let changed = p.status != status || p.note != note;
+                    p.status = status;
+                    p.note = note;
+                    changed
+                }
+                _ => false,
+            }
+        };
+        if changed {
+            self.broadcast_tree();
+        }
+    }
+
+    /// Renames a pane at the agent's own request (`argus-hook title ...`).
+    ///
+    /// A column of four rows all reading "claude" says nothing about which
+    /// one is worth looking at; the agent knows what it is doing, so it is
+    /// the one asked. Ignored for a pane that has exited — a rename racing
+    /// a crash shouldn't relabel a dead row.
+    fn set_pane_title(&self, pane: PaneId, title: &str) {
+        let title = clean_title(title);
+        if title.is_empty() {
+            return;
+        }
+        let changed = {
+            let mut inner = self.inner.lock().unwrap();
+            match find_pane(&mut inner.projects, pane) {
+                Some(p) if !matches!(p.status, PaneStatus::Exited { .. }) && p.title != title => {
+                    p.title = title;
+                    true
+                }
+                _ => false,
             }
         };
         if changed {
@@ -1160,14 +1239,24 @@ async fn handle_hook_request(
             content_length = v.trim().parse().unwrap_or(0);
         }
     }
-    if content_length > 0 {
-        let mut discard = vec![0u8; content_length];
-        let _ = reader.read_exact(&mut discard).await;
+    // Capped: the only body anyone sends is a pane title, and this server
+    // trusts nothing about a request beyond having written the command that
+    // makes it.
+    let mut body = vec![0u8; content_length.min(MAX_BODY)];
+    if !body.is_empty() {
+        let _ = reader.read_exact(&mut body).await;
     }
 
     if authorized {
-        if let Some((pane, status)) = parse_hook_path(&path) {
-            daemon.set_pane_hook_status(pane, status);
+        match parse_pane_path(&path) {
+            Some((pane, Endpoint::Status(report))) => {
+                let note = String::from_utf8_lossy(&body).to_string();
+                daemon.set_pane_hook_status(pane, report.status(), Some(note))
+            }
+            Some((pane, Endpoint::Title)) => {
+                daemon.set_pane_title(pane, &String::from_utf8_lossy(&body))
+            }
+            None => {}
         }
         wr.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
             .await?;
@@ -1180,33 +1269,48 @@ async fn handle_hook_request(
     Ok(())
 }
 
-/// `/hook/<pane_id>/<event>` -> which pane, and the status that event
-/// implies. Unrecognized events (anything we didn't ask `hooks.rs` to
-/// install) are ignored rather than erroring.
-fn parse_hook_path(path: &str) -> Option<(PaneId, PaneStatus)> {
+const MAX_BODY: usize = 4096;
+
+/// What a request wants done to a pane.
+#[derive(Debug, PartialEq, Eq)]
+enum Endpoint {
+    Status(crate::harness::Report),
+    Title,
+}
+
+/// `/pane/<id>/status/<working|idle|waiting>` and `/pane/<id>/title`.
+///
+/// The status is named in the URL rather than the harness's own event name:
+/// the installer already knows what each of its events means, so by the time
+/// a request arrives the daemon needs no dialect at all. That is what makes
+/// a harness a config block instead of a match arm here.
+fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
     let mut parts = path.trim_start_matches('/').split('/');
-    if parts.next()? != "hook" {
+    if parts.next()? != "pane" {
         return None;
     }
     let pane = PaneId(parts.next()?.parse().ok()?);
-    let status = match parts.next()? {
-        "UserPromptSubmit" => PaneStatus::Working,
-        "Stop" => PaneStatus::Idle,
-        "Notification" => PaneStatus::Waiting,
+    let endpoint = match parts.next()? {
+        "status" => Endpoint::Status(crate::harness::Report::parse(parts.next()?)?),
+        "title" => Endpoint::Title,
         _ => return None,
     };
-    Some((pane, status))
-}
-
-/// The status a pane should move to given a hook report, or `None` to leave
-/// it alone. A hook firing after the process died (e.g. `Stop` racing a
-/// crash) is stale and mustn't resurrect a dead pane's row; a report that
-/// changes nothing isn't worth a tree broadcast either.
-fn hook_status_update(current: PaneStatus, incoming: PaneStatus) -> Option<PaneStatus> {
-    if matches!(current, PaneStatus::Exited { .. }) || current == incoming {
+    if parts.next().is_some() {
         return None;
     }
-    Some(incoming)
+    Some((pane, endpoint))
+}
+
+/// A title has to survive being drawn in a one-line row, and arrives from a
+/// model, so it is flattened to a single line and cut to something a column
+/// can hold.
+fn clean_title(raw: &str) -> String {
+    const MAX: usize = 48;
+    let flat = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    match flat.char_indices().nth(MAX) {
+        Some((i, _)) => format!("{}…", flat[..i].trim_end()),
+        None => flat,
+    }
 }
 
 /// Not cryptographically strong — see `Daemon::hook_token`'s doc comment —
@@ -1246,6 +1350,7 @@ mod tests {
                 workspace: None,
             }],
             agents: Vec::new(),
+            harnesses: Vec::new(),
         })
     }
 
@@ -1261,69 +1366,182 @@ mod tests {
         paths.iter().map(PathBuf::from).collect()
     }
 
-    // --- hook path parsing -------------------------------------------------
+    // --- the pane API ------------------------------------------------------
 
     #[test]
-    fn hook_path_maps_each_managed_event_to_a_status() {
+    fn a_status_path_names_the_pane_and_the_state_itself() {
+        // Not the harness's event name: the installer already resolved that,
+        // which is what lets a new harness be config rather than code.
         assert_eq!(
-            parse_hook_path("/hook/7/UserPromptSubmit"),
-            Some((PaneId(7), PaneStatus::Working))
+            parse_pane_path("/pane/7/status/working"),
+            Some((PaneId(7), Endpoint::Status(crate::harness::Report::Working)))
         );
         assert_eq!(
-            parse_hook_path("/hook/7/Stop"),
-            Some((PaneId(7), PaneStatus::Idle))
+            parse_pane_path("/pane/7/status/failed"),
+            Some((PaneId(7), Endpoint::Status(crate::harness::Report::Failed)))
         );
         assert_eq!(
-            parse_hook_path("/hook/7/Notification"),
-            Some((PaneId(7), PaneStatus::Waiting))
+            parse_pane_path("/pane/7/title"),
+            Some((PaneId(7), Endpoint::Title))
         );
     }
 
     #[test]
-    fn hook_path_rejects_junk() {
-        assert_eq!(
-            parse_hook_path("/hook/7/SessionStart"),
-            None,
-            "unmanaged event"
-        );
-        assert_eq!(parse_hook_path("/nope/7/Stop"), None, "wrong prefix");
-        assert_eq!(
-            parse_hook_path("/hook/abc/Stop"),
-            None,
-            "non-numeric pane id"
-        );
-        assert_eq!(parse_hook_path("/hook/7"), None, "missing event");
-        assert_eq!(parse_hook_path(""), None, "empty path");
-    }
-
-    // --- hook status application -------------------------------------------
-
-    #[test]
-    fn hook_status_applies_to_a_live_pane() {
-        assert_eq!(
-            hook_status_update(PaneStatus::Idle, PaneStatus::Working),
-            Some(PaneStatus::Working)
-        );
-        assert_eq!(
-            hook_status_update(PaneStatus::Working, PaneStatus::Waiting),
-            Some(PaneStatus::Waiting)
-        );
+    fn a_pane_path_rejects_junk() {
+        assert_eq!(parse_pane_path("/pane/7/status/Stop"), None, "an event name");
+        assert_eq!(parse_pane_path("/pane/7/status/exited"), None, "ours to decide");
+        assert_eq!(parse_pane_path("/nope/7/title"), None, "wrong prefix");
+        assert_eq!(parse_pane_path("/pane/abc/title"), None, "non-numeric pane");
+        assert_eq!(parse_pane_path("/pane/7"), None, "no endpoint");
+        assert_eq!(parse_pane_path("/pane/7/title/extra"), None, "trailing junk");
+        assert_eq!(parse_pane_path(""), None, "empty path");
     }
 
     #[test]
-    fn hook_status_never_resurrects_an_exited_pane() {
-        for code in [Some(0), Some(1), None] {
-            assert_eq!(
-                hook_status_update(PaneStatus::Exited { code }, PaneStatus::Idle),
-                None,
-                "exit code {code:?} must stay exited"
-            );
-        }
+    fn a_title_from_a_model_is_flattened_and_cut_to_fit_a_row() {
+        assert_eq!(clean_title("  fixing\n the   pty  "), "fixing the pty");
+        let long = clean_title(&"x".repeat(200));
+        assert!(long.chars().count() <= 49, "got {} chars", long.chars().count());
+        assert!(long.ends_with('…'));
+        assert_eq!(clean_title("   "), "");
     }
 
-    #[test]
-    fn hook_status_that_changes_nothing_is_not_an_update() {
-        assert_eq!(hook_status_update(PaneStatus::Idle, PaneStatus::Idle), None);
+    /// A daemon holding one live agent pane, and that pane's id.
+    async fn daemon_with_an_agent(dir: &std::path::Path) -> (Arc<Daemon>, PaneId) {
+        let d = daemon_with_fake_claude(dir);
+        let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+        (d, pane)
+    }
+
+    fn pane_info(d: &Daemon, pane: PaneId) -> PaneInfo {
+        d.snapshot()
+            .into_iter()
+            .flat_map(|p| p.checkouts)
+            .flat_map(|c| c.panes)
+            .find(|p| p.id == pane)
+            .expect("pane should still be in the tree")
+    }
+
+    #[tokio::test]
+    async fn an_agent_can_rename_its_own_row() {
+        // The feature: four rows all reading "claude" say nothing about
+        // which one is worth looking at.
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+        assert_eq!(pane_info(&d, pane).title, "claude");
+
+        d.set_pane_title(pane, "fixing the pty deadlock");
+        assert_eq!(pane_info(&d, pane).title, "fixing the pty deadlock");
+
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_empty_rename_leaves_the_row_alone() {
+        // Better the agent's name than a blank row.
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+        d.set_pane_title(pane, "   \n  ");
+        assert_eq!(pane_info(&d, pane).title, "claude");
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_stalled_pane_says_what_it_is_stalled_on() {
+        // The reason to have a note at all: knowing a pane needs you is
+        // only half of it.
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+
+        d.set_pane_hook_status(
+            pane,
+            PaneStatus::Waiting,
+            Some("needs the staging password".to_string()),
+        );
+        let info = pane_info(&d, pane);
+        assert_eq!(info.status, PaneStatus::Waiting);
+        assert_eq!(info.note.as_deref(), Some("needs the staging password"));
+
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_note_goes_away_with_the_state_it_explained() {
+        // A stale "waiting on a password" under a working row is worse than
+        // no note at all.
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+
+        d.set_pane_hook_status(pane, PaneStatus::Waiting, Some("needs a password".into()));
+        d.set_pane_hook_status(pane, PaneStatus::Working, None);
+
+        let info = pane_info(&d, pane);
+        assert_eq!(info.status, PaneStatus::Working);
+        assert_eq!(info.note, None);
+
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_failure_keeps_the_pane_alive_and_says_why() {
+        // Distinct from an exit: the process is still there to answer.
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+
+        d.set_pane_hook_status(pane, PaneStatus::Failed, Some("cargo test won't build".into()));
+        let info = pane_info(&d, pane);
+        assert_eq!(info.status, PaneStatus::Failed);
+        assert!(info.note.is_some());
+
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_report_never_resurrects_an_exited_pane() {
+        // A Stop hook racing a crash must not relabel a dead row as idle.
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+        d.mark_pane_exited(pane, Some(1));
+
+        d.set_pane_hook_status(pane, PaneStatus::Idle, Some("all done".into()));
+
+        let info = pane_info(&d, pane);
+        assert_eq!(info.status, PaneStatus::Exited { code: Some(1) });
+        assert_eq!(info.note, None, "an exited pane explains nothing");
+
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_rename_will_not_relabel_a_dead_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+        d.mark_pane_exited(pane, Some(0));
+
+        d.set_pane_title(pane, "still working on it");
+        assert_eq!(pane_info(&d, pane).title, "claude");
+
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn every_agent_pane_is_handed_the_hook_environment() {
+        // The universal floor: a harness Argus knows nothing about can still
+        // report, because the variables are always there.
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_fake_claude(dir.path());
+        d.start_hook_server().unwrap();
+        let port = d.hook_port.load(std::sync::atomic::Ordering::Relaxed);
+        assert_ne!(port, 0);
+
+        let env = crate::harness::env(PaneId(1), port, &d.hook_token);
+        let url = env
+            .iter()
+            .find(|(k, _)| k == crate::harness::URL_VAR)
+            .map(|(_, v)| v.clone())
+            .unwrap();
+        assert!(url.contains(&port.to_string()));
+        assert!(parse_pane_path("/pane/1/title").is_some());
     }
 
     // --- worktree reconciliation -------------------------------------------
@@ -1480,7 +1698,9 @@ mod tests {
                 name: "claude".to_string(),
                 cmd: vec!["echo".to_string(), "hi".to_string()],
                 env: Default::default(),
+                harness: None,
             }],
+            harnesses: Vec::new(),
         })
     }
 
@@ -1498,7 +1718,9 @@ mod tests {
         // in a checkout fire against nobody — and break every later agent
         // run in that directory, Argus-managed or not.
         let dir = tempfile::tempdir().unwrap();
-        crate::hooks::install_claude_hooks(dir.path(), PaneId(4), 65140, "old").unwrap();
+        crate::harness::Harness::claude()
+            .install(dir.path(), PaneId(4), 65140, "old")
+            .unwrap();
         assert!(settings_of(dir.path()).exists());
 
         let d = daemon_with_fake_claude(dir.path());
@@ -1608,6 +1830,7 @@ mod tests {
                 workspace: None,
             }],
             agents: Vec::new(),
+            harnesses: Vec::new(),
         });
 
         for _ in 0..3 {
@@ -1636,6 +1859,7 @@ mod tests {
                 workspace: None,
             }],
             agents: Vec::new(),
+            harnesses: Vec::new(),
         });
         d.reconcile_worktrees();
         assert_eq!(d.snapshot()[0].checkouts.len(), 1);
@@ -1701,6 +1925,7 @@ mod tests {
                 },
             ],
             agents: Vec::new(),
+            harnesses: Vec::new(),
         }
     }
 
@@ -1878,6 +2103,7 @@ mod tests {
                     },
                 ],
                 agents: Vec::new(),
+                harnesses: Vec::new(),
             });
 
             // Spawn a pane in the *other* workspace, then look away.
@@ -2131,7 +2357,9 @@ mod tests {
                 name: "test-agent".to_string(),
                 cmd: vec![if cfg!(windows) { "cmd" } else { "sh" }.to_string()],
                 env: Default::default(),
+                harness: None,
             }],
+            harnesses: Vec::new(),
         })
     }
 
@@ -2146,6 +2374,7 @@ mod tests {
                     checkout_path: checkout.to_path_buf(),
                     kind: *kind,
                     title: title.to_string(),
+                    template: Some(title.to_string()),
                 })
                 .collect(),
         });
@@ -2226,6 +2455,33 @@ mod tests {
             d.restore_session();
 
             assert_eq!(d.snapshot()[0].checkouts[0].panes[0].title, "test-agent");
+            close_all(&d);
+        });
+    }
+
+    #[tokio::test]
+    async fn an_agent_that_renamed_itself_still_comes_back() {
+        // Regression: an agent is spawned by template name, and a renamed
+        // pane's title is no longer that. Restoring by title would look up
+        // a template called "fixing the pty deadlock" and find nothing.
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            crate::session::save(&crate::session::Session {
+                panes: vec![crate::session::SessionPane {
+                    checkout_path: dir.path().to_path_buf(),
+                    kind: PaneKind::Agent,
+                    title: "fixing the pty deadlock".to_string(),
+                    template: Some("test-agent".to_string()),
+                }],
+            });
+
+            let d = daemon_for_restore(dir.path());
+            d.restore_session();
+
+            let panes = &d.snapshot()[0].checkouts[0].panes;
+            assert_eq!(panes.len(), 1, "the renamed agent should be back");
+            assert_eq!(panes[0].title, "test-agent", "back under its template's name");
+
             close_all(&d);
         });
     }

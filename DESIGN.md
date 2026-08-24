@@ -10,7 +10,7 @@ Argus has three binaries:
 
 - `argus`: the ratatui/crossterm client.
 - `argusd`: the daemon that owns PTYs, terminal state, Git state, and runtime persistence.
-- `argus-hook`: the helper used by managed Claude hooks.
+- `argus-hook`: the helper managed hooks run, and the command an agent runs to report on itself.
 
 The client starts the daemon lazily when it cannot connect. On Unix the daemon process calls
 `setsid`; on Windows it starts in a detached process group. Closing the client does not stop the
@@ -82,10 +82,40 @@ Clients receive a full grid when they subscribe, then incremental damage. Resize
 PTY and parser and emits another full grid. If several clients resize one pane, the latest request
 wins; ownership is not yet defined.
 
-The current pane states are `Idle`, `Working`, `Waiting`, and `Exited { code }`. Claude hooks map
-prompt submission to working, stop to idle, and notification to waiting. Other harnesses rely on
-process state. Hook files are checkout-wide, so concurrent Claude panes in one checkout do not yet
-have independent hook routing.
+The current pane states are `Idle`, `Working`, `Waiting`, `Failed`, and `Exited { code }`.
+`Failed` means the agent said something went wrong while still running, so the row is worth going
+to rather than worth closing. A pane also carries a `note`: one line from the agent about the state
+it is in — the question it is blocked on, or what failed — drawn as the row's second line so a
+stalled pane explains itself without being opened. A note is set alongside a status report and
+cleared by the next report that carries none, so it can never outlive the state it explains.
+
+Status is harness-agnostic. A *harness* is a description of how a particular agent CLI can be
+asked to report, and there are two mechanisms; a harness may use either or both.
+
+Every agent pane is handed `ARGUS_HOOK_URL`, `ARGUS_HOOK_TOKEN`, `ARGUS_PANE`, `ARGUS_HOOK` and
+`ARGUS_INSTRUCTIONS`. That is the universal floor: a CLI that can run one command at some point in
+its lifecycle can report without Argus knowing anything about its config format. On top of that,
+a harness whose hooks live in JSON in the checkout can have Argus write and remove a managed block
+itself — `settings` says where the file is, `shape` says how an entry nests (`matcher` for Claude
+Code, `flat` otherwise), and `events` maps the harness's own event names onto the statuses Argus
+draws. Claude Code and `generic` are built in; a `[[harness]]` block in `projects.toml` adds or
+replaces one, and an `[[agent]]` template selects one with `harness = "..."`, defaulting to a
+harness matching its own name.
+
+The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
+/pane/<id>/status/<working|idle|waiting|failed>` with an optional body as the note, and `POST
+/pane/<id>/title`. The status is named in the URL rather than the harness's event name, because
+the installer already resolved that — which is what makes a new harness config instead of a match
+arm. Managed blocks are per-boot: they name an ephemeral port and a per-boot token, so they are
+swept from every configured checkout at startup and removed when the last agent pane in a checkout
+goes away. Hook files are checkout-wide, so concurrent panes of the same harness in one checkout
+do not yet have independent hook routing.
+
+Agents name their own rows. At session start a harness with a `context_event` is handed
+instructions telling it to run `argus-hook title "..."` once it knows what it is working on, and
+`argus-hook status waiting "..."` when it needs a human; the same text is in `ARGUS_INSTRUCTIONS`
+for harnesses with no such event. Titles arriving from a model are flattened to one line and cut to
+48 characters. Neither a rename nor a status report can touch a pane that has exited.
 
 ## Session restore
 

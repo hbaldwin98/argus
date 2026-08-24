@@ -10,7 +10,7 @@ name = "argusd"
 path = "src/main.rs"
 
 # The command Argus writes into managed agent hooks. Separate binary so a
-# hook never depends on a shell, and never reports failure. See hooks.rs.
+# hook never depends on a shell, and never reports failure. See harness.rs.
 [[bin]]
 name = "argus-hook"
 path = "src/bin/argus-hook.rs"

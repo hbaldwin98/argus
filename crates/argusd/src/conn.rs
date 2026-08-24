@@ -308,6 +308,7 @@ mod tests {
                     workspace: None,
                 }],
                 agents: Vec::new(),
+                harnesses: Vec::new(),
             });
             let (tx, rx) = mpsc::unbounded_channel();
             Harness {

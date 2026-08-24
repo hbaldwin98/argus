@@ -236,10 +236,7 @@ n  add one",
                             ),
                             Span::styled(exit_note(p.status), Style::default().fg(th.err)),
                         ],
-                        vec![Span::styled(
-                            status_word(p.status),
-                            Style::default().fg(th.dim),
-                        )],
+                        pane_detail(p, th),
                     )
                     .badged(vec![Span::styled(
                         format!("#{}", p.id.0),
@@ -1001,7 +998,24 @@ fn status_word(status: PaneStatus) -> &'static str {
         PaneStatus::Idle => "idle",
         PaneStatus::Working => "working",
         PaneStatus::Waiting => "needs you",
+        PaneStatus::Failed => "failed",
         PaneStatus::Exited { .. } => "exited",
+    }
+}
+
+/// The row's second line. The agent's own note when it has left one,
+/// because "needs you" without saying what for still costs you a trip into
+/// the pane — which is the whole thing this column exists to save.
+fn pane_detail(p: &argus_protocol::PaneInfo, th: Theme) -> Vec<Span<'static>> {
+    match p.note.as_deref().filter(|n| !n.is_empty()) {
+        Some(note) => vec![Span::styled(
+            note.to_string(),
+            Style::default().fg(if p.status.needs_you() { th.err } else { th.muted }),
+        )],
+        None => vec![Span::styled(
+            status_word(p.status),
+            Style::default().fg(th.dim),
+        )],
     }
 }
 
@@ -1026,7 +1040,10 @@ fn rank(status: &PaneStatus) -> u8 {
         PaneStatus::Exited { code: Some(0) } => 0,
         PaneStatus::Idle | PaneStatus::Working => 1,
         PaneStatus::Exited { .. } => 2,
-        PaneStatus::Waiting => 3,
+        // Both want you, and a live pane you can still answer wants you
+        // more than one that already gave up.
+        PaneStatus::Failed => 3,
+        PaneStatus::Waiting => 4,
     }
 }
 
@@ -1038,6 +1055,8 @@ fn status_dot(status: Option<PaneStatus>, th: Theme) -> Span<'static> {
         Some(PaneStatus::Idle) => ("● ", th.ok),
         Some(PaneStatus::Working) => ("● ", th.warn),
         Some(PaneStatus::Waiting) => ("● ", th.err),
+        // Still running, unlike an exit — so a dot, not a cross.
+        Some(PaneStatus::Failed) => ("● ", th.err),
         Some(PaneStatus::Exited { code: Some(0) }) => ("✓ ", th.dim),
         Some(PaneStatus::Exited { .. }) => ("✗ ", th.err),
     };
@@ -1124,6 +1143,7 @@ mod tests {
                     kind: PaneKind::Agent,
                     title: "t".to_string(),
                     status: *s,
+                    note: None,
                 })
                 .collect(),
         }
@@ -1287,6 +1307,70 @@ mod tests {
         assert!(row_rect(inner, 2).is_none(), "no room for both its lines");
     }
 
+    // --- what a pane row says -----------------------------------------------
+
+    fn pane(status: PaneStatus, note: Option<&str>) -> argus_protocol::PaneInfo {
+        argus_protocol::PaneInfo {
+            id: PaneId(1),
+            kind: PaneKind::Agent,
+            title: "claude".to_string(),
+            status,
+            note: note.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn a_pane_with_nothing_to_say_falls_back_to_its_state() {
+        let th = Theme::default();
+        assert_eq!(text_of(&pane_detail(&pane(PaneStatus::Working, None), th)), "working");
+        assert_eq!(
+            text_of(&pane_detail(&pane(PaneStatus::Waiting, None), th)),
+            "needs you"
+        );
+        assert_eq!(text_of(&pane_detail(&pane(PaneStatus::Failed, None), th)), "failed");
+    }
+
+    #[test]
+    fn a_stalled_pane_says_what_it_wants_instead_of_that_it_wants_something() {
+        // The whole point of the note: "needs you" still costs you a trip
+        // into the pane to find out what for.
+        let th = Theme::default();
+        let spans = pane_detail(&pane(PaneStatus::Waiting, Some("needs the db password")), th);
+        assert_eq!(text_of(&spans), "needs the db password");
+        assert_eq!(spans[0].style.fg, Some(th.err), "a blocked row should read as one");
+    }
+
+    #[test]
+    fn a_note_on_a_calm_pane_is_not_dressed_as_an_alarm() {
+        let th = Theme::default();
+        let spans = pane_detail(&pane(PaneStatus::Working, Some("rewriting the parser")), th);
+        assert_eq!(spans[0].style.fg, Some(th.muted));
+    }
+
+    #[test]
+    fn an_empty_note_is_not_an_empty_line() {
+        let th = Theme::default();
+        assert_eq!(text_of(&pane_detail(&pane(PaneStatus::Idle, Some("")), th)), "idle");
+    }
+
+    #[test]
+    fn a_failed_pane_outranks_the_calm_ones_but_not_a_waiting_one() {
+        // Parents show the worst child; both want you, and the one you can
+        // still answer wants you most.
+        assert!(rank(&PaneStatus::Failed) > rank(&PaneStatus::Working));
+        assert!(rank(&PaneStatus::Failed) > rank(&PaneStatus::Exited { code: Some(1) }));
+        assert!(rank(&PaneStatus::Waiting) > rank(&PaneStatus::Failed));
+    }
+
+    #[test]
+    fn a_failed_pane_is_still_running_so_it_keeps_its_dot() {
+        // A cross would read as "this is over"; it isn't.
+        let th = Theme::default();
+        let failed = status_dot(Some(PaneStatus::Failed), th);
+        assert_eq!(failed.content.trim(), "\u{25cf}");
+        assert_eq!(failed.style.fg, Some(th.err));
+    }
+
     // --- rendering the whole frame -----------------------------------------
 
     fn tree() -> Vec<ProjectInfo> {
@@ -1306,12 +1390,14 @@ mod tests {
                             kind: PaneKind::Agent,
                             title: "claude".to_string(),
                             status: PaneStatus::Working,
+                            note: None,
                         },
                         PaneInfo {
                             id: PaneId(101),
                             kind: PaneKind::Shell,
                             title: "shell".to_string(),
                             status: PaneStatus::Idle,
+                            note: None,
                         },
                     ],
                 },
@@ -1883,6 +1969,7 @@ mod tests {
                 kind: PaneKind::Editor,
                 title: "zzz-editor.rs".to_string(),
                 status: PaneStatus::Idle,
+                note: None,
             });
         }
         let out = lines(&draw(&mut app)).join("\n");

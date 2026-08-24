@@ -5,7 +5,7 @@ mod conn;
 mod diff;
 mod editor;
 mod git;
-mod hooks;
+mod harness;
 mod pty;
 mod session;
 mod state;

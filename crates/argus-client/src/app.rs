@@ -1554,6 +1554,7 @@ mod tests {
             kind: PaneKind::Shell,
             title: title.to_string(),
             status: PaneStatus::Idle,
+            note: None,
         }
     }
 
@@ -2796,12 +2797,14 @@ mod tests {
                 kind: PaneKind::Shell,
                 title: "sh".to_string(),
                 status: PaneStatus::Idle,
+                note: None,
             },
             PaneInfo {
                 id: PaneId(51),
                 kind: PaneKind::Agent,
                 title: "claude".to_string(),
                 status: PaneStatus::Idle,
+                note: None,
             },
         ];
         t
@@ -3501,6 +3504,7 @@ mod tests {
             kind: PaneKind::Editor,
             title: "a.rs".to_string(),
             status: PaneStatus::Idle,
+            note: None,
         });
         h.app.on_server_msg(ServerMsg::Tree(t));
     }
@@ -3517,6 +3521,7 @@ mod tests {
             kind: PaneKind::Editor,
             title: "a.rs".to_string(),
             status: PaneStatus::Idle,
+            note: None,
         });
         h.app.on_server_msg(ServerMsg::Tree(t));
     }
@@ -3835,6 +3840,7 @@ mod tests {
             kind: PaneKind::Editor,
             title: "a.rs".to_string(),
             status: PaneStatus::Idle,
+            note: None,
         });
         t
     }

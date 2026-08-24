@@ -137,6 +137,7 @@ mod tests {
                     kind: PaneKind::Agent,
                     title: "claude".to_string(),
                     status: PaneStatus::Waiting,
+                    note: None,
                 }],
             }],
         }]);

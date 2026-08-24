@@ -19,9 +19,21 @@ use serde::{Deserialize, Serialize};
 pub struct SessionPane {
     pub checkout_path: PathBuf,
     pub kind: PaneKind,
-    /// For an agent this is its template name, which is how it gets
-    /// started again.
+    /// What the row said when the daemon stopped — which, since an agent
+    /// can rename its own pane, is not necessarily what to start.
     pub title: String,
+    /// The agent template to spawn. Absent in a file written before agents
+    /// could rename themselves, where the title was the template name.
+    #[serde(default)]
+    pub template: Option<String>,
+}
+
+impl SessionPane {
+    /// What to start again. The title only stands in for a file old enough
+    /// to predate renaming.
+    pub fn template(&self) -> &str {
+        self.template.as_deref().unwrap_or(&self.title)
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -128,6 +140,7 @@ mod tests {
             checkout_path: PathBuf::from(path),
             kind,
             title: title.to_string(),
+            template: None,
         }
     }
 
@@ -213,9 +226,30 @@ mod tests {
                 checkout_path: forward,
                 kind: PaneKind::Shell,
                 title: "shell".to_string(),
+                template: None,
             }],
         };
         assert_eq!(restorable(&s, &known).count(), 1);
+    }
+
+    #[test]
+    fn a_renamed_agent_comes_back_as_the_template_it_was() {
+        // Regression: an agent that renamed its own pane to what it was
+        // working on would otherwise be looked up as a template by that
+        // name, and never come back at all.
+        let p = SessionPane {
+            checkout_path: PathBuf::from("/repo"),
+            kind: PaneKind::Agent,
+            title: "fixing the pty deadlock".to_string(),
+            template: Some("claude".to_string()),
+        };
+        assert_eq!(p.template(), "claude");
+    }
+
+    #[test]
+    fn a_file_written_before_renaming_still_names_its_template() {
+        let p = pane("/repo", PaneKind::Agent, "claude");
+        assert_eq!(p.template(), "claude", "the title was the template then");
     }
 
     #[test]
