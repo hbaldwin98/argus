@@ -112,6 +112,9 @@ fn handle_client_msg(
         }
         ClientMsg::OpenWorkspace { workspace } => daemon.open_workspace(workspace),
         // Filesystem work, so off the message loop like the two above.
+        ClientMsg::OpenInEditor { checkout, path, line } => {
+            daemon.spawn_editor(checkout, &path, line).map(|_| ())
+        }
         ClientMsg::Review { checkout } => daemon.checkout_path(checkout).map(|path| {
             let out_tx = out_tx.clone();
             tokio::task::spawn_blocking(move || {

@@ -479,6 +479,19 @@ impl App {
             KeyCode::Char('g') | KeyCode::Home => v.top_of_diff(),
             KeyCode::Char('G') | KeyCode::End => v.bottom_of_diff(),
             KeyCode::Char('V') | KeyCode::Char('v') => v.toggle_mark(),
+            KeyCode::Char('e') => {
+                let checkout = v.review.checkout;
+                if let Some(a) = v.anchor() {
+                    let _ = self.out.send(ClientMsg::OpenInEditor {
+                        checkout,
+                        path: a.path,
+                        line: a.start,
+                    });
+                    // The editor needs the column the review is using.
+                    self.pending_focus_new = true;
+                    self.close_review();
+                }
+            }
             KeyCode::Char('c') => {
                 let anchor = v.anchor();
                 if let Some(anchor) = anchor {
@@ -1986,6 +1999,28 @@ mod tests {
             Some(Prompt::Comment { input, .. }) => assert_eq!(input, "jkgG"),
             _ => panic!("no comment prompt"),
         }
+    }
+
+    #[test]
+    fn e_opens_the_file_under_the_cursor_at_its_line() {
+        let mut h = review_with_agent();
+        h.key(KeyCode::Char('j'));
+        h.key(KeyCode::Char('e'));
+
+        match &h.sent()[0] {
+            ClientMsg::OpenInEditor { path, line, .. } => {
+                assert_eq!(path, "src/a.rs");
+                assert_eq!(*line, Some(2));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn opening_an_editor_gives_it_the_column_the_review_was_using() {
+        let mut h = review_with_agent();
+        h.key(KeyCode::Char('e'));
+        assert!(h.app.review.is_none());
     }
 
 }

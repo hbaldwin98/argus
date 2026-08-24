@@ -442,7 +442,7 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     } else if app.leader_pending {
         ("leader…   esc back to panes   x close pane", th.accent)
     } else if app.focus == Focus::Review {
-        ("j/k move   ]/[ file   v range   c comment   r refresh   esc close", th.dim)
+        ("j/k move  ]/[ file  v range  c comment  e edit  r refresh  esc close", th.dim)
     } else if app.focus == Focus::PaneContent {
         ("typing — ctrl-space then esc to leave, x to close", th.dim)
     } else {

@@ -6,6 +6,8 @@ use crate::ids::{CheckoutId, PaneId, ProjectId, WorkspaceId};
 pub enum PaneKind {
     Shell,
     Agent,
+    /// The user's own editor, opened on a file from the review (§6).
+    Editor,
 }
 
 /// See DESIGN.md §8b. `Idle`/`Working`/`Waiting` come from agent hooks where

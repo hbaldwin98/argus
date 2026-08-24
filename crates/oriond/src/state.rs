@@ -336,6 +336,62 @@ impl Daemon {
         Ok(id)
     }
 
+    /// Opens `rel_path` (repo-relative) in the user's editor as a pane.
+    pub fn spawn_editor(
+        self: &Arc<Self>,
+        checkout: CheckoutId,
+        rel_path: &str,
+        line: Option<u32>,
+    ) -> anyhow::Result<PaneId> {
+        let path = self.checkout_path(checkout)?;
+        // Rejected here rather than trusted: `path` is spawned into a
+        // command line, and a client is not the authority on what is
+        // inside the checkout. A leading separator is not `is_absolute` on
+        // Windows, so it is checked by hand rather than left to the platform.
+        if rel_path.is_empty()
+            || rel_path.starts_with(['/', '\\'])
+            || std::path::Path::new(rel_path).is_absolute()
+            || rel_path.split(['/', '\\']).any(|c| c == "..")
+        {
+            anyhow::bail!("not a path inside the checkout: {rel_path}");
+        }
+
+        let editor = crate::editor::resolve();
+        let argv = crate::editor::command(&editor, rel_path, line);
+        let (program, args) = argv.split_first().expect("never empty");
+
+        let id = {
+            let mut inner = self.inner.lock().unwrap();
+            PaneId(inner.ids.alloc())
+        };
+        let daemon = self.clone();
+        let runtime = PaneRuntime::spawn(
+            id,
+            &path,
+            pty::Spawn::Program {
+                program: program.clone(),
+                args: args.to_vec(),
+                env: Vec::new(),
+            },
+            move |code| daemon.mark_pane_exited(id, code),
+        )?;
+
+        {
+            let mut inner = self.inner.lock().unwrap();
+            if let Some(c) = find_checkout(&mut inner.projects, checkout) {
+                c.panes.push(Pane {
+                    id,
+                    kind: PaneKind::Editor,
+                    title: rel_path.rsplit('/').next().unwrap_or(rel_path).to_string(),
+                    status: PaneStatus::Idle,
+                    runtime,
+                });
+            }
+        }
+        self.broadcast_tree();
+        Ok(id)
+    }
+
     pub fn spawn_agent(self: &Arc<Self>, checkout: CheckoutId, template_name: &str) -> anyhow::Result<PaneId> {
         let template = self
             .templates
@@ -1597,4 +1653,26 @@ mod tests {
             );
         });
     }
+    #[test]
+    fn an_editor_pane_will_not_open_a_path_outside_the_checkout() {
+        // `path` comes from a client and lands on a command line.
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_primary(&dir.path().to_string_lossy());
+        let checkout = d.snapshot()[0].checkouts[0].id;
+
+        for bad in [
+            "",
+            "../elsewhere.rs",
+            "sub/../../elsewhere.rs",
+            "/etc/passwd",
+            r"\\server\share\x",
+            r"C:\Windows\x",
+        ] {
+            assert!(
+                d.spawn_editor(checkout, bad, None).is_err(),
+                "{bad:?} should be refused"
+            );
+        }
+    }
+
 }

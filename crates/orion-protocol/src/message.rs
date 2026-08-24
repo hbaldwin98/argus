@@ -35,6 +35,12 @@ pub enum ClientMsg {
     /// (DESIGN.md §9 M4). A request rather than a subscription: a diff is
     /// expensive to compute and only interesting while it's on screen.
     Review { checkout: CheckoutId },
+    /// Open `path` (repo-relative) in the user's editor as a pane.
+    OpenInEditor {
+        checkout: CheckoutId,
+        path: String,
+        line: Option<u32>,
+    },
     /// Add a new project rooted at an arbitrary directory — not limited to
     /// whatever's already in `projects.toml` or under the daemon's cwd.
     /// Persisted to config so it survives a daemon restart.
