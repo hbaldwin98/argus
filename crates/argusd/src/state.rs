@@ -254,6 +254,7 @@ impl Daemon {
                                 title: pane.title.clone(),
                                 status: pane.status,
                                 note: pane.note.clone(),
+                                template: pane.template.clone(),
                             })
                             .collect(),
                         git: crate::git::status(&c.path),
@@ -1684,6 +1685,32 @@ mod tests {
     fn default_agent_templates_are_offered_when_config_has_none() {
         let d = daemon_with_primary("/repo");
         assert_eq!(d.template_names(), vec!["claude", "codex", "opencode"]);
+    }
+
+    #[test]
+    fn every_built_in_template_gets_a_harness_that_can_report() {
+        // Regression: `opencode` shipped as a template with no harness of
+        // the same name, so it fell through to `generic` — which installs
+        // nothing — and its rows never left Idle however hard it worked.
+        let d = daemon_with_primary("/repo");
+        for name in d.template_names() {
+            let template = AgentConfig {
+                name: name.clone(),
+                cmd: vec![name.clone()],
+                env: Default::default(),
+                harness: None,
+            };
+            let h = d.harness_for(&template);
+            // `codex` is the honest exception: it has no hook mechanism at
+            // all, so the environment really is all it gets.
+            if name == "codex" {
+                continue;
+            }
+            assert_ne!(
+                h.name, "generic",
+                "{name} has no harness, so its pane can never report"
+            );
+        }
     }
 
     #[test]

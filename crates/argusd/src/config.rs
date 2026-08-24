@@ -128,6 +128,9 @@ impl From<HarnessConfig> for crate::harness::Harness {
                 .map(|(name, e)| e.into_event(name))
                 .collect(),
             context_event: c.context_event,
+            // A plugin is a program, not a dialect, so it can only come
+            // from a built-in. See `harness::Plugin`.
+            plugin: None,
         }
     }
 }

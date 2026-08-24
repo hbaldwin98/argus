@@ -6,7 +6,7 @@
 //! harness here is a description of *how a particular CLI can be asked to
 //! report*, so adding one is a config block rather than a code change.
 //!
-//! Two mechanisms, and a harness may use either or both:
+//! Three mechanisms, and a harness may use any combination of them:
 //!
 //! 1. **Environment.** Every agent pane is handed `ARGUS_HOOK_URL`,
 //!    `ARGUS_HOOK_TOKEN` and the path to the helper binary, so a harness
@@ -20,6 +20,13 @@
 //!    out again afterwards. [`Harness::settings`] says where the file is,
 //!    [`Shape`] says how an entry is nested, and [`events`] maps that
 //!    harness's event names onto the statuses Argus draws.
+//!
+//! 3. **A plugin file.** Some harnesses have no hook table at all: opencode
+//!    extends through a JavaScript module, so there is no JSON to write and
+//!    nothing a `[[harness]]` block could describe. [`Plugin`] is a file
+//!    Argus drops into the checkout and takes out again on the same
+//!    schedule. It reads the environment from mechanism 1 rather than
+//!    baking a pane in, so one file serves every pane in the checkout.
 //!
 //! **A settings block is per-boot and must not outlive its daemon.** It
 //! names an ephemeral port and a per-boot token, so the moment the daemon
@@ -107,6 +114,20 @@ pub enum Shape {
     Flat,
 }
 
+/// A file Argus writes into the checkout whole, for a harness whose
+/// extension point is a program rather than a table of commands.
+///
+/// The source is shipped rather than configured: a hook dialect fits in
+/// TOML, and a program does not. A `[[harness]]` block that replaces a
+/// built-in by name therefore also gives up its plugin — which is what
+/// "replaces the built-in entirely" already meant.
+#[derive(Debug, Clone)]
+pub struct Plugin {
+    /// Where it goes, relative to the checkout.
+    pub path: PathBuf,
+    pub source: &'static str,
+}
+
 #[derive(Debug, Clone)]
 pub struct Harness {
     pub name: String,
@@ -120,6 +141,9 @@ pub struct Harness {
     /// An event whose command's stdout the harness injects into the model's
     /// context. Where Argus tells an agent it can rename its own pane.
     pub context_event: Option<String>,
+    /// A module to drop into the checkout, for a harness that extends
+    /// through code rather than through JSON.
+    pub plugin: Option<Plugin>,
 }
 
 impl Harness {
@@ -136,6 +160,7 @@ impl Harness {
             shape: Shape::Flat,
             events: Vec::new(),
             context_event: None,
+            plugin: None,
         }
     }
 
@@ -164,13 +189,38 @@ impl Harness {
                 },
             ],
             context_event: Some("SessionStart".to_string()),
+            plugin: None,
+        }
+    }
+
+    /// opencode reports through a plugin module rather than a hook table:
+    /// it has no JSON hooks at all, so mechanism 2 has nothing to write and
+    /// a template named `opencode` used to fall all the way through to
+    /// [`Harness::generic`] and sit at `Idle` for its whole life.
+    ///
+    /// The module carries the whole dialect — which of opencode's events
+    /// mean what — because that mapping lives in JavaScript here rather
+    /// than in [`events`]. `.opencode/plugin/` is one of the two directories
+    /// opencode scans in a project.
+    pub fn opencode() -> Harness {
+        Harness {
+            name: "opencode".to_string(),
+            settings: None,
+            hooks_key: "hooks".to_string(),
+            shape: Shape::Flat,
+            events: Vec::new(),
+            context_event: None,
+            plugin: Some(Plugin {
+                path: PathBuf::from(".opencode").join("plugin").join(PLUGIN_FILE),
+                source: include_str!("opencode-plugin.js"),
+            }),
         }
     }
 
     /// Harnesses Argus ships with. A `[[harness]]` block of the same name
     /// in the user's config replaces the built-in entirely.
     pub fn builtins() -> Vec<Harness> {
-        vec![Harness::claude(), Harness::generic()]
+        vec![Harness::claude(), Harness::opencode(), Harness::generic()]
     }
 
     fn settings_path(&self, checkout: &Path) -> Option<PathBuf> {
@@ -186,11 +236,37 @@ impl Harness {
             .chain(self.context_event.as_deref())
     }
 
-    /// Writes the managed block into the checkout's settings file.
+    /// Puts whatever this harness needs into the checkout: a managed block
+    /// in its settings file, its plugin module, or neither.
     ///
-    /// A no-op for a harness with no settings file — that is the normal
-    /// case, not a failure.
+    /// A harness that needs nothing is the normal case, not a failure. The
+    /// plugin is written even if the settings write fails, and vice versa —
+    /// a harness that uses both should not lose one to the other.
     pub fn install(
+        &self,
+        checkout: &Path,
+        pane: PaneId,
+        port: u16,
+        token: &str,
+    ) -> anyhow::Result<()> {
+        let settings = self.install_settings(checkout, pane, port, token);
+        let plugin = self.install_plugin(checkout);
+        settings.and(plugin)
+    }
+
+    fn install_plugin(&self, checkout: &Path) -> anyhow::Result<()> {
+        let Some(plugin) = &self.plugin else {
+            return Ok(());
+        };
+        let path = checkout.join(&plugin.path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&path, plugin.source)?;
+        Ok(())
+    }
+
+    fn install_settings(
         &self,
         checkout: &Path,
         pane: PaneId,
@@ -229,15 +305,43 @@ impl Harness {
         Ok(())
     }
 
-    /// Removes Argus's managed block, leaving anything the user put in the
-    /// same file untouched. Cleans up after itself as it goes: an emptied
-    /// hooks key is dropped, and a settings file left with nothing in it at
-    /// all is deleted rather than left behind as `{}`.
+    /// Removes everything [`install`] put in the checkout, leaving anything
+    /// the user put there untouched.
     ///
     /// Idempotent, and a no-op when there's nothing there — it runs at
     /// startup across every configured checkout, most of which never hosted
     /// an agent.
+    ///
+    /// [`install`]: Harness::install
     pub fn uninstall(&self, checkout: &Path) -> anyhow::Result<()> {
+        let settings = self.uninstall_settings(checkout);
+        let plugin = self.uninstall_plugin(checkout);
+        settings.and(plugin)
+    }
+
+    /// Deletes the plugin module, and any directory Argus made only to hold
+    /// it. Only ever removes a file that still carries our marker: a user
+    /// who replaced it with one of their own keeps it.
+    fn uninstall_plugin(&self, checkout: &Path) -> anyhow::Result<()> {
+        let Some(plugin) = &self.plugin else {
+            return Ok(());
+        };
+        let path = checkout.join(&plugin.path);
+        match std::fs::read_to_string(&path) {
+            Ok(body) if body.contains(PLUGIN_MARKER) => std::fs::remove_file(&path)?,
+            // Missing, unreadable, or someone else's. Nothing to do either
+            // way, and none of it is worth failing startup over.
+            _ => return Ok(()),
+        }
+        prune_empty_dirs(checkout, &path);
+        Ok(())
+    }
+
+    /// Removes Argus's managed hook block, leaving anything the user put in
+    /// the same file untouched. Cleans up after itself as it goes: an
+    /// emptied hooks key is dropped, and a settings file left with nothing
+    /// in it at all is deleted rather than left behind as `{}`.
+    fn uninstall_settings(&self, checkout: &Path) -> anyhow::Result<()> {
         let Some(path) = self.settings_path(checkout) else {
             return Ok(());
         };
@@ -271,10 +375,27 @@ impl Harness {
 
         if root_obj.is_empty() {
             std::fs::remove_file(&path)?;
+            prune_empty_dirs(checkout, &path);
         } else {
             std::fs::write(&path, serde_json::to_string_pretty(&root)?)?;
         }
         Ok(())
+    }
+}
+
+/// Removes the directories a just-deleted file was the last thing in,
+/// walking up until something stops it or the checkout itself is reached.
+///
+/// `remove_dir` refuses a directory with anything in it, which is the whole
+/// safety argument: a `.claude/` the user keeps their own settings in, or an
+/// `.opencode/` holding their agents, fails on the first step and stays.
+fn prune_empty_dirs(checkout: &Path, file: &Path) {
+    let mut dir = file.parent();
+    while let Some(d) = dir {
+        if d == checkout || std::fs::remove_dir(d).is_err() {
+            return;
+        }
+        dir = d.parent();
     }
 }
 
@@ -370,6 +491,16 @@ fn status_entry(command: &str, pane: PaneId, port: u16, token: &str, event: &Eve
     })
 }
 
+/// What a harness's plugin module is called in the checkout. Prefixed so
+/// it sorts and reads as ours in a directory the user also keeps their own
+/// plugins in.
+const PLUGIN_FILE: &str = "argus-status.js";
+
+/// The string that identifies a module as one Argus wrote, on its first
+/// line. Only a file still carrying it is ours to delete, so a user who
+/// replaces it with their own keeps it through an uninstall.
+const PLUGIN_MARKER: &str = "argus:managed-plugin";
+
 /// Tells the helper to read the harness's message off stdin and send it as
 /// the pane's note. Only passed on events that actually supply one — the
 /// helper must never block on a stdin nobody is writing to.
@@ -462,6 +593,7 @@ mod tests {
                 },
             ],
             context_event: None,
+            plugin: None,
         }
     }
 
@@ -804,6 +936,108 @@ mod tests {
             .map(|(_, v)| v.clone())
             .unwrap();
         assert!(text.contains("title"));
+    }
+
+    // --- the plugin mechanism ----------------------------------------------
+
+    fn plugin_path(dir: &Path, h: &Harness) -> PathBuf {
+        dir.join(&h.plugin.as_ref().unwrap().path)
+    }
+
+    #[test]
+    fn opencode_reports_through_a_plugin_rather_than_a_hook_table() {
+        // The bug this exists for: opencode has no JSON hooks, so before
+        // this it resolved to the generic harness and sat at Idle for its
+        // whole life however hard it was working.
+        let dir = tempfile::tempdir().unwrap();
+        let h = Harness::opencode();
+        assert!(h.settings.is_none(), "opencode has no hook file to write");
+
+        h.install(dir.path(), PaneId(3), 4242, "tok").unwrap();
+        let body = std::fs::read_to_string(plugin_path(dir.path(), &h)).unwrap();
+        assert!(body.contains(PLUGIN_MARKER));
+        // Per-pane facts stay in the environment the module reads at run
+        // time, so one file is correct for every pane in the checkout.
+        assert!(!body.contains("4242"), "a plugin must not bake in a port");
+        assert!(!body.contains("tok"), "nor a token");
+    }
+
+    #[test]
+    fn a_plugin_comes_back_out_with_the_directory_argus_made_for_it() {
+        // Same contract as a hook block: it names a dead port the moment
+        // this daemon exits, so it must not outlive the panes that need it.
+        let dir = tempfile::tempdir().unwrap();
+        let h = Harness::opencode();
+        h.install(dir.path(), PaneId(3), 4242, "tok").unwrap();
+        h.uninstall(dir.path()).unwrap();
+        assert!(!plugin_path(dir.path(), &h).exists());
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            0,
+            "an empty .opencode/ left behind is still litter"
+        );
+    }
+
+    #[test]
+    fn uninstalling_a_plugin_is_idempotent_and_safe_on_a_cold_checkout() {
+        // It runs at startup across every configured checkout, most of
+        // which have never hosted an agent.
+        let dir = tempfile::tempdir().unwrap();
+        let h = Harness::opencode();
+        h.uninstall(dir.path()).unwrap();
+        h.install(dir.path(), PaneId(1), 1, "t").unwrap();
+        h.uninstall(dir.path()).unwrap();
+        h.uninstall(dir.path()).unwrap();
+        assert!(!plugin_path(dir.path(), &h).exists());
+    }
+
+    #[test]
+    fn a_plugin_the_user_wrote_themselves_is_left_alone() {
+        // Their file, their directory. Only a module still carrying our
+        // marker is ours to delete.
+        let dir = tempfile::tempdir().unwrap();
+        let h = Harness::opencode();
+        let path = plugin_path(dir.path(), &h);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "export const Mine = async () => ({})").unwrap();
+
+        h.uninstall(dir.path()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "export const Mine = async () => ({})"
+        );
+    }
+
+    #[test]
+    fn the_opencode_plugin_maps_every_state_the_daemon_can_draw() {
+        // The dialect lives in the module rather than in `events`, so this
+        // is where a status the daemon knows but the plugin never sends
+        // would otherwise go unnoticed.
+        let source = Harness::opencode().plugin.unwrap().source;
+        for r in Report::ALL {
+            assert!(
+                source.contains(&format!("\"{}\"", r.as_str())),
+                "the opencode plugin never reports {}",
+                r.as_str()
+            );
+        }
+        // What a manual stop relies on: opencode drops the session to idle
+        // on abort as well as on a finished turn.
+        assert!(source.contains("session.status"));
+        assert!(source.contains("chat.message"));
+    }
+
+    #[test]
+    fn the_opencode_plugin_calls_the_same_pane_api_the_helper_does() {
+        // The module posts for itself rather than shelling out, so nothing
+        // but this stops a change to the route or the environment's names
+        // from leaving it talking to an endpoint that no longer exists.
+        let source = Harness::opencode().plugin.unwrap().source;
+        for var in [URL_VAR, TOKEN_VAR, INSTRUCTIONS_VAR] {
+            assert!(source.contains(var), "the plugin never reads {var}");
+        }
+        assert!(source.contains("/status/${status}"), "wrong pane route");
+        assert!(source.contains("Bearer ${TOKEN}"), "wrong authorization");
     }
 
     #[test]

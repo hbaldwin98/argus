@@ -90,7 +90,7 @@ stalled pane explains itself without being opened. A note is set alongside a sta
 cleared by the next report that carries none, so it can never outlive the state it explains.
 
 Status is harness-agnostic. A *harness* is a description of how a particular agent CLI can be
-asked to report, and there are two mechanisms; a harness may use either or both.
+asked to report, and there are three mechanisms; a harness may use any combination of them.
 
 Every agent pane is handed `ARGUS_HOOK_URL`, `ARGUS_HOOK_TOKEN`, `ARGUS_PANE`, `ARGUS_HOOK` and
 `ARGUS_INSTRUCTIONS`. That is the universal floor: a CLI that can run one command at some point in
@@ -98,9 +98,13 @@ its lifecycle can report without Argus knowing anything about its config format.
 a harness whose hooks live in JSON in the checkout can have Argus write and remove a managed block
 itself — `settings` says where the file is, `shape` says how an entry nests (`matcher` for Claude
 Code, `flat` otherwise), and `events` maps the harness's own event names onto the statuses Argus
-draws. Claude Code and `generic` are built in; a `[[harness]]` block in `projects.toml` adds or
-replaces one, and an `[[agent]]` template selects one with `harness = "..."`, defaulting to a
-harness matching its own name.
+draws. Third, a harness that extends through code rather than through JSON can have Argus write a
+plugin module into the checkout and remove it on the same schedule. OpenCode is the built-in case:
+it has no hook table, so its module carries the event mapping itself and reads `ARGUS_HOOK_URL`
+and `ARGUS_HOOK_TOKEN` at run time rather than having a pane baked into it. Claude Code, OpenCode
+and `generic` are built in; a `[[harness]]` block in `projects.toml` adds or replaces one, and an
+`[[agent]]` template selects one with `harness = "..."`, defaulting to a harness matching its own
+name. A block cannot supply a plugin, so replacing a built-in by name also gives up its module.
 
 The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
 /pane/<id>/status/<working|idle|waiting|failed>` with an optional body as the note, and `POST
@@ -108,14 +112,18 @@ The daemon's loopback receiver is a small pane API rather than a hook endpoint: 
 the installer already resolved that — which is what makes a new harness config instead of a match
 arm. Managed blocks are per-boot: they name an ephemeral port and a per-boot token, so they are
 swept from every configured checkout at startup and removed when the last agent pane in a checkout
-goes away. Hook files are checkout-wide, so concurrent panes of the same harness in one checkout
-do not yet have independent hook routing.
+goes away, along with any directory Argus made only to hold them. Hook files are checkout-wide, so
+concurrent panes of the same harness in one checkout do not yet have independent hook routing;
+a plugin module does not have that problem, because it reads the pane out of its own environment.
 
 Agents name their own rows. At session start a harness with a `context_event` is handed
 instructions telling it to run `argus-hook title "..."` once it knows what it is working on, and
-`argus-hook status waiting "..."` when it needs a human; the same text is in `ARGUS_INSTRUCTIONS`
-for harnesses with no such event. Titles arriving from a model are flattened to one line and cut to
-48 characters. Neither a rename nor a status report can touch a pane that has exited.
+`argus-hook status waiting "..."` when it needs a human; the same text is in `ARGUS_INSTRUCTIONS`,
+which is where a plugin harness picks it up — OpenCode's module appends it to the system prompt.
+Titles arriving from a model are flattened to one line and cut to 48 characters. Neither a rename
+nor a status report can touch a pane that has exited. A renamed row keeps showing its template on
+its second line, so a column of agents that have all named themselves still says which CLI each
+one is.
 
 ## Session restore
 

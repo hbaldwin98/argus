@@ -1082,20 +1082,37 @@ fn status_word(status: PaneStatus) -> &'static str {
     }
 }
 
-/// The row's second line. The agent's own note when it has left one,
-/// because "needs you" without saying what for still costs you a trip into
-/// the pane — which is the whole thing this column exists to save.
+/// The row's second line: which agent this is, then what it is saying.
+///
+/// The agent's own note when it has left one, because "needs you" without
+/// saying what for still costs you a trip into the pane — which is the
+/// whole thing this column exists to save.
+///
+/// The template leads because the name above it is the agent's own, and a
+/// row renamed to "fixing the pty deadlock" otherwise stops saying which
+/// CLI is in it. Dimmer than the note: it is how you tell two rows apart,
+/// not what you came to read.
 fn pane_detail(p: &argus_protocol::PaneInfo, th: Theme) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    // Only once the agent has taken the name over — before that the row
+    // already reads "opencode" and saying it twice is noise.
+    if let Some(template) = p.template.as_deref().filter(|t| *t != p.title) {
+        spans.push(Span::styled(
+            format!("{template}  "),
+            Style::default().fg(th.dim),
+        ));
+    }
     match p.note.as_deref().filter(|n| !n.is_empty()) {
-        Some(note) => vec![Span::styled(
+        Some(note) => spans.push(Span::styled(
             note.to_string(),
             Style::default().fg(if p.status.needs_you() { th.err } else { th.muted }),
-        )],
-        None => vec![Span::styled(
+        )),
+        None => spans.push(Span::styled(
             status_word(p.status),
             Style::default().fg(th.dim),
-        )],
+        )),
     }
+    spans
 }
 
 fn exit_note(status: PaneStatus) -> String {
@@ -1223,6 +1240,7 @@ mod tests {
                     title: "t".to_string(),
                     status: *s,
                     note: None,
+                    template: None,
                 })
                 .collect(),
         }
@@ -1395,6 +1413,7 @@ mod tests {
             title: "claude".to_string(),
             status,
             note: note.map(str::to_string),
+            template: None,
         }
     }
 
@@ -1407,6 +1426,33 @@ mod tests {
             "needs you"
         );
         assert_eq!(text_of(&pane_detail(&pane(PaneStatus::Failed, None), th)), "failed");
+    }
+
+    #[test]
+    fn a_renamed_row_still_says_which_agent_is_in_it() {
+        // The agent takes the name over as soon as it knows its task, so
+        // without this a column of renamed rows stops telling you which
+        // CLI to expect behind any of them.
+        let th = Theme::default();
+        let mut p = pane(PaneStatus::Working, None);
+        p.title = "fixing the pty deadlock".to_string();
+        p.template = Some("opencode".to_string());
+        assert_eq!(text_of(&pane_detail(&p, th)), "opencode  working");
+
+        p.note = Some("needs the db password".to_string());
+        assert_eq!(
+            text_of(&pane_detail(&p, th)),
+            "opencode  needs the db password"
+        );
+    }
+
+    #[test]
+    fn a_row_still_called_after_its_agent_does_not_say_so_twice() {
+        let th = Theme::default();
+        let mut p = pane(PaneStatus::Working, None);
+        p.title = "opencode".to_string();
+        p.template = Some("opencode".to_string());
+        assert_eq!(text_of(&pane_detail(&p, th)), "working");
     }
 
     #[test]
@@ -1470,6 +1516,7 @@ mod tests {
                             title: "claude".to_string(),
                             status: PaneStatus::Working,
                             note: None,
+                            template: None,
                         },
                         PaneInfo {
                             id: PaneId(101),
@@ -1477,6 +1524,7 @@ mod tests {
                             title: "shell".to_string(),
                             status: PaneStatus::Idle,
                             note: None,
+                            template: None,
                         },
                     ],
                 },
@@ -2073,6 +2121,7 @@ mod tests {
                 title: "zzz-editor.rs".to_string(),
                 status: PaneStatus::Idle,
                 note: None,
+                template: None,
             });
         }
         let out = lines(&draw(&mut app)).join("\n");

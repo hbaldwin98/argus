@@ -47,6 +47,13 @@ pub struct PaneInfo {
     /// having to.
     #[serde(default)]
     pub note: Option<String>,
+    /// The agent template this pane runs, for an agent pane. `title` starts
+    /// as this and then becomes whatever the agent renames itself to, so
+    /// without carrying it separately a renamed row stops saying which CLI
+    /// is in it — which is exactly what you want to know when several are
+    /// running side by side.
+    #[serde(default)]
+    pub template: Option<String>,
 }
 
 /// Read-only git status for a checkout, polled from the working directory

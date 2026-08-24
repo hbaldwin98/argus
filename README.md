@@ -206,6 +206,12 @@ inherited `PATH`. Custom commands are argument arrays; the first item is the exe
 optional `harness` selects a matching built-in or configured harness; without it, Argus tries the
 agent name and then falls back to the generic environment-only harness.
 
+Claude Code reports through hooks Argus writes into `.claude/settings.local.json`, and OpenCode
+through a plugin module Argus writes to `.opencode/plugin/argus-status.js`. Both are removed when
+the last agent pane in the checkout closes and swept from every configured checkout at startup;
+adding them to a repository's `.gitignore` keeps them out of its status while an agent is running.
+Codex has no hook mechanism, so its panes report only if the agent runs `argus-hook` itself.
+
 Custom JSON-hook harnesses use this schema:
 
 ```toml
@@ -229,7 +235,8 @@ harness = "herdr"
 
 `settings` is relative to the checkout. Event values are `working`, `idle`, `waiting`, or `failed`.
 Set `note = true` when the harness sends a useful JSON or text explanation to the hook on stdin.
-Omit `settings` for an environment-only harness.
+Omit `settings` for an environment-only harness. A block that reuses a built-in name replaces it
+outright, including a plugin module the built-in shipped.
 
 ### `client.toml`
 

@@ -138,6 +138,7 @@ mod tests {
                     title: "claude".to_string(),
                     status: PaneStatus::Waiting,
                     note: None,
+                    template: None,
                 }],
             }],
         }]);

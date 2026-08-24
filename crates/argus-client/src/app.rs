@@ -1639,6 +1639,7 @@ mod tests {
             title: title.to_string(),
             status: PaneStatus::Idle,
             note: None,
+            template: None,
         }
     }
 
@@ -2973,6 +2974,7 @@ mod tests {
                 title: "sh".to_string(),
                 status: PaneStatus::Idle,
                 note: None,
+                template: None,
             },
             PaneInfo {
                 id: PaneId(51),
@@ -2980,6 +2982,7 @@ mod tests {
                 title: "claude".to_string(),
                 status: PaneStatus::Idle,
                 note: None,
+                template: None,
             },
         ];
         t
@@ -3680,6 +3683,7 @@ mod tests {
             title: "a.rs".to_string(),
             status: PaneStatus::Idle,
             note: None,
+            template: None,
         });
         h.app.on_server_msg(ServerMsg::Tree(t));
     }
@@ -3697,6 +3701,7 @@ mod tests {
             title: "a.rs".to_string(),
             status: PaneStatus::Idle,
             note: None,
+            template: None,
         });
         h.app.on_server_msg(ServerMsg::Tree(t));
     }
@@ -4016,6 +4021,7 @@ mod tests {
             title: "a.rs".to_string(),
             status: PaneStatus::Idle,
             note: None,
+            template: None,
         });
         t
     }
