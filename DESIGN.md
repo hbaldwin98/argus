@@ -466,10 +466,18 @@ not have to leave the tool.
 the context server, then the write side behind policy.
 
 **M6 — polish.** Sandboxing, scrollback spill, config reload, and session restore across
-reboots. The UI theme pass is done: `theme.rs` keys every color to a semantic role (accent,
-text, muted/dim, ok/warn/err, edge, the two selection fills, the focus wash) with presets
-selectable via `ARGUS_THEME`. What is left here is a settings overlay to switch them at
-runtime instead of by environment variable.
+reboots. The UI is done for now:
+
+- `theme.rs` keys every color to a semantic role — three elevations (`bg` / `surface` /
+  `surface_focus`), accent, text, muted/dim, ok/warn/err, edge, and the two selection fills.
+- The four presets are the [Catppuccin](https://catppuccin.com) flavors in truecolor:
+  `mocha` (default), `macchiato`, `frappe`, `latte`. Indexed-palette approximations were
+  tried first and are the reason the UI read as a 1980s terminal — ANSI cyan/green/red are
+  fully saturated, and no layout fixes a palette that shouts.
+- Panels are padded cards separated by a gutter, sitting on a page one elevation darker.
+  Rows are two lines — what the thing is, then a dimmer line of what is true about it —
+  with counts pinned right as badges so the narrow columns don't truncate them away.
+- `t` switches theme at runtime; `ARGUS_THEME` still sets the one to start in.
 
 ---
 

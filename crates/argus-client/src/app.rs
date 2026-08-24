@@ -55,6 +55,8 @@ pub enum PickerKind {
     Agent,
     /// Switch to the chosen workspace, carrying its id per row.
     Workspace(Vec<WorkspaceId>),
+    /// Switch the color theme.
+    Theme,
 }
 
 pub struct Picker {
@@ -409,10 +411,21 @@ impl App {
             KeyCode::Char('n') => self.new_prompt(),
             KeyCode::Char('D') => self.remove_checkout_prompt(),
             KeyCode::Char('w') => self.open_workspace_picker(),
+            KeyCode::Char('t') => self.open_theme_picker(),
             KeyCode::Char('R') | KeyCode::Tab => self.open_review(),
             KeyCode::Char('x') => self.kill_selected(),
             _ => {}
         }
+    }
+
+    fn open_theme_picker(&mut self) {
+        let here = self.theme.name();
+        self.picker = Some(Picker {
+            kind: PickerKind::Theme,
+            title: "theme",
+            items: crate::theme::THEMES.iter().map(|t| t.to_string()).collect(),
+            sel: crate::theme::THEMES.iter().position(|t| *t == here).unwrap_or(0),
+        });
     }
 
     /// Works from any column that still implies a checkout.
@@ -772,6 +785,11 @@ impl App {
                 self.sel_checkout = 0;
                 self.sel_pane = 0;
                 self.focus = Focus::Projects;
+            }
+            PickerKind::Theme => {
+                let Some(name) = picker.items.get(picker.sel) else { return };
+                self.theme = crate::theme::Theme::by_name(name);
+                self.status = format!("theme: {name}");
             }
         }
     }
@@ -2089,6 +2107,39 @@ mod tests {
             h.sent().iter().any(|m| matches!(m, ClientMsg::Review { .. })),
             "leader-Tab should ask for the diff"
         );
+    }
+
+    #[test]
+    fn t_opens_the_theme_picker_on_the_theme_already_in_use() {
+        let mut h = Harness::new();
+        h.app.theme = crate::theme::Theme::by_name("frappe");
+        h.key(KeyCode::Char('t'));
+
+        let picker = h.app.picker.as_ref().expect("t should open the picker");
+        assert_eq!(picker.items[picker.sel], "frappe");
+    }
+
+    #[test]
+    fn choosing_a_theme_swaps_the_palette_without_asking_the_daemon() {
+        // The palette is the client's business; the daemon has no opinion.
+        let mut h = Harness::new();
+        h.key(KeyCode::Char('t'));
+        h.key(KeyCode::Char('j'));
+        h.key(KeyCode::Enter);
+
+        assert_eq!(h.app.theme, crate::theme::Theme::by_name("macchiato"));
+        assert!(h.sent().is_empty());
+        assert!(h.app.picker.is_none());
+    }
+
+    #[test]
+    fn escaping_the_theme_picker_leaves_the_palette_alone() {
+        let mut h = Harness::new();
+        let before = h.app.theme;
+        h.key(KeyCode::Char('t'));
+        h.key(KeyCode::Char('j'));
+        h.key(KeyCode::Esc);
+        assert_eq!(h.app.theme, before);
     }
 
 }

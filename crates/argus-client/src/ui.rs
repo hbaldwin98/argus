@@ -7,23 +7,28 @@
 //! Every color goes through [`crate::theme::Theme`] rather than being named
 //! here, and the visual language is deliberately narrow:
 //!
-//! - **Focus** is a rounded accent border plus a filled accent title chip,
-//!   and a faint wash over the whole column. Unfocused columns get a
-//!   receding `edge` border and a muted title.
-//! - **Selection** is a raised background bar with an accent `▌` marker,
-//!   never reverse video — reverse fights with the per-row status colors.
+//! - **Elevation** carries structure: the page sits at `bg`, an unfocused
+//!   panel at `surface`, the focused one at `surface_focus`. Panels are
+//!   padded and separated by a gutter, so they read as cards rather than
+//!   as boxes drawn in a terminal.
+//! - **Focus** is that elevation plus an accent border and title.
+//! - **Selection** is a raised bar with an accent `▌` marker, never reverse
+//!   video — reverse fights with the per-row status colors.
 //! - **State** is a single `●` dot in the row's status color (§8b), rolled
 //!   up to parents by the worst child.
+//! - **Rows are two lines**: what the thing is, then a dimmer line of what
+//!   is true about it. Packing both onto one line is what made the old
+//!   layout feel cramped.
 
 use argus_protocol::{Color as PColor, GitStatus, LineKind, PaneStatus};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wrap};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget, Wrap};
 use ratatui::Frame;
 
-use crate::app::{App, Focus, Prompt};
+use crate::app::{App, Focus, PickerKind, Prompt};
 use crate::grid::Grid;
 use crate::review::{Row, ReviewView};
 use crate::theme::Theme;
@@ -33,13 +38,51 @@ use crate::theme::Theme;
 const MARKER: &str = "▌";
 const GUTTER: &str = " ";
 
+/// Every list item is a name line plus a detail line.
+const ROW_HEIGHT: u16 = 2;
+
+/// Blank columns between panels, and between the panels and the screen
+/// edge. Without it the cards touch and stop reading as separate surfaces.
+const GUTTER_COLS: u16 = 1;
+
+/// One list item: what it is, a dimmer line of what's true about it, and
+/// an optional count pinned to the right of the name line. The badge is
+/// there because these columns are narrow — a count appended to the detail
+/// line is the first thing to get truncated away.
+pub struct Item<'a> {
+    pub name: Vec<Span<'a>>,
+    pub detail: Vec<Span<'a>>,
+    pub badge: Vec<Span<'a>>,
+}
+
+impl<'a> Item<'a> {
+    fn new(name: Vec<Span<'a>>, detail: Vec<Span<'a>>) -> Self {
+        Item {
+            name,
+            detail,
+            badge: Vec::new(),
+        }
+    }
+
+    fn badged(mut self, badge: Vec<Span<'a>>) -> Self {
+        self.badge = badge;
+        self
+    }
+}
+
 pub fn render(f: &mut Frame, app: &mut App) {
     let th = app.theme;
-    // A blank row above the status bar keeps it off the column borders.
+    // The page owns its background; leaving it `Reset` would inherit
+    // whatever the host terminal happens to be, and the elevation between
+    // page and panel is what makes the panels read as cards.
+    f.render_widget(Block::default().style(Style::default().bg(th.bg)), f.area());
+
+    let page = inset(f.area(), GUTTER_COLS);
+    // A blank row above the status bar keeps it off the panel borders.
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(2)])
-        .split(f.area());
+        .split(page);
 
     render_columns(f, app, root[0]);
     render_status(f, app, root[1], th);
@@ -58,15 +101,16 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
     let th = app.theme;
     let cols = Layout::default()
         .direction(Direction::Horizontal)
+        .spacing(GUTTER_COLS)
         .constraints([
-            Constraint::Percentage(18),
+            Constraint::Percentage(20),
             Constraint::Percentage(21),
             Constraint::Percentage(21),
-            Constraint::Percentage(40),
+            Constraint::Percentage(38),
         ])
         .split(area);
 
-    let project_rows: Vec<Vec<Span>> = app
+    let project_rows: Vec<Item> = app
         .tree
         .iter()
         .map(|p| {
@@ -76,14 +120,27 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
                 .iter()
                 .filter_map(worst_pane_status)
                 .max_by_key(rank);
-            vec![
-                status_dot(status, th),
-                Span::styled(p.name.clone(), Style::default().fg(th.text)),
-                Span::styled(
-                    format!("  {}⑂ {}▣", p.checkouts.len(), panes),
+            let item = Item::new(
+                vec![
+                    status_dot(status, th),
+                    Span::styled(
+                        p.name.clone(),
+                        Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+                    ),
+                ],
+                vec![Span::styled(
+                    plural(p.checkouts.len(), "checkout"),
                     Style::default().fg(th.dim),
-                ),
-            ]
+                )],
+            );
+            if panes == 0 {
+                item
+            } else {
+                item.badged(vec![Span::styled(
+                    format!("{panes} ▣"),
+                    Style::default().fg(th.dim),
+                )])
+            }
         })
         .collect();
     // The projects column is scoped to the open workspace, so it says so
@@ -100,36 +157,50 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
         project_rows,
         app.focus == Focus::Projects,
         Some(app.sel_project).filter(|_| !app.tree.is_empty()),
-        "no projects — n: add",
+        "no projects yet
+
+n  add one",
         th,
     );
 
-    let checkout_rows: Vec<Vec<Span>> = app
+    let checkout_rows: Vec<Item> = app
         .current_project()
         .map(|p| {
             p.checkouts
                 .iter()
                 .map(|c| {
-                    let mut spans = vec![
-                        status_dot(worst_pane_status(c), th),
-                        Span::styled(
-                            format!("{} ", if c.primary { "⌂" } else { "⧉" }),
-                            Style::default().fg(if c.primary { th.muted } else { th.dim }),
-                        ),
-                        Span::styled(c.name.clone(), Style::default().fg(th.text)),
-                    ];
                     // A checkout is usually sitting on the branch it's named
-                    // after; repeating it ("master master") wastes the width
-                    // these columns don't have. Show the branch only when it
-                    // actually differs.
-                    spans.extend(git_spans_unless_branch_is(c.git.as_ref(), &c.name, th));
-                    if !c.panes.is_empty() {
-                        spans.push(Span::styled(
-                            format!("  {}▣", c.panes.len()),
+                    // after; repeating it ("master master") says nothing.
+                    // Show the branch only when it actually differs.
+                    let mut detail = git_spans_unless_branch_is(c.git.as_ref(), &c.name, th);
+                    if detail.is_empty() {
+                        detail.push(Span::styled(
+                            if c.primary { "primary" } else { "worktree" },
                             Style::default().fg(th.dim),
                         ));
                     }
-                    spans
+                    Item::new(
+                        vec![
+                            status_dot(worst_pane_status(c), th),
+                            Span::styled(
+                                format!("{} ", if c.primary { "⌂" } else { "⧉" }),
+                                Style::default().fg(if c.primary { th.muted } else { th.dim }),
+                            ),
+                            Span::styled(
+                                c.name.clone(),
+                                Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+                            ),
+                        ],
+                        detail,
+                    )
+                    .badged(if c.panes.is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![Span::styled(
+                            format!("{} ▣", c.panes.len()),
+                            Style::default().fg(th.dim),
+                        )]
+                    })
                 })
                 .collect()
         })
@@ -146,18 +217,30 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
         th,
     );
 
-    let pane_rows: Vec<Vec<Span>> = app
+    let pane_rows: Vec<Item> = app
         .current_checkout()
         .map(|c| {
             c.panes
                 .iter()
                 .map(|p| {
-                    vec![
-                        status_dot(Some(p.status), th),
-                        Span::styled(p.title.clone(), Style::default().fg(th.text)),
-                        Span::styled(format!("  #{}", p.id.0), Style::default().fg(th.dim)),
-                        Span::styled(exit_note(p.status), Style::default().fg(th.err)),
-                    ]
+                    Item::new(
+                        vec![
+                            status_dot(Some(p.status), th),
+                            Span::styled(
+                                p.title.clone(),
+                                Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(exit_note(p.status), Style::default().fg(th.err)),
+                        ],
+                        vec![Span::styled(
+                            status_word(p.status),
+                            Style::default().fg(th.dim),
+                        )],
+                    )
+                    .badged(vec![Span::styled(
+                        format!("#{}", p.id.0),
+                        Style::default().fg(th.dim),
+                    )])
                 })
                 .collect()
         })
@@ -170,7 +253,10 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
         pane_rows,
         app.focus == Focus::Panes,
         Some(app.sel_pane).filter(|_| npane > 0),
-        "no panes — s: shell   a: agent",
+        "nothing running
+
+s  shell
+a  agent",
         th,
     );
 
@@ -184,7 +270,7 @@ fn render_column(
     f: &mut Frame,
     area: Rect,
     title: &str,
-    rows: Vec<Vec<Span>>,
+    rows: Vec<Item>,
     focused: bool,
     selected: Option<usize>,
     empty_hint: &str,
@@ -193,9 +279,6 @@ fn render_column(
     let block = panel_block(title, focused, th);
     let inner = block.inner(area);
     f.render_widget(block, area);
-    if focused {
-        wash(f.buffer_mut(), inner, th);
-    }
 
     if rows.is_empty() {
         // Wrapped, not truncated: these columns are narrow, and a hint cut
@@ -210,90 +293,116 @@ fn render_column(
     }
 
     // Scroll the window so the selection stays on screen in a long list.
-    let height = inner.height as usize;
+    let visible = (inner.height / ROW_HEIGHT) as usize;
     let first = selected
-        .filter(|s| height > 0 && *s >= height)
-        .map(|s| s + 1 - height)
+        .filter(|s| visible > 0 && *s >= visible)
+        .map(|s| s + 1 - visible)
         .unwrap_or(0);
 
-    for (i, spans) in rows.into_iter().enumerate().skip(first).take(height) {
+    for (i, item) in rows.into_iter().enumerate().skip(first).take(visible) {
         let Some(row) = row_rect(inner, i - first) else { break };
-        render_row(f, row, spans, selected == Some(i), focused, th);
+        render_row(f, row, item, selected == Some(i), focused, th);
     }
     inner
 }
 
-/// One full-width row. The selection reads as a raised bar with an accent
-/// marker pinning it; unselected rows get a blank gutter so the text lines
-/// up either way. `dim` spans would sink into the selection fill, so they
-/// are lifted to `muted` there.
-fn render_row(f: &mut Frame, area: Rect, spans: Vec<Span>, selected: bool, focused: bool, th: Theme) {
+/// A two-line item: name, then detail. The selection is a raised bar over
+/// both lines with an accent marker pinning the first; unselected rows get
+/// a blank gutter so text lines up either way. `dim` spans would sink into
+/// the selection fill, so they are lifted to `muted` there.
+fn render_row(f: &mut Frame, area: Rect, item: Item, selected: bool, focused: bool, th: Theme) {
     let bar = match (selected, focused) {
         (true, true) => Style::default().bg(th.sel_bg),
         (true, false) => Style::default().bg(th.sel_bg_dim),
         _ => Style::default(),
     };
 
-    let mut out = vec![if selected && focused {
-        Span::styled(MARKER, Style::default().fg(th.accent).bg(th.sel_bg))
+    let marker = if selected && focused {
+        Span::styled(MARKER, Style::default().fg(th.accent).patch(bar))
     } else {
         Span::styled(GUTTER, bar)
-    }];
-    out.extend(spans.into_iter().map(|s| {
-        let mut style = s.style.patch(bar);
-        if selected {
-            if style.fg == Some(th.dim) {
-                style = style.fg(th.muted);
-            }
-            if focused {
-                style = style.add_modifier(Modifier::BOLD);
-            }
-        }
-        Span::styled(s.content, style)
-    }));
+    };
+    fn lift<'a>(spans: Vec<Span<'a>>, bar: Style, selected: bool, th: Theme) -> Vec<Span<'a>> {
+        spans
+            .into_iter()
+            .map(|s| {
+                let mut style = s.style.patch(bar);
+                if selected && style.fg == Some(th.dim) {
+                    style = style.fg(th.muted);
+                }
+                Span::styled(s.content, style)
+            })
+            .collect()
+    }
 
-    f.render_widget(Paragraph::new(Line::from(out)).style(bar), area);
+    let mut name = vec![marker];
+    name.extend(lift(item.name, bar, selected, th));
+
+    let badge = lift(item.badge, bar, selected, th);
+    if !badge.is_empty() {
+        let used: usize = name.iter().chain(badge.iter()).map(Span::width).sum();
+        // One trailing column of air, and nothing at all if it won't fit.
+        if let Some(pad) = (area.width as usize).checked_sub(used + 1) {
+            name.push(Span::styled(" ".repeat(pad), bar));
+            name.extend(badge);
+        }
+    }
+    let mut detail = vec![Span::styled(GUTTER, bar), Span::styled("  ", bar)];
+    detail.extend(lift(item.detail, bar, selected, th));
+
+    f.render_widget(
+        Paragraph::new(vec![Line::from(name), Line::from(detail)]).style(bar),
+        area,
+    );
 }
 
-/// Bordered panel frame. Focus has to be unmissable at a glance, so the
-/// focused panel gets an accent border and a filled accent title chip
-/// against the unfocused panels' receding edge border and muted title.
+/// A padded card. Focus has to be unmissable at a glance, so the focused
+/// panel is lifted a step in elevation and given an accent border and
+/// title, against the unfocused panels' receding edge and muted label.
 fn panel_block(title: &str, focused: bool, th: Theme) -> Block<'_> {
-    let (border, chip) = if focused {
+    let (border, label, fill) = if focused {
         (
             Style::default().fg(th.accent),
             Style::default()
-                .fg(th.on_accent)
-                .bg(th.accent)
+                .fg(th.accent)
                 .add_modifier(Modifier::BOLD),
+            th.surface_focus,
         )
     } else {
-        (Style::default().fg(th.edge), Style::default().fg(th.muted))
+        (
+            Style::default().fg(th.edge),
+            Style::default().fg(th.muted),
+            th.surface,
+        )
     };
     Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(border)
-        .title(Span::styled(format!(" {title} "), chip))
+        .style(Style::default().bg(fill))
+        // The inner gutter is what stops text from sitting on the border.
+        .padding(Padding::new(1, 1, 1, 0))
+        .title(Span::styled(format!(" {title} "), label))
 }
 
-/// Washes a focused panel's background with the accent tint, leaving cells
-/// that already painted their own background (a selection bar) alone.
-fn wash(buf: &mut Buffer, area: Rect, th: Theme) {
-    for y in area.y..area.y.saturating_add(area.height) {
-        for x in area.x..area.x.saturating_add(area.width) {
-            if let Some(cell) = buf.cell_mut((x, y)) {
-                if cell.bg == Color::Reset {
-                    cell.bg = th.focus_tint;
-                }
-            }
-        }
+/// Shrinks a rect by `n` on every side, clamping rather than underflowing.
+fn inset(area: Rect, n: u16) -> Rect {
+    Rect {
+        x: area.x.saturating_add(n),
+        y: area.y.saturating_add(n),
+        width: area.width.saturating_sub(n * 2),
+        height: area.height.saturating_sub(n * 2),
     }
 }
 
 fn row_rect(inner: Rect, i: usize) -> Option<Rect> {
-    let y = inner.y.checked_add(u16::try_from(i).ok()?)?;
-    (y < inner.y + inner.height).then(|| Rect::new(inner.x, y, inner.width, 1))
+    row_rect_of(inner, i, ROW_HEIGHT)
+}
+
+fn row_rect_of(inner: Rect, i: usize, height: u16) -> Option<Rect> {
+    let offset = u16::try_from(i).ok()?.checked_mul(height)?;
+    let y = inner.y.checked_add(offset)?;
+    (y + height <= inner.y + inner.height).then(|| Rect::new(inner.x, y, inner.width, height))
 }
 
 /// The rightmost column: the selected pane's live terminal, always drawn
@@ -334,11 +443,9 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
 fn render_review(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let focused = app.focus == Focus::Review;
     let title = match app.review.as_ref() {
-        Some(v) => format!(
-            "review › {} changed vs {}",
-            v.review.files.len(),
-            v.review.base.label()
-        ),
+        // The file count is already on the status line; the base is the
+        // thing you can't tell from the diff itself.
+        Some(v) => format!("review · {}", v.review.base.label()),
         None => "review".to_string(),
     };
     let block = panel_block(&title, focused, th);
@@ -439,8 +546,15 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         ..area
     };
 
-    let (hint, tone) = if app.picker.is_some() {
-        ("j/k move   enter spawn   esc cancel", th.dim)
+    let (hint, tone) = if let Some(p) = &app.picker {
+        // What Enter does differs per picker, and "spawn" on the theme list
+        // would be a small lie.
+        let hint = match p.kind {
+            PickerKind::Agent => "j/k move   enter spawn   esc cancel",
+            PickerKind::Workspace(_) => "j/k move   enter open   esc cancel",
+            PickerKind::Theme => "j/k move   enter apply   esc cancel",
+        };
+        (hint, th.dim)
     } else if app.prompt.is_some() {
         ("type to edit   enter confirm   esc cancel", th.dim)
     } else if app.leader_pending {
@@ -451,7 +565,7 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         ("typing — ctrl-space then esc to leave, x to close", th.dim)
     } else {
         (
-            "j/k move  l/h in/out  s shell  a agent  n new  R review  w wksp  D rm  x close  q detach",
+            "j/k move  l/h in/out  s shell  a agent  n new  R review  w wksp  t theme  x close  q detach",
             th.dim,
         )
     };
@@ -501,9 +615,11 @@ fn breadcrumb(app: &App) -> String {
 
 fn render_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     let Some(picker) = &app.picker else { return };
-    let height = (picker.items.len() as u16 + 2).min(area.height);
+    // A picker row is just a name, so it stays one line — two would make a
+    // four-item list sprawl down half the screen.
+    let height = (picker.items.len() as u16 + 3).min(area.height);
     let widest = picker.items.iter().map(|i| i.chars().count()).max().unwrap_or(0);
-    let width = (widest as u16 + 6).clamp(24, 48).min(area.width);
+    let width = (widest as u16 + 8).clamp(28, 52).min(area.width);
     let popup = centered_rect(width, height, area);
 
     f.render_widget(Clear, popup);
@@ -512,11 +628,14 @@ fn render_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     f.render_widget(block, popup);
 
     for (i, name) in picker.items.iter().enumerate() {
-        let Some(row) = row_rect(inner, i) else { break };
+        let Some(row) = row_rect_of(inner, i, 1) else { break };
         render_row(
             f,
             row,
-            vec![Span::styled(name.clone(), Style::default().fg(th.text))],
+            Item::new(
+                vec![Span::styled(name.clone(), Style::default().fg(th.text))],
+                Vec::new(),
+            ),
             i == picker.sel,
             true,
             th,
@@ -630,26 +749,30 @@ fn git_spans_unless_branch_is(git: Option<&GitStatus>, name: &str, th: Theme) ->
 fn git_spans(git: Option<&GitStatus>, th: Theme) -> Vec<Span<'static>> {
     let Some(g) = git else { return Vec::new() };
     let mut spans = vec![match &g.branch {
-        Some(branch) => Span::styled(format!("  {branch}"), Style::default().fg(th.muted)),
-        None => Span::styled("  detached".to_string(), Style::default().fg(th.dim)),
+        Some(branch) => Span::styled(branch.clone(), Style::default().fg(th.muted)),
+        None => Span::styled("detached".to_string(), Style::default().fg(th.dim)),
     }];
     if g.ahead > 0 {
         spans.push(Span::styled(
-            format!(" ↑{}", g.ahead),
+            format!("  ↑{}", g.ahead),
             Style::default().fg(th.ok),
         ));
     }
     if g.behind > 0 {
         spans.push(Span::styled(
-            format!(" ↓{}", g.behind),
+            format!("  ↓{}", g.behind),
             Style::default().fg(th.warn),
         ));
     }
+    // Spelled out rather than a `*n` sigil: the detail line has room, and
+    // the count is the thing you act on.
     if g.dirty {
         spans.push(Span::styled(
-            format!(" *{}", g.changed_files),
+            format!("  {}", plural(g.changed_files, "change")),
             Style::default().fg(th.warn),
         ));
+    } else if g.branch.is_some() {
+        spans.push(Span::styled("  clean", Style::default().fg(th.dim)));
     }
     spans
 }
@@ -657,6 +780,25 @@ fn git_spans(git: Option<&GitStatus>, th: Theme) -> Vec<Span<'static>> {
 /// The exit code appended to a pane row, and only for a failure — a clean
 /// exit is already said by the green dot, and repeating it as text would
 /// make every finished pane shout.
+/// The detail line's word for a pane's state — the dot's meaning spelled
+/// out, since a color alone is a poor thing to have to learn.
+fn plural(n: usize, noun: &str) -> String {
+    if n == 1 {
+        format!("{n} {noun}")
+    } else {
+        format!("{n} {noun}s")
+    }
+}
+
+fn status_word(status: PaneStatus) -> &'static str {
+    match status {
+        PaneStatus::Idle => "idle",
+        PaneStatus::Working => "working",
+        PaneStatus::Waiting => "needs you",
+        PaneStatus::Exited { .. } => "exited",
+    }
+}
+
 fn exit_note(status: PaneStatus) -> String {
     match status {
         PaneStatus::Exited { code: Some(0) } => String::new(),
@@ -793,9 +935,15 @@ mod tests {
     }
 
     #[test]
-    fn a_clean_branch_shows_only_its_name() {
+    fn a_clean_branch_says_so_rather_than_leaving_it_to_be_inferred() {
         let s = git_spans(Some(&git(Some("master"), false, 0, 0, 0)), Theme::default());
-        assert_eq!(text_of(&s).trim(), "master");
+        assert_eq!(text_of(&s).trim(), "master  clean");
+    }
+
+    #[test]
+    fn one_change_is_not_reported_as_one_changes() {
+        let s = git_spans(Some(&git(Some("m"), true, 1, 0, 0)), Theme::default());
+        assert_eq!(text_of(&s).trim(), "m  1 change");
     }
 
     #[test]
@@ -807,13 +955,13 @@ mod tests {
     #[test]
     fn ahead_behind_and_dirty_render_in_a_fixed_order() {
         let s = git_spans(Some(&git(Some("wt"), true, 5, 1, 2)), Theme::default());
-        assert_eq!(text_of(&s).trim(), "wt ↑1 ↓2 *5");
+        assert_eq!(text_of(&s).trim(), "wt  ↑1  ↓2  5 changes");
     }
 
     #[test]
     fn zero_counts_are_omitted_rather_than_shown_as_zero() {
         let s = text_of(&git_spans(Some(&git(Some("m"), false, 0, 0, 0)), Theme::default()));
-        assert!(!s.contains('↑') && !s.contains('↓') && !s.contains('*'), "{s:?}");
+        assert!(!s.contains('↑') && !s.contains('↓') && !s.contains('0'), "{s:?}");
     }
 
     #[test]
@@ -831,7 +979,7 @@ mod tests {
         };
         assert_eq!(color_of("↑"), Some(th.ok));
         assert_eq!(color_of("↓"), Some(th.warn));
-        assert_eq!(color_of("*"), Some(th.warn));
+        assert_eq!(color_of("change"), Some(th.warn));
     }
 
     // --- rolled-up status ---------------------------------------------------
@@ -925,10 +1073,12 @@ mod tests {
 
     #[test]
     fn rows_stack_down_the_panel_and_stop_at_its_bottom() {
-        let inner = Rect::new(1, 1, 10, 3);
+        // Two lines per item, and a half-drawn item is worse than none.
+        let inner = Rect::new(1, 1, 10, 5);
         assert_eq!(row_rect(inner, 0).unwrap().y, 1);
-        assert_eq!(row_rect(inner, 2).unwrap().y, 3);
-        assert!(row_rect(inner, 3).is_none(), "must not draw past the border");
+        assert_eq!(row_rect(inner, 0).unwrap().height, ROW_HEIGHT);
+        assert_eq!(row_rect(inner, 1).unwrap().y, 3);
+        assert!(row_rect(inner, 2).is_none(), "no room for both its lines");
     }
 
     // --- rendering the whole frame -----------------------------------------
@@ -1032,27 +1182,26 @@ mod tests {
         app.focus = Focus::Checkouts;
         let buf = draw(&mut app);
 
-        // Top-left corner cell of each column's border.
-        let corner = |r: Rect| buf.cell((r.x.saturating_sub(1), r.y.saturating_sub(1))).unwrap().fg;
+        // The panel's top-left corner, outside the border's own padding.
+        let corner = |r: Rect| buf.cell((r.x - 2, r.y - 2)).unwrap().fg;
         assert_eq!(corner(app.layout.checkouts), th.accent, "focused column");
         assert_eq!(corner(app.layout.projects), th.edge, "unfocused column");
     }
 
     #[test]
-    fn the_focused_column_is_washed_and_the_others_are_not() {
+    fn the_three_elevations_show_up_on_screen() {
+        // Page behind unfocused panel behind focused panel. This is what
+        // makes the panels read as cards rather than boxes.
         let th = Theme::default();
         let mut app = app_with_tree();
         app.focus = Focus::Projects;
         let buf = draw(&mut app);
 
-        let inner = app.layout.projects;
-        // A blank cell inside the focused panel, below the last row.
-        let bg = buf.cell((inner.x, inner.y + inner.height - 1)).unwrap().bg;
-        assert_eq!(bg, th.focus_tint, "focused panel should be washed");
-
-        let other = app.layout.checkouts;
-        let other_bg = buf.cell((other.x, other.y + other.height - 1)).unwrap().bg;
-        assert_eq!(other_bg, Color::Reset, "unfocused panel stays plain");
+        // A blank cell inside each panel, below the last row.
+        let blank = |r: Rect| buf.cell((r.x, r.y + r.height - 1)).unwrap().bg;
+        assert_eq!(blank(app.layout.projects), th.surface_focus, "focused panel");
+        assert_eq!(blank(app.layout.checkouts), th.surface, "unfocused panel");
+        assert_eq!(buf.cell((0, 0)).unwrap().bg, th.bg, "the page behind them");
     }
 
     #[test]
@@ -1064,7 +1213,7 @@ mod tests {
         let buf = draw(&mut app);
 
         let inner = app.layout.checkouts;
-        let marker = buf.cell((inner.x, inner.y + 1)).unwrap();
+        let marker = buf.cell((inner.x, inner.y + ROW_HEIGHT)).unwrap();
         assert_eq!(marker.symbol(), MARKER, "selection marker on the selected row");
         assert_eq!(marker.fg, th.accent);
         assert_eq!(marker.bg, th.sel_bg);
@@ -1096,7 +1245,9 @@ mod tests {
         app.sel_checkout = 1; // the worktree with no panes
         app.focus = Focus::Panes;
         let text = lines(&draw(&mut app)).join("\n");
-        assert!(text.contains("s: shell"), "an empty panes column should say what to press");
+        assert!(text.contains("nothing running"), "{text}");
+        assert!(text.contains("shell"), "an empty panes column says what to press:
+{text}");
     }
 
     #[test]
@@ -1207,6 +1358,32 @@ mod tests {
         let w = std::env::var("DUMP_W").ok().and_then(|v| v.parse().ok()).unwrap_or(100);
         let h = std::env::var("DUMP_H").ok().and_then(|v| v.parse().ok()).unwrap_or(20);
         for line in lines(&draw_at(&mut app, w, h)) {
+            println!("|{line}");
+        }
+    }
+
+    /// Same idea as `dump_frame`, for the two views it doesn't reach.
+    #[test]
+    #[ignore]
+    fn dump_review() {
+        let mut app = app_with_review();
+        for line in lines(&draw_at(&mut app, 100, 20)) {
+            println!("|{line}");
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_picker() {
+        let mut app = app_with_tree();
+        app.theme = Theme::default();
+        app.picker = Some(crate::app::Picker {
+            kind: PickerKind::Theme,
+            title: "theme",
+            items: crate::theme::THEMES.iter().map(|t| t.to_string()).collect(),
+            sel: 1,
+        });
+        for line in lines(&draw_at(&mut app, 100, 20)) {
             println!("|{line}");
         }
     }
