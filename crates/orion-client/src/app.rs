@@ -4,6 +4,7 @@ use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::grid::Grid;
+use crate::theme::Theme;
 use crate::keys::{encode_key, is_leader};
 use crate::mouse::encode_mouse;
 
@@ -68,6 +69,9 @@ pub struct App {
     pub layout: Layout,
     pub picker: Option<Picker>,
     pub prompt: Option<Prompt>,
+    /// Active color theme. Every color the UI draws comes from here, so a
+    /// preset swap is one assignment rather than a sweep of call sites.
+    pub theme: Theme,
     pending_focus_new: bool,
     pending_focus_new_checkout: bool,
     pending_focus_new_project: bool,
@@ -92,6 +96,7 @@ impl App {
             layout: Layout::default(),
             picker: None,
             prompt: None,
+            theme: Theme::from_env(),
             pending_focus_new: false,
             pending_focus_new_checkout: false,
             pending_focus_new_project: false,

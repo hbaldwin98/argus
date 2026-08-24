@@ -3,6 +3,7 @@ mod grid;
 mod keys;
 mod launch;
 mod mouse;
+mod theme;
 mod ui;
 
 use std::io;
