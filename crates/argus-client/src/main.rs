@@ -14,7 +14,10 @@ use std::collections::HashSet;
 use std::io;
 
 use argus_protocol::{read_msg, write_msg, ClientMsg, PaneId, ServerMsg};
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyEventKind};
+use crossterm::event::{
+    DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture, Event,
+    EventStream, KeyEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -27,6 +30,25 @@ use tokio::sync::mpsc;
 
 const FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
 const SERVER_QUEUE_MESSAGES: usize = 256;
+
+#[derive(Default)]
+struct RedrawScheduler {
+    dirty: bool,
+}
+
+impl RedrawScheduler {
+    fn changed(&mut self) {
+        self.dirty = true;
+    }
+
+    fn pending(&self) -> bool {
+        self.dirty
+    }
+
+    fn take_frame(&mut self) -> bool {
+        std::mem::take(&mut self.dirty)
+    }
+}
 
 use app::App;
 
@@ -43,7 +65,12 @@ async fn main() -> anyhow::Result<()> {
 fn enter_terminal() -> anyhow::Result<Terminal<CrosstermBackend<io::Stdout>>> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        EnableBracketedPaste
+    )?;
     let backend = CrosstermBackend::new(stdout);
     Ok(Terminal::new(backend)?)
 }
@@ -52,6 +79,7 @@ fn leave_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> anyh
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
+        DisableBracketedPaste,
         DisableMouseCapture,
         LeaveAlternateScreen
     )?;
@@ -139,7 +167,7 @@ async fn run(
     let mut herdr = herdr::HerdrReporter::from_env();
     let mut frames = tokio::time::interval(FRAME_INTERVAL);
     frames.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut dirty = false;
+    let mut redraw = RedrawScheduler::default();
     // Keyed by pane id, not just dimensions — switching to a different pane
     // at the same on-screen size still needs its own Resize, since each
     // pane's pty starts at a hardcoded default until told otherwise.
@@ -154,14 +182,17 @@ async fn run(
                 if !handle_terminal_event(&mut app, maybe_event) {
                     break;
                 }
+                redraw.changed();
             }
             Some(msg) = out_rx.recv() => {
                 app.on_server_msg(msg);
-                dirty = true;
-                continue;
+                redraw.changed();
             }
-            _ = frames.tick(), if dirty => {
-                dirty = false;
+            _ = frames.tick(), if redraw.pending() => {
+                redraw.take_frame();
+                update_herdr(&mut herdr, &app);
+                terminal.draw(|f| ui::render(f, &mut app))?;
+                resize_live_panes(&mut app, &mut last_sizes);
             }
         }
 
@@ -169,10 +200,6 @@ async fn run(
             break;
         }
 
-        update_herdr(&mut herdr, &app);
-
-        terminal.draw(|f| ui::render(f, &mut app))?;
-        resize_live_panes(&mut app, &mut last_sizes);
     }
 
     release_herdr(&mut herdr);
@@ -184,6 +211,7 @@ fn handle_terminal_event(app: &mut App, event: Option<Result<Event, std::io::Err
     match event {
         Some(Ok(Event::Key(key))) => handle_key_event(app, key),
         Some(Ok(Event::Mouse(event))) => app.on_mouse(event),
+        Some(Ok(Event::Paste(text))) => app.on_paste(text),
         Some(Ok(_)) => {}
         Some(Err(_)) | None => return false,
     }
@@ -238,6 +266,7 @@ fn resize_live_panes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::Prompt;
     use tokio::time::{timeout, Duration};
 
     #[tokio::test]
@@ -295,5 +324,46 @@ mod tests {
             ] if *first == pane_a && *second == pane_b
         ));
         assert_eq!(subscribed, HashSet::from([pane_b]));
+    }
+
+    #[test]
+    fn many_input_events_request_one_draw_on_the_next_frame() {
+        let mut redraw = RedrawScheduler::default();
+        for _ in 0..10_000 {
+            redraw.changed();
+        }
+
+        assert!(redraw.take_frame());
+        assert!(!redraw.take_frame());
+    }
+
+    #[test]
+    fn paste_events_are_dispatched_to_the_app() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut app = App::new(tx);
+        app.prompt = Some(Prompt::AddProject {
+            input: String::new(),
+        });
+
+        assert!(handle_terminal_event(
+            &mut app,
+            Some(Ok(Event::Paste("pasted".to_string())))
+        ));
+        assert!(matches!(
+            app.prompt,
+            Some(Prompt::AddProject { ref input }) if input == "pasted"
+        ));
+    }
+
+    #[test]
+    fn a_closed_or_failed_event_stream_stops_the_client() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut app = App::new(tx);
+
+        assert!(!handle_terminal_event(&mut app, None));
+        assert!(!handle_terminal_event(
+            &mut app,
+            Some(Err(io::Error::other("event stream failed")))
+        ));
     }
 }

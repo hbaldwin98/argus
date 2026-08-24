@@ -884,6 +884,16 @@ impl Daemon {
         input.write(bytes)
     }
 
+    pub fn paste_pane(&self, pane: PaneId, text: &str) -> anyhow::Result<()> {
+        let input = {
+            let inner = self.inner.lock().unwrap();
+            let pane = find_pane_ref(&inner.projects, pane)
+                .ok_or_else(|| anyhow::anyhow!("no such pane"))?;
+            pane.runtime.input()
+        };
+        input.paste(text.as_bytes())
+    }
+
     pub fn resize_pane(&self, pane: PaneId, rows: u16, cols: u16) -> anyhow::Result<()> {
         let inner = self.inner.lock().unwrap();
         let p =

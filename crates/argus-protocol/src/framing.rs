@@ -86,6 +86,10 @@ mod tests {
                 pane: PaneId(1),
                 bytes: vec![0, 27, 255],
             },
+            ClientMsg::Paste {
+                pane: PaneId(1),
+                text: "first\nsecond".to_string(),
+            },
             ClientMsg::Resize {
                 pane: PaneId(1),
                 rows: 40,

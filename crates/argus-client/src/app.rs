@@ -770,6 +770,38 @@ impl App {
         }
     }
 
+    pub fn on_paste(&mut self, text: String) {
+        self.clear_status();
+        if let Some(prompt) = &mut self.prompt {
+            let input = match prompt {
+                Prompt::NewWorktree { input, .. }
+                | Prompt::Comment { input, .. }
+                | Prompt::EditorCommand { input }
+                | Prompt::AddProject { input } => Some(input),
+                Prompt::ConfirmRemoveCheckout { .. } => None,
+            };
+            if let Some(input) = input {
+                input.extend(text.chars().filter(|c| !c.is_control()));
+            }
+            return;
+        }
+        if let Some(picker) = &mut self.picker {
+            if picker.kind.is_fuzzy() {
+                picker.query.extend(text.chars().filter(|c| !c.is_control()));
+                picker.refilter();
+            }
+            return;
+        }
+        let pane = self
+            .overlay
+            .as_ref()
+            .and_then(Overlay::pane)
+            .or_else(|| (self.focus == Focus::PaneContent).then(|| self.column_pane()).flatten());
+        if let Some(pane) = pane {
+            let _ = self.out.send(ClientMsg::Paste { pane, text });
+        }
+    }
+
     fn on_key_prompt(&mut self, key: KeyEvent) {
         let Some(prompt) = &mut self.prompt else { return };
         match prompt {
@@ -2041,6 +2073,20 @@ mod tests {
             })
             .collect();
         assert_eq!(bytes, b"echo\r");
+    }
+
+    #[test]
+    fn a_paste_reaches_the_child_as_one_message() {
+        let mut h = Harness::new();
+        h.keys("llll");
+        h.sent();
+
+        h.app.on_paste("first\nsecond".to_string());
+
+        assert!(matches!(
+            h.sent().as_slice(),
+            [ClientMsg::Paste { pane: PaneId(100), text }] if text == "first\nsecond"
+        ));
     }
 
     #[test]

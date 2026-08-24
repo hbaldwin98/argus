@@ -14,6 +14,9 @@ pub enum ClientMsg {
     Unsubscribe { pane: PaneId },
     /// Raw input bytes to forward to the pane's pty.
     Input { pane: PaneId, bytes: Vec<u8> },
+    /// Text pasted as one event. The daemon adds bracketed-paste delimiters
+    /// only when the child requested them.
+    Paste { pane: PaneId, text: String },
     /// The client's view of a pane has been resized.
     Resize { pane: PaneId, rows: u16, cols: u16 },
     /// Spawn a shell pane cwd'd into a checkout.

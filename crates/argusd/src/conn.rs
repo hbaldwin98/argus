@@ -163,6 +163,7 @@ fn dispatch_pane(
             Ok(())
         }
         ClientMsg::Input { pane, bytes } => daemon.write_pane(pane, &bytes),
+        ClientMsg::Paste { pane, text } => daemon.paste_pane(pane, &text),
         ClientMsg::Resize { pane, rows, cols } => daemon.resize_pane(pane, rows, cols),
         ClientMsg::SpawnShell { checkout } => {
             let daemon = daemon.clone();

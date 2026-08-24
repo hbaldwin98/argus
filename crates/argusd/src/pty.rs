@@ -21,6 +21,8 @@ const MAX_CHUNKS_PER_FRAME: usize = 64;
 /// before announcing the exit. Short-lived commands routinely exit before
 /// any of their output has been drained.
 const EXIT_FLUSH_GRACE: Duration = Duration::from_millis(500);
+const PASTE_START: &[u8] = b"\x1b[200~";
+const PASTE_END: &[u8] = b"\x1b[201~";
 
 /// What to run in a newly-opened pty: the user's shell, or a named program
 /// (an agent CLI) with its own args and extra environment variables.
@@ -73,11 +75,23 @@ pub struct PaneRuntime {
 }
 
 #[derive(Clone)]
-pub struct PaneInput(Arc<StdMutex<Box<dyn Write + Send>>>);
+pub struct PaneInput {
+    writer: Arc<StdMutex<Box<dyn Write + Send>>>,
+    parser: Arc<StdMutex<vt100::Parser>>,
+}
 
 impl PaneInput {
     pub fn write(&self, bytes: &[u8]) -> anyhow::Result<()> {
-        self.0.lock().unwrap().write_all(bytes)?;
+        self.writer.lock().unwrap().write_all(bytes)?;
+        Ok(())
+    }
+
+    pub fn paste(&self, bytes: &[u8]) -> anyhow::Result<()> {
+        let bracketed = self.parser.lock().unwrap().screen().bracketed_paste();
+        self.writer
+            .lock()
+            .unwrap()
+            .write_all(&paste_bytes(bytes, bracketed))?;
         Ok(())
     }
 }
@@ -117,14 +131,16 @@ impl PaneRuntime {
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);
 
-        let mut reader = pair.master.try_clone_reader()?;
-        let input = PaneInput(Arc::new(StdMutex::new(pair.master.take_writer()?)));
-
         let parser = Arc::new(StdMutex::new(vt100::Parser::new(
             DEFAULT_ROWS,
             DEFAULT_COLS,
             SCROLLBACK_LINES,
         )));
+        let mut reader = pair.master.try_clone_reader()?;
+        let input = PaneInput {
+            writer: Arc::new(StdMutex::new(pair.master.take_writer()?)),
+            parser: parser.clone(),
+        };
         let child = Arc::new(StdMutex::new(child));
         let (damage_tx, _) = broadcast::channel::<ServerMsg>(64);
 
@@ -325,6 +341,17 @@ fn convert_color(c: vt100::Color) -> Color {
         vt100::Color::Idx(i) => Color::Idx(i),
         vt100::Color::Rgb(r, g, b) => Color::Rgb(r, g, b),
     }
+}
+
+fn paste_bytes(bytes: &[u8], bracketed: bool) -> Vec<u8> {
+    if !bracketed {
+        return bytes.to_vec();
+    }
+    let mut pasted = Vec::with_capacity(PASTE_START.len() + bytes.len() + PASTE_END.len());
+    pasted.extend_from_slice(PASTE_START);
+    pasted.extend_from_slice(bytes);
+    pasted.extend_from_slice(PASTE_END);
+    pasted
 }
 
 #[cfg(test)]
@@ -665,6 +692,15 @@ mod tests {
                 col: 4,
                 visible: false,
             }
+        );
+    }
+
+    #[test]
+    fn paste_is_delimited_only_when_the_child_requested_it() {
+        assert_eq!(paste_bytes(b"one\ntwo", false), b"one\ntwo");
+        assert_eq!(
+            paste_bytes(b"one\ntwo", true),
+            b"\x1b[200~one\ntwo\x1b[201~"
         );
     }
 }

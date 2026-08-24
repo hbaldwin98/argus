@@ -91,6 +91,11 @@ Clients receive a full grid when they subscribe, then incremental damage. Resize
 PTY and parser and emits another full grid. If several clients resize one pane, the latest request
 wins; ownership is not yet defined.
 
+The client enables bracketed paste and forwards each paste as one protocol message. The daemon
+consults the pane parser and wraps the text in bracketed-paste delimiters only when the child has
+requested that mode. Keyboard, paste, mouse, and daemon updates all share the client's 16 ms redraw
+tick, so input bursts cannot trigger an unbounded number of full UI renders.
+
 The current pane states are `Idle`, `Working`, `Waiting`, `NeedsReview`, `Done`, `Failed`, and
 `Exited { code }`. `NeedsReview` means work is ready for the operator to inspect; `Done` means it
 has been reviewed and completed. `Failed` means the agent said something went wrong while still
