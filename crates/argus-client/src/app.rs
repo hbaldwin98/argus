@@ -444,58 +444,7 @@ impl App {
 
     pub fn on_server_msg(&mut self, msg: ServerMsg) {
         match msg {
-            ServerMsg::Tree(t) => {
-                self.tree = t;
-                self.clamp();
-                if self.pending_focus_new_project {
-                    self.pending_focus_new_project = false;
-                    let n = self.tree.len();
-                    if n > 0 {
-                        self.sel_project = n - 1;
-                        self.clamp();
-                    }
-                }
-                if self.pending_focus_new_checkout {
-                    self.pending_focus_new_checkout = false;
-                    let n = self.current_project().map(|p| p.checkouts.len()).unwrap_or(0);
-                    if n > 0 {
-                        self.sel_checkout = n - 1;
-                        self.clamp();
-                    }
-                }
-                // A pane killed from elsewhere leaves its window orphaned.
-                if let Some(pane) = self.overlay.as_ref().and_then(Overlay::pane) {
-                    let alive = self
-                        .tree
-                        .iter()
-                        .flat_map(|p| p.checkouts.iter())
-                        .flat_map(|c| c.panes.iter())
-                        .any(|p| p.id == pane);
-                    if !alive {
-                        self.close_overlay();
-                    }
-                }
-                if self.pending_focus_new {
-                    self.pending_focus_new = false;
-                    let newest = self
-                        .current_checkout()
-                        .and_then(|c| c.panes.last())
-                        .map(|p| (p.id, p.title.clone()));
-                    if let Some((id, title)) = newest {
-                        if std::mem::take(&mut self.pending_overlay_new) {
-                            // Deliberately leaves `sel_pane` alone: the
-                            // columns keep showing whatever you were
-                            // watching, and closing the window puts you
-                            // back there rather than on the editor.
-                            self.open_overlay_pane(id, title, true);
-                        } else {
-                            self.sel_pane = self.visible_pane_count().saturating_sub(1);
-                            self.sync_subscription();
-                            self.focus = Focus::PaneContent;
-                        }
-                    }
-                }
-            }
+            ServerMsg::Tree(tree) => self.receive_tree(tree),
             ServerMsg::Templates(names) => {
                 self.templates = names;
             }
@@ -583,6 +532,79 @@ impl App {
             }
             ServerMsg::Error { message } => {
                 self.alert(format!("error: {message}"));
+            }
+        }
+    }
+
+    fn receive_tree(&mut self, tree: Vec<ProjectInfo>) {
+        let selected_pane = matches!(self.focus, Focus::Panes | Focus::PaneContent)
+            .then(|| self.current_pane().map(|pane| pane.id))
+            .flatten();
+        self.tree = tree;
+        if let Some(selected_pane) = selected_pane {
+            if let Some((project, checkout, pane)) = self.tree.iter().enumerate().find_map(
+                |(project_index, project)| {
+                    project.checkouts.iter().enumerate().find_map(
+                        |(checkout_index, checkout)| {
+                            checkout
+                                .listed_panes()
+                                .position(|candidate| candidate.id == selected_pane)
+                                .map(|pane_index| (project_index, checkout_index, pane_index))
+                        },
+                    )
+                },
+            ) {
+                self.sel_project = project;
+                self.sel_checkout = checkout;
+                self.sel_pane = pane;
+            }
+        }
+        self.clamp();
+        if self.pending_focus_new_project {
+            self.pending_focus_new_project = false;
+            let n = self.tree.len();
+            if n > 0 {
+                self.sel_project = n - 1;
+                self.clamp();
+            }
+        }
+        if self.pending_focus_new_checkout {
+            self.pending_focus_new_checkout = false;
+            let n = self.current_project().map(|p| p.checkouts.len()).unwrap_or(0);
+            if n > 0 {
+                self.sel_checkout = n - 1;
+                self.clamp();
+            }
+        }
+        // A pane killed from elsewhere leaves its window orphaned.
+        if let Some(pane) = self.overlay.as_ref().and_then(Overlay::pane) {
+            let alive = self
+                .tree
+                .iter()
+                .flat_map(|p| p.checkouts.iter())
+                .flat_map(|c| c.panes.iter())
+                .any(|p| p.id == pane);
+            if !alive {
+                self.close_overlay();
+            }
+        }
+        if self.pending_focus_new {
+            self.pending_focus_new = false;
+            let newest = self
+                .current_checkout()
+                .and_then(|c| c.panes.last())
+                .map(|p| (p.id, p.title.clone()));
+            if let Some((id, title)) = newest {
+                if std::mem::take(&mut self.pending_overlay_new) {
+                    // Deliberately leaves `sel_pane` alone: the columns keep
+                    // showing whatever you were watching, and closing the
+                    // window puts you back there rather than on the editor.
+                    self.open_overlay_pane(id, title, true);
+                } else {
+                    self.sel_pane = self.visible_pane_count().saturating_sub(1);
+                    self.sync_subscription();
+                    self.focus = Focus::PaneContent;
+                }
             }
         }
     }
@@ -2034,6 +2056,37 @@ mod tests {
         t[0].checkouts[0].panes.push(pane(102, "shell"));
         h.app.on_server_msg(ServerMsg::Tree(t));
         assert_eq!(h.app.column_pane(), Some(PaneId(102)));
+    }
+
+    #[test]
+    fn a_selected_pane_is_followed_when_it_moves_to_another_checkout() {
+        let mut h = Harness::new();
+        h.app.focus = Focus::PaneContent;
+        h.app.sel_pane = 1;
+        assert_eq!(h.app.column_pane(), Some(PaneId(101)));
+
+        let mut moved = tree();
+        let pane = moved[0].checkouts[0].panes.remove(1);
+        moved[0].checkouts[1].panes.push(pane);
+        h.app.on_server_msg(ServerMsg::Tree(moved));
+
+        assert_eq!(h.app.sel_checkout, 1);
+        assert_eq!(h.app.column_pane(), Some(PaneId(101)));
+        assert_eq!(h.app.focus, Focus::PaneContent);
+    }
+
+    #[test]
+    fn a_background_pane_move_does_not_hijack_project_navigation() {
+        let mut h = Harness::new();
+        h.app.focus = Focus::Projects;
+
+        let mut moved = tree();
+        let pane = moved[0].checkouts[0].panes.remove(0);
+        moved[0].checkouts[1].panes.push(pane);
+        h.app.on_server_msg(ServerMsg::Tree(moved));
+
+        assert_eq!(h.app.sel_checkout, 0);
+        assert_eq!(h.app.focus, Focus::Projects);
     }
 
     #[test]
