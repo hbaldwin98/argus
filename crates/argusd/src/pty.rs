@@ -44,6 +44,17 @@ fn program_command(program: &str, args: &[String]) -> CommandBuilder {
     c
 }
 
+fn strip_herdr_context(
+    command: &mut CommandBuilder,
+    keys: impl IntoIterator<Item = std::ffi::OsString>,
+) {
+    for key in keys {
+        if key.to_string_lossy().starts_with("HERDR_") {
+            command.env_remove(key);
+        }
+    }
+}
+
 #[cfg(unix)]
 fn program_command(program: &str, args: &[String]) -> CommandBuilder {
     let mut c = CommandBuilder::new(program);
@@ -86,6 +97,9 @@ impl PaneRuntime {
                 c
             }
         };
+        // Argus owns the outer Herdr pane. Processes nested in its PTYs must
+        // not compete with the client's aggregate lifecycle report for it.
+        strip_herdr_context(&mut cmd, std::env::vars_os().map(|(key, _)| key));
         cmd.cwd(cwd);
 
         let child = pair.slave.spawn_command(cmd)?;
@@ -305,6 +319,23 @@ fn convert_color(c: vt100::Color) -> Color {
 mod tests {
     use super::*;
     use argus_protocol::CellSpan;
+
+    #[test]
+    fn nested_processes_do_not_inherit_the_outer_herdr_pane() {
+        let mut command = CommandBuilder::new("dummy");
+        command.env("HERDR_ENV", "1");
+        command.env("HERDR_PANE_ID", "w1:p1");
+        command.env("ARGUS_PANE", "7");
+
+        strip_herdr_context(
+            &mut command,
+            ["HERDR_ENV".into(), "HERDR_PANE_ID".into()],
+        );
+
+        assert_eq!(command.get_env("HERDR_ENV"), None);
+        assert_eq!(command.get_env("HERDR_PANE_ID"), None);
+        assert_eq!(command.get_env("ARGUS_PANE"), Some(std::ffi::OsStr::new("7")));
+    }
 
     /// Flattens a grid to one string per row, trailing blanks trimmed.
     fn rows_of(grid: &[Vec<Cell>]) -> Vec<String> {

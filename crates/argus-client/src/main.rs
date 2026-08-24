@@ -1,6 +1,7 @@
 mod app;
 mod fuzzy;
 mod grid;
+mod herdr;
 mod keys;
 mod launch;
 mod mouse;
@@ -69,6 +70,7 @@ async fn run(
 ) -> anyhow::Result<()> {
     let mut app = App::with_settings(in_tx, settings::load());
     let mut events = EventStream::new();
+    let mut herdr = herdr::HerdrReporter::from_env();
     // Keyed by pane id, not just dimensions — switching to a different pane
     // at the same on-screen size still needs its own Resize, since each
     // pane's pty starts at a hardcoded default until told otherwise.
@@ -102,6 +104,10 @@ async fn run(
             break;
         }
 
+        if let Some(reporter) = &mut herdr {
+            reporter.update(&app.tree);
+        }
+
         terminal.draw(|f| ui::render(f, &mut app))?;
 
         // Every pane on screen is sized from where it is actually drawn,
@@ -118,6 +124,10 @@ async fn run(
             }
         }
         last_sizes.retain(|pane, _| live.iter().any(|(id, _)| id == pane));
+    }
+
+    if let Some(reporter) = &mut herdr {
+        reporter.release();
     }
 
     Ok(())
