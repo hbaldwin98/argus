@@ -12,7 +12,7 @@
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use argus_protocol::PaneKind;
+use argus_protocol::{PaneKind, PaneStatus};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,6 +26,16 @@ pub struct SessionPane {
     /// could rename themselves, where the title was the template name.
     #[serde(default)]
     pub template: Option<String>,
+    /// Last agent-reported state and its explanation. Defaults preserve
+    /// compatibility with session files written before statuses were saved.
+    #[serde(default = "idle_status")]
+    pub status: PaneStatus,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+fn idle_status() -> PaneStatus {
+    PaneStatus::Idle
 }
 
 impl SessionPane {
@@ -141,6 +151,8 @@ mod tests {
             kind,
             title: title.to_string(),
             template: None,
+            status: PaneStatus::Idle,
+            note: None,
         }
     }
 
@@ -182,6 +194,16 @@ mod tests {
         // your panes to a schema change would be a poor trade.
         let s: Session = serde_json::from_str("{}").unwrap();
         assert!(s.panes.is_empty());
+    }
+
+    #[test]
+    fn a_pane_from_before_status_persistence_defaults_to_idle() {
+        let s: Session = serde_json::from_str(
+            r#"{"panes":[{"checkout_path":"/repo","kind":"Agent","title":"claude"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(s.panes[0].status, PaneStatus::Idle);
+        assert_eq!(s.panes[0].note, None);
     }
 
     #[test]
@@ -227,6 +249,8 @@ mod tests {
                 kind: PaneKind::Shell,
                 title: "shell".to_string(),
                 template: None,
+                status: PaneStatus::Idle,
+                note: None,
             }],
         };
         assert_eq!(restorable(&s, &known).count(), 1);
@@ -242,6 +266,8 @@ mod tests {
             kind: PaneKind::Agent,
             title: "fixing the pty deadlock".to_string(),
             template: Some("claude".to_string()),
+            status: PaneStatus::NeedsReview,
+            note: Some("ready to inspect".to_string()),
         };
         assert_eq!(p.template(), "claude");
     }

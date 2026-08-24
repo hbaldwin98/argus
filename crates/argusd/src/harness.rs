@@ -53,14 +53,19 @@ pub enum Report {
     Working,
     Idle,
     Waiting,
+    #[serde(rename = "needs-review")]
+    NeedsReview,
+    Done,
     Failed,
 }
 
 impl Report {
-    pub const ALL: [Report; 4] = [
+    pub const ALL: [Report; 6] = [
         Report::Working,
         Report::Idle,
         Report::Waiting,
+        Report::NeedsReview,
+        Report::Done,
         Report::Failed,
     ];
 
@@ -69,6 +74,8 @@ impl Report {
             Report::Working => "working",
             Report::Idle => "idle",
             Report::Waiting => "waiting",
+            Report::NeedsReview => "needs-review",
+            Report::Done => "done",
             Report::Failed => "failed",
         }
     }
@@ -82,6 +89,8 @@ impl Report {
             Report::Working => PaneStatus::Working,
             Report::Idle => PaneStatus::Idle,
             Report::Waiting => PaneStatus::Waiting,
+            Report::NeedsReview => PaneStatus::NeedsReview,
+            Report::Done => PaneStatus::Done,
             Report::Failed => PaneStatus::Failed,
         }
     }
@@ -538,7 +547,13 @@ pub fn instructions() -> String {
          \x20 {hook} status waiting \"needs the staging database password\"\n\
          \x20 {hook} status failed \"cargo test is failing on a dependency I can't fix\"\n\
          \n\
-         Report `working` again once you are unblocked. These write nothing and cost \
+         When your changes are ready for the human to inspect, report `needs-review`. \
+         After they are reviewed and the task is complete, report `done`:\n\
+         \n\
+         \x20 {hook} status needs-review \"ready for review\"\n\
+         \x20 {hook} status done \"reviewed and complete\"\n\
+         \n\
+         Report `working` again when you resume work. These write nothing and cost \
          nothing. Do not mention having run them."
     )
 }
@@ -795,6 +810,14 @@ mod tests {
             args[1].contains("checkout"),
             "should teach checkout affiliation: {}",
             args[1]
+        );
+        assert!(
+            args[1].contains("needs-review"),
+            "should teach review state"
+        );
+        assert!(
+            args[1].contains("status done"),
+            "should teach completion state"
         );
         assert!(
             !args[1].contains("http://"),
@@ -1162,12 +1185,11 @@ mod tests {
     }
 
     #[test]
-    fn the_opencode_plugin_maps_every_state_the_daemon_can_draw() {
-        // The dialect lives in the module rather than in `events`, so this
-        // is where a status the daemon knows but the plugin never sends
-        // would otherwise go unnoticed.
+    fn the_opencode_plugin_maps_every_automatic_state() {
+        // Completion states are explicit agent reports taught through the
+        // injected instructions; lifecycle events supply only these states.
         let source = Harness::opencode().plugin.unwrap().source;
-        for r in Report::ALL {
+        for r in [Report::Working, Report::Idle, Report::Waiting, Report::Failed] {
             assert!(
                 source.contains(&format!("\"{}\"", r.as_str())),
                 "the opencode plugin never reports {}",
@@ -1271,5 +1293,18 @@ process.stdout.write(JSON.stringify(reports));
         }
         assert_eq!(Report::parse("exited"), None, "only the daemon decides that");
         assert_eq!(Report::parse(""), None);
+    }
+
+    #[test]
+    fn every_report_maps_to_its_pane_status() {
+        let expected = [
+            PaneStatus::Working,
+            PaneStatus::Idle,
+            PaneStatus::Waiting,
+            PaneStatus::NeedsReview,
+            PaneStatus::Done,
+            PaneStatus::Failed,
+        ];
+        assert_eq!(Report::ALL.map(Report::status), expected);
     }
 }

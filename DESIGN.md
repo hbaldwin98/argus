@@ -91,20 +91,24 @@ Clients receive a full grid when they subscribe, then incremental damage. Resize
 PTY and parser and emits another full grid. If several clients resize one pane, the latest request
 wins; ownership is not yet defined.
 
-The current pane states are `Idle`, `Working`, `Waiting`, `Failed`, and `Exited { code }`.
-`Failed` means the agent said something went wrong while still running, so the row is worth going
-to rather than worth closing. A pane also carries a `note`: one line from the agent about the state
-it is in — the question it is blocked on, or what failed — drawn as the row's second line so a
-stalled pane explains itself without being opened. A note is set alongside a status report and
-cleared by the next report that carries none, so it can never outlive the state it explains.
+The current pane states are `Idle`, `Working`, `Waiting`, `NeedsReview`, `Done`, `Failed`, and
+`Exited { code }`. `NeedsReview` means work is ready for the operator to inspect; `Done` means it
+has been reviewed and completed. `Failed` means the agent said something went wrong while still
+running, so the row is worth going to rather than worth closing. A pane also carries a `note`: one
+line from the agent about the state it is in — the question it is blocked on, or what failed — drawn
+as the row's second line so a stalled pane explains itself without being opened. A note is set
+alongside a status report and cleared by the next accepted report that carries none, so it can never
+outlive the state it explains.
+Automatic `Idle` events do not erase `Waiting`, `NeedsReview`, `Done`, or `Failed`; the agent reports
+`Working` when it resumes.
 
 When the client itself runs in a Herdr pane, it reports one aggregate `argus` agent for the open
-workspace. `Waiting` and `Failed` map to Herdr's blocked state, then `Working` takes precedence over
-`Idle`; the blocked pane's note or title explains why. A newly attached client reports the tree it
-receives even when every agent was already running, and releases the report when it detaches. Herdr
-context is removed from nested PTY processes so individual harness integrations cannot claim the
-outer pane. This aggregate is limited to the open workspace because background workspace summaries
-carry pane counts, not individual statuses.
+workspace. `Waiting`, `NeedsReview`, and `Failed` map to Herdr's blocked state, `Done` maps to idle,
+and `Working` takes precedence over idle; the blocked pane's note or title explains why. A newly
+attached client reports the tree it receives even when every agent was already running, and releases
+the report when it detaches. Herdr context is removed from nested PTY processes so individual
+harness integrations cannot claim the outer pane. This aggregate is limited to the open workspace
+because background workspace summaries carry pane counts, not individual statuses.
 
 Status is harness-agnostic. A *harness* is a description of how a particular agent CLI can be
 asked to report, and there are three mechanisms; a harness may use any combination of them.
@@ -127,11 +131,11 @@ in `projects.toml` adds or replaces one, and an `[[agent]]` template selects one
 so replacing a built-in by name also gives up its module and its resume arguments.
 
 The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
-/pane/<id>/status/<working|idle|waiting|failed>` with an optional body as the note, `POST
-/pane/<id>/title`, and `POST /pane/<id>/checkout` with a known checkout path. The checkout endpoint
-changes affiliation only: the agent runs `argus-hook checkout` from the directory it has already
-moved to. The status is named in the URL rather than the harness's event name, because the installer
-already resolved that — which is what makes a new harness config instead of a match arm. Managed
+/pane/<id>/status/<working|idle|waiting|needs-review|done|failed>` with an optional body as the note,
+`POST /pane/<id>/title`, and `POST /pane/<id>/checkout` with a known checkout path. The checkout
+endpoint changes affiliation only: the agent runs `argus-hook checkout` from the directory it has
+already moved to. The status is named in the URL rather than the harness's event name, because the
+installer already resolved that — which is what makes a new harness config instead of a match arm. Managed
 blocks are per-boot: they name an ephemeral port and a per-boot token, so they are swept from every
 configured checkout at startup and removed when the last agent pane in a checkout goes away, along
 with any directory Argus made only to hold them. Moving a pane performs the same cleanup in its old
@@ -141,7 +145,8 @@ not have that problem, because it reads the pane out of its own environment.
 
 Agents name their own rows. At session start a harness with a `context_event` is handed
 instructions telling it to run `argus-hook title "..."` once it knows what it is working on, and
-`argus-hook status waiting "..."` when it needs a human. The instructions also ask it to run
+`argus-hook status waiting "..."` when it needs a human, `needs-review` when work is ready to
+inspect, and `done` once reviewed and complete. The instructions also ask it to run
 `argus-hook checkout` after moving to another checkout. The same text is in `ARGUS_INSTRUCTIONS`,
 which is where a plugin harness picks it up — OpenCode's module appends it to the system prompt.
 Titles arriving from a model are flattened to one line and cut to 48 characters. Neither a rename,
@@ -151,9 +156,9 @@ CLI each one is.
 
 ## Session restore
 
-`session.json` records each pane's checkout path, kind, and title when the daemon broadcasts a
-structural tree change. Recording is enabled by `main` only after startup restore, so tests do not
-write the user's session.
+`session.json` records each pane's checkout path, kind, title, status, and note when the daemon
+broadcasts a structural tree change. Recording is enabled by `main` only after startup restore, so
+tests do not write the user's session. Older files without status fields restore panes as `Idle`.
 
 On daemon startup:
 
@@ -162,6 +167,7 @@ On daemon startup:
 - editors are skipped;
 - panes whose checkout no longer exists are skipped;
 - shells start as new default shells;
+- the saved status and note are reapplied after each pane starts;
 - agents start as new processes from the saved template name, with their harness's `resume`
   arguments appended to the template's own command;
 - one pane per checkout and template resumes; a second agent of the same kind in the same checkout

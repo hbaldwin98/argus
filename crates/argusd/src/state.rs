@@ -412,6 +412,8 @@ impl Daemon {
                             kind: pane.kind,
                             title: pane.title.clone(),
                             template: pane.template.clone(),
+                            status: pane.status,
+                            note: pane.note.clone(),
                         })
                 })
                 .collect(),
@@ -482,12 +484,15 @@ impl Daemon {
                         claimed.push(key);
                         Start::Resuming
                     };
-                    self.start_agent(checkout, pane.template(), start).map(|_| ())
+                    self.start_agent(checkout, pane.template(), start)
                 }
-                _ => self.spawn_shell(checkout).map(|_| ()),
+                _ => self.spawn_shell(checkout),
             };
             match result {
-                Ok(()) => restored += 1,
+                Ok(id) => {
+                    self.set_pane_hook_status(id, pane.status, pane.note.clone());
+                    restored += 1;
+                }
                 Err(e) => tracing::warn!(
                     "could not restore {} in {}: {e}",
                     pane.title,
@@ -872,7 +877,17 @@ impl Daemon {
         let changed = {
             let mut inner = self.inner.lock().unwrap();
             match find_pane(&mut inner.projects, pane) {
-                Some(p) if !matches!(p.status, PaneStatus::Exited { .. }) => {
+                Some(p)
+                    if !matches!(p.status, PaneStatus::Exited { .. })
+                        && !(status == PaneStatus::Idle
+                            && matches!(
+                                p.status,
+                                PaneStatus::Waiting
+                                    | PaneStatus::NeedsReview
+                                    | PaneStatus::Done
+                                    | PaneStatus::Failed
+                            )) =>
+                {
                     // A note explains one state; the report that leaves that
                     // state takes it away with it, so a stale "waiting for
                     // the db password" can't sit under a working row.
@@ -1503,8 +1518,8 @@ enum Endpoint {
     Checkout,
 }
 
-/// `/pane/<id>/status/<working|idle|waiting>`, `/pane/<id>/title`, and
-/// `/pane/<id>/checkout`.
+/// `/pane/<id>/status/<working|idle|waiting|needs-review|done|failed>`,
+/// `/pane/<id>/title`, and `/pane/<id>/checkout`.
 ///
 /// The status is named in the URL rather than the harness's own event name:
 /// the installer already knows what each of its events means, so by the time
@@ -1642,6 +1657,17 @@ mod tests {
             Some((PaneId(7), Endpoint::Status(crate::harness::Report::Failed)))
         );
         assert_eq!(
+            parse_pane_path("/pane/7/status/needs-review"),
+            Some((
+                PaneId(7),
+                Endpoint::Status(crate::harness::Report::NeedsReview)
+            ))
+        );
+        assert_eq!(
+            parse_pane_path("/pane/7/status/done"),
+            Some((PaneId(7), Endpoint::Status(crate::harness::Report::Done)))
+        );
+        assert_eq!(
             parse_pane_path("/pane/7/title"),
             Some((PaneId(7), Endpoint::Title))
         );
@@ -1757,6 +1783,28 @@ mod tests {
         let info = pane_info(&d, pane);
         assert_eq!(info.status, PaneStatus::Failed);
         assert!(info.note.is_some());
+
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn automatic_idle_does_not_erase_an_explicit_completion_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+
+        for status in [
+            PaneStatus::Waiting,
+            PaneStatus::NeedsReview,
+            PaneStatus::Done,
+            PaneStatus::Failed,
+        ] {
+            d.set_pane_hook_status(pane, status, Some("still relevant".into()));
+            d.set_pane_hook_status(pane, PaneStatus::Idle, None);
+            let info = pane_info(&d, pane);
+            assert_eq!(info.status, status);
+            assert_eq!(info.note.as_deref(), Some("still relevant"));
+            d.set_pane_hook_status(pane, PaneStatus::Working, None);
+        }
 
         d.close_pane(pane).unwrap();
     }
@@ -2786,6 +2834,8 @@ mod tests {
                     kind: *kind,
                     title: title.to_string(),
                     template: Some(title.to_string()),
+                    status: PaneStatus::Idle,
+                    note: None,
                 })
                 .collect(),
         });
@@ -2856,6 +2906,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn agent_status_and_note_survive_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            crate::session::save(&crate::session::Session {
+                panes: vec![crate::session::SessionPane {
+                    checkout_path: dir.path().to_path_buf(),
+                    kind: PaneKind::Agent,
+                    title: "review parser".to_string(),
+                    template: Some("test-agent".to_string()),
+                    status: PaneStatus::NeedsReview,
+                    note: Some("ready to inspect".to_string()),
+                }],
+            });
+
+            let d = daemon_for_restore(dir.path());
+            d.restore_session();
+
+            let pane = &d.snapshot()[0].checkouts[0].panes[0];
+            assert_eq!(pane.status, PaneStatus::NeedsReview);
+            assert_eq!(pane.note.as_deref(), Some("ready to inspect"));
+            close_all(&d);
+        });
+    }
+
+    #[tokio::test]
     async fn an_agent_comes_back_as_the_template_it_was() {
         // The title is how a restored agent knows what to launch.
         let dir = tempfile::tempdir().unwrap();
@@ -2883,6 +2958,8 @@ mod tests {
                     kind: PaneKind::Agent,
                     title: "fixing the pty deadlock".to_string(),
                     template: Some("test-agent".to_string()),
+                    status: PaneStatus::Idle,
+                    note: None,
                 }],
             });
 
