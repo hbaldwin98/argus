@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
-use argus_protocol::{diff_grid, Cell, Color, PaneId, ServerMsg};
+use argus_protocol::{diff_grid, Cell, Color, Cursor, PaneId, ServerMsg};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::broadcast;
 
@@ -125,6 +125,7 @@ impl PaneRuntime {
             tokio::spawn(async move {
                 let mut interval = tokio::time::interval(FRAME_INTERVAL);
                 let mut prev: Option<Vec<Vec<Cell>>> = None;
+                let mut prev_cursor = None;
                 let mut on_exit = Some(on_exit);
                 loop {
                     interval.tick().await;
@@ -135,12 +136,15 @@ impl PaneRuntime {
                         dirty = true;
                     }
                     if dirty {
-                        let cur = snapshot_grid(&parser.lock().unwrap());
+                        let parser = parser.lock().unwrap();
+                        let cur = snapshot_grid(&parser);
+                        let cursor = snapshot_cursor(&parser);
                         let spans = diff_grid(prev.as_ref(), &cur);
-                        if !spans.is_empty() {
-                            let _ = damage_tx.send(ServerMsg::Damage { pane: id, spans });
+                        if !spans.is_empty() || prev_cursor != Some(cursor) {
+                            let _ = damage_tx.send(ServerMsg::Damage { pane: id, spans, cursor });
                         }
                         prev = Some(cur);
+                        prev_cursor = Some(cursor);
                     }
 
                     let exited = child.lock().unwrap().try_wait().ok().flatten();
@@ -171,10 +175,12 @@ impl PaneRuntime {
                             }
                         }
                         if flushed {
-                            let cur = snapshot_grid(&parser.lock().unwrap());
+                            let parser = parser.lock().unwrap();
+                            let cur = snapshot_grid(&parser);
+                            let cursor = snapshot_cursor(&parser);
                             let spans = diff_grid(prev.as_ref(), &cur);
-                            if !spans.is_empty() {
-                                let _ = damage_tx.send(ServerMsg::Damage { pane: id, spans });
+                            if !spans.is_empty() || prev_cursor != Some(cursor) {
+                                let _ = damage_tx.send(ServerMsg::Damage { pane: id, spans, cursor });
                             }
                         }
 
@@ -219,10 +225,10 @@ impl PaneRuntime {
         Ok(())
     }
 
-    pub fn full_snapshot(&self) -> (u16, u16, Vec<Vec<Cell>>) {
+    pub fn full_snapshot(&self) -> (u16, u16, Vec<Vec<Cell>>, Cursor) {
         let parser = self.parser.lock().unwrap();
         let (rows, cols) = parser.screen().size();
-        (rows, cols, snapshot_grid(&parser))
+        (rows, cols, snapshot_grid(&parser), snapshot_cursor(&parser))
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<ServerMsg> {
@@ -234,8 +240,14 @@ impl PaneRuntime {
     /// grown or shrunk by replacing it wholesale — incremental Damage spans
     /// referencing indices outside its current size are meaningless to it.
     pub fn broadcast_snapshot(&self, pane: PaneId) {
-        let (rows, cols, cells) = self.full_snapshot();
-        let _ = self.damage_tx.send(ServerMsg::PaneSnapshot { pane, rows, cols, cells });
+        let (rows, cols, cells, cursor) = self.full_snapshot();
+        let _ = self.damage_tx.send(ServerMsg::PaneSnapshot {
+            pane,
+            rows,
+            cols,
+            cells,
+            cursor,
+        });
     }
 }
 
@@ -251,6 +263,16 @@ fn snapshot_grid(parser: &vt100::Parser) -> Vec<Vec<Cell>> {
         grid.push(row);
     }
     grid
+}
+
+fn snapshot_cursor(parser: &vt100::Parser) -> Cursor {
+    let screen = parser.screen();
+    let (row, col) = screen.cursor_position();
+    Cursor {
+        row,
+        col,
+        visible: !screen.hide_cursor(),
+    }
 }
 
 fn cell_from_vt100(cell: Option<&vt100::Cell>) -> Cell {
@@ -309,7 +331,7 @@ mod tests {
     async fn wait_for(pane: &PaneRuntime, pred: impl Fn(&[Vec<Cell>]) -> bool) -> Vec<Vec<Cell>> {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
         loop {
-            let (_, _, grid) = pane.full_snapshot();
+            let (_, _, grid, _) = pane.full_snapshot();
             if pred(&grid) {
                 return grid;
             }
@@ -355,7 +377,7 @@ mod tests {
                 .unwrap_or_else(|_| panic!("no damage carrying the marker; saw {seen:?}"))
                 .unwrap();
             match msg {
-                ServerMsg::Damage { pane, spans } => {
+                ServerMsg::Damage { pane, spans, .. } => {
                     assert_eq!(pane, PaneId(7), "damage must be tagged with its own pane");
                     seen.push_str(&span_text(&spans));
                     if seen.contains("damage-marker") {
@@ -439,13 +461,13 @@ mod tests {
     async fn a_pane_starts_at_the_default_size_and_resize_changes_it() {
         let pane =
             PaneRuntime::spawn(PaneId(5), &std::env::temp_dir(), Spawn::DefaultShell, |_| {}).unwrap();
-        let (rows, cols, grid) = pane.full_snapshot();
+        let (rows, cols, grid, _) = pane.full_snapshot();
         assert_eq!((rows, cols), (DEFAULT_ROWS, DEFAULT_COLS));
         assert_eq!(grid.len(), DEFAULT_ROWS as usize);
         assert_eq!(grid[0].len(), DEFAULT_COLS as usize);
 
         pane.resize(40, 120).unwrap();
-        let (rows, cols, grid) = pane.full_snapshot();
+        let (rows, cols, grid, _) = pane.full_snapshot();
         assert_eq!((rows, cols), (40, 120));
         assert_eq!(grid.len(), 40, "the grid must actually grow, not just the pty");
         assert_eq!(grid[0].len(), 120);
@@ -473,7 +495,13 @@ mod tests {
         .await
         .expect("a snapshot should follow a resize");
 
-        let ServerMsg::PaneSnapshot { pane: id, rows, cols, cells } = msg else {
+        let ServerMsg::PaneSnapshot {
+            pane: id,
+            rows,
+            cols,
+            cells,
+            ..
+        } = msg else {
             unreachable!()
         };
         assert_eq!(id, PaneId(6));
@@ -576,5 +604,19 @@ mod tests {
         let mut parser = vt100::Parser::new(2, 10, 0);
         parser.process(b"abcdef\x1b[H\x1b[Kxy");
         assert_eq!(rows_of(&snapshot_grid(&parser))[0], "xy");
+    }
+
+    #[test]
+    fn cursor_position_and_visibility_survive_vt_parsing() {
+        let mut parser = vt100::Parser::new(4, 10, 0);
+        parser.process(b"\x1b[3;5H\x1b[?25l");
+        assert_eq!(
+            snapshot_cursor(&parser),
+            Cursor {
+                row: 2,
+                col: 4,
+                visible: false,
+            }
+        );
     }
 }

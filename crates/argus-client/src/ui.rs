@@ -514,7 +514,7 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         );
     } else {
         let grid = app.column_pane().and_then(|id| app.grids.get(&id));
-        f.render_widget(TermView { grid }, inner);
+        render_term(f, grid, inner, focused);
     }
     app.layout.content = Panel { outer: area, inner };
 }
@@ -744,12 +744,7 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
 
     match overlay {
         Overlay::Pane { pane, .. } => {
-            f.render_widget(
-                TermView {
-                    grid: app.grids.get(pane),
-                },
-                inner,
-            );
+            render_term(f, app.grids.get(pane), inner, true);
         }
         Overlay::Settings { sel } => render_settings(f, app, inner, *sel, th),
         Overlay::Review => render_review(f, app, inner, th),
@@ -1169,6 +1164,16 @@ fn status_dot(status: Option<PaneStatus>, th: Theme) -> Span<'static> {
 
 struct TermView<'a> {
     grid: Option<&'a Grid>,
+}
+
+fn render_term(f: &mut Frame, grid: Option<&Grid>, area: Rect, focused: bool) {
+    f.render_widget(TermView { grid }, area);
+    let Some(grid) = grid.filter(|grid| focused && grid.cursor.visible) else {
+        return;
+    };
+    if grid.cursor.row < area.height && grid.cursor.col < area.width {
+        f.set_cursor_position((area.x + grid.cursor.col, area.y + grid.cursor.row));
+    }
 }
 
 impl Widget for TermView<'_> {
@@ -1603,6 +1608,31 @@ mod tests {
         for title in ["projects", "checkouts", "panes"] {
             assert!(text.contains(title), "{title} column missing while inside a pane");
         }
+    }
+
+    #[test]
+    fn a_focused_terminal_places_the_hardware_cursor_at_the_child_cursor() {
+        let mut app = app_with_tree();
+        app.focus = Focus::PaneContent;
+        app.grids.insert(
+            PaneId(100),
+            Grid::with_cursor(
+                vec![vec![Default::default(); 4]; 3],
+                argus_protocol::Cursor {
+                    row: 1,
+                    col: 2,
+                    visible: true,
+                },
+            ),
+        );
+        let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
+
+        terminal.draw(|f| render(f, &mut app)).unwrap();
+
+        terminal.backend_mut().assert_cursor_position((
+            app.layout.content.inner.x + 2,
+            app.layout.content.inner.y + 1,
+        ));
     }
 
     #[test]

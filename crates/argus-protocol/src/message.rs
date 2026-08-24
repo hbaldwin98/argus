@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::cell::{Cell, CellSpan};
+use crate::cell::{Cell, CellSpan, Cursor};
 use crate::ids::{CheckoutId, PaneId, WorkspaceId};
 use crate::review::{Review, ReviewBase};
 use crate::tree::{ProjectInfo, WorkspaceInfo};
@@ -87,9 +87,14 @@ pub enum ServerMsg {
         rows: u16,
         cols: u16,
         cells: Vec<Vec<Cell>>,
+        cursor: Cursor,
     },
     /// Incremental changed spans since the last snapshot/damage for a pane.
-    Damage { pane: PaneId, spans: Vec<CellSpan> },
+    Damage {
+        pane: PaneId,
+        spans: Vec<CellSpan>,
+        cursor: Cursor,
+    },
     /// The answer to `ClientMsg::Review`.
     Review(Review),
     /// A failed review capture/diff, correlated so stale failures are dropped.

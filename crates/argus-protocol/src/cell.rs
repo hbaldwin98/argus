@@ -1,5 +1,23 @@
 use serde::{Deserialize, Serialize};
 
+/// The child terminal's cursor, in grid-relative coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Cursor {
+    pub row: u16,
+    pub col: u16,
+    pub visible: bool,
+}
+
+impl Default for Cursor {
+    fn default() -> Self {
+        Cursor {
+            row: 0,
+            col: 0,
+            visible: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Color {
     #[default]

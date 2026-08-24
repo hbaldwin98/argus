@@ -75,8 +75,10 @@ but are omitted from the normal pane list and counts.
 
 Each PTY starts at 24 by 80 cells. A blocking reader thread sends output to a Tokio task, which
 drains output on a 16 ms interval, feeds a `vt100` parser, and broadcasts changed horizontal cell
-spans. The parser retains 4,000 scrollback lines, though the client has no scrollback navigation.
-An exiting process gets a 500 ms output-flush grace period.
+spans plus the child cursor's position and visibility. Cursor-only changes are broadcast even when
+no cell changed. The client places its hardware cursor there only while that pane has typing focus.
+The parser retains 4,000 scrollback lines, though the client has no scrollback navigation. An
+exiting process gets a 500 ms output-flush grace period.
 
 Clients receive a full grid when they subscribe, then incremental damage. Resize changes both the
 PTY and parser and emits another full grid. If several clients resize one pane, the latest request

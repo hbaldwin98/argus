@@ -111,13 +111,14 @@ fn handle_client_msg(
     subs: &mut Subscriptions,
 ) {
     let result = match msg {
-        ClientMsg::Subscribe { pane } => daemon.subscribe_pane(pane).map(|(rows, cols, cells, rx)| {
+        ClientMsg::Subscribe { pane } => daemon.subscribe_pane(pane).map(|(rows, cols, cells, cursor, rx)| {
             subs.add(pane, rx, out_tx.clone());
             let _ = out_tx.send(ServerMsg::PaneSnapshot {
                 pane,
                 rows,
                 cols,
                 cells,
+                cursor,
             });
         }),
         ClientMsg::Unsubscribe { pane } => {

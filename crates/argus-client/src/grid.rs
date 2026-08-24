@@ -1,12 +1,20 @@
-use argus_protocol::{Cell, CellSpan};
+use argus_protocol::{Cell, CellSpan, Cursor};
 
 pub struct Grid {
     pub cells: Vec<Vec<Cell>>,
+    pub cursor: Cursor,
 }
 
 impl Grid {
     pub fn new(cells: Vec<Vec<Cell>>) -> Self {
-        Grid { cells }
+        Grid {
+            cells,
+            cursor: Cursor::default(),
+        }
+    }
+
+    pub fn with_cursor(cells: Vec<Vec<Cell>>, cursor: Cursor) -> Self {
+        Grid { cells, cursor }
     }
 
     pub fn apply(&mut self, spans: &[CellSpan]) {
@@ -20,6 +28,10 @@ impl Grid {
                 }
             }
         }
+    }
+
+    pub fn move_cursor(&mut self, cursor: Cursor) {
+        self.cursor = cursor;
     }
 }
 
@@ -103,5 +115,16 @@ mod tests {
             }],
         }]);
         assert!(g.cells[0][0].bold);
+    }
+
+    #[test]
+    fn cursor_only_damage_updates_terminal_state() {
+        let mut g = grid(&["a"]);
+        g.move_cursor(Cursor {
+            row: 3,
+            col: 7,
+            visible: false,
+        });
+        assert_eq!(g.cursor, Cursor { row: 3, col: 7, visible: false });
     }
 }

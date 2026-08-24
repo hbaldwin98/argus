@@ -507,15 +507,18 @@ impl App {
                     .unwrap_or_default();
                 self.workspaces = list;
             }
-            ServerMsg::PaneSnapshot { pane, cells, .. } => {
+            ServerMsg::PaneSnapshot {
+                pane, cells, cursor, ..
+            } => {
                 if self.grids.contains_key(&pane) {
-                    self.grids.insert(pane, Grid::new(cells));
+                    self.grids.insert(pane, Grid::with_cursor(cells, cursor));
                 }
             }
-            ServerMsg::Damage { pane, spans } => {
+            ServerMsg::Damage { pane, spans, cursor } => {
                 {
                     if let Some(grid) = self.grids.get_mut(&pane) {
                         grid.apply(&spans);
+                        grid.move_cursor(cursor);
                     }
                 }
             }
@@ -1898,6 +1901,7 @@ mod tests {
             .insert(PaneId(100), crate::grid::Grid::new(vec![vec![Cell::default()]]));
         h.app.on_server_msg(ServerMsg::Damage {
             pane: PaneId(999),
+            cursor: Default::default(),
             spans: vec![CellSpan {
                 row: 0,
                 col: 0,
@@ -1918,6 +1922,11 @@ mod tests {
             rows: 1,
             cols: 1,
             cells: vec![vec![Cell::default()]],
+            cursor: argus_protocol::Cursor {
+                row: 0,
+                col: 0,
+                visible: true,
+            },
         });
         assert!(h.app.grids.contains_key(&PaneId(100)));
     }

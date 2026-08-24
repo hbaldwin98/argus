@@ -85,7 +85,13 @@ pub struct Daemon {
     persist: std::sync::atomic::AtomicBool,
 }
 
-type PaneSubscription = (u16, u16, Vec<Vec<Cell>>, broadcast::Receiver<ServerMsg>);
+type PaneSubscription = (
+    u16,
+    u16,
+    Vec<Vec<Cell>>,
+    argus_protocol::Cursor,
+    broadcast::Receiver<ServerMsg>,
+);
 
 impl Daemon {
     pub fn new(config: ConfigFile) -> Arc<Self> {
@@ -709,9 +715,9 @@ impl Daemon {
         let inner = self.inner.lock().unwrap();
         let p =
             find_pane_ref(&inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
-        let (rows, cols, cells) = p.runtime.full_snapshot();
+        let (rows, cols, cells, cursor) = p.runtime.full_snapshot();
         let rx = p.runtime.subscribe();
-        Ok((rows, cols, cells, rx))
+        Ok((rows, cols, cells, cursor, rx))
     }
 
     /// Binds the loopback HTTP status receiver hook commands POST to (see

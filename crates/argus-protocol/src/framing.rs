@@ -47,7 +47,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cell::{Cell, CellSpan};
+    use crate::cell::{Cell, CellSpan, Cursor};
     use crate::ids::{CheckoutId, PaneId};
     use crate::message::{ClientMsg, ServerMsg};
     use crate::tree::{CheckoutInfo, GitStatus, PaneInfo, PaneKind, PaneStatus, ProjectInfo};
@@ -172,6 +172,11 @@ mod tests {
     async fn damage_spans_survive_the_wire() {
         let sent = ServerMsg::Damage {
             pane: PaneId(1),
+            cursor: Cursor {
+                row: 4,
+                col: 8,
+                visible: true,
+            },
             spans: vec![CellSpan {
                 row: 4,
                 col: 7,
@@ -182,11 +187,12 @@ mod tests {
                 }],
             }],
         };
-        let ServerMsg::Damage { spans, .. } = roundtrip(&sent).await else {
+        let ServerMsg::Damage { spans, cursor, .. } = roundtrip(&sent).await else {
             panic!("variant changed across the wire");
         };
         assert_eq!(spans[0].cells[0].ch, "é", "non-ascii must survive");
         assert!(spans[0].cells[0].bold);
+        assert_eq!(cursor, Cursor { row: 4, col: 8, visible: true });
     }
 
     #[tokio::test]
