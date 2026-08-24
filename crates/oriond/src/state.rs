@@ -330,11 +330,14 @@ impl Daemon {
         let changed = {
             let mut inner = self.inner.lock().unwrap();
             match find_pane(&mut inner.projects, pane) {
-                Some(p) if !matches!(p.status, PaneStatus::Exited { .. }) => {
-                    p.status = status;
-                    true
-                }
-                _ => false,
+                Some(p) => match hook_status_update(p.status, status) {
+                    Some(next) => {
+                        p.status = next;
+                        true
+                    }
+                    None => false,
+                },
+                None => false,
             }
         };
         if changed {
@@ -356,9 +359,76 @@ impl Daemon {
             loop {
                 interval.tick().await;
                 let daemon = daemon.clone();
-                let _ = tokio::task::spawn_blocking(move || daemon.broadcast_tree()).await;
+                let _ = tokio::task::spawn_blocking(move || {
+                    daemon.reconcile_worktrees();
+                    daemon.broadcast_tree();
+                })
+                .await;
             }
         });
+    }
+
+    /// Reconciles each project's checkouts against `git worktree list` on
+    /// its primary checkout, so a worktree created or removed outside
+    /// Orion — a bare `git worktree add`/`remove` from a shell — still
+    /// shows up, or disappears, without going through `create_worktree` /
+    /// `remove_checkout`. Runs on the same blocking-pool tick as the git
+    /// status poll (§4 Level 2, §11 worktree auto-discovery).
+    fn reconcile_worktrees(&self) {
+        self.reconcile_worktrees_with(crate::git::list_worktrees);
+    }
+
+    /// The reconciliation itself, with the worktree listing injected so
+    /// tests can drive it without a real repo (and without waiting on the
+    /// `git` binary). Production always passes `git::list_worktrees`.
+    fn reconcile_worktrees_with(&self, list: impl Fn(&std::path::Path) -> Vec<PathBuf>) {
+        let mut orphaned_panes: Vec<Pane> = Vec::new();
+        {
+            let mut guard = self.inner.lock().unwrap();
+            let Inner { projects, ids } = &mut *guard;
+            for project in projects.iter_mut() {
+                let Some(primary_path) = project.checkouts.iter().find(|c| c.primary).map(|c| c.path.clone())
+                else {
+                    continue;
+                };
+                let listed = list(&primary_path);
+                if listed.is_empty() {
+                    // Not a git repo (or `git` failed) — nothing to
+                    // reconcile against, and never treat this as "every
+                    // worktree was removed".
+                    continue;
+                }
+
+                for path in &listed {
+                    if project.checkouts.iter().any(|c| &c.path == path) {
+                        continue;
+                    }
+                    let is_primary = *path == primary_path;
+                    let id = CheckoutId(ids.alloc());
+                    let name = worktree_display_name(path, is_primary);
+                    project.checkouts.push(Checkout {
+                        id,
+                        name,
+                        path: path.clone(),
+                        primary: is_primary,
+                        panes: Vec::new(),
+                    });
+                }
+
+                let mut i = 0;
+                while i < project.checkouts.len() {
+                    let gone = !project.checkouts[i].primary && !listed.contains(&project.checkouts[i].path);
+                    if gone {
+                        orphaned_panes.extend(project.checkouts.remove(i).panes);
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+        }
+        for pane in orphaned_panes {
+            let _ = pane.runtime.kill();
+        }
     }
 
     /// Adds a brand-new project rooted at an arbitrary directory — not
@@ -527,6 +597,20 @@ fn find_checkout_context(projects: &[Project], id: CheckoutId) -> Option<(Projec
     })
 }
 
+/// Prefers the checked-out branch name for a newly-discovered worktree —
+/// matches how `create_worktree` names ones Orion made itself — falling
+/// back to the directory name for a detached HEAD or an unreadable repo.
+fn worktree_display_name(path: &std::path::Path, is_primary: bool) -> String {
+    if !is_primary {
+        if let Some(branch) = crate::git::status(path).and_then(|s| s.branch) {
+            return branch;
+        }
+    }
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string_lossy().to_string())
+}
+
 fn remove_checkout_entry(projects: &mut [Project], id: CheckoutId) -> Option<Checkout> {
     for project in projects.iter_mut() {
         if let Some(pos) = project.checkouts.iter().position(|c| c.id == id) {
@@ -635,6 +719,17 @@ fn parse_hook_path(path: &str) -> Option<(PaneId, PaneStatus)> {
     Some((pane, status))
 }
 
+/// The status a pane should move to given a hook report, or `None` to leave
+/// it alone. A hook firing after the process died (e.g. `Stop` racing a
+/// crash) is stale and mustn't resurrect a dead pane's row; a report that
+/// changes nothing isn't worth a tree broadcast either.
+fn hook_status_update(current: PaneStatus, incoming: PaneStatus) -> Option<PaneStatus> {
+    if matches!(current, PaneStatus::Exited { .. }) || current == incoming {
+        return None;
+    }
+    Some(incoming)
+}
+
 /// Not cryptographically strong — see `Daemon::hook_token`'s doc comment —
 /// just enough entropy that it isn't a fixed, guessable string.
 fn gen_token() -> String {
@@ -649,4 +744,207 @@ fn gen_token() -> String {
     std::thread::current().id().hash(&mut hasher);
     let b = hasher.finish();
     format!("{a:016x}{b:016x}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ProjectConfig;
+
+    /// A daemon with one project whose primary checkout is `primary`, and no
+    /// panes. Nothing here touches disk: `Daemon::new` only expands paths,
+    /// and every test below injects its own worktree listing.
+    fn daemon_with_primary(primary: &str) -> Arc<Daemon> {
+        Daemon::new(ConfigFile {
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                repos: vec![primary.to_string()],
+            }],
+            agents: Vec::new(),
+        })
+    }
+
+    fn checkout_paths(d: &Daemon) -> Vec<String> {
+        d.snapshot()
+            .into_iter()
+            .flat_map(|p| p.checkouts)
+            .map(|c| c.path)
+            .collect()
+    }
+
+    fn listing(paths: &[&str]) -> Vec<PathBuf> {
+        paths.iter().map(PathBuf::from).collect()
+    }
+
+    // --- hook path parsing -------------------------------------------------
+
+    #[test]
+    fn hook_path_maps_each_managed_event_to_a_status() {
+        assert_eq!(
+            parse_hook_path("/hook/7/UserPromptSubmit"),
+            Some((PaneId(7), PaneStatus::Working))
+        );
+        assert_eq!(parse_hook_path("/hook/7/Stop"), Some((PaneId(7), PaneStatus::Idle)));
+        assert_eq!(
+            parse_hook_path("/hook/7/Notification"),
+            Some((PaneId(7), PaneStatus::Waiting))
+        );
+    }
+
+    #[test]
+    fn hook_path_rejects_junk() {
+        assert_eq!(parse_hook_path("/hook/7/SessionStart"), None, "unmanaged event");
+        assert_eq!(parse_hook_path("/nope/7/Stop"), None, "wrong prefix");
+        assert_eq!(parse_hook_path("/hook/abc/Stop"), None, "non-numeric pane id");
+        assert_eq!(parse_hook_path("/hook/7"), None, "missing event");
+        assert_eq!(parse_hook_path(""), None, "empty path");
+    }
+
+    // --- hook status application -------------------------------------------
+
+    #[test]
+    fn hook_status_applies_to_a_live_pane() {
+        assert_eq!(
+            hook_status_update(PaneStatus::Idle, PaneStatus::Working),
+            Some(PaneStatus::Working)
+        );
+        assert_eq!(
+            hook_status_update(PaneStatus::Working, PaneStatus::Waiting),
+            Some(PaneStatus::Waiting)
+        );
+    }
+
+    #[test]
+    fn hook_status_never_resurrects_an_exited_pane() {
+        for code in [Some(0), Some(1), None] {
+            assert_eq!(
+                hook_status_update(PaneStatus::Exited { code }, PaneStatus::Idle),
+                None,
+                "exit code {code:?} must stay exited"
+            );
+        }
+    }
+
+    #[test]
+    fn hook_status_that_changes_nothing_is_not_an_update() {
+        assert_eq!(hook_status_update(PaneStatus::Idle, PaneStatus::Idle), None);
+    }
+
+    // --- worktree reconciliation -------------------------------------------
+
+    #[test]
+    fn reconcile_adds_a_worktree_created_outside_orion() {
+        let d = daemon_with_primary("/repo");
+        d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/.orion/worktrees/feat"]));
+
+        let paths = checkout_paths(&d);
+        assert_eq!(paths.len(), 2, "discovered worktree should join the tree: {paths:?}");
+        assert!(paths.iter().any(|p| p.ends_with("feat")));
+    }
+
+    #[test]
+    fn discovered_worktree_is_not_primary_and_primary_stays_primary() {
+        let d = daemon_with_primary("/repo");
+        d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
+
+        let checkouts: Vec<_> = d.snapshot().into_iter().flat_map(|p| p.checkouts).collect();
+        let primary = checkouts.iter().find(|c| c.path == "/repo").unwrap();
+        let linked = checkouts.iter().find(|c| c.path == "/repo/wt").unwrap();
+        assert!(primary.primary, "the configured checkout stays primary");
+        assert!(!linked.primary, "a discovered worktree is removable, not primary");
+    }
+
+    #[test]
+    fn reconcile_is_idempotent() {
+        let d = daemon_with_primary("/repo");
+        for _ in 0..3 {
+            d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
+        }
+        assert_eq!(checkout_paths(&d).len(), 2, "repeated ticks must not duplicate rows");
+    }
+
+    #[test]
+    fn reconcile_drops_a_worktree_removed_outside_orion() {
+        let d = daemon_with_primary("/repo");
+        d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
+        assert_eq!(checkout_paths(&d).len(), 2);
+
+        d.reconcile_worktrees_with(|_| listing(&["/repo"]));
+        assert_eq!(checkout_paths(&d), vec!["/repo".to_string()]);
+    }
+
+    #[test]
+    fn an_empty_listing_never_wipes_the_tree() {
+        // `git::list_worktrees` returns empty when the path isn't a repo or
+        // the `git` binary is missing — that must mean "nothing to
+        // reconcile", never "every worktree was removed".
+        let d = daemon_with_primary("/repo");
+        d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
+
+        d.reconcile_worktrees_with(|_| Vec::new());
+        assert_eq!(checkout_paths(&d).len(), 2, "empty listing must be a no-op");
+    }
+
+    #[test]
+    fn reconcile_never_removes_the_primary_checkout() {
+        // Even if git somehow stops listing it — a moved/renamed repo dir —
+        // the configured checkout is the user's, not ours to drop.
+        let d = daemon_with_primary("/repo");
+        d.reconcile_worktrees_with(|_| listing(&["/somewhere/else"]));
+        assert!(
+            checkout_paths(&d).contains(&"/repo".to_string()),
+            "primary must survive a listing that omits it"
+        );
+    }
+
+    #[test]
+    fn discovered_checkouts_get_distinct_ids() {
+        let d = daemon_with_primary("/repo");
+        d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/a", "/repo/b"]));
+
+        let ids: Vec<_> = d
+            .snapshot()
+            .into_iter()
+            .flat_map(|p| p.checkouts)
+            .map(|c| c.id)
+            .collect();
+        let mut uniq = ids.clone();
+        uniq.sort_by_key(|i| i.0);
+        uniq.dedup();
+        assert_eq!(uniq.len(), ids.len(), "ids must be unique: {ids:?}");
+    }
+
+    // --- display naming ----------------------------------------------------
+
+    #[test]
+    fn worktree_display_name_falls_back_to_the_directory_name() {
+        // Non-repo path: no branch to read, so the leaf directory names it.
+        assert_eq!(worktree_display_name(std::path::Path::new("/repo/wt/feat-x"), false), "feat-x");
+        assert_eq!(worktree_display_name(std::path::Path::new("/repo"), true), "repo");
+    }
+
+    // --- tree broadcast ----------------------------------------------------
+
+    #[test]
+    fn reconcile_result_is_visible_to_tree_subscribers() {
+        let d = daemon_with_primary("/repo");
+        let mut rx = d.subscribe_tree();
+        d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
+        d.broadcast_tree();
+
+        let tree = rx.try_recv().expect("a tree snapshot should have been broadcast");
+        assert_eq!(tree[0].checkouts.len(), 2);
+    }
+
+    #[test]
+    fn default_agent_templates_are_offered_when_config_has_none() {
+        let d = daemon_with_primary("/repo");
+        assert_eq!(d.template_names(), vec!["claude", "codex", "opencode"]);
+    }
+
+    #[test]
+    fn gen_token_is_not_a_fixed_string() {
+        assert_eq!(gen_token().len(), 32);
+        assert_ne!(gen_token(), gen_token());
+    }
 }

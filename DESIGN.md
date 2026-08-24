@@ -403,6 +403,32 @@ while its project is not the focused one.
 
 ---
 
+## 8c. Testing
+
+Behaviour is verified by `cargo test`, not by launching the TUI and looking at it. Driving a
+real terminal is slow, needs a human to read the screen, and only exercises whatever path
+happened to get clicked — a race that loses a short-lived pane's output shows up in a test
+loop long before anyone notices it by eye.
+
+Three layers, all in-tree unit tests (both binaries are single-crate, so `#[cfg(test)]` modules
+are the only option — there is no library target for `tests/` to import):
+
+- **Pure logic** — wire framing and grid diffing, key encoding, git porcelain parsing, hook
+  path/JSON handling, the status roll-up and its glyphs. No I/O, instant.
+- **State machines** — `App` is constructed over an `mpsc` channel and driven with synthetic
+  key/mouse events; tests assert on the `ClientMsg`s it emits and the focus/selection it lands
+  in. `Daemon`'s worktree reconciliation takes its listing as an injected closure, so it is
+  tested without a repo or the `git` binary.
+- **Real processes** — `PaneRuntime` tests spawn actual pty-backed children, type at them, and
+  assert on the grid and the damage broadcast. These are the end-to-end M1 spine checks that
+  used to require a terminal.
+
+Rules that keep the suite worth having: no fixed sleeps waiting for output (poll the grid to a
+deadline instead), every test names the behaviour it protects rather than the function it
+calls, and anything that shells out to `git` or a real config file gets a seam instead.
+
+---
+
 ## 9. Roadmap
 
 **M1 — spine.** Daemon + client, PTY panes, three-column navigation, shell panes, detach/reattach.

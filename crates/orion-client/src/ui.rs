@@ -393,3 +393,172 @@ fn to_ratatui_color(c: PColor) -> Color {
         PColor::Rgb(r, g, b) => Color::Rgb(r, g, b),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use orion_protocol::{CheckoutId, PaneId, PaneInfo, PaneKind};
+
+    fn git(branch: Option<&str>, dirty: bool, changed: usize, ahead: usize, behind: usize) -> GitStatus {
+        GitStatus {
+            branch: branch.map(str::to_string),
+            dirty,
+            changed_files: changed,
+            ahead,
+            behind,
+        }
+    }
+
+    fn checkout_with(statuses: &[PaneStatus]) -> orion_protocol::CheckoutInfo {
+        orion_protocol::CheckoutInfo {
+            id: CheckoutId(1),
+            name: "c".to_string(),
+            path: "/c".to_string(),
+            primary: true,
+            git: None,
+            panes: statuses
+                .iter()
+                .enumerate()
+                .map(|(i, s)| PaneInfo {
+                    id: PaneId(i as u64),
+                    kind: PaneKind::Agent,
+                    title: "t".to_string(),
+                    status: *s,
+                })
+                .collect(),
+        }
+    }
+
+    // --- git suffix ---------------------------------------------------------
+
+    #[test]
+    fn a_non_repo_checkout_gets_no_suffix() {
+        assert_eq!(git_suffix(None), "");
+    }
+
+    #[test]
+    fn a_clean_branch_shows_only_its_name() {
+        assert_eq!(git_suffix(Some(&git(Some("master"), false, 0, 0, 0))), " master");
+    }
+
+    #[test]
+    fn a_detached_head_says_so() {
+        assert_eq!(git_suffix(Some(&git(None, false, 0, 0, 0))), " (detached)");
+    }
+
+    #[test]
+    fn dirty_shows_the_changed_file_count() {
+        assert_eq!(git_suffix(Some(&git(Some("main"), true, 3, 0, 0))), " main *3");
+    }
+
+    #[test]
+    fn ahead_and_behind_render_in_that_order() {
+        assert_eq!(git_suffix(Some(&git(Some("main"), false, 0, 2, 1))), " main ↑2 ↓1");
+    }
+
+    #[test]
+    fn zero_counts_are_omitted_rather_than_shown_as_zero() {
+        let s = git_suffix(Some(&git(Some("main"), false, 0, 0, 0)));
+        assert!(!s.contains('↑') && !s.contains('↓') && !s.contains('*'), "{s:?}");
+    }
+
+    #[test]
+    fn everything_at_once_reads_in_a_fixed_order() {
+        assert_eq!(git_suffix(Some(&git(Some("wt"), true, 5, 1, 2))), " wt ↑1 ↓2 *5");
+    }
+
+    // --- rolled-up status ---------------------------------------------------
+
+    #[test]
+    fn a_parent_with_no_panes_has_no_status() {
+        assert_eq!(worst_pane_status(&checkout_with(&[])), None);
+    }
+
+    #[test]
+    fn waiting_outranks_everything_because_it_is_blocked_on_you() {
+        let c = checkout_with(&[
+            PaneStatus::Working,
+            PaneStatus::Waiting,
+            PaneStatus::Exited { code: Some(1) },
+        ]);
+        assert_eq!(worst_pane_status(&c), Some(PaneStatus::Waiting));
+    }
+
+    #[test]
+    fn a_failed_exit_outranks_the_calm_states() {
+        let c = checkout_with(&[PaneStatus::Idle, PaneStatus::Exited { code: Some(1) }]);
+        assert_eq!(worst_pane_status(&c), Some(PaneStatus::Exited { code: Some(1) }));
+    }
+
+    #[test]
+    fn a_clean_exit_ranks_below_a_live_pane() {
+        let c = checkout_with(&[PaneStatus::Exited { code: Some(0) }, PaneStatus::Idle]);
+        assert_eq!(worst_pane_status(&c), Some(PaneStatus::Idle));
+    }
+
+    #[test]
+    fn a_kill_with_no_exit_code_counts_as_a_failure() {
+        assert_eq!(rank(&PaneStatus::Exited { code: None }), rank(&PaneStatus::Exited { code: Some(1) }));
+    }
+
+    #[test]
+    fn the_rank_order_is_the_documented_one() {
+        let mut all = vec![
+            PaneStatus::Waiting,
+            PaneStatus::Exited { code: Some(0) },
+            PaneStatus::Idle,
+            PaneStatus::Exited { code: Some(2) },
+        ];
+        all.sort_by_key(rank);
+        assert_eq!(
+            all,
+            vec![
+                PaneStatus::Exited { code: Some(0) },
+                PaneStatus::Idle,
+                PaneStatus::Exited { code: Some(2) },
+                PaneStatus::Waiting,
+            ]
+        );
+    }
+
+    // --- glyphs -------------------------------------------------------------
+
+    #[test]
+    fn every_status_has_a_distinct_glyph_except_the_two_quiet_ones() {
+        assert_eq!(status_glyph(Some(PaneStatus::Working)), "◐");
+        assert_eq!(status_glyph(Some(PaneStatus::Waiting)), "?");
+        assert_eq!(status_glyph(Some(PaneStatus::Exited { code: Some(0) })), "✓");
+        assert_eq!(status_glyph(Some(PaneStatus::Exited { code: Some(1) })), "✗");
+        assert_eq!(status_glyph(Some(PaneStatus::Exited { code: None })), "✗");
+        // "no panes" and "idle" deliberately look the same: both are quiet.
+        assert_eq!(status_glyph(None), status_glyph(Some(PaneStatus::Idle)));
+    }
+
+    #[test]
+    fn glyph_and_style_agree_on_which_states_are_alarming() {
+        for (status, expected) in [
+            (Some(PaneStatus::Waiting), Color::Yellow),
+            (Some(PaneStatus::Working), Color::Blue),
+            (Some(PaneStatus::Exited { code: Some(0) }), Color::Green),
+            (Some(PaneStatus::Exited { code: Some(1) }), Color::Red),
+            (Some(PaneStatus::Idle), Color::DarkGray),
+            (None, Color::DarkGray),
+        ] {
+            assert_eq!(status_style(status).fg, Some(expected), "for {status:?}");
+        }
+    }
+
+    // --- layout -------------------------------------------------------------
+
+    #[test]
+    fn a_modal_is_centered_in_its_area() {
+        let r = centered_rect(10, 4, Rect::new(0, 0, 30, 20));
+        assert_eq!((r.x, r.y, r.width, r.height), (10, 8, 10, 4));
+    }
+
+    #[test]
+    fn a_modal_larger_than_the_screen_is_pinned_not_wrapped_negative() {
+        let r = centered_rect(50, 40, Rect::new(0, 0, 30, 20));
+        assert_eq!((r.x, r.y), (0, 0), "saturating, never underflowing");
+    }
+}

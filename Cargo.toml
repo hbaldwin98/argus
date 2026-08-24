@@ -27,6 +27,7 @@ vt100 = "0.15"
 git2 = "0.19"
 ratatui = "0.28"
 crossterm = "0.28"
+tempfile = "3"
 
 [profile.release]
 opt-level = 3
