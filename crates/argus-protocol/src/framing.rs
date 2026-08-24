@@ -119,11 +119,11 @@ mod tests {
     async fn a_tree_snapshot_survives_the_wire() {
         let sent = ServerMsg::Tree(vec![ProjectInfo {
             id: ProjectId(1),
-            name: "orion".to_string(),
+            name: "argus".to_string(),
             checkouts: vec![CheckoutInfo {
                 id: CheckoutId(2),
                 name: "master".to_string(),
-                path: "C:/src/orion".to_string(),
+                path: "C:/src/argus".to_string(),
                 primary: true,
                 git: Some(GitStatus {
                     branch: Some("master".to_string()),

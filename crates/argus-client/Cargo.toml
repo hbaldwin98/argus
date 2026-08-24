@@ -1,14 +1,14 @@
 [package]
-name = "orion"
+name = "argus"
 version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "orion"
+name = "argus"
 path = "src/main.rs"
 
 [dependencies]
-orion-protocol = { workspace = true }
+argus-protocol = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 anyhow = { workspace = true }

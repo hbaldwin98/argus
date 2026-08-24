@@ -3,7 +3,7 @@
 //! selectable — moving down from a file's last line lands on the next
 //! file's first, never on a header you'd have to skip by hand.
 
-use orion_protocol::{FileDiff, LineKind, Review};
+use argus_protocol::{FileDiff, LineKind, Review};
 
 /// Headers and notes are drawn but never selected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -254,7 +254,7 @@ fn flatten(files: &[FileDiff]) -> Vec<Row> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use orion_protocol::{ChangeKind, CheckoutId, DiffLine, Hunk};
+    use argus_protocol::{ChangeKind, CheckoutId, DiffLine, Hunk};
 
     fn line(kind: LineKind, no: u32, text: &str) -> DiffLine {
         let (old_lineno, new_lineno) = match kind {
@@ -286,7 +286,7 @@ mod tests {
     fn view(files: Vec<FileDiff>) -> ReviewView {
         ReviewView::new(Review {
             checkout: CheckoutId(1),
-            base: orion_protocol::ReviewBase::WorkingTree,
+            base: argus_protocol::ReviewBase::WorkingTree,
             files,
         })
     }

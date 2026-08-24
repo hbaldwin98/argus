@@ -13,7 +13,7 @@ use crossterm::event::{DisableMouseCapture, EnableMouseCapture, Event, EventStre
 use crossterm::execute;
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use futures::StreamExt;
-use orion_protocol::{read_msg, write_msg, ClientMsg, PaneId, ServerMsg};
+use argus_protocol::{read_msg, write_msg, ClientMsg, PaneId, ServerMsg};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use tokio::io::split;

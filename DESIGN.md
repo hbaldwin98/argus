@@ -1,4 +1,4 @@
-# Orion
+# Argus
 
 A terminal multiplexer with one idea: **group repositories into workspaces and run AI agents against their branches.**
 
@@ -38,7 +38,7 @@ Two binaries, one protocol.
 
 ```
 ┌─────────────────┐        unix socket / named pipe        ┌──────────────────────┐
-│  oriond         │◀──────── length-prefixed msgpack ─────▶│  orion (TUI client)  │
+│  argusd         │◀──────── length-prefixed msgpack ─────▶│  argus (TUI client)  │
 │  (daemon)       │                                        │  ratatui + crossterm │
 │                 │                                        └──────────────────────┘
 │  • PTY pool     │                                                  ▲
@@ -54,9 +54,9 @@ Two binaries, one protocol.
        └── zsh      (acme-api @ feat/rate-limit)
 ```
 
-**Why a daemon.** Detachment is the whole point. `oriond` owns every PTY and every scrollback
+**Why a daemon.** Detachment is the whole point. `argusd` owns every PTY and every scrollback
 buffer; the client is a pure renderer with no state worth losing. It is started lazily on first
-`orion` invocation (double-fork, `setsid`, reparented to init) and idles at near-zero CPU —
+`argus` invocation (double-fork, `setsid`, reparented to init) and idles at near-zero CPU —
 epoll/kqueue on PTY fds, no polling loop.
 
 **Why Rust.** Predictable memory, no GC pauses in the render path, and the ecosystem is already
@@ -64,7 +64,7 @@ here: `portable-pty` for cross-platform PTYs (ConPTY on Windows), `vt100`/`wezte
 terminal emulation, `gix` for git without shelling out, `ratatui` for rendering, `notify` for
 filesystem watching.
 
-**The protocol.** Length-prefixed msgpack over a Unix domain socket (`$XDG_RUNTIME_DIR/orion.sock`)
+**The protocol.** Length-prefixed msgpack over a Unix domain socket (`$XDG_RUNTIME_DIR/argus.sock`)
 or a named pipe on Windows. Client→daemon: `Attach`, `Input{pane, bytes}`, `Resize`, `SpawnAgent`,
 `Kill`, `Subscribe{view}`. Daemon→client: `Damage{pane, cell_runs}`, `TreeDelta`, `AgentState`,
 `GitDelta`. The daemon sends **damage regions, not full screens** — a spinner in a background
@@ -83,7 +83,7 @@ everything. Instead:
 - The live screen (visible rows only) is a dense grid — that is the hot path, keep it flat.
 - Panes with no client subscription for N minutes drop their decoded screen and keep only the
   compressed tail; re-attach replays it.
-- Scrollback above a threshold spills to a memory-mapped file under `$XDG_CACHE_HOME/orion/`,
+- Scrollback above a threshold spills to a memory-mapped file under `$XDG_CACHE_HOME/argus/`,
   so a runaway `cargo build` log costs address space, not RSS.
 
 Target: ~1.5 MB resident per idle pane, ~40 MB daemon with 16 panes, ~25 MB client.
@@ -98,10 +98,10 @@ A **project** is a named group of repositories. Not one repo — a group, becaus
 frontend, a backend, and a shared library.
 
 ```toml
-# ~/.config/orion/projects.toml
+# ~/.config/argus/projects.toml
 [[project]]
-name = "orion"
-repos = ["~/src/orion"]
+name = "argus"
+repos = ["~/src/argus"]
 
 [[project]]
 name = "acme"
@@ -117,13 +117,13 @@ failure is visible from the top level without drilling in.
 ### Level 2 — Checkouts (branches)
 
 The unit here is a **checkout**: a working directory sitting at a branch. Git already models this
-exactly — `git worktree list` includes the repo's primary working tree — so Orion does too. The
+exactly — `git worktree list` includes the repo's primary working tree — so Argus does too. The
 main checkout is a first-class row, not a special case, and a linked worktree is just another
 checkout that happens to live elsewhere on disk.
 
 **If you want to work off `main` in the repo you already have cloned, you do.** No worktree gets
 created, nothing is moved, and the agent you spawn there runs in `~/src/acme-api` like it would if
-you had `cd`'d in yourself. Worktrees are a tool Orion makes cheap, not a toll it charges.
+you had `cd`'d in yourself. Worktrees are a tool Argus makes cheap, not a toll it charges.
 
 Selecting a project lists every repo and, nested under it, its checkouts:
 
@@ -142,21 +142,21 @@ acme-web                                     ~/src/acme-web
   Selecting one asks how to open it: **switch the primary checkout** (`git switch`, if it is
   clean) or **create a worktree** (`n`). Either way you land in a checkout and continue right.
 - `git switch` on a dirty primary checkout is refused, with the offer to make a worktree instead.
-  This is the one place Orion nudges — not because worktrees are ideologically correct, but
+  This is the one place Argus nudges — not because worktrees are ideologically correct, but
   because clobbering uncommitted work is the failure we actually have to prevent.
 
-**Isolation is a default, not a law.** One agent per checkout is what Orion sets up and what the
-UI assumes. Nothing stops you from putting two agents on `main` — Orion marks the row `⚠ shared`,
+**Isolation is a default, not a law.** One agent per checkout is what Argus sets up and what the
+UI assumes. Nothing stops you from putting two agents on `main` — Argus marks the row `⚠ shared`,
 colors it amber, and shows both agents' names on the checkout row so the risk is visible rather
 than discovered at merge time. Per-project `exclusive = true` turns it into a hard block if you
 want the guardrail.
 
 `n` creates a worktree: prompts for a branch name (defaulting to a branch off the current one),
 runs `git worktree add`, and optionally runs a per-project `setup` hook — `npm ci`, `direnv
-allow`, copying `.env`. Worktrees live in `.orion/worktrees/<branch>` beside the repo, or wherever
+allow`, copying `.env`. Worktrees live in `.argus/worktrees/<branch>` beside the repo, or wherever
 config says. `D` removes a checkout, its branch, and any agents attached, after a confirmation
 showing exactly what disappears — and it refuses outright on the primary checkout, which is yours,
-not Orion's to delete.
+not Argus's to delete.
 
 ### Level 3 — Agents
 
@@ -164,7 +164,7 @@ Each checkout holds a list of panes. Three kinds, same primitive underneath:
 
 - **Agent** — an AI CLI, spawned from a template.
 - **Shell** — your `$SHELL`, cwd'd into the checkout.
-- **Editor** — `$EDITOR`, a full PTY pane. Neovim runs *inside* Orion the same way it runs inside
+- **Editor** — `$EDITOR`, a full PTY pane. Neovim runs *inside* Argus the same way it runs inside
   tmux, with full mouse, true color, and its own keymaps. See §6 for how we stay out of its way.
 
 Agents are declared as templates, not hardcoded:
@@ -209,7 +209,7 @@ that checkout, a two-column view:
   syntax-highlighted via tree-sitter, incrementally, only for visible hunks.
 - Three diff bases, cycled with `b`: **working tree** (uncommitted agent edits), **vs. branch
   point** (everything this branch did), **since I last looked** — the last one is the killer.
-  Orion snapshots the tree hash each time you leave Review, so returning shows *only what the
+  Argus snapshots the tree hash each time you leave Review, so returning shows *only what the
   agent did while you were away* — and it is the base that still works on `main`, where "vs.
   branch point" has nothing to point at. On a checkout with no meaningful fork point, `b` cycles
   between working tree, since-I-last-looked, and vs. upstream (`@{u}`) instead.
@@ -233,8 +233,8 @@ Every level of the tree can hold notes. A note is a plain markdown file on disk 
 lock-in, greppable, committable if you want it to be.
 
 ```
-~/.local/share/orion/notes/<project>.md          # project-level
-<repo>/.orion/notes/<branch>.md                  # branch-level, next to the code
+~/.local/share/argus/notes/<project>.md          # project-level
+<repo>/.argus/notes/<branch>.md                  # branch-level, next to the code
 ```
 
 `o` opens the notes pane for whatever is selected — a split alongside the current column, edited
@@ -271,11 +271,11 @@ name and a timestamp, so the handoff runs both directions and stays auditable.
 
 ## 5c. The context server
 
-`oriond` exposes an HTTP + MCP server on a loopback port. Every agent it spawns gets `ORION_URL`
-and a scoped `ORION_TOKEN` in its environment; the token is bound to one checkout, so an agent can
+`argusd` exposes an HTTP + MCP server on a loopback port. Every agent it spawns gets `ARGUS_URL`
+and a scoped `ARGUS_TOKEN` in its environment; the token is bound to one checkout, so an agent can
 only see and touch its own.
 
-This is what turns Orion from a window manager into something the agents participate in.
+This is what turns Argus from a window manager into something the agents participate in.
 
 **Read side — pull context down.**
 
@@ -309,8 +309,8 @@ configurable fan-out limit so a delegation loop cannot fork bomb the machine.
 ways, all backed by one implementation:
 
 - **MCP** over stdio or HTTP, for harnesses that support it — the good path.
-- **`orion ctx <what>`** — a small CLI printing the same payloads to stdout, so any agent that can
-  run a shell command can pull context: `orion ctx diff --base branch-point`.
+- **`argus ctx <what>`** — a small CLI printing the same payloads to stdout, so any agent that can
+  run a shell command can pull context: `argus ctx diff --base branch-point`.
 - **Template interpolation** — `{diff}`, `{notes}`, `{pinned}`, `{branch}`, `{siblings}` expand
   directly into a template's argv or prompt file, for one-shot agents that take a prompt and
   nothing else.
@@ -319,7 +319,7 @@ ways, all backed by one implementation:
 
 ## 6. Editor panes and the keybinding problem
 
-Running vim inside a multiplexer means fighting over keys. Orion's answer: **a single leader key
+Running vim inside a multiplexer means fighting over keys. Argus's answer: **a single leader key
 and no ambiguity.**
 
 - Default leader: `Ctrl-Space` (rebindable). Nothing else is intercepted, ever. Inside a pane,
@@ -338,7 +338,7 @@ and no ambiguity.**
 "Safe" here means an agent cannot quietly ruin your day.
 
 - **Isolation by checkout** is the default posture — an agent's blast radius is one working
-  directory, and Orion flags a shared checkout in amber rather than pretending it cannot happen.
+  directory, and Argus flags a shared checkout in amber rather than pretending it cannot happen.
 - **Scoped tokens.** A context-server token grants exactly one checkout and exactly the calls its
   template allows. There is no ambient authority to reach sideways into another branch.
 - **Optional sandbox per template**: `sandbox = "readonly-outside"` wraps the child in the platform
@@ -356,13 +356,13 @@ and no ambiguity.**
 
 ## 8. Performance discipline
 
-- Render only on damage. Idle Orion issues zero syscalls per second beyond the epoll wait.
+- Render only on damage. Idle Argus issues zero syscalls per second beyond the epoll wait.
 - Coalesce PTY reads: drain the fd, parse once, emit one damage set per frame, cap at 60 Hz.
   A pane spewing output at 100 MB/s costs bounded work — we parse and discard, we do not queue.
 - No `String` allocation in the render loop; a per-frame arena, reset each pass.
 - Diff, syntax highlighting, git status, and context-server requests run on a small rayon pool,
   never on the input thread.
-- Startup budget: **<30 ms** from `orion` to first paint when the daemon is warm.
+- Startup budget: **<30 ms** from `argus` to first paint when the daemon is warm.
 
 ---
 
@@ -448,7 +448,7 @@ jump-to-editor. Concretely, the shape wanted here:
 - Attach a comment to a line or a *range* of lines, the way a pull-request review does, and
   send it straight to the agent working that checkout. *(landed)* `c` in the review composes
   one; it is typed at the agent's pty as `path:line \`+the line\`: your comment`, so it works
-  with any harness rather than needing one to know about Orion.
+  with any harness rather than needing one to know about Argus.
 - Open any of them in the user's real editor (`$EDITOR` — vim, nvim, helix, whatever), as a
   pane rather than a shell-out that blanks the screen (§6). *(landed)* `e` on a line opens it
   at that line; the flag syntax is per editor, and an unrecognised one just gets the path.
@@ -468,7 +468,7 @@ the context server, then the write side behind policy.
 **M6 — polish.** Sandboxing, scrollback spill, config reload, and session restore across
 reboots. The UI theme pass is done: `theme.rs` keys every color to a semantic role (accent,
 text, muted/dim, ok/warn/err, edge, the two selection fills, the focus wash) with presets
-selectable via `ORION_THEME`. What is left here is a settings overlay to switch them at
+selectable via `ARGUS_THEME`. What is left here is a settings overlay to switch them at
 runtime instead of by environment variable.
 
 ---
@@ -491,9 +491,10 @@ runtime instead of by environment variable.
 
 Additional directions for the roadmap, beyond what's in §9:
 
-- **Rename to `argus`.** The project, both binaries (`argus` / `argusd`), the crates, the
-  config directory, and the docs. Worth doing in one sweep rather than piecemeal, and worth
-  doing before there is anything on disk to migrate.
+- **Rename to `argus`.** *(landed)* Crates, binaries (`argus` / `argusd` / `argus-hook`),
+  the socket and named pipe, the config directory, and `ARGUS_CONFIG_DIR` / `ARGUS_THEME`.
+  `is_hook_helper` still recognises the old `orion-hook` name so a hook block written before
+  the rename is swept rather than left firing on every agent turn.
 
 - **Workspaces.** *(landed)* A named group of projects sitting above the project level, with
   exactly one open at a time — daemon-global, so every attached client re-scopes together.
@@ -506,7 +507,7 @@ Additional directions for the roadmap, beyond what's in §9:
 - **A workspace layer above projects.** Nest Workspace → Project → Checkout → Pane, with exactly
   one workspace *open* at a time (daemon-global, switched from the TUI, broadcast to every
   client) — other workspaces' panes keep running in the background but drop out of the Projects
-  panel and search. Orion's tree currently starts at Project; adding Workspace above it is the
+  panel and search. Argus's tree currently starts at Project; adding Workspace above it is the
   next structural change to the tree, ahead of M2's remaining pieces.
 - **Status via hooks, not scraping.** This is the real answer to the M3/§8b open question above.
   At spawn, install managed hooks (e.g. `.claude/settings.local.json`) that `curl` a loopback HTTP
@@ -519,7 +520,7 @@ Additional directions for the roadmap, beyond what's in §9:
   persistence, not repeated appends to a TOML file. `add_project`'s append-to-file approach (this
   session) is a stopgap; the SQLite move in M5/M6 should absorb it.
 - **Worktree auto-discovery.** Poll git metadata so worktrees created outside the tool (a bare
-  `git worktree add` from a shell) still show up. Orion only shows worktrees it created itself —
+  `git worktree add` from a shell) still show up. Argus only shows worktrees it created itself —
   same gap as the "branches without a checkout" row from §4, worth closing together.
 - **Notes and links per checkout**, with a PR row looked up client-side (`gh pr view`) on the git
   poll tick, shown above the stored links but not itself editable — it's derived, not owned.

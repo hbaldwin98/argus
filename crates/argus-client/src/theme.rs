@@ -66,13 +66,13 @@ impl Default for Theme {
 }
 
 impl Theme {
-    /// The preset named by `ORION_THEME`, or the default. An env var rather
+    /// The preset named by `ARGUS_THEME`, or the default. An env var rather
     /// than a config key for now: the client has no config file of its own
     /// yet, and this keeps the palette switchable while the roles above are
     /// still being tuned. A settings toggle is the M6 shape (`THEMES` is
     /// the cycle order it would use).
     pub fn from_env() -> Self {
-        let Ok(name) = std::env::var("ORION_THEME") else {
+        let Ok(name) = std::env::var("ARGUS_THEME") else {
             return Theme::default();
         };
         let known = THEMES

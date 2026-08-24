@@ -24,6 +24,55 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "argus"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argus-protocol",
+ "crossterm",
+ "directories",
+ "futures",
+ "libc",
+ "ratatui",
+ "serde",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "argus-protocol"
+version = "0.1.0"
+dependencies = [
+ "directories",
+ "rmp-serde",
+ "serde",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "argusd"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argus-protocol",
+ "directories",
+ "git2",
+ "portable-pty",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "vt100",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -782,55 +831,6 @@ name = "option-ext"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
-
-[[package]]
-name = "orion"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "crossterm",
- "directories",
- "futures",
- "libc",
- "orion-protocol",
- "ratatui",
- "serde",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "orion-protocol"
-version = "0.1.0"
-dependencies = [
- "directories",
- "rmp-serde",
- "serde",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "oriond"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "directories",
- "git2",
- "orion-protocol",
- "portable-pty",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
- "vt100",
-]
 
 [[package]]
 name = "parking_lot"

@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/orion-protocol",
-    "crates/oriond",
-    "crates/orion-client",
+    "crates/argus-protocol",
+    "crates/argusd",
+    "crates/argus-client",
 ]
 
 [workspace.package]
@@ -21,7 +21,7 @@ directories = "5"
 toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-orion-protocol = { path = "crates/orion-protocol" }
+argus-protocol = { path = "crates/argus-protocol" }
 portable-pty = "0.8"
 vt100 = "0.15"
 git2 = "0.19"

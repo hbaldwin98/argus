@@ -25,8 +25,8 @@ async fn main() -> anyhow::Result<()> {
     daemon.start_hook_server()?;
     daemon.start_git_poll();
 
-    let mut listener = orion_protocol::transport::Listener::bind().await?;
-    tracing::info!("oriond listening");
+    let mut listener = argus_protocol::transport::Listener::bind().await?;
+    tracing::info!("argusd listening");
 
     let serve = async {
         loop {

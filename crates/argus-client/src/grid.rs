@@ -1,4 +1,4 @@
-use orion_protocol::{Cell, CellSpan};
+use argus_protocol::{Cell, CellSpan};
 
 pub struct Grid {
     pub cells: Vec<Vec<Cell>>,

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use orion_protocol::{read_msg, write_msg, ClientMsg, ServerMsg};
+use argus_protocol::{read_msg, write_msg, ClientMsg, ServerMsg};
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc};
 
@@ -118,7 +118,7 @@ fn handle_client_msg(
         ClientMsg::Review { checkout, base } => daemon.checkout_path(checkout).map(|path| {
             let out_tx = out_tx.clone();
             tokio::task::spawn_blocking(move || {
-                let _ = out_tx.send(ServerMsg::Review(orion_protocol::Review {
+                let _ = out_tx.send(ServerMsg::Review(argus_protocol::Review {
                     checkout,
                     base,
                     files: crate::diff::working_tree(&path, base),
@@ -163,7 +163,7 @@ where
 mod tests {
     use super::*;
     use crate::config::{ConfigFile, ProjectConfig};
-    use orion_protocol::{CheckoutId, PaneId, ReviewBase};
+    use argus_protocol::{CheckoutId, PaneId, ReviewBase};
 
     struct Harness {
         daemon: Arc<Daemon>,
@@ -332,7 +332,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut h = Harness::new(dir.path());
         h.send(ClientMsg::OpenWorkspace {
-            workspace: orion_protocol::WorkspaceId(9999),
+            workspace: argus_protocol::WorkspaceId(9999),
         });
         assert!(!h.error().is_empty());
     }

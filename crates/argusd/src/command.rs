@@ -1,7 +1,7 @@
 //! Spawning external commands without flashing a console window.
 //!
 //! The client starts the daemon with `DETACHED_PROCESS` (see
-//! `orion-client`'s `launch`), so on Windows `oriond` owns no console at
+//! `argus-client`'s `launch`), so on Windows `argusd` owns no console at
 //! all. Windows then gives any *console* child it spawns a brand-new
 //! console window — which appears on screen and vanishes when the child
 //! exits. For a short-lived command like `git`, that is a window flashing

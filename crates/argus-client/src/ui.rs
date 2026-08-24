@@ -15,7 +15,7 @@
 //! - **State** is a single `●` dot in the row's status color (§8b), rolled
 //!   up to parents by the worst child.
 
-use orion_protocol::{Color as PColor, GitStatus, LineKind, PaneStatus};
+use argus_protocol::{Color as PColor, GitStatus, LineKind, PaneStatus};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -666,7 +666,7 @@ fn exit_note(status: PaneStatus) -> String {
     }
 }
 
-fn worst_pane_status(c: &orion_protocol::CheckoutInfo) -> Option<PaneStatus> {
+fn worst_pane_status(c: &argus_protocol::CheckoutInfo) -> Option<PaneStatus> {
     c.panes.iter().map(|p| p.status).max_by_key(rank)
 }
 
@@ -747,7 +747,7 @@ fn to_ratatui_color(c: PColor) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use orion_protocol::{CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, ProjectId, ProjectInfo};
+    use argus_protocol::{CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, ProjectId, ProjectInfo};
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
@@ -936,7 +936,7 @@ mod tests {
     fn tree() -> Vec<ProjectInfo> {
         vec![ProjectInfo {
             id: ProjectId(1),
-            name: "orion".to_string(),
+            name: "argus".to_string(),
             checkouts: vec![
                 CheckoutInfo {
                     id: CheckoutId(10),
@@ -1000,7 +1000,7 @@ mod tests {
         // Keep the receiver alive so sends don't fail during render setup.
         std::mem::forget(rx);
         let mut app = App::new(tx);
-        app.on_server_msg(orion_protocol::ServerMsg::Tree(tree()));
+        app.on_server_msg(argus_protocol::ServerMsg::Tree(tree()));
         app
     }
 
@@ -1020,7 +1020,7 @@ mod tests {
     fn the_tree_contents_actually_reach_the_screen() {
         let mut app = app_with_tree();
         let text = lines(&draw(&mut app)).join("\n");
-        assert!(text.contains("orion"), "project name");
+        assert!(text.contains("argus"), "project name");
         assert!(text.contains("master"), "checkout name");
         assert!(text.contains("claude"), "pane title");
     }
@@ -1104,7 +1104,7 @@ mod tests {
         let mut app = app_with_tree();
         let text = lines(&draw(&mut app)).join("\n");
         assert!(
-            text.contains("orion › master › claude"),
+            text.contains("argus › master › claude"),
             "the live view should say where its content came from:\n{text}"
         );
     }
@@ -1133,7 +1133,7 @@ mod tests {
     #[test]
     fn an_error_takes_over_the_status_bar_from_the_breadcrumb() {
         let mut app = app_with_tree();
-        app.on_server_msg(orion_protocol::ServerMsg::Error {
+        app.on_server_msg(argus_protocol::ServerMsg::Error {
             message: "git worktree add failed".to_string(),
         });
         let text = lines(&draw(&mut app)).join("\n");
@@ -1196,7 +1196,7 @@ mod tests {
     }
 
     /// Not an assertion — a way to look at the UI while working on it:
-    /// `cargo test -p orion dump_frame -- --ignored --nocapture`. Beats
+    /// `cargo test -p argus dump_frame -- --ignored --nocapture`. Beats
     /// launching the client into a real terminal just to see the layout.
     #[test]
     #[ignore = "prints a frame for eyeballing; asserts nothing"]
@@ -1226,30 +1226,30 @@ mod tests {
 
     fn app_with_review() -> App {
         let mut app = app_with_tree();
-        app.review = Some(crate::review::ReviewView::new(orion_protocol::Review {
+        app.review = Some(crate::review::ReviewView::new(argus_protocol::Review {
             checkout: CheckoutId(1),
-            base: orion_protocol::ReviewBase::WorkingTree,
-            files: vec![orion_protocol::FileDiff {
+            base: argus_protocol::ReviewBase::WorkingTree,
+            files: vec![argus_protocol::FileDiff {
                 path: "src/thing.rs".to_string(),
                 old_path: None,
-                kind: orion_protocol::ChangeKind::Modified,
-                hunks: vec![orion_protocol::Hunk {
+                kind: argus_protocol::ChangeKind::Modified,
+                hunks: vec![argus_protocol::Hunk {
                     header: "@@ -10,3 +10,3 @@ fn f()".to_string(),
                     lines: vec![
-                        orion_protocol::DiffLine {
-                            kind: orion_protocol::LineKind::Context,
+                        argus_protocol::DiffLine {
+                            kind: argus_protocol::LineKind::Context,
                             old_lineno: Some(10),
                             new_lineno: Some(10),
                             text: "unchanged".to_string(),
                         },
-                        orion_protocol::DiffLine {
-                            kind: orion_protocol::LineKind::Removed,
+                        argus_protocol::DiffLine {
+                            kind: argus_protocol::LineKind::Removed,
                             old_lineno: Some(11),
                             new_lineno: None,
                             text: "gone".to_string(),
                         },
-                        orion_protocol::DiffLine {
-                            kind: orion_protocol::LineKind::Added,
+                        argus_protocol::DiffLine {
+                            kind: argus_protocol::LineKind::Added,
                             old_lineno: None,
                             new_lineno: Some(11),
                             text: "arrived".to_string(),
@@ -1265,11 +1265,11 @@ mod tests {
 
     #[test]
     fn the_review_never_hides_the_nav_columns() {
-        // The standing rule for every view Orion has: one thing opening
+        // The standing rule for every view Argus has: one thing opening
         // must not take the others off screen.
         let mut app = app_with_review();
         let out = lines(&draw(&mut app)).join("\n");
-        assert!(out.contains("orion"), "the project is still listed:\n{out}");
+        assert!(out.contains("argus"), "the project is still listed:\n{out}");
         assert!(out.contains("src/thing.rs"), "and the diff is up too:\n{out}");
     }
 

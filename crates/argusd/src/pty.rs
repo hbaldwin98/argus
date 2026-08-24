@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
-use orion_protocol::{diff_grid, Cell, Color, PaneId, ServerMsg};
+use argus_protocol::{diff_grid, Cell, Color, PaneId, ServerMsg};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::broadcast;
 
@@ -282,7 +282,7 @@ fn convert_color(c: vt100::Color) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use orion_protocol::CellSpan;
+    use argus_protocol::CellSpan;
 
     /// Flattens a grid to one string per row, trailing blanks trimmed.
     fn rows_of(grid: &[Vec<Cell>]) -> Vec<String> {
@@ -322,8 +322,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_programs_output_lands_on_the_panes_grid() {
-        let pane = PaneRuntime::spawn(PaneId(1), &std::env::temp_dir(), echo("orion-marker"), |_| {}).unwrap();
-        wait_for(&pane, |g| grid_contains(g, "orion-marker")).await;
+        let pane = PaneRuntime::spawn(PaneId(1), &std::env::temp_dir(), echo("argus-marker"), |_| {}).unwrap();
+        wait_for(&pane, |g| grid_contains(g, "argus-marker")).await;
     }
 
     #[tokio::test]
@@ -383,8 +383,8 @@ mod tests {
             PaneRuntime::spawn(PaneId(2), &std::env::temp_dir(), Spawn::DefaultShell, |_| {}).unwrap();
         // Let the shell draw its prompt before typing at it.
         tokio::time::sleep(Duration::from_millis(500)).await;
-        pane.write_input(b"echo orion-typed\r").unwrap();
-        wait_for(&pane, |g| grid_contains(g, "orion-typed")).await;
+        pane.write_input(b"echo argus-typed\r").unwrap();
+        wait_for(&pane, |g| grid_contains(g, "argus-typed")).await;
         let _ = pane.kill();
     }
 
@@ -512,7 +512,7 @@ mod tests {
             PaneId(9),
             &std::env::temp_dir(),
             Spawn::Program {
-                program: "orion-definitely-not-a-real-program".to_string(),
+                program: "argus-definitely-not-a-real-program".to_string(),
                 args: Vec::new(),
                 env: Vec::new(),
             },

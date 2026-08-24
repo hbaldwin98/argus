@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use orion_protocol::transport;
+use argus_protocol::transport;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::sleep;
 
@@ -21,7 +21,7 @@ pub async fn ensure_daemon_and_connect(
         }
     }
     Err(anyhow::anyhow!(
-        "could not connect to oriond: {:?}",
+        "could not connect to argusd: {:?}",
         last_err
     ))
 }
@@ -62,7 +62,7 @@ fn spawn_daemon() -> anyhow::Result<()> {
 }
 
 fn daemon_exe_path() -> PathBuf {
-    let name = if cfg!(windows) { "oriond.exe" } else { "oriond" };
+    let name = if cfg!(windows) { "argusd.exe" } else { "argusd" };
     if let Ok(mut path) = std::env::current_exe() {
         path.pop();
         path.push(name);

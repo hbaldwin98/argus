@@ -59,15 +59,15 @@ pub fn default_agents() -> Vec<AgentConfig> {
         .collect()
 }
 
-/// Where Orion keeps its configuration. `ORION_CONFIG_DIR` overrides the
+/// Where Argus keeps its configuration. `ARGUS_CONFIG_DIR` overrides the
 /// platform location — needed by tests, which must not read or scribble on
 /// the real user's config, and handy for running a throwaway instance
 /// alongside a real one.
 pub fn config_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("ORION_CONFIG_DIR") {
+    if let Some(dir) = std::env::var_os("ARGUS_CONFIG_DIR") {
         return PathBuf::from(dir);
     }
-    directories::ProjectDirs::from("", "", "orion")
+    directories::ProjectDirs::from("", "", "argus")
         .map(|d| d.config_dir().to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."))
 }
@@ -76,11 +76,11 @@ pub fn config_path() -> PathBuf {
     config_dir().join("projects.toml")
 }
 
-const DEFAULT_CONFIG: &str = r#"# Orion projects. Each project groups one or more repositories.
+const DEFAULT_CONFIG: &str = r#"# Argus projects. Each project groups one or more repositories.
 #
 # [[project]]
-# name = "orion"
-# repos = ["~/src/orion"]
+# name = "argus"
+# repos = ["~/src/argus"]
 
 # Agent templates available from the "a" picker. claude/codex/opencode are
 # already built in with no config needed; add [[agent]] entries here to
@@ -134,7 +134,7 @@ pub fn append_project(name: &str, repo_path: &Path, workspace: &str) -> Result<(
 /// Where the name of the open workspace is remembered. A file of its own
 /// rather than a key in `projects.toml`: that file is the user's, edited by
 /// hand and full of their comments, and `append_project` deliberately only
-/// ever appends to it. Which workspace happens to be open is Orion's
+/// ever appends to it. Which workspace happens to be open is Argus's
 /// bookkeeping, not configuration, so it lives beside it instead.
 fn open_workspace_path() -> PathBuf {
     config_path().with_file_name("open-workspace")

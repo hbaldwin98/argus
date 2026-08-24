@@ -1,6 +1,6 @@
-//! The command Orion's managed agent hooks actually run.
+//! The command Argus's managed agent hooks actually run.
 //!
-//! Usage: `orion-hook <url> <bearer-token>`
+//! Usage: `argus-hook <url> <bearer-token>`
 //!
 //! It POSTs to the daemon's loopback status receiver and **always exits 0**,
 //! whatever happens. That is the entire reason it exists instead of a `curl`
@@ -12,7 +12,7 @@
 //! is exactly the failure mode this avoids.
 //!
 //! It also writes nothing to stdout. Some agent CLIs inject a hook's stdout
-//! into the model's context on success, so staying silent keeps Orion's
+//! into the model's context on success, so staying silent keeps Argus's
 //! bookkeeping out of the conversation.
 //!
 //! On Windows it is a GUI-subsystem binary. Not because it has a UI — it

@@ -5,7 +5,7 @@
 use std::cell::RefCell;
 use std::path::Path;
 
-use orion_protocol::{ChangeKind, DiffLine, FileDiff, Hunk, LineKind, ReviewBase};
+use argus_protocol::{ChangeKind, DiffLine, FileDiff, Hunk, LineKind, ReviewBase};
 
 /// Past this a file is reported as changed but not rendered — nobody reads
 /// a 20k-line diff, and shipping it is pure waste.

@@ -52,7 +52,7 @@ pub struct CheckoutInfo {
     pub panes: Vec<PaneInfo>,
     pub git: Option<GitStatus>,
     /// True for a repo's original working directory (as configured), false
-    /// for a linked worktree Orion created. The primary checkout can't be
+    /// for a linked worktree Argus created. The primary checkout can't be
     /// removed — see DESIGN.md §4 Level 2.
     pub primary: bool,
 }

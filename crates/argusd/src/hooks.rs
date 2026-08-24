@@ -18,15 +18,15 @@
 
 use std::path::{Path, PathBuf};
 
-use orion_protocol::PaneId;
+use argus_protocol::PaneId;
 use serde_json::{json, Value};
 
-/// The helper that actually posts to the daemon (`src/bin/orion-hook.rs`),
+/// The helper that actually posts to the daemon (`src/bin/argus-hook.rs`),
 /// resolved next to the running daemon rather than trusted to `PATH` —
 /// nothing installs these binaries system-wide. Falls back to the bare name
 /// if the daemon's own path can't be read.
 fn hook_command() -> String {
-    let exe = if cfg!(windows) { "orion-hook.exe" } else { "orion-hook" };
+    let exe = if cfg!(windows) { "argus-hook.exe" } else { "argus-hook" };
     std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.join(exe)))
@@ -81,7 +81,7 @@ pub fn install_claude_hooks(checkout: &Path, pane: PaneId, port: u16, token: &st
     Ok(())
 }
 
-/// Removes Orion's managed hook block from a checkout, leaving anything the
+/// Removes Argus's managed hook block from a checkout, leaving anything the
 /// user put in the same file untouched. Cleans up after itself as it goes:
 /// an emptied `hooks` key is dropped, and a settings file left with nothing
 /// in it at all is deleted rather than left behind as `{}`.
@@ -124,7 +124,7 @@ pub fn uninstall_claude_hooks(checkout: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Whether an event's value is a block Orion wrote: every command in it
+/// Whether an event's value is a block Argus wrote: every command in it
 /// names our helper. Anything else — a user's own hook, or a block we only
 /// partly recognize — is left alone.
 fn is_managed_entry(value: &Value) -> bool {
@@ -149,9 +149,11 @@ fn is_managed_entry(value: &Value) -> bool {
 /// lived somewhere else on disk — an older build, a different target dir —
 /// is still recognized as ours and cleaned up.
 fn is_hook_helper(command: &str) -> bool {
-    Path::new(command)
-        .file_stem()
-        .is_some_and(|s| s.eq_ignore_ascii_case("orion-hook"))
+    Path::new(command).file_stem().is_some_and(|s| {
+        // `orion-hook` is the pre-rename name. A block naming it is still
+        // ours, and still fires on every turn until something removes it.
+        s.eq_ignore_ascii_case("argus-hook") || s.eq_ignore_ascii_case("orion-hook")
+    })
 }
 
 fn hook_entry(command: &str, pane: PaneId, port: u16, token: &str, event: &str) -> Value {
@@ -222,10 +224,14 @@ mod tests {
     fn the_helper_is_recognized_however_it_was_spelled() {
         // A block written by an older build living in another target dir
         // must still be recognized as ours so it can be cleaned up.
-        assert!(is_hook_helper("orion-hook"));
-        assert!(is_hook_helper("orion-hook.exe"));
-        assert!(is_hook_helper(r"C:\old\target\debug\orion-hook.exe"));
-        assert!(is_hook_helper("/usr/local/bin/orion-hook"));
+        assert!(is_hook_helper("argus-hook"));
+        assert!(is_hook_helper("argus-hook.exe"));
+        assert!(is_hook_helper(r"C:\old\target\debug\argus-hook.exe"));
+        assert!(is_hook_helper("/usr/local/bin/argus-hook"));
+        assert!(
+            is_hook_helper("orion-hook.exe"),
+            "a block from before the rename is still ours to clean up"
+        );
         assert!(!is_hook_helper("curl.exe"));
         assert!(!is_hook_helper("/bin/sh"));
     }
@@ -313,7 +319,7 @@ mod tests {
     fn a_daemon_that_exits_leaves_no_hooks_behind_for_the_next_agent() {
         // Regression: hooks naming a dead daemon's ephemeral port stayed in
         // the checkout forever, so every later agent run in that directory
-        // — Orion-managed or not — failed its Stop hook on every turn.
+        // — Argus-managed or not — failed its Stop hook on every turn.
         let dir = tempfile::tempdir().unwrap();
         install_claude_hooks(dir.path(), PaneId(4), 65140, "tok").unwrap();
         uninstall_claude_hooks(dir.path()).unwrap();

@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use orion_protocol::GitStatus;
+use argus_protocol::GitStatus;
 
 /// Returns `None` if `path` isn't inside a git repo at all. Any other
 /// failure (e.g. a transient lock) also degrades to `None` rather than
@@ -48,7 +48,7 @@ pub fn status(path: &Path) -> Option<GitStatus> {
 /// with `DETACHED_PROCESS` on Windows, so it owns no console. Every console
 /// child it spawns therefore gets a **brand-new console window**, which
 /// meant a window flashing open and shut every couple of seconds for as
-/// long as Orion was running. In-process avoids the whole class of problem
+/// long as Argus was running. In-process avoids the whole class of problem
 /// (and is faster). Mutating worktree operations still shell out — they are
 /// rare, user-initiated, and go through `crate::command::git`.
 pub fn list_worktrees(path: &Path) -> Vec<PathBuf> {

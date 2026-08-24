@@ -1,20 +1,20 @@
 [package]
-name = "oriond"
+name = "argusd"
 version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "oriond"
+name = "argusd"
 path = "src/main.rs"
 
-# The command Orion writes into managed agent hooks. Separate binary so a
+# The command Argus writes into managed agent hooks. Separate binary so a
 # hook never depends on a shell, and never reports failure. See hooks.rs.
 [[bin]]
-name = "orion-hook"
-path = "src/bin/orion-hook.rs"
+name = "argus-hook"
+path = "src/bin/argus-hook.rs"
 
 [dependencies]
-orion-protocol = { workspace = true }
+argus-protocol = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

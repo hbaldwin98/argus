@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
-use orion_protocol::{
+use argus_protocol::{
     Cell, CheckoutId, CheckoutInfo, IdGen, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId,
     ProjectInfo, ServerMsg, WorkspaceId, WorkspaceInfo,
 };
@@ -592,7 +592,7 @@ impl Daemon {
 
     /// Reconciles each project's checkouts against `git worktree list` on
     /// its primary checkout, so a worktree created or removed outside
-    /// Orion — a bare `git worktree add`/`remove` from a shell — still
+    /// Argus — a bare `git worktree add`/`remove` from a shell — still
     /// shows up, or disappears, without going through `create_worktree` /
     /// `remove_checkout`. Runs on the same blocking-pool tick as the git
     /// status poll (§4 Level 2, §11 worktree auto-discovery).
@@ -698,7 +698,7 @@ impl Daemon {
 
     /// `git worktree add`s a new checkout in `base`'s project, branched off
     /// `base`'s current HEAD, and appends it to the tree. Placed under
-    /// `.orion/worktrees/<branch>` beside the project's primary checkout
+    /// `.argus/worktrees/<branch>` beside the project's primary checkout
     /// (DESIGN.md §4 Level 2), regardless of which checkout `base` itself
     /// is — so worktrees always nest under the one directory, not under
     /// each other.
@@ -712,7 +712,7 @@ impl Daemon {
             let inner = self.inner.lock().unwrap();
             find_checkout_context(&inner.projects, base).ok_or_else(|| anyhow::anyhow!("no such checkout"))?
         };
-        let dest = primary_path.join(".orion").join("worktrees").join(&branch);
+        let dest = primary_path.join(".argus").join("worktrees").join(&branch);
 
         let output = crate::command::git()
             .args(["worktree", "add", "-b", &branch])
@@ -744,7 +744,7 @@ impl Daemon {
     /// Kills every pane in a linked-worktree checkout, `git worktree
     /// remove`s and deletes its branch (both best-effort — the checkout
     /// leaves the tree regardless), and refuses outright on the primary
-    /// checkout, which is the repo the user already had, not Orion's to
+    /// checkout, which is the repo the user already had, not Argus's to
     /// delete (DESIGN.md §4 Level 2).
     /// Errors rather than `None`, so a stale id reaches the user as text.
     pub fn checkout_path(&self, checkout: CheckoutId) -> anyhow::Result<PathBuf> {
@@ -834,7 +834,7 @@ fn find_checkout_context(projects: &[Project], id: CheckoutId) -> Option<(Projec
 }
 
 /// Prefers the checked-out branch name for a newly-discovered worktree —
-/// matches how `create_worktree` names ones Orion made itself — falling
+/// matches how `create_worktree` names ones Argus made itself — falling
 /// back to the directory name for a detached HEAD or an unreadable repo.
 fn worktree_display_name(path: &std::path::Path, is_primary: bool) -> String {
     if !is_primary {
@@ -1085,9 +1085,9 @@ mod tests {
     // --- worktree reconciliation -------------------------------------------
 
     #[test]
-    fn reconcile_adds_a_worktree_created_outside_orion() {
+    fn reconcile_adds_a_worktree_created_outside_argus() {
         let d = daemon_with_primary("/repo");
-        d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/.orion/worktrees/feat"]));
+        d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/.argus/worktrees/feat"]));
 
         let paths = checkout_paths(&d);
         assert_eq!(paths.len(), 2, "discovered worktree should join the tree: {paths:?}");
@@ -1116,7 +1116,7 @@ mod tests {
     }
 
     #[test]
-    fn reconcile_drops_a_worktree_removed_outside_orion() {
+    fn reconcile_drops_a_worktree_removed_outside_argus() {
         let d = daemon_with_primary("/repo");
         d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
         assert_eq!(checkout_paths(&d).len(), 2);
@@ -1233,7 +1233,7 @@ mod tests {
     fn startup_sweeps_hooks_left_by_a_previous_daemon() {
         // Regression: a daemon's ephemeral port dies with it, so hooks left
         // in a checkout fire against nobody — and break every later agent
-        // run in that directory, Orion-managed or not.
+        // run in that directory, Argus-managed or not.
         let dir = tempfile::tempdir().unwrap();
         crate::hooks::install_claude_hooks(dir.path(), PaneId(4), 65140, "old").unwrap();
         assert!(settings_of(dir.path()).exists());
@@ -1357,7 +1357,7 @@ mod tests {
     }
 
     #[test]
-    fn a_worktree_made_outside_orion_is_discovered_against_a_real_repo() {
+    fn a_worktree_made_outside_argus_is_discovered_against_a_real_repo() {
         let dir = tempfile::tempdir().unwrap();
         let repo = real_repo(dir.path());
 
@@ -1387,7 +1387,7 @@ mod tests {
 
     // --- workspaces ---------------------------------------------------------
 
-    /// `ORION_CONFIG_DIR` is process-global, so tests that read or write
+    /// `ARGUS_CONFIG_DIR` is process-global, so tests that read or write
     /// config take this lock and restore the variable afterwards.
     static CONFIG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -1396,12 +1396,12 @@ mod tests {
     fn with_temp_config<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
         let _guard = CONFIG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().unwrap();
-        let previous = std::env::var_os("ORION_CONFIG_DIR");
-        std::env::set_var("ORION_CONFIG_DIR", dir.path());
+        let previous = std::env::var_os("ARGUS_CONFIG_DIR");
+        std::env::set_var("ARGUS_CONFIG_DIR", dir.path());
         let out = f(dir.path());
         match previous {
-            Some(v) => std::env::set_var("ORION_CONFIG_DIR", v),
-            None => std::env::remove_var("ORION_CONFIG_DIR"),
+            Some(v) => std::env::set_var("ARGUS_CONFIG_DIR", v),
+            None => std::env::remove_var("ARGUS_CONFIG_DIR"),
         }
         out
     }

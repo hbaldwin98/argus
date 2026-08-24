@@ -1,5 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, MouseButton, MouseEvent, MouseEventKind};
-use orion_protocol::{
+use argus_protocol::{
     CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, ProjectInfo, ServerMsg, WorkspaceId,
     WorkspaceInfo,
 };
@@ -8,7 +8,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::grid::Grid;
 use crate::review::{Anchor, ReviewView};
-use orion_protocol::ReviewBase;
+use argus_protocol::ReviewBase;
 use crate::theme::Theme;
 use crate::keys::{encode_key, is_leader};
 use crate::mouse::encode_mouse;
@@ -430,7 +430,7 @@ impl App {
     }
 
     /// Typed at the agent as if by hand, so it works with any harness
-    /// rather than needing one to know about Orion.
+    /// rather than needing one to know about Argus.
     fn send_to_agent(&mut self, message: String) {
         let Some(pane) = self.agent_in_current_checkout() else {
             self.status = "no agent running in this checkout".to_string();
@@ -452,7 +452,7 @@ impl App {
             .find(|c| c.id == checkout)?
             .panes
             .iter()
-            .find(|p| p.kind == orion_protocol::PaneKind::Agent)
+            .find(|p| p.kind == argus_protocol::PaneKind::Agent)
             .map(|p| p.id)
     }
 
@@ -542,7 +542,7 @@ impl App {
 
     /// Opens a confirmation to remove the selected checkout. Refused
     /// client-side for the primary checkout — the repo the user already
-    /// had, not Orion's to delete — so there's no round-trip just to be
+    /// had, not Argus's to delete — so there's no round-trip just to be
     /// told no (the daemon refuses it too, as defense in depth).
     fn remove_checkout_prompt(&mut self) {
         if self.focus != Focus::Checkouts {
@@ -819,7 +819,7 @@ fn in_rect(area: Rect, x: u16, y: u16) -> bool {
 mod tests {
     use super::*;
     use crossterm::event::KeyModifiers;
-    use orion_protocol::{Cell, CellSpan, CheckoutId, GitStatus, PaneKind, PaneStatus, ProjectId};
+    use argus_protocol::{Cell, CellSpan, CheckoutId, GitStatus, PaneKind, PaneStatus, ProjectId};
     use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 
     fn pane(id: u64, title: &str) -> PaneInfo {
@@ -848,7 +848,7 @@ mod tests {
         vec![
             ProjectInfo {
                 id: ProjectId(1),
-                name: "orion".to_string(),
+                name: "argus".to_string(),
                 checkouts: vec![
                     checkout(10, "master", true, vec![pane(100, "shell"), pane(101, "claude")]),
                     checkout(11, "feat", false, vec![]),
@@ -910,7 +910,7 @@ mod tests {
     fn starts_focused_on_projects() {
         let h = Harness::new();
         assert_eq!(h.app.focus, Focus::Projects);
-        assert_eq!(h.app.current_project().unwrap().name, "orion");
+        assert_eq!(h.app.current_project().unwrap().name, "argus");
     }
 
     #[test]
@@ -1600,12 +1600,12 @@ mod tests {
 
     // --- workspaces ---------------------------------------------------------
 
-    fn workspaces(open: &str) -> Vec<orion_protocol::WorkspaceInfo> {
+    fn workspaces(open: &str) -> Vec<argus_protocol::WorkspaceInfo> {
         ["default", "work", "weekend"]
             .iter()
             .enumerate()
-            .map(|(i, name)| orion_protocol::WorkspaceInfo {
-                id: orion_protocol::WorkspaceId(i as u64 + 1),
+            .map(|(i, name)| argus_protocol::WorkspaceInfo {
+                id: argus_protocol::WorkspaceId(i as u64 + 1),
                 name: name.to_string(),
                 projects: i + 1,
                 panes: i,
@@ -1645,7 +1645,7 @@ mod tests {
 
         match &h.sent()[0] {
             ClientMsg::OpenWorkspace { workspace } => {
-                assert_eq!(*workspace, orion_protocol::WorkspaceId(2), "the 'work' row");
+                assert_eq!(*workspace, argus_protocol::WorkspaceId(2), "the 'work' row");
             }
             other => panic!("unexpected {other:?}"),
         }
@@ -1685,8 +1685,8 @@ mod tests {
         // The zero-config case. A picker offering a single choice is just a
         // keystroke that does nothing, so say so instead.
         let mut h = Harness::new();
-        h.app.on_server_msg(ServerMsg::Workspaces(vec![orion_protocol::WorkspaceInfo {
-            id: orion_protocol::WorkspaceId(1),
+        h.app.on_server_msg(ServerMsg::Workspaces(vec![argus_protocol::WorkspaceInfo {
+            id: argus_protocol::WorkspaceId(1),
             name: "default".to_string(),
             projects: 1,
             panes: 0,
@@ -1719,25 +1719,25 @@ mod tests {
     }
     // --- review -------------------------------------------------------------
 
-    fn diff_of(checkout: CheckoutId) -> orion_protocol::Review {
-        orion_protocol::Review {
+    fn diff_of(checkout: CheckoutId) -> argus_protocol::Review {
+        argus_protocol::Review {
             checkout,
-            base: orion_protocol::ReviewBase::WorkingTree,
-            files: vec![orion_protocol::FileDiff {
+            base: argus_protocol::ReviewBase::WorkingTree,
+            files: vec![argus_protocol::FileDiff {
                 path: "src/a.rs".to_string(),
                 old_path: None,
-                kind: orion_protocol::ChangeKind::Modified,
-                hunks: vec![orion_protocol::Hunk {
+                kind: argus_protocol::ChangeKind::Modified,
+                hunks: vec![argus_protocol::Hunk {
                     header: "@@ -1,2 +1,2 @@".to_string(),
                     lines: vec![
-                        orion_protocol::DiffLine {
-                            kind: orion_protocol::LineKind::Context,
+                        argus_protocol::DiffLine {
+                            kind: argus_protocol::LineKind::Context,
                             old_lineno: Some(1),
                             new_lineno: Some(1),
                             text: "keep".to_string(),
                         },
-                        orion_protocol::DiffLine {
-                            kind: orion_protocol::LineKind::Added,
+                        argus_protocol::DiffLine {
+                            kind: argus_protocol::LineKind::Added,
                             old_lineno: None,
                             new_lineno: Some(2),
                             text: "new".to_string(),
@@ -1750,7 +1750,7 @@ mod tests {
     }
 
     /// Presses `R` on the first checkout and answers with `review`.
-    fn open_review(h: &mut Harness, review: orion_protocol::Review) {
+    fn open_review(h: &mut Harness, review: argus_protocol::Review) {
         h.key(KeyCode::Char('l'));
         h.key(KeyCode::Char('R'));
         h.sent();
@@ -1812,9 +1812,9 @@ mod tests {
         let checkout = h.app.tree[0].checkouts[0].id;
         open_review(
             &mut h,
-            orion_protocol::Review {
+            argus_protocol::Review {
                 checkout,
-                base: orion_protocol::ReviewBase::WorkingTree,
+                base: argus_protocol::ReviewBase::WorkingTree,
                 files: Vec::new(),
             },
         );
@@ -2047,7 +2047,7 @@ mod tests {
 
         match &h.sent()[0] {
             ClientMsg::Review { base, .. } => {
-                assert_eq!(*base, orion_protocol::ReviewBase::BranchPoint)
+                assert_eq!(*base, argus_protocol::ReviewBase::BranchPoint)
             }
             other => panic!("unexpected {other:?}"),
         }
@@ -2064,7 +2064,7 @@ mod tests {
         h.key(KeyCode::Char('R'));
         match &h.sent()[0] {
             ClientMsg::Review { base, .. } => {
-                assert_eq!(*base, orion_protocol::ReviewBase::BranchPoint)
+                assert_eq!(*base, argus_protocol::ReviewBase::BranchPoint)
             }
             other => panic!("unexpected {other:?}"),
         }

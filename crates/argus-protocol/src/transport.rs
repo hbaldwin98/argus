@@ -23,7 +23,7 @@ mod imp {
     use tokio::net::{UnixListener, UnixStream};
 
     pub fn socket_path() -> PathBuf {
-        runtime_dir().join("orion.sock")
+        runtime_dir().join("argus.sock")
     }
 
     pub struct Listener(UnixListener);
@@ -61,7 +61,7 @@ mod imp {
 
     pub fn pipe_name() -> String {
         let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-        format!(r"\\.\pipe\orion-{user}")
+        format!(r"\\.\pipe\argus-{user}")
     }
 
     pub struct Listener {
@@ -97,7 +97,7 @@ mod imp {
                 }
             }
         }
-        Err(last_err.unwrap_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "could not open orion pipe")))
+        Err(last_err.unwrap_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "could not open argus pipe")))
     }
 
     pub fn is_daemon_listening() -> bool {
