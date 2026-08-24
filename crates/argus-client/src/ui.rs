@@ -46,6 +46,11 @@ pub const ROW_HEIGHT: u16 = 2;
 /// edge. Without it the cards touch and stop reading as separate surfaces.
 const GUTTER_COLS: u16 = 1;
 
+/// A dragged column cannot be collapsed beyond this outer width. The
+/// renderer scales the floor down only when the terminal itself is too
+/// narrow to fit four such columns.
+pub const MIN_COLUMN_WIDTH: u16 = 8;
+
 /// One list item: what it is, a dimmer line of what's true about it, and
 /// an optional count pinned to the right of the name line. The badge is
 /// there because these columns are narrow — a count appended to the detail
@@ -104,15 +109,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
 /// visible next to the rest of the tree instead of taking over the screen.
 fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
     let th = app.theme;
+    let constraints = column_constraints(area.width, app.column_widths);
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .spacing(GUTTER_COLS)
-        .constraints([
-            Constraint::Percentage(20),
-            Constraint::Percentage(21),
-            Constraint::Percentage(21),
-            Constraint::Percentage(38),
-        ])
+        .constraints(constraints)
         .split(area);
 
     let project_rows: Vec<Item> = app
@@ -267,6 +268,41 @@ a  agent",
     render_content(f, app, cols[3], th);
 }
 
+fn column_constraints(total_width: u16, preferred: Option<[u16; 4]>) -> [Constraint; 4] {
+    let Some(mut widths) = preferred else {
+        return [
+            Constraint::Percentage(20),
+            Constraint::Percentage(21),
+            Constraint::Percentage(21),
+            Constraint::Percentage(38),
+        ];
+    };
+
+    let available = total_width.saturating_sub(GUTTER_COLS * 3);
+    if available == 0 {
+        return [Constraint::Length(0); 4];
+    }
+    let floor = MIN_COLUMN_WIDTH.min(available / 4).max(1);
+    for width in &mut widths {
+        *width = (*width).max(floor);
+    }
+
+    let mut sum: u16 = widths.iter().copied().sum();
+    if sum < available {
+        widths[3] = widths[3].saturating_add(available - sum);
+    } else {
+        for width in widths.iter_mut().rev() {
+            if sum <= available {
+                break;
+            }
+            let take = (sum - available).min(width.saturating_sub(floor));
+            *width -= take;
+            sum -= take;
+        }
+    }
+    widths.map(Constraint::Length)
+}
+
 /// Renders one bordered column of rows and returns its inner (post-border)
 /// area, so the caller can hit-test mouse clicks against the same rows.
 #[allow(clippy::too_many_arguments)]
@@ -280,7 +316,7 @@ fn render_column(
     empty_hint: &str,
     th: Theme,
 ) -> Panel {
-    let block = panel_block(title, focused, th);
+    let block = panel_block(title, focused, th, area.width);
     let inner = block.inner(area);
     let panel = Panel { outer: area, inner };
     f.render_widget(block, area);
@@ -355,6 +391,9 @@ fn render_row(f: &mut Frame, area: Rect, item: Item, selected: bool, focused: bo
     let mut detail = vec![Span::styled(GUTTER, bar), Span::styled("  ", bar)];
     detail.extend(lift(item.detail, bar, selected, th));
 
+    let name = ellipsize_spans(name, area.width as usize);
+    let detail = ellipsize_spans(detail, area.width as usize);
+
     f.render_widget(
         Paragraph::new(vec![Line::from(name), Line::from(detail)]).style(bar),
         area,
@@ -364,7 +403,7 @@ fn render_row(f: &mut Frame, area: Rect, item: Item, selected: bool, focused: bo
 /// A padded card. Focus has to be unmissable at a glance, so the focused
 /// panel is lifted a step in elevation and given an accent border and
 /// title, against the unfocused panels' receding edge and muted label.
-fn panel_block(title: &str, focused: bool, th: Theme) -> Block<'_> {
+fn panel_block(title: &str, focused: bool, th: Theme, width: u16) -> Block<'_> {
     let (border, label, fill) = if focused {
         (
             Style::default().fg(th.accent),
@@ -387,7 +426,47 @@ fn panel_block(title: &str, focused: bool, th: Theme) -> Block<'_> {
         .style(Style::default().bg(fill))
         // The inner gutter is what stops text from sitting on the border.
         .padding(Padding::new(1, 1, 1, 0))
-        .title(Span::styled(format!(" {title} "), label))
+        .title(Span::styled(
+            format!(
+                " {} ",
+                ellipsize_text(title, width.saturating_sub(4) as usize)
+            ),
+            label,
+        ))
+}
+
+fn ellipsize_text(text: &str, width: usize) -> String {
+    ellipsize_spans(vec![Span::raw(text.to_string())], width)
+        .into_iter()
+        .map(|span| span.content.into_owned())
+        .collect()
+}
+
+fn ellipsize_spans<'a>(spans: Vec<Span<'a>>, width: usize) -> Vec<Span<'a>> {
+    if spans.iter().map(Span::width).sum::<usize>() <= width {
+        return spans;
+    }
+    if width == 0 {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    let mut remaining = width - 1;
+    let mut ellipsis_style = Style::default();
+    'spans: for span in spans {
+        let style = span.style;
+        ellipsis_style = style;
+        for ch in span.content.chars() {
+            let cell_width = Span::raw(ch.to_string()).width();
+            if cell_width > remaining {
+                break 'spans;
+            }
+            out.push(Span::styled(ch.to_string(), style));
+            remaining -= cell_width;
+        }
+    }
+    out.push(Span::styled("…", ellipsis_style));
+    out
 }
 
 /// Shrinks a rect by `n` on every side, clamping rather than underflowing.
@@ -418,7 +497,7 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     // PaneContent lights it up — merely selecting a pane does not.
     let focused = app.focus == Focus::PaneContent;
     let title = content_title(app);
-    let block = panel_block(&title, focused, th);
+    let block = panel_block(&title, focused, th, area.width);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -647,7 +726,7 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     };
 
     f.render_widget(Clear, popup);
-    let block = panel_block(&title, true, th);
+    let block = panel_block(&title, true, th, popup.width);
     let inner = block.inner(popup);
     f.render_widget(block, popup);
     app.layout.overlay = Panel {
@@ -767,7 +846,7 @@ fn render_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     let popup = centered_rect(width, height, area);
 
     f.render_widget(Clear, popup);
-    let block = panel_block(picker.title, true, th);
+    let block = panel_block(picker.title, true, th, popup.width);
     let inner = block.inner(popup);
     f.render_widget(block, popup);
     if inner.height == 0 {
@@ -1456,6 +1535,30 @@ mod tests {
         for title in ["projects", "checkouts", "panes"] {
             assert!(text.contains(title), "{title} column missing while inside a pane");
         }
+    }
+
+    #[test]
+    fn preferred_column_widths_are_used_and_keep_a_minimum() {
+        let mut app = app_with_tree();
+        app.column_widths = Some([2, 30, 20, 45]);
+        draw(&mut app);
+
+        assert_eq!(app.layout.projects.outer.width, MIN_COLUMN_WIDTH);
+        assert_eq!(app.layout.checkouts.outer.width, 30);
+        assert_eq!(app.layout.panes.outer.width, 20);
+        assert_eq!(app.layout.content.outer.width, 37);
+    }
+
+    #[test]
+    fn narrow_row_text_ends_in_an_ellipsis() {
+        let mut app = app_with_tree();
+        app.column_widths = Some([8, 30, 20, 39]);
+        let text = lines(&draw(&mut app)).join("\n");
+
+        assert!(
+            text.contains("● …"),
+            "narrow project name should end in an ellipsis:\n{text}"
+        );
     }
 
     #[test]

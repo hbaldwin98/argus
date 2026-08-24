@@ -253,6 +253,11 @@ pub struct App {
     pub should_quit: bool,
     pub status: String,
     pub layout: Layout,
+    /// Preferred outer widths for the four main columns. `None` uses the
+    /// initial proportional layout; dragging a gutter captures concrete
+    /// widths so the adjustment survives subsequent frames.
+    pub column_widths: Option<[u16; 4]>,
+    resizing_gutter: Option<usize>,
     pub picker: Option<Picker>,
     pub overlay: Option<Overlay>,
     pub settings: crate::settings::Settings,
@@ -324,6 +329,8 @@ impl App {
             status: "j/k move  l/enter open  h/esc back  s: shell  a: agent  n: new  D: rm-checkout  x: close  q: detach"
                 .to_string(),
             layout: Layout::default(),
+            column_widths: None,
+            resizing_gutter: None,
             picker: None,
             overlay: None,
             settings,
@@ -1173,6 +1180,24 @@ impl App {
             }
             return;
         }
+        if matches!(ev.kind, MouseEventKind::Up(MouseButton::Left))
+            && self.resizing_gutter.take().is_some()
+        {
+            return;
+        }
+        if let MouseEventKind::Drag(MouseButton::Left) = ev.kind {
+            if let Some(gutter) = self.resizing_gutter {
+                self.resize_columns_at(gutter, ev.column);
+                return;
+            }
+        }
+        if let MouseEventKind::Down(MouseButton::Left) = ev.kind {
+            if let Some(gutter) = self.gutter_at(ev.column, ev.row) {
+                self.column_widths = Some(self.rendered_column_widths());
+                self.resizing_gutter = Some(gutter);
+                return;
+            }
+        }
         // The live view is always visible in the rightmost column, so a
         // click landing on it both forwards to the child and (for presses)
         // switches into typing mode, regardless of what was focused before.
@@ -1195,6 +1220,60 @@ impl App {
             MouseEventKind::ScrollDown => self.scroll_at(ev.column, ev.row, 1),
             _ => {}
         }
+    }
+
+    fn panels(&self) -> [Panel; 4] {
+        [
+            self.layout.projects,
+            self.layout.checkouts,
+            self.layout.panes,
+            self.layout.content,
+        ]
+    }
+
+    fn rendered_column_widths(&self) -> [u16; 4] {
+        self.panels().map(|panel| panel.outer.width)
+    }
+
+    /// Returns the blank separator under the pointer. Separators remain one
+    /// cell wide, which gives dragging an unambiguous target without taking
+    /// clicks away from either panel's border.
+    fn gutter_at(&self, x: u16, y: u16) -> Option<usize> {
+        let panels = self.panels();
+        panels.windows(2).position(|pair| {
+            let left = pair[0].outer;
+            let right = pair[1].outer;
+            let left_edge = left.x.saturating_add(left.width);
+            x >= left_edge
+                && x < right.x
+                && y >= left.y.max(right.y)
+                && y
+                    < left
+                        .y
+                        .saturating_add(left.height)
+                        .min(right.y.saturating_add(right.height))
+        })
+    }
+
+    fn resize_columns_at(&mut self, gutter: usize, x: u16) {
+        let panels = self.panels();
+        let left = panels[gutter].outer;
+        let right = panels[gutter + 1].outer;
+        let pair_width = left.width.saturating_add(right.width);
+        if pair_width < 2 {
+            return;
+        }
+
+        // On very small terminals the effective floor scales down, but a
+        // column always retains at least one cell instead of disappearing.
+        let floor = crate::ui::MIN_COLUMN_WIDTH.min(pair_width / 2).max(1);
+        let left_width = x
+            .saturating_sub(left.x)
+            .clamp(floor, pair_width.saturating_sub(floor));
+        let rendered = self.rendered_column_widths();
+        let widths = self.column_widths.get_or_insert(rendered);
+        widths[gutter] = left_width;
+        widths[gutter + 1] = pair_width - left_width;
     }
 
     /// Scroll-wheel selection change for whichever list column the cursor is
@@ -2244,6 +2323,57 @@ mod tests {
         };
     }
 
+    fn drag(x: u16, y: u16) -> MouseEvent {
+        MouseEvent {
+            kind: MouseEventKind::Drag(MouseButton::Left),
+            column: x,
+            row: y,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn dragging_a_gutter_resizes_the_two_adjacent_columns() {
+        let mut h = Harness::new();
+        let panel = |x: u16, w: u16| Panel {
+            outer: Rect::new(x, 0, w, 8),
+            inner: Rect::new(x + 1, 1, w.saturating_sub(2), 6),
+        };
+        h.app.layout = Layout {
+            projects: panel(0, 12),
+            checkouts: panel(13, 12),
+            panes: panel(26, 12),
+            content: panel(39, 20),
+            overlay: Panel::default(),
+        };
+
+        h.app.on_mouse(click(12, 3));
+        h.app.on_mouse(drag(16, 3));
+
+        assert_eq!(h.app.column_widths, Some([16, 8, 12, 20]));
+    }
+
+    #[test]
+    fn dragging_a_gutter_cannot_collapse_either_column() {
+        let mut h = Harness::new();
+        let panel = |x: u16, w: u16| Panel {
+            outer: Rect::new(x, 0, w, 8),
+            inner: Rect::new(x + 1, 1, w.saturating_sub(2), 6),
+        };
+        h.app.layout = Layout {
+            projects: panel(0, 12),
+            checkouts: panel(13, 12),
+            panes: panel(26, 12),
+            content: panel(39, 20),
+            overlay: Panel::default(),
+        };
+
+        h.app.on_mouse(click(12, 3));
+        h.app.on_mouse(drag(30, 3));
+
+        assert_eq!(h.app.column_widths, Some([16, 8, 12, 20]));
+    }
+
     #[test]
     fn clicking_a_row_selects_it_and_focuses_that_column() {
         let mut h = Harness::new();
@@ -2343,6 +2473,26 @@ mod tests {
         assert!(
             h.sent().iter().any(|m| matches!(m, ClientMsg::Input { .. })),
             "the child gets the click too"
+        );
+    }
+
+    #[test]
+    fn releasing_in_the_live_view_is_forwarded_when_not_resizing() {
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        h.app.on_mouse(MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: 40,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        });
+
+        assert!(
+            h.sent().iter().any(|message| matches!(
+                message,
+                ClientMsg::Input { bytes, .. } if bytes.ends_with(b"m")
+            )),
+            "the child gets an ordinary release"
         );
     }
 
