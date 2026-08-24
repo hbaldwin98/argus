@@ -145,9 +145,14 @@ fn handle_client_msg(
             });
             Ok(())
         }
-        ClientMsg::OpenInEditor { checkout, path, line } => {
-            daemon.spawn_editor(checkout, &path, line).map(|_| ())
-        }
+        ClientMsg::OpenInEditor {
+            checkout,
+            path,
+            line,
+            external,
+        } => daemon
+            .spawn_editor(checkout, &path, line, external)
+            .map(|_| ()),
         ClientMsg::Review { checkout, base } => daemon.checkout_path(checkout).map(|path| {
             let out_tx = out_tx.clone();
             tokio::task::spawn_blocking(move || {
@@ -371,6 +376,7 @@ mod tests {
             checkout,
             path: "../escape.rs".to_string(),
             line: None,
+            external: false,
         });
         assert!(h.error().contains("inside the checkout"), "{}", h.error());
     }

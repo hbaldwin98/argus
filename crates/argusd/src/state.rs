@@ -342,6 +342,7 @@ impl Daemon {
         checkout: CheckoutId,
         rel_path: &str,
         line: Option<u32>,
+        external: bool,
     ) -> anyhow::Result<PaneId> {
         let path = self.checkout_path(checkout)?;
         // Rejected here rather than trusted: `path` is spawned into a
@@ -359,6 +360,18 @@ impl Daemon {
         let editor = crate::editor::resolve();
         let argv = crate::editor::command(&editor, rel_path, line);
         let (program, args) = argv.split_first().expect("never empty");
+
+        if external {
+            // No pty and no pane: this editor brings its own window, and
+            // Argus has nothing to draw for it. Detached so closing the
+            // daemon doesn't take the user's editor with it.
+            crate::command::detached(program)
+                .args(args)
+                .current_dir(&path)
+                .spawn()
+                .map_err(|e| anyhow::anyhow!("could not start {program}: {e}"))?;
+            return Ok(PaneId(0));
+        }
 
         let id = {
             let mut inner = self.inner.lock().unwrap();
@@ -1721,7 +1734,7 @@ mod tests {
             r"C:\Windows\x",
         ] {
             assert!(
-                d.spawn_editor(checkout, bad, None).is_err(),
+                d.spawn_editor(checkout, bad, None, false).is_err(),
                 "{bad:?} should be refused"
             );
         }

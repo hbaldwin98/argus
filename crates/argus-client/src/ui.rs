@@ -28,7 +28,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget, Wrap};
 use ratatui::Frame;
 
-use crate::app::{App, Focus, Panel, PickerKind, Prompt};
+use crate::app::{App, Focus, Overlay, Panel, PickerKind, Prompt, Setting};
 use crate::grid::Grid;
 use crate::review::{Row, ReviewView};
 use crate::theme::Theme;
@@ -87,6 +87,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     render_columns(f, app, root[0]);
     render_status(f, app, root[1], th);
+
+    // Above the columns, below the modals: a picker opened from an
+    // overlay still has to be reachable.
+    render_overlay(f, app, page, th);
 
     if app.picker.is_some() {
         render_picker(f, app, f.area(), th);
@@ -566,6 +570,10 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         ("type to edit   enter confirm   esc cancel", th.dim)
     } else if app.leader_pending {
         ("leader…   esc back to panes   x close pane", th.accent)
+    } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
+        ("j/k move   h/l change   esc close", th.dim)
+    } else if app.overlay.is_some() {
+        ("floating — ctrl-space then esc to close, x to kill", th.dim)
     } else if app.focus == Focus::Review {
         ("j/k  ]/[ file  f jump  v range  c comment  e edit  b base  esc close", th.dim)
     } else if app.focus == Focus::PaneContent {
@@ -574,7 +582,7 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         // Per column rather than one list of everything: the bar cannot
         // hold every key at once, and most of them only apply somewhere.
         let keys = match app.focus {
-            Focus::Projects => "j/k move  l open  n add project  w wksp  t theme  q detach",
+            Focus::Projects => "j/k move  l open  n add project  w wksp  S settings  q detach",
             Focus::Checkouts => {
                 "j/k move  l open  b branch  f file  R review  n worktree  D rm  q detach"
             }
@@ -624,6 +632,108 @@ fn breadcrumb(app: &App) -> String {
         Focus::Projects => "projects".to_string(),
         _ => content_title(app),
     }
+}
+
+/// How much of the screen a floating window takes. Big enough that vim is
+/// usable, small enough that the tree still frames it — losing your place
+/// is the thing the whole layout exists to prevent.
+const OVERLAY_FRACTION: (u16, u16) = (82, 78);
+
+fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    let Some(overlay) = &app.overlay else {
+        app.layout.overlay = Panel::default();
+        return;
+    };
+
+    let width = (area.width * OVERLAY_FRACTION.0 / 100).max(20.min(area.width));
+    let height = (area.height * OVERLAY_FRACTION.1 / 100).max(6.min(area.height));
+    let popup = centered_rect(width, height, area);
+
+    let title = match overlay {
+        Overlay::Pane { title, .. } => title.clone(),
+        Overlay::Settings { .. } => "settings".to_string(),
+    };
+
+    f.render_widget(Clear, popup);
+    let block = panel_block(&title, true, th);
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    app.layout.overlay = Panel {
+        outer: popup,
+        inner,
+    };
+
+    match overlay {
+        Overlay::Pane { .. } => {
+            f.render_widget(TermView { grid: &app.grid }, inner);
+        }
+        Overlay::Settings { sel } => render_settings(f, app, inner, *sel, th),
+    }
+}
+
+/// Each setting gets a name, its current value, and a line saying what
+/// choosing it does — the reason a panel exists rather than another picker.
+fn render_settings(f: &mut Frame, app: &App, area: Rect, sel: usize, th: Theme) {
+    let mut lines: Vec<Line> = Vec::new();
+    for (i, setting) in Setting::ALL.iter().enumerate() {
+        let selected = i == sel;
+        let bar = if selected {
+            Style::default().bg(th.sel_bg)
+        } else {
+            Style::default()
+        };
+        let (value, detail) = match setting {
+            Setting::Editor => (
+                app.settings.editor.label().to_string(),
+                app.settings.editor.detail().to_string(),
+            ),
+            Setting::Theme => (
+                app.settings.theme.clone(),
+                "colours for the whole client".to_string(),
+            ),
+        };
+
+        let marker = if selected {
+            Span::styled(MARKER, Style::default().fg(th.accent).patch(bar))
+        } else {
+            Span::styled(GUTTER, bar)
+        };
+        lines.push(Line::from(vec![
+            marker,
+            Span::styled(
+                format!(" {:<16}", setting.label()),
+                Style::default().fg(th.text).patch(bar),
+            ),
+            Span::styled("‹ ", Style::default().fg(th.dim).patch(bar)),
+            Span::styled(
+                value,
+                Style::default()
+                    .fg(th.accent)
+                    .add_modifier(Modifier::BOLD)
+                    .patch(bar),
+            ),
+            Span::styled(" ›", Style::default().fg(th.dim).patch(bar)),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled(GUTTER, bar),
+            Span::styled(
+                format!("  {detail}"),
+                Style::default().fg(th.dim).patch(bar),
+            ),
+        ]));
+        lines.push(Line::raw(""));
+    }
+
+    lines.push(Line::from(vec![Span::styled(
+        " changes save as you make them",
+        Style::default().fg(th.dim).add_modifier(Modifier::ITALIC),
+    )]));
+    lines.push(Line::from(vec![Span::styled(
+        format!(" {}", crate::settings::path().display()),
+        Style::default().fg(th.dim),
+    )]));
+
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), area);
 }
 
 /// Rows a fuzzy picker will show at once. Past this it scrolls, so a
@@ -1453,7 +1563,9 @@ mod tests {
         let mut app = app_with_tree();
         app.theme = Theme::default();
         let mut p = crate::app::Picker::new(
-            PickerKind::Branch { checkout: CheckoutId(10) },
+            PickerKind::Branch {
+                checkout: CheckoutId(10),
+            },
             "switch branch",
             ["feature/login", "feature/logout", "hotfix", "release/2.1"]
                 .iter()
@@ -1463,6 +1575,17 @@ mod tests {
         );
         p.type_query("log");
         app.picker = Some(p);
+
+        for line in lines(&draw_at(&mut app, 100, 20)) {
+            println!("|{line}");
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_settings() {
+        let mut app = app_with_tree();
+        app.open_settings();
         for line in lines(&draw_at(&mut app, 100, 20)) {
             println!("|{line}");
         }

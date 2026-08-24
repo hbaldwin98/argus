@@ -32,6 +32,25 @@ pub fn git() -> tokio::process::Command {
     cmd
 }
 
+/// A process that outlives the daemon and owns whatever window it makes:
+/// a GUI editor the user asked for. Its stdio goes nowhere, since nothing
+/// here will ever read it.
+pub fn detached(program: &str) -> std::process::Command {
+    let mut cmd = std::process::Command::new(program);
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // DETACHED_PROCESS: no console of its own, and not tied to one the
+        // daemon doesn't have anyway.
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        cmd.creation_flags(DETACHED_PROCESS);
+    }
+    cmd
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

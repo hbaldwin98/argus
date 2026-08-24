@@ -92,6 +92,20 @@ Target: ~1.5 MB resident per idle pane, ~40 MB daemon with 16 panes, ~25 MB clie
 
 ## 4. The three levels
 
+**Floating windows.** Some things do not fit a 38%-wide column: a terminal editor, and a
+settings panel with room to say what each option does. Those open as an overlay — a large panel
+above the columns, with the tree still framing it, because losing your place is what the whole
+layout exists to prevent. An overlay holding a pane takes over the live subscription while it is
+up (the protocol carries one per connection) and hands it back on close; the pty is sized from
+wherever the pane is actually drawn, so a floating vim gets the floating window's dimensions.
+Every key belongs to the editor while it is up, `q` included — the leader is the way out.
+
+`S` opens settings. Changes apply and save as they are made, to `client.toml` beside the
+daemon's `projects.toml`: what exists is the daemon's business, how one client draws is not.
+`editor opens` chooses between the floating window (the default), the rightmost column, and
+outside Argus entirely — the last spawns detached with no pty, for editors that bring their own
+window.
+
 **Fuzzy pickers.** `b` switches branch, `f` opens a file, and `f` inside the review jumps to a
 changed file. All three filter as you type. Ranking is `nucleo-matcher` — fzf's algorithm as a
 library — and the file list comes from `ignore`, the crate ripgrep and fd are built on, so

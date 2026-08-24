@@ -59,18 +59,7 @@ pub fn default_agents() -> Vec<AgentConfig> {
         .collect()
 }
 
-/// Where Argus keeps its configuration. `ARGUS_CONFIG_DIR` overrides the
-/// platform location — needed by tests, which must not read or scribble on
-/// the real user's config, and handy for running a throwaway instance
-/// alongside a real one.
-pub fn config_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("ARGUS_CONFIG_DIR") {
-        return PathBuf::from(dir);
-    }
-    directories::ProjectDirs::from("", "", "argus")
-        .map(|d| d.config_dir().to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("."))
-}
+pub use argus_protocol::config_dir;
 
 pub fn config_path() -> PathBuf {
     config_dir().join("projects.toml")

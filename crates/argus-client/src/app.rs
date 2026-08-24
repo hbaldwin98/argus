@@ -22,6 +22,8 @@ pub enum Focus {
     PaneContent,
     /// A mode of the rightmost column, not a fifth column of its own.
     Review,
+    /// A floating window over everything else — see [`Overlay`].
+    Overlay,
 }
 
 /// One rendered panel: the whole card, and the padded area its rows live
@@ -41,6 +43,8 @@ pub struct Layout {
     pub checkouts: Panel,
     pub panes: Panel,
     pub content: Panel,
+    /// Zero-sized when no overlay is up.
+    pub overlay: Panel,
 }
 
 /// What confirming a picker selection does. The picker is one widget with
@@ -159,6 +163,48 @@ impl Picker {
     }
 }
 
+/// A window floating above the columns, for things the four-column spine
+/// has no room for. Unlike a picker it can be large and can hold a live
+/// pane: a terminal editor in a 38%-wide column is unusable, and the whole
+/// point of `$EDITOR` support is that it be usable.
+///
+/// It floats rather than replacing the columns — the tree stays visible
+/// around the edges, which is the same rule every other view here follows.
+pub enum Overlay {
+    /// A pty pane, drawn large. The title is carried rather than looked up
+    /// so it survives the pane leaving the tree.
+    Pane { pane: PaneId, title: String },
+    /// Preferences, with room to say what each one does.
+    Settings { sel: usize },
+}
+
+impl Overlay {
+    fn pane(&self) -> Option<PaneId> {
+        match self {
+            Overlay::Pane { pane, .. } => Some(*pane),
+            Overlay::Settings { .. } => None,
+        }
+    }
+}
+
+/// The rows of the settings panel, in the order they are drawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Setting {
+    Editor,
+    Theme,
+}
+
+impl Setting {
+    pub const ALL: &'static [Setting] = &[Setting::Editor, Setting::Theme];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Setting::Editor => "editor opens",
+            Setting::Theme => "theme",
+        }
+    }
+}
+
 /// A modal text/confirm prompt, mutually exclusive with `Picker`. Both new
 /// worktree (free text) and remove-checkout (yes/no) go through this so
 /// there's one input path and one place `on_mouse` has to know to ignore.
@@ -190,6 +236,14 @@ pub struct App {
     pub status: String,
     pub layout: Layout,
     pub picker: Option<Picker>,
+    pub overlay: Option<Overlay>,
+    pub settings: crate::settings::Settings,
+    /// False for an app that must not write to the user's config — every
+    /// test, and anything constructed with [`App::new`].
+    persist_settings: bool,
+    /// The next pane the daemon tells us about should open in an overlay.
+    /// Set when an editor is spawned for one.
+    pending_overlay_new: bool,
     pub review: Option<ReviewView>,
     /// What the outstanding request was for; a diff for anything else is
     /// stale and dropped.
@@ -210,7 +264,32 @@ pub struct App {
 }
 
 impl App {
+    /// Defaults, and nothing written to disk — an app that cannot touch
+    /// the user's real preferences. `main` uses [`App::with_settings`].
+    #[cfg(test)]
     pub fn new(out: UnboundedSender<ClientMsg>) -> Self {
+        App::build(out, crate::settings::Settings::default(), false)
+    }
+
+    /// The real thing: preferences loaded from disk, and changes saved back.
+    pub fn with_settings(
+        out: UnboundedSender<ClientMsg>,
+        settings: crate::settings::Settings,
+    ) -> Self {
+        App::build(out, settings, true)
+    }
+
+    fn build(
+        out: UnboundedSender<ClientMsg>,
+        settings: crate::settings::Settings,
+        persist: bool,
+    ) -> Self {
+        // The environment still wins, so a one-off `ARGUS_THEME=latte argus`
+        // works without editing anything.
+        let theme = match std::env::var("ARGUS_THEME") {
+            Ok(_) => Theme::from_env(),
+            Err(_) => Theme::by_name(&settings.theme),
+        };
         App {
             tree: Vec::new(),
             templates: Vec::new(),
@@ -228,12 +307,16 @@ impl App {
                 .to_string(),
             layout: Layout::default(),
             picker: None,
+            overlay: None,
+            settings,
+            persist_settings: persist,
+            pending_overlay_new: false,
             review: None,
             review_wanted: None,
             list_wanted: None,
             review_base: ReviewBase::WorkingTree,
             prompt: None,
-            theme: Theme::from_env(),
+            theme,
             pending_focus_new: false,
             pending_focus_new_checkout: false,
             pending_focus_new_project: false,
@@ -281,7 +364,13 @@ impl App {
     /// shows this pane's content alongside the project/checkout columns,
     /// it never takes over the whole screen.
     fn sync_subscription(&mut self) {
-        let want = self.current_pane().map(|p| p.id);
+        // An overlay pane is the live view while it is up: the protocol
+        // carries one subscription per connection, and the floating window
+        // is the one the user is looking at.
+        let want = match &self.overlay {
+            Some(o) => o.pane(),
+            None => self.current_pane().map(|p| p.id),
+        };
         if want == self.subscribed {
             return;
         }
@@ -318,11 +407,19 @@ impl App {
                 }
                 if self.pending_focus_new {
                     self.pending_focus_new = false;
-                    let n = self.current_checkout().map(|c| c.panes.len()).unwrap_or(0);
-                    if n > 0 {
+                    let newest = self
+                        .current_checkout()
+                        .and_then(|c| c.panes.last())
+                        .map(|p| (p.id, p.title.clone()));
+                    if let Some((id, title)) = newest {
+                        let n = self.current_checkout().map(|c| c.panes.len()).unwrap_or(1);
                         self.sel_pane = n - 1;
-                        self.sync_subscription();
-                        self.focus = Focus::PaneContent;
+                        if std::mem::take(&mut self.pending_overlay_new) {
+                            self.open_overlay_pane(id, title);
+                        } else {
+                            self.sync_subscription();
+                            self.focus = Focus::PaneContent;
+                        }
                     }
                 }
             }
@@ -414,6 +511,8 @@ impl App {
             self.on_key_prompt(key);
         } else if self.picker.is_some() {
             self.on_key_picker(key);
+        } else if self.overlay.is_some() {
+            self.on_key_overlay(key);
         } else if self.focus == Focus::Review {
             self.on_key_review(key);
         } else if self.focus == Focus::PaneContent {
@@ -526,6 +625,114 @@ impl App {
         p.sel = (p.sel as isize + delta).clamp(0, last as isize) as usize;
     }
 
+    /// An overlay holding a pane is a typing surface like the content
+    /// column, so the same leader gets you out of it.
+    fn on_key_overlay(&mut self, key: KeyEvent) {
+        if let Some(Overlay::Settings { sel }) = &mut self.overlay {
+            let sel = *sel;
+            match key.code {
+                KeyCode::Char('j') | KeyCode::Down => self.move_setting(1),
+                KeyCode::Char('k') | KeyCode::Up => self.move_setting(-1),
+                KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => self.cycle_setting(sel, 1),
+                KeyCode::Char('h') | KeyCode::Left => self.cycle_setting(sel, -1),
+                KeyCode::Esc | KeyCode::Char('q') => self.close_overlay(),
+                _ => {}
+            }
+            return;
+        }
+        if self.leader_pending {
+            self.leader_pending = false;
+            match key.code {
+                KeyCode::Esc => self.close_overlay(),
+                KeyCode::Char('x') => {
+                    if let Some(pane) = self.overlay.as_ref().and_then(Overlay::pane) {
+                        let _ = self.out.send(ClientMsg::Kill { pane });
+                    }
+                    self.close_overlay();
+                }
+                _ => {}
+            }
+            return;
+        }
+        if is_leader(&key) {
+            self.leader_pending = true;
+            return;
+        }
+        let Some(pane) = self.overlay.as_ref().and_then(Overlay::pane) else {
+            return;
+        };
+        let bytes = encode_key(&key);
+        if !bytes.is_empty() {
+            let _ = self.out.send(ClientMsg::Input { pane, bytes });
+        }
+    }
+
+    /// Where the subscribed pane is actually drawn. The pty is sized from
+    /// this, so it has to follow the pane into a floating window.
+    pub fn live_area(&self) -> Rect {
+        if self.overlay.is_some() {
+            self.layout.overlay.inner
+        } else {
+            self.layout.content.inner
+        }
+    }
+
+    pub fn open_settings(&mut self) {
+        self.overlay = Some(Overlay::Settings { sel: 0 });
+        self.focus = Focus::Overlay;
+    }
+
+    fn move_setting(&mut self, delta: isize) {
+        if let Some(Overlay::Settings { sel }) = &mut self.overlay {
+            let last = Setting::ALL.len() as isize - 1;
+            *sel = (*sel as isize + delta).clamp(0, last) as usize;
+        }
+    }
+
+    /// Changing a setting applies it at once and writes it out — there is
+    /// no separate save, so there is nothing to forget to press.
+    fn cycle_setting(&mut self, sel: usize, delta: isize) {
+        match Setting::ALL.get(sel) {
+            Some(Setting::Editor) => {
+                self.settings.editor = if delta > 0 {
+                    self.settings.editor.next()
+                } else {
+                    self.settings.editor.prev()
+                };
+            }
+            Some(Setting::Theme) => {
+                let themes = crate::theme::THEMES;
+                let here = themes
+                    .iter()
+                    .position(|t| *t == self.settings.theme)
+                    .unwrap_or(0) as isize;
+                let n = themes.len() as isize;
+                let next = ((here + delta) % n + n) % n;
+                self.settings.theme = themes[next as usize].to_string();
+                self.theme = Theme::by_name(&self.settings.theme);
+            }
+            None => return,
+        }
+        if self.persist_settings {
+            crate::settings::save(&self.settings);
+        }
+    }
+
+    /// Opens `pane` in a floating window and moves the live view to it.
+    pub fn open_overlay_pane(&mut self, pane: PaneId, title: String) {
+        self.overlay = Some(Overlay::Pane { pane, title });
+        self.focus = Focus::Overlay;
+        self.sync_subscription();
+    }
+
+    pub fn close_overlay(&mut self) {
+        self.overlay = None;
+        self.leader_pending = false;
+        // Back to whatever the columns were showing, including its grid.
+        self.focus = Focus::Panes;
+        self.sync_subscription();
+    }
+
     fn on_key_pane_content(&mut self, key: KeyEvent) {
         if self.leader_pending {
             self.leader_pending = false;
@@ -561,6 +768,7 @@ impl App {
             KeyCode::Char('D') => self.remove_checkout_prompt(),
             KeyCode::Char('w') => self.open_workspace_picker(),
             KeyCode::Char('t') => self.open_theme_picker(),
+            KeyCode::Char('S') => self.open_settings(),
             KeyCode::Char('b') => self.open_branch_picker(),
             KeyCode::Char('f') => self.open_file_picker(),
             KeyCode::Char('R') | KeyCode::Tab => self.open_review(),
@@ -620,6 +828,19 @@ impl App {
             .map(|p| p.id)
     }
 
+    /// Where the editor about to be spawned should land. Nothing at all
+    /// for an external one: it has no pane to focus.
+    fn want_editor(&mut self) {
+        match self.settings.editor {
+            crate::settings::EditorMode::External => {}
+            crate::settings::EditorMode::Column => self.pending_focus_new = true,
+            crate::settings::EditorMode::Overlay => {
+                self.pending_focus_new = true;
+                self.pending_overlay_new = true;
+            }
+        }
+    }
+
     fn close_review(&mut self) {
         self.review = None;
         self.review_wanted = None;
@@ -663,9 +884,9 @@ impl App {
                         checkout,
                         path: a.path,
                         line: a.start,
+                        external: self.settings.editor.is_external(),
                     });
-                    // The editor needs the column the review is using.
-                    self.pending_focus_new = true;
+                    self.want_editor();
                     self.close_review();
                 }
             }
@@ -840,7 +1061,7 @@ impl App {
             Focus::Projects => &mut self.sel_project,
             Focus::Checkouts => &mut self.sel_checkout,
             Focus::Panes => &mut self.sel_pane,
-            Focus::PaneContent | Focus::Review => return,
+            Focus::PaneContent | Focus::Review | Focus::Overlay => return,
         };
         let new = *sel as i32 + delta;
         if new >= 0 {
@@ -868,7 +1089,7 @@ impl App {
                     self.focus = Focus::PaneContent;
                 }
             }
-            Focus::PaneContent | Focus::Review => {}
+            Focus::PaneContent | Focus::Review | Focus::Overlay => {}
         }
     }
 
@@ -883,7 +1104,7 @@ impl App {
             Focus::Panes => self.focus = Focus::Checkouts,
             Focus::Checkouts => self.focus = Focus::Projects,
             Focus::Projects => {}
-            Focus::Review => self.focus = Focus::Checkouts,
+            Focus::Review | Focus::Overlay => self.focus = Focus::Checkouts,
         }
     }
 
@@ -1001,8 +1222,9 @@ impl App {
                     checkout: *checkout,
                     path: path.to_string(),
                     line: None,
+                    external: self.settings.editor.is_external(),
                 });
-                self.pending_focus_new = true;
+                self.want_editor();
             }
             PickerKind::Change => {
                 let Some(idx) = picker.shown.get(picker.sel).copied() else { return };
@@ -1778,6 +2000,7 @@ mod tests {
             checkouts: panel(12, 12),
             panes: panel(24, 12),
             content: panel(36, 20),
+            overlay: Panel::default(),
         };
     }
 
@@ -2719,6 +2942,245 @@ mod tests {
         open_review(&mut h, diff_of(checkout));
         h.key(KeyCode::Char('f'));
         assert_eq!(h.app.picker.as_ref().unwrap().items, vec!["M src/a.rs"]);
+    }
+
+    // --- floating windows ---------------------------------------------------
+
+    #[test]
+    fn an_overlay_pane_becomes_the_live_view() {
+        // The protocol carries one subscription per connection, so the
+        // floating window has to take it over.
+        let mut h = Harness::new();
+        h.keys("ll"); // watching the column's pane
+        h.sent();
+
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+
+        assert_eq!(h.app.subscribed, Some(PaneId(101)));
+        assert_eq!(h.app.focus, Focus::Overlay);
+        assert!(matches!(
+            h.sent().last(),
+            Some(ClientMsg::Subscribe { pane: PaneId(101) })
+        ));
+    }
+
+    #[test]
+    fn typing_in_a_floating_pane_reaches_its_child() {
+        let mut h = Harness::new();
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.sent();
+
+        h.keys("iabc");
+
+        let typed: Vec<u8> = h
+            .sent()
+            .into_iter()
+            .filter_map(|m| match m {
+                ClientMsg::Input { pane: PaneId(101), bytes } => Some(bytes),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert_eq!(typed, b"iabc");
+    }
+
+    #[test]
+    fn nav_keys_do_not_leak_out_of_a_floating_pane() {
+        // Every key belongs to the editor while it is up — `q` especially.
+        let mut h = Harness::new();
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.keys("q");
+        assert!(!h.app.should_quit, "q is the editor's, not ours");
+        assert!(h.app.overlay.is_some());
+    }
+
+    #[test]
+    fn the_leader_closes_a_floating_pane_and_leaves_it_running() {
+        let mut h = Harness::new();
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.sent();
+
+        h.leader();
+        h.key(KeyCode::Esc);
+
+        assert!(h.app.overlay.is_none());
+        assert!(
+            !h.sent().iter().any(|m| matches!(m, ClientMsg::Kill { .. })),
+            "closing the window must not kill the editor"
+        );
+    }
+
+    #[test]
+    fn the_leader_can_also_kill_the_pane_in_a_floating_window() {
+        let mut h = Harness::new();
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.sent();
+
+        h.leader();
+        h.key(KeyCode::Char('x'));
+
+        assert!(h.sent().iter().any(|m| matches!(m, ClientMsg::Kill { pane } if *pane == PaneId(101))));
+        assert!(h.app.overlay.is_none());
+    }
+
+    #[test]
+    fn closing_a_floating_pane_puts_the_live_view_back_on_the_column() {
+        let mut h = Harness::new();
+        h.keys("ll");
+        h.sent();
+        let was = h.app.subscribed;
+
+        h.app.open_overlay_pane(PaneId(999), "vim".to_string());
+        h.leader();
+        h.key(KeyCode::Esc);
+
+        assert_eq!(h.app.subscribed, was, "back to what the columns show");
+    }
+
+    #[test]
+    fn the_pty_is_sized_from_wherever_the_pane_is_drawn() {
+        // A floating editor sized to the narrow column would wrap wrongly.
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        assert_eq!(h.app.live_area(), h.app.layout.content.inner);
+
+        h.app.open_overlay_pane(PaneId(101), "vim".to_string());
+        h.app.layout.overlay = Panel {
+            outer: Rect::new(2, 1, 40, 20),
+            inner: Rect::new(3, 2, 38, 18),
+        };
+        assert_eq!(h.app.live_area(), h.app.layout.overlay.inner);
+    }
+
+    // --- settings -----------------------------------------------------------
+
+    #[test]
+    fn shift_s_opens_the_settings_panel() {
+        let mut h = Harness::new();
+        h.key(KeyCode::Char('S'));
+        assert!(matches!(h.app.overlay, Some(Overlay::Settings { .. })));
+        assert_eq!(h.app.focus, Focus::Overlay);
+    }
+
+    #[test]
+    fn h_and_l_change_the_setting_under_the_cursor() {
+        let mut h = Harness::new();
+        h.app.open_settings();
+        let before = h.app.settings.editor;
+
+        h.key(KeyCode::Char('l'));
+        assert_eq!(h.app.settings.editor, before.next());
+
+        h.key(KeyCode::Char('h'));
+        assert_eq!(h.app.settings.editor, before, "and back again");
+    }
+
+    #[test]
+    fn changing_the_theme_applies_it_at_once() {
+        // There is no save button, so there is nothing to forget to press.
+        let mut h = Harness::new();
+        h.app.open_settings();
+        h.key(KeyCode::Char('j')); // down to the theme row
+        h.key(KeyCode::Char('l'));
+
+        assert_eq!(h.app.theme, crate::theme::Theme::by_name(&h.app.settings.theme));
+        assert_ne!(h.app.settings.theme, "mocha");
+    }
+
+    #[test]
+    fn the_settings_cursor_stops_at_the_ends() {
+        let mut h = Harness::new();
+        h.app.open_settings();
+        for _ in 0..10 {
+            h.key(KeyCode::Char('j'));
+        }
+        let Some(Overlay::Settings { sel }) = h.app.overlay else {
+            panic!("no settings panel")
+        };
+        assert_eq!(sel, crate::app::Setting::ALL.len() - 1);
+    }
+
+    #[test]
+    fn esc_closes_the_settings_panel() {
+        let mut h = Harness::new();
+        h.app.open_settings();
+        h.key(KeyCode::Esc);
+        assert!(h.app.overlay.is_none());
+    }
+
+    #[test]
+    fn settings_keys_never_reach_a_pane() {
+        // The panel shares the overlay slot with a live editor; leaking a
+        // keystroke into a child would be silent and destructive.
+        let mut h = Harness::new();
+        h.keys("ll");
+        h.sent();
+        h.app.open_settings();
+
+        h.keys("jklh");
+
+        assert!(!h.sent().iter().any(|m| matches!(m, ClientMsg::Input { .. })));
+    }
+
+    // --- where an editor opens ----------------------------------------------
+
+    fn open_editor_from_review(h: &mut Harness) {
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(h, diff_of(checkout));
+        h.key(KeyCode::Char('e'));
+        h.sent();
+        // The daemon answers with a tree carrying the new editor pane.
+        let mut t = tree();
+        t[0].checkouts[0].panes.push(PaneInfo {
+            id: PaneId(700),
+            kind: PaneKind::Editor,
+            title: "a.rs".to_string(),
+            status: PaneStatus::Idle,
+        });
+        h.app.on_server_msg(ServerMsg::Tree(t));
+    }
+
+    #[test]
+    fn an_editor_opens_in_a_floating_window_by_default() {
+        let mut h = Harness::new();
+        open_editor_from_review(&mut h);
+        assert!(matches!(h.app.overlay, Some(Overlay::Pane { pane, .. }) if pane == PaneId(700)));
+    }
+
+    #[test]
+    fn the_column_setting_keeps_the_editor_in_the_column() {
+        let mut h = Harness::new();
+        h.app.settings.editor = crate::settings::EditorMode::Column;
+        open_editor_from_review(&mut h);
+
+        assert!(h.app.overlay.is_none());
+        assert_eq!(h.app.focus, Focus::PaneContent);
+    }
+
+    #[test]
+    fn an_external_editor_asks_the_daemon_not_to_make_a_pane() {
+        let mut h = Harness::new();
+        h.app.settings.editor = crate::settings::EditorMode::External;
+        let checkout = h.app.tree[0].checkouts[0].id;
+        open_review(&mut h, diff_of(checkout));
+        h.key(KeyCode::Char('e'));
+
+        match &h.sent()[0] {
+            ClientMsg::OpenInEditor { external, .. } => assert!(*external),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_external_editor_does_not_steal_focus_when_the_tree_changes() {
+        // It has no pane to focus, and grabbing the newest one would land
+        // the user somewhere arbitrary.
+        let mut h = Harness::new();
+        h.app.settings.editor = crate::settings::EditorMode::External;
+        open_editor_from_review(&mut h);
+
+        assert!(h.app.overlay.is_none());
+        assert_ne!(h.app.focus, Focus::PaneContent);
     }
 
 }

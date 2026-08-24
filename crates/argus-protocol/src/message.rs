@@ -52,6 +52,9 @@ pub enum ClientMsg {
         checkout: CheckoutId,
         path: String,
         line: Option<u32>,
+        /// Launch it outside Argus with no pty, for an editor that brings
+        /// its own window.
+        external: bool,
     },
     /// Add a new project rooted at an arbitrary directory — not limited to
     /// whatever's already in `projects.toml` or under the daemon's cwd.

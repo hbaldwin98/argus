@@ -5,6 +5,7 @@ mod keys;
 mod launch;
 mod mouse;
 mod review;
+mod settings;
 mod theme;
 mod ui;
 
@@ -66,7 +67,7 @@ async fn run(
     in_tx: mpsc::UnboundedSender<ClientMsg>,
     out_rx: &mut mpsc::UnboundedReceiver<ServerMsg>,
 ) -> anyhow::Result<()> {
-    let mut app = App::new(in_tx);
+    let mut app = App::with_settings(in_tx, settings::load());
     let mut events = EventStream::new();
     // Keyed by pane id, not just dimensions — switching to a different pane
     // at the same on-screen size still needs its own Resize, since each
@@ -103,7 +104,7 @@ async fn run(
         terminal.draw(|f| ui::render(f, &mut app))?;
 
         if let Some(pane) = app.subscribed {
-            let area = app.layout.content.inner;
+            let area = app.live_area();
             let key = (pane, area.height, area.width);
             if last_pane_area != Some(key) && area.height > 0 && area.width > 0 {
                 last_pane_area = Some(key);
