@@ -2,9 +2,11 @@ use std::sync::Arc;
 
 use argus_protocol::{read_msg, write_msg, ClientMsg, PaneId, ServerMsg};
 use tokio::io::{split, AsyncRead, AsyncWrite};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, Semaphore};
 
 use crate::state::Daemon;
+
+static REVIEW_PERMIT: Semaphore = Semaphore::const_new(1);
 
 pub async fn handle<S>(stream: S, daemon: Arc<Daemon>)
 where
@@ -34,12 +36,19 @@ where
     let mut tree_rx = daemon.subscribe_tree();
     let mut workspaces_rx = daemon.subscribe_workspaces();
     let mut subs = Subscriptions::default();
+    let mut review_task = None;
 
     loop {
         tokio::select! {
             msg = read_msg::<_, ClientMsg>(&mut rd) => {
                 match msg {
-                    Ok(cmsg) => handle_client_msg(cmsg, &daemon, &out_tx, &mut subs),
+                    Ok(cmsg) => handle_client_msg(
+                        cmsg,
+                        &daemon,
+                        &out_tx,
+                        &mut subs,
+                        &mut review_task,
+                    ),
                     Err(_) => break,
                 }
             }
@@ -50,6 +59,9 @@ where
                 let _ = out_tx.send(ServerMsg::Workspaces(ws));
             }
         }
+    }
+    if let Some(task) = review_task {
+        task.abort();
     }
 }
 
@@ -109,18 +121,43 @@ fn handle_client_msg(
     daemon: &Arc<Daemon>,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
     subs: &mut Subscriptions,
+    review_task: &mut Option<tokio::task::JoinHandle<()>>,
 ) {
+    let result = dispatch_pane(msg, daemon, out_tx, subs)
+        .or_else(|msg| dispatch_workspace(msg, daemon, out_tx))
+        .or_else(|msg| dispatch_branch_or_editor(msg, daemon, out_tx))
+        .or_else(|msg| dispatch_review(msg, daemon, out_tx, review_task))
+        .unwrap_or_else(|_| unreachable!("every client message is dispatched"));
+    if let Err(e) = result {
+        let _ = out_tx.send(ServerMsg::Error {
+            message: e.to_string(),
+        });
+    }
+}
+
+type DispatchResult = Result<anyhow::Result<()>, ClientMsg>;
+
+fn dispatch_pane(
+    msg: ClientMsg,
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    subs: &mut Subscriptions,
+) -> DispatchResult {
     let result = match msg {
-        ClientMsg::Subscribe { pane } => daemon.subscribe_pane(pane).map(|(rows, cols, cells, cursor, rx)| {
-            subs.add(pane, rx, out_tx.clone());
-            let _ = out_tx.send(ServerMsg::PaneSnapshot {
-                pane,
-                rows,
-                cols,
-                cells,
-                cursor,
-            });
-        }),
+        ClientMsg::Subscribe { pane } => {
+            daemon
+                .subscribe_pane(pane)
+                .map(|(rows, cols, cells, cursor, rx)| {
+                    subs.add(pane, rx, out_tx.clone());
+                    let _ = out_tx.send(ServerMsg::PaneSnapshot {
+                        pane,
+                        rows,
+                        cols,
+                        cells,
+                        cursor,
+                    });
+                })
+        }
         ClientMsg::Unsubscribe { pane } => {
             subs.remove(pane);
             Ok(())
@@ -132,33 +169,28 @@ fn handle_client_msg(
             daemon.spawn_agent(checkout, &template).map(|_| ())
         }
         ClientMsg::Kill { pane } => daemon.close_pane(pane),
+        msg => return Err(msg),
+    };
+    Ok(result)
+}
+
+fn dispatch_workspace(
+    msg: ClientMsg,
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) -> DispatchResult {
+    dispatch_workspace_query(msg, daemon, out_tx)
+        .or_else(|msg| dispatch_worktree_change(msg, daemon, out_tx))
+}
+
+fn dispatch_workspace_query(
+    msg: ClientMsg,
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) -> DispatchResult {
+    let result = match msg {
         ClientMsg::AddProject { path } => daemon.add_project(&path),
-        // Both do real subprocess I/O (`git worktree add`/`remove`), so they
-        // run on their own task instead of blocking this connection's
-        // message loop — a slow worktree op must not stall keystrokes going
-        // to some other pane. Each reports its own error asynchronously.
-        ClientMsg::CreateWorktree { checkout, branch } => {
-            let daemon = daemon.clone();
-            let out_tx = out_tx.clone();
-            tokio::spawn(async move {
-                if let Err(e) = daemon.create_worktree(checkout, branch).await {
-                    let _ = out_tx.send(ServerMsg::Error { message: e.to_string() });
-                }
-            });
-            Ok(())
-        }
-        ClientMsg::RemoveCheckout { checkout } => {
-            let daemon = daemon.clone();
-            let out_tx = out_tx.clone();
-            tokio::spawn(async move {
-                if let Err(e) = daemon.remove_checkout(checkout).await {
-                    let _ = out_tx.send(ServerMsg::Error { message: e.to_string() });
-                }
-            });
-            Ok(())
-        }
         ClientMsg::OpenWorkspace { workspace } => daemon.open_workspace(workspace),
-        // Filesystem work, so off the message loop like the two above.
         // Listing walks a working tree, so it goes off the message loop.
         ClientMsg::ListBranches { checkout } => {
             reply_with(daemon, out_tx, checkout, move |path| ServerMsg::Branches {
@@ -172,12 +204,64 @@ fn handle_client_msg(
                 files: crate::browse::files(&path),
             })
         }
+        msg => return Err(msg),
+    };
+    Ok(result)
+}
+
+fn dispatch_worktree_change(
+    msg: ClientMsg,
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) -> DispatchResult {
+    let result = match msg {
+        // Both do real subprocess I/O (`git worktree add`/`remove`), so they
+        // run on their own task instead of blocking this connection's
+        // message loop — a slow worktree op must not stall keystrokes going
+        // to some other pane. Each reports its own error asynchronously.
+        ClientMsg::CreateWorktree { checkout, branch } => {
+            let daemon = daemon.clone();
+            let out_tx = out_tx.clone();
+            tokio::spawn(async move {
+                if let Err(e) = daemon.create_worktree(checkout, branch).await {
+                    let _ = out_tx.send(ServerMsg::Error {
+                        message: e.to_string(),
+                    });
+                }
+            });
+            Ok(())
+        }
+        ClientMsg::RemoveCheckout { checkout } => {
+            let daemon = daemon.clone();
+            let out_tx = out_tx.clone();
+            tokio::spawn(async move {
+                if let Err(e) = daemon.remove_checkout(checkout).await {
+                    let _ = out_tx.send(ServerMsg::Error {
+                        message: e.to_string(),
+                    });
+                }
+            });
+            Ok(())
+        }
+        msg => return Err(msg),
+    };
+    Ok(result)
+}
+
+fn dispatch_branch_or_editor(
+    msg: ClientMsg,
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) -> DispatchResult {
+    let result = match msg {
         ClientMsg::SwitchBranch { checkout, branch } => {
             let daemon = daemon.clone();
             let out_tx = out_tx.clone();
             tokio::spawn(async move {
                 if let Err(e) = daemon.switch_branch(checkout, &branch).await {
-                    let _ = out_tx.send(ServerMsg::Error { message: e.to_string() });
+                    let _ = out_tx.send(ServerMsg::Error {
+                        message: e.to_string(),
+                    });
                 }
             });
             Ok(())
@@ -187,7 +271,9 @@ fn handle_client_msg(
             let out_tx = out_tx.clone();
             tokio::spawn(async move {
                 if let Err(e) = daemon.create_branch(checkout, &branch).await {
-                    let _ = out_tx.send(ServerMsg::Error { message: e.to_string() });
+                    let _ = out_tx.send(ServerMsg::Error {
+                        message: e.to_string(),
+                    });
                 }
             });
             Ok(())
@@ -201,15 +287,38 @@ fn handle_client_msg(
         } => daemon
             .spawn_editor(checkout, &path, line, external, command.as_deref())
             .map(|_| ()),
+        msg => return Err(msg),
+    };
+    Ok(result)
+}
+
+fn dispatch_review(
+    msg: ClientMsg,
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    review_task: &mut Option<tokio::task::JoinHandle<()>>,
+) -> DispatchResult {
+    let result = match msg {
         ClientMsg::Review {
             request_id,
             checkout,
             base,
         } => daemon.checkout_path(checkout).map(|path| {
+            if let Some(task) = review_task.take() {
+                task.abort();
+            }
             let out_tx = out_tx.clone();
-            tokio::task::spawn_blocking(move || {
-                let message = match crate::diff::generate(&path, base) {
-                    Ok(generated) => ServerMsg::Review(argus_protocol::Review {
+            *review_task = Some(tokio::spawn(async move {
+                let Ok(permit) = REVIEW_PERMIT.acquire().await else {
+                    return;
+                };
+                let generated = tokio::task::spawn_blocking(move || {
+                    let _permit = permit;
+                    crate::diff::generate(&path, base)
+                })
+                .await;
+                let message = match generated {
+                    Ok(Ok(generated)) => ServerMsg::Review(argus_protocol::Review {
                         request_id,
                         checkout,
                         base,
@@ -217,6 +326,11 @@ fn handle_client_msg(
                         baseline_snapshot: generated.baseline_snapshot,
                         files: generated.files,
                     }),
+                    Ok(Err(error)) => ServerMsg::ReviewFailed {
+                        request_id,
+                        checkout,
+                        message: error.to_string(),
+                    },
                     Err(error) => ServerMsg::ReviewFailed {
                         request_id,
                         checkout,
@@ -224,7 +338,7 @@ fn handle_client_msg(
                     },
                 };
                 let _ = out_tx.send(message);
-            });
+            }));
         }),
         ClientMsg::AcknowledgeReview {
             checkout,
@@ -251,12 +365,9 @@ fn handle_client_msg(
                 let _ = out_tx.send(message);
             });
         }),
+        msg => return Err(msg),
     };
-    if let Err(e) = result {
-        let _ = out_tx.send(ServerMsg::Error {
-            message: e.to_string(),
-        });
-    }
+    Ok(result)
 }
 
 /// Resolves a checkout to its path, then answers on a blocking thread.
@@ -297,6 +408,7 @@ mod tests {
         tx: mpsc::UnboundedSender<ServerMsg>,
         rx: mpsc::UnboundedReceiver<ServerMsg>,
         subs: Subscriptions,
+        review_task: Option<tokio::task::JoinHandle<()>>,
     }
 
     impl Harness {
@@ -317,6 +429,7 @@ mod tests {
                 tx,
                 rx,
                 subs: Subscriptions::default(),
+                review_task: None,
             }
         }
 
@@ -325,7 +438,13 @@ mod tests {
         }
 
         fn send(&mut self, msg: ClientMsg) {
-            handle_client_msg(msg, &self.daemon, &self.tx, &mut self.subs);
+            handle_client_msg(
+                msg,
+                &self.daemon,
+                &self.tx,
+                &mut self.subs,
+                &mut self.review_task,
+            );
         }
 
         fn replies(&mut self) -> Vec<ServerMsg> {
@@ -415,6 +534,40 @@ mod tests {
             }
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn a_new_review_replaces_an_older_queued_review() {
+        let permit = REVIEW_PERMIT.acquire().await.unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        std::fs::write(dir.path().join("a.txt"), "one\n").unwrap();
+        let mut h = Harness::new(dir.path());
+        let checkout = h.checkout();
+
+        for request_id in [1, 2] {
+            h.send(ClientMsg::Review {
+                request_id,
+                checkout,
+                base: ReviewBase::WorkingTree,
+            });
+        }
+        drop(permit);
+
+        let reply = tokio::time::timeout(std::time::Duration::from_secs(5), h.rx.recv())
+            .await
+            .expect("the newest diff should arrive")
+            .expect("channel open");
+        assert!(matches!(
+            reply,
+            ServerMsg::Review(argus_protocol::Review { request_id: 2, .. })
+        ));
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), h.rx.recv())
+                .await
+                .is_err(),
+            "the replaced review should not run"
+        );
     }
 
     #[tokio::test]

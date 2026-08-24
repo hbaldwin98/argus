@@ -796,10 +796,13 @@ impl Daemon {
     }
 
     pub fn write_pane(&self, pane: PaneId, bytes: &[u8]) -> anyhow::Result<()> {
-        let mut inner = self.inner.lock().unwrap();
-        let p =
-            find_pane(&mut inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
-        p.runtime.write_input(bytes)
+        let input = {
+            let inner = self.inner.lock().unwrap();
+            let pane = find_pane_ref(&inner.projects, pane)
+                .ok_or_else(|| anyhow::anyhow!("no such pane"))?;
+            pane.runtime.input()
+        };
+        input.write(bytes)
     }
 
     pub fn resize_pane(&self, pane: PaneId, rows: u16, cols: u16) -> anyhow::Result<()> {

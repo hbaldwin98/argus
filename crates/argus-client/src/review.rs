@@ -74,11 +74,15 @@ impl ReviewView {
 
     /// Clamps rather than wraps; wrapping in a long diff loses your place.
     pub fn move_by(&mut self, delta: isize) {
+        let marked_file = self
+            .mark
+            .and_then(|mark| self.rows.get(mark))
+            .map(|row| row.file());
         let selectable: Vec<usize> = self
             .rows
             .iter()
             .enumerate()
-            .filter(|(_, r)| r.is_line())
+            .filter(|(_, r)| r.is_line() && marked_file.is_none_or(|file| r.file() == file))
             .map(|(i, _)| i)
             .collect();
         if selectable.is_empty() {
@@ -194,6 +198,9 @@ impl ReviewView {
             let Row::Line { file, hunk, line } = **row else {
                 continue;
             };
+            if file != first.file() {
+                break;
+            }
             let l = &self.review.files[file].hunks[hunk].lines[line];
             let side = l.new_lineno.or(l.old_lineno);
             if start.is_none() {
@@ -474,16 +481,14 @@ mod tests {
     }
 
     #[test]
-    fn a_range_that_spans_the_gap_between_files_takes_the_first_files_path() {
-        // The headers in between contribute no lines, so the range is still
-        // contiguous text; it just can't claim to be about two files at once.
+    fn a_range_stops_at_the_end_of_its_file() {
         let mut v = two_files();
         v.move_by(1);
         v.toggle_mark();
         v.move_by(1);
         let a = v.anchor().unwrap();
         assert_eq!(a.path, "a.rs");
-        assert_eq!(a.text, vec!["+two", "-old"]);
+        assert_eq!(a.text, vec!["+two"]);
     }
 
     #[test]

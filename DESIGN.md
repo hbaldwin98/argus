@@ -73,12 +73,13 @@ project to `projects.toml` in the open workspace.
 Shells, agents, and editors use the same PTY primitive. Editors exist in daemon state while open
 but are omitted from the normal pane list and counts.
 
-Each PTY starts at 24 by 80 cells. A blocking reader thread sends output to a Tokio task, which
-drains output on a 16 ms interval, feeds a `vt100` parser, and broadcasts changed horizontal cell
-spans plus the child cursor's position and visibility. Cursor-only changes are broadcast even when
-no cell changed. The client places its hardware cursor there only while that pane has typing focus.
-The parser retains 4,000 scrollback lines, though the client has no scrollback navigation. An
-exiting process gets a 500 ms output-flush grace period.
+Each PTY starts at 24 by 80 cells. A blocking reader thread sends output through a bounded queue to
+a Tokio task, which processes a bounded batch on a 16 ms interval, feeds a `vt100` parser, and
+broadcasts changed horizontal cell spans plus the child cursor's position and visibility. The
+client also bounds incoming daemon messages and coalesces redraws to the same interval. Cursor-only
+changes are broadcast even when no cell changed. The client places its hardware cursor there only
+while that pane has typing focus. The parser retains 4,000 scrollback lines, though the client has
+no scrollback navigation. An exiting process gets a 500 ms output-flush grace period.
 
 Clients receive a full grid when they subscribe, then incremental damage. Resize changes both the
 PTY and parser and emits another full grid. If several clients resize one pane, the latest request
@@ -202,26 +203,28 @@ subscribed.
 Three bases cycle with `b`:
 
 - `uncommitted`: `HEAD` against index and working tree.
-- `this branch`: merge base against upstream or a conventional local default branch, falling
-  back to `HEAD`.
+- `this branch`: merge base against a conventional local default branch, then the branch's
+  upstream when no default exists, falling back to `HEAD`.
 - `last looked`: the last target explicitly accepted with `A`. With no baseline it falls back to
   uncommitted work and remains uninitialized until accepted, including for an empty review.
 
 Each request captures an immutable synthetic tree from the real index plus working-tree deletions,
 edits, and non-ignored untracked content. The objects are written to Git's object database without
 changing HEAD, branches, the index, or files. Diffs use three context lines, preserve old and new
-line numbers, and detect renames. Binary files and files over 5,000 rendered lines are listed
-without their content. Capture and diff failures are reported rather than rendered as empty work.
+line numbers, and detect renames. Binary files, files over 1 MiB, files over 5,000 rendered lines,
+and content beyond the review's 20,000-line budget are listed without their content. Capture and
+diff failures are reported rather than rendered as empty work.
 
 Every request has an id and the client accepts only the latest exact reply. Accepted last-looked
 trees live under a hidden `refs/argus/review/...` ref keyed by the worktree Git directory, so linked
 worktrees do not share baselines and daemon restarts retain them. `A` updates the ref with
 compare-and-swap against the displayed baseline. Closing, refreshing, changing base, editing, and
-commenting do not acknowledge anything.
+commenting do not acknowledge anything. Review capture is globally serialized, and a connection
+drops an older queued capture when a newer request replaces it.
 
-The client supports line and file navigation, range marking, a changed-file fuzzy picker, refresh,
-and opening the selected line in an editor. A comment is flattened and typed into the first agent
-PTY in the checkout; it is not durable review state.
+The client supports line and file navigation, single-file range marking, a changed-file fuzzy
+picker, refresh, and opening the selected line in an editor. A comment is flattened and typed into
+the first agent PTY in the checkout; it is not durable review state.
 
 There is no vetted state, stage/unstage/revert action, syntax highlighting, or persistent comment
 store. Closing the review sends no daemon message.

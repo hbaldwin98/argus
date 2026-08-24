@@ -2,7 +2,7 @@
 //! Git object database, but never changes HEAD, branches, the real index, or
 //! the working directory.
 
-use std::cell::RefCell;
+use std::cell::{Cell as ValueCell, RefCell};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -10,6 +10,8 @@ use anyhow::{anyhow, Context};
 use argus_protocol::{ChangeKind, DiffLine, FileDiff, Hunk, LineKind, ReviewBase};
 
 const MAX_LINES_PER_FILE: usize = 5_000;
+const MAX_TOTAL_LINES: usize = 20_000;
+const MAX_DIFF_BYTES: i64 = 1024 * 1024;
 const BINARY_NOTE: &str = "binary file";
 const TOO_LARGE_NOTE: &str = "too large to display";
 
@@ -103,15 +105,15 @@ fn capture(repo: &git2::Repository) -> anyhow::Result<Snapshot> {
                 // worktree is a separate repository and review boundary.
                 continue;
             }
-            let data = file_bytes(&full)
+            let (id, file_size) = capture_blob(repo, &full)
                 .with_context(|| format!("could not capture {}", full.display()))?;
             let mut entry = source
                 .get_path(Path::new(path), 0)
                 .unwrap_or_else(|| new_entry(path, &full));
             entry.path = path.as_bytes().to_vec();
             entry.mode = worktree_mode(&full, entry.mode);
-            entry.id = repo.blob(&data)?;
-            entry.file_size = data.len().try_into().unwrap_or(u32::MAX);
+            entry.id = id;
+            entry.file_size = file_size;
             synthetic.add(&entry)?;
             if flags.contains(git2::Status::WT_NEW) {
                 untracked.insert(path.replace('\\', "/"));
@@ -124,15 +126,22 @@ fn capture(repo: &git2::Repository) -> anyhow::Result<Snapshot> {
     Ok(Snapshot { tree, untracked })
 }
 
-fn file_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
+fn capture_blob(repo: &git2::Repository, path: &Path) -> anyhow::Result<(git2::Oid, u32)> {
     #[cfg(unix)]
     if path.symlink_metadata()?.file_type().is_symlink() {
-        return Ok(std::fs::read_link(path)?
-            .as_os_str()
-            .as_encoded_bytes()
-            .to_vec());
+        let data = file_bytes(path)?;
+        return Ok((repo.blob(&data)?, data.len().try_into().unwrap_or(u32::MAX)));
     }
-    std::fs::read(path)
+    let size = path.metadata()?.len().try_into().unwrap_or(u32::MAX);
+    Ok((repo.blob_path(path)?, size))
+}
+
+#[cfg(unix)]
+fn file_bytes(path: &Path) -> std::io::Result<Vec<u8>> {
+    Ok(std::fs::read_link(path)?
+        .as_os_str()
+        .as_encoded_bytes()
+        .to_vec())
 }
 
 fn new_entry(path: &str, _full: &Path) -> git2::IndexEntry {
@@ -236,18 +245,21 @@ fn branch_point_tree(repo: &git2::Repository) -> Option<git2::Oid> {
 
 fn fork_candidate(repo: &git2::Repository, head: &git2::Reference) -> Option<git2::Oid> {
     let name = head.shorthand().unwrap_or_default().to_string();
-    if let Some(upstream) = repo
-        .find_branch(&name, git2::BranchType::Local)
-        .ok()
-        .and_then(|b| b.upstream().ok())
-    {
-        return upstream.get().peel_to_commit().ok().map(|c| c.id());
-    }
     ["main", "master", "develop", "trunk"]
         .iter()
         .filter(|d| **d != name)
         .find_map(|d| {
             repo.find_branch(d, git2::BranchType::Local)
+                .ok()?
+                .get()
+                .peel_to_commit()
+                .ok()
+                .map(|c| c.id())
+        })
+        .or_else(|| {
+            repo.find_branch(&name, git2::BranchType::Local)
+                .ok()?
+                .upstream()
                 .ok()?
                 .get()
                 .peel_to_commit()
@@ -265,7 +277,7 @@ fn render_diff(
     let old_tree = old.map(|oid| repo.find_tree(oid)).transpose()?;
     let target_tree = repo.find_tree(target)?;
     let mut opts = git2::DiffOptions::new();
-    opts.context_lines(3);
+    opts.context_lines(3).max_size(MAX_DIFF_BYTES);
     let mut diff =
         repo.diff_tree_to_tree(old_tree.as_ref(), Some(&target_tree), Some(&mut opts))?;
     let mut find = git2::DiffFindOptions::new();
@@ -274,9 +286,14 @@ fn render_diff(
         .context("could not detect review renames")?;
 
     let files: RefCell<Vec<FileDiff>> = RefCell::new(Vec::new());
+    let rendered_lines = ValueCell::new(0usize);
     diff.foreach(
         &mut |delta, _| {
-            files.borrow_mut().push(new_file(&delta, untracked));
+            let mut file = new_file(&delta, untracked);
+            if rendered_lines.get() >= MAX_TOTAL_LINES && file.note.is_none() {
+                file.note = Some(TOO_LARGE_NOTE.to_string());
+            }
+            files.borrow_mut().push(file);
             true
         },
         None,
@@ -301,6 +318,11 @@ fn render_diff(
             if file.note.is_some() {
                 return true;
             }
+            if rendered_lines.get() >= MAX_TOTAL_LINES {
+                file.hunks.clear();
+                file.note = Some(TOO_LARGE_NOTE.to_string());
+                return true;
+            }
             let kind = match line.origin() {
                 '+' => LineKind::Added,
                 '-' => LineKind::Removed,
@@ -316,6 +338,7 @@ fn render_diff(
                         .trim_end_matches(['\n', '\r'])
                         .to_string(),
                 });
+                rendered_lines.set(rendered_lines.get() + 1);
             }
             if total_lines(file) > MAX_LINES_PER_FILE {
                 file.hunks.clear();
@@ -341,6 +364,7 @@ fn new_file(delta: &git2::DiffDelta, untracked: &HashSet<String>) -> FileDiff {
         git2::Delta::Renamed => ChangeKind::Renamed,
         _ => ChangeKind::Modified,
     };
+    let too_large = delta.old_file().size().max(delta.new_file().size()) > MAX_DIFF_BYTES as u64;
     FileDiff {
         old_path: (kind == ChangeKind::Renamed)
             .then(|| delta.old_file().path().map(slashed))
@@ -348,7 +372,9 @@ fn new_file(delta: &git2::DiffDelta, untracked: &HashSet<String>) -> FileDiff {
         path,
         kind,
         hunks: Vec::new(),
-        note: delta.flags().is_binary().then(|| BINARY_NOTE.to_string()),
+        note: too_large
+            .then(|| TOO_LARGE_NOTE.to_string())
+            .or_else(|| delta.flags().is_binary().then(|| BINARY_NOTE.to_string())),
     }
 }
 
@@ -506,6 +532,49 @@ mod tests {
         let branch = generate(&path, ReviewBase::BranchPoint).unwrap();
         assert_eq!(find(&branch.files, "b.txt").added_lines(), 1);
         assert_eq!(find(&branch.files, "c.txt").added_lines(), 1);
+    }
+
+    #[test]
+    fn branch_point_includes_work_already_pushed_to_the_feature_upstream() {
+        let (_dir, path) = repo_with(&[("base.txt", "base\n")]);
+        commit_on_branch(&path, "feature", &[("pushed.txt", "pushed\n")]);
+
+        let repo = git2::Repository::open(&path).unwrap();
+        let pushed = repo.head().unwrap().target().unwrap();
+        repo.reference("refs/remotes/origin/feature", pushed, true, "test")
+            .unwrap();
+        repo.remote("origin", path.to_str().unwrap()).unwrap();
+        let mut feature = repo
+            .find_branch("feature", git2::BranchType::Local)
+            .unwrap();
+        feature.set_upstream(Some("origin/feature")).unwrap();
+        drop(feature);
+        write(&path, "local.txt", "local\n");
+        commit(&repo, "local work");
+        drop(repo);
+
+        let review = generate(&path, ReviewBase::BranchPoint).unwrap();
+        assert_eq!(find(&review.files, "pushed.txt").added_lines(), 1);
+        assert_eq!(find(&review.files, "local.txt").added_lines(), 1);
+    }
+
+    #[test]
+    fn a_review_has_a_global_rendered_line_limit() {
+        let (_dir, path) = repo_with(&[("base.txt", "base\n")]);
+        for file in 0..5 {
+            let body: String = (0..MAX_LINES_PER_FILE)
+                .map(|line| format!("line {line}\n"))
+                .collect();
+            write(&path, &format!("large-{file}.txt"), &body);
+        }
+
+        let review = generate(&path, ReviewBase::WorkingTree).unwrap();
+        let rendered: usize = review.files.iter().map(total_lines).sum();
+        assert!(rendered <= MAX_TOTAL_LINES, "rendered {rendered} lines");
+        assert!(review
+            .files
+            .iter()
+            .any(|file| file.note.as_deref() == Some(TOO_LARGE_NOTE)));
     }
 
     #[test]

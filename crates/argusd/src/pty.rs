@@ -15,6 +15,8 @@ const DEFAULT_ROWS: u16 = 24;
 const DEFAULT_COLS: u16 = 80;
 const SCROLLBACK_LINES: usize = 4000;
 const FRAME_INTERVAL: Duration = Duration::from_millis(16);
+const OUTPUT_QUEUE_CHUNKS: usize = 256;
+const MAX_CHUNKS_PER_FRAME: usize = 64;
 /// How long the output pump keeps draining a dead child's remaining output
 /// before announcing the exit. Short-lived commands routinely exit before
 /// any of their output has been drained.
@@ -64,10 +66,20 @@ fn program_command(program: &str, args: &[String]) -> CommandBuilder {
 
 pub struct PaneRuntime {
     master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    input: PaneInput,
     parser: Arc<StdMutex<vt100::Parser>>,
     child: Arc<StdMutex<Box<dyn Child + Send + Sync>>>,
     damage_tx: broadcast::Sender<ServerMsg>,
+}
+
+#[derive(Clone)]
+pub struct PaneInput(Arc<StdMutex<Box<dyn Write + Send>>>);
+
+impl PaneInput {
+    pub fn write(&self, bytes: &[u8]) -> anyhow::Result<()> {
+        self.0.lock().unwrap().write_all(bytes)?;
+        Ok(())
+    }
 }
 
 impl PaneRuntime {
@@ -106,7 +118,7 @@ impl PaneRuntime {
         drop(pair.slave);
 
         let mut reader = pair.master.try_clone_reader()?;
-        let writer = pair.master.take_writer()?;
+        let input = PaneInput(Arc::new(StdMutex::new(pair.master.take_writer()?)));
 
         let parser = Arc::new(StdMutex::new(vt100::Parser::new(
             DEFAULT_ROWS,
@@ -116,14 +128,14 @@ impl PaneRuntime {
         let child = Arc::new(StdMutex::new(child));
         let (damage_tx, _) = broadcast::channel::<ServerMsg>(64);
 
-        let (byte_tx, mut byte_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let (byte_tx, mut byte_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(OUTPUT_QUEUE_CHUNKS);
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if byte_tx.send(buf[..n].to_vec()).is_err() {
+                        if byte_tx.blocking_send(buf[..n].to_vec()).is_err() {
                             break;
                         }
                     }
@@ -145,7 +157,8 @@ impl PaneRuntime {
                     interval.tick().await;
 
                     let mut dirty = false;
-                    while let Ok(chunk) = byte_rx.try_recv() {
+                    for _ in 0..MAX_CHUNKS_PER_FRAME {
+                        let Ok(chunk) = byte_rx.try_recv() else { break };
                         parser.lock().unwrap().process(&chunk);
                         dirty = true;
                     }
@@ -211,16 +224,15 @@ impl PaneRuntime {
 
         Ok(PaneRuntime {
             master: pair.master,
-            writer,
+            input,
             parser,
             child,
             damage_tx,
         })
     }
 
-    pub fn write_input(&mut self, bytes: &[u8]) -> anyhow::Result<()> {
-        self.writer.write_all(bytes)?;
-        Ok(())
+    pub fn input(&self) -> PaneInput {
+        self.input.clone()
     }
 
     pub fn resize(&self, rows: u16, cols: u16) -> anyhow::Result<()> {
@@ -432,11 +444,16 @@ mod tests {
     async fn typed_input_reaches_the_child_and_its_output_comes_back() {
         // The M1 spine end-to-end, without a terminal: keystrokes in, screen
         // out. This is the loop that otherwise needs a real TUI to check.
-        let mut pane =
-            PaneRuntime::spawn(PaneId(2), &std::env::temp_dir(), Spawn::DefaultShell, |_| {}).unwrap();
+        let pane = PaneRuntime::spawn(
+            PaneId(2),
+            &std::env::temp_dir(),
+            Spawn::DefaultShell,
+            |_| {},
+        )
+        .unwrap();
         // Let the shell draw its prompt before typing at it.
         tokio::time::sleep(Duration::from_millis(500)).await;
-        pane.write_input(b"echo argus-typed\r").unwrap();
+        pane.input().write(b"echo argus-typed\r").unwrap();
         wait_for(&pane, |g| grid_contains(g, "argus-typed")).await;
         let _ = pane.kill();
     }

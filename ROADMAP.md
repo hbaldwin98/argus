@@ -10,7 +10,6 @@ contract is in [`TARGET.md`](TARGET.md).
 - Route Claude hooks to the correct pane when several agents share a checkout.
 - Make worktree removal transactional so a failed Git command does not destroy its panes.
 - Validate worktree branch names as strictly as in-place branch creation.
-- Prevent review ranges from crossing files, or represent multi-file comments explicitly.
 - Parse editor commands without breaking quoted arguments or executable paths containing spaces.
 
 ## P2: Repository Model
@@ -61,7 +60,6 @@ contract is in [`TARGET.md`](TARGET.md).
 
 - Expose scrollback navigation.
 - Add child-negotiated mouse behavior, bracketed paste, focus events, OSC 52, and extended keys.
-- Bound the reader-to-parser output queue.
 - Replace idle 16 ms pane wakeups with event-driven work where possible.
 - Implement packed, byte-bounded scrollback, then cold eviction, spill, and redaction.
 - Benchmark frame time, startup, RSS, pane scaling, high-output children, and slow clients.
