@@ -2142,6 +2142,7 @@ mod tests {
             status: PaneStatus::Idle,
             note: None,
             template: None,
+            children: Vec::new(),
         }
     }
 
@@ -4008,6 +4009,7 @@ mod tests {
                 status: PaneStatus::Idle,
                 note: None,
                 template: None,
+                children: Vec::new(),
             },
             PaneInfo {
                 id: PaneId(51),
@@ -4016,6 +4018,7 @@ mod tests {
                 status: PaneStatus::Idle,
                 note: None,
                 template: None,
+                children: Vec::new(),
             },
         ];
         t
@@ -4073,6 +4076,7 @@ mod tests {
                 status: PaneStatus::Working,
                 note: None,
                 template: Some("codex".to_string()),
+                children: Vec::new(),
             });
 
         h.key(KeyCode::Char('c'));
@@ -4111,6 +4115,7 @@ mod tests {
                 status: PaneStatus::Exited { code: Some(0) },
                 note: None,
                 template: Some("codex".to_string()),
+                children: Vec::new(),
             });
 
         h.key(KeyCode::Char('c'));
@@ -4816,6 +4821,7 @@ mod tests {
             status: PaneStatus::Idle,
             note: None,
             template: None,
+            children: Vec::new(),
         });
         h.app.on_server_msg(ServerMsg::Tree(t));
     }
@@ -4834,6 +4840,7 @@ mod tests {
             status: PaneStatus::Idle,
             note: None,
             template: None,
+            children: Vec::new(),
         });
         h.app.on_server_msg(ServerMsg::Tree(t));
     }
@@ -5154,6 +5161,7 @@ mod tests {
             status: PaneStatus::Idle,
             note: None,
             template: None,
+            children: Vec::new(),
         });
         t
     }

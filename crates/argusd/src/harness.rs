@@ -111,8 +111,15 @@ pub struct Event {
     #[serde(default)]
     pub note_from_stdin: bool,
     /// Optional top-level JSON key whose string value identifies the session.
+    /// Every event that has one tags its report with it, which is how a
+    /// report from an agent spawned inside the pane is told apart from the
+    /// pane's own.
     #[serde(default)]
     pub session_id_key: Option<String>,
+    /// Whether this event is the harness announcing that *its own* session
+    /// started, and so may claim the identity Argus resumes the pane with.
+    #[serde(default)]
+    pub owns_session: bool,
 }
 
 /// How a hook entry is nested inside the harness's settings file.
@@ -211,14 +218,16 @@ impl Harness {
                     reports: Report::Working,
                     matcher: None,
                     note_from_stdin: false,
-                    session_id_key: None,
+                    session_id_key: Some("session_id".into()),
+                    owns_session: false,
                 },
                 Event {
                     name: "Stop".into(),
                     reports: Report::Idle,
                     matcher: None,
                     note_from_stdin: false,
-                    session_id_key: None,
+                    session_id_key: Some("session_id".into()),
+                    owns_session: false,
                 },
                 Event {
                     name: "Notification".into(),
@@ -226,7 +235,8 @@ impl Harness {
                     matcher: None,
                     // Carries the text of what it is asking for.
                     note_from_stdin: true,
-                    session_id_key: None,
+                    session_id_key: Some("session_id".into()),
+                    owns_session: false,
                 },
                 Event {
                     name: "SessionStart".into(),
@@ -236,6 +246,7 @@ impl Harness {
                     matcher: Some("startup|resume|clear|fork".into()),
                     note_from_stdin: false,
                     session_id_key: Some("session_id".into()),
+                    owns_session: true,
                 },
             ],
             context_event: Some("SessionStart".to_string()),
@@ -264,6 +275,7 @@ impl Harness {
                 matcher: Some("startup|resume|clear".into()),
                 note_from_stdin: false,
                 session_id_key: Some("session_id".into()),
+                owns_session: true,
             }],
             context_event: None,
             plugin: None,
@@ -319,13 +331,15 @@ impl Harness {
                     matcher: None,
                     note_from_stdin: false,
                     session_id_key: Some("conversationId".into()),
+                    owns_session: true,
                 },
                 Event {
                     name: "Stop".into(),
                     reports: Report::Idle,
                     matcher: None,
                     note_from_stdin: false,
-                    session_id_key: None,
+                    session_id_key: Some("conversationId".into()),
+                    owns_session: false,
                 },
             ],
             context_event: None,
@@ -703,6 +717,9 @@ fn status_entry(
         args.push(SESSION_KEY_FLAG.to_string());
         args.push(key.clone());
     }
+    if event.owns_session {
+        args.push(OWNS_SESSION_FLAG.to_string());
+    }
     if command_string {
         return json!({
             "type": "command",
@@ -734,6 +751,10 @@ const PLUGIN_MARKER: &str = "argus:managed-plugin";
 /// helper must never block on a stdin nobody is writing to.
 pub const NOTE_FLAG: &str = "--note-from-stdin";
 pub const SESSION_KEY_FLAG: &str = "--session-id-from-stdin";
+/// Marks the one event per harness that may claim the pane's resume
+/// identity. Without it a CLI started from inside a pane would overwrite
+/// the conversation Argus reopens for that row.
+pub const OWNS_SESSION_FLAG: &str = "--owns-session";
 
 /// A stable command-string hook. Codex persists trust against the handler's
 /// content hash, so the checkout-wide file must not contain ephemeral pane,
@@ -760,6 +781,9 @@ fn env_command_line(event: &Event, windows: bool) -> String {
     if let Some(key) = &event.session_id_key {
         parts.push(SESSION_KEY_FLAG.to_string());
         parts.push(key.clone());
+    }
+    if event.owns_session {
+        parts.push(OWNS_SESSION_FLAG.to_string());
     }
     parts
         .into_iter()
@@ -853,6 +877,7 @@ mod tests {
                     matcher: None,
                     note_from_stdin: false,
                     session_id_key: None,
+                    owns_session: false,
                 },
                 Event {
                     name: "turn_end".into(),
@@ -860,6 +885,7 @@ mod tests {
                     matcher: None,
                     note_from_stdin: false,
                     session_id_key: None,
+                    owns_session: false,
                 },
             ],
             context_event: None,
@@ -891,10 +917,7 @@ mod tests {
         assert_eq!(Harness::claude().resume_id, ["--resume", "{session_id}"]);
         assert_eq!(Harness::codex().resume_id, ["resume", "{session_id}"]);
         assert_eq!(Harness::opencode().resume_id, ["--session", "{session_id}"]);
-        assert_eq!(
-            Harness::agy().resume_id,
-            ["--conversation", "{session_id}"]
-        );
+        assert_eq!(Harness::agy().resume_id, ["--conversation", "{session_id}"]);
     }
 
     #[test]
@@ -960,7 +983,11 @@ mod tests {
             args,
             vec![
                 "http://127.0.0.1:5555/pane/42/status/idle".to_string(),
-                "sekrit".to_string()
+                "sekrit".to_string(),
+                // Every report says which conversation it came from, so a
+                // CLI spawned inside the pane is not mistaken for its own.
+                "--session-id-from-stdin".to_string(),
+                "session_id".to_string()
             ]
         );
     }
@@ -1038,7 +1065,8 @@ mod tests {
                 "http://127.0.0.1:5555/pane/1/status/idle",
                 "tok",
                 SESSION_KEY_FLAG,
-                "session_id"
+                "session_id",
+                OWNS_SESSION_FLAG
             ])
         );
         let context = starts
@@ -1165,11 +1193,11 @@ mod tests {
         );
         assert_eq!(
             second["command"],
-            r#""$ARGUS_HOOK" "$ARGUS_HOOK_URL/status/idle" "$ARGUS_HOOK_TOKEN" "--session-id-from-stdin" "session_id""#
+            r#""$ARGUS_HOOK" "$ARGUS_HOOK_URL/status/idle" "$ARGUS_HOOK_TOKEN" "--session-id-from-stdin" "session_id" "--owns-session""#
         );
         assert_eq!(
             second["commandWindows"],
-            r#""%ARGUS_HOOK%" "%ARGUS_HOOK_URL%/status/idle" "%ARGUS_HOOK_TOKEN%" "--session-id-from-stdin" "session_id""#
+            r#""%ARGUS_HOOK%" "%ARGUS_HOOK_URL%/status/idle" "%ARGUS_HOOK_TOKEN%" "--session-id-from-stdin" "session_id" "--owns-session""#
         );
     }
 
@@ -1629,7 +1657,10 @@ process.stdout.write(JSON.stringify(reports));
         let root: Value = serde_json::from_str(&raw).unwrap();
 
         let argus = &root["argus"];
-        assert!(argus.is_object(), "should be nested under 'argus' hook name");
+        assert!(
+            argus.is_object(),
+            "should be nested under 'argus' hook name"
+        );
 
         let pre_inv = argus["PreInvocation"].as_array().unwrap();
         assert_eq!(pre_inv.len(), 1);
@@ -1652,7 +1683,10 @@ process.stdout.write(JSON.stringify(reports));
         // Uninstall sweeps .agents/hooks.json, rules, and prunes the empty .agents directory
         h.uninstall(dir.path()).unwrap();
         assert!(!hooks_file.exists(), ".agents/hooks.json should be removed");
-        assert!(!rule_file.exists(), ".agents/rules/argus.md should be removed");
+        assert!(
+            !rule_file.exists(),
+            ".agents/rules/argus.md should be removed"
+        );
         assert!(
             !dir.path().join(".agents").exists(),
             "empty .agents dir should be pruned"

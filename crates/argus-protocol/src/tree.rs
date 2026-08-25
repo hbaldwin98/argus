@@ -28,7 +28,9 @@ pub enum PaneStatus {
     /// Distinct from `Exited`: the process is alive, so the row is worth
     /// going to rather than worth closing.
     Failed,
-    Exited { code: Option<i32> },
+    Exited {
+        code: Option<i32>,
+    },
 }
 
 impl PaneStatus {
@@ -40,6 +42,18 @@ impl PaneStatus {
             PaneStatus::Waiting | PaneStatus::NeedsReview | PaneStatus::Failed
         )
     }
+}
+
+/// Another agent reporting through a pane it does not own — a CLI spawned
+/// from inside the pane's own agent, which inherits the hook environment and
+/// so would otherwise rewrite the row belonging to its parent. Listed under
+/// the parent, and never allowed to change it: see DESIGN.md §8b.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChildAgentInfo {
+    /// What the child called itself, or a generic word until it says.
+    pub label: String,
+    pub status: PaneStatus,
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +75,11 @@ pub struct PaneInfo {
     /// running side by side.
     #[serde(default)]
     pub template: Option<String>,
+    /// Agents running underneath this one, in the order they first
+    /// reported. Read-only: the pane's own status and title stay the
+    /// parent's to set.
+    #[serde(default)]
+    pub children: Vec<ChildAgentInfo>,
 }
 
 /// Read-only git status for a checkout, polled from the working directory

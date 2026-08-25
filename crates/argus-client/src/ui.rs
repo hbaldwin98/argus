@@ -20,7 +20,7 @@
 //!   is true about it. Packing both onto one line is what made the old
 //!   layout feel cramped.
 
-use argus_protocol::{Color as PColor, GitStatus, LineKind, PaneStatus};
+use argus_protocol::{ChildAgentInfo, Color as PColor, GitStatus, LineKind, PaneStatus};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -1491,7 +1491,27 @@ fn pane_detail(p: &argus_protocol::PaneInfo, th: Theme) -> Vec<Span<'static>> {
             Style::default().fg(th.dim),
         )),
     }
+    spans.extend(children_note(&p.children, th));
     spans
+}
+
+/// Agents running underneath this one, on the parent's own detail line.
+/// They get no row of their own: they are not something you can go to or
+/// act on, only something worth knowing is there — and the one that is
+/// stalled is the one worth naming.
+fn children_note(children: &[ChildAgentInfo], th: Theme) -> Vec<Span<'static>> {
+    let Some(worst) = children.iter().max_by_key(|c| rank(&c.status)) else {
+        return Vec::new();
+    };
+    let label = if children.len() > 1 {
+        format!("  ⤷ {} · {}", children.len(), worst.label)
+    } else {
+        format!("  ⤷ {}", worst.label)
+    };
+    vec![Span::styled(
+        label,
+        Style::default().fg(if worst.status.needs_you() { th.err } else { th.dim }),
+    )]
 }
 
 fn exit_note(status: PaneStatus) -> String {
@@ -1672,6 +1692,7 @@ mod tests {
                     status: *s,
                     note: None,
                     template: None,
+                    children: Vec::new(),
                 })
                 .collect(),
         }
@@ -1861,6 +1882,7 @@ mod tests {
             status,
             note: note.map(str::to_string),
             template: None,
+            children: Vec::new(),
         }
     }
 
@@ -1895,6 +1917,34 @@ mod tests {
         assert_eq!(
             text_of(&pane_detail(&p, th)),
             "opencode  needs the db password"
+        );
+    }
+
+    #[test]
+    fn a_row_says_what_is_running_underneath_it() {
+        // Agents spawned inside a pane cannot touch its row, so the only
+        // way to know they are there is for the parent to say so.
+        let th = Theme::default();
+        let mut p = pane(PaneStatus::Working, None);
+        p.children = vec![ChildAgentInfo {
+            label: "searching the hook table".to_string(),
+            status: PaneStatus::Working,
+            note: None,
+        }];
+        assert_eq!(
+            text_of(&pane_detail(&p, th)),
+            "working  \u{2937} searching the hook table"
+        );
+
+        // With several, the one stalled on a human is the one named.
+        p.children.push(ChildAgentInfo {
+            label: "running the tests".to_string(),
+            status: PaneStatus::Waiting,
+            note: Some("needs a password".to_string()),
+        });
+        assert_eq!(
+            text_of(&pane_detail(&p, th)),
+            "working  \u{2937} 2 \u{b7} running the tests"
         );
     }
 
@@ -1975,6 +2025,7 @@ mod tests {
                             status: PaneStatus::Working,
                             note: None,
                             template: None,
+                            children: Vec::new(),
                         },
                         PaneInfo {
                             id: PaneId(101),
@@ -1983,6 +2034,7 @@ mod tests {
                             status: PaneStatus::Idle,
                             note: None,
                             template: None,
+                            children: Vec::new(),
                         },
                     ],
                 },
@@ -2239,6 +2291,7 @@ mod tests {
                     status: PaneStatus::Waiting,
                     note: None,
                     template: None,
+                    children: Vec::new(),
                 }],
             }],
         });
@@ -3038,6 +3091,7 @@ mod tests {
                 status: PaneStatus::Idle,
                 note: None,
                 template: None,
+                children: Vec::new(),
             });
         }
         let out = lines(&draw(&mut app)).join("\n");

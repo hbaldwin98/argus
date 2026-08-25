@@ -272,6 +272,7 @@ mod tests {
                             status: *status,
                             note: None,
                             template: Some("opencode".into()),
+                            children: Vec::new(),
                         })
                         .collect(),
                     git: None,
@@ -355,6 +356,7 @@ mod tests {
                     status: PaneStatus::Waiting,
                     note: None,
                     template: Some("opencode".into()),
+                    children: Vec::new(),
                 }],
                 git: None,
                 primary: true,

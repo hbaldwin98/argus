@@ -113,6 +113,10 @@ pub enum EventConfig {
         /// Top-level stdin JSON key containing the harness session ID.
         #[serde(default)]
         session_id: Option<String>,
+        /// Whether this event is the harness announcing its own session
+        /// start, and so may claim the identity the pane resumes from.
+        #[serde(default)]
+        owns_session: bool,
     },
 }
 
@@ -125,18 +129,21 @@ impl EventConfig {
                 matcher: None,
                 note_from_stdin: false,
                 session_id_key: None,
+                owns_session: false,
             },
             EventConfig::Detailed {
                 reports,
                 note,
                 matcher,
                 session_id,
+                owns_session,
             } => crate::harness::Event {
                 name,
                 reports,
                 matcher,
                 note_from_stdin: note,
                 session_id_key: session_id,
+                owns_session,
             },
         }
     }
