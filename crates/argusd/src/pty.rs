@@ -172,15 +172,46 @@ impl PaneRuntime {
             let child = child.clone();
             let damage_tx = damage_tx.clone();
             tokio::spawn(async move {
-                let mut interval = tokio::time::interval(FRAME_INTERVAL);
                 let mut prev: Option<Vec<Vec<Cell>>> = None;
                 let mut prev_cursor = None;
                 let mut on_exit = Some(on_exit);
+                let mut eof = false;
                 loop {
-                    interval.tick().await;
+                    // Wait for the first byte, not for the next tick. A
+                    // tick-first pump makes an echoed keystroke sit out the
+                    // remainder of a frame it had no part in starting, and
+                    // this pane's frame grid has no relation to the one the
+                    // client draws on, so the two waits stack. The rate cap
+                    // is at the bottom of the loop instead: it belongs after
+                    // a frame has been presented, not before one is begun.
+                    let first = if eof {
+                        // Nothing more can arrive, but the exit poll below
+                        // still has to run.
+                        tokio::time::sleep(FRAME_INTERVAL).await;
+                        None
+                    } else {
+                        tokio::select! {
+                            chunk = byte_rx.recv() => {
+                                eof = chunk.is_none();
+                                chunk
+                            }
+                            // A pane that produces nothing still has to be
+                            // watched for its child exiting.
+                            _ = tokio::time::sleep(FRAME_INTERVAL) => None,
+                        }
+                    };
 
                     let mut dirty = false;
-                    for _ in 0..MAX_CHUNKS_PER_FRAME {
+                    let mut budget = MAX_CHUNKS_PER_FRAME;
+                    if let Some(chunk) = first {
+                        shape.lock().unwrap().feed(&chunk);
+                        parser.lock().unwrap().process(&chunk);
+                        dirty = true;
+                        budget -= 1;
+                    }
+                    // Whatever else is already queued rides along on this
+                    // frame rather than costing one of its own.
+                    for _ in 0..budget {
                         let Ok(chunk) = byte_rx.try_recv() else { break };
                         shape.lock().unwrap().feed(&chunk);
                         parser.lock().unwrap().process(&chunk);
@@ -244,6 +275,13 @@ impl PaneRuntime {
                             cb(code);
                         }
                         break;
+                    }
+
+                    // The rate cap. A sustained stream still coalesces onto
+                    // FRAME_INTERVAL; a lone keystroke's echo has already
+                    // gone out above without waiting for it.
+                    if dirty {
+                        tokio::time::sleep(FRAME_INTERVAL).await;
                     }
                 }
             });
@@ -650,6 +688,8 @@ mod tests {
         wait_for(&pane, |g| grid_contains(g, "argus-typed")).await;
         let _ = pane.kill();
     }
+
+
 
     #[tokio::test]
     async fn a_child_exit_fires_on_exit_once_and_announces_pane_closed() {
