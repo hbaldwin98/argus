@@ -325,8 +325,8 @@ n  add one",
         .current_checkout()
         .map(|c| {
             c.listed_panes()
-                .map(|p| {
-                    Item::new(
+                .flat_map(|p| {
+                    let parent = Item::new(
                         vec![
                             status_dot(Some(p.status), th),
                             Span::styled(
@@ -340,22 +340,26 @@ n  add one",
                     .badged(vec![Span::styled(
                         format!("#{}", p.id.0),
                         Style::default().fg(th.dim),
-                    )])
+                    )]);
+                    std::iter::once(parent)
+                        .chain(p.children.iter().map(|c| child_item(c, th)))
                 })
                 .collect()
         })
         .unwrap_or_default();
-    let npane = app
+    // The selection is a pane, but the rows it sits among include the
+    // children listed under each one, so the highlight has to be moved
+    // onto the row that pane actually occupies.
+    let selected_row = app
         .current_checkout()
-        .map(|c| c.listed_panes().count())
-        .unwrap_or(0);
+        .and_then(|c| pane_row_owners(c).iter().position(|owner| *owner == app.sel_pane));
     app.layout.panes = render_column(
         f,
         cols[3],
         "panes",
         pane_rows,
         app.focus == Focus::Panes,
-        (npane > 0).then_some(app.sel_pane),
+        selected_row,
         "nothing running
 
 s  shell
@@ -1491,27 +1495,38 @@ fn pane_detail(p: &argus_protocol::PaneInfo, th: Theme) -> Vec<Span<'static>> {
             Style::default().fg(th.dim),
         )),
     }
-    spans.extend(children_note(&p.children, th));
     spans
 }
 
-/// Agents running underneath this one, on the parent's own detail line.
-/// They get no row of their own: they are not something you can go to or
-/// act on, only something worth knowing is there — and the one that is
-/// stalled is the one worth naming.
-fn children_note(children: &[ChildAgentInfo], th: Theme) -> Vec<Span<'static>> {
-    let Some(worst) = children.iter().max_by_key(|c| rank(&c.status)) else {
-        return Vec::new();
-    };
-    let label = if children.len() > 1 {
-        format!("  ⤷ {} · {}", children.len(), worst.label)
-    } else {
-        format!("  ⤷ {}", worst.label)
-    };
-    vec![Span::styled(
-        label,
-        Style::default().fg(if worst.status.needs_you() { th.err } else { th.dim }),
-    )]
+/// One agent running underneath a pane, as a row of its own beneath its
+/// parent (DESIGN.md §8b). Indented and unbolded so the column still reads
+/// as a list of panes: a child is something happening in a pane, not
+/// somewhere else to go — selecting its row selects the pane it runs in.
+fn child_item(c: &ChildAgentInfo, th: Theme) -> Item<'static> {
+    Item::new(
+        vec![
+            Span::styled("  ⤷ ", Style::default().fg(th.dim)),
+            status_dot(Some(c.status), th),
+            Span::styled(c.label.clone(), Style::default().fg(th.muted)),
+        ],
+        vec![Span::styled(
+            match c.note.as_deref().filter(|n| !n.is_empty()) {
+                Some(note) => format!("    {note}"),
+                None => format!("    {}", status_word(c.status)),
+            },
+            Style::default().fg(if c.status.needs_you() { th.err } else { th.dim }),
+        )],
+    )
+}
+
+/// Which pane each row of the panes column belongs to: a pane's own row,
+/// then one row per child listed under it. Shared with `app` so a click
+/// lands on the same pane the renderer drew there.
+pub fn pane_row_owners(c: &argus_protocol::CheckoutInfo) -> Vec<usize> {
+    c.listed_panes()
+        .enumerate()
+        .flat_map(|(i, p)| std::iter::repeat_n(i, 1 + p.children.len()))
+        .collect()
 }
 
 fn exit_note(status: PaneStatus) -> String {
@@ -1921,31 +1936,53 @@ mod tests {
     }
 
     #[test]
-    fn a_row_says_what_is_running_underneath_it() {
-        // Agents spawned inside a pane cannot touch its row, so the only
-        // way to know they are there is for the parent to say so.
-        let th = Theme::default();
-        let mut p = pane(PaneStatus::Working, None);
-        p.children = vec![ChildAgentInfo {
-            label: "searching the hook table".to_string(),
-            status: PaneStatus::Working,
-            note: None,
-        }];
-        assert_eq!(
-            text_of(&pane_detail(&p, th)),
-            "working  \u{2937} searching the hook table"
-        );
+    fn a_working_child_gets_its_own_row_under_its_pane() {
+        // Agents spawned inside a pane cannot touch its row, so without a
+        // row of their own there is nothing on screen saying they are
+        // there at all.
+        let mut app = app_with_tree();
+        if let Some(p) = app.tree[0].repositories[0].checkouts[0].panes.get_mut(0) {
+            p.children = vec![
+                ChildAgentInfo {
+                    label: "searching the hook table".to_string(),
+                    status: PaneStatus::Working,
+                    note: None,
+                },
+                ChildAgentInfo {
+                    label: "running the tests".to_string(),
+                    status: PaneStatus::Waiting,
+                    note: Some("needs a password".to_string()),
+                },
+            ];
+        }
+        let out = lines(&draw_at(&mut app, 160, 24)).join("
+");
+        assert!(out.contains("⤷"), "children are marked as such:
+{out}");
+        assert!(out.contains("searching the"), "{out}");
+        assert!(out.contains("running the tests"), "{out}");
+        // A child stalled on a human says so where the parent's note goes,
+        // which is the whole reason to list it.
+        assert!(out.contains("needs a password"), "{out}");
+    }
 
-        // With several, the one stalled on a human is the one named.
-        p.children.push(ChildAgentInfo {
-            label: "running the tests".to_string(),
-            status: PaneStatus::Waiting,
-            note: Some("needs a password".to_string()),
-        });
-        assert_eq!(
-            text_of(&pane_detail(&p, th)),
-            "working  \u{2937} 2 \u{b7} running the tests"
-        );
+    #[test]
+    fn the_selection_stays_on_the_pane_when_children_push_rows_down() {
+        let mut app = app_with_tree();
+        if let Some(p) = app.tree[0].repositories[0].checkouts[0].panes.get_mut(0) {
+            p.children = vec![ChildAgentInfo {
+                label: "searching the hook table".to_string(),
+                status: PaneStatus::Working,
+                note: None,
+            }];
+        }
+        app.focus = Focus::Panes;
+        app.sel_pane = 1;
+        let buf = draw_at(&mut app, 160, 24);
+        let inner = app.layout.panes.inner;
+        // Row 0 is the pane, row 1 its child, so the second pane is row 2.
+        let marker = buf.cell((inner.x, inner.y + ROW_HEIGHT * 2)).unwrap();
+        assert_eq!(marker.symbol(), MARKER, "the marker follows the pane's row");
     }
 
     #[test]

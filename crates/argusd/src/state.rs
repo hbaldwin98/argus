@@ -45,11 +45,21 @@ struct ChildAgent {
     label: Option<String>,
     status: PaneStatus,
     note: Option<String>,
+    /// When this child last said anything. A child that finishes usually
+    /// says so, and one whose parent finishes is cleared with the turn —
+    /// this is for the child that dies without either happening.
+    at: std::time::Instant,
 }
 
 /// How many children a pane lists. A parent fanning out dozens of one-shot
 /// CLIs should not push its own row off the column.
 const MAX_CHILDREN: usize = 8;
+
+/// How long a child may go without reporting before it stops being listed.
+/// Long enough that a single slow tool call is not mistaken for death —
+/// the common endings are handled without waiting for it, so this is only
+/// the backstop for a child that vanishes silently.
+const CHILD_SILENCE: Duration = Duration::from_secs(600);
 
 /// A pane started with its harness's resume arguments, and what to start
 /// instead if that turns out to have been a lie.
@@ -1092,13 +1102,17 @@ impl Daemon {
                 return;
             }
             match p.children.iter_mut().find(|c| c.session_id == session) {
-                Some(child) => edit(child),
+                Some(child) => {
+                    child.at = std::time::Instant::now();
+                    edit(child)
+                }
                 None => {
                     let mut child = ChildAgent {
                         session_id: session.to_string(),
                         label: None,
                         status: PaneStatus::Working,
                         note: None,
+                        at: std::time::Instant::now(),
                     };
                     edit(&mut child);
                     p.children.push(child);
@@ -1137,6 +1151,27 @@ impl Daemon {
         self.with_child(pane, session, |child| child.label = Some(label));
     }
 
+    /// Forgets children that have gone quiet. A child says so when it
+    /// finishes and is cleared with its parent's turn either way, so this
+    /// only catches the one that was killed, crashed, or lost its harness
+    /// mid-turn — otherwise its row would sit there claiming to be working
+    /// for as long as the parent kept going.
+    fn drop_silent_children(&self) {
+        let changed = {
+            let mut inner = self.inner.lock().unwrap();
+            let mut changed = false;
+            for p in all_panes(&mut inner.projects) {
+                let before = p.children.len();
+                p.children.retain(|c| c.at.elapsed() < CHILD_SILENCE);
+                changed |= p.children.len() != before;
+            }
+            changed
+        };
+        if changed {
+            self.broadcast_tree();
+        }
+    }
+
     fn set_pane_hook_status(&self, pane: PaneId, status: PaneStatus, note: Option<String>) {
         let changed = {
             let mut inner = self.inner.lock().unwrap();
@@ -1146,9 +1181,17 @@ impl Daemon {
                     // state takes it away with it, so a stale "waiting for
                     // the db password" can't sit under a working row.
                     let note = note.map(|n| clean_title(&n)).filter(|n| !n.is_empty());
-                    let changed = p.status != status || p.note != note;
+                    let mut changed = p.status != status || p.note != note;
                     p.status = status;
                     p.note = note;
+                    // The turn that spawned them is over, so anything still
+                    // listed under this row has finished without saying so.
+                    // A background agent outliving the turn is not lost by
+                    // this: its next report lists it again.
+                    if status == PaneStatus::Idle && !p.children.is_empty() {
+                        p.children.clear();
+                        changed = true;
+                    }
                     changed
                 }
                 _ => false,
@@ -1370,6 +1413,7 @@ impl Daemon {
                 let daemon = daemon.clone();
                 let _ = tokio::task::spawn_blocking(move || {
                     daemon.reconcile_worktrees();
+                    daemon.drop_silent_children();
                     daemon.refresh_git_status();
                     let _ = daemon.tree_tx.send(daemon.snapshot());
                 })
@@ -2073,6 +2117,14 @@ fn is_stale_report(current: PaneStatus, reported: PaneStatus) -> bool {
             )
 }
 
+fn all_panes(projects: &mut [Project]) -> impl Iterator<Item = &mut Pane> {
+    projects
+        .iter_mut()
+        .flat_map(|p| p.repositories.iter_mut())
+        .flat_map(|r| r.checkouts.iter_mut())
+        .flat_map(|c| c.panes.iter_mut())
+}
+
 fn find_pane(projects: &mut [Project], id: PaneId) -> Option<&mut Pane> {
     projects
         .iter_mut()
@@ -2608,6 +2660,61 @@ mod tests {
 
         d.report_pane_status(pane, Some("child-session"), PaneStatus::Idle, None);
         assert!(pane_info(&d, pane).children.is_empty());
+
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_parent_going_idle_forgets_what_ran_under_it() {
+        // Most children never report finishing: a subagent's harness fires
+        // the parent's hooks, not its own. The turn ending is what says
+        // they are done, so the row must not keep claiming they are working.
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+        d.set_pane_session_id(pane, "parent-session");
+        d.report_pane_status(pane, Some("parent-session"), PaneStatus::Working, None);
+        d.report_pane_status(pane, Some("child-session"), PaneStatus::Working, None);
+        assert_eq!(pane_info(&d, pane).children.len(), 1);
+
+        d.report_pane_status(pane, Some("parent-session"), PaneStatus::Idle, None);
+        assert!(pane_info(&d, pane).children.is_empty());
+
+        // A background agent that outlives the turn is not lost by this:
+        // the next thing it reports lists it again.
+        d.report_pane_status(pane, Some("child-session"), PaneStatus::Working, None);
+        assert_eq!(pane_info(&d, pane).children.len(), 1);
+
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_child_that_goes_quiet_stops_being_listed() {
+        // The backstop for a child that is killed or crashes mid-turn:
+        // nothing reports its ending, and the parent keeps working, so
+        // without this its row would sit there indefinitely.
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+        d.set_pane_session_id(pane, "parent-session");
+        d.report_pane_status(pane, Some("parent-session"), PaneStatus::Working, None);
+        d.report_pane_status(pane, Some("live-child"), PaneStatus::Working, None);
+        d.report_pane_status(pane, Some("dead-child"), PaneStatus::Working, None);
+
+        // Age one of them past the silence the sweep allows.
+        {
+            let mut inner = d.inner.lock().unwrap();
+            let p = find_pane(&mut inner.projects, pane).unwrap();
+            let child = p
+                .children
+                .iter_mut()
+                .find(|c| c.session_id == "dead-child")
+                .unwrap();
+            child.at = std::time::Instant::now() - CHILD_SILENCE - Duration::from_secs(1);
+        }
+        d.drop_silent_children();
+
+        let listed = pane_info(&d, pane).children;
+        assert_eq!(listed.len(), 1, "the quiet one is gone");
+        assert_eq!(listed[0].label, "agent");
 
         d.close_pane(pane).unwrap();
     }

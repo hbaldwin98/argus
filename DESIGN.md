@@ -207,11 +207,18 @@ at PreInvocation.
 Every report carries the session it came from, and the pane belongs to one of them. The session that
 claims a pane first owns it; a report from any other session — a CLI started from inside the pane,
 which inherits the same hook URL and token and cannot be stopped from calling home — is recorded as a
-child of that pane instead. Children are listed on the parent's row and can change nothing about it:
+child of that pane instead. Children are listed as indented rows beneath the parent's, each with its
+own status and note, and are not separately selectable: clicking one selects the pane it runs in,
+because a child is something happening inside that pane rather than somewhere else to go. A child can
+change nothing about the pane it reports through:
 not its title, not its status, not its checkout, and not the conversation it resumes. A new session
 ID may take the pane over only while the pane is not working, which is what an agent starting a fresh
 conversation looks like and what an agent spawned mid-turn does not; taking over clears the child
-list. A child that reports idle stops being listed, and a pane lists at most eight. A report with no
+list. A child stops being listed three ways: it reports idle, its parent reports idle — the turn that
+spawned it is over, and most children never report an ending of their own because the subagent's
+harness fires the *parent's* hooks — or it goes ten minutes without reporting anything, which is the
+backstop for one that was killed mid-turn. A background agent outliving its parent's turn is not lost
+by the second of those: its next report lists it again. A pane lists at most eight. A report with no
 session at all — `argus-hook status` run by hand — is the pane's own voice, as before.
 
 Agents name their own rows. At session start a harness with a `context_event` is handed

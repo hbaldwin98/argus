@@ -1844,7 +1844,16 @@ impl App {
             _ => self.visible_pane_count(),
         };
 
-        let hit = row_in(inner, x, y).filter(|idx| *idx < count);
+        // The panes column draws each pane's children under it, so a row
+        // there is not an index into the panes: a click on a child row
+        // means the pane it is running in.
+        let hit = match target {
+            Focus::Panes => row_in(inner, x, y).and_then(|row| {
+                self.current_checkout()
+                    .and_then(|c| crate::ui::pane_row_owners(c).get(row).copied())
+            }),
+            _ => row_in(inner, x, y).filter(|idx| *idx < count),
+        };
         let already = self.focus == target && hit == Some(self.selection_in(target));
         if let Some(idx) = hit {
             *self.selection_mut(target) = idx;
@@ -3509,6 +3518,30 @@ second
         h.app.on_mouse(click(26, 3)); // the checkouts card, second row
         assert_eq!(h.app.focus, Focus::Checkouts);
         assert_eq!(h.app.sel_checkout, 1);
+    }
+
+    #[test]
+    fn clicking_a_child_row_selects_the_pane_it_runs_in() {
+        // A child is drawn as its own row but is not somewhere to go: the
+        // only thing to select there is the pane it is running inside.
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        if let Some(p) = h.app.tree[0].repositories[0].checkouts[0].panes.get_mut(0) {
+            p.children = vec![argus_protocol::ChildAgentInfo {
+                label: "running the tests".to_string(),
+                status: PaneStatus::Working,
+                note: None,
+            }];
+        }
+
+        // Row 1 of the panes column is the first pane's child; row 2 is the
+        // second pane, which without children would have been row 1.
+        h.app.on_mouse(click(38, 3));
+        assert_eq!(h.app.focus, Focus::Panes);
+        assert_eq!(h.app.sel_pane, 0, "a child row means its parent");
+
+        h.app.on_mouse(click(38, 5));
+        assert_eq!(h.app.sel_pane, 1, "and the rows below it have shifted down");
     }
 
     #[test]
