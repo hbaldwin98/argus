@@ -1631,6 +1631,18 @@ impl App {
         self.prompt = Some(Prompt::ConfirmRemove { target, label });
     }
 
+    /// Whether a mouse event can be ignored outright.
+    ///
+    /// Nothing in the client follows the pointer — there is no hover state,
+    /// and `encode_mouse` has no VT sequence for a move with no button
+    /// held — so a pointer crossing the terminal changes nothing on screen.
+    /// It was still costing a full frame each, which is a few hundred
+    /// milliseconds of drawing per second of moving the mouse. A drag in
+    /// progress is a real change and is not idle.
+    pub fn mouse_is_idle(&self, ev: &MouseEvent) -> bool {
+        matches!(ev.kind, MouseEventKind::Moved) && self.resizing_gutter.is_none()
+    }
+
     pub fn on_mouse(&mut self, ev: MouseEvent) {
         if self.picker.is_some() || self.prompt.is_some() || self.dir_picker.is_some() {
             return;
@@ -2502,6 +2514,23 @@ mod tests {
             })
             .collect();
         assert_eq!(bytes, b"echo\r");
+    }
+
+    #[test]
+    fn a_pointer_crossing_the_screen_is_not_a_reason_to_redraw() {
+        let h = Harness::new();
+        let moved = MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: 4,
+            row: 4,
+            modifiers: KeyModifiers::NONE,
+        };
+
+        assert!(h.app.mouse_is_idle(&moved));
+        assert!(!h.app.mouse_is_idle(&MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            ..moved
+        }));
     }
 
     #[test]

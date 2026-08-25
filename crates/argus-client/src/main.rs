@@ -382,8 +382,14 @@ fn take_event(
         &event,
         Some(Ok(Event::Key(k))) if matches!(k.kind, KeyEventKind::Press | KeyEventKind::Repeat)
     );
+    // A pointer crossing the terminal changes nothing on screen, and a
+    // frame for each was costing more than everything else the loop does.
+    let idle = matches!(&event, Some(Ok(Event::Mouse(m))) if app.mouse_is_idle(m));
     if !handle_terminal_event(app, burst, event) {
         return false;
+    }
+    if idle {
+        return true;
     }
     if key {
         let pane = app.input_pane();
