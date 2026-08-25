@@ -48,6 +48,10 @@ pub struct Layout {
     pub content: Panel,
     /// Zero-sized when no overlay is up.
     pub overlay: Panel,
+    /// Where the last frame put the hardware cursor, `None` when it hid it.
+    /// Recorded as well as applied so the decision — which is one decision
+    /// for the whole frame, made across several layers — can be asserted on.
+    pub cursor: Option<crate::ui::CursorPlacement>,
 }
 
 /// What confirming a picker selection does. The picker is one widget with
@@ -2298,8 +2302,7 @@ mod tests {
             cursor: argus_protocol::Cursor {
                 row: 0,
                 col: 0,
-                visible: true,
-            },
+                visible: true, ..Default::default() },
         });
         assert!(h.app.grids.contains_key(&PaneId(100)));
     }
@@ -3135,6 +3138,7 @@ mod tests {
             panes: panel(36, 12),
             content: panel(48, 20),
             overlay: Panel::default(),
+            cursor: None,
         };
     }
 
@@ -3161,6 +3165,7 @@ mod tests {
             panes: panel(39, 12),
             content: panel(52, 20),
             overlay: Panel::default(),
+            cursor: None,
         };
 
         h.app.on_mouse(click(12, 3));
@@ -3216,6 +3221,7 @@ mod tests {
             panes: panel(39, 12),
             content: panel(52, 20),
             overlay: Panel::default(),
+            cursor: None,
         };
 
         h.app.on_mouse(click(12, 3));
@@ -5130,6 +5136,7 @@ mod tests {
             panes: panel(29, 12),
             content: panel(42, 20),
             overlay: Panel::default(),
+            cursor: None,
         };
         h.app.projects_collapsed = true;
 

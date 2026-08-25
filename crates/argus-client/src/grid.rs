@@ -124,8 +124,7 @@ mod tests {
         g.move_cursor(Cursor {
             row: 3,
             col: 7,
-            visible: false,
-        });
-        assert_eq!(g.cursor, Cursor { row: 3, col: 7, visible: false });
+            visible: false, ..Default::default() });
+        assert_eq!(g.cursor, Cursor { row: 3, col: 7, visible: false, ..Default::default() });
     }
 }

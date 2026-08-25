@@ -22,7 +22,7 @@
 
 use argus_protocol::{Color as PColor, GitStatus, LineKind, PaneStatus};
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget, Wrap};
@@ -31,6 +31,7 @@ use ratatui::Frame;
 use crate::app::{App, Focus, Overlay, Panel, PickerKind, Prompt, Setting};
 use crate::dirpicker::DirRow;
 use crate::grid::Grid;
+use argus_protocol::CursorShape;
 use crate::review::{Row, ReviewView};
 use crate::theme::Theme;
 
@@ -99,21 +100,42 @@ pub fn render(f: &mut Frame, app: &mut App) {
         .constraints([Constraint::Min(1), Constraint::Length(2)])
         .split(page);
 
-    render_columns(f, app, root[0]);
+    // The hardware cursor is decided once, here, and applied last.
+    //
+    // Ratatui keeps a single cursor position per frame, so every widget
+    // that sets one overwrites whatever was drawn before it. Deciding
+    // per-widget means a layer on top can only ever *add* a position,
+    // never take one away: an overlay whose child had hidden its cursor
+    // left the content column's cursor stranded on top of the overlay.
+    // Each layer replaces the decision outright, `None` included.
+    let mut cursor = render_columns(f, app, root[0]);
     render_status(f, app, root[1], th);
 
     // Above the columns, below the modals: a picker opened from an
     // overlay still has to be reachable.
-    render_overlay(f, app, page, th);
+    let overlay_cursor = render_overlay(f, app, page, th);
+    if app.overlay.is_some() {
+        cursor = overlay_cursor;
+    }
 
+    // These draw their own caret and cover what is under them, so no child
+    // terminal's cursor has any business showing through.
     if app.picker.is_some() {
         render_picker(f, app, f.area(), th);
+        cursor = None;
     }
     if app.dir_picker.is_some() {
         render_dir_picker(f, app, f.area(), th);
+        cursor = None;
     }
     if app.prompt.is_some() {
         render_prompt(f, app, f.area(), th);
+        cursor = None;
+    }
+
+    app.layout.cursor = cursor;
+    if let Some(placement) = cursor {
+        f.set_cursor_position(placement.position);
     }
 }
 
@@ -121,7 +143,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
 /// visible next to the rest of the tree instead of taking over the screen.
 /// The projects column may be collapsed to a thin strip, in which case its
 /// width is ceded to the other four.
-fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
+fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option<CursorPlacement> {
     let th = app.theme;
     let constraints = if app.projects_collapsed {
         collapsed_projects_constraints(area.width, app.column_widths.as_deref())
@@ -341,7 +363,7 @@ a  agent",
         th,
     );
 
-    render_content(f, app, cols[4], th);
+    render_content(f, app, cols[4], th)
 }
 
 fn column_constraints(total_width: u16, preferred: Option<&[u16]>) -> Vec<Constraint> {
@@ -619,7 +641,7 @@ fn row_rect_of(inner: Rect, i: usize, height: u16) -> Option<Rect> {
 /// The rightmost column: the selected pane's live terminal, always drawn
 /// alongside the other four rather than taking over the screen. Which pane
 /// that is follows the panes column's selection.
-fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option<CursorPlacement> {
     // Typing focus is what the accent border promises here, so only
     // PaneContent lights it up — merely selecting a pane does not.
     let focused = app.focus == Focus::PaneContent;
@@ -628,7 +650,7 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    if app.current_pane().is_none() {
+    let cursor = if app.current_pane().is_none() {
         f.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::styled("nothing running here — ", Style::default().fg(th.dim)),
@@ -639,11 +661,13 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
             ])),
             inner,
         );
+        None
     } else {
         let grid = app.column_pane().and_then(|id| app.grids.get(&id));
-        render_term(f, grid, inner, focused);
-    }
+        render_term(f, grid, inner, focused)
+    };
     app.layout.content = Panel { outer: area, inner };
+    cursor
 }
 
 /// Drawn in the column the live pane uses, so the nav columns stay put
@@ -854,10 +878,14 @@ fn breadcrumb(app: &App) -> String {
 /// is the thing the whole layout exists to prevent.
 const OVERLAY_FRACTION: (u16, u16) = (82, 78);
 
-fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+/// Returns where the hardware cursor belongs while an overlay is up. An
+/// overlay covers the content column, so `None` here means the cursor is
+/// not drawn at all this frame — the column underneath does not get to
+/// keep it (see [`render`]).
+fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option<CursorPlacement> {
     let Some(overlay) = &app.overlay else {
         app.layout.overlay = Panel::default();
-        return;
+        return None;
     };
 
     let width = (area.width * OVERLAY_FRACTION.0 / 100).max(20.min(area.width));
@@ -885,11 +913,15 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     };
 
     match overlay {
-        Overlay::Pane { pane, .. } => {
-            render_term(f, app.grids.get(pane), inner, true);
+        Overlay::Pane { pane, .. } => render_term(f, app.grids.get(pane), inner, true),
+        Overlay::Settings { sel } => {
+            render_settings(f, app, inner, *sel, th);
+            None
         }
-        Overlay::Settings { sel } => render_settings(f, app, inner, *sel, th),
-        Overlay::Review => render_review(f, app, inner, th),
+        Overlay::Review => {
+            render_review(f, app, inner, th);
+            None
+        }
     }
 }
 
@@ -1511,14 +1543,50 @@ struct TermView<'a> {
     grid: Option<&'a Grid>,
 }
 
-fn render_term(f: &mut Frame, grid: Option<&Grid>, area: Rect, focused: bool) {
+/// Draws the pane and reports where the hardware cursor would go if this
+/// pane owned it. Reporting rather than placing: `render` makes one cursor
+/// decision for the whole frame (see [`render`]), so a pane drawn
+/// underneath something else cannot strand its cursor on top of it.
+/// Where the hardware cursor goes this frame, and what the child asked it
+/// to look like. The two travel together because they come from the same
+/// grid: the pane that owns the cursor owns its shape too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CursorPlacement {
+    pub position: Position,
+    pub shape: CursorShape,
+}
+
+fn render_term(
+    f: &mut Frame,
+    grid: Option<&Grid>,
+    area: Rect,
+    focused: bool,
+) -> Option<CursorPlacement> {
     f.render_widget(TermView { grid }, area);
-    let Some(grid) = grid.filter(|grid| focused && grid.cursor.visible) else {
-        return;
-    };
-    if grid.cursor.row < area.height && grid.cursor.col < area.width {
-        f.set_cursor_position((area.x + grid.cursor.col, area.y + grid.cursor.row));
+    term_cursor(grid, area, focused)
+}
+
+/// The child cursor mapped into `area`, or `None` when it must not be drawn.
+///
+/// Bounded by the grid as well as by the area. The two disagree for a frame
+/// whenever a pane's on-screen size changes: the client draws the grid it
+/// has, and only asks for a matching pty size afterwards, so a grid still
+/// at the pty's 24x80 default can be drawn into a much larger box. Placing
+/// the cursor at a coordinate the drawn rows don't reach puts it in empty
+/// space — better to skip a frame than to point at nothing.
+fn term_cursor(grid: Option<&Grid>, area: Rect, focused: bool) -> Option<CursorPlacement> {
+    let grid = grid.filter(|grid| focused && grid.cursor.visible)?;
+    let rows = grid.cells.len();
+    let cols = grid.cells.first().map_or(0, Vec::len);
+    let row = usize::from(grid.cursor.row);
+    let col = usize::from(grid.cursor.col);
+    if row >= rows.min(usize::from(area.height)) || col >= cols.min(usize::from(area.width)) {
+        return None;
     }
+    Some(CursorPlacement {
+        position: Position::new(area.x + grid.cursor.col, area.y + grid.cursor.row),
+        shape: grid.cursor.shape,
+    })
 }
 
 impl Widget for TermView<'_> {
@@ -1998,8 +2066,7 @@ mod tests {
                 argus_protocol::Cursor {
                     row: 1,
                     col: 2,
-                    visible: true,
-                },
+                    visible: true, ..Default::default() },
             ),
         );
         let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
@@ -2010,6 +2077,112 @@ mod tests {
             app.layout.content.inner.x + 2,
             app.layout.content.inner.y + 1,
         ));
+    }
+
+    #[test]
+    fn an_overlay_whose_cursor_is_hidden_does_not_leave_the_column_cursor_on_top_of_it() {
+        // Regression: the content column and the overlay both drew a
+        // terminal, and ratatui has one cursor slot per frame. The overlay
+        // took the early return when its child had hidden its cursor,
+        // which left the column's position in the slot — so the hardware
+        // cursor sat on top of the overlay, pointing at a coordinate that
+        // belonged to the pane behind it.
+        let mut app = app_with_tree();
+        app.focus = Focus::PaneContent;
+        app.grids.insert(
+            PaneId(100),
+            Grid::with_cursor(
+                vec![vec![Default::default(); 40]; 10],
+                argus_protocol::Cursor { row: 1, col: 2, visible: true, ..Default::default() },
+            ),
+        );
+        app.grids.insert(
+            PaneId(101),
+            Grid::with_cursor(
+                vec![vec![Default::default(); 40]; 10],
+                argus_protocol::Cursor { row: 1, col: 2, visible: false, ..Default::default() },
+            ),
+        );
+        app.overlay = Some(Overlay::Pane {
+            pane: PaneId(101),
+            title: "editor".to_string(),
+            ephemeral: true,
+        });
+
+        draw(&mut app);
+
+        assert_eq!(
+            app.layout.cursor, None,
+            "the overlay owns the cursor and its child has hidden it"
+        );
+    }
+
+    #[test]
+    fn a_prompt_takes_the_cursor_away_from_the_pane_behind_it() {
+        // The prompt draws its own caret; a second cursor blinking in the
+        // column underneath is just noise.
+        let mut app = app_with_tree();
+        app.focus = Focus::PaneContent;
+        app.grids.insert(
+            PaneId(100),
+            Grid::with_cursor(
+                vec![vec![Default::default(); 40]; 10],
+                argus_protocol::Cursor { row: 1, col: 2, visible: true, ..Default::default() },
+            ),
+        );
+        draw(&mut app);
+        assert!(app.layout.cursor.is_some());
+
+        app.prompt = Some(Prompt::EditorCommand { input: String::new() });
+        draw(&mut app);
+
+        assert_eq!(app.layout.cursor, None);
+    }
+
+    #[test]
+    fn a_cursor_past_the_end_of_the_grid_is_not_drawn() {
+        // A pane's on-screen box is resized a frame before its pty is, so
+        // the grid can be smaller than the area it is drawn into. Placing
+        // the cursor by the area alone points it at rows that were never
+        // drawn.
+        let area = Rect::new(0, 0, 80, 40);
+        let grid = Grid::with_cursor(
+            vec![vec![Default::default(); 80]; 24],
+            argus_protocol::Cursor { row: 30, col: 0, visible: true, ..Default::default() },
+        );
+
+        assert_eq!(term_cursor(Some(&grid), area, true), None);
+    }
+
+    #[test]
+    fn a_cursor_inside_both_the_grid_and_the_area_is_drawn() {
+        let area = Rect::new(3, 5, 80, 40);
+        let grid = Grid::with_cursor(
+            vec![vec![Default::default(); 80]; 24],
+            argus_protocol::Cursor { row: 7, col: 9, visible: true, ..Default::default() },
+        );
+
+        assert_eq!(
+            term_cursor(Some(&grid), area, true).map(|c| c.position),
+            Some(Position::new(12, 12))
+        );
+    }
+
+    #[test]
+    fn an_unfocused_or_hidden_cursor_is_not_drawn() {
+        let area = Rect::new(0, 0, 80, 40);
+        let visible = Grid::with_cursor(
+            vec![vec![Default::default(); 80]; 24],
+            argus_protocol::Cursor { row: 1, col: 1, visible: true, ..Default::default() },
+        );
+        let hidden = Grid::with_cursor(
+            vec![vec![Default::default(); 80]; 24],
+            argus_protocol::Cursor { row: 1, col: 1, visible: false, ..Default::default() },
+        );
+
+        assert_eq!(term_cursor(Some(&visible), area, false), None);
+        assert_eq!(term_cursor(Some(&hidden), area, true), None);
+        assert_eq!(term_cursor(None, area, true), None);
     }
 
     #[test]

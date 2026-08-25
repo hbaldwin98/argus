@@ -6,12 +6,52 @@ use serde::{Deserialize, Serialize};
 /// inline, so no blank cell anywhere in the pipeline touches the allocator.
 pub const BLANK: CompactString = CompactString::const_new(" ");
 
+/// What the child asked its cursor to look like, via DECSCUSR
+/// (`CSI Ps SP q`). Carried separately from position because the shape is
+/// a deliberate signal — a bar for insert mode, a block for normal mode —
+/// and rendering every child's cursor as the host terminal's default block
+/// throws that signal away.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum CursorShape {
+    /// The child has not asked for anything; the host's own shape stands.
+    #[default]
+    Default,
+    BlinkingBlock,
+    SteadyBlock,
+    BlinkingUnderline,
+    SteadyUnderline,
+    BlinkingBar,
+    SteadyBar,
+}
+
+impl CursorShape {
+    /// The DECSCUSR parameter, as written by the child. An absent parameter
+    /// means the same as `0`: go back to the host's shape.
+    pub fn from_decscusr(param: Option<u16>) -> Self {
+        match param.unwrap_or(0) {
+            1 => CursorShape::BlinkingBlock,
+            2 => CursorShape::SteadyBlock,
+            3 => CursorShape::BlinkingUnderline,
+            4 => CursorShape::SteadyUnderline,
+            5 => CursorShape::BlinkingBar,
+            6 => CursorShape::SteadyBar,
+            // 0 and anything unrecognised: leave the host's shape alone
+            // rather than guessing at one the child did not ask for.
+            _ => CursorShape::Default,
+        }
+    }
+}
+
 /// The child terminal's cursor, in grid-relative coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Cursor {
     pub row: u16,
     pub col: u16,
     pub visible: bool,
+    /// Defaulted on the wire so a client and daemon of different vintages
+    /// still agree about position and visibility.
+    #[serde(default)]
+    pub shape: CursorShape,
 }
 
 impl Default for Cursor {
@@ -20,6 +60,7 @@ impl Default for Cursor {
             row: 0,
             col: 0,
             visible: true,
+            shape: CursorShape::Default,
         }
     }
 }

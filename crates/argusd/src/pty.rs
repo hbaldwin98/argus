@@ -7,7 +7,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
-use argus_protocol::{diff_grid, Cell, Color, CompactString, Cursor, PaneId, ServerMsg, BLANK};
+use argus_protocol::{
+    diff_grid, Cell, Color, CompactString, Cursor, CursorShape, PaneId, ServerMsg, BLANK,
+};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::broadcast;
 
@@ -70,6 +72,9 @@ pub struct PaneRuntime {
     master: Box<dyn MasterPty + Send>,
     input: PaneInput,
     parser: Arc<StdMutex<vt100::Parser>>,
+    /// Shared with the pump: the cursor shape lives outside `vt100`, but a
+    /// snapshot taken from any thread still has to report it.
+    shape: Arc<StdMutex<CursorShapeScanner>>,
     child: Arc<StdMutex<Box<dyn Child + Send + Sync>>>,
     damage_tx: broadcast::Sender<ServerMsg>,
 }
@@ -142,6 +147,7 @@ impl PaneRuntime {
             parser: parser.clone(),
         };
         let child = Arc::new(StdMutex::new(child));
+        let shape = Arc::new(StdMutex::new(CursorShapeScanner::default()));
         let (damage_tx, _) = broadcast::channel::<ServerMsg>(64);
 
         let (byte_tx, mut byte_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(OUTPUT_QUEUE_CHUNKS);
@@ -162,6 +168,7 @@ impl PaneRuntime {
 
         {
             let parser = parser.clone();
+            let shape = shape.clone();
             let child = child.clone();
             let damage_tx = damage_tx.clone();
             tokio::spawn(async move {
@@ -175,13 +182,15 @@ impl PaneRuntime {
                     let mut dirty = false;
                     for _ in 0..MAX_CHUNKS_PER_FRAME {
                         let Ok(chunk) = byte_rx.try_recv() else { break };
+                        shape.lock().unwrap().feed(&chunk);
                         parser.lock().unwrap().process(&chunk);
                         dirty = true;
                     }
                     if dirty {
+                        let shape = shape.lock().unwrap().shape();
                         let parser = parser.lock().unwrap();
                         let cur = snapshot_grid(&parser);
-                        let cursor = snapshot_cursor(&parser);
+                        let cursor = snapshot_cursor(&parser, shape);
                         let spans = diff_grid(prev.as_ref(), &cur);
                         if !spans.is_empty() || prev_cursor != Some(cursor) {
                             let _ = damage_tx.send(ServerMsg::Damage { pane: id, spans, cursor });
@@ -206,6 +215,7 @@ impl PaneRuntime {
                         while tokio::time::Instant::now() < grace {
                             match tokio::time::timeout(FRAME_INTERVAL, byte_rx.recv()).await {
                                 Ok(Some(chunk)) => {
+                                    shape.lock().unwrap().feed(&chunk);
                                     parser.lock().unwrap().process(&chunk);
                                     flushed = true;
                                 }
@@ -218,9 +228,10 @@ impl PaneRuntime {
                             }
                         }
                         if flushed {
+                            let shape = shape.lock().unwrap().shape();
                             let parser = parser.lock().unwrap();
                             let cur = snapshot_grid(&parser);
-                            let cursor = snapshot_cursor(&parser);
+                            let cursor = snapshot_cursor(&parser, shape);
                             let spans = diff_grid(prev.as_ref(), &cur);
                             if !spans.is_empty() || prev_cursor != Some(cursor) {
                                 let _ = damage_tx.send(ServerMsg::Damage { pane: id, spans, cursor });
@@ -242,6 +253,7 @@ impl PaneRuntime {
             master: pair.master,
             input,
             parser,
+            shape,
             child,
             damage_tx,
         })
@@ -268,9 +280,10 @@ impl PaneRuntime {
     }
 
     pub fn full_snapshot(&self) -> (u16, u16, Vec<Vec<Cell>>, Cursor) {
+        let shape = self.shape.lock().unwrap().shape();
         let parser = self.parser.lock().unwrap();
         let (rows, cols) = parser.screen().size();
-        (rows, cols, snapshot_grid(&parser), snapshot_cursor(&parser))
+        (rows, cols, snapshot_grid(&parser), snapshot_cursor(&parser, shape))
     }
 
     /// The damage stream on its own. Only tests want this: a real
@@ -290,10 +303,17 @@ impl PaneRuntime {
     /// receiver — and the cells it carried stay wrong on the subscriber's
     /// grid until something else happens to overwrite them.
     pub fn snapshot_and_subscribe(&self) -> (u16, u16, Vec<Vec<Cell>>, Cursor, broadcast::Receiver<ServerMsg>) {
+        let shape = self.shape.lock().unwrap().shape();
         let parser = self.parser.lock().unwrap();
         let (rows, cols) = parser.screen().size();
         let rx = self.damage_tx.subscribe();
-        (rows, cols, snapshot_grid(&parser), snapshot_cursor(&parser), rx)
+        (
+            rows,
+            cols,
+            snapshot_grid(&parser),
+            snapshot_cursor(&parser, shape),
+            rx,
+        )
     }
 
     /// Pushes a fresh full-grid snapshot to whoever is currently subscribed.
@@ -326,13 +346,69 @@ fn snapshot_grid(parser: &vt100::Parser) -> Vec<Vec<Cell>> {
     grid
 }
 
-fn snapshot_cursor(parser: &vt100::Parser) -> Cursor {
+fn snapshot_cursor(parser: &vt100::Parser, shape: CursorShape) -> Cursor {
     let screen = parser.screen();
     let (row, col) = screen.cursor_position();
     Cursor {
         row,
         col,
         visible: !screen.hide_cursor(),
+        shape,
+    }
+}
+
+/// Picks DECSCUSR (`CSI Ps SP q`) out of the child's output stream.
+///
+/// `vt100` does not model the cursor's shape at all, so it is not in the
+/// screen state the rest of the pipeline is built from — but a child that
+/// asks for a bar means it, and dropping the request leaves every pane
+/// wearing the host terminal's block. The sequence is left in the stream
+/// for the parser to ignore as it already does; this only watches it go by.
+///
+/// Resumable across reads: a `read` boundary lands wherever the kernel put
+/// it, so a sequence is as likely to be split as not.
+#[derive(Default)]
+struct CursorShapeScanner {
+    shape: CursorShape,
+    state: ScanState,
+}
+
+#[derive(Default, Clone, Copy)]
+enum ScanState {
+    #[default]
+    Ground,
+    /// Saw ESC.
+    Escape,
+    /// Inside `CSI`, collecting the numeric parameter.
+    Params(Option<u16>),
+    /// Saw the intermediate space that makes this DECSCUSR and not some
+    /// other CSI ending in a letter.
+    Intermediate(Option<u16>),
+}
+
+impl CursorShapeScanner {
+    fn shape(&self) -> CursorShape {
+        self.shape
+    }
+
+    fn feed(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.state = match (self.state, b) {
+                // ESC restarts the machine from anywhere: a truncated
+                // sequence must not swallow the one that follows it.
+                (_, 0x1b) => ScanState::Escape,
+                (ScanState::Escape, b'[') => ScanState::Params(None),
+                (ScanState::Params(n), b'0'..=b'9') => ScanState::Params(Some(
+                    n.unwrap_or(0).saturating_mul(10).saturating_add(u16::from(b - b'0')),
+                )),
+                (ScanState::Params(n), b' ') => ScanState::Intermediate(n),
+                (ScanState::Intermediate(n), b'q') => {
+                    self.shape = CursorShape::from_decscusr(n);
+                    ScanState::Ground
+                }
+                _ => ScanState::Ground,
+            };
+        }
     }
 }
 
@@ -411,6 +487,59 @@ mod tests {
         assert_eq!(command.get_env("HERDR_ENV"), None);
         assert_eq!(command.get_env("HERDR_PANE_ID"), None);
         assert_eq!(command.get_env("ARGUS_PANE"), Some(std::ffi::OsStr::new("7")));
+    }
+
+    #[test]
+    fn a_bar_cursor_request_is_picked_out_of_the_stream() {
+        let mut scan = CursorShapeScanner::default();
+        scan.feed(b"hello[6 qworld");
+        assert_eq!(scan.shape(), CursorShape::SteadyBar);
+    }
+
+    #[test]
+    fn a_request_split_across_reads_still_lands() {
+        // A read boundary falls wherever the kernel put it, so the halves
+        // of a five-byte sequence routinely arrive in different chunks.
+        let mut scan = CursorShapeScanner::default();
+        for chunk in [&b""[..], b"[", b"5", b" ", b"q"] {
+            scan.feed(chunk);
+        }
+        assert_eq!(scan.shape(), CursorShape::BlinkingBar);
+    }
+
+    #[test]
+    fn a_zero_or_bare_parameter_hands_the_shape_back_to_the_host() {
+        let mut scan = CursorShapeScanner::default();
+        scan.feed(b"[2 q");
+        assert_eq!(scan.shape(), CursorShape::SteadyBlock);
+
+        scan.feed(b"[0 q");
+        assert_eq!(scan.shape(), CursorShape::Default);
+
+        scan.feed(b"[4 q");
+        scan.feed(b"[ q");
+        assert_eq!(scan.shape(), CursorShape::Default);
+    }
+
+    #[test]
+    fn other_escape_sequences_leave_the_shape_alone() {
+        let mut scan = CursorShapeScanner::default();
+        scan.feed(b"[3 q");
+        assert_eq!(scan.shape(), CursorShape::BlinkingUnderline);
+
+        // Colours, cursor moves, private modes, and a `q` that is not the
+        // final byte of a DECSCUSR: all common, none of them shape changes.
+        scan.feed(b"[31m[2;5H[?25l[?1049hq[10q");
+        assert_eq!(scan.shape(), CursorShape::BlinkingUnderline);
+    }
+
+    #[test]
+    fn a_truncated_sequence_does_not_swallow_the_one_behind_it() {
+        // An ESC always restarts the machine, so an abandoned sequence
+        // cannot eat the next request.
+        let mut scan = CursorShapeScanner::default();
+        scan.feed(b"[2[6 q");
+        assert_eq!(scan.shape(), CursorShape::SteadyBar);
     }
 
     /// Flattens a grid to one string per row, trailing blanks trimmed.
@@ -750,11 +879,12 @@ mod tests {
         let mut parser = vt100::Parser::new(4, 10, 0);
         parser.process(b"\x1b[3;5H\x1b[?25l");
         assert_eq!(
-            snapshot_cursor(&parser),
+            snapshot_cursor(&parser, CursorShape::SteadyBar),
             Cursor {
                 row: 2,
                 col: 4,
                 visible: false,
+                shape: CursorShape::SteadyBar,
             }
         );
     }

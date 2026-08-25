@@ -198,8 +198,7 @@ mod tests {
             cursor: Cursor {
                 row: 4,
                 col: 8,
-                visible: true,
-            },
+                visible: true, ..Default::default() },
             spans: vec![CellSpan {
                 row: 4,
                 col: 7,
@@ -215,7 +214,7 @@ mod tests {
         };
         assert_eq!(spans[0].cells[0].ch, "é", "non-ascii must survive");
         assert!(spans[0].cells[0].bold);
-        assert_eq!(cursor, Cursor { row: 4, col: 8, visible: true });
+        assert_eq!(cursor, Cursor { row: 4, col: 8, visible: true, ..Default::default() });
     }
 
     #[tokio::test]
