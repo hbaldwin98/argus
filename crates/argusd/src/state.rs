@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use argus_protocol::{
-    Cell, CheckoutId, CheckoutInfo, IdGen, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId,
-    ProjectInfo, RepositoryId, RepositoryInfo, ServerMsg, WorkspaceId, WorkspaceInfo,
+    Cell, CheckoutId, CheckoutInfo, GitStatus, IdGen, PaneId, PaneInfo, PaneKind, PaneStatus,
+    ProjectId, ProjectInfo, RepositoryId, RepositoryInfo, ServerMsg, WorkspaceId, WorkspaceInfo,
 };
 use tokio::sync::broadcast;
 
@@ -72,6 +72,12 @@ struct Checkout {
     /// worktree created via `create_worktree`. Gates removal (§4 Level 2).
     primary: bool,
     panes: Vec<Pane>,
+    /// Last polled git status, or `None` before the first poll has run.
+    /// Cached rather than read on demand because `snapshot` is taken under
+    /// the daemon's one lock, and `git::status` is milliseconds of blocking
+    /// I/O per checkout — long enough to be felt as typing lag, since every
+    /// keystroke needs that same lock to find its pane (§4 Level 2).
+    git: Option<GitStatus>,
 }
 
 struct Repository {
@@ -197,6 +203,7 @@ impl Daemon {
                                 path,
                                 primary: true,
                                 panes: Vec::new(),
+                                git: None,
                             }],
                         }
                     })
@@ -219,7 +226,7 @@ impl Daemon {
 
         let (tree_tx, _) = broadcast::channel(32);
         let (workspaces_tx, _) = broadcast::channel(32);
-        Arc::new(Daemon {
+        let daemon = Arc::new(Daemon {
             inner: StdMutex::new(Inner {
                 workspaces,
                 projects,
@@ -235,7 +242,13 @@ impl Daemon {
             hook_token: gen_token(),
             restoring: std::sync::atomic::AtomicBool::new(false),
             persist: std::sync::atomic::AtomicBool::new(false),
-        })
+        });
+        // Checkout rows are named after the branch occupying them, and that
+        // name now comes from the cache. Filling it here rather than waiting
+        // for the first poll means the first client to connect gets branch
+        // names rather than directory names.
+        daemon.refresh_git_status();
+        daemon
     }
 
     /// Clears any managed agent hooks left in a configured checkout by a
@@ -310,7 +323,7 @@ impl Daemon {
                             .checkouts
                             .iter()
                             .map(|c| {
-                                let git = crate::git::status(&c.path);
+                                let git = c.git.clone();
                                 CheckoutInfo {
                                     id: c.id,
                                     // A checkout names the branch currently occupying it,
@@ -913,9 +926,7 @@ impl Daemon {
         let inner = self.inner.lock().unwrap();
         let p =
             find_pane_ref(&inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
-        let (rows, cols, cells, cursor) = p.runtime.full_snapshot();
-        let rx = p.runtime.subscribe();
-        Ok((rows, cols, cells, cursor, rx))
+        Ok(p.runtime.snapshot_and_subscribe())
     }
 
     /// Binds the loopback HTTP status receiver hook commands POST to (see
@@ -1172,11 +1183,68 @@ impl Daemon {
                 let daemon = daemon.clone();
                 let _ = tokio::task::spawn_blocking(move || {
                     daemon.reconcile_worktrees();
+                    daemon.refresh_git_status();
                     let _ = daemon.tree_tx.send(daemon.snapshot());
                 })
                 .await;
             }
         });
+    }
+
+    /// Re-reads every checkout's git status and caches it on the checkout,
+    /// so the tree snapshots that clients actually render cost nothing but
+    /// a clone.
+    ///
+    /// Deliberately three phases — collect paths, read git, store results —
+    /// with the lock dropped in the middle. Reading git under the lock is
+    /// what this exists to avoid: status is several milliseconds of
+    /// blocking I/O per checkout, and `write_pane` needs the same lock to
+    /// find the pty a keystroke belongs to, so holding it across a sweep of
+    /// every checkout puts that whole sweep in front of the next key.
+    ///
+    /// Checkouts are matched back by id: the tree can be rearranged while
+    /// the lock is down, and a stale result must be dropped rather than
+    /// land on whatever now occupies that position.
+    pub fn refresh_git_status(&self) {
+        let checkouts: Vec<(CheckoutId, PathBuf)> = {
+            let inner = self.inner.lock().unwrap();
+            inner
+                .projects
+                .iter()
+                .flat_map(|p| p.repositories.iter())
+                .flat_map(|r| r.checkouts.iter())
+                .map(|c| (c.id, c.path.clone()))
+                .collect()
+        };
+
+        let statuses: Vec<(CheckoutId, Option<GitStatus>)> = checkouts
+            .into_iter()
+            .map(|(id, path)| (id, crate::git::status(&path)))
+            .collect();
+
+        let mut inner = self.inner.lock().unwrap();
+        for (id, status) in statuses {
+            if let Some(c) = find_checkout(&mut inner.projects, id) {
+                c.git = status;
+            }
+        }
+    }
+
+    /// Re-reads one checkout's status, for the moments where waiting for the
+    /// next poll would show the user the state they just changed away from.
+    /// A checkout row is named after the branch in its cached status, so a
+    /// switch that only updated the fallback name would keep drawing the
+    /// branch it just left for the rest of the tick.
+    fn refresh_checkout_git(&self, checkout: CheckoutId) {
+        let Ok(path) = self.checkout_path(checkout) else {
+            return;
+        };
+        // Read first, take the lock second — same reason as the sweep above.
+        let status = crate::git::status(&path);
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(c) = find_checkout(&mut inner.projects, checkout) {
+            c.git = status;
+        }
     }
 
     /// Reconciles each repository's checkouts against `git worktree list` on
@@ -1227,6 +1295,7 @@ impl Daemon {
                             path: path.clone(),
                             primary: is_primary,
                             panes: Vec::new(),
+                            git: None,
                         });
                     }
 
@@ -1291,6 +1360,7 @@ impl Daemon {
                         path: expanded,
                         primary: true,
                         panes: Vec::new(),
+                        git: None,
                     }],
                 }],
             });
@@ -1356,6 +1426,7 @@ impl Daemon {
                 c.name = branch.to_string();
             }
         }
+        self.refresh_checkout_git(checkout);
         self.broadcast_tree();
         Ok(())
     }
@@ -1390,18 +1461,23 @@ impl Daemon {
             );
         }
 
-        {
+        let added = {
             let mut inner = self.inner.lock().unwrap();
             let id = CheckoutId(inner.ids.alloc());
-            if let Some(r) = find_repository(&mut inner.projects, repository_id) {
+            find_repository(&mut inner.projects, repository_id).map(|r| {
                 r.checkouts.push(Checkout {
                     id,
                     name: branch,
                     path: dest,
                     primary: false,
                     panes: Vec::new(),
+                    git: None,
                 });
-            }
+                id
+            })
+        };
+        if let Some(id) = added {
+            self.refresh_checkout_git(id);
         }
         self.broadcast_tree();
         Ok(())
@@ -3068,7 +3144,34 @@ mod tests {
         repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
             .unwrap();
 
+        // Nothing told the daemon, so the poll is what finds it — the same
+        // step `start_git_poll` runs every two seconds. `snapshot` reads the
+        // cache that poll fills and never git itself, because it is taken
+        // under the lock keystrokes need.
+        d.refresh_git_status();
+
         assert_eq!(d.snapshot()[0].repositories[0].checkouts[0].name, "outside");
+    }
+
+    #[test]
+    fn a_tree_snapshot_reads_no_git_of_its_own() {
+        // The guarantee the status cache exists for: `snapshot` runs under
+        // the daemon's one lock, and `write_pane` needs that same lock to
+        // find the pty a keystroke belongs to. Reading git there put several
+        // milliseconds of blocking I/O per checkout in front of the next
+        // key. Asserted by moving the repo out from under the daemon: a
+        // snapshot that still consulted git would lose the branch name.
+        let (dir, d) = daemon_on_a_repo();
+        d.refresh_git_status();
+        let named = d.snapshot()[0].repositories[0].checkouts[0].name.clone();
+
+        std::fs::remove_dir_all(dir.path().join(".git")).unwrap();
+
+        assert_eq!(
+            d.snapshot()[0].repositories[0].checkouts[0].name,
+            named,
+            "the snapshot went back to git instead of using the cache"
+        );
     }
 
     #[tokio::test]

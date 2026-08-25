@@ -273,8 +273,27 @@ impl PaneRuntime {
         (rows, cols, snapshot_grid(&parser), snapshot_cursor(&parser))
     }
 
+    /// The damage stream on its own. Only tests want this: a real
+    /// subscriber needs the grid the stream continues from, which is
+    /// [`PaneRuntime::snapshot_and_subscribe`].
+    #[cfg(test)]
     pub fn subscribe(&self) -> broadcast::Receiver<ServerMsg> {
         self.damage_tx.subscribe()
+    }
+
+    /// A full grid and the damage stream that continues it, taken together.
+    ///
+    /// Atomic on purpose: the pump needs the parser lock to produce a frame,
+    /// so holding it across both halves means no frame can be published
+    /// between them. Taken separately, a frame landing in that gap belongs
+    /// to neither — it is newer than the snapshot and older than the
+    /// receiver — and the cells it carried stay wrong on the subscriber's
+    /// grid until something else happens to overwrite them.
+    pub fn snapshot_and_subscribe(&self) -> (u16, u16, Vec<Vec<Cell>>, Cursor, broadcast::Receiver<ServerMsg>) {
+        let parser = self.parser.lock().unwrap();
+        let (rows, cols) = parser.screen().size();
+        let rx = self.damage_tx.subscribe();
+        (rows, cols, snapshot_grid(&parser), snapshot_cursor(&parser), rx)
     }
 
     /// Pushes a fresh full-grid snapshot to whoever is currently subscribed.

@@ -87,9 +87,16 @@ changes are broadcast even when no cell changed. The client places its hardware 
 while that pane has typing focus. The parser retains 4,000 scrollback lines, though the client has
 no scrollback navigation. An exiting process gets a 500 ms output-flush grace period.
 
-Clients receive a full grid when they subscribe, then incremental damage. Resize changes both the
-PTY and parser and emits another full grid. If several clients resize one pane, the latest request
-wins; ownership is not yet defined.
+Clients receive a full grid when they subscribe, then incremental damage. The grid and the damage
+stream are taken under one hold of the parser lock, so no frame can be published between them and
+be missed by both. Resize changes both the PTY and parser and emits another full grid. If several
+clients resize one pane, the latest request wins; ownership is not yet defined.
+
+The client drops a pane's cached grid the moment it stops drawing it, so a subscription it takes
+back is never redundant even when the daemon never stopped streaming: only a snapshot can rebuild
+a grid, because incremental damage has no rows to land on. Subscription changes are coalesced over
+one frame and reduced to the settled selection, so crossing a column of panes costs one full grid
+rather than one per pane — but that settled selection is always sent.
 
 The client enables bracketed paste and forwards each paste as one protocol message. The daemon
 consults the pane parser and wraps the text in bracketed-paste delimiters only when the child has
@@ -202,12 +209,20 @@ recording for that daemon run so the recoverable file is not overwritten.
 
 ## Git and checkouts
 
-Read-only Git work uses `git2`. Every two seconds the daemon refreshes:
+Read-only Git work uses `git2`. Every two seconds, on a blocking-pool thread, the daemon refreshes:
 
 - branch or detached-HEAD state;
 - dirty state and changed-file count, including untracked files;
 - ahead/behind against the tracking branch;
 - linked worktrees added or removed outside Argus.
+
+Status is cached on the checkout rather than read when a tree is snapshotted. A snapshot is taken
+under the daemon's one lock, and a keystroke needs that same lock to find the pty it belongs to, so
+reading git there put several milliseconds of blocking I/O per checkout in front of the next key —
+on every structural change, not just on the poll. The refresh collects paths, reads git with the
+lock down, and stores results back by checkout id, dropping any whose checkout moved meanwhile. A
+branch switch and a new worktree refresh their own checkout so the row does not name the branch it
+just left for the rest of the tick; anything changed outside Argus waits for the poll.
 
 Branch and file pickers run in process. Branches are local branches, current first. File discovery
 uses `ignore`, follows Git ignore rules, and caps the result at 50,000 files.
