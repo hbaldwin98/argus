@@ -340,6 +340,7 @@ connects instantly and a rebuild only pays for what changed.
 | `b` | Open the branch picker |
 | `f` | Open the file picker |
 | `R` / Tab | Open review |
+| `N` | Jump to the next pane waiting, failed, or ready for review |
 | `S` | Open settings |
 | `t` | Choose a theme for this client process |
 | `x` | Kill the selected pane |
@@ -354,6 +355,7 @@ connects instantly and a rebuild only pays for what changed.
 | `Ctrl-Space`, Escape | Leave terminal input or close a floating pane |
 | `Ctrl-Space`, `x` | Kill the pane |
 | `Ctrl-Space`, Tab | Open review |
+| `Ctrl-Space`, `N` | Jump to the next pane waiting, failed, or ready for review |
 | F12 | Emergency close for a floating window |
 
 Other supported keys are forwarded to the child PTY.
@@ -368,7 +370,7 @@ Other supported keys are forwarded to the child PTY.
 | `g` / `G`, Home / End | First or last changed line |
 | `v` / `V` | Start or clear a line-range selection |
 | `f` | Open the changed-file picker |
-| `c` | Send a comment to the first agent in the checkout |
+| `c` | Send a comment to an agent in the checkout; choose one when several are running |
 | `e` | Open the selected line in the editor |
 | `b` | Cycle uncommitted, branch-point, and last-looked bases |
 | `r` / `R` | Refresh |

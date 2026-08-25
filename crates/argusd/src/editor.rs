@@ -34,7 +34,8 @@ const FALLBACKS: &[&str] = &["nvim", "vim", "hx", "helix", "micro", "nano", "vi"
 /// Whether `editor` brings its own window. Matched on the program name, so
 /// a full path or a command with flags still resolves.
 pub fn is_gui(editor: &str) -> bool {
-    let program = editor.split_whitespace().next().unwrap_or(editor);
+    let parsed = parse_command(editor).unwrap_or_default();
+    let program = parsed.first().map(String::as_str).unwrap_or(editor);
     let stem = program_stem(program);
     GUI_EDITORS.contains(&stem.as_str())
 }
@@ -102,7 +103,7 @@ fn on_path(program: &str) -> bool {
 /// Line-number syntax differs per editor and there is no probing it, so
 /// unknown editors just get the path — off by a jump beats failing to open.
 pub fn command(editor: &str, path: &str, line: Option<u32>) -> Vec<String> {
-    let mut argv: Vec<String> = editor.split_whitespace().map(str::to_string).collect();
+    let mut argv = parse_command(editor).unwrap_or_default();
     if argv.is_empty() {
         argv.push("vi".to_string());
     }
@@ -123,6 +124,44 @@ pub fn command(editor: &str, path: &str, line: Option<u32>) -> Vec<String> {
         _ => argv.push(path.to_string()),
     }
     argv
+}
+
+/// Splits a configured editor into argv without invoking a shell. Quotes group
+/// spaces, while ordinary backslashes remain path separators on Windows.
+fn parse_command(command: &str) -> Option<Vec<String>> {
+    let mut argv = Vec::new();
+    let mut current = String::new();
+    let mut quote = None;
+    let mut started = false;
+
+    for ch in command.chars() {
+        match quote {
+            Some(delimiter) if ch == delimiter => quote = None,
+            Some(_) => current.push(ch),
+            None if matches!(ch, '\'' | '"') => {
+                quote = Some(ch);
+                started = true;
+            }
+            None if ch.is_whitespace() => {
+                if started {
+                    argv.push(std::mem::take(&mut current));
+                    started = false;
+                }
+            }
+            None => {
+                current.push(ch);
+                started = true;
+            }
+        }
+    }
+
+    if quote.is_some() {
+        return None;
+    }
+    if started {
+        argv.push(current);
+    }
+    Some(argv)
 }
 
 #[cfg(test)]
@@ -178,9 +217,24 @@ mod tests {
             ["/usr/bin/nvim", "+3", "a.rs"]
         );
         assert_eq!(
-            command(r"C:\Program Files\Neovim\nvim.exe", "a.rs", Some(3)),
-            [r"C:\Program", "Files\\Neovim\\nvim.exe", "a.rs"],
-            "a space in the path defeats the split, as it would in a shell"
+            command(r#""C:\Program Files\Neovim\nvim.exe""#, "a.rs", Some(3)),
+            [r"C:\Program Files\Neovim\nvim.exe", "+3", "a.rs"]
+        );
+    }
+
+    #[test]
+    fn quoted_editor_arguments_remain_one_argument() {
+        assert_eq!(
+            command(r#"code --profile "Argus Review""#, "a.rs", Some(3)),
+            ["code", "--profile", "Argus Review", "--goto", "a.rs:3"]
+        );
+    }
+
+    #[test]
+    fn unquoted_windows_path_separators_are_preserved() {
+        assert_eq!(
+            command(r"C:\Tools\Neovim\nvim.exe", "a.rs", Some(3)),
+            [r"C:\Tools\Neovim\nvim.exe", "+3", "a.rs"]
         );
     }
 
@@ -194,6 +248,7 @@ mod tests {
         assert!(is_gui("notepad"));
         assert!(is_gui("Notepad.exe"));
         assert!(is_gui(r"C:\Windows\System32\notepad.exe"));
+        assert!(is_gui(r#""C:\Program Files\Microsoft VS Code\code.exe" -w"#));
         assert!(is_gui("code -w"));
         assert!(is_gui("/usr/bin/subl"));
     }

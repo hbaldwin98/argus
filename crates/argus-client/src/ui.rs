@@ -794,12 +794,13 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             }
             PickerKind::File { .. } => "type to filter   ↑/↓ move   enter open   esc cancel",
             PickerKind::Change => "type to filter   ↑/↓ move   enter jump   esc cancel",
+            PickerKind::ReviewRecipient { .. } => "j/k move   enter send   esc cancel",
         };
         (hint, th.dim)
     } else if app.prompt.is_some() {
         ("type to edit   enter confirm   esc cancel", th.dim)
     } else if app.leader_pending {
-        ("leader…   esc back to panes   x close pane", th.accent)
+        ("leader…   esc back   N next attention   x close pane", th.accent)
     } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
         ("j/k move   h/l change   esc close", th.dim)
     } else if matches!(app.overlay, Some(Overlay::Review)) {
@@ -813,15 +814,15 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         // hold every key at once, and most of them only apply somewhere.
         let keys = match app.focus {
             Focus::Projects => {
-                "j/k move  l open  n add  D rm  w wksp  p fold  S settings  q detach"
+                "j/k  l open  N needs  n add  D rm  w wksp  p fold  S settings  q detach"
             }
             Focus::Repositories => {
-                "j/k move  l open  s shell  a agent  b branch  f file  n add  D rm  q detach"
+                "j/k move  l open  N attention  s shell  a agent  b branch  f file  n add  D rm  q detach"
             }
             Focus::Checkouts => {
-                "j/k move  l open  b branch  f file  R review  n worktree  D rm  q detach"
+                "j/k move  l open  N attention  b branch  f file  R review  n worktree  D rm  q detach"
             }
-            _ => "j/k move  l open  s shell  a agent  b branch  f file  R review  x close  q detach",
+            _ => "j/k move  l open  N attention  s shell  a agent  b branch  f file  R review  x close  q detach",
         };
         (keys, th.dim)
     };
