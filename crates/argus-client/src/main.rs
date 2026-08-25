@@ -8,6 +8,7 @@ mod keys;
 mod launch;
 mod mouse;
 mod paste;
+mod profile;
 mod review;
 mod settings;
 mod theme;
@@ -27,6 +28,7 @@ use crossterm::terminal::{
 };
 use futures::StreamExt;
 use paste::{Flush, PasteBurst, Step};
+use profile::{Profile, Record};
 use ratatui::Terminal;
 use tokio::io::split;
 use tokio::sync::mpsc;
@@ -238,6 +240,7 @@ async fn run(
     frames.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut redraw = RedrawScheduler::default();
     let mut burst = PasteBurst::default();
+    let mut profile = Profile::from_env();
     // Keyed by pane id, not just dimensions — switching to a different pane
     // at the same on-screen size still needs its own Resize, since each
     // pane's pty starts at a hardcoded default until told otherwise.
@@ -250,8 +253,13 @@ async fn run(
         let burst_due = burst.deadline();
         tokio::select! {
             maybe_event = events.next() => {
+                let key = matches!(maybe_event, Some(Ok(Event::Key(_))));
                 if !handle_terminal_event(&mut app, &mut burst, maybe_event) {
                     break;
+                }
+                if key {
+                    let pane = app.input_pane();
+                    profile.record(|c| c.key(pane, std::time::Instant::now()));
                 }
                 redraw.input();
             }
@@ -260,6 +268,11 @@ async fn run(
                 redraw.input();
             }
             Some(msg) = out_rx.recv() => {
+                if let ServerMsg::Damage { pane, .. } = &msg {
+                    let pane = *pane;
+                    profile.record(|c| c.damage(pane, std::time::Instant::now()));
+                }
+                profile.record(profile::Counters::server_msg);
                 app.on_server_msg(msg);
                 redraw.changed();
             }
@@ -272,9 +285,13 @@ async fn run(
             break;
         }
 
+        profile.flush_due();
+
         if redraw.take_frame() {
             update_herdr(&mut herdr, &app);
+            let began = std::time::Instant::now();
             draw_frame(terminal, &mut app)?;
+            profile.record(|c| c.draw(began.elapsed()));
             resize_live_panes(&mut app, &mut last_sizes);
         }
     }

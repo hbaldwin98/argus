@@ -886,11 +886,16 @@ impl App {
         if let Some(picker) = &self.picker {
             return picker.kind.is_fuzzy();
         }
+        self.input_pane().is_some()
+    }
+
+    /// The pane typed text goes to: the floating window if one is up,
+    /// otherwise the focused column's pane.
+    pub fn input_pane(&self) -> Option<PaneId> {
         self.overlay
             .as_ref()
             .and_then(Overlay::pane)
             .or_else(|| (self.focus == Focus::PaneContent).then(|| self.column_pane()).flatten())
-            .is_some()
     }
 
     pub fn on_paste(&mut self, text: String) {
@@ -918,12 +923,7 @@ impl App {
             }
             return;
         }
-        let pane = self
-            .overlay
-            .as_ref()
-            .and_then(Overlay::pane)
-            .or_else(|| (self.focus == Focus::PaneContent).then(|| self.column_pane()).flatten());
-        if let Some(pane) = pane {
+        if let Some(pane) = self.input_pane() {
             let _ = self.out.send(ClientMsg::Paste { pane, text });
         }
     }
