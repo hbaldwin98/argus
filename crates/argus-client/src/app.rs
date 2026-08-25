@@ -266,6 +266,9 @@ pub struct App {
     /// initial proportional layout; dragging a gutter captures concrete
     /// widths so the adjustment survives subsequent frames.
     pub column_widths: Option<Vec<u16>>,
+    /// True when the projects column is collapsed to a thin strip. Stored
+    /// both here (for the renderer) and on `settings` (so it persists).
+    pub projects_collapsed: bool,
     resizing_gutter: Option<usize>,
     pub picker: Option<Picker>,
     pub overlay: Option<Overlay>,
@@ -332,7 +335,13 @@ impl App {
             templates: Vec::new(),
             workspaces: Vec::new(),
             open_workspace: String::new(),
-            focus: Focus::Projects,
+            // A remembered collapsed strip is not a focus target, so a
+            // restart from that state lands a column further in.
+            focus: if settings.projects_collapsed {
+                Focus::Repositories
+            } else {
+                Focus::Projects
+            },
             sel_project: 0,
             sel_repository: 0,
             sel_checkout: 0,
@@ -346,6 +355,7 @@ impl App {
             status_alert: false,
             layout: Layout::default(),
             column_widths,
+            projects_collapsed: settings.projects_collapsed,
             resizing_gutter: None,
             picker: None,
             overlay: None,
@@ -979,6 +989,30 @@ impl App {
         self.focus = Focus::Overlay;
     }
 
+    /// Folds the projects column away to a thin strip, or brings it back.
+    /// The other four columns absorb the reclaimed width, so collapsing is a
+    /// way to give the tree and live view more room rather than a way to
+    /// lose the project you are in — the breadcrumb still names it. Stored
+    /// on `settings` so the choice survives a restart.
+    pub fn toggle_projects_collapsed(&mut self) {
+        self.projects_collapsed = !self.projects_collapsed;
+        self.settings.projects_collapsed = self.projects_collapsed;
+        if self.persist_settings {
+            crate::settings::save(&self.settings);
+        }
+        if self.projects_collapsed && self.focus == Focus::Projects {
+            // The collapsed strip is not a focus target, so the cursor has
+            // to land somewhere the keys still mean something.
+            self.focus = Focus::Repositories;
+            self.clamp();
+        }
+        if self.projects_collapsed {
+            self.report("collapsed the projects column — p to expand");
+        } else {
+            self.report("expanded the projects column");
+        }
+    }
+
     fn move_setting(&mut self, delta: isize) {
         if let Some(Overlay::Settings { sel }) = &mut self.overlay {
             let last = Setting::ALL.len() as isize - 1;
@@ -1098,6 +1132,7 @@ impl App {
             KeyCode::Char('f') => self.open_file_picker(),
             KeyCode::Char('R') | KeyCode::Tab => self.open_review(),
             KeyCode::Char('x') => self.kill_selected(),
+            KeyCode::Char('p') => self.toggle_projects_collapsed(),
             _ => {}
         }
     }
@@ -1297,6 +1332,16 @@ impl App {
         if self.picker.is_some() || self.prompt.is_some() {
             return;
         }
+        // Clicking the collapsed strip is the mouse equivalent of `p`: it
+        // expands the column again. Handled before the column hit-test,
+        // which would otherwise park focus on the strip's (nonexistent) rows.
+        if self.projects_collapsed
+            && matches!(ev.kind, MouseEventKind::Down(_))
+            && in_rect(self.layout.projects.outer, ev.column, ev.row)
+        {
+            self.toggle_projects_collapsed();
+            return;
+        }
         // Same acknowledgement as a keypress, but only for a deliberate one:
         // a mouse crossing the terminal is not the user reading anything.
         if matches!(ev.kind, MouseEventKind::Down(_)) {
@@ -1386,6 +1431,9 @@ impl App {
     /// clicks away from either panel's border.
     fn gutter_at(&self, x: u16, y: u16) -> Option<usize> {
         let panels = self.panels();
+        // The collapsed projects strip has no width to drag; suppress its
+        // gutter so it isn't a one-cell trap between it and the next column.
+        let skip = if self.projects_collapsed { Some(0) } else { None };
         panels.windows(2).position(|pair| {
             let left = pair[0].outer;
             let right = pair[1].outer;
@@ -1398,7 +1446,7 @@ impl App {
                         .y
                         .saturating_add(left.height)
                         .min(right.y.saturating_add(right.height))
-        })
+        }).filter(|g| Some(*g) != skip)
     }
 
     fn resize_columns_at(&mut self, gutter: usize, x: u16) {
@@ -1426,6 +1474,12 @@ impl App {
     /// over, independent of `focus` — so scrolling a background column
     /// doesn't steal focus away from a pane you're typing into.
     fn scroll_at(&mut self, x: u16, y: u16, delta: i32) {
+        // The collapsed projects strip has nothing visible to scroll; a
+        // wheel event landing there would otherwise change the hidden
+        // project selection, which is only ever confusing.
+        if self.projects_collapsed && in_rect(self.layout.projects.outer, x, y) {
+            return;
+        }
         let Some((target, _)) = self.column_at(x, y) else {
             return;
         };
@@ -1563,7 +1617,13 @@ impl App {
             }
             Focus::Panes => self.focus = Focus::Checkouts,
             Focus::Checkouts => self.focus = Focus::Repositories,
-            Focus::Repositories => self.focus = Focus::Projects,
+            Focus::Repositories => {
+                // Ascending into a collapsed projects column would park the
+                // cursor on a strip with no rows, so it stays put instead.
+                if !self.projects_collapsed {
+                    self.focus = Focus::Projects;
+                }
+            }
             Focus::Projects => {}
             Focus::Review | Focus::Overlay => self.focus = Focus::Checkouts,
         }
@@ -1711,12 +1771,18 @@ impl App {
                 let _ = self.out.send(ClientMsg::OpenWorkspace { workspace: *id });
                 // The incoming tree is a different set of projects, so
                 // start at the top rather than keeping an index that meant
-                // something else.
+                // something else. If the projects column is collapsed there
+                // is nothing for it to park the cursor on, so land on
+                // repositories — the same place a collapsed startup does.
                 self.sel_project = 0;
                 self.sel_repository = 0;
                 self.sel_checkout = 0;
                 self.sel_pane = 0;
-                self.focus = Focus::Projects;
+                self.focus = if self.projects_collapsed {
+                    Focus::Repositories
+                } else {
+                    Focus::Projects
+                };
             }
             PickerKind::Theme => {
                 let Some(name) = picker.selected() else { return };
@@ -4512,6 +4578,103 @@ mod tests {
 
         assert!(h.app.overlay.is_none());
         assert!(h.app.review.is_none(), "and the diff goes with it");
+    }
+
+    // --- collapse projects pane ----------------------------------------------
+
+    #[test]
+    fn p_collapses_and_restores_the_projects_column() {
+        let mut h = Harness::new();
+        assert!(!h.app.projects_collapsed, "starts expanded");
+        assert_eq!(h.app.focus, Focus::Projects);
+
+        h.key(KeyCode::Char('p'));
+        assert!(h.app.projects_collapsed, "p collapses");
+        assert_eq!(h.app.focus, Focus::Repositories, "focus leaves the strip");
+        assert!(h.app.status.contains("collapsed"), "reports collapse: {}", h.app.status);
+        assert!(h.app.settings.projects_collapsed, "persisted to settings");
+
+        h.key(KeyCode::Char('p'));
+        assert!(!h.app.projects_collapsed, "p restores");
+        assert_eq!(h.app.focus, Focus::Repositories, "focus stays put on restore");
+        assert!(h.app.status.contains("expanded"), "reports expand: {}", h.app.status);
+        assert!(!h.app.settings.projects_collapsed, "cleared in settings");
+    }
+
+    #[test]
+    fn collapsing_moves_focus_off_projects() {
+        let mut h = Harness::new();
+        h.app.focus = Focus::Projects;
+        h.key(KeyCode::Char('p'));
+        assert!(h.app.projects_collapsed);
+        assert_eq!(h.app.focus, Focus::Repositories);
+    }
+
+    #[test]
+    fn ascending_into_a_collapsed_projects_column_stays_put() {
+        let mut h = Harness::new();
+        h.key(KeyCode::Char('p')); // collapse, focus -> Repositories
+        h.key(KeyCode::Char('h')); // ascend from Repositories
+        assert_eq!(h.app.focus, Focus::Repositories, "blocked by collapsed strip");
+        // Expand it; now ascend works.
+        h.key(KeyCode::Char('p'));
+        h.key(KeyCode::Char('h'));
+        assert_eq!(h.app.focus, Focus::Projects);
+    }
+
+    #[test]
+    fn starting_collapsed_lands_on_repositories() {
+        let (tx, _rx) = unbounded_channel();
+        let settings = crate::settings::Settings {
+            projects_collapsed: true,
+            ..crate::settings::Settings::default()
+        };
+        let app = App::build(tx, settings, false);
+        assert!(app.projects_collapsed);
+        assert_eq!(app.focus, Focus::Repositories, "never lands on the hidden column");
+    }
+
+    #[test]
+    fn clicking_the_collapsed_strip_expands_it() {
+        let mut h = Harness::new();
+        laid_out(&mut h); // set up a real layout
+        h.key(KeyCode::Char('p')); // collapse
+        // The laid_out projects column is 12 wide; clicking anywhere in it
+        // expands because the layout hasn't been re-rendered yet.
+        h.app.on_mouse(click(1, 1));
+        assert!(!h.app.projects_collapsed, "click expands");
+    }
+
+    #[test]
+    fn the_gutter_next_to_a_collapsed_strip_is_not_draggable() {
+        let mut h = Harness::new();
+        let panel = |x: u16, w: u16| Panel {
+            outer: Rect::new(x, 0, w, 8),
+            inner: Rect::new(x + 1, 1, w.saturating_sub(2), 6),
+        };
+        // Strip at 0..2, gutter at 2, repositories at 3..15.
+        h.app.layout = Layout {
+            projects: panel(0, 2),
+            repositories: panel(3, 12),
+            checkouts: panel(16, 12),
+            panes: panel(29, 12),
+            content: panel(42, 20),
+            overlay: Panel::default(),
+        };
+        h.app.projects_collapsed = true;
+
+        h.app.on_mouse(click(2, 3)); // the gutter cell
+        assert!(h.app.resizing_gutter.is_none(), "gutter suppressed");
+
+        // Drag does nothing.
+        h.app.on_mouse(drag(5, 3));
+        h.app.on_mouse(MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: 5,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(h.app.column_widths, None);
     }
 
 }

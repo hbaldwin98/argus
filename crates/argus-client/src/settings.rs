@@ -75,6 +75,10 @@ pub struct Settings {
     /// renderer discards lengths that do not match the current layout.
     /// Absent until the user first drags a column separator.
     pub column_widths: Option<Vec<u16>>,
+    /// Whether the projects column is collapsed to a thin strip, ceding its
+    /// width to the other four columns. Remembered so the layout a user
+    /// settled on survives a restart.
+    pub projects_collapsed: bool,
 }
 
 impl Default for Settings {
@@ -84,6 +88,7 @@ impl Default for Settings {
             editor_cmd: String::new(),
             theme: crate::theme::THEMES[0].to_string(),
             column_widths: None,
+            projects_collapsed: false,
         }
     }
 }
@@ -182,6 +187,7 @@ mod tests {
             editor_cmd: "code -w".to_string(),
             theme: "latte".to_string(),
             column_widths: Some(vec![12, 16, 18, 24, 46]),
+            projects_collapsed: true,
         };
         let back: Settings = toml::from_str(&toml::to_string_pretty(&s).unwrap()).unwrap();
         assert_eq!(back, s);
