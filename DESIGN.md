@@ -16,6 +16,12 @@ The client starts the daemon lazily when it cannot connect. On Unix the daemon p
 `setsid`; on Windows it starts in a detached process group. Closing the client does not stop the
 daemon or its child processes.
 
+The daemon is started with its stderr on the null device, since it shares no console with the
+client and anything it printed would either land in the middle of the TUI or open a console window
+of its own. So it logs to a file beside its config as well, keeping the previous run's log — a
+daemon that is starting has often just stopped in a way somebody wants to read about. `RUST_LOG`
+sets the level, `info` by default. Failing to open the log is never a reason not to start.
+
 The daemon listens on a Unix socket or Windows named pipe. Messages are named MessagePack
 records framed by a four-byte big-endian length. Frames larger than 64 MiB are rejected.
 Several clients may connect at once and each connection may subscribe to several pane screens.
@@ -68,6 +74,7 @@ Configuration uses `ARGUS_CONFIG_DIR` when set and the platform config directory
 - `client.toml` stores theme and editor settings.
 - `open-workspace` stores the daemon-wide selected workspace name.
 - `session.json` stores descriptions of panes to relaunch.
+- `argusd.log` is the running daemon's log, and `argusd.log.1` the run before it.
 
 The current project and agent schema is:
 

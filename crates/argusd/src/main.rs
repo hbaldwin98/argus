@@ -6,20 +6,15 @@ mod diff;
 mod editor;
 mod git;
 mod harness;
+mod logging;
 mod pty;
 mod session;
 mod state;
 
-use tracing_subscriber::EnvFilter;
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .with_writer(std::io::stderr)
-        .init();
+    logging::init();
+    tracing::info!("argusd starting; logging to {}", logging::log_path().display());
 
     let cfg = config::load()?;
     let daemon = state::Daemon::new(cfg);
