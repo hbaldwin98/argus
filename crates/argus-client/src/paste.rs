@@ -9,7 +9,7 @@
 
 use std::time::{Duration, Instant};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 /// Longest gap between two keys still counted as one burst. Key repeat is
 /// an order of magnitude slower than this, so a held key never coalesces.
@@ -23,6 +23,9 @@ const PASTE_MIN: usize = 3;
 /// What the caller should do with a key it just handed over.
 #[derive(Debug)]
 pub enum Step {
+    /// Not input at all — a key release, or a modifier on its own.
+    /// Swallowed here so it neither reaches the app nor breaks a burst.
+    Drop,
     /// Not part of a burst — dispatch it now.
     Dispatch(KeyEvent),
     /// Held back as part of the open burst.
@@ -47,14 +50,18 @@ pub struct PasteBurst {
 
 impl PasteBurst {
     pub fn push(&mut self, key: KeyEvent, now: Instant) -> Step {
-        let Some(_) = text_char(&key) else {
-            self.last_text = None;
-            return if self.buffer.is_empty() {
-                Step::Dispatch(key)
-            } else {
-                Step::FlushThen(key)
-            };
-        };
+        match classify(&key) {
+            Class::Ignore => return Step::Drop,
+            Class::Text => {}
+            Class::Other => {
+                self.last_text = None;
+                return if self.buffer.is_empty() {
+                    Step::Dispatch(key)
+                } else {
+                    Step::FlushThen(key)
+                };
+            }
+        }
         let continues = self
             .last_text
             .is_some_and(|last| now.duration_since(last) < BURST_GAP);
@@ -94,6 +101,32 @@ impl PasteBurst {
     }
 }
 
+/// What a key event is worth to a burst.
+enum Class {
+    /// Contributes a character.
+    Text,
+    /// Neither text nor a real keypress: releases, and modifiers pressed on
+    /// their own. Windows reports both, and counting them was doubling
+    /// every pasted character and cutting bursts at every capital letter.
+    Ignore,
+    /// A real key that is not text — it ends the burst.
+    Other,
+}
+
+fn classify(key: &KeyEvent) -> Class {
+    if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+        return Class::Ignore;
+    }
+    if matches!(key.code, KeyCode::Modifier(_) | KeyCode::Null) {
+        return Class::Ignore;
+    }
+    if text_char(key).is_some() {
+        Class::Text
+    } else {
+        Class::Other
+    }
+}
+
 /// The character a key contributes to pasted text, if it is text at all.
 fn text_char(key: &KeyEvent) -> Option<char> {
     let plain = (key.modifiers - KeyModifiers::SHIFT).is_empty();
@@ -120,17 +153,53 @@ mod tests {
         KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)
     }
 
+    fn released(key: KeyEvent) -> KeyEvent {
+        KeyEvent {
+            kind: KeyEventKind::Release,
+            ..key
+        }
+    }
+
     fn feed(burst: &mut PasteBurst, keys: &[KeyEvent], gap: Duration) -> Vec<KeyEvent> {
         let mut now = Instant::now();
         let mut dispatched = Vec::new();
         for key in keys {
             match burst.push(*key, now) {
                 Step::Dispatch(k) | Step::FlushThen(k) => dispatched.push(k),
-                Step::Buffered => {}
+                Step::Buffered | Step::Drop => {}
             }
             now += gap;
         }
         dispatched
+    }
+
+    #[test]
+    fn a_key_release_is_not_a_second_character() {
+        // Windows reports press and release both. Counting the release
+        // doubled every pasted character on its way into the pane.
+        let mut burst = PasteBurst::default();
+        let keys = [key('h'), released(key('h')), key('i'), released(key('i'))];
+
+        let dispatched = feed(&mut burst, &keys, Duration::from_millis(1));
+
+        assert_eq!(dispatched, vec![key('h')]);
+        assert_eq!(burst.take(true), Some(Flush::Keys(vec![key('i')])));
+    }
+
+    #[test]
+    fn a_modifier_on_its_own_does_not_cut_a_burst_in_half() {
+        // A capital letter in pasted text arrives with its own Shift
+        // events. Treating those as "not text" ended the burst at every
+        // capital, and the short pieces went in as keystrokes — which is
+        // one submitted message per line all over again.
+        let mut burst = PasteBurst::default();
+        let shift = KeyEvent::new(KeyCode::Modifier(crossterm::event::ModifierKeyCode::LeftShift), KeyModifiers::SHIFT);
+        let keys = [key('a'), shift, key('B'), enter(), key('c')];
+
+        feed(&mut burst, &keys, Duration::from_millis(1));
+
+        assert_eq!(burst.take(true), Some(Flush::Paste("B
+c".to_string())));
     }
 
     #[test]

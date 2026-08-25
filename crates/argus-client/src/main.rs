@@ -124,16 +124,21 @@ fn enter_terminal() -> anyhow::Result<Term> {
 /// written as several syscalls; wrapping them in a synchronized update is
 /// what stops the terminal presenting a half-drawn frame with the cursor
 /// already moved. The shape goes inside the wrapper for the same reason.
-fn draw_frame(terminal: &mut Term, app: &mut App) -> anyhow::Result<()> {
+fn draw_frame(terminal: &mut Term, app: &mut App) -> anyhow::Result<std::time::Duration> {
+    let mut ui_took = std::time::Duration::ZERO;
     terminal.backend_mut().begin_frame()?;
-    terminal.draw(|f| ui::render(f, app))?;
+    terminal.draw(|f| {
+        let began = std::time::Instant::now();
+        ui::render(f, app);
+        ui_took = began.elapsed();
+    })?;
     let shape = app
         .layout
         .cursor
         .map_or(argus_protocol::CursorShape::Default, |c| c.shape);
     terminal.backend_mut().set_cursor_shape(shape)?;
     terminal.backend_mut().end_frame()?;
-    Ok(())
+    Ok(ui_took)
 }
 
 fn leave_terminal(terminal: &mut Term) -> anyhow::Result<()> {
@@ -268,7 +273,13 @@ async fn run(
                 // motion arrives hundreds of times a second and used to
                 // present a frame each — the profile's quiet seconds with a
                 // hundred frames and no keys in them were the mouse moving.
-                let key = matches!(maybe_event, Some(Ok(Event::Key(_))));
+                // A release is not a keypress, and counting it made the
+                // rate in the profile twice what was actually typed.
+                let key = matches!(
+                    &maybe_event,
+                    Some(Ok(Event::Key(k)))
+                        if matches!(k.kind, KeyEventKind::Press | KeyEventKind::Repeat)
+                );
                 if !handle_terminal_event(&mut app, &mut burst, maybe_event) {
                     break;
                 }
@@ -307,8 +318,8 @@ async fn run(
         if redraw.take_frame() {
             update_herdr(&mut herdr, &app);
             let began = std::time::Instant::now();
-            draw_frame(terminal, &mut app)?;
-            profile.record(|c| c.draw(began.elapsed()));
+            let ui = draw_frame(terminal, &mut app)?;
+            profile.record(|c| c.draw(began.elapsed(), ui));
             resize_live_panes(&mut app, &mut last_sizes);
         }
     }
@@ -349,7 +360,7 @@ fn handle_terminal_event(
     match event {
         Some(Ok(Event::Key(key))) => match burst.push(key, std::time::Instant::now()) {
             Step::Dispatch(key) => handle_key_event(app, key),
-            Step::Buffered => {}
+            Step::Buffered | Step::Drop => {}
             Step::FlushThen(key) => {
                 flush_burst(app, burst);
                 handle_key_event(app, key);

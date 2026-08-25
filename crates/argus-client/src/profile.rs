@@ -19,6 +19,8 @@ pub struct Window {
     pub frames: u32,
     pub draw_total: Duration,
     pub draw_max: Duration,
+    pub ui_total: Duration,
+    pub ui_max: Duration,
     pub msgs: u32,
     pub keys: u32,
     pub echoes: u32,
@@ -29,10 +31,12 @@ pub struct Window {
 impl Window {
     pub fn line(&self) -> String {
         format!(
-            "frames={} draw_avg={:.1}ms draw_max={:.1}ms msgs={} keys={} echo_avg={:.1}ms echo_max={:.1}ms",
+            "frames={} draw_avg={:.1}ms draw_max={:.1}ms ui_avg={:.1}ms ui_max={:.1}ms msgs={} keys={} echo_avg={:.1}ms echo_max={:.1}ms",
             self.frames,
             avg_ms(self.draw_total, self.frames),
             ms(self.draw_max),
+            avg_ms(self.ui_total, self.frames),
+            ms(self.ui_max),
             self.msgs,
             self.keys,
             avg_ms(self.echo_total, self.echoes),
@@ -61,10 +65,15 @@ pub struct Counters {
 }
 
 impl Counters {
-    pub fn draw(&mut self, took: Duration) {
+    /// `took` is the whole frame; `ui` is the widget pass inside it, so a
+    /// slow frame says whether the time went on deciding what to draw or on
+    /// getting it to the terminal.
+    pub fn draw(&mut self, took: Duration, ui: Duration) {
         self.window.frames += 1;
         self.window.draw_total += took;
         self.window.draw_max = self.window.draw_max.max(took);
+        self.window.ui_total += ui;
+        self.window.ui_max = self.window.ui_max.max(ui);
     }
 
     pub fn server_msg(&mut self) {
@@ -220,7 +229,7 @@ mod tests {
         let mut c = Counters::default();
         let start = Instant::now();
         let mut since = start;
-        c.draw(Duration::from_millis(4));
+        c.draw(Duration::from_millis(4), Duration::from_millis(1));
 
         assert!(c.due(start + Duration::from_millis(999), &mut since).is_none());
         assert!(c.due(start + FLUSH_INTERVAL, &mut since).is_some());
@@ -230,8 +239,8 @@ mod tests {
     fn the_line_carries_both_halves_of_the_latency() {
         let mut c = Counters::default();
         let start = Instant::now();
-        c.draw(Duration::from_millis(2));
-        c.draw(Duration::from_millis(8));
+        c.draw(Duration::from_millis(2), Duration::from_millis(1));
+        c.draw(Duration::from_millis(8), Duration::from_millis(3));
         c.server_msg();
         c.key(Some(PaneId(1)), start);
         c.damage(PaneId(1), start + Duration::from_millis(30));
@@ -242,6 +251,7 @@ mod tests {
         assert!(line.contains("frames=2"), "{line}");
         assert!(line.contains("draw_avg=5.0ms"), "{line}");
         assert!(line.contains("draw_max=8.0ms"), "{line}");
+        assert!(line.contains("ui_avg=2.0ms"), "{line}");
         assert!(line.contains("echo_max=30.0ms"), "{line}");
     }
 }
