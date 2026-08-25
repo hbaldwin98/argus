@@ -342,24 +342,25 @@ fn post_as(url: &str, token: &str, body: &str, session: Option<&str>) -> Option<
     Some(())
 }
 
+/// Headers are assembled by hand rather than with a client library, so
+/// each one must start its own line at column zero: a header the daemon
+/// cannot recognize is not an error it can report, only a report that
+/// quietly does nothing — a session header it misses files a child's work
+/// under its parent's row, and a Content-Length it misses drops the note.
 fn request(path: &str, authority: &str, token: &str, session: Option<&str>, body: &str) -> String {
     let session = match session.filter(|id| !id.is_empty()) {
-        Some(id) => format!(
-            "{SESSION_HEADER}: {id}
-"
-        ),
+        Some(id) => format!("{SESSION_HEADER}: {id}\r\n"),
         None => String::new(),
     };
-    format!(
-        "POST {path} HTTP/1.1
-Host: {authority}
-Authorization: Bearer {token}
-         {session}Content-Length: {}
-Connection: close
-
-{body}",
-        body.len()
-    )
+    let mut req = String::new();
+    req.push_str(&format!("POST {path} HTTP/1.1\r\n"));
+    req.push_str(&format!("Host: {authority}\r\n"));
+    req.push_str(&format!("Authorization: Bearer {token}\r\n"));
+    req.push_str(&session);
+    req.push_str(&format!("Content-Length: {}\r\n", body.len()));
+    req.push_str("Connection: close\r\n\r\n");
+    req.push_str(body);
+    req
 }
 
 #[cfg(test)]
@@ -377,22 +378,29 @@ mod tests {
             Some("s-1"),
             "",
         );
-        assert!(
-            tagged.contains(
-                "X-Argus-Session: s-1
-"
-            ),
-            "{tagged}"
-        );
+        assert!(tagged.contains("\r\nX-Argus-Session: s-1\r\n"), "{tagged}");
         let untagged = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", None, "");
         assert!(!untagged.contains("X-Argus-Session"), "{untagged}");
-        assert!(
-            untagged.contains(
-                "Content-Length: 0
-"
-            ),
-            "{untagged}"
-        );
+        assert!(untagged.contains("\r\nContent-Length: 0\r\n"), "{untagged}");
+    }
+
+    #[test]
+    fn every_header_starts_its_own_line_at_column_zero() {
+        // An indented header line is a continuation of the one above it, so
+        // a stray space here is invisible on the wire and silently costs the
+        // daemon whichever header it swallowed: a session header it misses
+        // files a child's report on its parent's row, and a Content-Length
+        // it misses drops the note the report was carrying.
+        let req = request("/pane/1/title", "127.0.0.1:4242", "tok", Some("s-1"), "hi");
+        let (head, body) = req
+            .split_once("\r\n\r\n")
+            .expect("a blank line ends the headers");
+        assert_eq!(body, "hi");
+        for line in head.split("\r\n") {
+            assert_eq!(line.trim_start(), line, "indented header line: {req:?}");
+            assert!(!line.is_empty(), "blank header line: {req:?}");
+        }
+        assert!(head.contains("\r\nContent-Length: 2\r\n"), "{req:?}");
     }
 
     #[test]
