@@ -179,7 +179,8 @@ and `ARGUS_HOOK_TOKEN` at run time rather than having a pane baked into it. A ha
 `resume`, the legacy arguments that continue the last conversation, and `resume_id`, an exact argv
 template containing `{session_id}`. Both are used only when a recorded pane is restored. Claude
 Code, Codex, OpenCode, AGY and `generic` are built in. Codex uses a project-local `.codex/hooks.json`
-SessionStart adapter; Codex requires the user to trust project hooks before it runs. AGY uses
+SessionStart adapter whose command reads routing from the pane environment, so its content hash stays
+stable after the user trusts it. Codex requires the user to trust project hooks before it runs. AGY uses
 `.agents/hooks.json` with flat `PreInvocation` and `Stop` hooks. A `[[harness]]`
 block in `projects.toml` adds or replaces one, and an `[[agent]]` template selects one with
 `harness = "..."`, defaulting to a harness matching its own name. A block cannot supply a plugin,
@@ -192,12 +193,13 @@ The daemon's loopback receiver is a small pane API rather than a hook endpoint: 
 endpoint changes affiliation only: the agent runs `argus-hook checkout` from the directory it has
 already moved to. The status is named in the URL rather than the harness's event name, because the
 installer already resolved that — which is what makes a new harness config instead of a match arm. Managed
-blocks are per-boot: they name an ephemeral port and a per-boot token, so they are swept from every
+blocks are generally per-boot: they name an ephemeral port and a per-boot token, so they are swept from every
 configured checkout at startup and removed when the last agent pane in a checkout goes away, along
 with any directory Argus made only to hold them. Moving a pane performs the same cleanup in its old
-checkout and installs its harness in the new one. Hook files are checkout-wide; the helper rebases a
-generated URL to a valid `ARGUS_HOOK_URL` on the same loopback listener, so each process still routes
-to its own pane. The helper reads hook stdin once and can extract both a note and a configured
+checkout and installs its harness in the new one. Codex is the exception: its trust-sensitive command
+contains only environment references and remains identical across boots. Hook files are checkout-wide;
+the helper uses or rebases to a valid `ARGUS_HOOK_URL`, so each process still routes to its own pane.
+The helper reads hook stdin once and can extract both a note and a configured
 top-level session ID key. Claude captures `session_id` at SessionStart. OpenCode's plugin reports only
 the root ID and reports again when a newly created root replaces it. AGY captures `conversationId`
 at PreInvocation.

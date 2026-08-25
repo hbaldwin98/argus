@@ -169,8 +169,9 @@ pub struct Harness {
     pub resume: Vec<String>,
     /// Exact resume argv template. `{session_id}` is expanded without a shell.
     pub resume_id: Vec<String>,
-    /// Codex command hooks accept one command string, unlike Claude's
-    /// `command` plus `args` shape.
+    /// Command hooks accept one shell command string, unlike Claude's
+    /// `command` plus `args` shape. These use the pane environment rather
+    /// than baked-in routing so content-hash trust survives reinstalls.
     pub command_string: bool,
     /// Optional workspace rule markdown file to install into checkout.
     pub rule_file: Option<PathBuf>,
@@ -705,8 +706,8 @@ fn status_entry(
     if command_string {
         return json!({
             "type": "command",
-            "command": command_line(command, &args, false),
-            "commandWindows": command_line(command, &args, true),
+            "command": env_command_line(event, false),
+            "commandWindows": env_command_line(event, true),
             "timeout": 5
         });
     }
@@ -734,16 +735,35 @@ const PLUGIN_MARKER: &str = "argus:managed-plugin";
 pub const NOTE_FLAG: &str = "--note-from-stdin";
 pub const SESSION_KEY_FLAG: &str = "--session-id-from-stdin";
 
-fn command_line(command: &str, args: &[String], windows: bool) -> String {
-    std::iter::once(command)
-        .chain(args.iter().map(String::as_str))
-        .map(|part| {
-            if windows {
-                format!("\"{}\"", part.replace('"', "\\\""))
-            } else {
-                format!("'{}'", part.replace('\'', "'\"'\"'"))
-            }
-        })
+/// A stable command-string hook. Codex persists trust against the handler's
+/// content hash, so the checkout-wide file must not contain ephemeral pane,
+/// port, token, or executable-path values. Every spawned pane receives these
+/// variables, and the helper's installed form still extracts hook stdin.
+fn env_command_line(event: &Event, windows: bool) -> String {
+    let (helper, url, token) = if windows {
+        (
+            "%ARGUS_HOOK%".to_string(),
+            format!("%ARGUS_HOOK_URL%/status/{}", event.reports.as_str()),
+            "%ARGUS_HOOK_TOKEN%".to_string(),
+        )
+    } else {
+        (
+            "$ARGUS_HOOK".to_string(),
+            format!("$ARGUS_HOOK_URL/status/{}", event.reports.as_str()),
+            "$ARGUS_HOOK_TOKEN".to_string(),
+        )
+    };
+    let mut parts = vec![helper, url, token];
+    if event.note_from_stdin {
+        parts.push(NOTE_FLAG.to_string());
+    }
+    if let Some(key) = &event.session_id_key {
+        parts.push(SESSION_KEY_FLAG.to_string());
+        parts.push(key.clone());
+    }
+    parts
+        .into_iter()
+        .map(|part| format!("\"{}\"", part.replace('"', "\\\"")))
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -797,6 +817,7 @@ fn names_helper(entry: &Value) -> bool {
             is_hook_helper(command)
                 || command.contains("argus-hook")
                 || command.contains("orion-hook")
+                || command.contains("ARGUS_HOOK")
         })
 }
 
@@ -1120,6 +1141,35 @@ mod tests {
         assert_eq!(
             root["hooks"]["SessionStart"][0]["hooks"][0]["command"],
             "my-hook"
+        );
+    }
+
+    #[test]
+    fn codex_hook_content_stays_stable_across_panes_and_daemon_boots() {
+        // Codex trusts each project hook by a hash of its handler. Pane IDs,
+        // ports, and per-boot tokens therefore cannot be baked into it.
+        let dir = tempfile::tempdir().unwrap();
+        let h = Harness::codex();
+
+        h.install(dir.path(), PaneId(1), 1111, "first-token")
+            .unwrap();
+        let first = settings_of(dir.path(), &h)["hooks"]["SessionStart"][0]["hooks"][0].clone();
+
+        h.install(dir.path(), PaneId(9), 9999, "second-token")
+            .unwrap();
+        let second = settings_of(dir.path(), &h)["hooks"]["SessionStart"][0]["hooks"][0].clone();
+
+        assert_eq!(
+            first, second,
+            "reinstalling must not invalidate Codex trust"
+        );
+        assert_eq!(
+            second["command"],
+            r#""$ARGUS_HOOK" "$ARGUS_HOOK_URL/status/idle" "$ARGUS_HOOK_TOKEN" "--session-id-from-stdin" "session_id""#
+        );
+        assert_eq!(
+            second["commandWindows"],
+            r#""%ARGUS_HOOK%" "%ARGUS_HOOK_URL%/status/idle" "%ARGUS_HOOK_TOKEN%" "--session-id-from-stdin" "session_id""#
         );
     }
 

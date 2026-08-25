@@ -432,16 +432,17 @@ Claude Code, Codex, OpenCode, AGY, and the generic environment-only harness are 
 harness manages
 `UserPromptSubmit`, `Stop`, `Notification`, and `SessionStart` entries in
 `<checkout>/.claude/settings.local.json`; its SessionStart hook captures top-level `session_id`.
-Codex uses `<checkout>/.codex/hooks.json` with its required command-string handler shape. OpenCode's
+Codex uses `<checkout>/.codex/hooks.json` with its required command-string handler shape. Its handler
+reads pane routing from the process environment, keeping its trust-sensitive content stable across
+pane starts and daemon restarts. OpenCode's
 plugin reports the root session ID and updates it when the process creates a new root. AGY manages
 `PreInvocation` and `Stop` hooks in `<checkout>/.agents/hooks.json` under the `argus` hook key and captures
 top-level `conversationId`. Managed
 entries preserve user settings and are removed when the last agent pane closes or during the next
 daemon startup sweep. A same-named `[[harness]]` block replaces a built-in.
 
-Hook files are checkout-wide, but the helper rebases their generated loopback URL to the valid
-pane-specific `ARGUS_HOOK_URL` inherited by each process. Concurrent panes therefore report to their
-own rows even when the newest install rewrote the shared file.
+Hook files are checkout-wide, but handlers use or rebase to the valid pane-specific
+`ARGUS_HOOK_URL` inherited by each process. Concurrent panes therefore report to their own rows.
 
 ## Development
 
