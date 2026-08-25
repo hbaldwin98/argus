@@ -846,6 +846,15 @@ impl App {
         key.code == KeyCode::F(12)
     }
 
+    /// Ctrl-V, with or without shift. Taken by Argus everywhere, including
+    /// inside a pane: what the child would have made of it (quoted-insert
+    /// in a line editor, visual block in vim) is worth less than pasting
+    /// reliably, and the leader chord still reaches the child's own keys.
+    fn is_paste_key(key: &KeyEvent) -> bool {
+        key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('v') | KeyCode::Char('V'))
+    }
+
     pub fn on_key(&mut self, key: KeyEvent) {
         // The left of the bar is the breadcrumb's seat and a message only
         // borrows it. Pressing anything is the acknowledgement that hands it
@@ -853,6 +862,10 @@ impl App {
         // the rest of the session. Cleared before dispatch, so a handler is
         // still free to set its own.
         self.clear_status();
+        if Self::is_paste_key(&key) {
+            self.paste_clipboard();
+            return;
+        }
         if Self::is_panic_key(&key) {
             if self.overlay.is_some() {
                 self.close_overlay();
@@ -1126,7 +1139,6 @@ impl App {
             self.leader_pending = false;
             match key.code {
                 KeyCode::Esc => self.close_overlay(),
-                KeyCode::Char('v') => self.paste_clipboard(),
                 KeyCode::Char('x') => {
                     if let Some(pane) = self.overlay.as_ref().and_then(Overlay::pane) {
                         let _ = self.out.send(ClientMsg::Kill { pane });
@@ -1272,7 +1284,6 @@ impl App {
                 KeyCode::Esc => self.ascend(),
                 KeyCode::Tab => self.open_review(),
                 KeyCode::Char('x') => self.close_current(),
-                KeyCode::Char('v') => self.paste_clipboard(),
                 KeyCode::Char('N') => self.jump_to_next_attention(),
                 _ => {}
             }
@@ -2494,6 +2505,41 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_v_pastes_from_inside_a_pane_rather_than_reaching_the_child() {
+        let mut h = Harness::new();
+        h.keys("llll");
+        h.sent();
+        h.app.clipboard = || Some("one
+two".to_string());
+
+        h.app.on_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::CONTROL));
+
+        assert!(matches!(
+            h.sent().as_slice(),
+            [ClientMsg::Paste { pane: PaneId(100), text }] if text == "one
+two"
+        ), "ctrl-v must not go to the child as a keystroke");
+    }
+
+    #[test]
+    fn ctrl_shift_v_pastes_too() {
+        let mut h = Harness::new();
+        h.keys("llll");
+        h.sent();
+        h.app.clipboard = || Some("x".to_string());
+
+        h.app.on_key(KeyEvent::new(
+            KeyCode::Char('V'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        ));
+
+        assert!(matches!(
+            h.sent().as_slice(),
+            [ClientMsg::Paste { .. }]
+        ));
+    }
+
+    #[test]
     fn the_paste_key_sends_the_clipboard_as_one_message() {
         // The point of an explicit key: no inference, and the newlines
         // stay newlines instead of arriving as a run of Enters.
@@ -2504,8 +2550,7 @@ mod tests {
 second
 ".to_string());
 
-        h.leader();
-        h.key(KeyCode::Char('v'));
+        h.app.on_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::CONTROL));
 
         assert!(matches!(
             h.sent().as_slice(),
@@ -2523,8 +2568,7 @@ second
         h.sent();
         h.app.clipboard = || None;
 
-        h.leader();
-        h.key(KeyCode::Char('v'));
+        h.app.on_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::CONTROL));
 
         assert!(h.sent().is_empty(), "nothing to paste, nothing sent");
         assert!(h.app.status_alert, "a clipboard that cannot be read is worth saying");

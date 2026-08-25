@@ -800,15 +800,15 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     } else if app.prompt.is_some() {
         ("type to edit   enter confirm   esc cancel", th.dim)
     } else if app.leader_pending {
-        ("leader…   esc back   v paste   N next attention   x close pane", th.accent)
+        ("leader…   esc back   N next attention   x close pane", th.accent)
     } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
         ("j/k move   h/l change   esc close", th.dim)
     } else if matches!(app.overlay, Some(Overlay::Review)) {
         ("j/k  ]/[ file  f jump  c comment  e edit  b base  A accept  esc close", th.dim)
     } else if app.overlay.is_some() {
-        ("floating — ctrl-space then esc to close, x to kill", th.dim)
+        ("floating — ctrl-space then esc to close, x to kill   ctrl-v paste", th.dim)
     } else if app.focus == Focus::PaneContent {
-        ("typing — ctrl-space then esc to leave, x to close", th.dim)
+        ("typing — ctrl-space then esc to leave, x to close   ctrl-v paste", th.dim)
     } else {
         // Per column rather than one list of everything: the bar cannot
         // hold every key at once, and most of them only apply somewhere.
