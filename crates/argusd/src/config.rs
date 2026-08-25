@@ -300,6 +300,23 @@ pub fn append_project(name: &str, root_path: &Path, workspace: &str) -> Result<(
     Ok(())
 }
 
+/// Appends a `[[workspace]]` block, so a workspace created from the TUI
+/// outlives the daemon. Declaring it is what makes an empty workspace
+/// exist at all: a workspace with no projects has nothing else in the file
+/// to imply it.
+pub fn append_workspace(name: &str) -> Result<()> {
+    let cfg_path = config_path();
+    let block = format!("\n[[workspace]]\nname = {name:?}\n");
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&cfg_path)
+        .with_context(|| format!("opening {}", cfg_path.display()))?;
+    f.write_all(block.as_bytes())
+        .with_context(|| format!("appending workspace to {}", cfg_path.display()))?;
+    Ok(())
+}
+
 /// Where the name of the open workspace is remembered. A file of its own
 /// rather than a key in `projects.toml`: that file is the user's, edited by
 /// hand and full of their comments, and `append_project` deliberately only

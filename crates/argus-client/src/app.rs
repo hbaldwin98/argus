@@ -55,8 +55,13 @@ pub struct Layout {
 pub enum PickerKind {
     /// Spawn the chosen agent template in the selected checkout.
     Agent,
-    /// Switch to the chosen workspace, carrying its id per row.
-    Workspace(Vec<WorkspaceId>),
+    /// Switch to the chosen workspace. Ids ride along per row, and the
+    /// bare names beside them: the rows themselves carry rollup counts, so
+    /// they are not what "does this name already exist" can be asked of.
+    Workspace {
+        ids: Vec<WorkspaceId>,
+        names: Vec<String>,
+    },
     /// Switch the color theme.
     Theme,
     /// `git switch` the current checkout to the chosen branch. The last
@@ -75,7 +80,10 @@ impl PickerKind {
     pub fn is_fuzzy(&self) -> bool {
         matches!(
             self,
-            PickerKind::Branch { .. } | PickerKind::File { .. } | PickerKind::Change
+            PickerKind::Branch { .. }
+                | PickerKind::File { .. }
+                | PickerKind::Change
+                | PickerKind::Workspace { .. }
         )
     }
 
@@ -150,14 +158,24 @@ impl Picker {
     /// refers to a row that is no longer there.
     fn refilter(&mut self) {
         let mut matcher = self.kind.matcher();
-        self.shown = matcher.filter(&self.query, &self.items);
+        // Workspace rows carry rollup counts, so they are matched on their
+        // names — otherwise typing a digit would "find" a workspace by how
+        // many panes it happens to be running.
+        self.shown = match &self.kind {
+            PickerKind::Workspace { names, .. } => matcher.filter(&self.query, names),
+            _ => matcher.filter(&self.query, &self.items),
+        };
 
         // Offering to create a branch that already exists would be a
         // second, worse way to switch to it.
-        self.create = match self.kind {
+        self.create = match &self.kind {
             PickerKind::Branch { .. } => {
                 let q = self.query.trim();
                 (!q.is_empty() && !self.items.iter().any(|b| b == q)).then(|| q.to_string())
+            }
+            PickerKind::Workspace { names, .. } => {
+                let q = self.query.trim();
+                (!q.is_empty() && !names.iter().any(|n| n == q)).then(|| q.to_string())
             }
             _ => None,
         };
@@ -1652,11 +1670,16 @@ impl App {
     /// daemon-global, so every attached client follows. Opens on the one
     /// that's already open rather than the top of the list, since "look at
     /// where I am, then move" is the usual reason to press it.
+    ///
+    /// It opens on a single workspace too, because typing a name here is
+    /// how a second one comes to exist: the alternative was hand-editing
+    /// `projects.toml`, which meant the zero-config install stayed at one
+    /// workspace forever.
     fn open_workspace_picker(&mut self) {
-        if self.workspaces.len() < 2 {
-            // One workspace is the zero-config case; a picker offering a
-            // single choice is just a keystroke that does nothing.
-            self.report("only one workspace");
+        if self.workspaces.is_empty() {
+            // Only before the daemon's first message; there is always at
+            // least `default`.
+            self.report("no workspaces yet");
             return;
         }
         let sel = self.workspaces.iter().position(|w| w.open).unwrap_or(0);
@@ -1673,11 +1696,31 @@ impl App {
             })
             .collect();
         self.picker = Some(Picker::new(
-            PickerKind::Workspace(self.workspaces.iter().map(|w| w.id).collect()),
+            PickerKind::Workspace {
+                ids: self.workspaces.iter().map(|w| w.id).collect(),
+                names: self.workspaces.iter().map(|w| w.name.clone()).collect(),
+            },
             "open workspace",
             items,
             sel,
         ));
+    }
+
+    /// Back to the top of the tree. Anything that swaps the whole project
+    /// column out from under the columns needs it: the old indices refer
+    /// to rows that are no longer there. If the projects column is
+    /// collapsed there is nothing for it to park the cursor on, so land on
+    /// repositories — the same place a collapsed startup does.
+    fn reset_navigation(&mut self) {
+        self.sel_project = 0;
+        self.sel_repository = 0;
+        self.sel_checkout = 0;
+        self.sel_pane = 0;
+        self.focus = if self.projects_collapsed {
+            Focus::Repositories
+        } else {
+            Focus::Projects
+        };
     }
 
     /// `b` asks the daemon for this checkout's branches; the picker opens
@@ -1718,14 +1761,24 @@ impl App {
 
     fn confirm_picker(&mut self) {
         let Some(picker) = self.picker.take() else { return };
-        // A branch picker's create row carries the typed name rather than a
-        // list entry, so it is handled before anything reads the selection.
-        if let (PickerKind::Branch { checkout }, true) = (&picker.kind, picker.on_create_row()) {
-            if let Some(branch) = picker.create.clone() {
-                let _ = self.out.send(ClientMsg::CreateBranch {
-                    checkout: *checkout,
-                    branch,
-                });
+        // A create row carries the typed name rather than a list entry, so
+        // it is handled before anything reads the selection.
+        if let (Some(name), true) = (picker.create.clone(), picker.on_create_row()) {
+            match &picker.kind {
+                PickerKind::Branch { checkout } => {
+                    let _ = self.out.send(ClientMsg::CreateBranch {
+                        checkout: *checkout,
+                        branch: name,
+                    });
+                }
+                PickerKind::Workspace { .. } => {
+                    let _ = self.out.send(ClientMsg::CreateWorkspace { name });
+                    // The daemon opens what it creates, and it arrives
+                    // empty, so the columns must not keep pointing into
+                    // the workspace that was open a moment ago.
+                    self.reset_navigation();
+                }
+                _ => {}
             }
             return;
         }
@@ -1764,25 +1817,15 @@ impl App {
                     self.pending_focus_new = true;
                 }
             }
-            PickerKind::Workspace(ids) => {
+            PickerKind::Workspace { ids, .. } => {
                 let Some(id) = picker.shown.get(picker.sel).and_then(|i| ids.get(*i)) else {
                     return;
                 };
                 let _ = self.out.send(ClientMsg::OpenWorkspace { workspace: *id });
                 // The incoming tree is a different set of projects, so
                 // start at the top rather than keeping an index that meant
-                // something else. If the projects column is collapsed there
-                // is nothing for it to park the cursor on, so land on
-                // repositories — the same place a collapsed startup does.
-                self.sel_project = 0;
-                self.sel_repository = 0;
-                self.sel_checkout = 0;
-                self.sel_pane = 0;
-                self.focus = if self.projects_collapsed {
-                    Focus::Repositories
-                } else {
-                    Focus::Projects
-                };
+                // something else.
+                self.reset_navigation();
             }
             PickerKind::Theme => {
                 let Some(name) = picker.selected() else { return };
@@ -3050,7 +3093,7 @@ mod tests {
         let mut h = Harness::new();
         h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
         h.key(KeyCode::Char('w'));
-        h.key(KeyCode::Char('j'));
+        h.key(KeyCode::Down);
         h.key(KeyCode::Enter);
 
         match &h.sent()[0] {
@@ -3072,7 +3115,7 @@ mod tests {
         h.sent();
 
         h.key(KeyCode::Char('w'));
-        h.key(KeyCode::Char('j'));
+        h.key(KeyCode::Down);
         h.key(KeyCode::Enter);
 
         assert_eq!(h.app.focus, Focus::Projects);
@@ -3084,28 +3127,119 @@ mod tests {
         let mut h = Harness::new();
         h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
         h.key(KeyCode::Char('w'));
-        h.key(KeyCode::Char('j'));
+        h.key(KeyCode::Down);
         h.key(KeyCode::Esc);
         assert!(h.app.picker.is_none());
         assert!(h.sent().is_empty());
     }
 
-    #[test]
-    fn w_does_nothing_useful_when_there_is_only_one_workspace() {
-        // The zero-config case. A picker offering a single choice is just a
-        // keystroke that does nothing, so say so instead.
-        let mut h = Harness::new();
-        h.app.on_server_msg(ServerMsg::Workspaces(vec![argus_protocol::WorkspaceInfo {
+    fn only_default() -> Vec<argus_protocol::WorkspaceInfo> {
+        vec![argus_protocol::WorkspaceInfo {
             id: argus_protocol::WorkspaceId(1),
             name: "default".to_string(),
             projects: 1,
             panes: 0,
             open: true,
-        }]));
+        }]
+    }
+
+    #[test]
+    fn w_still_opens_on_a_lone_workspace_because_that_is_where_a_second_comes_from() {
+        // The zero-config case, and the one that used to be a dead end:
+        // with no way to name a workspace here, an install stayed at one
+        // forever unless the user hand-edited projects.toml.
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Workspaces(only_default()));
         h.key(KeyCode::Char('w'));
+        assert!(h.app.picker.is_some());
+    }
+
+    #[test]
+    fn a_query_naming_no_workspace_offers_to_create_it() {
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
+        h.key(KeyCode::Char('w'));
+        h.app.picker.as_mut().unwrap().type_query("weekday");
+
+        let p = h.app.picker.as_ref().unwrap();
+        assert_eq!(p.create.as_deref(), Some("weekday"));
+    }
+
+    #[test]
+    fn a_query_naming_a_workspace_that_exists_does_not_offer_to_create_it() {
+        // Two ways to reach the same workspace, one of which would fail on
+        // the daemon, is worse than one.
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
+        h.key(KeyCode::Char('w'));
+        h.app.picker.as_mut().unwrap().type_query("weekend");
+        assert_eq!(h.app.picker.as_ref().unwrap().create, None);
+    }
+
+    #[test]
+    fn workspace_rows_are_matched_on_their_names_not_their_counts() {
+        // The rows carry "2\u{25a3}"; typing a digit must not "find" a
+        // workspace by how many panes it happens to be running.
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
+        h.key(KeyCode::Char('w'));
+        h.app.picker.as_mut().unwrap().type_query("2");
+        let p = h.app.picker.as_ref().unwrap();
+        assert!(p.shown.is_empty(), "no workspace is named 2: {:?}", p.shown);
+        assert_eq!(p.create.as_deref(), Some("2"), "it is a name to make instead");
+    }
+
+    #[test]
+    fn choosing_the_create_row_makes_the_workspace() {
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Workspaces(only_default()));
+        h.key(KeyCode::Char('w'));
+        h.keys("side");
+        h.key(KeyCode::Down); // past the (now empty) matches, onto create
+        h.key(KeyCode::Enter);
+
+        match &h.sent()[0] {
+            ClientMsg::CreateWorkspace { name } => assert_eq!(name, "side"),
+            other => panic!("unexpected {other:?}"),
+        }
         assert!(h.app.picker.is_none());
-        assert!(h.sent().is_empty());
-        assert!(h.app.status.contains("one workspace"), "{}", h.app.status);
+    }
+
+    #[test]
+    fn a_created_workspace_arrives_empty_so_navigation_starts_over() {
+        // The daemon opens what it creates, and it has no projects; leaving
+        // the columns pointed into the old workspace would be a selection
+        // into a tree that is gone.
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Workspaces(only_default()));
+        h.keys("lllj");
+        h.sent();
+
+        h.key(KeyCode::Char('w'));
+        h.keys("side");
+        h.key(KeyCode::Down);
+        h.key(KeyCode::Enter);
+
+        assert_eq!(h.app.focus, Focus::Projects);
+        assert_eq!((h.app.sel_project, h.app.sel_checkout, h.app.sel_pane), (0, 0, 0));
+    }
+
+    #[test]
+    fn the_top_row_still_switches_rather_than_creating() {
+        // The create row sits below the matches; enter on a match is a
+        // switch, exactly as it was before the row existed.
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
+        h.key(KeyCode::Char('w'));
+        h.keys("week");
+        h.key(KeyCode::Enter);
+
+        match &h.sent()[0] {
+            ClientMsg::OpenWorkspace { workspace } => {
+                assert_eq!(*workspace, argus_protocol::WorkspaceId(3), "the 'weekend' row");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
     }
 
     #[test]

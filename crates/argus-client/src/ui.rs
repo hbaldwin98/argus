@@ -35,6 +35,10 @@ use crate::theme::Theme;
 
 /// The selection marker, and the blank gutter every other row gets so text
 /// stays aligned whether or not it's selected.
+/// The text caret, drawn rather than using the terminal cursor: the
+/// cursor belongs to whichever pane is focused.
+const CARET: &str = "▏";
+
 const MARKER: &str = "▌";
 const GUTTER: &str = " ";
 
@@ -751,7 +755,9 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         // would be a small lie.
         let hint = match p.kind {
             PickerKind::Agent => "j/k move   enter spawn   esc cancel",
-            PickerKind::Workspace(_) => "j/k move   enter open   esc cancel",
+            PickerKind::Workspace { .. } => {
+                "type to filter or name a new one   ↑/↓ move   enter open   esc cancel"
+            }
             PickerKind::Theme => "j/k move   enter apply   esc cancel",
             PickerKind::Branch { .. } => {
                 "type to filter   ↑/↓ move   enter switch   esc cancel"
@@ -1052,59 +1058,87 @@ fn picker_item<'a>(picker: &'a crate::app::Picker, i: usize, th: Theme) -> Item<
     )
 }
 
-/// The modal for all three prompts, drawn over everything else. Destructive
+/// How wide a prompt box gets. A comment is a sentence and gets the wider
+/// box; everything else here is an identifier — a branch name, a path — and
+/// a wide box would only be a wide box.
+const PROMPT_WIDTH: u16 = 54;
+const COMMENT_WIDTH: u16 = 76;
+/// How tall the text being typed may grow before the box stops growing and
+/// starts scrolling instead. A prompt is still a modal: it must not become
+/// the screen.
+const PROMPT_MAX_ROWS: usize = 8;
+
+/// The modal for all five prompts, drawn over everything else. Destructive
 /// confirmations are tinted `err` so a removal never looks like a text
 /// field you can dismiss by typing.
+///
+/// Text wraps rather than running off the edge, and the box grows with it:
+/// a field you cannot read back is a field you cannot check before sending.
 fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     let Some(prompt) = &app.prompt else { return };
+
+    let wanted = match prompt {
+        Prompt::Comment { .. } => COMMENT_WIDTH,
+        _ => PROMPT_WIDTH,
+    };
+    let width = wanted.min(area.width.saturating_sub(2));
+    // Borders and the gutter inside them, which the block below pads.
+    let inner_width = width.saturating_sub(4);
+
     let (title, body, hint, danger) = match prompt {
         Prompt::NewWorktree { input, .. } => (
             "new worktree",
-            field(input, th),
+            wrapped_field(input, inner_width, th),
             "enter create   esc cancel",
             false,
         ),
         Prompt::AddProject { input } => (
             "add project",
-            field(input, th),
+            wrapped_field(input, inner_width, th),
             "enter add   esc cancel",
             false,
         ),
         Prompt::EditorCommand { input } => (
             "editor command",
-            field(input, th),
+            wrapped_field(input, inner_width, th),
             "empty to use $EDITOR   enter save   esc cancel",
             false,
         ),
-        Prompt::Comment { anchor, input } => (
-            "comment to the agent",
-            Line::from(vec![
-                Span::styled(
-                    anchor.message(""),
-                    Style::default().fg(th.muted),
-                ),
-                Span::raw("  "),
-                field(input, th).spans.remove(0),
-            ]),
-            "enter send   esc cancel",
-            false,
-        ),
+        Prompt::Comment { anchor, input } => {
+            // The anchor gets lines of its own. Sharing one with the text
+            // left a long path only a few columns to type a sentence in.
+            let where_ = anchor.message("");
+            let mut lines = vec![Line::from(Span::styled(
+                ellipsize_text(where_.trim_end_matches([' ', ':']), inner_width as usize),
+                Style::default().fg(th.muted),
+            ))];
+            lines.extend(wrapped_field(input, inner_width, th));
+            (
+                "comment to the agent",
+                lines,
+                "enter send   esc cancel",
+                false,
+            )
+        }
         Prompt::ConfirmRemoveCheckout { label, .. } => (
             "remove checkout?",
-            Line::from(vec![
-                Span::styled(label.clone(), Style::default().fg(th.text).add_modifier(Modifier::BOLD)),
+            vec![Line::from(vec![
+                Span::styled(
+                    label.clone(),
+                    Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(
                     "  — worktree, branch, and its panes",
                     Style::default().fg(th.muted),
                 ),
-            ]),
+            ])],
             "y/enter remove   n/esc cancel",
             true,
         ),
     };
 
-    let width = 54.min(area.width.saturating_sub(2));
-    let height = 4.min(area.height);
+    // Borders, the body, and the hint under it.
+    let height = (body.len() as u16 + 3).min(area.height);
     let popup = centered_rect(width, height, area);
 
     f.render_widget(Clear, popup);
@@ -1113,6 +1147,7 @@ fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(accent))
+        .padding(Padding::horizontal(1))
         .title(Span::styled(
             format!(" {title} "),
             Style::default()
@@ -1122,13 +1157,9 @@ fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         ));
     let inner = block.inner(popup);
     f.render_widget(block, popup);
-    f.render_widget(
-        Paragraph::new(vec![
-            body,
-            Line::from(Span::styled(hint, Style::default().fg(th.dim))),
-        ]),
-        inner,
-    );
+    let mut lines = body;
+    lines.push(Line::from(Span::styled(hint, Style::default().fg(th.dim))));
+    f.render_widget(Paragraph::new(lines), inner);
 }
 
 /// A text field with a visible caret. Empty fields show nothing but the
@@ -1136,8 +1167,63 @@ fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
 fn field(input: &str, th: Theme) -> Line<'static> {
     Line::from(vec![
         Span::styled(input.to_string(), Style::default().fg(th.text)),
-        Span::styled("▏", Style::default().fg(th.accent)),
+        Span::styled(CARET, Style::default().fg(th.accent)),
     ])
+}
+
+/// The same field wrapped to `width`, showing its last [`PROMPT_MAX_ROWS`]
+/// rows. The tail is what survives because the caret is there: a prompt
+/// that scrolls away from what you are typing is the bug this exists to
+/// avoid.
+fn wrapped_field(input: &str, width: u16, th: Theme) -> Vec<Line<'static>> {
+    let mut rows = wrap(input, width);
+    // The caret needs a cell of its own, and a row filled to the edge has
+    // none left.
+    if rows
+        .last()
+        .is_none_or(|r| Span::raw(r.clone()).width() >= width.max(1) as usize)
+    {
+        rows.push(String::new());
+    }
+    let last = rows.len() - 1;
+    rows.into_iter()
+        .enumerate()
+        .skip(last.saturating_sub(PROMPT_MAX_ROWS - 1))
+        .map(|(i, row)| {
+            let mut spans = vec![Span::styled(row, Style::default().fg(th.text))];
+            if i == last {
+                spans.push(Span::styled(CARET, Style::default().fg(th.accent)));
+            }
+            Line::from(spans)
+        })
+        .collect()
+}
+
+/// Greedy word wrap. A word moves down whole when it will not fit; one
+/// wider than the line itself is cut, because the alternative is a row
+/// that overruns the box. Always returns at least one row, so an empty
+/// field still has somewhere to put its caret.
+fn wrap(text: &str, width: u16) -> Vec<String> {
+    let width = width.max(1) as usize;
+    let mut rows: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut cur_w = 0usize;
+    for ch in text.chars() {
+        let w = Span::raw(ch.to_string()).width().max(1);
+        if cur_w + w > width {
+            let carry = match cur.rfind(' ') {
+                Some(i) if i + 1 < cur.len() => cur.split_off(i + 1),
+                _ => String::new(),
+            };
+            rows.push(std::mem::take(&mut cur));
+            cur_w = Span::raw(carry.clone()).width();
+            cur = carry;
+        }
+        cur.push(ch);
+        cur_w += w;
+    }
+    rows.push(cur);
+    rows
 }
 
 fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
@@ -2081,6 +2167,125 @@ mod tests {
         let text = lines(&draw(&mut app)).join("\n");
         assert!(text.contains("add project"));
         assert!(text.contains("enter add"), "a prompt should say how to commit it");
+    }
+
+    fn comment_prompt(input: &str) -> App {
+        let mut app = app_with_tree();
+        app.prompt = Some(Prompt::Comment {
+            anchor: crate::review::Anchor {
+                path: "crates/argus-client/src/ui.rs".to_string(),
+                start: Some(1013),
+                end: Some(1013),
+                text: vec!["        Prompt::Comment { anchor, input } => (".to_string()],
+            },
+            input: input.to_string(),
+        });
+        app
+    }
+
+    /// What is inside the prompt box, borders and the columns it floats
+    /// over excluded. The box is found rather than assumed: it is centered
+    /// and sized to its own content.
+    fn box_rows(buf: &ratatui::buffer::Buffer) -> Vec<String> {
+        let sym = |x: u16, y: u16| buf.cell((x, y)).map(|c| c.symbol().to_string()).unwrap_or_default();
+        // The panels are drawn first and start higher up, so the last
+        // top-left corner on the screen belongs to the modal over them.
+        let (x0, y0) = (0..buf.area.height)
+            .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
+            .rfind(|(x, y)| sym(*x, *y) == "\u{256d}")
+            .expect("a prompt box should be drawn");
+        let x1 = (x0 + 1..buf.area.width)
+            .find(|x| sym(*x, y0) == "\u{256e}")
+            .expect("closed on the right");
+
+        (y0 + 1..buf.area.height)
+            .take_while(|y| sym(x0, *y) != "\u{2570}")
+            .map(|y| {
+                (x0 + 1..x1)
+                    .map(|x| sym(x, y))
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_box_finder_reads_the_modal_and_not_the_columns_behind_it() {
+        // Guards the four tests below: they would all pass on a broken
+        // finder that returned the whole screen.
+        let mut app = comment_prompt("just this");
+        let rows = box_rows(&draw(&mut app));
+        assert!(
+            rows.iter().all(|r| !r.contains("projects")),
+            "the column titles are outside the box: {rows:?}"
+        );
+        assert!(rows.iter().any(|r| r.contains("just this")), "{rows:?}");
+    }
+
+    #[test]
+    fn a_long_comment_wraps_inside_the_box_instead_of_running_off_it() {
+        // The bug: one line, no wrap — past the edge of the box you were
+        // typing text you could not read back.
+        let sentence = "this loop rebuilds the whole row set on every keystroke, \
+                        which is fine at ten files and visibly slow at a thousand";
+        let mut app = comment_prompt(sentence);
+        let buf = draw(&mut app);
+
+        let rows = box_rows(&buf);
+        assert!(rows.len() > 3, "the box grew to fit: {rows:?}");
+        let typed: String = rows.join(" ");
+        for word in ["rebuilds", "keystroke", "thousand"] {
+            assert!(typed.contains(word), "{word:?} should be readable: {rows:?}");
+        }
+    }
+
+    #[test]
+    fn the_box_never_overruns_the_screen_it_floats_over() {
+        let mut app = comment_prompt(&"word ".repeat(200));
+        let buf = draw(&mut app);
+        // `lines` trims the right edge, so an overrun shows up as a row
+        // wider than the terminal or a panic in `draw`.
+        assert!(lines(&buf).iter().all(|l| l.chars().count() <= 100));
+        assert!(
+            lines(&buf).len() <= 20,
+            "and it stays a modal rather than becoming the screen"
+        );
+    }
+
+    #[test]
+    fn what_you_are_typing_stays_on_screen_once_the_box_stops_growing() {
+        // The tail is kept, not the head: the caret is at the end.
+        let mut app = comment_prompt(&format!("{} tailword", "filler ".repeat(300)));
+        let buf = draw(&mut app);
+        let rows = box_rows(&buf).join(" ");
+        assert!(rows.contains("tailword"), "{rows}");
+        assert!(rows.contains(CARET), "and the caret with it: {rows}");
+    }
+
+    #[test]
+    fn the_anchor_gets_its_own_line_rather_than_the_room_to_type_in() {
+        let mut app = comment_prompt("make this lazy");
+        let buf = draw(&mut app);
+        let rows = box_rows(&buf);
+
+        let anchored = rows
+            .iter()
+            .position(|r| r.contains("ui.rs:1013"))
+            .expect("the anchor is shown");
+        let typed = rows
+            .iter()
+            .position(|r| r.contains("make this lazy"))
+            .expect("and so is the comment");
+        assert!(anchored < typed, "on separate lines, anchor first: {rows:?}");
+    }
+
+    #[test]
+    fn a_narrow_terminal_still_gets_a_box_that_fits() {
+        let mut app = comment_prompt("nope");
+        let buf = draw_at(&mut app, 30, 12);
+        assert!(lines(&buf).iter().all(|l| l.chars().count() <= 30));
+        assert!(lines(&buf).join("\n").contains("nope"));
     }
 
     #[test]

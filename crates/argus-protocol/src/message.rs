@@ -34,6 +34,9 @@ pub enum ClientMsg {
     /// Switch which workspace is open. Daemon-global: every connected
     /// client's tree re-scopes to it.
     OpenWorkspace { workspace: WorkspaceId },
+    /// Declare a new, empty workspace and open it. Persisted to config, so
+    /// grouping projects never requires hand-editing `projects.toml`.
+    CreateWorkspace { name: String },
     /// Ask for this checkout's uncommitted changes, for the review viewer
     /// (DESIGN.md §9 M4). A request rather than a subscription: a diff is
     /// expensive to compute and only interesting while it's on screen.

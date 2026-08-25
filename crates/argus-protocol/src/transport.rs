@@ -23,7 +23,13 @@ mod imp {
     use tokio::net::{UnixListener, UnixStream};
 
     pub fn socket_path() -> PathBuf {
-        runtime_dir().join("argus.sock")
+        // A named instance gets its own file, so two daemons — an
+        // installed one and a worktree's — can listen side by side.
+        let file = match crate::instance_name() {
+            Some(name) => format!("argus-{name}.sock"),
+            None => "argus.sock".to_string(),
+        };
+        runtime_dir().join(file)
     }
 
     pub struct Listener(UnixListener);
@@ -61,7 +67,12 @@ mod imp {
 
     pub fn pipe_name() -> String {
         let user = std::env::var("USERNAME").unwrap_or_else(|_| "default".to_string());
-        format!(r"\\.\pipe\argus-{user}")
+        // A named instance gets its own pipe, so two daemons — an
+        // installed one and a worktree's — can listen side by side.
+        match crate::instance_name() {
+            Some(name) => format!(r"\\.\pipe\argus-{user}-{name}"),
+            None => format!(r"\\.\pipe\argus-{user}"),
+        }
     }
 
     pub struct Listener {

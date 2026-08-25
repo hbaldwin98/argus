@@ -417,6 +417,44 @@ impl Daemon {
         Ok(())
     }
 
+    /// Declares a new workspace and opens it. Empty by definition: what
+    /// puts projects in it is adding them while it is open, which is how
+    /// `add_project` already behaves. Persisted with a `[[workspace]]`
+    /// block, because an empty workspace has no project to imply it.
+    ///
+    /// Reopening rather than rejecting a name that already exists would
+    /// make one gesture mean two things; the picker already offers the
+    /// existing rows, so the create row only ever means a new name.
+    pub fn create_workspace(&self, name: &str) -> anyhow::Result<()> {
+        let name = name.trim();
+        if name.is_empty() {
+            anyhow::bail!("a workspace needs a name");
+        }
+        {
+            let inner = self.inner.lock().unwrap();
+            if inner.workspaces.iter().any(|w| w.name == name) {
+                anyhow::bail!("workspace already exists: {name}");
+            }
+        }
+        // Written before it exists in memory: a workspace the daemon opens
+        // but forgets on restart is worse than one that was never made.
+        config::append_workspace(name)?;
+
+        {
+            let mut inner = self.inner.lock().unwrap();
+            let id = WorkspaceId(inner.ids.alloc());
+            inner.workspaces.push(Workspace {
+                id,
+                name: name.to_string(),
+            });
+            inner.open = id;
+        }
+        config::save_open_workspace(name);
+        self.broadcast_tree();
+        self.broadcast_workspaces();
+        Ok(())
+    }
+
     /// The open workspace's id and name — what `add_project` files new
     /// projects under, and what the client shows above the project list.
     fn open_workspace_ref(&self) -> (WorkspaceId, String) {
@@ -3474,6 +3512,104 @@ mod tests {
             );
         });
     }
+    #[test]
+    fn a_created_workspace_is_declared_on_disk_and_opened() {
+        with_temp_config(|dir| {
+            let d = Daemon::new(config_with_workspaces());
+            d.create_workspace("side").unwrap();
+
+            let ws = d.workspaces();
+            let side = ws.iter().find(|w| w.name == "side").expect("it exists");
+            assert!(side.open, "you land in what you just made");
+            assert_eq!(side.projects, 0, "and it starts empty");
+            assert_eq!(names_of(&d).len(), 0, "so the tree is empty too");
+
+            // Declared, not implied: an empty workspace has no project in
+            // the file to imply it, so it would not survive a restart.
+            let written = std::fs::read_to_string(dir.join("projects.toml")).unwrap();
+            assert!(
+                written.contains("[[workspace]]") && written.contains(r#"name = "side""#),
+                "the declaration must be written out:\n{written}"
+            );
+        });
+    }
+
+    #[test]
+    fn a_workspace_created_then_given_a_project_is_how_grouping_starts() {
+        // The whole point: reaching a second workspace without editing
+        // projects.toml by hand.
+        let repo = tempfile::tempdir().unwrap();
+        with_temp_config(|_| {
+            let d = daemon_with_primary("/repo");
+            d.create_workspace("side").unwrap();
+            d.add_project(&repo.path().to_string_lossy()).unwrap();
+
+            let side = d
+                .workspaces()
+                .into_iter()
+                .find(|w| w.name == "side")
+                .unwrap();
+            assert_eq!(side.projects, 1, "added into what was open");
+            assert_eq!(names_of(&d).len(), 1);
+        });
+    }
+
+    #[test]
+    fn a_created_workspace_survives_a_restart() {
+        with_temp_config(|_| {
+            let d = Daemon::new(config_with_workspaces());
+            d.create_workspace("side").unwrap();
+            drop(d);
+
+            let reloaded = Daemon::new(crate::config::load().unwrap());
+            let names: Vec<String> = reloaded.workspaces().into_iter().map(|w| w.name).collect();
+            assert!(names.contains(&"side".to_string()), "{names:?}");
+            assert!(
+                reloaded
+                    .workspaces()
+                    .iter()
+                    .find(|w| w.name == "side")
+                    .unwrap()
+                    .open,
+                "and it is still the one open"
+            );
+        });
+    }
+
+    #[test]
+    fn a_workspace_that_already_exists_is_refused_rather_than_reopened() {
+        // The picker already lists the existing rows; one gesture meaning
+        // both "go there" and "make it" is how duplicates get made.
+        with_temp_config(|dir| {
+            let d = Daemon::new(config_with_workspaces());
+            assert!(d.create_workspace("work").is_err());
+            assert!(d.create_workspace("   ").is_err(), "nor an empty name");
+
+            assert_eq!(d.workspaces().len(), 3, "nothing was added");
+            let written = std::fs::read_to_string(dir.join("projects.toml")).unwrap_or_default();
+            assert!(
+                !written.contains("[[workspace]]"),
+                "and nothing was written:\n{written}"
+            );
+        });
+    }
+
+    #[test]
+    fn creating_a_workspace_pushes_a_new_tree_and_workspace_list() {
+        with_temp_config(|_| {
+            let d = Daemon::new(config_with_workspaces());
+            let mut tree_rx = d.subscribe_tree();
+            let mut ws_rx = d.subscribe_workspaces();
+
+            d.create_workspace("side").unwrap();
+
+            let tree = tree_rx.try_recv().expect("clients need the empty tree");
+            assert!(tree.is_empty());
+            let ws = ws_rx.try_recv().expect("and the new row");
+            assert!(ws.iter().any(|w| w.name == "side" && w.open));
+        });
+    }
+
     #[test]
     fn an_editor_pane_will_not_open_a_path_outside_the_checkout() {
         // `path` comes from a client and lands on a command line.

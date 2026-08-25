@@ -293,6 +293,7 @@ quoted arguments and executable paths containing spaces are not yet supported.
 | Variable | Effect |
 |---|---|
 | `ARGUS_CONFIG_DIR` | Overrides the configuration directory for client and daemon |
+| `ARGUS_INSTANCE` | Names this process's instance: scopes the pipe/socket and carves the config directory into `instances/<name>`, so a second Argus can run beside the first |
 | `ARGUS_NO_RESTORE` | Starts the daemon without relaunching recorded panes when present |
 | `ARGUS_THEME` | Overrides the configured theme for that client process |
 | `RUST_LOG` | Controls daemon tracing when `argusd` is run in the foreground |
@@ -306,6 +307,20 @@ RUST_LOG=argusd=debug cargo run -p argusd --bin argusd
 ```sh
 cargo run -p argus --bin argus
 ```
+
+### Running a development build beside an installed one
+
+From any checkout or `.argus/worktrees/*` worktree:
+
+```powershell
+.\scripts\dev.ps1          # builds this checkout and opens its Argus
+.\scripts\dev.ps1 -Stop    # ends this checkout's daemon
+```
+
+The script sets `ARGUS_INSTANCE=dev`, so the worktree daemon listens on its own
+endpoint under its own slice of the config directory and the installed Argus
+keeps running, untouched. The daemon outlives the client, so the next launch
+connects instantly and a rebuild only pays for what changed.
 
 ## Controls
 
