@@ -211,7 +211,10 @@ which is where a plugin harness picks it up — OpenCode's module appends it to 
 Titles arriving from a model are flattened to one line and cut to 48 characters. Neither a rename,
 status report, nor checkout move can touch a pane that has exited. A renamed row keeps showing its
 template on its second line, so a column of agents that have all named themselves still says which
-CLI each one is.
+CLI each one is. Because panes may share a checkout, the standing instructions prohibit agents from
+switching that checkout's branch in place. An agent that needs another branch creates a linked
+worktree, continues from its path, and reports that checkout move. This keeps one agent's branch
+choice from changing the files and `HEAD` seen by every other pane in the original checkout.
 
 ## Session restore
 

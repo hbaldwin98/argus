@@ -638,7 +638,13 @@ pub fn instructions() -> String {
          Do that as soon as you know what the task is, and again whenever you move on \
          to something clearly different.\n\
          \n\
-         If you start working in another checkout, run this from that checkout so the \
+         Other agents may be running in the same checkout. Never run `git switch` or \
+         `git checkout` in the checkout you were started in, because that changes the \
+         branch for every agent sharing it. If you need another branch, create a new \
+         linked worktree and branch there with `git worktree add <new-path> -b \
+         <new-branch>`. Do all subsequent work from that new path.\n\
+         \n\
+         After you start working in another checkout, run this from that checkout so the \
          pane moves under it in Argus:\n\
          \n\
          \x20 {hook} checkout\n\
@@ -1339,6 +1345,15 @@ mod tests {
             .map(|(_, v)| v.clone())
             .unwrap();
         assert!(text.contains("title"));
+    }
+
+    #[test]
+    fn agents_are_told_to_isolate_branch_changes() {
+        let text = instructions();
+
+        assert!(text.contains("Never run `git switch` or `git checkout`"));
+        assert!(text.contains("git worktree add"));
+        assert!(text.contains("checkout"));
     }
 
     // --- the plugin mechanism ----------------------------------------------
