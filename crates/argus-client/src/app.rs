@@ -873,6 +873,26 @@ impl App {
         }
     }
 
+    /// Whether pasted text has somewhere to land — the same routing
+    /// `on_paste` walks, asked ahead of time so a coalesced burst with no
+    /// target is replayed as keystrokes instead of vanishing.
+    pub fn accepts_paste(&self) -> bool {
+        if let Some(prompt) = &self.prompt {
+            return !matches!(prompt, Prompt::ConfirmRemove { .. });
+        }
+        if self.dir_picker.is_some() {
+            return true;
+        }
+        if let Some(picker) = &self.picker {
+            return picker.kind.is_fuzzy();
+        }
+        self.overlay
+            .as_ref()
+            .and_then(Overlay::pane)
+            .or_else(|| (self.focus == Focus::PaneContent).then(|| self.column_pane()).flatten())
+            .is_some()
+    }
+
     pub fn on_paste(&mut self, text: String) {
         self.clear_status();
         if let Some(prompt) = &mut self.prompt {

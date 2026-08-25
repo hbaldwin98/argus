@@ -7,6 +7,7 @@ mod herdr;
 mod keys;
 mod launch;
 mod mouse;
+mod paste;
 mod review;
 mod settings;
 mod theme;
@@ -25,6 +26,7 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use futures::StreamExt;
+use paste::{Flush, PasteBurst, Step};
 use ratatui::Terminal;
 use tokio::io::split;
 use tokio::sync::mpsc;
@@ -235,6 +237,7 @@ async fn run(
     let mut frames = tokio::time::interval(FRAME_INTERVAL);
     frames.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut redraw = RedrawScheduler::default();
+    let mut burst = PasteBurst::default();
     // Keyed by pane id, not just dimensions — switching to a different pane
     // at the same on-screen size still needs its own Resize, since each
     // pane's pty starts at a hardcoded default until told otherwise.
@@ -244,11 +247,16 @@ async fn run(
     draw_frame(terminal, &mut app)?;
 
     loop {
+        let burst_due = burst.deadline();
         tokio::select! {
             maybe_event = events.next() => {
-                if !handle_terminal_event(&mut app, maybe_event) {
+                if !handle_terminal_event(&mut app, &mut burst, maybe_event) {
                     break;
                 }
+                redraw.input();
+            }
+            _ = sleep_until(burst_due), if burst_due.is_some() => {
+                flush_burst(&mut app, &mut burst);
                 redraw.input();
             }
             Some(msg) = out_rx.recv() => {
@@ -276,13 +284,56 @@ async fn run(
     Ok(())
 }
 
-fn handle_terminal_event(app: &mut App, event: Option<Result<Event, std::io::Error>>) -> bool {
+/// Sleeps until `deadline`, or forever when there is none — the select
+/// arm is guarded, but the future still needs a type either way.
+async fn sleep_until(deadline: Option<std::time::Instant>) {
+    match deadline {
+        Some(deadline) => {
+            tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await
+        }
+        None => std::future::pending().await,
+    }
+}
+
+fn flush_burst(app: &mut App, burst: &mut PasteBurst) {
+    match burst.take(app.accepts_paste()) {
+        Some(Flush::Paste(text)) => app.on_paste(text),
+        Some(Flush::Keys(keys)) => {
+            for key in keys {
+                handle_key_event(app, key);
+            }
+        }
+        None => {}
+    }
+}
+
+fn handle_terminal_event(
+    app: &mut App,
+    burst: &mut PasteBurst,
+    event: Option<Result<Event, std::io::Error>>,
+) -> bool {
     match event {
-        Some(Ok(Event::Key(key))) => handle_key_event(app, key),
-        Some(Ok(Event::Mouse(event))) => app.on_mouse(event),
-        Some(Ok(Event::Paste(text))) => app.on_paste(text),
+        Some(Ok(Event::Key(key))) => match burst.push(key, std::time::Instant::now()) {
+            Step::Dispatch(key) => handle_key_event(app, key),
+            Step::Buffered => {}
+            Step::FlushThen(key) => {
+                flush_burst(app, burst);
+                handle_key_event(app, key);
+            }
+        },
+        Some(Ok(Event::Mouse(event))) => {
+            flush_burst(app, burst);
+            app.on_mouse(event);
+        }
+        Some(Ok(Event::Paste(text))) => {
+            flush_burst(app, burst);
+            app.on_paste(text);
+        }
         Some(Ok(_)) => {}
-        Some(Err(_)) | None => return false,
+        Some(Err(_)) | None => {
+            flush_burst(app, burst);
+            return false;
+        }
     }
     true
 }
@@ -487,6 +538,7 @@ mod tests {
 
         assert!(handle_terminal_event(
             &mut app,
+            &mut PasteBurst::default(),
             Some(Ok(Event::Paste("pasted".to_string())))
         ));
         assert!(matches!(
@@ -500,9 +552,10 @@ mod tests {
         let (tx, _rx) = mpsc::unbounded_channel();
         let mut app = App::new(tx);
 
-        assert!(!handle_terminal_event(&mut app, None));
+        assert!(!handle_terminal_event(&mut app, &mut PasteBurst::default(), None));
         assert!(!handle_terminal_event(
             &mut app,
+            &mut PasteBurst::default(),
             Some(Err(io::Error::other("event stream failed")))
         ));
     }
