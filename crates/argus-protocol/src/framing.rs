@@ -158,6 +158,7 @@ mod tests {
                         status: PaneStatus::Waiting,
                         note: None,
                         template: None,
+                        children: Vec::new(),
                     }],
                 }],
             }],

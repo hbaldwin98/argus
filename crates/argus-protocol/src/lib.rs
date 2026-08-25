@@ -15,6 +15,6 @@ pub use ids::{CheckoutId, IdGen, PaneId, ProjectId, RepositoryId, WorkspaceId};
 pub use message::{ClientMsg, DirEntry, DirListing, ServerMsg};
 pub use review::{ChangeKind, DiffLine, FileDiff, Hunk, LineKind, Review, ReviewBase};
 pub use tree::{
-    CheckoutInfo, GitStatus, PaneInfo, PaneKind, PaneStatus, ProjectInfo, RepositoryInfo,
-    WorkspaceInfo,
+    CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneStatus, ProjectInfo,
+    RepositoryInfo, WorkspaceInfo,
 };

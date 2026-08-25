@@ -50,6 +50,11 @@ use std::time::Duration;
 const TIMEOUT: Duration = Duration::from_secs(2);
 const NOTE_FLAG: &str = "--note-from-stdin";
 const SESSION_KEY_FLAG: &str = "--session-id-from-stdin";
+const OWNS_SESSION_FLAG: &str = "--owns-session";
+/// Names the conversation a report comes from, so the daemon can tell the
+/// agent that owns a pane from one spawned inside it — which inherits this
+/// process's environment and would otherwise rewrite its parent's row.
+const SESSION_HEADER: &str = "X-Argus-Session";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -135,12 +140,17 @@ fn installed_hook(url: &str, rest: &[&str]) {
     let inherited_url = env_url();
     let inherited_token = env_token();
     let (url, token) = routed_hook(url, token, &inherited_url, &inherited_token);
-    let _ = post(&url, &token, &note);
-    post_session_id(&url, &token, key, raw.as_deref());
+    let session = key.and_then(|key| raw.as_deref().and_then(|raw| json_string(raw, key)));
+    let _ = post_as(&url, &token, &note, session.as_deref());
+    if rest.contains(&OWNS_SESSION_FLAG) {
+        post_session_id(&url, &token, session.as_deref());
+    }
 
     let mut out = std::io::stdout();
     let is_pre_tool = raw.as_deref().is_some_and(|r| r.contains("\"toolCall\""));
-    let is_pre_inv = raw.as_deref().is_some_and(|r| r.contains("\"invocationNum\""));
+    let is_pre_inv = raw
+        .as_deref()
+        .is_some_and(|r| r.contains("\"invocationNum\""));
     let instructions = env_instructions();
 
     if is_pre_tool {
@@ -179,12 +189,15 @@ fn installed_input<'a>(rest: &'a [&str]) -> (Option<&'a str>, Option<String>, St
     (key, raw, note)
 }
 
-fn post_session_id(url: &str, token: &str, key: Option<&str>, raw: Option<&str>) {
-    let Some(id) = key.and_then(|key| raw.and_then(|raw| json_string(raw, key))) else {
+/// Records the conversation identity Argus resumes this pane with. Only the
+/// event a harness fires when *its own* session starts carries the flag that
+/// gets here, so a CLI started from inside the pane cannot claim it.
+fn post_session_id(url: &str, token: &str, id: Option<&str>) {
+    let Some(id) = id.filter(|id| !id.is_empty()) else {
         return;
     };
     if let Some(base) = pane_base(url) {
-        let _ = post(&format!("{base}/session"), token, &id);
+        let _ = post_as(&format!("{base}/session"), token, id, Some(id));
     }
 }
 
@@ -279,7 +292,11 @@ fn note_from(raw: &str) -> String {
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) {
         if let Some(tool) = v.get("toolCall") {
             let name = tool.get("name").and_then(|v| v.as_str()).unwrap_or("tool");
-            if let Some(cmd) = tool.get("args").and_then(|a| a.get("CommandLine")).and_then(|v| v.as_str()) {
+            if let Some(cmd) = tool
+                .get("args")
+                .and_then(|a| a.get("CommandLine"))
+                .and_then(|v| v.as_str())
+            {
                 return format!("{name}: {cmd}");
             }
             return name.to_string();
@@ -304,6 +321,10 @@ fn note_from(raw: &str) -> String {
 /// Best-effort POST. Every error is discarded by the caller; the return type
 /// exists only so the body can use `?`.
 fn post(url: &str, token: &str, body: &str) -> Option<()> {
+    post_as(url, token, body, None)
+}
+
+fn post_as(url: &str, token: &str, body: &str, session: Option<&str>) -> Option<()> {
     let rest = url.strip_prefix("http://")?;
     let (authority, path) = match rest.find('/') {
         Some(i) => (&rest[..i], &rest[i..]),
@@ -314,20 +335,65 @@ fn post(url: &str, token: &str, body: &str) -> Option<()> {
     let mut stream = TcpStream::connect_timeout(&addr, TIMEOUT).ok()?;
     stream.set_write_timeout(Some(TIMEOUT)).ok()?;
 
-    let req = format!(
-        "POST {path} HTTP/1.1\r\nHost: {authority}\r\nAuthorization: Bearer {token}\r\n\
-         Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
+    let req = request(path, authority, token, session, body);
     stream.write_all(req.as_bytes()).ok()?;
     // The daemon's reply is deliberately not read: nothing here acts on it,
     // and not waiting keeps the agent's turn from stalling on a slow answer.
     Some(())
 }
 
+fn request(path: &str, authority: &str, token: &str, session: Option<&str>, body: &str) -> String {
+    let session = match session.filter(|id| !id.is_empty()) {
+        Some(id) => format!(
+            "{SESSION_HEADER}: {id}
+"
+        ),
+        None => String::new(),
+    };
+    format!(
+        "POST {path} HTTP/1.1
+Host: {authority}
+Authorization: Bearer {token}
+         {session}Content-Length: {}
+Connection: close
+
+{body}",
+        body.len()
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_report_names_the_conversation_it_came_from() {
+        // What lets the daemon tell the pane's own agent from a CLI started
+        // inside it, which inherits the same URL and token.
+        let tagged = request(
+            "/pane/1/status/idle",
+            "127.0.0.1:4242",
+            "tok",
+            Some("s-1"),
+            "",
+        );
+        assert!(
+            tagged.contains(
+                "X-Argus-Session: s-1
+"
+            ),
+            "{tagged}"
+        );
+        let untagged = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", None, "");
+        assert!(!untagged.contains("X-Argus-Session"), "{untagged}");
+        assert!(
+            untagged.contains(
+                "Content-Length: 0
+"
+            ),
+            "{untagged}"
+        );
+    }
 
     #[test]
     fn a_json_event_gives_up_the_message_a_human_would_read() {

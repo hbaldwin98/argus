@@ -24,13 +24,32 @@ struct Pane {
     /// The agent template this pane was started from, kept because the
     /// title no longer answers that — an agent may have renamed it.
     template: Option<String>,
-    /// Stable conversation identity reported by the harness.
+    /// Stable conversation identity reported by the harness. Also the pane's
+    /// owner: reports carrying a different session belong to `children`.
     harness_session_id: Option<String>,
+    /// Agents reporting through this pane that do not own it — a CLI started
+    /// from inside the pane's own agent inherits the hook environment, so
+    /// without this its every turn would rewrite its parent's row.
+    children: Vec<ChildAgent>,
     /// Set while this pane is a conversation Argus asked a CLI to reopen,
     /// and it is too early to be sure it could. See [`Resumed`].
     resumed: Option<Resumed>,
     runtime: PaneRuntime,
 }
+
+/// One agent running underneath a pane's own, tracked only so the operator
+/// can see it. Nothing here ever reaches the parent's status or title: the
+/// pane belongs to the agent Argus started in it.
+struct ChildAgent {
+    session_id: String,
+    label: Option<String>,
+    status: PaneStatus,
+    note: Option<String>,
+}
+
+/// How many children a pane lists. A parent fanning out dozens of one-shot
+/// CLIs should not push its own row off the column.
+const MAX_CHILDREN: usize = 8;
 
 /// A pane started with its harness's resume arguments, and what to start
 /// instead if that turns out to have been a lie.
@@ -354,6 +373,18 @@ impl Daemon {
                                             status: pane.status,
                                             note: pane.note.clone(),
                                             template: pane.template.clone(),
+                                            children: pane
+                                                .children
+                                                .iter()
+                                                .map(|c| argus_protocol::ChildAgentInfo {
+                                                    label: c
+                                                        .label
+                                                        .clone()
+                                                        .unwrap_or_else(|| "agent".to_string()),
+                                                    status: c.status,
+                                                    note: c.note.clone(),
+                                                })
+                                                .collect(),
                                         })
                                         .collect(),
                                     git,
@@ -658,6 +689,7 @@ impl Daemon {
                     status: PaneStatus::Idle,
                     note: None,
                     template: None,
+                    children: Vec::new(),
                     harness_session_id: None,
                     resumed: None,
                     runtime,
@@ -739,6 +771,7 @@ impl Daemon {
                     status: PaneStatus::Idle,
                     note: None,
                     template: None,
+                    children: Vec::new(),
                     harness_session_id: None,
                     resumed: None,
                     runtime,
@@ -848,6 +881,7 @@ impl Daemon {
                     status: PaneStatus::Idle,
                     note: None,
                     template: Some(template.name.clone()),
+                    children: Vec::new(),
                     harness_session_id: reported_session_id.or(harness_session_id),
                     resumed: resuming.then(|| Resumed {
                         checkout,
@@ -1009,6 +1043,100 @@ impl Daemon {
     /// Applies a hook-reported status, unless the pane has already exited —
     /// a hook firing after the process died (e.g. `Stop` racing a crash) is
     /// stale and shouldn't resurrect a dead pane's row.
+    /// Applies a hook report to whichever agent sent it.
+    ///
+    /// Every report a harness makes carries the session it came from, so a
+    /// CLI spawned inside a pane — which inherits the pane's hook URL and
+    /// token and cannot be stopped from calling home — lands in that pane's
+    /// child list instead of overwriting the row. The agent Argus started
+    /// stays the authority on what the pane says.
+    fn report_pane_status(
+        &self,
+        pane: PaneId,
+        reporter: Option<&str>,
+        status: PaneStatus,
+        note: Option<String>,
+    ) {
+        match self.child_of(pane, reporter) {
+            Some(session) => self.set_child_status(pane, &session, status, note),
+            None => self.set_pane_hook_status(pane, status, note),
+        }
+    }
+
+    fn report_pane_title(&self, pane: PaneId, reporter: Option<&str>, title: &str) {
+        match self.child_of(pane, reporter) {
+            Some(session) => self.set_child_label(pane, &session, title),
+            None => self.set_pane_title(pane, title),
+        }
+    }
+
+    /// The reporting session, when it is not the one that owns the pane.
+    /// A report with no session at all is the pane's own: only a harness
+    /// event carries one, and `argus-hook status` typed by hand has none.
+    fn child_of(&self, pane: PaneId, reporter: Option<&str>) -> Option<String> {
+        let reporter = reporter?;
+        let inner = self.inner.lock().unwrap();
+        let owner = find_pane_ref(&inner.projects, pane)?
+            .harness_session_id
+            .as_deref()?;
+        (owner != reporter).then(|| reporter.to_string())
+    }
+
+    fn with_child(&self, pane: PaneId, session: &str, edit: impl FnOnce(&mut ChildAgent)) {
+        {
+            let mut inner = self.inner.lock().unwrap();
+            let Some(p) = find_pane(&mut inner.projects, pane) else {
+                return;
+            };
+            if matches!(p.status, PaneStatus::Exited { .. }) {
+                return;
+            }
+            match p.children.iter_mut().find(|c| c.session_id == session) {
+                Some(child) => edit(child),
+                None => {
+                    let mut child = ChildAgent {
+                        session_id: session.to_string(),
+                        label: None,
+                        status: PaneStatus::Working,
+                        note: None,
+                    };
+                    edit(&mut child);
+                    p.children.push(child);
+                    if p.children.len() > MAX_CHILDREN {
+                        p.children.remove(0);
+                    }
+                }
+            }
+            // A child that has gone idle is no longer something running
+            // under this row, so it stops being listed under it.
+            p.children
+                .retain(|c| !matches!(c.status, PaneStatus::Idle | PaneStatus::Exited { .. }));
+        }
+        self.broadcast_tree();
+    }
+
+    fn set_child_status(
+        &self,
+        pane: PaneId,
+        session: &str,
+        status: PaneStatus,
+        note: Option<String>,
+    ) {
+        let note = note.map(|n| clean_title(&n)).filter(|n| !n.is_empty());
+        self.with_child(pane, session, |child| {
+            child.status = status;
+            child.note = note;
+        });
+    }
+
+    fn set_child_label(&self, pane: PaneId, session: &str, title: &str) {
+        let label = clean_title(title);
+        if label.is_empty() {
+            return;
+        }
+        self.with_child(pane, session, |child| child.label = Some(label));
+    }
+
     fn set_pane_hook_status(&self, pane: PaneId, status: PaneStatus, note: Option<String>) {
         let changed = {
             let mut inner = self.inner.lock().unwrap();
@@ -1057,10 +1185,29 @@ impl Daemon {
         }
     }
 
+    /// Records the conversation Argus would resume this pane with.
+    ///
+    /// A claim from a session that is not the pane's current owner is only
+    /// honoured while the pane is not working: the pane's own agent starting
+    /// over (`/clear`, a resume) is idle at that moment, whereas a CLI
+    /// spawned from inside a turn arrives mid-work. The latter is listed as
+    /// a child instead, which is what keeps a nested agent from stealing the
+    /// identity the row resumes from.
     fn set_pane_session_id(&self, pane: PaneId, raw: &str) {
         let Some(session_id) = valid_session_id(raw) else {
             return;
         };
+        if self.child_of(pane, Some(&session_id)).is_some() {
+            let working = {
+                let inner = self.inner.lock().unwrap();
+                find_pane_ref(&inner.projects, pane)
+                    .is_some_and(|p| p.status == PaneStatus::Working)
+            };
+            if working {
+                self.with_child(pane, &session_id, |_| {});
+                return;
+            }
+        }
         let changed = {
             let mut starting = self.starting_agents.lock().unwrap();
             let mut inner = self.inner.lock().unwrap();
@@ -1070,6 +1217,7 @@ impl Daemon {
                         && p.harness_session_id.as_deref() != Some(&session_id) =>
                 {
                     p.harness_session_id = Some(session_id);
+                    p.children.clear();
                     true
                 }
                 Some(_) => false,
@@ -1995,6 +2143,7 @@ async fn handle_hook_request(
 
     let mut authorized = false;
     let mut content_length: usize = 0;
+    let mut reporter: Option<String> = None;
     loop {
         let mut line = String::new();
         let n = reader.read_line(&mut line).await?;
@@ -2013,6 +2162,11 @@ async fn handle_hook_request(
             .or_else(|| line.strip_prefix("content-length:"))
         {
             content_length = v.trim().parse().unwrap_or(0);
+        } else if let Some(v) = line
+            .strip_prefix("X-Argus-Session:")
+            .or_else(|| line.strip_prefix("x-argus-session:"))
+        {
+            reporter = valid_session_id(v);
         }
     }
     // Capped: the only body anyone sends is a pane title, and this server
@@ -2027,12 +2181,14 @@ async fn handle_hook_request(
         match parse_pane_path(&path) {
             Some((pane, Endpoint::Status(report))) => {
                 let note = String::from_utf8_lossy(&body).to_string();
-                daemon.set_pane_hook_status(pane, report.status(), Some(note))
+                daemon.report_pane_status(pane, reporter.as_deref(), report.status(), Some(note))
             }
             Some((pane, Endpoint::Title)) => {
-                daemon.set_pane_title(pane, &String::from_utf8_lossy(&body))
+                daemon.report_pane_title(pane, reporter.as_deref(), &String::from_utf8_lossy(&body))
             }
-            Some((pane, Endpoint::Checkout)) => {
+            Some((pane, Endpoint::Checkout))
+                if daemon.child_of(pane, reporter.as_deref()).is_none() =>
+            {
                 let destination = PathBuf::from(String::from_utf8_lossy(&body).trim());
                 if let Err(error) = daemon.move_agent_to_checkout(pane, &destination) {
                     tracing::warn!("pane {} could not move checkout: {error}", pane.0);
@@ -2041,7 +2197,9 @@ async fn handle_hook_request(
             Some((pane, Endpoint::Session)) => {
                 daemon.set_pane_session_id(pane, &String::from_utf8_lossy(&body))
             }
-            None => {}
+            // A checkout move from an agent that does not own the pane is
+            // dropped: the row follows the agent Argus started in it.
+            _ => {}
         }
         wr.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
             .await?;
@@ -2405,6 +2563,124 @@ mod tests {
 
         d.set_pane_title(pane, "fixing the pty deadlock");
         assert_eq!(pane_info(&d, pane).title, "fixing the pty deadlock");
+
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_agent_spawned_inside_a_pane_reports_as_a_child_of_it() {
+        // The bug: a CLI started from inside a pane inherits that pane's
+        // hook URL and token, so every turn it takes used to overwrite the
+        // row belonging to the agent that started it.
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+        d.set_pane_session_id(pane, "parent-session");
+        d.set_pane_title(pane, "fixing the pty deadlock");
+        d.report_pane_status(pane, Some("parent-session"), PaneStatus::Working, None);
+
+        d.report_pane_title(pane, Some("child-session"), "reading the hook table");
+        d.report_pane_status(
+            pane,
+            Some("child-session"),
+            PaneStatus::Waiting,
+            Some("needs a password".into()),
+        );
+
+        let info = pane_info(&d, pane);
+        assert_eq!(info.title, "fixing the pty deadlock", "the parent's row");
+        assert_eq!(info.status, PaneStatus::Working);
+        assert_eq!(info.note, None);
+        assert_eq!(info.children.len(), 1);
+        assert_eq!(info.children[0].label, "reading the hook table");
+        assert_eq!(info.children[0].status, PaneStatus::Waiting);
+        assert_eq!(info.children[0].note.as_deref(), Some("needs a password"));
+
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_child_that_has_finished_stops_being_listed() {
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+        d.set_pane_session_id(pane, "parent-session");
+        d.report_pane_status(pane, Some("child-session"), PaneStatus::Working, None);
+        assert_eq!(pane_info(&d, pane).children.len(), 1);
+
+        d.report_pane_status(pane, Some("child-session"), PaneStatus::Idle, None);
+        assert!(pane_info(&d, pane).children.is_empty());
+
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_pane_lists_only_so_many_children() {
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+        d.set_pane_session_id(pane, "parent-session");
+        for i in 0..MAX_CHILDREN + 4 {
+            d.report_pane_status(pane, Some(&format!("child-{i}")), PaneStatus::Working, None);
+        }
+        assert_eq!(pane_info(&d, pane).children.len(), MAX_CHILDREN);
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_session_started_mid_turn_cannot_take_over_the_row() {
+        // A nested CLI announces its own session start while its parent is
+        // working; letting that claim stick would leave the row resuming
+        // the wrong conversation.
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+        d.set_pane_session_id(pane, "parent-session");
+        d.report_pane_status(pane, Some("parent-session"), PaneStatus::Working, None);
+
+        d.set_pane_session_id(pane, "nested-session");
+
+        assert_eq!(
+            d.session().panes[0].harness_session_id.as_deref(),
+            Some("parent-session")
+        );
+        assert_eq!(pane_info(&d, pane).children.len(), 1);
+
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn the_panes_own_agent_can_still_start_a_new_conversation() {
+        // `/clear` gives the pane's agent a new session id, and it arrives
+        // while the pane is idle. That is the row's own agent, so it keeps
+        // the row — and whatever ran under the old conversation is gone.
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+        d.set_pane_session_id(pane, "first-session");
+        d.report_pane_status(pane, Some("child-session"), PaneStatus::Working, None);
+
+        d.set_pane_session_id(pane, "second-session");
+
+        assert_eq!(
+            d.session().panes[0].harness_session_id.as_deref(),
+            Some("second-session")
+        );
+        assert!(pane_info(&d, pane).children.is_empty());
+
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_report_with_no_session_at_all_is_the_panes_own() {
+        // `argus-hook status` typed by an agent carries no session id, and
+        // must keep working as the pane's own voice.
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+        d.set_pane_session_id(pane, "parent-session");
+
+        d.report_pane_title(pane, None, "renamed by hand");
+        d.report_pane_status(pane, None, PaneStatus::NeedsReview, None);
+
+        let info = pane_info(&d, pane);
+        assert_eq!(info.title, "renamed by hand");
+        assert_eq!(info.status, PaneStatus::NeedsReview);
+        assert!(info.children.is_empty());
 
         d.close_pane(pane).unwrap();
     }

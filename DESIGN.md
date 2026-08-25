@@ -204,6 +204,16 @@ top-level session ID key. Claude captures `session_id` at SessionStart. OpenCode
 the root ID and reports again when a newly created root replaces it. AGY captures `conversationId`
 at PreInvocation.
 
+Every report carries the session it came from, and the pane belongs to one of them. The session that
+claims a pane first owns it; a report from any other session — a CLI started from inside the pane,
+which inherits the same hook URL and token and cannot be stopped from calling home — is recorded as a
+child of that pane instead. Children are listed on the parent's row and can change nothing about it:
+not its title, not its status, not its checkout, and not the conversation it resumes. A new session
+ID may take the pane over only while the pane is not working, which is what an agent starting a fresh
+conversation looks like and what an agent spawned mid-turn does not; taking over clears the child
+list. A child that reports idle stops being listed, and a pane lists at most eight. A report with no
+session at all — `argus-hook status` run by hand — is the pane's own voice, as before.
+
 Agents name their own rows. At session start a harness with a `context_event` is handed
 instructions telling it to run `argus-hook title "..."` once it knows what it is working on, and
 `argus-hook status waiting "..."` when it needs a human, `needs-review` when work is ready to
