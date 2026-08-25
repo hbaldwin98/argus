@@ -51,6 +51,10 @@ const GUTTER_COLS: u16 = 1;
 /// narrow to fit five such columns.
 pub const MIN_COLUMN_WIDTH: u16 = 8;
 
+/// The collapsed projects column keeps only this much: enough rail to stay
+/// visible and clickable, not enough to read.
+pub const COLLAPSED_STRIP_WIDTH: u16 = 2;
+
 /// One list item: what it is, a dimmer line of what's true about it, and
 /// an optional count pinned to the right of the name line. The badge is
 /// there because these columns are narrow — a count appended to the detail
@@ -107,73 +111,83 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
 /// Always draws all five columns side by side, so an agent's output stays
 /// visible next to the rest of the tree instead of taking over the screen.
+/// The projects column may be collapsed to a thin strip, in which case its
+/// width is ceded to the other four.
 fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
     let th = app.theme;
-    let constraints = column_constraints(area.width, app.column_widths.as_deref());
+    let constraints = if app.projects_collapsed {
+        collapsed_projects_constraints(area.width, app.column_widths.as_deref())
+    } else {
+        column_constraints(area.width, app.column_widths.as_deref())
+    };
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .spacing(GUTTER_COLS)
         .constraints(constraints)
         .split(area);
 
-    let project_rows: Vec<Item> = app
-        .tree
-        .iter()
-        .map(|p| {
-            let panes: usize = p
-                .repositories
-                .iter()
-                .flat_map(|r| r.checkouts.iter())
-                .map(|c| c.listed_panes().count())
-                .sum();
-            let status = p
-                .repositories
-                .iter()
-                .flat_map(|r| r.checkouts.iter())
-                .filter_map(worst_pane_status)
-                .max_by_key(rank);
-            let item = Item::new(
-                vec![
-                    status_dot(status, th),
-                    Span::styled(
-                        p.name.clone(),
-                        Style::default().fg(th.text).add_modifier(Modifier::BOLD),
-                    ),
-                ],
-                vec![Span::styled(
-                    plural(p.repositories.len(), "repository"),
-                    Style::default().fg(th.dim),
-                )],
-            );
-            if panes == 0 {
-                item
-            } else {
-                item.badged(vec![Span::styled(
-                    format!("{panes} ▣"),
-                    Style::default().fg(th.dim),
-                )])
-            }
-        })
-        .collect();
-    // The projects column is scoped to the open workspace, so it says so
-    // in its own title rather than leaving the scope to be inferred.
-    let projects_title = if app.open_workspace.is_empty() {
-        "projects".to_string()
+    app.layout.projects = if app.projects_collapsed {
+        render_collapsed_projects(f, cols[0], th)
     } else {
-        format!("projects · {}", app.open_workspace)
-    };
-    app.layout.projects = render_column(
-        f,
-        cols[0],
-        &projects_title,
-        project_rows,
-        app.focus == Focus::Projects,
-        (!app.tree.is_empty()).then_some(app.sel_project),
-        "no projects yet
+        let project_rows: Vec<Item> = app
+            .tree
+            .iter()
+            .map(|p| {
+                let panes: usize = p
+                    .repositories
+                    .iter()
+                    .flat_map(|r| r.checkouts.iter())
+                    .map(|c| c.listed_panes().count())
+                    .sum();
+                let status = p
+                    .repositories
+                    .iter()
+                    .flat_map(|r| r.checkouts.iter())
+                    .filter_map(worst_pane_status)
+                    .max_by_key(rank);
+                let item = Item::new(
+                    vec![
+                        status_dot(status, th),
+                        Span::styled(
+                            p.name.clone(),
+                            Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+                        ),
+                    ],
+                    vec![Span::styled(
+                        plural(p.repositories.len(), "repository"),
+                        Style::default().fg(th.dim),
+                    )],
+                );
+                if panes == 0 {
+                    item
+                } else {
+                    item.badged(vec![Span::styled(
+                        format!("{panes} ▣"),
+                        Style::default().fg(th.dim),
+                    )])
+                }
+            })
+            .collect();
+        // The projects column is scoped to the open workspace, so it says so
+        // in its own title rather than leaving the scope to be inferred.
+        let projects_title = if app.open_workspace.is_empty() {
+            "projects".to_string()
+        } else {
+            format!("projects · {}", app.open_workspace)
+        };
+        render_column(
+            f,
+            cols[0],
+            &projects_title,
+            project_rows,
+            app.focus == Focus::Projects,
+            (!app.tree.is_empty()).then_some(app.sel_project),
+            "no projects yet
 
 n  add one",
-        th,
-    );
+            th,
+        )
+    };
 
     let repository_rows: Vec<Item> = app
         .current_project()
@@ -336,24 +350,58 @@ fn column_constraints(total_width: u16, preferred: Option<&[u16]>) -> Vec<Constr
         return vec![Constraint::Length(0); 5];
     }
     let floor = MIN_COLUMN_WIDTH.min(available / 5).max(1);
-    for width in &mut widths {
+    fit_widths(&mut widths, available, floor);
+    widths.into_iter().map(Constraint::Length).collect()
+}
+
+/// The collapsed layout: projects keeps only a rail, its width passing to
+/// the other four columns. Gutters dragged before collapsing are absolute
+/// preferences, not fractions, so the four survivors keep them as-is and
+/// the slack lands in the live view; with nothing captured yet the default
+/// split is re-dealt over four columns instead of five.
+fn collapsed_projects_constraints(total_width: u16, preferred: Option<&[u16]>) -> Vec<Constraint> {
+    let available = total_width
+        .saturating_sub(GUTTER_COLS * 4)
+        .saturating_sub(COLLAPSED_STRIP_WIDTH);
+    let floor = MIN_COLUMN_WIDTH.min(available / 4).max(1);
+    let mut widths: Vec<u16> = match preferred.filter(|widths| widths.len() == 5) {
+        Some(widths) => widths[1..].to_vec(),
+        None => [20u32, 21, 21, 38]
+            .iter()
+            .map(|share| (u32::from(available) * share / 100).max(u32::from(floor)) as u16)
+            .collect(),
+    };
+    fit_widths(&mut widths, available, floor);
+
+    let mut constraints = vec![Constraint::Length(COLLAPSED_STRIP_WIDTH)];
+    constraints.extend(widths.into_iter().map(Constraint::Length));
+    constraints
+}
+
+/// Reconciles preferred widths with what is actually available: nothing
+/// below the floor, any shortfall reclaimed from the right, any spare
+/// handed to the last column (the live view, where spare width does the
+/// most good).
+fn fit_widths(widths: &mut [u16], available: u16, floor: u16) {
+    for width in widths.iter_mut() {
         *width = (*width).max(floor);
     }
-
-    let mut sum: u16 = widths.iter().copied().sum();
+    let mut sum: u32 = widths.iter().map(|w| u32::from(*w)).sum();
+    let available = u32::from(available);
     if sum < available {
-        widths[4] = widths[4].saturating_add(available - sum);
+        if let Some(last) = widths.last_mut() {
+            *last = last.saturating_add((available - sum) as u16);
+        }
     } else {
         for width in widths.iter_mut().rev() {
             if sum <= available {
                 break;
             }
-            let take = (sum - available).min(width.saturating_sub(floor));
-            *width -= take;
+            let take = (sum - available).min(u32::from(width.saturating_sub(floor)));
+            *width -= take as u16;
             sum -= take;
         }
     }
-    widths.into_iter().map(Constraint::Length).collect()
 }
 
 /// Renders one bordered column of rows and returns its inner (post-border)
@@ -397,6 +445,22 @@ fn render_column(
         let Some(row) = row_rect(inner, i - first) else { break };
         render_row(f, row, item, selected == Some(i), focused, th);
     }
+    panel
+}
+
+/// The projects column folded away: a rail exactly as wide as its own
+/// borders. There is nothing to read here — clicking it (or `p`) brings
+/// the column back, so it only has to stay visible. Losing the project
+/// name is fine because the breadcrumb still carries it.
+fn render_collapsed_projects(f: &mut Frame, area: Rect, th: Theme) -> Panel {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(th.edge))
+        .style(Style::default().bg(th.surface));
+    let inner = block.inner(area);
+    let panel = Panel { outer: area, inner };
+    f.render_widget(block, area);
     panel
 }
 
@@ -712,7 +776,9 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         // Per column rather than one list of everything: the bar cannot
         // hold every key at once, and most of them only apply somewhere.
         let keys = match app.focus {
-            Focus::Projects => "j/k move  l open  n add project  w wksp  S settings  q detach",
+            Focus::Projects => {
+                "j/k move  l open  n add project  w wksp  p fold  S settings  q detach"
+            }
             Focus::Repositories => {
                 "j/k move  l open  s shell  a agent  b branch  f file  R review  q detach"
             }
@@ -1970,7 +2036,8 @@ mod tests {
 
         app.report("review baseline accepted");
         let buf = draw(&mut app);
-        let y = bar_row(&buf);
+        // Status bar is always the second-to-last row (height 20, status bar at row 18).
+        let y = buf.area.height - 2;
         assert!(
             (0..buf.area.width).all(|x| buf.cell((x, y)).unwrap().fg != th.err),
             "an ordinary report is news, not an alarm"
@@ -1978,7 +2045,7 @@ mod tests {
 
         app.alert("error: git worktree add failed");
         let buf = draw(&mut app);
-        let y = bar_row(&buf);
+        let y = buf.area.height - 2;
         assert!(
             (0..buf.area.width).any(|x| buf.cell((x, y)).unwrap().fg == th.err),
             "and an error still has to look like one"
@@ -2377,6 +2444,74 @@ mod tests {
         let out = lines(&draw(&mut app)).join("\n");
         assert!(!out.contains("zzz-editor"), "editors are not panes:\n{out}");
         assert!(out.contains("claude"), "the agent still is:\n{out}");
+    }
+
+    #[test]
+    fn collapsed_projects_column_renders_as_a_thin_strip() {
+        let mut app = app_with_tree();
+        app.projects_collapsed = true;
+        let buf = draw(&mut app);
+
+        // The strip is exactly COLLAPSED_STRIP_WIDTH cells wide.
+        assert_eq!(app.layout.projects.outer.width, COLLAPSED_STRIP_WIDTH);
+
+        // The other columns absorb the freed space; the live view is widest.
+        assert!(app.layout.repositories.outer.width > 10);
+        assert!(app.layout.checkouts.outer.width > 10);
+        assert!(app.layout.panes.outer.width > 10);
+        assert!(app.layout.content.outer.width > 20);
+
+        // No project text renders inside the strip.
+        let text = lines(&buf).join("\n");
+        // The strip itself (first column) should only have borders, no text.
+        // Check the first COLLAPSED_STRIP_WIDTH columns of each row.
+        for line in lines(&buf) {
+            let strip_part = line.chars().take(COLLAPSED_STRIP_WIDTH as usize).collect::<String>();
+            assert!(
+                !strip_part.contains("argus"),
+                "project name found in strip area: {:?}",
+                strip_part
+            );
+            assert!(
+                !strip_part.contains("no projects"),
+                "empty hint found in strip area: {:?}",
+                strip_part
+            );
+        }
+        // But the rail's borders are present.
+        assert!(text.contains("╭"), "strip has top border");
+        assert!(text.contains("│"), "strip has side borders");
+    }
+
+    #[test]
+    fn collapsed_constraints_cede_the_projects_width() {
+        // With captured widths, the four survivors keep them and the slack
+        // lands in the content column, same as dragging a gutter.
+        let total = 100;
+        let preferred = Some(vec![12u16, 18, 20, 20, 40]);
+        let c = collapsed_projects_constraints(total, preferred.as_deref());
+        match c.as_slice() {
+            [Constraint::Length(2), Constraint::Length(18), Constraint::Length(20), Constraint::Length(20), Constraint::Length(36)] => {}
+            other => panic!("unexpected collapsed constraints: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn collapsed_constraints_default_redeals_over_four_columns() {
+        let total = 100;
+        let c = collapsed_projects_constraints(total, None);
+        // strip(2) + 4 columns fitting 92 cells = 2+94 (with 4 gutters)
+        assert_eq!(c.len(), 5);
+        match c.first() {
+            Some(Constraint::Length(2)) => {}
+            other => panic!("strip must be 2: {other:?}"),
+        }
+        // The rest are lengths that sum with 4 gutters to total.
+        let sum: u16 = c.iter().skip(1).map(|c| match c {
+            Constraint::Length(w) => *w,
+            _ => panic!("all lengths"),
+        }).sum();
+        assert_eq!(sum + 4, total - 2, "strip(2) + gutters(4) + rest = total");
     }
 
 }
