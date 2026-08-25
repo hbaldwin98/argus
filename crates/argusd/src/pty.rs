@@ -217,7 +217,20 @@ impl PaneRuntime {
                         parser.lock().unwrap().process(&chunk);
                         dirty = true;
                     }
-                    if dirty {
+                    if dirty && damage_tx.receiver_count() == 0 {
+                        // Nobody is watching this pane. The parser is fed
+                        // either way above, so its screen stays current, but
+                        // snapshotting and diffing a whole grid for an
+                        // audience of none is what a background agent's
+                        // output charges the pane you are actually typing
+                        // into — these tasks share the runtime with the
+                        // connection carrying your keystrokes. Dropping
+                        // `prev` makes the next watched frame a full
+                        // repaint, which is the only correct diff against a
+                        // grid we stopped tracking.
+                        prev = None;
+                        prev_cursor = None;
+                    } else if dirty {
                         let shape = shape.lock().unwrap().shape();
                         let parser = parser.lock().unwrap();
                         let cur = snapshot_grid(&parser);
@@ -689,7 +702,59 @@ mod tests {
         let _ = pane.kill();
     }
 
+    #[tokio::test]
+    async fn a_pane_nobody_is_watching_still_keeps_its_screen() {
+        // The pump skips snapshotting and diffing a grid while there are no
+        // subscribers — that work is what a background agent's output
+        // charges the pane you are typing into. It must not skip feeding
+        // the parser: the screen a later subscriber is handed comes from
+        // there, and a pane that ran unwatched would otherwise come back
+        // blank.
+        let pane =
+            PaneRuntime::spawn(PaneId(30), &std::env::temp_dir(), echo("unwatched-marker"), |_| {})
+                .unwrap();
+        wait_for(&pane, |g| grid_contains(g, "unwatched-marker")).await;
 
+        let (_, _, grid, _, _rx) = pane.snapshot_and_subscribe();
+        assert!(
+            grid_contains(&grid, "unwatched-marker"),
+            "output produced with nobody watching was lost:
+{}",
+            rows_of(&grid).join("
+")
+        );
+    }
+
+    #[tokio::test]
+    async fn damage_picks_back_up_after_a_stretch_with_nobody_watching() {
+        // Going unwatched drops the grid the pump diffs against, so the
+        // first frame after someone subscribes has to be a full repaint.
+        // Diffing against the stale one would silently drop every cell that
+        // happens to match it.
+        let pane =
+            PaneRuntime::spawn(PaneId(31), &std::env::temp_dir(), Spawn::DefaultShell, |_| {})
+                .unwrap();
+        // Long enough for the shell to draw a prompt with nobody watching.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let mut rx = pane.subscribe();
+        pane.input().write(b"echo late-marker\r").unwrap();
+
+        let seen = tokio::time::timeout(Duration::from_secs(20), async {
+            let mut text = String::new();
+            loop {
+                if let Ok(ServerMsg::Damage { spans, .. }) = rx.recv().await {
+                    text.push_str(&span_text(&spans));
+                    if text.contains("late-marker") {
+                        return text;
+                    }
+                }
+            }
+        })
+        .await;
+        let _ = pane.kill();
+        seen.expect("damage should resume once someone is watching again");
+    }
 
     #[tokio::test]
     async fn a_child_exit_fires_on_exit_once_and_announces_pane_closed() {
