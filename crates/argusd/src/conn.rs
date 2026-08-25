@@ -79,6 +79,7 @@ impl Subscriptions {
         pane: PaneId,
         mut rx: broadcast::Receiver<ServerMsg>,
         out_tx: mpsc::UnboundedSender<ServerMsg>,
+        daemon: Arc<Daemon>,
     ) {
         self.remove(pane);
         self.0.insert(
@@ -91,9 +92,26 @@ impl Subscriptions {
                                 break;
                             }
                         }
-                        // A slow client misses frames rather than losing
-                        // the stream; the next full repaint catches it up.
-                        Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(broadcast::error::RecvError::Lagged(_)) => {
+                            let Ok((rows, cols, cells, cursor, replacement)) =
+                                daemon.subscribe_pane(pane)
+                            else {
+                                break;
+                            };
+                            if out_tx
+                                .send(ServerMsg::PaneSnapshot {
+                                    pane,
+                                    rows,
+                                    cols,
+                                    cells,
+                                    cursor,
+                                })
+                                .is_err()
+                            {
+                                break;
+                            }
+                            rx = replacement;
+                        }
                         Err(broadcast::error::RecvError::Closed) => break,
                     }
                 }
@@ -148,7 +166,7 @@ fn dispatch_pane(
             daemon
                 .subscribe_pane(pane)
                 .map(|(rows, cols, cells, cursor, rx)| {
-                    subs.add(pane, rx, out_tx.clone());
+                    subs.add(pane, rx, out_tx.clone(), daemon.clone());
                     let _ = out_tx.send(ServerMsg::PaneSnapshot {
                         pane,
                         rows,
@@ -571,6 +589,35 @@ mod tests {
         h.send(ClientMsg::Subscribe { pane: PaneId(9999) });
         assert!(!h.error().await.is_empty());
         assert!(h.subs.0.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_lagged_subscription_recovers_with_a_fresh_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = Harness::new(dir.path());
+        let checkout = h.checkout();
+        let pane = h.daemon.spawn_shell(checkout).unwrap();
+        let (damage_tx, rx) = broadcast::channel(1);
+        let (out_tx, mut out_rx) = mpsc::unbounded_channel();
+
+        for message in ["one", "two"] {
+            damage_tx
+                .send(ServerMsg::Error {
+                    message: message.to_string(),
+                })
+                .unwrap();
+        }
+
+        let mut subs = Subscriptions::default();
+        subs.add(pane, rx, out_tx, h.daemon.clone());
+
+        let recovered = tokio::time::timeout(std::time::Duration::from_secs(5), out_rx.recv())
+            .await
+            .expect("lag recovery should answer")
+            .expect("output channel should remain open");
+        assert!(matches!(recovered, ServerMsg::PaneSnapshot { pane: id, .. } if id == pane));
+
+        let _ = h.daemon.close_pane(pane);
     }
 
     #[tokio::test]

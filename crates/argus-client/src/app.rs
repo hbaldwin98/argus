@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, ProjectId, ProjectInfo, RepositoryId,
-    RepositoryInfo, ServerMsg, WorkspaceId, WorkspaceInfo,
+    CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId,
+    ProjectInfo, RepositoryId, RepositoryInfo, ServerMsg, WorkspaceId, WorkspaceInfo,
 };
 use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
@@ -77,6 +77,8 @@ pub enum PickerKind {
     File { checkout: CheckoutId },
     /// Jump the review cursor to the chosen changed file.
     Change,
+    /// Send a prepared review comment to one live agent pane.
+    ReviewRecipient { panes: Vec<PaneId>, message: String },
 }
 
 impl PickerKind {
@@ -1222,6 +1224,7 @@ impl App {
                 KeyCode::Esc => self.ascend(),
                 KeyCode::Tab => self.open_review(),
                 KeyCode::Char('x') => self.close_current(),
+                KeyCode::Char('N') => self.jump_to_next_attention(),
                 _ => {}
             }
             return;
@@ -1256,6 +1259,7 @@ impl App {
             KeyCode::Char('R') | KeyCode::Tab => self.open_review(),
             KeyCode::Char('x') => self.kill_selected(),
             KeyCode::Char('p') => self.toggle_projects_collapsed(),
+            KeyCode::Char('N') => self.jump_to_next_attention(),
             _ => {}
         }
     }
@@ -1290,10 +1294,25 @@ impl App {
     /// Typed at the agent as if by hand, so it works with any harness
     /// rather than needing one to know about Argus.
     fn send_to_agent(&mut self, message: String) {
-        let Some(pane) = self.agent_in_current_checkout() else {
-            self.report("no agent running in this checkout");
-            return;
-        };
+        let agents = self.review_agents();
+        match agents.as_slice() {
+            [] => self.report("no agent running in this checkout"),
+            [(pane, _)] => self.send_to_pane(*pane, message),
+            _ => {
+                self.picker = Some(Picker::new(
+                    PickerKind::ReviewRecipient {
+                        panes: agents.iter().map(|(pane, _)| *pane).collect(),
+                        message,
+                    },
+                    "send comment to",
+                    agents.into_iter().map(|(_, label)| label).collect(),
+                    0,
+                ));
+            }
+        }
+    }
+
+    fn send_to_pane(&mut self, pane: PaneId, message: String) {
         let mut bytes = message.into_bytes();
         // What a terminal actually sends for Enter.
         bytes.push(b'\r');
@@ -1301,18 +1320,101 @@ impl App {
         self.report("comment sent");
     }
 
-    /// Shells are skipped — a comment at a shell prompt is a failed command.
-    fn agent_in_current_checkout(&self) -> Option<PaneId> {
-        let checkout = self.review.as_ref().map(|v| v.review.checkout)?;
+    /// Shells and exited agents are skipped: neither can receive a comment.
+    fn review_agents(&self) -> Vec<(PaneId, String)> {
+        let Some(checkout) = self.review.as_ref().map(|v| v.review.checkout) else {
+            return Vec::new();
+        };
         self.tree
             .iter()
             .flat_map(|p| p.repositories.iter())
             .flat_map(|r| r.checkouts.iter())
-            .find(|c| c.id == checkout)?
-            .panes
+            .find(|c| c.id == checkout)
+            .into_iter()
+            .flat_map(|c| c.panes.iter())
+            .filter(|p| p.kind == PaneKind::Agent && !matches!(p.status, PaneStatus::Exited { .. }))
+            .map(|p| {
+                let template = p.template.as_deref().unwrap_or("agent");
+                (p.id, format!("{}  {}  #{}", p.title, template, p.id.0))
+            })
+            .collect()
+    }
+
+    fn is_live_agent(&self, pane: PaneId) -> bool {
+        self.tree
             .iter()
-            .find(|p| p.kind == argus_protocol::PaneKind::Agent)
-            .map(|p| p.id)
+            .flat_map(|p| p.repositories.iter())
+            .flat_map(|r| r.checkouts.iter())
+            .flat_map(|c| c.panes.iter())
+            .any(|p| {
+                p.id == pane
+                    && p.kind == PaneKind::Agent
+                    && !matches!(p.status, PaneStatus::Exited { .. })
+            })
+    }
+
+    fn jump_to_next_attention(&mut self) {
+        let current = (
+            self.sel_project,
+            self.sel_repository,
+            self.sel_checkout,
+            self.sel_pane,
+        );
+        let candidates: Vec<_> = self
+            .tree
+            .iter()
+            .enumerate()
+            .flat_map(|(project_index, project)| {
+                project
+                    .repositories
+                    .iter()
+                    .enumerate()
+                    .flat_map(move |(repository_index, repository)| {
+                        repository
+                            .checkouts
+                            .iter()
+                            .enumerate()
+                            .flat_map(move |(checkout_index, checkout)| {
+                                checkout
+                                    .listed_panes()
+                                    .enumerate()
+                                    .filter(|(_, pane)| pane.status.needs_you())
+                                    .map(move |(pane_index, pane)| {
+                                        (
+                                            project_index,
+                                            repository_index,
+                                            checkout_index,
+                                            pane_index,
+                                            pane.title.clone(),
+                                            pane.note.clone(),
+                                        )
+                                    })
+                            })
+                    })
+            })
+            .collect();
+
+        let Some(next) = candidates
+            .iter()
+            .find(|candidate| (candidate.0, candidate.1, candidate.2, candidate.3) > current)
+            .or_else(|| candidates.first())
+        else {
+            self.report("no panes need attention");
+            return;
+        };
+
+        self.sel_project = next.0;
+        self.sel_repository = next.1;
+        self.sel_checkout = next.2;
+        self.sel_pane = next.3;
+        self.focus = Focus::PaneContent;
+        let status = next
+            .5
+            .as_deref()
+            .map(|note| format!("{}: {note}", next.4))
+            .unwrap_or_else(|| format!("attention: {}", next.4));
+        self.report(status);
+        self.sync_subscription();
     }
 
     /// The configured editor command, or `None` to leave it to the daemon.
@@ -1928,6 +2030,16 @@ impl App {
                 let Some(idx) = picker.shown.get(picker.sel).copied() else { return };
                 if let Some(view) = &mut self.review {
                     view.jump_to_file(idx);
+                }
+            }
+            PickerKind::ReviewRecipient { panes, message } => {
+                let Some(pane) = picker.shown.get(picker.sel).and_then(|i| panes.get(*i)) else {
+                    return;
+                };
+                if self.is_live_agent(*pane) {
+                    self.send_to_pane(*pane, message.clone());
+                } else {
+                    self.report("that agent is no longer running");
                 }
             }
             PickerKind::Agent => {
@@ -3950,6 +4062,66 @@ mod tests {
     }
 
     #[test]
+    fn a_comment_chooses_between_multiple_live_agents() {
+        let mut h = review_with_agent();
+        h.app.tree[0].repositories[0].checkouts[0]
+            .panes
+            .push(PaneInfo {
+                id: PaneId(52),
+                kind: PaneKind::Agent,
+                title: "fix tests".to_string(),
+                status: PaneStatus::Working,
+                note: None,
+                template: Some("codex".to_string()),
+            });
+
+        h.key(KeyCode::Char('c'));
+        h.keys("route this");
+        h.key(KeyCode::Enter);
+
+        let picker = h.app.picker.as_ref().expect("recipient picker");
+        assert!(matches!(
+            &picker.kind,
+            PickerKind::ReviewRecipient { panes, .. }
+                if panes == &[PaneId(51), PaneId(52)]
+        ));
+        assert!(picker.items[1].contains("fix tests"));
+        assert!(picker.items[1].contains("codex"));
+        assert!(picker.items[1].contains("#52"));
+        assert!(h.sent().is_empty(), "nothing is sent before choosing");
+
+        h.key(KeyCode::Char('j'));
+        h.key(KeyCode::Enter);
+        assert!(matches!(
+            &h.sent()[0],
+            ClientMsg::Input { pane: PaneId(52), bytes }
+                if String::from_utf8_lossy(bytes).ends_with("route this\r")
+        ));
+    }
+
+    #[test]
+    fn an_exited_agent_is_not_offered_as_a_comment_recipient() {
+        let mut h = review_with_agent();
+        h.app.tree[0].repositories[0].checkouts[0]
+            .panes
+            .push(PaneInfo {
+                id: PaneId(52),
+                kind: PaneKind::Agent,
+                title: "old agent".to_string(),
+                status: PaneStatus::Exited { code: Some(0) },
+                note: None,
+                template: Some("codex".to_string()),
+            });
+
+        h.key(KeyCode::Char('c'));
+        h.keys("only live agents");
+        h.key(KeyCode::Enter);
+
+        assert!(h.app.picker.is_none());
+        assert!(matches!(h.sent()[0], ClientMsg::Input { pane: PaneId(51), .. }));
+    }
+
+    #[test]
     fn a_comment_with_no_agent_to_read_it_says_so_and_sends_nothing() {
         let mut h = Harness::new();
         let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
@@ -4013,6 +4185,45 @@ mod tests {
             Some(Prompt::Comment { input, .. }) => assert_eq!(input, "jkgG"),
             _ => panic!("no comment prompt"),
         }
+    }
+
+    #[test]
+    fn n_cycles_through_panes_that_need_attention() {
+        let mut h = Harness::new();
+        let mut updated = tree();
+        updated[0].repositories[0].checkouts[0].panes[1].status = PaneStatus::Waiting;
+        updated[0].repositories[0].checkouts[0].panes[1].note =
+            Some("needs a password".to_string());
+        let mut review_pane = pane(102, "review agent");
+        review_pane.status = PaneStatus::NeedsReview;
+        updated[0].repositories[0].checkouts[1].panes.push(review_pane);
+        h.app.on_server_msg(ServerMsg::Tree(updated));
+        h.sent();
+
+        h.key(KeyCode::Char('N'));
+        assert_eq!(h.app.column_pane(), Some(PaneId(101)));
+        assert_eq!(h.app.focus, Focus::PaneContent);
+        assert!(h.app.status.contains("needs a password"));
+
+        h.leader();
+        h.key(KeyCode::Char('N'));
+        assert_eq!(h.app.column_pane(), Some(PaneId(102)));
+
+        h.leader();
+        h.key(KeyCode::Char('N'));
+        assert_eq!(h.app.column_pane(), Some(PaneId(101)), "cycles at the end");
+        assert!(
+            !h.sent().iter().any(|message| matches!(message, ClientMsg::Input { .. })),
+            "the leader chord must not reach a child"
+        );
+    }
+
+    #[test]
+    fn n_reports_when_no_pane_needs_attention() {
+        let mut h = Harness::new();
+        h.key(KeyCode::Char('N'));
+        assert!(h.app.status.contains("no panes need attention"));
+        assert_eq!(h.app.focus, Focus::Projects);
     }
 
     #[test]
