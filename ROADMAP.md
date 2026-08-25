@@ -47,6 +47,8 @@ contract is in [`TARGET.md`](TARGET.md).
 - Introduce transactional runtime storage for review state, notes metadata, links, UI selection,
   and resumable agent ids.
 - Implement Markdown notes and todo/pinned rollups.
+- Add project feature boards where agents can claim tasks, report progress or blockers, and submit
+  completion evidence for human review and acceptance.
 - Implement explicit note forwarding.
 - Add scoped context read APIs, then policy-gated writes with audit records.
 - Add `argus ctx` and MCP adapters over the same implementation.
