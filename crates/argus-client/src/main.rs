@@ -292,13 +292,27 @@ async fn run(
                 redraw.input(std::time::Instant::now());
             }
             Some(msg) = out_rx.recv() => {
-                if let ServerMsg::Damage { pane, .. } = &msg {
-                    let pane = *pane;
-                    profile.record(|c| c.damage(pane, std::time::Instant::now()));
-                }
+                let now = std::time::Instant::now();
+                // Damage from the pane being typed into is the echo of a
+                // keystroke, and somebody is waiting on it — the rest of
+                // what the daemon sends is background and can wait for the
+                // tick. Still bounded by the present gap, so a chatty agent
+                // in the focused pane cannot buy a frame per chunk.
+                let awaited = match &msg {
+                    ServerMsg::Damage { pane, .. } => {
+                        let pane = *pane;
+                        profile.record(|c| c.damage(pane, now));
+                        app.input_pane() == Some(pane)
+                    }
+                    _ => false,
+                };
                 profile.record(profile::Counters::server_msg);
                 app.on_server_msg(msg);
-                redraw.changed();
+                if awaited {
+                    redraw.input(now);
+                } else {
+                    redraw.changed();
+                }
             }
             _ = frames.tick(), if redraw.pending() => {
                 redraw.due();
