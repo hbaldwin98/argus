@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, ProjectInfo, RepositoryId,
+    CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, ProjectId, ProjectInfo, RepositoryId,
     RepositoryInfo, ServerMsg, WorkspaceId, WorkspaceInfo,
 };
 use ratatui::layout::Rect;
@@ -239,12 +239,46 @@ impl Setting {
     }
 }
 
+/// What a `ConfirmRemove` prompt is about to take away. A checkout's
+/// removal deletes its worktree and branch; the other two only stop
+/// showing something, leaving every file where it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoveTarget {
+    Checkout(CheckoutId),
+    Repository(RepositoryId),
+    Project(ProjectId),
+}
+
+impl RemoveTarget {
+    fn message(self) -> ClientMsg {
+        match self {
+            RemoveTarget::Checkout(checkout) => ClientMsg::RemoveCheckout { checkout },
+            RemoveTarget::Repository(repository) => ClientMsg::RemoveRepository { repository },
+            RemoveTarget::Project(project) => ClientMsg::RemoveProject { project },
+        }
+    }
+
+    /// Popup title and the line under the name — what the user is agreeing
+    /// to, which for two of the three is "nothing on disk".
+    pub fn wording(self) -> (&'static str, &'static str) {
+        match self {
+            RemoveTarget::Checkout(_) => {
+                ("remove checkout?", "  — worktree, branch, and its panes")
+            }
+            RemoveTarget::Repository(_) => {
+                ("remove repository?", "  — from this panel only; files stay")
+            }
+            RemoveTarget::Project(_) => ("remove project?", "  — from this panel only; files stay"),
+        }
+    }
+}
+
 /// A modal text/confirm prompt, mutually exclusive with `Picker`. Both new
-/// worktree (free text) and remove-checkout (yes/no) go through this so
+/// worktree (free text) and remove (yes/no) go through this so
 /// there's one input path and one place `on_mouse` has to know to ignore.
 pub enum Prompt {
     NewWorktree { base: CheckoutId, input: String },
-    ConfirmRemoveCheckout { checkout: CheckoutId, label: String },
+    ConfirmRemove { target: RemoveTarget, label: String },
     AddProject { input: String },
     Comment { anchor: Anchor, input: String },
     /// The editor command, typed rather than cycled — it is free text.
@@ -806,7 +840,7 @@ impl App {
                 | Prompt::Comment { input, .. }
                 | Prompt::EditorCommand { input }
                 | Prompt::AddProject { input } => Some(input),
-                Prompt::ConfirmRemoveCheckout { .. } => None,
+                Prompt::ConfirmRemove { .. } => None,
             };
             if let Some(input) = input {
                 input.extend(text.chars().filter(|c| !c.is_control()));
@@ -850,9 +884,9 @@ impl App {
                 KeyCode::Char(c) => input.push(c),
                 _ => {}
             },
-            Prompt::ConfirmRemoveCheckout { checkout, .. } => match key.code {
+            Prompt::ConfirmRemove { target, .. } => match key.code {
                 KeyCode::Char('y') | KeyCode::Enter => {
-                    let _ = self.out.send(ClientMsg::RemoveCheckout { checkout: *checkout });
+                    let _ = self.out.send(target.message());
                     self.prompt = None;
                 }
                 KeyCode::Esc | KeyCode::Char('n') => self.prompt = None,
@@ -1142,7 +1176,7 @@ impl App {
             KeyCode::Char('s') => self.spawn_shell(),
             KeyCode::Char('a') => self.open_picker(),
             KeyCode::Char('n') => self.new_prompt(),
-            KeyCode::Char('D') => self.remove_checkout_prompt(),
+            KeyCode::Char('D') => self.remove_prompt(),
             KeyCode::Char('w') => self.open_workspace_picker(),
             KeyCode::Char('t') => self.open_theme_picker(),
             KeyCode::Char('S') => self.open_settings(),
@@ -1327,23 +1361,36 @@ impl App {
         }
     }
 
-    /// Opens a confirmation to remove the selected checkout. Refused
-    /// client-side for the primary checkout — the repo the user already
-    /// had, not Argus's to delete — so there's no round-trip just to be
-    /// told no (the daemon refuses it too, as defense in depth).
-    fn remove_checkout_prompt(&mut self) {
-        if self.focus != Focus::Checkouts {
-            return;
-        }
-        let Some(c) = self.current_checkout() else { return };
-        if c.primary {
-            self.report("can't remove the primary checkout");
-            return;
-        }
-        self.prompt = Some(Prompt::ConfirmRemoveCheckout {
-            checkout: c.id,
-            label: c.name.clone(),
-        });
+    /// Opens a confirmation to remove whatever the focused column selects,
+    /// the way `n` adds to whatever it is focused on: a project, one of its
+    /// repositories, or a checkout. No-op in the pane columns — a pane is
+    /// killed with `x`, not removed.
+    ///
+    /// Removing a checkout is refused client-side for the primary one — the
+    /// repo the user already had, not Argus's to delete — so there's no
+    /// round-trip just to be told no (the daemon refuses it too, as defense
+    /// in depth).
+    fn remove_prompt(&mut self) {
+        let (target, label) = match self.focus {
+            Focus::Projects => {
+                let Some(p) = self.current_project() else { return };
+                (RemoveTarget::Project(p.id), p.name.clone())
+            }
+            Focus::Repositories => {
+                let Some(r) = self.current_repository() else { return };
+                (RemoveTarget::Repository(r.id), r.name.clone())
+            }
+            Focus::Checkouts => {
+                let Some(c) = self.current_checkout() else { return };
+                if c.primary {
+                    self.report("can't remove the primary checkout");
+                    return;
+                }
+                (RemoveTarget::Checkout(c.id), c.name.clone())
+            }
+            _ => return,
+        };
+        self.prompt = Some(Prompt::ConfirmRemove { target, label });
     }
 
     pub fn on_mouse(&mut self, ev: MouseEvent) {
@@ -2569,8 +2616,8 @@ mod tests {
         h.sent();
         h.key(KeyCode::Char('D'));
         match &h.app.prompt {
-            Some(Prompt::ConfirmRemoveCheckout { checkout, label }) => {
-                assert_eq!(*checkout, CheckoutId(11));
+            Some(Prompt::ConfirmRemove { target, label }) => {
+                assert_eq!(*target, RemoveTarget::Checkout(CheckoutId(11)));
                 assert_eq!(label, "feat", "the confirmation names what it will delete");
             }
             _ => panic!("expected a confirmation prompt"),
@@ -2585,6 +2632,64 @@ mod tests {
             }
         ));
         assert!(h.app.prompt.is_none());
+    }
+
+    #[test]
+    fn removing_a_project_asks_first_then_sends() {
+        let mut h = Harness::new();
+        h.key(KeyCode::Char('D'));
+        match &h.app.prompt {
+            Some(Prompt::ConfirmRemove { target, label }) => {
+                assert_eq!(*target, RemoveTarget::Project(ProjectId(1)));
+                assert_eq!(label, "argus");
+            }
+            other => panic!("expected a project confirmation, got {:?}", other.is_some()),
+        }
+        h.key(KeyCode::Char('y'));
+        assert!(matches!(
+            h.sent()[0],
+            ClientMsg::RemoveProject {
+                project: ProjectId(1)
+            }
+        ));
+    }
+
+    #[test]
+    fn removing_a_repository_asks_first_then_sends() {
+        let mut h = Harness::new();
+        h.keys("l");
+        h.sent();
+        h.key(KeyCode::Char('D'));
+        match &h.app.prompt {
+            Some(Prompt::ConfirmRemove { target, label }) => {
+                assert_eq!(*target, RemoveTarget::Repository(RepositoryId(5)));
+                assert_eq!(label, "orion");
+            }
+            other => panic!("expected a repository confirmation, got {:?}", other.is_some()),
+        }
+        h.key(KeyCode::Char('y'));
+        assert!(matches!(
+            h.sent()[0],
+            ClientMsg::RemoveRepository {
+                repository: RepositoryId(5)
+            }
+        ));
+    }
+
+    #[test]
+    fn a_removal_confirmation_says_whether_files_are_going_away() {
+        // The whole point of the project/repository removals is that they
+        // are not deletions, and the popup is the only place that says so.
+        for target in [
+            RemoveTarget::Project(ProjectId(1)),
+            RemoveTarget::Repository(RepositoryId(5)),
+        ] {
+            assert!(target.wording().1.contains("files stay"));
+        }
+        assert!(RemoveTarget::Checkout(CheckoutId(11))
+            .wording()
+            .1
+            .contains("worktree"));
     }
 
     #[test]
@@ -2603,10 +2708,15 @@ mod tests {
     }
 
     #[test]
-    fn d_only_applies_to_the_checkouts_column() {
+    fn d_does_nothing_in_the_pane_columns() {
+        // `D` follows focus through the three tree columns; a pane is
+        // closed with `x` instead, and has nothing to remove.
         let mut h = Harness::new();
+        h.keys("lll");
+        h.sent();
         h.key(KeyCode::Char('D'));
-        assert!(h.app.prompt.is_none(), "not from the projects column");
+        assert!(h.app.prompt.is_none(), "no removal offered from the panes column");
+        assert!(h.sent().is_empty());
     }
 
     // --- closing panes ------------------------------------------------------
