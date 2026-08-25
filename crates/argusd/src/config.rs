@@ -93,6 +93,9 @@ pub struct HarnessConfig {
     /// `{session_id}` is replaced with the captured ID and passed as argv.
     #[serde(default)]
     pub resume_id: Vec<String>,
+    /// Optional workspace rule markdown file to install into checkout.
+    #[serde(default)]
+    pub rule_file: Option<String>,
 }
 
 /// A bare status is the common case; the table form is for an event that
@@ -166,6 +169,7 @@ impl From<HarnessConfig> for crate::harness::Harness {
             resume: c.resume,
             resume_id: c.resume_id,
             command_string: false,
+            rule_file: c.rule_file.map(PathBuf::from),
         }
     }
 }
@@ -187,7 +191,7 @@ pub fn harnesses(configured: Vec<HarnessConfig>) -> Vec<crate::harness::Harness>
 /// Built-in agent templates used when the config has no `[[agent]]` entries,
 /// so spawning a known agent CLI works zero-config.
 pub fn default_agents() -> Vec<AgentConfig> {
-    ["claude", "codex", "opencode"]
+    ["claude", "codex", "opencode", "agy"]
         .into_iter()
         .map(|name| AgentConfig {
             name: name.to_string(),
@@ -219,7 +223,7 @@ const DEFAULT_CONFIG: &str = r#"# Argus projects. Each project groups one or mor
 # name = "argus"
 # repos = ["~/src/argus"]
 
-# Agent templates available from the "a" picker. claude/codex/opencode are
+# Agent templates available from the "a" picker. claude/codex/opencode/agy are
 # already built in with no config needed; add [[agent]] entries here to
 # override them or add your own.
 #

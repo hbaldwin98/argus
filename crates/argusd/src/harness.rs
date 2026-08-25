@@ -172,6 +172,8 @@ pub struct Harness {
     /// Codex command hooks accept one command string, unlike Claude's
     /// `command` plus `args` shape.
     pub command_string: bool,
+    /// Optional workspace rule markdown file to install into checkout.
+    pub rule_file: Option<PathBuf>,
 }
 
 impl Harness {
@@ -192,6 +194,7 @@ impl Harness {
             resume: Vec::new(),
             resume_id: Vec::new(),
             command_string: false,
+            rule_file: None,
         }
     }
 
@@ -242,6 +245,7 @@ impl Harness {
             resume: vec!["--continue".to_string()],
             resume_id: vec!["--resume".to_string(), "{session_id}".to_string()],
             command_string: false,
+            rule_file: None,
         }
     }
 
@@ -265,6 +269,7 @@ impl Harness {
             resume: vec!["resume".to_string(), "--last".to_string()],
             resume_id: vec!["resume".to_string(), "{session_id}".to_string()],
             command_string: true,
+            rule_file: None,
         }
     }
 
@@ -292,6 +297,42 @@ impl Harness {
             resume: vec!["--continue".to_string()],
             resume_id: vec!["--session".to_string(), "{session_id}".to_string()],
             command_string: false,
+            rule_file: None,
+        }
+    }
+
+    /// Google Antigravity (AGY) discovers workspace hooks in `.agents/hooks.json`
+    /// under the named hook object and rules in `.agents/rules/`. PreInvocation
+    /// marks the pane working, supplies conversationId, and injects instructions;
+    /// Stop marks the pane idle.
+    pub fn agy() -> Harness {
+        Harness {
+            name: "agy".to_string(),
+            settings: Some(PathBuf::from(".agents").join("hooks.json")),
+            hooks_key: "argus".to_string(),
+            shape: Shape::Flat,
+            events: vec![
+                Event {
+                    name: "PreInvocation".into(),
+                    reports: Report::Working,
+                    matcher: None,
+                    note_from_stdin: false,
+                    session_id_key: Some("conversationId".into()),
+                },
+                Event {
+                    name: "Stop".into(),
+                    reports: Report::Idle,
+                    matcher: None,
+                    note_from_stdin: false,
+                    session_id_key: None,
+                },
+            ],
+            context_event: None,
+            plugin: None,
+            resume: vec!["--continue".to_string()],
+            resume_id: vec!["--conversation".to_string(), "{session_id}".to_string()],
+            command_string: false,
+            rule_file: Some(PathBuf::from(".agents").join("rules").join("argus.md")),
         }
     }
 
@@ -302,6 +343,7 @@ impl Harness {
             Harness::claude(),
             Harness::codex(),
             Harness::opencode(),
+            Harness::agy(),
             Harness::generic(),
         ]
     }
@@ -320,11 +362,9 @@ impl Harness {
     }
 
     /// Puts whatever this harness needs into the checkout: a managed block
-    /// in its settings file, its plugin module, or neither.
+    /// in its settings file, its plugin module, its rules file, or neither.
     ///
-    /// A harness that needs nothing is the normal case, not a failure. The
-    /// plugin is written even if the settings write fails, and vice versa —
-    /// a harness that uses both should not lose one to the other.
+    /// A harness that needs nothing is the normal case, not a failure.
     pub fn install(
         &self,
         checkout: &Path,
@@ -334,7 +374,24 @@ impl Harness {
     ) -> anyhow::Result<()> {
         let settings = self.install_settings(checkout, pane, port, token);
         let plugin = self.install_plugin(checkout);
-        settings.and(plugin)
+        let rule = self.install_rule(checkout);
+        settings.and(plugin).and(rule)
+    }
+
+    fn install_rule(&self, checkout: &Path) -> anyhow::Result<()> {
+        let Some(rule_path) = &self.rule_file else {
+            return Ok(());
+        };
+        let path = checkout.join(rule_path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let content = format!(
+            "---\ndescription: Argus pair-programming environment integration\nalways_on: true\n---\n\n{}",
+            instructions()
+        );
+        std::fs::write(&path, content)?;
+        Ok(())
     }
 
     fn install_plugin(&self, checkout: &Path) -> anyhow::Result<()> {
@@ -411,16 +468,23 @@ impl Harness {
 
     /// Removes everything [`install`] put in the checkout, leaving anything
     /// the user put there untouched.
-    ///
-    /// Idempotent, and a no-op when there's nothing there — it runs at
-    /// startup across every configured checkout, most of which never hosted
-    /// an agent.
-    ///
-    /// [`install`]: Harness::install
     pub fn uninstall(&self, checkout: &Path) -> anyhow::Result<()> {
         let settings = self.uninstall_settings(checkout);
         let plugin = self.uninstall_plugin(checkout);
-        settings.and(plugin)
+        let rule = self.uninstall_rule(checkout);
+        settings.and(plugin).and(rule)
+    }
+
+    fn uninstall_rule(&self, checkout: &Path) -> anyhow::Result<()> {
+        let Some(rule_path) = &self.rule_file else {
+            return Ok(());
+        };
+        let path = checkout.join(rule_path);
+        if path.exists() {
+            let _ = std::fs::remove_file(&path);
+            prune_empty_dirs(checkout, &path);
+        }
+        Ok(())
     }
 
     /// Deletes the plugin module, and any directory Argus made only to hold
@@ -776,6 +840,7 @@ mod tests {
             resume: Vec::new(),
             resume_id: Vec::new(),
             command_string: false,
+            rule_file: None,
         }
     }
 
@@ -786,6 +851,7 @@ mod tests {
         // refuses to start at all.
         assert_eq!(Harness::claude().resume, ["--continue"]);
         assert_eq!(Harness::opencode().resume, ["--continue"]);
+        assert_eq!(Harness::agy().resume, ["--continue"]);
         assert_eq!(
             Harness::codex().resume,
             ["resume", "--last"],
@@ -798,6 +864,10 @@ mod tests {
         assert_eq!(Harness::claude().resume_id, ["--resume", "{session_id}"]);
         assert_eq!(Harness::codex().resume_id, ["resume", "{session_id}"]);
         assert_eq!(Harness::opencode().resume_id, ["--session", "{session_id}"]);
+        assert_eq!(
+            Harness::agy().resume_id,
+            ["--conversation", "{session_id}"]
+        );
     }
 
     #[test]
@@ -1474,5 +1544,53 @@ process.stdout.write(JSON.stringify(reports));
             PaneStatus::Failed,
         ];
         assert_eq!(Report::ALL.map(Report::status), expected);
+    }
+
+    #[test]
+    fn agy_installs_into_agents_hooks_json_and_cleans_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = Harness::agy();
+        h.install(dir.path(), PaneId(5), 4242, "tok").unwrap();
+
+        let hooks_file = dir.path().join(".agents").join("hooks.json");
+        assert!(hooks_file.is_file(), "should write .agents/hooks.json");
+
+        let rule_file = dir.path().join(".agents").join("rules").join("argus.md");
+        assert!(rule_file.is_file(), "should write .agents/rules/argus.md");
+        let rule_content = std::fs::read_to_string(&rule_file).unwrap();
+        assert!(rule_content.contains("title"));
+
+        let raw = std::fs::read_to_string(&hooks_file).unwrap();
+        let root: Value = serde_json::from_str(&raw).unwrap();
+
+        let argus = &root["argus"];
+        assert!(argus.is_object(), "should be nested under 'argus' hook name");
+
+        let pre_inv = argus["PreInvocation"].as_array().unwrap();
+        assert_eq!(pre_inv.len(), 1);
+        let pre_entry = &pre_inv[0];
+        assert_eq!(pre_entry["type"], "command");
+        let pre_args: Vec<String> = serde_json::from_value(pre_entry["args"].clone()).unwrap();
+        assert_eq!(pre_args[0], "http://127.0.0.1:4242/pane/5/status/working");
+        assert_eq!(pre_args[1], "tok");
+        assert_eq!(pre_args[2], SESSION_KEY_FLAG);
+        assert_eq!(pre_args[3], "conversationId");
+
+        let stop = argus["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 1);
+        let stop_entry = &stop[0];
+        assert_eq!(stop_entry["type"], "command");
+        let stop_args: Vec<String> = serde_json::from_value(stop_entry["args"].clone()).unwrap();
+        assert_eq!(stop_args[0], "http://127.0.0.1:4242/pane/5/status/idle");
+        assert_eq!(stop_args[1], "tok");
+
+        // Uninstall sweeps .agents/hooks.json, rules, and prunes the empty .agents directory
+        h.uninstall(dir.path()).unwrap();
+        assert!(!hooks_file.exists(), ".agents/hooks.json should be removed");
+        assert!(!rule_file.exists(), ".agents/rules/argus.md should be removed");
+        assert!(
+            !dir.path().join(".agents").exists(),
+            "empty .agents dir should be pruned"
+        );
     }
 }

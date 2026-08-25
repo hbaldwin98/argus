@@ -137,6 +137,31 @@ fn installed_hook(url: &str, rest: &[&str]) {
     let (url, token) = routed_hook(url, token, &inherited_url, &inherited_token);
     let _ = post(&url, &token, &note);
     post_session_id(&url, &token, key, raw.as_deref());
+
+    let mut out = std::io::stdout();
+    let is_pre_tool = raw.as_deref().is_some_and(|r| r.contains("\"toolCall\""));
+    let is_pre_inv = raw.as_deref().is_some_and(|r| r.contains("\"invocationNum\""));
+    let instructions = env_instructions();
+
+    if is_pre_tool {
+        let _ = writeln!(out, r#"{{"decision":"allow"}}"#);
+    } else if (is_pre_inv || rest.contains(&"--inject-instructions")) && !instructions.is_empty() {
+        let payload = serde_json::json!({
+            "injectSteps": [
+                {
+                    "ephemeralMessage": instructions
+                }
+            ]
+        });
+        let _ = writeln!(out, "{}", payload);
+    } else {
+        let _ = writeln!(out, "{{}}");
+    }
+    let _ = out.flush();
+}
+
+fn env_instructions() -> String {
+    std::env::var("ARGUS_INSTRUCTIONS").unwrap_or_default()
 }
 
 fn installed_input<'a>(rest: &'a [&str]) -> (Option<&'a str>, Option<String>, String) {
@@ -252,6 +277,13 @@ fn pane_base(url: &str) -> Option<String> {
 /// plain text instead still gets its first line used.
 fn note_from(raw: &str) -> String {
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) {
+        if let Some(tool) = v.get("toolCall") {
+            let name = tool.get("name").and_then(|v| v.as_str()).unwrap_or("tool");
+            if let Some(cmd) = tool.get("args").and_then(|a| a.get("CommandLine")).and_then(|v| v.as_str()) {
+                return format!("{name}: {cmd}");
+            }
+            return name.to_string();
+        }
         for key in ["message", "text", "reason", "prompt"] {
             if let Some(s) = v.get(key).and_then(|v| v.as_str()) {
                 if !s.trim().is_empty() {

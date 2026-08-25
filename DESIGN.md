@@ -99,7 +99,7 @@ env = { KEY = "value" }
 
 Projects without a workspace use `default`. A project may set `root`, `repos`, or both; a path
 reached both ways is one repository, and the two lists are joined with `repos` first. When no
-agents are configured, `claude`, `codex`, and `opencode` templates are supplied. Adding a project
+agents are configured, `claude`, `codex`, `opencode`, and `agy` templates are supplied. Adding a project
 at runtime appends a block whose `root` is the directory given, in the open workspace, so what it
 holds is discovered again on each start rather than frozen into the file.
 
@@ -176,8 +176,9 @@ it has no hook table, so its module carries the event mapping itself and reads `
 and `ARGUS_HOOK_TOKEN` at run time rather than having a pane baked into it. A harness also carries
 `resume`, the legacy arguments that continue the last conversation, and `resume_id`, an exact argv
 template containing `{session_id}`. Both are used only when a recorded pane is restored. Claude
-Code, Codex, OpenCode and `generic` are built in. Codex uses a project-local `.codex/hooks.json`
-SessionStart adapter; Codex requires the user to trust project hooks before it runs. A `[[harness]]`
+Code, Codex, OpenCode, AGY and `generic` are built in. Codex uses a project-local `.codex/hooks.json`
+SessionStart adapter; Codex requires the user to trust project hooks before it runs. AGY uses
+`.agents/hooks.json` with flat `PreInvocation` and `Stop` hooks. A `[[harness]]`
 block in `projects.toml` adds or replaces one, and an `[[agent]]` template selects one with
 `harness = "..."`, defaulting to a harness matching its own name. A block cannot supply a plugin,
 so replacing a built-in by name also gives up its module and its resume arguments.
@@ -196,7 +197,8 @@ checkout and installs its harness in the new one. Hook files are checkout-wide; 
 generated URL to a valid `ARGUS_HOOK_URL` on the same loopback listener, so each process still routes
 to its own pane. The helper reads hook stdin once and can extract both a note and a configured
 top-level session ID key. Claude captures `session_id` at SessionStart. OpenCode's plugin reports only
-the root ID and reports again when a newly created root replaces it.
+the root ID and reports again when a newly created root replaces it. AGY captures `conversationId`
+at PreInvocation.
 
 Agents name their own rows. At session start a harness with a `context_event` is handed
 instructions telling it to run `argus-hook title "..."` once it knows what it is working on, and
@@ -233,8 +235,8 @@ On daemon startup:
 - a missing or broken pane does not abort restoration;
 - `ARGUS_NO_RESTORE` starts without restoring panes.
 
-Exact templates are Claude `--resume {session_id}`, Codex `resume {session_id}`, and OpenCode
-`--session {session_id}`. Their legacy broad forms are `--continue`, `resume --last`, and
+Exact templates are Claude `--resume {session_id}`, Codex `resume {session_id}`, OpenCode
+`--session {session_id}`, and AGY `--conversation {session_id}`. Their legacy broad forms are `--continue`, `resume --last`, and
 `--continue`; `generic` has neither. A `[[harness]]` block sets `resume_id`, `resume`, and an
 event-level `session_id` stdin JSON key. Replacing a built-in gives up all of its defaults.
 

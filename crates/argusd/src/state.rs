@@ -2667,7 +2667,10 @@ mod tests {
     #[test]
     fn default_agent_templates_are_offered_when_config_has_none() {
         let d = daemon_with_primary("/repo");
-        assert_eq!(d.template_names(), vec!["claude", "codex", "opencode"]);
+        assert_eq!(
+            d.template_names(),
+            vec!["claude", "codex", "opencode", "agy"]
+        );
     }
 
     #[test]
