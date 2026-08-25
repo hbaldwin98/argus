@@ -7,7 +7,8 @@ pub mod review;
 pub mod tree;
 pub mod transport;
 
-pub use cell::{diff_grid, Cell, CellSpan, Color, Cursor};
+pub use cell::{diff_grid, Cell, CellSpan, Color, Cursor, BLANK};
+pub use compact_str::{CompactString, ToCompactString};
 pub use paths::config_dir;
 pub use framing::{read_msg, write_msg, FramingError};
 pub use ids::{CheckoutId, IdGen, PaneId, ProjectId, RepositoryId, WorkspaceId};

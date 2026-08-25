@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
-use argus_protocol::{diff_grid, Cell, Color, Cursor, PaneId, ServerMsg};
+use argus_protocol::{diff_grid, Cell, Color, CompactString, Cursor, PaneId, ServerMsg, BLANK};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::broadcast;
 
@@ -339,19 +339,37 @@ fn snapshot_cursor(parser: &vt100::Parser) -> Cursor {
 fn cell_from_vt100(cell: Option<&vt100::Cell>) -> Cell {
     match cell {
         None => Cell::default(),
-        Some(c) => {
-            let ch = c.contents();
-            Cell {
-                ch: if ch.is_empty() { " ".to_string() } else { ch },
-                fg: convert_color(c.fgcolor()),
-                bg: convert_color(c.bgcolor()),
-                bold: c.bold(),
-                italic: c.italic(),
-                underline: c.underline(),
-                reverse: c.inverse(),
-            }
-        }
+        Some(c) => Cell {
+            ch: contents_of(c),
+            fg: convert_color(c.fgcolor()),
+            bg: convert_color(c.bgcolor()),
+            bold: c.bold(),
+            italic: c.italic(),
+            underline: c.underline(),
+            reverse: c.inverse(),
+        },
     }
+}
+
+/// The cell's grapheme, or a blank — which still carries the cell's own
+/// colours, so it is a styled space rather than a default cell.
+///
+/// `vt100::Cell::contents` heap-allocates a `String` on every call,
+/// including for a cell that has nothing in it. Most of a screen is blank
+/// and every cell is rebuilt on every frame, so asking `has_contents`
+/// first is the difference between two allocations per blank cell and
+/// none.
+fn contents_of(c: &vt100::Cell) -> CompactString {
+    if !c.has_contents() {
+        return BLANK;
+    }
+    let contents = c.contents();
+    if contents.is_empty() {
+        // A wide character's continuation cell reports contents it does not
+        // have; the screen still needs a blank drawn there.
+        return BLANK;
+    }
+    contents.into()
 }
 
 fn convert_color(c: vt100::Color) -> Color {
@@ -680,6 +698,33 @@ mod tests {
         assert!(grid.iter().all(|r| r.len() == 10), "every row is full width");
         assert_eq!(rows_of(&grid)[0], "hi");
         assert_eq!(rows_of(&grid)[1], "", "untouched rows are blank, not missing");
+    }
+
+    #[test]
+    fn a_cell_with_no_contents_keeps_the_colours_it_was_cleared_to() {
+        // Erasing to end of line under a background colour is how a TUI
+        // paints a bar: the cells hold no character at all but do hold that
+        // colour. The snapshot skips `contents()` for exactly these cells,
+        // so it must still read their attributes — reading them as default
+        // cells would knock the colour out of every bar on screen.
+        let mut parser = vt100::Parser::new(2, 4, 0);
+        parser.process(b"\x1b[41m\x1b[K");
+        let grid = snapshot_grid(&parser);
+        assert_eq!(grid[0][0].ch, " ", "still drawn as a blank");
+        assert_eq!(grid[0][3].bg, Color::Idx(1), "the cleared-to background is lost");
+        assert_eq!(grid[1][0].bg, Color::Default, "an untouched row stays default");
+    }
+
+    #[test]
+    fn a_grapheme_wider_than_one_char_survives_the_snapshot() {
+        // A cell holds a character plus any combining marks, so the
+        // snapshot has to carry more than one `char` — and more than one
+        // byte — through to the client.
+        let mut parser = vt100::Parser::new(1, 4, 0);
+        parser.process("e\u{301}x".as_bytes());
+        let grid = snapshot_grid(&parser);
+        assert_eq!(grid[0][0].ch, "e\u{301}");
+        assert_eq!(grid[0][1].ch, "x");
     }
 
     #[test]

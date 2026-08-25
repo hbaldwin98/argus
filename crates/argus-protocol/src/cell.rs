@@ -1,4 +1,10 @@
+use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
+
+/// What an empty cell holds. A `const` rather than a literal at each use so
+/// it costs nothing to make: `CompactString` stores anything this short
+/// inline, so no blank cell anywhere in the pipeline touches the allocator.
+pub const BLANK: CompactString = CompactString::const_new(" ");
 
 /// The child terminal's cursor, in grid-relative coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,7 +36,15 @@ pub enum Color {
 /// diff and to ship: a damage span is a contiguous run of these.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Cell {
-    pub ch: String,
+    /// The cell's grapheme — one character, plus any combining marks.
+    ///
+    /// `CompactString` rather than `String` because a grid is rebuilt,
+    /// diffed, shipped and applied sixty times a second per pane, and a
+    /// heap allocation per cell at each of those steps is most of what that
+    /// costs. Anything up to 24 bytes lives inline, which every grapheme a
+    /// terminal cell can hold does. It serializes as a plain string, so the
+    /// wire format is unchanged.
+    pub ch: CompactString,
     pub fg: Color,
     pub bg: Color,
     pub bold: bool,
@@ -42,7 +56,7 @@ pub struct Cell {
 impl Default for Cell {
     fn default() -> Self {
         Cell {
-            ch: " ".to_string(),
+            ch: BLANK,
             fg: Color::Default,
             bg: Color::Default,
             bold: false,
@@ -102,11 +116,12 @@ pub fn diff_grid(prev: Option<&Vec<Vec<Cell>>>, cur: &[Vec<Cell>]) -> Vec<CellSp
 #[cfg(test)]
 mod tests {
     use super::*;
+    use compact_str::ToCompactString;
 
     fn row(s: &str) -> Vec<Cell> {
         s.chars()
             .map(|c| Cell {
-                ch: c.to_string(),
+                ch: c.to_compact_string(),
                 ..Default::default()
             })
             .collect()
@@ -194,13 +209,53 @@ mod tests {
         // wrong colour if this were treated as unchanged.
         let prev = vec![row("a")];
         let cur = vec![vec![Cell {
-            ch: "a".to_string(),
+            ch: "a".into(),
             bold: true,
             ..Default::default()
         }]];
         let spans = diff_grid(Some(&prev), &cur);
         assert_eq!(spans.len(), 1);
         assert!(spans[0].cells[0].bold);
+    }
+
+    #[test]
+    fn a_cell_is_still_a_plain_string_on_the_wire() {
+        // `ch` stores itself inline rather than on the heap, which is the
+        // whole point of the type — but that has to stay an implementation
+        // detail. A client and a daemon built from different commits have
+        // to agree, so the encoding must be byte-for-byte what a `String`
+        // produced.
+        #[derive(Serialize)]
+        struct AsString {
+            ch: String,
+            fg: Color,
+            bg: Color,
+            bold: bool,
+            italic: bool,
+            underline: bool,
+            reverse: bool,
+        }
+
+        let compact = Cell {
+            ch: "e\u{301}".into(),
+            fg: Color::Idx(3),
+            bold: true,
+            ..Default::default()
+        };
+        let string = AsString {
+            ch: "e\u{301}".to_string(),
+            fg: Color::Idx(3),
+            bg: Color::Default,
+            bold: true,
+            italic: false,
+            underline: false,
+            reverse: false,
+        };
+
+        assert_eq!(
+            rmp_serde::to_vec_named(&compact).unwrap(),
+            rmp_serde::to_vec_named(&string).unwrap()
+        );
     }
 
     #[test]

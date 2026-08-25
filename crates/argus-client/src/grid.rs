@@ -38,10 +38,11 @@ impl Grid {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use argus_protocol::ToCompactString;
 
     fn cell(c: char) -> Cell {
         Cell {
-            ch: c.to_string(),
+            ch: c.to_compact_string(),
             ..Default::default()
         }
     }
@@ -109,7 +110,7 @@ mod tests {
             row: 0,
             col: 0,
             cells: vec![Cell {
-                ch: "a".to_string(),
+                ch: "a".into(),
                 bold: true,
                 ..Default::default()
             }],

@@ -81,7 +81,15 @@ but are omitted from the normal pane list and counts.
 
 Each PTY starts at 24 by 80 cells. A blocking reader thread sends output through a bounded queue to
 a Tokio task, which processes a bounded batch on a 16 ms interval, feeds a `vt100` parser, and
-broadcasts changed horizontal cell spans plus the child cursor's position and visibility. The
+broadcasts changed horizontal cell spans plus the child cursor's position and visibility.
+
+A cell's grapheme is stored inline rather than on the heap, and a cell the parser holds nothing in
+is read as a blank without asking the parser to build one. Both exist because a grid is rebuilt,
+diffed, shipped and applied sixty times a second per pane, and an allocation per cell at each of
+those steps was most of what that cost — the second one especially, since most of a screen is blank
+and `vt100` allocates for a blank cell as readily as for a full one. A blank still carries the
+attributes it was cleared to, so a TUI's coloured bars survive. The encoding is unchanged: a cell is
+a plain string on the wire. The
 client also bounds incoming daemon messages and coalesces redraws to the same interval. Cursor-only
 changes are broadcast even when no cell changed. The client places its hardware cursor there only
 while that pane has typing focus. The parser retains 4,000 scrollback lines, though the client has

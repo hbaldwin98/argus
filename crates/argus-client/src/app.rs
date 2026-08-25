@@ -2026,7 +2026,7 @@ mod tests {
                 row: 0,
                 col: 0,
                 cells: vec![Cell {
-                    ch: "X".to_string(),
+                    ch: "X".into(),
                     ..Default::default()
                 }],
             }],

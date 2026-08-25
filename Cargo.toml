@@ -17,6 +17,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-uti
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rmp-serde = "1"
+compact_str = { version = "0.8", features = ["serde"] }
 anyhow = "1"
 thiserror = "1"
 directories = "5"

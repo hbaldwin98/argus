@@ -194,7 +194,7 @@ mod tests {
                 row: 4,
                 col: 7,
                 cells: vec![Cell {
-                    ch: "é".to_string(),
+                    ch: "é".into(),
                     bold: true,
                     ..Default::default()
                 }],

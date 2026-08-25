@@ -46,6 +46,7 @@ dependencies = [
 name = "argus-protocol"
 version = "0.3.1"
 dependencies = [
+ "compact_str",
  "directories",
  "rmp-serde",
  "serde",
@@ -158,6 +159,7 @@ dependencies = [
  "itoa",
  "rustversion",
  "ryu",
+ "serde",
  "static_assertions",
 ]
 
