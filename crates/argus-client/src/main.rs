@@ -26,7 +26,7 @@ use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 use paste::{Flush, PasteBurst, Step};
 use profile::{Profile, Record};
 use ratatui::Terminal;
@@ -35,6 +35,8 @@ use tokio::sync::mpsc;
 
 const FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
 const SERVER_QUEUE_MESSAGES: usize = 256;
+/// Most events drained onto a single frame.
+const EVENT_BATCH: usize = 512;
 
 /// Decides which of the loop's wake-ups is worth a frame.
 ///
@@ -269,26 +271,25 @@ async fn run(
         let burst_due = burst.deadline();
         tokio::select! {
             maybe_event = events.next() => {
-                // Only a keystroke has somebody waiting on its echo. Mouse
-                // motion arrives hundreds of times a second and used to
-                // present a frame each — the profile's quiet seconds with a
-                // hundred frames and no keys in them were the mouse moving.
-                // A release is not a keypress, and counting it made the
-                // rate in the profile twice what was actually typed.
-                let key = matches!(
-                    &maybe_event,
-                    Some(Ok(Event::Key(k)))
-                        if matches!(k.kind, KeyEventKind::Press | KeyEventKind::Repeat)
-                );
-                if !handle_terminal_event(&mut app, &mut burst, maybe_event) {
+                if !take_event(&mut app, &mut burst, &mut redraw, &mut profile, maybe_event) {
                     break;
                 }
-                if key {
-                    let pane = app.input_pane();
-                    profile.record(|c| c.key(pane, std::time::Instant::now()));
-                    redraw.input();
-                } else {
-                    redraw.changed();
+                // Whatever else is already queued belongs on this frame.
+                // One frame per event is what turned a fast input stream
+                // into a full repaint per keystroke, and every frame but
+                // the last of them was drawn for nobody.
+                // Bounded so a stream that never runs dry cannot hold the
+                // loop away from the daemon's messages.
+                let mut alive = true;
+                for _ in 0..EVENT_BATCH {
+                    if !alive {
+                        break;
+                    }
+                    let Some(queued) = events.next().now_or_never() else { break };
+                    alive = take_event(&mut app, &mut burst, &mut redraw, &mut profile, queued);
+                }
+                if !alive {
+                    break;
                 }
             }
             _ = sleep_until(burst_due), if burst_due.is_some() => {
@@ -350,6 +351,38 @@ fn flush_burst(app: &mut App, burst: &mut PasteBurst) {
         }
         None => {}
     }
+}
+
+/// One event, with the bookkeeping the loop wants around it. `false` when
+/// the event stream has ended and the client should stop.
+///
+/// Only a keystroke presents on the spot: mouse motion arrives hundreds of
+/// times a second and nobody is waiting on its echo, so it rides the next
+/// tick.
+fn take_event(
+    app: &mut App,
+    burst: &mut PasteBurst,
+    redraw: &mut RedrawScheduler,
+    profile: &mut Option<Profile>,
+    event: Option<Result<Event, std::io::Error>>,
+) -> bool {
+    // A release is not a keypress, and counting it made the rate in the
+    // profile twice what was actually typed.
+    let key = matches!(
+        &event,
+        Some(Ok(Event::Key(k))) if matches!(k.kind, KeyEventKind::Press | KeyEventKind::Repeat)
+    );
+    if !handle_terminal_event(app, burst, event) {
+        return false;
+    }
+    if key {
+        let pane = app.input_pane();
+        profile.record(|c| c.key(pane, std::time::Instant::now()));
+        redraw.input();
+    } else {
+        redraw.changed();
+    }
+    true
 }
 
 fn handle_terminal_event(
