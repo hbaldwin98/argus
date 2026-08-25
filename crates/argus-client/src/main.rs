@@ -32,14 +32,34 @@ use tokio::sync::mpsc;
 const FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
 const SERVER_QUEUE_MESSAGES: usize = 256;
 
+/// Decides which of the loop's wake-ups is worth a frame.
+///
+/// Damage from the daemon is coalesced onto `FRAME_INTERVAL`: an agent
+/// painting a spinner would otherwise redraw the whole screen for every
+/// chunk it produces. Input is not. A keystroke is already one event and
+/// has nothing to coalesce with, and the person who pressed the key is
+/// waiting on the echo, so it presents on the spot.
 #[derive(Default)]
 struct RedrawScheduler {
     dirty: bool,
+    present: bool,
 }
 
 impl RedrawScheduler {
+    /// Something changed, but nobody is waiting on it — the next frame.
     fn changed(&mut self) {
         self.dirty = true;
+    }
+
+    /// Something changed and someone is waiting on it — this frame.
+    fn input(&mut self) {
+        self.dirty = true;
+        self.present = true;
+    }
+
+    /// A frame has come due for whatever was already dirty.
+    fn due(&mut self) {
+        self.present = true;
     }
 
     fn pending(&self) -> bool {
@@ -47,7 +67,12 @@ impl RedrawScheduler {
     }
 
     fn take_frame(&mut self) -> bool {
-        std::mem::take(&mut self.dirty)
+        if !(self.dirty && self.present) {
+            return false;
+        }
+        self.dirty = false;
+        self.present = false;
+        true
     }
 }
 
@@ -224,17 +249,14 @@ async fn run(
                 if !handle_terminal_event(&mut app, maybe_event) {
                     break;
                 }
-                redraw.changed();
+                redraw.input();
             }
             Some(msg) = out_rx.recv() => {
                 app.on_server_msg(msg);
                 redraw.changed();
             }
             _ = frames.tick(), if redraw.pending() => {
-                redraw.take_frame();
-                update_herdr(&mut herdr, &app);
-                draw_frame(terminal, &mut app)?;
-                resize_live_panes(&mut app, &mut last_sizes);
+                redraw.due();
             }
         }
 
@@ -242,6 +264,11 @@ async fn run(
             break;
         }
 
+        if redraw.take_frame() {
+            update_herdr(&mut herdr, &app);
+            draw_frame(terminal, &mut app)?;
+            resize_live_panes(&mut app, &mut last_sizes);
+        }
     }
 
     release_herdr(&mut herdr);
@@ -412,13 +439,41 @@ mod tests {
     }
 
     #[test]
-    fn many_input_events_request_one_draw_on_the_next_frame() {
+    fn many_damage_messages_request_one_draw_on_the_next_frame() {
         let mut redraw = RedrawScheduler::default();
         for _ in 0..10_000 {
             redraw.changed();
         }
 
+        assert!(!redraw.take_frame(), "damage drew before its frame came due");
+        redraw.due();
         assert!(redraw.take_frame());
+        assert!(!redraw.take_frame());
+    }
+
+    #[test]
+    fn a_keystroke_draws_without_waiting_for_the_next_frame() {
+        // Regression: input used to be folded into the same 16ms grid as
+        // damage, so every character typed into a prompt or a pane waited
+        // out the rest of a frame it had no part in starting.
+        let mut redraw = RedrawScheduler::default();
+        redraw.input();
+
+        assert!(redraw.take_frame());
+        assert!(!redraw.take_frame());
+    }
+
+    #[test]
+    fn a_keystroke_carries_pending_damage_with_it() {
+        // The frame it presents is the whole screen, so damage that was
+        // waiting for the next tick is already on it and must not ask for
+        // a second frame of its own.
+        let mut redraw = RedrawScheduler::default();
+        redraw.changed();
+        redraw.input();
+
+        assert!(redraw.take_frame());
+        redraw.due();
         assert!(!redraw.take_frame());
     }
 
