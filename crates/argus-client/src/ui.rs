@@ -22,14 +22,16 @@
 
 use argus_protocol::{Color as PColor, GitStatus, LineKind, PaneStatus};
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget, Wrap};
 use ratatui::Frame;
 
 use crate::app::{App, Focus, Overlay, Panel, PickerKind, Prompt, Setting};
+use crate::dirpicker::DirRow;
 use crate::grid::Grid;
+use argus_protocol::CursorShape;
 use crate::review::{Row, ReviewView};
 use crate::theme::Theme;
 
@@ -98,18 +100,42 @@ pub fn render(f: &mut Frame, app: &mut App) {
         .constraints([Constraint::Min(1), Constraint::Length(2)])
         .split(page);
 
-    render_columns(f, app, root[0]);
+    // The hardware cursor is decided once, here, and applied last.
+    //
+    // Ratatui keeps a single cursor position per frame, so every widget
+    // that sets one overwrites whatever was drawn before it. Deciding
+    // per-widget means a layer on top can only ever *add* a position,
+    // never take one away: an overlay whose child had hidden its cursor
+    // left the content column's cursor stranded on top of the overlay.
+    // Each layer replaces the decision outright, `None` included.
+    let mut cursor = render_columns(f, app, root[0]);
     render_status(f, app, root[1], th);
 
     // Above the columns, below the modals: a picker opened from an
     // overlay still has to be reachable.
-    render_overlay(f, app, page, th);
+    let overlay_cursor = render_overlay(f, app, page, th);
+    if app.overlay.is_some() {
+        cursor = overlay_cursor;
+    }
 
+    // These draw their own caret and cover what is under them, so no child
+    // terminal's cursor has any business showing through.
     if app.picker.is_some() {
         render_picker(f, app, f.area(), th);
+        cursor = None;
+    }
+    if app.dir_picker.is_some() {
+        render_dir_picker(f, app, f.area(), th);
+        cursor = None;
     }
     if app.prompt.is_some() {
         render_prompt(f, app, f.area(), th);
+        cursor = None;
+    }
+
+    app.layout.cursor = cursor;
+    if let Some(placement) = cursor {
+        f.set_cursor_position(placement.position);
     }
 }
 
@@ -117,7 +143,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
 /// visible next to the rest of the tree instead of taking over the screen.
 /// The projects column may be collapsed to a thin strip, in which case its
 /// width is ceded to the other four.
-fn render_columns(f: &mut Frame, app: &mut App, area: Rect) {
+fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option<CursorPlacement> {
     let th = app.theme;
     let constraints = if app.projects_collapsed {
         collapsed_projects_constraints(area.width, app.column_widths.as_deref())
@@ -337,7 +363,7 @@ a  agent",
         th,
     );
 
-    render_content(f, app, cols[4], th);
+    render_content(f, app, cols[4], th)
 }
 
 fn column_constraints(total_width: u16, preferred: Option<&[u16]>) -> Vec<Constraint> {
@@ -615,7 +641,7 @@ fn row_rect_of(inner: Rect, i: usize, height: u16) -> Option<Rect> {
 /// The rightmost column: the selected pane's live terminal, always drawn
 /// alongside the other four rather than taking over the screen. Which pane
 /// that is follows the panes column's selection.
-fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option<CursorPlacement> {
     // Typing focus is what the accent border promises here, so only
     // PaneContent lights it up — merely selecting a pane does not.
     let focused = app.focus == Focus::PaneContent;
@@ -624,7 +650,7 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    if app.current_pane().is_none() {
+    let cursor = if app.current_pane().is_none() {
         f.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::styled("nothing running here — ", Style::default().fg(th.dim)),
@@ -635,11 +661,13 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
             ])),
             inner,
         );
+        None
     } else {
         let grid = app.column_pane().and_then(|id| app.grids.get(&id));
-        render_term(f, grid, inner, focused);
-    }
+        render_term(f, grid, inner, focused)
+    };
     app.layout.content = Panel { outer: area, inner };
+    cursor
 }
 
 /// Drawn in the column the live pane uses, so the nav columns stay put
@@ -850,10 +878,14 @@ fn breadcrumb(app: &App) -> String {
 /// is the thing the whole layout exists to prevent.
 const OVERLAY_FRACTION: (u16, u16) = (82, 78);
 
-fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+/// Returns where the hardware cursor belongs while an overlay is up. An
+/// overlay covers the content column, so `None` here means the cursor is
+/// not drawn at all this frame — the column underneath does not get to
+/// keep it (see [`render`]).
+fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option<CursorPlacement> {
     let Some(overlay) = &app.overlay else {
         app.layout.overlay = Panel::default();
-        return;
+        return None;
     };
 
     let width = (area.width * OVERLAY_FRACTION.0 / 100).max(20.min(area.width));
@@ -881,11 +913,15 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     };
 
     match overlay {
-        Overlay::Pane { pane, .. } => {
-            render_term(f, app.grids.get(pane), inner, true);
+        Overlay::Pane { pane, .. } => render_term(f, app.grids.get(pane), inner, true),
+        Overlay::Settings { sel } => {
+            render_settings(f, app, inner, *sel, th);
+            None
         }
-        Overlay::Settings { sel } => render_settings(f, app, inner, *sel, th),
-        Overlay::Review => render_review(f, app, inner, th),
+        Overlay::Review => {
+            render_review(f, app, inner, th);
+            None
+        }
     }
 }
 
@@ -1060,6 +1096,129 @@ fn picker_item<'a>(picker: &'a crate::app::Picker, i: usize, th: Theme) -> Item<
     )
 }
 
+/// The directory browser. Wider than a picker and taller than a prompt,
+/// because it has to show three things at once: where you are, what is
+/// under it, and which of those are repositories.
+fn render_dir_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
+    let Some(picker) = &app.dir_picker else { return };
+
+    let rows = picker.len().min(PICKER_ROWS);
+    // Borders, the block's top pad, breadcrumb, query, the blank under it,
+    // and the key hint.
+    let height = (rows as u16 + 7).min(area.height);
+    let width = 64.min(area.width);
+    let popup = centered_rect(width, height, area);
+
+    f.render_widget(Clear, popup);
+    let block = panel_block(picker.title(), true, th, popup.width);
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    if inner.height < 3 {
+        return;
+    }
+
+    // The tail of the path, not its head: the segments nearest the cursor
+    // are the ones that tell you where you are.
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            elide_head(&picker.path, inner.width as usize),
+            Style::default().fg(th.muted),
+        ))),
+        Rect { height: 1, ..inner },
+    );
+
+    let mut query = vec![Span::styled("› ", Style::default().fg(th.accent))];
+    query.extend(field(&picker.query, th).spans);
+    if picker.query.is_empty() {
+        query.push(Span::styled(" type to filter", Style::default().fg(th.dim)));
+    }
+    f.render_widget(
+        Paragraph::new(Line::from(query)),
+        Rect {
+            y: inner.y + 1,
+            height: 1,
+            ..inner
+        },
+    );
+
+    let hint_y = inner.y + inner.height - 1;
+    let list = Rect {
+        y: inner.y + 3,
+        height: hint_y.saturating_sub(inner.y + 3),
+        ..inner
+    };
+
+    if let Some(error) = &picker.error {
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                ellipsize_text(error, list.width as usize),
+                Style::default().fg(th.err),
+            ))),
+            Rect { height: 1, ..list },
+        );
+    } else {
+        let visible = list.height as usize;
+        let first = picker.sel.saturating_sub(visible.saturating_sub(1));
+        for slot in 0..visible {
+            let i = first + slot;
+            let Some(row) = picker.row(i) else { break };
+            let Some(rect) = row_rect_of(list, slot, 1) else { break };
+            render_row(f, rect, dir_item(row, th), i == picker.sel, true, th);
+        }
+    }
+
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            "tab open   ← up   enter add   esc cancel",
+            Style::default().fg(th.dim),
+        ))),
+        Rect {
+            y: hint_y,
+            height: 1,
+            ..inner
+        },
+    );
+}
+
+fn dir_item(row: &DirRow, th: Theme) -> Item<'static> {
+    match row {
+        DirRow::Here => Item::new(
+            vec![
+                Span::styled("· ", Style::default().fg(th.accent)),
+                Span::styled("add this directory", Style::default().fg(th.text)),
+            ],
+            Vec::new(),
+        ),
+        DirRow::Child { name, is_repo } => {
+            let item = Item::new(
+                vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled(name.clone(), Style::default().fg(th.text)),
+                ],
+                Vec::new(),
+            );
+            // Which children are repositories is invisible from the name,
+            // and is usually the whole question being asked here.
+            if *is_repo {
+                item.badged(vec![Span::styled("git", Style::default().fg(th.ok))])
+            } else {
+                item
+            }
+        }
+    }
+}
+
+/// Truncates from the left, keeping the end. The opposite of
+/// [`ellipsize_text`], and the right choice for a path.
+fn elide_head(text: &str, width: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= width || width == 0 {
+        return text.to_string();
+    }
+    let tail: String = chars[chars.len() + 1 - width..].iter().collect();
+    format!("…{tail}")
+}
+
 /// How wide a prompt box gets. A comment is a sentence and gets the wider
 /// box; everything else here is an identifier — a branch name, a path — and
 /// a wide box would only be a wide box.
@@ -1092,18 +1251,6 @@ fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             "new worktree",
             wrapped_field(input, inner_width, th),
             "enter create   esc cancel",
-            false,
-        ),
-        Prompt::AddProject { input } => (
-            "add project",
-            wrapped_field(input, inner_width, th),
-            "enter add   esc cancel",
-            false,
-        ),
-        Prompt::AddRepository { input, .. } => (
-            "add repository",
-            wrapped_field(input, inner_width, th),
-            "enter add   esc cancel",
             false,
         ),
         Prompt::EditorCommand { input } => (
@@ -1396,14 +1543,50 @@ struct TermView<'a> {
     grid: Option<&'a Grid>,
 }
 
-fn render_term(f: &mut Frame, grid: Option<&Grid>, area: Rect, focused: bool) {
+/// Draws the pane and reports where the hardware cursor would go if this
+/// pane owned it. Reporting rather than placing: `render` makes one cursor
+/// decision for the whole frame (see [`render`]), so a pane drawn
+/// underneath something else cannot strand its cursor on top of it.
+/// Where the hardware cursor goes this frame, and what the child asked it
+/// to look like. The two travel together because they come from the same
+/// grid: the pane that owns the cursor owns its shape too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CursorPlacement {
+    pub position: Position,
+    pub shape: CursorShape,
+}
+
+fn render_term(
+    f: &mut Frame,
+    grid: Option<&Grid>,
+    area: Rect,
+    focused: bool,
+) -> Option<CursorPlacement> {
     f.render_widget(TermView { grid }, area);
-    let Some(grid) = grid.filter(|grid| focused && grid.cursor.visible) else {
-        return;
-    };
-    if grid.cursor.row < area.height && grid.cursor.col < area.width {
-        f.set_cursor_position((area.x + grid.cursor.col, area.y + grid.cursor.row));
+    term_cursor(grid, area, focused)
+}
+
+/// The child cursor mapped into `area`, or `None` when it must not be drawn.
+///
+/// Bounded by the grid as well as by the area. The two disagree for a frame
+/// whenever a pane's on-screen size changes: the client draws the grid it
+/// has, and only asks for a matching pty size afterwards, so a grid still
+/// at the pty's 24x80 default can be drawn into a much larger box. Placing
+/// the cursor at a coordinate the drawn rows don't reach puts it in empty
+/// space — better to skip a frame than to point at nothing.
+fn term_cursor(grid: Option<&Grid>, area: Rect, focused: bool) -> Option<CursorPlacement> {
+    let grid = grid.filter(|grid| focused && grid.cursor.visible)?;
+    let rows = grid.cells.len();
+    let cols = grid.cells.first().map_or(0, Vec::len);
+    let row = usize::from(grid.cursor.row);
+    let col = usize::from(grid.cursor.col);
+    if row >= rows.min(usize::from(area.height)) || col >= cols.min(usize::from(area.width)) {
+        return None;
     }
+    Some(CursorPlacement {
+        position: Position::new(area.x + grid.cursor.col, area.y + grid.cursor.row),
+        shape: grid.cursor.shape,
+    })
 }
 
 impl Widget for TermView<'_> {
@@ -1457,6 +1640,7 @@ mod tests {
         CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, ProjectId, ProjectInfo,
         RepositoryId, RepositoryInfo,
     };
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
@@ -1882,8 +2066,7 @@ mod tests {
                 argus_protocol::Cursor {
                     row: 1,
                     col: 2,
-                    visible: true,
-                },
+                    visible: true, ..Default::default() },
             ),
         );
         let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
@@ -1894,6 +2077,112 @@ mod tests {
             app.layout.content.inner.x + 2,
             app.layout.content.inner.y + 1,
         ));
+    }
+
+    #[test]
+    fn an_overlay_whose_cursor_is_hidden_does_not_leave_the_column_cursor_on_top_of_it() {
+        // Regression: the content column and the overlay both drew a
+        // terminal, and ratatui has one cursor slot per frame. The overlay
+        // took the early return when its child had hidden its cursor,
+        // which left the column's position in the slot — so the hardware
+        // cursor sat on top of the overlay, pointing at a coordinate that
+        // belonged to the pane behind it.
+        let mut app = app_with_tree();
+        app.focus = Focus::PaneContent;
+        app.grids.insert(
+            PaneId(100),
+            Grid::with_cursor(
+                vec![vec![Default::default(); 40]; 10],
+                argus_protocol::Cursor { row: 1, col: 2, visible: true, ..Default::default() },
+            ),
+        );
+        app.grids.insert(
+            PaneId(101),
+            Grid::with_cursor(
+                vec![vec![Default::default(); 40]; 10],
+                argus_protocol::Cursor { row: 1, col: 2, visible: false, ..Default::default() },
+            ),
+        );
+        app.overlay = Some(Overlay::Pane {
+            pane: PaneId(101),
+            title: "editor".to_string(),
+            ephemeral: true,
+        });
+
+        draw(&mut app);
+
+        assert_eq!(
+            app.layout.cursor, None,
+            "the overlay owns the cursor and its child has hidden it"
+        );
+    }
+
+    #[test]
+    fn a_prompt_takes_the_cursor_away_from_the_pane_behind_it() {
+        // The prompt draws its own caret; a second cursor blinking in the
+        // column underneath is just noise.
+        let mut app = app_with_tree();
+        app.focus = Focus::PaneContent;
+        app.grids.insert(
+            PaneId(100),
+            Grid::with_cursor(
+                vec![vec![Default::default(); 40]; 10],
+                argus_protocol::Cursor { row: 1, col: 2, visible: true, ..Default::default() },
+            ),
+        );
+        draw(&mut app);
+        assert!(app.layout.cursor.is_some());
+
+        app.prompt = Some(Prompt::EditorCommand { input: String::new() });
+        draw(&mut app);
+
+        assert_eq!(app.layout.cursor, None);
+    }
+
+    #[test]
+    fn a_cursor_past_the_end_of_the_grid_is_not_drawn() {
+        // A pane's on-screen box is resized a frame before its pty is, so
+        // the grid can be smaller than the area it is drawn into. Placing
+        // the cursor by the area alone points it at rows that were never
+        // drawn.
+        let area = Rect::new(0, 0, 80, 40);
+        let grid = Grid::with_cursor(
+            vec![vec![Default::default(); 80]; 24],
+            argus_protocol::Cursor { row: 30, col: 0, visible: true, ..Default::default() },
+        );
+
+        assert_eq!(term_cursor(Some(&grid), area, true), None);
+    }
+
+    #[test]
+    fn a_cursor_inside_both_the_grid_and_the_area_is_drawn() {
+        let area = Rect::new(3, 5, 80, 40);
+        let grid = Grid::with_cursor(
+            vec![vec![Default::default(); 80]; 24],
+            argus_protocol::Cursor { row: 7, col: 9, visible: true, ..Default::default() },
+        );
+
+        assert_eq!(
+            term_cursor(Some(&grid), area, true).map(|c| c.position),
+            Some(Position::new(12, 12))
+        );
+    }
+
+    #[test]
+    fn an_unfocused_or_hidden_cursor_is_not_drawn() {
+        let area = Rect::new(0, 0, 80, 40);
+        let visible = Grid::with_cursor(
+            vec![vec![Default::default(); 80]; 24],
+            argus_protocol::Cursor { row: 1, col: 1, visible: true, ..Default::default() },
+        );
+        let hidden = Grid::with_cursor(
+            vec![vec![Default::default(); 80]; 24],
+            argus_protocol::Cursor { row: 1, col: 1, visible: false, ..Default::default() },
+        );
+
+        assert_eq!(term_cursor(Some(&visible), area, false), None);
+        assert_eq!(term_cursor(Some(&hidden), area, true), None);
+        assert_eq!(term_cursor(None, area, true), None);
     }
 
     #[test]
@@ -2341,6 +2630,102 @@ mod tests {
     #[ignore]
     fn dump_review() {
         let mut app = app_with_review();
+        for line in lines(&draw_at(&mut app, 100, 20)) {
+            println!("|{line}");
+        }
+    }
+
+    // --- the directory browser ----------------------------------------------
+
+    fn app_browsing() -> App {
+        let mut app = app_with_tree();
+        let mut picker = crate::dirpicker::DirPicker::new(crate::dirpicker::DirTarget::Project, 1);
+        picker.show(argus_protocol::DirListing {
+            request_id: 1,
+            path: "/home/u/Source/github.com".to_string(),
+            parent: Some("/home/u/Source".to_string()),
+            entries: [("argus", true), ("notes", false), ("orion", true)]
+                .iter()
+                .map(|(name, is_repo)| argus_protocol::DirEntry {
+                    name: name.to_string(),
+                    is_repo: *is_repo,
+                })
+                .collect(),
+            error: None,
+        });
+        app.dir_picker = Some(picker);
+        app
+    }
+
+    #[test]
+    fn the_browser_shows_where_you_are_and_what_is_under_it() {
+        let mut app = app_browsing();
+        let rendered = lines(&draw(&mut app)).join("\n");
+        assert!(rendered.contains("add project"), "{rendered}");
+        assert!(rendered.contains("github.com"), "the breadcrumb");
+        assert!(rendered.contains("add this directory"), "{rendered}");
+        assert!(rendered.contains("orion"), "{rendered}");
+        assert!(rendered.contains("tab open"), "the keys are on screen");
+    }
+
+    #[test]
+    fn a_repository_among_the_directories_is_marked() {
+        // Which children are already repos is the question the browser
+        // exists to answer, and it is invisible from the name.
+        let mut app = app_browsing();
+        let rendered = lines(&draw(&mut app));
+        // Rightmost match: the repositories column behind the modal also
+        // has an "orion" on it.
+        let row = rendered.iter().rev().find(|r| r.contains("orion")).unwrap();
+        assert!(row.contains("git"), "{row}");
+        let plain = rendered.iter().find(|r| r.contains("notes")).unwrap();
+        assert!(!plain.contains("git"), "{plain}");
+    }
+
+    #[test]
+    fn typing_narrows_the_browser_to_what_matches() {
+        let mut app = app_browsing();
+        app.on_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
+        let rendered = lines(&draw(&mut app)).join("\n");
+        assert!(rendered.contains("notes"), "{rendered}");
+        assert!(!rendered.contains("argus\n"), "{rendered}");
+        assert!(
+            !rendered.contains("add this directory"),
+            "the row that answers no query steps aside"
+        );
+    }
+
+    #[test]
+    fn an_unreadable_directory_says_so_instead_of_looking_empty() {
+        let mut app = app_with_tree();
+        let mut picker = crate::dirpicker::DirPicker::new(crate::dirpicker::DirTarget::Project, 1);
+        picker.show(argus_protocol::DirListing {
+            request_id: 1,
+            path: "/root".to_string(),
+            parent: Some("/".to_string()),
+            entries: Vec::new(),
+            error: Some("permission denied".to_string()),
+        });
+        app.dir_picker = Some(picker);
+        let rendered = lines(&draw(&mut app)).join("\n");
+        assert!(rendered.contains("permission denied"), "{rendered}");
+    }
+
+    #[test]
+    fn a_breadcrumb_too_long_for_the_box_keeps_its_end() {
+        // The segments nearest the cursor are the ones that say where you
+        // are; the drive letter is not.
+        let long = "/very/deep".repeat(20);
+        assert_eq!(elide_head(&long, 12).chars().next(), Some('\u{2026}'));
+        assert!(elide_head(&long, 12).ends_with("very/deep"));
+        assert_eq!(elide_head("/short", 12), "/short");
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_dir_picker() {
+        let mut app = app_browsing();
+        app.theme = Theme::default();
         for line in lines(&draw_at(&mut app, 100, 20)) {
             println!("|{line}");
         }

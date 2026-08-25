@@ -1,4 +1,6 @@
 mod app;
+mod backend;
+mod dirpicker;
 mod fuzzy;
 mod grid;
 mod herdr;
@@ -23,7 +25,6 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use futures::StreamExt;
-use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use tokio::io::split;
 use tokio::sync::mpsc;
@@ -51,6 +52,7 @@ impl RedrawScheduler {
 }
 
 use app::App;
+use backend::TermBackend;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -62,7 +64,9 @@ async fn main() -> anyhow::Result<()> {
     result
 }
 
-fn enter_terminal() -> anyhow::Result<Terminal<CrosstermBackend<io::Stdout>>> {
+type Term = Terminal<TermBackend<io::Stdout>>;
+
+fn enter_terminal() -> anyhow::Result<Term> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(
@@ -71,12 +75,36 @@ fn enter_terminal() -> anyhow::Result<Terminal<CrosstermBackend<io::Stdout>>> {
         EnableMouseCapture,
         EnableBracketedPaste
     )?;
-    let backend = CrosstermBackend::new(stdout);
-    Ok(Terminal::new(backend)?)
+    Ok(Terminal::new(TermBackend::new(stdout))?)
 }
 
-fn leave_terminal(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> anyhow::Result<()> {
+/// One frame, presented all at once.
+///
+/// The draw itself is a diff, a cursor move, and a visibility change,
+/// written as several syscalls; wrapping them in a synchronized update is
+/// what stops the terminal presenting a half-drawn frame with the cursor
+/// already moved. The shape goes inside the wrapper for the same reason.
+fn draw_frame(terminal: &mut Term, app: &mut App) -> anyhow::Result<()> {
+    terminal.backend_mut().begin_frame()?;
+    terminal.draw(|f| ui::render(f, app))?;
+    let shape = app
+        .layout
+        .cursor
+        .map_or(argus_protocol::CursorShape::Default, |c| c.shape);
+    terminal.backend_mut().set_cursor_shape(shape)?;
+    terminal.backend_mut().end_frame()?;
+    Ok(())
+}
+
+fn leave_terminal(terminal: &mut Term) -> anyhow::Result<()> {
+    // Ahead of everything else: if the last frame died partway through, the
+    // terminal is still inside a synchronized update and would show none of
+    // what follows.
+    terminal.backend_mut().abandon_frame();
     disable_raw_mode()?;
+    // The cursor shape belongs to whatever the user runs next, not to the
+    // last pane that happened to be focused here.
+    let _ = terminal.backend_mut().set_cursor_shape(argus_protocol::CursorShape::Default);
     execute!(
         terminal.backend_mut(),
         DisableBracketedPaste,
@@ -172,7 +200,7 @@ fn compact_subscriptions(
 }
 
 async fn run(
-    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    terminal: &mut Term,
     in_tx: mpsc::UnboundedSender<ClientMsg>,
     out_rx: &mut mpsc::Receiver<ServerMsg>,
 ) -> anyhow::Result<()> {
@@ -188,7 +216,7 @@ async fn run(
     let mut last_sizes: std::collections::HashMap<PaneId, (u16, u16)> =
         std::collections::HashMap::new();
 
-    terminal.draw(|f| ui::render(f, &mut app))?;
+    draw_frame(terminal, &mut app)?;
 
     loop {
         tokio::select! {
@@ -205,7 +233,7 @@ async fn run(
             _ = frames.tick(), if redraw.pending() => {
                 redraw.take_frame();
                 update_herdr(&mut herdr, &app);
-                terminal.draw(|f| ui::render(f, &mut app))?;
+                draw_frame(terminal, &mut app)?;
                 resize_live_panes(&mut app, &mut last_sizes);
             }
         }
@@ -398,7 +426,7 @@ mod tests {
     fn paste_events_are_dispatched_to_the_app() {
         let (tx, _rx) = mpsc::unbounded_channel();
         let mut app = App::new(tx);
-        app.prompt = Some(Prompt::AddProject {
+        app.prompt = Some(Prompt::EditorCommand {
             input: String::new(),
         });
 
@@ -408,7 +436,7 @@ mod tests {
         ));
         assert!(matches!(
             app.prompt,
-            Some(Prompt::AddProject { ref input }) if input == "pasted"
+            Some(Prompt::EditorCommand { ref input }) if input == "pasted"
         ));
     }
 

@@ -1,5 +1,6 @@
 //! Listing what a checkout contains, for the fuzzy pickers: its branches
-//! and its files.
+//! and its files — and, for the directory browser, what a directory
+//! anywhere on disk contains.
 //!
 //! Both are in-process. Branches come from libgit2; files from `ignore`,
 //! the crate ripgrep and fd are built on, so `.gitignore` is honoured with
@@ -8,7 +9,8 @@
 //! owns no console — the bug `git::list_worktrees` documents — and would
 //! make both features depend on tools that may not be installed.
 
-use std::path::Path;
+use argus_protocol::{DirEntry, DirListing};
+use std::path::{Path, PathBuf};
 
 /// Files bigger than a picker can usefully show. A repo past this is
 /// almost certainly one where the user wants a narrower query anyway.
@@ -66,6 +68,91 @@ pub fn files(path: &Path) -> Vec<String> {
     }
     out.sort();
     out
+}
+
+/// Subdirectories of `path`, for the "add project"/"add repository"
+/// browser. An empty `path` starts at the user's home directory, which is
+/// where checkouts almost always live — starting at the daemon's cwd would
+/// drop the user somewhere they have to climb out of.
+///
+/// Files are left out: neither a project nor a repository can be one, and
+/// a browser full of them is a browser you have to filter before you can
+/// use it.
+pub fn directories(path: &str) -> DirListing {
+    let target = resolve(path);
+    let listing = |entries, error| DirListing {
+        request_id: 0,
+        path: display_path(&target),
+        parent: target
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(display_path),
+        entries,
+        error,
+    };
+
+    let read = match std::fs::read_dir(&target) {
+        Ok(read) => read,
+        Err(e) => return listing(Vec::new(), Some(e.to_string())),
+    };
+
+    let mut entries: Vec<DirEntry> = read
+        .flatten()
+        // `file_type` on the entry does not follow symlinks, so a symlinked
+        // checkout — a normal way to keep repos on another drive — would
+        // otherwise vanish from the browser.
+        .filter(|e| e.path().is_dir())
+        .filter(|e| e.file_name() != ".git")
+        .map(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            let is_repo = e.path().join(".git").exists();
+            DirEntry { name, is_repo }
+        })
+        .collect();
+    // Case-insensitive: `Source` sorting away from `src` is an ordering
+    // only a byte comparison would choose.
+    entries.sort_by_key(|e| (e.name.to_lowercase(), e.name.clone()));
+    listing(entries, None)
+}
+
+/// Where an empty or `~`-rooted path points. A relative path is taken
+/// against home for the same reason the empty one is.
+fn resolve(path: &str) -> PathBuf {
+    let home = home_dir();
+    let trimmed = path.trim();
+    let expanded = match trimmed {
+        "" => return home,
+        "~" => home,
+        p if p.starts_with("~/") || p.starts_with("~\\") => home.join(&p[2..]),
+        p => PathBuf::from(p),
+    };
+    // Canonicalizing collapses the `..` a climb to the parent leaves
+    // behind, so the breadcrumb never grows a tail of them.
+    expanded
+        .canonicalize()
+        .map(strip_verbatim)
+        .unwrap_or(expanded)
+}
+
+fn home_dir() -> PathBuf {
+    directories::UserDirs::new()
+        .map(|d| d.home_dir().to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// `canonicalize` without the verbatim `\\?\` prefix Windows puts on the
+/// front, which is correct as a path and unreadable as a breadcrumb. UNC
+/// paths keep theirs: there the prefix is load-bearing.
+fn strip_verbatim(path: PathBuf) -> PathBuf {
+    let text = path.to_string_lossy().to_string();
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if !rest.starts_with("UNC\\") => PathBuf::from(rest),
+        _ => path,
+    }
+}
+
+fn display_path(path: &Path) -> String {
+    path.to_string_lossy().to_string()
 }
 
 #[cfg(test)]
@@ -194,6 +281,113 @@ mod tests {
         let (_d, path) = repo(&[("src/a.rs", "x\n")]);
         let list = files(&path);
         assert!(!list.contains(&"src".to_string()), "{list:?}");
+    }
+
+    // --- directories --------------------------------------------------------
+
+    fn names(listing: &DirListing) -> Vec<String> {
+        listing.entries.iter().map(|e| e.name.clone()).collect()
+    }
+
+    #[test]
+    fn only_directories_are_offered_and_they_are_sorted() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["Zebra", "alpha", "beta"] {
+            std::fs::create_dir(dir.path().join(name)).unwrap();
+        }
+        std::fs::write(dir.path().join("a-file.txt"), "x").unwrap();
+
+        let listing = directories(&dir.path().to_string_lossy());
+        // Case-insensitive: `Zebra` sorting away from `alpha` is an order
+        // only a byte comparison would choose.
+        assert_eq!(names(&listing), vec!["alpha", "beta", "Zebra"]);
+    }
+
+    #[test]
+    fn a_repository_is_marked_as_one() {
+        // The difference between a project root and a repository, and the
+        // thing you cannot see from the name.
+        let dir = tempfile::tempdir().unwrap();
+        let inner = dir.path().join("checkout");
+        std::fs::create_dir(&inner).unwrap();
+        git2::Repository::init(&inner).unwrap();
+        std::fs::create_dir(dir.path().join("plain")).unwrap();
+
+        let listing = directories(&dir.path().to_string_lossy());
+        let by_name = |n: &str| {
+            listing
+                .entries
+                .iter()
+                .find(|e| e.name == n)
+                .unwrap()
+                .is_repo
+        };
+        assert!(by_name("checkout"));
+        assert!(!by_name("plain"));
+    }
+
+    #[test]
+    fn gits_own_directory_is_never_offered_to_browse_into() {
+        let (_d, path) = repo(&[("a.txt", "x\n")]);
+        let listing = directories(&path.to_string_lossy());
+        assert!(!names(&listing).contains(&".git".to_string()), "{listing:?}");
+    }
+
+    #[test]
+    fn the_listing_carries_the_parent_to_climb_to() {
+        let dir = tempfile::tempdir().unwrap();
+        let inner = dir.path().join("child");
+        std::fs::create_dir(&inner).unwrap();
+
+        let listing = directories(&inner.to_string_lossy());
+        let parent = listing.parent.expect("a child has a parent");
+        assert!(
+            listing.path.ends_with("child"),
+            "{}",
+            listing.path
+        );
+        assert!(parent.len() < listing.path.len(), "{parent} vs {}", listing.path);
+    }
+
+    #[test]
+    fn an_empty_path_starts_somewhere_that_exists() {
+        // The client sends no path on open: only the daemon knows what it
+        // can see, and dropping the user nowhere would be worse than a
+        // text box.
+        let listing = directories("");
+        assert!(listing.error.is_none(), "{listing:?}");
+        assert!(!listing.path.is_empty());
+    }
+
+    #[test]
+    fn a_directory_that_is_not_there_says_why_rather_than_looking_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone = dir.path().join("never-existed");
+
+        let listing = directories(&gone.to_string_lossy());
+        assert!(listing.entries.is_empty());
+        assert!(listing.error.is_some(), "{listing:?}");
+        // The path still comes back, so the browser can say where it is
+        // stuck and the user can climb out.
+        assert!(listing.path.ends_with("never-existed"), "{}", listing.path);
+    }
+
+    #[test]
+    fn a_dot_dot_in_the_path_is_collapsed_away() {
+        // Climbing leaves them behind, and a breadcrumb growing a tail of
+        // `..` reads like a bug even when it resolves.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("a")).unwrap();
+        let climbed = dir.path().join("a").join("..");
+
+        let listing = directories(&climbed.to_string_lossy());
+        assert!(!listing.path.contains(".."), "{}", listing.path);
+        assert_eq!(names(&listing), vec!["a"]);
+    }
+
+    #[test]
+    fn a_tilde_means_the_home_directory() {
+        assert_eq!(directories("~").path, directories("").path);
     }
 
     #[test]
