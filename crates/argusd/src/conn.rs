@@ -213,6 +213,7 @@ fn dispatch_workspace_query(
     let result = match msg {
         ClientMsg::AddProject { path } => daemon.add_project(&path),
         ClientMsg::OpenWorkspace { workspace } => daemon.open_workspace(workspace),
+        ClientMsg::CreateWorkspace { name } => daemon.create_workspace(&name),
         // Listing walks a working tree, so it goes off the message loop.
         ClientMsg::ListBranches { checkout } => {
             reply_with(daemon, out_tx, checkout, move |path| ServerMsg::Branches {
