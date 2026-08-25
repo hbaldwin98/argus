@@ -29,6 +29,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Wi
 use ratatui::Frame;
 
 use crate::app::{App, Focus, Overlay, Panel, PickerKind, Prompt, Setting};
+use crate::dirpicker::DirRow;
 use crate::grid::Grid;
 use crate::review::{Row, ReviewView};
 use crate::theme::Theme;
@@ -107,6 +108,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
 
     if app.picker.is_some() {
         render_picker(f, app, f.area(), th);
+    }
+    if app.dir_picker.is_some() {
+        render_dir_picker(f, app, f.area(), th);
     }
     if app.prompt.is_some() {
         render_prompt(f, app, f.area(), th);
@@ -1060,6 +1064,129 @@ fn picker_item<'a>(picker: &'a crate::app::Picker, i: usize, th: Theme) -> Item<
     )
 }
 
+/// The directory browser. Wider than a picker and taller than a prompt,
+/// because it has to show three things at once: where you are, what is
+/// under it, and which of those are repositories.
+fn render_dir_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
+    let Some(picker) = &app.dir_picker else { return };
+
+    let rows = picker.len().min(PICKER_ROWS);
+    // Borders, the block's top pad, breadcrumb, query, the blank under it,
+    // and the key hint.
+    let height = (rows as u16 + 7).min(area.height);
+    let width = 64.min(area.width);
+    let popup = centered_rect(width, height, area);
+
+    f.render_widget(Clear, popup);
+    let block = panel_block(picker.title(), true, th, popup.width);
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    if inner.height < 3 {
+        return;
+    }
+
+    // The tail of the path, not its head: the segments nearest the cursor
+    // are the ones that tell you where you are.
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            elide_head(&picker.path, inner.width as usize),
+            Style::default().fg(th.muted),
+        ))),
+        Rect { height: 1, ..inner },
+    );
+
+    let mut query = vec![Span::styled("› ", Style::default().fg(th.accent))];
+    query.extend(field(&picker.query, th).spans);
+    if picker.query.is_empty() {
+        query.push(Span::styled(" type to filter", Style::default().fg(th.dim)));
+    }
+    f.render_widget(
+        Paragraph::new(Line::from(query)),
+        Rect {
+            y: inner.y + 1,
+            height: 1,
+            ..inner
+        },
+    );
+
+    let hint_y = inner.y + inner.height - 1;
+    let list = Rect {
+        y: inner.y + 3,
+        height: hint_y.saturating_sub(inner.y + 3),
+        ..inner
+    };
+
+    if let Some(error) = &picker.error {
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                ellipsize_text(error, list.width as usize),
+                Style::default().fg(th.err),
+            ))),
+            Rect { height: 1, ..list },
+        );
+    } else {
+        let visible = list.height as usize;
+        let first = picker.sel.saturating_sub(visible.saturating_sub(1));
+        for slot in 0..visible {
+            let i = first + slot;
+            let Some(row) = picker.row(i) else { break };
+            let Some(rect) = row_rect_of(list, slot, 1) else { break };
+            render_row(f, rect, dir_item(row, th), i == picker.sel, true, th);
+        }
+    }
+
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            "tab open   ← up   enter add   esc cancel",
+            Style::default().fg(th.dim),
+        ))),
+        Rect {
+            y: hint_y,
+            height: 1,
+            ..inner
+        },
+    );
+}
+
+fn dir_item(row: &DirRow, th: Theme) -> Item<'static> {
+    match row {
+        DirRow::Here => Item::new(
+            vec![
+                Span::styled("· ", Style::default().fg(th.accent)),
+                Span::styled("add this directory", Style::default().fg(th.text)),
+            ],
+            Vec::new(),
+        ),
+        DirRow::Child { name, is_repo } => {
+            let item = Item::new(
+                vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled(name.clone(), Style::default().fg(th.text)),
+                ],
+                Vec::new(),
+            );
+            // Which children are repositories is invisible from the name,
+            // and is usually the whole question being asked here.
+            if *is_repo {
+                item.badged(vec![Span::styled("git", Style::default().fg(th.ok))])
+            } else {
+                item
+            }
+        }
+    }
+}
+
+/// Truncates from the left, keeping the end. The opposite of
+/// [`ellipsize_text`], and the right choice for a path.
+fn elide_head(text: &str, width: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= width || width == 0 {
+        return text.to_string();
+    }
+    let tail: String = chars[chars.len() + 1 - width..].iter().collect();
+    format!("…{tail}")
+}
+
 /// How wide a prompt box gets. A comment is a sentence and gets the wider
 /// box; everything else here is an identifier — a branch name, a path — and
 /// a wide box would only be a wide box.
@@ -1092,18 +1219,6 @@ fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             "new worktree",
             wrapped_field(input, inner_width, th),
             "enter create   esc cancel",
-            false,
-        ),
-        Prompt::AddProject { input } => (
-            "add project",
-            wrapped_field(input, inner_width, th),
-            "enter add   esc cancel",
-            false,
-        ),
-        Prompt::AddRepository { input, .. } => (
-            "add repository",
-            wrapped_field(input, inner_width, th),
-            "enter add   esc cancel",
             false,
         ),
         Prompt::EditorCommand { input } => (
@@ -1457,6 +1572,7 @@ mod tests {
         CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, ProjectId, ProjectInfo,
         RepositoryId, RepositoryInfo,
     };
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
@@ -2341,6 +2457,102 @@ mod tests {
     #[ignore]
     fn dump_review() {
         let mut app = app_with_review();
+        for line in lines(&draw_at(&mut app, 100, 20)) {
+            println!("|{line}");
+        }
+    }
+
+    // --- the directory browser ----------------------------------------------
+
+    fn app_browsing() -> App {
+        let mut app = app_with_tree();
+        let mut picker = crate::dirpicker::DirPicker::new(crate::dirpicker::DirTarget::Project, 1);
+        picker.show(argus_protocol::DirListing {
+            request_id: 1,
+            path: "/home/u/Source/github.com".to_string(),
+            parent: Some("/home/u/Source".to_string()),
+            entries: [("argus", true), ("notes", false), ("orion", true)]
+                .iter()
+                .map(|(name, is_repo)| argus_protocol::DirEntry {
+                    name: name.to_string(),
+                    is_repo: *is_repo,
+                })
+                .collect(),
+            error: None,
+        });
+        app.dir_picker = Some(picker);
+        app
+    }
+
+    #[test]
+    fn the_browser_shows_where_you_are_and_what_is_under_it() {
+        let mut app = app_browsing();
+        let rendered = lines(&draw(&mut app)).join("\n");
+        assert!(rendered.contains("add project"), "{rendered}");
+        assert!(rendered.contains("github.com"), "the breadcrumb");
+        assert!(rendered.contains("add this directory"), "{rendered}");
+        assert!(rendered.contains("orion"), "{rendered}");
+        assert!(rendered.contains("tab open"), "the keys are on screen");
+    }
+
+    #[test]
+    fn a_repository_among_the_directories_is_marked() {
+        // Which children are already repos is the question the browser
+        // exists to answer, and it is invisible from the name.
+        let mut app = app_browsing();
+        let rendered = lines(&draw(&mut app));
+        // Rightmost match: the repositories column behind the modal also
+        // has an "orion" on it.
+        let row = rendered.iter().rev().find(|r| r.contains("orion")).unwrap();
+        assert!(row.contains("git"), "{row}");
+        let plain = rendered.iter().find(|r| r.contains("notes")).unwrap();
+        assert!(!plain.contains("git"), "{plain}");
+    }
+
+    #[test]
+    fn typing_narrows_the_browser_to_what_matches() {
+        let mut app = app_browsing();
+        app.on_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
+        let rendered = lines(&draw(&mut app)).join("\n");
+        assert!(rendered.contains("notes"), "{rendered}");
+        assert!(!rendered.contains("argus\n"), "{rendered}");
+        assert!(
+            !rendered.contains("add this directory"),
+            "the row that answers no query steps aside"
+        );
+    }
+
+    #[test]
+    fn an_unreadable_directory_says_so_instead_of_looking_empty() {
+        let mut app = app_with_tree();
+        let mut picker = crate::dirpicker::DirPicker::new(crate::dirpicker::DirTarget::Project, 1);
+        picker.show(argus_protocol::DirListing {
+            request_id: 1,
+            path: "/root".to_string(),
+            parent: Some("/".to_string()),
+            entries: Vec::new(),
+            error: Some("permission denied".to_string()),
+        });
+        app.dir_picker = Some(picker);
+        let rendered = lines(&draw(&mut app)).join("\n");
+        assert!(rendered.contains("permission denied"), "{rendered}");
+    }
+
+    #[test]
+    fn a_breadcrumb_too_long_for_the_box_keeps_its_end() {
+        // The segments nearest the cursor are the ones that say where you
+        // are; the drive letter is not.
+        let long = "/very/deep".repeat(20);
+        assert_eq!(elide_head(&long, 12).chars().next(), Some('\u{2026}'));
+        assert!(elide_head(&long, 12).ends_with("very/deep"));
+        assert_eq!(elide_head("/short", 12), "/short");
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_dir_picker() {
+        let mut app = app_browsing();
+        app.theme = Theme::default();
         for line in lines(&draw_at(&mut app, 100, 20)) {
             println!("|{line}");
         }

@@ -1,4 +1,5 @@
 mod app;
+mod dirpicker;
 mod fuzzy;
 mod grid;
 mod herdr;
@@ -398,7 +399,7 @@ mod tests {
     fn paste_events_are_dispatched_to_the_app() {
         let (tx, _rx) = mpsc::unbounded_channel();
         let mut app = App::new(tx);
-        app.prompt = Some(Prompt::AddProject {
+        app.prompt = Some(Prompt::EditorCommand {
             input: String::new(),
         });
 
@@ -408,7 +409,7 @@ mod tests {
         ));
         assert!(matches!(
             app.prompt,
-            Some(Prompt::AddProject { ref input }) if input == "pasted"
+            Some(Prompt::EditorCommand { ref input }) if input == "pasted"
         ));
     }
 

@@ -226,6 +226,18 @@ fn dispatch_workspace_query(
                 branches: crate::browse::branches(&path),
             })
         }
+        // Not tied to a checkout — the browser roams the whole filesystem —
+        // so it cannot go through `reply_with`. Off the message loop all
+        // the same: a directory on a cold network drive takes its time.
+        ClientMsg::ListDirectories { request_id, path } => {
+            let out_tx = out_tx.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut listing = crate::browse::directories(&path);
+                listing.request_id = request_id;
+                let _ = out_tx.send(ServerMsg::Directories(listing));
+            });
+            Ok(())
+        }
         ClientMsg::ListFiles { checkout } => {
             reply_with(daemon, out_tx, checkout, move |path| ServerMsg::Files {
                 checkout,

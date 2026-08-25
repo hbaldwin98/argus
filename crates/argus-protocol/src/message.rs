@@ -85,6 +85,13 @@ pub enum ClientMsg {
     /// whatever's already in `projects.toml` or under the daemon's cwd.
     /// Persisted to config so it survives a daemon restart.
     AddProject { path: String },
+    /// List the subdirectories of `path`, for the directory browser
+    /// behind "add project" and "add repository". An empty path means
+    /// "wherever a browse should start" — the daemon decides, since only
+    /// it knows its own cwd. `request_id` correlates the reply: a browse
+    /// walks the filesystem, and a slow listing must not land in a
+    /// directory the user has already navigated away from.
+    ListDirectories { request_id: u64, path: String },
     /// Add one repository to a project that already exists, by path. For a
     /// directory the project's root would never scan — anything under the
     /// root arrives on its own — so the path is written into the project's
@@ -138,6 +145,8 @@ pub enum ServerMsg {
         checkout: CheckoutId,
         branches: Vec<String>,
     },
+    /// The answer to `ClientMsg::ListDirectories`.
+    Directories(DirListing),
     /// The answer to `ClientMsg::ListFiles`, repo-relative.
     Files {
         checkout: CheckoutId,
@@ -146,4 +155,33 @@ pub enum ServerMsg {
     /// A pane's process exited.
     PaneClosed { pane: PaneId, code: Option<i32> },
     Error { message: String },
+}
+
+/// One directory's subdirectories, as the browser needs to draw them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirListing {
+    pub request_id: u64,
+    /// The directory that was listed, absolute and canonicalized — what
+    /// the client shows as the breadcrumb and what it sends back when the
+    /// user picks it.
+    pub path: String,
+    /// The directory above it, absent at a filesystem root.
+    pub parent: Option<String>,
+    pub entries: Vec<DirEntry>,
+    /// Why the listing is empty, when it is empty for a reason worth
+    /// saying: a directory that has gone away, or one this user may not
+    /// read. Navigating into a dead end should say so rather than look
+    /// like an empty directory.
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirEntry {
+    /// The last segment only. The browser draws it under the breadcrumb,
+    /// and fuzzy-matches it, so the parent path would only be noise.
+    pub name: String,
+    /// Whether it is a Git repository — the thing the user is usually
+    /// hunting for, and the difference between a project root and a
+    /// repository inside one.
+    pub is_repo: bool,
 }

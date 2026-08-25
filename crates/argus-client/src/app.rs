@@ -6,6 +6,7 @@ use argus_protocol::{
 use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::dirpicker::{DirAction, DirPicker, DirTarget};
 use crate::fuzzy::Fuzzy;
 use crate::grid::Grid;
 use crate::review::{Anchor, ReviewView};
@@ -279,9 +280,6 @@ impl RemoveTarget {
 pub enum Prompt {
     NewWorktree { base: CheckoutId, input: String },
     ConfirmRemove { target: RemoveTarget, label: String },
-    AddProject { input: String },
-    /// A repository joining a project that already exists, by path.
-    AddRepository { project: ProjectId, input: String },
     Comment { anchor: Anchor, input: String },
     /// The editor command, typed rather than cycled — it is free text.
     EditorCommand { input: String },
@@ -325,6 +323,9 @@ pub struct App {
     pub projects_collapsed: bool,
     resizing_gutter: Option<usize>,
     pub picker: Option<Picker>,
+    /// The directory browser, up in place of a prompt when a project or a
+    /// repository is being added.
+    pub dir_picker: Option<DirPicker>,
     pub overlay: Option<Overlay>,
     pub settings: crate::settings::Settings,
     /// False for an app that must not write to the user's config — every
@@ -340,6 +341,7 @@ pub struct App {
     next_review_request: u64,
     /// Same, for a branch or file list.
     list_wanted: Option<CheckoutId>,
+    next_browse_request: u64,
     /// Sticky across reopens, so `b` is a setting rather than a per-visit
     /// choice.
     pub review_base: ReviewBase,
@@ -415,6 +417,7 @@ impl App {
             projects_collapsed: settings.projects_collapsed,
             resizing_gutter: None,
             picker: None,
+            dir_picker: None,
             overlay: None,
             settings,
             persist_settings: persist,
@@ -423,6 +426,7 @@ impl App {
             review_wanted: None,
             next_review_request: 1,
             list_wanted: None,
+            next_browse_request: 1,
             review_base: ReviewBase::WorkingTree,
             prompt: None,
             theme,
@@ -615,6 +619,15 @@ impl App {
                     files,
                     0,
                 ));
+            }
+            ServerMsg::Directories(listing) => {
+                // A listing for a directory we have already navigated away
+                // from would yank the browser backwards.
+                let Some(picker) = &mut self.dir_picker else { return };
+                if picker.pending != Some(listing.request_id) {
+                    return;
+                }
+                picker.show(listing);
             }
             ServerMsg::Error { message } => {
                 self.alert(format!("error: {message}"));
@@ -839,6 +852,8 @@ impl App {
         }
         if self.prompt.is_some() {
             self.on_key_prompt(key);
+        } else if self.dir_picker.is_some() {
+            self.on_key_dir_picker(key);
         } else if self.picker.is_some() {
             self.on_key_picker(key);
         } else if self.overlay.is_some() {
@@ -858,14 +873,16 @@ impl App {
             let input = match prompt {
                 Prompt::NewWorktree { input, .. }
                 | Prompt::Comment { input, .. }
-                | Prompt::EditorCommand { input }
-                | Prompt::AddProject { input }
-                | Prompt::AddRepository { input, .. } => Some(input),
+                | Prompt::EditorCommand { input } => Some(input),
                 Prompt::ConfirmRemove { .. } => None,
             };
             if let Some(input) = input {
                 input.extend(text.chars().filter(|c| !c.is_control()));
             }
+            return;
+        }
+        if let Some(picker) = &mut self.dir_picker {
+            picker.paste(&text);
             return;
         }
         if let Some(picker) = &mut self.picker {
@@ -945,39 +962,51 @@ impl App {
                 KeyCode::Char(c) => input.push(c),
                 _ => {}
             },
-            Prompt::AddProject { input } => match key.code {
-                KeyCode::Enter => {
-                    let path = input.trim().to_string();
-                    self.prompt = None;
-                    if !path.is_empty() {
+        }
+    }
+
+    /// Opens the directory browser at wherever the daemon thinks a browse
+    /// should start. The picker goes up straight away, empty: waiting for
+    /// the first listing before showing anything would make `n` look like
+    /// it had missed the keystroke.
+    fn browse_for(&mut self, target: DirTarget) {
+        let request = self.next_browse_request;
+        self.next_browse_request += 1;
+        self.dir_picker = Some(DirPicker::new(target, request));
+        let _ = self.out.send(ClientMsg::ListDirectories {
+            request_id: request,
+            path: String::new(),
+        });
+    }
+
+    fn on_key_dir_picker(&mut self, key: KeyEvent) {
+        let Some(picker) = &mut self.dir_picker else { return };
+        match picker.on_key(key) {
+            DirAction::None => {}
+            DirAction::Close => self.dir_picker = None,
+            DirAction::Browse(path) => {
+                let request = self.next_browse_request;
+                self.next_browse_request += 1;
+                picker.pending = Some(request);
+                let _ = self.out.send(ClientMsg::ListDirectories {
+                    request_id: request,
+                    path,
+                });
+            }
+            DirAction::Choose(path) => {
+                let target = picker.target;
+                self.dir_picker = None;
+                match target {
+                    DirTarget::Project => {
                         let _ = self.out.send(ClientMsg::AddProject { path });
                         self.pending_focus_new_project = true;
                     }
-                }
-                KeyCode::Esc => self.prompt = None,
-                KeyCode::Backspace => {
-                    input.pop();
-                }
-                KeyCode::Char(c) => input.push(c),
-                _ => {}
-            },
-            Prompt::AddRepository { project, input } => match key.code {
-                KeyCode::Enter => {
-                    let path = input.trim().to_string();
-                    let project = *project;
-                    self.prompt = None;
-                    if !path.is_empty() {
+                    DirTarget::Repository(project) => {
                         let _ = self.out.send(ClientMsg::AddRepository { project, path });
                         self.pending_focus_new_repository = Some(project);
                     }
                 }
-                KeyCode::Esc => self.prompt = None,
-                KeyCode::Backspace => {
-                    input.pop();
-                }
-                KeyCode::Char(c) => input.push(c),
-                _ => {}
-            },
+            }
         }
     }
 
@@ -1386,15 +1415,10 @@ impl App {
     /// columns.
     fn new_prompt(&mut self) {
         match self.focus {
-            Focus::Projects => {
-                self.prompt = Some(Prompt::AddProject { input: String::new() });
-            }
+            Focus::Projects => self.browse_for(DirTarget::Project),
             Focus::Repositories => {
                 if let Some(p) = self.current_project() {
-                    self.prompt = Some(Prompt::AddRepository {
-                        project: p.id,
-                        input: String::new(),
-                    });
+                    self.browse_for(DirTarget::Repository(p.id));
                 }
             }
             Focus::Checkouts => {
@@ -1442,7 +1466,7 @@ impl App {
     }
 
     pub fn on_mouse(&mut self, ev: MouseEvent) {
-        if self.picker.is_some() || self.prompt.is_some() {
+        if self.picker.is_some() || self.prompt.is_some() || self.dir_picker.is_some() {
             return;
         }
         // Clicking the collapsed strip is the mouse equivalent of `p`: it
@@ -1986,6 +2010,7 @@ fn in_rect(area: Rect, x: u16, y: u16) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use argus_protocol::{DirEntry, DirListing};
     use crossterm::event::KeyModifiers;
     use argus_protocol::{
         Cell, CellSpan, CheckoutId, GitStatus, PaneKind, PaneStatus, ProjectId, RepositoryId,
@@ -2078,6 +2103,30 @@ mod tests {
             for c in s.chars() {
                 self.key(KeyCode::Char(c));
             }
+        }
+
+        /// Answers the browser's outstanding listing request, the way the
+        /// daemon would.
+        fn browse(&mut self, path: &str, parent: Option<&str>, entries: &[(&str, bool)]) {
+            let request_id = self
+                .app
+                .dir_picker
+                .as_ref()
+                .and_then(|p| p.pending)
+                .expect("the browser is waiting for a listing");
+            self.app.on_server_msg(ServerMsg::Directories(DirListing {
+                request_id,
+                path: path.to_string(),
+                parent: parent.map(str::to_string),
+                entries: entries
+                    .iter()
+                    .map(|(name, is_repo)| DirEntry {
+                        name: name.to_string(),
+                        is_repo: *is_repo,
+                    })
+                    .collect(),
+                error: None,
+            }));
         }
 
         fn sent(&mut self) -> Vec<ClientMsg> {
@@ -2474,25 +2523,76 @@ mod tests {
     // --- prompts -----------------------------------------------------------
 
     #[test]
-    fn n_in_the_projects_column_prompts_for_a_directory() {
+    fn n_in_the_projects_column_opens_the_directory_browser() {
         let mut h = Harness::new();
         h.key(KeyCode::Char('n'));
-        assert!(matches!(h.app.prompt, Some(Prompt::AddProject { .. })));
+        assert!(h.app.dir_picker.is_some());
+        // The browser asks where to start rather than guessing: only the
+        // daemon knows what it can see.
+        match &h.sent()[0] {
+            ClientMsg::ListDirectories { path, .. } => assert_eq!(path, ""),
+            other => panic!("unexpected {other:?}"),
+        }
 
-        h.keys("/some/dir");
+        h.browse("/some", Some("/"), &[("dir", false)]);
+        h.keys("dir");
         h.key(KeyCode::Enter);
         match &h.sent()[0] {
             ClientMsg::AddProject { path } => assert_eq!(path, "/some/dir"),
             other => panic!("unexpected {other:?}"),
         }
-        assert!(h.app.prompt.is_none());
+        assert!(h.app.dir_picker.is_none());
+    }
+
+    #[test]
+    fn tab_walks_into_a_directory_and_enter_adds_where_you_land() {
+        let mut h = Harness::new();
+        h.key(KeyCode::Char('n'));
+        h.browse("/home", Some("/"), &[("u", false)]);
+        h.sent();
+
+        h.keys("u");
+        h.key(KeyCode::Tab);
+        match &h.sent()[0] {
+            ClientMsg::ListDirectories { path, .. } => assert_eq!(path, "/home/u"),
+            other => panic!("unexpected {other:?}"),
+        }
+
+        h.browse("/home/u", Some("/home"), &[("code", true)]);
+        h.key(KeyCode::Enter);
+        match &h.sent()[0] {
+            ClientMsg::AddProject { path } => {
+                assert_eq!(path, "/home/u", "the first row is the directory you are in");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_listing_for_a_directory_already_left_is_dropped() {
+        let mut h = Harness::new();
+        h.key(KeyCode::Char('n'));
+        h.browse("/home", Some("/"), &[("u", false)]);
+        h.sent();
+        h.keys("u");
+        h.key(KeyCode::Tab);
+        h.sent();
+
+        h.app.on_server_msg(ServerMsg::Directories(DirListing {
+            request_id: 999,
+            path: "/stale".to_string(),
+            parent: None,
+            entries: Vec::new(),
+            error: None,
+        }));
+        assert_eq!(h.app.dir_picker.as_ref().unwrap().path, "/home");
     }
 
     #[test]
     fn a_new_project_becomes_the_selected_one() {
         let mut h = Harness::new();
         h.key(KeyCode::Char('n'));
-        h.keys("/d");
+        h.browse("/d", Some("/"), &[]);
         h.key(KeyCode::Enter);
         h.sent();
 
@@ -2518,9 +2618,11 @@ mod tests {
         assert_eq!(h.app.focus, Focus::Repositories);
 
         h.key(KeyCode::Char('n'));
-        assert!(matches!(h.app.prompt, Some(Prompt::AddRepository { .. })));
+        assert!(h.app.dir_picker.is_some());
 
-        h.keys("/some/repo");
+        h.browse("/some", Some("/"), &[("repo", true)]);
+        h.sent();
+        h.keys("repo");
         h.key(KeyCode::Enter);
         match &h.sent()[0] {
             ClientMsg::AddRepository { project, path } => {
@@ -2529,7 +2631,7 @@ mod tests {
             }
             other => panic!("unexpected {other:?}"),
         }
-        assert!(h.app.prompt.is_none());
+        assert!(h.app.dir_picker.is_none());
     }
 
     #[test]
@@ -2537,7 +2639,7 @@ mod tests {
         let mut h = Harness::new();
         h.keys("l");
         h.key(KeyCode::Char('n'));
-        h.keys("/r");
+        h.browse("/r", Some("/"), &[]);
         h.key(KeyCode::Enter);
         h.sent();
 
@@ -2557,9 +2659,11 @@ mod tests {
         h.keys("l");
         h.sent();
         h.key(KeyCode::Char('n'));
-        h.keys("/r");
+        h.browse("/some", Some("/"), &[("repo", true)]);
+        h.sent();
+        h.keys("re");
         h.key(KeyCode::Esc);
-        assert!(h.app.prompt.is_none());
+        assert!(h.app.dir_picker.is_none());
         assert!(h.sent().is_empty());
     }
 
@@ -2661,27 +2765,32 @@ mod tests {
         h.sent();
         h.key(KeyCode::Char('n'));
         assert!(h.app.prompt.is_none(), "no checkout context to branch from");
+        assert!(h.app.dir_picker.is_none());
     }
 
     #[test]
     fn an_empty_prompt_sends_nothing() {
         let mut h = Harness::new();
+        h.keys("ll");
+        h.sent();
         h.key(KeyCode::Char('n'));
         h.keys("   ");
         h.key(KeyCode::Enter);
         assert!(h.app.prompt.is_none());
-        assert!(h.sent().is_empty(), "whitespace is not a path");
+        assert!(h.sent().is_empty(), "whitespace is not a branch name");
     }
 
     #[test]
     fn esc_cancels_a_prompt_and_backspace_edits_it() {
         let mut h = Harness::new();
+        h.keys("ll");
+        h.sent();
         h.key(KeyCode::Char('n'));
         h.keys("abc");
         h.key(KeyCode::Backspace);
         match &h.app.prompt {
-            Some(Prompt::AddProject { input }) => assert_eq!(input, "ab"),
-            _ => panic!("expected the add-project prompt to still be open"),
+            Some(Prompt::NewWorktree { input, .. }) => assert_eq!(input, "ab"),
+            _ => panic!("expected the new-worktree prompt to still be open"),
         }
         h.key(KeyCode::Esc);
         assert!(h.app.prompt.is_none());
@@ -2689,12 +2798,28 @@ mod tests {
     }
 
     #[test]
-    fn a_prompt_swallows_navigation_keys() {
+    fn the_directory_browser_swallows_navigation_keys() {
         let mut h = Harness::new();
         h.key(KeyCode::Char('n'));
+        h.browse("/home", Some("/"), &[("u", false)]);
         h.keys("jl");
-        assert_eq!(h.app.sel_project, 0, "j typed into the prompt, not a move");
+        assert_eq!(h.app.sel_project, 0, "j typed into the query, not a move");
         assert_eq!(h.app.focus, Focus::Projects);
+        assert_eq!(h.app.dir_picker.as_ref().unwrap().query, "jl");
+    }
+
+    #[test]
+    fn a_pasted_path_goes_into_the_browser_and_not_a_pane() {
+        let mut h = Harness::new();
+        h.key(KeyCode::Char('n'));
+        h.browse("/home", Some("/"), &[]);
+        h.sent();
+        h.app.on_paste("/var/src".to_string());
+        h.key(KeyCode::Tab);
+        match &h.sent()[0] {
+            ClientMsg::ListDirectories { path, .. } => assert_eq!(path, "/var/src"),
+            other => panic!("unexpected {other:?}"),
+        }
     }
 
     // --- removing a checkout ------------------------------------------------
@@ -3227,8 +3352,8 @@ mod tests {
         laid_out(&mut h);
         h.key(KeyCode::Char('n'));
         h.app.on_mouse(click(14, 3));
-        assert_eq!(h.app.sel_checkout, 0, "click must not navigate behind the prompt");
-        assert!(h.app.prompt.is_some());
+        assert_eq!(h.app.sel_checkout, 0, "click must not navigate behind the modal");
+        assert!(h.app.dir_picker.is_some());
     }
 
     #[test]
