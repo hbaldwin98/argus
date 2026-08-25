@@ -2626,7 +2626,7 @@ mod tests {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         let dir = tempfile::tempdir().unwrap();
-        let d = daemon_with_fake_claude(dir.path());
+        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
         d.start_hook_server().unwrap();
         let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
         let body = "session-123";
