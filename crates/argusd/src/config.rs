@@ -300,6 +300,153 @@ pub fn append_project(name: &str, root_path: &Path, workspace: &str) -> Result<(
     Ok(())
 }
 
+/// Deletes the `[[project]]` block at `index` (counting project blocks in
+/// file order, which is the order [`ConfigFile::projects`] is built in) —
+/// how a project leaves the panel for good rather than until the next
+/// restart. Text-level like [`append_project`], and for the same reason:
+/// the rest of the file is the user's, comments included, and a serde
+/// round-trip would rewrite all of it.
+///
+/// `name` is what the daemon believes sits at that index. If the file has
+/// been edited by hand since it was loaded the index may have moved, so a
+/// mismatch falls back to a block that uniquely carries that name, and
+/// removes nothing at all when even that is ambiguous.
+pub fn remove_project(index: usize, name: &str) -> Result<()> {
+    let cfg_path = config_path();
+    let raw = std::fs::read_to_string(&cfg_path)
+        .with_context(|| format!("reading {}", cfg_path.display()))?;
+    let lines: Vec<&str> = raw.lines().collect();
+    let blocks = project_blocks(&lines);
+
+    let target = match blocks.get(index) {
+        Some(&(start, end)) if block_name(&lines[start..end]).as_deref() == Some(name) => {
+            Some((start, end))
+        }
+        _ => {
+            let mut matching = blocks
+                .iter()
+                .filter(|&&(start, end)| block_name(&lines[start..end]).as_deref() == Some(name));
+            match (matching.next(), matching.next()) {
+                (Some(&only), None) => Some(only),
+                _ => None,
+            }
+        }
+    };
+    let Some((start, end)) = target else {
+        anyhow::bail!("no project named {name:?} in {}", cfg_path.display());
+    };
+
+    // Comments sitting directly on top of the block introduce it, and
+    // reading them under the *next* project is worse than losing them.
+    // Anything further up is separated by a blank line and stays.
+    let mut start = start;
+    while start > 0 && lines[start - 1].trim_start().starts_with('#') {
+        start -= 1;
+    }
+
+    // The blank line `append_project` writes ahead of each block goes with
+    // it, so adding and removing the same project leaves the file as it
+    // was rather than growing a gap every round trip.
+    let start = if start > 0 && lines[start - 1].trim().is_empty() {
+        start - 1
+    } else {
+        start
+    };
+
+    let mut kept: Vec<&str> = Vec::with_capacity(lines.len());
+    kept.extend_from_slice(&lines[..start]);
+    kept.extend_from_slice(&lines[end..]);
+    let mut out = kept.join("\n");
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    std::fs::write(&cfg_path, out).with_context(|| format!("rewriting {}", cfg_path.display()))?;
+    Ok(())
+}
+
+/// Half-open line ranges of each `[[project]]` block, header included. A
+/// block runs until the next table header of any kind, so the trailing
+/// blank line before that header goes with the block it follows.
+fn project_blocks(lines: &[&str]) -> Vec<(usize, usize)> {
+    let header = |line: &str| line.trim_start().starts_with('[');
+    let mut blocks = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim_start().starts_with("[[project]]") {
+            let end = lines[i + 1..]
+                .iter()
+                .position(|l| header(l))
+                .map(|offset| i + 1 + offset)
+                .unwrap_or(lines.len());
+            blocks.push((i, end));
+        }
+    }
+    blocks
+}
+
+/// The `name` a block declares, read by parsing the block's body as the
+/// table it is — so quoting and escapes mean what TOML says they mean
+/// rather than what a regex would guess.
+fn block_name(block: &[&str]) -> Option<String> {
+    let body = block.get(1..)?.join("\n");
+    let table: toml::Table = toml::from_str(&body).ok()?;
+    Some(table.get("name")?.as_str()?.to_string())
+}
+
+/// Repository paths the user has taken out of the panel. Kept beside
+/// `projects.toml` rather than in it, for the same reason `open-workspace`
+/// is: which of a scan's results you want to look at is Argus's
+/// bookkeeping about a directory listing, not a description of the
+/// project. Removing the project drops its repositories with it, so this
+/// file only ever holds paths under projects that still exist.
+fn excluded_path() -> PathBuf {
+    config_path().with_file_name("excluded-repos")
+}
+
+/// One path per line, absolute and as written when it was excluded.
+pub fn load_excluded_repos() -> Vec<PathBuf> {
+    let Ok(raw) = std::fs::read_to_string(excluded_path()) else {
+        return Vec::new();
+    };
+    raw.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(PathBuf::from)
+        .collect()
+}
+
+/// Replaces the exclusion file with exactly these paths — how exclusions
+/// under a removed project are forgotten.
+pub fn rewrite_excluded_repos(paths: &[PathBuf]) -> Result<()> {
+    let file = excluded_path();
+    if paths.is_empty() {
+        // Nothing excluded and no file is the same state, and the tidier
+        // one to leave behind.
+        match std::fs::remove_file(&file) {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e).with_context(|| format!("removing {}", file.display())),
+        }
+    }
+    let body: String = paths.iter().map(|p| format!("{}\n", p.display())).collect();
+    std::fs::write(&file, body).with_context(|| format!("writing {}", file.display()))
+}
+
+pub fn append_excluded_repo(path: &Path) -> Result<()> {
+    let file = excluded_path();
+    if let Some(parent) = file.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&file)
+        .with_context(|| format!("opening {}", file.display()))?;
+    writeln!(f, "{}", path.display())
+        .with_context(|| format!("appending to {}", file.display()))?;
+    Ok(())
+}
+
 /// Appends a `[[workspace]]` block, so a workspace created from the TUI
 /// outlives the daemon. Declaring it is what makes an empty workspace
 /// exist at all: a workspace with no projects has nothing else in the file

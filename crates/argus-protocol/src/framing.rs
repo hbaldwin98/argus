@@ -106,6 +106,12 @@ mod tests {
                 branch: "feat/x".to_string(),
             },
             ClientMsg::RemoveCheckout { checkout: CheckoutId(2) },
+            ClientMsg::RemoveProject {
+                project: ProjectId(1),
+            },
+            ClientMsg::RemoveRepository {
+                repository: crate::RepositoryId(3),
+            },
             ClientMsg::AddProject {
                 path: r"C:\src\thing".to_string(),
             },

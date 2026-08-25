@@ -783,10 +783,10 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         // hold every key at once, and most of them only apply somewhere.
         let keys = match app.focus {
             Focus::Projects => {
-                "j/k move  l open  n add project  w wksp  p fold  S settings  q detach"
+                "j/k move  l open  n add  D rm  w wksp  p fold  S settings  q detach"
             }
             Focus::Repositories => {
-                "j/k move  l open  s shell  a agent  b branch  f file  R review  q detach"
+                "j/k move  l open  s shell  a agent  b branch  f file  R review  D rm  q detach"
             }
             Focus::Checkouts => {
                 "j/k move  l open  b branch  f file  R review  n worktree  D rm  q detach"
@@ -1120,21 +1120,21 @@ fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 false,
             )
         }
-        Prompt::ConfirmRemoveCheckout { label, .. } => (
-            "remove checkout?",
-            vec![Line::from(vec![
-                Span::styled(
-                    label.clone(),
-                    Style::default().fg(th.text).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    "  — worktree, branch, and its panes",
-                    Style::default().fg(th.muted),
-                ),
-            ])],
-            "y/enter remove   n/esc cancel",
-            true,
-        ),
+        Prompt::ConfirmRemove { target, label } => {
+            let (title, detail) = target.wording();
+            (
+                title,
+                vec![Line::from(vec![
+                    Span::styled(
+                        label.clone(),
+                        Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(detail, Style::default().fg(th.muted)),
+                ])],
+                "y/enter remove   n/esc cancel",
+                true,
+            )
+        }
     };
 
     // Borders, the body, and the hint under it.

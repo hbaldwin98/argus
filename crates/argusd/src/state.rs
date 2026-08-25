@@ -116,6 +116,10 @@ struct Inner {
     /// Exactly one workspace is open at a time, daemon-global. Panes in the
     /// others keep running; they are just not in the tree clients render.
     open: WorkspaceId,
+    /// Repository paths the user has removed from the panel. A scan finds
+    /// them again every ten seconds, so without this the row would come
+    /// straight back (see `config::load_excluded_repos`).
+    excluded: Vec<PathBuf>,
 }
 
 pub struct Daemon {
@@ -181,21 +185,27 @@ impl Daemon {
             intern(&mut workspaces, &mut ids, &w.name);
         }
 
+        let excluded = config::load_excluded_repos();
         let projects = config
             .projects
             .into_iter()
             .map(|p| {
                 let root = p.root.as_deref().map(config::expand_home);
+                // An excluded path is out whether the scan turned it up or
+                // the config named it outright: "remove this row" means the
+                // same thing either way.
                 let mut repositories: Vec<Repository> = p
                     .repos
                     .iter()
-                    .map(|repo| new_repository(&mut ids, config::expand_home(repo), false))
+                    .map(|repo| config::expand_home(repo))
+                    .filter(|path| !is_excluded(&excluded, path))
+                    .map(|path| new_repository(&mut ids, path, false))
                     .collect();
                 // A root is scanned once here so the tree is complete the
                 // moment the first client attaches, rather than filling in
                 // a tick later. Reconciliation keeps it current after that.
                 if let Some(root) = &root {
-                    let found = crate::git::discover_repositories(root);
+                    let found = retain_included(&excluded, crate::git::discover_repositories(root));
                     install_discovered(&mut ids, &mut repositories, &found);
                 }
                 Project {
@@ -232,6 +242,7 @@ impl Daemon {
                 projects,
                 ids,
                 open,
+                excluded,
             }),
             starting_agents: StdMutex::new(HashMap::new()),
             workspaces_tx,
@@ -1382,8 +1393,14 @@ impl Daemon {
 
         let mut changed = false;
         let mut inner = self.inner.lock().unwrap();
-        let Inner { projects, ids, .. } = &mut *inner;
+        let Inner {
+            projects,
+            ids,
+            excluded,
+            ..
+        } = &mut *inner;
         for (project_id, found) in scanned {
+            let found = retain_included(excluded, found);
             let Some(project) = projects.iter_mut().find(|p| p.id == project_id) else {
                 continue;
             };
@@ -1487,6 +1504,102 @@ impl Daemon {
         self.broadcast_tree();
         // The rollup counts changed too.
         self.broadcast_workspaces();
+        Ok(())
+    }
+
+    /// Takes a project out of the panel and out of `projects.toml`.
+    /// Nothing on disk is touched — this is the undo for `add_project`, not
+    /// a delete, and adding the same directory again brings the same tree
+    /// back.
+    ///
+    /// Refused while any of its panes is alive. Removing the row would
+    /// leave those processes running with nowhere to reach them, and unlike
+    /// `remove_checkout` — where killing the panes is the point, because
+    /// the worktree they sit in is going away — here the checkout survives
+    /// and the user can simply look at it again.
+    pub fn remove_project(&self, project: ProjectId) -> anyhow::Result<()> {
+        let (index, name, excluded_paths) = {
+            let inner = self.inner.lock().unwrap();
+            let index = inner
+                .projects
+                .iter()
+                .position(|p| p.id == project)
+                .ok_or_else(|| anyhow::anyhow!("no such project"))?;
+            let p = &inner.projects[index];
+            if p.repositories
+                .iter()
+                .flat_map(|r| r.checkouts.iter())
+                .any(|c| !c.panes.is_empty())
+            {
+                anyhow::bail!("close {}'s panes before removing it", p.name);
+            }
+            // Exclusions under a project that no longer exists describe
+            // nothing, so they leave with it — otherwise adding the same
+            // directory back would bring back a project missing exactly the
+            // repositories the user had once removed, with nothing on
+            // screen to explain why.
+            let paths: Vec<PathBuf> = p
+                .repositories
+                .iter()
+                .flat_map(|r| r.checkouts.iter())
+                .filter(|c| c.primary)
+                .map(|c| c.path.clone())
+                .collect();
+            (index, p.name.clone(), paths)
+        };
+
+        // Config first: a project that vanishes from the panel but not from
+        // the file comes back on the next restart, which reads as Argus
+        // having ignored the request.
+        config::remove_project(index, &name)?;
+
+        let remaining = {
+            let mut inner = self.inner.lock().unwrap();
+            inner.projects.retain(|p| p.id != project);
+            inner
+                .excluded
+                .retain(|e| !excluded_paths.iter().any(|p| same_path(e, p)));
+            inner.excluded.clone()
+        };
+        config::rewrite_excluded_repos(&remaining)?;
+        self.broadcast_tree();
+        // One fewer project in the workspace's rollup.
+        self.broadcast_workspaces();
+        Ok(())
+    }
+
+    /// Takes one repository row out of its project. Like `remove_project`,
+    /// nothing on disk changes; unlike it, the project's root keeps being
+    /// scanned, so the path has to be remembered as excluded or the next
+    /// scan would put the row straight back.
+    pub fn remove_repository(&self, repository: RepositoryId) -> anyhow::Result<()> {
+        let path = {
+            let inner = self.inner.lock().unwrap();
+            let r = inner
+                .projects
+                .iter()
+                .flat_map(|p| p.repositories.iter())
+                .find(|r| r.id == repository)
+                .ok_or_else(|| anyhow::anyhow!("no such repository"))?;
+            if r.checkouts.iter().any(|c| !c.panes.is_empty()) {
+                anyhow::bail!("close {}'s panes before removing it", r.name);
+            }
+            r.checkouts
+                .iter()
+                .find(|c| c.primary)
+                .map(|c| c.path.clone())
+                .ok_or_else(|| anyhow::anyhow!("{} has no primary checkout", r.name))?
+        };
+
+        config::append_excluded_repo(&path)?;
+        {
+            let mut inner = self.inner.lock().unwrap();
+            inner.excluded.push(path);
+            for project in inner.projects.iter_mut() {
+                project.repositories.retain(|r| r.id != repository);
+            }
+        }
+        self.broadcast_tree();
         Ok(())
     }
 
@@ -2049,6 +2162,18 @@ fn install_discovered(
         added = true;
     }
     added
+}
+
+/// Whether this path is one the user has taken out of the panel.
+fn is_excluded(excluded: &[PathBuf], path: &std::path::Path) -> bool {
+    excluded.iter().any(|e| same_path(e, path))
+}
+
+fn retain_included(excluded: &[PathBuf], found: Vec<PathBuf>) -> Vec<PathBuf> {
+    found
+        .into_iter()
+        .filter(|path| !is_excluded(excluded, path))
+        .collect()
 }
 
 fn same_path(a: &std::path::Path, b: &std::path::Path) -> bool {
@@ -3220,6 +3345,189 @@ mod tests {
 
             let restarted = Daemon::new(crate::config::load().unwrap());
             assert_eq!(repository_names(&restarted), before);
+        });
+    }
+
+    // --- removing what was added --------------------------------------------
+
+    /// A project rooted at a temp directory holding one repository per
+    /// name, added through `add_project` so it is written to the config the
+    /// way the TUI writes it.
+    fn added_project_with(names: &[&str]) -> (tempfile::TempDir, Arc<Daemon>) {
+        let dir = tempfile::tempdir().unwrap();
+        for name in names {
+            let child = dir.path().join(name);
+            std::fs::create_dir(&child).unwrap();
+            let _repo = real_repo(&child);
+        }
+        let d = Daemon::new(ConfigFile::default());
+        d.add_project(&dir.path().to_string_lossy()).unwrap();
+        (dir, d)
+    }
+
+    #[test]
+    fn a_removed_project_leaves_the_tree_the_config_and_the_disk_alone() {
+        with_temp_config(|cfg| {
+            let (dir, d) = added_project_with(&["orion"]);
+            let project = d.snapshot()[0].id;
+
+            d.remove_project(project).unwrap();
+
+            assert!(d.snapshot().is_empty(), "gone from the tree");
+            let written = std::fs::read_to_string(cfg.join("projects.toml")).unwrap();
+            assert!(
+                !written.contains("[[project]]"),
+                "and out of the config, not just this run:
+{written}"
+            );
+            assert!(
+                dir.path().join("orion").is_dir(),
+                "removing is not deleting — the repository is still on disk"
+            );
+        });
+    }
+
+    #[test]
+    fn removing_one_project_keeps_the_rest_of_the_users_file() {
+        // The config is hand-edited and full of comments; a removal is a
+        // text edit to one block, not a serde round-trip of the whole file.
+        with_temp_config(|cfg| {
+            let cfg_path = cfg.join("projects.toml");
+            std::fs::write(
+                &cfg_path,
+                r#"# what these are
+[[project]]
+name = "keep-me"
+repos = ["/keep"]
+
+# the one going away
+[[project]]
+name = "doomed"
+repos = ["/doomed"]
+
+[[project]]
+name = "also-keep"
+repos = ["/also"]
+"#,
+            )
+            .unwrap();
+
+            let d = Daemon::new(crate::config::load().unwrap());
+            let doomed = d
+                .snapshot()
+                .into_iter()
+                .find(|p| p.name == "doomed")
+                .unwrap()
+                .id;
+            d.remove_project(doomed).unwrap();
+
+            let after = std::fs::read_to_string(&cfg_path).unwrap();
+            assert!(
+                after.contains("# what these are") && after.contains(r#"name = "also-keep""#),
+                "everything else is left exactly as it was:
+{after}"
+            );
+            assert!(
+                !after.contains(r#"name = "doomed""#),
+                "and the block itself is gone:
+{after}"
+            );
+            assert!(
+                !after.contains("# the one going away"),
+                "with the comment that introduced it:
+{after}"
+            );
+        });
+    }
+
+    #[tokio::test]
+    async fn a_project_still_holding_panes_is_not_removed() {
+        with_temp_config(|_| {
+            let (_dir, d) = added_project_with(&["orion"]);
+            let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
+            let pane = d.spawn_shell(checkout).unwrap();
+
+            let err = d.remove_project(d.snapshot()[0].id).unwrap_err();
+            assert!(err.to_string().contains("panes"), "{err}");
+            assert_eq!(d.snapshot().len(), 1, "and it stays put");
+
+            d.close_pane(pane).unwrap();
+            d.remove_project(d.snapshot()[0].id).unwrap();
+        });
+    }
+
+    #[test]
+    fn a_removed_repository_does_not_come_back_on_the_next_scan() {
+        // The project's root is scanned every ten seconds, so an exclusion
+        // that only lived in memory would be undone by the next tick.
+        with_temp_config(|_| {
+            let (_dir, d) = added_project_with(&["orion", "notes"]);
+            let doomed = d.snapshot()[0]
+                .repositories
+                .iter()
+                .find(|r| r.name == "notes")
+                .unwrap()
+                .id;
+
+            d.remove_repository(doomed).unwrap();
+            assert_eq!(repository_names(&d), vec!["orion"]);
+
+            assert!(
+                !d.reconcile_repositories(),
+                "a scan that finds it again changes nothing"
+            );
+            assert_eq!(repository_names(&d), vec!["orion"]);
+        });
+    }
+
+    #[test]
+    fn a_removed_repository_is_still_gone_after_a_restart() {
+        with_temp_config(|_| {
+            let (_dir, d) = added_project_with(&["orion", "notes"]);
+            let doomed = d.snapshot()[0].repositories[0].id;
+            let kept: Vec<String> = repository_names(&d).into_iter().skip(1).collect();
+
+            d.remove_repository(doomed).unwrap();
+
+            let restarted = Daemon::new(crate::config::load().unwrap());
+            assert_eq!(repository_names(&restarted), kept);
+        });
+    }
+
+    #[tokio::test]
+    async fn a_repository_still_holding_panes_is_not_removed() {
+        with_temp_config(|_| {
+            let (_dir, d) = added_project_with(&["orion"]);
+            let repository = d.snapshot()[0].repositories[0].id;
+            let pane = d
+                .spawn_shell(d.snapshot()[0].repositories[0].checkouts[0].id)
+                .unwrap();
+
+            let err = d.remove_repository(repository).unwrap_err();
+            assert!(err.to_string().contains("panes"), "{err}");
+            assert_eq!(repository_names(&d), vec!["orion"]);
+
+            d.close_pane(pane).unwrap();
+            d.remove_repository(repository).unwrap();
+        });
+    }
+
+    #[test]
+    fn re_adding_a_project_brings_back_the_repositories_it_had_lost() {
+        // An exclusion describes a project's scan. Once the project is
+        // gone, keeping it would mean adding the same directory back and
+        // silently getting less than is in it.
+        with_temp_config(|_| {
+            let (dir, d) = added_project_with(&["orion", "notes"]);
+            let doomed = d.snapshot()[0].repositories[0].id;
+            d.remove_repository(doomed).unwrap();
+            d.remove_project(d.snapshot()[0].id).unwrap();
+
+            let restarted = Daemon::new(crate::config::load().unwrap());
+            restarted
+                .add_project(&dir.path().to_string_lossy())
+                .unwrap();
+            assert_eq!(repository_names(&restarted), vec!["notes", "orion"]);
         });
     }
 

@@ -73,6 +73,8 @@ Configuration uses `ARGUS_CONFIG_DIR` when set and the platform config directory
 - `projects.toml` declares workspaces, projects, and agent templates.
 - `client.toml` stores theme and editor settings.
 - `open-workspace` stores the daemon-wide selected workspace name.
+- `excluded-repos` stores repository paths removed from the panel, one per line, so a project root
+  scan does not bring them back. Exclusions under a removed project are dropped with it.
 - `session.json` stores descriptions of panes to relaunch.
 - `argusd.log` is the running daemon's log, and `argusd.log.1` the run before it.
 

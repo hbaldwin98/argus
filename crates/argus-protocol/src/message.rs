@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::cell::{Cell, CellSpan, Cursor};
-use crate::ids::{CheckoutId, PaneId, WorkspaceId};
+use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{Review, ReviewBase};
 use crate::tree::{ProjectInfo, WorkspaceInfo};
 
@@ -72,6 +72,15 @@ pub enum ClientMsg {
         /// work it out from the environment.
         command: Option<String>,
     },
+    /// Drop a project from the panel and from `projects.toml`. Nothing on
+    /// disk is touched — the directories stay exactly where they are, and
+    /// adding the project again brings the same tree back.
+    RemoveProject { project: ProjectId },
+    /// Drop one repository from its project's panel row. The scan that
+    /// found it would otherwise put it straight back, so the path is
+    /// remembered as excluded until the project is removed or the
+    /// exclusion file is edited.
+    RemoveRepository { repository: RepositoryId },
     /// Add a new project rooted at an arbitrary directory — not limited to
     /// whatever's already in `projects.toml` or under the daemon's cwd.
     /// Persisted to config so it survives a daemon restart.
