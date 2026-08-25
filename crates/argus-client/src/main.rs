@@ -1,5 +1,6 @@
 mod app;
 mod backend;
+mod clipboard;
 mod dirpicker;
 mod fuzzy;
 mod grid;

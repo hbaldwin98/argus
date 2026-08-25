@@ -22,6 +22,7 @@ ratatui = { workspace = true }
 crossterm = { workspace = true, features = ["event-stream"] }
 futures = "0.3"
 nucleo-matcher = "0.3"
+arboard = { version = "3", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

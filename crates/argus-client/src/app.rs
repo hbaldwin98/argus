@@ -311,6 +311,9 @@ pub struct App {
     /// running behind it.
     pub grids: std::collections::HashMap<PaneId, Grid>,
     pub leader_pending: bool,
+    /// How the clipboard is read. A field so a test can hand the app a
+    /// clipboard without there being a desktop session to hold one.
+    pub clipboard: fn() -> Option<String>,
     pub should_quit: bool,
     /// The last thing worth saying on the status bar, and whether it is
     /// something the user *must* read. The rank rides along rather than
@@ -413,6 +416,7 @@ impl App {
             sel_pane: 0,
             grids: std::collections::HashMap::new(),
             leader_pending: false,
+            clipboard: crate::clipboard::read,
             should_quit: false,
             // Empty, not a keymap: the bar's left half is the breadcrumb's
             // until something has actually happened to report.
@@ -898,6 +902,29 @@ impl App {
             .or_else(|| (self.focus == Focus::PaneContent).then(|| self.column_pane()).flatten())
     }
 
+    /// Pastes what is actually on the clipboard, rather than what the
+    /// timing of a run of keystrokes suggested was one.
+    fn paste_clipboard(&mut self) {
+        let Some(text) = (self.clipboard)() else {
+            self.alert("could not read the clipboard");
+            return;
+        };
+        if text.is_empty() {
+            self.report("the clipboard is empty");
+            return;
+        }
+        if !self.accepts_paste() {
+            self.report("nothing here takes pasted text");
+            return;
+        }
+        let lines = text.lines().count();
+        self.on_paste(crate::clipboard::normalize(&text));
+        self.report(format!(
+            "pasted {lines} line{}",
+            if lines == 1 { "" } else { "s" }
+        ));
+    }
+
     pub fn on_paste(&mut self, text: String) {
         self.clear_status();
         if let Some(prompt) = &mut self.prompt {
@@ -1099,6 +1126,7 @@ impl App {
             self.leader_pending = false;
             match key.code {
                 KeyCode::Esc => self.close_overlay(),
+                KeyCode::Char('v') => self.paste_clipboard(),
                 KeyCode::Char('x') => {
                     if let Some(pane) = self.overlay.as_ref().and_then(Overlay::pane) {
                         let _ = self.out.send(ClientMsg::Kill { pane });
@@ -1244,6 +1272,7 @@ impl App {
                 KeyCode::Esc => self.ascend(),
                 KeyCode::Tab => self.open_review(),
                 KeyCode::Char('x') => self.close_current(),
+                KeyCode::Char('v') => self.paste_clipboard(),
                 KeyCode::Char('N') => self.jump_to_next_attention(),
                 _ => {}
             }
@@ -2462,6 +2491,43 @@ mod tests {
             })
             .collect();
         assert_eq!(bytes, b"echo\r");
+    }
+
+    #[test]
+    fn the_paste_key_sends_the_clipboard_as_one_message() {
+        // The point of an explicit key: no inference, and the newlines
+        // stay newlines instead of arriving as a run of Enters.
+        let mut h = Harness::new();
+        h.keys("llll");
+        h.sent();
+        h.app.clipboard = || Some("first
+second
+".to_string());
+
+        h.leader();
+        h.key(KeyCode::Char('v'));
+
+        assert!(matches!(
+            h.sent().as_slice(),
+            [ClientMsg::Paste { pane: PaneId(100), text }] if text == "first
+second
+"
+        ));
+        assert!(h.app.status.contains("2 lines"), "{}", h.app.status);
+    }
+
+    #[test]
+    fn the_paste_key_says_so_rather_than_failing_silently() {
+        let mut h = Harness::new();
+        h.keys("llll");
+        h.sent();
+        h.app.clipboard = || None;
+
+        h.leader();
+        h.key(KeyCode::Char('v'));
+
+        assert!(h.sent().is_empty(), "nothing to paste, nothing sent");
+        assert!(h.app.status_alert, "a clipboard that cannot be read is worth saying");
     }
 
     #[test]

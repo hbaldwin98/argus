@@ -800,7 +800,7 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     } else if app.prompt.is_some() {
         ("type to edit   enter confirm   esc cancel", th.dim)
     } else if app.leader_pending {
-        ("leader…   esc back   N next attention   x close pane", th.accent)
+        ("leader…   esc back   v paste   N next attention   x close pane", th.accent)
     } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
         ("j/k move   h/l change   esc close", th.dim)
     } else if matches!(app.overlay, Some(Overlay::Review)) {
