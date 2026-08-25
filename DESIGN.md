@@ -33,10 +33,26 @@ A workspace is a daemon-wide scope, not a navigation column. Switching it change
 client. Panes in other workspaces continue to run. The TUI draws project, repository, checkout,
 and pane columns followed by the selected pane's terminal.
 
-A project configures one or more repository paths. Each path becomes a repository with its own
-primary checkout and linked worktrees. Repository identity is carried through daemon state and the
-protocol, so worktree discovery, creation, and removal stay scoped to the repository that owns the
-selected checkout.
+A project takes its repositories from a root directory, from paths named one at a time, or from
+both. Each becomes a repository with its own primary checkout and linked worktrees. Repository
+identity is carried through daemon state and the protocol, so worktree discovery, creation, and
+removal stay scoped to the repository that owns the selected checkout.
+
+A root is scanned for the Git repositories at or beneath it. The scan stops at each repository it
+finds, so a submodule or a vendored checkout stays part of the repository containing it rather than
+becoming a sibling of it. It skips `.git`, `.argus`, `node_modules`, and `target`; it does not
+follow directory symlinks; it goes no more than eight directories below the root; and it treats
+neither a linked worktree nor a bare repository as a repository of its own. Like the rest of the
+read-only Git work it uses `git2` rather than the `git` executable, and it returns its repositories
+in path order.
+
+The scan runs at startup and every ten seconds after, on the blocking pool and never under the
+daemon mutex. A repository cloned into a root therefore arrives on its own, and one deleted out of
+it leaves once it holds no panes — a repository still running an agent stays until it is empty,
+because a directory can go missing for reasons that have nothing to do with the operator's intent.
+A path the configuration names outright is taken at its word: one that is not a Git repository at
+all still becomes a row, and no scan removes it. A root with no repositories under it is a project
+all the same.
 
 Checkout rows use the branch currently occupying their path as their display name, including when
 another process switches the branch outside Argus. A live agent can report that it has started
@@ -60,6 +76,10 @@ The current project and agent schema is:
 name = "work"
 
 [[project]]
+name = "src"
+root = "~/src"
+
+[[project]]
 name = "argus"
 repos = ["~/src/argus"]
 workspace = "work"
@@ -70,9 +90,11 @@ cmd = ["claude"]
 env = { KEY = "value" }
 ```
 
-Projects without a workspace use `default`. When no agents are configured, `claude`, `codex`,
-and `opencode` templates are supplied. Adding a project at runtime appends a single-repository
-project to `projects.toml` in the open workspace.
+Projects without a workspace use `default`. A project may set `root`, `repos`, or both; a path
+reached both ways is one repository, and the two lists are joined with `repos` first. When no
+agents are configured, `claude`, `codex`, and `opencode` templates are supplied. Adding a project
+at runtime appends a block whose `root` is the directory given, in the open workspace, so what it
+holds is discovered again on each start rather than frozen into the file.
 
 ## Panes and terminal state
 
@@ -203,6 +225,9 @@ Read-only Git work uses `git2`. Every two seconds the daemon refreshes:
 - dirty state and changed-file count, including untracked files;
 - ahead/behind against the tracking branch;
 - linked worktrees added or removed outside Argus.
+
+On a slower ten-second beat it also rescans each project root for repositories added or removed
+there. Both run on the blocking pool.
 
 Branch and file pickers run in process. Branches are local branches, current first. File discovery
 uses `ignore`, follows Git ignore rules, and caps the result at 50,000 files.

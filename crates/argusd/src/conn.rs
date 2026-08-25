@@ -443,6 +443,7 @@ mod tests {
                 workspaces: Vec::new(),
                 projects: vec![ProjectConfig {
                     name: "proj".to_string(),
+                    root: None,
                     repos: vec![repo.to_string_lossy().to_string()],
                     workspace: None,
                 }],

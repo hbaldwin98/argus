@@ -77,6 +77,110 @@ pub fn list_worktrees(path: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// Directories a project scan never walks into: Git's own storage, the
+/// worktrees Argus creates (they belong to the repository above them), and
+/// two build/dependency trees big enough to dominate the walk on their own.
+const SKIPPED: [&str; 4] = [".git", ".argus", "node_modules", "target"];
+
+/// How far below the root a repository can sit and still be found. A project
+/// root is a directory holding repositories, not a filesystem to crawl, and
+/// the cap keeps a mistyped root (`C:\` or `/`) from turning reconciliation
+/// into a disk scan.
+const MAX_DEPTH: usize = 8;
+
+/// Every distinct Git repository at or beneath `root`, ordered by path so
+/// the repository column doesn't reshuffle between scans.
+///
+/// The walk stops at each repository it finds: what lives inside a
+/// repository — a submodule, a vendored checkout, a linked worktree — belongs
+/// to that repository rather than beside it as a sibling row. Linked
+/// worktrees are never rows of their own for the same reason, wherever they
+/// sit, and neither are bare repositories, which have nothing to check out.
+/// Directory symlinks are not followed, so a scan can neither cycle nor
+/// wander out of the root.
+///
+/// Like the rest of this module it is libgit2 rather than `git`: it runs on
+/// the daemon's reconciliation tick, and see `list_worktrees` for what
+/// spawning a process there costs on Windows.
+pub fn discover_repositories(root: &Path) -> Vec<PathBuf> {
+    // (identity, working directory). The identity is the repository's Git
+    // directory, resolved, so two paths that reach one repository collapse
+    // to a single row; the working directory is kept as the walk spelled it,
+    // which is the user's own root with directory names appended, rather
+    // than whatever canonicalization would make of it.
+    let mut found: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let mut pending = vec![(root.to_path_buf(), 0usize)];
+
+    while let Some((dir, depth)) = pending.pop() {
+        match look(&dir) {
+            Site::Repository { identity } => {
+                if !found.iter().any(|(seen, _)| *seen == identity) {
+                    found.push((identity, dir));
+                }
+                continue;
+            }
+            Site::Boundary => continue,
+            Site::Plain => {}
+        }
+        if depth == MAX_DEPTH {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            // `file_type` here describes the link itself, not its target.
+            if kind.is_symlink() || !kind.is_dir() {
+                continue;
+            }
+            let name = entry.file_name();
+            if SKIPPED.iter().any(|skip| name == *skip) {
+                continue;
+            }
+            pending.push((entry.path(), depth + 1));
+        }
+    }
+
+    let mut out: Vec<PathBuf> = found.into_iter().map(|(_, dir)| dir).collect();
+    // `pending` is a stack, so the walk order is the filesystem's. Sorting
+    // is what makes the result the same list every tick.
+    out.sort();
+    out
+}
+
+/// What a scan makes of one directory.
+enum Site {
+    /// A repository with a working directory of its own, identified by its
+    /// resolved Git directory.
+    Repository { identity: PathBuf },
+    /// Git, but not a row: a linked worktree, whose repository already
+    /// stands for it, or a bare repository, which has no checkout. Either
+    /// way nothing underneath is a sibling repository.
+    Boundary,
+    /// Not Git.
+    Plain,
+}
+
+fn look(dir: &Path) -> Site {
+    // `Repository::open` does not search parent directories, so this asks
+    // whether `dir` *is* a repository, not whether it sits inside one.
+    let Ok(repo) = git2::Repository::open(dir) else {
+        return Site::Plain;
+    };
+    if repo.is_worktree() || repo.workdir().is_none() {
+        return Site::Boundary;
+    }
+    let git_dir = repo.path();
+    Site::Repository {
+        identity: git_dir
+            .canonicalize()
+            .unwrap_or_else(|_| git_dir.to_path_buf()),
+    }
+}
+
 fn ahead_behind(repo: &git2::Repository, head: Option<&git2::Reference>) -> Option<(usize, usize)> {
     let head = head?;
     let local_oid = head.target()?;
@@ -223,5 +327,170 @@ mod tests {
         let _repo = repo_with_a_commit(dir.path());
         let s = status(dir.path()).unwrap();
         assert_eq!((s.ahead, s.behind), (0, 0));
+    }
+
+    /// Discovery hands back the walk's own spelling of each path while
+    /// tempdir paths and libgit2's differ on some platforms, so compare
+    /// resolved.
+    fn discovers(root: &Path, expected: &[PathBuf]) {
+        let found = discover_repositories(root);
+        assert_eq!(
+            found.len(),
+            expected.len(),
+            "expected {expected:?}, found {found:?}"
+        );
+        for (got, want) in found.iter().zip(expected) {
+            assert!(
+                same_path(got, want),
+                "expected {expected:?}, found {found:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_repository_under_a_root_is_found_in_path_order() {
+        // The order is the promise: the repository column is drawn from this
+        // list every tick and must not reshuffle.
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["beta", "alpha", "gamma"] {
+            let child = dir.path().join(name);
+            std::fs::create_dir(&child).unwrap();
+            let _repo = repo_with_a_commit(&child);
+        }
+
+        discovers(
+            dir.path(),
+            &[
+                dir.path().join("alpha"),
+                dir.path().join("beta"),
+                dir.path().join("gamma"),
+            ],
+        );
+    }
+
+    #[test]
+    fn a_root_that_is_itself_a_repository_is_the_only_repository() {
+        // The common case, and the one that has to keep behaving exactly as
+        // `repos = ["~/src/argus"]` always did: one repository, at the root.
+        let dir = tempfile::tempdir().unwrap();
+        let _repo = repo_with_a_commit(dir.path());
+        std::fs::create_dir_all(dir.path().join("crates/argusd/src")).unwrap();
+
+        discovers(dir.path(), &[dir.path().to_path_buf()]);
+    }
+
+    #[test]
+    fn a_repository_several_directories_down_is_found() {
+        // How a checkout tree that mirrors a host actually looks:
+        // ~/src/github.com/owner/repo.
+        let dir = tempfile::tempdir().unwrap();
+        let deep = dir.path().join("github.com/owner/repo");
+        std::fs::create_dir_all(&deep).unwrap();
+        let _repo = repo_with_a_commit(&deep);
+
+        discovers(dir.path(), &[deep]);
+    }
+
+    #[test]
+    fn a_plain_directory_holds_no_repositories() {
+        // A root can be empty and stay a perfectly good project: a
+        // repository cloned into it later is picked up by the next scan.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("notes/drafts")).unwrap();
+
+        assert!(discover_repositories(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn a_directory_inside_a_repository_is_not_a_repository_of_its_own() {
+        // libgit2 will happily walk up to the enclosing repository if asked
+        // to; discovery must ask the other question — is *this* directory a
+        // repository — or every subdirectory becomes a row.
+        let dir = tempfile::tempdir().unwrap();
+        let _repo = repo_with_a_commit(dir.path());
+        let inner = dir.path().join("src");
+        std::fs::create_dir(&inner).unwrap();
+
+        assert!(discover_repositories(&inner).is_empty());
+    }
+
+    #[test]
+    fn build_and_dependency_directories_are_never_walked() {
+        // Real repositories do turn up under node_modules and target. They
+        // are not the user's projects, and walking those trees would dwarf
+        // the rest of the scan.
+        let dir = tempfile::tempdir().unwrap();
+        let mine = dir.path().join("mine");
+        std::fs::create_dir(&mine).unwrap();
+        let _repo = repo_with_a_commit(&mine);
+
+        for buried in ["node_modules/dep", "target/vendored", ".git/hidden"] {
+            let path = dir.path().join(buried);
+            std::fs::create_dir_all(&path).unwrap();
+            let _repo = repo_with_a_commit(&path);
+        }
+
+        discovers(dir.path(), &[mine]);
+    }
+
+    #[test]
+    fn worktrees_argus_created_are_not_repositories_of_their_own() {
+        // `.argus/worktrees/<branch>` is a checkout of the repository beside
+        // it. Listing it as a repository would split one repository's
+        // checkouts across two rows.
+        let dir = tempfile::tempdir().unwrap();
+        let repo_dir = dir.path().join("orion");
+        std::fs::create_dir(&repo_dir).unwrap();
+        let repo = repo_with_a_commit(&repo_dir);
+        std::fs::create_dir_all(repo_dir.join(".argus/worktrees")).unwrap();
+        repo.worktree("feature", &repo_dir.join(".argus/worktrees/feature"), None)
+            .unwrap();
+
+        discovers(dir.path(), &[repo_dir]);
+    }
+
+    #[test]
+    fn a_linked_worktree_anywhere_is_not_a_repository_of_its_own() {
+        // Same rule away from `.argus`, where the skip list can't help: the
+        // worktree has to identify itself as one.
+        let dir = tempfile::tempdir().unwrap();
+        let repo_dir = dir.path().join("orion");
+        std::fs::create_dir(&repo_dir).unwrap();
+        let repo = repo_with_a_commit(&repo_dir);
+        repo.worktree("feature", &dir.path().join("elsewhere"), None)
+            .unwrap();
+
+        discovers(dir.path(), &[repo_dir]);
+    }
+
+    #[test]
+    fn a_bare_repository_is_not_a_repository_row() {
+        // Nothing to check out, so nothing a pane could open.
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init_bare(dir.path().join("mirror.git")).unwrap();
+
+        assert!(discover_repositories(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn directory_symlinks_are_not_followed() {
+        // A link pointing at an ancestor is a cycle, and one pointing out of
+        // the root drags in repositories the user never named.
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        let _repo = repo_with_a_commit(&real);
+
+        let link = dir.path().join("link");
+        #[cfg(windows)]
+        let made = std::os::windows::fs::symlink_dir(&real, &link).is_ok();
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(&real, &link).is_ok();
+        if !made {
+            // Windows needs Developer Mode or elevation to make one.
+            return;
+        }
+
+        discovers(dir.path(), &[real]);
     }
 }
