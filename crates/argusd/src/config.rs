@@ -31,9 +31,19 @@ pub struct WorkspaceConfig {
 /// workspaces keeps working unchanged.
 pub const DEFAULT_WORKSPACE: &str = "default";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct ProjectConfig {
     pub name: String,
+    /// A directory to find repositories under. Every Git repository at or
+    /// beneath it becomes a repository of this project, and keeps doing so
+    /// as repositories are cloned into it or removed from it. See
+    /// `git::discover_repositories`.
+    #[serde(default)]
+    pub root: Option<String>,
+    /// Repositories named one at a time, joined to whatever `root` finds.
+    /// A path here is taken at its word: one that is not a Git repository
+    /// at all still becomes a row, which is how a plain directory gets
+    /// panes.
     #[serde(default)]
     pub repos: Vec<String>,
     /// Which workspace this project belongs to. Absent means
@@ -196,6 +206,15 @@ pub fn config_path() -> PathBuf {
 
 const DEFAULT_CONFIG: &str = r#"# Argus projects. Each project groups one or more repositories.
 #
+# `root` is a directory to find them under: every Git repository at or
+# beneath it becomes a repository of the project, including ones cloned
+# there later. `repos` names them one at a time instead, and a path there
+# need not be a Git repository at all. A project can use either or both.
+#
+# [[project]]
+# name = "src"
+# root = "~/src"
+#
 # [[project]]
 # name = "argus"
 # repos = ["~/src/argus"]
@@ -251,18 +270,22 @@ pub fn load() -> Result<ConfigFile> {
     Ok(file)
 }
 
-/// Appends a `[[project]]` block for a single-repo project to
-/// `projects.toml` on disk, so a project added at runtime (any directory,
-/// not just ones already configured) survives a daemon restart. Appends
-/// raw text rather than round-tripping through serde so a user's existing
-/// comments in the file aren't clobbered.
-pub fn append_project(name: &str, repo_path: &Path, workspace: &str) -> Result<()> {
+/// Appends a `[[project]]` block to `projects.toml` on disk, so a project
+/// added at runtime (any directory, not just ones already configured)
+/// survives a daemon restart. Appends raw text rather than round-tripping
+/// through serde so a user's existing comments in the file aren't clobbered.
+///
+/// What it writes is the root, not the repositories found under it: the
+/// point of adding a directory is that Argus keeps looking there, so a
+/// repository cloned into it next month arrives without the user editing
+/// anything.
+pub fn append_project(name: &str, root_path: &Path, workspace: &str) -> Result<()> {
     let cfg_path = config_path();
-    let repo = repo_path.to_string_lossy().replace('\\', "/");
+    let root = root_path.to_string_lossy().replace('\\', "/");
     // `{:?}` on a &str produces a properly quote/backslash-escaped literal,
     // which is also valid TOML basic-string syntax.
     let block =
-        format!("\n[[project]]\nname = {name:?}\nrepos = [{repo:?}]\nworkspace = {workspace:?}\n");
+        format!("\n[[project]]\nname = {name:?}\nroot = {root:?}\nworkspace = {workspace:?}\n");
     let mut f = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -318,6 +341,37 @@ mod tests {
 
     fn parse(raw: &str) -> ConfigFile {
         toml::from_str(raw).expect("the test config should parse")
+    }
+
+    #[test]
+    fn a_project_predating_roots_still_names_its_repositories_outright() {
+        // `repos` is the schema every existing config is written in. It has
+        // to keep meaning exactly what it meant, root or no root.
+        let cfg = parse(
+            r#"
+[[project]]
+name = "argus"
+repos = ["~/src/argus", "~/src/notes"]
+"#,
+        );
+        let project = &cfg.projects[0];
+        assert_eq!(project.repos, ["~/src/argus", "~/src/notes"]);
+        assert!(project.root.is_none());
+    }
+
+    #[test]
+    fn a_project_can_name_a_root_to_find_its_repositories_under() {
+        let cfg = parse(
+            r#"
+[[project]]
+name = "src"
+root = "~/src"
+repos = ["~/scratch"]
+"#,
+        );
+        let project = &cfg.projects[0];
+        assert_eq!(project.root.as_deref(), Some("~/src"));
+        assert_eq!(project.repos, ["~/scratch"], "the two combine");
     }
 
     #[test]

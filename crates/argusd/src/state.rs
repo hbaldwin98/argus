@@ -77,6 +77,11 @@ struct Checkout {
 struct Repository {
     id: RepositoryId,
     name: String,
+    /// True if a scan of the project's root turned this up, false if the
+    /// config named it outright. Only the former can be taken away again by
+    /// a later scan: a repository the user wrote down stays whether or not
+    /// it is currently a Git repository, or currently exists.
+    discovered: bool,
     checkouts: Vec<Checkout>,
 }
 
@@ -86,6 +91,10 @@ struct Project {
     /// Which workspace this project is filed under. The tree a client sees
     /// is scoped to whichever workspace is open (DESIGN.md §11).
     workspace: WorkspaceId,
+    /// The directory whose repositories make up this project, if it has
+    /// one. Kept so reconciliation can look again and find what has been
+    /// cloned into it, or removed from it, since.
+    root: Option<PathBuf>,
     repositories: Vec<Repository>,
 }
 
@@ -169,38 +178,30 @@ impl Daemon {
         let projects = config
             .projects
             .into_iter()
-            .map(|p| Project {
-                id: ProjectId(ids.alloc()),
-                workspace: match p.workspace.as_deref() {
-                    Some(name) => intern(&mut workspaces, &mut ids, name),
-                    None => default_ws,
-                },
-                name: p.name,
-                repositories: p
+            .map(|p| {
+                let root = p.root.as_deref().map(config::expand_home);
+                let mut repositories: Vec<Repository> = p
                     .repos
-                    .into_iter()
-                    .map(|repo| {
-                        let path = config::expand_home(&repo);
-                        let name = path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or(repo);
-                        Repository {
-                            id: RepositoryId(ids.alloc()),
-                            name,
-                            checkouts: vec![Checkout {
-                                id: CheckoutId(ids.alloc()),
-                                name: path
-                                    .file_name()
-                                    .map(|n| n.to_string_lossy().to_string())
-                                    .unwrap_or_else(|| path.to_string_lossy().to_string()),
-                                path,
-                                primary: true,
-                                panes: Vec::new(),
-                            }],
-                        }
-                    })
-                    .collect(),
+                    .iter()
+                    .map(|repo| new_repository(&mut ids, config::expand_home(repo), false))
+                    .collect();
+                // A root is scanned once here so the tree is complete the
+                // moment the first client attaches, rather than filling in
+                // a tick later. Reconciliation keeps it current after that.
+                if let Some(root) = &root {
+                    let found = crate::git::discover_repositories(root);
+                    install_discovered(&mut ids, &mut repositories, &found);
+                }
+                Project {
+                    id: ProjectId(ids.alloc()),
+                    workspace: match p.workspace.as_deref() {
+                        Some(name) => intern(&mut workspaces, &mut ids, name),
+                        None => default_ws,
+                    },
+                    name: p.name,
+                    root,
+                    repositories,
+                }
             })
             .collect();
 
@@ -953,17 +954,7 @@ impl Daemon {
         let changed = {
             let mut inner = self.inner.lock().unwrap();
             match find_pane(&mut inner.projects, pane) {
-                Some(p)
-                    if !matches!(p.status, PaneStatus::Exited { .. })
-                        && !(status == PaneStatus::Idle
-                            && matches!(
-                                p.status,
-                                PaneStatus::Waiting
-                                    | PaneStatus::NeedsReview
-                                    | PaneStatus::Done
-                                    | PaneStatus::Failed
-                            )) =>
-                {
+                Some(p) if !is_stale_report(p.status, status) => {
                     // A note explains one state; the report that leaves that
                     // state takes it away with it, so a stale "waiting for
                     // the db password" can't sit under a working row.
@@ -1250,11 +1241,108 @@ impl Daemon {
         }
     }
 
+    /// Looks under each project's root again, so a repository cloned into
+    /// it — or deleted out of it — reaches the tree without restarting the
+    /// daemon. `reconcile_worktrees` does the same job one level further
+    /// down, for a repository's checkouts.
+    fn reconcile_repositories(&self) -> bool {
+        self.reconcile_repositories_with(crate::git::discover_repositories)
+    }
+
+    /// The reconciliation itself, with the scan injected so tests can state
+    /// what is on disk instead of building it. Reports whether anything
+    /// changed. Production always passes `git::discover_repositories`.
+    fn reconcile_repositories_with(
+        &self,
+        discover: impl Fn(&std::path::Path) -> Vec<PathBuf>,
+    ) -> bool {
+        // Scanning happens between the two locks and never inside one, for
+        // the same reason `add_project` scans before taking it.
+        let roots: Vec<(ProjectId, PathBuf)> = {
+            let inner = self.inner.lock().unwrap();
+            inner
+                .projects
+                .iter()
+                .filter_map(|p| p.root.clone().map(|root| (p.id, root)))
+                .collect()
+        };
+        if roots.is_empty() {
+            return false;
+        }
+        let scanned: Vec<(ProjectId, Vec<PathBuf>)> = roots
+            .into_iter()
+            .map(|(id, root)| (id, discover(&root)))
+            .collect();
+
+        let mut changed = false;
+        let mut inner = self.inner.lock().unwrap();
+        let Inner { projects, ids, .. } = &mut *inner;
+        for (project_id, found) in scanned {
+            let Some(project) = projects.iter_mut().find(|p| p.id == project_id) else {
+                continue;
+            };
+            changed |= install_discovered(ids, &mut project.repositories, &found);
+
+            // A repository that has left the root leaves the project with
+            // it — but not while it is holding panes. A directory can go
+            // missing for reasons that are none of the user's doing (a drive
+            // that dropped, a scan racing a move), and taking a running
+            // agent down with it is not a trade worth making: those rows
+            // stay until they are empty. A repository the config named
+            // outright is never removed this way at all.
+            project.repositories.retain(|repository| {
+                if !repository.discovered
+                    || repository.checkouts.iter().any(|c| !c.panes.is_empty())
+                {
+                    return true;
+                }
+                let still_there = repository
+                    .checkouts
+                    .iter()
+                    .filter(|c| c.primary)
+                    .any(|c| found.iter().any(|path| same_path(&c.path, path)));
+                changed |= !still_there;
+                still_there
+            });
+        }
+        changed
+    }
+
+    /// Re-scans project roots on a slower beat than the git poll: a scan
+    /// walks directories rather than reading one repository's state, and a
+    /// repository being cloned is a far rarer event than a file being
+    /// edited. Blocking-pool, like the poll, and for the same reason.
+    pub fn start_project_scan(self: &Arc<Self>) {
+        let daemon = self.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(10));
+            loop {
+                interval.tick().await;
+                let daemon = daemon.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    if daemon.reconcile_repositories() {
+                        daemon.broadcast_tree();
+                        // A project gaining or losing a repository moves the
+                        // workspace rollup counts too.
+                        daemon.broadcast_workspaces();
+                    }
+                })
+                .await;
+            }
+        });
+    }
+
     /// Adds a brand-new project rooted at an arbitrary directory — not
     /// restricted to whatever's already in `projects.toml` or wherever the
-    /// daemon happens to be running from — and persists it so it survives
-    /// a restart. The project gets exactly one (primary) checkout, at
-    /// `path` itself.
+    /// daemon happens to be running from — and persists it so it survives a
+    /// restart.
+    ///
+    /// The directory is the project's root, and every Git repository at or
+    /// beneath it becomes one of its repositories. Pointing at a repository
+    /// therefore adds that one repository, which is what it has always
+    /// meant; pointing at the directory a dozen of them live in adds the
+    /// dozen. A root with none of them yet is a project all the same — the
+    /// scan runs again, and the first clone into it arrives on its own.
     pub fn add_project(&self, path: &str) -> anyhow::Result<()> {
         let expanded = config::expand_home(path);
         if !expanded.is_dir() {
@@ -1265,6 +1353,10 @@ impl Daemon {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| path.to_string());
 
+        // Scanned before the lock is taken: this walks directories, and
+        // every pane event in the daemon queues behind that mutex.
+        let found = crate::git::discover_repositories(&expanded);
+
         // New projects land in whichever workspace is open, so "add this
         // directory" means "add it to what I am looking at".
         let (workspace, workspace_name) = self.open_workspace_ref();
@@ -1272,27 +1364,15 @@ impl Daemon {
 
         {
             let mut inner = self.inner.lock().unwrap();
-            let project_id = ProjectId(inner.ids.alloc());
-            let repository_id = RepositoryId(inner.ids.alloc());
-            let checkout_id = CheckoutId(inner.ids.alloc());
-            inner.projects.push(Project {
-                id: project_id,
+            let Inner { projects, ids, .. } = &mut *inner;
+            let mut repositories = Vec::new();
+            install_discovered(ids, &mut repositories, &found);
+            projects.push(Project {
+                id: ProjectId(ids.alloc()),
                 workspace,
-                name: name.clone(),
-                repositories: vec![Repository {
-                    id: repository_id,
-                    name,
-                    checkouts: vec![Checkout {
-                        id: checkout_id,
-                        name: expanded
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_else(|| expanded.to_string_lossy().to_string()),
-                        path: expanded,
-                        primary: true,
-                        panes: Vec::new(),
-                    }],
-                }],
+                name,
+                root: Some(expanded),
+                repositories,
             });
         }
         self.broadcast_tree();
@@ -1537,6 +1617,24 @@ fn remove_checkout_entry(projects: &mut [Project], id: CheckoutId) -> Option<Che
         }
     }
     None
+}
+
+/// Whether a hook's report should be dropped rather than applied, for
+/// either of two reasons. The pane has already exited, and nothing said
+/// afterwards — a `Stop` racing a crash, say — should resurrect its row. Or
+/// `Idle` is arriving over a state that is still holding something for the
+/// operator, where "my turn ended" is not news that clears "blocked on the
+/// db password".
+fn is_stale_report(current: PaneStatus, reported: PaneStatus) -> bool {
+    matches!(current, PaneStatus::Exited { .. })
+        || reported == PaneStatus::Idle
+            && matches!(
+                current,
+                PaneStatus::Waiting
+                    | PaneStatus::NeedsReview
+                    | PaneStatus::Done
+                    | PaneStatus::Failed
+            )
 }
 
 fn find_pane(projects: &mut [Project], id: PaneId) -> Option<&mut Pane> {
@@ -1790,6 +1888,53 @@ fn nothing_to_resume(code: Option<i32>, ran_for: Duration) -> bool {
     code != Some(0) && ran_for < RESUME_GRACE
 }
 
+/// A repository holding only its primary checkout, which is what both a
+/// configured path and a discovered one start as. Linked worktrees arrive
+/// afterwards, from `reconcile_worktrees`.
+fn new_repository(ids: &mut IdGen, path: PathBuf, discovered: bool) -> Repository {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string_lossy().to_string());
+    Repository {
+        id: RepositoryId(ids.alloc()),
+        name: name.clone(),
+        discovered,
+        checkouts: vec![Checkout {
+            id: CheckoutId(ids.alloc()),
+            name,
+            path,
+            primary: true,
+            panes: Vec::new(),
+        }],
+    }
+}
+
+/// Adds the repositories a scan found that aren't there yet, and reports
+/// whether it added any. Repositories already present are left exactly as
+/// they are, ids, checkouts and panes included: a scan is a way of noticing
+/// what is on disk, not a reason to rebuild the tree. A discovered path that
+/// matches a repository the config named outright belongs to that
+/// repository rather than to a second row of its own.
+fn install_discovered(
+    ids: &mut IdGen,
+    repositories: &mut Vec<Repository>,
+    found: &[PathBuf],
+) -> bool {
+    let mut added = false;
+    for path in found {
+        if repositories
+            .iter()
+            .any(|r| r.checkouts.iter().any(|c| same_path(&c.path, path)))
+        {
+            continue;
+        }
+        repositories.push(new_repository(ids, path.clone(), true));
+        added = true;
+    }
+    added
+}
+
 fn same_path(a: &std::path::Path, b: &std::path::Path) -> bool {
     match (a.canonicalize(), b.canonicalize()) {
         (Ok(a), Ok(b)) => a == b,
@@ -1810,6 +1955,7 @@ mod tests {
             workspaces: Vec::new(),
             projects: vec![ProjectConfig {
                 name: "proj".to_string(),
+                root: None,
                 repos: vec![primary.to_string()],
                 workspace: None,
             }],
@@ -1823,6 +1969,7 @@ mod tests {
             workspaces: Vec::new(),
             projects: vec![ProjectConfig {
                 name: "proj".to_string(),
+                root: None,
                 repos: repositories.iter().map(|path| path.to_string()).collect(),
                 workspace: None,
             }],
@@ -2103,6 +2250,7 @@ mod tests {
             workspaces: Vec::new(),
             projects: vec![ProjectConfig {
                 name: "proj".to_string(),
+                root: None,
                 repos: vec![
                     first.to_string_lossy().to_string(),
                     second.to_string_lossy().to_string(),
@@ -2481,6 +2629,7 @@ mod tests {
             workspaces: Vec::new(),
             projects: vec![ProjectConfig {
                 name: "proj".to_string(),
+                root: None,
                 repos: vec![dir.to_string_lossy().to_string()],
                 workspace: None,
             }],
@@ -2616,6 +2765,7 @@ mod tests {
             workspaces: Vec::new(),
             projects: vec![ProjectConfig {
                 name: "proj".to_string(),
+                root: None,
                 repos: vec![configured],
                 workspace: None,
             }],
@@ -2645,6 +2795,7 @@ mod tests {
             workspaces: Vec::new(),
             projects: vec![ProjectConfig {
                 name: "proj".to_string(),
+                root: None,
                 repos: vec![dir.path().to_string_lossy().to_string()],
                 workspace: None,
             }],
@@ -2669,6 +2820,288 @@ mod tests {
             checkouts.iter().any(|c| !c.primary),
             "and be removable, not marked primary"
         );
+    }
+
+    // --- project roots ------------------------------------------------------
+
+    /// A project that finds its repositories under `root`, with `repos`
+    /// naming any that are also written down outright.
+    fn daemon_rooted_at(root: &std::path::Path, repos: &[&str]) -> Arc<Daemon> {
+        Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                root: Some(root.to_string_lossy().to_string()),
+                repos: repos.iter().map(|p| p.to_string()).collect(),
+                workspace: None,
+            }],
+            agents: Vec::new(),
+            harnesses: Vec::new(),
+        })
+    }
+
+    fn repository_names(d: &Daemon) -> Vec<String> {
+        d.snapshot()
+            .into_iter()
+            .flat_map(|p| p.repositories)
+            .map(|r| r.name)
+            .collect()
+    }
+
+    #[test]
+    fn a_root_brings_in_every_repository_under_it() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["orion", "notes"] {
+            let child = dir.path().join(name);
+            std::fs::create_dir(&child).unwrap();
+            let _repo = real_repo(&child);
+        }
+
+        let d = daemon_rooted_at(dir.path(), &[]);
+        assert_eq!(repository_names(&d), vec!["notes", "orion"]);
+    }
+
+    #[test]
+    fn repositories_written_down_outright_still_mean_exactly_what_they_did() {
+        // The schema every existing config is written in. A path here is
+        // taken at its word — this one is not a Git repository at all, and
+        // still has to be a row with a checkout to open panes in.
+        let dir = tempfile::tempdir().unwrap();
+        let plain = dir.path().join("scratch");
+        std::fs::create_dir(&plain).unwrap();
+
+        let d = daemon_with_repositories(&[&plain.to_string_lossy()]);
+        assert_eq!(repository_names(&d), vec!["scratch"]);
+        assert_eq!(checkout_paths(&d).len(), 1);
+    }
+
+    #[test]
+    fn a_root_and_the_repositories_named_outright_combine_without_duplicating() {
+        // The same repository reached both ways is one row, and the row is
+        // the explicit one, so a scan can never take it away.
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("orion");
+        std::fs::create_dir(&shared).unwrap();
+        let _repo = real_repo(&shared);
+        let outside = tempfile::tempdir().unwrap();
+        let _elsewhere = real_repo(outside.path());
+
+        let d = daemon_rooted_at(
+            dir.path(),
+            &[&shared.to_string_lossy(), &outside.path().to_string_lossy()],
+        );
+
+        // Order is part of the contract: what the config names comes first,
+        // in the order it names it, and what a scan turns up follows.
+        assert_eq!(
+            repository_names(&d),
+            vec![
+                "orion".to_string(),
+                outside
+                    .path()
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_repository_cloned_into_a_root_arrives_on_the_next_scan() {
+        // The reason the root is remembered at all rather than resolved once
+        // and thrown away.
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_rooted_at(dir.path(), &[]);
+        assert!(repository_names(&d).is_empty(), "nothing there yet");
+
+        let cloned = dir.path().join("orion");
+        assert!(
+            d.reconcile_repositories_with(|_| listing(&[&cloned.to_string_lossy()])),
+            "the tree changed, so clients need telling"
+        );
+
+        assert_eq!(repository_names(&d), vec!["orion"]);
+    }
+
+    #[test]
+    fn an_empty_root_is_a_project_in_its_own_right() {
+        // Pressing `n` on a directory you are about to clone into should
+        // leave you with the project, not with an error.
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_rooted_at(dir.path(), &[]);
+
+        let projects = d.snapshot();
+        assert_eq!(projects.len(), 1);
+        assert!(projects[0].repositories.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_scan_leaves_the_repositories_it_already_knew_about_alone() {
+        // Ids reach clients as selection state and reach panes as their
+        // place in the tree. Rebuilding a repository that merely turned up
+        // in a scan again would move the user's cursor and orphan its panes.
+        let dir = tempfile::tempdir().unwrap();
+        let child = dir.path().join("orion");
+        std::fs::create_dir(&child).unwrap();
+        let _repo = real_repo(&child);
+
+        let d = daemon_rooted_at(dir.path(), &[]);
+        let before = d.snapshot();
+        let repository = before[0].repositories[0].clone();
+        let pane = d.spawn_shell(repository.checkouts[0].id).unwrap();
+
+        assert!(
+            !d.reconcile_repositories_with(|_| listing(&[&child.to_string_lossy()])),
+            "nothing changed, so nothing should be broadcast"
+        );
+
+        let after = &d.snapshot()[0].repositories[0];
+        assert_eq!(after.id, repository.id);
+        assert_eq!(after.checkouts[0].id, repository.checkouts[0].id);
+        assert_eq!(after.checkouts[0].panes.len(), 1);
+
+        let _ = d.close_pane(pane);
+    }
+
+    #[test]
+    fn a_discovered_repository_that_leaves_the_root_leaves_the_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let child = dir.path().join("orion");
+        std::fs::create_dir(&child).unwrap();
+        let _repo = real_repo(&child);
+        let d = daemon_rooted_at(dir.path(), &[]);
+
+        assert!(d.reconcile_repositories_with(|_| Vec::new()));
+        assert!(repository_names(&d).is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_repository_holding_panes_survives_a_scan_that_cannot_find_it() {
+        // A directory can go missing for reasons that have nothing to do
+        // with the user's intent. Killing a running agent over it is not a
+        // trade worth making, so the row waits until it is empty.
+        let dir = tempfile::tempdir().unwrap();
+        let child = dir.path().join("orion");
+        std::fs::create_dir(&child).unwrap();
+        let _repo = real_repo(&child);
+        let d = daemon_rooted_at(dir.path(), &[]);
+        let pane = d
+            .spawn_shell(d.snapshot()[0].repositories[0].checkouts[0].id)
+            .unwrap();
+
+        assert!(!d.reconcile_repositories_with(|_| Vec::new()));
+        assert_eq!(
+            repository_names(&d),
+            vec!["orion"],
+            "still there, with its pane"
+        );
+
+        d.close_pane(pane).unwrap();
+        assert!(d.reconcile_repositories_with(|_| Vec::new()));
+        assert!(repository_names(&d).is_empty(), "and gone once it is empty");
+    }
+
+    #[test]
+    fn a_repository_named_outright_survives_a_scan_that_cannot_find_it() {
+        // Explicit configuration is the user speaking. A scan of the root
+        // has no standing to contradict it — and it may not be a Git
+        // repository for a scan to find in the first place.
+        let dir = tempfile::tempdir().unwrap();
+        let plain = dir.path().join("scratch");
+        std::fs::create_dir(&plain).unwrap();
+
+        let d = daemon_rooted_at(dir.path(), &[&plain.to_string_lossy()]);
+        assert!(!d.reconcile_repositories_with(|_| Vec::new()));
+        assert_eq!(repository_names(&d), vec!["scratch"]);
+    }
+
+    #[test]
+    fn a_project_without_a_root_is_never_scanned() {
+        let d = daemon_with_repositories(&["/configured"]);
+        assert!(
+            !d.reconcile_repositories_with(|_| panic!("a rootless project has nothing to scan")),
+            "and nothing changed"
+        );
+    }
+
+    #[test]
+    fn adding_a_directory_of_repositories_adds_every_repository_under_it() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["orion", "notes"] {
+            let child = dir.path().join(name);
+            std::fs::create_dir(&child).unwrap();
+            let _repo = real_repo(&child);
+        }
+
+        with_temp_config(|_| {
+            let d = Daemon::new(ConfigFile::default());
+            d.add_project(&dir.path().to_string_lossy()).unwrap();
+            assert_eq!(repository_names(&d), vec!["notes", "orion"]);
+        });
+    }
+
+    #[test]
+    fn adding_a_repository_adds_that_one_repository() {
+        // The oldest meaning of `n`, and the one that must not change.
+        let dir = tempfile::tempdir().unwrap();
+        let _repo = real_repo(dir.path());
+
+        with_temp_config(|_| {
+            let d = Daemon::new(ConfigFile::default());
+            d.add_project(&dir.path().to_string_lossy()).unwrap();
+
+            let name = dir
+                .path()
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .to_string();
+            assert_eq!(repository_names(&d), vec![name]);
+        });
+    }
+
+    #[test]
+    fn an_added_project_persists_the_root_it_was_given() {
+        // Not the repositories found under it: writing those down would
+        // freeze the project as it looked the day it was added.
+        let dir = tempfile::tempdir().unwrap();
+        let child = dir.path().join("orion");
+        std::fs::create_dir(&child).unwrap();
+        let _repo = real_repo(&child);
+
+        with_temp_config(|cfg| {
+            let d = Daemon::new(ConfigFile::default());
+            d.add_project(&dir.path().to_string_lossy()).unwrap();
+
+            let written = std::fs::read_to_string(cfg.join("projects.toml")).unwrap();
+            let root = dir.path().to_string_lossy().replace('\\', "/");
+            assert!(
+                written.contains(&format!("root = {root:?}")),
+                "the root is what gets scanned again next time:\n{written}"
+            );
+            assert!(
+                !written.contains("repos = "),
+                "and what it found is not frozen into the file:\n{written}"
+            );
+        });
+    }
+
+    #[test]
+    fn a_project_added_at_runtime_comes_back_the_same_after_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let child = dir.path().join("orion");
+        std::fs::create_dir(&child).unwrap();
+        let _repo = real_repo(&child);
+
+        with_temp_config(|_| {
+            let d = Daemon::new(ConfigFile::default());
+            d.add_project(&dir.path().to_string_lossy()).unwrap();
+            let before = repository_names(&d);
+
+            let restarted = Daemon::new(crate::config::load().unwrap());
+            assert_eq!(repository_names(&restarted), before);
+        });
     }
 
     // --- workspaces ---------------------------------------------------------
@@ -2700,16 +3133,19 @@ mod tests {
             projects: vec![
                 ProjectConfig {
                     name: "home-thing".to_string(),
+                    root: None,
                     repos: vec!["/home-thing".to_string()],
                     workspace: None,
                 },
                 ProjectConfig {
                     name: "day-job".to_string(),
+                    root: None,
                     repos: vec!["/day-job".to_string()],
                     workspace: Some("work".to_string()),
                 },
                 ProjectConfig {
                     name: "side".to_string(),
+                    root: None,
                     repos: vec!["/side".to_string()],
                     workspace: Some("weekend".to_string()),
                 },
@@ -2883,11 +3319,13 @@ mod tests {
                 projects: vec![
                     ProjectConfig {
                         name: "here".to_string(),
+                        root: None,
                         repos: vec![dir.path().to_string_lossy().to_string()],
                         workspace: None,
                     },
                     ProjectConfig {
                         name: "elsewhere".to_string(),
+                        root: None,
                         repos: vec![dir.path().to_string_lossy().to_string()],
                         workspace: Some("other".to_string()),
                     },
@@ -3209,6 +3647,7 @@ mod tests {
             workspaces: Vec::new(),
             projects: vec![ProjectConfig {
                 name: "proj".to_string(),
+                root: None,
                 repos: vec![dir.to_string_lossy().to_string()],
                 workspace: None,
             }],
@@ -3260,6 +3699,7 @@ mod tests {
             workspaces: Vec::new(),
             projects: vec![ProjectConfig {
                 name: "proj".into(),
+                root: None,
                 repos: vec![dir.to_string_lossy().to_string()],
                 workspace: None,
             }],

@@ -92,7 +92,8 @@ for `argus-hook` beside itself.
 
 Start Argus once to create the configuration directory, or create `projects.toml` yourself as shown
 under [Configuration](#configuration). You can also press `n` in the projects column and enter a
-directory.
+directory: every Git repository at or beneath it becomes one of the project's repositories, so
+naming a repository adds that one and naming the directory a dozen of them live in adds the dozen.
 
 ### 4. Run
 
@@ -177,6 +178,10 @@ Configuration is loaded when the daemon starts; live reload is not implemented.
 name = "work"
 
 [[project]]
+name = "src"
+root = "~/src"
+
+[[project]]
 name = "argus"
 repos = ["~/src/argus"]
 workspace = "work"
@@ -192,8 +197,23 @@ cmd = ["opencode"]
 env = {}
 ```
 
-Each repository path becomes a primary checkout. `~/` and `~\` are expanded. Projects without a
-`workspace` use the always-present `default` workspace.
+A project finds its repositories under `root`, or names them one at a time in `repos`, or does
+both. Each becomes a repository with a primary checkout at that path.
+
+`root` is scanned for the Git repositories at or beneath it, at startup and every ten seconds
+after, so a repository you clone into it turns up without restarting anything, and one you delete
+leaves once nothing is running in it. The scan stops at each repository it finds, so a submodule
+stays part of the repository containing it; it skips `.git`, `.argus`, `node_modules`, and
+`target`; it does not follow directory symlinks; and it looks no more than eight directories deep.
+Linked worktrees are not repositories of their own — they are checkouts of the repository they
+belong to, and appear in its checkout column.
+
+`repos` is taken at its word: a path there need not be a Git repository at all, which is how a
+plain directory gets a row and panes, and no scan will ever remove it. A repository reached both
+ways appears once.
+
+`~/` and `~\` are expanded. Projects without a `workspace` use the always-present `default`
+workspace.
 
 When no `[[agent]]` entries exist, Argus supplies these templates:
 
