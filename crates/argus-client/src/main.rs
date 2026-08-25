@@ -93,7 +93,15 @@ async fn main() -> anyhow::Result<()> {
     result
 }
 
-type Term = Terminal<TermBackend<io::Stdout>>;
+/// One frame is written as hundreds of small writes. `io::Stdout` is a
+/// line writer with a 1 KiB buffer, and terminal output carries almost no
+/// newlines, so unbuffered each full frame became a long run of tiny
+/// console writes — the fixed ~6ms a frame cost that showed up in the
+/// profile whether or not anything had changed. Buffered, a frame is one
+/// write, at `end_frame`.
+const FRAME_BUFFER: usize = 1 << 20;
+
+type Term = Terminal<TermBackend<io::BufWriter<io::Stdout>>>;
 
 fn enter_terminal() -> anyhow::Result<Term> {
     enable_raw_mode()?;
@@ -104,7 +112,10 @@ fn enter_terminal() -> anyhow::Result<Term> {
         EnableMouseCapture,
         EnableBracketedPaste
     )?;
-    Ok(Terminal::new(TermBackend::new(stdout))?)
+    Ok(Terminal::new(TermBackend::new(io::BufWriter::with_capacity(
+        FRAME_BUFFER,
+        stdout,
+    )))?)
 }
 
 /// One frame, presented all at once.
@@ -253,6 +264,10 @@ async fn run(
         let burst_due = burst.deadline();
         tokio::select! {
             maybe_event = events.next() => {
+                // Only a keystroke has somebody waiting on its echo. Mouse
+                // motion arrives hundreds of times a second and used to
+                // present a frame each — the profile's quiet seconds with a
+                // hundred frames and no keys in them were the mouse moving.
                 let key = matches!(maybe_event, Some(Ok(Event::Key(_))));
                 if !handle_terminal_event(&mut app, &mut burst, maybe_event) {
                     break;
@@ -260,8 +275,10 @@ async fn run(
                 if key {
                     let pane = app.input_pane();
                     profile.record(|c| c.key(pane, std::time::Instant::now()));
+                    redraw.input();
+                } else {
+                    redraw.changed();
                 }
-                redraw.input();
             }
             _ = sleep_until(burst_due), if burst_due.is_some() => {
                 flush_burst(&mut app, &mut burst);
