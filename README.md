@@ -334,7 +334,7 @@ connects instantly and a rebuild only pays for what changed.
 | `h`, Left, Escape | Go back |
 | `s` | Start a shell |
 | `a` | Choose and start an agent |
-| `n` | Add a project or create a worktree, depending on the column |
+| `n` | Add a project, add a repository to one, or create a worktree, depending on the column |
 | `D` | Remove what the column selects, after confirmation: a project or repository (out of the panel only — nothing on disk is touched) or a linked worktree (deleted) |
 | `w` | Switch workspace |
 | `b` | Open the branch picker |

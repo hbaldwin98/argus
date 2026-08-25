@@ -316,23 +316,7 @@ pub fn remove_project(index: usize, name: &str) -> Result<()> {
     let raw = std::fs::read_to_string(&cfg_path)
         .with_context(|| format!("reading {}", cfg_path.display()))?;
     let lines: Vec<&str> = raw.lines().collect();
-    let blocks = project_blocks(&lines);
-
-    let target = match blocks.get(index) {
-        Some(&(start, end)) if block_name(&lines[start..end]).as_deref() == Some(name) => {
-            Some((start, end))
-        }
-        _ => {
-            let mut matching = blocks
-                .iter()
-                .filter(|&&(start, end)| block_name(&lines[start..end]).as_deref() == Some(name));
-            match (matching.next(), matching.next()) {
-                (Some(&only), None) => Some(only),
-                _ => None,
-            }
-        }
-    };
-    let Some((start, end)) = target else {
+    let Some((start, end)) = locate_project(&lines, index, name) else {
         anyhow::bail!("no project named {name:?} in {}", cfg_path.display());
     };
 
@@ -362,6 +346,130 @@ pub fn remove_project(index: usize, name: &str) -> Result<()> {
     }
     std::fs::write(&cfg_path, out).with_context(|| format!("rewriting {}", cfg_path.display()))?;
     Ok(())
+}
+
+/// The line range of the `[[project]]` block the daemon believes is
+/// `name` at `index`. If the file has been edited by hand since it was
+/// loaded the index may have moved, so a mismatch falls back to a block
+/// that uniquely carries that name, and gives up when even that is
+/// ambiguous — better to touch nothing than the wrong project.
+fn locate_project(lines: &[&str], index: usize, name: &str) -> Option<(usize, usize)> {
+    let blocks = project_blocks(lines);
+    match blocks.get(index) {
+        Some(&(start, end)) if block_name(&lines[start..end]).as_deref() == Some(name) => {
+            Some((start, end))
+        }
+        _ => {
+            let mut matching = blocks
+                .iter()
+                .filter(|&&(start, end)| block_name(&lines[start..end]).as_deref() == Some(name));
+            match (matching.next(), matching.next()) {
+                (Some(&only), None) => Some(only),
+                _ => None,
+            }
+        }
+    }
+}
+
+/// Adds one repository path to the `repos` list of the `[[project]]` block
+/// at `index` — the counterpart to [`append_project`] for a repository the
+/// project's root would never find, and the reason `repos` and `root` can
+/// both be set on one project.
+///
+/// Text-level like the rest of this module, so the user's other blocks and
+/// comments survive. Only the `repos` key is rewritten, and it is rewritten
+/// as one line: the paths are the value, their formatting isn't.
+pub fn append_repo(index: usize, name: &str, path: &Path) -> Result<()> {
+    let cfg_path = config_path();
+    let raw = std::fs::read_to_string(&cfg_path)
+        .with_context(|| format!("reading {}", cfg_path.display()))?;
+    let lines: Vec<&str> = raw.lines().collect();
+    let Some((start, end)) = locate_project(&lines, index, name) else {
+        anyhow::bail!("no project named {name:?} in {}", cfg_path.display());
+    };
+
+    let mut repos = block_repos(&lines[start..end]);
+    repos.push(path.to_string_lossy().replace('\\', "/"));
+    let rendered = format!(
+        "repos = [{}]",
+        repos
+            .iter()
+            .map(|r| format!("{r:?}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
+    let mut out: Vec<String> = lines[..start].iter().map(|l| l.to_string()).collect();
+    match repos_span(&lines[start..end]) {
+        Some((key_start, key_end)) => {
+            out.extend(
+                lines[start..start + key_start]
+                    .iter()
+                    .map(|l| l.to_string()),
+            );
+            out.push(rendered);
+            out.extend(lines[start + key_end..end].iter().map(|l| l.to_string()));
+        }
+        None => {
+            // After the block's own keys but before the blank line that
+            // separates it from whatever follows, so the file keeps its
+            // shape.
+            let mut at = end;
+            while at > start + 1 && lines[at - 1].trim().is_empty() {
+                at -= 1;
+            }
+            out.extend(lines[start..at].iter().map(|l| l.to_string()));
+            out.push(rendered);
+            out.extend(lines[at..end].iter().map(|l| l.to_string()));
+        }
+    }
+    out.extend(lines[end..].iter().map(|l| l.to_string()));
+
+    let mut text = out.join("\n");
+    if !text.is_empty() {
+        text.push('\n');
+    }
+    std::fs::write(&cfg_path, text).with_context(|| format!("rewriting {}", cfg_path.display()))?;
+    Ok(())
+}
+
+/// The `repos` a block already lists, read as TOML for the same reason
+/// [`block_name`] is.
+fn block_repos(block: &[&str]) -> Vec<String> {
+    let Some(body) = block.get(1..).map(|b| b.join("\n")) else {
+        return Vec::new();
+    };
+    let Ok(table) = toml::from_str::<toml::Table>(&body) else {
+        return Vec::new();
+    };
+    table
+        .get("repos")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The block-relative line range the `repos` assignment occupies, arrays
+/// written across several lines included.
+fn repos_span(block: &[&str]) -> Option<(usize, usize)> {
+    let start = block.iter().position(|l| {
+        let t = l.trim_start();
+        t.strip_prefix("repos")
+            .is_some_and(|rest| rest.trim_start().starts_with('='))
+    })?;
+    let mut depth = 0i32;
+    for (offset, line) in block[start..].iter().enumerate() {
+        depth += line.chars().filter(|&c| c == '[').count() as i32;
+        depth -= line.chars().filter(|&c| c == ']').count() as i32;
+        if depth <= 0 {
+            return Some((start, start + offset + 1));
+        }
+    }
+    Some((start, block.len()))
 }
 
 /// Half-open line ranges of each `[[project]]` block, header included. A

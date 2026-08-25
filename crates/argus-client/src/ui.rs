@@ -238,7 +238,9 @@ n  add one",
         repository_rows,
         app.focus == Focus::Repositories,
         (nrepo > 0).then_some(app.sel_repository),
-        "no repositories",
+        "no repositories
+
+n  add one",
         th,
     );
 
@@ -786,7 +788,7 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "j/k move  l open  n add  D rm  w wksp  p fold  S settings  q detach"
             }
             Focus::Repositories => {
-                "j/k move  l open  s shell  a agent  b branch  f file  R review  D rm  q detach"
+                "j/k move  l open  s shell  a agent  b branch  f file  n add  D rm  q detach"
             }
             Focus::Checkouts => {
                 "j/k move  l open  b branch  f file  R review  n worktree  D rm  q detach"
@@ -1094,6 +1096,12 @@ fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         ),
         Prompt::AddProject { input } => (
             "add project",
+            wrapped_field(input, inner_width, th),
+            "enter add   esc cancel",
+            false,
+        ),
+        Prompt::AddRepository { input, .. } => (
+            "add repository",
             wrapped_field(input, inner_width, th),
             "enter add   esc cancel",
             false,

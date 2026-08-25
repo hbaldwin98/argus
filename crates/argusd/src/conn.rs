@@ -212,6 +212,7 @@ fn dispatch_workspace_query(
 ) -> DispatchResult {
     let result = match msg {
         ClientMsg::AddProject { path } => daemon.add_project(&path),
+        ClientMsg::AddRepository { project, path } => daemon.add_repository(project, &path),
         // Removal only rewrites config and the tree — no subprocess, no
         // directory walk — so it stays on the message loop like AddProject.
         ClientMsg::RemoveProject { project } => daemon.remove_project(project),

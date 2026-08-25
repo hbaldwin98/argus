@@ -85,6 +85,11 @@ pub enum ClientMsg {
     /// whatever's already in `projects.toml` or under the daemon's cwd.
     /// Persisted to config so it survives a daemon restart.
     AddProject { path: String },
+    /// Add one repository to a project that already exists, by path. For a
+    /// directory the project's root would never scan — anything under the
+    /// root arrives on its own — so the path is written into the project's
+    /// `repos` list and taken at its word, Git repository or not.
+    AddRepository { project: ProjectId, path: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

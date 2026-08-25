@@ -1507,6 +1507,66 @@ impl Daemon {
         Ok(())
     }
 
+    /// Adds one repository to a project that is already in the panel, by
+    /// path — the way a repository that lives nowhere near the project's
+    /// root joins it. Named in the project's `repos` list rather than found
+    /// by a scan, so it survives a restart and no amount of rescanning
+    /// takes it away again.
+    ///
+    /// The path is taken at its word, as `repos` always has: a directory
+    /// that is not a Git repository still becomes a row, which is how a
+    /// plain directory gets panes. A path the user had previously removed
+    /// stops being excluded — asking for it back is the undo for that.
+    pub fn add_repository(&self, project: ProjectId, path: &str) -> anyhow::Result<()> {
+        let expanded = config::expand_home(path);
+        if !expanded.is_dir() {
+            anyhow::bail!("not a directory: {}", expanded.display());
+        }
+
+        let (index, name) = {
+            let inner = self.inner.lock().unwrap();
+            let index = inner
+                .projects
+                .iter()
+                .position(|p| p.id == project)
+                .ok_or_else(|| anyhow::anyhow!("no such project"))?;
+            let p = &inner.projects[index];
+            if p.repositories
+                .iter()
+                .flat_map(|r| r.checkouts.iter())
+                .any(|c| same_path(&c.path, &expanded))
+            {
+                anyhow::bail!("{} already has {}", p.name, expanded.display());
+            }
+            (index, p.name.clone())
+        };
+
+        // Config first, for the same reason removal writes it first: a row
+        // that appears in the panel but not in the file is gone again after
+        // a restart.
+        config::append_repo(index, &name, &expanded)?;
+
+        let unexcluded = {
+            let mut inner = self.inner.lock().unwrap();
+            let was_excluded = is_excluded(&inner.excluded, &expanded);
+            inner.excluded.retain(|e| !same_path(e, &expanded));
+            let Inner { projects, ids, .. } = &mut *inner;
+            let repository = new_repository(ids, expanded.clone(), false);
+            let p = projects
+                .iter_mut()
+                .find(|p| p.id == project)
+                .ok_or_else(|| anyhow::anyhow!("no such project"))?;
+            p.repositories.push(repository);
+            was_excluded.then(|| inner.excluded.clone())
+        };
+        if let Some(remaining) = unexcluded {
+            config::rewrite_excluded_repos(&remaining)?;
+        }
+
+        self.broadcast_tree();
+        Ok(())
+    }
+
     /// Takes a project out of the panel and out of `projects.toml`.
     /// Nothing on disk is touched — this is the undo for `add_project`, not
     /// a delete, and adding the same directory again brings the same tree
@@ -3348,6 +3408,119 @@ mod tests {
         });
     }
 
+    // --- adding one repository to a project ---------------------------------
+
+    /// A project rooted at `dir`, added the way the TUI adds it, plus a
+    /// repository sitting somewhere the root will never scan.
+    fn project_and_an_outside_repository() -> (tempfile::TempDir, tempfile::TempDir, Arc<Daemon>) {
+        let root = tempfile::tempdir().unwrap();
+        let child = root.path().join("orion");
+        std::fs::create_dir(&child).unwrap();
+        let _repo = real_repo(&child);
+
+        let outside = tempfile::tempdir().unwrap();
+        let elsewhere = outside.path().join("notes");
+        std::fs::create_dir(&elsewhere).unwrap();
+        let _other = real_repo(&elsewhere);
+
+        let d = Daemon::new(ConfigFile::default());
+        d.add_project(&root.path().to_string_lossy()).unwrap();
+        (root, outside, d)
+    }
+
+    #[test]
+    fn a_repository_can_be_added_to_a_project_from_outside_its_root() {
+        with_temp_config(|_| {
+            let (_root, outside, d) = project_and_an_outside_repository();
+            let project = d.snapshot()[0].id;
+
+            d.add_repository(project, &outside.path().join("notes").to_string_lossy())
+                .unwrap();
+
+            assert_eq!(repository_names(&d), vec!["orion", "notes"]);
+        });
+    }
+
+    #[test]
+    fn a_repository_added_by_path_is_still_there_after_a_restart() {
+        with_temp_config(|_| {
+            let (_root, outside, d) = project_and_an_outside_repository();
+            let project = d.snapshot()[0].id;
+            d.add_repository(project, &outside.path().join("notes").to_string_lossy())
+                .unwrap();
+
+            // Named repositories are built before the root is scanned, so
+            // the row order changes across a restart even though the set
+            // does not.
+            let restarted = Daemon::new(crate::config::load().unwrap());
+            assert_eq!(repository_names(&restarted), vec!["notes", "orion"]);
+        });
+    }
+
+    #[test]
+    fn a_repository_named_by_hand_is_not_a_scan_result_and_no_scan_removes_it() {
+        with_temp_config(|_| {
+            let (_root, outside, d) = project_and_an_outside_repository();
+            let project = d.snapshot()[0].id;
+            d.add_repository(project, &outside.path().join("notes").to_string_lossy())
+                .unwrap();
+
+            // A scan of the root finds only what is under it, which the
+            // added repository never was.
+            assert!(!d.reconcile_repositories_with(crate::git::discover_repositories));
+            assert_eq!(repository_names(&d), vec!["orion", "notes"]);
+        });
+    }
+
+    #[test]
+    fn adding_a_repository_the_project_already_has_is_refused() {
+        with_temp_config(|_| {
+            let (root, _outside, d) = project_and_an_outside_repository();
+            let project = d.snapshot()[0].id;
+
+            let err = d
+                .add_repository(project, &root.path().join("orion").to_string_lossy())
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("already has"), "{err}");
+            assert_eq!(repository_names(&d), vec!["orion"]);
+        });
+    }
+
+    #[test]
+    fn adding_something_that_is_not_a_directory_is_refused() {
+        with_temp_config(|_| {
+            let (root, _outside, d) = project_and_an_outside_repository();
+            let project = d.snapshot()[0].id;
+
+            let err = d
+                .add_repository(project, &root.path().join("nope").to_string_lossy())
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("not a directory"), "{err}");
+        });
+    }
+
+    #[test]
+    fn adding_a_repository_back_undoes_having_removed_it() {
+        with_temp_config(|_| {
+            let (root, _outside, d) = project_and_an_outside_repository();
+            let project = d.snapshot()[0].id;
+            let repository = d.snapshot()[0].repositories[0].id;
+
+            d.remove_repository(repository).unwrap();
+            assert!(repository_names(&d).is_empty());
+
+            d.add_repository(project, &root.path().join("orion").to_string_lossy())
+                .unwrap();
+            assert_eq!(repository_names(&d), vec!["orion"]);
+
+            // The exclusion is gone too, or a restart would drop it again.
+            let restarted = Daemon::new(crate::config::load().unwrap());
+            assert_eq!(repository_names(&restarted), vec!["orion"]);
+        });
+    }
+
     // --- removing what was added --------------------------------------------
 
     /// A project rooted at a temp directory holding one repository per
@@ -3436,6 +3609,76 @@ repos = ["/also"]
                 !after.contains("# the one going away"),
                 "with the comment that introduced it:
 {after}"
+            );
+        });
+    }
+
+    #[test]
+    fn adding_a_repository_extends_that_projects_list_and_leaves_the_file_alone() {
+        with_temp_config(|cfg| {
+            let cfg_path = cfg.join("projects.toml");
+            std::fs::write(
+                &cfg_path,
+                r#"# hand written
+[[project]]
+name = "first"
+repos = [
+  "/one",
+]
+
+[[project]]
+name = "second"
+root = "/somewhere"
+"#,
+            )
+            .unwrap();
+            let added = tempfile::tempdir().unwrap();
+
+            let d = Daemon::new(crate::config::load().unwrap());
+            let first = d
+                .snapshot()
+                .into_iter()
+                .find(|p| p.name == "first")
+                .unwrap();
+            d.add_repository(first.id, &added.path().to_string_lossy())
+                .unwrap();
+
+            let after = std::fs::read_to_string(&cfg_path).unwrap();
+            let repos = crate::config::load().unwrap().projects.remove(0).repos;
+            assert_eq!(
+                repos,
+                vec![
+                    "/one".to_string(),
+                    added.path().to_string_lossy().replace('\\', "/")
+                ],
+                "the new path joins the ones already listed:
+{after}"
+            );
+            assert!(
+                after.contains("# hand written")
+                    && after.contains(r#"name = "second""#)
+                    && after.contains(r#"root = "/somewhere""#),
+                "and nothing else in the file moved:
+{after}"
+            );
+        });
+    }
+
+    #[test]
+    fn a_project_that_lists_no_repositories_yet_gains_the_key() {
+        with_temp_config(|_| {
+            let (_dir, d) = added_project_with(&["orion"]);
+            let added = tempfile::tempdir().unwrap();
+
+            // `add_project` writes a block with a root and no `repos`.
+            d.add_repository(d.snapshot()[0].id, &added.path().to_string_lossy())
+                .unwrap();
+
+            let restarted = Daemon::new(crate::config::load().unwrap());
+            let names = repository_names(&restarted);
+            assert!(
+                names.contains(&"orion".to_string()) && names.len() == 2,
+                "{names:?}"
             );
         });
     }

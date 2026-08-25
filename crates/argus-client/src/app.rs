@@ -280,6 +280,8 @@ pub enum Prompt {
     NewWorktree { base: CheckoutId, input: String },
     ConfirmRemove { target: RemoveTarget, label: String },
     AddProject { input: String },
+    /// A repository joining a project that already exists, by path.
+    AddRepository { project: ProjectId, input: String },
     Comment { anchor: Anchor, input: String },
     /// The editor command, typed rather than cycled — it is free text.
     EditorCommand { input: String },
@@ -348,6 +350,9 @@ pub struct App {
     pending_focus_new: bool,
     pending_focus_new_checkout: Option<RepositoryId>,
     pending_focus_new_project: bool,
+    /// The project a just-added repository belongs to, so the new row is
+    /// the selected one when the tree carrying it arrives.
+    pending_focus_new_repository: Option<ProjectId>,
     out: UnboundedSender<ClientMsg>,
 }
 
@@ -424,6 +429,7 @@ impl App {
             pending_focus_new: false,
             pending_focus_new_checkout: None,
             pending_focus_new_project: false,
+            pending_focus_new_repository: None,
             out,
         }
     }
@@ -653,6 +659,20 @@ impl App {
                 self.clamp();
             }
         }
+        if let Some(project_id) = self.pending_focus_new_repository.take() {
+            if let Some((index, project)) = self
+                .tree
+                .iter()
+                .enumerate()
+                .find(|(_, p)| p.id == project_id)
+            {
+                if !project.repositories.is_empty() {
+                    self.sel_project = index;
+                    self.sel_repository = project.repositories.len() - 1;
+                    self.clamp();
+                }
+            }
+        }
         if let Some(repository_id) = self.pending_focus_new_checkout.take() {
             if let Some((project, repository)) = self.tree.iter().enumerate().find_map(
                 |(project_index, project)| {
@@ -839,7 +859,8 @@ impl App {
                 Prompt::NewWorktree { input, .. }
                 | Prompt::Comment { input, .. }
                 | Prompt::EditorCommand { input }
-                | Prompt::AddProject { input } => Some(input),
+                | Prompt::AddProject { input }
+                | Prompt::AddRepository { input, .. } => Some(input),
                 Prompt::ConfirmRemove { .. } => None,
             };
             if let Some(input) = input {
@@ -931,6 +952,23 @@ impl App {
                     if !path.is_empty() {
                         let _ = self.out.send(ClientMsg::AddProject { path });
                         self.pending_focus_new_project = true;
+                    }
+                }
+                KeyCode::Esc => self.prompt = None,
+                KeyCode::Backspace => {
+                    input.pop();
+                }
+                KeyCode::Char(c) => input.push(c),
+                _ => {}
+            },
+            Prompt::AddRepository { project, input } => match key.code {
+                KeyCode::Enter => {
+                    let path = input.trim().to_string();
+                    let project = *project;
+                    self.prompt = None;
+                    if !path.is_empty() {
+                        let _ = self.out.send(ClientMsg::AddRepository { project, path });
+                        self.pending_focus_new_repository = Some(project);
                     }
                 }
                 KeyCode::Esc => self.prompt = None,
@@ -1340,14 +1378,24 @@ impl App {
     }
 
     /// `n` is contextual on which column has focus: a new project (any
-    /// directory, not just preconfigured ones) from the projects column, or
-    /// a new worktree branched off the selected checkout from the
-    /// checkouts column. No-op elsewhere — there's no "current checkout"
-    /// to branch from once you're inside the panes/content columns.
+    /// directory, not just preconfigured ones) from the projects column, a
+    /// repository added to the selected project from the repositories
+    /// column, or a new worktree branched off the selected checkout from
+    /// the checkouts column. No-op elsewhere — there's no "current
+    /// checkout" to branch from once you're inside the panes/content
+    /// columns.
     fn new_prompt(&mut self) {
         match self.focus {
             Focus::Projects => {
                 self.prompt = Some(Prompt::AddProject { input: String::new() });
+            }
+            Focus::Repositories => {
+                if let Some(p) = self.current_project() {
+                    self.prompt = Some(Prompt::AddRepository {
+                        project: p.id,
+                        input: String::new(),
+                    });
+                }
             }
             Focus::Checkouts => {
                 if let Some(c) = self.current_checkout() {
@@ -2460,6 +2508,59 @@ mod tests {
         });
         h.app.on_server_msg(ServerMsg::Tree(t));
         assert_eq!(h.app.current_project().unwrap().name, "new");
+    }
+
+    #[test]
+    fn n_in_the_repositories_column_adds_a_repository_to_that_project() {
+        let mut h = Harness::new();
+        h.keys("l");
+        h.sent();
+        assert_eq!(h.app.focus, Focus::Repositories);
+
+        h.key(KeyCode::Char('n'));
+        assert!(matches!(h.app.prompt, Some(Prompt::AddRepository { .. })));
+
+        h.keys("/some/repo");
+        h.key(KeyCode::Enter);
+        match &h.sent()[0] {
+            ClientMsg::AddRepository { project, path } => {
+                assert_eq!(*project, ProjectId(1), "the project in view");
+                assert_eq!(path, "/some/repo");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(h.app.prompt.is_none());
+    }
+
+    #[test]
+    fn a_new_repository_becomes_the_selected_one() {
+        let mut h = Harness::new();
+        h.keys("l");
+        h.key(KeyCode::Char('n'));
+        h.keys("/r");
+        h.key(KeyCode::Enter);
+        h.sent();
+
+        let mut t = tree();
+        t[0].repositories.push(repository(
+            7,
+            "added",
+            vec![checkout(30, "main", true, vec![])],
+        ));
+        h.app.on_server_msg(ServerMsg::Tree(t));
+        assert_eq!(h.app.current_repository().unwrap().name, "added");
+    }
+
+    #[test]
+    fn esc_cancels_adding_a_repository() {
+        let mut h = Harness::new();
+        h.keys("l");
+        h.sent();
+        h.key(KeyCode::Char('n'));
+        h.keys("/r");
+        h.key(KeyCode::Esc);
+        assert!(h.app.prompt.is_none());
+        assert!(h.sent().is_empty());
     }
 
     #[test]

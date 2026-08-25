@@ -115,6 +115,10 @@ mod tests {
             ClientMsg::AddProject {
                 path: r"C:\src\thing".to_string(),
             },
+            ClientMsg::AddRepository {
+                project: ProjectId(1),
+                path: r"C:\src\thing\repo".to_string(),
+            },
         ];
         for msg in &msgs {
             let back = roundtrip(msg).await;
