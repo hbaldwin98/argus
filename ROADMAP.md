@@ -20,7 +20,8 @@ contract is in [`TARGET.md`](TARGET.md).
 - Show shared-checkout warnings and support optional exclusivity.
 - Replace or supplement the two-second poll with Git metadata watching.
 - Reload configuration without dropping running panes.
-- Decide whether project scan globs remain part of the product.
+- Let a project root include or exclude paths, now that scanning one is how projects are built.
+  The scan currently has one fixed skip list and no per-project control.
 
 ## P3: Agent State and Identity
 
