@@ -139,6 +139,7 @@ mod tests {
             repositories: vec![RepositoryInfo {
                 id: RepositoryId(2),
                 name: "orion".to_string(),
+                branches: Vec::new(),
                 checkouts: vec![CheckoutInfo {
                     id: CheckoutId(3),
                     name: "master".to_string(),

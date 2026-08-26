@@ -306,10 +306,25 @@ n  add one",
                             Style::default().fg(th.dim),
                         )]
                     })
-                }).collect()
+                })
+                // Branches with no checkout of their own, after the
+                // checkouts they could become: a branch you cannot see is
+                // one you forget you left behind (TARGET.md §Repository and
+                // checkout model).
+                .chain(r.branches.iter().map(|b| {
+                    Item::new(
+                        vec![
+                            status_dot(None, th),
+                            Span::styled("⌥ ", Style::default().fg(th.dim)),
+                            Span::styled(b.clone(), Style::default().fg(th.muted)),
+                        ],
+                        vec![Span::styled("no checkout", Style::default().fg(th.dim))],
+                    )
+                }))
+                .collect()
         })
         .unwrap_or_default();
-    let ncheck = app.current_repository().map(|r| r.checkouts.len()).unwrap_or(0);
+    let ncheck = app.checkout_row_count();
     app.layout.checkouts = render_column(
         f,
         cols[2],
@@ -2047,6 +2062,7 @@ mod tests {
             repositories: vec![RepositoryInfo {
                 id: RepositoryId(2),
                 name: "orion".to_string(),
+                branches: Vec::new(),
                 checkouts: vec![
                 CheckoutInfo {
                     id: CheckoutId(10),
@@ -2131,6 +2147,26 @@ mod tests {
         let mut app = App::new(tx);
         app.on_server_msg(argus_protocol::ServerMsg::Tree(tree()));
         app
+    }
+
+    #[test]
+    fn a_branch_with_no_checkout_gets_a_row_saying_so() {
+        let mut app = app_with_tree();
+        app.tree[0].repositories[0].branches = vec!["hotfix".to_string()];
+
+        let buf = draw_at(&mut app, 120, 20);
+        let rendered = lines(&buf);
+        let at = rendered
+            .iter()
+            .position(|l| l.contains("hotfix"))
+            .expect("the branch should have a row of its own");
+
+        // A row is two lines: the name, then what it is.
+        assert!(
+            rendered[at + 1].contains("no checkout"),
+            "a branch row has to say what it is: {:?}",
+            rendered[at + 1]
+        );
     }
 
     #[test]
@@ -2315,6 +2351,7 @@ mod tests {
         app.tree[0].repositories.push(RepositoryInfo {
             id: RepositoryId(3),
             name: "satellite".to_string(),
+            branches: Vec::new(),
             checkouts: vec![CheckoutInfo {
                 id: CheckoutId(12),
                 name: "main".to_string(),

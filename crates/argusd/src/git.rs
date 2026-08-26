@@ -130,6 +130,15 @@ pub fn removal(primary: &Path, worktree: &Path) -> Removal {
     }
 }
 
+/// Whether the repository at `path` already has a local branch by this
+/// name — the difference between giving an existing branch a worktree and
+/// starting a new one.
+pub fn has_local_branch(path: &Path, branch: &str) -> bool {
+    git2::Repository::open(path)
+        .and_then(|repo| repo.find_branch(branch, git2::BranchType::Local).map(|_| ()))
+        .is_ok()
+}
+
 /// Worktree paths come back from libgit2 canonicalized while a configured
 /// one is however the user spelled it; compare them resolved.
 fn same_path(a: &Path, b: &Path) -> bool {

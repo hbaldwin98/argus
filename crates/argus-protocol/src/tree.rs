@@ -124,6 +124,12 @@ pub struct RepositoryInfo {
     pub id: RepositoryId,
     pub name: String,
     pub checkouts: Vec<CheckoutInfo>,
+    /// Local branches no checkout of this repository is sitting on, sorted.
+    /// A branch you can't see is a branch you forget: these are the rows
+    /// that make "switch to it, or give it a worktree" an offer rather than
+    /// something you have to remember to go looking for.
+    #[serde(default)]
+    pub branches: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

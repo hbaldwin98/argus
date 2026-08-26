@@ -462,6 +462,31 @@ impl App {
             .and_then(|r| r.checkouts.get(self.sel_checkout))
     }
 
+    /// The checkouts column lists this repository's checkouts and then the
+    /// branches that have none, so a selection past the last checkout is a
+    /// branch row. Everything reached through `current_checkout` — panes,
+    /// review, spawning — is `None` there, which is what a branch with no
+    /// directory has to offer.
+    pub fn current_branch_row(&self) -> Option<&str> {
+        let r = self.current_repository()?;
+        r.branches
+            .get(self.sel_checkout.checked_sub(r.checkouts.len())?)
+            .map(String::as_str)
+    }
+
+    /// Rows in the checkouts column: its checkouts, then its branches.
+    pub fn checkout_row_count(&self) -> usize {
+        self.current_repository()
+            .map(|r| r.checkouts.len() + r.branches.len())
+            .unwrap_or(0)
+    }
+
+    /// The checkout a repository-wide action runs in: its primary one,
+    /// which is where a branch without a directory would be switched to.
+    fn primary_checkout(&self) -> Option<&CheckoutInfo> {
+        self.current_repository()?.checkouts.iter().find(|c| c.primary)
+    }
+
     pub fn current_pane(&self) -> Option<&PaneInfo> {
         self.current_checkout()
             .and_then(|c| c.listed_panes().nth(self.sel_pane))
@@ -480,7 +505,7 @@ impl App {
         } else if self.sel_repository >= nrepo {
             self.sel_repository = nrepo - 1;
         }
-        let ncheck = self.current_repository().map(|r| r.checkouts.len()).unwrap_or(0);
+        let ncheck = self.checkout_row_count();
         if ncheck == 0 {
             self.sel_checkout = 0;
         } else if self.sel_checkout >= ncheck {
@@ -1593,10 +1618,31 @@ impl App {
                         base: c.id,
                         input: String::new(),
                     });
+                } else if let Some(branch) = self.current_branch_row().map(str::to_string) {
+                    // The name is not the question here — this branch is —
+                    // so there is nothing to prompt for.
+                    let Some(base) = self.primary_checkout().map(|c| c.id) else {
+                        return;
+                    };
+                    let _ = self.out.send(ClientMsg::CreateWorktree { checkout: base, branch });
                 }
             }
             _ => {}
         }
+    }
+
+    /// Moves the repository's primary checkout onto the selected branch row.
+    /// The daemon refuses this when that checkout is dirty and says so; the
+    /// answer there is `n`, which gives the branch a worktree instead.
+    fn switch_primary_to_selected_branch(&mut self) {
+        let Some(branch) = self.current_branch_row().map(str::to_string) else {
+            return;
+        };
+        let Some(checkout) = self.primary_checkout().map(|c| c.id) else {
+            self.report("this repository has no primary checkout");
+            return;
+        };
+        let _ = self.out.send(ClientMsg::SwitchBranch { checkout, branch });
     }
 
     /// Opens a confirmation to remove whatever the focused column selects,
@@ -1840,7 +1886,7 @@ impl App {
         let count = match target {
             Focus::Projects => self.tree.len(),
             Focus::Repositories => self.current_project().map(|p| p.repositories.len()).unwrap_or(0),
-            Focus::Checkouts => self.current_repository().map(|r| r.checkouts.len()).unwrap_or(0),
+            Focus::Checkouts => self.checkout_row_count(),
             _ => self.visible_pane_count(),
         };
 
@@ -1920,6 +1966,10 @@ impl App {
                 if self.current_checkout().is_some() {
                     self.sel_pane = 0;
                     self.focus = Focus::Panes;
+                } else if self.current_branch_row().is_some() {
+                    // A branch with no directory has no panes to descend
+                    // into; what it offers instead is somewhere to be.
+                    self.switch_primary_to_selected_branch();
                 }
             }
             Focus::Panes => {
@@ -2243,6 +2293,7 @@ mod tests {
             id: RepositoryId(id),
             name: name.to_string(),
             checkouts,
+            branches: Vec::new(),
         }
     }
 
@@ -2672,6 +2723,88 @@ second
         h.key(KeyCode::Char('Q'));
         assert!(h.sent().is_empty());
         assert!(!h.app.leader_pending, "chord consumed");
+    }
+
+    // --- branches without a checkout ----------------------------------------
+
+    /// The fixture tree with two branches nothing is sitting on, and the
+    /// selection parked on the first of them.
+    fn harness_on_a_branch_row() -> Harness {
+        let mut h = Harness::new();
+        h.app.tree[0].repositories[0].branches =
+            vec!["hotfix/tls".to_string(), "spike".to_string()];
+        h.keys("ll"); // into the checkouts column
+        h.keys("jj"); // past both checkouts, onto the first branch
+        h.sent();
+        h
+    }
+
+    #[test]
+    fn branch_rows_come_after_the_checkouts_and_carry_no_checkout() {
+        let mut h = harness_on_a_branch_row();
+
+        assert_eq!(h.app.checkout_row_count(), 4, "two checkouts, two branches");
+        assert_eq!(h.app.current_branch_row(), Some("hotfix/tls"));
+        assert!(
+            h.app.current_checkout().is_none(),
+            "a branch row has no checkout, so nothing hangs off it"
+        );
+        assert!(h.app.current_pane().is_none());
+
+        h.key(KeyCode::Char('j'));
+        assert_eq!(h.app.current_branch_row(), Some("spike"));
+        h.key(KeyCode::Char('j'));
+        assert_eq!(
+            h.app.current_branch_row(),
+            Some("spike"),
+            "the last branch is the last row"
+        );
+    }
+
+    #[test]
+    fn enter_on_a_branch_row_switches_the_primary_checkout_to_it() {
+        let mut h = harness_on_a_branch_row();
+
+        h.key(KeyCode::Enter);
+
+        assert!(
+            matches!(
+                h.sent().as_slice(),
+                [ClientMsg::SwitchBranch { checkout: CheckoutId(10), branch }] if branch == "hotfix/tls"
+            ),
+            "the primary checkout is where a branch with no directory goes"
+        );
+        assert_eq!(h.app.focus, Focus::Checkouts, "there is nothing to descend into");
+    }
+
+    #[test]
+    fn n_on_a_branch_row_gives_that_branch_a_worktree_without_asking_for_a_name() {
+        let mut h = harness_on_a_branch_row();
+
+        h.key(KeyCode::Char('n'));
+
+        assert!(h.app.prompt.is_none(), "the branch is already named");
+        assert!(matches!(
+            h.sent().as_slice(),
+            [ClientMsg::CreateWorktree { checkout: CheckoutId(10), branch }] if branch == "hotfix/tls"
+        ));
+    }
+
+    #[test]
+    fn a_branch_that_gets_a_checkout_stops_being_a_row_of_its_own() {
+        // The daemon decides this — a branch is listed only while no
+        // checkout is on it — so the client must not hold a selection that
+        // outlives the row.
+        let mut h = harness_on_a_branch_row();
+        h.key(KeyCode::Char('j')); // the last row
+
+        let mut tree = tree();
+        tree[0].repositories[0].branches = vec!["hotfix/tls".to_string()];
+        h.app.on_server_msg(ServerMsg::Tree(tree));
+
+        assert_eq!(h.app.checkout_row_count(), 3);
+        assert_eq!(h.app.sel_checkout, 2, "clamped onto the row that is left");
+        assert_eq!(h.app.current_branch_row(), Some("hotfix/tls"));
     }
 
     // --- spawning ----------------------------------------------------------

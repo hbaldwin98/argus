@@ -300,6 +300,10 @@ branch switch, a new worktree, and a scan that found new repositories refresh wh
 a row does not name the branch it just left for the rest of the tick; anything changed outside Argus
 waits for the poll.
 
+The checkouts column also lists the repository's local branches that no checkout is sitting on,
+refreshed on the same poll and cached the same way. Enter on one switches the primary checkout to
+it; `n` gives it a worktree.
+
 Branch and file pickers run in process. Branches are local branches, current first. File discovery
 uses `ignore`, follows Git ignore rules, and caps the result at 50,000 files.
 
@@ -307,11 +311,20 @@ Git mutations use the `git` executable:
 
 - switch to an existing branch;
 - create and switch to a branch;
-- add a worktree and branch;
+- add a worktree, creating the branch unless it already exists;
 - force-remove a linked worktree and best-effort delete its branch.
 
-Argus-created worktrees live under `<primary>/.argus/worktrees/<branch>`. Branches without a
-checkout are not represented. Dirty-checkout switching relies on Git's own conflict checks.
+Argus-created worktrees live under `<primary>/.argus/worktrees/<branch>`; a branch name that is not
+a plain path component is refused before it becomes a directory, and a name starting with a dash is
+refused before it reaches a command line. Removing a worktree decides what git would refuse — a
+locked worktree, a path that is not a linked worktree of this repository — before killing the
+checkout's panes, because the panes have to die first for the directory to be deletable on Windows
+and a refusal afterwards would cost them for nothing. A registration whose directory is already
+gone is pruned instead.
+
+Switching a dirty primary checkout is refused, and the refusal names the worktree alternative: git
+carries uncommitted changes across a switch whenever they do not conflict, which moves work off the
+branch it was done on. Linked worktrees are Argus's own and switch under Git's rules alone.
 
 ## Review
 

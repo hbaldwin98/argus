@@ -118,6 +118,11 @@ struct Repository {
     /// it is currently a Git repository, or currently exists.
     discovered: bool,
     checkouts: Vec<Checkout>,
+    /// Local branches none of `checkouts` is sitting on, from the last
+    /// poll. Cached for the same reason a checkout's git status is: a
+    /// snapshot is taken under the lock keystrokes need, and reading refs
+    /// there would put git I/O in front of the next key.
+    branches: Vec<String>,
 }
 
 struct Project {
@@ -402,6 +407,7 @@ impl Daemon {
                     .map(|r| RepositoryInfo {
                         id: r.id,
                         name: r.name.clone(),
+                        branches: r.branches.clone(),
                         checkouts: r
                             .checkouts
                             .iter()
@@ -1536,6 +1542,7 @@ impl Daemon {
                     daemon.reconcile_worktrees();
                     daemon.drop_silent_children();
                     daemon.refresh_git_status();
+                    daemon.refresh_branches();
                     let _ = daemon.tree_tx.send(daemon.snapshot());
                 })
                 .await;
@@ -1578,6 +1585,52 @@ impl Daemon {
         for (id, status) in statuses {
             if let Some(c) = find_checkout(&mut inner.projects, id) {
                 c.git = status;
+            }
+        }
+    }
+
+    /// Re-reads each repository's local branches and caches the ones no
+    /// checkout is sitting on, so the tree can offer them as rows.
+    ///
+    /// Runs after `refresh_git_status` and reads the branch names it just
+    /// cached: what makes a branch "without a checkout" is that no checkout
+    /// of that repository currently has it, which is exactly what a
+    /// checkout's status says. Three phases with the lock dropped in the
+    /// middle, for the reason the status sweep documents.
+    pub fn refresh_branches(&self) {
+        let repositories: Vec<(RepositoryId, PathBuf, Vec<String>)> = {
+            let inner = self.inner.lock().unwrap();
+            inner
+                .projects
+                .iter()
+                .flat_map(|p| p.repositories.iter())
+                .filter_map(|r| {
+                    let primary = r.checkouts.iter().find(|c| c.primary)?;
+                    let occupied = r
+                        .checkouts
+                        .iter()
+                        .filter_map(|c| c.git.as_ref().and_then(|g| g.branch.clone()))
+                        .collect();
+                    Some((r.id, primary.path.clone(), occupied))
+                })
+                .collect()
+        };
+
+        let listed: Vec<(RepositoryId, Vec<String>)> = repositories
+            .into_iter()
+            .map(|(id, path, occupied)| {
+                let free = crate::browse::branches(&path)
+                    .into_iter()
+                    .filter(|b| !occupied.contains(b))
+                    .collect();
+                (id, free)
+            })
+            .collect();
+
+        let mut inner = self.inner.lock().unwrap();
+        for (id, branches) in listed {
+            if let Some(r) = find_repository(&mut inner.projects, id) {
+                r.branches = branches;
             }
         }
     }
@@ -1979,7 +2032,32 @@ impl Daemon {
     /// Moves this checkout onto an existing branch. `git` refuses when the
     /// switch would clobber uncommitted work, and that refusal is exactly
     /// what should reach the user, so its stderr is passed through.
+    ///
+    /// Argus refuses one case git allows: switching a *dirty primary*
+    /// checkout (TARGET.md §Repository and checkout model). Git carries
+    /// uncommitted changes across a switch whenever they don't conflict,
+    /// which quietly moves work you were doing on one branch onto another —
+    /// and the primary checkout is the repo the user already had, not one
+    /// Argus made. A worktree gives the branch a directory of its own and
+    /// leaves that work where it was.
     pub async fn switch_branch(&self, checkout: CheckoutId, branch: &str) -> anyhow::Result<()> {
+        let (primary, path) = {
+            let inner = self.inner.lock().unwrap();
+            let c = find_checkout_ref(&inner.projects, checkout)
+                .ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
+            (c.primary, c.path.clone())
+        };
+        if primary {
+            // Read live rather than trusting the cache: the poll is up to
+            // two seconds stale, and this is the check that decides whether
+            // uncommitted work is about to move.
+            let dirty = crate::git::status(&path).is_some_and(|s| s.dirty);
+            if dirty {
+                anyhow::bail!(
+                    "the primary checkout has uncommitted changes — commit them, or make a worktree for {branch} instead"
+                );
+            }
+        }
         self.git_switch(checkout, &["switch"], branch).await
     }
 
@@ -2022,16 +2100,23 @@ impl Daemon {
             }
         }
         self.refresh_checkout_git(checkout);
+        self.refresh_branches();
         self.broadcast_tree();
         Ok(())
     }
 
-    /// `git worktree add`s a new checkout in `base`'s repository, branched off
-    /// `base`'s current HEAD, and appends it to the tree. Placed under
-    /// `.argus/worktrees/<branch>` beside the repository's primary checkout
-    /// (DESIGN.md §4 Level 2), regardless of which checkout `base` itself
-    /// is — so worktrees always nest under the one directory, not under
-    /// each other.
+    /// `git worktree add`s a new checkout in `base`'s repository and appends
+    /// it to the tree. Placed under `.argus/worktrees/<branch>` beside the
+    /// repository's primary checkout (DESIGN.md §4 Level 2), regardless of
+    /// which checkout `base` itself is — so worktrees always nest under the
+    /// one directory, not under each other.
+    ///
+    /// A branch that already exists gets a directory for the branch it is;
+    /// otherwise the branch is created off `base`'s current HEAD. Giving a
+    /// branch a checkout and inventing one are the same request from the
+    /// tree's point of view — a row for a branch that has no directory yet —
+    /// and refusing the first because the name is taken would only mean
+    /// telling the user to say it a different way.
     pub async fn create_worktree(
         self: &Arc<Self>,
         base: CheckoutId,
@@ -2045,13 +2130,18 @@ impl Daemon {
                 .ok_or_else(|| anyhow::anyhow!("no such checkout"))?
         };
         let dest = worktree_dir(&primary_path, &branch)?;
+        let exists = crate::git::has_local_branch(&primary_path, &branch);
 
-        let output = crate::command::git()
-            .args(["worktree", "add", "-b", &branch])
-            .arg(&dest)
-            .current_dir(&base_path)
-            .output()
-            .await?;
+        let mut command = crate::command::git();
+        command.args(["worktree", "add"]);
+        if !exists {
+            command.args(["-b", &branch]);
+        }
+        command.arg(&dest);
+        if exists {
+            command.arg(&branch);
+        }
+        let output = command.current_dir(&base_path).output().await?;
         if !output.status.success() {
             anyhow::bail!(
                 "git worktree add failed: {}",
@@ -2077,6 +2167,7 @@ impl Daemon {
         if let Some(id) = added {
             self.refresh_checkout_git(id);
         }
+        self.refresh_branches();
         self.broadcast_tree();
         Ok(())
     }
@@ -2153,6 +2244,7 @@ impl Daemon {
             let mut inner = self.inner.lock().unwrap();
             remove_checkout_entry(&mut inner.projects, checkout);
         }
+        self.refresh_branches();
         self.broadcast_tree();
         Ok(())
     }
@@ -2593,6 +2685,7 @@ fn new_repository(ids: &mut IdGen, path: PathBuf, discovered: bool) -> Repositor
         id: RepositoryId(ids.alloc()),
         name: name.clone(),
         discovered,
+        branches: Vec::new(),
         checkouts: vec![Checkout {
             id: CheckoutId(ids.alloc()),
             name,
@@ -5148,6 +5241,107 @@ root = "/somewhere"
         let path = PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[1].path);
         assert!(path.starts_with(dir.path().join(".argus").join("worktrees")));
         assert_eq!(head_of(&path), "feat/nested");
+    }
+
+    #[tokio::test]
+    async fn a_branch_with_no_checkout_is_listed_on_its_repository() {
+        let (dir, d) = daemon_on_a_repo();
+        let checkout = only_checkout(&d);
+        let on_it = head_of(dir.path());
+        d.create_branch(checkout, "parked").await.unwrap();
+        d.switch_branch(checkout, &on_it).await.unwrap();
+
+        d.refresh_git_status();
+        d.refresh_branches();
+
+        assert_eq!(
+            d.snapshot()[0].repositories[0].branches,
+            vec!["parked".to_string()],
+            "the branch nothing is sitting on is the one to offer"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_branch_a_checkout_is_sitting_on_is_not_offered_as_one_to_go_to() {
+        let (_dir, d) = daemon_on_a_repo();
+        d.create_worktree(only_checkout(&d), "in-a-worktree".to_string())
+            .await
+            .unwrap();
+
+        d.refresh_git_status();
+        d.refresh_branches();
+
+        assert!(
+            !d.snapshot()[0].repositories[0]
+                .branches
+                .contains(&"in-a-worktree".to_string()),
+            "it already has a directory of its own"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_branch_that_already_exists_gets_a_worktree_rather_than_a_refusal() {
+        // The tree offers a worktree for a branch row, and every branch row
+        // is a branch that already exists.
+        let (_dir, d) = daemon_on_a_repo();
+        let checkout = only_checkout(&d);
+        let on_it = head_of(&PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[0].path));
+        d.create_branch(checkout, "waiting").await.unwrap();
+        d.switch_branch(checkout, &on_it).await.unwrap();
+
+        d.create_worktree(checkout, "waiting".to_string())
+            .await
+            .unwrap();
+
+        let snapshot = d.snapshot();
+        let made = &snapshot[0].repositories[0].checkouts[1];
+        assert_eq!(head_of(&PathBuf::from(&made.path)), "waiting");
+    }
+
+    #[tokio::test]
+    async fn a_dirty_primary_checkout_is_not_switched_out_from_under_its_work() {
+        let (dir, d) = daemon_on_a_repo();
+        let checkout = only_checkout(&d);
+        let on_it = head_of(dir.path());
+        d.create_branch(checkout, "elsewhere").await.unwrap();
+        d.switch_branch(checkout, &on_it).await.unwrap();
+        std::fs::write(dir.path().join("a.txt"), "uncommitted\n").unwrap();
+
+        let err = d
+            .switch_branch(checkout, "elsewhere")
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("worktree"), "say what to do instead: {err:?}");
+        assert_eq!(head_of(dir.path()), on_it, "still where the work is");
+    }
+
+    #[tokio::test]
+    async fn a_dirty_worktree_still_switches_because_argus_made_it() {
+        // The refusal is about the repo the user already had. A linked
+        // worktree is Argus's own, and an agent moving between branches in
+        // one is ordinary work.
+        let (_dir, d, worktree) = daemon_with_a_worktree("scratch").await;
+        let path = PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[1].path);
+        d.create_branch(worktree, "second").await.unwrap();
+        std::fs::write(path.join("a.txt"), "uncommitted\n").unwrap();
+
+        d.switch_branch(worktree, "scratch").await.unwrap();
+
+        assert_eq!(head_of(&path), "scratch");
+    }
+
+    #[tokio::test]
+    async fn a_clean_primary_checkout_still_switches() {
+        let (dir, d) = daemon_on_a_repo();
+        let checkout = only_checkout(&d);
+        let on_it = head_of(dir.path());
+        d.create_branch(checkout, "clean-move").await.unwrap();
+
+        d.switch_branch(checkout, &on_it).await.unwrap();
+
+        assert_eq!(head_of(dir.path()), on_it);
     }
 
     #[tokio::test]
