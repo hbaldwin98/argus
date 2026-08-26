@@ -160,6 +160,84 @@ mod tests {
     }
 
     #[test]
+    fn every_named_key_encodes_to_its_documented_sequence() {
+        // The whole table at once, so a key nobody presses by hand while
+        // testing cannot quietly stop reaching the child.
+        let table: &[(KeyCode, &[u8])] = &[
+            (KeyCode::Enter, b"\r"),
+            (KeyCode::Tab, b"\t"),
+            (KeyCode::BackTab, b"\x1b[Z"),
+            (KeyCode::Backspace, &[0x7f]),
+            (KeyCode::Esc, &[0x1b]),
+            (KeyCode::Left, b"\x1b[D"),
+            (KeyCode::Right, b"\x1b[C"),
+            (KeyCode::Up, b"\x1b[A"),
+            (KeyCode::Down, b"\x1b[B"),
+            (KeyCode::Home, b"\x1b[H"),
+            (KeyCode::End, b"\x1b[F"),
+            (KeyCode::PageUp, b"\x1b[5~"),
+            (KeyCode::PageDown, b"\x1b[6~"),
+            (KeyCode::Delete, b"\x1b[3~"),
+            (KeyCode::Insert, b"\x1b[2~"),
+        ];
+        for (code, expected) in table {
+            assert_eq!(&encode_key(&k(*code)), expected, "{code:?}");
+        }
+    }
+
+    #[test]
+    fn every_control_pair_encodes_to_its_c0_byte() {
+        let table: &[(char, u8)] = &[
+            ('a', 0x01),
+            ('z', 0x1a),
+            ('[', 0x1b),
+            ('\\', 0x1c),
+            (']', 0x1d),
+            ('^', 0x1e),
+            ('_', 0x1f),
+            ('@', 0x00),
+            (' ', 0x00),
+        ];
+        for (c, expected) in table {
+            assert_eq!(encode_key(&ctrl(*c)), vec![*expected], "ctrl-{c:?}");
+        }
+    }
+
+    #[test]
+    fn every_function_key_has_a_sequence_and_nothing_past_twelve_does() {
+        let table: &[(u8, &[u8])] = &[
+            (1, b"\x1bOP"),
+            (2, b"\x1bOQ"),
+            (3, b"\x1bOR"),
+            (4, b"\x1bOS"),
+            (5, b"\x1b[15~"),
+            (6, b"\x1b[17~"),
+            (7, b"\x1b[18~"),
+            (8, b"\x1b[19~"),
+            (9, b"\x1b[20~"),
+            (10, b"\x1b[21~"),
+            (11, b"\x1b[23~"),
+            (12, b"\x1b[24~"),
+        ];
+        for (n, expected) in table {
+            assert_eq!(&encode_key(&k(KeyCode::F(*n))), expected, "F{n}");
+        }
+        for n in [0u8, 13, 20, 255] {
+            assert!(encode_key(&k(KeyCode::F(n))).is_empty(), "F{n}");
+        }
+    }
+
+    #[test]
+    fn alt_prefixes_an_escape_onto_every_key_that_encodes() {
+        for code in [KeyCode::Char('a'), KeyCode::Up, KeyCode::Delete, KeyCode::F(5)] {
+            let plain = encode_key(&k(code));
+            let alt = encode_key(&KeyEvent::new(code, KeyModifiers::ALT));
+            assert_eq!(alt.first(), Some(&0x1b), "{code:?}");
+            assert_eq!(&alt[1..], &plain[..], "{code:?}");
+        }
+    }
+
+    #[test]
     fn function_keys_encode_and_unknown_ones_do_not() {
         assert_eq!(encode_key(&k(KeyCode::F(1))), b"\x1bOP");
         assert_eq!(encode_key(&k(KeyCode::F(5))), b"\x1b[15~");

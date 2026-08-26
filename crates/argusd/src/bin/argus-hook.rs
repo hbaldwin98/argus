@@ -47,6 +47,8 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
+use argus_protocol::{Endpoint, Report};
+
 const TIMEOUT: Duration = Duration::from_secs(2);
 const NOTE_FLAG: &str = "--note-from-stdin";
 const SESSION_KEY_FLAG: &str = "--session-id-from-stdin";
@@ -101,17 +103,21 @@ fn say(rest: &[&str]) {
 fn title(rest: &[&str]) {
     let text = rest.join(" ");
     if !text.trim().is_empty() {
-        let _ = post(&format!("{}/title", env_url()), &env_token(), &text);
+        let _ = post(&endpoint_url(&env_url(), Endpoint::Title), &env_token(), &text);
     }
 }
 
 fn status(rest: &[&str]) {
-    let Some(state) = rest.first() else { return };
+    // A state the pane API has no name for could only ever be refused at the
+    // other end, so it is refused here instead of travelling.
+    let Some(report) = rest.first().and_then(|s| Report::parse(s)) else {
+        return;
+    };
     // Anything after the state is the reason, so
     // `status waiting "needs a password"` reads the way you'd say it.
     let note = rest[1..].join(" ");
     let _ = post(
-        &format!("{}/status/{state}", env_url()),
+        &endpoint_url(&env_url(), Endpoint::Status(report)),
         &env_token(),
         &note,
     );
@@ -120,7 +126,7 @@ fn status(rest: &[&str]) {
 fn checkout(rest: &[&str]) {
     if let Some(path) = reported_checkout(rest) {
         let _ = post(
-            &format!("{}/checkout", env_url()),
+            &endpoint_url(&env_url(), Endpoint::Checkout),
             &env_token(),
             &path.to_string_lossy(),
         );
@@ -130,7 +136,11 @@ fn checkout(rest: &[&str]) {
 fn session(rest: &[&str]) {
     let id = rest.join(" ");
     if !id.is_empty() {
-        let _ = post(&format!("{}/session", env_url()), &env_token(), &id);
+        let _ = post(
+            &endpoint_url(&env_url(), Endpoint::Session),
+            &env_token(),
+            &id,
+        );
     }
 }
 
@@ -197,7 +207,7 @@ fn post_session_id(url: &str, token: &str, id: Option<&str>) {
         return;
     };
     if let Some(base) = pane_base(url) {
-        let _ = post_as(&format!("{base}/session"), token, id, Some(id));
+        let _ = post_as(&endpoint_url(&base, Endpoint::Session), token, id, Some(id));
     }
 }
 
@@ -265,6 +275,13 @@ fn routed_hook(
 
 fn authority(url: &str) -> Option<&str> {
     url.strip_prefix("http://")?.split('/').next()
+}
+
+/// A pane base (`http://host:port/pane/<id>`) plus the endpoint being asked
+/// for. The suffix comes from `argus-protocol` so the daemon parses exactly
+/// what is built here.
+fn endpoint_url(base: &str, endpoint: Endpoint) -> String {
+    format!("{}/{}", base.trim_end_matches('/'), endpoint.suffix())
 }
 
 fn pane_base(url: &str) -> Option<String> {

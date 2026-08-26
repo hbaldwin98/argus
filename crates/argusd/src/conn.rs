@@ -209,6 +209,33 @@ fn dispatch_pane(
     Ok(result)
 }
 
+/// Runs a daemon call on its own task, reporting a refusal to the client
+/// that asked for it.
+///
+/// Every git mutation has this shape: real subprocess I/O that must not
+/// stall this connection's message loop, nothing to answer with when it
+/// works, and a message worth showing when it does not.
+fn spawn_reporting<F, Fut>(
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    work: F,
+) -> anyhow::Result<()>
+where
+    F: FnOnce(Arc<Daemon>) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = anyhow::Result<()>> + Send,
+{
+    let daemon = daemon.clone();
+    let out_tx = out_tx.clone();
+    tokio::spawn(async move {
+        if let Err(error) = work(daemon).await {
+            let _ = out_tx.send(ServerMsg::Error {
+                message: error.to_string(),
+            });
+        }
+    });
+    Ok(())
+}
+
 fn spawn_pane(
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
     spawn: impl FnOnce() -> anyhow::Result<()> + Send + 'static,
@@ -288,28 +315,10 @@ fn dispatch_worktree_change(
         // message loop — a slow worktree op must not stall keystrokes going
         // to some other pane. Each reports its own error asynchronously.
         ClientMsg::CreateWorktree { checkout, branch } => {
-            let daemon = daemon.clone();
-            let out_tx = out_tx.clone();
-            tokio::spawn(async move {
-                if let Err(e) = daemon.create_worktree(checkout, branch).await {
-                    let _ = out_tx.send(ServerMsg::Error {
-                        message: e.to_string(),
-                    });
-                }
-            });
-            Ok(())
+            spawn_reporting(daemon, out_tx, move |d| async move { d.create_worktree(checkout, branch).await })
         }
         ClientMsg::RemoveCheckout { checkout } => {
-            let daemon = daemon.clone();
-            let out_tx = out_tx.clone();
-            tokio::spawn(async move {
-                if let Err(e) = daemon.remove_checkout(checkout).await {
-                    let _ = out_tx.send(ServerMsg::Error {
-                        message: e.to_string(),
-                    });
-                }
-            });
-            Ok(())
+            spawn_reporting(daemon, out_tx, move |d| async move { d.remove_checkout(checkout).await })
         }
         msg => return Err(msg),
     };
@@ -323,64 +332,19 @@ fn dispatch_branch_or_editor(
 ) -> DispatchResult {
     let result = match msg {
         ClientMsg::SwitchBranch { checkout, branch } => {
-            let daemon = daemon.clone();
-            let out_tx = out_tx.clone();
-            tokio::spawn(async move {
-                if let Err(e) = daemon.switch_branch(checkout, &branch).await {
-                    let _ = out_tx.send(ServerMsg::Error {
-                        message: e.to_string(),
-                    });
-                }
-            });
-            Ok(())
+            spawn_reporting(daemon, out_tx, move |d| async move { d.switch_branch(checkout, &branch).await })
         }
         ClientMsg::CreateBranch { checkout, branch } => {
-            let daemon = daemon.clone();
-            let out_tx = out_tx.clone();
-            tokio::spawn(async move {
-                if let Err(e) = daemon.create_branch(checkout, &branch).await {
-                    let _ = out_tx.send(ServerMsg::Error {
-                        message: e.to_string(),
-                    });
-                }
-            });
-            Ok(())
+            spawn_reporting(daemon, out_tx, move |d| async move { d.create_branch(checkout, &branch).await })
         }
         ClientMsg::Fetch { checkout } => {
-            let daemon = daemon.clone();
-            let out_tx = out_tx.clone();
-            tokio::spawn(async move {
-                if let Err(e) = daemon.fetch(checkout).await {
-                    let _ = out_tx.send(ServerMsg::Error {
-                        message: e.to_string(),
-                    });
-                }
-            });
-            Ok(())
+            spawn_reporting(daemon, out_tx, move |d| async move { d.fetch(checkout).await })
         }
         ClientMsg::Pull { checkout } => {
-            let daemon = daemon.clone();
-            let out_tx = out_tx.clone();
-            tokio::spawn(async move {
-                if let Err(e) = daemon.pull(checkout).await {
-                    let _ = out_tx.send(ServerMsg::Error {
-                        message: e.to_string(),
-                    });
-                }
-            });
-            Ok(())
+            spawn_reporting(daemon, out_tx, move |d| async move { d.pull(checkout).await })
         }
         ClientMsg::DeleteBranch { checkout, branch } => {
-            let daemon = daemon.clone();
-            let out_tx = out_tx.clone();
-            tokio::spawn(async move {
-                if let Err(e) = daemon.delete_branch(checkout, &branch).await {
-                    let _ = out_tx.send(ServerMsg::Error {
-                        message: e.to_string(),
-                    });
-                }
-            });
-            Ok(())
+            spawn_reporting(daemon, out_tx, move |d| async move { d.delete_branch(checkout, &branch).await })
         }
         ClientMsg::OpenInEditor {
             checkout,
@@ -592,6 +556,36 @@ mod tests {
         });
         let error = h.error().await;
         assert!(error.contains("no such checkout"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn every_git_mutation_reports_its_refusal() {
+        // These seven arms share one helper, so this is the test that says
+        // the helper is wired to all of them: a bogus checkout has to come
+        // back as a message rather than as a keypress that did nothing.
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+        let gone = CheckoutId(9999);
+        let branch = || "nope".to_string();
+
+        let sent = [
+            ClientMsg::SwitchBranch { checkout: gone, branch: branch() },
+            ClientMsg::CreateBranch { checkout: gone, branch: branch() },
+            ClientMsg::DeleteBranch { checkout: gone, branch: branch() },
+            ClientMsg::Fetch { checkout: gone },
+            ClientMsg::Pull { checkout: gone },
+            ClientMsg::CreateWorktree { checkout: gone, branch: branch() },
+            ClientMsg::RemoveCheckout { checkout: gone },
+        ];
+        let expected = sent.len();
+        for msg in sent {
+            h.send(msg);
+        }
+
+        for _ in 0..expected {
+            let error = h.error().await;
+            assert!(error.contains("no such checkout"), "{error}");
+        }
     }
 
     #[tokio::test(flavor = "current_thread")]

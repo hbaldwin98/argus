@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-Argus is a Rust 2021 workspace. `crates/argus-client/` contains the `argus` terminal UI, `crates/argusd/` contains the daemon plus `argus-hook`, and `crates/argus-protocol/` owns shared messages, framing, IDs, and transport types. Keep behavior near its owning crate and put cross-process contracts in `argus-protocol`. Unit tests generally live beside implementation code in `#[cfg(test)] mod tests` blocks. `scripts/dev.ps1` supports isolated local development; `target/` is generated output. Consult `DESIGN.md` for current behavior and `TARGET.md`/`ROADMAP.md` for intended direction.
+Argus is a Rust 2021 workspace. `crates/argus-client/` contains the `argus` terminal UI, `crates/argusd/` contains the daemon plus `argus-hook`, and `crates/argus-protocol/` owns shared messages, framing, IDs, and transport types. Keep behavior near its owning crate and put cross-process contracts in `argus-protocol` — the pane API’s URL grammar lives there for exactly that reason. The daemon’s `state.rs` owns the tree; `state/panes.rs`, `state/sync.rs`, `state/git_ops.rs`, and `state/hook.rs` carry the `impl Daemon` blocks for panes, disk reconciliation, Git writes, and the loopback receiver. Unit tests generally live beside implementation code in `#[cfg(test)] mod tests` blocks. `scripts/dev.ps1` supports isolated local development; `target/` is generated output. Consult `DESIGN.md` for current behavior and `TARGET.md`/`ROADMAP.md` for intended direction.
 
 ## Build, Test, and Development Commands
 
