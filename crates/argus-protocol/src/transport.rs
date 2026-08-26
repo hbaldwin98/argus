@@ -121,3 +121,55 @@ pub use imp::{connect, is_daemon_listening, socket_path, Listener};
 
 #[cfg(windows)]
 pub use imp::{connect, is_daemon_listening, pipe_name, Listener};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{read_msg, write_msg, ClientMsg, PaneId, ServerMsg};
+
+    /// Binds a real endpoint, connects to it, and sends a frame each way.
+    ///
+    /// The one thing in the workspace that no other test can reach: both
+    /// binaries meet here, and a break in it is a client that cannot start
+    /// rather than a feature that misbehaves. It runs against its own
+    /// instance name so it never touches a daemon the developer has running.
+    #[tokio::test]
+    async fn a_client_and_a_daemon_meet_on_the_endpoint_and_talk_both_ways() {
+        std::env::set_var(
+            "ARGUS_INSTANCE",
+            format!("selftest-{}", std::process::id()),
+        );
+
+        let mut listener = Listener::bind().await.expect("the endpoint should bind");
+
+        let server = tokio::spawn(async move {
+            let mut stream = listener.accept().await.expect("a client should arrive");
+            let request: ClientMsg = read_msg(&mut stream).await.expect("a framed request");
+            write_msg(
+                &mut stream,
+                &ServerMsg::Error {
+                    message: format!("{request:?}"),
+                },
+            )
+            .await
+            .expect("a framed reply");
+        });
+
+        let mut client = connect().await.expect("the endpoint should accept");
+        write_msg(&mut client, &ClientMsg::Subscribe { pane: PaneId(7) })
+            .await
+            .unwrap();
+        let reply: ServerMsg = read_msg(&mut client).await.expect("a reply should arrive");
+
+        match reply {
+            // Round-tripped through msgpack and back, so the framing, the
+            // encoding and the socket all held.
+            ServerMsg::Error { message } => assert!(message.contains("PaneId(7)"), "{message}"),
+            other => panic!("unexpected {other:?}"),
+        }
+        server.await.unwrap();
+
+        #[cfg(unix)]
+        let _ = std::fs::remove_file(socket_path());
+    }
+}

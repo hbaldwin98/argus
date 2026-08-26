@@ -27,6 +27,18 @@ records framed by a four-byte big-endian length. Frames larger than 64 MiB are r
 Several clients may connect at once and each connection may subscribe to several pane screens.
 There is no protocol negotiation or transport authentication.
 
+The daemon's state is one `Daemon` type behind a small set of mutexes, but it is not one file.
+`state.rs` holds the tree itself — the types, the workspace and session handling, and the snapshot
+clients render — and four sibling modules hold `impl Daemon` blocks for the concerns that only touch
+it: `state/panes.rs` for pane lifecycle, sizing, and what an agent reports about itself;
+`state/sync.rs` for the polls and watchers that keep the tree level with the disk; `state/git_ops.rs`
+for the writes to Git; and `state/hook.rs` for the loopback receiver. The type and its locking are
+unchanged by the split — only which file a concern is read in.
+
+The pane API's URL grammar lives in `argus-protocol` rather than in the daemon, because
+`argus-hook` builds the paths the daemon parses. Written once, a new endpoint cannot compile on one
+side and fail at runtime against the other.
+
 ## Navigation model
 
 The runtime hierarchy is:

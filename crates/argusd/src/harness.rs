@@ -40,61 +40,17 @@
 
 use std::path::{Path, PathBuf};
 
-use argus_protocol::{PaneId, PaneStatus};
+use argus_protocol::PaneId;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-/// The statuses a harness can report. Deliberately not [`PaneStatus`]:
-/// that has an `Exited` variant, which is the daemon's to decide from the
-/// process, never a hook's to claim.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Report {
-    Working,
-    Idle,
-    Waiting,
-    #[serde(rename = "needs-review")]
-    NeedsReview,
-    Done,
-    Failed,
-}
-
-impl Report {
-    pub const ALL: [Report; 6] = [
-        Report::Working,
-        Report::Idle,
-        Report::Waiting,
-        Report::NeedsReview,
-        Report::Done,
-        Report::Failed,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Report::Working => "working",
-            Report::Idle => "idle",
-            Report::Waiting => "waiting",
-            Report::NeedsReview => "needs-review",
-            Report::Done => "done",
-            Report::Failed => "failed",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Report> {
-        Report::ALL.into_iter().find(|r| r.as_str() == s)
-    }
-
-    pub fn status(self) -> PaneStatus {
-        match self {
-            Report::Working => PaneStatus::Working,
-            Report::Idle => PaneStatus::Idle,
-            Report::Waiting => PaneStatus::Waiting,
-            Report::NeedsReview => PaneStatus::NeedsReview,
-            Report::Done => PaneStatus::Done,
-            Report::Failed => PaneStatus::Failed,
-        }
-    }
-}
+/// The statuses a harness can report, and the URL vocabulary they travel in.
+///
+/// Deliberately not [`PaneStatus`]: that has an `Exited` variant, which is
+/// the daemon's to decide from the process, never a hook's to claim. It
+/// lives in `argus-protocol` because `argus-hook` names the same statuses
+/// from the other side of the wire.
+pub use argus_protocol::Report;
 
 /// One of the harness's own lifecycle events, and what it means for the row.
 #[derive(Debug, Clone, Deserialize)]
@@ -858,6 +814,7 @@ fn is_hook_helper(command: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use argus_protocol::PaneStatus;
 
     fn settings_of(dir: &Path, h: &Harness) -> Value {
         let raw = std::fs::read_to_string(h.settings_path(dir).unwrap()).unwrap();
