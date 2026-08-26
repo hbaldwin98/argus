@@ -77,6 +77,86 @@ pub fn list_worktrees(path: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// What removing the checkout at `worktree` from the repository at
+/// `primary` would run into, decided before anything is touched.
+///
+/// Removing a worktree has to kill its panes first — on Windows a shell
+/// sitting in the directory is itself what stops the directory being
+/// deleted — so any refusal git discovers on its own arrives after the
+/// user's agents are already dead. Every refusal that can be seen coming is
+/// therefore made here, while the panes are still running.
+pub enum Removal {
+    /// Nothing here stands in git's way.
+    Ready,
+    /// The directory is already gone and only the registration is left, which
+    /// `git worktree remove` refuses rather than cleans up.
+    Stale,
+    /// Git would refuse, for this reason.
+    Blocked(String),
+}
+
+pub fn removal(primary: &Path, worktree: &Path) -> Removal {
+    let Ok(repo) = git2::Repository::open(primary) else {
+        return Removal::Blocked(format!("{} is not a git repository", primary.display()));
+    };
+    let registered = repo.worktrees().ok().and_then(|names| {
+        names
+            .iter()
+            .flatten()
+            .filter_map(|name| repo.find_worktree(name).ok())
+            .find(|wt| same_path(wt.path(), worktree))
+    });
+    let Some(worktree_ref) = registered else {
+        // Either a directory that reached the tree some other way — the
+        // primary of another repository, say — or a registration git has
+        // already pruned. Only the second is safe to treat as done.
+        return if worktree.is_dir() {
+            Removal::Blocked(format!(
+                "{} is not a linked worktree of this repository",
+                worktree.display()
+            ))
+        } else {
+            Removal::Stale
+        };
+    };
+    if let Ok(git2::WorktreeLockStatus::Locked(reason)) = worktree_ref.is_locked() {
+        let why = reason.unwrap_or_else(|| "no reason given".to_string());
+        return Removal::Blocked(format!("this worktree is locked: {}", why.trim()));
+    }
+    if worktree.is_dir() {
+        Removal::Ready
+    } else {
+        Removal::Stale
+    }
+}
+
+/// The Git directory of the repository at `path` — `<path>/.git` for an
+/// ordinary checkout, wherever it points for anything else. `None` if
+/// `path` is not a repository.
+pub fn git_dir(path: &Path) -> Option<PathBuf> {
+    git2::Repository::open(path)
+        .ok()
+        .map(|repo| repo.path().to_path_buf())
+}
+
+/// Whether the repository at `path` already has a local branch by this
+/// name — the difference between giving an existing branch a worktree and
+/// starting a new one.
+pub fn has_local_branch(path: &Path, branch: &str) -> bool {
+    git2::Repository::open(path)
+        .and_then(|repo| repo.find_branch(branch, git2::BranchType::Local).map(|_| ()))
+        .is_ok()
+}
+
+/// Worktree paths come back from libgit2 canonicalized while a configured
+/// one is however the user spelled it; compare them resolved.
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
 /// Directories a project scan never walks into: Git's own storage, the
 /// worktrees Argus creates (they belong to the repository above them), and
 /// two build/dependency trees big enough to dominate the walk on their own.
@@ -103,6 +183,49 @@ const MAX_DEPTH: usize = 8;
 /// the daemon's reconciliation tick, and see `list_worktrees` for what
 /// spawning a process there costs on Windows.
 pub fn discover_repositories(root: &Path) -> Vec<PathBuf> {
+    discover_repositories_within(root, &Scan::default())
+}
+
+/// What a project's scan may and may not walk into, beyond [`SKIPPED`].
+///
+/// Both lists take either a bare name, which matches a directory anywhere
+/// under the root, or a root-relative path with `/` separators, which
+/// matches that one directory. `include` is the stronger of the two and
+/// beats the built-in skips as well: a repository kept somewhere the
+/// defaults would never look is still reachable by naming it.
+#[derive(Debug, Default, Clone)]
+pub struct Scan {
+    pub exclude: Vec<String>,
+    pub include: Vec<String>,
+}
+
+impl Scan {
+    /// Whether the walk should descend into `dir`, which sits at
+    /// `relative` below the root.
+    fn descends_into(&self, name: &str, relative: &Path) -> bool {
+        if matches(&self.include, name, relative) {
+            return true;
+        }
+        if SKIPPED.contains(&name) {
+            return false;
+        }
+        !matches(&self.exclude, name, relative)
+    }
+}
+
+fn matches(patterns: &[String], name: &str, relative: &Path) -> bool {
+    let relative = relative.to_string_lossy().replace('\\', "/");
+    patterns.iter().any(|pattern| {
+        let pattern = pattern.trim_matches('/');
+        if pattern.contains('/') {
+            relative == pattern
+        } else {
+            name == pattern
+        }
+    })
+}
+
+pub fn discover_repositories_within(root: &Path, scan: &Scan) -> Vec<PathBuf> {
     // (identity, working directory). The identity is the repository's Git
     // directory, resolved, so two paths that reach one repository collapse
     // to a single row; the working directory is kept as the walk spelled it,
@@ -136,11 +259,13 @@ pub fn discover_repositories(root: &Path) -> Vec<PathBuf> {
             if kind.is_symlink() || !kind.is_dir() {
                 continue;
             }
+            let path = entry.path();
             let name = entry.file_name();
-            if SKIPPED.iter().any(|skip| name == *skip) {
+            let relative = path.strip_prefix(root).unwrap_or(&path);
+            if !scan.descends_into(&name.to_string_lossy(), relative) {
                 continue;
             }
-            pending.push((entry.path(), depth + 1));
+            pending.push((path, depth + 1));
         }
     }
 
@@ -211,15 +336,6 @@ mod tests {
         repo
     }
 
-    fn same_path(a: &Path, b: &Path) -> bool {
-        // Worktree paths come back canonicalized by libgit2 while the
-        // configured one is whatever the user typed; compare resolved.
-        match (a.canonicalize(), b.canonicalize()) {
-            (Ok(a), Ok(b)) => a == b,
-            _ => a == b,
-        }
-    }
-
     #[test]
     fn a_plain_repo_lists_just_its_own_working_directory() {
         let dir = tempfile::tempdir().unwrap();
@@ -266,6 +382,134 @@ mod tests {
             !listed.iter().any(|p| same_path(p, &wt_dir)),
             "a deleted worktree must not linger: {listed:?}"
         );
+    }
+
+    #[test]
+    fn a_project_can_keep_the_scan_out_of_a_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let kept = root.path().join("kept");
+        let vendored = root.path().join("vendor").join("thing");
+        std::fs::create_dir_all(&kept).unwrap();
+        std::fs::create_dir_all(&vendored).unwrap();
+        repo_with_a_commit(&kept);
+        repo_with_a_commit(&vendored);
+
+        let scan = Scan {
+            exclude: vec!["vendor".to_string()],
+            ..Default::default()
+        };
+        let found = discover_repositories_within(root.path(), &scan);
+
+        assert_eq!(found.len(), 1, "got {found:?}");
+        assert!(same_path(&found[0], &kept));
+    }
+
+    #[test]
+    fn an_excluded_path_can_name_one_directory_rather_than_every_directory_of_that_name() {
+        let root = tempfile::tempdir().unwrap();
+        let here = root.path().join("a").join("build");
+        let there = root.path().join("b").join("build");
+        std::fs::create_dir_all(&here).unwrap();
+        std::fs::create_dir_all(&there).unwrap();
+        repo_with_a_commit(&here);
+        repo_with_a_commit(&there);
+
+        let scan = Scan {
+            exclude: vec!["a/build".to_string()],
+            ..Default::default()
+        };
+        let found = discover_repositories_within(root.path(), &scan);
+
+        assert_eq!(found.len(), 1, "got {found:?}");
+        assert!(same_path(&found[0], &there));
+    }
+
+    #[test]
+    fn including_a_path_reaches_a_repository_the_defaults_would_never_look_in() {
+        // `target` is skipped for everyone; a project that keeps a
+        // repository there can say so.
+        let root = tempfile::tempdir().unwrap();
+        let hidden = root.path().join("target").join("scratch");
+        std::fs::create_dir_all(&hidden).unwrap();
+        repo_with_a_commit(&hidden);
+
+        assert!(
+            discover_repositories(root.path()).is_empty(),
+            "the built-in skip still applies by default"
+        );
+
+        let scan = Scan {
+            include: vec!["target".to_string()],
+            ..Default::default()
+        };
+        let found = discover_repositories_within(root.path(), &scan);
+
+        assert_eq!(found.len(), 1, "got {found:?}");
+        assert!(same_path(&found[0], &hidden));
+    }
+
+    #[test]
+    fn including_beats_excluding_the_same_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let inside = root.path().join("vendor").join("thing");
+        std::fs::create_dir_all(&inside).unwrap();
+        repo_with_a_commit(&inside);
+
+        let scan = Scan {
+            exclude: vec!["vendor".to_string()],
+            include: vec!["vendor".to_string()],
+        };
+
+        assert_eq!(discover_repositories_within(root.path(), &scan).len(), 1);
+    }
+
+    #[test]
+    fn a_directory_that_is_not_this_repos_worktree_is_never_removed() {
+        // Whatever else it is, deleting it is not `git worktree remove`'s
+        // job — and the caller kills panes on anything but a refusal.
+        let dir = tempfile::tempdir().unwrap();
+        let _repo = repo_with_a_commit(dir.path());
+        let elsewhere = dir.path().join("just-a-directory");
+        std::fs::create_dir(&elsewhere).unwrap();
+
+        assert!(matches!(
+            removal(dir.path(), &elsewhere),
+            Removal::Blocked(_)
+        ));
+        assert!(matches!(
+            removal(dir.path(), dir.path()),
+            Removal::Blocked(_)
+        ));
+    }
+
+    #[test]
+    fn a_worktree_is_ready_to_remove_until_something_holds_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = repo_with_a_commit(dir.path());
+        let wt_dir = dir.path().join("wt-feature");
+        repo.worktree("feature", &wt_dir, None).unwrap();
+
+        assert!(matches!(removal(dir.path(), &wt_dir), Removal::Ready));
+
+        repo.find_worktree("feature")
+            .unwrap()
+            .lock(Some("mid-rebase"))
+            .unwrap();
+        let Removal::Blocked(why) = removal(dir.path(), &wt_dir) else {
+            panic!("a locked worktree is git's own refusal");
+        };
+        assert!(why.contains("mid-rebase"), "got {why:?}");
+    }
+
+    #[test]
+    fn a_registration_left_by_a_deleted_directory_is_stale_rather_than_blocked() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = repo_with_a_commit(dir.path());
+        let wt_dir = dir.path().join("wt-gone");
+        repo.worktree("gone", &wt_dir, None).unwrap();
+        std::fs::remove_dir_all(&wt_dir).unwrap();
+
+        assert!(matches!(removal(dir.path(), &wt_dir), Removal::Stale));
     }
 
     #[test]

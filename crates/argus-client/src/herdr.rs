@@ -258,6 +258,7 @@ mod tests {
             repositories: vec![RepositoryInfo {
                 id: RepositoryId(2),
                 name: "repo".into(),
+                branches: Vec::new(),
                 checkouts: vec![CheckoutInfo {
                     id: CheckoutId(3),
                     name: "checkout".into(),
@@ -345,6 +346,7 @@ mod tests {
         agents[0].repositories.push(RepositoryInfo {
             id: RepositoryId(20),
             name: "second".into(),
+            branches: Vec::new(),
             checkouts: vec![CheckoutInfo {
                 id: CheckoutId(21),
                 name: "main".into(),

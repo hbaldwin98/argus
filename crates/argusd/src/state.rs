@@ -24,6 +24,11 @@ struct Pane {
     /// The agent template this pane was started from, kept because the
     /// title no longer answers that — an agent may have renamed it.
     template: Option<String>,
+    /// The harness this pane actually started under, which is not the same
+    /// question as which harness its template names *now*: the config can
+    /// be reloaded, and a running agent's hooks on disk were written by the
+    /// harness it started with.
+    harness: Option<String>,
     /// Stable conversation identity reported by the harness. Also the pane's
     /// owner: reports carrying a different session belong to `children`.
     harness_session_id: Option<String>,
@@ -118,6 +123,11 @@ struct Repository {
     /// it is currently a Git repository, or currently exists.
     discovered: bool,
     checkouts: Vec<Checkout>,
+    /// Local branches none of `checkouts` is sitting on, from the last
+    /// poll. Cached for the same reason a checkout's git status is: a
+    /// snapshot is taken under the lock keystrokes need, and reading refs
+    /// there would put git I/O in front of the next key.
+    branches: Vec<String>,
 }
 
 struct Project {
@@ -131,6 +141,15 @@ struct Project {
     /// cloned into it, or removed from it, since.
     root: Option<PathBuf>,
     repositories: Vec<Repository>,
+    /// Where this project's worktrees are created, if it says. See
+    /// `worktree_dir`.
+    worktree_root: Option<PathBuf>,
+    /// Commands run in a worktree this project has just created, in order.
+    setup: Vec<String>,
+    /// Whether a checkout here may hold only one agent at a time.
+    exclusive: bool,
+    /// What this project's root scan may and may not walk into.
+    scan: crate::git::Scan,
 }
 
 struct Workspace {
@@ -158,7 +177,9 @@ pub struct Daemon {
     starting_agents: StdMutex<HashMap<PaneId, Option<String>>>,
     tree_tx: broadcast::Sender<Vec<ProjectInfo>>,
     workspaces_tx: broadcast::Sender<Vec<WorkspaceInfo>>,
-    templates: Vec<AgentConfig>,
+    /// Agent templates, replaceable: `reload_config` swaps them, and every
+    /// start looks its template up by name at the time it runs.
+    templates: StdMutex<Vec<AgentConfig>>,
     /// Every harness this run knows about, built-in or configured.
     harnesses: Vec<crate::harness::Harness>,
     /// Set once `start_hook_server` binds; 0 until then. Read by
@@ -178,6 +199,10 @@ pub struct Daemon {
     /// write over the real user's session file, and every structural
     /// change would otherwise do exactly that.
     persist: std::sync::atomic::AtomicBool,
+    /// How many times a template has been restarted in a checkout lately,
+    /// and when that run of restarts began. Keeps a CLI that dies on
+    /// every start from being restarted forever.
+    restart_attempts: StdMutex<HashMap<(CheckoutId, String), (u32, std::time::Instant)>>,
     /// Every attached client's requested size for the panes it is showing.
     /// A pty has one size and clients do not have to agree on it, so the
     /// sizes are collected here and reconciled rather than applied as they
@@ -239,17 +264,7 @@ impl Daemon {
         // project refers to without declaring. Declaring is therefore
         // optional — `workspace = "x"` on a project is enough to create it.
         let mut workspaces: Vec<Workspace> = Vec::new();
-        let intern = |ws: &mut Vec<Workspace>, ids: &mut IdGen, name: &str| -> WorkspaceId {
-            if let Some(w) = ws.iter().find(|w| w.name == name) {
-                return w.id;
-            }
-            let id = WorkspaceId(ids.alloc());
-            ws.push(Workspace {
-                id,
-                name: name.to_string(),
-            });
-            id
-        };
+        let intern = intern_workspace;
         let default_ws = intern(&mut workspaces, &mut ids, config::DEFAULT_WORKSPACE);
         for w in &config.workspaces {
             intern(&mut workspaces, &mut ids, &w.name);
@@ -274,8 +289,15 @@ impl Daemon {
                 // A root is scanned once here so the tree is complete the
                 // moment the first client attaches, rather than filling in
                 // a tick later. Reconciliation keeps it current after that.
+                let scan = crate::git::Scan {
+                    exclude: p.exclude.clone(),
+                    include: p.include.clone(),
+                };
                 if let Some(root) = &root {
-                    let found = retain_included(&excluded, crate::git::discover_repositories(root));
+                    let found = retain_included(
+                        &excluded,
+                        crate::git::discover_repositories_within(root, &scan),
+                    );
                     install_discovered(&mut ids, &mut repositories, &found);
                 }
                 Project {
@@ -287,6 +309,13 @@ impl Daemon {
                     name: p.name,
                     root,
                     repositories,
+                    worktree_root: p.worktree_root.as_deref().map(config::expand_home),
+                    setup: p.setup,
+                    exclusive: p.exclusive,
+                    scan: crate::git::Scan {
+                        exclude: p.exclude,
+                        include: p.include,
+                    },
                 }
             })
             .collect();
@@ -317,12 +346,13 @@ impl Daemon {
             starting_agents: StdMutex::new(HashMap::new()),
             workspaces_tx,
             tree_tx,
-            templates,
+            templates: StdMutex::new(templates),
             harnesses,
             hook_port: std::sync::atomic::AtomicU16::new(0),
             hook_token: gen_token(),
             restoring: std::sync::atomic::AtomicBool::new(false),
             persist: std::sync::atomic::AtomicBool::new(false),
+            restart_attempts: StdMutex::new(HashMap::new()),
             viewers: StdMutex::new(Viewers::default()),
             next_viewer: std::sync::atomic::AtomicU64::new(0),
         });
@@ -379,7 +409,7 @@ impl Daemon {
     }
 
     pub fn template_names(&self) -> Vec<String> {
-        self.templates.iter().map(|t| t.name.clone()).collect()
+        self.templates.lock().unwrap().iter().map(|t| t.name.clone()).collect()
     }
 
     /// The tree as clients see it: only the open workspace's projects.
@@ -402,6 +432,7 @@ impl Daemon {
                     .map(|r| RepositoryInfo {
                         id: r.id,
                         name: r.name.clone(),
+                        branches: r.branches.clone(),
                         checkouts: r
                             .checkouts
                             .iter()
@@ -592,6 +623,7 @@ impl Daemon {
                             status: pane.status,
                             note: pane.note.clone(),
                             harness_session_id: pane.harness_session_id.clone(),
+                            harness: pane.harness.clone(),
                         })
                 })
                 .collect(),
@@ -659,11 +691,22 @@ impl Daemon {
                     let start = if session_id.is_some() {
                         Start::Resuming
                     } else {
-                        let harness = self
-                            .templates
-                            .iter()
-                            .find(|template| template.name == pane.template())
-                            .map(|template| self.harness_for(template).name);
+                        // The harness the pane recorded, since that is who
+                        // wrote the conversation being claimed. Only a file
+                        // old enough not to have it falls back to asking
+                        // what the template names now.
+                        let harness = pane.harness.clone().or_else(|| {
+                            let template = self
+                                .templates
+                                .lock()
+                                .unwrap()
+                                .iter()
+                                .find(|template| template.name == pane.template())
+                                .cloned();
+                            template
+                                .as_ref()
+                                .map(|template| self.harness_for(template).name.to_string())
+                        });
                         let key = harness.map(|harness| (pane.checkout_path.clone(), harness));
                         if key.as_ref().is_some_and(|key| claimed.contains(key)) {
                             Start::Fresh
@@ -742,6 +785,7 @@ impl Daemon {
                     status: PaneStatus::Idle,
                     note: None,
                     template: None,
+                    harness: None,
                     children: Vec::new(),
                     harness_session_id: None,
                     resumed: None,
@@ -824,6 +868,7 @@ impl Daemon {
                     status: PaneStatus::Idle,
                     note: None,
                     template: None,
+                    harness: None,
                     children: Vec::new(),
                     harness_session_id: None,
                     resumed: None,
@@ -854,6 +899,8 @@ impl Daemon {
     ) -> anyhow::Result<PaneId> {
         let template = self
             .templates
+            .lock()
+            .unwrap()
             .iter()
             .find(|t| t.name == template_name)
             .cloned()
@@ -864,6 +911,16 @@ impl Daemon {
 
         let path = {
             let inner = self.inner.lock().unwrap();
+            // Only on a fresh start: a restore is replaying panes that were
+            // already running together, and refusing half of them would
+            // take work away rather than protect it.
+            if start == Start::Fresh {
+                if let Some(running) = exclusive_conflict(&inner.projects, checkout) {
+                    anyhow::bail!(
+                        "{running} is already working here, and this project allows one agent per checkout — make a worktree for another"
+                    );
+                }
+            }
             find_checkout_ref(&inner.projects, checkout)
                 .map(|c| c.path.clone())
                 .ok_or_else(|| anyhow::anyhow!("no such checkout"))?
@@ -934,6 +991,7 @@ impl Daemon {
                     status: PaneStatus::Idle,
                     note: None,
                     template: Some(template.name.clone()),
+                    harness: Some(harness.name.to_string()),
                     children: Vec::new(),
                     harness_session_id: reported_session_id.or(harness_session_id),
                     resumed: resuming.then(|| Resumed {
@@ -950,17 +1008,21 @@ impl Daemon {
     }
 
     pub fn mark_pane_exited(self: &Arc<Self>, pane: PaneId, code: Option<i32>) {
-        let retry = {
+        let (retry, restart) = {
             let mut inner = self.inner.lock().unwrap();
-            match find_pane(&mut inner.projects, pane) {
-                Some(p) => {
+            match find_pane_with_checkout(&mut inner.projects, pane) {
+                Some((p, checkout)) => {
                     p.status = PaneStatus::Exited { code };
                     p.note = None;
-                    p.resumed
-                        .take()
-                        .filter(|r| nothing_to_resume(code, r.at.elapsed()))
+                    let restart = p.template.clone().map(|template| (checkout, template));
+                    (
+                        p.resumed
+                            .take()
+                            .filter(|r| nothing_to_resume(code, r.at.elapsed())),
+                        restart,
+                    )
                 }
-                None => None,
+                None => (None, None),
             }
         };
 
@@ -979,7 +1041,67 @@ impl Daemon {
             return;
         }
 
+        if let Some((checkout, template)) = restart {
+            if self.restarts(&template, code, checkout) {
+                let _ = self.remove_pane(pane);
+                if let Err(e) = self.start_agent(checkout, &template, Start::Fresh, None) {
+                    tracing::warn!("could not restart {template}: {e}");
+                }
+                return;
+            }
+        }
+
         self.broadcast_tree();
+    }
+
+    /// Whether an agent that just exited should be started again: its
+    /// template's policy says so, and it is not looping.
+    ///
+    /// A CLI that dies immediately on every start would otherwise be
+    /// restarted forever, spending the machine on a row nobody can read. A
+    /// burst of restarts close together therefore gives up and leaves the
+    /// exited row, which is the thing that tells the operator what happened.
+    fn restarts(&self, template: &str, code: Option<i32>, checkout: CheckoutId) -> bool {
+        /// How many times a template may restart in one checkout inside the
+        /// window before Argus stops trying.
+        const LIMIT: u32 = 3;
+        /// Restarts further apart than this are somebody's long-running
+        /// agent ending normally, not a loop.
+        const WINDOW: Duration = Duration::from_secs(60);
+
+        let wanted = self
+            .templates
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|t| t.name == template)
+            .map(|t| t.restart)
+            .unwrap_or_default();
+        let restart = match wanted {
+            crate::config::Restart::Never => false,
+            crate::config::Restart::OnFailure => code != Some(0),
+            crate::config::Restart::Always => true,
+        };
+        if !restart {
+            return false;
+        }
+
+        let mut attempts = self.restart_attempts.lock().unwrap();
+        let key = (checkout, template.to_string());
+        let now = std::time::Instant::now();
+        let attempt = attempts.entry(key).or_insert((0, now));
+        if now.duration_since(attempt.1) > WINDOW {
+            *attempt = (0, now);
+        }
+        attempt.0 += 1;
+        if attempt.0 > LIMIT {
+            tracing::warn!(
+                "{template} exited {} times in a row; leaving the row for you to read",
+                attempt.0
+            );
+            return false;
+        }
+        true
     }
 
     /// Drops a pane from the tree without touching the checkout's managed
@@ -1497,10 +1619,15 @@ impl Daemon {
             }
         }
 
-        if let Some(template) = template
-            .as_deref()
-            .and_then(|name| self.templates.iter().find(|template| template.name == name))
-        {
+        let found = template.as_deref().and_then(|name| {
+            self.templates
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|template| template.name == name)
+                .cloned()
+        });
+        if let Some(template) = found.as_ref() {
             let harness = self.harness_for(template);
             let port = self.hook_port.load(std::sync::atomic::Ordering::Relaxed);
             if port != 0 {
@@ -1536,6 +1663,7 @@ impl Daemon {
                     daemon.reconcile_worktrees();
                     daemon.drop_silent_children();
                     daemon.refresh_git_status();
+                    daemon.refresh_branches();
                     let _ = daemon.tree_tx.send(daemon.snapshot());
                 })
                 .await;
@@ -1578,6 +1706,285 @@ impl Daemon {
         for (id, status) in statuses {
             if let Some(c) = find_checkout(&mut inner.projects, id) {
                 c.git = status;
+            }
+        }
+    }
+
+    /// Re-reads `projects.toml` and folds it into the running tree.
+    ///
+    /// Nothing is rebuilt: projects, repositories and checkouts are matched
+    /// to what the file now says and updated in place, so ids stay valid
+    /// and every pane keeps running. What the file no longer mentions is
+    /// removed — unless it is holding panes, which are somebody's work in
+    /// progress and not the config file's to end. Those rows stay until
+    /// they are empty, and the next reload takes them.
+    ///
+    /// Agent templates are replaced wholesale, since a template is looked
+    /// up by name each time an agent starts. Harnesses are not: a running
+    /// agent's hooks on disk were written by the harness it started under.
+    pub fn reload_config(self: &Arc<Self>) -> anyhow::Result<()> {
+        let config = config::load()?;
+        let templates = if config.agents.is_empty() {
+            config::default_agents()
+        } else {
+            config.agents
+        };
+        *self.templates.lock().unwrap() = templates;
+
+        {
+            let mut inner = self.inner.lock().unwrap();
+            let excluded = inner.excluded.clone();
+            let Inner {
+                workspaces,
+                projects,
+                ids,
+                ..
+            } = &mut *inner;
+
+            for declared in &config.workspaces {
+                intern_workspace(workspaces, ids, &declared.name);
+            }
+
+            for p in &config.projects {
+                let workspace = match p.workspace.as_deref() {
+                    Some(name) => intern_workspace(workspaces, ids, name),
+                    None => intern_workspace(workspaces, ids, config::DEFAULT_WORKSPACE),
+                };
+                let root = p.root.as_deref().map(config::expand_home);
+                let named: Vec<PathBuf> = p
+                    .repos
+                    .iter()
+                    .map(|repo| config::expand_home(repo))
+                    .filter(|path| !is_excluded(&excluded, path))
+                    .collect();
+
+                match projects.iter_mut().find(|live| live.name == p.name) {
+                    Some(live) => {
+                        live.workspace = workspace;
+                        live.root = root;
+                        live.worktree_root =
+                            p.worktree_root.as_deref().map(config::expand_home);
+                        live.setup = p.setup.clone();
+                        live.exclusive = p.exclusive;
+                        live.scan = crate::git::Scan {
+                            exclude: p.exclude.clone(),
+                            include: p.include.clone(),
+                        };
+                        for path in &named {
+                            if !live.repositories.iter().any(|r| {
+                                r.checkouts.iter().any(|c| c.primary && &c.path == path)
+                            }) {
+                                live.repositories
+                                    .push(new_repository(ids, path.clone(), false));
+                            }
+                        }
+                        // A repository the config named and no longer does.
+                        // Discovered ones answer to the root scan instead.
+                        live.repositories.retain(|r| {
+                            r.discovered
+                                || named.iter().any(|path| {
+                                    r.checkouts.iter().any(|c| c.primary && &c.path == path)
+                                })
+                                || r.checkouts.iter().any(|c| !c.panes.is_empty())
+                        });
+                    }
+                    None => {
+                        let repositories = named
+                            .into_iter()
+                            .map(|path| new_repository(ids, path, false))
+                            .collect();
+                        projects.push(Project {
+                            id: ProjectId(ids.alloc()),
+                            workspace,
+                            name: p.name.clone(),
+                            root,
+                            repositories,
+                            worktree_root: p
+                                .worktree_root
+                                .as_deref()
+                                .map(config::expand_home),
+                            setup: p.setup.clone(),
+                            exclusive: p.exclusive,
+                            scan: crate::git::Scan {
+                                exclude: p.exclude.clone(),
+                                include: p.include.clone(),
+                            },
+                        });
+                    }
+                }
+            }
+
+            projects.retain(|live| {
+                config.projects.iter().any(|p| p.name == live.name)
+                    || live
+                        .repositories
+                        .iter()
+                        .flat_map(|r| r.checkouts.iter())
+                        .any(|c| !c.panes.is_empty())
+            });
+
+            // Workspaces are only ever interned, never dropped: the open
+            // one stays valid, and a workspace whose projects all left is
+            // an empty tab rather than a dangling id.
+        }
+
+        // A repository named for the first time has no status yet, and its
+        // row is named from that status.
+        self.reconcile_repositories();
+        self.refresh_git_status();
+        self.refresh_branches();
+        self.broadcast_tree();
+        self.broadcast_workspaces();
+        Ok(())
+    }
+
+    /// Reloads whenever `projects.toml` is written, so editing the file is
+    /// all there is to editing the config.
+    ///
+    /// An editor's save is several writes and often a rename, hence the
+    /// pause before reading; a file caught half-written simply fails to
+    /// parse, and a config that does not parse is logged and ignored rather
+    /// than allowed to take the running tree with it.
+    pub fn start_config_watch(self: &Arc<Self>) {
+        let path = config::config_path();
+        let Some(dir) = path.parent().map(std::path::Path::to_path_buf) else {
+            return;
+        };
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let Some(watch) = crate::watch::directory(&dir, move || {
+            let _ = tx.send(());
+        }) else {
+            return;
+        };
+
+        let daemon = self.clone();
+        tokio::spawn(async move {
+            // Held for as long as the loop runs: dropping the watcher stops
+            // the watch.
+            let _watch = watch;
+            while rx.recv().await.is_some() {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                while rx.try_recv().is_ok() {}
+
+                let daemon = daemon.clone();
+                let _ = tokio::task::spawn_blocking(move || match daemon.reload_config() {
+                    Ok(()) => tracing::info!("reloaded {}", config::config_path().display()),
+                    Err(e) => tracing::warn!("keeping the running config: {e}"),
+                })
+                .await;
+            }
+        });
+    }
+
+    /// Watches every repository's Git metadata and refreshes the moment it
+    /// changes, so a branch switch, a commit, or a worktree made in a shell
+    /// lands in the tree when it happens instead of up to a tick later.
+    ///
+    /// The poll stays: editing a file touches nothing under `.git`, so
+    /// dirty state and changed-file counts still need the sweep. This is
+    /// the half that can be known exactly, done exactly.
+    pub fn start_git_watch(self: &Arc<Self>) {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let Some(mut watch) = crate::watch::GitWatch::new(move || {
+            let _ = tx.send(());
+        }) else {
+            return;
+        };
+
+        let daemon = self.clone();
+        tokio::spawn(async move {
+            let mut resync = tokio::time::interval(Duration::from_secs(10));
+            loop {
+                tokio::select! {
+                    // The set of repositories changes as roots are scanned
+                    // and projects come and go; re-derive it on the same
+                    // slow beat the scan itself runs on.
+                    _ = resync.tick() => watch.sync(&daemon.git_dirs()),
+                    event = rx.recv() => {
+                        if event.is_none() {
+                            break;
+                        }
+                        // One user action is many writes — a commit alone
+                        // moves HEAD, a ref, and the index — so let the
+                        // burst finish before reading any of it.
+                        tokio::time::sleep(Duration::from_millis(150)).await;
+                        while rx.try_recv().is_ok() {}
+
+                        let daemon = daemon.clone();
+                        let _ = tokio::task::spawn_blocking(move || {
+                            daemon.reconcile_worktrees();
+                            daemon.refresh_git_status();
+                            daemon.refresh_branches();
+                            let _ = daemon.tree_tx.send(daemon.snapshot());
+                        })
+                        .await;
+                    }
+                }
+            }
+        });
+    }
+
+    /// Every repository's Git directory, for the watch to follow. Uses the
+    /// primary checkout's, which is where linked worktrees keep theirs too.
+    fn git_dirs(&self) -> Vec<PathBuf> {
+        let primaries: Vec<PathBuf> = {
+            let inner = self.inner.lock().unwrap();
+            inner
+                .projects
+                .iter()
+                .flat_map(|p| p.repositories.iter())
+                .filter_map(|r| r.checkouts.iter().find(|c| c.primary))
+                .map(|c| c.path.clone())
+                .collect()
+        };
+        primaries
+            .iter()
+            .filter_map(|path| crate::git::git_dir(path))
+            .collect()
+    }
+
+    /// Re-reads each repository's local branches and caches the ones no
+    /// checkout is sitting on, so the tree can offer them as rows.
+    ///
+    /// Runs after `refresh_git_status` and reads the branch names it just
+    /// cached: what makes a branch "without a checkout" is that no checkout
+    /// of that repository currently has it, which is exactly what a
+    /// checkout's status says. Three phases with the lock dropped in the
+    /// middle, for the reason the status sweep documents.
+    pub fn refresh_branches(&self) {
+        let repositories: Vec<(RepositoryId, PathBuf, Vec<String>)> = {
+            let inner = self.inner.lock().unwrap();
+            inner
+                .projects
+                .iter()
+                .flat_map(|p| p.repositories.iter())
+                .filter_map(|r| {
+                    let primary = r.checkouts.iter().find(|c| c.primary)?;
+                    let occupied = r
+                        .checkouts
+                        .iter()
+                        .filter_map(|c| c.git.as_ref().and_then(|g| g.branch.clone()))
+                        .collect();
+                    Some((r.id, primary.path.clone(), occupied))
+                })
+                .collect()
+        };
+
+        let listed: Vec<(RepositoryId, Vec<String>)> = repositories
+            .into_iter()
+            .map(|(id, path, occupied)| {
+                let free = crate::browse::branches(&path)
+                    .into_iter()
+                    .filter(|b| !occupied.contains(b))
+                    .collect();
+                (id, free)
+            })
+            .collect();
+
+        let mut inner = self.inner.lock().unwrap();
+        for (id, branches) in listed {
+            if let Some(r) = find_repository(&mut inner.projects, id) {
+                r.branches = branches;
             }
         }
     }
@@ -1676,7 +2083,7 @@ impl Daemon {
     /// daemon. `reconcile_worktrees` does the same job one level further
     /// down, for a repository's checkouts.
     fn reconcile_repositories(&self) -> bool {
-        self.reconcile_repositories_with(crate::git::discover_repositories)
+        self.reconcile_repositories_with(crate::git::discover_repositories_within)
     }
 
     /// The reconciliation itself, with the scan injected so tests can state
@@ -1684,16 +2091,16 @@ impl Daemon {
     /// changed. Production always passes `git::discover_repositories`.
     fn reconcile_repositories_with(
         &self,
-        discover: impl Fn(&std::path::Path) -> Vec<PathBuf>,
+        discover: impl Fn(&std::path::Path, &crate::git::Scan) -> Vec<PathBuf>,
     ) -> bool {
         // Scanning happens between the two locks and never inside one, for
         // the same reason `add_project` scans before taking it.
-        let roots: Vec<(ProjectId, PathBuf)> = {
+        let roots: Vec<(ProjectId, PathBuf, crate::git::Scan)> = {
             let inner = self.inner.lock().unwrap();
             inner
                 .projects
                 .iter()
-                .filter_map(|p| p.root.clone().map(|root| (p.id, root)))
+                .filter_map(|p| p.root.clone().map(|root| (p.id, root, p.scan.clone())))
                 .collect()
         };
         if roots.is_empty() {
@@ -1701,7 +2108,7 @@ impl Daemon {
         }
         let scanned: Vec<(ProjectId, Vec<PathBuf>)> = roots
             .into_iter()
-            .map(|(id, root)| (id, discover(&root)))
+            .map(|(id, root, scan)| (id, discover(&root, &scan)))
             .collect();
 
         let mut changed = false;
@@ -1812,6 +2219,13 @@ impl Daemon {
                 name,
                 root: Some(expanded),
                 repositories,
+                // A project added at runtime is written to the config as a
+                // root and nothing else; worktree settings are something
+                // the user adds to the file by hand.
+                worktree_root: None,
+                setup: Vec::new(),
+                exclusive: false,
+                scan: crate::git::Scan::default(),
             });
         }
         self.broadcast_tree();
@@ -1976,45 +2390,60 @@ impl Daemon {
         Ok(())
     }
 
-    /// `git worktree add`s a new checkout in `base`'s repository, branched off
-    /// `base`'s current HEAD, and appends it to the tree. Placed under
-    /// `.argus/worktrees/<branch>` beside the repository's primary checkout
-    /// (DESIGN.md §4 Level 2), regardless of which checkout `base` itself
-    /// is — so worktrees always nest under the one directory, not under
-    /// each other.
     /// Moves this checkout onto an existing branch. `git` refuses when the
     /// switch would clobber uncommitted work, and that refusal is exactly
     /// what should reach the user, so its stderr is passed through.
+    ///
+    /// Argus refuses one case git allows: switching a *dirty primary*
+    /// checkout (TARGET.md §Repository and checkout model). Git carries
+    /// uncommitted changes across a switch whenever they don't conflict,
+    /// which quietly moves work you were doing on one branch onto another —
+    /// and the primary checkout is the repo the user already had, not one
+    /// Argus made. A worktree gives the branch a directory of its own and
+    /// leaves that work where it was.
     pub async fn switch_branch(&self, checkout: CheckoutId, branch: &str) -> anyhow::Result<()> {
-        self.git_switch(checkout, &["switch", branch], branch).await
+        let (primary, path) = {
+            let inner = self.inner.lock().unwrap();
+            let c = find_checkout_ref(&inner.projects, checkout)
+                .ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
+            (c.primary, c.path.clone())
+        };
+        if primary {
+            // Read live rather than trusting the cache: the poll is up to
+            // two seconds stale, and this is the check that decides whether
+            // uncommitted work is about to move.
+            let dirty = crate::git::status(&path).is_some_and(|s| s.dirty);
+            if dirty {
+                anyhow::bail!(
+                    "the primary checkout has uncommitted changes — commit them, or make a worktree for {branch} instead"
+                );
+            }
+        }
+        self.git_switch(checkout, &["switch"], branch).await
     }
 
     /// Creates a branch here and moves onto it, leaving the checkout where
     /// it is — unlike `create_worktree`, which makes a directory for it.
     pub async fn create_branch(&self, checkout: CheckoutId, branch: &str) -> anyhow::Result<()> {
-        self.git_switch(checkout, &["switch", "-c", branch], branch)
-            .await
+        self.git_switch(checkout, &["switch", "-c"], branch).await
     }
 
+    /// `flags` are everything before the branch name, which this appends
+    /// itself once it is validated — so the name git is handed is the same
+    /// one that was checked, rather than whatever the caller had spelled
+    /// into its own argument list.
     async fn git_switch(
         &self,
         checkout: CheckoutId,
-        args: &[&str],
+        flags: &[&str],
         branch: &str,
     ) -> anyhow::Result<()> {
-        let branch = branch.trim();
-        if branch.is_empty() {
-            anyhow::bail!("branch name can't be empty");
-        }
-        // Leading dashes would be read as flags, and git's own refname
-        // rules reject the rest.
-        if branch.starts_with('-') {
-            anyhow::bail!("not a valid branch name: {branch}");
-        }
+        let branch = checked_branch_name(branch)?;
         let path = self.checkout_path(checkout)?;
 
         let output = crate::command::git()
-            .args(args)
+            .args(flags)
+            .arg(&branch)
             .current_dir(&path)
             .output()
             .await?;
@@ -2032,33 +2461,48 @@ impl Daemon {
             }
         }
         self.refresh_checkout_git(checkout);
+        self.refresh_branches();
         self.broadcast_tree();
         Ok(())
     }
 
+    /// `git worktree add`s a new checkout in `base`'s repository and appends
+    /// it to the tree. Placed under `.argus/worktrees/<branch>` beside the
+    /// repository's primary checkout (DESIGN.md §4 Level 2), regardless of
+    /// which checkout `base` itself is — so worktrees always nest under the
+    /// one directory, not under each other.
+    ///
+    /// A branch that already exists gets a directory for the branch it is;
+    /// otherwise the branch is created off `base`'s current HEAD. Giving a
+    /// branch a checkout and inventing one are the same request from the
+    /// tree's point of view — a row for a branch that has no directory yet —
+    /// and refusing the first because the name is taken would only mean
+    /// telling the user to say it a different way.
     pub async fn create_worktree(
         self: &Arc<Self>,
         base: CheckoutId,
         branch: String,
     ) -> anyhow::Result<()> {
-        let branch = branch.trim().to_string();
-        if branch.is_empty() {
-            anyhow::bail!("branch name can't be empty");
-        }
+        let branch = checked_branch_name(&branch)?;
 
-        let (repository_id, base_path, primary_path) = {
+        let context = {
             let inner = self.inner.lock().unwrap();
-            find_checkout_context(&inner.projects, base)
+            worktree_context(&inner.projects, base)
                 .ok_or_else(|| anyhow::anyhow!("no such checkout"))?
         };
-        let dest = primary_path.join(".argus").join("worktrees").join(&branch);
+        let dest = worktree_dir(&context.root, &branch)?;
+        let exists = crate::git::has_local_branch(&context.base, &branch);
 
-        let output = crate::command::git()
-            .args(["worktree", "add", "-b", &branch])
-            .arg(&dest)
-            .current_dir(&base_path)
-            .output()
-            .await?;
+        let mut command = crate::command::git();
+        command.args(["worktree", "add"]);
+        if !exists {
+            command.args(["-b", &branch]);
+        }
+        command.arg(&dest);
+        if exists {
+            command.arg(&branch);
+        }
+        let output = command.current_dir(&context.base).output().await?;
         if !output.status.success() {
             anyhow::bail!(
                 "git worktree add failed: {}",
@@ -2069,11 +2513,11 @@ impl Daemon {
         let added = {
             let mut inner = self.inner.lock().unwrap();
             let id = CheckoutId(inner.ids.alloc());
-            find_repository(&mut inner.projects, repository_id).map(|r| {
+            find_repository(&mut inner.projects, context.repository).map(|r| {
                 r.checkouts.push(Checkout {
                     id,
                     name: branch,
-                    path: dest,
+                    path: dest.clone(),
                     primary: false,
                     panes: Vec::new(),
                     git: None,
@@ -2084,15 +2528,14 @@ impl Daemon {
         if let Some(id) = added {
             self.refresh_checkout_git(id);
         }
+        self.refresh_branches();
+        // Broadcast before the setup commands run: they can take as long as
+        // an install takes, and the row is what the user asked for.
         self.broadcast_tree();
-        Ok(())
+
+        run_setup(&context.setup, &dest).await
     }
 
-    /// Kills every pane in a linked-worktree checkout, `git worktree
-    /// remove`s and deletes its branch (both best-effort — the checkout
-    /// leaves the tree regardless), and refuses outright on the primary
-    /// checkout, which is the repo the user already had, not Argus's to
-    /// delete (DESIGN.md §4 Level 2).
     /// Errors rather than `None`, so a stale id reaches the user as text.
     pub fn checkout_path(&self, checkout: CheckoutId) -> anyhow::Result<PathBuf> {
         let inner = self.inner.lock().unwrap();
@@ -2101,6 +2544,16 @@ impl Daemon {
             .ok_or_else(|| anyhow::anyhow!("no such checkout"))
     }
 
+    /// Kills every pane in a linked-worktree checkout, `git worktree
+    /// remove`s it, deletes its branch (best-effort — a branch left behind
+    /// costs nothing), and refuses outright on the primary checkout, which
+    /// is the repo the user already had, not Argus's to delete (DESIGN.md
+    /// §4 Level 2).
+    ///
+    /// Ordered so a refusal costs nothing: every check that can be made
+    /// while the agents are still running is made first, and the panes die
+    /// only once git's own removal is expected to go through. See
+    /// `git::removal` for why the panes cannot simply be killed afterwards.
     pub async fn remove_checkout(&self, checkout: CheckoutId) -> anyhow::Result<()> {
         let (path, primary, primary_path, pane_ids) = {
             let inner = self.inner.lock().unwrap();
@@ -2119,23 +2572,28 @@ impl Daemon {
             anyhow::bail!("refusing to remove the primary checkout");
         }
 
+        let stale = match crate::git::removal(&primary_path, &path) {
+            crate::git::Removal::Blocked(why) => anyhow::bail!("{why}"),
+            crate::git::Removal::Stale => true,
+            crate::git::Removal::Ready => false,
+        };
+
         let branch = crate::git::status(&path).and_then(|s| s.branch);
 
         for pane in pane_ids {
             let _ = self.close_pane(pane);
         }
 
-        let output = crate::command::git()
-            .args(["worktree", "remove", "--force"])
-            .arg(&path)
-            .current_dir(&primary_path)
-            .output()
-            .await?;
-        if !output.status.success() {
-            anyhow::bail!(
-                "git worktree remove failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            );
+        if stale {
+            // Nothing to delete but the registration, and `worktree remove`
+            // refuses a directory it cannot find.
+            let _ = crate::command::git()
+                .args(["worktree", "prune"])
+                .current_dir(&primary_path)
+                .output()
+                .await;
+        } else {
+            self.run_worktree_remove(&path, &primary_path).await?;
         }
 
         if let Some(branch) = branch {
@@ -2150,9 +2608,129 @@ impl Daemon {
             let mut inner = self.inner.lock().unwrap();
             remove_checkout_entry(&mut inner.projects, checkout);
         }
+        self.refresh_branches();
         self.broadcast_tree();
         Ok(())
     }
+
+    /// `git worktree remove --force`, retried briefly.
+    ///
+    /// Killing a pane asks the OS to end the child; the handles it held on
+    /// the worktree directory go away a moment later, and on Windows a
+    /// directory a process still has open cannot be deleted. Retrying for
+    /// about a second turns that race into a wait instead of a refusal the
+    /// user has to reissue — by which point the panes are already gone.
+    async fn run_worktree_remove(
+        &self,
+        path: &std::path::Path,
+        primary_path: &std::path::Path,
+    ) -> anyhow::Result<()> {
+        const ATTEMPTS: usize = 10;
+        let mut last = String::new();
+        for attempt in 0..ATTEMPTS {
+            if attempt > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            let output = crate::command::git()
+                .args(["worktree", "remove", "--force"])
+                .arg(path)
+                .current_dir(primary_path)
+                .output()
+                .await?;
+            if output.status.success() {
+                return Ok(());
+            }
+            last = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        }
+        anyhow::bail!("git worktree remove failed: {last}");
+    }
+}
+
+/// Trims a user-typed branch name and refuses the two spellings that must
+/// never reach a git command line: empty, and anything starting with a
+/// dash, which git reads as a flag rather than as a name. Git's own refname
+/// rules cover everything else, and its refusal says more than a restatement
+/// of them here would.
+fn checked_branch_name(raw: &str) -> anyhow::Result<String> {
+    let branch = raw.trim();
+    if branch.is_empty() {
+        anyhow::bail!("branch name can't be empty");
+    }
+    if branch.starts_with('-') {
+        anyhow::bail!("not a valid branch name: {branch}");
+    }
+    Ok(branch.to_string())
+}
+
+/// Runs a project's setup commands in a worktree that was just created,
+/// in order, stopping at the first that fails.
+///
+/// Parsed into arguments rather than handed to a shell, the way an editor
+/// command is: the daemon owns no console on Windows, a shell would be a
+/// second thing to configure, and the commands here are the user's own
+/// words either way. A failure is reported but the worktree is kept — a
+/// dependency install that did not work is a thing to fix in a directory
+/// that exists, not a reason to throw the branch away.
+async fn run_setup(commands: &[String], dir: &std::path::Path) -> anyhow::Result<()> {
+    for line in commands {
+        let argv = crate::editor::parse_command(line).unwrap_or_default();
+        let Some((program, args)) = argv.split_first() else {
+            continue;
+        };
+        let output = crate::command::quiet(program)
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .await;
+        let failed = match output {
+            Ok(output) if output.status.success() => continue,
+            Ok(output) => String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            Err(e) => e.to_string(),
+        };
+        tracing::warn!("setup command {line:?} failed in {}: {failed}", dir.display());
+        anyhow::bail!("the worktree is there, but setup command {line:?} failed: {failed}");
+    }
+    Ok(())
+}
+
+/// Where a new worktree for `branch` goes, under `root` — the project's
+/// configured worktree root for this repository, or the `.argus/worktrees`
+/// directory beside its primary checkout.
+///
+/// The branch name is a user string that becomes a path here, so the
+/// components that would steer it out of that root are refused rather than
+/// left to git's refname rules — which run too late, and allow more than a
+/// path should. `..` climbs out, and `Path::join` throws the base away
+/// entirely when what it joins is rooted (`/tmp/x`, `C:\x`,
+/// `\\server\share`), which would put the worktree wherever the name said.
+fn worktree_dir(root: &std::path::Path, branch: &str) -> anyhow::Result<PathBuf> {
+    // A backslash separates directories on Windows and is an ordinary
+    // character in a name everywhere else; refusing it keeps one branch
+    // name from meaning two different paths.
+    let rooted = branch.contains('\\')
+        || std::path::Path::new(branch)
+            .components()
+            .any(|c| !matches!(c, std::path::Component::Normal(_)));
+    if rooted {
+        anyhow::bail!("a branch name can't be a path: {branch}");
+    }
+    Ok(root.join(branch))
+}
+
+/// The id of the workspace by this name, creating it if this is the first
+/// time it has been mentioned. Workspaces come from three places — the
+/// built-in default, `[[workspace]]` blocks, and any name a project refers
+/// to without declaring — so declaring one is optional.
+fn intern_workspace(workspaces: &mut Vec<Workspace>, ids: &mut IdGen, name: &str) -> WorkspaceId {
+    if let Some(w) = workspaces.iter().find(|w| w.name == name) {
+        return w.id;
+    }
+    let id = WorkspaceId(ids.alloc());
+    workspaces.push(Workspace {
+        id,
+        name: name.to_string(),
+    });
+    id
 }
 
 fn find_checkout(projects: &mut [Project], id: CheckoutId) -> Option<&mut Checkout> {
@@ -2193,6 +2771,44 @@ fn find_checkout_context(
             let primary = r.checkouts.iter().find(|c| c.primary).unwrap_or(base);
             Some((r.id, base.path.clone(), primary.path.clone()))
         })
+}
+
+/// Everything creating a worktree needs to know about where it goes.
+struct WorktreeContext {
+    repository: RepositoryId,
+    /// The checkout whose HEAD a new branch is cut from, and where the
+    /// `git worktree add` runs.
+    base: PathBuf,
+    /// The directory worktrees for this repository are placed under.
+    root: PathBuf,
+    /// The project's setup commands, run in whatever is created.
+    setup: Vec<String>,
+}
+
+/// Where this repository's worktrees go: the project's configured root with
+/// a directory per repository under it, or `.argus/worktrees` beside the
+/// primary checkout when the project doesn't say.
+///
+/// A shared root needs the repository level — two repositories in one
+/// project routinely have a `main` or a `feat/x`, and without it the second
+/// one to ask would land on the first one's directory.
+fn worktree_context(projects: &[Project], id: CheckoutId) -> Option<WorktreeContext> {
+    projects.iter().find_map(|p| {
+        p.repositories.iter().find_map(|r| {
+            let base = r.checkouts.iter().find(|c| c.id == id)?;
+            let primary = r.checkouts.iter().find(|c| c.primary).unwrap_or(base);
+            let root = match &p.worktree_root {
+                Some(root) => root.join(&r.name),
+                None => primary.path.join(".argus").join("worktrees"),
+            };
+            Some(WorktreeContext {
+                repository: r.id,
+                base: base.path.clone(),
+                root,
+                setup: p.setup.clone(),
+            })
+        })
+    })
 }
 
 /// Prefers the checked-out branch name for a newly-discovered worktree —
@@ -2246,6 +2862,23 @@ fn all_panes(projects: &mut [Project]) -> impl Iterator<Item = &mut Pane> {
         .flat_map(|c| c.panes.iter_mut())
 }
 
+/// The pane and the id of the checkout holding it — which the pane itself
+/// does not carry, and which a caller acting on the pane's exit needs in
+/// order to put something back in its place.
+fn find_pane_with_checkout(
+    projects: &mut [Project],
+    id: PaneId,
+) -> Option<(&mut Pane, CheckoutId)> {
+    projects
+        .iter_mut()
+        .flat_map(|p| p.repositories.iter_mut())
+        .flat_map(|r| r.checkouts.iter_mut())
+        .find_map(|c| {
+            let checkout = c.id;
+            c.panes.iter_mut().find(|p| p.id == id).map(|p| (p, checkout))
+        })
+}
+
 fn find_pane(projects: &mut [Project], id: PaneId) -> Option<&mut Pane> {
     projects
         .iter_mut()
@@ -2267,6 +2900,30 @@ fn find_pane_ref(projects: &[Project], id: PaneId) -> Option<&Pane> {
 /// Whether any agent pane is still open in the checkout at `path`. Gates
 /// tearing down that checkout's managed hooks, which are shared by every
 /// agent running there.
+/// The agent already working in this checkout, if its project allows only
+/// one. `None` when the project has not asked for that, or when nothing is
+/// running there — sharing a checkout is otherwise allowed, and merely
+/// shown (TARGET.md §Repository and checkout model).
+fn exclusive_conflict(projects: &[Project], checkout: CheckoutId) -> Option<String> {
+    let project = projects.iter().find(|p| {
+        p.repositories
+            .iter()
+            .any(|r| r.checkouts.iter().any(|c| c.id == checkout))
+    })?;
+    if !project.exclusive {
+        return None;
+    }
+    project
+        .repositories
+        .iter()
+        .flat_map(|r| r.checkouts.iter())
+        .find(|c| c.id == checkout)?
+        .panes
+        .iter()
+        .find(|p| p.kind == PaneKind::Agent)
+        .map(|p| p.title.clone())
+}
+
 fn checkout_has_agent(projects: &[Project], path: &std::path::Path) -> bool {
     projects
         .iter()
@@ -2519,6 +3176,7 @@ fn new_repository(ids: &mut IdGen, path: PathBuf, discovered: bool) -> Repositor
         id: RepositoryId(ids.alloc()),
         name: name.clone(),
         discovered,
+        branches: Vec::new(),
         checkouts: vec![Checkout {
             id: CheckoutId(ids.alloc()),
             name,
@@ -2590,6 +3248,7 @@ mod tests {
                 root: None,
                 repos: vec![primary.to_string()],
                 workspace: None,
+                ..Default::default()
             }],
             agents: Vec::new(),
             harnesses: Vec::new(),
@@ -2604,6 +3263,7 @@ mod tests {
                 root: None,
                 repos: repositories.iter().map(|path| path.to_string()).collect(),
                 workspace: None,
+                ..Default::default()
             }],
             agents: Vec::new(),
             harnesses: Vec::new(),
@@ -3081,6 +3741,128 @@ mod tests {
         d.close_pane(pane).unwrap();
     }
 
+    /// A daemon whose one agent template has a restart policy.
+    fn daemon_with_a_restarting_agent(
+        dir: &std::path::Path,
+        restart: crate::config::Restart,
+    ) -> Arc<Daemon> {
+        Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                repos: vec![dir.to_string_lossy().to_string()],
+                ..Default::default()
+            }],
+            agents: vec![AgentConfig {
+                name: "claude".to_string(),
+                cmd: vec!["echo".to_string(), "hi".to_string()],
+                env: Default::default(),
+                harness: None,
+                restart,
+            }],
+            harnesses: Vec::new(),
+        })
+    }
+
+    fn panes_of(d: &Daemon) -> Vec<PaneInfo> {
+        d.snapshot()
+            .remove(0)
+            .repositories
+            .remove(0)
+            .checkouts
+            .remove(0)
+            .panes
+    }
+
+    #[tokio::test]
+    async fn an_agent_that_exits_leaves_its_row_alone_by_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+
+        d.mark_pane_exited(pane, Some(1));
+
+        let panes = panes_of(&d);
+        assert_eq!(panes.len(), 1);
+        assert_eq!(panes[0].id, pane, "the same dead row, for reading");
+        assert_eq!(panes[0].status, PaneStatus::Exited { code: Some(1) });
+    }
+
+    #[tokio::test]
+    async fn on_failure_starts_the_agent_again_and_a_clean_exit_does_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_a_restarting_agent(dir.path(), crate::config::Restart::OnFailure);
+        let checkout = only_checkout(&d);
+        let first = d.spawn_agent(checkout, "claude").unwrap();
+
+        d.mark_pane_exited(first, Some(1));
+
+        let panes = panes_of(&d);
+        assert_eq!(panes.len(), 1, "the dead row is replaced, not joined");
+        let second = panes[0].id;
+        assert_ne!(second, first, "a new pane is running");
+        assert_ne!(panes[0].status, PaneStatus::Exited { code: Some(1) });
+
+        d.mark_pane_exited(second, Some(0));
+
+        let panes = panes_of(&d);
+        assert_eq!(panes[0].id, second, "a clean exit is the agent finishing");
+        assert_eq!(panes[0].status, PaneStatus::Exited { code: Some(0) });
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn always_starts_the_agent_again_however_it_ended() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_a_restarting_agent(dir.path(), crate::config::Restart::Always);
+        let checkout = only_checkout(&d);
+        let first = d.spawn_agent(checkout, "claude").unwrap();
+
+        d.mark_pane_exited(first, Some(0));
+
+        let panes = panes_of(&d);
+        assert_eq!(panes.len(), 1);
+        assert_ne!(panes[0].id, first);
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn a_cli_that_dies_on_every_start_is_left_where_the_operator_can_read_it() {
+        // Restarting forever spends the machine on a row nobody ever sees.
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_a_restarting_agent(dir.path(), crate::config::Restart::Always);
+        let checkout = only_checkout(&d);
+        let mut pane = d.spawn_agent(checkout, "claude").unwrap();
+
+        for _ in 0..6 {
+            d.mark_pane_exited(pane, Some(1));
+            pane = panes_of(&d)[0].id;
+        }
+
+        let panes = panes_of(&d);
+        assert_eq!(panes.len(), 1);
+        assert_eq!(
+            panes[0].status,
+            PaneStatus::Exited { code: Some(1) },
+            "it gave up and left the exit visible"
+        );
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn closing_a_pane_is_never_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_a_restarting_agent(dir.path(), crate::config::Restart::Always);
+        let checkout = only_checkout(&d);
+        let pane = d.spawn_agent(checkout, "claude").unwrap();
+
+        d.close_pane(pane).unwrap();
+        // Whatever the process does on its way out arrives after the row
+        // has already gone.
+        d.mark_pane_exited(pane, Some(1));
+
+        assert!(panes_of(&d).is_empty(), "closing means closing");
+    }
+
     #[tokio::test]
     async fn a_report_never_resurrects_an_exited_pane() {
         // A Stop hook racing a crash must not relabel a dead row as idle.
@@ -3143,12 +3925,14 @@ mod tests {
                     second.to_string_lossy().to_string(),
                 ],
                 workspace: None,
+                ..Default::default()
             }],
             agents: vec![AgentConfig {
                 name: "claude".to_string(),
                 cmd: vec![if cfg!(windows) { "cmd" } else { "sh" }.to_string()],
                 env: Default::default(),
                 harness: None,
+                restart: Default::default(),
             }],
             harnesses: Vec::new(),
         })
@@ -3494,6 +4278,7 @@ mod tests {
                 cmd: vec![name.clone()],
                 env: Default::default(),
                 harness: None,
+                restart: Default::default(),
             };
             let h = d.harness_for(&template);
             assert_ne!(
@@ -3522,15 +4307,99 @@ mod tests {
                 root: None,
                 repos: vec![dir.to_string_lossy().to_string()],
                 workspace: None,
+                ..Default::default()
             }],
             agents: vec![AgentConfig {
                 name: "claude".to_string(),
                 cmd: vec!["echo".to_string(), "hi".to_string()],
                 env: Default::default(),
                 harness: None,
+                restart: Default::default(),
             }],
             harnesses: Vec::new(),
         })
+    }
+
+    /// The same fake agent, in a project that allows one per checkout.
+    fn daemon_with_an_exclusive_project(dir: &std::path::Path) -> Arc<Daemon> {
+        Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                repos: vec![dir.to_string_lossy().to_string()],
+                exclusive: true,
+                ..Default::default()
+            }],
+            agents: vec![AgentConfig {
+                name: "claude".to_string(),
+                cmd: vec!["echo".to_string(), "hi".to_string()],
+                env: Default::default(),
+                harness: None,
+                restart: Default::default(),
+            }],
+            harnesses: Vec::new(),
+        })
+    }
+
+    #[tokio::test]
+    async fn sharing_a_checkout_is_allowed_unless_the_project_says_otherwise() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_fake_claude(dir.path());
+        let checkout = only_checkout(&d);
+
+        let first = d.spawn_agent(checkout, "claude").unwrap();
+        let second = d.spawn_agent(checkout, "claude").unwrap();
+
+        assert_eq!(
+            d.snapshot()[0].repositories[0].checkouts[0].panes.len(),
+            2,
+            "two agents in one checkout is shown, not refused"
+        );
+        let _ = d.close_pane(first);
+        let _ = d.close_pane(second);
+    }
+
+    #[tokio::test]
+    async fn an_exclusive_project_refuses_a_second_agent_in_one_checkout() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_an_exclusive_project(dir.path());
+        let checkout = only_checkout(&d);
+        let first = d.spawn_agent(checkout, "claude").unwrap();
+
+        let err = d.spawn_agent(checkout, "claude").unwrap_err().to_string();
+
+        assert!(err.contains("worktree"), "say what to do instead: {err:?}");
+        assert_eq!(
+            d.snapshot()[0].repositories[0].checkouts[0].panes.len(),
+            1
+        );
+        let _ = d.close_pane(first);
+    }
+
+    #[tokio::test]
+    async fn exclusivity_is_about_agents_not_shells() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_an_exclusive_project(dir.path());
+        let checkout = only_checkout(&d);
+        let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+        let shell = d.spawn_shell(checkout).expect("a shell is not an agent");
+
+        let _ = d.close_pane(shell);
+        let _ = d.close_pane(agent);
+    }
+
+    #[tokio::test]
+    async fn an_exclusive_checkout_takes_an_agent_again_once_the_first_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_an_exclusive_project(dir.path());
+        let checkout = only_checkout(&d);
+        let first = d.spawn_agent(checkout, "claude").unwrap();
+        d.close_pane(first).unwrap();
+
+        let second = d.spawn_agent(checkout, "claude").unwrap();
+
+        let _ = d.close_pane(second);
     }
 
     fn settings_of(dir: &std::path::Path) -> std::path::PathBuf {
@@ -3658,6 +4527,7 @@ mod tests {
                 root: None,
                 repos: vec![configured],
                 workspace: None,
+                ..Default::default()
             }],
             agents: Vec::new(),
             harnesses: Vec::new(),
@@ -3688,6 +4558,7 @@ mod tests {
                 root: None,
                 repos: vec![dir.path().to_string_lossy().to_string()],
                 workspace: None,
+                ..Default::default()
             }],
             agents: Vec::new(),
             harnesses: Vec::new(),
@@ -3724,6 +4595,7 @@ mod tests {
                 root: Some(root.to_string_lossy().to_string()),
                 repos: repos.iter().map(|p| p.to_string()).collect(),
                 workspace: None,
+                ..Default::default()
             }],
             agents: Vec::new(),
             harnesses: Vec::new(),
@@ -3807,7 +4679,7 @@ mod tests {
 
         let cloned = dir.path().join("orion");
         assert!(
-            d.reconcile_repositories_with(|_| listing(&[&cloned.to_string_lossy()])),
+            d.reconcile_repositories_with(|_, _| listing(&[&cloned.to_string_lossy()])),
             "the tree changed, so clients need telling"
         );
 
@@ -3842,7 +4714,7 @@ mod tests {
         let pane = d.spawn_shell(repository.checkouts[0].id).unwrap();
 
         assert!(
-            !d.reconcile_repositories_with(|_| listing(&[&child.to_string_lossy()])),
+            !d.reconcile_repositories_with(|_, _| listing(&[&child.to_string_lossy()])),
             "nothing changed, so nothing should be broadcast"
         );
 
@@ -3862,7 +4734,7 @@ mod tests {
         let _repo = real_repo(&child);
         let d = daemon_rooted_at(dir.path(), &[]);
 
-        assert!(d.reconcile_repositories_with(|_| Vec::new()));
+        assert!(d.reconcile_repositories_with(|_, _| Vec::new()));
         assert!(repository_names(&d).is_empty());
     }
 
@@ -3880,7 +4752,7 @@ mod tests {
             .spawn_shell(d.snapshot()[0].repositories[0].checkouts[0].id)
             .unwrap();
 
-        assert!(!d.reconcile_repositories_with(|_| Vec::new()));
+        assert!(!d.reconcile_repositories_with(|_, _| Vec::new()));
         assert_eq!(
             repository_names(&d),
             vec!["orion"],
@@ -3888,7 +4760,7 @@ mod tests {
         );
 
         d.close_pane(pane).unwrap();
-        assert!(d.reconcile_repositories_with(|_| Vec::new()));
+        assert!(d.reconcile_repositories_with(|_, _| Vec::new()));
         assert!(repository_names(&d).is_empty(), "and gone once it is empty");
     }
 
@@ -3902,7 +4774,7 @@ mod tests {
         std::fs::create_dir(&plain).unwrap();
 
         let d = daemon_rooted_at(dir.path(), &[&plain.to_string_lossy()]);
-        assert!(!d.reconcile_repositories_with(|_| Vec::new()));
+        assert!(!d.reconcile_repositories_with(|_, _| Vec::new()));
         assert_eq!(repository_names(&d), vec!["scratch"]);
     }
 
@@ -3910,7 +4782,7 @@ mod tests {
     fn a_project_without_a_root_is_never_scanned() {
         let d = daemon_with_repositories(&["/configured"]);
         assert!(
-            !d.reconcile_repositories_with(|_| panic!("a rootless project has nothing to scan")),
+            !d.reconcile_repositories_with(|_, _| panic!("a rootless project has nothing to scan")),
             "and nothing changed"
         );
     }
@@ -4053,7 +4925,7 @@ mod tests {
 
             // A scan of the root finds only what is under it, which the
             // added repository never was.
-            assert!(!d.reconcile_repositories_with(crate::git::discover_repositories));
+            assert!(!d.reconcile_repositories_with(crate::git::discover_repositories_within));
             assert_eq!(repository_names(&d), vec!["orion", "notes"]);
         });
     }
@@ -4381,6 +5253,194 @@ root = "/somewhere"
         out
     }
 
+    #[test]
+    fn a_projects_own_scan_rules_decide_what_its_root_turns_up() {
+        let root = tempfile::tempdir().unwrap();
+        let kept = root.path().join("kept");
+        let vendored = root.path().join("vendor").join("thing");
+        std::fs::create_dir_all(&kept).unwrap();
+        std::fs::create_dir_all(&vendored).unwrap();
+        init_repo(&kept);
+        init_repo(&vendored);
+
+        let d = Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                root: Some(root.path().to_string_lossy().to_string()),
+                exclude: vec!["vendor".to_string()],
+                ..Default::default()
+            }],
+            agents: Vec::new(),
+            harnesses: Vec::new(),
+        });
+
+        assert_eq!(repository_names(&d), vec!["kept".to_string()]);
+    }
+
+    // --- reloading the config -----------------------------------------------
+
+    #[test]
+    fn a_project_added_to_the_file_arrives_on_reload() {
+        with_temp_config(|dir| {
+            std::fs::write(
+                dir.join("projects.toml"),
+                "[[project]]\nname = \"one\"\nrepos = [\"/one\"]\n",
+            )
+            .unwrap();
+            let d = Daemon::new(config::load().unwrap());
+            assert_eq!(d.snapshot().len(), 1);
+
+            std::fs::write(
+                dir.join("projects.toml"),
+                "[[project]]\nname = \"one\"\nrepos = [\"/one\"]\n\n[[project]]\nname = \"two\"\nrepos = [\"/two\"]\n",
+            )
+            .unwrap();
+            d.reload_config().unwrap();
+
+            let names: Vec<String> = d.snapshot().into_iter().map(|p| p.name).collect();
+            assert_eq!(names, vec!["one".to_string(), "two".to_string()]);
+        });
+    }
+
+    #[tokio::test]
+    async fn reloading_keeps_the_panes_and_ids_of_everything_still_configured() {
+        let repo = tempfile::tempdir().unwrap();
+        let repo_path = repo.path().to_string_lossy().replace('\\', "/");
+        with_temp_config(|dir| {
+            std::fs::write(
+                dir.join("projects.toml"),
+                format!("[[project]]\nname = \"one\"\nrepos = [\"{repo_path}\"]\n"),
+            )
+            .unwrap();
+            let d = Daemon::new(config::load().unwrap());
+            let checkout = only_checkout(&d);
+            let pane = d.spawn_shell(checkout).unwrap();
+
+            std::fs::write(
+                dir.join("projects.toml"),
+                format!(
+                    "[[project]]\nname = \"one\"\nrepos = [\"{repo_path}\"]\nexclusive = true\n"
+                ),
+            )
+            .unwrap();
+            d.reload_config().unwrap();
+
+            let snapshot = d.snapshot();
+            assert_eq!(
+                snapshot[0].repositories[0].checkouts[0].id, checkout,
+                "the same checkout, not a rebuilt one"
+            );
+            assert_eq!(
+                snapshot[0].repositories[0].checkouts[0].panes.len(),
+                1,
+                "the shell kept running"
+            );
+            let _ = d.close_pane(pane);
+        });
+    }
+
+    #[test]
+    fn a_repository_the_file_stopped_naming_leaves_only_when_it_is_empty() {
+        let repo = tempfile::tempdir().unwrap();
+        let repo_path = repo.path().to_string_lossy().replace('\\', "/");
+        with_temp_config(|dir| {
+            std::fs::write(
+                dir.join("projects.toml"),
+                format!("[[project]]\nname = \"one\"\nrepos = [\"{repo_path}\", \"/second\"]\n"),
+            )
+            .unwrap();
+            let d = Daemon::new(config::load().unwrap());
+            assert_eq!(d.snapshot()[0].repositories.len(), 2);
+
+            std::fs::write(
+                dir.join("projects.toml"),
+                format!("[[project]]\nname = \"one\"\nrepos = [\"{repo_path}\"]\n"),
+            )
+            .unwrap();
+            d.reload_config().unwrap();
+
+            assert_eq!(
+                d.snapshot()[0].repositories.len(),
+                1,
+                "the repository with nothing running in it goes"
+            );
+        });
+    }
+
+    #[tokio::test]
+    async fn a_project_removed_from_the_file_stays_while_an_agent_is_working_in_it() {
+        // The config file does not get to end somebody's work in progress.
+        let repo = tempfile::tempdir().unwrap();
+        let repo_path = repo.path().to_string_lossy().replace('\\', "/");
+        with_temp_config(|dir| {
+            std::fs::write(
+                dir.join("projects.toml"),
+                format!("[[project]]\nname = \"one\"\nrepos = [\"{repo_path}\"]\n"),
+            )
+            .unwrap();
+            let d = Daemon::new(config::load().unwrap());
+            let pane = d.spawn_shell(only_checkout(&d)).unwrap();
+
+            std::fs::write(dir.join("projects.toml"), "").unwrap();
+            d.reload_config().unwrap();
+
+            assert_eq!(d.snapshot().len(), 1, "still there, still running");
+
+            d.close_pane(pane).unwrap();
+            d.reload_config().unwrap();
+            assert!(d.snapshot().is_empty(), "and gone once it is empty");
+        });
+    }
+
+    #[test]
+    fn reloading_replaces_the_agent_templates() {
+        with_temp_config(|dir| {
+            std::fs::write(dir.join("projects.toml"), "[[agent]]\nname = \"old\"\ncmd = [\"x\"]\n")
+                .unwrap();
+            let d = Daemon::new(config::load().unwrap());
+            assert_eq!(d.template_names(), vec!["old".to_string()]);
+
+            std::fs::write(dir.join("projects.toml"), "[[agent]]\nname = \"new\"\ncmd = [\"y\"]\n")
+                .unwrap();
+            d.reload_config().unwrap();
+
+            assert_eq!(d.template_names(), vec!["new".to_string()]);
+        });
+    }
+
+    #[tokio::test]
+    async fn a_project_that_becomes_exclusive_starts_refusing_a_second_agent() {
+        let repo = tempfile::tempdir().unwrap();
+        let repo_path = repo.path().to_string_lossy().replace('\\', "/");
+        with_temp_config(|dir| {
+            let agent = "[[agent]]\nname = \"claude\"\ncmd = [\"echo\", \"hi\"]\n";
+            std::fs::write(
+                dir.join("projects.toml"),
+                format!("[[project]]\nname = \"one\"\nrepos = [\"{repo_path}\"]\n{agent}"),
+            )
+            .unwrap();
+            let d = Daemon::new(config::load().unwrap());
+            let checkout = only_checkout(&d);
+            let first = d.spawn_agent(checkout, "claude").unwrap();
+
+            std::fs::write(
+                dir.join("projects.toml"),
+                format!(
+                    "[[project]]\nname = \"one\"\nrepos = [\"{repo_path}\"]\nexclusive = true\n{agent}"
+                ),
+            )
+            .unwrap();
+            d.reload_config().unwrap();
+
+            assert!(
+                d.spawn_agent(checkout, "claude").is_err(),
+                "the setting applies to the checkout that was already there"
+            );
+            let _ = d.close_pane(first);
+        });
+    }
+
     fn config_with_workspaces() -> ConfigFile {
         ConfigFile {
             workspaces: vec![crate::config::WorkspaceConfig {
@@ -4392,18 +5452,21 @@ root = "/somewhere"
                     root: None,
                     repos: vec!["/home-thing".to_string()],
                     workspace: None,
+                    ..Default::default()
                 },
                 ProjectConfig {
                     name: "day-job".to_string(),
                     root: None,
                     repos: vec!["/day-job".to_string()],
                     workspace: Some("work".to_string()),
+                    ..Default::default()
                 },
                 ProjectConfig {
                     name: "side".to_string(),
                     root: None,
                     repos: vec!["/side".to_string()],
                     workspace: Some("weekend".to_string()),
+                    ..Default::default()
                 },
             ],
             agents: Vec::new(),
@@ -4578,12 +5641,14 @@ root = "/somewhere"
                         root: None,
                         repos: vec![dir.path().to_string_lossy().to_string()],
                         workspace: None,
+                        ..Default::default()
                     },
                     ProjectConfig {
                         name: "elsewhere".to_string(),
                         root: None,
                         repos: vec![dir.path().to_string_lossy().to_string()],
                         workspace: Some("other".to_string()),
+                        ..Default::default()
                     },
                 ],
                 agents: Vec::new(),
@@ -4774,8 +5839,37 @@ root = "/somewhere"
     /// A real repo with one commit, and a daemon whose only checkout is it.
     fn daemon_on_a_repo() -> (tempfile::TempDir, Arc<Daemon>) {
         let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init(dir.path()).unwrap();
-        std::fs::write(dir.path().join("a.txt"), "one\n").unwrap();
+        init_repo(dir.path());
+        let d = daemon_with_primary(&dir.path().to_string_lossy());
+        (dir, d)
+    }
+
+    /// The same repo, in a project that says where worktrees go and what to
+    /// run in one.
+    fn daemon_on_a_repo_with(
+        worktree_root: Option<&str>,
+        setup: &[&str],
+    ) -> (tempfile::TempDir, Arc<Daemon>) {
+        let dir = tempfile::tempdir().unwrap();
+        init_repo(dir.path());
+        let d = Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                repos: vec![dir.path().to_string_lossy().to_string()],
+                worktree_root: worktree_root.map(str::to_string),
+                setup: setup.iter().map(|s| s.to_string()).collect(),
+                ..Default::default()
+            }],
+            agents: Vec::new(),
+            harnesses: Vec::new(),
+        });
+        (dir, d)
+    }
+
+    fn init_repo(dir: &std::path::Path) {
+        let repo = git2::Repository::init(dir).unwrap();
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
         let mut index = repo.index().unwrap();
         index.add_path(std::path::Path::new("a.txt")).unwrap();
         index.write().unwrap();
@@ -4786,9 +5880,6 @@ root = "/somewhere"
         drop(tree);
         drop(index);
         drop(repo);
-
-        let d = daemon_with_primary(&dir.path().to_string_lossy());
-        (dir, d)
     }
 
     fn head_of(path: &std::path::Path) -> String {
@@ -4818,6 +5909,80 @@ root = "/somewhere"
         let path = std::path::Path::new(&checkouts[1].path);
         assert_eq!(head_of(path), "feature-x");
         assert!(path.starts_with(dir.path()));
+    }
+
+    /// The daemon, plus the id of a linked worktree it just made.
+    async fn daemon_with_a_worktree(name: &str) -> (tempfile::TempDir, Arc<Daemon>, CheckoutId) {
+        let (dir, d) = daemon_on_a_repo();
+        d.create_worktree(only_checkout(&d), name.to_string())
+            .await
+            .unwrap();
+        let id = d.snapshot()[0].repositories[0].checkouts[1].id;
+        (dir, d, id)
+    }
+
+    #[tokio::test]
+    async fn removing_a_worktree_takes_its_directory_and_its_row_with_it() {
+        let (_dir, d, worktree) = daemon_with_a_worktree("doomed").await;
+        let path = PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[1].path);
+
+        d.remove_checkout(worktree).await.unwrap();
+
+        assert_eq!(d.snapshot()[0].repositories[0].checkouts.len(), 1);
+        assert!(!path.exists(), "the working directory should be gone");
+    }
+
+    #[tokio::test]
+    async fn a_removal_git_would_refuse_keeps_the_panes_it_would_have_killed() {
+        // The point of checking before killing: a locked worktree is a
+        // refusal git only reports once it runs, and by then the agents that
+        // were working in it are already dead.
+        let (dir, d, worktree) = daemon_with_a_worktree("locked-up").await;
+        let pane = d.spawn_shell(worktree).unwrap();
+        git2::Repository::open(dir.path())
+            .unwrap()
+            .find_worktree("locked-up")
+            .unwrap()
+            .lock(Some("held by hand"))
+            .unwrap();
+
+        let err = d.remove_checkout(worktree).await.unwrap_err().to_string();
+
+        assert!(err.contains("locked"), "got {err:?}");
+        let snapshot = d.snapshot();
+        let checkouts = &snapshot[0].repositories[0].checkouts;
+        assert_eq!(checkouts.len(), 2, "the checkout stays");
+        assert_eq!(checkouts[1].panes.len(), 1, "and so does what was running");
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn removing_a_checkout_whose_directory_is_already_gone_clears_it() {
+        // `git worktree remove` refuses a path it cannot find, which would
+        // strand the row for a directory the user deleted by hand.
+        let (dir, d, worktree) = daemon_with_a_worktree("deleted").await;
+        let path = PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[1].path);
+        std::fs::remove_dir_all(&path).unwrap();
+
+        d.remove_checkout(worktree).await.unwrap();
+
+        assert_eq!(d.snapshot()[0].repositories[0].checkouts.len(), 1);
+        let repo = git2::Repository::open(dir.path()).unwrap();
+        assert_eq!(
+            repo.worktrees().unwrap().len(),
+            0,
+            "the registration should have been pruned too"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_primary_checkout_is_never_removable() {
+        let (dir, d) = daemon_on_a_repo();
+
+        assert!(d.remove_checkout(only_checkout(&d)).await.is_err());
+
+        assert!(dir.path().join("a.txt").exists());
+        assert_eq!(d.snapshot()[0].repositories[0].checkouts.len(), 1);
     }
 
     #[tokio::test]
@@ -4956,6 +6121,246 @@ root = "/somewhere"
     }
 
     #[tokio::test]
+    async fn a_worktree_branch_name_is_checked_as_strictly_as_a_branch_switch() {
+        // The name is both a git argument and the directory Argus builds
+        // from it, so a rooted or climbing one would put the worktree
+        // wherever it said rather than under the worktrees root.
+        let (dir, d) = daemon_on_a_repo();
+        let base = only_checkout(&d);
+        let escaped = dir.path().parent().unwrap().join("escaped");
+
+        for bad in [
+            "",
+            "   ",
+            "-b",
+            "--force",
+            "..",
+            "../escaped",
+            r"..\escaped",
+            "/escaped",
+            r"C:\escaped",
+        ] {
+            assert!(
+                d.create_worktree(base, bad.to_string()).await.is_err(),
+                "{bad:?} should be refused"
+            );
+        }
+
+        assert!(!escaped.exists(), "a worktree landed outside the root");
+        assert_eq!(
+            d.snapshot()[0].repositories[0].checkouts.len(),
+            1,
+            "nothing should have been added"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_branch_name_with_a_slash_still_nests_under_the_worktrees_root() {
+        let (dir, d) = daemon_on_a_repo();
+
+        d.create_worktree(only_checkout(&d), "feat/nested".to_string())
+            .await
+            .unwrap();
+
+        let path = PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[1].path);
+        assert!(path.starts_with(dir.path().join(".argus").join("worktrees")));
+        assert_eq!(head_of(&path), "feat/nested");
+    }
+
+    #[tokio::test]
+    async fn a_branch_switch_made_outside_argus_reaches_clients_without_waiting_for_the_poll() {
+        // The poll would find this too, two seconds later. The watch is
+        // what makes an agent's commit or switch show up as it happens.
+        let (dir, d) = daemon_on_a_repo();
+        d.refresh_git_status();
+        let mut tree = d.subscribe_tree();
+        d.start_git_watch();
+        // The first sync of the watched set happens on the interval's
+        // immediate first tick; give it the scheduler slot it needs.
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        let repo = git2::Repository::open(dir.path()).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("from-a-shell", &head, false).unwrap();
+        repo.set_head("refs/heads/from-a-shell").unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let named = loop {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            assert!(!left.is_zero(), "the watch never reported the switch");
+            let Ok(Ok(projects)) = tokio::time::timeout(left, tree.recv()).await else {
+                panic!("the watch never reported the switch");
+            };
+            let name = projects[0].repositories[0].checkouts[0].name.clone();
+            if name == "from-a-shell" {
+                break name;
+            }
+        };
+
+        assert_eq!(named, "from-a-shell");
+    }
+
+    #[tokio::test]
+    async fn a_configured_worktree_root_is_where_worktrees_go() {
+        let elsewhere = tempfile::tempdir().unwrap();
+        let (dir, d) =
+            daemon_on_a_repo_with(Some(&elsewhere.path().to_string_lossy()), &[]);
+
+        d.create_worktree(only_checkout(&d), "over-there".to_string())
+            .await
+            .unwrap();
+
+        let made = PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[1].path);
+        let repo_name = dir.path().file_name().unwrap();
+        assert_eq!(
+            made,
+            elsewhere.path().join(repo_name).join("over-there"),
+            "one directory per repository under the root, so two repos can share a branch name"
+        );
+        assert!(!dir.path().join(".argus").exists(), "not the default root");
+    }
+
+    #[tokio::test]
+    async fn setup_commands_run_in_the_worktree_that_was_just_made() {
+        // `git tag` is a command every machine running these tests has, and
+        // it leaves something a test can read back.
+        let (_dir, d) = daemon_on_a_repo_with(None, &["git tag setup-ran"]);
+
+        d.create_worktree(only_checkout(&d), "with-setup".to_string())
+            .await
+            .unwrap();
+
+        let made = PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[1].path);
+        let repo = git2::Repository::open(&made).unwrap();
+        let tags = repo.tag_names(None).unwrap();
+        assert!(
+            tags.iter().flatten().any(|t| t == "setup-ran"),
+            "the setup command should have run in {}",
+            made.display()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_setup_command_that_fails_is_reported_without_taking_the_worktree_with_it() {
+        let (_dir, d) = daemon_on_a_repo_with(None, &["git not-a-git-command"]);
+
+        let err = d
+            .create_worktree(only_checkout(&d), "half-set-up".to_string())
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("not-a-git-command"), "got {err:?}");
+        let snapshot = d.snapshot();
+        let checkouts = &snapshot[0].repositories[0].checkouts;
+        assert_eq!(checkouts.len(), 2, "the worktree is still there to fix");
+        assert!(PathBuf::from(&checkouts[1].path).is_dir());
+    }
+
+    #[tokio::test]
+    async fn a_branch_with_no_checkout_is_listed_on_its_repository() {
+        let (dir, d) = daemon_on_a_repo();
+        let checkout = only_checkout(&d);
+        let on_it = head_of(dir.path());
+        d.create_branch(checkout, "parked").await.unwrap();
+        d.switch_branch(checkout, &on_it).await.unwrap();
+
+        d.refresh_git_status();
+        d.refresh_branches();
+
+        assert_eq!(
+            d.snapshot()[0].repositories[0].branches,
+            vec!["parked".to_string()],
+            "the branch nothing is sitting on is the one to offer"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_branch_a_checkout_is_sitting_on_is_not_offered_as_one_to_go_to() {
+        let (_dir, d) = daemon_on_a_repo();
+        d.create_worktree(only_checkout(&d), "in-a-worktree".to_string())
+            .await
+            .unwrap();
+
+        d.refresh_git_status();
+        d.refresh_branches();
+
+        assert!(
+            !d.snapshot()[0].repositories[0]
+                .branches
+                .contains(&"in-a-worktree".to_string()),
+            "it already has a directory of its own"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_branch_that_already_exists_gets_a_worktree_rather_than_a_refusal() {
+        // The tree offers a worktree for a branch row, and every branch row
+        // is a branch that already exists.
+        let (_dir, d) = daemon_on_a_repo();
+        let checkout = only_checkout(&d);
+        let on_it = head_of(&PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[0].path));
+        d.create_branch(checkout, "waiting").await.unwrap();
+        d.switch_branch(checkout, &on_it).await.unwrap();
+
+        d.create_worktree(checkout, "waiting".to_string())
+            .await
+            .unwrap();
+
+        let snapshot = d.snapshot();
+        let made = &snapshot[0].repositories[0].checkouts[1];
+        assert_eq!(head_of(&PathBuf::from(&made.path)), "waiting");
+    }
+
+    #[tokio::test]
+    async fn a_dirty_primary_checkout_is_not_switched_out_from_under_its_work() {
+        let (dir, d) = daemon_on_a_repo();
+        let checkout = only_checkout(&d);
+        let on_it = head_of(dir.path());
+        d.create_branch(checkout, "elsewhere").await.unwrap();
+        d.switch_branch(checkout, &on_it).await.unwrap();
+        std::fs::write(dir.path().join("a.txt"), "uncommitted\n").unwrap();
+
+        let err = d
+            .switch_branch(checkout, "elsewhere")
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("worktree"), "say what to do instead: {err:?}");
+        assert_eq!(head_of(dir.path()), on_it, "still where the work is");
+    }
+
+    #[tokio::test]
+    async fn a_dirty_worktree_still_switches_because_argus_made_it() {
+        // The refusal is about the repo the user already had. A linked
+        // worktree is Argus's own, and an agent moving between branches in
+        // one is ordinary work.
+        let (_dir, d, worktree) = daemon_with_a_worktree("scratch").await;
+        let path = PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[1].path);
+        d.create_branch(worktree, "second").await.unwrap();
+        std::fs::write(path.join("a.txt"), "uncommitted\n").unwrap();
+
+        d.switch_branch(worktree, "scratch").await.unwrap();
+
+        assert_eq!(head_of(&path), "scratch");
+    }
+
+    #[tokio::test]
+    async fn a_clean_primary_checkout_still_switches() {
+        let (dir, d) = daemon_on_a_repo();
+        let checkout = only_checkout(&d);
+        let on_it = head_of(dir.path());
+        d.create_branch(checkout, "clean-move").await.unwrap();
+
+        d.switch_branch(checkout, &on_it).await.unwrap();
+
+        assert_eq!(head_of(dir.path()), on_it);
+    }
+
+    #[tokio::test]
     async fn a_branch_operation_on_a_checkout_that_is_gone_errors() {
         let (_dir, d) = daemon_on_a_repo();
         assert!(d.create_branch(CheckoutId(9999), "x").await.is_err());
@@ -5031,12 +6436,14 @@ root = "/somewhere"
                 root: None,
                 repos: vec![dir.to_string_lossy().to_string()],
                 workspace: None,
+                ..Default::default()
             }],
             agents: vec![AgentConfig {
                 name: "test-agent".to_string(),
                 cmd: vec![if cfg!(windows) { "cmd" } else { "sh" }.to_string()],
                 env: Default::default(),
                 harness: None,
+                restart: Default::default(),
             }],
             harnesses: Vec::new(),
         })
@@ -5057,6 +6464,7 @@ root = "/somewhere"
                     status: PaneStatus::Idle,
                     note: None,
                     harness_session_id: None,
+                    harness: None,
                 })
                 .collect(),
         });
@@ -5083,6 +6491,7 @@ root = "/somewhere"
                 root: None,
                 repos: vec![dir.to_string_lossy().to_string()],
                 workspace: None,
+                ..Default::default()
             }],
             agents: names
                 .iter()
@@ -5091,6 +6500,7 @@ root = "/somewhere"
                     cmd: persistent_agent_command(),
                     env: Default::default(),
                     harness: Some("claude".into()),
+                    restart: Default::default(),
                 })
                 .collect(),
             harnesses: Vec::new(),
@@ -5109,6 +6519,7 @@ root = "/somewhere"
                     status: PaneStatus::Idle,
                     note: None,
                     harness_session_id: session_id.map(str::to_string),
+                    harness: None,
                 })
                 .collect(),
         });
@@ -5193,6 +6604,7 @@ root = "/somewhere"
                     status: PaneStatus::NeedsReview,
                     note: Some("ready to inspect".to_string()),
                     harness_session_id: None,
+                    harness: None,
                 }],
             });
 
@@ -5240,6 +6652,7 @@ root = "/somewhere"
                     status: PaneStatus::Idle,
                     note: None,
                     harness_session_id: None,
+                    harness: None,
                 }],
             });
 

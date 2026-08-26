@@ -3,28 +3,8 @@
 This file orders unfinished work. Current behavior is in [`DESIGN.md`](DESIGN.md), and the desired
 contract is in [`TARGET.md`](TARGET.md).
 
-## P0: Correctness
-
-- Recover lagged pane subscribers with a full snapshot and close the subscribe/snapshot race.
-- Route Claude hooks to the correct pane when several agents share a checkout.
-- Make worktree removal transactional so a failed Git command does not destroy its panes.
-- Validate worktree branch names as strictly as in-place branch creation.
-- Parse editor commands without breaking quoted arguments or executable paths containing spaces.
-
-## P2: Repository Model
-
-- Show branches without checkouts and offer switch or worktree creation.
-- Add explicit dirty-primary protection.
-- Add configurable worktree roots and setup hooks.
-- Show shared-checkout warnings and support optional exclusivity.
-- Replace or supplement the two-second poll with Git metadata watching.
-- Reload configuration without dropping running panes.
-- Let a project root include or exclude paths, now that scanning one is how projects are built.
-  The scan currently has one fixed skip list and no per-project control.
-
 ## P3: Agent State and Identity
 
-- Separate template, harness, display title, harness session id, and restart policy.
 - Add transitions and notifications around explicit agent states.
 - Make hook events pane-specific and subagent-aware.
 - Define fallback state detection for unsupported harnesses.

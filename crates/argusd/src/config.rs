@@ -50,6 +50,34 @@ pub struct ProjectConfig {
     /// [`DEFAULT_WORKSPACE`].
     #[serde(default)]
     pub workspace: Option<String>,
+    /// Where worktrees Argus creates for this project's repositories go.
+    /// Absent keeps them under `<primary>/.argus/worktrees`; a directory
+    /// here holds one subdirectory per repository, so two repositories can
+    /// have a branch of the same name without landing on each other.
+    #[serde(default)]
+    pub worktree_root: Option<String>,
+    /// Directories under `root` the scan must not walk into, beyond the
+    /// ones it always skips. A bare name matches anywhere under the root;
+    /// a `/`-separated path matches that one directory.
+    #[serde(default)]
+    pub exclude: Vec<String>,
+    /// Directories to walk into anyway — this beats both `exclude` and the
+    /// built-in skips, so a repository kept somewhere the defaults would
+    /// never look is still reachable by naming it.
+    #[serde(default)]
+    pub include: Vec<String>,
+    /// Whether a checkout in this project may hold only one agent at a
+    /// time. Sharing a checkout is allowed by default and merely shown;
+    /// this turns it into a refusal, for repositories where two agents
+    /// editing the same files is never what was meant.
+    #[serde(default)]
+    pub exclusive: bool,
+    /// Commands to run in a worktree Argus has just created — installing
+    /// dependencies, seeding an untracked config file, whatever a fresh
+    /// checkout needs before it is worth opening. Each is parsed into
+    /// arguments the way the editor command is, and run without a shell.
+    #[serde(default)]
+    pub setup: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -63,6 +91,26 @@ pub struct AgentConfig {
     /// "claude"` keeps working with no extra key.
     #[serde(default)]
     pub harness: Option<String>,
+    /// What to do when the CLI exits on its own.
+    #[serde(default)]
+    pub restart: Restart,
+}
+
+/// Whether a pane starts its agent again when the process ends. Closing a
+/// pane is never a restart: that takes the row out first, and what is gone
+/// has nothing to restart.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Restart {
+    /// Leave the exited row where it is, for the operator to read and
+    /// close. What every agent did before there was a choice.
+    #[default]
+    Never,
+    /// Start again only when the CLI exited non-zero — a crash, a killed
+    /// process, an API that gave up — and leave a clean exit alone.
+    OnFailure,
+    /// Start again however it ended, for a CLI whose normal end is exiting.
+    Always,
 }
 
 /// How a particular agent CLI can be asked to report its status, in the
@@ -205,6 +253,7 @@ pub fn default_agents() -> Vec<AgentConfig> {
             cmd: vec![name.to_string()],
             env: Default::default(),
             harness: None,
+            restart: Restart::Never,
         })
         .collect()
 }

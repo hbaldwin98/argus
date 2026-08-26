@@ -46,7 +46,8 @@ removal stay scoped to the repository that owns the selected checkout.
 
 A root is scanned for the Git repositories at or beneath it. The scan stops at each repository it
 finds, so a submodule or a vendored checkout stays part of the repository containing it rather than
-becoming a sibling of it. It skips `.git`, `.argus`, `node_modules`, and `target`; it does not
+becoming a sibling of it. It skips `.git`, `.argus`, `node_modules`, and `target`, plus whatever the
+project's own `exclude` adds and minus whatever its `include` overrides; it does not
 follow directory symlinks; it goes no more than eight directories below the root; and it treats
 neither a linked worktree nor a bare repository as a repository of its own. Like the rest of the
 read-only Git work it uses `git2` rather than the `git` executable, and it returns its repositories
@@ -92,12 +93,26 @@ root = "~/src"
 name = "argus"
 repos = ["~/src/argus"]
 workspace = "work"
+worktree_root = "~/worktrees"
+setup = ["pnpm install"]
+exclusive = true
+exclude = ["vendor"]
+include = ["target/scratch"]
 
 [[agent]]
 name = "claude"
 cmd = ["claude"]
 env = { KEY = "value" }
+restart = "on-failure"
 ```
+
+`projects.toml` is watched, and a save reloads it into the running tree — projects, repositories,
+their per-project settings, and agent templates. Nothing is rebuilt: what the file still names is
+matched and updated in place, so ids stay valid and panes keep running. What it no longer names is
+removed unless it is holding panes, in which case the row stays until it is empty. A file caught
+half-written fails to parse and is logged and ignored rather than allowed to take the tree with it.
+Harnesses are not reloaded: a running agent's hooks on disk were written by the harness it started
+under.
 
 Projects without a workspace use `default`. A project may set `root`, `repos`, or both; a path
 reached both ways is one repository, and the two lists are joined with `repos` first. When no
@@ -109,6 +124,12 @@ holds is discovered again on each start rather than frozen into the file.
 
 Shells, agents, and editors use the same PTY primitive. Editors exist in daemon state while open
 but are omitted from the normal pane list and counts.
+
+An agent whose process exits leaves its row as `Exited` unless its template sets `restart`:
+`on-failure` starts it again on a non-zero exit, `always` on any exit, and `never` — the default —
+leaves the row alone. A pane closed by the operator is removed before it is killed, so closing is
+never a restart. Three restarts of one template in one checkout within a minute stops the cycle and
+leaves the exited row, which is what says what happened.
 
 Each PTY starts at 24 by 80 cells. A blocking reader thread sends output through a bounded queue to
 a Tokio task, which processes a bounded batch on a 16 ms interval, feeds a `vt100` parser, and
@@ -247,8 +268,10 @@ choice from changing the files and `HEAD` seen by every other pane in the origin
 ## Session restore
 
 `session.json` records each pane's checkout path, kind, title, status, note, and optional harness
-session ID when the daemon
-broadcasts a structural tree change. Recording is enabled by `main` only after startup restore, so
+session ID and harness name when the daemon
+broadcasts a structural tree change. The harness is the one the pane actually ran under rather than
+whatever its template names now, since that is who wrote the conversation a restore claims; a file
+without it falls back to the template. Recording is enabled by `main` only after startup restore, so
 tests do not write the user's session. Older files without status fields restore panes as `Idle`.
 
 On daemon startup:
@@ -291,6 +314,16 @@ Read-only Git work uses `git2`. Every two seconds, on a blocking-pool thread, th
 On a slower ten-second beat it also rescans each project root for repositories added or removed
 there. Both run on the blocking pool.
 
+Alongside the poll, each repository's Git metadata is watched with `notify`, so a branch switch, a
+commit, or a worktree made in a shell reaches clients as it happens rather than up to a tick later.
+The watched set is the Git directory itself (HEAD, index, packed-refs) non-recursively plus its
+`refs` and `worktrees` trees — never `objects`, which takes thousands of writes per commit for a
+change `refs` reports once. Events are coalesced for 150 ms, then run the same reconcile, status,
+and branch refresh the poll runs. The watched set is re-derived on the ten-second beat, since
+repositories come and go. The poll is not replaced: editing a file touches nothing under `.git`, so
+dirty state and changed-file counts still come from the sweep, and a platform where the watch cannot
+start logs and leaves the poll on its own.
+
 Status is cached on the checkout rather than read when a tree is snapshotted. A snapshot is taken
 under the daemon's one lock, and a keystroke needs that same lock to find the pty it belongs to, so
 reading git there put several milliseconds of blocking I/O per checkout in front of the next key —
@@ -300,6 +333,10 @@ branch switch, a new worktree, and a scan that found new repositories refresh wh
 a row does not name the branch it just left for the rest of the tick; anything changed outside Argus
 waits for the poll.
 
+The checkouts column also lists the repository's local branches that no checkout is sitting on,
+refreshed on the same poll and cached the same way. Enter on one switches the primary checkout to
+it; `n` gives it a worktree.
+
 Branch and file pickers run in process. Branches are local branches, current first. File discovery
 uses `ignore`, follows Git ignore rules, and caps the result at 50,000 files.
 
@@ -307,11 +344,35 @@ Git mutations use the `git` executable:
 
 - switch to an existing branch;
 - create and switch to a branch;
-- add a worktree and branch;
+- add a worktree, creating the branch unless it already exists;
 - force-remove a linked worktree and best-effort delete its branch.
 
-Argus-created worktrees live under `<primary>/.argus/worktrees/<branch>`. Branches without a
-checkout are not represented. Dirty-checkout switching relies on Git's own conflict checks.
+A root scan skips `.git`, `.argus`, `node_modules`, and `target` for every project. `exclude` adds to
+that and `include` overrides it, both taking either a bare directory name, matched anywhere under
+the root, or a root-relative `/`-separated path, matched once; `include` wins over both `exclude`
+and the built-in list, so a repository kept where the defaults would never look is still reachable.
+
+A project may set `worktree_root`, which holds one directory per repository, so two repositories in
+one project can have a branch of the same name. Its `setup` commands run in a worktree Argus has
+just created, in order, parsed into arguments without a shell like the editor command; the row is
+broadcast before they run, and a failure is reported without removing the worktree.
+
+A checkout may hold several agents. That is shown — a warning glyph on the row, and "shared by N"
+where the column is wide enough — rather than prevented, unless the project sets `exclusive`, which
+turns a second fresh agent in one checkout into a refusal naming the one already there. Shells never
+count, and restoring a session is exempt: those panes were already running together.
+
+Argus-created worktrees live under `<primary>/.argus/worktrees/<branch>` by default; a branch name that is not
+a plain path component is refused before it becomes a directory, and a name starting with a dash is
+refused before it reaches a command line. Removing a worktree decides what git would refuse — a
+locked worktree, a path that is not a linked worktree of this repository — before killing the
+checkout's panes, because the panes have to die first for the directory to be deletable on Windows
+and a refusal afterwards would cost them for nothing. A registration whose directory is already
+gone is pruned instead.
+
+Switching a dirty primary checkout is refused, and the refusal names the worktree alternative: git
+carries uncommitted changes across a switch whenever they do not conflict, which moves work off the
+branch it was done on. Linked worktrees are Argus's own and switch under Git's rules alone.
 
 ## Review
 

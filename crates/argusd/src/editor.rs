@@ -128,7 +128,7 @@ pub fn command(editor: &str, path: &str, line: Option<u32>) -> Vec<String> {
 
 /// Splits a configured editor into argv without invoking a shell. Quotes group
 /// spaces, while ordinary backslashes remain path separators on Windows.
-fn parse_command(command: &str) -> Option<Vec<String>> {
+pub fn parse_command(command: &str) -> Option<Vec<String>> {
     let mut argv = Vec::new();
     let mut current = String::new();
     let mut quote = None;

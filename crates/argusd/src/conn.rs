@@ -494,6 +494,7 @@ mod tests {
                     root: None,
                     repos: vec![repo.to_string_lossy().to_string()],
                     workspace: None,
+                    ..Default::default()
                 }],
                 agents: Vec::new(),
                 harnesses: Vec::new(),

@@ -24,7 +24,13 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// An async `git` command that won't flash a console window.
 pub fn git() -> tokio::process::Command {
-    let cmd = tokio::process::Command::new("git");
+    quiet("git")
+}
+
+/// Any other async command the daemon waits on — a project's worktree setup
+/// commands — under the same no-window rule as `git`.
+pub fn quiet(program: &str) -> tokio::process::Command {
+    let cmd = tokio::process::Command::new(program);
     #[cfg(windows)]
     let mut cmd = cmd;
     #[cfg(windows)]
