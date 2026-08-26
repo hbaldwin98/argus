@@ -12,6 +12,19 @@ use serde::{Deserialize, Serialize};
 use crate::ids::PaneId;
 use crate::tree::PaneStatus;
 
+pub const MAX_DELEGATE_TASK_BYTES: usize = 2048;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DelegateRequest {
+    pub template: Option<String>,
+    pub task: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DelegateResponse {
+    pub pane: PaneId,
+}
+
 /// What an agent can say about itself.
 ///
 /// The wire spelling is the one in the URL, which is also the one a harness
@@ -73,6 +86,7 @@ pub enum Endpoint {
     Title,
     Checkout,
     Session,
+    Delegate,
 }
 
 impl Endpoint {
@@ -88,6 +102,7 @@ impl Endpoint {
             Endpoint::Title => Cow::Borrowed("title"),
             Endpoint::Checkout => Cow::Borrowed("checkout"),
             Endpoint::Session => Cow::Borrowed("session"),
+            Endpoint::Delegate => Cow::Borrowed("delegate"),
         }
     }
 }
@@ -116,6 +131,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "title" => Endpoint::Title,
         "checkout" => Endpoint::Checkout,
         "session" => Endpoint::Session,
+        "delegate" => Endpoint::Delegate,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -129,7 +145,12 @@ mod tests {
     use super::*;
 
     fn every_endpoint() -> Vec<Endpoint> {
-        let mut all = vec![Endpoint::Title, Endpoint::Checkout, Endpoint::Session];
+        let mut all = vec![
+            Endpoint::Title,
+            Endpoint::Checkout,
+            Endpoint::Session,
+            Endpoint::Delegate,
+        ];
         all.extend(Report::ALL.into_iter().map(Endpoint::Status));
         all
     }
@@ -153,6 +174,10 @@ mod tests {
         assert_eq!(pane_path(PaneId(3), Endpoint::Title), "/pane/3/title");
         assert_eq!(pane_path(PaneId(3), Endpoint::Checkout), "/pane/3/checkout");
         assert_eq!(pane_path(PaneId(3), Endpoint::Session), "/pane/3/session");
+        assert_eq!(
+            pane_path(PaneId(3), Endpoint::Delegate),
+            "/pane/3/delegate"
+        );
         assert_eq!(
             pane_path(PaneId(3), Endpoint::Status(Report::NeedsReview)),
             "/pane/3/status/needs-review"

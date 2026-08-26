@@ -11,7 +11,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use argus_protocol::{CheckoutId, PaneId, PaneKind, PaneStatus};
+use argus_protocol::{CheckoutId, PaneId, PaneKind, PaneStatus, MAX_DELEGATE_TASK_BYTES};
 
 use super::*;
 
@@ -151,6 +151,73 @@ impl Daemon {
         template_name: &str,
     ) -> anyhow::Result<PaneId> {
         self.start_agent(checkout, template_name, Start::Fresh, None)
+    }
+
+    /// Opens an independent agent pane beside `source_id` and queues one
+    /// bounded, single-line task into its terminal.
+    pub fn delegate_agent(
+        self: &Arc<Self>,
+        source_id: PaneId,
+        template_name: Option<&str>,
+        task: &str,
+    ) -> anyhow::Result<PaneId> {
+        const MAX_LIVE_AGENTS: usize = 4;
+
+        let task = task.split_whitespace().collect::<Vec<_>>().join(" ");
+        if task.is_empty() {
+            anyhow::bail!("delegation requires a task");
+        }
+        if task.len() > MAX_DELEGATE_TASK_BYTES {
+            anyhow::bail!("delegation task exceeds {MAX_DELEGATE_TASK_BYTES} bytes");
+        }
+
+        let _delegation = self.delegation.lock().unwrap();
+
+        let (checkout_id, inherited_template) = {
+            let inner = self.inner.lock().unwrap();
+            let mut source = None;
+            'projects: for project in &inner.projects {
+                for repository in &project.repositories {
+                    for checkout in &repository.checkouts {
+                        if let Some(pane) = checkout.panes.iter().find(|pane| pane.id == source_id) {
+                            source = Some((checkout, pane));
+                            break 'projects;
+                        }
+                    }
+                }
+            }
+            let (checkout, pane) = source.ok_or_else(|| anyhow::anyhow!("no such source pane"))?;
+            if pane.kind != PaneKind::Agent || matches!(pane.status, PaneStatus::Exited { .. }) {
+                anyhow::bail!("delegation source must be a live agent pane");
+            }
+            let live_agents = checkout
+                .panes
+                .iter()
+                .filter(|pane| {
+                    pane.kind == PaneKind::Agent
+                        && !matches!(pane.status, PaneStatus::Exited { .. })
+                })
+                .count();
+            if live_agents >= MAX_LIVE_AGENTS {
+                anyhow::bail!("this checkout already has {MAX_LIVE_AGENTS} live agents");
+            }
+            (checkout.id, pane.template.clone())
+        };
+
+        let template_name = template_name
+            .filter(|name| !name.trim().is_empty())
+            .map(str::to_string)
+            .or(inherited_template)
+            .ok_or_else(|| anyhow::anyhow!("source pane has no agent template"))?;
+        let pane = self.spawn_agent(checkout_id, &template_name)?;
+        if let Err(error) = self
+            .paste_pane(pane, &task)
+            .and_then(|_| self.write_pane(pane, b"\r"))
+        {
+            let _ = self.close_pane(pane);
+            return Err(error.context("could not deliver delegated task"));
+        }
+        Ok(pane)
     }
 
     pub(super) fn start_agent(

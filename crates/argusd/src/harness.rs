@@ -724,6 +724,16 @@ pub fn instructions() -> String {
          linked worktree and branch there with `git worktree add <new-path> -b \
          <new-branch>`. Do all subsequent work from that new path.\n\
          \n\
+         You can open another independent agent pane for a bounded review task:\n\
+         \n\
+         \x20 {hook} delegate \"Review the current diff for correctness\"\n\
+         \x20 {hook} delegate --template NAME \"Review DESIGN.md for contradictions\"\n\
+         \n\
+         Without `--template`, the new agent uses your template. It starts in this same \
+         checkout, so it sees and shares the same files. Ask it to review rather than edit \
+         unless sharing edits is intentional; use a worktree when it needs isolation. A \
+         delegation request is refused once the checkout has four live agents.\n\
+         \n\
          After you start working in another checkout, run this from that checkout so the \
          pane moves under it in Argus:\n\
          \n\
@@ -1544,6 +1554,15 @@ mod tests {
         assert!(text.contains("Never run `git switch` or `git checkout`"));
         assert!(text.contains("git worktree add"));
         assert!(text.contains("checkout"));
+    }
+
+    #[test]
+    fn agents_are_told_how_to_delegate_reviews_safely() {
+        let text = instructions();
+
+        assert!(text.contains("delegate --template NAME"));
+        assert!(text.contains("shares the same files"));
+        assert!(text.contains("refused once the checkout has four live agents"));
     }
 
     // --- the plugin mechanism ----------------------------------------------

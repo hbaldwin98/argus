@@ -244,7 +244,12 @@ so replacing a built-in by name also gives up its module and its resume argument
 The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
 /pane/<id>/status/<working|idle|waiting|needs-review|done|failed>` with an optional body as the note,
 `POST /pane/<id>/title`, `POST /pane/<id>/session` with a validated harness session ID, and `POST
-/pane/<id>/checkout` with a known checkout path. The checkout
+`/pane/<id>/checkout` with a known checkout path. `POST /pane/<id>/delegate` accepts a JSON task and
+optional agent template, opens an independent agent pane in the source pane's checkout, and returns
+the new pane ID. The task is flattened to one line and limited to 2 KiB. Delegation requires a live
+agent source, honors project exclusivity, and is refused when the checkout already has four live
+agents. A malformed body returns 400, a policy or launch refusal returns 409, and success returns 201.
+It broadcasts the normal tree update but does not focus the pane in any attached client. The checkout
 endpoint changes affiliation only: the agent runs `argus-hook checkout` from the directory it has
 already moved to. The status is named in the URL rather than the harness's event name, because the
 installer already resolved that — which is what makes a new harness config instead of a match arm. Managed
@@ -290,6 +295,11 @@ CLI each one is. Because panes may share a checkout, the standing instructions p
 switching that checkout's branch in place. An agent that needs another branch creates a linked
 worktree, continues from its path, and reports that checkout move. This keeps one agent's branch
 choice from changing the files and `HEAD` seen by every other pane in the original checkout.
+The instructions also expose `argus-hook delegate [--template NAME] "task"` for bounded code or
+document reviews. A delegated pane is a peer, not one of the nested harness sessions described above.
+It inherits the source template by default and shares the checkout's files; read-only review is a
+prompt convention rather than an enforced sandbox, so editing work that needs isolation belongs in a
+separate worktree.
 
 ## Session restore
 

@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use argus_protocol::{parse_pane_path, Endpoint};
+use argus_protocol::{parse_pane_path, DelegateRequest, DelegateResponse, Endpoint, PaneId};
 
 use super::Daemon;
 
@@ -46,6 +46,42 @@ impl Daemon {
 }
 
 const MAX_BODY: usize = 4096;
+
+struct HookResponse {
+    code: u16,
+    reason: &'static str,
+    body: Vec<u8>,
+}
+
+impl HookResponse {
+    fn empty(code: u16, reason: &'static str) -> Self {
+        Self {
+            code,
+            reason,
+            body: Vec::new(),
+        }
+    }
+
+    fn text(code: u16, reason: &'static str, body: String) -> Self {
+        Self {
+            code,
+            reason,
+            body: body.into_bytes(),
+        }
+    }
+
+    fn bytes(&self) -> Vec<u8> {
+        let mut response = format!(
+            "HTTP/1.1 {} {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            self.code,
+            self.reason,
+            self.body.len()
+        )
+        .into_bytes();
+        response.extend_from_slice(&self.body);
+        response
+    }
+}
 
 async fn handle_hook_request(
     stream: tokio::net::TcpStream,
@@ -92,22 +128,27 @@ async fn handle_hook_request(
             reporter = valid_session_id(v);
         }
     }
-    // Capped: the only body anyone sends is a pane title, and this server
-    // trusts nothing about a request beyond having written the command that
-    // makes it.
+    // Capped: bodies are short pane metadata or one bounded delegation task.
+    // The server trusts nothing about a request beyond its bearer token.
     let mut body = vec![0u8; content_length.min(MAX_BODY)];
     if !body.is_empty() {
         let _ = reader.read_exact(&mut body).await;
     }
 
-    if authorized {
+    let response = if authorized {
         match parse_pane_path(&path) {
             Some((pane, Endpoint::Status(report))) => {
                 let note = String::from_utf8_lossy(&body).to_string();
-                daemon.report_pane_status(pane, reporter.as_deref(), report.status(), Some(note))
+                daemon.report_pane_status(pane, reporter.as_deref(), report.status(), Some(note));
+                HookResponse::empty(200, "OK")
             }
             Some((pane, Endpoint::Title)) => {
-                daemon.report_pane_title(pane, reporter.as_deref(), &String::from_utf8_lossy(&body))
+                daemon.report_pane_title(
+                    pane,
+                    reporter.as_deref(),
+                    &String::from_utf8_lossy(&body),
+                );
+                HookResponse::empty(200, "OK")
             }
             Some((pane, Endpoint::Checkout))
                 if daemon.child_of(pane, reporter.as_deref()).is_none() =>
@@ -116,23 +157,48 @@ async fn handle_hook_request(
                 if let Err(error) = daemon.move_agent_to_checkout(pane, &destination) {
                     tracing::warn!("pane {} could not move checkout: {error}", pane.0);
                 }
+                HookResponse::empty(200, "OK")
             }
             Some((pane, Endpoint::Session)) => {
-                daemon.set_pane_session_id(pane, &String::from_utf8_lossy(&body))
+                daemon.set_pane_session_id(pane, &String::from_utf8_lossy(&body));
+                HookResponse::empty(200, "OK")
             }
+            Some((pane, Endpoint::Delegate)) => delegation_response(&daemon, pane, &body)?,
             // A checkout move from an agent that does not own the pane is
             // dropped: the row follows the agent Argus started in it.
-            _ => {}
+            _ => HookResponse::empty(200, "OK"),
         }
-        wr.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
-            .await?;
     } else {
-        wr.write_all(
-            b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-        )
-        .await?;
-    }
+        HookResponse::empty(401, "Unauthorized")
+    };
+    wr.write_all(&response.bytes()).await?;
     Ok(())
+}
+
+fn delegation_response(
+    daemon: &Arc<Daemon>,
+    source: PaneId,
+    body: &[u8],
+) -> anyhow::Result<HookResponse> {
+    let request = match serde_json::from_slice::<DelegateRequest>(body) {
+        Ok(request) => request,
+        Err(error) => {
+            return Ok(HookResponse::text(
+                400,
+                "Bad Request",
+                format!("invalid delegation request: {error}"),
+            ));
+        }
+    };
+    let response = match daemon.delegate_agent(source, request.template.as_deref(), &request.task) {
+        Ok(pane) => HookResponse {
+            code: 201,
+            reason: "Created",
+            body: serde_json::to_vec(&DelegateResponse { pane })?,
+        },
+        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
+    };
+    Ok(response)
 }
 
 /// A harness session id is opaque to Argus — it only has to be one

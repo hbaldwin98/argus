@@ -9,7 +9,8 @@
 //! argus-hook status working
 //! argus-hook checkout                            # reports the current directory
 //! argus-hook session <id>                        # records exact resume identity
-//! argus-hook say "text"                       # prints, calls nobody
+//! argus-hook delegate [--template NAME] "task"  # opens another agent pane
+//! argus-hook say "text"                          # prints, calls nobody
 //! argus-hook <url> <token> [--note-from-stdin]  # the installed hook form
 //! ```
 //!
@@ -27,10 +28,10 @@
 //! updating", never to an error on every prompt in that directory. `curl`
 //! exits 7 on a refused connection, which is exactly what this avoids.
 //!
-//! It writes nothing to stdout except for `say`. Some agent CLIs inject a
-//! hook's stdout into the model's context, so staying silent keeps Argus's
-//! bookkeeping out of the conversation — and `say` is the one case where
-//! putting something there is the whole point.
+//! Lifecycle reports write nothing to stdout. Some agent CLIs inject a hook's
+//! stdout into the model's context, so staying silent keeps Argus's bookkeeping
+//! out of the conversation. The deliberate `say` and `delegate` commands do
+//! return useful output.
 //!
 //! On Windows it is a GUI-subsystem binary. Not because it has a UI — it
 //! has none — but because the agent CLI that runs it decides how it is
@@ -47,7 +48,9 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-use argus_protocol::{Endpoint, Report};
+use argus_protocol::{
+    DelegateRequest, DelegateResponse, Endpoint, Report, MAX_DELEGATE_TASK_BYTES,
+};
 
 const TIMEOUT: Duration = Duration::from_secs(2);
 const NOTE_FLAG: &str = "--note-from-stdin";
@@ -77,6 +80,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("status", status),
     ("checkout", checkout),
     ("session", session),
+    ("delegate", delegate),
 ];
 
 fn dispatch(command: Option<&str>, rest: &[&str]) {
@@ -142,6 +146,63 @@ fn session(rest: &[&str]) {
             &id,
         );
     }
+}
+
+fn delegate(rest: &[&str]) {
+    let mut out = std::io::stdout();
+    let _ = writeln!(out, "{}", delegation_message(rest, &env_url(), &env_token()));
+    let _ = out.flush();
+}
+
+fn delegation_message(rest: &[&str], base_url: &str, token: &str) -> String {
+    match request_delegation(rest, base_url, token) {
+        Ok(response) => format!("opened agent pane {}", response.pane.0),
+        Err(error) => format!("could not open agent: {error}"),
+    }
+}
+
+fn request_delegation(
+    rest: &[&str],
+    base_url: &str,
+    token: &str,
+) -> Result<DelegateResponse, String> {
+    let request = delegate_args(rest).map_err(str::to_string)?;
+    let body = serde_json::to_string(&request).map_err(|_| "invalid request".to_string())?;
+    let (status, response_body) = post_response(
+        &endpoint_url(base_url, Endpoint::Delegate),
+        token,
+        &body,
+    )
+    .ok_or_else(|| "daemon unavailable".to_string())?;
+    if status != 201 {
+        let reason = response_body.trim();
+        return Err(if reason.is_empty() {
+            "daemon refused the request".to_string()
+        } else {
+            reason.to_string()
+        });
+    }
+    serde_json::from_str(&response_body).map_err(|_| "invalid daemon response".to_string())
+}
+
+fn delegate_args(rest: &[&str]) -> Result<DelegateRequest, &'static str> {
+    let (template, task_args) = if rest.first() == Some(&"--template") {
+        let template = rest
+            .get(1)
+            .filter(|name| !name.trim().is_empty())
+            .ok_or("--template requires a name and task")?;
+        (Some((*template).to_string()), &rest[2..])
+    } else {
+        (None, rest)
+    };
+    let task = task_args.join(" ");
+    if task.trim().is_empty() {
+        return Err("delegate requires a task");
+    }
+    if task.len() > MAX_DELEGATE_TASK_BYTES {
+        return Err("delegate task exceeds 2048 bytes");
+    }
+    Ok(DelegateRequest { template, task })
 }
 
 fn installed_hook(url: &str, rest: &[&str]) {
@@ -359,6 +420,27 @@ fn post_as(url: &str, token: &str, body: &str, session: Option<&str>) -> Option<
     Some(())
 }
 
+fn post_response(url: &str, token: &str, body: &str) -> Option<(u16, String)> {
+    let rest = url.strip_prefix("http://")?;
+    let (authority, path) = match rest.find('/') {
+        Some(i) => (&rest[..i], &rest[i..]),
+        None => (rest, "/"),
+    };
+    let addr = authority.parse().ok()?;
+    let mut stream = TcpStream::connect_timeout(&addr, TIMEOUT).ok()?;
+    stream.set_write_timeout(Some(TIMEOUT)).ok()?;
+    stream.set_read_timeout(Some(TIMEOUT)).ok()?;
+    stream
+        .write_all(request(path, authority, token, None, body).as_bytes())
+        .ok()?;
+
+    let mut response = String::new();
+    stream.read_to_string(&mut response).ok()?;
+    let (head, body) = response.split_once("\r\n\r\n")?;
+    let status = head.split_whitespace().nth(1)?.parse().ok()?;
+    Some((status, body.to_string()))
+}
+
 /// Headers are assembled by hand rather than with a client library, so
 /// each one must start its own line at column zero: a header the daemon
 /// cannot recognize is not an error it can report, only a report that
@@ -527,5 +609,98 @@ mod tests {
     #[test]
     fn checkout_without_a_path_reports_the_current_directory() {
         assert_eq!(reported_checkout(&[]), std::env::current_dir().ok());
+    }
+
+    #[test]
+    fn delegation_accepts_an_optional_template_and_joins_the_task() {
+        assert_eq!(
+            delegate_args(&["review", "DESIGN.md"]).unwrap(),
+            DelegateRequest {
+                template: None,
+                task: "review DESIGN.md".into(),
+            }
+        );
+        assert_eq!(
+            delegate_args(&["--template", "codex", "review", "the", "diff"]).unwrap(),
+            DelegateRequest {
+                template: Some("codex".into()),
+                task: "review the diff".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn delegation_requires_a_task_and_a_template_name() {
+        assert_eq!(delegate_args(&[]), Err("delegate requires a task"));
+        assert_eq!(
+            delegate_args(&["--template"]),
+            Err("--template requires a name and task")
+        );
+        assert_eq!(
+            delegate_args(&["--template", "codex"]),
+            Err("delegate requires a task")
+        );
+    }
+
+    #[test]
+    fn delegation_posts_the_request_and_reports_the_created_pane() {
+        use std::io::BufRead as _;
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let response_body = serde_json::to_string(&DelegateResponse {
+            pane: argus_protocol::PaneId(9),
+        })
+        .unwrap();
+        let response = format!(
+            "HTTP/1.1 201 Created\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            response_body.len(),
+            response_body
+        );
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = std::io::BufReader::new(stream);
+            let mut head = String::new();
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+                head.push_str(&line);
+            }
+            let content_length = head
+                .lines()
+                .find_map(|line| line.strip_prefix("Content-Length: "))
+                .unwrap()
+                .parse()
+                .unwrap();
+            let mut body = vec![0; content_length];
+            reader.read_exact(&mut body).unwrap();
+            reader.get_mut().write_all(response.as_bytes()).unwrap();
+            (head, body)
+        });
+
+        let message = delegation_message(
+            &["--template", "codex", "review", "the", "diff"],
+            &format!("http://{address}/pane/4"),
+            "secret",
+        );
+        let (head, body) = server.join().unwrap();
+
+        assert_eq!(message, "opened agent pane 9");
+        assert!(head.starts_with("POST /pane/4/delegate HTTP/1.1\r\n"));
+        assert!(head.contains("\r\nAuthorization: Bearer secret\r\n"));
+        assert_eq!(
+            serde_json::from_slice::<DelegateRequest>(&body).unwrap(),
+            DelegateRequest {
+                template: Some("codex".into()),
+                task: "review the diff".into(),
+            }
+        );
+        assert_eq!(
+            delegation_message(&[], "", ""),
+            "could not open agent: delegate requires a task"
+        );
     }
 }

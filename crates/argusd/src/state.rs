@@ -202,6 +202,9 @@ struct Inner {
 
 pub struct Daemon {
     inner: StdMutex<Inner>,
+    /// Serializes delegated starts so their per-checkout fan-out check and
+    /// pane insertion form one operation. Ordinary user starts remain free.
+    delegation: StdMutex<()>,
     /// Hooks can fire after the child is spawned but before its pane is
     /// inserted into `inner`. Keep their latest bounded state until insertion.
     starting_agents: StdMutex<HashMap<PaneId, PendingStart>>,
@@ -374,6 +377,7 @@ impl Daemon {
                 open,
                 excluded,
             }),
+            delegation: StdMutex::new(()),
             starting_agents: StdMutex::new(HashMap::new()),
             workspaces_tx,
             tree_tx,
@@ -2599,6 +2603,172 @@ mod tests {
         let second = d.spawn_agent(checkout, "claude").unwrap();
 
         let _ = d.close_pane(second);
+    }
+
+    #[tokio::test]
+    async fn delegation_inherits_or_overrides_the_source_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_claude_aliases(dir.path(), &["first", "second"]);
+        let source = d.spawn_agent(only_checkout(&d), "first").unwrap();
+
+        let inherited = d.delegate_agent(source, None, "review the diff").unwrap();
+        let overridden = d
+            .delegate_agent(source, Some("second"), "review DESIGN.md")
+            .unwrap();
+
+        assert_eq!(pane_info(&d, inherited).template.as_deref(), Some("first"));
+        assert_eq!(pane_info(&d, overridden).template.as_deref(), Some("second"));
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn delegation_requires_a_live_agent_source_and_a_bounded_task() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+        let checkout = only_checkout(&d);
+        let shell = d.spawn_shell(checkout).unwrap();
+        let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+        assert!(d.delegate_agent(shell, None, "review").is_err());
+        assert!(d.delegate_agent(agent, None, "   ").is_err());
+        assert!(d
+            .delegate_agent(
+                agent,
+                None,
+                &"x".repeat(argus_protocol::MAX_DELEGATE_TASK_BYTES + 1),
+            )
+            .is_err());
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn delegation_caps_live_agents_in_one_checkout() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+        let source = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+        for _ in 0..3 {
+            d.delegate_agent(source, None, "review").unwrap();
+        }
+
+        let error = d.delegate_agent(source, None, "one too many").unwrap_err();
+
+        assert!(error.to_string().contains("4 live agents"));
+        close_all(&d);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn concurrent_delegation_respects_the_live_agent_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+        let source = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+        for _ in 0..2 {
+            d.delegate_agent(source, None, "review").unwrap();
+        }
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let handles = (0..2)
+            .map(|_| {
+                let d = Arc::clone(&d);
+                let barrier = Arc::clone(&barrier);
+                tokio::spawn(async move {
+                    barrier.wait().await;
+                    d.delegate_agent(source, None, "review concurrently")
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut results = Vec::new();
+        for handle in handles {
+            results.push(handle.await.unwrap());
+        }
+
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(results.iter().filter(|result| result.is_err()).count(), 1);
+        assert_eq!(
+            d.snapshot()[0].repositories[0].checkouts[0]
+                .panes
+                .iter()
+                .filter(|pane| pane.kind == PaneKind::Agent)
+                .count(),
+            4
+        );
+        close_all(&d);
+    }
+
+    async fn post_delegation_hook(d: &Arc<Daemon>, source: PaneId, body: &str) -> Vec<u8> {
+        use argus_protocol::Endpoint;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let request = format!(
+            "POST {} HTTP/1.1\r\nAuthorization: Bearer {}\r\nContent-Length: {}\r\n\r\n{}",
+            argus_protocol::pane_path(source, Endpoint::Delegate),
+            d.hook_token,
+            body.len(),
+            body
+        );
+        let port = d.hook_port.load(std::sync::atomic::Ordering::Relaxed);
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        stream.write_all(request.as_bytes()).await.unwrap();
+        let mut response = Vec::new();
+        stream.read_to_end(&mut response).await.unwrap();
+        response
+    }
+
+    #[tokio::test]
+    async fn an_authorized_delegation_hook_returns_the_new_pane() {
+        use argus_protocol::{DelegateRequest, DelegateResponse};
+
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+        d.start_hook_server().unwrap();
+        let source = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+        let body = serde_json::to_string(&DelegateRequest {
+            template: None,
+            task: "review the current changes".into(),
+        })
+        .unwrap();
+        let response = post_delegation_hook(&d, source, &body).await;
+
+        assert!(response.starts_with(b"HTTP/1.1 201 Created"));
+        let body = response
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .map(|index| &response[index + 4..])
+            .unwrap();
+        let delegated: DelegateResponse = serde_json::from_slice(body).unwrap();
+        assert_ne!(delegated.pane, source);
+        assert_eq!(pane_info(&d, delegated.pane).kind, PaneKind::Agent);
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn delegation_hook_reports_invalid_and_refused_requests() {
+        use argus_protocol::DelegateRequest;
+
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+        d.start_hook_server().unwrap();
+        let checkout = only_checkout(&d);
+        let agent = d.spawn_agent(checkout, "claude").unwrap();
+        let shell = d.spawn_shell(checkout).unwrap();
+
+        let invalid = post_delegation_hook(&d, agent, "not json").await;
+        let body = serde_json::to_string(&DelegateRequest {
+            template: None,
+            task: "review".into(),
+        })
+        .unwrap();
+        let refused = post_delegation_hook(&d, shell, &body).await;
+
+        assert!(invalid.starts_with(b"HTTP/1.1 400 Bad Request"));
+        assert!(String::from_utf8(invalid)
+            .unwrap()
+            .contains("invalid delegation request"));
+        assert!(refused.starts_with(b"HTTP/1.1 409 Conflict"));
+        assert!(String::from_utf8(refused)
+            .unwrap()
+            .contains("source must be a live agent pane"));
+        close_all(&d);
     }
 
     fn settings_of(dir: &std::path::Path) -> std::path::PathBuf {
