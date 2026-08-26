@@ -672,6 +672,29 @@ impl App {
         self.checkout_rows().len()
     }
 
+    /// The row the checkout at `index` is drawn on.
+    ///
+    /// `sel_checkout` is a position in [`App::checkout_rows`], and a
+    /// checkout's position in `checkouts` is not one: the main branch leads
+    /// the column either way, so it takes a row of its own as soon as no
+    /// checkout is sitting on it, and every checkout slides down past it.
+    /// Anything that finds a checkout by walking `checkouts` has to come
+    /// back through here before it can point the cursor at it.
+    fn checkout_row_of(&self, index: usize) -> Option<usize> {
+        self.checkout_rows()
+            .iter()
+            .position(|row| matches!(row, CheckoutRow::Checkout(i) if *i == index))
+    }
+
+    /// The inverse: where the selected row sits in `checkouts`, for the
+    /// places that compare a cursor against one.
+    fn selected_checkout_index(&self) -> Option<usize> {
+        match self.checkout_rows().get(self.sel_checkout).copied()? {
+            CheckoutRow::Checkout(i) => Some(i),
+            CheckoutRow::Branch(_) | CheckoutRow::Remote(_) => None,
+        }
+    }
+
     /// The selected checkout row as an identity, paired with the repository
     /// it belongs to. Taken before a new tree replaces the old one.
     fn checkout_anchor(&self) -> Option<(RepositoryId, CheckoutAnchor)> {
@@ -959,9 +982,11 @@ impl App {
             ) {
                 self.sel_project = project;
                 self.sel_repository = repository;
-                self.sel_checkout = checkout;
-                self.sel_pane = pane;
-                followed_pane = true;
+                if let Some(row) = self.checkout_row_of(checkout) {
+                    self.sel_checkout = row;
+                    self.sel_pane = pane;
+                    followed_pane = true;
+                }
             }
         }
         // Following a pane already moved the cursor deliberately; the
@@ -1007,10 +1032,11 @@ impl App {
             ) {
                 self.sel_project = project;
                 self.sel_repository = repository;
-                self.sel_checkout = self
+                let newest = self
                     .current_repository()
                     .map(|r| r.checkouts.len().saturating_sub(1))
                     .unwrap_or(0);
+                self.sel_checkout = self.checkout_row_of(newest).unwrap_or(0);
                 self.clamp();
             }
         }
@@ -1820,10 +1846,13 @@ impl App {
     }
 
     fn jump_to_next_attention(&mut self) {
+        // Compared against candidates walked out of `checkouts`, so the
+        // cursor has to be read back as one of those positions rather than
+        // as the row it is drawn on.
         let current = (
             self.sel_project,
             self.sel_repository,
-            self.sel_checkout,
+            self.selected_checkout_index().unwrap_or(0),
             self.sel_pane,
         );
         let candidates: Vec<_> = self
@@ -1871,7 +1900,7 @@ impl App {
 
         self.sel_project = next.0;
         self.sel_repository = next.1;
-        self.sel_checkout = next.2;
+        self.sel_checkout = self.checkout_row_of(next.2).unwrap_or(0);
         self.sel_pane = next.3;
         self.focus = Focus::PaneContent;
         let status = next
@@ -2917,6 +2946,69 @@ mod tests {
             h.app.current_checkout().map(|c| c.id),
             Some(CheckoutId(11)),
             "the cursor must stay on the worktree it was on"
+        );
+    }
+
+    /// The bug this guards: `sel_checkout` is a row in the drawn column,
+    /// but following the watched pane set it from the checkout's position
+    /// in `checkouts`. Those agree only while a checkout is sitting on the
+    /// main branch; once none is, the main branch takes a pinned row of its
+    /// own and every checkout is a row lower. Watching an agent then threw
+    /// the cursor onto that pinned row, where there is no checkout and so
+    /// no agent — and every later tree kept it there.
+    #[test]
+    fn watching_an_agent_off_the_main_branch_stays_on_its_checkout() {
+        let mut h = Harness::new();
+        h.keys("lll");
+        assert_eq!(h.app.current_pane().map(|p| p.id), Some(PaneId(100)));
+
+        let mut t = tree();
+        let r = &mut t[0].repositories[0];
+        // Both checkouts have been switched off the main branch, so it is a
+        // branch nobody is on and is pinned above them.
+        r.default_branch = Some("dev".to_string());
+        r.branches = vec!["dev".to_string()];
+        h.app.on_server_msg(ServerMsg::Tree(t));
+
+        assert_eq!(h.app.sel_checkout, 1, "the pinned branch row sits above it");
+        assert_eq!(
+            h.app.current_pane().map(|p| p.id),
+            Some(PaneId(100)),
+            "the agent being watched must still be the selected pane"
+        );
+    }
+
+    #[test]
+    fn n_lands_on_the_checkout_row_of_the_pane_that_needs_attention() {
+        let mut h = Harness::new();
+        let mut t = tree();
+        let r = &mut t[0].repositories[0];
+        r.default_branch = Some("dev".to_string());
+        r.branches = vec!["dev".to_string()];
+        r.checkouts[0].panes[1].status = PaneStatus::Waiting;
+        h.app.on_server_msg(ServerMsg::Tree(t));
+
+        h.key(KeyCode::Char('N'));
+
+        assert_eq!(h.app.column_pane(), Some(PaneId(101)));
+        assert_eq!(h.app.current_checkout().map(|c| c.id), Some(CheckoutId(10)));
+    }
+
+    #[test]
+    fn a_new_worktree_is_selected_by_its_row_not_its_index() {
+        let mut h = Harness::new();
+        let mut t = tree();
+        let r = &mut t[0].repositories[0];
+        r.default_branch = Some("dev".to_string());
+        r.branches = vec!["dev".to_string()];
+        r.checkouts.push(checkout(12, "spike", false, vec![]));
+        h.app.pending_focus_new_checkout = Some(RepositoryId(5));
+        h.app.on_server_msg(ServerMsg::Tree(t));
+
+        assert_eq!(
+            h.app.current_checkout().map(|c| c.id),
+            Some(CheckoutId(12)),
+            "the worktree just created is the row to land on"
         );
     }
 
