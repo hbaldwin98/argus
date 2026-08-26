@@ -6,6 +6,9 @@ contract is in [`TARGET.md`](TARGET.md).
 ## P3: Agent State and Identity
 
 - Define fallback state detection for unsupported harnesses.
+- Use tool-start hooks (`PreToolUse` / `preToolUse` / equivalents) across harnesses as a
+  `working` signal when lifecycle hooks are missing or unreliable; keep turn-end events as the
+  sole authority for `idle`. Optionally surface the active tool in the pane note later.
 - Add daemon-arbitrated auto-titling.
 - Expand the template schema only after lifecycle and permission semantics are stable.
 
