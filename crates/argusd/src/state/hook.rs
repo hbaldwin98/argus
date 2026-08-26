@@ -1,0 +1,161 @@
+//! The loopback pane API: the HTTP receiver an agent's hooks POST to.
+//!
+//! Separate from the tree it reports into because it is a protocol surface,
+//! not daemon state — the same reason `harness`, `watch` and `session` are
+//! their own modules. Its grammar lives further out still, in
+//! `argus_protocol::hook`, since `argus-hook` builds the paths this parses.
+//!
+//! The server binds loopback only and checks a per-boot bearer token, which
+//! is all that stands between a pane's status and any other local process.
+
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use argus_protocol::{parse_pane_path, Endpoint};
+
+use super::Daemon;
+
+impl Daemon {
+    /// Binds the loopback HTTP status receiver hook commands POST to (see
+    /// `hooks::install_claude_hooks`) and starts serving it in the
+    /// background. The bind itself is synchronous so `hook_port` is set
+    /// before the daemon's client socket starts accepting — no window where
+    /// a client could spawn an agent whose hooks point nowhere.
+    pub fn start_hook_server(self: &Arc<Self>) -> anyhow::Result<()> {
+        let std_listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+        std_listener.set_nonblocking(true)?;
+        let port = std_listener.local_addr()?.port();
+        self.hook_port
+            .store(port, std::sync::atomic::Ordering::Relaxed);
+        let listener = tokio::net::TcpListener::from_std(std_listener)?;
+
+        let daemon = self.clone();
+        tokio::spawn(async move {
+            loop {
+                let Ok((stream, _)) = listener.accept().await else {
+                    break;
+                };
+                let daemon = daemon.clone();
+                tokio::spawn(async move {
+                    let _ = handle_hook_request(stream, daemon).await;
+                });
+            }
+        });
+        Ok(())
+    }
+}
+
+const MAX_BODY: usize = 4096;
+
+async fn handle_hook_request(
+    stream: tokio::net::TcpStream,
+    daemon: Arc<Daemon>,
+) -> anyhow::Result<()> {
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+
+    let (rd, mut wr) = tokio::io::split(stream);
+    let mut reader = BufReader::new(rd);
+
+    let mut request_line = String::new();
+    reader.read_line(&mut request_line).await?;
+    let path = request_line
+        .strip_prefix("POST ")
+        .and_then(|rest| rest.split(' ').next())
+        .unwrap_or("")
+        .to_string();
+
+    let mut authorized = false;
+    let mut content_length: usize = 0;
+    let mut reporter: Option<String> = None;
+    loop {
+        let mut line = String::new();
+        let n = reader.read_line(&mut line).await?;
+        if n == 0 || line == "\r\n" || line == "\n" {
+            break;
+        }
+        if let Some(v) = line
+            .strip_prefix("Authorization:")
+            .or_else(|| line.strip_prefix("authorization:"))
+        {
+            authorized = v
+                .trim()
+                .eq_ignore_ascii_case(&format!("Bearer {}", daemon.hook_token));
+        } else if let Some(v) = line
+            .strip_prefix("Content-Length:")
+            .or_else(|| line.strip_prefix("content-length:"))
+        {
+            content_length = v.trim().parse().unwrap_or(0);
+        } else if let Some(v) = line
+            .strip_prefix("X-Argus-Session:")
+            .or_else(|| line.strip_prefix("x-argus-session:"))
+        {
+            reporter = valid_session_id(v);
+        }
+    }
+    // Capped: the only body anyone sends is a pane title, and this server
+    // trusts nothing about a request beyond having written the command that
+    // makes it.
+    let mut body = vec![0u8; content_length.min(MAX_BODY)];
+    if !body.is_empty() {
+        let _ = reader.read_exact(&mut body).await;
+    }
+
+    if authorized {
+        match parse_pane_path(&path) {
+            Some((pane, Endpoint::Status(report))) => {
+                let note = String::from_utf8_lossy(&body).to_string();
+                daemon.report_pane_status(pane, reporter.as_deref(), report.status(), Some(note))
+            }
+            Some((pane, Endpoint::Title)) => {
+                daemon.report_pane_title(pane, reporter.as_deref(), &String::from_utf8_lossy(&body))
+            }
+            Some((pane, Endpoint::Checkout))
+                if daemon.child_of(pane, reporter.as_deref()).is_none() =>
+            {
+                let destination = PathBuf::from(String::from_utf8_lossy(&body).trim());
+                if let Err(error) = daemon.move_agent_to_checkout(pane, &destination) {
+                    tracing::warn!("pane {} could not move checkout: {error}", pane.0);
+                }
+            }
+            Some((pane, Endpoint::Session)) => {
+                daemon.set_pane_session_id(pane, &String::from_utf8_lossy(&body))
+            }
+            // A checkout move from an agent that does not own the pane is
+            // dropped: the row follows the agent Argus started in it.
+            _ => {}
+        }
+        wr.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            .await?;
+    } else {
+        wr.write_all(
+            b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// A harness session id is opaque to Argus — it only has to be one
+/// nonempty, bounded, control-free line, since it goes on to enter a
+/// child's argv.
+pub(super) fn valid_session_id(raw: &str) -> Option<String> {
+    const MAX: usize = 512;
+    let id = raw.trim();
+    (!id.is_empty() && id.len() <= MAX && !id.chars().any(char::is_control)).then(|| id.to_string())
+}
+
+/// Not cryptographically strong — see `Daemon::hook_token`'s doc comment —
+/// just enough entropy that it isn't a fixed, guessable string.
+pub(super) fn gen_token() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static NEXT_TOKEN: AtomicU64 = AtomicU64::new(0);
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64;
+    let sequence = NEXT_TOKEN.fetch_add(1, Ordering::Relaxed);
+    format!("{now:016x}{sequence:016x}")
+}
