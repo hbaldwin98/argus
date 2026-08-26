@@ -1976,45 +1976,35 @@ impl Daemon {
         Ok(())
     }
 
-    /// `git worktree add`s a new checkout in `base`'s repository, branched off
-    /// `base`'s current HEAD, and appends it to the tree. Placed under
-    /// `.argus/worktrees/<branch>` beside the repository's primary checkout
-    /// (DESIGN.md §4 Level 2), regardless of which checkout `base` itself
-    /// is — so worktrees always nest under the one directory, not under
-    /// each other.
     /// Moves this checkout onto an existing branch. `git` refuses when the
     /// switch would clobber uncommitted work, and that refusal is exactly
     /// what should reach the user, so its stderr is passed through.
     pub async fn switch_branch(&self, checkout: CheckoutId, branch: &str) -> anyhow::Result<()> {
-        self.git_switch(checkout, &["switch", branch], branch).await
+        self.git_switch(checkout, &["switch"], branch).await
     }
 
     /// Creates a branch here and moves onto it, leaving the checkout where
     /// it is — unlike `create_worktree`, which makes a directory for it.
     pub async fn create_branch(&self, checkout: CheckoutId, branch: &str) -> anyhow::Result<()> {
-        self.git_switch(checkout, &["switch", "-c", branch], branch)
-            .await
+        self.git_switch(checkout, &["switch", "-c"], branch).await
     }
 
+    /// `flags` are everything before the branch name, which this appends
+    /// itself once it is validated — so the name git is handed is the same
+    /// one that was checked, rather than whatever the caller had spelled
+    /// into its own argument list.
     async fn git_switch(
         &self,
         checkout: CheckoutId,
-        args: &[&str],
+        flags: &[&str],
         branch: &str,
     ) -> anyhow::Result<()> {
-        let branch = branch.trim();
-        if branch.is_empty() {
-            anyhow::bail!("branch name can't be empty");
-        }
-        // Leading dashes would be read as flags, and git's own refname
-        // rules reject the rest.
-        if branch.starts_with('-') {
-            anyhow::bail!("not a valid branch name: {branch}");
-        }
+        let branch = checked_branch_name(branch)?;
         let path = self.checkout_path(checkout)?;
 
         let output = crate::command::git()
-            .args(args)
+            .args(flags)
+            .arg(&branch)
             .current_dir(&path)
             .output()
             .await?;
@@ -2036,22 +2026,25 @@ impl Daemon {
         Ok(())
     }
 
+    /// `git worktree add`s a new checkout in `base`'s repository, branched off
+    /// `base`'s current HEAD, and appends it to the tree. Placed under
+    /// `.argus/worktrees/<branch>` beside the repository's primary checkout
+    /// (DESIGN.md §4 Level 2), regardless of which checkout `base` itself
+    /// is — so worktrees always nest under the one directory, not under
+    /// each other.
     pub async fn create_worktree(
         self: &Arc<Self>,
         base: CheckoutId,
         branch: String,
     ) -> anyhow::Result<()> {
-        let branch = branch.trim().to_string();
-        if branch.is_empty() {
-            anyhow::bail!("branch name can't be empty");
-        }
+        let branch = checked_branch_name(&branch)?;
 
         let (repository_id, base_path, primary_path) = {
             let inner = self.inner.lock().unwrap();
             find_checkout_context(&inner.projects, base)
                 .ok_or_else(|| anyhow::anyhow!("no such checkout"))?
         };
-        let dest = primary_path.join(".argus").join("worktrees").join(&branch);
+        let dest = worktree_dir(&primary_path, &branch)?;
 
         let output = crate::command::git()
             .args(["worktree", "add", "-b", &branch])
@@ -2195,6 +2188,45 @@ impl Daemon {
         }
         anyhow::bail!("git worktree remove failed: {last}");
     }
+}
+
+/// Trims a user-typed branch name and refuses the two spellings that must
+/// never reach a git command line: empty, and anything starting with a
+/// dash, which git reads as a flag rather than as a name. Git's own refname
+/// rules cover everything else, and its refusal says more than a restatement
+/// of them here would.
+fn checked_branch_name(raw: &str) -> anyhow::Result<String> {
+    let branch = raw.trim();
+    if branch.is_empty() {
+        anyhow::bail!("branch name can't be empty");
+    }
+    if branch.starts_with('-') {
+        anyhow::bail!("not a valid branch name: {branch}");
+    }
+    Ok(branch.to_string())
+}
+
+/// Where a new worktree for `branch` goes, under the worktrees root beside
+/// the repository's primary checkout.
+///
+/// The branch name is a user string that becomes a path here, so the
+/// components that would steer it out of that root are refused rather than
+/// left to git's refname rules — which run too late, and allow more than a
+/// path should. `..` climbs out, and `Path::join` throws the base away
+/// entirely when what it joins is rooted (`/tmp/x`, `C:\x`,
+/// `\\server\share`), which would put the worktree wherever the name said.
+fn worktree_dir(primary: &std::path::Path, branch: &str) -> anyhow::Result<PathBuf> {
+    // A backslash separates directories on Windows and is an ordinary
+    // character in a name everywhere else; refusing it keeps one branch
+    // name from meaning two different paths.
+    let rooted = branch.contains('\\')
+        || std::path::Path::new(branch)
+            .components()
+            .any(|c| !matches!(c, std::path::Component::Normal(_)));
+    if rooted {
+        anyhow::bail!("a branch name can't be a path: {branch}");
+    }
+    Ok(primary.join(".argus").join("worktrees").join(branch))
 }
 
 fn find_checkout(projects: &mut [Project], id: CheckoutId) -> Option<&mut Checkout> {
@@ -5069,6 +5101,53 @@ root = "/somewhere"
                 "{bad:?} should be refused"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn a_worktree_branch_name_is_checked_as_strictly_as_a_branch_switch() {
+        // The name is both a git argument and the directory Argus builds
+        // from it, so a rooted or climbing one would put the worktree
+        // wherever it said rather than under the worktrees root.
+        let (dir, d) = daemon_on_a_repo();
+        let base = only_checkout(&d);
+        let escaped = dir.path().parent().unwrap().join("escaped");
+
+        for bad in [
+            "",
+            "   ",
+            "-b",
+            "--force",
+            "..",
+            "../escaped",
+            r"..\escaped",
+            "/escaped",
+            r"C:\escaped",
+        ] {
+            assert!(
+                d.create_worktree(base, bad.to_string()).await.is_err(),
+                "{bad:?} should be refused"
+            );
+        }
+
+        assert!(!escaped.exists(), "a worktree landed outside the root");
+        assert_eq!(
+            d.snapshot()[0].repositories[0].checkouts.len(),
+            1,
+            "nothing should have been added"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_branch_name_with_a_slash_still_nests_under_the_worktrees_root() {
+        let (dir, d) = daemon_on_a_repo();
+
+        d.create_worktree(only_checkout(&d), "feat/nested".to_string())
+            .await
+            .unwrap();
+
+        let path = PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[1].path);
+        assert!(path.starts_with(dir.path().join(".argus").join("worktrees")));
+        assert_eq!(head_of(&path), "feat/nested");
     }
 
     #[tokio::test]
