@@ -17,7 +17,7 @@ The workspace builds three executables:
 - Organizes projects into workspaces, repositories, checkouts, and shell or agent panes.
 - Keeps panes running when the client closes.
 - Starts and discovers Git worktrees and switches branches from the TUI.
-- Runs Claude Code, Codex, OpenCode, Google Antigravity (AGY), or custom command-line agent templates.
+- Runs Claude Code, Codex, OpenCode, Google Antigravity (AGY), Cursor Agent (`agent`), or custom command-line agent templates.
 - Shows Git status, changed-file counts, and ahead/behind state.
 - Reviews uncommitted work, branch work, or changes since the last explicitly accepted snapshot.
 - Captures staged, unstaged, deleted, renamed, and non-ignored untracked content for review.
@@ -223,6 +223,7 @@ When no `[[agent]]` entries exist, Argus supplies these templates:
 - `codex`, running `codex`.
 - `opencode`, running `opencode`.
 - `agy`, running `agy`.
+- `agent`, running Cursor's `agent` CLI.
 
 Adding any `[[agent]]` entry replaces the built-in list, so include every template you want to keep.
 Install and authenticate each agent CLI separately, and ensure it is available in the daemon's
@@ -232,7 +233,8 @@ agent name and then falls back to the generic environment-only harness.
 
 Claude Code reports through hooks Argus writes into `.claude/settings.local.json`, Codex through a
 SessionStart adapter in `.codex/hooks.json`, OpenCode through a plugin module Argus writes to
-`.opencode/plugin/argus-status.js`, and AGY through `.agents/hooks.json` under the `argus` hook key.
+`.opencode/plugin/argus-status.js`, AGY through `.agents/hooks.json` under the `argus` hook key, and
+Cursor's `agent` CLI through `.cursor/hooks.json` plus an always-on rule at `.cursor/rules/argus.mdc`.
 All are removed when
 the last agent pane in the checkout closes and swept from every configured checkout at startup;
 adding them to a repository's `.gitignore` keeps them out of its status while an agent is running.
@@ -441,7 +443,7 @@ Argus moves the existing pane under that checkout without restarting it. An expl
 `checkout`, but reporting the current directory is the normal form. `needs-review` marks work ready
 to inspect; `done` marks reviewed, completed work. A later `working` report resumes either state.
 
-Claude Code, Codex, OpenCode, AGY, and the generic environment-only harness are built in. The Claude
+Claude Code, Codex, OpenCode, AGY, Cursor Agent (`agent`), and the generic environment-only harness are built in. The Claude
 harness manages
 `UserPromptSubmit`, `Stop`, `Notification`, and `SessionStart` entries in
 `<checkout>/.claude/settings.local.json`; its SessionStart hook captures top-level `session_id`.
@@ -450,7 +452,9 @@ reads pane routing from the process environment, keeping its trust-sensitive con
 pane starts and daemon restarts. OpenCode's
 plugin reports the root session ID and updates it when the process creates a new root. AGY manages
 `PreInvocation` and `Stop` hooks in `<checkout>/.agents/hooks.json` under the `argus` hook key and captures
-top-level `conversationId`. Managed
+top-level `conversationId`. The `agent` (Cursor) harness manages `sessionStart`, `beforeSubmitPrompt`, and `stop` hooks in
+`<checkout>/.cursor/hooks.json` (with top-level `version: 1`) and captures top-level `conversation_id`;
+it also installs `.cursor/rules/argus.mdc`. Managed
 entries preserve user settings and are removed when the last agent pane closes or during the next
 daemon startup sweep. A same-named `[[harness]]` block replaces a built-in.
 

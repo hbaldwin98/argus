@@ -225,6 +225,7 @@ impl From<HarnessConfig> for crate::harness::Harness {
             resume_id: c.resume_id,
             command_string: false,
             rule_file: c.rule_file.map(PathBuf::from),
+            settings_version: None,
         }
     }
 }
@@ -246,7 +247,7 @@ pub fn harnesses(configured: Vec<HarnessConfig>) -> Vec<crate::harness::Harness>
 /// Built-in agent templates used when the config has no `[[agent]]` entries,
 /// so spawning a known agent CLI works zero-config.
 pub fn default_agents() -> Vec<AgentConfig> {
-    ["claude", "codex", "opencode", "agy"]
+    ["claude", "codex", "opencode", "agy", "agent"]
         .into_iter()
         .map(|name| AgentConfig {
             name: name.to_string(),
@@ -279,8 +280,8 @@ const DEFAULT_CONFIG: &str = r#"# Argus projects. Each project groups one or mor
 # name = "argus"
 # repos = ["~/src/argus"]
 
-# Agent templates available from the "a" picker. claude/codex/opencode/agy are
-# already built in with no config needed; add [[agent]] entries here to
+# Agent templates available from the "a" picker. claude/codex/opencode/agy/agent
+# are already built in with no config needed; add [[agent]] entries here to
 # override them or add your own.
 #
 # [[agent]]

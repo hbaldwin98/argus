@@ -138,6 +138,8 @@ pub struct Harness {
     pub command_string: bool,
     /// Optional workspace rule markdown file to install into checkout.
     pub rule_file: Option<PathBuf>,
+    /// Top-level `version` some settings files require (Cursor's hooks.json).
+    pub settings_version: Option<u64>,
 }
 
 impl Harness {
@@ -159,6 +161,7 @@ impl Harness {
             resume_id: Vec::new(),
             command_string: false,
             rule_file: None,
+            settings_version: None,
         }
     }
 
@@ -214,6 +217,7 @@ impl Harness {
             resume_id: vec!["--resume".to_string(), "{session_id}".to_string()],
             command_string: false,
             rule_file: None,
+            settings_version: None,
         }
     }
 
@@ -239,6 +243,7 @@ impl Harness {
             resume_id: vec!["resume".to_string(), "{session_id}".to_string()],
             command_string: true,
             rule_file: None,
+            settings_version: None,
         }
     }
 
@@ -267,6 +272,7 @@ impl Harness {
             resume_id: vec!["--session".to_string(), "{session_id}".to_string()],
             command_string: false,
             rule_file: None,
+            settings_version: None,
         }
     }
 
@@ -304,6 +310,53 @@ impl Harness {
             resume_id: vec!["--conversation".to_string(), "{session_id}".to_string()],
             command_string: false,
             rule_file: Some(PathBuf::from(".agents").join("rules").join("argus.md")),
+            settings_version: None,
+        }
+    }
+
+    /// Cursor Agent (`agent` CLI) discovers project hooks in `.cursor/hooks.json`
+    /// and always-on rules in `.cursor/rules/`. Hooks use a shell command string
+    /// and require top-level `version: 1`. `sessionStart` claims `conversation_id`,
+    /// `beforeSubmitPrompt` marks working, and `stop` marks idle.
+    pub fn agent() -> Harness {
+        Harness {
+            name: "agent".to_string(),
+            settings: Some(PathBuf::from(".cursor").join("hooks.json")),
+            hooks_key: "hooks".to_string(),
+            shape: Shape::Flat,
+            events: vec![
+                Event {
+                    name: "sessionStart".into(),
+                    reports: Report::Idle,
+                    matcher: None,
+                    note_from_stdin: false,
+                    session_id_key: Some("conversation_id".into()),
+                    owns_session: true,
+                },
+                Event {
+                    name: "beforeSubmitPrompt".into(),
+                    reports: Report::Working,
+                    matcher: None,
+                    note_from_stdin: false,
+                    session_id_key: Some("conversation_id".into()),
+                    owns_session: false,
+                },
+                Event {
+                    name: "stop".into(),
+                    reports: Report::Idle,
+                    matcher: None,
+                    note_from_stdin: false,
+                    session_id_key: Some("conversation_id".into()),
+                    owns_session: false,
+                },
+            ],
+            context_event: None,
+            plugin: None,
+            resume: vec!["--continue".to_string()],
+            resume_id: vec!["--resume".to_string(), "{session_id}".to_string()],
+            command_string: true,
+            rule_file: Some(PathBuf::from(".cursor").join("rules").join("argus.mdc")),
+            settings_version: Some(1),
         }
     }
 
@@ -315,6 +368,7 @@ impl Harness {
             Harness::codex(),
             Harness::opencode(),
             Harness::agy(),
+            Harness::agent(),
             Harness::generic(),
         ]
     }
@@ -357,8 +411,14 @@ impl Harness {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        // Cursor rules use `alwaysApply`; AGY and similar use `always_on`.
+        let always = if path.extension().and_then(|e| e.to_str()) == Some("mdc") {
+            "alwaysApply: true"
+        } else {
+            "always_on: true"
+        };
         let content = format!(
-            "---\ndescription: Argus pair-programming environment integration\nalways_on: true\n---\n\n{}",
+            "---\ndescription: Argus pair-programming environment integration\n{always}\n---\n\n{}",
             instructions()
         );
         std::fs::write(&path, content)?;
@@ -393,6 +453,11 @@ impl Harness {
 
         let mut root = read_settings(&path);
         let root_obj = root.as_object_mut().expect("just normalized to an object");
+        if let Some(version) = self.settings_version {
+            root_obj
+                .entry("version")
+                .or_insert_with(|| json!(version));
+        }
 
         let hooks = root_obj
             .entry(self.hooks_key.clone())
@@ -514,7 +579,12 @@ impl Harness {
             return Ok(());
         }
 
-        if root_obj.is_empty() {
+        // Cursor's schema leaves `version` behind after hooks are gone; a
+        // file that is only that key is litter from us, not a user setting.
+        let only_schema_version = self.settings_version.is_some()
+            && root_obj.len() == 1
+            && root_obj.contains_key("version");
+        if root_obj.is_empty() || only_schema_version {
             std::fs::remove_file(&path)?;
             prune_empty_dirs(checkout, &path);
         } else {
@@ -851,6 +921,7 @@ mod tests {
             resume_id: Vec::new(),
             command_string: false,
             rule_file: None,
+            settings_version: None,
         }
     }
 
@@ -862,6 +933,7 @@ mod tests {
         assert_eq!(Harness::claude().resume, ["--continue"]);
         assert_eq!(Harness::opencode().resume, ["--continue"]);
         assert_eq!(Harness::agy().resume, ["--continue"]);
+        assert_eq!(Harness::agent().resume, ["--continue"]);
         assert_eq!(
             Harness::codex().resume,
             ["resume", "--last"],
@@ -875,6 +947,7 @@ mod tests {
         assert_eq!(Harness::codex().resume_id, ["resume", "{session_id}"]);
         assert_eq!(Harness::opencode().resume_id, ["--session", "{session_id}"]);
         assert_eq!(Harness::agy().resume_id, ["--conversation", "{session_id}"]);
+        assert_eq!(Harness::agent().resume_id, ["--resume", "{session_id}"]);
     }
 
     #[test]
@@ -1667,6 +1740,59 @@ process.stdout.write(JSON.stringify(reports));
         assert!(
             !dir.path().join(".agents").exists(),
             "empty .agents dir should be pruned"
+        );
+    }
+
+    #[test]
+    fn cursor_agent_installs_into_hooks_json_and_cleans_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = Harness::agent();
+        h.install(dir.path(), PaneId(5), 4242, "tok").unwrap();
+
+        let hooks_file = dir.path().join(".cursor").join("hooks.json");
+        assert!(hooks_file.is_file(), "should write .cursor/hooks.json");
+
+        let rule_file = dir.path().join(".cursor").join("rules").join("argus.mdc");
+        assert!(rule_file.is_file(), "should write .cursor/rules/argus.mdc");
+        let rule_content = std::fs::read_to_string(&rule_file).unwrap();
+        assert!(rule_content.contains("alwaysApply: true"));
+        assert!(rule_content.contains("title"));
+
+        let raw = std::fs::read_to_string(&hooks_file).unwrap();
+        let root: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(root["version"], 1);
+
+        let hooks = &root["hooks"];
+        assert!(hooks.is_object());
+
+        let start = hooks["sessionStart"].as_array().unwrap();
+        assert_eq!(start.len(), 1);
+        let start_cmd = start[0]["command"].as_str().unwrap();
+        assert!(start_cmd.contains("ARGUS_HOOK"));
+        assert!(start_cmd.contains("idle"));
+        assert!(start_cmd.contains(SESSION_KEY_FLAG));
+        assert!(start_cmd.contains("conversation_id"));
+        assert!(start_cmd.contains(OWNS_SESSION_FLAG));
+
+        let working = hooks["beforeSubmitPrompt"].as_array().unwrap();
+        assert_eq!(working.len(), 1);
+        let working_cmd = working[0]["command"].as_str().unwrap();
+        assert!(working_cmd.contains("working"));
+
+        let stop = hooks["stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 1);
+        let stop_cmd = stop[0]["command"].as_str().unwrap();
+        assert!(stop_cmd.contains("idle"));
+
+        h.uninstall(dir.path()).unwrap();
+        assert!(!hooks_file.exists(), ".cursor/hooks.json should be removed");
+        assert!(
+            !rule_file.exists(),
+            ".cursor/rules/argus.mdc should be removed"
+        );
+        assert!(
+            !dir.path().join(".cursor").exists(),
+            "empty .cursor dir should be pruned"
         );
     }
 }

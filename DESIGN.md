@@ -128,7 +128,7 @@ under.
 
 Projects without a workspace use `default`. A project may set `root`, `repos`, or both; a path
 reached both ways is one repository, and the two lists are joined with `repos` first. When no
-agents are configured, `claude`, `codex`, `opencode`, and `agy` templates are supplied. Adding a project
+agents are configured, `claude`, `codex`, `opencode`, `agy`, and `agent` templates are supplied. Adding a project
 at runtime appends a block whose `root` is the directory given, in the open workspace, so what it
 holds is discovered again on each start rather than frozen into the file.
 
@@ -228,10 +228,12 @@ it has no hook table, so its module carries the event mapping itself and reads `
 and `ARGUS_HOOK_TOKEN` at run time rather than having a pane baked into it. A harness also carries
 `resume`, the legacy arguments that continue the last conversation, and `resume_id`, an exact argv
 template containing `{session_id}`. Both are used only when a recorded pane is restored. Claude
-Code, Codex, OpenCode, AGY and `generic` are built in. Codex uses a project-local `.codex/hooks.json`
+Code, Codex, OpenCode, AGY, Cursor Agent (`agent`) and `generic` are built in. Codex uses a project-local `.codex/hooks.json`
 SessionStart adapter whose command reads routing from the pane environment, so its content hash stays
 stable after the user trusts it. Codex requires the user to trust project hooks before it runs. AGY uses
-`.agents/hooks.json` with flat `PreInvocation` and `Stop` hooks. A `[[harness]]`
+`.agents/hooks.json` with flat `PreInvocation` and `Stop` hooks. Cursor's `agent` CLI uses `.cursor/hooks.json` with
+flat `sessionStart`, `beforeSubmitPrompt`, and `stop` hooks (schema `version: 1`) plus
+`.cursor/rules/argus.mdc`, and captures `conversation_id`. A `[[harness]]`
 block in `projects.toml` adds or replaces one, and an `[[agent]]` template selects one with
 `harness = "..."`, defaulting to a harness matching its own name. A block cannot supply a plugin,
 so replacing a built-in by name also gives up its module and its resume arguments.
@@ -253,6 +255,7 @@ The helper reads hook stdin once and can extract both a note and a configured
 top-level session ID key. Claude captures `session_id` at SessionStart. OpenCode's plugin tags root
 and child reports with their session IDs; only a root claims `/session`, and a newly created root
 reports again when it replaces the previous root. AGY captures `conversationId` at PreInvocation.
+Cursor's `agent` CLI captures `conversation_id` at `sessionStart`.
 
 Every report carries the session it came from, and the pane belongs to one of them. The session that
 claims a pane first owns it; a report from any other session — a CLI started from inside the pane,

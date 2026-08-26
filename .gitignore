@@ -6,4 +6,6 @@
 .claude/settings.local.json
 .codex/hooks.json
 .opencode/plugin/argus-status.js
+.cursor/hooks.json
+.cursor/rules/argus.mdc
 cov.xml

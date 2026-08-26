@@ -2380,7 +2380,7 @@ mod tests {
         let d = daemon_with_primary("/repo");
         assert_eq!(
             d.template_names(),
-            vec!["claude", "codex", "opencode", "agy"]
+            vec!["claude", "codex", "opencode", "agy", "agent"]
         );
     }
 
