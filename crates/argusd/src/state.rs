@@ -24,6 +24,11 @@ struct Pane {
     /// The agent template this pane was started from, kept because the
     /// title no longer answers that — an agent may have renamed it.
     template: Option<String>,
+    /// The harness this pane actually started under, which is not the same
+    /// question as which harness its template names *now*: the config can
+    /// be reloaded, and a running agent's hooks on disk were written by the
+    /// harness it started with.
+    harness: Option<String>,
     /// Stable conversation identity reported by the harness. Also the pane's
     /// owner: reports carrying a different session belong to `children`.
     harness_session_id: Option<String>,
@@ -194,6 +199,10 @@ pub struct Daemon {
     /// write over the real user's session file, and every structural
     /// change would otherwise do exactly that.
     persist: std::sync::atomic::AtomicBool,
+    /// How many times a template has been restarted in a checkout lately,
+    /// and when that run of restarts began. Keeps a CLI that dies on
+    /// every start from being restarted forever.
+    restart_attempts: StdMutex<HashMap<(CheckoutId, String), (u32, std::time::Instant)>>,
     /// Every attached client's requested size for the panes it is showing.
     /// A pty has one size and clients do not have to agree on it, so the
     /// sizes are collected here and reconciled rather than applied as they
@@ -343,6 +352,7 @@ impl Daemon {
             hook_token: gen_token(),
             restoring: std::sync::atomic::AtomicBool::new(false),
             persist: std::sync::atomic::AtomicBool::new(false),
+            restart_attempts: StdMutex::new(HashMap::new()),
             viewers: StdMutex::new(Viewers::default()),
             next_viewer: std::sync::atomic::AtomicU64::new(0),
         });
@@ -613,6 +623,7 @@ impl Daemon {
                             status: pane.status,
                             note: pane.note.clone(),
                             harness_session_id: pane.harness_session_id.clone(),
+                            harness: pane.harness.clone(),
                         })
                 })
                 .collect(),
@@ -680,16 +691,22 @@ impl Daemon {
                     let start = if session_id.is_some() {
                         Start::Resuming
                     } else {
-                        let template = self
-                            .templates
-                            .lock()
-                            .unwrap()
-                            .iter()
-                            .find(|template| template.name == pane.template())
-                            .cloned();
-                        let harness = template
-                            .as_ref()
-                            .map(|template| self.harness_for(template).name);
+                        // The harness the pane recorded, since that is who
+                        // wrote the conversation being claimed. Only a file
+                        // old enough not to have it falls back to asking
+                        // what the template names now.
+                        let harness = pane.harness.clone().or_else(|| {
+                            let template = self
+                                .templates
+                                .lock()
+                                .unwrap()
+                                .iter()
+                                .find(|template| template.name == pane.template())
+                                .cloned();
+                            template
+                                .as_ref()
+                                .map(|template| self.harness_for(template).name.to_string())
+                        });
                         let key = harness.map(|harness| (pane.checkout_path.clone(), harness));
                         if key.as_ref().is_some_and(|key| claimed.contains(key)) {
                             Start::Fresh
@@ -768,6 +785,7 @@ impl Daemon {
                     status: PaneStatus::Idle,
                     note: None,
                     template: None,
+                    harness: None,
                     children: Vec::new(),
                     harness_session_id: None,
                     resumed: None,
@@ -850,6 +868,7 @@ impl Daemon {
                     status: PaneStatus::Idle,
                     note: None,
                     template: None,
+                    harness: None,
                     children: Vec::new(),
                     harness_session_id: None,
                     resumed: None,
@@ -972,6 +991,7 @@ impl Daemon {
                     status: PaneStatus::Idle,
                     note: None,
                     template: Some(template.name.clone()),
+                    harness: Some(harness.name.to_string()),
                     children: Vec::new(),
                     harness_session_id: reported_session_id.or(harness_session_id),
                     resumed: resuming.then(|| Resumed {
@@ -988,17 +1008,21 @@ impl Daemon {
     }
 
     pub fn mark_pane_exited(self: &Arc<Self>, pane: PaneId, code: Option<i32>) {
-        let retry = {
+        let (retry, restart) = {
             let mut inner = self.inner.lock().unwrap();
-            match find_pane(&mut inner.projects, pane) {
-                Some(p) => {
+            match find_pane_with_checkout(&mut inner.projects, pane) {
+                Some((p, checkout)) => {
                     p.status = PaneStatus::Exited { code };
                     p.note = None;
-                    p.resumed
-                        .take()
-                        .filter(|r| nothing_to_resume(code, r.at.elapsed()))
+                    let restart = p.template.clone().map(|template| (checkout, template));
+                    (
+                        p.resumed
+                            .take()
+                            .filter(|r| nothing_to_resume(code, r.at.elapsed())),
+                        restart,
+                    )
                 }
-                None => None,
+                None => (None, None),
             }
         };
 
@@ -1017,7 +1041,67 @@ impl Daemon {
             return;
         }
 
+        if let Some((checkout, template)) = restart {
+            if self.restarts(&template, code, checkout) {
+                let _ = self.remove_pane(pane);
+                if let Err(e) = self.start_agent(checkout, &template, Start::Fresh, None) {
+                    tracing::warn!("could not restart {template}: {e}");
+                }
+                return;
+            }
+        }
+
         self.broadcast_tree();
+    }
+
+    /// Whether an agent that just exited should be started again: its
+    /// template's policy says so, and it is not looping.
+    ///
+    /// A CLI that dies immediately on every start would otherwise be
+    /// restarted forever, spending the machine on a row nobody can read. A
+    /// burst of restarts close together therefore gives up and leaves the
+    /// exited row, which is the thing that tells the operator what happened.
+    fn restarts(&self, template: &str, code: Option<i32>, checkout: CheckoutId) -> bool {
+        /// How many times a template may restart in one checkout inside the
+        /// window before Argus stops trying.
+        const LIMIT: u32 = 3;
+        /// Restarts further apart than this are somebody's long-running
+        /// agent ending normally, not a loop.
+        const WINDOW: Duration = Duration::from_secs(60);
+
+        let wanted = self
+            .templates
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|t| t.name == template)
+            .map(|t| t.restart)
+            .unwrap_or_default();
+        let restart = match wanted {
+            crate::config::Restart::Never => false,
+            crate::config::Restart::OnFailure => code != Some(0),
+            crate::config::Restart::Always => true,
+        };
+        if !restart {
+            return false;
+        }
+
+        let mut attempts = self.restart_attempts.lock().unwrap();
+        let key = (checkout, template.to_string());
+        let now = std::time::Instant::now();
+        let attempt = attempts.entry(key).or_insert((0, now));
+        if now.duration_since(attempt.1) > WINDOW {
+            *attempt = (0, now);
+        }
+        attempt.0 += 1;
+        if attempt.0 > LIMIT {
+            tracing::warn!(
+                "{template} exited {} times in a row; leaving the row for you to read",
+                attempt.0
+            );
+            return false;
+        }
+        true
     }
 
     /// Drops a pane from the tree without touching the checkout's managed
@@ -2778,6 +2862,23 @@ fn all_panes(projects: &mut [Project]) -> impl Iterator<Item = &mut Pane> {
         .flat_map(|c| c.panes.iter_mut())
 }
 
+/// The pane and the id of the checkout holding it — which the pane itself
+/// does not carry, and which a caller acting on the pane's exit needs in
+/// order to put something back in its place.
+fn find_pane_with_checkout(
+    projects: &mut [Project],
+    id: PaneId,
+) -> Option<(&mut Pane, CheckoutId)> {
+    projects
+        .iter_mut()
+        .flat_map(|p| p.repositories.iter_mut())
+        .flat_map(|r| r.checkouts.iter_mut())
+        .find_map(|c| {
+            let checkout = c.id;
+            c.panes.iter_mut().find(|p| p.id == id).map(|p| (p, checkout))
+        })
+}
+
 fn find_pane(projects: &mut [Project], id: PaneId) -> Option<&mut Pane> {
     projects
         .iter_mut()
@@ -3640,6 +3741,128 @@ mod tests {
         d.close_pane(pane).unwrap();
     }
 
+    /// A daemon whose one agent template has a restart policy.
+    fn daemon_with_a_restarting_agent(
+        dir: &std::path::Path,
+        restart: crate::config::Restart,
+    ) -> Arc<Daemon> {
+        Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                repos: vec![dir.to_string_lossy().to_string()],
+                ..Default::default()
+            }],
+            agents: vec![AgentConfig {
+                name: "claude".to_string(),
+                cmd: vec!["echo".to_string(), "hi".to_string()],
+                env: Default::default(),
+                harness: None,
+                restart,
+            }],
+            harnesses: Vec::new(),
+        })
+    }
+
+    fn panes_of(d: &Daemon) -> Vec<PaneInfo> {
+        d.snapshot()
+            .remove(0)
+            .repositories
+            .remove(0)
+            .checkouts
+            .remove(0)
+            .panes
+    }
+
+    #[tokio::test]
+    async fn an_agent_that_exits_leaves_its_row_alone_by_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+
+        d.mark_pane_exited(pane, Some(1));
+
+        let panes = panes_of(&d);
+        assert_eq!(panes.len(), 1);
+        assert_eq!(panes[0].id, pane, "the same dead row, for reading");
+        assert_eq!(panes[0].status, PaneStatus::Exited { code: Some(1) });
+    }
+
+    #[tokio::test]
+    async fn on_failure_starts_the_agent_again_and_a_clean_exit_does_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_a_restarting_agent(dir.path(), crate::config::Restart::OnFailure);
+        let checkout = only_checkout(&d);
+        let first = d.spawn_agent(checkout, "claude").unwrap();
+
+        d.mark_pane_exited(first, Some(1));
+
+        let panes = panes_of(&d);
+        assert_eq!(panes.len(), 1, "the dead row is replaced, not joined");
+        let second = panes[0].id;
+        assert_ne!(second, first, "a new pane is running");
+        assert_ne!(panes[0].status, PaneStatus::Exited { code: Some(1) });
+
+        d.mark_pane_exited(second, Some(0));
+
+        let panes = panes_of(&d);
+        assert_eq!(panes[0].id, second, "a clean exit is the agent finishing");
+        assert_eq!(panes[0].status, PaneStatus::Exited { code: Some(0) });
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn always_starts_the_agent_again_however_it_ended() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_a_restarting_agent(dir.path(), crate::config::Restart::Always);
+        let checkout = only_checkout(&d);
+        let first = d.spawn_agent(checkout, "claude").unwrap();
+
+        d.mark_pane_exited(first, Some(0));
+
+        let panes = panes_of(&d);
+        assert_eq!(panes.len(), 1);
+        assert_ne!(panes[0].id, first);
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn a_cli_that_dies_on_every_start_is_left_where_the_operator_can_read_it() {
+        // Restarting forever spends the machine on a row nobody ever sees.
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_a_restarting_agent(dir.path(), crate::config::Restart::Always);
+        let checkout = only_checkout(&d);
+        let mut pane = d.spawn_agent(checkout, "claude").unwrap();
+
+        for _ in 0..6 {
+            d.mark_pane_exited(pane, Some(1));
+            pane = panes_of(&d)[0].id;
+        }
+
+        let panes = panes_of(&d);
+        assert_eq!(panes.len(), 1);
+        assert_eq!(
+            panes[0].status,
+            PaneStatus::Exited { code: Some(1) },
+            "it gave up and left the exit visible"
+        );
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn closing_a_pane_is_never_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_a_restarting_agent(dir.path(), crate::config::Restart::Always);
+        let checkout = only_checkout(&d);
+        let pane = d.spawn_agent(checkout, "claude").unwrap();
+
+        d.close_pane(pane).unwrap();
+        // Whatever the process does on its way out arrives after the row
+        // has already gone.
+        d.mark_pane_exited(pane, Some(1));
+
+        assert!(panes_of(&d).is_empty(), "closing means closing");
+    }
+
     #[tokio::test]
     async fn a_report_never_resurrects_an_exited_pane() {
         // A Stop hook racing a crash must not relabel a dead row as idle.
@@ -3709,6 +3932,7 @@ mod tests {
                 cmd: vec![if cfg!(windows) { "cmd" } else { "sh" }.to_string()],
                 env: Default::default(),
                 harness: None,
+                restart: Default::default(),
             }],
             harnesses: Vec::new(),
         })
@@ -4054,6 +4278,7 @@ mod tests {
                 cmd: vec![name.clone()],
                 env: Default::default(),
                 harness: None,
+                restart: Default::default(),
             };
             let h = d.harness_for(&template);
             assert_ne!(
@@ -4089,6 +4314,7 @@ mod tests {
                 cmd: vec!["echo".to_string(), "hi".to_string()],
                 env: Default::default(),
                 harness: None,
+                restart: Default::default(),
             }],
             harnesses: Vec::new(),
         })
@@ -4109,6 +4335,7 @@ mod tests {
                 cmd: vec!["echo".to_string(), "hi".to_string()],
                 env: Default::default(),
                 harness: None,
+                restart: Default::default(),
             }],
             harnesses: Vec::new(),
         })
@@ -6216,6 +6443,7 @@ root = "/somewhere"
                 cmd: vec![if cfg!(windows) { "cmd" } else { "sh" }.to_string()],
                 env: Default::default(),
                 harness: None,
+                restart: Default::default(),
             }],
             harnesses: Vec::new(),
         })
@@ -6236,6 +6464,7 @@ root = "/somewhere"
                     status: PaneStatus::Idle,
                     note: None,
                     harness_session_id: None,
+                    harness: None,
                 })
                 .collect(),
         });
@@ -6271,6 +6500,7 @@ root = "/somewhere"
                     cmd: persistent_agent_command(),
                     env: Default::default(),
                     harness: Some("claude".into()),
+                    restart: Default::default(),
                 })
                 .collect(),
             harnesses: Vec::new(),
@@ -6289,6 +6519,7 @@ root = "/somewhere"
                     status: PaneStatus::Idle,
                     note: None,
                     harness_session_id: session_id.map(str::to_string),
+                    harness: None,
                 })
                 .collect(),
         });
@@ -6373,6 +6604,7 @@ root = "/somewhere"
                     status: PaneStatus::NeedsReview,
                     note: Some("ready to inspect".to_string()),
                     harness_session_id: None,
+                    harness: None,
                 }],
             });
 
@@ -6420,6 +6652,7 @@ root = "/somewhere"
                     status: PaneStatus::Idle,
                     note: None,
                     harness_session_id: None,
+                    harness: None,
                 }],
             });
 

@@ -35,6 +35,11 @@ pub struct SessionPane {
     /// The harness's stable conversation identity. Absent in legacy files.
     #[serde(default)]
     pub harness_session_id: Option<String>,
+    /// The harness the pane was running under, which is what decides who
+    /// may claim a checkout's last conversation on restore. Absent in
+    /// legacy files, and derived from the template in that case.
+    #[serde(default)]
+    pub harness: Option<String>,
 }
 
 fn idle_status() -> PaneStatus {
@@ -157,6 +162,7 @@ mod tests {
             status: PaneStatus::Idle,
             note: None,
             harness_session_id: None,
+            harness: None,
         }
     }
 
@@ -256,6 +262,7 @@ mod tests {
                 status: PaneStatus::Idle,
                 note: None,
                 harness_session_id: None,
+                harness: None,
             }],
         };
         assert_eq!(restorable(&s, &known).count(), 1);
@@ -274,6 +281,7 @@ mod tests {
             status: PaneStatus::NeedsReview,
             note: Some("ready to inspect".to_string()),
             harness_session_id: Some("session-123".to_string()),
+            harness: Some("claude".to_string()),
         };
         assert_eq!(p.template(), "claude");
     }

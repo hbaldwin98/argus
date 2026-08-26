@@ -103,6 +103,7 @@ include = ["target/scratch"]
 name = "claude"
 cmd = ["claude"]
 env = { KEY = "value" }
+restart = "on-failure"
 ```
 
 `projects.toml` is watched, and a save reloads it into the running tree — projects, repositories,
@@ -123,6 +124,12 @@ holds is discovered again on each start rather than frozen into the file.
 
 Shells, agents, and editors use the same PTY primitive. Editors exist in daemon state while open
 but are omitted from the normal pane list and counts.
+
+An agent whose process exits leaves its row as `Exited` unless its template sets `restart`:
+`on-failure` starts it again on a non-zero exit, `always` on any exit, and `never` — the default —
+leaves the row alone. A pane closed by the operator is removed before it is killed, so closing is
+never a restart. Three restarts of one template in one checkout within a minute stops the cycle and
+leaves the exited row, which is what says what happened.
 
 Each PTY starts at 24 by 80 cells. A blocking reader thread sends output through a bounded queue to
 a Tokio task, which processes a bounded batch on a 16 ms interval, feeds a `vt100` parser, and
@@ -261,8 +268,10 @@ choice from changing the files and `HEAD` seen by every other pane in the origin
 ## Session restore
 
 `session.json` records each pane's checkout path, kind, title, status, note, and optional harness
-session ID when the daemon
-broadcasts a structural tree change. Recording is enabled by `main` only after startup restore, so
+session ID and harness name when the daemon
+broadcasts a structural tree change. The harness is the one the pane actually ran under rather than
+whatever its template names now, since that is who wrote the conversation a restore claims; a file
+without it falls back to the template. Recording is enabled by `main` only after startup restore, so
 tests do not write the user's session. Older files without status fields restore panes as `Idle`.
 
 On daemon startup:

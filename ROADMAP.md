@@ -3,12 +3,8 @@
 This file orders unfinished work. Current behavior is in [`DESIGN.md`](DESIGN.md), and the desired
 contract is in [`TARGET.md`](TARGET.md).
 
-## P2: Repository Model
-
-
 ## P3: Agent State and Identity
 
-- Separate template, harness, display title, harness session id, and restart policy.
 - Add transitions and notifications around explicit agent states.
 - Make hook events pane-specific and subagent-aware.
 - Define fallback state detection for unsupported harnesses.

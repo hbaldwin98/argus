@@ -91,6 +91,26 @@ pub struct AgentConfig {
     /// "claude"` keeps working with no extra key.
     #[serde(default)]
     pub harness: Option<String>,
+    /// What to do when the CLI exits on its own.
+    #[serde(default)]
+    pub restart: Restart,
+}
+
+/// Whether a pane starts its agent again when the process ends. Closing a
+/// pane is never a restart: that takes the row out first, and what is gone
+/// has nothing to restart.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Restart {
+    /// Leave the exited row where it is, for the operator to read and
+    /// close. What every agent did before there was a choice.
+    #[default]
+    Never,
+    /// Start again only when the CLI exited non-zero — a crash, a killed
+    /// process, an API that gave up — and leave a clean exit alone.
+    OnFailure,
+    /// Start again however it ended, for a CLI whose normal end is exiting.
+    Always,
 }
 
 /// How a particular agent CLI can be asked to report its status, in the
@@ -233,6 +253,7 @@ pub fn default_agents() -> Vec<AgentConfig> {
             cmd: vec![name.to_string()],
             env: Default::default(),
             harness: None,
+            restart: Restart::Never,
         })
         .collect()
 }
