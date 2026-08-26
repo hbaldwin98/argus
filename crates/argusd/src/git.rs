@@ -77,6 +77,68 @@ pub fn list_worktrees(path: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// What removing the checkout at `worktree` from the repository at
+/// `primary` would run into, decided before anything is touched.
+///
+/// Removing a worktree has to kill its panes first — on Windows a shell
+/// sitting in the directory is itself what stops the directory being
+/// deleted — so any refusal git discovers on its own arrives after the
+/// user's agents are already dead. Every refusal that can be seen coming is
+/// therefore made here, while the panes are still running.
+pub enum Removal {
+    /// Nothing here stands in git's way.
+    Ready,
+    /// The directory is already gone and only the registration is left, which
+    /// `git worktree remove` refuses rather than cleans up.
+    Stale,
+    /// Git would refuse, for this reason.
+    Blocked(String),
+}
+
+pub fn removal(primary: &Path, worktree: &Path) -> Removal {
+    let Ok(repo) = git2::Repository::open(primary) else {
+        return Removal::Blocked(format!("{} is not a git repository", primary.display()));
+    };
+    let registered = repo.worktrees().ok().and_then(|names| {
+        names
+            .iter()
+            .flatten()
+            .filter_map(|name| repo.find_worktree(name).ok())
+            .find(|wt| same_path(wt.path(), worktree))
+    });
+    let Some(worktree_ref) = registered else {
+        // Either a directory that reached the tree some other way — the
+        // primary of another repository, say — or a registration git has
+        // already pruned. Only the second is safe to treat as done.
+        return if worktree.is_dir() {
+            Removal::Blocked(format!(
+                "{} is not a linked worktree of this repository",
+                worktree.display()
+            ))
+        } else {
+            Removal::Stale
+        };
+    };
+    if let Ok(git2::WorktreeLockStatus::Locked(reason)) = worktree_ref.is_locked() {
+        let why = reason.unwrap_or_else(|| "no reason given".to_string());
+        return Removal::Blocked(format!("this worktree is locked: {}", why.trim()));
+    }
+    if worktree.is_dir() {
+        Removal::Ready
+    } else {
+        Removal::Stale
+    }
+}
+
+/// Worktree paths come back from libgit2 canonicalized while a configured
+/// one is however the user spelled it; compare them resolved.
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
 /// Directories a project scan never walks into: Git's own storage, the
 /// worktrees Argus creates (they belong to the repository above them), and
 /// two build/dependency trees big enough to dominate the walk on their own.
@@ -211,15 +273,6 @@ mod tests {
         repo
     }
 
-    fn same_path(a: &Path, b: &Path) -> bool {
-        // Worktree paths come back canonicalized by libgit2 while the
-        // configured one is whatever the user typed; compare resolved.
-        match (a.canonicalize(), b.canonicalize()) {
-            (Ok(a), Ok(b)) => a == b,
-            _ => a == b,
-        }
-    }
-
     #[test]
     fn a_plain_repo_lists_just_its_own_working_directory() {
         let dir = tempfile::tempdir().unwrap();
@@ -266,6 +319,55 @@ mod tests {
             !listed.iter().any(|p| same_path(p, &wt_dir)),
             "a deleted worktree must not linger: {listed:?}"
         );
+    }
+
+    #[test]
+    fn a_directory_that_is_not_this_repos_worktree_is_never_removed() {
+        // Whatever else it is, deleting it is not `git worktree remove`'s
+        // job — and the caller kills panes on anything but a refusal.
+        let dir = tempfile::tempdir().unwrap();
+        let _repo = repo_with_a_commit(dir.path());
+        let elsewhere = dir.path().join("just-a-directory");
+        std::fs::create_dir(&elsewhere).unwrap();
+
+        assert!(matches!(
+            removal(dir.path(), &elsewhere),
+            Removal::Blocked(_)
+        ));
+        assert!(matches!(
+            removal(dir.path(), dir.path()),
+            Removal::Blocked(_)
+        ));
+    }
+
+    #[test]
+    fn a_worktree_is_ready_to_remove_until_something_holds_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = repo_with_a_commit(dir.path());
+        let wt_dir = dir.path().join("wt-feature");
+        repo.worktree("feature", &wt_dir, None).unwrap();
+
+        assert!(matches!(removal(dir.path(), &wt_dir), Removal::Ready));
+
+        repo.find_worktree("feature")
+            .unwrap()
+            .lock(Some("mid-rebase"))
+            .unwrap();
+        let Removal::Blocked(why) = removal(dir.path(), &wt_dir) else {
+            panic!("a locked worktree is git's own refusal");
+        };
+        assert!(why.contains("mid-rebase"), "got {why:?}");
+    }
+
+    #[test]
+    fn a_registration_left_by_a_deleted_directory_is_stale_rather_than_blocked() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = repo_with_a_commit(dir.path());
+        let wt_dir = dir.path().join("wt-gone");
+        repo.worktree("gone", &wt_dir, None).unwrap();
+        std::fs::remove_dir_all(&wt_dir).unwrap();
+
+        assert!(matches!(removal(dir.path(), &wt_dir), Removal::Stale));
     }
 
     #[test]

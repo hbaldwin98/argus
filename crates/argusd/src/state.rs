@@ -2088,11 +2088,6 @@ impl Daemon {
         Ok(())
     }
 
-    /// Kills every pane in a linked-worktree checkout, `git worktree
-    /// remove`s and deletes its branch (both best-effort — the checkout
-    /// leaves the tree regardless), and refuses outright on the primary
-    /// checkout, which is the repo the user already had, not Argus's to
-    /// delete (DESIGN.md §4 Level 2).
     /// Errors rather than `None`, so a stale id reaches the user as text.
     pub fn checkout_path(&self, checkout: CheckoutId) -> anyhow::Result<PathBuf> {
         let inner = self.inner.lock().unwrap();
@@ -2101,6 +2096,16 @@ impl Daemon {
             .ok_or_else(|| anyhow::anyhow!("no such checkout"))
     }
 
+    /// Kills every pane in a linked-worktree checkout, `git worktree
+    /// remove`s it, deletes its branch (best-effort — a branch left behind
+    /// costs nothing), and refuses outright on the primary checkout, which
+    /// is the repo the user already had, not Argus's to delete (DESIGN.md
+    /// §4 Level 2).
+    ///
+    /// Ordered so a refusal costs nothing: every check that can be made
+    /// while the agents are still running is made first, and the panes die
+    /// only once git's own removal is expected to go through. See
+    /// `git::removal` for why the panes cannot simply be killed afterwards.
     pub async fn remove_checkout(&self, checkout: CheckoutId) -> anyhow::Result<()> {
         let (path, primary, primary_path, pane_ids) = {
             let inner = self.inner.lock().unwrap();
@@ -2119,23 +2124,28 @@ impl Daemon {
             anyhow::bail!("refusing to remove the primary checkout");
         }
 
+        let stale = match crate::git::removal(&primary_path, &path) {
+            crate::git::Removal::Blocked(why) => anyhow::bail!("{why}"),
+            crate::git::Removal::Stale => true,
+            crate::git::Removal::Ready => false,
+        };
+
         let branch = crate::git::status(&path).and_then(|s| s.branch);
 
         for pane in pane_ids {
             let _ = self.close_pane(pane);
         }
 
-        let output = crate::command::git()
-            .args(["worktree", "remove", "--force"])
-            .arg(&path)
-            .current_dir(&primary_path)
-            .output()
-            .await?;
-        if !output.status.success() {
-            anyhow::bail!(
-                "git worktree remove failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            );
+        if stale {
+            // Nothing to delete but the registration, and `worktree remove`
+            // refuses a directory it cannot find.
+            let _ = crate::command::git()
+                .args(["worktree", "prune"])
+                .current_dir(&primary_path)
+                .output()
+                .await;
+        } else {
+            self.run_worktree_remove(&path, &primary_path).await?;
         }
 
         if let Some(branch) = branch {
@@ -2152,6 +2162,38 @@ impl Daemon {
         }
         self.broadcast_tree();
         Ok(())
+    }
+
+    /// `git worktree remove --force`, retried briefly.
+    ///
+    /// Killing a pane asks the OS to end the child; the handles it held on
+    /// the worktree directory go away a moment later, and on Windows a
+    /// directory a process still has open cannot be deleted. Retrying for
+    /// about a second turns that race into a wait instead of a refusal the
+    /// user has to reissue — by which point the panes are already gone.
+    async fn run_worktree_remove(
+        &self,
+        path: &std::path::Path,
+        primary_path: &std::path::Path,
+    ) -> anyhow::Result<()> {
+        const ATTEMPTS: usize = 10;
+        let mut last = String::new();
+        for attempt in 0..ATTEMPTS {
+            if attempt > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            let output = crate::command::git()
+                .args(["worktree", "remove", "--force"])
+                .arg(path)
+                .current_dir(primary_path)
+                .output()
+                .await?;
+            if output.status.success() {
+                return Ok(());
+            }
+            last = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        }
+        anyhow::bail!("git worktree remove failed: {last}");
     }
 }
 
@@ -4818,6 +4860,80 @@ root = "/somewhere"
         let path = std::path::Path::new(&checkouts[1].path);
         assert_eq!(head_of(path), "feature-x");
         assert!(path.starts_with(dir.path()));
+    }
+
+    /// The daemon, plus the id of a linked worktree it just made.
+    async fn daemon_with_a_worktree(name: &str) -> (tempfile::TempDir, Arc<Daemon>, CheckoutId) {
+        let (dir, d) = daemon_on_a_repo();
+        d.create_worktree(only_checkout(&d), name.to_string())
+            .await
+            .unwrap();
+        let id = d.snapshot()[0].repositories[0].checkouts[1].id;
+        (dir, d, id)
+    }
+
+    #[tokio::test]
+    async fn removing_a_worktree_takes_its_directory_and_its_row_with_it() {
+        let (_dir, d, worktree) = daemon_with_a_worktree("doomed").await;
+        let path = PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[1].path);
+
+        d.remove_checkout(worktree).await.unwrap();
+
+        assert_eq!(d.snapshot()[0].repositories[0].checkouts.len(), 1);
+        assert!(!path.exists(), "the working directory should be gone");
+    }
+
+    #[tokio::test]
+    async fn a_removal_git_would_refuse_keeps_the_panes_it_would_have_killed() {
+        // The point of checking before killing: a locked worktree is a
+        // refusal git only reports once it runs, and by then the agents that
+        // were working in it are already dead.
+        let (dir, d, worktree) = daemon_with_a_worktree("locked-up").await;
+        let pane = d.spawn_shell(worktree).unwrap();
+        git2::Repository::open(dir.path())
+            .unwrap()
+            .find_worktree("locked-up")
+            .unwrap()
+            .lock(Some("held by hand"))
+            .unwrap();
+
+        let err = d.remove_checkout(worktree).await.unwrap_err().to_string();
+
+        assert!(err.contains("locked"), "got {err:?}");
+        let snapshot = d.snapshot();
+        let checkouts = &snapshot[0].repositories[0].checkouts;
+        assert_eq!(checkouts.len(), 2, "the checkout stays");
+        assert_eq!(checkouts[1].panes.len(), 1, "and so does what was running");
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn removing_a_checkout_whose_directory_is_already_gone_clears_it() {
+        // `git worktree remove` refuses a path it cannot find, which would
+        // strand the row for a directory the user deleted by hand.
+        let (dir, d, worktree) = daemon_with_a_worktree("deleted").await;
+        let path = PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[1].path);
+        std::fs::remove_dir_all(&path).unwrap();
+
+        d.remove_checkout(worktree).await.unwrap();
+
+        assert_eq!(d.snapshot()[0].repositories[0].checkouts.len(), 1);
+        let repo = git2::Repository::open(dir.path()).unwrap();
+        assert_eq!(
+            repo.worktrees().unwrap().len(),
+            0,
+            "the registration should have been pruned too"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_primary_checkout_is_never_removable() {
+        let (dir, d) = daemon_on_a_repo();
+
+        assert!(d.remove_checkout(only_checkout(&d)).await.is_err());
+
+        assert!(dir.path().join("a.txt").exists());
+        assert_eq!(d.snapshot()[0].repositories[0].checkouts.len(), 1);
     }
 
     #[tokio::test]
