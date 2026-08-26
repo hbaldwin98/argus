@@ -307,3 +307,68 @@ mod tests {
         assert_eq!(c.bg, Color::Default);
     }
 }
+
+/// What the child asked for in the way of mouse reporting, from the xterm
+/// private modes (`DECSET 9/1000/1002/1003` and the `1006` encoding).
+///
+/// It has to travel with the screen because forwarding mouse sequences to a
+/// child that never asked for them is not a no-op: the child reads them as
+/// typed text, and `[<65;40;12M` lands in whatever it was prompting for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum MouseMode {
+    /// The child wants no mouse reports at all.
+    #[default]
+    None,
+    /// X10: presses only.
+    Press,
+    /// VT200: presses and releases.
+    PressRelease,
+    /// Presses, releases, and motion while a button is held.
+    ButtonMotion,
+    /// All of the above plus motion with no button held.
+    AnyMotion,
+}
+
+/// How the child wants those reports encoded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum MouseEncoding {
+    /// The original `CSI M Cb Cx Cy`, one byte per field, offset by 32.
+    #[default]
+    Default,
+    /// The same, with the coordinate bytes written as UTF-8.
+    Utf8,
+    /// `CSI < Cb ; Px ; Py M/m`, which is the only one that survives past
+    /// column 223 and can say which button was released.
+    Sgr,
+}
+
+/// The child's mouse reporting as a whole: what to report, and how.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct MouseTracking {
+    pub mode: MouseMode,
+    pub encoding: MouseEncoding,
+}
+
+impl MouseTracking {
+    /// Whether the child asked for mouse reports at all.
+    pub fn enabled(&self) -> bool {
+        self.mode != MouseMode::None
+    }
+
+    /// Whether a motion event with no button held should be reported.
+    pub fn wants_bare_motion(&self) -> bool {
+        self.mode == MouseMode::AnyMotion
+    }
+
+    /// Whether motion with a button held should be reported.
+    pub fn wants_drag(&self) -> bool {
+        matches!(self.mode, MouseMode::ButtonMotion | MouseMode::AnyMotion)
+    }
+
+    /// Whether a button release should be reported. X10 mode reports the
+    /// press alone, and a stray release there is the same garbage as a
+    /// report to a child that wanted none.
+    pub fn wants_release(&self) -> bool {
+        !matches!(self.mode, MouseMode::None | MouseMode::Press)
+    }
+}

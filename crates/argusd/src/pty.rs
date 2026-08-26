@@ -8,7 +8,8 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use argus_protocol::{
-    diff_grid, Cell, Color, CompactString, Cursor, CursorShape, PaneId, ServerMsg, BLANK,
+    diff_grid, Cell, Color, CompactString, Cursor, CursorShape, MouseEncoding, MouseMode,
+    MouseTracking, PaneId, ServerMsg, BLANK,
 };
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::broadcast;
@@ -174,6 +175,11 @@ impl PaneRuntime {
             tokio::spawn(async move {
                 let mut prev: Option<Vec<Vec<Cell>>> = None;
                 let mut prev_cursor = None;
+                // Tracked alongside the grid because a child can turn mouse
+                // reporting on or off without changing a single cell, and a
+                // client that misses the change forwards mouse bytes to a
+                // child that will print them.
+                let mut prev_mouse = None;
                 let mut on_exit = Some(on_exit);
                 let mut eof = false;
                 loop {
@@ -230,17 +236,25 @@ impl PaneRuntime {
                         // grid we stopped tracking.
                         prev = None;
                         prev_cursor = None;
+                        prev_mouse = None;
                     } else if dirty {
                         let shape = shape.lock().unwrap().shape();
                         let parser = parser.lock().unwrap();
                         let cur = snapshot_grid(&parser);
                         let cursor = snapshot_cursor(&parser, shape);
+                        let mouse = snapshot_mouse(&parser);
                         let spans = diff_grid(prev.as_ref(), &cur);
-                        if !spans.is_empty() || prev_cursor != Some(cursor) {
-                            let _ = damage_tx.send(ServerMsg::Damage { pane: id, spans, cursor });
+                        if !spans.is_empty() || prev_cursor != Some(cursor) || prev_mouse != Some(mouse) {
+                            let _ = damage_tx.send(ServerMsg::Damage {
+                                pane: id,
+                                spans,
+                                cursor,
+                                mouse,
+                            });
                         }
                         prev = Some(cur);
                         prev_cursor = Some(cursor);
+                        prev_mouse = Some(mouse);
                     }
 
                     let exited = child.lock().unwrap().try_wait().ok().flatten();
@@ -276,9 +290,15 @@ impl PaneRuntime {
                             let parser = parser.lock().unwrap();
                             let cur = snapshot_grid(&parser);
                             let cursor = snapshot_cursor(&parser, shape);
+                            let mouse = snapshot_mouse(&parser);
                             let spans = diff_grid(prev.as_ref(), &cur);
-                            if !spans.is_empty() || prev_cursor != Some(cursor) {
-                                let _ = damage_tx.send(ServerMsg::Damage { pane: id, spans, cursor });
+                            if !spans.is_empty() || prev_cursor != Some(cursor) || prev_mouse != Some(mouse) {
+                                let _ = damage_tx.send(ServerMsg::Damage {
+                                    pane: id,
+                                    spans,
+                                    cursor,
+                                    mouse,
+                                });
                             }
                         }
 
@@ -330,11 +350,17 @@ impl PaneRuntime {
         Ok(())
     }
 
-    pub fn full_snapshot(&self) -> (u16, u16, Vec<Vec<Cell>>, Cursor) {
+    pub fn full_snapshot(&self) -> (u16, u16, Vec<Vec<Cell>>, Cursor, MouseTracking) {
         let shape = self.shape.lock().unwrap().shape();
         let parser = self.parser.lock().unwrap();
         let (rows, cols) = parser.screen().size();
-        (rows, cols, snapshot_grid(&parser), snapshot_cursor(&parser, shape))
+        (
+            rows,
+            cols,
+            snapshot_grid(&parser),
+            snapshot_cursor(&parser, shape),
+            snapshot_mouse(&parser),
+        )
     }
 
     /// The damage stream on its own. Only tests want this: a real
@@ -353,7 +379,16 @@ impl PaneRuntime {
     /// to neither — it is newer than the snapshot and older than the
     /// receiver — and the cells it carried stay wrong on the subscriber's
     /// grid until something else happens to overwrite them.
-    pub fn snapshot_and_subscribe(&self) -> (u16, u16, Vec<Vec<Cell>>, Cursor, broadcast::Receiver<ServerMsg>) {
+    pub fn snapshot_and_subscribe(
+        &self,
+    ) -> (
+        u16,
+        u16,
+        Vec<Vec<Cell>>,
+        Cursor,
+        MouseTracking,
+        broadcast::Receiver<ServerMsg>,
+    ) {
         let shape = self.shape.lock().unwrap().shape();
         let parser = self.parser.lock().unwrap();
         let (rows, cols) = parser.screen().size();
@@ -363,6 +398,7 @@ impl PaneRuntime {
             cols,
             snapshot_grid(&parser),
             snapshot_cursor(&parser, shape),
+            snapshot_mouse(&parser),
             rx,
         )
     }
@@ -372,13 +408,14 @@ impl PaneRuntime {
     /// grown or shrunk by replacing it wholesale — incremental Damage spans
     /// referencing indices outside its current size are meaningless to it.
     pub fn broadcast_snapshot(&self, pane: PaneId) {
-        let (rows, cols, cells, cursor) = self.full_snapshot();
+        let (rows, cols, cells, cursor, mouse) = self.full_snapshot();
         let _ = self.damage_tx.send(ServerMsg::PaneSnapshot {
             pane,
             rows,
             cols,
             cells,
             cursor,
+            mouse,
         });
     }
 }
@@ -405,6 +442,24 @@ fn snapshot_cursor(parser: &vt100::Parser, shape: CursorShape) -> Cursor {
         col,
         visible: !screen.hide_cursor(),
         shape,
+    }
+}
+
+fn snapshot_mouse(parser: &vt100::Parser) -> MouseTracking {
+    let screen = parser.screen();
+    MouseTracking {
+        mode: match screen.mouse_protocol_mode() {
+            vt100::MouseProtocolMode::None => MouseMode::None,
+            vt100::MouseProtocolMode::Press => MouseMode::Press,
+            vt100::MouseProtocolMode::PressRelease => MouseMode::PressRelease,
+            vt100::MouseProtocolMode::ButtonMotion => MouseMode::ButtonMotion,
+            vt100::MouseProtocolMode::AnyMotion => MouseMode::AnyMotion,
+        },
+        encoding: match screen.mouse_protocol_encoding() {
+            vt100::MouseProtocolEncoding::Default => MouseEncoding::Default,
+            vt100::MouseProtocolEncoding::Utf8 => MouseEncoding::Utf8,
+            vt100::MouseProtocolEncoding::Sgr => MouseEncoding::Sgr,
+        },
     }
 }
 
@@ -541,6 +596,24 @@ mod tests {
     }
 
     #[test]
+    fn a_childs_mouse_request_is_carried_on_the_snapshot() {
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        assert_eq!(snapshot_mouse(&parser), MouseTracking::default());
+
+        parser.process(b"[?1002h[?1006h");
+        assert_eq!(
+            snapshot_mouse(&parser),
+            MouseTracking {
+                mode: MouseMode::ButtonMotion,
+                encoding: MouseEncoding::Sgr,
+            }
+        );
+
+        parser.process(b"[?1002l");
+        assert_eq!(snapshot_mouse(&parser).mode, MouseMode::None);
+    }
+
+    #[test]
     fn a_bar_cursor_request_is_picked_out_of_the_stream() {
         let mut scan = CursorShapeScanner::default();
         scan.feed(b"hello[6 qworld");
@@ -618,7 +691,7 @@ mod tests {
     async fn wait_for(pane: &PaneRuntime, pred: impl Fn(&[Vec<Cell>]) -> bool) -> Vec<Vec<Cell>> {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
         loop {
-            let (_, _, grid, _) = pane.full_snapshot();
+            let (_, _, grid, _, _) = pane.full_snapshot();
             if pred(&grid) {
                 return grid;
             }
@@ -715,7 +788,7 @@ mod tests {
                 .unwrap();
         wait_for(&pane, |g| grid_contains(g, "unwatched-marker")).await;
 
-        let (_, _, grid, _, _rx) = pane.snapshot_and_subscribe();
+        let (_, _, grid, _, _, _rx) = pane.snapshot_and_subscribe();
         assert!(
             grid_contains(&grid, "unwatched-marker"),
             "output produced with nobody watching was lost:
@@ -807,13 +880,13 @@ mod tests {
     async fn a_pane_starts_at_the_default_size_and_resize_changes_it() {
         let pane =
             PaneRuntime::spawn(PaneId(5), &std::env::temp_dir(), Spawn::DefaultShell, |_| {}).unwrap();
-        let (rows, cols, grid, _) = pane.full_snapshot();
+        let (rows, cols, grid, _, _) = pane.full_snapshot();
         assert_eq!((rows, cols), (DEFAULT_ROWS, DEFAULT_COLS));
         assert_eq!(grid.len(), DEFAULT_ROWS as usize);
         assert_eq!(grid[0].len(), DEFAULT_COLS as usize);
 
         pane.resize(40, 120).unwrap();
-        let (rows, cols, grid, _) = pane.full_snapshot();
+        let (rows, cols, grid, _, _) = pane.full_snapshot();
         assert_eq!((rows, cols), (40, 120));
         assert_eq!(grid.len(), 40, "the grid must actually grow, not just the pty");
         assert_eq!(grid[0].len(), 120);

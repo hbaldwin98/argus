@@ -1,8 +1,12 @@
-use argus_protocol::{Cell, CellSpan, Cursor};
+use argus_protocol::{Cell, CellSpan, Cursor, MouseTracking};
 
 pub struct Grid {
     pub cells: Vec<Vec<Cell>>,
     pub cursor: Cursor,
+    /// What mouse reporting the child behind this grid has asked for.
+    /// Nothing draws it; it decides whether a click or a wheel turn is
+    /// forwarded into the pty or handled here.
+    pub mouse: MouseTracking,
 }
 
 impl Grid {
@@ -10,11 +14,16 @@ impl Grid {
         Grid {
             cells,
             cursor: Cursor::default(),
+            mouse: MouseTracking::default(),
         }
     }
 
-    pub fn with_cursor(cells: Vec<Vec<Cell>>, cursor: Cursor) -> Self {
-        Grid { cells, cursor }
+    pub fn with_cursor(cells: Vec<Vec<Cell>>, cursor: Cursor, mouse: MouseTracking) -> Self {
+        Grid {
+            cells,
+            cursor,
+            mouse,
+        }
     }
 
     pub fn apply(&mut self, spans: &[CellSpan]) {

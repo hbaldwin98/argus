@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::cell::{Cell, CellSpan, Cursor};
+use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{Review, ReviewBase};
 use crate::tree::{ProjectInfo, WorkspaceInfo};
@@ -126,12 +126,19 @@ pub enum ServerMsg {
         cols: u16,
         cells: Vec<Vec<Cell>>,
         cursor: Cursor,
+        /// What mouse reporting the child has asked for. Defaulted on the
+        /// wire so an older daemon reads as "none", which is the safe
+        /// answer: no mouse bytes get forwarded.
+        #[serde(default)]
+        mouse: MouseTracking,
     },
     /// Incremental changed spans since the last snapshot/damage for a pane.
     Damage {
         pane: PaneId,
         spans: Vec<CellSpan>,
         cursor: Cursor,
+        #[serde(default)]
+        mouse: MouseTracking,
     },
     /// The answer to `ClientMsg::Review`.
     Review(Review),

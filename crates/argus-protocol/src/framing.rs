@@ -198,6 +198,7 @@ mod tests {
     #[tokio::test]
     async fn damage_spans_survive_the_wire() {
         let sent = ServerMsg::Damage {
+            mouse: Default::default(),
             pane: PaneId(1),
             cursor: Cursor {
                 row: 4,

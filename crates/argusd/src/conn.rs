@@ -100,7 +100,7 @@ impl Subscriptions {
                             }
                         }
                         Err(broadcast::error::RecvError::Lagged(_)) => {
-                            let Ok((rows, cols, cells, cursor, replacement)) =
+                            let Ok((rows, cols, cells, cursor, mouse, replacement)) =
                                 daemon.subscribe_pane(pane)
                             else {
                                 break;
@@ -112,6 +112,7 @@ impl Subscriptions {
                                     cols,
                                     cells,
                                     cursor,
+                                    mouse,
                                 })
                                 .is_err()
                             {
@@ -174,7 +175,7 @@ fn dispatch_pane(
         ClientMsg::Subscribe { pane } => {
             daemon
                 .subscribe_pane(pane)
-                .map(|(rows, cols, cells, cursor, rx)| {
+                .map(|(rows, cols, cells, cursor, mouse, rx)| {
                     subs.add(pane, rx, out_tx.clone(), daemon.clone());
                     let _ = out_tx.send(ServerMsg::PaneSnapshot {
                         pane,
@@ -182,6 +183,7 @@ fn dispatch_pane(
                         cols,
                         cells,
                         cursor,
+                        mouse,
                     });
                 })
         }

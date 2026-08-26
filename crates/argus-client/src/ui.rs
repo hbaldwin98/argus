@@ -2408,6 +2408,7 @@ mod tests {
                     row: 1,
                     col: 2,
                     visible: true, ..Default::default() },
+                Default::default(),
             ),
         );
         let mut terminal = Terminal::new(TestBackend::new(100, 20)).unwrap();
@@ -2435,6 +2436,7 @@ mod tests {
             Grid::with_cursor(
                 vec![vec![Default::default(); 40]; 10],
                 argus_protocol::Cursor { row: 1, col: 2, visible: true, ..Default::default() },
+                Default::default(),
             ),
         );
         app.grids.insert(
@@ -2442,6 +2444,7 @@ mod tests {
             Grid::with_cursor(
                 vec![vec![Default::default(); 40]; 10],
                 argus_protocol::Cursor { row: 1, col: 2, visible: false, ..Default::default() },
+                Default::default(),
             ),
         );
         app.overlay = Some(Overlay::Pane {
@@ -2469,6 +2472,7 @@ mod tests {
             Grid::with_cursor(
                 vec![vec![Default::default(); 40]; 10],
                 argus_protocol::Cursor { row: 1, col: 2, visible: true, ..Default::default() },
+                Default::default(),
             ),
         );
         draw(&mut app);
@@ -2490,6 +2494,7 @@ mod tests {
         let grid = Grid::with_cursor(
             vec![vec![Default::default(); 80]; 24],
             argus_protocol::Cursor { row: 30, col: 0, visible: true, ..Default::default() },
+            Default::default(),
         );
 
         assert_eq!(term_cursor(Some(&grid), area, true), None);
@@ -2501,6 +2506,7 @@ mod tests {
         let grid = Grid::with_cursor(
             vec![vec![Default::default(); 80]; 24],
             argus_protocol::Cursor { row: 7, col: 9, visible: true, ..Default::default() },
+            Default::default(),
         );
 
         assert_eq!(
@@ -2515,10 +2521,12 @@ mod tests {
         let visible = Grid::with_cursor(
             vec![vec![Default::default(); 80]; 24],
             argus_protocol::Cursor { row: 1, col: 1, visible: true, ..Default::default() },
+            Default::default(),
         );
         let hidden = Grid::with_cursor(
             vec![vec![Default::default(); 80]; 24],
             argus_protocol::Cursor { row: 1, col: 1, visible: false, ..Default::default() },
+            Default::default(),
         );
 
         assert_eq!(term_cursor(Some(&visible), area, false), None);

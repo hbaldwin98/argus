@@ -760,17 +760,27 @@ impl App {
                 self.workspaces = list;
             }
             ServerMsg::PaneSnapshot {
-                pane, cells, cursor, ..
+                pane,
+                cells,
+                cursor,
+                mouse,
+                ..
             } => {
                 if self.grids.contains_key(&pane) {
-                    self.grids.insert(pane, Grid::with_cursor(cells, cursor));
+                    self.grids.insert(pane, Grid::with_cursor(cells, cursor, mouse));
                 }
             }
-            ServerMsg::Damage { pane, spans, cursor } => {
+            ServerMsg::Damage {
+                pane,
+                spans,
+                cursor,
+                mouse,
+            } => {
                 {
                     if let Some(grid) = self.grids.get_mut(&pane) {
                         grid.apply(&spans);
                         grid.move_cursor(cursor);
+                        grid.mouse = mouse;
                     }
                 }
             }
@@ -2029,8 +2039,10 @@ impl App {
                 }
                 return;
             }
-            if let Some(bytes) = encode_mouse(&ev, self.layout.overlay.inner) {
-                if let Some(pane) = self.overlay_pane() {
+            if let Some(pane) = self.overlay_pane() {
+                if let Some(bytes) =
+                    encode_mouse(&ev, self.layout.overlay.inner, self.pane_mouse(pane))
+                {
                     let _ = self.out.send(ClientMsg::Input { pane, bytes });
                 }
             }
@@ -2061,12 +2073,21 @@ impl App {
         // The live view is always visible in the rightmost column, so a
         // click landing on it both forwards to the child and (for presses)
         // switches into typing mode, regardless of what was focused before.
-        if let Some(bytes) = encode_mouse(&ev, self.layout.content.inner) {
+        //
+        // The hit test is separate from the encoding: an event over the live
+        // view belongs to the live view even when the child wants no mouse
+        // reports and nothing is sent. Falling through to the nav handlers
+        // would scroll the pane list under a wheel turn aimed at the pane.
+        if in_rect(self.layout.content.inner, ev.column, ev.row) {
             if matches!(ev.kind, MouseEventKind::Down(_)) {
                 self.focus = Focus::PaneContent;
             }
             if let Some(pane) = self.column_pane() {
-                let _ = self.out.send(ClientMsg::Input { pane, bytes });
+                if let Some(bytes) =
+                    encode_mouse(&ev, self.layout.content.inner, self.pane_mouse(pane))
+                {
+                    let _ = self.out.send(ClientMsg::Input { pane, bytes });
+                }
             }
             return;
         }
@@ -2080,6 +2101,16 @@ impl App {
             MouseEventKind::ScrollDown => self.scroll_at(ev.column, ev.row, 1),
             _ => {}
         }
+    }
+
+    /// What mouse reporting the child in `pane` has asked for. An unknown
+    /// pane defaults to none, so nothing is forwarded until a snapshot has
+    /// actually said otherwise.
+    fn pane_mouse(&self, pane: PaneId) -> argus_protocol::MouseTracking {
+        self.grids
+            .get(&pane)
+            .map(|g| g.mouse)
+            .unwrap_or_default()
     }
 
     fn panels(&self) -> [Panel; 5] {
@@ -2833,6 +2864,7 @@ mod tests {
         h.app.grids
             .insert(PaneId(100), crate::grid::Grid::new(vec![vec![Cell::default()]]));
         h.app.on_server_msg(ServerMsg::Damage {
+            mouse: Default::default(),
             pane: PaneId(999),
             cursor: Default::default(),
             spans: vec![CellSpan {
@@ -2851,6 +2883,7 @@ mod tests {
     fn a_snapshot_for_the_subscribed_pane_installs_the_grid() {
         let mut h = Harness::new();
         h.app.on_server_msg(ServerMsg::PaneSnapshot {
+            mouse: Default::default(),
             pane: PaneId(100),
             rows: 1,
             cols: 1,
@@ -4045,6 +4078,21 @@ second
         };
     }
 
+    /// Say that `pane`'s child has asked for SGR mouse reporting. Nothing is
+    /// forwarded to a child that hasn't, so any test about forwarding has to
+    /// establish this first.
+    fn wants_mouse(h: &mut Harness, pane: PaneId) {
+        let grid = h
+            .app
+            .grids
+            .entry(pane)
+            .or_insert_with(|| crate::grid::Grid::new(Vec::new()));
+        grid.mouse = argus_protocol::MouseTracking {
+            mode: argus_protocol::MouseMode::ButtonMotion,
+            encoding: argus_protocol::MouseEncoding::Sgr,
+        };
+    }
+
     fn drag(x: u16, y: u16) -> MouseEvent {
         MouseEvent {
             kind: MouseEventKind::Drag(MouseButton::Left),
@@ -4251,6 +4299,8 @@ second
     fn clicking_the_live_view_switches_to_typing_and_forwards_the_click() {
         let mut h = Harness::new();
         laid_out(&mut h);
+        let pane = h.app.column_pane().unwrap();
+        wants_mouse(&mut h, pane);
         h.app.on_mouse(click(54, 3));
         assert_eq!(h.app.focus, Focus::PaneContent);
         assert!(
@@ -4263,6 +4313,8 @@ second
     fn releasing_in_the_live_view_is_forwarded_when_not_resizing() {
         let mut h = Harness::new();
         laid_out(&mut h);
+        let pane = h.app.column_pane().unwrap();
+        wants_mouse(&mut h, pane);
         h.app.on_mouse(MouseEvent {
             kind: MouseEventKind::Up(MouseButton::Left),
             column: 54,
@@ -4277,6 +4329,69 @@ second
             )),
             "the child gets an ordinary release"
         );
+    }
+
+    #[test]
+    fn nothing_is_forwarded_to_a_child_that_never_asked_for_the_mouse() {
+        // The bug: an agent that does no mouse reporting was still sent
+        // `ESC [ < ... M` for every click and wheel turn, and typed it into
+        // its prompt.
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        h.sent();
+
+        h.app.on_mouse(click(54, 3));
+        h.app.on_mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 54,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        });
+
+        assert!(
+            !h.sent().iter().any(|m| matches!(m, ClientMsg::Input { .. })),
+            "no mouse bytes reach a child that reports no mouse"
+        );
+        assert_eq!(
+            h.app.focus,
+            Focus::PaneContent,
+            "the click still selects the live view"
+        );
+    }
+
+    #[test]
+    fn a_wheel_over_the_live_view_never_scrolls_the_columns_behind_it() {
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        let before = h.app.sel_project;
+
+        h.app.on_mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 54,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        });
+
+        assert_eq!(h.app.sel_project, before);
+    }
+
+    #[test]
+    fn a_release_is_dropped_for_a_child_that_only_reports_presses() {
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        let pane = h.app.column_pane().unwrap();
+        wants_mouse(&mut h, pane);
+        h.app.grids.get_mut(&pane).unwrap().mouse.mode = argus_protocol::MouseMode::Press;
+        h.sent();
+
+        h.app.on_mouse(MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: 54,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        });
+
+        assert!(!h.sent().iter().any(|m| matches!(m, ClientMsg::Input { .. })));
     }
 
     #[test]
@@ -5868,6 +5983,7 @@ second
             outer: Rect::new(10, 4, 20, 10),
             inner: Rect::new(11, 5, 18, 8),
         };
+        wants_mouse(&mut h, PaneId(101));
         h.sent();
 
         h.app.on_mouse(click(15, 7));

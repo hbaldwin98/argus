@@ -281,6 +281,7 @@ type PaneSubscription = (
     u16,
     Vec<Vec<Cell>>,
     argus_protocol::Cursor,
+    argus_protocol::MouseTracking,
     broadcast::Receiver<ServerMsg>,
 );
 
@@ -1437,7 +1438,7 @@ mod tests {
     }
 
     fn pane_size(d: &Daemon, pane: PaneId) -> (u16, u16) {
-        let (rows, cols, _, _, _) = d.subscribe_pane(pane).unwrap();
+        let (rows, cols, _, _, _, _) = d.subscribe_pane(pane).unwrap();
         (rows, cols)
     }
 
