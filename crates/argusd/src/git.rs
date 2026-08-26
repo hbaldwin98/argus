@@ -183,6 +183,49 @@ const MAX_DEPTH: usize = 8;
 /// the daemon's reconciliation tick, and see `list_worktrees` for what
 /// spawning a process there costs on Windows.
 pub fn discover_repositories(root: &Path) -> Vec<PathBuf> {
+    discover_repositories_within(root, &Scan::default())
+}
+
+/// What a project's scan may and may not walk into, beyond [`SKIPPED`].
+///
+/// Both lists take either a bare name, which matches a directory anywhere
+/// under the root, or a root-relative path with `/` separators, which
+/// matches that one directory. `include` is the stronger of the two and
+/// beats the built-in skips as well: a repository kept somewhere the
+/// defaults would never look is still reachable by naming it.
+#[derive(Debug, Default, Clone)]
+pub struct Scan {
+    pub exclude: Vec<String>,
+    pub include: Vec<String>,
+}
+
+impl Scan {
+    /// Whether the walk should descend into `dir`, which sits at
+    /// `relative` below the root.
+    fn descends_into(&self, name: &str, relative: &Path) -> bool {
+        if matches(&self.include, name, relative) {
+            return true;
+        }
+        if SKIPPED.contains(&name) {
+            return false;
+        }
+        !matches(&self.exclude, name, relative)
+    }
+}
+
+fn matches(patterns: &[String], name: &str, relative: &Path) -> bool {
+    let relative = relative.to_string_lossy().replace('\\', "/");
+    patterns.iter().any(|pattern| {
+        let pattern = pattern.trim_matches('/');
+        if pattern.contains('/') {
+            relative == pattern
+        } else {
+            name == pattern
+        }
+    })
+}
+
+pub fn discover_repositories_within(root: &Path, scan: &Scan) -> Vec<PathBuf> {
     // (identity, working directory). The identity is the repository's Git
     // directory, resolved, so two paths that reach one repository collapse
     // to a single row; the working directory is kept as the walk spelled it,
@@ -216,11 +259,13 @@ pub fn discover_repositories(root: &Path) -> Vec<PathBuf> {
             if kind.is_symlink() || !kind.is_dir() {
                 continue;
             }
+            let path = entry.path();
             let name = entry.file_name();
-            if SKIPPED.iter().any(|skip| name == *skip) {
+            let relative = path.strip_prefix(root).unwrap_or(&path);
+            if !scan.descends_into(&name.to_string_lossy(), relative) {
                 continue;
             }
-            pending.push((entry.path(), depth + 1));
+            pending.push((path, depth + 1));
         }
     }
 
@@ -337,6 +382,85 @@ mod tests {
             !listed.iter().any(|p| same_path(p, &wt_dir)),
             "a deleted worktree must not linger: {listed:?}"
         );
+    }
+
+    #[test]
+    fn a_project_can_keep_the_scan_out_of_a_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let kept = root.path().join("kept");
+        let vendored = root.path().join("vendor").join("thing");
+        std::fs::create_dir_all(&kept).unwrap();
+        std::fs::create_dir_all(&vendored).unwrap();
+        repo_with_a_commit(&kept);
+        repo_with_a_commit(&vendored);
+
+        let scan = Scan {
+            exclude: vec!["vendor".to_string()],
+            ..Default::default()
+        };
+        let found = discover_repositories_within(root.path(), &scan);
+
+        assert_eq!(found.len(), 1, "got {found:?}");
+        assert!(same_path(&found[0], &kept));
+    }
+
+    #[test]
+    fn an_excluded_path_can_name_one_directory_rather_than_every_directory_of_that_name() {
+        let root = tempfile::tempdir().unwrap();
+        let here = root.path().join("a").join("build");
+        let there = root.path().join("b").join("build");
+        std::fs::create_dir_all(&here).unwrap();
+        std::fs::create_dir_all(&there).unwrap();
+        repo_with_a_commit(&here);
+        repo_with_a_commit(&there);
+
+        let scan = Scan {
+            exclude: vec!["a/build".to_string()],
+            ..Default::default()
+        };
+        let found = discover_repositories_within(root.path(), &scan);
+
+        assert_eq!(found.len(), 1, "got {found:?}");
+        assert!(same_path(&found[0], &there));
+    }
+
+    #[test]
+    fn including_a_path_reaches_a_repository_the_defaults_would_never_look_in() {
+        // `target` is skipped for everyone; a project that keeps a
+        // repository there can say so.
+        let root = tempfile::tempdir().unwrap();
+        let hidden = root.path().join("target").join("scratch");
+        std::fs::create_dir_all(&hidden).unwrap();
+        repo_with_a_commit(&hidden);
+
+        assert!(
+            discover_repositories(root.path()).is_empty(),
+            "the built-in skip still applies by default"
+        );
+
+        let scan = Scan {
+            include: vec!["target".to_string()],
+            ..Default::default()
+        };
+        let found = discover_repositories_within(root.path(), &scan);
+
+        assert_eq!(found.len(), 1, "got {found:?}");
+        assert!(same_path(&found[0], &hidden));
+    }
+
+    #[test]
+    fn including_beats_excluding_the_same_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let inside = root.path().join("vendor").join("thing");
+        std::fs::create_dir_all(&inside).unwrap();
+        repo_with_a_commit(&inside);
+
+        let scan = Scan {
+            exclude: vec!["vendor".to_string()],
+            include: vec!["vendor".to_string()],
+        };
+
+        assert_eq!(discover_repositories_within(root.path(), &scan).len(), 1);
     }
 
     #[test]

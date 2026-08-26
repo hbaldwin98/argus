@@ -46,7 +46,8 @@ removal stay scoped to the repository that owns the selected checkout.
 
 A root is scanned for the Git repositories at or beneath it. The scan stops at each repository it
 finds, so a submodule or a vendored checkout stays part of the repository containing it rather than
-becoming a sibling of it. It skips `.git`, `.argus`, `node_modules`, and `target`; it does not
+becoming a sibling of it. It skips `.git`, `.argus`, `node_modules`, and `target`, plus whatever the
+project's own `exclude` adds and minus whatever its `include` overrides; it does not
 follow directory symlinks; it goes no more than eight directories below the root; and it treats
 neither a linked worktree nor a bare repository as a repository of its own. Like the rest of the
 read-only Git work it uses `git2` rather than the `git` executable, and it returns its repositories
@@ -95,6 +96,8 @@ workspace = "work"
 worktree_root = "~/worktrees"
 setup = ["pnpm install"]
 exclusive = true
+exclude = ["vendor"]
+include = ["target/scratch"]
 
 [[agent]]
 name = "claude"
@@ -334,6 +337,11 @@ Git mutations use the `git` executable:
 - create and switch to a branch;
 - add a worktree, creating the branch unless it already exists;
 - force-remove a linked worktree and best-effort delete its branch.
+
+A root scan skips `.git`, `.argus`, `node_modules`, and `target` for every project. `exclude` adds to
+that and `include` overrides it, both taking either a bare directory name, matched anywhere under
+the root, or a root-relative `/`-separated path, matched once; `include` wins over both `exclude`
+and the built-in list, so a repository kept where the defaults would never look is still reachable.
 
 A project may set `worktree_root`, which holds one directory per repository, so two repositories in
 one project can have a branch of the same name. Its `setup` commands run in a worktree Argus has

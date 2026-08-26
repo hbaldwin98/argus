@@ -5,8 +5,6 @@ contract is in [`TARGET.md`](TARGET.md).
 
 ## P2: Repository Model
 
-- Let a project root include or exclude paths, now that scanning one is how projects are built.
-  The scan currently has one fixed skip list and no per-project control.
 
 ## P3: Agent State and Identity
 

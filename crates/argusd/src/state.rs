@@ -143,6 +143,8 @@ struct Project {
     setup: Vec<String>,
     /// Whether a checkout here may hold only one agent at a time.
     exclusive: bool,
+    /// What this project's root scan may and may not walk into.
+    scan: crate::git::Scan,
 }
 
 struct Workspace {
@@ -278,8 +280,15 @@ impl Daemon {
                 // A root is scanned once here so the tree is complete the
                 // moment the first client attaches, rather than filling in
                 // a tick later. Reconciliation keeps it current after that.
+                let scan = crate::git::Scan {
+                    exclude: p.exclude.clone(),
+                    include: p.include.clone(),
+                };
                 if let Some(root) = &root {
-                    let found = retain_included(&excluded, crate::git::discover_repositories(root));
+                    let found = retain_included(
+                        &excluded,
+                        crate::git::discover_repositories_within(root, &scan),
+                    );
                     install_discovered(&mut ids, &mut repositories, &found);
                 }
                 Project {
@@ -294,6 +303,10 @@ impl Daemon {
                     worktree_root: p.worktree_root.as_deref().map(config::expand_home),
                     setup: p.setup,
                     exclusive: p.exclusive,
+                    scan: crate::git::Scan {
+                        exclude: p.exclude,
+                        include: p.include,
+                    },
                 }
             })
             .collect();
@@ -1669,6 +1682,10 @@ impl Daemon {
                             p.worktree_root.as_deref().map(config::expand_home);
                         live.setup = p.setup.clone();
                         live.exclusive = p.exclusive;
+                        live.scan = crate::git::Scan {
+                            exclude: p.exclude.clone(),
+                            include: p.include.clone(),
+                        };
                         for path in &named {
                             if !live.repositories.iter().any(|r| {
                                 r.checkouts.iter().any(|c| c.primary && &c.path == path)
@@ -1704,6 +1721,10 @@ impl Daemon {
                                 .map(config::expand_home),
                             setup: p.setup.clone(),
                             exclusive: p.exclusive,
+                            scan: crate::git::Scan {
+                                exclude: p.exclude.clone(),
+                                include: p.include.clone(),
+                            },
                         });
                     }
                 }
@@ -1978,7 +1999,7 @@ impl Daemon {
     /// daemon. `reconcile_worktrees` does the same job one level further
     /// down, for a repository's checkouts.
     fn reconcile_repositories(&self) -> bool {
-        self.reconcile_repositories_with(crate::git::discover_repositories)
+        self.reconcile_repositories_with(crate::git::discover_repositories_within)
     }
 
     /// The reconciliation itself, with the scan injected so tests can state
@@ -1986,16 +2007,16 @@ impl Daemon {
     /// changed. Production always passes `git::discover_repositories`.
     fn reconcile_repositories_with(
         &self,
-        discover: impl Fn(&std::path::Path) -> Vec<PathBuf>,
+        discover: impl Fn(&std::path::Path, &crate::git::Scan) -> Vec<PathBuf>,
     ) -> bool {
         // Scanning happens between the two locks and never inside one, for
         // the same reason `add_project` scans before taking it.
-        let roots: Vec<(ProjectId, PathBuf)> = {
+        let roots: Vec<(ProjectId, PathBuf, crate::git::Scan)> = {
             let inner = self.inner.lock().unwrap();
             inner
                 .projects
                 .iter()
-                .filter_map(|p| p.root.clone().map(|root| (p.id, root)))
+                .filter_map(|p| p.root.clone().map(|root| (p.id, root, p.scan.clone())))
                 .collect()
         };
         if roots.is_empty() {
@@ -2003,7 +2024,7 @@ impl Daemon {
         }
         let scanned: Vec<(ProjectId, Vec<PathBuf>)> = roots
             .into_iter()
-            .map(|(id, root)| (id, discover(&root)))
+            .map(|(id, root, scan)| (id, discover(&root, &scan)))
             .collect();
 
         let mut changed = false;
@@ -2120,6 +2141,7 @@ impl Daemon {
                 worktree_root: None,
                 setup: Vec::new(),
                 exclusive: false,
+                scan: crate::git::Scan::default(),
             });
         }
         self.broadcast_tree();
@@ -4430,7 +4452,7 @@ mod tests {
 
         let cloned = dir.path().join("orion");
         assert!(
-            d.reconcile_repositories_with(|_| listing(&[&cloned.to_string_lossy()])),
+            d.reconcile_repositories_with(|_, _| listing(&[&cloned.to_string_lossy()])),
             "the tree changed, so clients need telling"
         );
 
@@ -4465,7 +4487,7 @@ mod tests {
         let pane = d.spawn_shell(repository.checkouts[0].id).unwrap();
 
         assert!(
-            !d.reconcile_repositories_with(|_| listing(&[&child.to_string_lossy()])),
+            !d.reconcile_repositories_with(|_, _| listing(&[&child.to_string_lossy()])),
             "nothing changed, so nothing should be broadcast"
         );
 
@@ -4485,7 +4507,7 @@ mod tests {
         let _repo = real_repo(&child);
         let d = daemon_rooted_at(dir.path(), &[]);
 
-        assert!(d.reconcile_repositories_with(|_| Vec::new()));
+        assert!(d.reconcile_repositories_with(|_, _| Vec::new()));
         assert!(repository_names(&d).is_empty());
     }
 
@@ -4503,7 +4525,7 @@ mod tests {
             .spawn_shell(d.snapshot()[0].repositories[0].checkouts[0].id)
             .unwrap();
 
-        assert!(!d.reconcile_repositories_with(|_| Vec::new()));
+        assert!(!d.reconcile_repositories_with(|_, _| Vec::new()));
         assert_eq!(
             repository_names(&d),
             vec!["orion"],
@@ -4511,7 +4533,7 @@ mod tests {
         );
 
         d.close_pane(pane).unwrap();
-        assert!(d.reconcile_repositories_with(|_| Vec::new()));
+        assert!(d.reconcile_repositories_with(|_, _| Vec::new()));
         assert!(repository_names(&d).is_empty(), "and gone once it is empty");
     }
 
@@ -4525,7 +4547,7 @@ mod tests {
         std::fs::create_dir(&plain).unwrap();
 
         let d = daemon_rooted_at(dir.path(), &[&plain.to_string_lossy()]);
-        assert!(!d.reconcile_repositories_with(|_| Vec::new()));
+        assert!(!d.reconcile_repositories_with(|_, _| Vec::new()));
         assert_eq!(repository_names(&d), vec!["scratch"]);
     }
 
@@ -4533,7 +4555,7 @@ mod tests {
     fn a_project_without_a_root_is_never_scanned() {
         let d = daemon_with_repositories(&["/configured"]);
         assert!(
-            !d.reconcile_repositories_with(|_| panic!("a rootless project has nothing to scan")),
+            !d.reconcile_repositories_with(|_, _| panic!("a rootless project has nothing to scan")),
             "and nothing changed"
         );
     }
@@ -4676,7 +4698,7 @@ mod tests {
 
             // A scan of the root finds only what is under it, which the
             // added repository never was.
-            assert!(!d.reconcile_repositories_with(crate::git::discover_repositories));
+            assert!(!d.reconcile_repositories_with(crate::git::discover_repositories_within));
             assert_eq!(repository_names(&d), vec!["orion", "notes"]);
         });
     }
@@ -5002,6 +5024,31 @@ root = "/somewhere"
             None => std::env::remove_var("ARGUS_CONFIG_DIR"),
         }
         out
+    }
+
+    #[test]
+    fn a_projects_own_scan_rules_decide_what_its_root_turns_up() {
+        let root = tempfile::tempdir().unwrap();
+        let kept = root.path().join("kept");
+        let vendored = root.path().join("vendor").join("thing");
+        std::fs::create_dir_all(&kept).unwrap();
+        std::fs::create_dir_all(&vendored).unwrap();
+        init_repo(&kept);
+        init_repo(&vendored);
+
+        let d = Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                root: Some(root.path().to_string_lossy().to_string()),
+                exclude: vec!["vendor".to_string()],
+                ..Default::default()
+            }],
+            agents: Vec::new(),
+            harnesses: Vec::new(),
+        });
+
+        assert_eq!(repository_names(&d), vec!["kept".to_string()]);
     }
 
     // --- reloading the config -----------------------------------------------

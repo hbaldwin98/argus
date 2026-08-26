@@ -56,6 +56,16 @@ pub struct ProjectConfig {
     /// have a branch of the same name without landing on each other.
     #[serde(default)]
     pub worktree_root: Option<String>,
+    /// Directories under `root` the scan must not walk into, beyond the
+    /// ones it always skips. A bare name matches anywhere under the root;
+    /// a `/`-separated path matches that one directory.
+    #[serde(default)]
+    pub exclude: Vec<String>,
+    /// Directories to walk into anyway — this beats both `exclude` and the
+    /// built-in skips, so a repository kept somewhere the defaults would
+    /// never look is still reachable by naming it.
+    #[serde(default)]
+    pub include: Vec<String>,
     /// Whether a checkout in this project may hold only one agent at a
     /// time. Sharing a checkout is allowed by default and merely shown;
     /// this turns it into a refusal, for repositories where two agents
