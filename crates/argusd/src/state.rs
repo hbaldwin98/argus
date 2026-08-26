@@ -136,6 +136,11 @@ struct Project {
     /// cloned into it, or removed from it, since.
     root: Option<PathBuf>,
     repositories: Vec<Repository>,
+    /// Where this project's worktrees are created, if it says. See
+    /// `worktree_dir`.
+    worktree_root: Option<PathBuf>,
+    /// Commands run in a worktree this project has just created, in order.
+    setup: Vec<String>,
 }
 
 struct Workspace {
@@ -292,6 +297,8 @@ impl Daemon {
                     name: p.name,
                     root,
                     repositories,
+                    worktree_root: p.worktree_root.as_deref().map(config::expand_home),
+                    setup: p.setup,
                 }
             })
             .collect();
@@ -1865,6 +1872,11 @@ impl Daemon {
                 name,
                 root: Some(expanded),
                 repositories,
+                // A project added at runtime is written to the config as a
+                // root and nothing else; worktree settings are something
+                // the user adds to the file by hand.
+                worktree_root: None,
+                setup: Vec::new(),
             });
         }
         self.broadcast_tree();
@@ -2124,13 +2136,13 @@ impl Daemon {
     ) -> anyhow::Result<()> {
         let branch = checked_branch_name(&branch)?;
 
-        let (repository_id, base_path, primary_path) = {
+        let context = {
             let inner = self.inner.lock().unwrap();
-            find_checkout_context(&inner.projects, base)
+            worktree_context(&inner.projects, base)
                 .ok_or_else(|| anyhow::anyhow!("no such checkout"))?
         };
-        let dest = worktree_dir(&primary_path, &branch)?;
-        let exists = crate::git::has_local_branch(&primary_path, &branch);
+        let dest = worktree_dir(&context.root, &branch)?;
+        let exists = crate::git::has_local_branch(&context.base, &branch);
 
         let mut command = crate::command::git();
         command.args(["worktree", "add"]);
@@ -2141,7 +2153,7 @@ impl Daemon {
         if exists {
             command.arg(&branch);
         }
-        let output = command.current_dir(&base_path).output().await?;
+        let output = command.current_dir(&context.base).output().await?;
         if !output.status.success() {
             anyhow::bail!(
                 "git worktree add failed: {}",
@@ -2152,11 +2164,11 @@ impl Daemon {
         let added = {
             let mut inner = self.inner.lock().unwrap();
             let id = CheckoutId(inner.ids.alloc());
-            find_repository(&mut inner.projects, repository_id).map(|r| {
+            find_repository(&mut inner.projects, context.repository).map(|r| {
                 r.checkouts.push(Checkout {
                     id,
                     name: branch,
-                    path: dest,
+                    path: dest.clone(),
                     primary: false,
                     panes: Vec::new(),
                     git: None,
@@ -2168,8 +2180,11 @@ impl Daemon {
             self.refresh_checkout_git(id);
         }
         self.refresh_branches();
+        // Broadcast before the setup commands run: they can take as long as
+        // an install takes, and the row is what the user asked for.
         self.broadcast_tree();
-        Ok(())
+
+        run_setup(&context.setup, &dest).await
     }
 
     /// Errors rather than `None`, so a stale id reaches the user as text.
@@ -2298,8 +2313,40 @@ fn checked_branch_name(raw: &str) -> anyhow::Result<String> {
     Ok(branch.to_string())
 }
 
-/// Where a new worktree for `branch` goes, under the worktrees root beside
-/// the repository's primary checkout.
+/// Runs a project's setup commands in a worktree that was just created,
+/// in order, stopping at the first that fails.
+///
+/// Parsed into arguments rather than handed to a shell, the way an editor
+/// command is: the daemon owns no console on Windows, a shell would be a
+/// second thing to configure, and the commands here are the user's own
+/// words either way. A failure is reported but the worktree is kept — a
+/// dependency install that did not work is a thing to fix in a directory
+/// that exists, not a reason to throw the branch away.
+async fn run_setup(commands: &[String], dir: &std::path::Path) -> anyhow::Result<()> {
+    for line in commands {
+        let argv = crate::editor::parse_command(line).unwrap_or_default();
+        let Some((program, args)) = argv.split_first() else {
+            continue;
+        };
+        let output = crate::command::quiet(program)
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .await;
+        let failed = match output {
+            Ok(output) if output.status.success() => continue,
+            Ok(output) => String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            Err(e) => e.to_string(),
+        };
+        tracing::warn!("setup command {line:?} failed in {}: {failed}", dir.display());
+        anyhow::bail!("the worktree is there, but setup command {line:?} failed: {failed}");
+    }
+    Ok(())
+}
+
+/// Where a new worktree for `branch` goes, under `root` — the project's
+/// configured worktree root for this repository, or the `.argus/worktrees`
+/// directory beside its primary checkout.
 ///
 /// The branch name is a user string that becomes a path here, so the
 /// components that would steer it out of that root are refused rather than
@@ -2307,7 +2354,7 @@ fn checked_branch_name(raw: &str) -> anyhow::Result<String> {
 /// path should. `..` climbs out, and `Path::join` throws the base away
 /// entirely when what it joins is rooted (`/tmp/x`, `C:\x`,
 /// `\\server\share`), which would put the worktree wherever the name said.
-fn worktree_dir(primary: &std::path::Path, branch: &str) -> anyhow::Result<PathBuf> {
+fn worktree_dir(root: &std::path::Path, branch: &str) -> anyhow::Result<PathBuf> {
     // A backslash separates directories on Windows and is an ordinary
     // character in a name everywhere else; refusing it keeps one branch
     // name from meaning two different paths.
@@ -2318,7 +2365,7 @@ fn worktree_dir(primary: &std::path::Path, branch: &str) -> anyhow::Result<PathB
     if rooted {
         anyhow::bail!("a branch name can't be a path: {branch}");
     }
-    Ok(primary.join(".argus").join("worktrees").join(branch))
+    Ok(root.join(branch))
 }
 
 fn find_checkout(projects: &mut [Project], id: CheckoutId) -> Option<&mut Checkout> {
@@ -2359,6 +2406,44 @@ fn find_checkout_context(
             let primary = r.checkouts.iter().find(|c| c.primary).unwrap_or(base);
             Some((r.id, base.path.clone(), primary.path.clone()))
         })
+}
+
+/// Everything creating a worktree needs to know about where it goes.
+struct WorktreeContext {
+    repository: RepositoryId,
+    /// The checkout whose HEAD a new branch is cut from, and where the
+    /// `git worktree add` runs.
+    base: PathBuf,
+    /// The directory worktrees for this repository are placed under.
+    root: PathBuf,
+    /// The project's setup commands, run in whatever is created.
+    setup: Vec<String>,
+}
+
+/// Where this repository's worktrees go: the project's configured root with
+/// a directory per repository under it, or `.argus/worktrees` beside the
+/// primary checkout when the project doesn't say.
+///
+/// A shared root needs the repository level — two repositories in one
+/// project routinely have a `main` or a `feat/x`, and without it the second
+/// one to ask would land on the first one's directory.
+fn worktree_context(projects: &[Project], id: CheckoutId) -> Option<WorktreeContext> {
+    projects.iter().find_map(|p| {
+        p.repositories.iter().find_map(|r| {
+            let base = r.checkouts.iter().find(|c| c.id == id)?;
+            let primary = r.checkouts.iter().find(|c| c.primary).unwrap_or(base);
+            let root = match &p.worktree_root {
+                Some(root) => root.join(&r.name),
+                None => primary.path.join(".argus").join("worktrees"),
+            };
+            Some(WorktreeContext {
+                repository: r.id,
+                base: base.path.clone(),
+                root,
+                setup: p.setup.clone(),
+            })
+        })
+    })
 }
 
 /// Prefers the checked-out branch name for a newly-discovered worktree —
@@ -2757,6 +2842,7 @@ mod tests {
                 root: None,
                 repos: vec![primary.to_string()],
                 workspace: None,
+                ..Default::default()
             }],
             agents: Vec::new(),
             harnesses: Vec::new(),
@@ -2771,6 +2857,7 @@ mod tests {
                 root: None,
                 repos: repositories.iter().map(|path| path.to_string()).collect(),
                 workspace: None,
+                ..Default::default()
             }],
             agents: Vec::new(),
             harnesses: Vec::new(),
@@ -3310,6 +3397,7 @@ mod tests {
                     second.to_string_lossy().to_string(),
                 ],
                 workspace: None,
+                ..Default::default()
             }],
             agents: vec![AgentConfig {
                 name: "claude".to_string(),
@@ -3689,6 +3777,7 @@ mod tests {
                 root: None,
                 repos: vec![dir.to_string_lossy().to_string()],
                 workspace: None,
+                ..Default::default()
             }],
             agents: vec![AgentConfig {
                 name: "claude".to_string(),
@@ -3825,6 +3914,7 @@ mod tests {
                 root: None,
                 repos: vec![configured],
                 workspace: None,
+                ..Default::default()
             }],
             agents: Vec::new(),
             harnesses: Vec::new(),
@@ -3855,6 +3945,7 @@ mod tests {
                 root: None,
                 repos: vec![dir.path().to_string_lossy().to_string()],
                 workspace: None,
+                ..Default::default()
             }],
             agents: Vec::new(),
             harnesses: Vec::new(),
@@ -3891,6 +3982,7 @@ mod tests {
                 root: Some(root.to_string_lossy().to_string()),
                 repos: repos.iter().map(|p| p.to_string()).collect(),
                 workspace: None,
+                ..Default::default()
             }],
             agents: Vec::new(),
             harnesses: Vec::new(),
@@ -4559,18 +4651,21 @@ root = "/somewhere"
                     root: None,
                     repos: vec!["/home-thing".to_string()],
                     workspace: None,
+                    ..Default::default()
                 },
                 ProjectConfig {
                     name: "day-job".to_string(),
                     root: None,
                     repos: vec!["/day-job".to_string()],
                     workspace: Some("work".to_string()),
+                    ..Default::default()
                 },
                 ProjectConfig {
                     name: "side".to_string(),
                     root: None,
                     repos: vec!["/side".to_string()],
                     workspace: Some("weekend".to_string()),
+                    ..Default::default()
                 },
             ],
             agents: Vec::new(),
@@ -4745,12 +4840,14 @@ root = "/somewhere"
                         root: None,
                         repos: vec![dir.path().to_string_lossy().to_string()],
                         workspace: None,
+                        ..Default::default()
                     },
                     ProjectConfig {
                         name: "elsewhere".to_string(),
                         root: None,
                         repos: vec![dir.path().to_string_lossy().to_string()],
                         workspace: Some("other".to_string()),
+                        ..Default::default()
                     },
                 ],
                 agents: Vec::new(),
@@ -4941,8 +5038,37 @@ root = "/somewhere"
     /// A real repo with one commit, and a daemon whose only checkout is it.
     fn daemon_on_a_repo() -> (tempfile::TempDir, Arc<Daemon>) {
         let dir = tempfile::tempdir().unwrap();
-        let repo = git2::Repository::init(dir.path()).unwrap();
-        std::fs::write(dir.path().join("a.txt"), "one\n").unwrap();
+        init_repo(dir.path());
+        let d = daemon_with_primary(&dir.path().to_string_lossy());
+        (dir, d)
+    }
+
+    /// The same repo, in a project that says where worktrees go and what to
+    /// run in one.
+    fn daemon_on_a_repo_with(
+        worktree_root: Option<&str>,
+        setup: &[&str],
+    ) -> (tempfile::TempDir, Arc<Daemon>) {
+        let dir = tempfile::tempdir().unwrap();
+        init_repo(dir.path());
+        let d = Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                repos: vec![dir.path().to_string_lossy().to_string()],
+                worktree_root: worktree_root.map(str::to_string),
+                setup: setup.iter().map(|s| s.to_string()).collect(),
+                ..Default::default()
+            }],
+            agents: Vec::new(),
+            harnesses: Vec::new(),
+        });
+        (dir, d)
+    }
+
+    fn init_repo(dir: &std::path::Path) {
+        let repo = git2::Repository::init(dir).unwrap();
+        std::fs::write(dir.join("a.txt"), "one\n").unwrap();
         let mut index = repo.index().unwrap();
         index.add_path(std::path::Path::new("a.txt")).unwrap();
         index.write().unwrap();
@@ -4953,9 +5079,6 @@ root = "/somewhere"
         drop(tree);
         drop(index);
         drop(repo);
-
-        let d = daemon_with_primary(&dir.path().to_string_lossy());
-        (dir, d)
     }
 
     fn head_of(path: &std::path::Path) -> String {
@@ -5244,6 +5367,63 @@ root = "/somewhere"
     }
 
     #[tokio::test]
+    async fn a_configured_worktree_root_is_where_worktrees_go() {
+        let elsewhere = tempfile::tempdir().unwrap();
+        let (dir, d) =
+            daemon_on_a_repo_with(Some(&elsewhere.path().to_string_lossy()), &[]);
+
+        d.create_worktree(only_checkout(&d), "over-there".to_string())
+            .await
+            .unwrap();
+
+        let made = PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[1].path);
+        let repo_name = dir.path().file_name().unwrap();
+        assert_eq!(
+            made,
+            elsewhere.path().join(repo_name).join("over-there"),
+            "one directory per repository under the root, so two repos can share a branch name"
+        );
+        assert!(!dir.path().join(".argus").exists(), "not the default root");
+    }
+
+    #[tokio::test]
+    async fn setup_commands_run_in_the_worktree_that_was_just_made() {
+        // `git tag` is a command every machine running these tests has, and
+        // it leaves something a test can read back.
+        let (_dir, d) = daemon_on_a_repo_with(None, &["git tag setup-ran"]);
+
+        d.create_worktree(only_checkout(&d), "with-setup".to_string())
+            .await
+            .unwrap();
+
+        let made = PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[1].path);
+        let repo = git2::Repository::open(&made).unwrap();
+        let tags = repo.tag_names(None).unwrap();
+        assert!(
+            tags.iter().flatten().any(|t| t == "setup-ran"),
+            "the setup command should have run in {}",
+            made.display()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_setup_command_that_fails_is_reported_without_taking_the_worktree_with_it() {
+        let (_dir, d) = daemon_on_a_repo_with(None, &["git not-a-git-command"]);
+
+        let err = d
+            .create_worktree(only_checkout(&d), "half-set-up".to_string())
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("not-a-git-command"), "got {err:?}");
+        let snapshot = d.snapshot();
+        let checkouts = &snapshot[0].repositories[0].checkouts;
+        assert_eq!(checkouts.len(), 2, "the worktree is still there to fix");
+        assert!(PathBuf::from(&checkouts[1].path).is_dir());
+    }
+
+    #[tokio::test]
     async fn a_branch_with_no_checkout_is_listed_on_its_repository() {
         let (dir, d) = daemon_on_a_repo();
         let checkout = only_checkout(&d);
@@ -5420,6 +5600,7 @@ root = "/somewhere"
                 root: None,
                 repos: vec![dir.to_string_lossy().to_string()],
                 workspace: None,
+                ..Default::default()
             }],
             agents: vec![AgentConfig {
                 name: "test-agent".to_string(),
@@ -5472,6 +5653,7 @@ root = "/somewhere"
                 root: None,
                 repos: vec![dir.to_string_lossy().to_string()],
                 workspace: None,
+                ..Default::default()
             }],
             agents: names
                 .iter()

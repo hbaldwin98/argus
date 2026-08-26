@@ -50,6 +50,18 @@ pub struct ProjectConfig {
     /// [`DEFAULT_WORKSPACE`].
     #[serde(default)]
     pub workspace: Option<String>,
+    /// Where worktrees Argus creates for this project's repositories go.
+    /// Absent keeps them under `<primary>/.argus/worktrees`; a directory
+    /// here holds one subdirectory per repository, so two repositories can
+    /// have a branch of the same name without landing on each other.
+    #[serde(default)]
+    pub worktree_root: Option<String>,
+    /// Commands to run in a worktree Argus has just created — installing
+    /// dependencies, seeding an untracked config file, whatever a fresh
+    /// checkout needs before it is worth opening. Each is parsed into
+    /// arguments the way the editor command is, and run without a shell.
+    #[serde(default)]
+    pub setup: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

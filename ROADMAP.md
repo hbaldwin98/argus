@@ -5,7 +5,6 @@ contract is in [`TARGET.md`](TARGET.md).
 
 ## P2: Repository Model
 
-- Add configurable worktree roots and setup hooks.
 - Show shared-checkout warnings and support optional exclusivity.
 - Replace or supplement the two-second poll with Git metadata watching.
 - Reload configuration without dropping running panes.

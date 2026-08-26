@@ -92,6 +92,8 @@ root = "~/src"
 name = "argus"
 repos = ["~/src/argus"]
 workspace = "work"
+worktree_root = "~/worktrees"
+setup = ["pnpm install"]
 
 [[agent]]
 name = "claude"
@@ -314,7 +316,12 @@ Git mutations use the `git` executable:
 - add a worktree, creating the branch unless it already exists;
 - force-remove a linked worktree and best-effort delete its branch.
 
-Argus-created worktrees live under `<primary>/.argus/worktrees/<branch>`; a branch name that is not
+A project may set `worktree_root`, which holds one directory per repository, so two repositories in
+one project can have a branch of the same name. Its `setup` commands run in a worktree Argus has
+just created, in order, parsed into arguments without a shell like the editor command; the row is
+broadcast before they run, and a failure is reported without removing the worktree.
+
+Argus-created worktrees live under `<primary>/.argus/worktrees/<branch>` by default; a branch name that is not
 a plain path component is refused before it becomes a directory, and a name starting with a dash is
 refused before it reaches a command line. Removing a worktree decides what git would refuse — a
 locked worktree, a path that is not a linked worktree of this repository — before killing the

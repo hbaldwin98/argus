@@ -399,13 +399,17 @@ baselines are retained under worktree-specific `refs/argus/review/...` refs. Arg
 `HEAD`, branch refs, the real index, or working files while capturing a review.
 
 Read-only Git operations use embedded libgit2. Branch switching and worktree creation/removal require
-the `git` executable. Argus-created worktrees are stored under:
+the `git` executable.
+
+Argus-created worktrees are stored under:
 
 ```text
 <primary-checkout>/.argus/worktrees/<branch>
 ```
 
-Add `/.argus/` to the repository's ignore rules if it is not already ignored.
+Add `/.argus/` to the repository's ignore rules if it is not already ignored. A project may set
+`worktree_root` to put them somewhere else instead — one directory per repository under it — and
+`setup` commands to run in each worktree Argus creates.
 
 ## Agent Harnesses
 
