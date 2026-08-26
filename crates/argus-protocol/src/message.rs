@@ -60,6 +60,17 @@ pub enum ClientMsg {
     /// from `CreateWorktree`, which puts the new branch in a directory of
     /// its own and leaves this one where it was.
     CreateBranch { checkout: CheckoutId, branch: String },
+    /// `git branch -d`: drop a local branch nothing is sitting on. Refused
+    /// while it holds commits no other branch has, because the row is the
+    /// only thing left pointing at them.
+    DeleteBranch { checkout: CheckoutId, branch: String },
+    /// `git fetch --all --prune`: bring the remote-tracking branches up to
+    /// date without touching the working tree, which is what makes the
+    /// remote's branches visible as rows.
+    Fetch { checkout: CheckoutId },
+    /// `git pull --ff-only`: move this checkout up to its upstream. Refused
+    /// by git itself where that would need a merge.
+    Pull { checkout: CheckoutId },
     /// Open `path` (repo-relative) in the user's editor as a pane.
     OpenInEditor {
         checkout: CheckoutId,

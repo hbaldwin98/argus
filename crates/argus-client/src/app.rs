@@ -247,27 +247,39 @@ impl Setting {
 }
 
 /// What a `ConfirmRemove` prompt is about to take away. A checkout's
-/// removal deletes its worktree and branch; the other two only stop
-/// showing something, leaving every file where it is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// removal deletes its worktree and branch, and a branch's deletes the
+/// branch; the other two only stop showing something, leaving every file
+/// where it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RemoveTarget {
     Checkout(CheckoutId),
     Repository(RepositoryId),
     Project(ProjectId),
+    /// A branch with no directory of its own. It carries the checkout git
+    /// will be run from, precisely because the branch hasn't got one.
+    Branch { checkout: CheckoutId, branch: String },
 }
 
 impl RemoveTarget {
-    fn message(self) -> ClientMsg {
+    fn message(&self) -> ClientMsg {
         match self {
-            RemoveTarget::Checkout(checkout) => ClientMsg::RemoveCheckout { checkout },
-            RemoveTarget::Repository(repository) => ClientMsg::RemoveRepository { repository },
-            RemoveTarget::Project(project) => ClientMsg::RemoveProject { project },
+            RemoveTarget::Checkout(checkout) => ClientMsg::RemoveCheckout {
+                checkout: *checkout,
+            },
+            RemoveTarget::Repository(repository) => ClientMsg::RemoveRepository {
+                repository: *repository,
+            },
+            RemoveTarget::Project(project) => ClientMsg::RemoveProject { project: *project },
+            RemoveTarget::Branch { checkout, branch } => ClientMsg::DeleteBranch {
+                checkout: *checkout,
+                branch: branch.clone(),
+            },
         }
     }
 
     /// Popup title and the line under the name — what the user is agreeing
-    /// to, which for two of the three is "nothing on disk".
-    pub fn wording(self) -> (&'static str, &'static str) {
+    /// to, which for two of the four is "nothing on disk".
+    pub fn wording(&self) -> (&'static str, &'static str) {
         match self {
             RemoveTarget::Checkout(_) => {
                 ("remove checkout?", "  — worktree, branch, and its panes")
@@ -276,6 +288,10 @@ impl RemoveTarget {
                 ("remove repository?", "  — from this panel only; files stay")
             }
             RemoveTarget::Project(_) => ("remove project?", "  — from this panel only; files stay"),
+            RemoveTarget::Branch { .. } => (
+                "delete branch?",
+                "  — the local branch only; the remote is untouched",
+            ),
         }
     }
 }
@@ -289,6 +305,37 @@ pub enum Prompt {
     Comment { anchor: Anchor, input: String },
     /// The editor command, typed rather than cycled — it is free text.
     EditorCommand { input: String },
+}
+
+/// One row of the checkouts column, as an index into the repository's own
+/// `checkouts` or `branches`. The two kinds interleave — the main branch
+/// leads the column whichever it turns out to be — so the column's order is
+/// [`App::checkout_rows`] rather than either list on its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckoutRow {
+    Checkout(usize),
+    Branch(usize),
+    /// A branch that exists on a remote and nowhere else — an index into
+    /// `remote_branches`, which holds them as `origin/feature`.
+    Remote(usize),
+}
+
+/// The branch a remote-tracking name would become locally:
+/// `origin/feature/x` → `feature/x`. Remote names have no slash in them,
+/// so the first one is the split.
+fn local_name(remote_branch: &str) -> Option<&str> {
+    remote_branch.split_once('/').map(|(_, rest)| rest)
+}
+
+/// Whether this checkout is the one sitting on `branch`. Its git status is
+/// the truth; the row's name stands in only until the first poll has been
+/// round.
+fn on_branch(c: &CheckoutInfo, branch: &str) -> bool {
+    c.git
+        .as_ref()
+        .and_then(|g| g.branch.as_deref())
+        .unwrap_or(&c.name)
+        == branch
 }
 
 pub struct App {
@@ -330,6 +377,10 @@ pub struct App {
     /// True when the projects column is collapsed to a thin strip. Stored
     /// both here (for the renderer) and on `settings` (so it persists).
     pub projects_collapsed: bool,
+    /// True while the checkouts column also lists the branches nothing is
+    /// sitting on. Off by default — the column is for what is running, and
+    /// the main branch is pinned to the top of it either way.
+    pub show_branches: bool,
     resizing_gutter: Option<usize>,
     pub picker: Option<Picker>,
     /// The directory browser, up in place of a prompt when a project or a
@@ -425,6 +476,7 @@ impl App {
             layout: Layout::default(),
             column_widths,
             projects_collapsed: settings.projects_collapsed,
+            show_branches: false,
             resizing_gutter: None,
             picker: None,
             dir_picker: None,
@@ -458,27 +510,82 @@ impl App {
     }
 
     pub fn current_checkout(&self) -> Option<&CheckoutInfo> {
-        self.current_repository()
-            .and_then(|r| r.checkouts.get(self.sel_checkout))
+        match self.checkout_rows().get(self.sel_checkout).copied()? {
+            CheckoutRow::Checkout(i) => self.current_repository()?.checkouts.get(i),
+            CheckoutRow::Branch(_) | CheckoutRow::Remote(_) => None,
+        }
     }
 
-    /// The checkouts column lists this repository's checkouts and then the
-    /// branches that have none, so a selection past the last checkout is a
-    /// branch row. Everything reached through `current_checkout` — panes,
-    /// review, spawning — is `None` there, which is what a branch with no
-    /// directory has to offer.
+    /// The checkouts column, in the order it is drawn.
+    ///
+    /// The main branch leads it either way — as the checkout sitting on it,
+    /// or as the offer of one — so that the branch everything is measured
+    /// against is always the row at the top. The remaining branches come
+    /// last and only while the column is expanded: a repository with forty
+    /// of them would otherwise bury the handful of checkouts that are the
+    /// point of the column.
+    pub fn checkout_rows(&self) -> Vec<CheckoutRow> {
+        let Some(r) = self.current_repository() else {
+            return Vec::new();
+        };
+        let default = r.default_branch.as_deref();
+        // `branches` only holds the ones no checkout has, so a hit here
+        // means the main branch has no directory and needs a row of its own.
+        let pinned = default.and_then(|d| r.branches.iter().position(|b| b == d));
+        let leads = |i: &usize| default.is_some_and(|d| on_branch(&r.checkouts[*i], d));
+
+        let mut rows: Vec<CheckoutRow> = pinned.map(CheckoutRow::Branch).into_iter().collect();
+        rows.extend((0..r.checkouts.len()).filter(leads).map(CheckoutRow::Checkout));
+        rows.extend(
+            (0..r.checkouts.len())
+                .filter(|i| !leads(i))
+                .map(CheckoutRow::Checkout),
+        );
+        if self.show_branches {
+            rows.extend(
+                (0..r.branches.len())
+                    .filter(|i| Some(*i) != pinned)
+                    .map(CheckoutRow::Branch),
+            );
+            // What a fetch turned up comes last: it is the furthest from
+            // being somewhere you can work.
+            rows.extend((0..r.remote_branches.len()).map(CheckoutRow::Remote));
+        }
+        rows
+    }
+
+    /// The selected row when it is a branch nothing is sitting on.
+    /// Everything reached through `current_checkout` — panes, review,
+    /// spawning — is `None` there, which is what a branch with no directory
+    /// has to offer.
+    /// The selected row when it is a branch nothing is sitting on, as the
+    /// branch it would be locally. A remote-only row answers here too: what
+    /// you switch to, or make a worktree of, is `feature`, and git is left
+    /// to notice that it comes from `origin/feature`.
     pub fn current_branch_row(&self) -> Option<&str> {
         let r = self.current_repository()?;
-        r.branches
-            .get(self.sel_checkout.checked_sub(r.checkouts.len())?)
-            .map(String::as_str)
+        match self.checkout_rows().get(self.sel_checkout).copied()? {
+            CheckoutRow::Branch(i) => r.branches.get(i).map(String::as_str),
+            CheckoutRow::Remote(i) => r.remote_branches.get(i).and_then(|b| local_name(b)),
+            CheckoutRow::Checkout(_) => None,
+        }
     }
 
-    /// Rows in the checkouts column: its checkouts, then its branches.
+    /// The same row as `origin/feature`, for the places that have to care
+    /// which side of the remote it is on.
+    pub fn current_remote_row(&self) -> Option<&str> {
+        match self.checkout_rows().get(self.sel_checkout).copied()? {
+            CheckoutRow::Remote(i) => self
+                .current_repository()?
+                .remote_branches
+                .get(i)
+                .map(String::as_str),
+            _ => None,
+        }
+    }
+
     pub fn checkout_row_count(&self) -> usize {
-        self.current_repository()
-            .map(|r| r.checkouts.len() + r.branches.len())
-            .unwrap_or(0)
+        self.checkout_rows().len()
     }
 
     /// The checkout a repository-wide action runs in: its primary one,
@@ -1340,6 +1447,9 @@ impl App {
             KeyCode::Char('t') => self.open_theme_picker(),
             KeyCode::Char('S') => self.open_settings(),
             KeyCode::Char('b') => self.open_branch_picker(),
+            KeyCode::Char('B') => self.toggle_branches(),
+            KeyCode::Char('F') => self.fetch(),
+            KeyCode::Char('P') => self.pull(),
             KeyCode::Char('f') => self.open_file_picker(),
             KeyCode::Char('R') | KeyCode::Tab => self.open_review(),
             KeyCode::Char('x') => self.kill_selected(),
@@ -1347,6 +1457,51 @@ impl App {
             KeyCode::Char('N') => self.jump_to_next_attention(),
             _ => {}
         }
+    }
+
+    /// Shows or hides the branches that have no checkout. The main branch
+    /// keeps its row either way, so the toggle is about the rest of them.
+    fn toggle_branches(&mut self) {
+        self.show_branches = !self.show_branches;
+        self.clamp();
+        self.report(if self.show_branches {
+            "showing every branch"
+        } else {
+            "showing checkouts only"
+        });
+    }
+
+    /// `F` brings the remotes up to date. Nothing about the working tree
+    /// changes, so it is safe to press from any row; what changes is which
+    /// branches the column can show you.
+    fn fetch(&mut self) {
+        let Some(checkout) = self.git_checkout() else {
+            self.report("no checkout to fetch in");
+            return;
+        };
+        let _ = self.out.send(ClientMsg::Fetch { checkout });
+        self.report("fetching…");
+    }
+
+    /// `P` moves the selected checkout up to its upstream, fast-forward
+    /// only. On a branch row that is the primary checkout, which is the
+    /// same checkout every other repository-wide action uses.
+    fn pull(&mut self) {
+        let Some(checkout) = self.git_checkout() else {
+            self.report("no checkout to pull into");
+            return;
+        };
+        let _ = self.out.send(ClientMsg::Pull { checkout });
+        self.report("pulling…");
+    }
+
+    /// The checkout a git command runs in: the selected one, or the
+    /// repository's primary when the selection is a branch with no
+    /// directory of its own.
+    fn git_checkout(&self) -> Option<CheckoutId> {
+        self.current_checkout()
+            .or_else(|| self.primary_checkout())
+            .map(|c| c.id)
     }
 
     fn open_theme_picker(&mut self) {
@@ -1663,6 +1818,28 @@ impl App {
             Focus::Repositories => {
                 let Some(r) = self.current_repository() else { return };
                 (RemoveTarget::Repository(r.id), r.name.clone())
+            }
+            // Deleting a remote branch is a push, which is not what `D`
+            // does anywhere else in this column.
+            Focus::Checkouts if self.current_remote_row().is_some() => {
+                self.report("that branch is on the remote; nothing here deletes it");
+                return;
+            }
+            // A branch row has no directory to remove, so `D` there is
+            // about the branch itself.
+            Focus::Checkouts if self.current_branch_row().is_some() => {
+                let branch = self.current_branch_row().unwrap().to_string();
+                let Some(checkout) = self.primary_checkout().map(|c| c.id) else {
+                    self.report("no checkout to delete the branch from");
+                    return;
+                };
+                (
+                    RemoveTarget::Branch {
+                        checkout,
+                        branch: branch.clone(),
+                    },
+                    branch,
+                )
             }
             Focus::Checkouts => {
                 let Some(c) = self.current_checkout() else { return };
@@ -2294,6 +2471,8 @@ mod tests {
             name: name.to_string(),
             checkouts,
             branches: Vec::new(),
+            default_branch: None,
+            remote_branches: Vec::new(),
         }
     }
 
@@ -2727,16 +2906,194 @@ second
 
     // --- branches without a checkout ----------------------------------------
 
-    /// The fixture tree with two branches nothing is sitting on, and the
-    /// selection parked on the first of them.
+    /// The fixture tree with two branches nothing is sitting on, the
+    /// column expanded to show them, and the selection parked on the first.
     fn harness_on_a_branch_row() -> Harness {
         let mut h = Harness::new();
         h.app.tree[0].repositories[0].branches =
             vec!["hotfix/tls".to_string(), "spike".to_string()];
         h.keys("ll"); // into the checkouts column
+        h.key(KeyCode::Char('B')); // and show the branches at all
         h.keys("jj"); // past both checkouts, onto the first branch
         h.sent();
         h
+    }
+
+    #[test]
+    fn the_branches_stay_out_of_the_column_until_they_are_asked_for() {
+        // The column is for what is running. Forty branches on top of two
+        // checkouts is the checkouts buried, not the branches surfaced.
+        let mut h = Harness::new();
+        h.app.tree[0].repositories[0].branches =
+            vec!["hotfix/tls".to_string(), "spike".to_string()];
+        h.keys("ll");
+
+        assert_eq!(h.app.checkout_row_count(), 2, "the two checkouts, only");
+        assert_eq!(h.app.current_branch_row(), None);
+
+        h.key(KeyCode::Char('B'));
+        assert_eq!(h.app.checkout_row_count(), 4);
+
+        h.key(KeyCode::Char('B'));
+        assert_eq!(h.app.checkout_row_count(), 2, "and away again");
+    }
+
+    #[test]
+    fn the_main_branch_leads_the_column_even_with_nothing_sitting_on_it() {
+        // Whatever it is named: this repository's is "trunk", and it is
+        // still the row everything else is measured against.
+        let mut h = Harness::new();
+        let r = &mut h.app.tree[0].repositories[0];
+        r.branches = vec!["spike".to_string(), "trunk".to_string()];
+        r.default_branch = Some("trunk".to_string());
+        h.keys("ll");
+
+        assert_eq!(
+            h.app.checkout_row_count(),
+            3,
+            "the main branch plus the two checkouts — and not `spike`"
+        );
+        assert_eq!(h.app.current_branch_row(), Some("trunk"), "at the top");
+        h.key(KeyCode::Char('j'));
+        assert_eq!(
+            h.app.current_checkout().map(|c| c.id),
+            Some(CheckoutId(10)),
+            "the checkouts follow it in their own order"
+        );
+    }
+
+    #[test]
+    fn the_checkout_sitting_on_the_main_branch_leads_the_column() {
+        // Same rule, the other way round: `feat` is the second checkout in
+        // the tree, but it is where main lives, so it is the first row.
+        let mut h = Harness::new();
+        h.app.tree[0].repositories[0].default_branch = Some("feat".to_string());
+        h.keys("ll");
+
+        assert_eq!(h.app.checkout_row_count(), 2, "no branch row is invented");
+        assert_eq!(h.app.current_checkout().map(|c| c.id), Some(CheckoutId(11)));
+    }
+
+    #[test]
+    fn d_on_a_branch_row_offers_to_delete_the_branch_itself() {
+        let mut h = harness_on_a_branch_row();
+
+        h.key(KeyCode::Char('D'));
+        match &h.app.prompt {
+            Some(Prompt::ConfirmRemove { target, label }) => {
+                assert_eq!(
+                    *target,
+                    RemoveTarget::Branch {
+                        checkout: CheckoutId(10),
+                        branch: "hotfix/tls".to_string(),
+                    },
+                    "the primary checkout is what git is run from"
+                );
+                assert_eq!(label, "hotfix/tls");
+            }
+            _ => panic!("expected a confirmation prompt"),
+        }
+        assert!(h.sent().is_empty(), "nothing sent before confirming");
+
+        h.key(KeyCode::Char('y'));
+        assert!(matches!(
+            h.sent().as_slice(),
+            [ClientMsg::DeleteBranch { checkout: CheckoutId(10), branch }] if branch == "hotfix/tls"
+        ));
+    }
+
+    /// The fixture tree with one branch that exists only on the remote,
+    /// the column expanded, and the selection parked on it.
+    fn harness_on_a_remote_branch_row() -> Harness {
+        let mut h = Harness::new();
+        h.app.tree[0].repositories[0].remote_branches = vec!["origin/from-elsewhere".to_string()];
+        h.keys("ll");
+        h.key(KeyCode::Char('B'));
+        h.keys("jj"); // past both checkouts
+        h.sent();
+        h
+    }
+
+    #[test]
+    fn a_remote_only_branch_is_offered_under_the_name_it_would_have_here() {
+        let mut h = harness_on_a_remote_branch_row();
+
+        assert_eq!(
+            h.app.current_remote_row(),
+            Some("origin/from-elsewhere"),
+            "the row says where it is"
+        );
+        assert_eq!(
+            h.app.current_branch_row(),
+            Some("from-elsewhere"),
+            "but what you would switch to is the branch, not the remote's name for it"
+        );
+
+        h.key(KeyCode::Enter);
+        assert!(
+            matches!(
+                h.sent().as_slice(),
+                [ClientMsg::SwitchBranch { checkout: CheckoutId(10), branch }]
+                    if branch == "from-elsewhere"
+            ),
+            "git makes the local branch off the remote one; we only name it"
+        );
+    }
+
+    #[test]
+    fn n_on_a_remote_branch_gives_it_a_worktree_under_its_local_name() {
+        let mut h = harness_on_a_remote_branch_row();
+
+        h.key(KeyCode::Char('n'));
+
+        assert!(matches!(
+            h.sent().as_slice(),
+            [ClientMsg::CreateWorktree { checkout: CheckoutId(10), branch }]
+                if branch == "from-elsewhere"
+        ));
+    }
+
+    #[test]
+    fn d_on_a_remote_branch_is_refused_rather_than_becoming_a_push() {
+        let mut h = harness_on_a_remote_branch_row();
+
+        h.key(KeyCode::Char('D'));
+
+        assert!(h.app.prompt.is_none(), "no confirmation is even offered");
+        assert!(h.sent().is_empty());
+        assert!(h.app.status.contains("remote"), "got {:?}", h.app.status);
+    }
+
+    #[test]
+    fn fetch_and_pull_run_in_the_selected_checkout() {
+        let mut h = Harness::new();
+        h.keys("llj"); // the linked worktree
+        h.sent();
+
+        h.key(KeyCode::Char('F'));
+        assert!(matches!(
+            h.sent().as_slice(),
+            [ClientMsg::Fetch { checkout: CheckoutId(11) }]
+        ));
+
+        h.key(KeyCode::Char('P'));
+        assert!(matches!(
+            h.sent().as_slice(),
+            [ClientMsg::Pull { checkout: CheckoutId(11) }]
+        ));
+    }
+
+    #[test]
+    fn a_fetch_from_a_branch_row_falls_back_to_the_primary_checkout() {
+        // A branch with no directory has nowhere of its own to run git.
+        let mut h = harness_on_a_remote_branch_row();
+
+        h.key(KeyCode::Char('F'));
+
+        assert!(matches!(
+            h.sent().as_slice(),
+            [ClientMsg::Fetch { checkout: CheckoutId(10) }]
+        ));
     }
 
     #[test]

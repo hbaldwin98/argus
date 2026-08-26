@@ -259,6 +259,8 @@ mod tests {
                 id: RepositoryId(2),
                 name: "repo".into(),
                 branches: Vec::new(),
+                default_branch: None,
+                remote_branches: Vec::new(),
                 checkouts: vec![CheckoutInfo {
                     id: CheckoutId(3),
                     name: "checkout".into(),
@@ -347,6 +349,8 @@ mod tests {
             id: RepositoryId(20),
             name: "second".into(),
             branches: Vec::new(),
+            default_branch: None,
+            remote_branches: Vec::new(),
             checkouts: vec![CheckoutInfo {
                 id: CheckoutId(21),
                 name: "main".into(),
