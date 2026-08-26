@@ -132,6 +132,10 @@ struct Repository {
     /// reason. `None` until the first refresh, and for a repository with no
     /// remote and no conventionally-named branch.
     default_branch: Option<String>,
+    /// Remote-tracking branches with no local branch of the same name, from
+    /// the same refresh. Only a fetch changes these, but reading them costs
+    /// what reading the local ones costs, so they ride along.
+    remote_branches: Vec<String>,
 }
 
 struct Project {
@@ -438,6 +442,7 @@ impl Daemon {
                         name: r.name.clone(),
                         branches: r.branches.clone(),
                         default_branch: r.default_branch.clone(),
+                        remote_branches: r.remote_branches.clone(),
                         checkouts: r
                             .checkouts
                             .iter()
@@ -1975,22 +1980,25 @@ impl Daemon {
                 .collect()
         };
 
-        let listed: Vec<(RepositoryId, Vec<String>, Option<String>)> = repositories
+        let listed: Vec<BranchState> = repositories
             .into_iter()
-            .map(|(id, path, occupied)| {
-                let free = crate::browse::branches(&path)
+            .map(|(id, path, occupied)| BranchState {
+                id,
+                free: crate::browse::branches(&path)
                     .into_iter()
                     .filter(|b| !occupied.contains(b))
-                    .collect();
-                (id, free, crate::git::default_branch(&path))
+                    .collect(),
+                default: crate::git::default_branch(&path),
+                remote: crate::git::remote_branches(&path),
             })
             .collect();
 
         let mut inner = self.inner.lock().unwrap();
-        for (id, branches, default) in listed {
-            if let Some(r) = find_repository(&mut inner.projects, id) {
-                r.branches = branches;
-                r.default_branch = default;
+        for state in listed {
+            if let Some(r) = find_repository(&mut inner.projects, state.id) {
+                r.branches = state.free;
+                r.default_branch = state.default;
+                r.remote_branches = state.remote;
             }
         }
     }
@@ -2434,6 +2442,34 @@ impl Daemon {
         self.git_switch(checkout, &["switch", "-c"], branch).await
     }
 
+    /// Brings every remote up to date without touching a working tree.
+    ///
+    /// This is what makes a remote's branches visible as rows, so the tree
+    /// is refreshed on the way out rather than waiting for the poll — a
+    /// fetch the user asked for that appears to have done nothing until two
+    /// seconds later reads as a fetch that failed.
+    pub async fn fetch(&self, checkout: CheckoutId) -> anyhow::Result<()> {
+        let path = self.checkout_path(checkout)?;
+        run_git(&path, &["fetch", "--all", "--prune"]).await?;
+        self.refresh_checkout_git(checkout);
+        self.refresh_branches();
+        self.broadcast_tree();
+        Ok(())
+    }
+
+    /// Moves one checkout up to its upstream, and only ever by
+    /// fast-forward: a merge that needs a decision is not something to make
+    /// on the user's behalf from a keypress, and git's refusal says so
+    /// better than a guess would.
+    pub async fn pull(&self, checkout: CheckoutId) -> anyhow::Result<()> {
+        let path = self.checkout_path(checkout)?;
+        run_git(&path, &["pull", "--ff-only"]).await?;
+        self.refresh_checkout_git(checkout);
+        self.refresh_branches();
+        self.broadcast_tree();
+        Ok(())
+    }
+
     /// Drops a local branch. Run from the checkout that asked, which is
     /// the repository's primary one whenever the row was a branch rather
     /// than a directory.
@@ -2534,6 +2570,13 @@ impl Daemon {
         let dest = worktree_dir(&context.root, &branch)?;
         let exists = crate::git::has_local_branch(&context.base, &branch);
 
+        // A branch that is only on a remote starts from there and tracks
+        // it, rather than being invented afresh off this checkout's HEAD —
+        // the row said `origin/x`, so the worktree has to be `origin/x`.
+        let upstream = (!exists)
+            .then(|| crate::git::remote_branch_for(&context.base, &branch))
+            .flatten();
+
         let mut command = crate::command::git();
         command.args(["worktree", "add"]);
         if !exists {
@@ -2542,6 +2585,8 @@ impl Daemon {
         command.arg(&dest);
         if exists {
             command.arg(&branch);
+        } else if let Some(upstream) = &upstream {
+            command.arg(upstream);
         }
         let output = command.current_dir(&context.base).output().await?;
         if !output.status.success() {
@@ -3205,6 +3250,37 @@ fn nothing_to_resume(code: Option<i32>, ran_for: Duration) -> bool {
     code != Some(0) && ran_for < RESUME_GRACE
 }
 
+/// What one branch refresh learned about a repository, carried across the
+/// gap where the daemon's lock is down.
+struct BranchState {
+    id: RepositoryId,
+    /// Local branches no checkout of it is sitting on.
+    free: Vec<String>,
+    default: Option<String>,
+    remote: Vec<String>,
+}
+
+/// Runs git in `dir` and turns a non-zero exit into git's own message.
+/// Anything the user is going to have to act on is already in there.
+async fn run_git(dir: &std::path::Path, args: &[&str]) -> anyhow::Result<()> {
+    let output = crate::command::git()
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .await?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let message = if stderr.trim().is_empty() {
+            stdout.trim()
+        } else {
+            stderr.trim()
+        };
+        anyhow::bail!("{message}");
+    }
+    Ok(())
+}
+
 /// A repository holding only its primary checkout, which is what both a
 /// configured path and a discovered one start as. Linked worktrees arrive
 /// afterwards, from `reconcile_worktrees`.
@@ -3219,6 +3295,7 @@ fn new_repository(ids: &mut IdGen, path: PathBuf, discovered: bool) -> Repositor
         discovered,
         branches: Vec::new(),
         default_branch: None,
+        remote_branches: Vec::new(),
         checkouts: vec![Checkout {
             id: CheckoutId(ids.alloc()),
             name,
@@ -5958,6 +6035,103 @@ root = "/somewhere"
         let repo = git2::Repository::open(dir).unwrap();
         let head = repo.head().unwrap().peel_to_commit().unwrap();
         repo.branch(name, &head, false).unwrap();
+    }
+
+    /// A second repository standing in for a remote, and the repo under
+    /// test wired to it. Git takes a path as a URL, forward slashes and all.
+    fn remote_holding(branch: &str) -> (tempfile::TempDir, String) {
+        let upstream = tempfile::tempdir().unwrap();
+        init_repo(upstream.path());
+        branch_off_head(upstream.path(), branch);
+        let url = upstream.path().to_string_lossy().replace('\\', "/");
+        (upstream, url)
+    }
+
+    #[tokio::test]
+    async fn a_fetch_brings_the_remote_only_branches_into_the_tree() {
+        let (dir, d) = daemon_on_a_repo();
+        let (_upstream, url) = remote_holding("from-elsewhere");
+        git2::Repository::open(dir.path())
+            .unwrap()
+            .remote("origin", &url)
+            .unwrap();
+
+        d.fetch(only_checkout(&d)).await.unwrap();
+
+        let remote = &d.snapshot()[0].repositories[0].remote_branches;
+        assert!(
+            remote.iter().any(|b| b == "origin/from-elsewhere"),
+            "the fetch is what makes the row appear; got {remote:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_worktree_for_a_remote_only_branch_starts_from_the_remote() {
+        // Otherwise the row said `origin/x` and gave you a branch of that
+        // name off this checkout's HEAD, which is not the work you asked
+        // for. The two repositories share no history, so the commit id is
+        // proof of where the branch came from.
+        let (dir, d) = daemon_on_a_repo();
+        let (upstream, url) = remote_holding("from-elsewhere");
+        git2::Repository::open(dir.path())
+            .unwrap()
+            .remote("origin", &url)
+            .unwrap();
+        d.fetch(only_checkout(&d)).await.unwrap();
+
+        d.create_worktree(only_checkout(&d), "from-elsewhere".to_string())
+            .await
+            .unwrap();
+
+        let made = PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[1].path);
+        assert_eq!(head_of(&made), "from-elsewhere");
+        let there = git2::Repository::open(upstream.path())
+            .unwrap()
+            .find_branch("from-elsewhere", git2::BranchType::Local)
+            .unwrap()
+            .get()
+            .peel_to_commit()
+            .unwrap()
+            .id();
+        let here = git2::Repository::open(&made)
+            .unwrap()
+            .head()
+            .unwrap()
+            .peel_to_commit()
+            .unwrap()
+            .id();
+        assert_eq!(here, there, "the worktree should hold the remote's work");
+    }
+
+    #[tokio::test]
+    async fn a_pull_fast_forwards_the_checkout_onto_its_upstream() {
+        let upstream = tempfile::tempdir().unwrap();
+        init_repo(upstream.path());
+        let url = upstream.path().to_string_lossy().replace('\\', "/");
+        let clone = tempfile::tempdir().unwrap();
+        let local = clone.path().join("work");
+        git2::build::RepoBuilder::new().clone(&url, &local).unwrap();
+        let d = daemon_with_primary(&local.to_string_lossy());
+
+        // Work lands upstream after the clone was taken.
+        let repo = git2::Repository::open(upstream.path()).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        let tree = head.tree().unwrap();
+        let sig = git2::Signature::now("t", "t@example.com").unwrap();
+        let moved = repo
+            .commit(Some("HEAD"), &sig, &sig, "later", &tree, &[&head])
+            .unwrap();
+
+        d.pull(only_checkout(&d)).await.unwrap();
+
+        let here = git2::Repository::open(&local)
+            .unwrap()
+            .head()
+            .unwrap()
+            .peel_to_commit()
+            .unwrap()
+            .id();
+        assert_eq!(here, moved);
     }
 
     #[tokio::test]

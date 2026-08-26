@@ -280,6 +280,9 @@ n  add one",
                 .filter_map(|row| match row {
                     CheckoutRow::Checkout(i) => r.checkouts.get(i).map(|c| checkout_item(c, th)),
                     CheckoutRow::Branch(i) => r.branches.get(i).map(|b| branch_item(b, th)),
+                    CheckoutRow::Remote(i) => {
+                        r.remote_branches.get(i).map(|b| remote_item(b, th))
+                    }
                 })
                 .collect()
         })
@@ -799,7 +802,7 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "j/k move  l open  N attention  s shell  a agent  b branch  f file  n add  D rm  q detach"
             }
             Focus::Checkouts => {
-                "j/k move  l open  N attention  b branch  B all  f file  R review  n worktree  D rm  q detach"
+                "j/k move  l open  b branch  B all  F fetch  P pull  f file  R review  n worktree  D rm  q detach"
             }
             _ => "j/k move  l open  N attention  s shell  a agent  b branch  f file  R review  x close  q detach",
         };
@@ -1432,6 +1435,22 @@ fn branch_item(name: &str, th: Theme) -> Item<'static> {
             Span::styled(name.to_string(), Style::default().fg(th.muted)),
         ],
         vec![Span::styled("no checkout", Style::default().fg(th.dim))],
+    )
+}
+
+/// A branch that only exists on a remote. Named as the remote names it,
+/// because the point of the row is that it isn't here yet.
+fn remote_item(name: &str, th: Theme) -> Item<'static> {
+    Item::new(
+        vec![
+            status_dot(None, th),
+            Span::styled("⇣ ", Style::default().fg(th.dim)),
+            Span::styled(name.to_string(), Style::default().fg(th.muted)),
+        ],
+        vec![Span::styled(
+            "on the remote only",
+            Style::default().fg(th.dim),
+        )],
     )
 }
 
@@ -2092,6 +2111,7 @@ mod tests {
                 name: "orion".to_string(),
                 branches: Vec::new(),
                 default_branch: None,
+                remote_branches: Vec::new(),
                 checkouts: vec![
                 CheckoutInfo {
                     id: CheckoutId(10),
@@ -2240,6 +2260,25 @@ mod tests {
         assert!(
             rendered[at + 1].contains("no checkout"),
             "a branch row has to say what it is: {:?}",
+            rendered[at + 1]
+        );
+    }
+
+    #[test]
+    fn a_remote_only_branch_says_that_is_where_it_is() {
+        let mut app = app_with_tree();
+        app.tree[0].repositories[0].remote_branches = vec!["origin/spike".to_string()];
+        app.show_branches = true;
+
+        // Wide, so the column has room for the row's own words.
+        let rendered = lines(&draw_at(&mut app, 200, 20));
+        let at = rendered
+            .iter()
+            .position(|l| l.contains("origin/spike"))
+            .expect("a branch the remote has should be reachable");
+        assert!(
+            rendered[at + 1].contains("on the remote only"),
+            "{:?}",
             rendered[at + 1]
         );
     }
@@ -2446,6 +2485,7 @@ mod tests {
             name: "satellite".to_string(),
             branches: Vec::new(),
             default_branch: None,
+            remote_branches: Vec::new(),
             checkouts: vec![CheckoutInfo {
                 id: CheckoutId(12),
                 name: "main".to_string(),

@@ -346,6 +346,30 @@ fn dispatch_branch_or_editor(
             });
             Ok(())
         }
+        ClientMsg::Fetch { checkout } => {
+            let daemon = daemon.clone();
+            let out_tx = out_tx.clone();
+            tokio::spawn(async move {
+                if let Err(e) = daemon.fetch(checkout).await {
+                    let _ = out_tx.send(ServerMsg::Error {
+                        message: e.to_string(),
+                    });
+                }
+            });
+            Ok(())
+        }
+        ClientMsg::Pull { checkout } => {
+            let daemon = daemon.clone();
+            let out_tx = out_tx.clone();
+            tokio::spawn(async move {
+                if let Err(e) = daemon.pull(checkout).await {
+                    let _ = out_tx.send(ServerMsg::Error {
+                        message: e.to_string(),
+                    });
+                }
+            });
+            Ok(())
+        }
         ClientMsg::DeleteBranch { checkout, branch } => {
             let daemon = daemon.clone();
             let out_tx = out_tx.clone();

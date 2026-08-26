@@ -137,6 +137,11 @@ pub struct RepositoryInfo {
     /// to be asked from.
     #[serde(default)]
     pub default_branch: Option<String>,
+    /// Remote-tracking branches with no local branch of the same name, as
+    /// `origin/feature`. What a fetch turns up: work that exists but isn't
+    /// here yet, and can be had by switching to it or giving it a worktree.
+    #[serde(default)]
+    pub remote_branches: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

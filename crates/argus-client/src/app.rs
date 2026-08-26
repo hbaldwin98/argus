@@ -315,6 +315,16 @@ pub enum Prompt {
 pub enum CheckoutRow {
     Checkout(usize),
     Branch(usize),
+    /// A branch that exists on a remote and nowhere else — an index into
+    /// `remote_branches`, which holds them as `origin/feature`.
+    Remote(usize),
+}
+
+/// The branch a remote-tracking name would become locally:
+/// `origin/feature/x` → `feature/x`. Remote names have no slash in them,
+/// so the first one is the split.
+fn local_name(remote_branch: &str) -> Option<&str> {
+    remote_branch.split_once('/').map(|(_, rest)| rest)
 }
 
 /// Whether this checkout is the one sitting on `branch`. Its git status is
@@ -502,7 +512,7 @@ impl App {
     pub fn current_checkout(&self) -> Option<&CheckoutInfo> {
         match self.checkout_rows().get(self.sel_checkout).copied()? {
             CheckoutRow::Checkout(i) => self.current_repository()?.checkouts.get(i),
-            CheckoutRow::Branch(_) => None,
+            CheckoutRow::Branch(_) | CheckoutRow::Remote(_) => None,
         }
     }
 
@@ -537,6 +547,9 @@ impl App {
                     .filter(|i| Some(*i) != pinned)
                     .map(CheckoutRow::Branch),
             );
+            // What a fetch turned up comes last: it is the furthest from
+            // being somewhere you can work.
+            rows.extend((0..r.remote_branches.len()).map(CheckoutRow::Remote));
         }
         rows
     }
@@ -545,12 +558,29 @@ impl App {
     /// Everything reached through `current_checkout` — panes, review,
     /// spawning — is `None` there, which is what a branch with no directory
     /// has to offer.
+    /// The selected row when it is a branch nothing is sitting on, as the
+    /// branch it would be locally. A remote-only row answers here too: what
+    /// you switch to, or make a worktree of, is `feature`, and git is left
+    /// to notice that it comes from `origin/feature`.
     pub fn current_branch_row(&self) -> Option<&str> {
+        let r = self.current_repository()?;
         match self.checkout_rows().get(self.sel_checkout).copied()? {
-            CheckoutRow::Branch(i) => {
-                self.current_repository()?.branches.get(i).map(String::as_str)
-            }
+            CheckoutRow::Branch(i) => r.branches.get(i).map(String::as_str),
+            CheckoutRow::Remote(i) => r.remote_branches.get(i).and_then(|b| local_name(b)),
             CheckoutRow::Checkout(_) => None,
+        }
+    }
+
+    /// The same row as `origin/feature`, for the places that have to care
+    /// which side of the remote it is on.
+    pub fn current_remote_row(&self) -> Option<&str> {
+        match self.checkout_rows().get(self.sel_checkout).copied()? {
+            CheckoutRow::Remote(i) => self
+                .current_repository()?
+                .remote_branches
+                .get(i)
+                .map(String::as_str),
+            _ => None,
         }
     }
 
@@ -1418,6 +1448,8 @@ impl App {
             KeyCode::Char('S') => self.open_settings(),
             KeyCode::Char('b') => self.open_branch_picker(),
             KeyCode::Char('B') => self.toggle_branches(),
+            KeyCode::Char('F') => self.fetch(),
+            KeyCode::Char('P') => self.pull(),
             KeyCode::Char('f') => self.open_file_picker(),
             KeyCode::Char('R') | KeyCode::Tab => self.open_review(),
             KeyCode::Char('x') => self.kill_selected(),
@@ -1437,6 +1469,39 @@ impl App {
         } else {
             "showing checkouts only"
         });
+    }
+
+    /// `F` brings the remotes up to date. Nothing about the working tree
+    /// changes, so it is safe to press from any row; what changes is which
+    /// branches the column can show you.
+    fn fetch(&mut self) {
+        let Some(checkout) = self.git_checkout() else {
+            self.report("no checkout to fetch in");
+            return;
+        };
+        let _ = self.out.send(ClientMsg::Fetch { checkout });
+        self.report("fetching…");
+    }
+
+    /// `P` moves the selected checkout up to its upstream, fast-forward
+    /// only. On a branch row that is the primary checkout, which is the
+    /// same checkout every other repository-wide action uses.
+    fn pull(&mut self) {
+        let Some(checkout) = self.git_checkout() else {
+            self.report("no checkout to pull into");
+            return;
+        };
+        let _ = self.out.send(ClientMsg::Pull { checkout });
+        self.report("pulling…");
+    }
+
+    /// The checkout a git command runs in: the selected one, or the
+    /// repository's primary when the selection is a branch with no
+    /// directory of its own.
+    fn git_checkout(&self) -> Option<CheckoutId> {
+        self.current_checkout()
+            .or_else(|| self.primary_checkout())
+            .map(|c| c.id)
     }
 
     fn open_theme_picker(&mut self) {
@@ -1753,6 +1818,12 @@ impl App {
             Focus::Repositories => {
                 let Some(r) = self.current_repository() else { return };
                 (RemoveTarget::Repository(r.id), r.name.clone())
+            }
+            // Deleting a remote branch is a push, which is not what `D`
+            // does anywhere else in this column.
+            Focus::Checkouts if self.current_remote_row().is_some() => {
+                self.report("that branch is on the remote; nothing here deletes it");
+                return;
             }
             // A branch row has no directory to remove, so `D` there is
             // about the branch itself.
@@ -2401,6 +2472,7 @@ mod tests {
             checkouts,
             branches: Vec::new(),
             default_branch: None,
+            remote_branches: Vec::new(),
         }
     }
 
@@ -2927,6 +2999,100 @@ second
         assert!(matches!(
             h.sent().as_slice(),
             [ClientMsg::DeleteBranch { checkout: CheckoutId(10), branch }] if branch == "hotfix/tls"
+        ));
+    }
+
+    /// The fixture tree with one branch that exists only on the remote,
+    /// the column expanded, and the selection parked on it.
+    fn harness_on_a_remote_branch_row() -> Harness {
+        let mut h = Harness::new();
+        h.app.tree[0].repositories[0].remote_branches = vec!["origin/from-elsewhere".to_string()];
+        h.keys("ll");
+        h.key(KeyCode::Char('B'));
+        h.keys("jj"); // past both checkouts
+        h.sent();
+        h
+    }
+
+    #[test]
+    fn a_remote_only_branch_is_offered_under_the_name_it_would_have_here() {
+        let mut h = harness_on_a_remote_branch_row();
+
+        assert_eq!(
+            h.app.current_remote_row(),
+            Some("origin/from-elsewhere"),
+            "the row says where it is"
+        );
+        assert_eq!(
+            h.app.current_branch_row(),
+            Some("from-elsewhere"),
+            "but what you would switch to is the branch, not the remote's name for it"
+        );
+
+        h.key(KeyCode::Enter);
+        assert!(
+            matches!(
+                h.sent().as_slice(),
+                [ClientMsg::SwitchBranch { checkout: CheckoutId(10), branch }]
+                    if branch == "from-elsewhere"
+            ),
+            "git makes the local branch off the remote one; we only name it"
+        );
+    }
+
+    #[test]
+    fn n_on_a_remote_branch_gives_it_a_worktree_under_its_local_name() {
+        let mut h = harness_on_a_remote_branch_row();
+
+        h.key(KeyCode::Char('n'));
+
+        assert!(matches!(
+            h.sent().as_slice(),
+            [ClientMsg::CreateWorktree { checkout: CheckoutId(10), branch }]
+                if branch == "from-elsewhere"
+        ));
+    }
+
+    #[test]
+    fn d_on_a_remote_branch_is_refused_rather_than_becoming_a_push() {
+        let mut h = harness_on_a_remote_branch_row();
+
+        h.key(KeyCode::Char('D'));
+
+        assert!(h.app.prompt.is_none(), "no confirmation is even offered");
+        assert!(h.sent().is_empty());
+        assert!(h.app.status.contains("remote"), "got {:?}", h.app.status);
+    }
+
+    #[test]
+    fn fetch_and_pull_run_in_the_selected_checkout() {
+        let mut h = Harness::new();
+        h.keys("llj"); // the linked worktree
+        h.sent();
+
+        h.key(KeyCode::Char('F'));
+        assert!(matches!(
+            h.sent().as_slice(),
+            [ClientMsg::Fetch { checkout: CheckoutId(11) }]
+        ));
+
+        h.key(KeyCode::Char('P'));
+        assert!(matches!(
+            h.sent().as_slice(),
+            [ClientMsg::Pull { checkout: CheckoutId(11) }]
+        ));
+    }
+
+    #[test]
+    fn a_fetch_from_a_branch_row_falls_back_to_the_primary_checkout() {
+        // A branch with no directory has nowhere of its own to run git.
+        let mut h = harness_on_a_remote_branch_row();
+
+        h.key(KeyCode::Char('F'));
+
+        assert!(matches!(
+            h.sent().as_slice(),
+            [ClientMsg::Fetch { checkout: CheckoutId(10) }]
         ));
     }
 

@@ -148,6 +148,47 @@ pub fn has_local_branch(path: &Path, branch: &str) -> bool {
         .is_ok()
 }
 
+/// Remote-tracking branches that have no local branch of the same name —
+/// the work that exists but isn't here yet.
+///
+/// `origin/HEAD` is a pointer at one of the others rather than a branch of
+/// its own, so it is left out.
+pub fn remote_branches(path: &Path) -> Vec<String> {
+    let Ok(repo) = git2::Repository::open(path) else {
+        return Vec::new();
+    };
+    let Ok(iter) = repo.branches(Some(git2::BranchType::Remote)) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = iter
+        .flatten()
+        .filter_map(|(b, _)| b.name().ok().flatten().map(str::to_string))
+        .filter(|n| !n.ends_with("/HEAD"))
+        .filter(|n| match local_name(n) {
+            Some(local) => repo.find_branch(local, git2::BranchType::Local).is_err(),
+            None => false,
+        })
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// The branch a remote-tracking name would become locally:
+/// `origin/feature/x` → `feature/x`. Remote names have no slash in them,
+/// so the first one is the split.
+pub fn local_name(remote_branch: &str) -> Option<&str> {
+    remote_branch.split_once('/').map(|(_, rest)| rest)
+}
+
+/// The remote-tracking branch that would supply `branch`, for a branch that
+/// exists on a remote and nowhere else.
+pub fn remote_branch_for(path: &Path, branch: &str) -> Option<String> {
+    remote_branches(path)
+        .into_iter()
+        .find(|r| local_name(r) == Some(branch))
+}
+
 /// The repository's main line of development, whatever it is called.
 ///
 /// `origin/HEAD` is the only thing that actually knows, so it is asked
