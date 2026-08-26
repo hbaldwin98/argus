@@ -18,19 +18,22 @@ const INSTRUCTIONS = process.env.ARGUS_INSTRUCTIONS;
 let rootSession;
 const children = new Set();
 
-// Several of these fire per turn, and the row only changes on a change.
-let lastSent;
+// Several of these fire per turn, and each row only changes on a change.
+const lastSent = new Map();
 let lastSessionSent;
 
-async function report(status, note = "") {
-  if (!BASE || !TOKEN) return;
+async function report(sessionID, status, note = "") {
+  if (!BASE || !TOKEN || !sessionID) return;
   const key = `${status} ${note}`;
-  if (key === lastSent) return;
-  lastSent = key;
+  if (key === lastSent.get(sessionID)) return;
+  lastSent.set(sessionID, key);
   try {
     await fetch(`${BASE}/status/${status}`, {
       method: "POST",
-      headers: { authorization: `Bearer ${TOKEN}` },
+      headers: {
+        authorization: `Bearer ${TOKEN}`,
+        "X-Argus-Session": sessionID,
+      },
       body: note,
       signal: AbortSignal.timeout(2000),
     });
@@ -47,7 +50,10 @@ async function reportSession(sessionID) {
   try {
     await fetch(`${BASE}/session`, {
       method: "POST",
-      headers: { authorization: `Bearer ${TOKEN}` },
+      headers: {
+        authorization: `Bearer ${TOKEN}`,
+        "X-Argus-Session": sessionID,
+      },
       body: sessionID,
       signal: AbortSignal.timeout(2000),
     });
@@ -86,7 +92,9 @@ export const ArgusStatus = async () => {
     "chat.message": async ({ sessionID }) => {
       if (ownedByPane(sessionID)) {
         await reportSession(rootSession);
-        await report("working");
+        await report(rootSession, "working");
+      } else {
+        await report(sessionID, "working");
       }
     },
 
@@ -101,10 +109,12 @@ export const ArgusStatus = async () => {
     event: async ({ event }) => {
       const type = event?.type;
       const props = event?.properties ?? {};
-      const sessionID = props.sessionID;
+      const sessionID = props.sessionID ?? props.info?.id;
 
-      if (props.info?.id && props.info?.parentID) {
+      if (type === "session.created" && props.info?.id && props.info?.parentID) {
         children.add(props.info.id);
+        await report(props.info.id, "working");
+        return;
       }
       // OpenCode keeps the same process and plugin when the user starts a
       // new conversation. A newly created root replaces the root this pane
@@ -113,11 +123,11 @@ export const ArgusStatus = async () => {
       if (type === "session.created" && props.info?.id && !props.info.parentID) {
         rootSession = props.info.id;
         await reportSession(rootSession);
-        await report("idle");
+        await report(rootSession, "idle");
         return;
       }
-      if (!ownedByPane(sessionID)) return;
-      await reportSession(rootSession);
+      const root = ownedByPane(sessionID);
+      if (root) await reportSession(rootSession);
 
       switch (type) {
         // The authoritative one. opencode drops the session to `idle` both
@@ -125,23 +135,30 @@ export const ArgusStatus = async () => {
         // a manually stopped agent from sitting at "working" forever.
         case "session.status": {
           const kind = props.status?.type ?? props.status;
-          if (kind === "idle") await report("idle");
-          else if (kind === "busy" || kind === "retry") await report("working");
+          if (kind === "idle") await report(sessionID ?? rootSession, "idle");
+          else if (kind === "busy" || kind === "retry") {
+            await report(sessionID ?? rootSession, "working");
+          }
           break;
         }
         case "session.idle":
-          await report("idle");
+          await report(sessionID ?? rootSession, "idle");
+          break;
+        case "session.deleted":
+          await report(sessionID ?? rootSession, "idle");
+          children.delete(sessionID);
+          lastSent.delete(sessionID);
           break;
         case "permission.asked":
         case "permission.updated":
-          await report("waiting", noteFrom(props));
+          await report(sessionID ?? rootSession, "waiting", noteFrom(props));
           break;
         case "permission.replied":
         case "session.compacted":
-          await report("working");
+          await report(sessionID ?? rootSession, "working");
           break;
         case "session.error":
-          await report("failed", noteFrom(props));
+          await report(sessionID ?? rootSession, "failed", noteFrom(props));
           break;
         default:
           break;

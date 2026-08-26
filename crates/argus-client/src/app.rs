@@ -15,6 +15,8 @@ use crate::theme::Theme;
 use crate::keys::{encode_key, is_leader};
 use crate::mouse::encode_mouse;
 
+const STATE_FLASH: std::time::Duration = std::time::Duration::from_millis(900);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
     Projects,
@@ -231,17 +233,19 @@ pub enum Setting {
     Editor,
     EditorCmd,
     Theme,
+    Notifications,
 }
 
 impl Setting {
     pub const ALL: &'static [Setting] =
-        &[Setting::Editor, Setting::EditorCmd, Setting::Theme];
+        &[Setting::Editor, Setting::EditorCmd, Setting::Theme, Setting::Notifications];
 
     pub fn label(self) -> &'static str {
         match self {
             Setting::Editor => "editor opens",
             Setting::EditorCmd => "editor command",
             Setting::Theme => "theme",
+            Setting::Notifications => "notifications",
         }
     }
 }
@@ -338,6 +342,66 @@ fn on_branch(c: &CheckoutInfo, branch: &str) -> bool {
         == branch
 }
 
+fn panes_in(tree: &[ProjectInfo]) -> impl Iterator<Item = &PaneInfo> {
+    tree.iter()
+        .flat_map(|project| project.repositories.iter())
+        .flat_map(|repository| repository.checkouts.iter())
+        .flat_map(|checkout| checkout.panes.iter())
+}
+
+fn state_rank(status: PaneStatus) -> u8 {
+    match status {
+        PaneStatus::Exited { code: Some(0) } => 0,
+        PaneStatus::Idle => 1,
+        PaneStatus::Done => 2,
+        PaneStatus::Working => 3,
+        PaneStatus::Exited { .. } => 4,
+        PaneStatus::NeedsReview => 5,
+        PaneStatus::Failed => 6,
+        PaneStatus::Waiting => 7,
+    }
+}
+
+fn state_word(status: PaneStatus) -> &'static str {
+    match status {
+        PaneStatus::Idle => "idle",
+        PaneStatus::Working => "working",
+        PaneStatus::Waiting => "needs attention",
+        PaneStatus::NeedsReview => "needs review",
+        PaneStatus::Done => "done",
+        PaneStatus::Failed => "failed",
+        PaneStatus::Exited { code: Some(0) } => "exited",
+        PaneStatus::Exited { .. } => "exited unsuccessfully",
+    }
+}
+
+/// The pane's effective state includes nested agents, because their parent
+/// row is the only selectable destination the client can flash or open.
+fn effective_state(pane: &PaneInfo) -> (PaneStatus, &str, Option<&str>) {
+    let mut effective = (pane.status, pane.title.as_str(), pane.note.as_deref());
+    for child in &pane.children {
+        if state_rank(child.status) > state_rank(effective.0) {
+            effective = (child.status, child.label.as_str(), child.note.as_deref());
+        }
+    }
+    effective
+}
+
+fn effective_label(pane: &PaneInfo, label: &str) -> String {
+    if label == pane.title {
+        label.to_string()
+    } else {
+        format!("{} / {label}", pane.title)
+    }
+}
+
+fn attention_of(pane: &PaneInfo) -> Option<(String, Option<String>)> {
+    let (status, label, note) = effective_state(pane);
+    status.needs_you().then(|| {
+        (effective_label(pane, label), note.map(str::to_string))
+    })
+}
+
 pub struct App {
     pub tree: Vec<ProjectInfo>,
     pub templates: Vec<String>,
@@ -415,6 +479,11 @@ pub struct App {
     /// The project a just-added repository belongs to, so the new row is
     /// the selected one when the tree carrying it arrives.
     pending_focus_new_repository: Option<ProjectId>,
+    /// A short shape-preserving highlight after an effective parent or child
+    /// state changes. The client derives this from consecutive snapshots;
+    /// the first snapshot on attach is only a baseline.
+    state_flashes: std::collections::HashMap<PaneId, std::time::Instant>,
+    bell_pending: bool,
     out: UnboundedSender<ClientMsg>,
 }
 
@@ -496,6 +565,8 @@ impl App {
             pending_focus_new_checkout: None,
             pending_focus_new_project: false,
             pending_focus_new_repository: None,
+            state_flashes: std::collections::HashMap::new(),
+            bell_pending: false,
             out,
         }
     }
@@ -778,6 +849,7 @@ impl App {
     }
 
     fn receive_tree(&mut self, tree: Vec<ProjectInfo>) {
+        self.record_state_transitions(&tree);
         let selected_pane = matches!(self.focus, Focus::Panes | Focus::PaneContent)
             .then(|| self.current_pane().map(|pane| pane.id))
             .flatten();
@@ -880,6 +952,63 @@ impl App {
                 }
             }
         }
+    }
+
+    fn record_state_transitions(&mut self, next: &[ProjectInfo]) {
+        if self.tree.is_empty() {
+            return;
+        }
+        let now = std::time::Instant::now();
+        let mut transitions = Vec::new();
+        for pane in panes_in(next) {
+            let Some(previous) = panes_in(&self.tree).find(|old| old.id == pane.id) else {
+                continue;
+            };
+            let before = effective_state(previous);
+            let after = effective_state(pane);
+            if before.0 != after.0 {
+                transitions.push((
+                    pane.id,
+                    before.0,
+                    after.0,
+                    effective_label(pane, after.1),
+                    after.2.map(str::to_string),
+                ));
+            }
+        }
+        for (pane, before, after, label, note) in transitions {
+            self.state_flashes.insert(pane, now + STATE_FLASH);
+            if after.needs_you() && (!before.needs_you() || before != after) {
+                let message = note
+                    .filter(|note| !note.is_empty())
+                    .map(|note| format!("{label}: {note}"))
+                    .unwrap_or_else(|| format!("{label}: {}", state_word(after)));
+                self.alert(message);
+                if self.settings.notifications == crate::settings::NotificationMode::Bell
+                    && self.input_pane() != Some(pane)
+                {
+                    self.bell_pending = true;
+                }
+            }
+        }
+    }
+
+    pub fn pane_is_flashing(&self, pane: PaneId) -> bool {
+        self.state_flashes
+            .get(&pane)
+            .is_some_and(|deadline| *deadline > std::time::Instant::now())
+    }
+
+    pub fn next_flash_deadline(&self) -> Option<std::time::Instant> {
+        self.state_flashes.values().copied().min()
+    }
+
+    pub fn expire_state_flashes(&mut self, now: std::time::Instant) {
+        self.state_flashes.retain(|_, deadline| *deadline > now);
+    }
+
+    pub fn take_bell(&mut self) -> bool {
+        std::mem::take(&mut self.bell_pending)
     }
 
     fn receive_pane_closed(&mut self, pane: PaneId, code: Option<i32>) {
@@ -1365,6 +1494,9 @@ impl App {
                 self.settings.theme = themes[next as usize].to_string();
                 self.theme = Theme::by_name(&self.settings.theme);
             }
+            Some(Setting::Notifications) => {
+                self.settings.notifications = self.settings.notifications.step(delta);
+            }
             None => return,
         }
         if self.persist_settings {
@@ -1618,16 +1750,16 @@ impl App {
                                 checkout
                                     .listed_panes()
                                     .enumerate()
-                                    .filter(|(_, pane)| pane.status.needs_you())
-                                    .map(move |(pane_index, pane)| {
-                                        (
+                                    .filter_map(move |(pane_index, pane)| {
+                                        let (label, note) = attention_of(pane)?;
+                                        Some((
                                             project_index,
                                             repository_index,
                                             checkout_index,
                                             pane_index,
-                                            pane.title.clone(),
-                                            pane.note.clone(),
-                                        )
+                                            label,
+                                            note,
+                                        ))
                                     })
                             })
                     })
@@ -4914,6 +5046,26 @@ second
     }
 
     #[test]
+    fn n_opens_the_parent_of_a_child_that_needs_attention() {
+        let mut h = Harness::new();
+        let mut updated = tree();
+        updated[0].repositories[0].checkouts[0].panes[1]
+            .children
+            .push(argus_protocol::ChildAgentInfo {
+                label: "database helper".to_string(),
+                status: PaneStatus::Waiting,
+                note: Some("needs credentials".to_string()),
+            });
+        h.app.on_server_msg(ServerMsg::Tree(updated));
+
+        h.key(KeyCode::Char('N'));
+
+        assert_eq!(h.app.column_pane(), Some(PaneId(101)));
+        assert!(h.app.status.contains("claude / database helper"));
+        assert!(h.app.status.contains("needs credentials"));
+    }
+
+    #[test]
     fn e_opens_the_file_under_the_cursor_at_its_line() {
         let mut h = review_with_agent();
         h.key(KeyCode::Char('j'));
@@ -5440,13 +5592,107 @@ second
         // There is no save button, so there is nothing to forget to press.
         let mut h = Harness::new();
         h.app.open_settings();
-        for _ in 0..crate::app::Setting::ALL.len() {
-            h.key(KeyCode::Char('j')); // down to the theme row, wherever it is
+        let theme_row = Setting::ALL
+            .iter()
+            .position(|setting| *setting == Setting::Theme)
+            .unwrap();
+        for _ in 0..theme_row {
+            h.key(KeyCode::Char('j'));
         }
         h.key(KeyCode::Char('l'));
 
         assert_eq!(h.app.theme, crate::theme::Theme::by_name(&h.app.settings.theme));
         assert_ne!(h.app.settings.theme, "mocha");
+    }
+
+    #[test]
+    fn the_initial_tree_is_a_quiet_baseline() {
+        let mut h = Harness::new();
+
+        assert!(h.app.next_flash_deadline().is_none());
+        assert!(!h.app.take_bell());
+        assert!(h.app.status.is_empty());
+    }
+
+    #[test]
+    fn every_state_has_an_accurate_notification_word() {
+        let cases = [
+            (PaneStatus::Idle, "idle"),
+            (PaneStatus::Working, "working"),
+            (PaneStatus::Waiting, "needs attention"),
+            (PaneStatus::NeedsReview, "needs review"),
+            (PaneStatus::Done, "done"),
+            (PaneStatus::Failed, "failed"),
+            (PaneStatus::Exited { code: Some(0) }, "exited"),
+            (
+                PaneStatus::Exited { code: Some(1) },
+                "exited unsuccessfully",
+            ),
+            (PaneStatus::Exited { code: None }, "exited unsuccessfully"),
+        ];
+
+        for (status, word) in cases {
+            assert_eq!(state_word(status), word, "for {status:?}");
+        }
+    }
+
+    #[test]
+    fn an_actionable_transition_flashes_and_explains_the_pane() {
+        let mut h = Harness::new();
+        let mut next = tree();
+        let pane = &mut next[0].repositories[0].checkouts[0].panes[1];
+        pane.status = PaneStatus::Waiting;
+        pane.note = Some("needs the staging password".to_string());
+
+        h.app.on_server_msg(ServerMsg::Tree(next));
+
+        assert!(h.app.pane_is_flashing(PaneId(101)));
+        assert!(h.app.status.contains("claude: needs the staging password"));
+        assert!(h.app.status_alert);
+        let deadline = h.app.next_flash_deadline().unwrap();
+        h.app.expire_state_flashes(deadline);
+        assert!(!h.app.pane_is_flashing(PaneId(101)));
+    }
+
+    #[test]
+    fn the_bell_is_opt_in_and_only_consumed_once() {
+        let mut h = Harness::new();
+        h.app.settings.notifications = crate::settings::NotificationMode::Bell;
+        let mut next = tree();
+        next[0].repositories[0].checkouts[0].panes[1].status = PaneStatus::NeedsReview;
+
+        h.app.on_server_msg(ServerMsg::Tree(next));
+
+        assert!(h.app.take_bell());
+        assert!(!h.app.take_bell());
+    }
+
+    #[test]
+    fn a_child_transition_flashes_and_names_its_parent() {
+        let mut h = Harness::new();
+        let mut working = tree();
+        let pane = &mut working[0].repositories[0].checkouts[0].panes[1];
+        pane.status = PaneStatus::Working;
+        pane.children.push(argus_protocol::ChildAgentInfo {
+            label: "test runner".to_string(),
+            status: PaneStatus::Working,
+            note: None,
+        });
+        h.app.on_server_msg(ServerMsg::Tree(working.clone()));
+        h.app.expire_state_flashes(std::time::Instant::now() + STATE_FLASH);
+        working[0].repositories[0].checkouts[0].panes[1].children[0].status =
+            PaneStatus::Failed;
+        working[0].repositories[0].checkouts[0].panes[1].children[0].note =
+            Some("unit tests failed".to_string());
+
+        h.app.on_server_msg(ServerMsg::Tree(working));
+
+        assert!(h.app.pane_is_flashing(PaneId(101)));
+        assert!(
+            h.app
+                .status
+                .contains("claude / test runner: unit tests failed")
+        );
     }
 
     #[test]

@@ -5,10 +5,7 @@ contract is in [`TARGET.md`](TARGET.md).
 
 ## P3: Agent State and Identity
 
-- Add transitions and notifications around explicit agent states.
-- Make hook events pane-specific and subagent-aware.
 - Define fallback state detection for unsupported harnesses.
-- Add accessible glyphs, transition flashes, and optional notifications.
 - Add daemon-arbitrated auto-titling.
 - Expand the template schema only after lifecycle and permission semantics are stable.
 

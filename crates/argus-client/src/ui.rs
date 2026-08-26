@@ -14,8 +14,8 @@
 //! - **Focus** is that elevation plus an accent border and title.
 //! - **Selection** is a raised bar with an accent `▌` marker, never reverse
 //!   video — reverse fights with the per-row status colors.
-//! - **State** is a single `●` dot in the row's status color (§8b), rolled
-//!   up to parents by the worst child.
+//! - **State** is a shape-distinct glyph in the row's status color (§8b),
+//!   rolled up to parents by the worst descendant.
 //! - **Rows are two lines**: what the thing is, then a dimmer line of what
 //!   is true about it. Packing both onto one line is what made the old
 //!   layout feel cramped.
@@ -304,14 +304,27 @@ n  add one",
         .map(|c| {
             c.listed_panes()
                 .flat_map(|p| {
+                    let flash = if app.pane_is_flashing(p.id) {
+                        Style::default().bg(th.sel_bg_dim)
+                    } else {
+                        Style::default()
+                    };
+                    let mut state = status_dot(Some(p.status), th);
+                    state.style = state.style.patch(flash);
                     let parent = Item::new(
                         vec![
-                            status_dot(Some(p.status), th),
+                            state,
                             Span::styled(
                                 p.title.clone(),
-                                Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+                                Style::default()
+                                    .fg(th.text)
+                                    .add_modifier(Modifier::BOLD)
+                                    .patch(flash),
                             ),
-                            Span::styled(exit_note(p.status), Style::default().fg(th.err)),
+                            Span::styled(
+                                exit_note(p.status),
+                                Style::default().fg(th.err).patch(flash),
+                            ),
                         ],
                         pane_detail(p, th),
                     )
@@ -872,7 +885,14 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
     };
 
     let width = (area.width * OVERLAY_FRACTION.0 / 100).max(20.min(area.width));
-    let height = (area.height * OVERLAY_FRACTION.1 / 100).max(6.min(area.height));
+    let minimum_height = if matches!(overlay, Overlay::Settings { .. }) {
+        // Two border rows and the panel's vertical padding sit outside the
+        // setting lines and the two-line save-location footer.
+        (Setting::ALL.len() as u16 * 3 + 7).min(area.height)
+    } else {
+        6.min(area.height)
+    };
+    let height = (area.height * OVERLAY_FRACTION.1 / 100).max(minimum_height);
     let popup = centered_rect(width, height, area);
 
     // The way out is in the title because a floating pane eats every other
@@ -938,6 +958,10 @@ fn render_settings(f: &mut Frame, app: &App, area: Rect, sel: usize, th: Theme) 
             Setting::Theme => (
                 app.settings.theme.clone(),
                 "colours for the whole client".to_string(),
+            ),
+            Setting::Notifications => (
+                app.settings.notifications.label().to_string(),
+                app.settings.notifications.detail().to_string(),
             ),
         };
 
@@ -1501,10 +1525,10 @@ fn git_spans(git: Option<&GitStatus>, th: Theme) -> Vec<Span<'static>> {
 }
 
 /// The exit code appended to a pane row, and only for a failure — a clean
-/// exit is already said by the green dot, and repeating it as text would
+/// exit is already said by the outlined box, and repeating it as text would
 /// make every finished pane shout.
-/// The detail line's word for a pane's state — the dot's meaning spelled
-/// out, since a color alone is a poor thing to have to learn.
+/// The detail line's word for a pane's state — the glyph's meaning spelled
+/// out as well.
 fn plural(n: usize, noun: &str) -> String {
     if n == 1 {
         format!("{n} {noun}")
@@ -1601,7 +1625,11 @@ fn exit_note(status: PaneStatus) -> String {
 }
 
 fn worst_pane_status(c: &argus_protocol::CheckoutInfo) -> Option<PaneStatus> {
-    c.listed_panes().map(|p| p.status).max_by_key(rank)
+    c.listed_panes()
+        .flat_map(|p| {
+            std::iter::once(p.status).chain(p.children.iter().map(|child| child.status))
+        })
+        .max_by_key(rank)
 }
 
 /// Parents show the most urgent child (DESIGN.md §8b). Active work outranks
@@ -1619,19 +1647,19 @@ fn rank(status: &PaneStatus) -> u8 {
     }
 }
 
-/// One dot carries the whole state signal (§8b). A hollow dot means there
-/// is nothing running to have a state; a filled one is colored by it.
+/// Shape carries the state signal (§8b); color reinforces it but is never
+/// the only distinction. Outlined shapes mark idle or cleanly exited work.
 fn status_dot(status: Option<PaneStatus>, th: Theme) -> Span<'static> {
     let (glyph, color) = match status {
-        None => ("○ ", th.dim),
-        Some(PaneStatus::Idle) => ("● ", th.ok),
+        None => ("· ", th.dim),
+        Some(PaneStatus::Idle) => ("○ ", th.ok),
         Some(PaneStatus::Working) => ("● ", th.warn),
-        Some(PaneStatus::Waiting) => ("● ", th.err),
+        Some(PaneStatus::Waiting) => ("▲ ", th.err),
         Some(PaneStatus::NeedsReview) => ("◆ ", th.err),
         Some(PaneStatus::Done) => ("✓ ", th.ok),
-        // Still running, unlike an exit — so a dot, not a cross.
-        Some(PaneStatus::Failed) => ("● ", th.err),
-        Some(PaneStatus::Exited { code: Some(0) }) => ("✓ ", th.dim),
+        // Still running, unlike an exit, so it is a block rather than a cross.
+        Some(PaneStatus::Failed) => ("■ ", th.err),
+        Some(PaneStatus::Exited { code: Some(0) }) => ("□ ", th.dim),
         Some(PaneStatus::Exited { .. }) => ("✗ ", th.err),
     };
     Span::styled(glyph, Style::default().fg(color))
@@ -1864,6 +1892,46 @@ mod tests {
     }
 
     #[test]
+    fn descendant_status_rolls_up_through_checkout_repository_and_project() {
+        let mut c = checkout_with(&[PaneStatus::Idle]);
+        c.panes[0].children.push(ChildAgentInfo {
+            label: "blocked child".to_string(),
+            status: PaneStatus::Waiting,
+            note: None,
+        });
+        let repository = RepositoryInfo {
+            id: RepositoryId(2),
+            name: "repo".to_string(),
+            branches: Vec::new(),
+            default_branch: None,
+            remote_branches: Vec::new(),
+            checkouts: vec![c],
+        };
+        let project = ProjectInfo {
+            id: ProjectId(3),
+            name: "project".to_string(),
+            repositories: vec![repository],
+        };
+
+        let checkout_status = worst_pane_status(&project.repositories[0].checkouts[0]);
+        let repository_status = project.repositories[0]
+            .checkouts
+            .iter()
+            .filter_map(worst_pane_status)
+            .max_by_key(rank);
+        let project_status = project
+            .repositories
+            .iter()
+            .flat_map(|repository| repository.checkouts.iter())
+            .filter_map(worst_pane_status)
+            .max_by_key(rank);
+
+        assert_eq!(checkout_status, Some(PaneStatus::Waiting));
+        assert_eq!(repository_status, Some(PaneStatus::Waiting));
+        assert_eq!(project_status, Some(PaneStatus::Waiting));
+    }
+
+    #[test]
     fn a_kill_with_no_exit_code_counts_as_a_failure() {
         assert_eq!(
             rank(&PaneStatus::Exited { code: None }),
@@ -1871,20 +1939,35 @@ mod tests {
         );
     }
 
-    // --- the status dot -----------------------------------------------------
+    // --- the status glyph ---------------------------------------------------
 
     #[test]
-    fn nothing_running_is_a_hollow_dot_and_anything_running_is_filled() {
+    fn every_status_has_a_shape_distinct_glyph() {
         let th = Theme::default();
-        assert_eq!(status_dot(None, th).content.trim(), "○");
-        for s in [PaneStatus::Idle, PaneStatus::Working, PaneStatus::Waiting] {
-            assert_eq!(status_dot(Some(s), th).content.trim(), "●", "for {s:?}");
+        let statuses = [
+            PaneStatus::Idle,
+            PaneStatus::Working,
+            PaneStatus::Waiting,
+            PaneStatus::NeedsReview,
+            PaneStatus::Done,
+            PaneStatus::Failed,
+            PaneStatus::Exited { code: Some(0) },
+            PaneStatus::Exited { code: Some(1) },
+        ];
+        let glyphs = statuses.map(|status| status_dot(Some(status), th).content.trim().to_string());
+
+        for (i, glyph) in glyphs.iter().enumerate() {
+            assert!(
+                !glyphs[..i].contains(glyph),
+                "{status:?} reuses glyph {glyph:?}",
+                status = statuses[i]
+            );
         }
-        assert_eq!(
-            status_dot(Some(PaneStatus::NeedsReview), th).content.trim(),
-            "◆"
+        assert_ne!(
+            status_dot(Some(PaneStatus::Done), th).content,
+            status_dot(Some(PaneStatus::Exited { code: Some(0) }), th).content,
+            "reviewed completion and process exit remain different states"
         );
-        assert_eq!(status_dot(Some(PaneStatus::Done), th).content.trim(), "✓");
     }
 
     #[test]
@@ -1907,11 +1990,11 @@ mod tests {
     }
 
     #[test]
-    fn exits_are_a_tick_or_a_cross_not_a_dot() {
+    fn exits_are_a_box_or_a_cross_not_a_live_state_glyph() {
         let th = Theme::default();
         let clean = status_dot(Some(PaneStatus::Exited { code: Some(0) }), th);
         let failed = status_dot(Some(PaneStatus::Exited { code: Some(1) }), th);
-        assert_eq!(clean.content.trim(), "✓");
+        assert_eq!(clean.content.trim(), "□");
         assert_eq!(failed.content.trim(), "✗");
         assert_eq!(failed.style.fg, Some(th.err), "a failure must be loud");
         assert_eq!(clean.style.fg, Some(th.dim), "a clean exit must not be");
@@ -2092,11 +2175,11 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_pane_is_still_running_so_it_keeps_its_dot() {
+    fn a_failed_pane_is_still_running_so_it_is_not_an_exit_cross() {
         // A cross would read as "this is over"; it isn't.
         let th = Theme::default();
         let failed = status_dot(Some(PaneStatus::Failed), th);
-        assert_eq!(failed.content.trim(), "\u{25cf}");
+        assert_eq!(failed.content.trim(), "■");
         assert_eq!(failed.style.fg, Some(th.err));
     }
 
@@ -2516,7 +2599,7 @@ mod tests {
                 app.layout.repositories.inner.y + ROW_HEIGHT,
             ))
             .unwrap();
-        assert_eq!(status.symbol(), "●");
+        assert_eq!(status.symbol(), "▲");
         assert_eq!(status.fg, app.theme.err);
     }
 

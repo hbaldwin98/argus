@@ -165,12 +165,13 @@ The directory may contain:
 | File | Purpose |
 |---|---|
 | `projects.toml` | Workspaces, projects, repositories, agent templates, and harnesses |
-| `client.toml` | Editor and theme preferences |
+| `client.toml` | Editor, theme, layout, and notification preferences |
 | `open-workspace` | Last daemon-wide workspace |
 | `excluded-repos` | Repositories removed from the panel with `D`, one path per line, so a root scan does not find them again |
 | `session.json` | Pane descriptions used for relaunch |
 
-Configuration is loaded when the daemon starts; live reload is not implemented.
+The daemon watches `projects.toml` and reloads project and agent-template changes. Existing panes
+keep the command and harness they started with.
 
 ### `projects.toml`
 
@@ -279,12 +280,15 @@ shipped.
 editor = "overlay"
 editor_cmd = ""
 theme = "mocha"
+notifications = "off"
 ```
 
 - `editor`: `overlay`, `column`, or `external`.
 - `editor_cmd`: an editor command, or empty to try `$VISUAL`, `$EDITOR`, then installed terminal
   editors.
 - `theme`: `mocha`, `macchiato`, `frappe`, or `latte`.
+- `notifications`: `off` or `bell`; `bell` rings for a background transition into waiting,
+  needs-review, or failed.
 
 The settings panel writes this file immediately. Editor commands currently split on whitespace, so
 quoted arguments and executable paths containing spaces are not yet supported.
@@ -343,7 +347,7 @@ connects instantly and a rebuild only pays for what changed.
 | `P` | Pull the selected checkout, fast-forward only |
 | `f` | Open the file picker |
 | `R` / Tab | Open review |
-| `N` | Jump to the next pane waiting, failed, or ready for review |
+| `N` | Jump to the next pane, or parent of a child, waiting, failed, or ready for review |
 | `S` | Open settings |
 | `t` | Choose a theme for this client process |
 | `x` | Kill the selected pane |

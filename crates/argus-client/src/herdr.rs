@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use argus_protocol::{PaneInfo, PaneKind, PaneStatus, ProjectInfo};
+use argus_protocol::{ChildAgentInfo, PaneInfo, PaneKind, PaneStatus, ProjectInfo};
 use tokio::process::Command;
 
 const SOURCE: &str = "argus:client";
@@ -58,17 +58,27 @@ fn aggregate(tree: &[ProjectInfo], workspace: &str) -> Option<Update> {
         .flat_map(|repository| &repository.checkouts)
         .flat_map(|checkout| &checkout.panes)
         .filter(|pane| pane.kind == PaneKind::Agent)
-        .filter(|pane| !matches!(pane.status, PaneStatus::Exited { .. }))
+        .flat_map(|pane| {
+            std::iter::once((pane, None)).chain(
+                pane.children
+                    .iter()
+                    .map(move |child| (pane, Some(child))),
+            )
+        })
+        .filter(|agent| !matches!(agent_status(*agent), PaneStatus::Exited { .. }))
         .collect::<Vec<_>>();
 
     if agents.is_empty() {
         return None;
     }
 
-    let attention = agents.iter().find_map(|pane| attention_message(pane));
+    let attention = agents.iter().find_map(|agent| attention_message(*agent));
     let state = if attention.is_some() {
         AgentState::Blocked
-    } else if agents.iter().any(|pane| pane.status == PaneStatus::Working) {
+    } else if agents
+        .iter()
+        .any(|agent| agent_status(*agent) == PaneStatus::Working)
+    {
         AgentState::Working
     } else {
         AgentState::Idle
@@ -81,23 +91,41 @@ fn aggregate(tree: &[ProjectInfo], workspace: &str) -> Option<Update> {
     })
 }
 
-fn attention_message(pane: &PaneInfo) -> Option<String> {
-    pane.status.needs_you().then(|| {
+fn agent_status(agent: (&PaneInfo, Option<&ChildAgentInfo>)) -> PaneStatus {
+    agent.1.map_or(agent.0.status, |child| child.status)
+}
+
+fn attention_message((pane, child): (&PaneInfo, Option<&ChildAgentInfo>)) -> Option<String> {
+    let status = child.map_or(pane.status, |child| child.status);
+    status.needs_you().then(|| {
+        let name = child.map_or_else(
+            || pane.title.clone(),
+            |child| format!("{} / {}", pane.title, child.label),
+        );
+        let note = match child {
+            Some(child) => child.note.as_deref(),
+            None => pane.note.as_deref(),
+        };
         format!(
             "{}: {}",
-            pane.title,
-            pane.note
-                .as_deref()
-                .unwrap_or_else(|| status_label(pane.status))
+            name,
+            note.unwrap_or_else(|| status_label(status))
         )
     })
 }
 
-fn group_agents(agents: Vec<&PaneInfo>) -> Vec<(&str, Vec<String>)> {
+fn group_agents<'a>(
+    agents: Vec<(&'a PaneInfo, Option<&'a ChildAgentInfo>)>,
+) -> Vec<(&'a str, Vec<String>)> {
     let mut groups: Vec<(&str, Vec<String>)> = Vec::new();
-    for pane in agents {
+    for (pane, child) in agents {
         let harness = pane.template.as_deref().unwrap_or("agent");
-        let entry = format!("{} [{}]", pane.title, status_label(pane.status));
+        let name = child.map_or_else(
+            || pane.title.clone(),
+            |child| format!("{} / {}", pane.title, child.label),
+        );
+        let status = child.map_or(pane.status, |child| child.status);
+        let entry = format!("{name} [{}]", status_label(status));
         if let Some((_, panes)) = groups.iter_mut().find(|(name, _)| *name == harness) {
             panes.push(entry);
         } else {
@@ -245,8 +273,8 @@ impl HerdrReporter {
 #[cfg(test)]
 mod tests {
     use argus_protocol::{
-        CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId, ProjectInfo,
-        RepositoryId, RepositoryInfo,
+        CheckoutId, CheckoutInfo, ChildAgentInfo, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId,
+        ProjectInfo, RepositoryId, RepositoryInfo,
     };
 
     use super::{AgentState, HerdrSync, Update};
@@ -376,6 +404,27 @@ mod tests {
                 state: AgentState::Blocked,
                 message: Some(
                     "work | blocked elsewhere: waiting | opencode: agent-0 [working], blocked elsewhere [waiting]"
+                        .into(),
+                ),
+            })
+        );
+    }
+
+    #[test]
+    fn child_statuses_affect_the_aggregate_and_name_the_parent_pane() {
+        let mut agents = tree(&[PaneStatus::Idle]);
+        agents[0].repositories[0].checkouts[0].panes[0].children = vec![ChildAgentInfo {
+            label: "database migration".into(),
+            status: PaneStatus::Waiting,
+            note: Some("needs production approval".into()),
+        }];
+
+        assert_eq!(
+            HerdrSync::default().next_update(&agents, "work"),
+            Some(Update::Report {
+                state: AgentState::Blocked,
+                message: Some(
+                    "work | agent-0 / database migration: needs production approval | opencode: agent-0 [idle], agent-0 / database migration [waiting]"
                         .into(),
                 ),
             })

@@ -22,6 +22,41 @@ pub enum EditorMode {
     External,
 }
 
+/// How this client calls attention to a background agent transition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NotificationMode {
+    Off,
+    Bell,
+}
+
+impl NotificationMode {
+    pub const ALL: &'static [NotificationMode] = &[NotificationMode::Off, NotificationMode::Bell];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            NotificationMode::Off => "off",
+            NotificationMode::Bell => "terminal bell",
+        }
+    }
+
+    pub fn detail(self) -> &'static str {
+        match self {
+            NotificationMode::Off => "state changes stay inside the Argus window",
+            NotificationMode::Bell => "ring when a background agent needs attention",
+        }
+    }
+
+    pub fn step(self, delta: isize) -> Self {
+        let here = NotificationMode::ALL
+            .iter()
+            .position(|mode| *mode == self)
+            .unwrap_or(0) as isize;
+        let n = NotificationMode::ALL.len() as isize;
+        NotificationMode::ALL[(((here + delta) % n + n) % n) as usize]
+    }
+}
+
 impl EditorMode {
     pub const ALL: &'static [EditorMode] =
         &[EditorMode::Overlay, EditorMode::Column, EditorMode::External];
@@ -79,6 +114,9 @@ pub struct Settings {
     /// width to the other four columns. Remembered so the layout a user
     /// settled on survives a restart.
     pub projects_collapsed: bool,
+    /// Audible attention signal. Off by default: attaching another client
+    /// must not make an existing session unexpectedly noisy.
+    pub notifications: NotificationMode,
 }
 
 impl Default for Settings {
@@ -89,6 +127,7 @@ impl Default for Settings {
             theme: crate::theme::THEMES[0].to_string(),
             column_widths: None,
             projects_collapsed: false,
+            notifications: NotificationMode::Off,
         }
     }
 }
@@ -188,6 +227,7 @@ mod tests {
             theme: "latte".to_string(),
             column_widths: Some(vec![12, 16, 18, 24, 46]),
             projects_collapsed: true,
+            notifications: NotificationMode::Bell,
         };
         let back: Settings = toml::from_str(&toml::to_string_pretty(&s).unwrap()).unwrap();
         assert_eq!(back, s);
@@ -200,6 +240,7 @@ mod tests {
         assert_eq!(s.theme, "frappe");
         assert_eq!(s.editor, Settings::default().editor);
         assert_eq!(s.column_widths, None);
+        assert_eq!(s.notifications, NotificationMode::Off);
     }
 
     #[test]
@@ -213,5 +254,12 @@ mod tests {
         // `load` turns this into a warning; the parse itself must not
         // quietly invent a mode.
         assert!(toml::from_str::<Settings>(r#"editor = "telepathy""#).is_err());
+    }
+
+    #[test]
+    fn notification_modes_cycle_in_both_directions() {
+        assert_eq!(NotificationMode::Off.step(1), NotificationMode::Bell);
+        assert_eq!(NotificationMode::Off.step(-1), NotificationMode::Bell);
+        assert_eq!(NotificationMode::Bell.step(1), NotificationMode::Off);
     }
 }

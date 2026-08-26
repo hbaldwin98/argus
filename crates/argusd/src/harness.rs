@@ -1528,7 +1528,7 @@ mod tests {
     }
 
     #[test]
-    fn a_new_opencode_conversation_clears_the_previous_sessions_failure() {
+    fn the_opencode_plugin_reports_root_and_child_sessions_without_transferring_ownership() {
         let dir = tempfile::tempdir().unwrap();
         let plugin = dir.path().join("argus-status.mjs");
         let runner = dir.path().join("runner.mjs");
@@ -1540,7 +1540,12 @@ import { pathToFileURL } from "node:url";
 
 const reports = [];
 globalThis.fetch = async (url, init) => {
-  reports.push({ status: url.split("/").at(-1), note: init.body });
+  reports.push({
+    url,
+    session: init.headers["X-Argus-Session"],
+    authorization: init.headers.authorization,
+    note: init.body,
+  });
 };
 
 const { ArgusStatus } = await import(pathToFileURL(process.argv[2]));
@@ -1555,7 +1560,19 @@ await hooks.event({
 await hooks.event({
   event: {
     type: "session.created",
-    properties: { sessionID: "child", info: { id: "child", parentID: "old" } },
+    properties: { info: { id: "child", parentID: "old" } },
+  },
+});
+await hooks.event({
+  event: {
+    type: "permission.asked",
+    properties: { sessionID: "child", title: "Approve child tool" },
+  },
+});
+await hooks.event({
+  event: {
+    type: "session.deleted",
+    properties: { info: { id: "child", parentID: "old" } },
   },
 });
 await hooks.event({
@@ -1590,12 +1607,15 @@ process.stdout.write(JSON.stringify(reports));
         assert_eq!(
             reports,
             json!([
-                { "status": "session", "note": "old" },
-                { "status": "working", "note": "" },
-                { "status": "failed", "note": "PermissionDenied" },
-                { "status": "session", "note": "new" },
-                { "status": "idle", "note": "" },
-                { "status": "working", "note": "" },
+                { "url": "http://127.0.0.1/pane/1/session", "session": "old", "authorization": "Bearer test-token", "note": "old" },
+                { "url": "http://127.0.0.1/pane/1/status/working", "session": "old", "authorization": "Bearer test-token", "note": "" },
+                { "url": "http://127.0.0.1/pane/1/status/failed", "session": "old", "authorization": "Bearer test-token", "note": "PermissionDenied" },
+                { "url": "http://127.0.0.1/pane/1/status/working", "session": "child", "authorization": "Bearer test-token", "note": "" },
+                { "url": "http://127.0.0.1/pane/1/status/waiting", "session": "child", "authorization": "Bearer test-token", "note": "Approve child tool" },
+                { "url": "http://127.0.0.1/pane/1/status/idle", "session": "child", "authorization": "Bearer test-token", "note": "" },
+                { "url": "http://127.0.0.1/pane/1/session", "session": "new", "authorization": "Bearer test-token", "note": "new" },
+                { "url": "http://127.0.0.1/pane/1/status/idle", "session": "new", "authorization": "Bearer test-token", "note": "" },
+                { "url": "http://127.0.0.1/pane/1/status/working", "session": "new", "authorization": "Bearer test-token", "note": "" },
             ])
         );
     }

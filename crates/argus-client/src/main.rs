@@ -16,7 +16,7 @@ mod theme;
 mod ui;
 
 use std::collections::HashSet;
-use std::io;
+use std::io::{self, Write};
 
 use argus_protocol::{read_msg, write_msg, ClientMsg, PaneId, ServerMsg};
 use crossterm::event::{
@@ -282,6 +282,7 @@ async fn run(
 
     loop {
         let burst_due = burst.deadline();
+        let flash_due = app.next_flash_deadline();
         tokio::select! {
             maybe_event = events.next() => {
                 if !take_event(&mut app, &mut burst, &mut redraw, &mut profile, maybe_event) {
@@ -291,6 +292,11 @@ async fn run(
             _ = sleep_until(burst_due), if burst_due.is_some() => {
                 flush_burst(&mut app, &mut burst);
                 redraw.input(std::time::Instant::now());
+            }
+            _ = sleep_until(flash_due), if flash_due.is_some() => {
+                app.expire_state_flashes(std::time::Instant::now());
+                redraw.changed();
+                redraw.due();
             }
             Some(msg) = out_rx.recv() => {
                 let now = std::time::Instant::now();
@@ -309,6 +315,9 @@ async fn run(
                 };
                 profile.record(profile::Counters::server_msg);
                 app.on_server_msg(msg);
+                if app.take_bell() {
+                    ring_bell(terminal)?;
+                }
                 if awaited {
                     redraw.input(now);
                 } else {
@@ -338,6 +347,11 @@ async fn run(
     release_herdr(&mut herdr);
 
     Ok(())
+}
+
+fn ring_bell(terminal: &mut Term) -> io::Result<()> {
+    terminal.backend_mut().write_all(b"\x07")?;
+    terminal.backend_mut().flush()
 }
 
 /// Sleeps until `deadline`, or forever when there is none — the select

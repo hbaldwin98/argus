@@ -183,9 +183,17 @@ outlive the state it explains.
 Automatic `Idle` events do not erase `Waiting`, `NeedsReview`, `Done`, or `Failed`; the agent reports
 `Working` when it resumes.
 
+Each client compares consecutive tree snapshots by pane ID. The first snapshot after attaching is a
+quiet baseline; a later effective-state change flashes the owning pane for 900 ms. Effective state
+includes child agents because their parent pane is the selectable place the operator can open.
+Transitions into `Waiting`, `NeedsReview`, or `Failed` also put the pane or child note in the status
+bar. A client can optionally ring its terminal bell for those transitions when the pane is not the
+active input pane; notifications default to off and are saved in `client.toml`.
+
 When the client itself runs in a Herdr pane, it reports one aggregate `argus` agent for the open
 workspace. Its message names that workspace and groups every live pane by harness, with each pane's
-name and status. `Waiting`, `NeedsReview`, and `Failed` map to Herdr's blocked state, `Done` maps to
+name and status, including child agents under the name `parent / child`. `Waiting`, `NeedsReview`,
+and `Failed` map to Herdr's blocked state, `Done` maps to
 idle, and `Working` takes precedence over idle; a blocked pane's name and note lead the message so
 truncation cannot hide why it needs attention. A newly attached client reports the tree it receives
 even when every agent was already running, and releases the report when it detaches. Herdr context
@@ -230,9 +238,9 @@ checkout and installs its harness in the new one. Codex is the exception: its tr
 contains only environment references and remains identical across boots. Hook files are checkout-wide;
 the helper uses or rebases to a valid `ARGUS_HOOK_URL`, so each process still routes to its own pane.
 The helper reads hook stdin once and can extract both a note and a configured
-top-level session ID key. Claude captures `session_id` at SessionStart. OpenCode's plugin reports only
-the root ID and reports again when a newly created root replaces it. AGY captures `conversationId`
-at PreInvocation.
+top-level session ID key. Claude captures `session_id` at SessionStart. OpenCode's plugin tags root
+and child reports with their session IDs; only a root claims `/session`, and a newly created root
+reports again when it replaces the previous root. AGY captures `conversationId` at PreInvocation.
 
 Every report carries the session it came from, and the pane belongs to one of them. The session that
 claims a pane first owns it; a report from any other session — a CLI started from inside the pane,
@@ -281,7 +289,7 @@ On daemon startup:
 - editors are skipped;
 - panes whose checkout no longer exists are skipped;
 - shells start as new default shells;
-- the saved status and note are reapplied after each pane starts;
+- the saved display title, status, and note are reapplied after each pane starts;
 - an agent with an ID starts with its harness's `resume_id` argv template expanded to that exact ID;
 - every identified pane resumes independently;
 - records without an ID retain broad `resume`; one legacy pane per checkout and harness claims it,

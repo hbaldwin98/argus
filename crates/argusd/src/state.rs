@@ -36,6 +36,10 @@ struct Pane {
     /// from inside the pane's own agent inherits the hook environment, so
     /// without this its every turn would rewrite its parent's row.
     children: Vec<ChildAgent>,
+    /// A hook won the race with session restoration, so saved metadata must
+    /// not overwrite what the newly started process already reported.
+    restore_status_reported: bool,
+    restore_title_reported: bool,
     /// Set while this pane is a conversation Argus asked a CLI to reopen,
     /// and it is too early to be sure it could. See [`Resumed`].
     resumed: Option<Resumed>,
@@ -54,6 +58,17 @@ struct ChildAgent {
     /// says so, and one whose parent finishes is cleared with the turn —
     /// this is for the child that dies without either happening.
     at: std::time::Instant,
+}
+
+/// Hook state reported after a process starts but before its pane enters the
+/// tree. Each kind keeps only its latest value, bounding this race mailbox
+/// regardless of how many hooks the starting process fires.
+#[derive(Default)]
+struct PendingStart {
+    harness_session_id: Option<String>,
+    status: Option<(PaneStatus, Option<String>)>,
+    title: Option<String>,
+    children: Vec<ChildAgent>,
 }
 
 /// How many children a pane lists. A parent fanning out dozens of one-shot
@@ -180,9 +195,9 @@ struct Inner {
 
 pub struct Daemon {
     inner: StdMutex<Inner>,
-    /// SessionStart can fire after the child is spawned but before its pane
-    /// is inserted into `inner`. Keep that first identity until insertion.
-    starting_agents: StdMutex<HashMap<PaneId, Option<String>>>,
+    /// Hooks can fire after the child is spawned but before its pane is
+    /// inserted into `inner`. Keep their latest bounded state until insertion.
+    starting_agents: StdMutex<HashMap<PaneId, PendingStart>>,
     tree_tx: broadcast::Sender<Vec<ProjectInfo>>,
     workspaces_tx: broadcast::Sender<Vec<WorkspaceInfo>>,
     /// Agent templates, replaceable: `reload_config` swaps them, and every
@@ -733,7 +748,7 @@ impl Daemon {
             };
             match result {
                 Ok(id) => {
-                    self.set_pane_hook_status(id, pane.status, pane.note.clone());
+                    self.restore_pane_metadata(id, pane);
                     restored += 1;
                 }
                 Err(e) => tracing::warn!(
@@ -749,6 +764,25 @@ impl Daemon {
         tracing::info!("restored {restored} of {} panes", wanted.len());
         self.broadcast_tree();
         true
+    }
+
+    fn restore_pane_metadata(&self, id: PaneId, saved: &crate::session::SessionPane) {
+        let mut inner = self.inner.lock().unwrap();
+        let Some(pane) = find_pane(&mut inner.projects, id) else {
+            return;
+        };
+        if !pane.restore_status_reported && !matches!(pane.status, PaneStatus::Exited { .. }) {
+            pane.status = saved.status;
+            pane.note = saved.note.clone();
+        }
+        if saved.kind == PaneKind::Agent
+            && saved.title != saved.template()
+            && !pane.restore_title_reported
+        {
+            pane.title = saved.title.clone();
+        }
+        pane.restore_status_reported = false;
+        pane.restore_title_reported = false;
     }
 
     /// The checkout at `path`, whatever workspace it is in.
@@ -797,6 +831,8 @@ impl Daemon {
                     template: None,
                     harness: None,
                     children: Vec::new(),
+                    restore_status_reported: false,
+                    restore_title_reported: false,
                     harness_session_id: None,
                     resumed: None,
                     runtime,
@@ -880,6 +916,8 @@ impl Daemon {
                     template: None,
                     harness: None,
                     children: Vec::new(),
+                    restore_status_reported: false,
+                    restore_title_reported: false,
                     harness_session_id: None,
                     resumed: None,
                     runtime,
@@ -940,7 +978,10 @@ impl Daemon {
             let mut inner = self.inner.lock().unwrap();
             PaneId(inner.ids.alloc())
         };
-        self.starting_agents.lock().unwrap().insert(id, None);
+        self.starting_agents
+            .lock()
+            .unwrap()
+            .insert(id, PendingStart::default());
 
         // Must land before the process starts: a harness reads its hook
         // config at its own startup, not on later file changes.
@@ -992,18 +1033,25 @@ impl Daemon {
             // and pane tree, so an arriving hook cannot slip between them.
             let mut starting = self.starting_agents.lock().unwrap();
             let mut inner = self.inner.lock().unwrap();
-            let reported_session_id = starting.remove(&id).flatten();
+            let pending = starting.remove(&id).unwrap_or_default();
+            let restore_status_reported = pending.status.is_some();
+            let restore_title_reported = pending.title.is_some();
             if let Some(c) = find_checkout(&mut inner.projects, checkout) {
                 c.panes.push(Pane {
                     id,
                     kind: PaneKind::Agent,
-                    title: template.name.clone(),
-                    status: PaneStatus::Idle,
-                    note: None,
+                    title: pending.title.unwrap_or_else(|| template.name.clone()),
+                    status: pending
+                        .status
+                        .as_ref()
+                        .map_or(PaneStatus::Idle, |(status, _)| *status),
+                    note: pending.status.and_then(|(_, note)| note),
                     template: Some(template.name.clone()),
                     harness: Some(harness.name.to_string()),
-                    children: Vec::new(),
-                    harness_session_id: reported_session_id.or(harness_session_id),
+                    children: pending.children,
+                    restore_status_reported,
+                    restore_title_reported,
+                    harness_session_id: pending.harness_session_id.or(harness_session_id),
                     resumed: resuming.then(|| Resumed {
                         checkout,
                         template: template.name.clone(),
@@ -1024,6 +1072,7 @@ impl Daemon {
                 Some((p, checkout)) => {
                     p.status = PaneStatus::Exited { code };
                     p.note = None;
+                    p.children.clear();
                     let restart = p.template.clone().map(|template| (checkout, template));
                     (
                         p.resumed
@@ -1338,23 +1387,33 @@ impl Daemon {
     /// event carries one, and `argus-hook status` typed by hand has none.
     fn child_of(&self, pane: PaneId, reporter: Option<&str>) -> Option<String> {
         let reporter = reporter?;
+        // Match insertion's lock order so ownership cannot change between
+        // checking the pre-spawn mailbox and checking the pane tree.
+        let starting = self.starting_agents.lock().unwrap();
         let inner = self.inner.lock().unwrap();
-        let owner = find_pane_ref(&inner.projects, pane)?
-            .harness_session_id
-            .as_deref()?;
+        let owner = find_pane_ref(&inner.projects, pane)
+            .and_then(|pane| pane.harness_session_id.as_deref())
+            .or_else(|| {
+                starting
+                    .get(&pane)
+                    .and_then(|pending| pending.harness_session_id.as_deref())
+            })?;
         (owner != reporter).then(|| reporter.to_string())
     }
 
     fn with_child(&self, pane: PaneId, session: &str, edit: impl FnOnce(&mut ChildAgent)) {
         {
+            let mut starting = self.starting_agents.lock().unwrap();
             let mut inner = self.inner.lock().unwrap();
-            let Some(p) = find_pane(&mut inner.projects, pane) else {
-                return;
+            let children = match find_pane(&mut inner.projects, pane) {
+                Some(p) if matches!(p.status, PaneStatus::Exited { .. }) => return,
+                Some(p) => &mut p.children,
+                None => match starting.get_mut(&pane) {
+                    Some(pending) => &mut pending.children,
+                    None => return,
+                },
             };
-            if matches!(p.status, PaneStatus::Exited { .. }) {
-                return;
-            }
-            match p.children.iter_mut().find(|c| c.session_id == session) {
+            match children.iter_mut().find(|c| c.session_id == session) {
                 Some(child) => {
                     child.at = std::time::Instant::now();
                     edit(child)
@@ -1368,15 +1427,15 @@ impl Daemon {
                         at: std::time::Instant::now(),
                     };
                     edit(&mut child);
-                    p.children.push(child);
-                    if p.children.len() > MAX_CHILDREN {
-                        p.children.remove(0);
+                    children.push(child);
+                    if children.len() > MAX_CHILDREN {
+                        children.remove(0);
                     }
                 }
             }
             // A child that has gone idle is no longer something running
             // under this row, so it stops being listed under it.
-            p.children
+            children
                 .retain(|c| !matches!(c.status, PaneStatus::Idle | PaneStatus::Exited { .. }));
         }
         self.broadcast_tree();
@@ -1427,9 +1486,13 @@ impl Daemon {
 
     fn set_pane_hook_status(&self, pane: PaneId, status: PaneStatus, note: Option<String>) {
         let changed = {
+            let mut starting = self.starting_agents.lock().unwrap();
             let mut inner = self.inner.lock().unwrap();
             match find_pane(&mut inner.projects, pane) {
                 Some(p) if !is_stale_report(p.status, status) => {
+                    if self.restoring.load(std::sync::atomic::Ordering::Relaxed) {
+                        p.restore_status_reported = true;
+                    }
                     // A note explains one state; the report that leaves that
                     // state takes it away with it, so a stale "waiting for
                     // the db password" can't sit under a working row.
@@ -1447,7 +1510,28 @@ impl Daemon {
                     }
                     changed
                 }
-                _ => false,
+                Some(_) => false,
+                None => match starting.get_mut(&pane) {
+                    Some(pending)
+                        if !is_stale_report(
+                            pending
+                                .status
+                                .as_ref()
+                                .map_or(PaneStatus::Idle, |(status, _)| *status),
+                            status,
+                        ) =>
+                    {
+                        let note = note.map(|n| clean_title(&n)).filter(|n| !n.is_empty());
+                        let mut changed = pending.status.as_ref() != Some(&(status, note.clone()));
+                        pending.status = Some((status, note));
+                        if status == PaneStatus::Idle && !pending.children.is_empty() {
+                            pending.children.clear();
+                            changed = true;
+                        }
+                        changed
+                    }
+                    _ => false,
+                },
             }
         };
         if changed {
@@ -1467,13 +1551,28 @@ impl Daemon {
             return;
         }
         let changed = {
+            let mut starting = self.starting_agents.lock().unwrap();
             let mut inner = self.inner.lock().unwrap();
             match find_pane(&mut inner.projects, pane) {
-                Some(p) if !matches!(p.status, PaneStatus::Exited { .. }) && p.title != title => {
-                    p.title = title;
-                    true
+                Some(p) if !matches!(p.status, PaneStatus::Exited { .. }) => {
+                    if self.restoring.load(std::sync::atomic::Ordering::Relaxed) {
+                        p.restore_title_reported = true;
+                    }
+                    if p.title != title {
+                        p.title = title;
+                        true
+                    } else {
+                        false
+                    }
                 }
-                _ => false,
+                Some(_) => false,
+                None => match starting.get_mut(&pane) {
+                    Some(pending) if pending.title.as_deref() != Some(&title) => {
+                        pending.title = Some(title);
+                        true
+                    }
+                    _ => false,
+                },
             }
         };
         if changed {
@@ -1495,9 +1594,16 @@ impl Daemon {
         };
         if self.child_of(pane, Some(&session_id)).is_some() {
             let working = {
+                let starting = self.starting_agents.lock().unwrap();
                 let inner = self.inner.lock().unwrap();
                 find_pane_ref(&inner.projects, pane)
-                    .is_some_and(|p| p.status == PaneStatus::Working)
+                    .map(|p| p.status)
+                    .or_else(|| {
+                        starting.get(&pane).and_then(|pending| {
+                            pending.status.as_ref().map(|(status, _)| *status)
+                        })
+                    })
+                    == Some(PaneStatus::Working)
             };
             if working {
                 self.with_child(pane, &session_id, |_| {});
@@ -1518,8 +1624,9 @@ impl Daemon {
                 }
                 Some(_) => false,
                 None => match starting.get_mut(&pane) {
-                    Some(pending) if pending.as_deref() != Some(&session_id) => {
-                        *pending = Some(session_id);
+                    Some(pending) if pending.harness_session_id.as_deref() != Some(&session_id) => {
+                        pending.harness_session_id = Some(session_id);
+                        pending.children.clear();
                         true
                     }
                     _ => false,
@@ -3565,6 +3672,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_exited_parent_forgets_its_children() {
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+        d.set_pane_session_id(pane, "parent-session");
+        d.report_pane_status(pane, Some("child-session"), PaneStatus::Waiting, None);
+        assert_eq!(pane_info(&d, pane).children.len(), 1);
+
+        d.clone().mark_pane_exited(pane, Some(1));
+
+        let info = pane_info(&d, pane);
+        assert_eq!(info.status, PaneStatus::Exited { code: Some(1) });
+        assert!(info.children.is_empty());
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
     async fn a_parent_going_idle_forgets_what_ran_under_it() {
         // Most children never report finishing: a subagent's harness fires
         // the parent's hooks, not its own. The turn ending is what says
@@ -4146,7 +4269,10 @@ mod tests {
     fn session_identity_arriving_before_pane_registration_is_retained() {
         let d = daemon_with_primary("/repo");
         let pane = PaneId(42);
-        d.starting_agents.lock().unwrap().insert(pane, None);
+        d.starting_agents
+            .lock()
+            .unwrap()
+            .insert(pane, PendingStart::default());
 
         d.set_pane_session_id(pane, "session-early");
 
@@ -4155,9 +4281,197 @@ mod tests {
                 .lock()
                 .unwrap()
                 .get(&pane)
-                .and_then(Option::as_deref),
+                .and_then(|pending| pending.harness_session_id.as_deref()),
             Some("session-early")
         );
+    }
+
+    #[test]
+    fn status_arriving_before_pane_registration_is_retained() {
+        let d = daemon_with_primary("/repo");
+        let pane = PaneId(42);
+        d.starting_agents
+            .lock()
+            .unwrap()
+            .insert(pane, PendingStart::default());
+
+        d.set_pane_hook_status(pane, PaneStatus::Working, None);
+        d.set_pane_hook_status(
+            pane,
+            PaneStatus::Waiting,
+            Some(" needs the database password ".to_string()),
+        );
+
+        assert_eq!(
+            d.starting_agents.lock().unwrap()[&pane].status,
+            Some((
+                PaneStatus::Waiting,
+                Some("needs the database password".to_string())
+            ))
+        );
+    }
+
+    #[test]
+    fn title_arriving_before_pane_registration_is_retained() {
+        let d = daemon_with_primary("/repo");
+        let pane = PaneId(42);
+        d.starting_agents
+            .lock()
+            .unwrap()
+            .insert(pane, PendingStart::default());
+
+        d.set_pane_title(pane, "starting up");
+        d.set_pane_title(pane, " fixing the pty deadlock ");
+
+        assert_eq!(
+            d.starting_agents.lock().unwrap()[&pane].title.as_deref(),
+            Some("fixing the pty deadlock")
+        );
+    }
+
+    #[test]
+    fn child_reports_arriving_before_pane_registration_are_retained() {
+        let d = daemon_with_primary("/repo");
+        let pane = PaneId(42);
+        d.starting_agents.lock().unwrap().insert(
+            pane,
+            PendingStart {
+                harness_session_id: Some("parent-session".to_string()),
+                ..PendingStart::default()
+            },
+        );
+
+        d.report_pane_status(
+            pane,
+            Some("child-session"),
+            PaneStatus::Waiting,
+            Some("needs permission".to_string()),
+        );
+        d.report_pane_title(pane, Some("child-session"), "test runner");
+
+        let starting = d.starting_agents.lock().unwrap();
+        let children = &starting[&pane].children;
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].label.as_deref(), Some("test runner"));
+        assert_eq!(children[0].status, PaneStatus::Waiting);
+        assert_eq!(children[0].note.as_deref(), Some("needs permission"));
+    }
+
+    #[test]
+    fn a_working_pending_parent_keeps_ownership_from_a_child() {
+        let d = daemon_with_primary("/repo");
+        let pane = PaneId(42);
+        d.starting_agents.lock().unwrap().insert(
+            pane,
+            PendingStart {
+                harness_session_id: Some("parent-session".to_string()),
+                status: Some((PaneStatus::Working, None)),
+                ..PendingStart::default()
+            },
+        );
+
+        d.set_pane_session_id(pane, "child-session");
+
+        let starting = d.starting_agents.lock().unwrap();
+        let pending = &starting[&pane];
+        assert_eq!(pending.harness_session_id.as_deref(), Some("parent-session"));
+        assert_eq!(pending.children.len(), 1);
+        assert_eq!(pending.children[0].session_id, "child-session");
+    }
+
+    #[test]
+    fn pending_parent_lifecycle_changes_clear_children() {
+        let d = daemon_with_primary("/repo");
+        let pane = PaneId(42);
+        d.starting_agents.lock().unwrap().insert(
+            pane,
+            PendingStart {
+                harness_session_id: Some("parent-session".to_string()),
+                ..PendingStart::default()
+            },
+        );
+        d.report_pane_status(
+            pane,
+            Some("child-session"),
+            PaneStatus::Working,
+            None,
+        );
+
+        d.report_pane_status(pane, Some("parent-session"), PaneStatus::Idle, None);
+        assert!(d.starting_agents.lock().unwrap()[&pane].children.is_empty());
+
+        d.report_pane_status(
+            pane,
+            Some("child-session"),
+            PaneStatus::Working,
+            None,
+        );
+        d.set_pane_session_id(pane, "replacement-session");
+        let starting = d.starting_agents.lock().unwrap();
+        let pending = &starting[&pane];
+        assert_eq!(
+            pending.harness_session_id.as_deref(),
+            Some("replacement-session")
+        );
+        assert!(pending.children.is_empty());
+    }
+
+    #[tokio::test]
+    async fn startup_reports_outrank_saved_restore_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+        d.restoring
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        d.set_pane_hook_status(pane, PaneStatus::Working, Some("new turn".to_string()));
+        d.set_pane_title(pane, "current task");
+
+        d.restore_pane_metadata(
+            pane,
+            &crate::session::SessionPane {
+                checkout_path: dir.path().to_path_buf(),
+                kind: PaneKind::Agent,
+                title: "previous task".to_string(),
+                template: Some("claude".to_string()),
+                status: PaneStatus::NeedsReview,
+                note: Some("old review".to_string()),
+                harness_session_id: None,
+                harness: None,
+            },
+        );
+        d.restoring
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+
+        let info = pane_info(&d, pane);
+        assert_eq!(info.title, "current task");
+        assert_eq!(info.status, PaneStatus::Working);
+        assert_eq!(info.note.as_deref(), Some("new turn"));
+        d.close_pane(pane).unwrap();
+    }
+
+    #[tokio::test]
+    async fn saved_restore_metadata_does_not_resurrect_an_exited_pane() {
+        let dir = tempfile::tempdir().unwrap();
+        let (d, pane) = daemon_with_an_agent(dir.path()).await;
+        d.mark_pane_exited(pane, Some(1));
+
+        d.restore_pane_metadata(
+            pane,
+            &crate::session::SessionPane {
+                checkout_path: dir.path().to_path_buf(),
+                kind: PaneKind::Agent,
+                title: "previous task".to_string(),
+                template: Some("claude".to_string()),
+                status: PaneStatus::Working,
+                note: Some("old turn".to_string()),
+                harness_session_id: None,
+                harness: None,
+            },
+        );
+
+        let info = pane_info(&d, pane);
+        assert_eq!(info.status, PaneStatus::Exited { code: Some(1) });
+        assert_eq!(info.note, None);
+        d.close_pane(pane).unwrap();
     }
 
     #[test]
@@ -6920,7 +7234,7 @@ root = "/somewhere"
     }
 
     #[tokio::test]
-    async fn an_agent_that_renamed_itself_still_comes_back() {
+    async fn an_agent_that_renamed_itself_restores_its_display_title() {
         // Regression: an agent is spawned by template name, and a renamed
         // pane's title is no longer that. Restoring by title would look up
         // a template called "fixing the pty deadlock" and find nothing.
@@ -6945,8 +7259,8 @@ root = "/somewhere"
             let panes = &d.snapshot()[0].repositories[0].checkouts[0].panes;
             assert_eq!(panes.len(), 1, "the renamed agent should be back");
             assert_eq!(
-                panes[0].title, "test-agent",
-                "back under its template's name"
+                panes[0].title, "fixing the pty deadlock",
+                "its separately persisted display title should be restored"
             );
 
             close_all(&d);
