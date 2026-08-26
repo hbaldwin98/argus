@@ -294,6 +294,16 @@ Read-only Git work uses `git2`. Every two seconds, on a blocking-pool thread, th
 On a slower ten-second beat it also rescans each project root for repositories added or removed
 there. Both run on the blocking pool.
 
+Alongside the poll, each repository's Git metadata is watched with `notify`, so a branch switch, a
+commit, or a worktree made in a shell reaches clients as it happens rather than up to a tick later.
+The watched set is the Git directory itself (HEAD, index, packed-refs) non-recursively plus its
+`refs` and `worktrees` trees — never `objects`, which takes thousands of writes per commit for a
+change `refs` reports once. Events are coalesced for 150 ms, then run the same reconcile, status,
+and branch refresh the poll runs. The watched set is re-derived on the ten-second beat, since
+repositories come and go. The poll is not replaced: editing a file touches nothing under `.git`, so
+dirty state and changed-file counts still come from the sweep, and a platform where the watch cannot
+start logs and leaves the poll on its own.
+
 Status is cached on the checkout rather than read when a tree is snapshotted. A snapshot is taken
 under the daemon's one lock, and a keystroke needs that same lock to find the pty it belongs to, so
 reading git there put several milliseconds of blocking I/O per checkout in front of the next key —

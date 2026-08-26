@@ -1609,6 +1609,73 @@ impl Daemon {
         }
     }
 
+    /// Watches every repository's Git metadata and refreshes the moment it
+    /// changes, so a branch switch, a commit, or a worktree made in a shell
+    /// lands in the tree when it happens instead of up to a tick later.
+    ///
+    /// The poll stays: editing a file touches nothing under `.git`, so
+    /// dirty state and changed-file counts still need the sweep. This is
+    /// the half that can be known exactly, done exactly.
+    pub fn start_git_watch(self: &Arc<Self>) {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let Some(mut watch) = crate::watch::GitWatch::new(move || {
+            let _ = tx.send(());
+        }) else {
+            return;
+        };
+
+        let daemon = self.clone();
+        tokio::spawn(async move {
+            let mut resync = tokio::time::interval(Duration::from_secs(10));
+            loop {
+                tokio::select! {
+                    // The set of repositories changes as roots are scanned
+                    // and projects come and go; re-derive it on the same
+                    // slow beat the scan itself runs on.
+                    _ = resync.tick() => watch.sync(&daemon.git_dirs()),
+                    event = rx.recv() => {
+                        if event.is_none() {
+                            break;
+                        }
+                        // One user action is many writes — a commit alone
+                        // moves HEAD, a ref, and the index — so let the
+                        // burst finish before reading any of it.
+                        tokio::time::sleep(Duration::from_millis(150)).await;
+                        while rx.try_recv().is_ok() {}
+
+                        let daemon = daemon.clone();
+                        let _ = tokio::task::spawn_blocking(move || {
+                            daemon.reconcile_worktrees();
+                            daemon.refresh_git_status();
+                            daemon.refresh_branches();
+                            let _ = daemon.tree_tx.send(daemon.snapshot());
+                        })
+                        .await;
+                    }
+                }
+            }
+        });
+    }
+
+    /// Every repository's Git directory, for the watch to follow. Uses the
+    /// primary checkout's, which is where linked worktrees keep theirs too.
+    fn git_dirs(&self) -> Vec<PathBuf> {
+        let primaries: Vec<PathBuf> = {
+            let inner = self.inner.lock().unwrap();
+            inner
+                .projects
+                .iter()
+                .flat_map(|p| p.repositories.iter())
+                .filter_map(|r| r.checkouts.iter().find(|c| c.primary))
+                .map(|c| c.path.clone())
+                .collect()
+        };
+        primaries
+            .iter()
+            .filter_map(|path| crate::git::git_dir(path))
+            .collect()
+    }
+
     /// Re-reads each repository's local branches and caches the ones no
     /// checkout is sitting on, so the tree can offer them as rows.
     ///
@@ -5483,6 +5550,41 @@ root = "/somewhere"
         let path = PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[1].path);
         assert!(path.starts_with(dir.path().join(".argus").join("worktrees")));
         assert_eq!(head_of(&path), "feat/nested");
+    }
+
+    #[tokio::test]
+    async fn a_branch_switch_made_outside_argus_reaches_clients_without_waiting_for_the_poll() {
+        // The poll would find this too, two seconds later. The watch is
+        // what makes an agent's commit or switch show up as it happens.
+        let (dir, d) = daemon_on_a_repo();
+        d.refresh_git_status();
+        let mut tree = d.subscribe_tree();
+        d.start_git_watch();
+        // The first sync of the watched set happens on the interval's
+        // immediate first tick; give it the scheduler slot it needs.
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        let repo = git2::Repository::open(dir.path()).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("from-a-shell", &head, false).unwrap();
+        repo.set_head("refs/heads/from-a-shell").unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let named = loop {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            assert!(!left.is_zero(), "the watch never reported the switch");
+            let Ok(Ok(projects)) = tokio::time::timeout(left, tree.recv()).await else {
+                panic!("the watch never reported the switch");
+            };
+            let name = projects[0].repositories[0].checkouts[0].name.clone();
+            if name == "from-a-shell" {
+                break name;
+            }
+        };
+
+        assert_eq!(named, "from-a-shell");
     }
 
     #[tokio::test]

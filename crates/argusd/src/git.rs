@@ -130,6 +130,15 @@ pub fn removal(primary: &Path, worktree: &Path) -> Removal {
     }
 }
 
+/// The Git directory of the repository at `path` — `<path>/.git` for an
+/// ordinary checkout, wherever it points for anything else. `None` if
+/// `path` is not a repository.
+pub fn git_dir(path: &Path) -> Option<PathBuf> {
+    git2::Repository::open(path)
+        .ok()
+        .map(|repo| repo.path().to_path_buf())
+}
+
 /// Whether the repository at `path` already has a local branch by this
 /// name — the difference between giving an existing branch a worktree and
 /// starting a new one.
