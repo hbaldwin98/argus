@@ -148,6 +148,41 @@ pub fn has_local_branch(path: &Path, branch: &str) -> bool {
         .is_ok()
 }
 
+/// The repository's main line of development, whatever it is called.
+///
+/// `origin/HEAD` is the only thing that actually knows, so it is asked
+/// first; the conventional names are a guess for the repositories where
+/// nobody ever set it, which includes everything made by `git init`.
+pub fn default_branch(path: &Path) -> Option<String> {
+    let repo = git2::Repository::open(path).ok()?;
+    remote_head(&repo).or_else(|| conventional(&repo))
+}
+
+fn remote_head(repo: &git2::Repository) -> Option<String> {
+    let remotes = repo.remotes().ok()?;
+    let names: Vec<&str> = remotes.iter().flatten().collect();
+    // `origin` when there is one, otherwise the only remote there is:
+    // picking between several would be a guess dressed up as an answer.
+    let remote = if names.contains(&"origin") {
+        "origin"
+    } else if let [only] = names[..] {
+        only
+    } else {
+        return None;
+    };
+    let head = repo.find_reference(&format!("refs/remotes/{remote}/HEAD")).ok()?;
+    head.symbolic_target()?
+        .strip_prefix(&format!("refs/remotes/{remote}/"))
+        .map(str::to_string)
+}
+
+fn conventional(repo: &git2::Repository) -> Option<String> {
+    ["main", "master"]
+        .into_iter()
+        .find(|b| repo.find_branch(b, git2::BranchType::Local).is_ok())
+        .map(str::to_string)
+}
+
 /// Worktree paths come back from libgit2 canonicalized while a configured
 /// one is however the user spelled it; compare them resolved.
 fn same_path(a: &Path, b: &Path) -> bool {
@@ -334,6 +369,55 @@ mod tests {
         repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[]).unwrap();
         drop(tree);
         repo
+    }
+
+    /// Renames whatever `init` called the first branch, so a test that
+    /// cares about the name doesn't depend on the machine's git config.
+    fn rename_head_branch(repo: &git2::Repository, to: &str) {
+        let from = repo.head().unwrap().shorthand().unwrap().to_string();
+        repo.find_branch(&from, git2::BranchType::Local)
+            .unwrap()
+            .rename(to, true)
+            .unwrap();
+    }
+
+    #[test]
+    fn origin_head_names_the_main_branch_whatever_it_is_called() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = repo_with_a_commit(dir.path());
+        rename_head_branch(&repo, "trunk");
+        repo.remote("origin", "https://example.invalid/x.git").unwrap();
+        repo.reference_symbolic(
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/trunk",
+            true,
+            "test",
+        )
+        .unwrap();
+
+        assert_eq!(default_branch(dir.path()).as_deref(), Some("trunk"));
+    }
+
+    #[test]
+    fn without_a_remote_head_the_conventional_name_is_the_guess() {
+        // `git init` never sets origin/HEAD, and every repository made that
+        // way would otherwise have no main branch at all.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = repo_with_a_commit(dir.path());
+        rename_head_branch(&repo, "wip");
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("main", &head, false).unwrap();
+
+        assert_eq!(default_branch(dir.path()).as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn a_repository_with_neither_admits_it_rather_than_guessing() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = repo_with_a_commit(dir.path());
+        rename_head_branch(&repo, "wip");
+
+        assert_eq!(default_branch(dir.path()), None);
     }
 
     #[test]

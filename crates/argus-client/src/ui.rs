@@ -28,7 +28,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget, Wrap};
 use ratatui::Frame;
 
-use crate::app::{App, Focus, Overlay, Panel, PickerKind, Prompt, Setting};
+use crate::app::{App, CheckoutRow, Focus, Overlay, Panel, PickerKind, Prompt, Setting};
 use crate::dirpicker::DirRow;
 use crate::grid::Grid;
 use argus_protocol::CursorShape;
@@ -270,77 +270,17 @@ n  add one",
         th,
     );
 
+    // The column's order is the app's, not either list's: the main branch
+    // leads it whether it has a directory or not.
     let checkout_rows: Vec<Item> = app
         .current_repository()
         .map(|r| {
-            r.checkouts.iter().map(|c| {
-                    // A checkout is usually sitting on the branch it's named
-                    // after; repeating it ("master master") says nothing.
-                    // Show the branch only when it actually differs.
-                    let mut detail = git_spans_unless_branch_is(c.git.as_ref(), &c.name, th);
-                    if detail.is_empty() {
-                        detail.push(Span::styled(
-                            if c.primary { "primary" } else { "worktree" },
-                            Style::default().fg(th.dim),
-                        ));
-                    }
-                    // Two agents in one directory is allowed, but it is
-                    // never something to find out from the diff later. The
-                    // glyph carries it where the column is too narrow for
-                    // the words, which is most columns.
-                    let agents = c
-                        .listed_panes()
-                        .filter(|p| p.kind == argus_protocol::PaneKind::Agent)
-                        .count();
-                    let shared = agents > 1;
-                    if shared {
-                        detail.push(Span::styled("  ", Style::default()));
-                        detail.push(Span::styled(
-                            format!("shared by {agents}"),
-                            Style::default().fg(th.warn),
-                        ));
-                    }
-                    Item::new(
-                        vec![
-                            status_dot(worst_pane_status(c), th),
-                            Span::styled(
-                                format!("{} ", if c.primary { "⌂" } else { "⧉" }),
-                                Style::default().fg(if c.primary { th.muted } else { th.dim }),
-                            ),
-                            Span::styled(
-                                c.name.clone(),
-                                Style::default().fg(th.text).add_modifier(Modifier::BOLD),
-                            ),
-                            Span::styled(
-                                if shared { " ⚠" } else { "" },
-                                Style::default().fg(th.warn),
-                            ),
-                        ],
-                        detail,
-                    )
-                    .badged(if c.listed_panes().next().is_none() {
-                        Vec::new()
-                    } else {
-                        vec![Span::styled(
-                            format!("{} ▣", c.listed_panes().count()),
-                            Style::default().fg(th.dim),
-                        )]
-                    })
+            app.checkout_rows()
+                .into_iter()
+                .filter_map(|row| match row {
+                    CheckoutRow::Checkout(i) => r.checkouts.get(i).map(|c| checkout_item(c, th)),
+                    CheckoutRow::Branch(i) => r.branches.get(i).map(|b| branch_item(b, th)),
                 })
-                // Branches with no checkout of their own, after the
-                // checkouts they could become: a branch you cannot see is
-                // one you forget you left behind (TARGET.md §Repository and
-                // checkout model).
-                .chain(r.branches.iter().map(|b| {
-                    Item::new(
-                        vec![
-                            status_dot(None, th),
-                            Span::styled("⌥ ", Style::default().fg(th.dim)),
-                            Span::styled(b.clone(), Style::default().fg(th.muted)),
-                        ],
-                        vec![Span::styled("no checkout", Style::default().fg(th.dim))],
-                    )
-                }))
                 .collect()
         })
         .unwrap_or_default();
@@ -859,7 +799,7 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "j/k move  l open  N attention  s shell  a agent  b branch  f file  n add  D rm  q detach"
             }
             Focus::Checkouts => {
-                "j/k move  l open  N attention  b branch  f file  R review  n worktree  D rm  q detach"
+                "j/k move  l open  N attention  b branch  B all  f file  R review  n worktree  D rm  q detach"
             }
             _ => "j/k move  l open  N attention  s shell  a agent  b branch  f file  R review  x close  q detach",
         };
@@ -1425,6 +1365,74 @@ fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     Rect::new(x, y, width, height)
+}
+
+/// A checkout's row: what is running in it, and what git says about it.
+fn checkout_item(c: &argus_protocol::CheckoutInfo, th: Theme) -> Item<'static> {
+    // A checkout is usually sitting on the branch it's named after;
+    // repeating it ("master master") says nothing. Show the branch only
+    // when it actually differs.
+    let mut detail = git_spans_unless_branch_is(c.git.as_ref(), &c.name, th);
+    if detail.is_empty() {
+        detail.push(Span::styled(
+            if c.primary { "primary" } else { "worktree" },
+            Style::default().fg(th.dim),
+        ));
+    }
+    // Two agents in one directory is allowed, but it is never something to
+    // find out from the diff later. The glyph carries it where the column
+    // is too narrow for the words, which is most columns.
+    let agents = c
+        .listed_panes()
+        .filter(|p| p.kind == argus_protocol::PaneKind::Agent)
+        .count();
+    let shared = agents > 1;
+    if shared {
+        detail.push(Span::styled("  ", Style::default()));
+        detail.push(Span::styled(
+            format!("shared by {agents}"),
+            Style::default().fg(th.warn),
+        ));
+    }
+    Item::new(
+        vec![
+            status_dot(worst_pane_status(c), th),
+            Span::styled(
+                format!("{} ", if c.primary { "⌂" } else { "⧉" }),
+                Style::default().fg(if c.primary { th.muted } else { th.dim }),
+            ),
+            Span::styled(
+                c.name.clone(),
+                Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                if shared { " ⚠" } else { "" },
+                Style::default().fg(th.warn),
+            ),
+        ],
+        detail,
+    )
+    .badged(if c.listed_panes().next().is_none() {
+        Vec::new()
+    } else {
+        vec![Span::styled(
+            format!("{} ▣", c.listed_panes().count()),
+            Style::default().fg(th.dim),
+        )]
+    })
+}
+
+/// A branch with no directory of its own — an offer of one, and something
+/// you can switch to or delete from where it stands.
+fn branch_item(name: &str, th: Theme) -> Item<'static> {
+    Item::new(
+        vec![
+            status_dot(None, th),
+            Span::styled("⌥ ", Style::default().fg(th.dim)),
+            Span::styled(name.to_string(), Style::default().fg(th.muted)),
+        ],
+        vec![Span::styled("no checkout", Style::default().fg(th.dim))],
+    )
 }
 
 /// The compact git summary on a checkout row: branch name (or `detached`),
@@ -2083,6 +2091,7 @@ mod tests {
                 id: RepositoryId(2),
                 name: "orion".to_string(),
                 branches: Vec::new(),
+                default_branch: None,
                 checkouts: vec![
                 CheckoutInfo {
                     id: CheckoutId(10),
@@ -2210,21 +2219,45 @@ mod tests {
     }
 
     #[test]
-    fn a_branch_with_no_checkout_gets_a_row_saying_so() {
+    fn the_main_branch_gets_a_row_of_its_own_and_the_rest_do_not() {
         let mut app = app_with_tree();
-        app.tree[0].repositories[0].branches = vec!["hotfix".to_string()];
+        let r = &mut app.tree[0].repositories[0];
+        r.branches = vec!["hotfix".to_string(), "trunk".to_string()];
+        r.default_branch = Some("trunk".to_string());
 
         let buf = draw_at(&mut app, 120, 20);
         let rendered = lines(&buf);
+        assert!(
+            !rendered.iter().any(|l| l.contains("hotfix")),
+            "an ordinary branch stays out of the column: {rendered:?}"
+        );
         let at = rendered
             .iter()
-            .position(|l| l.contains("hotfix"))
-            .expect("the branch should have a row of its own");
+            .position(|l| l.contains("trunk"))
+            .expect("the main branch keeps its row whether or not it has a directory");
 
         // A row is two lines: the name, then what it is.
         assert!(
             rendered[at + 1].contains("no checkout"),
             "a branch row has to say what it is: {:?}",
+            rendered[at + 1]
+        );
+    }
+
+    #[test]
+    fn the_other_branches_appear_once_the_column_is_expanded() {
+        let mut app = app_with_tree();
+        app.tree[0].repositories[0].branches = vec!["hotfix".to_string()];
+        app.show_branches = true;
+
+        let rendered = lines(&draw_at(&mut app, 120, 20));
+        let at = rendered
+            .iter()
+            .position(|l| l.contains("hotfix"))
+            .expect("expanded, the branch should have a row of its own");
+        assert!(
+            rendered[at + 1].contains("no checkout"),
+            "{:?}",
             rendered[at + 1]
         );
     }
@@ -2412,6 +2445,7 @@ mod tests {
             id: RepositoryId(3),
             name: "satellite".to_string(),
             branches: Vec::new(),
+            default_branch: None,
             checkouts: vec![CheckoutInfo {
                 id: CheckoutId(12),
                 name: "main".to_string(),

@@ -60,6 +60,10 @@ pub enum ClientMsg {
     /// from `CreateWorktree`, which puts the new branch in a directory of
     /// its own and leaves this one where it was.
     CreateBranch { checkout: CheckoutId, branch: String },
+    /// `git branch -d`: drop a local branch nothing is sitting on. Refused
+    /// while it holds commits no other branch has, because the row is the
+    /// only thing left pointing at them.
+    DeleteBranch { checkout: CheckoutId, branch: String },
     /// Open `path` (repo-relative) in the user's editor as a pane.
     OpenInEditor {
         checkout: CheckoutId,

@@ -333,9 +333,18 @@ branch switch, a new worktree, and a scan that found new repositories refresh wh
 a row does not name the branch it just left for the rest of the tick; anything changed outside Argus
 waits for the poll.
 
-The checkouts column also lists the repository's local branches that no checkout is sitting on,
-refreshed on the same poll and cached the same way. Enter on one switches the primary checkout to
-it; `n` gives it a worktree.
+The checkouts column is ordered around the repository's main branch, which leads it whether that
+is a checkout sitting on the branch or a row offering one. Which branch that is comes from
+`origin/HEAD` where the remote has said, and from the conventional names only where nothing ever
+set it — so a repository whose trunk is called something else still gets the same treatment.
+
+The repository's other local branches — the ones no checkout is sitting on — are cached on the same
+poll but stay out of the column until `B` asks for them: the column is for what is running, and a
+repository with forty branches would bury the two checkouts that are the point of it. Reaching a
+branch that has no row is what the `b` picker is for. On any branch row, Enter switches the primary
+checkout to it, `n` gives it a worktree, and `D` deletes it — `git branch -d` in the primary
+checkout, so the deletion is local, never pushed, and refused while the branch holds commits
+nothing else does. The main branch is refused outright.
 
 Branch and file pickers run in process. Branches are local branches, current first. File discovery
 uses `ignore`, follows Git ignore rules, and caps the result at 50,000 files.
@@ -345,6 +354,7 @@ Git mutations use the `git` executable:
 - switch to an existing branch;
 - create and switch to a branch;
 - add a worktree, creating the branch unless it already exists;
+- delete a local branch, refusing an unmerged one;
 - force-remove a linked worktree and best-effort delete its branch.
 
 A root scan skips `.git`, `.argus`, `node_modules`, and `target` for every project. `exclude` adds to

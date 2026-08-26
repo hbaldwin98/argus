@@ -125,11 +125,18 @@ pub struct RepositoryInfo {
     pub name: String,
     pub checkouts: Vec<CheckoutInfo>,
     /// Local branches no checkout of this repository is sitting on, sorted.
-    /// A branch you can't see is a branch you forget: these are the rows
-    /// that make "switch to it, or give it a worktree" an offer rather than
-    /// something you have to remember to go looking for.
+    /// The client decides which of them get rows — all of them only while
+    /// the column is expanded, since a long branch list buries the
+    /// checkouts that are the point of the column.
     #[serde(default)]
     pub branches: Vec<String>,
+    /// The repository's main line of development, whatever it is named:
+    /// `origin/HEAD` where the remote says, a conventional name where it
+    /// doesn't. It leads the checkouts column whether or not anything is
+    /// sitting on it, so that "how far is this from main" has a fixed place
+    /// to be asked from.
+    #[serde(default)]
+    pub default_branch: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

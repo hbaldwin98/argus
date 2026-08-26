@@ -128,6 +128,10 @@ struct Repository {
     /// snapshot is taken under the lock keystrokes need, and reading refs
     /// there would put git I/O in front of the next key.
     branches: Vec<String>,
+    /// What `origin/HEAD` points at, cached alongside them and for the same
+    /// reason. `None` until the first refresh, and for a repository with no
+    /// remote and no conventionally-named branch.
+    default_branch: Option<String>,
 }
 
 struct Project {
@@ -433,6 +437,7 @@ impl Daemon {
                         id: r.id,
                         name: r.name.clone(),
                         branches: r.branches.clone(),
+                        default_branch: r.default_branch.clone(),
                         checkouts: r
                             .checkouts
                             .iter()
@@ -1944,7 +1949,7 @@ impl Daemon {
     }
 
     /// Re-reads each repository's local branches and caches the ones no
-    /// checkout is sitting on, so the tree can offer them as rows.
+    /// checkout is sitting on, along with which branch is the main line.
     ///
     /// Runs after `refresh_git_status` and reads the branch names it just
     /// cached: what makes a branch "without a checkout" is that no checkout
@@ -1970,21 +1975,22 @@ impl Daemon {
                 .collect()
         };
 
-        let listed: Vec<(RepositoryId, Vec<String>)> = repositories
+        let listed: Vec<(RepositoryId, Vec<String>, Option<String>)> = repositories
             .into_iter()
             .map(|(id, path, occupied)| {
                 let free = crate::browse::branches(&path)
                     .into_iter()
                     .filter(|b| !occupied.contains(b))
                     .collect();
-                (id, free)
+                (id, free, crate::git::default_branch(&path))
             })
             .collect();
 
         let mut inner = self.inner.lock().unwrap();
-        for (id, branches) in listed {
+        for (id, branches, default) in listed {
             if let Some(r) = find_repository(&mut inner.projects, id) {
                 r.branches = branches;
+                r.default_branch = default;
             }
         }
     }
@@ -2426,6 +2432,41 @@ impl Daemon {
     /// it is — unlike `create_worktree`, which makes a directory for it.
     pub async fn create_branch(&self, checkout: CheckoutId, branch: &str) -> anyhow::Result<()> {
         self.git_switch(checkout, &["switch", "-c"], branch).await
+    }
+
+    /// Drops a local branch. Run from the checkout that asked, which is
+    /// the repository's primary one whenever the row was a branch rather
+    /// than a directory.
+    ///
+    /// Local only: `git branch -d` touches `refs/heads`, never
+    /// `refs/remotes`, and nothing here pushes a deletion. Removing a
+    /// branch from the panel is not removing it from the remote.
+    ///
+    /// `-d`, never `-D`. A branch is a name on commits, and the row you
+    /// delete it from says nothing about whether those commits are anywhere
+    /// else; git already knows, so its refusal is the answer and is passed
+    /// back as it stands. The main branch is refused outright — it is the
+    /// row the column is anchored on, and nobody means to delete it from
+    /// here.
+    pub async fn delete_branch(&self, checkout: CheckoutId, branch: &str) -> anyhow::Result<()> {
+        let branch = checked_branch_name(branch)?;
+        let path = self.checkout_path(checkout)?;
+        if crate::git::default_branch(&path).as_deref() == Some(branch.as_str()) {
+            anyhow::bail!("{branch} is the repository's main branch");
+        }
+
+        let output = crate::command::git()
+            .args(["branch", "-d", &branch])
+            .current_dir(&path)
+            .output()
+            .await?;
+        if !output.status.success() {
+            anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
+        }
+
+        self.refresh_branches();
+        self.broadcast_tree();
+        Ok(())
     }
 
     /// `flags` are everything before the branch name, which this appends
@@ -3177,6 +3218,7 @@ fn new_repository(ids: &mut IdGen, path: PathBuf, discovered: bool) -> Repositor
         name: name.clone(),
         discovered,
         branches: Vec::new(),
+        default_branch: None,
         checkouts: vec![Checkout {
             id: CheckoutId(ids.alloc()),
             name,
@@ -5909,6 +5951,73 @@ root = "/somewhere"
         let path = std::path::Path::new(&checkouts[1].path);
         assert_eq!(head_of(path), "feature-x");
         assert!(path.starts_with(dir.path()));
+    }
+
+    /// A branch on the repo's current commit, holding nothing of its own.
+    fn branch_off_head(dir: &std::path::Path, name: &str) {
+        let repo = git2::Repository::open(dir).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch(name, &head, false).unwrap();
+    }
+
+    #[tokio::test]
+    async fn deleting_a_branch_takes_it_off_the_repository() {
+        let (dir, d) = daemon_on_a_repo();
+        branch_off_head(dir.path(), "doomed");
+        d.refresh_branches();
+        assert!(
+            d.snapshot()[0].repositories[0].branches.iter().any(|b| b == "doomed"),
+            "the branch has to be there to be deleted"
+        );
+
+        d.delete_branch(only_checkout(&d), "doomed").await.unwrap();
+
+        assert!(
+            !d.snapshot()[0].repositories[0].branches.iter().any(|b| b == "doomed"),
+            "and the row goes with it, without waiting for the next poll"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_branch_holding_commits_nothing_else_has_is_refused() {
+        // `-d`, never `-D`: the row you delete from says nothing about
+        // whether those commits survive anywhere, so git's refusal stands.
+        let (dir, d) = daemon_on_a_repo();
+        let repo = git2::Repository::open(dir.path()).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        let tree = head.tree().unwrap();
+        let sig = git2::Signature::now("t", "t@example.com").unwrap();
+        repo.commit(Some("refs/heads/spike"), &sig, &sig, "work", &tree, &[&head])
+            .unwrap();
+
+        let err = d
+            .delete_branch(only_checkout(&d), "spike")
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("not fully merged"), "got {err:?}");
+        assert!(
+            git2::Repository::open(dir.path())
+                .unwrap()
+                .find_branch("spike", git2::BranchType::Local)
+                .is_ok(),
+            "a refused deletion leaves the branch alone"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_main_branch_is_not_deletable_from_its_own_row() {
+        let (dir, d) = daemon_on_a_repo();
+        branch_off_head(dir.path(), "main");
+
+        let err = d
+            .delete_branch(only_checkout(&d), "main")
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("main branch"), "got {err:?}");
     }
 
     /// The daemon, plus the id of a linked worktree it just made.
