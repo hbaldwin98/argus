@@ -467,14 +467,20 @@ fn resize_live_panes(
             app.resize_pane(*pane, size.0, size.1);
         }
     }
-    last_sizes.retain(|pane, _| {
-        app.tree
-            .iter()
-            .flat_map(|project| &project.repositories)
-            .flat_map(|repository| &repository.checkouts)
-            .flat_map(|checkout| &checkout.panes)
-            .any(|candidate| candidate.id == *pane)
-    });
+    forget_offscreen(last_sizes, &live);
+}
+
+/// Drops the remembered size of every pane that is no longer on screen.
+///
+/// Leaving the screen unsubscribes, and the daemon reads that as this
+/// client no longer constraining the pane's size — so the pane may well be
+/// a different size by the time it comes back. Forgetting it here is what
+/// makes the next frame that draws it claim its size again.
+fn forget_offscreen(
+    last_sizes: &mut std::collections::HashMap<PaneId, (u16, u16)>,
+    live: &[(PaneId, ratatui::layout::Rect)],
+) {
+    last_sizes.retain(|pane, _| live.iter().any(|(id, _)| id == pane));
 }
 
 #[cfg(test)]
@@ -482,6 +488,19 @@ mod tests {
     use super::*;
     use crate::app::Prompt;
     use tokio::time::{timeout, Duration};
+
+    #[test]
+    fn a_pane_that_left_the_screen_claims_its_size_again_when_it_returns() {
+        let mut last_sizes = std::collections::HashMap::from([
+            (PaneId(1), (30u16, 80u16)),
+            (PaneId(2), (30, 80)),
+        ]);
+        let still_shown = [(PaneId(1), ratatui::layout::Rect::new(0, 0, 80, 30))];
+
+        forget_offscreen(&mut last_sizes, &still_shown);
+
+        assert_eq!(last_sizes.keys().copied().collect::<Vec<_>>(), vec![PaneId(1)]);
+    }
 
     #[tokio::test]
     async fn rapid_pane_swaps_cost_one_message_however_many_panes_were_crossed() {

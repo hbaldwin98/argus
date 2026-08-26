@@ -128,8 +128,17 @@ no scrollback navigation. An exiting process gets a 500 ms output-flush grace pe
 
 Clients receive a full grid when they subscribe, then incremental damage. The grid and the damage
 stream are taken under one hold of the parser lock, so no frame can be published between them and
-be missed by both. Resize changes both the PTY and parser and emits another full grid. If several
-clients resize one pane, the latest request wins; ownership is not yet defined.
+be missed by both. Resize changes both the PTY and parser and emits another full grid.
+
+Each client's requested size for each pane it is showing is recorded against its connection, and a
+pane's PTY is sized to the smallest request in each dimension, so no client is ever sent more rows
+or columns than it has room to draw. A client with a larger window pads; sizing to the largest
+would truncate content out of the smaller one instead. Unsubscribing releases that client's claim,
+and so does disconnecting, so a pane grows back once whatever was holding it small stops showing it.
+A pane no client is showing keeps the size it has rather than reverting to the default. A request
+that does not change the effective size is not applied, so a second client agreeing with the first
+costs no snapshot. On the client side, a pane leaving the screen forgets its remembered size, so
+returning to the screen re-sends it.
 
 The client drops a pane's cached grid the moment it stops drawing it, so a subscription it takes
 back is never redundant even when the daemon never stopped streaming: only a snapshot can rebuild

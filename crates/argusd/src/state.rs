@@ -178,6 +178,47 @@ pub struct Daemon {
     /// write over the real user's session file, and every structural
     /// change would otherwise do exactly that.
     persist: std::sync::atomic::AtomicBool,
+    /// Every attached client's requested size for the panes it is showing.
+    /// A pty has one size and clients do not have to agree on it, so the
+    /// sizes are collected here and reconciled rather than applied as they
+    /// arrive.
+    viewers: StdMutex<Viewers>,
+    next_viewer: std::sync::atomic::AtomicU64,
+}
+
+/// Identifies one attached client for as long as its connection lasts.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct ViewerId(u64);
+
+/// The requested pane sizes of every attached client, and what was last
+/// actually applied to each pty.
+#[derive(Default)]
+struct Viewers {
+    wanted: HashMap<PaneId, HashMap<ViewerId, (u16, u16)>>,
+    applied: HashMap<PaneId, (u16, u16)>,
+}
+
+impl Viewers {
+    /// The size a pane should be given the clients currently showing it:
+    /// the smallest request in each dimension, so no client is ever sent a
+    /// grid with more rows or columns than it has room to draw. A client
+    /// with a bigger window pads; the alternative — sizing to the largest —
+    /// truncates content out of the smaller one entirely.
+    fn effective(&self, pane: PaneId) -> Option<(u16, u16)> {
+        let wanted = self.wanted.get(&pane)?;
+        wanted
+            .values()
+            .copied()
+            .reduce(|(ar, ac), (br, bc)| (ar.min(br), ac.min(bc)))
+    }
+
+    /// The size to apply for `pane`, or `None` when nothing would change.
+    /// A pane no client is showing keeps the size it has: reflowing a
+    /// running program's output for an audience of nobody only destroys it.
+    fn pending(&self, pane: PaneId) -> Option<(u16, u16)> {
+        let size = self.effective(pane)?;
+        (self.applied.get(&pane) != Some(&size)).then_some(size)
+    }
 }
 
 type PaneSubscription = (
@@ -282,6 +323,8 @@ impl Daemon {
             hook_token: gen_token(),
             restoring: std::sync::atomic::AtomicBool::new(false),
             persist: std::sync::atomic::AtomicBool::new(false),
+            viewers: StdMutex::new(Viewers::default()),
+            next_viewer: std::sync::atomic::AtomicU64::new(0),
         });
         // Checkout rows are named after the branch occupying them, and that
         // name now comes from the cache. Filling it here rather than waiting
@@ -964,6 +1007,11 @@ impl Daemon {
             (taken.map(|(p, _)| p), orphaned)
         };
         let removed = removed.ok_or_else(|| anyhow::anyhow!("no such pane"))?;
+        {
+            let mut viewers = self.viewers.lock().unwrap();
+            viewers.wanted.remove(&pane);
+            viewers.applied.remove(&pane);
+        }
         let _ = removed.runtime.kill();
         if let Some(path) = orphaned_checkout {
             for h in &self.harnesses {
@@ -1000,11 +1048,84 @@ impl Daemon {
         input.paste(text.as_bytes())
     }
 
-    pub fn resize_pane(&self, pane: PaneId, rows: u16, cols: u16) -> anyhow::Result<()> {
+    /// Hands out the identity a connection uses to claim pane sizes.
+    pub fn new_viewer(&self) -> ViewerId {
+        ViewerId(
+            self.next_viewer
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        )
+    }
+
+    /// Records one client's size for a pane and reconciles the pty against
+    /// every client showing it.
+    pub fn resize_pane(
+        &self,
+        viewer: ViewerId,
+        pane: PaneId,
+        rows: u16,
+        cols: u16,
+    ) -> anyhow::Result<()> {
+        {
+            let inner = self.inner.lock().unwrap();
+            if find_pane_ref(&inner.projects, pane).is_none() {
+                anyhow::bail!("no such pane");
+            }
+        }
+        self.viewers
+            .lock()
+            .unwrap()
+            .wanted
+            .entry(pane)
+            .or_default()
+            .insert(viewer, (rows, cols));
+        self.reconcile_size(pane)
+    }
+
+    /// Drops one client's claim on a pane it has stopped showing, letting
+    /// the pane grow back to what the remaining clients can display.
+    pub fn release_pane_size(&self, viewer: ViewerId, pane: PaneId) {
+        {
+            let mut viewers = self.viewers.lock().unwrap();
+            let Some(wanted) = viewers.wanted.get_mut(&pane) else {
+                return;
+            };
+            if wanted.remove(&viewer).is_none() {
+                return;
+            }
+            if wanted.is_empty() {
+                viewers.wanted.remove(&pane);
+            }
+        }
+        let _ = self.reconcile_size(pane);
+    }
+
+    /// Drops every claim a disconnecting client held.
+    pub fn release_viewer(&self, viewer: ViewerId) {
+        let touched: Vec<PaneId> = {
+            let viewers = self.viewers.lock().unwrap();
+            viewers
+                .wanted
+                .iter()
+                .filter(|(_, wanted)| wanted.contains_key(&viewer))
+                .map(|(pane, _)| *pane)
+                .collect()
+        };
+        for pane in touched {
+            self.release_pane_size(viewer, pane);
+        }
+    }
+
+    fn reconcile_size(&self, pane: PaneId) -> anyhow::Result<()> {
+        let Some((rows, cols)) = self.viewers.lock().unwrap().pending(pane) else {
+            return Ok(());
+        };
         let inner = self.inner.lock().unwrap();
         let p =
             find_pane_ref(&inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
         p.runtime.resize(rows, cols)?;
+        // Only once it took. Recording a size the pty rejected would make
+        // every later request agreeing with it a no-op.
+        self.viewers.lock().unwrap().applied.insert(pane, (rows, cols));
         // A subscribed client's cached grid is only ever sized by whatever
         // snapshot it last received; incremental Damage can't grow it.
         // Push a fresh full snapshot at the new size so growing a pane
@@ -2717,6 +2838,88 @@ mod tests {
         assert_eq!(listed[0].label, "agent");
 
         d.close_pane(pane).unwrap();
+    }
+
+    fn pane_size(d: &Daemon, pane: PaneId) -> (u16, u16) {
+        let (rows, cols, _, _, _) = d.subscribe_pane(pane).unwrap();
+        (rows, cols)
+    }
+
+    #[tokio::test]
+    async fn one_client_sizes_a_pane_to_exactly_what_it_asked_for() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_fake_claude(dir.path());
+        let pane = d.spawn_shell(only_checkout(&d)).unwrap();
+        let alone = d.new_viewer();
+
+        d.resize_pane(alone, pane, 40, 120).unwrap();
+
+        assert_eq!(pane_size(&d, pane), (40, 120));
+        let _ = d.close_pane(pane);
+    }
+
+    #[tokio::test]
+    async fn two_clients_get_a_pane_that_fits_in_both_of_their_windows() {
+        // Sizing to the later request instead would leave the client that
+        // asked first drawing a grid wider or taller than its own box.
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_fake_claude(dir.path());
+        let pane = d.spawn_shell(only_checkout(&d)).unwrap();
+        let (tall, wide) = (d.new_viewer(), d.new_viewer());
+
+        d.resize_pane(tall, pane, 60, 80).unwrap();
+        d.resize_pane(wide, pane, 30, 200).unwrap();
+
+        assert_eq!(pane_size(&d, pane), (30, 80));
+        let _ = d.close_pane(pane);
+    }
+
+    #[tokio::test]
+    async fn a_pane_grows_back_when_the_client_holding_it_small_leaves() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_fake_claude(dir.path());
+        let pane = d.spawn_shell(only_checkout(&d)).unwrap();
+        let (big, small) = (d.new_viewer(), d.new_viewer());
+        d.resize_pane(big, pane, 60, 200).unwrap();
+        d.resize_pane(small, pane, 20, 80).unwrap();
+
+        d.release_viewer(small);
+
+        assert_eq!(pane_size(&d, pane), (60, 200));
+        let _ = d.close_pane(pane);
+    }
+
+    #[tokio::test]
+    async fn a_pane_the_last_client_stopped_showing_keeps_its_size() {
+        // Nobody is watching, so there is no size that would be better —
+        // and reflowing a running program's output for no reader only
+        // damages what it has already drawn.
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_fake_claude(dir.path());
+        let pane = d.spawn_shell(only_checkout(&d)).unwrap();
+        let only = d.new_viewer();
+        d.resize_pane(only, pane, 44, 111).unwrap();
+
+        d.release_pane_size(only, pane);
+
+        assert_eq!(pane_size(&d, pane), (44, 111));
+        let _ = d.close_pane(pane);
+    }
+
+    #[test]
+    fn a_size_already_applied_is_not_applied_again() {
+        // Every applied size costs every subscriber a full-grid snapshot,
+        // so a second client agreeing with the first must be free.
+        let mut viewers = Viewers::default();
+        let pane = PaneId(1);
+        let (first, second) = (ViewerId(0), ViewerId(1));
+        viewers.wanted.entry(pane).or_default().insert(first, (30, 80));
+        assert_eq!(viewers.pending(pane), Some((30, 80)));
+        viewers.applied.insert(pane, (30, 80));
+
+        viewers.wanted.entry(pane).or_default().insert(second, (30, 80));
+
+        assert_eq!(viewers.pending(pane), None);
     }
 
     #[tokio::test]

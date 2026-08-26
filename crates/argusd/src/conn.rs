@@ -4,7 +4,7 @@ use argus_protocol::{read_msg, write_msg, ClientMsg, PaneId, ServerMsg};
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc, Semaphore};
 
-use crate::state::Daemon;
+use crate::state::{Daemon, ViewerId};
 
 static REVIEW_PERMIT: Semaphore = Semaphore::const_new(1);
 
@@ -33,6 +33,11 @@ where
         return;
     }
 
+    // This connection's identity for as long as it lasts: the daemon
+    // reconciles one pty size out of what every attached client asks for,
+    // so its requests have to be told apart from the other clients'.
+    let viewer = daemon.new_viewer();
+
     let mut tree_rx = daemon.subscribe_tree();
     let mut workspaces_rx = daemon.subscribe_workspaces();
     let mut subs = Subscriptions::default();
@@ -48,6 +53,7 @@ where
                         &out_tx,
                         &mut subs,
                         &mut review_task,
+                        viewer,
                     ),
                     Err(_) => break,
                 }
@@ -60,6 +66,7 @@ where
             }
         }
     }
+    daemon.release_viewer(viewer);
     if let Some(task) = review_task {
         task.abort();
     }
@@ -140,8 +147,9 @@ fn handle_client_msg(
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
     subs: &mut Subscriptions,
     review_task: &mut Option<tokio::task::JoinHandle<()>>,
+    viewer: ViewerId,
 ) {
-    let result = dispatch_pane(msg, daemon, out_tx, subs)
+    let result = dispatch_pane(msg, daemon, out_tx, subs, viewer)
         .or_else(|msg| dispatch_workspace(msg, daemon, out_tx))
         .or_else(|msg| dispatch_branch_or_editor(msg, daemon, out_tx))
         .or_else(|msg| dispatch_review(msg, daemon, out_tx, review_task))
@@ -160,6 +168,7 @@ fn dispatch_pane(
     daemon: &Arc<Daemon>,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
     subs: &mut Subscriptions,
+    viewer: ViewerId,
 ) -> DispatchResult {
     let result = match msg {
         ClientMsg::Subscribe { pane } => {
@@ -178,11 +187,12 @@ fn dispatch_pane(
         }
         ClientMsg::Unsubscribe { pane } => {
             subs.remove(pane);
+            daemon.release_pane_size(viewer, pane);
             Ok(())
         }
         ClientMsg::Input { pane, bytes } => daemon.write_pane(pane, &bytes),
         ClientMsg::Paste { pane, text } => daemon.paste_pane(pane, &text),
-        ClientMsg::Resize { pane, rows, cols } => daemon.resize_pane(pane, rows, cols),
+        ClientMsg::Resize { pane, rows, cols } => daemon.resize_pane(viewer, pane, rows, cols),
         ClientMsg::SpawnShell { checkout } => {
             let daemon = daemon.clone();
             spawn_pane(out_tx, move || daemon.spawn_shell(checkout).map(|_| ()))
@@ -472,6 +482,7 @@ mod tests {
         rx: mpsc::UnboundedReceiver<ServerMsg>,
         subs: Subscriptions,
         review_task: Option<tokio::task::JoinHandle<()>>,
+        viewer: ViewerId,
     }
 
     impl Harness {
@@ -488,7 +499,9 @@ mod tests {
                 harnesses: Vec::new(),
             });
             let (tx, rx) = mpsc::unbounded_channel();
+            let viewer = daemon.new_viewer();
             Harness {
+                viewer,
                 daemon,
                 tx,
                 rx,
@@ -508,6 +521,7 @@ mod tests {
                 &self.tx,
                 &mut self.subs,
                 &mut self.review_task,
+                self.viewer,
             );
         }
 

@@ -5,7 +5,6 @@ contract is in [`TARGET.md`](TARGET.md).
 
 ## P0: Correctness
 
-- Define multi-client PTY resize ownership.
 - Recover lagged pane subscribers with a full snapshot and close the subscribe/snapshot race.
 - Route Claude hooks to the correct pane when several agents share a checkout.
 - Make worktree removal transactional so a failed Git command does not destroy its panes.
