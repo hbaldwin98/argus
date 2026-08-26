@@ -324,6 +324,19 @@ pub enum CheckoutRow {
     Remote(usize),
 }
 
+/// What the checkouts column had selected, as an identity rather than a
+/// position. Row indices shift under the column whenever a branch row
+/// appears or disappears above the selection, so a tree arriving from the
+/// daemon has to be able to find the same row again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckoutAnchor {
+    Checkout(CheckoutId),
+    /// A branch with no directory, held by name: the checkout that would
+    /// give it one is the same row as far as the user is concerned.
+    Branch(String),
+    Remote(String),
+}
+
 /// The branch a remote-tracking name would become locally:
 /// `origin/feature/x` → `feature/x`. Remote names have no slash in them,
 /// so the first one is the split.
@@ -659,6 +672,64 @@ impl App {
         self.checkout_rows().len()
     }
 
+    /// The selected checkout row as an identity, paired with the repository
+    /// it belongs to. Taken before a new tree replaces the old one.
+    fn checkout_anchor(&self) -> Option<(RepositoryId, CheckoutAnchor)> {
+        let r = self.current_repository()?;
+        let row = self.checkout_rows().get(self.sel_checkout).copied()?;
+        let anchor = match row {
+            CheckoutRow::Checkout(i) => CheckoutAnchor::Checkout(r.checkouts.get(i)?.id),
+            CheckoutRow::Branch(i) => CheckoutAnchor::Branch(r.branches.get(i)?.clone()),
+            CheckoutRow::Remote(i) => CheckoutAnchor::Remote(r.remote_branches.get(i)?.clone()),
+        };
+        Some((r.id, anchor))
+    }
+
+    /// Puts the cursor back on the row the anchor names. The column's order
+    /// is not stable across trees: a checkout whose git status has not
+    /// landed yet leaves its own branch looking unoccupied, which pins a
+    /// branch row above every checkout and slides a bare index up by one.
+    /// Repeat that and the selection walks to the top row, which is exactly
+    /// where the main branch is pinned.
+    fn restore_checkout_anchor(&mut self, repository: RepositoryId, anchor: &CheckoutAnchor) {
+        let Some((project_index, repository_index)) =
+            self.tree.iter().enumerate().find_map(|(project_index, project)| {
+                project
+                    .repositories
+                    .iter()
+                    .position(|r| r.id == repository)
+                    .map(|repository_index| (project_index, repository_index))
+            })
+        else {
+            return;
+        };
+        self.sel_project = project_index;
+        self.sel_repository = repository_index;
+        let Some(r) = self.current_repository() else { return };
+        let rows = self.checkout_rows();
+        let found = rows.iter().position(|row| match (row, anchor) {
+            (CheckoutRow::Checkout(i), CheckoutAnchor::Checkout(id)) => {
+                r.checkouts.get(*i).is_some_and(|c| c.id == *id)
+            }
+            (CheckoutRow::Branch(i), CheckoutAnchor::Branch(name)) => {
+                r.branches.get(*i) == Some(name)
+            }
+            (CheckoutRow::Remote(i), CheckoutAnchor::Remote(name)) => {
+                r.remote_branches.get(*i) == Some(name)
+            }
+            // A branch that has just been given a directory is still the
+            // row the user was on, so follow it into its new checkout.
+            (CheckoutRow::Checkout(i), CheckoutAnchor::Branch(name)) => r
+                .checkouts
+                .get(*i)
+                .is_some_and(|c| on_branch(c, name)),
+            _ => false,
+        });
+        if let Some(index) = found {
+            self.sel_checkout = index;
+        }
+    }
+
     /// The checkout a repository-wide action runs in: its primary one,
     /// which is where a branch without a directory would be switched to.
     fn primary_checkout(&self) -> Option<&CheckoutInfo> {
@@ -863,7 +934,12 @@ impl App {
         let selected_pane = matches!(self.focus, Focus::Panes | Focus::PaneContent)
             .then(|| self.current_pane().map(|pane| pane.id))
             .flatten();
+        // Columns select by index, so any row appearing above the cursor
+        // moves it onto a different checkout without the user touching
+        // anything. Remember what was selected, not where it sat.
+        let checkout_anchor = self.checkout_anchor();
         self.tree = tree;
+        let mut followed_pane = false;
         if let Some(selected_pane) = selected_pane {
             if let Some((project, repository, checkout, pane)) = self.tree.iter().enumerate().find_map(
                 |(project_index, project)| {
@@ -885,6 +961,14 @@ impl App {
                 self.sel_repository = repository;
                 self.sel_checkout = checkout;
                 self.sel_pane = pane;
+                followed_pane = true;
+            }
+        }
+        // Following a pane already moved the cursor deliberately; the
+        // anchor is only for the columns nothing else re-aimed.
+        if !followed_pane {
+            if let Some((repository, anchor)) = &checkout_anchor {
+                self.restore_checkout_anchor(*repository, anchor);
             }
         }
         self.clamp();
@@ -2809,6 +2893,83 @@ mod tests {
         h.app.sel_project = 1; // "other" has only one checkout
         h.key(KeyCode::Char('j'));
         assert_eq!(h.app.sel_checkout, 0, "clamped into range");
+    }
+
+    /// The bug this guards: a poll that has not cached the primary
+    /// checkout's branch yet leaves `master` looking like a branch nobody
+    /// is on, which pins a row above every checkout. With a bare index the
+    /// cursor slid up a row on each such tree until it sat on the pinned
+    /// main row, and the worktree could not be worked in at all.
+    #[test]
+    fn a_branch_row_appearing_above_the_selection_does_not_drag_it_off_the_worktree() {
+        let mut h = Harness::new();
+        h.keys("llj"); // checkouts column, the "feat" worktree
+        assert_eq!(h.app.current_checkout().map(|c| c.id), Some(CheckoutId(11)));
+
+        let mut t = tree();
+        let r = &mut t[0].repositories[0];
+        r.default_branch = Some("master".to_string());
+        // The status sweep has not landed, so master reads as unoccupied.
+        r.branches = vec!["master".to_string()];
+        h.app.on_server_msg(ServerMsg::Tree(t));
+
+        assert_eq!(
+            h.app.current_checkout().map(|c| c.id),
+            Some(CheckoutId(11)),
+            "the cursor must stay on the worktree it was on"
+        );
+    }
+
+    #[test]
+    fn the_checkout_selection_survives_a_checkout_added_above_it() {
+        let mut h = Harness::new();
+        h.keys("llj");
+        assert_eq!(h.app.current_checkout().map(|c| c.id), Some(CheckoutId(11)));
+
+        let mut t = tree();
+        t[0].repositories[0]
+            .checkouts
+            .insert(0, checkout(12, "hotfix", false, vec![]));
+        h.app.on_server_msg(ServerMsg::Tree(t));
+
+        assert_eq!(
+            h.app.current_checkout().map(|c| c.id),
+            Some(CheckoutId(11)),
+            "a new row above the cursor must not move it"
+        );
+    }
+
+    /// A branch row is the offer of a checkout, so when one appears the
+    /// user is still on the same thing and should end up inside it.
+    #[test]
+    fn a_selected_branch_row_is_followed_into_the_checkout_that_takes_it() {
+        let mut h = Harness::new();
+        h.app.show_branches = true;
+        let mut t = tree();
+        t[0].repositories[0].branches = vec!["spike".to_string()];
+        h.app.on_server_msg(ServerMsg::Tree(t));
+        h.keys("ll");
+        // Rows: master, feat, then the free "spike" branch.
+        h.app.sel_checkout = 2;
+        assert_eq!(h.app.current_branch_row(), Some("spike"));
+
+        let mut t = tree();
+        let mut c = checkout(13, "spike", false, vec![]);
+        c.git = Some(argus_protocol::GitStatus {
+            branch: Some("spike".to_string()),
+            dirty: false,
+            changed_files: 0,
+            ahead: 0,
+            behind: 0,
+        });
+        t[0].repositories[0].checkouts.push(c);
+        h.app.on_server_msg(ServerMsg::Tree(t));
+
+        assert_eq!(
+            h.app.current_checkout().map(|c| c.id),
+            Some(CheckoutId(13)),
+            "the branch row became a checkout; follow it in"
+        );
     }
 
     // --- live-view subscription -------------------------------------------
