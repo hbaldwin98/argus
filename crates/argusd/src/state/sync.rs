@@ -15,7 +15,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use argus_protocol::{CheckoutId, RepositoryId};
+use argus_protocol::{CheckoutId, GitStatus, RepositoryId};
 
 use super::*;
 
@@ -61,6 +61,16 @@ impl Daemon {
     /// the lock is down, and a stale result must be dropped rather than
     /// land on whatever now occupies that position.
     pub fn refresh_git_status(&self) {
+        self.refresh_git_status_with(crate::git::status);
+    }
+
+    /// The sweep itself, with the status read injected so tests can state
+    /// what git would have said — including that it could not say anything.
+    /// Production always passes `git::status`.
+    pub(super) fn refresh_git_status_with(
+        &self,
+        read: impl Fn(&std::path::Path) -> Option<GitStatus>,
+    ) {
         let checkouts: Vec<(CheckoutId, PathBuf)> = {
             let inner = self.inner.lock().unwrap();
             inner
@@ -74,14 +84,23 @@ impl Daemon {
 
         let statuses: Vec<(CheckoutId, Option<GitStatus>)> = checkouts
             .into_iter()
-            .map(|(id, path)| (id, crate::git::status(&path)))
+            .map(|(id, path)| (id, read(&path)))
             .collect();
 
         let mut inner = self.inner.lock().unwrap();
         for (id, status) in statuses {
-            if let Some(c) = find_checkout(&mut inner.projects, id) {
-                c.git = status;
-            }
+            let Some(c) = find_checkout(&mut inner.projects, id) else {
+                continue;
+            };
+            let Some(status) = status else {
+                // The read failed, which is not the same as the checkout
+                // having nothing to report. Dropping the cache here is what
+                // made a `git switch` in another terminal throw the row back
+                // to the directory it was created as and free the branch it
+                // was really on. Keep what we last knew until a read works.
+                continue;
+            };
+            c.git = Some(status);
         }
     }
 

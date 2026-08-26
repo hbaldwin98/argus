@@ -2360,6 +2360,87 @@ mod tests {
         );
     }
 
+    fn status_on(branch: &str) -> GitStatus {
+        GitStatus {
+            branch: Some(branch.to_string()),
+            dirty: false,
+            changed_files: 0,
+            ahead: 0,
+            behind: 0,
+        }
+    }
+
+    /// The bug this guards: `git switch` in another terminal rewrites HEAD,
+    /// and a status read landing in that window used to come back as a
+    /// checkout on no branch. That threw the row's name back to the
+    /// directory the worktree was created as and left the branch it was
+    /// really on looking free, so the column rearranged itself under the
+    /// user for a tick.
+    #[test]
+    fn a_status_read_that_failed_does_not_erase_the_branch_we_knew() {
+        let d = daemon_with_primary("/repo");
+        d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
+        d.refresh_git_status_with(|path| {
+            Some(status_on(if path.ends_with("wt") { "dev" } else { "main" }))
+        });
+
+        let worktree = d.snapshot()[0].repositories[0]
+            .checkouts
+            .iter()
+            .find(|c| !c.primary)
+            .map(|c| c.id)
+            .unwrap();
+        assert_eq!(
+            d.snapshot()[0].repositories[0]
+                .checkouts
+                .iter()
+                .find(|c| c.id == worktree)
+                .unwrap()
+                .name,
+            "dev"
+        );
+
+        // git is mid-switch and cannot answer.
+        d.refresh_git_status_with(|_| None);
+
+        let c = d.snapshot()[0].repositories[0]
+            .checkouts
+            .iter()
+            .find(|c| c.id == worktree)
+            .unwrap()
+            .clone();
+        assert_eq!(c.name, "dev", "the row must not rename itself on a failed read");
+        assert_eq!(
+            c.git.and_then(|g| g.branch),
+            Some("dev".to_string()),
+            "and must still count as the occupant of the branch"
+        );
+    }
+
+    /// A switch made outside Argus is news, not a failure: the row follows
+    /// the branch that now occupies it.
+    #[test]
+    fn a_branch_switched_outside_argus_renames_the_row_it_happened_in() {
+        let d = daemon_with_primary("/repo");
+        d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
+        d.refresh_git_status_with(|path| {
+            Some(status_on(if path.ends_with("wt") { "dev" } else { "main" }))
+        });
+        d.refresh_git_status_with(|path| {
+            Some(status_on(if path.ends_with("wt") { "spike" } else { "main" }))
+        });
+
+        let names: Vec<String> = d.snapshot()[0].repositories[0]
+            .checkouts
+            .iter()
+            .map(|c| c.name.clone())
+            .collect();
+        assert!(
+            names.contains(&"spike".to_string()) && !names.contains(&"dev".to_string()),
+            "the row should follow the branch: {names:?}"
+        );
+    }
+
     // --- tree broadcast ----------------------------------------------------
 
     #[test]

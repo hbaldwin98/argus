@@ -359,6 +359,13 @@ branch switch, a new worktree, and a scan that found new repositories refresh wh
 a row does not name the branch it just left for the rest of the tick; anything changed outside Argus
 waits for the poll.
 
+A status that could not be read is unknown, not empty. `git switch` in another terminal rewrites
+HEAD, and a poll landing in that window used to report a checkout on no branch, which is how a
+detached HEAD reads: the row fell back to the directory the worktree was created as, and the branch
+it was really on turned up in the free-branch list, rearranging the column under the user. A failed
+read now leaves the cached status alone, and only a genuine detached HEAD reports no branch. A
+repository with no commits yet is a settled answer rather than a failure, and reports one too.
+
 The checkouts column is ordered around the repository's main branch, which leads it whether that
 is a checkout sitting on the branch or a row offering one. Which branch that is comes from
 `origin/HEAD` where the remote has said, and from the conventional names only where nothing ever

@@ -7,13 +7,36 @@ use std::path::{Path, PathBuf};
 
 use argus_protocol::GitStatus;
 
-/// Returns `None` if `path` isn't inside a git repo at all. Any other
-/// failure (e.g. a transient lock) also degrades to `None` rather than
-/// erroring the whole tree snapshot — status is best-effort.
+/// Returns `None` if `path` isn't inside a git repo at all, or if the repo
+/// could not be read right now — a transient lock, or HEAD mid-rewrite
+/// during a checkout elsewhere. `None` means "unknown", never "clean and on
+/// no branch": callers keep the last status they had rather than treating a
+/// failed read as news. Status is best-effort and never errors the whole
+/// tree snapshot.
 pub fn status(path: &Path) -> Option<GitStatus> {
     let repo = git2::Repository::open(path).ok()?;
 
-    let head = repo.head().ok();
+    // A branch of `None` means detached HEAD, and callers act on that: the
+    // checkout stops counting as the occupant of any branch. A HEAD that
+    // merely could not be read right now — git rewriting it during a
+    // `switch` in another terminal — must not be reported the same way, or
+    // the checkout appears to hold nothing and the branch it is really on
+    // shows up as free. Say nothing at all instead, and let the caller keep
+    // what it last knew.
+    let head = match repo.head() {
+        Ok(head) => Some(head),
+        // A repository with no commits yet has no HEAD to read, which is a
+        // settled answer rather than a transient one.
+        Err(e)
+            if matches!(
+                e.code(),
+                git2::ErrorCode::UnbornBranch | git2::ErrorCode::NotFound
+            ) =>
+        {
+            None
+        }
+        Err(_) => return None,
+    };
     let branch = head
         .as_ref()
         .and_then(|h| h.shorthand())
