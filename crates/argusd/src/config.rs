@@ -224,6 +224,7 @@ impl From<HarnessConfig> for crate::harness::Harness {
             resume: c.resume,
             resume_id: c.resume_id,
             command_string: false,
+            bake_command: false,
             rule_file: c.rule_file.map(PathBuf::from),
             settings_version: None,
         }

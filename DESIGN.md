@@ -232,8 +232,11 @@ Code, Codex, OpenCode, AGY, Cursor Agent (`agent`) and `generic` are built in. C
 SessionStart adapter whose command reads routing from the pane environment, so its content hash stays
 stable after the user trusts it. Codex requires the user to trust project hooks before it runs. AGY uses
 `.agents/hooks.json` with flat `PreInvocation` and `Stop` hooks. Cursor's `agent` CLI uses `.cursor/hooks.json` with
-flat `sessionStart`, `beforeSubmitPrompt`, and `stop` hooks (schema `version: 1`) plus
-`.cursor/rules/argus.mdc`, and captures `conversation_id`. A `[[harness]]`
+flat `sessionStart`, `beforeSubmitPrompt`, `preToolUse`, `beforeShellExecution`, and `stop` hooks
+(schema `version: 1`) plus `.cursor/rules/argus.mdc`, and captures `conversation_id`. Tool-start
+events mark `working` because the CLI often skips prompt/stop lifecycle hooks; only `stop` clears
+to `idle`. Hook commands bake the helper path and pane URL — Cursor's runner does not inherit the
+pane environment, unlike the shell where `argus-hook title` still works. A `[[harness]]`
 block in `projects.toml` adds or replaces one, and an `[[agent]]` template selects one with
 `harness = "..."`, defaulting to a harness matching its own name. A block cannot supply a plugin,
 so replacing a built-in by name also gives up its module and its resume arguments.

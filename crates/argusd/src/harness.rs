@@ -133,9 +133,13 @@ pub struct Harness {
     /// Exact resume argv template. `{session_id}` is expanded without a shell.
     pub resume_id: Vec<String>,
     /// Command hooks accept one shell command string, unlike Claude's
-    /// `command` plus `args` shape. These use the pane environment rather
-    /// than baked-in routing so content-hash trust survives reinstalls.
+    /// `command` plus `args` shape.
     pub command_string: bool,
+    /// When [`command_string`] is set, bake the helper path, pane URL, and
+    /// token into the command. Cursor's hook runner does not inherit the
+    /// pane environment (so env-based routing silently no-ops), while Codex
+    /// must keep the env form so its trust hash stays stable across boots.
+    pub bake_command: bool,
     /// Optional workspace rule markdown file to install into checkout.
     pub rule_file: Option<PathBuf>,
     /// Top-level `version` some settings files require (Cursor's hooks.json).
@@ -160,6 +164,7 @@ impl Harness {
             resume: Vec::new(),
             resume_id: Vec::new(),
             command_string: false,
+            bake_command: false,
             rule_file: None,
             settings_version: None,
         }
@@ -216,6 +221,7 @@ impl Harness {
             resume: vec!["--continue".to_string()],
             resume_id: vec!["--resume".to_string(), "{session_id}".to_string()],
             command_string: false,
+            bake_command: false,
             rule_file: None,
             settings_version: None,
         }
@@ -242,6 +248,7 @@ impl Harness {
             resume: vec!["resume".to_string(), "--last".to_string()],
             resume_id: vec!["resume".to_string(), "{session_id}".to_string()],
             command_string: true,
+            bake_command: false,
             rule_file: None,
             settings_version: None,
         }
@@ -271,6 +278,7 @@ impl Harness {
             resume: vec!["--continue".to_string()],
             resume_id: vec!["--session".to_string(), "{session_id}".to_string()],
             command_string: false,
+            bake_command: false,
             rule_file: None,
             settings_version: None,
         }
@@ -309,6 +317,7 @@ impl Harness {
             resume: vec!["--continue".to_string()],
             resume_id: vec!["--conversation".to_string(), "{session_id}".to_string()],
             command_string: false,
+            bake_command: false,
             rule_file: Some(PathBuf::from(".agents").join("rules").join("argus.md")),
             settings_version: None,
         }
@@ -316,8 +325,10 @@ impl Harness {
 
     /// Cursor Agent (`agent` CLI) discovers project hooks in `.cursor/hooks.json`
     /// and always-on rules in `.cursor/rules/`. Hooks use a shell command string
-    /// and require top-level `version: 1`. `sessionStart` claims `conversation_id`,
-    /// `beforeSubmitPrompt` marks working, and `stop` marks idle.
+    /// and require top-level `version: 1`. `sessionStart` claims `conversation_id`;
+    /// `beforeSubmitPrompt` plus tool-start events (`preToolUse`,
+    /// `beforeShellExecution`) mark working — the CLI often skips lifecycle
+    /// hooks, so tool-start is what actually turns the pane; `stop` marks idle.
     pub fn agent() -> Harness {
         Harness {
             name: "agent".to_string(),
@@ -342,6 +353,22 @@ impl Harness {
                     owns_session: false,
                 },
                 Event {
+                    name: "preToolUse".into(),
+                    reports: Report::Working,
+                    matcher: None,
+                    note_from_stdin: false,
+                    session_id_key: Some("conversation_id".into()),
+                    owns_session: false,
+                },
+                Event {
+                    name: "beforeShellExecution".into(),
+                    reports: Report::Working,
+                    matcher: None,
+                    note_from_stdin: false,
+                    session_id_key: Some("conversation_id".into()),
+                    owns_session: false,
+                },
+                Event {
                     name: "stop".into(),
                     reports: Report::Idle,
                     matcher: None,
@@ -355,6 +382,10 @@ impl Harness {
             resume: vec!["--continue".to_string()],
             resume_id: vec!["--resume".to_string(), "{session_id}".to_string()],
             command_string: true,
+            // Cursor spawns hooks without the pane environment, so env-based
+            // routing never reaches the daemon; title updates from the shell
+            // still work because they inherit ARGUS_HOOK_*.
+            bake_command: true,
             rule_file: Some(PathBuf::from(".cursor").join("rules").join("argus.mdc")),
             settings_version: Some(1),
         }
@@ -469,7 +500,15 @@ impl Harness {
 
         let command = helper_path();
         for event in &self.events {
-            let entry = status_entry(&command, pane, port, token, event, self.command_string);
+            let entry = status_entry(
+                &command,
+                pane,
+                port,
+                token,
+                event,
+                self.command_string,
+                self.bake_command,
+            );
             match hooks_obj.get_mut(&event.name) {
                 Some(existing) => {
                     remove_managed(existing);
@@ -731,6 +770,7 @@ fn status_entry(
     token: &str,
     event: &Event,
     command_string: bool,
+    bake_command: bool,
 ) -> Value {
     let mut args = vec![
         format!("{}/status/{}", pane_url(pane, port), event.reports.as_str()),
@@ -747,12 +787,21 @@ fn status_entry(
         args.push(OWNS_SESSION_FLAG.to_string());
     }
     if command_string {
-        return json!({
+        let line = if bake_command {
+            baked_command_line(command, pane, port, token, event)
+        } else {
+            // Codex: env form keeps the on-disk trust hash stable.
+            env_command_line(event, false)
+        };
+        let mut entry = json!({
             "type": "command",
-            "command": env_command_line(event, false),
-            "commandWindows": env_command_line(event, true),
+            "command": line,
             "timeout": 5
         });
+        if !bake_command {
+            entry["commandWindows"] = json!(env_command_line(event, true));
+        }
+        return entry;
     }
     json!({
         "type": "command",
@@ -781,6 +830,34 @@ pub const SESSION_KEY_FLAG: &str = "--session-id-from-stdin";
 /// identity. Without it a CLI started from inside a pane would overwrite
 /// the conversation Argus reopens for that row.
 pub const OWNS_SESSION_FLAG: &str = "--owns-session";
+
+/// Installed hook form for harnesses whose config is a single shell string
+/// but whose runner does not inherit the pane environment (Cursor). Same
+/// argv as Claude's command-plus-args shape, joined for the shell.
+fn baked_command_line(
+    helper: &str,
+    pane: PaneId,
+    port: u16,
+    token: &str,
+    event: &Event,
+) -> String {
+    let mut parts = vec![
+        helper.to_string(),
+        format!("{}/status/{}", pane_url(pane, port), event.reports.as_str()),
+        token.to_string(),
+    ];
+    if event.note_from_stdin {
+        parts.push(NOTE_FLAG.to_string());
+    }
+    if let Some(key) = &event.session_id_key {
+        parts.push(SESSION_KEY_FLAG.to_string());
+        parts.push(key.clone());
+    }
+    if event.owns_session {
+        parts.push(OWNS_SESSION_FLAG.to_string());
+    }
+    quote_command_parts(parts)
+}
 
 /// A stable command-string hook. Codex persists trust against the handler's
 /// content hash, so the checkout-wide file must not contain ephemeral pane,
@@ -811,6 +888,10 @@ fn env_command_line(event: &Event, windows: bool) -> String {
     if event.owns_session {
         parts.push(OWNS_SESSION_FLAG.to_string());
     }
+    quote_command_parts(parts)
+}
+
+fn quote_command_parts(parts: Vec<String>) -> String {
     parts
         .into_iter()
         .map(|part| format!("\"{}\"", part.replace('"', "\\\"")))
@@ -920,6 +1001,7 @@ mod tests {
             resume: Vec::new(),
             resume_id: Vec::new(),
             command_string: false,
+            bake_command: false,
             rule_file: None,
             settings_version: None,
         }
@@ -1768,21 +1850,39 @@ process.stdout.write(JSON.stringify(reports));
         let start = hooks["sessionStart"].as_array().unwrap();
         assert_eq!(start.len(), 1);
         let start_cmd = start[0]["command"].as_str().unwrap();
-        assert!(start_cmd.contains("ARGUS_HOOK"));
-        assert!(start_cmd.contains("idle"));
+        assert!(
+            start_cmd.contains("http://127.0.0.1:4242/pane/5/status/idle"),
+            "Cursor hooks must bake routing; env vars are not inherited:\n{start_cmd}"
+        );
+        assert!(start_cmd.contains("tok"));
         assert!(start_cmd.contains(SESSION_KEY_FLAG));
         assert!(start_cmd.contains("conversation_id"));
         assert!(start_cmd.contains(OWNS_SESSION_FLAG));
+        assert!(
+            !start_cmd.contains("ARGUS_HOOK"),
+            "env-based routing silently fails under Cursor"
+        );
 
         let working = hooks["beforeSubmitPrompt"].as_array().unwrap();
         assert_eq!(working.len(), 1);
         let working_cmd = working[0]["command"].as_str().unwrap();
-        assert!(working_cmd.contains("working"));
+        assert!(working_cmd.contains("/status/working"));
+
+        // Tool-start is the CLI-reliable working signal when lifecycle hooks
+        // do not fire; neither event may clear idle on its own.
+        for event in ["preToolUse", "beforeShellExecution"] {
+            let entries = hooks[event].as_array().unwrap();
+            assert_eq!(entries.len(), 1, "{event}");
+            let cmd = entries[0]["command"].as_str().unwrap();
+            assert!(cmd.contains("/status/working"), "{event}");
+            assert!(cmd.contains("conversation_id"), "{event}");
+            assert!(!cmd.contains("ARGUS_HOOK"), "{event}");
+        }
 
         let stop = hooks["stop"].as_array().unwrap();
         assert_eq!(stop.len(), 1);
         let stop_cmd = stop[0]["command"].as_str().unwrap();
-        assert!(stop_cmd.contains("idle"));
+        assert!(stop_cmd.contains("/status/idle"));
 
         h.uninstall(dir.path()).unwrap();
         assert!(!hooks_file.exists(), ".cursor/hooks.json should be removed");
