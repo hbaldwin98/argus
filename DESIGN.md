@@ -102,6 +102,14 @@ cmd = ["claude"]
 env = { KEY = "value" }
 ```
 
+`projects.toml` is watched, and a save reloads it into the running tree — projects, repositories,
+their per-project settings, and agent templates. Nothing is rebuilt: what the file still names is
+matched and updated in place, so ids stay valid and panes keep running. What it no longer names is
+removed unless it is holding panes, in which case the row stays until it is empty. A file caught
+half-written fails to parse and is logged and ignored rather than allowed to take the tree with it.
+Harnesses are not reloaded: a running agent's hooks on disk were written by the harness it started
+under.
+
 Projects without a workspace use `default`. A project may set `root`, `repos`, or both; a path
 reached both ways is one repository, and the two lists are joined with `repos` first. When no
 agents are configured, `claude`, `codex`, `opencode`, and `agy` templates are supplied. Adding a project

@@ -25,6 +25,7 @@ async fn main() -> anyhow::Result<()> {
     daemon.start_hook_server()?;
     daemon.start_git_poll();
     daemon.start_git_watch();
+    daemon.start_config_watch();
     daemon.start_project_scan();
     // After the hook server, so a restored agent gets working hooks.
     if daemon.restore_session() {

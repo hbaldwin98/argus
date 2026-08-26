@@ -81,6 +81,23 @@ impl GitWatch {
     }
 }
 
+/// Watches one directory, not recursively, for as long as the returned
+/// watcher is held — the config directory, where `projects.toml` is saved.
+pub fn directory(dir: &Path, on_change: impl Fn() + Send + 'static) -> Option<impl Watcher> {
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        if res.is_ok() {
+            on_change();
+        }
+    })
+    .map_err(|e| tracing::warn!("no watch on {}: {e}", dir.display()))
+    .ok()?;
+    watcher
+        .watch(dir, RecursiveMode::NonRecursive)
+        .map_err(|e| tracing::warn!("no watch on {}: {e}", dir.display()))
+        .ok()?;
+    Some(watcher)
+}
+
 /// The paths under one Git directory worth watching, those that exist.
 fn metadata_paths(git_dir: &Path) -> Vec<PathBuf> {
     [

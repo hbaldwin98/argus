@@ -170,7 +170,9 @@ pub struct Daemon {
     starting_agents: StdMutex<HashMap<PaneId, Option<String>>>,
     tree_tx: broadcast::Sender<Vec<ProjectInfo>>,
     workspaces_tx: broadcast::Sender<Vec<WorkspaceInfo>>,
-    templates: Vec<AgentConfig>,
+    /// Agent templates, replaceable: `reload_config` swaps them, and every
+    /// start looks its template up by name at the time it runs.
+    templates: StdMutex<Vec<AgentConfig>>,
     /// Every harness this run knows about, built-in or configured.
     harnesses: Vec<crate::harness::Harness>,
     /// Set once `start_hook_server` binds; 0 until then. Read by
@@ -251,17 +253,7 @@ impl Daemon {
         // project refers to without declaring. Declaring is therefore
         // optional — `workspace = "x"` on a project is enough to create it.
         let mut workspaces: Vec<Workspace> = Vec::new();
-        let intern = |ws: &mut Vec<Workspace>, ids: &mut IdGen, name: &str| -> WorkspaceId {
-            if let Some(w) = ws.iter().find(|w| w.name == name) {
-                return w.id;
-            }
-            let id = WorkspaceId(ids.alloc());
-            ws.push(Workspace {
-                id,
-                name: name.to_string(),
-            });
-            id
-        };
+        let intern = intern_workspace;
         let default_ws = intern(&mut workspaces, &mut ids, config::DEFAULT_WORKSPACE);
         for w in &config.workspaces {
             intern(&mut workspaces, &mut ids, &w.name);
@@ -332,7 +324,7 @@ impl Daemon {
             starting_agents: StdMutex::new(HashMap::new()),
             workspaces_tx,
             tree_tx,
-            templates,
+            templates: StdMutex::new(templates),
             harnesses,
             hook_port: std::sync::atomic::AtomicU16::new(0),
             hook_token: gen_token(),
@@ -394,7 +386,7 @@ impl Daemon {
     }
 
     pub fn template_names(&self) -> Vec<String> {
-        self.templates.iter().map(|t| t.name.clone()).collect()
+        self.templates.lock().unwrap().iter().map(|t| t.name.clone()).collect()
     }
 
     /// The tree as clients see it: only the open workspace's projects.
@@ -675,10 +667,15 @@ impl Daemon {
                     let start = if session_id.is_some() {
                         Start::Resuming
                     } else {
-                        let harness = self
+                        let template = self
                             .templates
+                            .lock()
+                            .unwrap()
                             .iter()
                             .find(|template| template.name == pane.template())
+                            .cloned();
+                        let harness = template
+                            .as_ref()
                             .map(|template| self.harness_for(template).name);
                         let key = harness.map(|harness| (pane.checkout_path.clone(), harness));
                         if key.as_ref().is_some_and(|key| claimed.contains(key)) {
@@ -870,6 +867,8 @@ impl Daemon {
     ) -> anyhow::Result<PaneId> {
         let template = self
             .templates
+            .lock()
+            .unwrap()
             .iter()
             .find(|t| t.name == template_name)
             .cloned()
@@ -1523,10 +1522,15 @@ impl Daemon {
             }
         }
 
-        if let Some(template) = template
-            .as_deref()
-            .and_then(|name| self.templates.iter().find(|template| template.name == name))
-        {
+        let found = template.as_deref().and_then(|name| {
+            self.templates
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|template| template.name == name)
+                .cloned()
+        });
+        if let Some(template) = found.as_ref() {
             let harness = self.harness_for(template);
             let port = self.hook_port.load(std::sync::atomic::Ordering::Relaxed);
             if port != 0 {
@@ -1607,6 +1611,164 @@ impl Daemon {
                 c.git = status;
             }
         }
+    }
+
+    /// Re-reads `projects.toml` and folds it into the running tree.
+    ///
+    /// Nothing is rebuilt: projects, repositories and checkouts are matched
+    /// to what the file now says and updated in place, so ids stay valid
+    /// and every pane keeps running. What the file no longer mentions is
+    /// removed — unless it is holding panes, which are somebody's work in
+    /// progress and not the config file's to end. Those rows stay until
+    /// they are empty, and the next reload takes them.
+    ///
+    /// Agent templates are replaced wholesale, since a template is looked
+    /// up by name each time an agent starts. Harnesses are not: a running
+    /// agent's hooks on disk were written by the harness it started under.
+    pub fn reload_config(self: &Arc<Self>) -> anyhow::Result<()> {
+        let config = config::load()?;
+        let templates = if config.agents.is_empty() {
+            config::default_agents()
+        } else {
+            config.agents
+        };
+        *self.templates.lock().unwrap() = templates;
+
+        {
+            let mut inner = self.inner.lock().unwrap();
+            let excluded = inner.excluded.clone();
+            let Inner {
+                workspaces,
+                projects,
+                ids,
+                ..
+            } = &mut *inner;
+
+            for declared in &config.workspaces {
+                intern_workspace(workspaces, ids, &declared.name);
+            }
+
+            for p in &config.projects {
+                let workspace = match p.workspace.as_deref() {
+                    Some(name) => intern_workspace(workspaces, ids, name),
+                    None => intern_workspace(workspaces, ids, config::DEFAULT_WORKSPACE),
+                };
+                let root = p.root.as_deref().map(config::expand_home);
+                let named: Vec<PathBuf> = p
+                    .repos
+                    .iter()
+                    .map(|repo| config::expand_home(repo))
+                    .filter(|path| !is_excluded(&excluded, path))
+                    .collect();
+
+                match projects.iter_mut().find(|live| live.name == p.name) {
+                    Some(live) => {
+                        live.workspace = workspace;
+                        live.root = root;
+                        live.worktree_root =
+                            p.worktree_root.as_deref().map(config::expand_home);
+                        live.setup = p.setup.clone();
+                        live.exclusive = p.exclusive;
+                        for path in &named {
+                            if !live.repositories.iter().any(|r| {
+                                r.checkouts.iter().any(|c| c.primary && &c.path == path)
+                            }) {
+                                live.repositories
+                                    .push(new_repository(ids, path.clone(), false));
+                            }
+                        }
+                        // A repository the config named and no longer does.
+                        // Discovered ones answer to the root scan instead.
+                        live.repositories.retain(|r| {
+                            r.discovered
+                                || named.iter().any(|path| {
+                                    r.checkouts.iter().any(|c| c.primary && &c.path == path)
+                                })
+                                || r.checkouts.iter().any(|c| !c.panes.is_empty())
+                        });
+                    }
+                    None => {
+                        let repositories = named
+                            .into_iter()
+                            .map(|path| new_repository(ids, path, false))
+                            .collect();
+                        projects.push(Project {
+                            id: ProjectId(ids.alloc()),
+                            workspace,
+                            name: p.name.clone(),
+                            root,
+                            repositories,
+                            worktree_root: p
+                                .worktree_root
+                                .as_deref()
+                                .map(config::expand_home),
+                            setup: p.setup.clone(),
+                            exclusive: p.exclusive,
+                        });
+                    }
+                }
+            }
+
+            projects.retain(|live| {
+                config.projects.iter().any(|p| p.name == live.name)
+                    || live
+                        .repositories
+                        .iter()
+                        .flat_map(|r| r.checkouts.iter())
+                        .any(|c| !c.panes.is_empty())
+            });
+
+            // Workspaces are only ever interned, never dropped: the open
+            // one stays valid, and a workspace whose projects all left is
+            // an empty tab rather than a dangling id.
+        }
+
+        // A repository named for the first time has no status yet, and its
+        // row is named from that status.
+        self.reconcile_repositories();
+        self.refresh_git_status();
+        self.refresh_branches();
+        self.broadcast_tree();
+        self.broadcast_workspaces();
+        Ok(())
+    }
+
+    /// Reloads whenever `projects.toml` is written, so editing the file is
+    /// all there is to editing the config.
+    ///
+    /// An editor's save is several writes and often a rename, hence the
+    /// pause before reading; a file caught half-written simply fails to
+    /// parse, and a config that does not parse is logged and ignored rather
+    /// than allowed to take the running tree with it.
+    pub fn start_config_watch(self: &Arc<Self>) {
+        let path = config::config_path();
+        let Some(dir) = path.parent().map(std::path::Path::to_path_buf) else {
+            return;
+        };
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let Some(watch) = crate::watch::directory(&dir, move || {
+            let _ = tx.send(());
+        }) else {
+            return;
+        };
+
+        let daemon = self.clone();
+        tokio::spawn(async move {
+            // Held for as long as the loop runs: dropping the watcher stops
+            // the watch.
+            let _watch = watch;
+            while rx.recv().await.is_some() {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                while rx.try_recv().is_ok() {}
+
+                let daemon = daemon.clone();
+                let _ = tokio::task::spawn_blocking(move || match daemon.reload_config() {
+                    Ok(()) => tracing::info!("reloaded {}", config::config_path().display()),
+                    Err(e) => tracing::warn!("keeping the running config: {e}"),
+                })
+                .await;
+            }
+        });
     }
 
     /// Watches every repository's Git metadata and refreshes the moment it
@@ -2447,6 +2609,22 @@ fn worktree_dir(root: &std::path::Path, branch: &str) -> anyhow::Result<PathBuf>
         anyhow::bail!("a branch name can't be a path: {branch}");
     }
     Ok(root.join(branch))
+}
+
+/// The id of the workspace by this name, creating it if this is the first
+/// time it has been mentioned. Workspaces come from three places — the
+/// built-in default, `[[workspace]]` blocks, and any name a project refers
+/// to without declaring — so declaring one is optional.
+fn intern_workspace(workspaces: &mut Vec<Workspace>, ids: &mut IdGen, name: &str) -> WorkspaceId {
+    if let Some(w) = workspaces.iter().find(|w| w.name == name) {
+        return w.id;
+    }
+    let id = WorkspaceId(ids.alloc());
+    workspaces.push(Workspace {
+        id,
+        name: name.to_string(),
+    });
+    id
 }
 
 fn find_checkout(projects: &mut [Project], id: CheckoutId) -> Option<&mut Checkout> {
@@ -4824,6 +5002,169 @@ root = "/somewhere"
             None => std::env::remove_var("ARGUS_CONFIG_DIR"),
         }
         out
+    }
+
+    // --- reloading the config -----------------------------------------------
+
+    #[test]
+    fn a_project_added_to_the_file_arrives_on_reload() {
+        with_temp_config(|dir| {
+            std::fs::write(
+                dir.join("projects.toml"),
+                "[[project]]\nname = \"one\"\nrepos = [\"/one\"]\n",
+            )
+            .unwrap();
+            let d = Daemon::new(config::load().unwrap());
+            assert_eq!(d.snapshot().len(), 1);
+
+            std::fs::write(
+                dir.join("projects.toml"),
+                "[[project]]\nname = \"one\"\nrepos = [\"/one\"]\n\n[[project]]\nname = \"two\"\nrepos = [\"/two\"]\n",
+            )
+            .unwrap();
+            d.reload_config().unwrap();
+
+            let names: Vec<String> = d.snapshot().into_iter().map(|p| p.name).collect();
+            assert_eq!(names, vec!["one".to_string(), "two".to_string()]);
+        });
+    }
+
+    #[tokio::test]
+    async fn reloading_keeps_the_panes_and_ids_of_everything_still_configured() {
+        let repo = tempfile::tempdir().unwrap();
+        let repo_path = repo.path().to_string_lossy().replace('\\', "/");
+        with_temp_config(|dir| {
+            std::fs::write(
+                dir.join("projects.toml"),
+                format!("[[project]]\nname = \"one\"\nrepos = [\"{repo_path}\"]\n"),
+            )
+            .unwrap();
+            let d = Daemon::new(config::load().unwrap());
+            let checkout = only_checkout(&d);
+            let pane = d.spawn_shell(checkout).unwrap();
+
+            std::fs::write(
+                dir.join("projects.toml"),
+                format!(
+                    "[[project]]\nname = \"one\"\nrepos = [\"{repo_path}\"]\nexclusive = true\n"
+                ),
+            )
+            .unwrap();
+            d.reload_config().unwrap();
+
+            let snapshot = d.snapshot();
+            assert_eq!(
+                snapshot[0].repositories[0].checkouts[0].id, checkout,
+                "the same checkout, not a rebuilt one"
+            );
+            assert_eq!(
+                snapshot[0].repositories[0].checkouts[0].panes.len(),
+                1,
+                "the shell kept running"
+            );
+            let _ = d.close_pane(pane);
+        });
+    }
+
+    #[test]
+    fn a_repository_the_file_stopped_naming_leaves_only_when_it_is_empty() {
+        let repo = tempfile::tempdir().unwrap();
+        let repo_path = repo.path().to_string_lossy().replace('\\', "/");
+        with_temp_config(|dir| {
+            std::fs::write(
+                dir.join("projects.toml"),
+                format!("[[project]]\nname = \"one\"\nrepos = [\"{repo_path}\", \"/second\"]\n"),
+            )
+            .unwrap();
+            let d = Daemon::new(config::load().unwrap());
+            assert_eq!(d.snapshot()[0].repositories.len(), 2);
+
+            std::fs::write(
+                dir.join("projects.toml"),
+                format!("[[project]]\nname = \"one\"\nrepos = [\"{repo_path}\"]\n"),
+            )
+            .unwrap();
+            d.reload_config().unwrap();
+
+            assert_eq!(
+                d.snapshot()[0].repositories.len(),
+                1,
+                "the repository with nothing running in it goes"
+            );
+        });
+    }
+
+    #[tokio::test]
+    async fn a_project_removed_from_the_file_stays_while_an_agent_is_working_in_it() {
+        // The config file does not get to end somebody's work in progress.
+        let repo = tempfile::tempdir().unwrap();
+        let repo_path = repo.path().to_string_lossy().replace('\\', "/");
+        with_temp_config(|dir| {
+            std::fs::write(
+                dir.join("projects.toml"),
+                format!("[[project]]\nname = \"one\"\nrepos = [\"{repo_path}\"]\n"),
+            )
+            .unwrap();
+            let d = Daemon::new(config::load().unwrap());
+            let pane = d.spawn_shell(only_checkout(&d)).unwrap();
+
+            std::fs::write(dir.join("projects.toml"), "").unwrap();
+            d.reload_config().unwrap();
+
+            assert_eq!(d.snapshot().len(), 1, "still there, still running");
+
+            d.close_pane(pane).unwrap();
+            d.reload_config().unwrap();
+            assert!(d.snapshot().is_empty(), "and gone once it is empty");
+        });
+    }
+
+    #[test]
+    fn reloading_replaces_the_agent_templates() {
+        with_temp_config(|dir| {
+            std::fs::write(dir.join("projects.toml"), "[[agent]]\nname = \"old\"\ncmd = [\"x\"]\n")
+                .unwrap();
+            let d = Daemon::new(config::load().unwrap());
+            assert_eq!(d.template_names(), vec!["old".to_string()]);
+
+            std::fs::write(dir.join("projects.toml"), "[[agent]]\nname = \"new\"\ncmd = [\"y\"]\n")
+                .unwrap();
+            d.reload_config().unwrap();
+
+            assert_eq!(d.template_names(), vec!["new".to_string()]);
+        });
+    }
+
+    #[tokio::test]
+    async fn a_project_that_becomes_exclusive_starts_refusing_a_second_agent() {
+        let repo = tempfile::tempdir().unwrap();
+        let repo_path = repo.path().to_string_lossy().replace('\\', "/");
+        with_temp_config(|dir| {
+            let agent = "[[agent]]\nname = \"claude\"\ncmd = [\"echo\", \"hi\"]\n";
+            std::fs::write(
+                dir.join("projects.toml"),
+                format!("[[project]]\nname = \"one\"\nrepos = [\"{repo_path}\"]\n{agent}"),
+            )
+            .unwrap();
+            let d = Daemon::new(config::load().unwrap());
+            let checkout = only_checkout(&d);
+            let first = d.spawn_agent(checkout, "claude").unwrap();
+
+            std::fs::write(
+                dir.join("projects.toml"),
+                format!(
+                    "[[project]]\nname = \"one\"\nrepos = [\"{repo_path}\"]\nexclusive = true\n{agent}"
+                ),
+            )
+            .unwrap();
+            d.reload_config().unwrap();
+
+            assert!(
+                d.spawn_agent(checkout, "claude").is_err(),
+                "the setting applies to the checkout that was already there"
+            );
+            let _ = d.close_pane(first);
+        });
     }
 
     fn config_with_workspaces() -> ConfigFile {
