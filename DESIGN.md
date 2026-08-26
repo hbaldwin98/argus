@@ -94,6 +94,7 @@ repos = ["~/src/argus"]
 workspace = "work"
 worktree_root = "~/worktrees"
 setup = ["pnpm install"]
+exclusive = true
 
 [[agent]]
 name = "claude"
@@ -320,6 +321,11 @@ A project may set `worktree_root`, which holds one directory per repository, so 
 one project can have a branch of the same name. Its `setup` commands run in a worktree Argus has
 just created, in order, parsed into arguments without a shell like the editor command; the row is
 broadcast before they run, and a failure is reported without removing the worktree.
+
+A checkout may hold several agents. That is shown — a warning glyph on the row, and "shared by N"
+where the column is wide enough — rather than prevented, unless the project sets `exclusive`, which
+turns a second fresh agent in one checkout into a refusal naming the one already there. Shells never
+count, and restoring a session is exempt: those panes were already running together.
 
 Argus-created worktrees live under `<primary>/.argus/worktrees/<branch>` by default; a branch name that is not
 a plain path component is refused before it becomes a directory, and a name starting with a dash is

@@ -141,6 +141,8 @@ struct Project {
     worktree_root: Option<PathBuf>,
     /// Commands run in a worktree this project has just created, in order.
     setup: Vec<String>,
+    /// Whether a checkout here may hold only one agent at a time.
+    exclusive: bool,
 }
 
 struct Workspace {
@@ -299,6 +301,7 @@ impl Daemon {
                     repositories,
                     worktree_root: p.worktree_root.as_deref().map(config::expand_home),
                     setup: p.setup,
+                    exclusive: p.exclusive,
                 }
             })
             .collect();
@@ -877,6 +880,16 @@ impl Daemon {
 
         let path = {
             let inner = self.inner.lock().unwrap();
+            // Only on a fresh start: a restore is replaying panes that were
+            // already running together, and refusing half of them would
+            // take work away rather than protect it.
+            if start == Start::Fresh {
+                if let Some(running) = exclusive_conflict(&inner.projects, checkout) {
+                    anyhow::bail!(
+                        "{running} is already working here, and this project allows one agent per checkout — make a worktree for another"
+                    );
+                }
+            }
             find_checkout_ref(&inner.projects, checkout)
                 .map(|c| c.path.clone())
                 .ok_or_else(|| anyhow::anyhow!("no such checkout"))?
@@ -1877,6 +1890,7 @@ impl Daemon {
                 // the user adds to the file by hand.
                 worktree_root: None,
                 setup: Vec::new(),
+                exclusive: false,
             });
         }
         self.broadcast_tree();
@@ -2518,6 +2532,30 @@ fn find_pane_ref(projects: &[Project], id: PaneId) -> Option<&Pane> {
 /// Whether any agent pane is still open in the checkout at `path`. Gates
 /// tearing down that checkout's managed hooks, which are shared by every
 /// agent running there.
+/// The agent already working in this checkout, if its project allows only
+/// one. `None` when the project has not asked for that, or when nothing is
+/// running there — sharing a checkout is otherwise allowed, and merely
+/// shown (TARGET.md §Repository and checkout model).
+fn exclusive_conflict(projects: &[Project], checkout: CheckoutId) -> Option<String> {
+    let project = projects.iter().find(|p| {
+        p.repositories
+            .iter()
+            .any(|r| r.checkouts.iter().any(|c| c.id == checkout))
+    })?;
+    if !project.exclusive {
+        return None;
+    }
+    project
+        .repositories
+        .iter()
+        .flat_map(|r| r.checkouts.iter())
+        .find(|c| c.id == checkout)?
+        .panes
+        .iter()
+        .find(|p| p.kind == PaneKind::Agent)
+        .map(|p| p.title.clone())
+}
+
 fn checkout_has_agent(projects: &[Project], path: &std::path::Path) -> bool {
     projects
         .iter()
@@ -3787,6 +3825,87 @@ mod tests {
             }],
             harnesses: Vec::new(),
         })
+    }
+
+    /// The same fake agent, in a project that allows one per checkout.
+    fn daemon_with_an_exclusive_project(dir: &std::path::Path) -> Arc<Daemon> {
+        Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                repos: vec![dir.to_string_lossy().to_string()],
+                exclusive: true,
+                ..Default::default()
+            }],
+            agents: vec![AgentConfig {
+                name: "claude".to_string(),
+                cmd: vec!["echo".to_string(), "hi".to_string()],
+                env: Default::default(),
+                harness: None,
+            }],
+            harnesses: Vec::new(),
+        })
+    }
+
+    #[tokio::test]
+    async fn sharing_a_checkout_is_allowed_unless_the_project_says_otherwise() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_fake_claude(dir.path());
+        let checkout = only_checkout(&d);
+
+        let first = d.spawn_agent(checkout, "claude").unwrap();
+        let second = d.spawn_agent(checkout, "claude").unwrap();
+
+        assert_eq!(
+            d.snapshot()[0].repositories[0].checkouts[0].panes.len(),
+            2,
+            "two agents in one checkout is shown, not refused"
+        );
+        let _ = d.close_pane(first);
+        let _ = d.close_pane(second);
+    }
+
+    #[tokio::test]
+    async fn an_exclusive_project_refuses_a_second_agent_in_one_checkout() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_an_exclusive_project(dir.path());
+        let checkout = only_checkout(&d);
+        let first = d.spawn_agent(checkout, "claude").unwrap();
+
+        let err = d.spawn_agent(checkout, "claude").unwrap_err().to_string();
+
+        assert!(err.contains("worktree"), "say what to do instead: {err:?}");
+        assert_eq!(
+            d.snapshot()[0].repositories[0].checkouts[0].panes.len(),
+            1
+        );
+        let _ = d.close_pane(first);
+    }
+
+    #[tokio::test]
+    async fn exclusivity_is_about_agents_not_shells() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_an_exclusive_project(dir.path());
+        let checkout = only_checkout(&d);
+        let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+        let shell = d.spawn_shell(checkout).expect("a shell is not an agent");
+
+        let _ = d.close_pane(shell);
+        let _ = d.close_pane(agent);
+    }
+
+    #[tokio::test]
+    async fn an_exclusive_checkout_takes_an_agent_again_once_the_first_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_an_exclusive_project(dir.path());
+        let checkout = only_checkout(&d);
+        let first = d.spawn_agent(checkout, "claude").unwrap();
+        d.close_pane(first).unwrap();
+
+        let second = d.spawn_agent(checkout, "claude").unwrap();
+
+        let _ = d.close_pane(second);
     }
 
     fn settings_of(dir: &std::path::Path) -> std::path::PathBuf {

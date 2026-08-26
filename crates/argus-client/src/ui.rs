@@ -284,6 +284,22 @@ n  add one",
                             Style::default().fg(th.dim),
                         ));
                     }
+                    // Two agents in one directory is allowed, but it is
+                    // never something to find out from the diff later. The
+                    // glyph carries it where the column is too narrow for
+                    // the words, which is most columns.
+                    let agents = c
+                        .listed_panes()
+                        .filter(|p| p.kind == argus_protocol::PaneKind::Agent)
+                        .count();
+                    let shared = agents > 1;
+                    if shared {
+                        detail.push(Span::styled("  ", Style::default()));
+                        detail.push(Span::styled(
+                            format!("shared by {agents}"),
+                            Style::default().fg(th.warn),
+                        ));
+                    }
                     Item::new(
                         vec![
                             status_dot(worst_pane_status(c), th),
@@ -294,6 +310,10 @@ n  add one",
                             Span::styled(
                                 c.name.clone(),
                                 Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(
+                                if shared { " ⚠" } else { "" },
+                                Style::default().fg(th.warn),
                             ),
                         ],
                         detail,
@@ -2147,6 +2167,46 @@ mod tests {
         let mut app = App::new(tx);
         app.on_server_msg(argus_protocol::ServerMsg::Tree(tree()));
         app
+    }
+
+    #[test]
+    fn a_checkout_two_agents_are_working_in_says_it_is_shared() {
+        let mut app = app_with_tree();
+        let panes = &mut app.tree[0].repositories[0].checkouts[0].panes;
+        for p in panes.iter_mut() {
+            p.kind = argus_protocol::PaneKind::Agent;
+        }
+
+        let buf = draw_at(&mut app, 200, 20);
+        let rendered = lines(&buf);
+        let at = rendered
+            .iter()
+            .position(|l| l.contains("⌂ master"))
+            .expect("the primary checkout has a row");
+
+        assert!(
+            rendered[at].contains('⚠'),
+            "the glyph is what survives a narrow column: {:?}",
+            rendered[at]
+        );
+        assert!(
+            rendered[at + 1].contains("shared by 2"),
+            "sharing a checkout is allowed, but not something to find out later: {:?}",
+            rendered[at + 1]
+        );
+    }
+
+    #[test]
+    fn one_agent_and_a_shell_is_not_sharing() {
+        let mut app = app_with_tree();
+
+        let buf = draw_at(&mut app, 120, 20);
+        let rendered = lines(&buf);
+
+        assert!(
+            !rendered.iter().any(|l| l.contains("shared")),
+            "the fixture has one agent and one shell in that checkout"
+        );
     }
 
     #[test]

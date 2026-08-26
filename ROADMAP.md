@@ -5,7 +5,6 @@ contract is in [`TARGET.md`](TARGET.md).
 
 ## P2: Repository Model
 
-- Show shared-checkout warnings and support optional exclusivity.
 - Replace or supplement the two-second poll with Git metadata watching.
 - Reload configuration without dropping running panes.
 - Let a project root include or exclude paths, now that scanning one is how projects are built.

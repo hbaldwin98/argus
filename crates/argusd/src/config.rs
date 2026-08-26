@@ -56,6 +56,12 @@ pub struct ProjectConfig {
     /// have a branch of the same name without landing on each other.
     #[serde(default)]
     pub worktree_root: Option<String>,
+    /// Whether a checkout in this project may hold only one agent at a
+    /// time. Sharing a checkout is allowed by default and merely shown;
+    /// this turns it into a refusal, for repositories where two agents
+    /// editing the same files is never what was meant.
+    #[serde(default)]
+    pub exclusive: bool,
     /// Commands to run in a worktree Argus has just created — installing
     /// dependencies, seeding an untracked config file, whatever a fresh
     /// checkout needs before it is worth opening. Each is parsed into
