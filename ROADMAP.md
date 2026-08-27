@@ -39,6 +39,11 @@ a recipient when several agents share the checkout. What remains is presentation
   hunks — review already captures both endpoints into the object store, so the parser can be given a
   complete file instead of guessing at a fragment torn out of one.
 - Decide whether to retain the current scrolling surface or adopt separate file and diff columns.
+- Offer a split view alongside the unified one, toggled. The wire needs nothing: a split pairs each
+  hunk's removed and added lines into rows over the `Hunk` data the client already has. What it
+  needs is width, and review draws in the live pane's column at roughly a third of the screen — so
+  it belongs behind the fullscreen pane, which is where two readable sides fit. Line comments
+  already carry both old and new numbers, so anchors survive the change.
 
 Deliberately out of scope: staging, unstaging, and reverting hunks, and any base that reaches into
 committed history. Dedicated Git tools do those better.
