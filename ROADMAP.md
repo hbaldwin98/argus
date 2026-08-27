@@ -45,7 +45,7 @@ the checkout. What remains is presentation work.
 Deliberately out of scope: staging, unstaging, and reverting hunks, and any base that compares a
 branch against a fork point or a remembered snapshot. Dedicated Git tools do those better.
 
-## P6: Notes, Context, and Delegation
+## P6: Notes and Context
 
 Closes the loop: information currently flows only upward, from agents reporting to humans reading.
 
@@ -55,8 +55,6 @@ Closes the loop: information currently flows only upward, from agents reporting 
   completion evidence for human review and acceptance.
 - Implement explicit note forwarding.
 - Add `argus ctx` and MCP adapters over the same implementation.
-- Decide whether delegation needs approval on top of its cap. Agents can already open peer
-  review panes, bounded to four live agents per checkout and gated on project exclusivity.
 
 ## P7: Terminal and Performance
 

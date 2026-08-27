@@ -11,10 +11,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use argus_protocol::{
-    parse_pane_path, DelegateRequest, DelegateResponse, Endpoint, HandoffRequest, PaneId,
-    MAX_HANDOFF_BYTES,
-};
+use argus_protocol::{parse_pane_path, Endpoint, PaneId};
 
 use super::Daemon;
 
@@ -49,7 +46,6 @@ impl Daemon {
 }
 
 const MAX_BODY: usize = 4096;
-const MAX_HANDOFF_BODY: usize = MAX_HANDOFF_BYTES * 6 + 1024;
 
 struct HookResponse {
     code: u16,
@@ -107,12 +103,8 @@ async fn handle_hook_request(
     let (authorized, content_length, reporter) =
         read_hook_headers(&mut reader, &daemon.hook_token).await?;
     let endpoint = parse_pane_path(&path);
-    let max_body = match endpoint {
-        Some((_, Endpoint::Handoff)) => MAX_HANDOFF_BODY,
-        _ => MAX_BODY,
-    };
     // The server trusts nothing about a request beyond its bearer token.
-    let too_large = content_length > max_body;
+    let too_large = content_length > MAX_BODY;
     let mut body = vec![0u8; if too_large { 0 } else { content_length }];
     if !body.is_empty() {
         let _ = reader.read_exact(&mut body).await;
@@ -150,8 +142,6 @@ async fn handle_hook_request(
                 daemon.set_pane_session_id(pane, &String::from_utf8_lossy(&body));
                 HookResponse::empty(200, "OK")
             }
-            Some((pane, Endpoint::Delegate)) => delegation_response(&daemon, pane, &body)?,
-            Some((pane, Endpoint::Handoff)) => handoff_response(&daemon, pane, &body)?,
             Some((pane, Endpoint::Comments)) => comments_response(&daemon, pane)?,
             // A checkout move from an agent that does not own the pane is
             // dropped: the row follows the agent Argus started in it.
@@ -195,59 +185,6 @@ async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
         }
     }
     Ok((authorized, content_length, reporter))
-}
-
-fn delegation_response(
-    daemon: &Arc<Daemon>,
-    source: PaneId,
-    body: &[u8],
-) -> anyhow::Result<HookResponse> {
-    let request = match serde_json::from_slice::<DelegateRequest>(body) {
-        Ok(request) => request,
-        Err(error) => {
-            return Ok(HookResponse::text(
-                400,
-                "Bad Request",
-                format!("invalid delegation request: {error}"),
-            ));
-        }
-    };
-    let response = match daemon.delegate_agent(source, request.template.as_deref(), &request.task) {
-        Ok(pane) => HookResponse {
-            code: 201,
-            reason: "Created",
-            body: serde_json::to_vec(&DelegateResponse { pane })?,
-        },
-        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
-    };
-    Ok(response)
-}
-
-fn handoff_response(
-    daemon: &Arc<Daemon>,
-    source: PaneId,
-    body: &[u8],
-) -> anyhow::Result<HookResponse> {
-    let request = match serde_json::from_slice::<HandoffRequest>(body) {
-        Ok(request) => request,
-        Err(error) => {
-            return Ok(HookResponse::text(
-                400,
-                "Bad Request",
-                format!("invalid handoff request: {error}"),
-            ));
-        }
-    };
-    let response = match daemon.handoff_agent(source, request.template.as_deref(), &request.message)
-    {
-        Ok(pane) => HookResponse {
-            code: 201,
-            reason: "Created",
-            body: serde_json::to_vec(&DelegateResponse { pane })?,
-        },
-        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
-    };
-    Ok(response)
 }
 
 fn comments_response(daemon: &Arc<Daemon>, source: PaneId) -> anyhow::Result<HookResponse> {

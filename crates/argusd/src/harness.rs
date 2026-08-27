@@ -764,25 +764,6 @@ pub fn instructions() -> String {
          linked worktree and branch there with `git worktree add <new-path> -b \
          <new-branch>`. Do all subsequent work from that new path.\n\
          \n\
-         You can open another independent agent pane for a bounded review task:\n\
-         \n\
-         \x20 {hook} delegate \"Review the current diff for correctness\"\n\
-         \x20 {hook} delegate --template NAME \"Review DESIGN.md for contradictions\"\n\
-         \n\
-         Without `--template`, the new agent uses your template. It starts in this same \
-         checkout, so it sees and shares the same files. Ask it to review rather than edit \
-         unless sharing edits is intentional; use a worktree when it needs isolation. A \
-         delegation request is refused once the checkout has four live agents.\n\
-         \n\
-         To continue the whole session in a fresh agent, generate a handoff document in memory \
-         and pipe it to the helper instead of writing it to the checkout:\n\
-         \n\
-         \x20 <producer> | {hook} handoff\n\
-         \x20 <producer> | {hook} handoff --template NAME\n\
-         \n\
-         The fresh agent receives that document as its first message. Without `--template`, it \
-         uses your template.\n\
-         \n\
          Review comments are durable and scoped to this checkout. Read the newest comments with:\n\
          \n\
          \x20 {hook} comments\n\
@@ -1600,24 +1581,6 @@ mod tests {
         assert!(text.contains("Never run `git switch` or `git checkout`"));
         assert!(text.contains("git worktree add"));
         assert!(text.contains("checkout"));
-    }
-
-    #[test]
-    fn agents_are_told_how_to_delegate_reviews_safely() {
-        let text = instructions();
-
-        assert!(text.contains("delegate --template NAME"));
-        assert!(text.contains("shares the same files"));
-        assert!(text.contains("refused once the checkout has four live agents"));
-    }
-
-    #[test]
-    fn agents_are_told_how_to_handoff_without_writing_a_file() {
-        let text = instructions();
-
-        assert!(text.contains("handoff --template NAME"));
-        assert!(text.contains("generate a handoff document in memory"));
-        assert!(text.contains("receives that document as its first message"));
     }
 
     #[test]

@@ -101,8 +101,7 @@ template's opt-in pinned-note injection.
 
 The daemon exposes the same scoped context through MCP, HTTP, and `argus ctx`. A per-checkout token
 limits every agent to approved read and write calls. Write operations such as note changes,
-review requests, worktree creation, and delegation are audited and template-policy gated.
-Delegation has a bounded fan-out and may require approval.
+review requests, and worktree creation are audited and template-policy gated.
 
 ## Terminal and memory model
 

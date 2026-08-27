@@ -182,9 +182,6 @@ struct Inner {
 
 pub struct Daemon {
     inner: StdMutex<Inner>,
-    /// Serializes delegated starts so their per-checkout fan-out check and
-    /// pane insertion form one operation. Ordinary user starts remain free.
-    delegation: StdMutex<()>,
     /// Hooks can fire after the child is spawned but before its pane is
     /// inserted into `inner`. Keep their latest bounded state until insertion.
     starting_agents: StdMutex<HashMap<PaneId, PendingStart>>,
@@ -382,7 +379,6 @@ impl Daemon {
                 open,
                 excluded,
             }),
-            delegation: StdMutex::new(()),
             starting_agents: StdMutex::new(HashMap::new()),
             workspaces_tx,
             tree_tx,
@@ -2147,92 +2143,6 @@ mod tests {
         let _ = d.close_pane(second);
     }
 
-    #[tokio::test]
-    async fn delegation_inherits_or_overrides_the_source_template() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = daemon_with_claude_aliases(dir.path(), &["first", "second"]);
-        let source = d.spawn_agent(only_checkout(&d), "first").unwrap();
-
-        let inherited = d.delegate_agent(source, None, "review the diff").unwrap();
-        let overridden = d
-            .delegate_agent(source, Some("second"), "review DESIGN.md")
-            .unwrap();
-
-        assert_eq!(pane_info(&d, inherited).template.as_deref(), Some("first"));
-        assert_eq!(
-            pane_info(&d, overridden).template.as_deref(),
-            Some("second")
-        );
-        close_all(&d);
-    }
-
-    #[tokio::test]
-    async fn a_delegated_task_waits_for_the_agent_that_has_to_read_it() {
-        // Regression: the task used to be typed at the new pane in the same
-        // breath as spawning it, seconds before any agent CLI has a prompt
-        // to type into. The text survived in the pty buffer and turned up in
-        // the input box eventually, but the Return that submits it did not —
-        // so the pane sat there with the task typed and never ran it, which
-        // reads from the outside as an agent opening panes for no reason.
-        let dir = tempfile::tempdir().unwrap();
-        let d = daemon_running(dir.path(), &["slow"], slow_starting_agent_command());
-        let source = d.spawn_agent(only_checkout(&d), "slow").unwrap();
-
-        let pane = d
-            .delegate_agent(source, None, "argus-delegated-marker")
-            .unwrap();
-
-        // The stand-in spends its first seconds not listening, the way a
-        // real harness spends its startup. Nothing may be typed at it yet:
-        // a terminal echoes what it is given, so the marker showing up here
-        // is the old bug, not early delivery.
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        assert!(
-            !screen_of(&d, pane)
-                .iter()
-                .any(|row| row.contains("argus-delegated-marker")),
-            "the task was typed at an agent that was still starting"
-        );
-        wait_for_screen(&d, pane, "argus-delegated-marker").await;
-        close_all(&d);
-    }
-
-    #[tokio::test]
-    async fn a_new_pane_says_what_it_was_opened_to_do() {
-        // Until the agent reads its message and renames itself, the row is
-        // the only place the human can see why a pane appeared at all.
-        let dir = tempfile::tempdir().unwrap();
-        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
-        let source = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-
-        let delegated = d.delegate_agent(source, None, "review the diff").unwrap();
-        let continued = d.handoff_agent(source, None, "everything I know").unwrap();
-
-        assert_eq!(pane_info(&d, delegated).title, "review the diff");
-        assert_eq!(pane_info(&d, continued).title, "handoff");
-        close_all(&d);
-    }
-
-    #[tokio::test]
-    async fn delegation_requires_a_live_agent_source_and_a_bounded_task() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
-        let checkout = only_checkout(&d);
-        let shell = d.spawn_shell(checkout).unwrap();
-        let agent = d.spawn_agent(checkout, "claude").unwrap();
-
-        assert!(d.delegate_agent(shell, None, "review").is_err());
-        assert!(d.delegate_agent(agent, None, "   ").is_err());
-        assert!(d
-            .delegate_agent(
-                agent,
-                None,
-                &"x".repeat(argus_protocol::MAX_DELEGATE_TASK_BYTES + 1),
-            )
-            .is_err());
-        close_all(&d);
-    }
-
     fn review_anchor(line: u32) -> ReviewAnchor {
         ReviewAnchor {
             commit: None,
@@ -2245,39 +2155,6 @@ mod tests {
             new_end: Some(line),
             text: vec!["+changed".to_string()],
         }
-    }
-
-    #[tokio::test]
-    async fn handoff_inherits_the_harness_and_accepts_a_document_sized_message() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
-        let source = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-        let message = "handoff context ".repeat(300);
-
-        let pane = d.handoff_agent(source, None, &message).unwrap();
-
-        assert_eq!(pane_info(&d, pane).template.as_deref(), Some("claude"));
-        close_all(&d);
-    }
-
-    #[tokio::test]
-    async fn handoff_requires_a_live_source_and_a_bounded_message() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
-        let checkout = only_checkout(&d);
-        let shell = d.spawn_shell(checkout).unwrap();
-        let agent = d.spawn_agent(checkout, "claude").unwrap();
-
-        assert!(d.handoff_agent(shell, None, "continue").is_err());
-        assert!(d.handoff_agent(agent, None, " \n ").is_err());
-        assert!(d
-            .handoff_agent(
-                agent,
-                None,
-                &"x".repeat(argus_protocol::MAX_HANDOFF_BYTES + 1),
-            )
-            .is_err());
-        close_all(&d);
     }
 
     #[tokio::test]
@@ -2313,72 +2190,10 @@ mod tests {
         close_all(&d);
     }
 
-    #[tokio::test]
-    async fn delegation_caps_live_agents_in_one_checkout() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
-        let source = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-        for _ in 0..3 {
-            d.delegate_agent(source, None, "review").unwrap();
-        }
-
-        let error = d.delegate_agent(source, None, "one too many").unwrap_err();
-
-        assert!(error.to_string().contains("4 live agents"));
-        close_all(&d);
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn concurrent_delegation_respects_the_live_agent_cap() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
-        let source = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-        for _ in 0..2 {
-            d.delegate_agent(source, None, "review").unwrap();
-        }
-        let barrier = Arc::new(tokio::sync::Barrier::new(2));
-        let handles = (0..2)
-            .map(|_| {
-                let d = Arc::clone(&d);
-                let barrier = Arc::clone(&barrier);
-                tokio::spawn(async move {
-                    barrier.wait().await;
-                    d.delegate_agent(source, None, "review concurrently")
-                })
-            })
-            .collect::<Vec<_>>();
-        let mut results = Vec::new();
-        for handle in handles {
-            results.push(handle.await.unwrap());
-        }
-
-        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
-        assert_eq!(results.iter().filter(|result| result.is_err()).count(), 1);
-        assert_eq!(
-            d.snapshot()[0].repositories[0].checkouts[0]
-                .panes
-                .iter()
-                .filter(|pane| pane.kind == PaneKind::Agent)
-                .count(),
-            4
-        );
-        close_all(&d);
-    }
-
     async fn post_agent_hook(
         d: &Arc<Daemon>,
         source: PaneId,
         endpoint: argus_protocol::Endpoint,
-        body: &str,
-    ) -> Vec<u8> {
-        post_agent_hook_with_length(d, source, endpoint, body.len(), body).await
-    }
-
-    async fn post_agent_hook_with_length(
-        d: &Arc<Daemon>,
-        source: PaneId,
-        endpoint: argus_protocol::Endpoint,
-        content_length: usize,
         body: &str,
     ) -> Vec<u8> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -2387,7 +2202,7 @@ mod tests {
             "POST {} HTTP/1.1\r\nAuthorization: Bearer {}\r\nContent-Length: {}\r\n\r\n{}",
             argus_protocol::pane_path(source, endpoint),
             d.hook_token,
-            content_length,
+            body.len(),
             body
         );
         let port = d.hook_port.load(std::sync::atomic::Ordering::Relaxed);
@@ -2398,85 +2213,6 @@ mod tests {
         let mut response = Vec::new();
         stream.read_to_end(&mut response).await.unwrap();
         response
-    }
-
-    #[tokio::test]
-    async fn an_authorized_delegation_hook_returns_the_new_pane() {
-        use argus_protocol::{DelegateRequest, DelegateResponse};
-
-        let dir = tempfile::tempdir().unwrap();
-        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
-        d.start_hook_server().unwrap();
-        let source = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-        let body = serde_json::to_string(&DelegateRequest {
-            template: None,
-            task: "review the current changes".into(),
-        })
-        .unwrap();
-        let response = post_agent_hook(&d, source, Endpoint::Delegate, &body).await;
-
-        assert!(response.starts_with(b"HTTP/1.1 201 Created"));
-        let body = response
-            .windows(4)
-            .position(|window| window == b"\r\n\r\n")
-            .map(|index| &response[index + 4..])
-            .unwrap();
-        let delegated: DelegateResponse = serde_json::from_slice(body).unwrap();
-        assert_ne!(delegated.pane, source);
-        assert_eq!(pane_info(&d, delegated.pane).kind, PaneKind::Agent);
-        close_all(&d);
-    }
-
-    #[tokio::test]
-    async fn an_authorized_handoff_hook_returns_the_new_pane() {
-        use argus_protocol::{DelegateResponse, HandoffRequest};
-
-        let dir = tempfile::tempdir().unwrap();
-        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
-        d.start_hook_server().unwrap();
-        let source = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-        let body = serde_json::to_string(&HandoffRequest {
-            template: None,
-            message: "handoff context ".repeat(300),
-        })
-        .unwrap();
-        let response = post_agent_hook(&d, source, Endpoint::Handoff, &body).await;
-
-        assert!(response.starts_with(b"HTTP/1.1 201 Created"));
-        let body = response
-            .windows(4)
-            .position(|window| window == b"\r\n\r\n")
-            .map(|index| &response[index + 4..])
-            .unwrap();
-        let handed_off: DelegateResponse = serde_json::from_slice(body).unwrap();
-        assert_ne!(handed_off.pane, source);
-        assert_eq!(pane_info(&d, handed_off.pane).kind, PaneKind::Agent);
-        close_all(&d);
-    }
-
-    #[tokio::test]
-    async fn handoff_hook_rejects_a_body_over_its_endpoint_limit() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
-        d.start_hook_server().unwrap();
-        let source = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-
-        let response = post_agent_hook_with_length(
-            &d,
-            source,
-            Endpoint::Handoff,
-            argus_protocol::MAX_HANDOFF_BYTES * 6 + 1025,
-            "",
-        )
-        .await;
-
-        assert!(response.starts_with(b"HTTP/1.1 413 Content Too Large"));
-        assert_eq!(
-            d.snapshot()[0].repositories[0].checkouts[0].panes.len(),
-            1,
-            "an oversized handoff must not spawn an agent"
-        );
-        close_all(&d);
     }
 
     #[tokio::test]
@@ -2509,32 +2245,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn delegation_hook_reports_invalid_and_refused_requests() {
-        use argus_protocol::DelegateRequest;
-
+    async fn hook_rejects_a_body_over_the_shared_limit() {
         let dir = tempfile::tempdir().unwrap();
         let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
         d.start_hook_server().unwrap();
-        let checkout = only_checkout(&d);
-        let agent = d.spawn_agent(checkout, "claude").unwrap();
-        let shell = d.spawn_shell(checkout).unwrap();
+        let source = d.spawn_agent(only_checkout(&d), "claude").unwrap();
 
-        let invalid = post_agent_hook(&d, agent, Endpoint::Delegate, "not json").await;
-        let body = serde_json::to_string(&DelegateRequest {
-            template: None,
-            task: "review".into(),
-        })
-        .unwrap();
-        let refused = post_agent_hook(&d, shell, Endpoint::Delegate, &body).await;
+        let response = post_agent_hook(&d, source, Endpoint::Title, &"x".repeat(4097)).await;
 
-        assert!(invalid.starts_with(b"HTTP/1.1 400 Bad Request"));
-        assert!(String::from_utf8(invalid)
-            .unwrap()
-            .contains("invalid delegation request"));
-        assert!(refused.starts_with(b"HTTP/1.1 409 Conflict"));
-        assert!(String::from_utf8(refused)
-            .unwrap()
-            .contains("source must be a live agent pane"));
+        assert!(response.starts_with(b"HTTP/1.1 413 Content Too Large"));
         close_all(&d);
     }
 
@@ -4951,58 +4670,6 @@ root = "/somewhere"
                 })
                 .collect(),
             harnesses: Vec::new(),
-        }
-    }
-
-    /// A stand-in for an agent CLI that takes its time. For two seconds it
-    /// is not reading, and what arrived while it was not is gone — a TUI
-    /// that clears the console before drawing loses it the same way. Then
-    /// it turns bracketed paste on the way an agent's prompt does, and
-    /// echoes what it is given from then on.
-    fn slow_starting_agent_command() -> Vec<String> {
-        if cfg!(windows) {
-            vec![
-                "powershell".into(),
-                "-NoProfile".into(),
-                "-Command".into(),
-                "Start-Sleep -Seconds 2; \
-                 while ([Console]::KeyAvailable) { $null = [Console]::ReadKey($true) }; \
-                 [Console]::Out.Write([char]27 + '[?2004h'); \
-                 while ($true) { $l = [Console]::In.ReadLine(); if ($l) { [Console]::Out.WriteLine($l) } }"
-                    .into(),
-            ]
-        } else {
-            vec![
-                "sh".into(),
-                "-c".into(),
-                "sleep 2; printf '\x1b[?2004h'; cat".into(),
-            ]
-        }
-    }
-
-    /// One string per row of a pane's screen.
-    fn screen_of(d: &Daemon, pane: PaneId) -> Vec<String> {
-        let (_, _, grid, _, _, _rx) = d.subscribe_pane(pane).unwrap();
-        grid.iter()
-            .map(|r| r.iter().map(|c| c.ch.as_str()).collect::<String>())
-            .collect()
-    }
-
-    /// Polls a pane's own screen until `needle` shows up on it.
-    async fn wait_for_screen(d: &Daemon, pane: PaneId, needle: &str) {
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-        loop {
-            let rows = screen_of(d, pane);
-            if rows.iter().any(|row| row.contains(needle)) {
-                return;
-            }
-            if tokio::time::Instant::now() > deadline {
-                panic!(
-                    "{needle:?} never reached the pane; its screen was:\n{}",
-                    rows.join("\n")
-                );
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
 
