@@ -31,13 +31,9 @@ Review shows both sides of uncommitted work and nothing else — staged and unst
 own endpoint. Comments are durable and agents can read checkout-scoped feedback; the client selects
 a recipient when several agents share the checkout. What remains is presentation work.
 
-- Add syntax highlighting and lazy rendering where measurements justify them. Tree-sitter is the
-  intended parser, chosen by file extension. Its grammars are compiled-in crates rather than
-  anything fetched at runtime, so "whatever the filename needs" means a fixed set linked at build
-  time and a quiet fall back to unhighlighted text for everything else; weigh that binary cost
-  against `syntect`, which loads its grammars at runtime instead. Highlight whole blobs rather than
-  hunks — review already captures both endpoints into the object store, so the parser can be given a
-  complete file instead of guessing at a fragment torn out of one.
+- Add lazy rendering where measurements justify it. Syntax highlighting has landed (DESIGN.md,
+  "Review"): tree-sitter in the daemon, ten grammars linked in and chosen by extension, spans on
+  the wire carrying token roles rather than colours.
 - Decide whether to retain the current scrolling surface or adopt separate file and diff columns.
 - Offer a split view alongside the unified one, toggled. The wire needs nothing: a split pairs each
   hunk's removed and added lines into rows over the `Hunk` data the client already has. What it

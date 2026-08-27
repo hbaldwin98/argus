@@ -6,6 +6,7 @@ mod diff;
 mod editor;
 mod git;
 mod harness;
+mod highlight;
 mod logging;
 mod pty;
 mod store;

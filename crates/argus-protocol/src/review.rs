@@ -66,6 +66,33 @@ pub enum LineKind {
     Removed,
 }
 
+/// What a run of source text is, not what colour it should be. The daemon
+/// owns the parse because it owns the blobs; the client's theme owns the
+/// palette, so a renderer stays replaceable and the wire carries no styling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum HighlightKind {
+    Keyword,
+    Str,
+    Comment,
+    Number,
+    Type,
+    Function,
+    Constant,
+    Property,
+    Operator,
+    Punctuation,
+}
+
+/// A highlighted run within one line's `text`. Byte offsets, always on UTF-8
+/// character boundaries because they come from token edges. Spans never
+/// overlap and are ordered by `start`; text no span covers is unhighlighted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HighlightSpan {
+    pub start: u32,
+    pub end: u32,
+    pub kind: HighlightKind,
+}
+
 /// Both line numbers are carried so a comment can say which side it means.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiffLine {
@@ -74,6 +101,10 @@ pub struct DiffLine {
     pub new_lineno: Option<u32>,
     /// No leading marker, no trailing newline; the client draws the marker.
     pub text: String,
+    /// Empty when the file has no grammar, when the parse failed, or when the
+    /// line is plain text. Defaulted so an older daemon still deserializes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spans: Vec<HighlightSpan>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -180,7 +211,7 @@ pub struct ReviewComment {
 
 #[cfg(test)]
 mod tests {
-    use super::{ReviewAnchor, ReviewBase};
+    use super::{DiffLine, LineKind, ReviewAnchor, ReviewBase};
 
     #[test]
     fn review_bases_toggle_between_the_two_sides() {
@@ -205,5 +236,31 @@ mod tests {
             anchor.notification("first thought\nsecond thought"),
             "src/main.rs:5 `+new`: first thought second thought"
         );
+    }
+    /// The wire gained a field, so a peer that predates it must still parse.
+    /// This is what `serde(default)` on `spans` is for, and the only way to
+    /// know it holds is to deserialize a payload that genuinely lacks it.
+    #[test]
+    fn a_diff_line_without_spans_still_deserializes() {
+        #[derive(serde::Serialize)]
+        struct OldDiffLine {
+            kind: LineKind,
+            old_lineno: Option<u32>,
+            new_lineno: Option<u32>,
+            text: String,
+        }
+
+        let old = OldDiffLine {
+            kind: LineKind::Added,
+            old_lineno: None,
+            new_lineno: Some(7),
+            text: "let x = 1;".to_string(),
+        };
+        let bytes = rmp_serde::to_vec_named(&old).unwrap();
+        let line: DiffLine = rmp_serde::from_slice(&bytes).unwrap();
+
+        assert_eq!(line.new_lineno, Some(7));
+        assert_eq!(line.text, "let x = 1;");
+        assert!(line.spans.is_empty(), "an absent field reads as no highlighting");
     }
 }
