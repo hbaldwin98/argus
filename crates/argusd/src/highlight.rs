@@ -93,7 +93,7 @@ fn typescript_query(jsx: bool) -> String {
         tree_sitter_javascript::HIGHLIGHT_QUERY
     );
     if jsx {
-        query.push_str("\n");
+        query.push('\n');
         query.push_str(tree_sitter_javascript::JSX_HIGHLIGHT_QUERY);
     }
     query
