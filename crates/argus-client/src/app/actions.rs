@@ -179,6 +179,7 @@ impl App {
         self.review = None;
         self.review_wanted = None;
         self.overlay = None;
+        self.pane_fullscreen = false;
         self.focus = Focus::Checkouts;
     }
 
@@ -224,6 +225,7 @@ impl App {
             // PaneContent — the pane at this index may now be a different
             // one once the removal lands, and typing should never go to a
             // pane the user didn't choose.
+            self.pane_fullscreen = false;
             self.focus = Focus::Panes;
         }
     }

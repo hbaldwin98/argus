@@ -500,7 +500,7 @@ fn forget_offscreen(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::Prompt;
+    use crate::app::{Focus, Prompt};
     use tokio::time::{timeout, Duration};
 
     #[test]
@@ -711,6 +711,41 @@ mod tests {
             app.prompt,
             Some(Prompt::EditorCommand { ref input }) if input == "pasted"
         ));
+    }
+
+    #[test]
+    fn a_repeated_null_key_event_keeps_the_leader_chord_pending() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut app = App::new(tx);
+        app.focus = Focus::PaneContent;
+        let leader = crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Null,
+            crossterm::event::KeyModifiers::NONE,
+        );
+
+        assert!(handle_terminal_event(
+            &mut app,
+            &mut PasteBurst::default(),
+            Some(Ok(Event::Key(leader)))
+        ));
+        assert!(handle_terminal_event(
+            &mut app,
+            &mut PasteBurst::default(),
+            Some(Ok(Event::Key(crossterm::event::KeyEvent {
+                kind: crossterm::event::KeyEventKind::Repeat,
+                ..leader
+            })))
+        ));
+        assert!(handle_terminal_event(
+            &mut app,
+            &mut PasteBurst::default(),
+            Some(Ok(Event::Key(crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::Char('f'),
+                crossterm::event::KeyModifiers::NONE,
+            ))))
+        ));
+
+        assert!(app.pane_fullscreen, "a repeated NUL cancelled the leader chord");
     }
 
     #[test]
