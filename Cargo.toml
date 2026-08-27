@@ -33,6 +33,18 @@ crossterm = "0.28"
 tempfile = "3"
 notify = { version = "6", default-features = false, features = ["macos_fsevent"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
+tree-sitter = "0.26"
+tree-sitter-highlight = "0.26"
+tree-sitter-rust = "0.24"
+tree-sitter-typescript = "0.23"
+tree-sitter-javascript = "0.25"
+tree-sitter-python = "0.25"
+tree-sitter-c-sharp = "0.23"
+tree-sitter-css = "0.25"
+tree-sitter-yaml = "0.7"
+tree-sitter-toml-ng = "0.7"
+tree-sitter-json = "0.24"
+tree-sitter-md = "0.5"
 
 [profile.release]
 opt-level = 3

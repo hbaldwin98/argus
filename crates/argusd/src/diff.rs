@@ -35,7 +35,8 @@ pub fn generate(path: &Path, base: ReviewBase) -> anyhow::Result<GeneratedReview
         ReviewBase::Staged => (head_tree(&repo), Snapshot { tree: index, untracked: HashSet::new() }),
         ReviewBase::Unstaged => (Some(index), capture(&repo)?),
     };
-    let files = render_diff(&repo, old, target.tree, &target.untracked)?;
+    let mut files = render_diff(&repo, old, target.tree, &target.untracked)?;
+    highlight_files(&repo, old, target.tree, &mut files);
     Ok(GeneratedReview { files })
 }
 
@@ -248,6 +249,7 @@ fn render_diff(
                     text: String::from_utf8_lossy(line.content())
                         .trim_end_matches(['\n', '\r'])
                         .to_string(),
+                    spans: Vec::new(),
                 });
                 rendered_lines.set(rendered_lines.get() + 1);
             }
@@ -259,6 +261,78 @@ fn render_diff(
         }),
     )?;
     Ok(files.into_inner())
+}
+
+/// Hangs syntax spans on every line of every file, parsing whole blobs rather
+/// than hunks. Each side is highlighted from its own tree, so a removed line is
+/// read in the file it was removed from and not in the one that replaced it.
+///
+/// Every step here is allowed to fail quietly. Highlighting is decoration: a
+/// file with no grammar, an unreadable blob, or a parse that gives up all mean
+/// plain text, and none of them may cost the operator their review.
+fn highlight_files(
+    repo: &git2::Repository,
+    old_tree: Option<git2::Oid>,
+    new_tree: git2::Oid,
+    files: &mut [FileDiff],
+) {
+    for file in files {
+        if file.note.is_some() || file.hunks.is_empty() {
+            continue;
+        }
+        let lines = || file.hunks.iter().flat_map(|hunk| &hunk.lines);
+        // A pure addition has no old side to read, and a deletion no new one.
+        // Skipping the parse is worth the two passes over the lines.
+        let wants_old = lines().any(|line| line.kind == LineKind::Removed);
+        let wants_new = lines().any(|line| line.kind != LineKind::Removed);
+
+        let new_spans = wants_new
+            .then(|| blob_spans(repo, Some(new_tree), &file.path, &file.path))
+            .flatten();
+        let old_path = file.old_path.clone().unwrap_or_else(|| file.path.clone());
+        let old_spans = wants_old
+            .then(|| blob_spans(repo, old_tree, &old_path, &file.path))
+            .flatten();
+
+        for line in file.hunks.iter_mut().flat_map(|hunk| &mut hunk.lines) {
+            // Context lines exist on both sides and read the same on both, so
+            // the new side answers for everything except an outright removal.
+            let (spans, lineno) = match line.kind {
+                LineKind::Removed => (old_spans.as_ref(), line.old_lineno),
+                _ => (new_spans.as_ref(), line.new_lineno),
+            };
+            let (Some(spans), Some(lineno)) = (spans, lineno) else {
+                continue;
+            };
+            // Git numbers lines from one. A span reaching past the text the
+            // diff carries means the blob and the hunk disagree about this
+            // line, and an offset into the wrong line is worse than no colour.
+            if let Some(found) = spans.get(lineno.saturating_sub(1) as usize) {
+                let width = line.text.len() as u32;
+                line.spans = found.iter().copied().filter(|s| s.end <= width).collect();
+            }
+        }
+    }
+}
+
+/// Reads one path out of one tree and highlights it. `syntax_path` names the
+/// grammar and `blob_path` locates the content, which differ for a rename: the
+/// old side sits at the old path but is still the same language.
+fn blob_spans(
+    repo: &git2::Repository,
+    tree: Option<git2::Oid>,
+    blob_path: &str,
+    syntax_path: &str,
+) -> Option<Vec<Vec<argus_protocol::HighlightSpan>>> {
+    let tree = repo.find_tree(tree?).ok()?;
+    let entry = tree.get_path(Path::new(blob_path)).ok()?;
+    let object = entry.to_object(repo).ok()?;
+    let blob = object.as_blob()?;
+    if blob.is_binary() {
+        return None;
+    }
+    let text = std::str::from_utf8(blob.content()).ok()?;
+    crate::highlight::line_spans(syntax_path, text)
 }
 
 fn new_file(delta: &git2::DiffDelta, untracked: &HashSet<String>) -> FileDiff {
@@ -527,5 +601,55 @@ mod tests {
     fn capture_errors_are_not_successful_empty_reviews() {
         let dir = tempfile::tempdir().unwrap();
         assert!(generate(dir.path(), ReviewBase::Unstaged).is_err());
+    }
+    /// Highlighting reaches the wire, and each side is read in its own blob.
+    /// The removed line here is only valid Rust in the file it was removed
+    /// from, so finding its keyword proves the old tree was the one parsed.
+    #[test]
+    fn diff_lines_carry_syntax_spans_from_their_own_side() {
+        let (_dir, path) = repo_with(&[("a.rs", "fn old_name() {}\n")]);
+        write(&path, "a.rs", "struct NewThing;\n");
+
+        let review = generate(&path, ReviewBase::Unstaged).unwrap();
+        let file = find(&review.files, "a.rs");
+        let lines: Vec<&DiffLine> = file.hunks.iter().flat_map(|h| &h.lines).collect();
+
+        let added = lines.iter().find(|l| l.kind == LineKind::Added).unwrap();
+        let text = |l: &DiffLine, s: &argus_protocol::HighlightSpan| {
+            l.text[s.start as usize..s.end as usize].to_string()
+        };
+        assert!(
+            added.spans.iter().any(|s| text(added, s) == "struct"),
+            "added line should be highlighted from the new blob: {:?}",
+            added.spans
+        );
+
+        let removed = lines.iter().find(|l| l.kind == LineKind::Removed).unwrap();
+        assert!(
+            removed.spans.iter().any(|s| text(removed, s) == "fn"),
+            "removed line should be highlighted from the old blob: {:?}",
+            removed.spans
+        );
+
+        // Every span has to land inside the text it annotates, or the client
+        // will slice a string it was never given.
+        for line in lines {
+            for span in &line.spans {
+                assert!(
+                    span.end as usize <= line.text.len(),
+                    "span {span:?} overruns {:?}",
+                    line.text
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_file_with_no_grammar_is_shipped_without_spans() {
+        let (_dir, path) = repo_with(&[("notes.xyz", "one\n")]);
+        write(&path, "notes.xyz", "two\n");
+        let review = generate(&path, ReviewBase::Unstaged).unwrap();
+        let file = find(&review.files, "notes.xyz");
+        assert!(file.hunks.iter().flat_map(|h| &h.lines).all(|l| l.spans.is_empty()));
     }
 }

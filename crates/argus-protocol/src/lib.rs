@@ -22,8 +22,8 @@ pub use hook::{
 pub use ids::{CheckoutId, IdGen, PaneId, ProjectId, RepositoryId, WorkspaceId};
 pub use message::{ClientMsg, DirEntry, DirListing, ServerMsg};
 pub use review::{
-    ChangeKind, DiffLine, FileDiff, Hunk, LineKind, Review, ReviewAnchor, ReviewBase,
-    ReviewComment, MAX_REVIEW_COMMENTS, MAX_REVIEW_COMMENT_BYTES,
+    ChangeKind, DiffLine, FileDiff, HighlightKind, HighlightSpan, Hunk, LineKind, Review,
+    ReviewAnchor, ReviewBase, ReviewComment, MAX_REVIEW_COMMENTS, MAX_REVIEW_COMMENT_BYTES,
 };
 pub use tree::{
     CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneStatus, ProjectInfo,
