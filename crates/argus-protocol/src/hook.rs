@@ -13,11 +13,18 @@ use crate::ids::PaneId;
 use crate::tree::PaneStatus;
 
 pub const MAX_DELEGATE_TASK_BYTES: usize = 2048;
+pub const MAX_HANDOFF_BYTES: usize = 32 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DelegateRequest {
     pub template: Option<String>,
     pub task: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HandoffRequest {
+    pub template: Option<String>,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,6 +94,8 @@ pub enum Endpoint {
     Checkout,
     Session,
     Delegate,
+    Handoff,
+    Comments,
 }
 
 impl Endpoint {
@@ -103,6 +112,8 @@ impl Endpoint {
             Endpoint::Checkout => Cow::Borrowed("checkout"),
             Endpoint::Session => Cow::Borrowed("session"),
             Endpoint::Delegate => Cow::Borrowed("delegate"),
+            Endpoint::Handoff => Cow::Borrowed("handoff"),
+            Endpoint::Comments => Cow::Borrowed("comments"),
         }
     }
 }
@@ -132,6 +143,8 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "checkout" => Endpoint::Checkout,
         "session" => Endpoint::Session,
         "delegate" => Endpoint::Delegate,
+        "handoff" => Endpoint::Handoff,
+        "comments" => Endpoint::Comments,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -150,6 +163,8 @@ mod tests {
             Endpoint::Checkout,
             Endpoint::Session,
             Endpoint::Delegate,
+            Endpoint::Handoff,
+            Endpoint::Comments,
         ];
         all.extend(Report::ALL.into_iter().map(Endpoint::Status));
         all
@@ -177,6 +192,14 @@ mod tests {
         assert_eq!(
             pane_path(PaneId(3), Endpoint::Delegate),
             "/pane/3/delegate"
+        );
+        assert_eq!(
+            pane_path(PaneId(3), Endpoint::Handoff),
+            "/pane/3/handoff"
+        );
+        assert_eq!(
+            pane_path(PaneId(3), Endpoint::Comments),
+            "/pane/3/comments"
         );
         assert_eq!(
             pane_path(PaneId(3), Endpoint::Status(Report::NeedsReview)),

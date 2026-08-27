@@ -3,7 +3,7 @@
 //! selectable — moving down from a file's last line lands on the next
 //! file's first, never on a header you'd have to skip by hand.
 
-use argus_protocol::{FileDiff, LineKind, Review};
+use argus_protocol::{FileDiff, LineKind, Review, ReviewAnchor};
 
 /// Headers and notes are drawn but never selected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,17 +33,6 @@ impl Row {
     pub fn is_line(self) -> bool {
         matches!(self, Row::Line { .. })
     }
-}
-
-/// Where a comment is anchored. A single-line comment is a range of one.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Anchor {
-    pub path: String,
-    /// `None` on a line that exists only on the other side.
-    pub start: Option<u32>,
-    pub end: Option<u32>,
-    /// Marker included, so the agent sees the exact text.
-    pub text: Vec<String>,
 }
 
 pub struct ReviewView {
@@ -180,7 +169,7 @@ impl ReviewView {
     }
 
     /// What a comment written now would attach to.
-    pub fn anchor(&self) -> Option<Anchor> {
+    pub fn anchor(&self) -> Option<ReviewAnchor> {
         if self.rows.is_empty() {
             return None;
         }
@@ -190,10 +179,13 @@ impl ReviewView {
             .filter(|r| r.is_line())
             .collect();
         let first = rows.first()?;
-        let path = self.review.files[first.file()].path.clone();
+        let file = &self.review.files[first.file()];
+        let path = file.path.clone();
+        let old_path = file.old_path.clone();
 
         let mut text = Vec::new();
-        let (mut start, mut end) = (None, None);
+        let (mut old_start, mut old_end) = (None, None);
+        let (mut new_start, mut new_end) = (None, None);
         for row in &rows {
             let Row::Line { file, hunk, line } = **row else {
                 continue;
@@ -202,41 +194,31 @@ impl ReviewView {
                 break;
             }
             let l = &self.review.files[file].hunks[hunk].lines[line];
-            let side = l.new_lineno.or(l.old_lineno);
-            if start.is_none() {
-                start = side;
+            if old_start.is_none() {
+                old_start = l.old_lineno;
             }
-            if side.is_some() {
-                end = side;
+            if l.old_lineno.is_some() {
+                old_end = l.old_lineno;
+            }
+            if new_start.is_none() {
+                new_start = l.new_lineno;
+            }
+            if l.new_lineno.is_some() {
+                new_end = l.new_lineno;
             }
             text.push(format!("{}{}", marker(l.kind), l.text));
         }
 
-        Some(Anchor {
+        Some(ReviewAnchor {
+            base: self.review.base,
             path,
-            start,
-            end,
+            old_path,
+            old_start,
+            old_end,
+            new_start,
+            new_end,
             text,
         })
-    }
-}
-
-impl Anchor {
-    /// One line, because it goes into a harness's prompt as if typed and a
-    /// newline would submit it half-written.
-    pub fn message(&self, comment: &str) -> String {
-        let where_ = match (self.start, self.end) {
-            (Some(a), Some(b)) if a != b => format!("{}:{a}-{b}", self.path),
-            (Some(a), _) => format!("{}:{a}", self.path),
-            _ => self.path.clone(),
-        };
-        let quoted = match self.text.len() {
-            1 => format!(" `{}`", self.text[0].trim()),
-            n if n > 1 => format!(" ({n} lines)"),
-            _ => String::new(),
-        };
-        let comment: Vec<&str> = comment.split_whitespace().collect();
-        format!("{where_}{quoted}: {}", comment.join(" "))
     }
 }
 
@@ -435,7 +417,8 @@ mod tests {
         v.move_by(1); // the added line
         let a = v.anchor().unwrap();
         assert_eq!(a.path, "a.rs");
-        assert_eq!((a.start, a.end), (Some(2), Some(2)));
+        assert_eq!((a.new_start, a.new_end), (Some(2), Some(2)));
+        assert_eq!((a.old_start, a.old_end), (None, None));
         assert_eq!(a.text, vec!["+two"], "marker included, as git shows it");
     }
 
@@ -444,7 +427,8 @@ mod tests {
         let mut v = two_files();
         v.jump_file(true); // b.rs, the removed line
         let a = v.anchor().unwrap();
-        assert_eq!(a.start, Some(1));
+        assert_eq!(a.old_start, Some(1));
+        assert_eq!(a.new_start, None);
         assert_eq!(a.text, vec!["-old"]);
     }
 
@@ -456,7 +440,8 @@ mod tests {
         assert_eq!(v.selection(), (v.sel - 1, v.sel));
         let a = v.anchor().unwrap();
         assert_eq!(a.text, vec![" one", "+two"]);
-        assert_eq!((a.start, a.end), (Some(1), Some(2)));
+        assert_eq!((a.new_start, a.new_end), (Some(1), Some(2)));
+        assert_eq!((a.old_start, a.old_end), (Some(1), Some(1)));
     }
 
     #[test]
@@ -535,7 +520,7 @@ mod tests {
     fn a_single_line_comment_names_the_place_and_quotes_the_line() {
         let mut v = two_files();
         v.move_by(1);
-        let m = v.anchor().unwrap().message("this should be two");
+        let m = v.anchor().unwrap().notification("this should be two");
         assert_eq!(m, "a.rs:2 `+two`: this should be two");
     }
 
@@ -546,7 +531,7 @@ mod tests {
         let mut v = two_files();
         v.toggle_mark();
         v.move_by(1);
-        let m = v.anchor().unwrap().message("rework this");
+        let m = v.anchor().unwrap().notification("rework this");
         assert_eq!(m, "a.rs:1-2 (2 lines): rework this");
     }
 
@@ -557,7 +542,10 @@ mod tests {
         let mut v = two_files();
         v.toggle_mark();
         v.move_by(1);
-        let m = v.anchor().unwrap().message("first thought\nsecond thought");
+        let m = v
+            .anchor()
+            .unwrap()
+            .notification("first thought\nsecond thought");
         assert!(!m.contains('\n'), "{m:?}");
     }
 

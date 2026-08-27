@@ -11,7 +11,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use argus_protocol::{parse_pane_path, DelegateRequest, DelegateResponse, Endpoint, PaneId};
+use argus_protocol::{
+    parse_pane_path, DelegateRequest, DelegateResponse, Endpoint, HandoffRequest, PaneId,
+    MAX_HANDOFF_BYTES,
+};
 
 use super::Daemon;
 
@@ -46,6 +49,7 @@ impl Daemon {
 }
 
 const MAX_BODY: usize = 4096;
+const MAX_HANDOFF_BODY: usize = MAX_HANDOFF_BYTES * 6 + 1024;
 
 struct HookResponse {
     code: u16,
@@ -100,43 +104,26 @@ async fn handle_hook_request(
         .unwrap_or("")
         .to_string();
 
-    let mut authorized = false;
-    let mut content_length: usize = 0;
-    let mut reporter: Option<String> = None;
-    loop {
-        let mut line = String::new();
-        let n = reader.read_line(&mut line).await?;
-        if n == 0 || line == "\r\n" || line == "\n" {
-            break;
-        }
-        if let Some(v) = line
-            .strip_prefix("Authorization:")
-            .or_else(|| line.strip_prefix("authorization:"))
-        {
-            authorized = v
-                .trim()
-                .eq_ignore_ascii_case(&format!("Bearer {}", daemon.hook_token));
-        } else if let Some(v) = line
-            .strip_prefix("Content-Length:")
-            .or_else(|| line.strip_prefix("content-length:"))
-        {
-            content_length = v.trim().parse().unwrap_or(0);
-        } else if let Some(v) = line
-            .strip_prefix("X-Argus-Session:")
-            .or_else(|| line.strip_prefix("x-argus-session:"))
-        {
-            reporter = valid_session_id(v);
-        }
-    }
-    // Capped: bodies are short pane metadata or one bounded delegation task.
+    let (authorized, content_length, reporter) =
+        read_hook_headers(&mut reader, &daemon.hook_token).await?;
+    let endpoint = parse_pane_path(&path);
+    let max_body = match endpoint {
+        Some((_, Endpoint::Handoff)) => MAX_HANDOFF_BODY,
+        _ => MAX_BODY,
+    };
     // The server trusts nothing about a request beyond its bearer token.
-    let mut body = vec![0u8; content_length.min(MAX_BODY)];
+    let too_large = content_length > max_body;
+    let mut body = vec![0u8; if too_large { 0 } else { content_length }];
     if !body.is_empty() {
         let _ = reader.read_exact(&mut body).await;
     }
 
-    let response = if authorized {
-        match parse_pane_path(&path) {
+    let response = if !authorized {
+        HookResponse::empty(401, "Unauthorized")
+    } else if too_large {
+        HookResponse::text(413, "Content Too Large", "request body is too large".into())
+    } else {
+        match endpoint {
             Some((pane, Endpoint::Status(report))) => {
                 let note = String::from_utf8_lossy(&body).to_string();
                 daemon.report_pane_status(pane, reporter.as_deref(), report.status(), Some(note));
@@ -164,15 +151,50 @@ async fn handle_hook_request(
                 HookResponse::empty(200, "OK")
             }
             Some((pane, Endpoint::Delegate)) => delegation_response(&daemon, pane, &body)?,
+            Some((pane, Endpoint::Handoff)) => handoff_response(&daemon, pane, &body)?,
+            Some((pane, Endpoint::Comments)) => comments_response(&daemon, pane)?,
             // A checkout move from an agent that does not own the pane is
             // dropped: the row follows the agent Argus started in it.
             _ => HookResponse::empty(200, "OK"),
         }
-    } else {
-        HookResponse::empty(401, "Unauthorized")
     };
     wr.write_all(&response.bytes()).await?;
     Ok(())
+}
+
+async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
+    reader: &mut R,
+    token: &str,
+) -> anyhow::Result<(bool, usize, Option<String>)> {
+    use tokio::io::AsyncBufReadExt;
+
+    let mut authorized = false;
+    let mut content_length = 0;
+    let mut reporter = None;
+    loop {
+        let mut line = String::new();
+        let n = reader.read_line(&mut line).await?;
+        if n == 0 || line == "\r\n" || line == "\n" {
+            break;
+        }
+        if let Some(v) = line
+            .strip_prefix("Authorization:")
+            .or_else(|| line.strip_prefix("authorization:"))
+        {
+            authorized = v.trim().eq_ignore_ascii_case(&format!("Bearer {token}"));
+        } else if let Some(v) = line
+            .strip_prefix("Content-Length:")
+            .or_else(|| line.strip_prefix("content-length:"))
+        {
+            content_length = v.trim().parse().unwrap_or(0);
+        } else if let Some(v) = line
+            .strip_prefix("X-Argus-Session:")
+            .or_else(|| line.strip_prefix("x-argus-session:"))
+        {
+            reporter = valid_session_id(v);
+        }
+    }
+    Ok((authorized, content_length, reporter))
 }
 
 fn delegation_response(
@@ -199,6 +221,44 @@ fn delegation_response(
         Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
     };
     Ok(response)
+}
+
+fn handoff_response(
+    daemon: &Arc<Daemon>,
+    source: PaneId,
+    body: &[u8],
+) -> anyhow::Result<HookResponse> {
+    let request = match serde_json::from_slice::<HandoffRequest>(body) {
+        Ok(request) => request,
+        Err(error) => {
+            return Ok(HookResponse::text(
+                400,
+                "Bad Request",
+                format!("invalid handoff request: {error}"),
+            ));
+        }
+    };
+    let response = match daemon.handoff_agent(source, request.template.as_deref(), &request.message)
+    {
+        Ok(pane) => HookResponse {
+            code: 201,
+            reason: "Created",
+            body: serde_json::to_vec(&DelegateResponse { pane })?,
+        },
+        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
+    };
+    Ok(response)
+}
+
+fn comments_response(daemon: &Arc<Daemon>, source: PaneId) -> anyhow::Result<HookResponse> {
+    Ok(match daemon.review_comments_for_agent(source) {
+        Ok(comments) => HookResponse {
+            code: 200,
+            reason: "OK",
+            body: serde_json::to_vec(&comments)?,
+        },
+        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
+    })
 }
 
 /// A harness session id is opaque to Argus — it only has to be one

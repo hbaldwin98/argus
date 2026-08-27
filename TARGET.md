@@ -85,8 +85,10 @@ includes deleted, renamed, and non-ignored untracked content.
 Committed history is out of scope. Comparing a branch against a fork point, an upstream, or a
 remembered snapshot belongs to a Git client, not here.
 
-Review eventually supports durable line or range comments, agent selection, and lazy syntax
-highlighting. Staging, unstaging, and reverting are deliberately not Argus's job.
+Review supports durable line or range comments and live-agent selection. The daemon stores a
+comment before sending its terminal notification, and agents can read checkout-scoped feedback.
+Lazy syntax highlighting remains planned. Staging, unstaging, and reverting are deliberately not
+Argus's job.
 
 ## Notes and context
 

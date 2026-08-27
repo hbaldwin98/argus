@@ -89,6 +89,13 @@ impl App {
             } => {
                 self.receive_review_failure(request_id, checkout, message);
             }
+            ServerMsg::ReviewCommentSaved { id, delivered } => {
+                if delivered {
+                    self.report(format!("comment #{id} saved and sent"));
+                } else {
+                    self.report(format!("comment #{id} saved; agent unavailable"));
+                }
+            }
             ServerMsg::Branches { checkout, branches } => {
                 if self.list_wanted != Some(checkout) {
                     return;

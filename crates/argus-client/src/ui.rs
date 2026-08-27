@@ -1303,7 +1303,7 @@ fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         Prompt::Comment { anchor, input } => {
             // The anchor gets lines of its own. Sharing one with the text
             // left a long path only a few columns to type a sentence in.
-            let where_ = anchor.message("");
+            let where_ = anchor.notification("");
             let mut lines = vec![Line::from(Span::styled(
                 ellipsize_text(where_.trim_end_matches([' ', ':']), inner_width as usize),
                 Style::default().fg(th.muted),
@@ -2939,10 +2939,14 @@ mod tests {
     fn comment_prompt(input: &str) -> App {
         let mut app = app_with_tree();
         app.prompt = Some(Prompt::Comment {
-            anchor: crate::review::Anchor {
+            anchor: argus_protocol::ReviewAnchor {
+                base: argus_protocol::ReviewBase::Unstaged,
                 path: "crates/argus-client/src/ui.rs".to_string(),
-                start: Some(1013),
-                end: Some(1013),
+                old_path: None,
+                old_start: Some(1013),
+                old_end: Some(1013),
+                new_start: Some(1013),
+                new_end: Some(1013),
                 text: vec!["        Prompt::Comment { anchor, input } => (".to_string()],
             },
             input: input.to_string(),

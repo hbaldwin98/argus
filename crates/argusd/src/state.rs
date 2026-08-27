@@ -757,7 +757,7 @@ async fn run_git(dir: &std::path::Path, args: &[&str]) -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use super::session::RESUME_GRACE;
-    use argus_protocol::parse_pane_path;
+    use argus_protocol::{parse_pane_path, Endpoint, ReviewAnchor, ReviewBase};
     use crate::config::ProjectConfig;
 
     /// A daemon with one project whose primary checkout is `primary`, and no
@@ -2183,6 +2183,85 @@ mod tests {
         close_all(&d);
     }
 
+    fn review_anchor(line: u32) -> ReviewAnchor {
+        ReviewAnchor {
+            base: ReviewBase::Unstaged,
+            path: "src/main.rs".to_string(),
+            old_path: None,
+            old_start: None,
+            old_end: None,
+            new_start: Some(line),
+            new_end: Some(line),
+            text: vec!["+changed".to_string()],
+        }
+    }
+
+    #[tokio::test]
+    async fn handoff_inherits_the_harness_and_accepts_a_document_sized_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+        let source = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+        let message = "handoff context ".repeat(300);
+
+        let pane = d.handoff_agent(source, None, &message).unwrap();
+
+        assert_eq!(pane_info(&d, pane).template.as_deref(), Some("claude"));
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn handoff_requires_a_live_source_and_a_bounded_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+        let checkout = only_checkout(&d);
+        let shell = d.spawn_shell(checkout).unwrap();
+        let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+        assert!(d.handoff_agent(shell, None, "continue").is_err());
+        assert!(d.handoff_agent(agent, None, " \n ").is_err());
+        assert!(d
+            .handoff_agent(
+                agent,
+                None,
+                &"x".repeat(argus_protocol::MAX_HANDOFF_BYTES + 1),
+            )
+            .is_err());
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn a_review_comment_is_saved_before_it_is_sent_to_an_agent() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+        let checkout = only_checkout(&d);
+        let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+        let (id, delivered) = d
+            .submit_review_comment(checkout, agent, review_anchor(8), "fix this".to_string())
+            .unwrap();
+
+        assert!(delivered);
+        let comments = d.review_comments_for_agent(agent).unwrap();
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].id, id);
+        assert_eq!(comments[0].body, "fix this");
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn review_comments_require_a_live_agent_in_the_reviewed_checkout() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+        let checkout = only_checkout(&d);
+        let shell = d.spawn_shell(checkout).unwrap();
+
+        assert!(d
+            .submit_review_comment(checkout, shell, review_anchor(1), "fix".to_string())
+            .is_err());
+        assert!(d.review_comments_for_agent(shell).is_err());
+        close_all(&d);
+    }
+
     #[tokio::test]
     async fn delegation_caps_live_agents_in_one_checkout() {
         let dir = tempfile::tempdir().unwrap();
@@ -2235,15 +2314,29 @@ mod tests {
         close_all(&d);
     }
 
-    async fn post_delegation_hook(d: &Arc<Daemon>, source: PaneId, body: &str) -> Vec<u8> {
-        use argus_protocol::Endpoint;
+    async fn post_agent_hook(
+        d: &Arc<Daemon>,
+        source: PaneId,
+        endpoint: argus_protocol::Endpoint,
+        body: &str,
+    ) -> Vec<u8> {
+        post_agent_hook_with_length(d, source, endpoint, body.len(), body).await
+    }
+
+    async fn post_agent_hook_with_length(
+        d: &Arc<Daemon>,
+        source: PaneId,
+        endpoint: argus_protocol::Endpoint,
+        content_length: usize,
+        body: &str,
+    ) -> Vec<u8> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         let request = format!(
             "POST {} HTTP/1.1\r\nAuthorization: Bearer {}\r\nContent-Length: {}\r\n\r\n{}",
-            argus_protocol::pane_path(source, Endpoint::Delegate),
+            argus_protocol::pane_path(source, endpoint),
             d.hook_token,
-            body.len(),
+            content_length,
             body
         );
         let port = d.hook_port.load(std::sync::atomic::Ordering::Relaxed);
@@ -2269,7 +2362,7 @@ mod tests {
             task: "review the current changes".into(),
         })
         .unwrap();
-        let response = post_delegation_hook(&d, source, &body).await;
+        let response = post_agent_hook(&d, source, Endpoint::Delegate, &body).await;
 
         assert!(response.starts_with(b"HTTP/1.1 201 Created"));
         let body = response
@@ -2284,6 +2377,83 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_authorized_handoff_hook_returns_the_new_pane() {
+        use argus_protocol::{DelegateResponse, HandoffRequest};
+
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+        d.start_hook_server().unwrap();
+        let source = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+        let body = serde_json::to_string(&HandoffRequest {
+            template: None,
+            message: "handoff context ".repeat(300),
+        })
+        .unwrap();
+        let response = post_agent_hook(&d, source, Endpoint::Handoff, &body).await;
+
+        assert!(response.starts_with(b"HTTP/1.1 201 Created"));
+        let body = response
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .map(|index| &response[index + 4..])
+            .unwrap();
+        let handed_off: DelegateResponse = serde_json::from_slice(body).unwrap();
+        assert_ne!(handed_off.pane, source);
+        assert_eq!(pane_info(&d, handed_off.pane).kind, PaneKind::Agent);
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn handoff_hook_rejects_a_body_over_its_endpoint_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+        d.start_hook_server().unwrap();
+        let source = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+
+        let response = post_agent_hook_with_length(
+            &d,
+            source,
+            Endpoint::Handoff,
+            argus_protocol::MAX_HANDOFF_BYTES * 6 + 1025,
+            "",
+        )
+        .await;
+
+        assert!(response.starts_with(b"HTTP/1.1 413 Content Too Large"));
+        assert_eq!(
+            d.snapshot()[0].repositories[0].checkouts[0].panes.len(),
+            1,
+            "an oversized handoff must not spawn an agent"
+        );
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn an_authorized_comments_hook_returns_checkout_feedback() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+        d.start_hook_server().unwrap();
+        let checkout = only_checkout(&d);
+        let source = d.spawn_agent(checkout, "claude").unwrap();
+        d.submit_review_comment(checkout, source, review_anchor(6), "consider this".to_string())
+            .unwrap();
+
+        let response = post_agent_hook(&d, source, Endpoint::Comments, "").await;
+
+        assert!(response.starts_with(b"HTTP/1.1 200 OK"));
+        let body = response
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .map(|index| &response[index + 4..])
+            .unwrap();
+        let comments: Vec<argus_protocol::ReviewComment> =
+            serde_json::from_slice(body).unwrap();
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].body, "consider this");
+        close_all(&d);
+    }
+
+    #[tokio::test]
     async fn delegation_hook_reports_invalid_and_refused_requests() {
         use argus_protocol::DelegateRequest;
 
@@ -2294,13 +2464,13 @@ mod tests {
         let agent = d.spawn_agent(checkout, "claude").unwrap();
         let shell = d.spawn_shell(checkout).unwrap();
 
-        let invalid = post_delegation_hook(&d, agent, "not json").await;
+        let invalid = post_agent_hook(&d, agent, Endpoint::Delegate, "not json").await;
         let body = serde_json::to_string(&DelegateRequest {
             template: None,
             task: "review".into(),
         })
         .unwrap();
-        let refused = post_delegation_hook(&d, shell, &body).await;
+        let refused = post_agent_hook(&d, shell, Endpoint::Delegate, &body).await;
 
         assert!(invalid.starts_with(b"HTTP/1.1 400 Bad Request"));
         assert!(String::from_utf8(invalid)

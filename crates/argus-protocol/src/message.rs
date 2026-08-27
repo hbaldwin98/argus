@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
-use crate::review::{Review, ReviewBase};
+use crate::review::{Review, ReviewAnchor, ReviewBase};
 use crate::tree::{ProjectInfo, WorkspaceInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +44,13 @@ pub enum ClientMsg {
         request_id: u64,
         checkout: CheckoutId,
         base: ReviewBase,
+    },
+    /// Persist a review comment, then notify the selected live agent.
+    ReviewComment {
+        checkout: CheckoutId,
+        recipient: PaneId,
+        anchor: Box<ReviewAnchor>,
+        body: String,
     },
     /// Ask for what this checkout contains, for the fuzzy pickers.
     ListBranches { checkout: CheckoutId },
@@ -142,6 +149,9 @@ pub enum ServerMsg {
         checkout: CheckoutId,
         message: String,
     },
+    /// The durable write succeeded. Delivery only describes the immediate
+    /// terminal notification; an undelivered comment remains readable.
+    ReviewCommentSaved { id: u64, delivered: bool },
     /// The answer to `ClientMsg::ListBranches`. `current` is the branch the
     /// checkout is on, and is the first entry of `branches`.
     Branches {

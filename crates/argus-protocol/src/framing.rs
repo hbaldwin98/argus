@@ -50,6 +50,7 @@ mod tests {
     use crate::cell::{Cell, CellSpan, Cursor};
     use crate::ids::{CheckoutId, PaneId, RepositoryId};
     use crate::message::{ClientMsg, ServerMsg};
+    use crate::review::{ReviewAnchor, ReviewBase};
     use crate::tree::{
         CheckoutInfo, GitStatus, PaneInfo, PaneKind, PaneStatus, ProjectInfo, RepositoryInfo,
     };
@@ -118,6 +119,21 @@ mod tests {
             ClientMsg::AddRepository {
                 project: ProjectId(1),
                 path: r"C:\src\thing\repo".to_string(),
+            },
+            ClientMsg::ReviewComment {
+                checkout: CheckoutId(2),
+                recipient: PaneId(1),
+                anchor: Box::new(ReviewAnchor {
+                    base: ReviewBase::Unstaged,
+                    path: "src/main.rs".to_string(),
+                    old_path: None,
+                    old_start: None,
+                    old_end: None,
+                    new_start: Some(4),
+                    new_end: Some(4),
+                    text: vec!["+changed".to_string()],
+                }),
+                body: "check this".to_string(),
             },
         ];
         for msg in &msgs {

@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use argus_protocol::{
     CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId,
-    ProjectInfo, RepositoryId, RepositoryInfo, ServerMsg, WorkspaceId, WorkspaceInfo,
+    ProjectInfo, RepositoryId, RepositoryInfo, ReviewAnchor, ServerMsg, WorkspaceId, WorkspaceInfo,
 };
 use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
@@ -9,7 +9,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::dirpicker::{DirAction, DirPicker, DirTarget};
 use crate::fuzzy::Fuzzy;
 use crate::grid::Grid;
-use crate::review::{Anchor, ReviewView};
+use crate::review::ReviewView;
 use argus_protocol::ReviewBase;
 use crate::theme::Theme;
 use crate::keys::{encode_key, is_leader};
@@ -93,7 +93,12 @@ pub enum PickerKind {
     /// Jump the review cursor to the chosen changed file.
     Change,
     /// Send a prepared review comment to one live agent pane.
-    ReviewRecipient { panes: Vec<PaneId>, message: String },
+    ReviewRecipient {
+        panes: Vec<PaneId>,
+        checkout: CheckoutId,
+        anchor: ReviewAnchor,
+        body: String,
+    },
 }
 
 impl PickerKind {
@@ -319,7 +324,7 @@ impl RemoveTarget {
 pub enum Prompt {
     NewWorktree { base: CheckoutId, input: String },
     ConfirmRemove { target: RemoveTarget, label: String },
-    Comment { anchor: Anchor, input: String },
+    Comment { anchor: ReviewAnchor, input: String },
     /// The editor command, typed rather than cycled — it is free text.
     EditorCommand { input: String },
 }
@@ -3051,18 +3056,23 @@ second
     #[test]
     fn a_comment_is_typed_at_the_agent_and_submitted() {
         let mut h = review_with_agent();
+        let checkout = h.app.review.as_ref().unwrap().review.checkout;
         h.key(KeyCode::Char('j'));
         h.key(KeyCode::Char('c'));
         h.keys("fix this");
         h.key(KeyCode::Enter);
 
         match &h.sent()[0] {
-            ClientMsg::Input { pane, bytes } => {
-                assert_eq!(*pane, PaneId(51), "the agent, not the shell");
-                assert_eq!(
-                    String::from_utf8_lossy(bytes),
-                    "src/a.rs:2 `+new`: fix this\r"
-                );
+            ClientMsg::ReviewComment {
+                checkout: sent_checkout,
+                recipient,
+                anchor,
+                body,
+            } => {
+                assert_eq!(*sent_checkout, checkout);
+                assert_eq!(*recipient, PaneId(51), "the agent, not the shell");
+                assert_eq!(anchor.notification(body), "src/a.rs:2 `+new`: fix this");
+                assert_eq!(body, "fix this");
             }
             other => panic!("unexpected {other:?}"),
         }
@@ -3103,8 +3113,8 @@ second
         h.key(KeyCode::Enter);
         assert!(matches!(
             &h.sent()[0],
-            ClientMsg::Input { pane: PaneId(52), bytes }
-                if String::from_utf8_lossy(bytes).ends_with("route this\r")
+            ClientMsg::ReviewComment { recipient: PaneId(52), body, .. }
+                if body == "route this"
         ));
     }
 
@@ -3128,7 +3138,10 @@ second
         h.key(KeyCode::Enter);
 
         assert!(h.app.picker.is_none());
-        assert!(matches!(h.sent()[0], ClientMsg::Input { pane: PaneId(51), .. }));
+        assert!(matches!(
+            h.sent()[0],
+            ClientMsg::ReviewComment { recipient: PaneId(51), .. }
+        ));
     }
 
     #[test]
@@ -3178,12 +3191,27 @@ second
         let sent = h.sent();
         assert_eq!(sent.len(), 1);
         match &sent[0] {
-            ClientMsg::Input { bytes, .. } => assert_eq!(
-                String::from_utf8_lossy(bytes),
-                "src/a.rs:1-2 (2 lines): both lines\r"
-            ),
+            ClientMsg::ReviewComment { anchor, body, .. } => {
+                assert_eq!(anchor.notification(body), "src/a.rs:1-2 (2 lines): both lines")
+            }
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_saved_comment_reports_delivery_from_the_daemon() {
+        let mut h = Harness::new();
+        h.app.on_server_msg(ServerMsg::ReviewCommentSaved {
+            id: 7,
+            delivered: true,
+        });
+        assert_eq!(h.app.status, "comment #7 saved and sent");
+
+        h.app.on_server_msg(ServerMsg::ReviewCommentSaved {
+            id: 8,
+            delivered: false,
+        });
+        assert_eq!(h.app.status, "comment #8 saved; agent unavailable");
     }
 
     #[test]

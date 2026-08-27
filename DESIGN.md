@@ -271,6 +271,13 @@ optional agent template, opens an independent agent pane in the source pane's ch
 the new pane ID. The task is flattened to one line and limited to 2 KiB. Delegation requires a live
 agent source, honors project exclusivity, and is refused when the checkout already has four live
 agents. A malformed body returns 400, a policy or launch refusal returns 409, and success returns 201.
+`POST /pane/<id>/handoff` applies the same source, template, checkout, and live-agent rules but accepts
+up to 32 KiB of context. The daemon flattens it to one line and writes it directly to the new pane's
+PTY as the fresh harness's first message. This keeps the handoff in memory and avoids relying on
+harness-specific startup flags or bracketed paste being ready during startup.
+`POST /pane/<id>/comments` requires a live agent source and returns the newest 100 durable review
+comments for that pane's checkout as JSON, oldest first. The checkout comes from the pane rather
+than request input, so callers cannot select another checkout through this endpoint.
 It broadcasts the normal tree update but does not focus the pane in any attached client. The checkout
 endpoint changes affiliation only: the agent runs `argus-hook checkout` from the directory it has
 already moved to. The status is named in the URL rather than the harness's event name, because the
@@ -322,6 +329,9 @@ document reviews. A delegated pane is a peer, not one of the nested harness sess
 It inherits the source template by default and shares the checkout's files; read-only review is a
 prompt convention rather than an enforced sandbox, so editing work that needs isolation belongs in a
 separate worktree.
+For full-session continuation, the instructions expose `argus-hook handoff [--template NAME]`, which
+reads the handoff from stdin and starts a fresh peer pane without writing the document to the checkout
+or a temporary file.
 
 ## Session restore
 
@@ -489,11 +499,15 @@ globally serialized, and a connection drops an older queued capture when a newer
 it.
 
 The client supports line and file navigation, single-file range marking, a changed-file fuzzy
-picker, refresh, and opening the selected line in an editor. A comment is flattened and typed into
-the first agent PTY in the checkout; it is not durable review state.
+picker, refresh, and opening the selected line in an editor. A comment records the review side,
+paths, separate old and new ranges, quoted diff text, and body. The client chooses among the live
+agents in the checkout when necessary. The daemon validates that recipient, persists the comment
+under the checkout path, then sends a flattened one-line notification to the recipient's PTY. A
+failed PTY write does not discard the stored comment. Live agents in the checkout can read the
+newest 100 comments with `argus-hook comments`.
 
 Review is a viewer. There is no vetted state, no stage/unstage/revert action, no syntax
-highlighting, and no persistent comment store. Closing the review sends no daemon message.
+highlighting, or comment-resolution lifecycle. Closing the review sends no daemon message.
 
 ## Editors and overlays
 

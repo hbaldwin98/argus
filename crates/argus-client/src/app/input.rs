@@ -181,11 +181,12 @@ impl App {
             },
             Prompt::Comment { anchor, input } => match key.code {
                 KeyCode::Enter => {
-                    let message = anchor.message(input);
+                    let anchor = anchor.clone();
+                    let body = input.trim().to_string();
                     let empty = input.trim().is_empty();
                     self.prompt = None;
                     if !empty {
-                        self.send_to_agent(message);
+                        self.send_to_agent(anchor, body);
                     }
                 }
                 KeyCode::Esc => self.prompt = None,
@@ -414,10 +415,11 @@ impl App {
             KeyCode::Char('e') => {
                 let checkout = v.review.checkout;
                 if let Some(a) = v.anchor() {
+                    let line = a.preferred_start();
                     let _ = self.out.send(ClientMsg::OpenInEditor {
                         checkout,
                         path: a.path,
-                        line: a.start,
+                        line,
                         external: self.settings.editor.is_external(),
                         command: self.editor_command(),
                     });

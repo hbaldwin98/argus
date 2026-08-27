@@ -399,12 +399,17 @@ impl App {
                     view.jump_to_file(idx);
                 }
             }
-            PickerKind::ReviewRecipient { panes, message } => {
+            PickerKind::ReviewRecipient {
+                panes,
+                checkout,
+                anchor,
+                body,
+            } => {
                 let Some(pane) = picker.shown.get(picker.sel).and_then(|i| panes.get(*i)) else {
                     return;
                 };
                 if self.is_live_agent(*pane) {
-                    self.send_to_pane(*pane, message.clone());
+                    self.send_review_comment(*checkout, *pane, anchor.clone(), body.clone());
                 } else {
                     self.report("that agent is no longer running");
                 }

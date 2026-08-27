@@ -413,6 +413,16 @@ fn dispatch_review(
                 let _ = out_tx.send(message);
             }));
         }),
+        ClientMsg::ReviewComment {
+            checkout,
+            recipient,
+            anchor,
+            body,
+        } => daemon
+            .submit_review_comment(checkout, recipient, *anchor, body)
+            .map(|(id, delivered)| {
+                let _ = out_tx.send(ServerMsg::ReviewCommentSaved { id, delivered });
+            }),
         msg => return Err(msg),
     };
     Ok(result)

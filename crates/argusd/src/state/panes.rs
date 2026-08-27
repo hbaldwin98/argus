@@ -11,7 +11,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use argus_protocol::{CheckoutId, PaneId, PaneKind, PaneStatus, MAX_DELEGATE_TASK_BYTES};
+use argus_protocol::{
+    CheckoutId, PaneId, PaneKind, PaneStatus, ReviewAnchor, ReviewComment,
+    MAX_DELEGATE_TASK_BYTES, MAX_HANDOFF_BYTES, MAX_REVIEW_COMMENT_BYTES,
+};
 
 use super::*;
 
@@ -161,8 +164,6 @@ impl Daemon {
         template_name: Option<&str>,
         task: &str,
     ) -> anyhow::Result<PaneId> {
-        const MAX_LIVE_AGENTS: usize = 4;
-
         let task = task.split_whitespace().collect::<Vec<_>>().join(" ");
         if task.is_empty() {
             anyhow::bail!("delegation requires a task");
@@ -171,7 +172,37 @@ impl Daemon {
             anyhow::bail!("delegation task exceeds {MAX_DELEGATE_TASK_BYTES} bytes");
         }
 
-        let _delegation = self.delegation.lock().unwrap();
+        self.spawn_related_agent(source_id, template_name, &task)
+    }
+
+    /// Starts a fresh agent beside `source_id` with an in-memory handoff as
+    /// its first terminal message.
+    pub fn handoff_agent(
+        self: &Arc<Self>,
+        source_id: PaneId,
+        template_name: Option<&str>,
+        message: &str,
+    ) -> anyhow::Result<PaneId> {
+        let message = message.split_whitespace().collect::<Vec<_>>().join(" ");
+        if message.is_empty() {
+            anyhow::bail!("handoff requires a message");
+        }
+        if message.len() > MAX_HANDOFF_BYTES {
+            anyhow::bail!("handoff exceeds {MAX_HANDOFF_BYTES} bytes");
+        }
+
+        self.spawn_related_agent(source_id, template_name, &message)
+    }
+
+    fn spawn_related_agent(
+        self: &Arc<Self>,
+        source_id: PaneId,
+        template_name: Option<&str>,
+        message: &str,
+    ) -> anyhow::Result<PaneId> {
+        const MAX_LIVE_AGENTS: usize = 4;
+
+        let _agent_start = self.delegation.lock().unwrap();
 
         let (checkout_id, inherited_template) = {
             let inner = self.inner.lock().unwrap();
@@ -179,7 +210,8 @@ impl Daemon {
             'projects: for project in &inner.projects {
                 for repository in &project.repositories {
                     for checkout in &repository.checkouts {
-                        if let Some(pane) = checkout.panes.iter().find(|pane| pane.id == source_id) {
+                        if let Some(pane) = checkout.panes.iter().find(|pane| pane.id == source_id)
+                        {
                             source = Some((checkout, pane));
                             break 'projects;
                         }
@@ -188,7 +220,7 @@ impl Daemon {
             }
             let (checkout, pane) = source.ok_or_else(|| anyhow::anyhow!("no such source pane"))?;
             if pane.kind != PaneKind::Agent || matches!(pane.status, PaneStatus::Exited { .. }) {
-                anyhow::bail!("delegation source must be a live agent pane");
+                anyhow::bail!("source must be a live agent pane");
             }
             let live_agents = checkout
                 .panes
@@ -211,11 +243,11 @@ impl Daemon {
             .ok_or_else(|| anyhow::anyhow!("source pane has no agent template"))?;
         let pane = self.spawn_agent(checkout_id, &template_name)?;
         if let Err(error) = self
-            .paste_pane(pane, &task)
+            .write_pane(pane, message.as_bytes())
             .and_then(|_| self.write_pane(pane, b"\r"))
         {
             let _ = self.close_pane(pane);
-            return Err(error.context("could not deliver delegated task"));
+            return Err(error.context("could not deliver initial message"));
         }
         Ok(pane)
     }
@@ -509,6 +541,73 @@ impl Daemon {
             pane.runtime.input()
         };
         input.paste(text.as_bytes())
+    }
+
+    /// Persists first, then best-effort notifies the selected agent through
+    /// its terminal. A failed notification does not erase durable feedback.
+    pub fn submit_review_comment(
+        &self,
+        checkout_id: CheckoutId,
+        recipient: PaneId,
+        anchor: ReviewAnchor,
+        body: String,
+    ) -> anyhow::Result<(u64, bool)> {
+        let body = body.trim().to_string();
+        if body.is_empty() {
+            anyhow::bail!("review comment is empty");
+        }
+        if body.len() > MAX_REVIEW_COMMENT_BYTES {
+            anyhow::bail!("review comment exceeds {MAX_REVIEW_COMMENT_BYTES} bytes");
+        }
+
+        let (checkout_path, input) = {
+            let inner = self.inner.lock().unwrap();
+            let checkout = find_checkout_ref(&inner.projects, checkout_id)
+                .ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
+            let pane = checkout
+                .panes
+                .iter()
+                .find(|pane| pane.id == recipient)
+                .ok_or_else(|| anyhow::anyhow!("recipient is not in that checkout"))?;
+            if pane.kind != PaneKind::Agent || matches!(pane.status, PaneStatus::Exited { .. }) {
+                anyhow::bail!("recipient must be a live agent pane");
+            }
+            (checkout.path.clone(), pane.runtime.input())
+        };
+
+        let comment = self
+            .store
+            .add_review_comment(&checkout_path, anchor, body)?;
+        let mut notification = comment.anchor.notification(&comment.body).into_bytes();
+        notification.push(b'\r');
+        let delivered = input.write(&notification).is_ok();
+        Ok((comment.id, delivered))
+    }
+
+    /// Comments visible to the checkout containing this live agent. Pane ids
+    /// are runtime-only, so durable access is deliberately checkout-scoped.
+    pub fn review_comments_for_agent(&self, pane_id: PaneId) -> anyhow::Result<Vec<ReviewComment>> {
+        let checkout_path = {
+            let inner = self.inner.lock().unwrap();
+            let mut found = None;
+            'projects: for project in &inner.projects {
+                for repository in &project.repositories {
+                    for checkout in &repository.checkouts {
+                        if let Some(pane) = checkout.panes.iter().find(|pane| pane.id == pane_id) {
+                            if pane.kind != PaneKind::Agent
+                                || matches!(pane.status, PaneStatus::Exited { .. })
+                            {
+                                anyhow::bail!("source must be a live agent pane");
+                            }
+                            found = Some(checkout.path.clone());
+                            break 'projects;
+                        }
+                    }
+                }
+            }
+            found.ok_or_else(|| anyhow::anyhow!("no such source pane"))?
+        };
+        self.store.review_comments(&checkout_path)
     }
 
     /// Hands out the identity a connection uses to claim pane sizes.

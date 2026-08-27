@@ -76,18 +76,22 @@ impl App {
     }
 
 
-    /// Typed at the agent as if by hand, so it works with any harness
-    /// rather than needing one to know about Argus.
-    pub(super) fn send_to_agent(&mut self, message: String) {
+    pub(super) fn send_to_agent(&mut self, anchor: ReviewAnchor, body: String) {
+        let Some(checkout) = self.review.as_ref().map(|view| view.review.checkout) else {
+            self.report("review is no longer open");
+            return;
+        };
         let agents = self.review_agents();
         match agents.as_slice() {
             [] => self.report("no agent running in this checkout"),
-            [(pane, _)] => self.send_to_pane(*pane, message),
+            [(pane, _)] => self.send_review_comment(checkout, *pane, anchor, body),
             _ => {
                 self.picker = Some(Picker::new(
                     PickerKind::ReviewRecipient {
                         panes: agents.iter().map(|(pane, _)| *pane).collect(),
-                        message,
+                        checkout,
+                        anchor,
+                        body,
                     },
                     "send comment to",
                     agents.into_iter().map(|(_, label)| label).collect(),
@@ -98,12 +102,20 @@ impl App {
     }
 
 
-    pub(super) fn send_to_pane(&mut self, pane: PaneId, message: String) {
-        let mut bytes = message.into_bytes();
-        // What a terminal actually sends for Enter.
-        bytes.push(b'\r');
-        let _ = self.out.send(ClientMsg::Input { pane, bytes });
-        self.report("comment sent");
+    pub(super) fn send_review_comment(
+        &mut self,
+        checkout: CheckoutId,
+        recipient: PaneId,
+        anchor: ReviewAnchor,
+        body: String,
+    ) {
+        let _ = self.out.send(ClientMsg::ReviewComment {
+            checkout,
+            recipient,
+            anchor: Box::new(anchor),
+            body,
+        });
+        self.report("saving comment…");
     }
 
 

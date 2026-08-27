@@ -734,6 +734,19 @@ pub fn instructions() -> String {
          unless sharing edits is intentional; use a worktree when it needs isolation. A \
          delegation request is refused once the checkout has four live agents.\n\
          \n\
+         To continue the whole session in a fresh agent, generate a handoff document in memory \
+         and pipe it to the helper instead of writing it to the checkout:\n\
+         \n\
+         \x20 <producer> | {hook} handoff\n\
+         \x20 <producer> | {hook} handoff --template NAME\n\
+         \n\
+         The fresh agent receives that document as its first message. Without `--template`, it \
+         uses your template.\n\
+         \n\
+         Review comments are durable and scoped to this checkout. Read the newest comments with:\n\
+         \n\
+         \x20 {hook} comments\n\
+         \n\
          After you start working in another checkout, run this from that checkout so the \
          pane moves under it in Argus:\n\
          \n\
@@ -1563,6 +1576,23 @@ mod tests {
         assert!(text.contains("delegate --template NAME"));
         assert!(text.contains("shares the same files"));
         assert!(text.contains("refused once the checkout has four live agents"));
+    }
+
+    #[test]
+    fn agents_are_told_how_to_handoff_without_writing_a_file() {
+        let text = instructions();
+
+        assert!(text.contains("handoff --template NAME"));
+        assert!(text.contains("generate a handoff document in memory"));
+        assert!(text.contains("receives that document as its first message"));
+    }
+
+    #[test]
+    fn agents_are_told_how_to_read_review_comments() {
+        let text = instructions();
+
+        assert!(text.contains("Review comments are durable"));
+        assert!(text.contains("comments"));
     }
 
     // --- the plugin mechanism ----------------------------------------------

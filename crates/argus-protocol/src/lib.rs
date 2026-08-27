@@ -16,12 +16,15 @@ pub use compact_str::{CompactString, ToCompactString};
 pub use paths::{config_dir, instance_name};
 pub use framing::{read_msg, write_msg, FramingError};
 pub use hook::{
-    pane_path, pane_prefix, parse_pane_path, DelegateRequest, DelegateResponse, Endpoint, Report,
-    MAX_DELEGATE_TASK_BYTES,
+    pane_path, pane_prefix, parse_pane_path, DelegateRequest, DelegateResponse, Endpoint,
+    HandoffRequest, Report, MAX_DELEGATE_TASK_BYTES, MAX_HANDOFF_BYTES,
 };
 pub use ids::{CheckoutId, IdGen, PaneId, ProjectId, RepositoryId, WorkspaceId};
 pub use message::{ClientMsg, DirEntry, DirListing, ServerMsg};
-pub use review::{ChangeKind, DiffLine, FileDiff, Hunk, LineKind, Review, ReviewBase};
+pub use review::{
+    ChangeKind, DiffLine, FileDiff, Hunk, LineKind, Review, ReviewAnchor, ReviewBase,
+    ReviewComment, MAX_REVIEW_COMMENTS, MAX_REVIEW_COMMENT_BYTES,
+};
 pub use tree::{
     CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneStatus, ProjectInfo,
     RepositoryInfo, WorkspaceInfo,

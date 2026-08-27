@@ -33,10 +33,9 @@ imported once and retired; `projects.toml` is back to being configuration Argus 
 ## P5: Complete Review
 
 Review shows both sides of uncommitted work and nothing else — staged and unstaged, each with its
-own endpoint. What is left is making it durable rather than making it a Git client.
+own endpoint. Comments are durable and agents can read checkout-scoped feedback; the client selects
+a recipient when several agents share the checkout. What remains is presentation work.
 
-- Persist review comments and let agents read them.
-- Select a comment recipient when several agents share a checkout.
 - Add syntax highlighting and lazy rendering where measurements justify them.
 - Decide whether to retain the current scrolling surface or adopt separate file and diff columns.
 

@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex as StdMutex;
 
 use anyhow::{Context, Result};
-use argus_protocol::{PaneKind, PaneStatus};
+use argus_protocol::{PaneKind, PaneStatus, ReviewAnchor, ReviewComment, MAX_REVIEW_COMMENTS};
 use rusqlite::{Connection, OptionalExtension};
 
 /// One pane worth starting again, as it stood when the daemon stopped.
@@ -79,7 +79,7 @@ pub struct Overlays {
 pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -153,6 +153,9 @@ impl Store {
         if from < 1 {
             tx.execute_batch(SCHEMA_V1)?;
         }
+        if from < 2 {
+            tx.execute_batch(SCHEMA_V2)?;
+        }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
         Ok(())
@@ -221,6 +224,49 @@ impl Store {
                 harness_session_id: r.get(7)?,
             })
         })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    // ---- review comments ---------------------------------------------
+
+    pub fn add_review_comment(
+        &self,
+        checkout_path: &Path,
+        anchor: ReviewAnchor,
+        body: String,
+    ) -> Result<ReviewComment> {
+        let conn = self.conn();
+        conn.execute(
+            "INSERT INTO review_comment (checkout_path, anchor, body) VALUES (?1, ?2, ?3)",
+            rusqlite::params![path_text(checkout_path), encode(&anchor)?, body],
+        )?;
+        Ok(ReviewComment {
+            id: conn.last_insert_rowid() as u64,
+            anchor,
+            body,
+        })
+    }
+
+    /// The newest bounded window, returned oldest-first so it reads as a
+    /// conversation rather than in reverse database order.
+    pub fn review_comments(&self, checkout_path: &Path) -> Result<Vec<ReviewComment>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, anchor, body FROM (
+                 SELECT id, anchor, body FROM review_comment
+                  WHERE checkout_path = ?1 ORDER BY id DESC LIMIT ?2
+             ) ORDER BY id",
+        )?;
+        let rows = stmt.query_map(
+            rusqlite::params![path_text(checkout_path), MAX_REVIEW_COMMENTS as i64],
+            |r| {
+                Ok(ReviewComment {
+                    id: r.get::<_, i64>(0)? as u64,
+                    anchor: decode_row(&r.get::<_, String>(1)?, 1)?,
+                    body: r.get(2)?,
+                })
+            },
+        )?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
@@ -581,6 +627,16 @@ CREATE TABLE ui_state (
 );
 "#;
 
+const SCHEMA_V2: &str = r#"
+CREATE TABLE review_comment (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    checkout_path TEXT NOT NULL,
+    anchor        TEXT NOT NULL,
+    body          TEXT NOT NULL
+);
+CREATE INDEX review_comment_checkout ON review_comment (checkout_path, id);
+"#;
+
 /// Reading `session.json` one last time.
 ///
 /// The `serde(default)` shims live here rather than on the live type: the
@@ -682,6 +738,19 @@ mod tests {
         }
     }
 
+    fn anchor(line: u32) -> ReviewAnchor {
+        ReviewAnchor {
+            base: argus_protocol::ReviewBase::Unstaged,
+            path: "src/main.rs".to_string(),
+            old_path: None,
+            old_start: None,
+            old_end: None,
+            new_start: Some(line),
+            new_end: Some(line),
+            text: vec!["+changed".to_string()],
+        }
+    }
+
     #[test]
     fn a_pane_survives_a_round_trip() {
         let s = store();
@@ -695,6 +764,34 @@ mod tests {
 
         s.save_panes(&want).unwrap();
         assert_eq!(s.panes().unwrap(), want);
+    }
+
+    #[test]
+    fn review_comments_survive_a_round_trip_in_order() {
+        let s = store();
+        let first = s
+            .add_review_comment(Path::new("/repo"), anchor(4), "first".to_string())
+            .unwrap();
+        let second = s
+            .add_review_comment(Path::new("/repo"), anchor(9), "second".to_string())
+            .unwrap();
+
+        assert_eq!(s.review_comments(Path::new("/repo")).unwrap(), [first, second]);
+        assert!(s.review_comments(Path::new("/other")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn only_the_newest_review_comments_are_returned() {
+        let s = store();
+        for line in 1..=(MAX_REVIEW_COMMENTS as u32 + 5) {
+            s.add_review_comment(Path::new("/repo"), anchor(line), format!("comment {line}"))
+                .unwrap();
+        }
+
+        let comments = s.review_comments(Path::new("/repo")).unwrap();
+        assert_eq!(comments.len(), MAX_REVIEW_COMMENTS);
+        assert_eq!(comments.first().unwrap().anchor.new_start, Some(6));
+        assert_eq!(comments.last().unwrap().anchor.new_start, Some(105));
     }
 
     #[test]
@@ -983,6 +1080,31 @@ mod tests {
             .unwrap();
         s.migrate().unwrap();
         assert_eq!(s.panes().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn migrating_a_v1_store_preserves_existing_state_and_adds_comments() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("runtime.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(SCHEMA_V1).unwrap();
+            conn.execute(
+                "INSERT INTO pane
+                   (seq, checkout_path, kind, title, template, status, note, harness, harness_session_id)
+                 VALUES (0, '/repo', ?1, 'claude', NULL, ?2, NULL, NULL, NULL)",
+                rusqlite::params![encode(&PaneKind::Agent).unwrap(), encode(&PaneStatus::Idle).unwrap()],
+            )
+            .unwrap();
+            conn.pragma_update(None, "user_version", 1).unwrap();
+        }
+
+        let s = Store::open_at(&path).unwrap();
+        assert_eq!(s.panes().unwrap().len(), 1);
+        let saved = s
+            .add_review_comment(Path::new("/repo"), anchor(3), "persist this".to_string())
+            .unwrap();
+        assert_eq!(s.review_comments(Path::new("/repo")).unwrap(), [saved]);
     }
 
     #[test]
