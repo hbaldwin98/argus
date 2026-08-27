@@ -167,6 +167,10 @@ leaves the row alone. A pane closed by the operator is removed before it is kill
 never a restart. Three restarts of one template in one checkout within a minute stops the cycle and
 leaves the exited row, which is what says what happened.
 
+On Windows, each agent process tree runs in its own Job Object with an 8 GiB committed-memory limit
+and a 64-process limit. Closing the pane or dropping its runtime terminates the whole job rather
+than only the template's immediate process. Shell and editor panes are not subject to these limits.
+
 Each PTY starts at 24 by 80 cells. A blocking reader thread sends output through a bounded queue to
 a Tokio task, which processes a bounded batch on a 16 ms interval, feeds a `vt100` parser, and
 broadcasts changed horizontal cell spans plus the child cursor's position and visibility.

@@ -7,6 +7,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
+#[cfg(windows)]
+use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
+
 use argus_protocol::{
     diff_grid, Cell, Color, CompactString, Cursor, CursorShape, MouseEncoding, MouseMode,
     MouseTracking, PaneId, ServerMsg, BLANK,
@@ -27,6 +30,17 @@ const EXIT_FLUSH_GRACE: Duration = Duration::from_millis(500);
 const PASTE_START: &[u8] = b"\x1b[200~";
 const PASTE_END: &[u8] = b"\x1b[201~";
 
+#[cfg(windows)]
+const AGENT_JOB_MEMORY_BYTES: usize = 8 * 1024 * 1024 * 1024;
+#[cfg(windows)]
+const AGENT_JOB_PROCESS_LIMIT: u32 = 64;
+
+#[derive(Clone, Copy)]
+pub enum ResourcePolicy {
+    Unrestricted,
+    Agent,
+}
+
 /// What to run in a newly-opened pty: the user's shell, or a named program
 /// (an agent CLI) with its own args and extra environment variables.
 pub enum Spawn {
@@ -35,7 +49,161 @@ pub enum Spawn {
         program: String,
         args: Vec<String>,
         env: Vec<(String, String)>,
+        resource_policy: ResourcePolicy,
     },
+}
+
+impl Spawn {
+    fn into_command(self) -> (CommandBuilder, ResourcePolicy) {
+        match self {
+            Self::DefaultShell => (
+                CommandBuilder::new_default_prog(),
+                ResourcePolicy::Unrestricted,
+            ),
+            Self::Program {
+                program,
+                args,
+                env,
+                resource_policy,
+            } => {
+                let mut command = program_command(&program, &args);
+                for (key, value) in env {
+                    command.env(key, value);
+                }
+                (command, resource_policy)
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+#[derive(Clone, Copy)]
+struct JobLimits {
+    memory_bytes: usize,
+    active_processes: u32,
+}
+
+#[cfg(windows)]
+struct ProcessJob {
+    handle: OwnedHandle,
+}
+
+#[cfg(windows)]
+impl ProcessJob {
+    fn new(limits: JobLimits) -> anyhow::Result<Self> {
+        use windows_sys::Win32::System::JobObjects::{
+            CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+            JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        };
+
+        let raw = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        if raw.is_null() {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        let handle = unsafe { OwnedHandle::from_raw_handle(raw as RawHandle) };
+
+        let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_JOB_MEMORY
+            | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+            | JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        info.BasicLimitInformation.ActiveProcessLimit = limits.active_processes;
+        info.JobMemoryLimit = limits.memory_bytes;
+        let configured = unsafe {
+            SetInformationJobObject(
+                handle.as_raw_handle() as _,
+                JobObjectExtendedLimitInformation,
+                std::ptr::from_ref(&info).cast(),
+                std::mem::size_of_val(&info) as u32,
+            )
+        };
+        if configured == 0 {
+            return Err(anyhow::anyhow!(
+                "could not configure agent process limits: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+
+        Ok(Self { handle })
+    }
+
+    fn assign(&self, process: RawHandle) -> anyhow::Result<()> {
+        use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
+
+        let assigned =
+            unsafe { AssignProcessToJobObject(self.handle.as_raw_handle() as _, process as _) };
+        if assigned == 0 {
+            return Err(anyhow::anyhow!(
+                "could not contain agent process: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        Ok(())
+    }
+
+    fn terminate(&self) -> anyhow::Result<()> {
+        use windows_sys::Win32::System::JobObjects::TerminateJobObject;
+
+        let terminated = unsafe { TerminateJobObject(self.handle.as_raw_handle() as _, 1) };
+        if terminated == 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    fn active_processes(&self) -> anyhow::Result<u32> {
+        use windows_sys::Win32::System::JobObjects::{
+            JobObjectBasicAccountingInformation, QueryInformationJobObject,
+            JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+        };
+
+        let mut info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+        let queried = unsafe {
+            QueryInformationJobObject(
+                self.handle.as_raw_handle() as _,
+                JobObjectBasicAccountingInformation,
+                std::ptr::from_mut(&mut info).cast(),
+                std::mem::size_of_val(&info) as u32,
+                std::ptr::null_mut(),
+            )
+        };
+        if queried == 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(info.ActiveProcesses)
+    }
+}
+
+#[cfg(windows)]
+fn job_for(resource_policy: ResourcePolicy) -> anyhow::Result<Option<ProcessJob>> {
+    match resource_policy {
+        ResourcePolicy::Unrestricted => Ok(None),
+        ResourcePolicy::Agent => ProcessJob::new(JobLimits {
+            memory_bytes: AGENT_JOB_MEMORY_BYTES,
+            active_processes: AGENT_JOB_PROCESS_LIMIT,
+        })
+        .map(Some),
+    }
+}
+
+#[cfg(windows)]
+fn assign_to_job(
+    job: Option<&ProcessJob>,
+    child: &mut Box<dyn Child + Send + Sync>,
+) -> anyhow::Result<()> {
+    let Some(job) = job else {
+        return Ok(());
+    };
+    let Some(handle) = child.as_raw_handle() else {
+        let _ = child.kill();
+        anyhow::bail!("agent process did not expose a Windows process handle");
+    };
+    if let Err(error) = job.assign(handle) {
+        let _ = child.kill();
+        return Err(error);
+    }
+    Ok(())
 }
 
 /// Builds the command to run a named program with args. On Windows this
@@ -62,6 +230,26 @@ fn strip_herdr_context(
     }
 }
 
+fn spawn_output_reader(
+    mut reader: Box<dyn Read + Send>,
+    byte_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
+) {
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 8192];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if byte_tx.blocking_send(buf[..n].to_vec()).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+}
+
 #[cfg(unix)]
 fn program_command(program: &str, args: &[String]) -> CommandBuilder {
     let mut c = CommandBuilder::new(program);
@@ -78,6 +266,8 @@ pub struct PaneRuntime {
     shape: Arc<StdMutex<CursorShapeScanner>>,
     child: Arc<StdMutex<Box<dyn Child + Send + Sync>>>,
     damage_tx: broadcast::Sender<ServerMsg>,
+    #[cfg(windows)]
+    _job: Option<ProcessJob>,
 }
 
 #[derive(Clone)]
@@ -129,22 +319,20 @@ impl PaneRuntime {
             pixel_height: 0,
         })?;
 
-        let mut cmd = match spec {
-            Spawn::DefaultShell => CommandBuilder::new_default_prog(),
-            Spawn::Program { program, args, env } => {
-                let mut c = program_command(&program, &args);
-                for (k, v) in env {
-                    c.env(k, v);
-                }
-                c
-            }
-        };
+        let (mut cmd, resource_policy) = spec.into_command();
         // Argus owns the outer Herdr pane. Processes nested in its PTYs must
         // not compete with the client's aggregate lifecycle report for it.
         strip_herdr_context(&mut cmd, std::env::vars_os().map(|(key, _)| key));
         cmd.cwd(cwd);
 
-        let child = pair.slave.spawn_command(cmd)?;
+        #[cfg(windows)]
+        let job = job_for(resource_policy)?;
+        #[cfg(not(windows))]
+        let _ = resource_policy;
+
+        let mut child = pair.slave.spawn_command(cmd)?;
+        #[cfg(windows)]
+        assign_to_job(job.as_ref(), &mut child)?;
         drop(pair.slave);
 
         let parser = Arc::new(StdMutex::new(vt100::Parser::new(
@@ -152,7 +340,7 @@ impl PaneRuntime {
             DEFAULT_COLS,
             SCROLLBACK_LINES,
         )));
-        let mut reader = pair.master.try_clone_reader()?;
+        let reader = pair.master.try_clone_reader()?;
         let input = PaneInput {
             writer: Arc::new(StdMutex::new(pair.master.take_writer()?)),
             parser: parser.clone(),
@@ -162,20 +350,7 @@ impl PaneRuntime {
         let (damage_tx, _) = broadcast::channel::<ServerMsg>(64);
 
         let (byte_tx, mut byte_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(OUTPUT_QUEUE_CHUNKS);
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 8192];
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        if byte_tx.blocking_send(buf[..n].to_vec()).is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        });
+        spawn_output_reader(reader, byte_tx);
 
         {
             let parser = parser.clone();
@@ -343,6 +518,8 @@ impl PaneRuntime {
             shape,
             child,
             damage_tx,
+            #[cfg(windows)]
+            _job: job,
         })
     }
 
@@ -362,6 +539,10 @@ impl PaneRuntime {
     }
 
     pub fn kill(&self) -> anyhow::Result<()> {
+        #[cfg(windows)]
+        if let Some(job) = &self._job {
+            return job.terminate();
+        }
         self.child.lock().unwrap().kill()?;
         Ok(())
     }
@@ -706,6 +887,124 @@ mod tests {
             program: "echo".to_string(),
             args: vec![text.to_string()],
             env: Vec::new(),
+            resource_policy: ResourcePolicy::Unrestricted,
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn job_memory_limit_helper() {
+        if std::env::var_os("ARGUS_JOB_MEMORY_TEST").is_none() {
+            return;
+        }
+
+        // Give the parent time to assign this process to the job before it
+        // starts committing memory. The total allocation stays host-safe if
+        // containment is broken; success then makes the parent test fail.
+        std::thread::sleep(Duration::from_millis(500));
+        let mut allocations = Vec::new();
+        for _ in 0..8 {
+            allocations.push(vec![0xa5; 32 * 1024 * 1024]);
+        }
+        std::hint::black_box(allocations);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_job_stops_a_process_that_exceeds_its_memory_limit() {
+        use std::os::windows::io::AsRawHandle;
+        use std::process::{Command, Stdio};
+
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "pty::tests::job_memory_limit_helper",
+                "--nocapture",
+            ])
+            .env("ARGUS_JOB_MEMORY_TEST", "1")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let job = ProcessJob::new(JobLimits {
+            memory_bytes: 128 * 1024 * 1024,
+            active_processes: 4,
+        })
+        .unwrap();
+        job.assign(AsRawHandle::as_raw_handle(&child)).unwrap();
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            if std::time::Instant::now() >= deadline {
+                job.terminate().unwrap();
+                let _ = child.wait();
+                panic!("memory-limited process did not exit");
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+
+        assert!(
+            !status.success(),
+            "a process that committed 256 MiB escaped a 128 MiB job limit"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn job_descendant_helper() {
+        if std::env::var_os("ARGUS_JOB_DESCENDANT_TEST").is_none() {
+            return;
+        }
+
+        println!("argus-job-descendant-ready");
+        std::thread::sleep(Duration::from_secs(20));
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn agent_policy_contains_the_program_behind_the_cmd_wrapper() {
+        let program = std::env::current_exe()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        for i in 0..20 {
+            let pane = PaneRuntime::spawn(
+                PaneId(32 + i),
+                &std::env::temp_dir(),
+                Spawn::Program {
+                    program: program.clone(),
+                    args: vec![
+                        "--exact".to_string(),
+                        "pty::tests::job_descendant_helper".to_string(),
+                        "--nocapture".to_string(),
+                    ],
+                    env: vec![("ARGUS_JOB_DESCENDANT_TEST".to_string(), "1".to_string())],
+                    resource_policy: ResourcePolicy::Agent,
+                },
+                |_| {},
+            )
+            .unwrap();
+
+            wait_for(&pane, |g| grid_contains(g, "argus-job-descendant-ready")).await;
+            let active = pane._job.as_ref().unwrap().active_processes().unwrap();
+            pane.kill().unwrap();
+
+            assert!(
+                active >= 2,
+                "only cmd.exe entered the job on attempt {i}; its agent child escaped"
+            );
+
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+            while pane._job.as_ref().unwrap().active_processes().unwrap() != 0 {
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "terminating the pane left a descendant running on attempt {i}"
+                );
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
         }
     }
 
@@ -1039,6 +1338,7 @@ mod tests {
                 },
                 args: Vec::new(),
                 env: Vec::new(),
+                resource_policy: ResourcePolicy::Unrestricted,
             },
             |_| {},
         )
@@ -1058,6 +1358,7 @@ mod tests {
                 program: "argus-definitely-not-a-real-program".to_string(),
                 args: Vec::new(),
                 env: Vec::new(),
+                resource_policy: ResourcePolicy::Unrestricted,
             },
             |_| {},
         );
