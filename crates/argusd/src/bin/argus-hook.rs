@@ -1066,7 +1066,6 @@ mod tests {
             id: 4,
             anchor: argus_protocol::ReviewAnchor {
                 base: argus_protocol::ReviewBase::Staged,
-                commit: None,
                 path: "src/main.rs".to_string(),
                 old_path: None,
                 old_start: Some(9),
