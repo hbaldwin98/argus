@@ -23,6 +23,49 @@ pub fn status(path: &Path) -> Option<GitStatus> {
     // the checkout appears to hold nothing and the branch it is really on
     // shows up as free. Say nothing at all instead, and let the caller keep
     // what it last knew.
+    let (head, branch) = head_of(&repo)?;
+
+    let mut opts = git2::StatusOptions::new();
+    opts.include_untracked(true).renames_head_to_index(true);
+    let changed_files = repo
+        .statuses(Some(&mut opts))
+        .map(|s| s.iter().count())
+        .unwrap_or(0);
+
+    let (ahead, behind) = ahead_behind(&repo, head.as_ref()).unwrap_or((0, 0));
+
+    Some(GitStatus {
+        branch,
+        dirty: changed_files > 0,
+        changed_files,
+        ahead,
+        behind,
+    })
+}
+
+/// The branch occupying `path`, without walking the workdir.
+///
+/// Checkout rows are named from this. Dirty counts and ahead/behind need a
+/// full [`status`], which on a cold disk across a project root of many
+/// repositories is seconds of sequential I/O — too much to put in front of
+/// the first client. `dirty`/`ahead`/`behind` here are placeholders: false
+/// and zero until the poll fills them in.
+pub fn head(path: &Path) -> Option<GitStatus> {
+    let repo = git2::Repository::open(path).ok()?;
+    let (_head, branch) = head_of(&repo)?;
+    Some(GitStatus {
+        branch,
+        dirty: false,
+        changed_files: 0,
+        ahead: 0,
+        behind: 0,
+    })
+}
+
+/// `None` if HEAD could not be read right now — a transient lock or a
+/// rewrite in another process. `Some` is a settled answer: the branch name,
+/// or `None` for detached / unborn HEAD.
+fn head_of(repo: &git2::Repository) -> Option<(Option<git2::Reference<'_>>, Option<String>)> {
     let head = match repo.head() {
         Ok(head) => Some(head),
         // A repository with no commits yet has no HEAD to read, which is a
@@ -42,23 +85,7 @@ pub fn status(path: &Path) -> Option<GitStatus> {
         .and_then(|h| h.shorthand())
         .filter(|s| *s != "HEAD") // detached HEAD shorthand is literally "HEAD"
         .map(str::to_string);
-
-    let mut opts = git2::StatusOptions::new();
-    opts.include_untracked(true).renames_head_to_index(true);
-    let changed_files = repo
-        .statuses(Some(&mut opts))
-        .map(|s| s.iter().count())
-        .unwrap_or(0);
-
-    let (ahead, behind) = ahead_behind(&repo, head.as_ref()).unwrap_or((0, 0));
-
-    Some(GitStatus {
-        branch,
-        dirty: changed_files > 0,
-        changed_files,
-        ahead,
-        behind,
-    })
+    Some((head, branch))
 }
 
 /// Every worktree path git currently knows about for the repo at `path`
@@ -394,6 +421,16 @@ enum Site {
 }
 
 fn look(dir: &Path) -> Site {
+    // Opening libgit2 on every directory of a project root is the scan's
+    // cost. A checkout has a `.git` entry (directory or gitfile); a bare
+    // repository is the Git directory itself. Anything else is not Git.
+    if !dir.join(".git").exists() {
+        return if is_git_dir(dir) {
+            Site::Boundary
+        } else {
+            Site::Plain
+        };
+    }
     // `Repository::open` does not search parent directories, so this asks
     // whether `dir` *is* a repository, not whether it sits inside one.
     let Ok(repo) = git2::Repository::open(dir) else {
@@ -408,6 +445,13 @@ fn look(dir: &Path) -> Site {
             .canonicalize()
             .unwrap_or_else(|_| git_dir.to_path_buf()),
     }
+}
+
+/// Whether `dir` itself is a Git directory — a bare repository, or the
+/// `.git` of an ordinary checkout. `HEAD` plus `objects` and `refs` is
+/// what libgit2 needs; asking the filesystem is cheaper than asking it.
+fn is_git_dir(dir: &Path) -> bool {
+    dir.join("HEAD").is_file() && dir.join("objects").is_dir() && dir.join("refs").is_dir()
 }
 
 fn ahead_behind(repo: &git2::Repository, head: Option<&git2::Reference>) -> Option<(usize, usize)> {
@@ -720,6 +764,28 @@ mod tests {
         let dirty = status(dir.path()).unwrap();
         assert!(dirty.dirty, "an untracked file counts as dirty");
         assert!(dirty.changed_files >= 1);
+    }
+
+    #[test]
+    fn head_names_the_branch_without_counting_untracked_files() {
+        // The startup fill: a name for the row, not a workdir walk. Untracked
+        // files are what made a project root of many repositories take
+        // seconds to listen; they belong to `status`, not to this.
+        let dir = tempfile::tempdir().unwrap();
+        let repo = repo_with_a_commit(dir.path());
+        rename_head_branch(&repo, "main");
+        std::fs::create_dir_all(dir.path().join("untracked/nested")).unwrap();
+        std::fs::write(dir.path().join("untracked/nested/a.txt"), "x").unwrap();
+
+        let head = head(dir.path()).expect("a repo should report HEAD");
+        assert_eq!(head.branch.as_deref(), Some("main"));
+        assert!(!head.dirty);
+        assert_eq!(head.changed_files, 0);
+        assert_eq!((head.ahead, head.behind), (0, 0));
+
+        let full = status(dir.path()).unwrap();
+        assert!(full.dirty, "status still sees the untracked tree");
+        assert!(full.changed_files >= 1);
     }
 
     #[test]

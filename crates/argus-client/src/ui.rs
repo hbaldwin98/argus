@@ -911,6 +911,12 @@ fn history_line<'a>(view: &'a HistoryView, row: HistoryRow, selected: bool, th: 
     let commit = &view.commits[row.commit()];
     let spans = match row {
         HistoryRow::Commit { .. } => vec![
+            // The fold marker is the only sign that a header has anything
+            // under it: its files are not fetched until it is opened.
+            Span::styled(
+                format!("{} ", fold_marker(commit)),
+                Style::default().fg(th.muted),
+            ),
             Span::styled(
                 format!(" {} ", commit.info.short),
                 Style::default().fg(th.on_accent).bg(th.accent),
@@ -924,8 +930,10 @@ fn history_line<'a>(view: &'a HistoryView, row: HistoryRow, selected: bool, th: 
                 Style::default().fg(th.muted),
             ),
         ],
-        HistoryRow::File { file, .. } => {
-            let file = &commit.files[file];
+        HistoryRow::File { .. } => {
+            let Some(file) = view.file_at(row) else {
+                return Line::default();
+            };
             let mut v = vec![
                 Span::styled(
                     format!("  {} ", file.kind.marker()),
@@ -947,6 +955,14 @@ fn history_line<'a>(view: &'a HistoryView, row: HistoryRow, selected: bool, th: 
         line = line.style(Style::default().bg(th.sel_bg));
     }
     line
+}
+
+fn fold_marker(commit: &crate::history::HistoryEntry) -> &'static str {
+    match (commit.expanded, commit.pending) {
+        (_, true) => "…",
+        (true, _) => "▾",
+        (false, _) => "▸",
+    }
 }
 
 /// `project / checkout / pane` for the live view's title, which doubles as
@@ -1023,7 +1039,7 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         (hint, th.dim)
     } else if matches!(app.overlay, Some(Overlay::History)) {
         (
-            "j/k  ]/[ commit  l open  r refresh  R review  esc close",
+            "j/k  ]/[ commit  l files/open  h fold  r refresh  R review  esc close",
             th.dim,
         )
     } else if app.overlay.is_some() {
@@ -3714,38 +3730,49 @@ mod tests {
         app
     }
 
+    /// As the overlay first opens: headers, and no commit summarized yet.
     fn app_with_history() -> App {
         let mut app = app_with_tree();
         app.history = Some(crate::history::HistoryView::new(
             CheckoutId(1),
-            vec![argus_protocol::HistoryCommit {
-                info: argus_protocol::CommitInfo {
-                    oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
-                    short: "aaaaaaa".into(),
-                    summary: "Wake a pane's pump on the byte".into(),
-                    author: "hunt".into(),
-                    time: 0,
-                },
-                files: vec![
-                    argus_protocol::CommitFile {
-                        path: "crates/argusd/src/pty.rs".into(),
-                        old_path: None,
-                        kind: argus_protocol::ChangeKind::Modified,
-                        added: 12,
-                        removed: 3,
-                    },
-                    argus_protocol::CommitFile {
-                        path: "DESIGN.md".into(),
-                        old_path: None,
-                        kind: argus_protocol::ChangeKind::Added,
-                        added: 40,
-                        removed: 0,
-                    },
-                ],
+            vec![argus_protocol::CommitInfo {
+                oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                short: "aaaaaaa".into(),
+                summary: "Wake a pane's pump on the byte".into(),
+                author: "hunt".into(),
+                time: 0,
             }],
         ));
         app.overlay = Some(Overlay::History);
         app.focus = Focus::Review;
+        app
+    }
+
+    /// The same overlay after the cursor has drilled into that commit and
+    /// the daemon has answered with what it touched.
+    fn app_with_drilled_history() -> App {
+        let mut app = app_with_history();
+        let view = app.history.as_mut().unwrap();
+        view.drill();
+        view.receive_files(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            vec![
+                argus_protocol::CommitFile {
+                    path: "crates/argusd/src/pty.rs".into(),
+                    old_path: None,
+                    kind: argus_protocol::ChangeKind::Modified,
+                    added: 12,
+                    removed: 3,
+                },
+                argus_protocol::CommitFile {
+                    path: "DESIGN.md".into(),
+                    old_path: None,
+                    kind: argus_protocol::ChangeKind::Added,
+                    added: 40,
+                    removed: 0,
+                },
+            ],
+        );
         app
     }
 
@@ -3803,14 +3830,31 @@ mod tests {
     }
 
     #[test]
-    fn the_files_a_commit_touched_are_listed_under_it() {
-        let mut app = app_with_history();
+    fn the_files_a_commit_touched_are_listed_once_it_is_drilled_into() {
+        let mut app = app_with_drilled_history();
         let out = lines(&draw(&mut app)).join(
             "
 ",
         );
         assert!(out.contains("crates/argusd/src/pty.rs"), "{out}");
         assert!(out.contains("DESIGN.md"), "{out}");
+    }
+
+    /// The reason the overlay opens fast at all: a hundred commits cost a
+    /// hundred diffs to summarize, so a fresh list shows none of them.
+    #[test]
+    fn a_fresh_history_lists_no_files_and_marks_the_commit_as_foldable() {
+        let mut app = app_with_history();
+        let out = lines(&draw(&mut app)).join(
+            "
+",
+        );
+        assert!(!out.contains("crates/argusd/src/pty.rs"), "{out}");
+        assert!(
+            out.contains("▸"),
+            "the header says there is something to open:
+{out}"
+        );
     }
 
     #[test]

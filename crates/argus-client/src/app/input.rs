@@ -475,11 +475,18 @@ impl App {
         match key.code {
             KeyCode::Char('R') => return self.open_review(),
             KeyCode::Char('r') | KeyCode::Char('H') => return self.open_history(),
-            KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc | KeyCode::Char('q') => {
-                return self.close_overlay()
+            // `h`/Left folds the commit the cursor is in before it closes
+            // the overlay, the way it steps back out of a review.
+            KeyCode::Char('h') | KeyCode::Left => {
+                let folded = self.history.as_mut().is_some_and(|v| v.collapse());
+                if !folded {
+                    self.close_overlay();
+                }
+                return;
             }
+            KeyCode::Esc | KeyCode::Char('q') => return self.close_overlay(),
             KeyCode::Char('l') | KeyCode::Enter | KeyCode::Right => {
-                return self.open_selected_commit()
+                return self.drill_into_history()
             }
             _ => {}
         }

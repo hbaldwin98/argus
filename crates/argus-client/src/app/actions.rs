@@ -113,6 +113,24 @@ impl App {
         });
     }
 
+    /// `l`/Enter in the history overlay. A folded commit unfolds to the
+    /// files it touched — fetched then, not when the list was built — and
+    /// anything already unfolded opens as a review.
+    pub(super) fn drill_into_history(&mut self) {
+        let Some(view) = &mut self.history else {
+            return;
+        };
+        let checkout = view.checkout;
+        match view.drill() {
+            Drill::Open => self.open_selected_commit(),
+            Drill::Shown => {}
+            Drill::Fetch(commit) => {
+                self.report("loading files…");
+                let _ = self.out.send(ClientMsg::ListCommitFiles { checkout, commit });
+            }
+        }
+    }
+
     pub(super) fn open_selected_commit(&mut self) {
         let Some(view) = &self.history else {
             return;

@@ -73,7 +73,8 @@ it leaves once it holds no panes — a repository still running an agent stays u
 because a directory can go missing for reasons that have nothing to do with the operator's intent.
 A path the configuration names outright is taken at its word: one that is not a Git repository at
 all still becomes a row, and no scan removes it. A root with no repositories under it is a project
-all the same.
+all the same. The walk probes for a `.git` entry (or a bare Git directory) before opening libgit2,
+so a root of ordinary directories is not a libgit2 open per folder.
 
 Checkout rows use the branch currently occupying their path as their display name, including when
 another process switches the branch outside Argus. A live agent can report that it has started
@@ -392,12 +393,17 @@ truth and the table follows it: a pane that closed has no row to update.
 
 ## Git and checkouts
 
-Read-only Git work uses `git2`. Every two seconds, on a blocking-pool thread, the daemon refreshes:
+Read-only Git work uses `git2`. At daemon startup only HEAD is read for each checkout, so the first
+client gets branch names without a workdir walk of every repository under a project root. Every two
+seconds, on a blocking-pool thread, the daemon then refreshes:
 
 - branch or detached-HEAD state;
 - dirty state and changed-file count, including untracked files;
 - ahead/behind against the tracking branch;
 - linked worktrees added or removed outside Argus.
+
+The first of those ticks is immediate, overlapping session restore, so dirty counts follow by the
+time the tree has been on screen a moment.
 
 On a slower ten-second beat it also rescans each project root for repositories added or removed
 there. Both run on the blocking pool.
@@ -507,14 +513,16 @@ The chosen side is a setting rather than a per-visit choice, and it survives clo
 the overlay.
 
 A third snapshot is one commit against its first parent, reached through the history overlay rather
-than the side toggle. `H` lists the newest 100 commits on the checkout's HEAD, each with the files
-it touched and their line counts, but without hunks — a hundred rendered diffs would be the capture
-cost the cap exists to avoid. Opening a row asks for that commit as an ordinary review, so a commit
-diff is the same viewer, the same navigation, and the same comment path as uncommitted work, with
-the comment's anchor recording which commit it was made against. `h` from a commit review returns
-to the list it was opened from; escape closes both. An unborn branch is an empty history rather
-than an error. Comparing a branch against its fork point, or against a remembered snapshot, remains
-out of scope: that is what a Git client is for.
+than the side toggle. `H` lists the newest 100 commits on the checkout's HEAD — identities only,
+which is one revwalk and no diffs at all. Naming the files a commit touched means diffing it
+against its parent, so that is asked for one commit at a time, when `l` drills into its row, and
+kept while the overlay stays open; `h` folds a commit back up before it closes the overlay.
+Drilling into a commit that is already unfolded, or into one of its file rows, asks for that commit
+as an ordinary review, so a commit diff is the same viewer, the same navigation, and the same
+comment path as uncommitted work, with the comment's anchor recording which commit it was made
+against. `h` from a commit review returns to the list it was opened from; escape closes both. An
+unborn branch is an empty history rather than an error. Comparing a branch against its fork point,
+or against a remembered snapshot, remains out of scope: that is what a Git client is for.
 
 Each request captures the index as a tree, and for the unstaged side also an immutable synthetic
 tree built from the index plus working-tree deletions, edits, and non-ignored untracked content.

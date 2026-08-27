@@ -31,6 +31,9 @@ impl Daemon {
         let daemon = self.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(2));
+            // The first tick is immediate. Keep it: startup only reads HEAD,
+            // so this is when dirty counts, ahead/behind, and free branches
+            // first land — overlapping restore rather than blocking listen.
             loop {
                 interval.tick().await;
                 let daemon = daemon.clone();
@@ -557,6 +560,10 @@ impl Daemon {
         let daemon = self.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(10));
+            // Startup already scanned every root so the tree is complete the
+            // moment a client attaches. The immediate first tick would walk
+            // them again, competing with the first status poll for disk.
+            interval.tick().await;
             loop {
                 interval.tick().await;
                 let daemon = daemon.clone();

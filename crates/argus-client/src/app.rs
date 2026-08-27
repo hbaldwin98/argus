@@ -9,7 +9,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::dirpicker::{DirAction, DirPicker, DirTarget};
 use crate::fuzzy::Fuzzy;
 use crate::grid::Grid;
-use crate::history::HistoryView;
+use crate::history::{Drill, HistoryView};
 use crate::keys::{encode_key, is_leader};
 use crate::mouse::encode_mouse;
 use crate::review::ReviewView;
@@ -3844,6 +3844,137 @@ second
 
         assert_eq!(h.app.focus, Focus::Projects);
         assert_eq!(h.app.column_pane(), watching, "still showing the same pane");
+    }
+
+    // --- history -------------------------------------------------------------
+
+    fn commit(oid: &str, summary: &str) -> argus_protocol::CommitInfo {
+        argus_protocol::CommitInfo {
+            oid: oid.to_string(),
+            short: oid.chars().take(7).collect(),
+            summary: summary.to_string(),
+            author: "hunt".to_string(),
+            time: 0,
+        }
+    }
+
+    fn touched(path: &str) -> argus_protocol::CommitFile {
+        argus_protocol::CommitFile {
+            path: path.to_string(),
+            old_path: None,
+            kind: argus_protocol::ChangeKind::Modified,
+            added: 1,
+            removed: 1,
+        }
+    }
+
+    /// Presses `H` on the first checkout and answers with two commits.
+    fn open_history(h: &mut Harness) -> CheckoutId {
+        h.key(KeyCode::Char('l'));
+        let checkout = h.app.current_checkout().unwrap().id;
+        h.key(KeyCode::Char('H'));
+        let request_id = match &h.sent()[0] {
+            ClientMsg::ListCommits { request_id, .. } => *request_id,
+            other => panic!("unexpected {other:?}"),
+        };
+        h.app.on_server_msg(ServerMsg::Commits {
+            request_id,
+            checkout,
+            commits: vec![commit("aaaa111", "newest"), commit("bbbb222", "older")],
+        });
+        checkout
+    }
+
+    fn commit_files_arrive(h: &mut Harness, checkout: CheckoutId, oid: &str) {
+        h.app.on_server_msg(ServerMsg::CommitFiles {
+            checkout,
+            commit: oid.to_string(),
+            files: vec![touched("src/a.rs")],
+        });
+    }
+
+    #[test]
+    fn opening_history_asks_for_commits_and_nothing_else() {
+        let mut h = Harness::new();
+        let checkout = open_history(&mut h);
+        assert!(h.app.history.is_some());
+        assert!(matches!(h.app.overlay, Some(Overlay::History)));
+        assert!(
+            h.sent().is_empty(),
+            "no commit is summarized until it is drilled into"
+        );
+        assert_eq!(h.app.history.as_ref().unwrap().checkout, checkout);
+        assert_eq!(
+            h.app.history.as_ref().unwrap().rows.len(),
+            2,
+            "two headers, no file rows"
+        );
+    }
+
+    #[test]
+    fn drilling_into_a_commit_asks_for_that_commit_alone() {
+        let mut h = Harness::new();
+        let checkout = open_history(&mut h);
+
+        h.key(KeyCode::Char('l'));
+        match h.sent().as_slice() {
+            [ClientMsg::ListCommitFiles { checkout: c, commit }] => {
+                assert_eq!(*c, checkout);
+                assert_eq!(commit, "aaaa111");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+
+        commit_files_arrive(&mut h, checkout, "aaaa111");
+        let view = h.app.history.as_ref().unwrap();
+        assert_eq!(view.rows.len(), 3);
+        assert_eq!(view.commits[0].files.as_ref().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn drilling_into_an_unfolded_commit_opens_it_as_a_review() {
+        let mut h = Harness::new();
+        let checkout = open_history(&mut h);
+        h.key(KeyCode::Char('l'));
+        commit_files_arrive(&mut h, checkout, "aaaa111");
+        h.sent();
+
+        h.key(KeyCode::Char('l'));
+        match h.sent().as_slice() {
+            [ClientMsg::Review { base, commit, .. }] => {
+                assert_eq!(*base, argus_protocol::ReviewBase::Commit);
+                assert_eq!(commit.as_deref(), Some("aaaa111"));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn h_folds_the_commit_before_it_closes_the_overlay() {
+        let mut h = Harness::new();
+        let checkout = open_history(&mut h);
+        h.key(KeyCode::Char('l'));
+        commit_files_arrive(&mut h, checkout, "aaaa111");
+
+        h.key(KeyCode::Char('h'));
+        assert!(
+            matches!(h.app.overlay, Some(Overlay::History)),
+            "folded, not closed"
+        );
+        assert_eq!(h.app.history.as_ref().unwrap().rows.len(), 2);
+
+        h.key(KeyCode::Char('h'));
+        assert!(h.app.overlay.is_none());
+    }
+
+    #[test]
+    fn a_summary_for_a_checkout_the_user_left_is_dropped() {
+        let mut h = Harness::new();
+        open_history(&mut h);
+        h.key(KeyCode::Char('l'));
+
+        commit_files_arrive(&mut h, CheckoutId(9999), "aaaa111");
+        assert!(h.app.history.as_ref().unwrap().commits[0].files.is_none());
     }
 
     // --- fuzzy pickers ------------------------------------------------------

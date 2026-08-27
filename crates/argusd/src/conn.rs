@@ -328,6 +328,23 @@ fn dispatch_workspace_query(
                 },
             },
         ),
+        ClientMsg::ListCommitFiles { checkout, commit } => reply_with(
+            daemon,
+            out_tx,
+            checkout,
+            move |path| match crate::diff::commit_summary(&path, &commit) {
+                Ok(files) => ServerMsg::CommitFiles {
+                    checkout,
+                    commit,
+                    files,
+                },
+                Err(error) => ServerMsg::CommitFilesFailed {
+                    checkout,
+                    commit,
+                    message: error.to_string(),
+                },
+            },
+        ),
         msg => return Err(msg),
     };
     Ok(result)

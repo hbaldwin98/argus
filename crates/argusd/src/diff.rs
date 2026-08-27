@@ -8,8 +8,8 @@ use std::path::Path;
 
 use anyhow::Context;
 use argus_protocol::{
-    ChangeKind, CommitFile, CommitInfo, DiffLine, FileDiff, HistoryCommit, Hunk, LineKind,
-    ReviewBase, MAX_HISTORY_COMMITS,
+    ChangeKind, CommitFile, CommitInfo, DiffLine, FileDiff, Hunk, LineKind, ReviewBase,
+    MAX_HISTORY_COMMITS,
 };
 
 const MAX_LINES_PER_FILE: usize = 5_000;
@@ -54,9 +54,13 @@ pub fn generate(path: &Path, base: ReviewBase) -> anyhow::Result<GeneratedReview
     })
 }
 
-/// Newest first, first-parent diffs, capped. An unborn HEAD is an empty
-/// history rather than an error — there is nothing to show yet.
-pub fn list_commits(path: &Path) -> anyhow::Result<Vec<HistoryCommit>> {
+/// Newest first, capped, identities only. Summarizing what each commit
+/// touched is a diff against its parent, so it waits for
+/// [`commit_summary`] and the row the viewer actually drills into.
+///
+/// An unborn HEAD is an empty history rather than an error — there is
+/// nothing to show yet.
+pub fn list_commits(path: &Path) -> anyhow::Result<Vec<CommitInfo>> {
     let repo = git2::Repository::open(path)
         .with_context(|| format!("could not open Git repository at {}", path.display()))?;
     // `revwalk.push_head` reports GenericError for an unborn branch, not
@@ -77,13 +81,22 @@ pub fn list_commits(path: &Path) -> anyhow::Result<Vec<HistoryCommit>> {
         let commit = repo
             .find_commit(oid)
             .with_context(|| format!("could not load commit {oid}"))?;
-        let files = commit_files(&repo, &commit)?;
-        commits.push(HistoryCommit {
-            info: commit_info(&commit),
-            files,
-        });
+        commits.push(commit_info(&commit));
     }
     Ok(commits)
+}
+
+/// The paths one commit touched, against its first parent. One commit's
+/// worth of the work [`list_commits`] deliberately does not do.
+pub fn commit_summary(path: &Path, rev: &str) -> anyhow::Result<Vec<CommitFile>> {
+    let repo = git2::Repository::open(path)
+        .with_context(|| format!("could not open Git repository at {}", path.display()))?;
+    let commit = repo
+        .revparse_single(rev)
+        .with_context(|| format!("could not resolve {rev}"))?
+        .peel_to_commit()
+        .with_context(|| format!("{rev} is not a commit"))?;
+    commit_files(&repo, &commit)
 }
 
 /// Parent of `rev` against `rev` itself. Merge commits use the first parent,
@@ -824,7 +837,7 @@ mod tests {
     }
 
     #[test]
-    fn history_lists_newest_first_with_the_files_each_commit_touched() {
+    fn history_lists_newest_first() {
         let (_dir, path) = repo_with(&[("a.txt", "one\n")]);
         let repo = git2::Repository::open(&path).unwrap();
         write(&path, "a.txt", "two\n");
@@ -833,25 +846,41 @@ mod tests {
 
         let history = list_commits(&path).unwrap();
         assert_eq!(
-            history
-                .iter()
-                .map(|c| c.info.summary.as_str())
-                .collect::<Vec<_>>(),
+            history.iter().map(|c| c.summary.as_str()).collect::<Vec<_>>(),
             ["second", "first"]
         );
+    }
+
+    #[test]
+    fn one_commit_summarizes_to_the_files_it_touched() {
+        let (_dir, path) = repo_with(&[("a.txt", "one\n")]);
+        let repo = git2::Repository::open(&path).unwrap();
+        write(&path, "a.txt", "two\n");
+        write(&path, "b.txt", "new\n");
+        commit(&repo, "second");
+        drop(repo);
+
+        let history = list_commits(&path).unwrap();
         assert_eq!(
-            history[0]
-                .files
+            commit_summary(&path, &history[0].oid)
+                .unwrap()
                 .iter()
-                .map(|f| (f.kind, f.path.as_str()))
+                .map(|f| (f.kind, f.path.clone()))
                 .collect::<Vec<_>>(),
             [
-                (ChangeKind::Modified, "a.txt"),
-                (ChangeKind::Added, "b.txt")
+                (ChangeKind::Modified, "a.txt".to_string()),
+                (ChangeKind::Added, "b.txt".to_string())
             ]
         );
-        assert_eq!(history[1].files[0].path, "a.txt");
-        assert_eq!(history[1].files[0].kind, ChangeKind::Added);
+        let root = commit_summary(&path, &history[1].oid).unwrap();
+        assert_eq!(root[0].path, "a.txt");
+        assert_eq!(root[0].kind, ChangeKind::Added);
+    }
+
+    #[test]
+    fn summarizing_something_that_is_not_a_commit_is_an_error() {
+        let (_dir, path) = repo_with(&[("a.txt", "one\n")]);
+        assert!(commit_summary(&path, "no-such-rev").is_err());
     }
 
     #[test]
@@ -862,7 +891,7 @@ mod tests {
         commit(&repo, "second");
 
         let history = list_commits(&path).unwrap();
-        let review = generate_commit(&path, &history[0].info.oid).unwrap();
+        let review = generate_commit(&path, &history[0].oid).unwrap();
         assert_eq!(review.commit.as_ref().unwrap().summary, "second");
         assert_eq!(find(&review.files, "a.txt").added_lines(), 1);
         assert_eq!(find(&review.files, "a.txt").removed_lines(), 1);
@@ -896,7 +925,7 @@ mod tests {
         assert_eq!(
             history
                 .iter()
-                .map(|c| c.info.summary.as_str())
+                .map(|c| c.summary.as_str())
                 .collect::<Vec<_>>(),
             ["c4", "c3", "c2", "c1", "first"]
         );
@@ -911,16 +940,16 @@ mod tests {
         drop(repo);
 
         let history = list_commits(&path).unwrap();
-        let file = &history[0].files[0];
-        assert_eq!(file.path, "a.txt");
-        assert_eq!((file.added, file.removed), (2, 1));
+        let files = commit_summary(&path, &history[0].oid).unwrap();
+        assert_eq!(files[0].path, "a.txt");
+        assert_eq!((files[0].added, files[0].removed), (2, 1));
     }
 
     #[test]
     fn a_root_commit_review_lists_its_files_as_added() {
         let (_dir, path) = repo_with(&[("a.txt", "one\n")]);
         let history = list_commits(&path).unwrap();
-        let review = generate_commit(&path, &history[0].info.oid).unwrap();
+        let review = generate_commit(&path, &history[0].oid).unwrap();
         assert_eq!(find(&review.files, "a.txt").kind, ChangeKind::Added);
     }
 
