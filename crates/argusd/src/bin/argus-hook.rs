@@ -30,10 +30,12 @@
 //! updating", never to an error on every prompt in that directory. `curl`
 //! exits 7 on a refused connection, which is exactly what this avoids.
 //!
-//! Lifecycle reports write nothing to stdout. Some agent CLIs inject a hook's
-//! stdout into the model's context, so staying silent keeps Argus's bookkeeping
-//! out of the conversation. The deliberate `say` and `delegate` commands do
-//! return useful output.
+//! Installed hooks write only the JSON the runner needs to let the turn
+//! continue — Cursor wants `permission`, Claude wants `decision` — never a
+//! human-readable message. Some agent CLIs inject a hook's stdout into the
+//! model's context, so staying silent keeps Argus's bookkeeping out of the
+//! conversation. The deliberate `say` and `delegate` commands do return
+//! useful output.
 //!
 //! On Windows it is a GUI-subsystem binary. Not because it has a UI — it
 //! has none — but because the agent CLI that runs it decides how it is
@@ -112,7 +114,11 @@ fn say(rest: &[&str]) {
 fn title(rest: &[&str]) {
     let text = rest.join(" ");
     if !text.trim().is_empty() {
-        let _ = post(&endpoint_url(&env_url(), Endpoint::Title), &env_token(), &text);
+        let _ = post(
+            &endpoint_url(&env_url(), Endpoint::Title),
+            &env_token(),
+            &text,
+        );
     }
 }
 
@@ -155,15 +161,30 @@ fn session(rest: &[&str]) {
 
 fn delegate(rest: &[&str]) {
     let mut out = std::io::stdout();
-    let _ = writeln!(out, "{}", delegation_message(rest, &env_url(), &env_token()));
+    let _ = writeln!(
+        out,
+        "{}",
+        delegation_message(rest, &env_url(), &env_token())
+    );
     let _ = out.flush();
 }
 
 fn delegation_message(rest: &[&str], base_url: &str, token: &str) -> String {
     match request_delegation(rest, base_url, token) {
-        Ok(response) => format!("opened agent pane {}", response.pane.0),
+        Ok(response) => opened(response),
         Err(error) => format!("could not open agent: {error}"),
     }
+}
+
+/// What the agent that asked is told. The pane is open, but the harness
+/// inside it is still starting and is given its message once it can read
+/// one — so this says the sending is under way, rather than leaving the
+/// caller to conclude from a silent pane that it should ask again.
+fn opened(response: DelegateResponse) -> String {
+    format!(
+        "opened agent pane {}; it is sent its message once it finishes starting",
+        response.pane.0
+    )
 }
 
 fn request_delegation(
@@ -182,12 +203,8 @@ fn request_agent(
     token: &str,
 ) -> Result<DelegateResponse, String> {
     let body = serde_json::to_string(&request).map_err(|_| "invalid request".to_string())?;
-    let (status, response_body) = post_response(
-        &endpoint_url(base_url, endpoint),
-        token,
-        &body,
-    )
-    .ok_or_else(|| "daemon unavailable".to_string())?;
+    let (status, response_body) = post_response(&endpoint_url(base_url, endpoint), token, &body)
+        .ok_or_else(|| "daemon unavailable".to_string())?;
     if status != 201 {
         let reason = response_body.trim();
         return Err(if reason.is_empty() {
@@ -246,7 +263,7 @@ fn handoff_message(rest: &[&str], input: &str, base_url: &str, token: &str) -> S
         .map_err(str::to_string)
         .and_then(|request| request_agent(&request, Endpoint::Handoff, base_url, token))
     {
-        Ok(response) => format!("opened agent pane {}", response.pane.0),
+        Ok(response) => opened(response),
         Err(error) => format!("could not open agent: {error}"),
     }
 }
@@ -280,11 +297,9 @@ fn comments_message(rest: &[&str], base_url: &str, token: &str) -> String {
     if !rest.is_empty() {
         return "could not read comments: comments takes no arguments".to_string();
     }
-    let Some((status, body)) = post_response(
-        &endpoint_url(base_url, Endpoint::Comments),
-        token,
-        "",
-    ) else {
+    let Some((status, body)) =
+        post_response(&endpoint_url(base_url, Endpoint::Comments), token, "")
+    else {
         return "could not read comments: daemon unavailable".to_string();
     };
     if status != 200 {
@@ -328,27 +343,36 @@ fn installed_hook(url: &str, rest: &[&str]) {
     }
 
     let mut out = std::io::stdout();
-    let is_pre_tool = raw.as_deref().is_some_and(|r| r.contains("\"toolCall\""));
-    let is_pre_inv = raw
-        .as_deref()
-        .is_some_and(|r| r.contains("\"invocationNum\""));
-    let instructions = env_instructions();
-
-    if is_pre_tool {
-        let _ = writeln!(out, r#"{{"decision":"allow"}}"#);
-    } else if (is_pre_inv || rest.contains(&"--inject-instructions")) && !instructions.is_empty() {
-        let payload = serde_json::json!({
-            "injectSteps": [
-                {
-                    "ephemeralMessage": instructions
-                }
-            ]
-        });
-        let _ = writeln!(out, "{}", payload);
-    } else {
-        let _ = writeln!(out, "{{}}");
-    }
+    let _ = writeln!(
+        out,
+        "{}",
+        hook_reply(
+            raw.as_deref(),
+            rest.contains(&"--inject-instructions"),
+            &env_instructions(),
+        )
+    );
     let _ = out.flush();
+}
+
+/// The JSON a hook runner needs so it does not treat bookkeeping as a
+/// denied tool or a blocked prompt. Claude Code keys off `toolCall` and
+/// wants `decision`; Cursor keys off `tool_name` and wants `permission`.
+fn hook_reply(raw: Option<&str>, inject_instructions: bool, instructions: &str) -> String {
+    let raw = raw.unwrap_or("");
+    if raw.contains("\"toolCall\"") {
+        return r#"{"decision":"allow"}"#.to_string();
+    }
+    if raw.contains("\"tool_name\"") {
+        return r#"{"permission":"allow"}"#.to_string();
+    }
+    if (raw.contains("\"invocationNum\"") || inject_instructions) && !instructions.is_empty() {
+        return serde_json::json!({
+            "injectSteps": [{ "ephemeralMessage": instructions }]
+        })
+        .to_string();
+    }
+    "{}".to_string()
 }
 
 fn env_instructions() -> String {
@@ -361,7 +385,8 @@ fn installed_input<'a>(rest: &'a [&str]) -> (Option<&'a str>, Option<String>, St
         .position(|arg| *arg == SESSION_KEY_FLAG)
         .and_then(|index| rest.get(index + 1))
         .copied();
-    let raw = (rest.contains(&NOTE_FLAG) || key.is_some()).then(read_stdin);
+    let raw =
+        (rest.contains(&NOTE_FLAG) || key.is_some()).then(|| read_hook_input(std::io::stdin()));
     let note = if rest.contains(&NOTE_FLAG) {
         raw.as_deref().map(note_from).unwrap_or_default()
     } else {
@@ -398,23 +423,65 @@ fn env_token() -> String {
     std::env::var("ARGUS_HOOK_TOKEN").unwrap_or_default()
 }
 
-/// The message a harness hands its hook on stdin, reduced to the one line
-/// worth showing under a pane. Only called when Argus wrote the flag asking
-/// for it, so there is always a writer on the other end.
-fn read_stdin() -> String {
-    let mut raw = String::new();
-    if std::io::stdin().read_to_string(&mut raw).is_err() {
-        return String::new();
+/// The message a harness hands its hook on stdin.
+///
+/// Cursor's runner writes one JSON object and then waits for stdout without
+/// closing the pipe. Reading to EOF would deadlock until the hook timeout
+/// killed the process — after which the status POST never ran. One complete
+/// JSON value is enough; plain text still reads to the end of the stream.
+fn read_hook_input(mut reader: impl Read) -> String {
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 1024];
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => {
+                buf.extend_from_slice(&chunk[..n]);
+                if let Ok(s) = std::str::from_utf8(&buf) {
+                    if json_value(s).is_some() {
+                        break;
+                    }
+                }
+            }
+            Err(_) => break,
+        }
     }
-    raw
+    String::from_utf8_lossy(&buf).into_owned()
+}
+
+fn json_value(raw: &str) -> Option<serde_json::Value> {
+    let trimmed = raw.trim_start();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut de = serde_json::Deserializer::from_str(trimmed);
+    serde::Deserialize::deserialize(&mut de).ok()
 }
 
 fn json_string(raw: &str, key: &str) -> Option<String> {
-    serde_json::from_str::<serde_json::Value>(raw)
-        .ok()?
-        .get(key)?
-        .as_str()
-        .map(str::to_string)
+    let v = json_value(raw)?;
+    if let Some(s) = v
+        .get(key)
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty())
+    {
+        return Some(s.to_string());
+    }
+    // Cursor's sessionStart names the same id `session_id`; every other
+    // event puts it on `conversation_id`. Asking for either must find both.
+    for alias in ["conversation_id", "session_id"] {
+        if alias == key {
+            continue;
+        }
+        if let Some(s) = v
+            .get(alias)
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+        {
+            return Some(s.to_string());
+        }
+    }
+    None
 }
 
 /// Repoint a checkout-wide managed hook at the pane-specific URL inherited
@@ -633,6 +700,69 @@ mod tests {
     }
 
     #[test]
+    fn cursor_session_start_names_the_id_session_id() {
+        // sessionStart's documented payload uses session_id; other events
+        // put the same value on conversation_id. The helper asks for either.
+        let start = r#"{"session_id":"conv-9","composer_mode":"agent"}"#;
+        assert_eq!(
+            json_string(start, "conversation_id").as_deref(),
+            Some("conv-9")
+        );
+        let tool = r#"{"conversation_id":"conv-9","tool_name":"Shell"}"#;
+        assert_eq!(json_string(tool, "session_id").as_deref(), Some("conv-9"));
+    }
+
+    #[test]
+    fn hook_stdin_stops_at_one_json_object_without_waiting_for_eof() {
+        struct JsonThenHang {
+            data: &'static [u8],
+        }
+        impl Read for JsonThenHang {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if self.data.is_empty() {
+                    panic!("hook stdin was read past the JSON object");
+                }
+                let n = self.data.len().min(buf.len());
+                buf[..n].copy_from_slice(&self.data[..n]);
+                self.data = &self.data[n..];
+                Ok(n)
+            }
+        }
+        let raw = read_hook_input(JsonThenHang {
+            data: br#"{"conversation_id":"conv-9","tool_name":"Shell"}"#,
+        });
+        assert_eq!(
+            json_string(&raw, "conversation_id").as_deref(),
+            Some("conv-9")
+        );
+    }
+
+    #[test]
+    fn hook_stdin_plain_text_still_reads_to_eof() {
+        assert_eq!(
+            read_hook_input(std::io::Cursor::new("waiting on review\n")),
+            "waiting on review\n"
+        );
+    }
+
+    #[test]
+    fn cursor_tool_hooks_allow_with_permission_and_claude_with_decision() {
+        assert_eq!(
+            hook_reply(
+                Some(r#"{"tool_name":"Shell","conversation_id":"c"}"#),
+                false,
+                ""
+            ),
+            r#"{"permission":"allow"}"#
+        );
+        assert_eq!(
+            hook_reply(Some(r#"{"toolCall":{"name":"Bash"}}"#), false, ""),
+            r#"{"decision":"allow"}"#
+        );
+        assert_eq!(hook_reply(Some(r#"{"session_id":"c"}"#), false, ""), "{}");
+    }
+
+    #[test]
     fn a_checkout_wide_hook_url_rebases_to_the_process_pane() {
         assert_eq!(
             rebase_hook_url(
@@ -798,7 +928,7 @@ mod tests {
         );
         let (head, body) = server.join().unwrap();
 
-        assert_eq!(message, "opened agent pane 9");
+        assert!(message.starts_with("opened agent pane 9;"), "{message}");
         assert!(head.starts_with("POST /pane/4/delegate HTTP/1.1\r\n"));
         assert!(head.contains("\r\nAuthorization: Bearer secret\r\n"));
         assert_eq!(
@@ -915,7 +1045,7 @@ mod tests {
         );
         let (head, body) = server.join().unwrap();
 
-        assert_eq!(message, "opened agent pane 12");
+        assert!(message.starts_with("opened agent pane 12;"), "{message}");
         assert!(head.starts_with("POST /pane/4/handoff HTTP/1.1\r\n"));
         assert_eq!(
             serde_json::from_slice::<HandoffRequest>(&body).unwrap(),
@@ -936,6 +1066,7 @@ mod tests {
             id: 4,
             anchor: argus_protocol::ReviewAnchor {
                 base: argus_protocol::ReviewBase::Staged,
+                commit: None,
                 path: "src/main.rs".to_string(),
                 old_path: None,
                 old_start: Some(9),
@@ -968,16 +1099,15 @@ mod tests {
             head
         });
 
-        let message = comments_message(
-            &[],
-            &format!("http://{address}/pane/4"),
-            "secret",
-        );
+        let message = comments_message(&[], &format!("http://{address}/pane/4"), "secret");
         let head = server.join().unwrap();
 
         assert_eq!(message, "#4 [staged] src/main.rs:10 `+changed`: fix this");
         assert!(head.starts_with("POST /pane/4/comments HTTP/1.1\r\n"));
         assert!(head.contains("\r\nAuthorization: Bearer secret\r\n"));
-        assert_eq!(comments_message(&["extra"], "", ""), "could not read comments: comments takes no arguments");
+        assert_eq!(
+            comments_message(&["extra"], "", ""),
+            "could not read comments: comments takes no arguments"
+        );
     }
 }

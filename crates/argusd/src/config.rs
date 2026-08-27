@@ -177,6 +177,7 @@ impl EventConfig {
                 note_from_stdin: false,
                 session_id_key: None,
                 owns_session: false,
+                claim_only: false,
             },
             EventConfig::Detailed {
                 reports,
@@ -191,6 +192,7 @@ impl EventConfig {
                 note_from_stdin: note,
                 session_id_key: session_id,
                 owns_session,
+                claim_only: false,
             },
         }
     }
@@ -382,7 +384,9 @@ pub fn with_overlays(mut config: ConfigFile, overlays: &crate::store::Overlays) 
 
     for name in &overlays.workspaces {
         if !config.workspaces.iter().any(|w| &w.name == name) {
-            config.workspaces.push(WorkspaceConfig { name: name.clone() });
+            config
+                .workspaces
+                .push(WorkspaceConfig { name: name.clone() });
         }
     }
 

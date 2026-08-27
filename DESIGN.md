@@ -257,10 +257,14 @@ SessionStart adapter whose command reads routing from the pane environment, so i
 stable after the user trusts it. Codex requires the user to trust project hooks before it runs. AGY uses
 `.agents/hooks.json` with flat `PreInvocation` and `Stop` hooks. Cursor's `agent` CLI uses `.cursor/hooks.json` with
 flat `sessionStart`, `beforeSubmitPrompt`, `preToolUse`, `beforeShellExecution`, and `stop` hooks
-(schema `version: 1`) plus `.cursor/rules/argus.mdc`, and captures `conversation_id`. Tool-start
-events mark `working` because the CLI often skips prompt/stop lifecycle hooks; only `stop` clears
-to `idle`. Hook commands bake the helper path and pane URL — Cursor's runner does not inherit the
-pane environment, unlike the shell where `argus-hook title` still works. A `[[harness]]`
+(schema `version: 1`) plus `.cursor/rules/argus.mdc`. `sessionStart` claims the conversation
+(`conversation_id` or `session_id`) without posting `idle`, because that event is fire-and-forget
+and can arrive after a tool has already marked the pane working. Tool-start events mark `working`
+because the CLI often skips prompt/stop lifecycle hooks; only `stop` clears to `idle`. The helper
+answers Cursor tool hooks with `permission: allow` (and Claude's `toolCall` with `decision: allow`)
+and stops reading stdin at one JSON object so a runner that waits for stdout without closing the
+pipe cannot deadlock the POST. Hook commands bake the helper path and pane URL — Cursor's runner
+does not inherit the pane environment, unlike the shell where `argus-hook title` still works. A `[[harness]]`
 block in `projects.toml` adds or replaces one, and an `[[agent]]` template selects one with
 `harness = "..."`, defaulting to a harness matching its own name. A block cannot supply a plugin,
 so replacing a built-in by name also gives up its module and its resume arguments.
@@ -294,7 +298,8 @@ The helper reads hook stdin once and can extract both a note and a configured
 top-level session ID key. Claude captures `session_id` at SessionStart. OpenCode's plugin tags root
 and child reports with their session IDs; only a root claims `/session`, and a newly created root
 reports again when it replaces the previous root. AGY captures `conversationId` at PreInvocation.
-Cursor's `agent` CLI captures `conversation_id` at `sessionStart`.
+Cursor's `agent` CLI captures `conversation_id` or `session_id` at `sessionStart` without moving the
+pane to idle.
 
 Every report carries the session it came from, and the pane belongs to one of them. The session that
 claims a pane first owns it; a report from any other session — a CLI started from inside the pane,

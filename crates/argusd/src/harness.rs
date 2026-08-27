@@ -76,6 +76,12 @@ pub struct Event {
     /// started, and so may claim the identity Argus resumes the pane with.
     #[serde(default)]
     pub owns_session: bool,
+    /// Skip the status POST and talk only to `/session`. Cursor's
+    /// `sessionStart` is fire-and-forget and can run after tools have
+    /// already marked the pane working; posting `idle` then would snap
+    /// the row back.
+    #[serde(default)]
+    pub claim_only: bool,
 }
 
 /// How a hook entry is nested inside the harness's settings file.
@@ -184,6 +190,7 @@ impl Harness {
                     note_from_stdin: false,
                     session_id_key: Some("session_id".into()),
                     owns_session: false,
+                    claim_only: false,
                 },
                 Event {
                     name: "Stop".into(),
@@ -192,6 +199,7 @@ impl Harness {
                     note_from_stdin: false,
                     session_id_key: Some("session_id".into()),
                     owns_session: false,
+                    claim_only: false,
                 },
                 Event {
                     name: "Notification".into(),
@@ -201,6 +209,7 @@ impl Harness {
                     note_from_stdin: true,
                     session_id_key: Some("session_id".into()),
                     owns_session: false,
+                    claim_only: false,
                 },
                 Event {
                     name: "SessionStart".into(),
@@ -211,6 +220,7 @@ impl Harness {
                     note_from_stdin: false,
                     session_id_key: Some("session_id".into()),
                     owns_session: true,
+                    claim_only: false,
                 },
             ],
             context_event: Some("SessionStart".to_string()),
@@ -242,6 +252,7 @@ impl Harness {
                 note_from_stdin: false,
                 session_id_key: Some("session_id".into()),
                 owns_session: true,
+                claim_only: false,
             }],
             context_event: None,
             plugin: None,
@@ -302,6 +313,7 @@ impl Harness {
                     note_from_stdin: false,
                     session_id_key: Some("conversationId".into()),
                     owns_session: true,
+                    claim_only: false,
                 },
                 Event {
                     name: "Stop".into(),
@@ -310,6 +322,7 @@ impl Harness {
                     note_from_stdin: false,
                     session_id_key: Some("conversationId".into()),
                     owns_session: false,
+                    claim_only: false,
                 },
             ],
             context_event: None,
@@ -325,10 +338,12 @@ impl Harness {
 
     /// Cursor Agent (`agent` CLI) discovers project hooks in `.cursor/hooks.json`
     /// and always-on rules in `.cursor/rules/`. Hooks use a shell command string
-    /// and require top-level `version: 1`. `sessionStart` claims `conversation_id`;
-    /// `beforeSubmitPrompt` plus tool-start events (`preToolUse`,
-    /// `beforeShellExecution`) mark working — the CLI often skips lifecycle
-    /// hooks, so tool-start is what actually turns the pane; `stop` marks idle.
+    /// and require top-level `version: 1`. `sessionStart` claims identity
+    /// without posting idle — the event is fire-and-forget and can arrive
+    /// after tools have already marked working. `beforeSubmitPrompt` plus
+    /// tool-start events (`preToolUse`, `beforeShellExecution`) mark working
+    /// — the CLI often skips lifecycle hooks, so tool-start is what actually
+    /// turns the pane; `stop` marks idle.
     pub fn agent() -> Harness {
         Harness {
             name: "agent".to_string(),
@@ -343,6 +358,7 @@ impl Harness {
                     note_from_stdin: false,
                     session_id_key: Some("conversation_id".into()),
                     owns_session: true,
+                    claim_only: true,
                 },
                 Event {
                     name: "beforeSubmitPrompt".into(),
@@ -351,6 +367,7 @@ impl Harness {
                     note_from_stdin: false,
                     session_id_key: Some("conversation_id".into()),
                     owns_session: false,
+                    claim_only: false,
                 },
                 Event {
                     name: "preToolUse".into(),
@@ -359,6 +376,7 @@ impl Harness {
                     note_from_stdin: false,
                     session_id_key: Some("conversation_id".into()),
                     owns_session: false,
+                    claim_only: false,
                 },
                 Event {
                     name: "beforeShellExecution".into(),
@@ -367,6 +385,7 @@ impl Harness {
                     note_from_stdin: false,
                     session_id_key: Some("conversation_id".into()),
                     owns_session: false,
+                    claim_only: false,
                 },
                 Event {
                     name: "stop".into(),
@@ -375,6 +394,7 @@ impl Harness {
                     note_from_stdin: false,
                     session_id_key: Some("conversation_id".into()),
                     owns_session: false,
+                    claim_only: false,
                 },
             ],
             context_event: None,
@@ -485,9 +505,7 @@ impl Harness {
         let mut root = read_settings(&path);
         let root_obj = root.as_object_mut().expect("just normalized to an object");
         if let Some(version) = self.settings_version {
-            root_obj
-                .entry("version")
-                .or_insert_with(|| json!(version));
+            root_obj.entry("version").or_insert_with(|| json!(version));
         }
 
         let hooks = root_obj
@@ -699,6 +717,28 @@ fn pane_url(pane: PaneId, port: u16) -> String {
     format!("http://127.0.0.1:{port}/pane/{}", pane.0)
 }
 
+fn event_target_url(pane: PaneId, port: u16, event: &Event) -> String {
+    let base = pane_url(pane, port);
+    if event.claim_only {
+        format!("{base}/session")
+    } else {
+        format!("{base}/status/{}", event.reports.as_str())
+    }
+}
+
+fn event_env_url(event: &Event, windows: bool) -> String {
+    let base = if windows {
+        "%ARGUS_HOOK_URL%"
+    } else {
+        "$ARGUS_HOOK_URL"
+    };
+    if event.claim_only {
+        format!("{base}/session")
+    } else {
+        format!("{base}/status/{}", event.reports.as_str())
+    }
+}
+
 /// What an agent is told about Argus, once, at the start of its session.
 ///
 /// Kept to what is actionable. An agent that reads this should come away
@@ -795,10 +835,7 @@ fn status_entry(
     command_string: bool,
     bake_command: bool,
 ) -> Value {
-    let mut args = vec![
-        format!("{}/status/{}", pane_url(pane, port), event.reports.as_str()),
-        token.to_string(),
-    ];
+    let mut args = vec![event_target_url(pane, port, event), token.to_string()];
     if event.note_from_stdin {
         args.push(NOTE_FLAG.to_string());
     }
@@ -857,16 +894,10 @@ pub const OWNS_SESSION_FLAG: &str = "--owns-session";
 /// Installed hook form for harnesses whose config is a single shell string
 /// but whose runner does not inherit the pane environment (Cursor). Same
 /// argv as Claude's command-plus-args shape, joined for the shell.
-fn baked_command_line(
-    helper: &str,
-    pane: PaneId,
-    port: u16,
-    token: &str,
-    event: &Event,
-) -> String {
+fn baked_command_line(helper: &str, pane: PaneId, port: u16, token: &str, event: &Event) -> String {
     let mut parts = vec![
         helper.to_string(),
-        format!("{}/status/{}", pane_url(pane, port), event.reports.as_str()),
+        event_target_url(pane, port, event),
         token.to_string(),
     ];
     if event.note_from_stdin {
@@ -890,13 +921,13 @@ fn env_command_line(event: &Event, windows: bool) -> String {
     let (helper, url, token) = if windows {
         (
             "%ARGUS_HOOK%".to_string(),
-            format!("%ARGUS_HOOK_URL%/status/{}", event.reports.as_str()),
+            event_env_url(event, true),
             "%ARGUS_HOOK_TOKEN%".to_string(),
         )
     } else {
         (
             "$ARGUS_HOOK".to_string(),
-            format!("$ARGUS_HOOK_URL/status/{}", event.reports.as_str()),
+            event_env_url(event, false),
             "$ARGUS_HOOK_TOKEN".to_string(),
         )
     };
@@ -1009,6 +1040,7 @@ mod tests {
                     note_from_stdin: false,
                     session_id_key: None,
                     owns_session: false,
+                    claim_only: false,
                 },
                 Event {
                     name: "turn_end".into(),
@@ -1017,6 +1049,7 @@ mod tests {
                     note_from_stdin: false,
                     session_id_key: None,
                     owns_session: false,
+                    claim_only: false,
                 },
             ],
             context_event: None,
@@ -1900,8 +1933,12 @@ process.stdout.write(JSON.stringify(reports));
         assert_eq!(start.len(), 1);
         let start_cmd = start[0]["command"].as_str().unwrap();
         assert!(
-            start_cmd.contains("http://127.0.0.1:4242/pane/5/status/idle"),
-            "Cursor hooks must bake routing; env vars are not inherited:\n{start_cmd}"
+            start_cmd.contains("http://127.0.0.1:4242/pane/5/session"),
+            "sessionStart claims identity without posting idle:\n{start_cmd}"
+        );
+        assert!(
+            !start_cmd.contains("/status/idle"),
+            "a late sessionStart idle would snap a working pane back:\n{start_cmd}"
         );
         assert!(start_cmd.contains("tok"));
         assert!(start_cmd.contains(SESSION_KEY_FLAG));

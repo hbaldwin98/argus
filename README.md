@@ -484,11 +484,13 @@ plugin reports the root session ID and updates it when the process creates a new
 `PreInvocation` and `Stop` hooks in `<checkout>/.agents/hooks.json` under the `argus` hook key and captures
 top-level `conversationId`. The `agent` (Cursor) harness manages `sessionStart`, `beforeSubmitPrompt`,
 `preToolUse`, `beforeShellExecution`, and `stop` hooks in
-`<checkout>/.cursor/hooks.json` (with top-level `version: 1`) and captures top-level `conversation_id`;
-it also installs `.cursor/rules/argus.mdc`. Tool-start hooks mark `working` when the CLI skips
+`<checkout>/.cursor/hooks.json` (with top-level `version: 1`) and captures top-level `conversation_id`
+or `session_id` without posting `idle` from `sessionStart`. It also installs
+`.cursor/rules/argus.mdc`. Tool-start hooks mark `working` when the CLI skips
 lifecycle events; only `stop` returns the pane to `idle`. Commands bake the helper path and pane
 URL because Cursor's hook process does not inherit `ARGUS_HOOK_*` (shell-run `argus-hook title`
-still does). Managed
+still does). The helper answers Cursor tool hooks with `{"permission":"allow"}` and does not wait
+for stdin EOF after one JSON object. Managed
 entries preserve user settings and are removed when the last agent pane closes or during the next
 daemon startup sweep. A same-named `[[harness]]` block replaces a built-in.
 
