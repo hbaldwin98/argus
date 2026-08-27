@@ -211,7 +211,7 @@ pub struct ReviewComment {
 
 #[cfg(test)]
 mod tests {
-    use super::{ReviewAnchor, ReviewBase};
+    use super::{DiffLine, LineKind, ReviewAnchor, ReviewBase};
 
     #[test]
     fn review_bases_toggle_between_the_two_sides() {
@@ -236,5 +236,31 @@ mod tests {
             anchor.notification("first thought\nsecond thought"),
             "src/main.rs:5 `+new`: first thought second thought"
         );
+    }
+    /// The wire gained a field, so a peer that predates it must still parse.
+    /// This is what `serde(default)` on `spans` is for, and the only way to
+    /// know it holds is to deserialize a payload that genuinely lacks it.
+    #[test]
+    fn a_diff_line_without_spans_still_deserializes() {
+        #[derive(serde::Serialize)]
+        struct OldDiffLine {
+            kind: LineKind,
+            old_lineno: Option<u32>,
+            new_lineno: Option<u32>,
+            text: String,
+        }
+
+        let old = OldDiffLine {
+            kind: LineKind::Added,
+            old_lineno: None,
+            new_lineno: Some(7),
+            text: "let x = 1;".to_string(),
+        };
+        let bytes = rmp_serde::to_vec_named(&old).unwrap();
+        let line: DiffLine = rmp_serde::from_slice(&bytes).unwrap();
+
+        assert_eq!(line.new_lineno, Some(7));
+        assert_eq!(line.text, "let x = 1;");
+        assert!(line.spans.is_empty(), "an absent field reads as no highlighting");
     }
 }
