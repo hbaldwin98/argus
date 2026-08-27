@@ -113,8 +113,8 @@ pub struct Settings {
     /// renderer discards lengths that do not match the current layout.
     /// Absent until the user first drags a column separator.
     pub column_widths: Option<Vec<u16>>,
-    /// Whether the projects column is collapsed to a thin strip, ceding its
-    /// width to the other four columns. Remembered so the layout a user
+    /// Whether the projects column is folded away to a left-edge tab, ceding
+    /// its width to the other four columns. Remembered so the layout a user
     /// settled on survives a restart.
     pub projects_collapsed: bool,
     /// Audible attention signal. Off by default: attaching another client

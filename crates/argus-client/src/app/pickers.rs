@@ -41,11 +41,11 @@ impl App {
         self.focus = Focus::Overlay;
     }
 
-    /// Folds the projects column away to a thin strip, or brings it back.
-    /// The other four columns absorb the reclaimed width, so collapsing is a
-    /// way to give the tree and live view more room rather than a way to
-    /// lose the project you are in — the breadcrumb still names it. Stored
-    /// on `settings` so the choice survives a restart.
+    /// Folds the projects column away to a tab on the left edge, or brings
+    /// it back. The other four columns absorb the reclaimed width, so
+    /// collapsing is a way to give the tree and live view more room rather
+    /// than a way to lose the project you are in — the breadcrumb still
+    /// names it. Stored on `settings` so the choice survives a restart.
     pub fn toggle_projects_collapsed(&mut self) {
         self.projects_collapsed = !self.projects_collapsed;
         self.settings.projects_collapsed = self.projects_collapsed;
@@ -53,7 +53,7 @@ impl App {
             crate::settings::save(&self.settings);
         }
         if self.projects_collapsed && self.focus == Focus::Projects {
-            // The collapsed strip is not a focus target, so the cursor has
+            // The folded-away tab is not a focus target, so the cursor has
             // to land somewhere the keys still mean something.
             self.focus = Focus::Repositories;
             self.clamp();

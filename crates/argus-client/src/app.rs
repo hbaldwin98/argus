@@ -496,8 +496,8 @@ pub struct App {
     /// initial proportional layout; dragging a gutter captures concrete
     /// widths so the adjustment survives subsequent frames.
     pub column_widths: Option<Vec<u16>>,
-    /// True when the projects column is collapsed to a thin strip. Stored
-    /// both here (for the renderer) and on `settings` (so it persists).
+    /// True when the projects column is folded away to a left-edge tab.
+    /// Stored both here (for the renderer) and on `settings` (so it persists).
     pub projects_collapsed: bool,
     /// True while the checkouts column also lists the branches nothing is
     /// sitting on. Off by default — the column is for what is running, and
@@ -586,7 +586,7 @@ impl App {
             templates: Vec::new(),
             workspaces: Vec::new(),
             open_workspace: String::new(),
-            // A remembered collapsed strip is not a focus target, so a
+            // A remembered folded-away tab is not a focus target, so a
             // restart from that state lands a column further in.
             focus: if settings.projects_collapsed {
                 Focus::Repositories
@@ -3918,7 +3918,10 @@ second
 
         h.key(KeyCode::Char('l'));
         match h.sent().as_slice() {
-            [ClientMsg::ListCommitFiles { checkout: c, commit }] => {
+            [ClientMsg::ListCommitFiles {
+                checkout: c,
+                commit,
+            }] => {
                 assert_eq!(*c, checkout);
                 assert_eq!(commit, "aaaa111");
             }
@@ -5057,7 +5060,7 @@ second
 
         h.key(KeyCode::Char('p'));
         assert!(h.app.projects_collapsed, "p collapses");
-        assert_eq!(h.app.focus, Focus::Repositories, "focus leaves the strip");
+        assert_eq!(h.app.focus, Focus::Repositories, "focus leaves the tab");
         assert!(
             h.app.status.contains("collapsed"),
             "reports collapse: {}",
@@ -5097,7 +5100,7 @@ second
         assert_eq!(
             h.app.focus,
             Focus::Repositories,
-            "blocked by collapsed strip"
+            "blocked by the folded-away tab"
         );
         // Expand it; now ascend works.
         h.key(KeyCode::Char('p'));
@@ -5122,37 +5125,40 @@ second
     }
 
     #[test]
-    fn clicking_the_collapsed_strip_expands_it() {
+    fn clicking_the_collapsed_tab_expands_it() {
         let mut h = Harness::new();
-        laid_out(&mut h); // set up a real layout
-        h.key(KeyCode::Char('p')); // collapse
-                                   // The laid_out projects column is 12 wide; clicking anywhere in it
-                                   // expands because the layout hasn't been re-rendered yet.
-        h.app.on_mouse(click(1, 1));
+        h.app.projects_collapsed = true;
+        h.app.layout.projects = Panel {
+            outer: Rect::new(0, 1, 1, 16),
+            inner: Rect::new(0, 1, 1, 1),
+            first: 0,
+        };
+        h.app.on_mouse(click(0, 1));
         assert!(!h.app.projects_collapsed, "click expands");
     }
 
     #[test]
-    fn the_gutter_next_to_a_collapsed_strip_is_not_draggable() {
+    fn the_gutter_next_to_a_collapsed_tab_is_not_draggable() {
         let mut h = Harness::new();
         let panel = |x: u16, w: u16| Panel {
             outer: Rect::new(x, 0, w, 8),
             inner: Rect::new(x + 1, 1, w.saturating_sub(2), 6),
             first: 0,
         };
-        // Strip at 0..2, gutter at 2, repositories at 3..15.
+        // Tab at 0..1, a one-cell gap, repositories at 2..14. The gap would
+        // otherwise be gutter 0; collapsed layout suppresses it.
         h.app.layout = Layout {
-            projects: panel(0, 2),
-            repositories: panel(3, 12),
-            checkouts: panel(16, 12),
-            panes: panel(29, 12),
-            content: panel(42, 20),
+            projects: panel(0, 1),
+            repositories: panel(2, 12),
+            checkouts: panel(15, 12),
+            panes: panel(28, 12),
+            content: panel(41, 20),
             overlay: Panel::default(),
             cursor: None,
         };
         h.app.projects_collapsed = true;
 
-        h.app.on_mouse(click(2, 3)); // the gutter cell
+        h.app.on_mouse(click(1, 3)); // the gap
         assert!(h.app.resizing_gutter.is_none(), "gutter suppressed");
 
         // Drag does nothing.

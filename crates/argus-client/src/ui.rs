@@ -58,9 +58,9 @@ const GUTTER_COLS: u16 = 1;
 /// narrow to fit five such columns.
 pub const MIN_COLUMN_WIDTH: u16 = 8;
 
-/// The collapsed projects column keeps only this much: enough rail to stay
-/// visible and clickable, not enough to read.
-pub const COLLAPSED_STRIP_WIDTH: u16 = 2;
+/// Folded-away projects: a disclosure mark in the left page gutter, not a
+/// full-height rail. The rest of that gutter is the click target.
+const COLLAPSED_TAB: &str = "▸";
 
 /// One list item: what it is, a dimmer line of what's true about it, and
 /// an optional count pinned to the right of the name line. The badge is
@@ -150,11 +150,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
     }
 }
 
-/// Draws the normal five-column spine. The projects column may be collapsed
-/// to a thin strip, in which case its width is ceded to the other four.
+/// Draws the normal five-column spine. The projects column may be folded
+/// away to a tab in the left gutter, in which case its width is ceded to
+/// the other four.
 fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option<CursorPlacement> {
     let th = app.theme;
-    let constraints = if app.projects_collapsed {
+    let collapsed = app.projects_collapsed;
+    let constraints = if collapsed {
         collapsed_projects_constraints(area.width, app.column_widths.as_deref())
     } else {
         column_constraints(area.width, app.column_widths.as_deref())
@@ -165,8 +167,12 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option<CursorPlac
         .constraints(constraints)
         .split(area);
 
-    app.layout.projects = if app.projects_collapsed {
-        render_collapsed_projects(f, cols[0], th)
+    // When projects is folded away there is no leading card, so the
+    // remaining four occupy `cols[0..4]`. `col(i)` is the expanded index.
+    let col = |i: usize| cols[if collapsed { i - 1 } else { i }];
+
+    app.layout.projects = if collapsed {
+        render_collapsed_projects(f, area, th)
     } else {
         let project_rows: Vec<Item> = app
             .tree
@@ -216,7 +222,7 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option<CursorPlac
         };
         render_column(
             f,
-            cols[0],
+            col(0),
             &projects_title,
             project_rows,
             app.focus == Focus::Projects,
@@ -272,7 +278,7 @@ n  add one",
         .unwrap_or(0);
     app.layout.repositories = render_column(
         f,
-        cols[1],
+        col(1),
         "repositories",
         repository_rows,
         app.focus == Focus::Repositories,
@@ -302,7 +308,7 @@ n  add one",
     let ncheck = app.checkout_row_count();
     app.layout.checkouts = render_column(
         f,
-        cols[2],
+        col(2),
         "checkouts",
         checkout_rows,
         app.focus == Focus::Checkouts,
@@ -360,7 +366,7 @@ n  add one",
     });
     app.layout.panes = render_column(
         f,
-        cols[3],
+        col(3),
         "panes",
         pane_rows,
         app.focus == Focus::Panes,
@@ -373,7 +379,7 @@ a  agent",
         th,
     );
 
-    render_content(f, app, cols[4], th)
+    render_content(f, app, col(4), th)
 }
 
 fn column_constraints(total_width: u16, preferred: Option<&[u16]>) -> Vec<Constraint> {
@@ -399,15 +405,16 @@ fn column_constraints(total_width: u16, preferred: Option<&[u16]>) -> Vec<Constr
     widths.into_iter().map(Constraint::Length).collect()
 }
 
-/// The collapsed layout: projects keeps only a rail, its width passing to
-/// the other four columns. Gutters dragged before collapsing are absolute
-/// preferences, not fractions, so the four survivors keep them as-is and
-/// the slack lands in the live view; with nothing captured yet the default
-/// split is re-dealt over four columns instead of five.
+/// The collapsed layout: no projects card, its width passing to the other
+/// four columns. Gutters dragged before collapsing are absolute preferences,
+/// not fractions, so the four survivors keep them as-is and the slack lands
+/// in the live view; with nothing captured yet the default split is re-dealt
+/// over four columns instead of five.
 fn collapsed_projects_constraints(total_width: u16, preferred: Option<&[u16]>) -> Vec<Constraint> {
-    let available = total_width
-        .saturating_sub(GUTTER_COLS * 4)
-        .saturating_sub(COLLAPSED_STRIP_WIDTH);
+    let available = total_width.saturating_sub(GUTTER_COLS * 3);
+    if available == 0 {
+        return vec![Constraint::Length(0); 4];
+    }
     let floor = MIN_COLUMN_WIDTH.min(available / 4).max(1);
     let mut widths: Vec<u16> = match preferred.filter(|widths| widths.len() == 5) {
         Some(widths) => widths[1..].to_vec(),
@@ -417,10 +424,7 @@ fn collapsed_projects_constraints(total_width: u16, preferred: Option<&[u16]>) -
             .collect(),
     };
     fit_widths(&mut widths, available, floor);
-
-    let mut constraints = vec![Constraint::Length(COLLAPSED_STRIP_WIDTH)];
-    constraints.extend(widths.into_iter().map(Constraint::Length));
-    constraints
+    widths.into_iter().map(Constraint::Length).collect()
 }
 
 /// Reconciles preferred widths with what is actually available: nothing
@@ -528,24 +532,39 @@ fn scrolled_to_show(
     first
 }
 
-/// The projects column folded away: a rail exactly as wide as its own
-/// borders. There is nothing to read here — clicking it (or `p`) brings
-/// the column back, so it only has to stay visible. Losing the project
-/// name is fine because the breadcrumb still carries it.
-fn render_collapsed_projects(f: &mut Frame, area: Rect, th: Theme) -> Panel {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(th.edge))
-        .style(Style::default().bg(th.surface));
-    let inner = block.inner(area);
-    let panel = Panel {
-        outer: area,
-        inner,
-        first: 0,
+/// The projects column folded away: a disclosure mark in the page's left
+/// gutter, sitting beside the first remaining card's top border. The rest
+/// of that gutter is empty page, so nothing reads as a second column —
+/// clicking it (or `p`) brings the column back. Losing the project name is
+/// fine because the breadcrumb still carries it.
+fn render_collapsed_projects(f: &mut Frame, columns: Rect, th: Theme) -> Panel {
+    let Some(x) = columns.x.checked_sub(GUTTER_COLS) else {
+        return Panel::default();
     };
-    f.render_widget(block, area);
-    panel
+    let gutter = Rect {
+        x,
+        y: columns.y,
+        width: GUTTER_COLS,
+        height: columns.height,
+    };
+    let chip = Rect {
+        x,
+        y: columns.y,
+        width: 1,
+        height: 1,
+    };
+    f.render_widget(
+        Paragraph::new(Span::styled(
+            COLLAPSED_TAB,
+            Style::default().fg(th.accent).bg(th.surface),
+        )),
+        chip,
+    );
+    Panel {
+        outer: gutter,
+        inner: chip,
+        first: 0,
+    }
 }
 
 /// A two-line item: name, then detail. The selection is a raised bar over
@@ -4153,13 +4172,16 @@ mod tests {
     }
 
     #[test]
-    fn collapsed_projects_column_renders_as_a_thin_strip() {
+    fn collapsed_projects_column_renders_as_a_tab() {
         let mut app = app_with_tree();
         app.projects_collapsed = true;
         let buf = draw(&mut app);
 
-        // The strip is exactly COLLAPSED_STRIP_WIDTH cells wide.
-        assert_eq!(app.layout.projects.outer.width, COLLAPSED_STRIP_WIDTH);
+        // The tab occupies the left page gutter: one cell wide, the column
+        // band tall (so the whole edge is clickable), sitting on x = 0.
+        assert_eq!(app.layout.projects.outer.width, 1);
+        assert_eq!(app.layout.projects.outer.x, 0);
+        assert_eq!(app.layout.repositories.outer.x, 1);
 
         // The other columns absorb the freed space; the live view is widest.
         assert!(app.layout.repositories.outer.width > 10);
@@ -4167,29 +4189,33 @@ mod tests {
         assert!(app.layout.panes.outer.width > 10);
         assert!(app.layout.content.outer.width > 20);
 
-        // No project text renders inside the strip.
-        let text = lines(&buf).join("\n");
-        // The strip itself (first column) should only have borders, no text.
-        // Check the first COLLAPSED_STRIP_WIDTH columns of each row.
-        for line in lines(&buf) {
-            let strip_part = line
-                .chars()
-                .take(COLLAPSED_STRIP_WIDTH as usize)
-                .collect::<String>();
-            assert!(
-                !strip_part.contains("argus"),
-                "project name found in strip area: {:?}",
-                strip_part
-            );
-            assert!(
-                !strip_part.contains("no projects"),
-                "empty hint found in strip area: {:?}",
-                strip_part
-            );
+        let all = lines(&buf);
+        let tab_y = app.layout.projects.outer.y as usize;
+        let first = |line: &str| line.chars().next().unwrap_or(' ');
+        assert_eq!(first(&all[tab_y]), '▸', "disclosure on the tab row");
+
+        // Below the mark the gutter is empty page, not a bordered rail.
+        let gutter = app.layout.projects.outer;
+        for y in gutter.y..gutter.y.saturating_add(gutter.height) {
+            let ch = first(&all[y as usize]);
+            if y as usize == tab_y {
+                continue;
+            }
+            assert_ne!(ch, '│', "full-height rail at row {y}");
+            assert_ne!(ch, '╭', "card border in the gutter at row {y}");
+            assert_ne!(ch, '╰', "card border in the gutter at row {y}");
+            assert_eq!(ch, ' ', "gutter below the tab should be empty at row {y}");
         }
-        // But the rail's borders are present.
-        assert!(text.contains("╭"), "strip has top border");
-        assert!(text.contains("│"), "strip has side borders");
+
+        let text = all.join("\n");
+        assert!(
+            text.contains("argus"),
+            "project still named in the breadcrumb"
+        );
+        assert!(
+            !all.iter().any(|line| line.starts_with("argus")),
+            "project name must not occupy the gutter"
+        );
     }
 
     #[test]
@@ -4200,7 +4226,7 @@ mod tests {
         let preferred = Some(vec![12u16, 18, 20, 20, 40]);
         let c = collapsed_projects_constraints(total, preferred.as_deref());
         match c.as_slice() {
-            [Constraint::Length(2), Constraint::Length(18), Constraint::Length(20), Constraint::Length(20), Constraint::Length(36)] =>
+            [Constraint::Length(18), Constraint::Length(20), Constraint::Length(20), Constraint::Length(39)] =>
                 {}
             other => panic!("unexpected collapsed constraints: {other:?}"),
         }
@@ -4210,21 +4236,14 @@ mod tests {
     fn collapsed_constraints_default_redeals_over_four_columns() {
         let total = 100;
         let c = collapsed_projects_constraints(total, None);
-        // strip(2) + 4 columns fitting 92 cells = 2+94 (with 4 gutters)
-        assert_eq!(c.len(), 5);
-        match c.first() {
-            Some(Constraint::Length(2)) => {}
-            other => panic!("strip must be 2: {other:?}"),
-        }
-        // The rest are lengths that sum with 4 gutters to total.
+        assert_eq!(c.len(), 4);
         let sum: u16 = c
             .iter()
-            .skip(1)
             .map(|c| match c {
                 Constraint::Length(w) => *w,
                 _ => panic!("all lengths"),
             })
             .sum();
-        assert_eq!(sum + 4, total - 2, "strip(2) + gutters(4) + rest = total");
+        assert_eq!(sum + 3, total, "4 columns + 3 gutters = total");
     }
 }
