@@ -31,7 +31,13 @@ Review shows both sides of uncommitted work and nothing else — staged and unst
 own endpoint. Comments are durable and agents can read checkout-scoped feedback; the client selects
 a recipient when several agents share the checkout. What remains is presentation work.
 
-- Add syntax highlighting and lazy rendering where measurements justify them.
+- Add syntax highlighting and lazy rendering where measurements justify them. Tree-sitter is the
+  intended parser, chosen by file extension. Its grammars are compiled-in crates rather than
+  anything fetched at runtime, so "whatever the filename needs" means a fixed set linked at build
+  time and a quiet fall back to unhighlighted text for everything else; weigh that binary cost
+  against `syntect`, which loads its grammars at runtime instead. Highlight whole blobs rather than
+  hunks — review already captures both endpoints into the object store, so the parser can be given a
+  complete file instead of guessing at a fragment torn out of one.
 - Decide whether to retain the current scrolling surface or adopt separate file and diff columns.
 
 Deliberately out of scope: staging, unstaging, and reverting hunks, and any base that reaches into
@@ -73,6 +79,7 @@ Closes the loop: information currently flows only upward, from agents reporting 
 
 - True child-process reattachment versus guaranteed termination plus harness resume.
 - Multi-repository features as coordinated checkout sets.
-- Unix-first delivery versus equal Windows support, which the state-detection tiering forces first.
+- Unix-first delivery versus equal Windows support, now forced by ConPTY and named-pipe behavior
+  rather than by state detection.
 - Whether a future GPU client warrants a richer protocol now.
 - PR/link lookup and whether `gh` is an acceptable optional dependency.
