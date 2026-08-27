@@ -399,8 +399,8 @@ impl App {
             Focus::Panes => self.focus = Focus::Checkouts,
             Focus::Checkouts => self.focus = Focus::Repositories,
             Focus::Repositories => {
-                // Ascending into a collapsed projects column would park the
-                // cursor on a strip with no rows, so it stays put instead.
+                // Ascending into a folded-away projects column would park the
+                // cursor on a tab with no rows, so it stays put instead.
                 if !self.projects_collapsed {
                     self.focus = Focus::Projects;
                 }

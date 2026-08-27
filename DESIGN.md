@@ -49,7 +49,9 @@ Workspace scope -> Project -> Repository -> Checkout -> Pane
 
 A workspace is a daemon-wide scope, not a navigation column. Switching it changes every attached
 client. Panes in other workspaces continue to run. The TUI draws project, repository, checkout,
-and pane columns followed by the selected pane's terminal. While typing in a pane, `Ctrl-Space`,
+and pane columns followed by the selected pane's terminal. Pressing `p` folds the
+projects column away to a disclosure tab on the left edge, ceding its width to the
+rest; pressing `p` again, or clicking the tab, brings it back. While typing in a pane, `Ctrl-Space`,
 `f` lets its terminal take the main content area; repeating the chord restores the columns. The
 status bar remains visible in both layouts.
 

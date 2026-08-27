@@ -23,9 +23,9 @@ impl App {
         if self.picker.is_some() || self.prompt.is_some() || self.dir_picker.is_some() {
             return;
         }
-        // Clicking the collapsed strip is the mouse equivalent of `p`: it
+        // Clicking the folded-away tab is the mouse equivalent of `p`: it
         // expands the column again. Handled before the column hit-test,
-        // which would otherwise park focus on the strip's (nonexistent) rows.
+        // which would otherwise park focus on a handle with no rows.
         if self.projects_collapsed
             && matches!(ev.kind, MouseEventKind::Down(_))
             && in_rect(self.layout.projects.outer, ev.column, ev.row)
@@ -147,10 +147,24 @@ impl App {
     }
 
     fn rendered_column_widths(&self) -> Vec<u16> {
-        self.panels()
+        let mut widths: Vec<u16> = self
+            .panels()
             .iter()
             .map(|panel| panel.outer.width)
-            .collect()
+            .collect();
+        if self.projects_collapsed {
+            // The tab is not a column. Keep the remembered projects width
+            // so expanding — or dragging another gutter while folded — does
+            // not shrink it to one cell.
+            widths[0] = self
+                .column_widths
+                .as_ref()
+                .filter(|w| w.len() == 5)
+                .and_then(|w| w.first().copied())
+                .filter(|w| *w >= crate::ui::MIN_COLUMN_WIDTH)
+                .unwrap_or(crate::ui::MIN_COLUMN_WIDTH);
+        }
+        widths
     }
 
     /// Returns the blank separator under the pointer. Separators remain one
@@ -158,8 +172,8 @@ impl App {
     /// clicks away from either panel's border.
     fn gutter_at(&self, x: u16, y: u16) -> Option<usize> {
         let panels = self.panels();
-        // The collapsed projects strip has no width to drag; suppress its
-        // gutter so it isn't a one-cell trap between it and the next column.
+        // The folded-away tab is not a column; suppress a gutter against it
+        // so a gap on the left edge is not a one-cell resize trap.
         let skip = if self.projects_collapsed {
             Some(0)
         } else {
@@ -207,9 +221,9 @@ impl App {
     /// over, independent of `focus` — so scrolling a background column
     /// doesn't steal focus away from a pane you're typing into.
     fn scroll_at(&mut self, x: u16, y: u16, delta: i32) {
-        // The collapsed projects strip has nothing visible to scroll; a
-        // wheel event landing there would otherwise change the hidden
-        // project selection, which is only ever confusing.
+        // The folded-away tab has nothing visible to scroll; a wheel event
+        // landing there would otherwise change the hidden project
+        // selection, which is only ever confusing.
         if self.projects_collapsed && in_rect(self.layout.projects.outer, x, y) {
             return;
         }
