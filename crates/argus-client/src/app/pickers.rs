@@ -121,6 +121,7 @@ impl App {
     /// Opens `pane` in a floating window alongside whatever the columns
     /// are showing. `ephemeral` panes are killed when the window closes.
     pub fn open_overlay_pane(&mut self, pane: PaneId, title: String, ephemeral: bool) {
+        self.pane_fullscreen = false;
         self.overlay = Some(Overlay::Pane {
             pane,
             title,
@@ -146,6 +147,7 @@ impl App {
         self.review_wanted = None;
         self.overlay = None;
         self.leader_pending = false;
+        self.pane_fullscreen = false;
         self.focus = match self.focus {
             Focus::Overlay => Focus::Panes,
             // A diff was opened from a checkout, so that is where closing

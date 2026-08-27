@@ -1,8 +1,6 @@
-//! The renderer. Five columns, always all five: projects, repositories,
-//! checkouts, open panes, and the selected pane's live view. Descending
-//! moves focus rightward; it never replaces the columns with a full-screen
-//! view, so an agent's output is always visible next to the tree it belongs
-//! to.
+//! The renderer. Its normal spine has five columns: projects, repositories,
+//! checkouts, open panes, and the selected pane's live view. A pane can
+//! temporarily take the main content area while its terminal has focus.
 //!
 //! Every color goes through [`crate::theme::Theme`] rather than being named
 //! here, and the visual language is deliberately narrow:
@@ -108,7 +106,18 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // never take one away: an overlay whose child had hidden its cursor
     // left the content column's cursor stranded on top of the overlay.
     // Each layer replaces the decision outright, `None` included.
-    let mut cursor = render_columns(f, app, root[0]);
+    let fullscreen = app.pane_fullscreen
+        && app.focus == Focus::PaneContent
+        && app.column_pane().is_some();
+    let mut cursor = if fullscreen {
+        app.layout.projects = Panel::default();
+        app.layout.repositories = Panel::default();
+        app.layout.checkouts = Panel::default();
+        app.layout.panes = Panel::default();
+        render_content(f, app, root[0], th)
+    } else {
+        render_columns(f, app, root[0])
+    };
     render_status(f, app, root[1], th);
 
     // Above the columns, below the modals: a picker opened from an
@@ -139,10 +148,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
     }
 }
 
-/// Always draws all five columns side by side, so an agent's output stays
-/// visible next to the rest of the tree instead of taking over the screen.
-/// The projects column may be collapsed to a thin strip, in which case its
-/// width is ceded to the other four.
+/// Draws the normal five-column spine. The projects column may be collapsed
+/// to a thin strip, in which case its width is ceded to the other four.
 fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option<CursorPlacement> {
     let th = app.theme;
     let constraints = if app.projects_collapsed {
@@ -666,9 +673,9 @@ fn row_rect_of(inner: Rect, i: usize, height: u16) -> Option<Rect> {
     (y + height <= inner.y + inner.height).then(|| Rect::new(inner.x, y, inner.width, height))
 }
 
-/// The rightmost column: the selected pane's live terminal, always drawn
-/// alongside the other four rather than taking over the screen. Which pane
-/// that is follows the panes column's selection.
+/// The selected pane's live terminal. It normally occupies the rightmost
+/// column, but fullscreen gives it the whole main content area. Which pane
+/// it shows follows the panes column's selection.
 fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option<CursorPlacement> {
     // Typing focus is what the accent border promises here, so only
     // PaneContent lights it up — merely selecting a pane does not.
@@ -828,7 +835,12 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     } else if app.prompt.is_some() {
         ("type to edit   enter confirm   esc cancel", th.dim)
     } else if app.leader_pending {
-        ("leader…   esc back   N next attention   x close pane", th.accent)
+        let hint = if app.pane_fullscreen {
+            "leader…   esc back   f restore   N attention   x close"
+        } else {
+            "leader…   esc back   f fullscreen   N attention   x close"
+        };
+        (hint, th.accent)
     } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
         ("j/k move   h/l change   esc close", th.dim)
     } else if matches!(app.overlay, Some(Overlay::Review)) {
@@ -836,7 +848,12 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     } else if app.overlay.is_some() {
         ("floating — ctrl-space then esc to close, x to kill   ctrl-v paste", th.dim)
     } else if app.focus == Focus::PaneContent {
-        ("typing — ctrl-space then esc to leave, x to close   ctrl-v paste", th.dim)
+        let hint = if app.pane_fullscreen {
+            "typing   ctrl-space: esc leave  f restore  x close   ctrl-v paste"
+        } else {
+            "typing   ctrl-space: esc leave  f fullscreen  x close   ctrl-v paste"
+        };
+        (hint, th.dim)
     } else {
         // Per column rather than one list of everything: the bar cannot
         // hold every key at once, and most of them only apply somewhere.
@@ -2502,15 +2519,39 @@ mod tests {
     }
 
     #[test]
-    fn all_five_columns_are_drawn_at_once() {
-        // The core navigational promise (§4): descending never replaces the
-        // tree with a full-screen view.
+    fn all_five_columns_are_drawn_in_the_normal_pane_view() {
         let mut app = app_with_tree();
         app.focus = Focus::PaneContent;
         let text = lines(&draw(&mut app)).join("\n");
         for title in ["projects", "repositories", "checkouts", "panes"] {
             assert!(text.contains(title), "{title} column missing while inside a pane");
         }
+    }
+
+    #[test]
+    fn fullscreen_gives_the_main_area_to_the_selected_pane() {
+        let mut app = app_with_tree();
+        app.focus = Focus::PaneContent;
+        draw(&mut app);
+        let column_width = app.layout.content.outer.width;
+
+        app.pane_fullscreen = true;
+        let text = lines(&draw(&mut app)).join("\n");
+
+        assert!(app.layout.content.outer.width > column_width);
+        for panel in [
+            app.layout.projects,
+            app.layout.repositories,
+            app.layout.checkouts,
+            app.layout.panes,
+        ] {
+            assert_eq!(panel.outer, Rect::default(), "hidden columns must not remain clickable");
+        }
+        for title in ["projects", "repositories", "checkouts", "panes"] {
+            assert!(!text.contains(title), "{title} column remained visible in fullscreen");
+        }
+        assert!(text.contains("argus › orion › master › claude"));
+        assert!(text.contains("f restore"));
     }
 
     #[test]
