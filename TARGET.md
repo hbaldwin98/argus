@@ -71,9 +71,11 @@ The target state model is:
 | `done` | Finished and reviewed |
 | `failed` | Non-zero exit or explicit block/failure |
 
-Explicit harness events are authoritative, process state is next, and output matching is only a
-fallback. Events must identify a pane even when several harnesses share a checkout. Parent rows
-show the highest-severity descendant with distinct glyphs as well as color.
+Explicit harness events are the only source of state. A harness that reports nothing sits at
+`idle` until it exits — coarse, but honest: process activity cannot separate an agent thinking
+from one stopped at a prompt, and output matching reads an agent's own prose as its status.
+Events must identify a pane even when several harnesses share a checkout. Parent rows show the
+highest-severity descendant with distinct glyphs as well as color.
 
 ## Review contract
 
@@ -110,6 +112,9 @@ private and template redaction runs before persistence.
 The terminal path supports child-negotiated mouse reporting, bracketed paste, focus events, OSC
 52 forwarding, extended keys, and usable scrollback navigation. Output queues and parsing work are
 bounded under a noisy child.
+
+A pane can be toggled fullscreen, hiding the navigation columns and giving the terminal the full
+client window. The navigation columns remain accessible via a keybinding or mouse gesture.
 
 With several clients, PTY size has deterministic ownership or arbitration. A smaller background
 view cannot continuously resize a pane away from the active owner.

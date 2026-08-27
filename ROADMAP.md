@@ -19,11 +19,6 @@ imported once and retired; `projects.toml` is back to being configuration Argus 
 
 ## P4: Agent State and Identity
 
-- Define fallback state detection for unsupported harnesses, as the tiering TARGET.md already
-  promises — explicit events authoritative, process state next, output matching last. Settle
-  precedence (a real event locks out inference for that session), decay for an inferred `working`
-  that will never be told to stop, the Windows answer where there is no foreground process group,
-  and whether an inferred state is visually distinct from a reported one.
 - Extend tool-start hooks as a lifecycle fallback to any other harness whose own lifecycle events
   prove unreliable. Cursor's `agent` already reports `working` from `preToolUse` and
   `beforeShellExecution`, with `stop` still the sole authority for `idle`.
@@ -59,6 +54,7 @@ Closes the loop: information currently flows only upward, from agents reporting 
 
 - Expose scrollback navigation.
 - Add child-negotiated mouse behavior, bracketed paste, focus events, OSC 52, and extended keys.
+- Add fullscreen mode for a pane (hide navigation columns, give terminal full window).
 - Replace idle 16 ms pane wakeups with event-driven work where possible.
 - Implement packed, byte-bounded scrollback, then cold eviction, spill, and redaction.
 - Benchmark frame time, startup, RSS, pane scaling, high-output children, and slow clients.
