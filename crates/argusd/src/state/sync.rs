@@ -604,7 +604,11 @@ impl Daemon {
         // New projects land in whichever workspace is open, so "add this
         // directory" means "add it to what I am looking at".
         let (workspace, workspace_name) = self.open_workspace_ref();
-        config::append_project(&name, &expanded, &workspace_name)?;
+        self.store.add_project(&crate::store::ProjectOverlay {
+            name: name.clone(),
+            root: expanded.clone(),
+            workspace: workspace_name,
+        })?;
 
         {
             let mut inner = self.inner.lock().unwrap();
@@ -648,14 +652,13 @@ impl Daemon {
             anyhow::bail!("not a directory: {}", expanded.display());
         }
 
-        let (index, name) = {
+        let name = {
             let inner = self.inner.lock().unwrap();
-            let index = inner
+            let p = inner
                 .projects
                 .iter()
-                .position(|p| p.id == project)
+                .find(|p| p.id == project)
                 .ok_or_else(|| anyhow::anyhow!("no such project"))?;
-            let p = &inner.projects[index];
             if p.repositories
                 .iter()
                 .flat_map(|r| r.checkouts.iter())
@@ -663,13 +666,13 @@ impl Daemon {
             {
                 anyhow::bail!("{} already has {}", p.name, expanded.display());
             }
-            (index, p.name.clone())
+            p.name.clone()
         };
 
-        // Config first, for the same reason removal writes it first: a row
-        // that appears in the panel but not in the file is gone again after
-        // a restart.
-        config::append_repo(index, &name, &expanded)?;
+        // Recorded first, for the same reason removal is: a row that
+        // appears in the panel but nowhere else is gone again after a
+        // restart.
+        self.store.add_repo(&name, &expanded)?;
 
         let unexcluded = {
             let mut inner = self.inner.lock().unwrap();
@@ -685,17 +688,18 @@ impl Daemon {
             was_excluded.then(|| inner.excluded.clone())
         };
         if let Some(remaining) = unexcluded {
-            config::rewrite_excluded_repos(&remaining)?;
+            self.store.set_excluded_repos(&remaining)?;
         }
 
         self.broadcast_tree();
         Ok(())
     }
 
-    /// Takes a project out of the panel and out of `projects.toml`.
-    /// Nothing on disk is touched — this is the undo for `add_project`, not
-    /// a delete, and adding the same directory again brings the same tree
-    /// back.
+    /// Takes a project out of the panel. Nothing on disk is touched — this
+    /// is the undo for `add_project`, not a delete, and adding the same
+    /// directory again brings the same tree back. A project the config
+    /// declares is recorded as hidden rather than removed, because that
+    /// file is the user's to edit.
     ///
     /// Refused while any of its panes is alive. Removing the row would
     /// leave those processes running with nowhere to reach them, and unlike
@@ -703,14 +707,13 @@ impl Daemon {
     /// the worktree they sit in is going away — here the checkout survives
     /// and the user can simply look at it again.
     pub fn remove_project(&self, project: ProjectId) -> anyhow::Result<()> {
-        let (index, name, excluded_paths) = {
+        let (name, root, excluded_paths) = {
             let inner = self.inner.lock().unwrap();
-            let index = inner
+            let p = inner
                 .projects
                 .iter()
-                .position(|p| p.id == project)
+                .find(|p| p.id == project)
                 .ok_or_else(|| anyhow::anyhow!("no such project"))?;
-            let p = &inner.projects[index];
             if p.repositories
                 .iter()
                 .flat_map(|r| r.checkouts.iter())
@@ -730,13 +733,13 @@ impl Daemon {
                 .filter(|c| c.primary)
                 .map(|c| c.path.clone())
                 .collect();
-            (index, p.name.clone(), paths)
+            (p.name.clone(), p.root.clone(), paths)
         };
 
-        // Config first: a project that vanishes from the panel but not from
-        // the file comes back on the next restart, which reads as Argus
-        // having ignored the request.
-        config::remove_project(index, &name)?;
+        // Recorded first: a project that vanishes from the panel but not
+        // from the store comes back on the next restart, which reads as
+        // Argus having ignored the request.
+        self.store.remove_project(&name, root.as_deref())?;
 
         let remaining = {
             let mut inner = self.inner.lock().unwrap();
@@ -746,7 +749,7 @@ impl Daemon {
                 .retain(|e| !excluded_paths.iter().any(|p| same_path(e, p)));
             inner.excluded.clone()
         };
-        config::rewrite_excluded_repos(&remaining)?;
+        self.store.set_excluded_repos(&remaining)?;
         self.broadcast_tree();
         // One fewer project in the workspace's rollup.
         self.broadcast_workspaces();
@@ -776,7 +779,7 @@ impl Daemon {
                 .ok_or_else(|| anyhow::anyhow!("{} has no primary checkout", r.name))?
         };
 
-        config::append_excluded_repo(&path)?;
+        self.store.exclude_repo(&path)?;
         {
             let mut inner = self.inner.lock().unwrap();
             inner.excluded.push(path);

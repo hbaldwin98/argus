@@ -83,13 +83,35 @@ follows the pane when the pane list or terminal has focus; project and checkout 
 
 Configuration uses `ARGUS_CONFIG_DIR` when set and the platform config directory otherwise.
 
-- `projects.toml` declares workspaces, projects, and agent templates.
+- `projects.toml` declares workspaces, projects, and agent templates. Argus only reads it.
 - `client.toml` stores theme and editor settings.
-- `open-workspace` stores the daemon-wide selected workspace name.
-- `excluded-repos` stores repository paths removed from the panel, one per line, so a project root
-  scan does not bring them back. Exclusions under a removed project are dropped with it.
-- `session.json` stores descriptions of panes to relaunch.
+- `runtime.db` holds everything Argus writes: panes to relaunch, projects and repositories added
+  from the TUI, projects and repositories removed from the panel, workspaces created at runtime,
+  and the daemon-wide selected workspace.
 - `argusd.log` is the running daemon's log, and `argusd.log.1` the run before it.
+
+## Runtime storage
+
+`runtime.db` is SQLite in WAL mode, opened once per daemon with `synchronous = NORMAL` and a
+five-second busy timeout. Its schema version is `user_version`; a store from a newer Argus is
+refused rather than migrated backwards, and a store that cannot be opened at all costs the run its
+memory rather than its startup — the daemon falls back to an in-memory store, which also cannot
+overwrite whatever made the file unreadable.
+
+The dividing line against `projects.toml` is ownership: the file says what exists and is the
+user's to edit, comments included; the store says what happened while Argus was running. So a
+project added from the TUI is recorded as an overlay keyed on its root directory, an extra
+repository is recorded against its project's name, and a project the config declares is recorded
+as *hidden* rather than deleted from the file. Startup merges the two, the config winning for any
+root that appears in both.
+
+Persistence is a store a daemon is given, not a flag it can be told to set: `Daemon::new` hands out
+an in-memory one, and only `main` passes the store on disk. That is what keeps the test suite off
+the user's state.
+
+`session.json`, `excluded-repos`, and `open-workspace` are read once, on the first start that finds
+them, and renamed to `*.imported` afterwards. A `session.json` that will not parse is left where it
+is, since a file this version cannot read is one a later version might.
 
 The current project and agent schema is:
 
@@ -129,8 +151,8 @@ under.
 Projects without a workspace use `default`. A project may set `root`, `repos`, or both; a path
 reached both ways is one repository, and the two lists are joined with `repos` first. When no
 agents are configured, `claude`, `codex`, `opencode`, `agy`, and `agent` templates are supplied. Adding a project
-at runtime appends a block whose `root` is the directory given, in the open workspace, so what it
-holds is discovered again on each start rather than frozen into the file.
+at runtime records the directory given as its `root`, in the open workspace, so what it holds is
+discovered again on each start rather than frozen into the record.
 
 ## Panes and terminal state
 
@@ -303,12 +325,12 @@ separate worktree.
 
 ## Session restore
 
-`session.json` records each pane's checkout path, kind, title, status, note, and optional harness
+The store records each pane's checkout path, kind, title, status, note, and optional harness
 session ID and harness name when the daemon
 broadcasts a structural tree change. The harness is the one the pane actually ran under rather than
-whatever its template names now, since that is who wrote the conversation a restore claims; a file
-without it falls back to the template. Recording is enabled by `main` only after startup restore, so
-tests do not write the user's session. Older files without status fields restore panes as `Idle`.
+whatever its template names now, since that is who wrote the conversation a restore claims; a record
+without it falls back to the template. Recording is suppressed while a restore is in flight, so the
+panes it is starting do not rewrite the rows it is reading.
 
 On daemon startup:
 
@@ -334,9 +356,8 @@ event-level `session_id` stdin JSON key. Replacing a built-in gives up all of it
 
 This is relaunch, not process reattachment. PIDs are not stored. Captured IDs are nonempty, bounded,
 and control-free, and enter the child command as argv rather than shell interpolation. Exited panes
-are omitted. Session replacement uses a same-directory temporary file,
-flush, and atomic rename; on Unix it also syncs the parent directory. A read or parse failure disables
-recording for that daemon run so the recoverable file is not overwritten.
+are omitted. Each recording replaces the pane table in one transaction, because the tree is the
+truth and the table follows it: a pane that closed has no row to update.
 
 ## Git and checkouts
 

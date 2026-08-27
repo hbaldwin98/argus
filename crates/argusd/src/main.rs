@@ -8,7 +8,7 @@ mod git;
 mod harness;
 mod logging;
 mod pty;
-mod session;
+mod store;
 mod state;
 mod watch;
 
@@ -18,7 +18,15 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("argusd starting; logging to {}", logging::log_path().display());
 
     let cfg = config::load()?;
-    let daemon = state::Daemon::new(cfg);
+    // A store that will not open costs this run its memory, not its
+    // startup: running without persistence beats refusing to run, and an
+    // in-memory store also cannot overwrite whatever made the real one
+    // unreadable.
+    let store = store::Store::open().unwrap_or_else(|e| {
+        tracing::error!("could not open the runtime store: {e}; nothing will be remembered");
+        store::Store::in_memory().expect("an in-memory store needs nothing that can fail")
+    });
+    let daemon = state::Daemon::with_store(cfg, store);
     // Before anything can write new ones: any managed hooks still on disk
     // name a previous daemon's port and are stale by definition.
     daemon.sweep_stale_hooks();
@@ -28,9 +36,7 @@ async fn main() -> anyhow::Result<()> {
     daemon.start_config_watch();
     daemon.start_project_scan();
     // After the hook server, so a restored agent gets working hooks.
-    if daemon.restore_session() {
-        daemon.persist_session();
-    }
+    daemon.restore_session();
 
     let mut listener = argus_protocol::transport::Listener::bind().await?;
     tracing::info!("argusd listening");

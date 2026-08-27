@@ -1,3 +1,4 @@
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -10,11 +11,15 @@ use argus_protocol::{
 use tokio::sync::broadcast;
 
 mod git_ops;
+mod session;
+mod tree;
 mod panes;
 mod sync;
 mod hook;
 
 use hook::{gen_token, valid_session_id};
+use session::{agent_args, nothing_to_resume, Resumed};
+use tree::*;
 
 use crate::config::{self, AgentConfig, ConfigFile};
 use crate::pty::{self, PaneRuntime};
@@ -88,29 +93,6 @@ const MAX_CHILDREN: usize = 8;
 /// the backstop for a child that vanishes silently.
 const CHILD_SILENCE: Duration = Duration::from_secs(600);
 
-/// A pane started with its harness's resume arguments, and what to start
-/// instead if that turns out to have been a lie.
-///
-/// The CLIs answer "there is nothing to continue" by refusing to start:
-/// `claude --continue` in a checkout that has never held a conversation
-/// prints a line and exits. Restoring a pane must not leave a dead row
-/// where an agent should be, so an immediate failure is taken as that
-/// answer and the pane comes back as a plain new agent.
-struct Resumed {
-    checkout: CheckoutId,
-    template: String,
-    at: std::time::Instant,
-}
-
-/// How long after a resumed spawn a failure still reads as "there was
-/// nothing to resume" rather than as the user quitting.
-///
-/// Long enough for a node CLI to start and give up, short enough that
-/// quitting an agent you did not want back — which restore has just put in
-/// front of you — is not misread as one. A false positive costs a fresh
-/// agent pane, which is exactly what restore did before it could resume at
-/// all; a false negative costs a dead row.
-const RESUME_GRACE: Duration = Duration::from_secs(5);
 
 /// Whether a spawn opens a new conversation or continues the one the pane
 /// had before the daemon stopped.
@@ -196,7 +178,7 @@ struct Inner {
     open: WorkspaceId,
     /// Repository paths the user has removed from the panel. A scan finds
     /// them again every ten seconds, so without this the row would come
-    /// straight back (see `config::load_excluded_repos`).
+    /// straight back (see [`crate::store::Store::excluded_repos`]).
     excluded: Vec<PathBuf>,
 }
 
@@ -228,10 +210,11 @@ pub struct Daemon {
     /// True while `restore_session` is spawning, so the panes it makes
     /// don't each rewrite the file it is reading from.
     restoring: std::sync::atomic::AtomicBool,
-    /// Off unless `main` turns it on. A daemon built in a test must not
-    /// write over the real user's session file, and every structural
-    /// change would otherwise do exactly that.
-    persist: std::sync::atomic::AtomicBool,
+    /// Runtime state that outlives this run. Which store a daemon holds is
+    /// what decides whether it persists at all: `new` gives it one that
+    /// lives and dies with the process, so a daemon built in a test cannot
+    /// write over the real user's state, and only `with_store` reaches disk.
+    store: crate::store::Store,
     /// How many times a template has been restarted in a checkout lately,
     /// and when that run of restarts began. Keeps a CLI that dies on
     /// every start from being restarted forever.
@@ -289,8 +272,31 @@ type PaneSubscription = (
 );
 
 impl Daemon {
+    /// A daemon that remembers nothing past this process, for tests.
+    ///
+    /// Persistence is a store you hand a daemon, not a flag it can be
+    /// talked into setting, and this is what keeps the several hundred
+    /// tests that build one off the real user's disk without any of them
+    /// having to remember to ask.
+    #[cfg(test)]
     pub fn new(config: ConfigFile) -> Arc<Self> {
+        let store = crate::store::Store::in_memory()
+            .expect("an in-memory runtime store needs nothing that can fail");
+        Self::with_store(config, store)
+    }
+
+
+    pub fn with_store(config: ConfigFile, store: crate::store::Store) -> Arc<Self> {
         let mut ids = IdGen::default();
+
+        // What the user declared, plus what they did to the panel while it
+        // was running. A store that cannot be read costs the overlays, not
+        // the config: showing the declared projects beats showing nothing.
+        let overlays = store.overlays().unwrap_or_else(|e| {
+            tracing::warn!("could not read runtime state: {e}");
+            Default::default()
+        });
+        let config = config::with_overlays(config, &overlays);
 
         // Workspaces come from three places, in this order: the built-in
         // default (always present, so a config that predates workspaces
@@ -304,7 +310,7 @@ impl Daemon {
             intern(&mut workspaces, &mut ids, &w.name);
         }
 
-        let excluded = config::load_excluded_repos();
+        let excluded = overlays.excluded.clone();
         let projects = config
             .projects
             .into_iter()
@@ -363,7 +369,9 @@ impl Daemon {
 
         // Reopen whatever was open last time, if that workspace still
         // exists — a name can disappear from the config between runs.
-        let open = config::load_open_workspace()
+        let open = overlays
+            .open_workspace
+            .as_deref()
             .and_then(|name| workspaces.iter().find(|w| w.name == name).map(|w| w.id))
             .unwrap_or(default_ws);
 
@@ -386,7 +394,7 @@ impl Daemon {
             hook_port: std::sync::atomic::AtomicU16::new(0),
             hook_token: gen_token(),
             restoring: std::sync::atomic::AtomicBool::new(false),
-            persist: std::sync::atomic::AtomicBool::new(false),
+            store,
             restart_attempts: StdMutex::new(HashMap::new()),
             viewers: StdMutex::new(Viewers::default()),
             next_viewer: std::sync::atomic::AtomicU64::new(0),
@@ -398,6 +406,7 @@ impl Daemon {
         daemon.refresh_git_status();
         daemon
     }
+
 
     /// Clears any managed agent hooks left in a configured checkout by a
     /// previous daemon. They name that daemon's ephemeral port and per-boot
@@ -419,6 +428,7 @@ impl Daemon {
         }
     }
 
+
     fn checkout_paths(&self) -> Vec<PathBuf> {
         let inner = self.inner.lock().unwrap();
         inner
@@ -429,6 +439,7 @@ impl Daemon {
             .map(|c| c.path.clone())
             .collect()
     }
+
 
     /// The harness an agent template speaks. A template that names none
     /// falls back to one matching its own name, so `name = "claude"` needs
@@ -443,9 +454,11 @@ impl Daemon {
             .unwrap_or_else(crate::harness::Harness::generic)
     }
 
+
     pub fn template_names(&self) -> Vec<String> {
         self.templates.lock().unwrap().iter().map(|t| t.name.clone()).collect()
     }
+
 
     /// The tree as clients see it: only the open workspace's projects.
     /// Panes in the other workspaces are still alive and still updating —
@@ -519,13 +532,16 @@ impl Daemon {
             .collect()
     }
 
+
     pub fn subscribe_tree(&self) -> broadcast::Receiver<Vec<ProjectInfo>> {
         self.tree_tx.subscribe()
     }
 
+
     pub fn subscribe_workspaces(&self) -> broadcast::Receiver<Vec<WorkspaceInfo>> {
         self.workspaces_tx.subscribe()
     }
+
 
     /// Every workspace with its rollup, open flag included. Ordered as
     /// configured so the picker doesn't reshuffle under the user.
@@ -556,6 +572,7 @@ impl Daemon {
             .collect()
     }
 
+
     /// Switches which workspace is open, for every connected client at
     /// once. A no-op if it is already open, so a stray keypress doesn't
     /// churn the tree. Remembered on disk for the next daemon.
@@ -574,11 +591,12 @@ impl Daemon {
             inner.open = workspace;
             name
         };
-        config::save_open_workspace(&name);
+        self.save_open_workspace(&name);
         self.broadcast_tree();
         self.broadcast_workspaces();
         Ok(())
     }
+
 
     /// Declares a new workspace and opens it. Empty by definition: what
     /// puts projects in it is adding them while it is open, which is how
@@ -601,7 +619,7 @@ impl Daemon {
         }
         // Written before it exists in memory: a workspace the daemon opens
         // but forgets on restart is worse than one that was never made.
-        config::append_workspace(name)?;
+        self.store.add_workspace(name)?;
 
         {
             let mut inner = self.inner.lock().unwrap();
@@ -612,11 +630,21 @@ impl Daemon {
             });
             inner.open = id;
         }
-        config::save_open_workspace(name);
+        self.save_open_workspace(name);
         self.broadcast_tree();
         self.broadcast_workspaces();
         Ok(())
     }
+
+
+    /// Best-effort: failing to remember the open workspace is not worth
+    /// failing the switch the user just asked for.
+    fn save_open_workspace(&self, name: &str) {
+        if let Err(e) = self.store.set_open_workspace(name) {
+            tracing::warn!("could not remember the open workspace: {e}");
+        }
+    }
+
 
     /// The open workspace's id and name — what `add_project` files new
     /// projects under, and what the client shows above the project list.
@@ -631,6 +659,7 @@ impl Daemon {
         (inner.open, name)
     }
 
+
     fn broadcast_tree(&self) {
         // Structural changes only — pane output never reaches here — so
         // recording the session on the same edge is cheap and means the
@@ -639,163 +668,6 @@ impl Daemon {
         let _ = self.tree_tx.send(self.snapshot());
     }
 
-    /// What is running, in a form that survives ids being reissued.
-    fn session(&self) -> crate::session::Session {
-        let inner = self.inner.lock().unwrap();
-        crate::session::Session {
-            panes: inner
-                .projects
-                .iter()
-                .flat_map(|p| p.repositories.iter())
-                .flat_map(|r| r.checkouts.iter())
-                .flat_map(|c| {
-                    c.panes
-                        .iter()
-                        .filter(|pane| !matches!(pane.status, PaneStatus::Exited { .. }))
-                        .map(|pane| crate::session::SessionPane {
-                            checkout_path: c.path.clone(),
-                            kind: pane.kind,
-                            title: pane.title.clone(),
-                            template: pane.template.clone(),
-                            status: pane.status,
-                            note: pane.note.clone(),
-                            harness_session_id: pane.harness_session_id.clone(),
-                            harness: pane.harness.clone(),
-                        })
-                })
-                .collect(),
-        }
-    }
-
-    /// Records the session from here on, and remembers this one. Only
-    /// `main` calls it; everything else runs without touching disk.
-    pub fn persist_session(&self) {
-        self.persist
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        self.record_session();
-    }
-
-    fn record_session(&self) {
-        // Half a restore is not a session worth remembering.
-        let ord = std::sync::atomic::Ordering::Relaxed;
-        if !self.persist.load(ord) || self.restoring.load(ord) {
-            return;
-        }
-        crate::session::save(&self.session());
-    }
-
-    /// Starts again whatever was running when the daemon last stopped, and
-    /// asks each agent CLI to reopen the conversation it had.
-    ///
-    /// Failures are per pane and never fatal: a template that has since
-    /// stopped working should cost you that pane, not the whole session.
-    pub fn restore_session(self: &Arc<Self>) -> bool {
-        let Some(saved) = crate::session::load() else {
-            return false;
-        };
-        if saved.panes.is_empty() {
-            return true;
-        }
-        // Only primary checkouts come from the config; a worktree is
-        // discovered from git by a poll that has not run yet. Without this,
-        // every pane in a worktree looks like a pane whose checkout is
-        // gone, and is dropped.
-        self.reconcile_worktrees();
-        let known = self.checkout_paths();
-        let wanted: Vec<crate::session::SessionPane> = crate::session::restorable(&saved, &known)
-            .cloned()
-            .collect();
-        if wanted.is_empty() {
-            return true;
-        }
-
-        self.restoring
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-        let mut restored = 0usize;
-        let mut claimed: Vec<(PathBuf, String)> = Vec::new();
-        for pane in &wanted {
-            let Some(checkout) = self.checkout_at(&pane.checkout_path) else {
-                continue;
-            };
-            let result = match pane.kind {
-                PaneKind::Agent => {
-                    let session_id = pane
-                        .harness_session_id
-                        .as_deref()
-                        .and_then(valid_session_id);
-                    // Exact IDs are independent. Only old records need to
-                    // claim a checkout's broad "last conversation" resume.
-                    let start = if session_id.is_some() {
-                        Start::Resuming
-                    } else {
-                        // The harness the pane recorded, since that is who
-                        // wrote the conversation being claimed. Only a file
-                        // old enough not to have it falls back to asking
-                        // what the template names now.
-                        let harness = pane.harness.clone().or_else(|| {
-                            let template = self
-                                .templates
-                                .lock()
-                                .unwrap()
-                                .iter()
-                                .find(|template| template.name == pane.template())
-                                .cloned();
-                            template
-                                .as_ref()
-                                .map(|template| self.harness_for(template).name.to_string())
-                        });
-                        let key = harness.map(|harness| (pane.checkout_path.clone(), harness));
-                        if key.as_ref().is_some_and(|key| claimed.contains(key)) {
-                            Start::Fresh
-                        } else {
-                            if let Some(key) = key {
-                                claimed.push(key);
-                            }
-                            Start::Resuming
-                        }
-                    };
-                    self.start_agent(checkout, pane.template(), start, session_id)
-                }
-                _ => self.spawn_shell(checkout),
-            };
-            match result {
-                Ok(id) => {
-                    self.restore_pane_metadata(id, pane);
-                    restored += 1;
-                }
-                Err(e) => tracing::warn!(
-                    "could not restore {} in {}: {e}",
-                    pane.title,
-                    pane.checkout_path.display()
-                ),
-            }
-        }
-        self.restoring
-            .store(false, std::sync::atomic::Ordering::Relaxed);
-
-        tracing::info!("restored {restored} of {} panes", wanted.len());
-        self.broadcast_tree();
-        true
-    }
-
-    fn restore_pane_metadata(&self, id: PaneId, saved: &crate::session::SessionPane) {
-        let mut inner = self.inner.lock().unwrap();
-        let Some(pane) = find_pane(&mut inner.projects, id) else {
-            return;
-        };
-        if !pane.restore_status_reported && !matches!(pane.status, PaneStatus::Exited { .. }) {
-            pane.status = saved.status;
-            pane.note = saved.note.clone();
-        }
-        if saved.kind == PaneKind::Agent
-            && saved.title != saved.template()
-            && !pane.restore_title_reported
-        {
-            pane.title = saved.title.clone();
-        }
-        pane.restore_status_reported = false;
-        pane.restore_title_reported = false;
-    }
 
     /// The checkout at `path`, whatever workspace it is in.
     fn checkout_at(&self, path: &std::path::Path) -> Option<CheckoutId> {
@@ -809,129 +681,10 @@ impl Daemon {
             .map(|c| c.id)
     }
 
+
     fn broadcast_workspaces(&self) {
         let _ = self.workspaces_tx.send(self.workspaces());
     }
-
-}
-
-/// The id of the workspace by this name, creating it if this is the first
-/// time it has been mentioned. Workspaces come from three places — the
-/// built-in default, `[[workspace]]` blocks, and any name a project refers
-/// to without declaring — so declaring one is optional.
-fn intern_workspace(workspaces: &mut Vec<Workspace>, ids: &mut IdGen, name: &str) -> WorkspaceId {
-    if let Some(w) = workspaces.iter().find(|w| w.name == name) {
-        return w.id;
-    }
-    let id = WorkspaceId(ids.alloc());
-    workspaces.push(Workspace {
-        id,
-        name: name.to_string(),
-    });
-    id
-}
-
-fn find_checkout(projects: &mut [Project], id: CheckoutId) -> Option<&mut Checkout> {
-    projects
-        .iter_mut()
-        .flat_map(|p| p.repositories.iter_mut())
-        .flat_map(|r| r.checkouts.iter_mut())
-        .find(|c| c.id == id)
-}
-
-fn find_checkout_ref(projects: &[Project], id: CheckoutId) -> Option<&Checkout> {
-    projects
-        .iter()
-        .flat_map(|p| p.repositories.iter())
-        .flat_map(|r| r.checkouts.iter())
-        .find(|c| c.id == id)
-}
-
-fn find_repository(projects: &mut [Project], id: RepositoryId) -> Option<&mut Repository> {
-    projects
-        .iter_mut()
-        .flat_map(|p| p.repositories.iter_mut())
-        .find(|r| r.id == id)
-}
-
-/// For a checkout, the id of its owning repository, that checkout's own path
-/// (the base to branch off / run `git worktree` commands from), and its
-/// repository's primary checkout path (where new worktrees get placed).
-fn find_checkout_context(
-    projects: &[Project],
-    id: CheckoutId,
-) -> Option<(RepositoryId, PathBuf, PathBuf)> {
-    projects
-        .iter()
-        .flat_map(|p| p.repositories.iter())
-        .find_map(|r| {
-            let base = r.checkouts.iter().find(|c| c.id == id)?;
-            let primary = r.checkouts.iter().find(|c| c.primary).unwrap_or(base);
-            Some((r.id, base.path.clone(), primary.path.clone()))
-        })
-}
-
-/// Everything creating a worktree needs to know about where it goes.
-struct WorktreeContext {
-    repository: RepositoryId,
-    /// The checkout whose HEAD a new branch is cut from, and where the
-    /// `git worktree add` runs.
-    base: PathBuf,
-    /// The directory worktrees for this repository are placed under.
-    root: PathBuf,
-    /// The project's setup commands, run in whatever is created.
-    setup: Vec<String>,
-}
-
-/// Where this repository's worktrees go: the project's configured root with
-/// a directory per repository under it, or `.argus/worktrees` beside the
-/// primary checkout when the project doesn't say.
-///
-/// A shared root needs the repository level — two repositories in one
-/// project routinely have a `main` or a `feat/x`, and without it the second
-/// one to ask would land on the first one's directory.
-fn worktree_context(projects: &[Project], id: CheckoutId) -> Option<WorktreeContext> {
-    projects.iter().find_map(|p| {
-        p.repositories.iter().find_map(|r| {
-            let base = r.checkouts.iter().find(|c| c.id == id)?;
-            let primary = r.checkouts.iter().find(|c| c.primary).unwrap_or(base);
-            let root = match &p.worktree_root {
-                Some(root) => root.join(&r.name),
-                None => primary.path.join(".argus").join("worktrees"),
-            };
-            Some(WorktreeContext {
-                repository: r.id,
-                base: base.path.clone(),
-                root,
-                setup: p.setup.clone(),
-            })
-        })
-    })
-}
-
-/// Prefers the checked-out branch name for a newly-discovered worktree —
-/// matches how `create_worktree` names ones Argus made itself — falling
-/// back to the directory name for a detached HEAD or an unreadable repo.
-fn worktree_display_name(path: &std::path::Path, is_primary: bool) -> String {
-    if !is_primary {
-        if let Some(branch) = crate::git::status(path).and_then(|s| s.branch) {
-            return branch;
-        }
-    }
-    path.file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| path.to_string_lossy().to_string())
-}
-
-fn remove_checkout_entry(projects: &mut [Project], id: CheckoutId) -> Option<Checkout> {
-    for project in projects.iter_mut() {
-        for repository in project.repositories.iter_mut() {
-            if let Some(pos) = repository.checkouts.iter().position(|c| c.id == id) {
-                return Some(repository.checkouts.remove(pos));
-            }
-        }
-    }
-    None
 }
 
 /// Whether a hook's report should be dropped rather than applied, for
@@ -952,101 +705,6 @@ fn is_stale_report(current: PaneStatus, reported: PaneStatus) -> bool {
             )
 }
 
-fn all_panes(projects: &mut [Project]) -> impl Iterator<Item = &mut Pane> {
-    projects
-        .iter_mut()
-        .flat_map(|p| p.repositories.iter_mut())
-        .flat_map(|r| r.checkouts.iter_mut())
-        .flat_map(|c| c.panes.iter_mut())
-}
-
-/// The pane and the id of the checkout holding it — which the pane itself
-/// does not carry, and which a caller acting on the pane's exit needs in
-/// order to put something back in its place.
-fn find_pane_with_checkout(
-    projects: &mut [Project],
-    id: PaneId,
-) -> Option<(&mut Pane, CheckoutId)> {
-    projects
-        .iter_mut()
-        .flat_map(|p| p.repositories.iter_mut())
-        .flat_map(|r| r.checkouts.iter_mut())
-        .find_map(|c| {
-            let checkout = c.id;
-            c.panes.iter_mut().find(|p| p.id == id).map(|p| (p, checkout))
-        })
-}
-
-fn find_pane(projects: &mut [Project], id: PaneId) -> Option<&mut Pane> {
-    projects
-        .iter_mut()
-        .flat_map(|p| p.repositories.iter_mut())
-        .flat_map(|r| r.checkouts.iter_mut())
-        .flat_map(|c| c.panes.iter_mut())
-        .find(|p| p.id == id)
-}
-
-fn find_pane_ref(projects: &[Project], id: PaneId) -> Option<&Pane> {
-    projects
-        .iter()
-        .flat_map(|p| p.repositories.iter())
-        .flat_map(|r| r.checkouts.iter())
-        .flat_map(|c| c.panes.iter())
-        .find(|p| p.id == id)
-}
-
-/// Whether any agent pane is still open in the checkout at `path`. Gates
-/// tearing down that checkout's managed hooks, which are shared by every
-/// agent running there.
-/// The agent already working in this checkout, if its project allows only
-/// one. `None` when the project has not asked for that, or when nothing is
-/// running there — sharing a checkout is otherwise allowed, and merely
-/// shown (TARGET.md §Repository and checkout model).
-fn exclusive_conflict(projects: &[Project], checkout: CheckoutId) -> Option<String> {
-    let project = projects.iter().find(|p| {
-        p.repositories
-            .iter()
-            .any(|r| r.checkouts.iter().any(|c| c.id == checkout))
-    })?;
-    if !project.exclusive {
-        return None;
-    }
-    project
-        .repositories
-        .iter()
-        .flat_map(|r| r.checkouts.iter())
-        .find(|c| c.id == checkout)?
-        .panes
-        .iter()
-        .find(|p| p.kind == PaneKind::Agent)
-        .map(|p| p.title.clone())
-}
-
-fn checkout_has_agent(projects: &[Project], path: &std::path::Path) -> bool {
-    projects
-        .iter()
-        .flat_map(|p| p.repositories.iter())
-        .flat_map(|r| r.checkouts.iter())
-        .filter(|c| c.path == path)
-        .any(|c| c.panes.iter().any(|p| p.kind == PaneKind::Agent))
-}
-
-/// Removes a pane from whichever checkout holds it, returning it along with
-/// that checkout's path — which the caller can't look up afterwards, the
-/// pane being gone by then.
-fn remove_pane_with_checkout(projects: &mut [Project], id: PaneId) -> Option<(Pane, PathBuf)> {
-    for project in projects.iter_mut() {
-        for repository in project.repositories.iter_mut() {
-            for checkout in repository.checkouts.iter_mut() {
-                if let Some(pos) = checkout.panes.iter().position(|p| p.id == id) {
-                    return Some((checkout.panes.remove(pos), checkout.path.clone()));
-                }
-            }
-        }
-    }
-    None
-}
-
 /// Reads one HTTP/1.1 request, checks the bearer token, and applies the pane
 /// operation its path encodes. Hand-rolled rather than pulling in an HTTP server crate:
 /// the request shape is entirely our own (we generate every hook command
@@ -1062,57 +720,6 @@ fn clean_title(raw: &str) -> String {
         Some((i, _)) => format!("{}…", flat[..i].trim_end()),
         None => flat,
     }
-}
-
-fn has_windows_drive_prefix(path: &str) -> bool {
-    let bytes = path.as_bytes();
-    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
-}
-
-/// The arguments an agent pane starts with, and whether that command asks
-/// the CLI to continue a conversation rather than open a new one.
-///
-/// Restoring a pane means restoring what was in it, so the harness's resume
-/// arguments go on the end of the template's own command — the user's flags
-/// still apply to the conversation being continued. A harness Argus cannot
-/// ask to resume leaves the command exactly as it was, and the pane is not
-/// treated as resumed: there is nothing for a failure to fall back from.
-fn agent_args(
-    configured: &[String],
-    resume: &[String],
-    resume_id: &[String],
-    start: Start,
-    session_id: Option<&str>,
-) -> (Vec<String>, bool) {
-    let mut args = configured.to_vec();
-    if start == Start::Fresh {
-        return (args, false);
-    }
-    if let Some(session_id) = session_id {
-        if resume_id.is_empty() {
-            return (args, false);
-        }
-        args.extend(
-            resume_id
-                .iter()
-                .map(|arg| arg.replace("{session_id}", session_id)),
-        );
-    } else {
-        if resume.is_empty() {
-            return (args, false);
-        }
-        args.extend(resume.iter().cloned());
-    }
-    (args, true)
-}
-
-/// Whether a resumed agent's exit reads as "there was no conversation to
-/// continue" rather than as an agent the user is done with.
-///
-/// A clean exit is always the user's: every one of these CLIs exits 0 when
-/// you leave it, and refuses with a status when it cannot start.
-fn nothing_to_resume(code: Option<i32>, ran_for: Duration) -> bool {
-    code != Some(0) && ran_for < RESUME_GRACE
 }
 
 /// What one branch refresh learned about a repository, carried across the
@@ -1146,79 +753,10 @@ async fn run_git(dir: &std::path::Path, args: &[&str]) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A repository holding only its primary checkout, which is what both a
-/// configured path and a discovered one start as. Linked worktrees arrive
-/// afterwards, from `reconcile_worktrees`.
-fn new_repository(ids: &mut IdGen, path: PathBuf, discovered: bool) -> Repository {
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| path.to_string_lossy().to_string());
-    Repository {
-        id: RepositoryId(ids.alloc()),
-        name: name.clone(),
-        discovered,
-        branches: Vec::new(),
-        default_branch: None,
-        remote_branches: Vec::new(),
-        checkouts: vec![Checkout {
-            id: CheckoutId(ids.alloc()),
-            name,
-            path,
-            primary: true,
-            panes: Vec::new(),
-            git: None,
-        }],
-    }
-}
-
-/// Adds the repositories a scan found that aren't there yet, and reports
-/// whether it added any. Repositories already present are left exactly as
-/// they are, ids, checkouts and panes included: a scan is a way of noticing
-/// what is on disk, not a reason to rebuild the tree. A discovered path that
-/// matches a repository the config named outright belongs to that
-/// repository rather than to a second row of its own.
-fn install_discovered(
-    ids: &mut IdGen,
-    repositories: &mut Vec<Repository>,
-    found: &[PathBuf],
-) -> bool {
-    let mut added = false;
-    for path in found {
-        if repositories
-            .iter()
-            .any(|r| r.checkouts.iter().any(|c| same_path(&c.path, path)))
-        {
-            continue;
-        }
-        repositories.push(new_repository(ids, path.clone(), true));
-        added = true;
-    }
-    added
-}
-
-/// Whether this path is one the user has taken out of the panel.
-fn is_excluded(excluded: &[PathBuf], path: &std::path::Path) -> bool {
-    excluded.iter().any(|e| same_path(e, path))
-}
-
-fn retain_included(excluded: &[PathBuf], found: Vec<PathBuf>) -> Vec<PathBuf> {
-    found
-        .into_iter()
-        .filter(|path| !is_excluded(excluded, path))
-        .collect()
-}
-
-fn same_path(a: &std::path::Path, b: &std::path::Path) -> bool {
-    match (a.canonicalize(), b.canonicalize()) {
-        (Ok(a), Ok(b)) => a == b,
-        _ => a == b,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::session::RESUME_GRACE;
     use argus_protocol::parse_pane_path;
     use crate::config::ProjectConfig;
 
@@ -1548,7 +1086,7 @@ mod tests {
         d.set_pane_session_id(pane, "nested-session");
 
         assert_eq!(
-            d.session().panes[0].harness_session_id.as_deref(),
+            d.session_panes()[0].harness_session_id.as_deref(),
             Some("parent-session")
         );
         assert_eq!(pane_info(&d, pane).children.len(), 1);
@@ -1569,7 +1107,7 @@ mod tests {
         d.set_pane_session_id(pane, "second-session");
 
         assert_eq!(
-            d.session().panes[0].harness_session_id.as_deref(),
+            d.session_panes()[0].harness_session_id.as_deref(),
             Some("second-session")
         );
         assert!(pane_info(&d, pane).children.is_empty());
@@ -1893,7 +1431,7 @@ mod tests {
         let tree = d.snapshot();
         assert!(tree[0].repositories[0].checkouts[0].panes.is_empty());
         assert_eq!(tree[0].repositories[1].checkouts[0].panes[0].id, pane);
-        assert_eq!(d.session().panes[0].checkout_path, second.path());
+        assert_eq!(d.session_panes()[0].checkout_path, second.path());
         d.close_pane(pane).unwrap();
     }
 
@@ -1958,7 +1496,7 @@ mod tests {
 
         assert!(response.starts_with(b"HTTP/1.1 200 OK"));
         assert_eq!(
-            d.session().panes[0].harness_session_id.as_deref(),
+            d.session_panes()[0].harness_session_id.as_deref(),
             Some(body)
         );
         d.close_pane(pane).unwrap();
@@ -2117,7 +1655,7 @@ mod tests {
 
         d.restore_pane_metadata(
             pane,
-            &crate::session::SessionPane {
+            &crate::store::SessionPane {
                 checkout_path: dir.path().to_path_buf(),
                 kind: PaneKind::Agent,
                 title: "previous task".to_string(),
@@ -2146,7 +1684,7 @@ mod tests {
 
         d.restore_pane_metadata(
             pane,
-            &crate::session::SessionPane {
+            &crate::store::SessionPane {
                 checkout_path: dir.path().to_path_buf(),
                 kind: PaneKind::Agent,
                 title: "previous task".to_string(),
@@ -2503,7 +2041,11 @@ mod tests {
     /// that is really just `echo` — enough to exercise the hook-install path
     /// (which keys off the template *name*) without launching a real agent.
     fn daemon_with_fake_claude(dir: &std::path::Path) -> Arc<Daemon> {
-        Daemon::new(ConfigFile {
+        Daemon::new(fake_claude_config(dir))
+    }
+
+    fn fake_claude_config(dir: &std::path::Path) -> ConfigFile {
+        ConfigFile {
             workspaces: Vec::new(),
             projects: vec![ProjectConfig {
                 name: "proj".to_string(),
@@ -2520,7 +2062,7 @@ mod tests {
                 restart: Default::default(),
             }],
             harnesses: Vec::new(),
-        })
+        }
     }
 
     /// The same fake agent, in a project that allows one per checkout.
@@ -2971,6 +2513,24 @@ mod tests {
         })
     }
 
+    /// Whether `projects.toml` declares any project, ignoring the
+    /// commented-out examples the default config ships with — which is what
+    /// a bare `contains` would count.
+    fn declares_a_project(cfg: &std::path::Path) -> bool {
+        declares(cfg, "[[project]]")
+    }
+
+    fn declares_a_workspace(cfg: &std::path::Path) -> bool {
+        declares(cfg, "[[workspace]]")
+    }
+
+    fn declares(cfg: &std::path::Path, header: &str) -> bool {
+        std::fs::read_to_string(cfg.join("projects.toml"))
+            .unwrap_or_default()
+            .lines()
+            .any(|line| line.trim_start().starts_with(header))
+    }
+
     fn repository_names(d: &Daemon) -> Vec<String> {
         d.snapshot()
             .into_iter()
@@ -3201,19 +2761,21 @@ mod tests {
         std::fs::create_dir(&child).unwrap();
         let _repo = real_repo(&child);
 
-        with_temp_config(|cfg| {
-            let d = Daemon::new(ConfigFile::default());
+        with_temp_config(|_| {
+            let d = persistent(ConfigFile::default());
             d.add_project(&dir.path().to_string_lossy()).unwrap();
 
-            let written = std::fs::read_to_string(cfg.join("projects.toml")).unwrap();
-            let root = dir.path().to_string_lossy().replace('\\', "/");
-            assert!(
-                written.contains(&format!("root = {root:?}")),
-                "the root is what gets scanned again next time:\n{written}"
+            let recorded = crate::store::Store::open().unwrap().overlays().unwrap();
+            assert_eq!(recorded.projects.len(), 1);
+            let (project, repos) = &recorded.projects[0];
+            assert_eq!(
+                project.root,
+                dir.path(),
+                "the root is what gets scanned again next time"
             );
             assert!(
-                !written.contains("repos = "),
-                "and what it found is not frozen into the file:\n{written}"
+                repos.is_empty(),
+                "and what it found is not frozen alongside it: {repos:?}"
             );
         });
     }
@@ -3226,11 +2788,11 @@ mod tests {
         let _repo = real_repo(&child);
 
         with_temp_config(|_| {
-            let d = Daemon::new(ConfigFile::default());
+            let d = persistent(ConfigFile::default());
             d.add_project(&dir.path().to_string_lossy()).unwrap();
             let before = repository_names(&d);
 
-            let restarted = Daemon::new(crate::config::load().unwrap());
+            let restarted = persistent(crate::config::load().unwrap());
             assert_eq!(repository_names(&restarted), before);
         });
     }
@@ -3250,7 +2812,7 @@ mod tests {
         std::fs::create_dir(&elsewhere).unwrap();
         let _other = real_repo(&elsewhere);
 
-        let d = Daemon::new(ConfigFile::default());
+        let d = persistent(ConfigFile::default());
         d.add_project(&root.path().to_string_lossy()).unwrap();
         (root, outside, d)
     }
@@ -3279,7 +2841,7 @@ mod tests {
             // Named repositories are built before the root is scanned, so
             // the row order changes across a restart even though the set
             // does not.
-            let restarted = Daemon::new(crate::config::load().unwrap());
+            let restarted = persistent(crate::config::load().unwrap());
             assert_eq!(repository_names(&restarted), vec!["notes", "orion"]);
         });
     }
@@ -3343,7 +2905,7 @@ mod tests {
             assert_eq!(repository_names(&d), vec!["orion"]);
 
             // The exclusion is gone too, or a restart would drop it again.
-            let restarted = Daemon::new(crate::config::load().unwrap());
+            let restarted = persistent(crate::config::load().unwrap());
             assert_eq!(repository_names(&restarted), vec!["orion"]);
         });
     }
@@ -3353,6 +2915,14 @@ mod tests {
     /// A project rooted at a temp directory holding one repository per
     /// name, added through `add_project` so it is written to the config the
     /// way the TUI writes it.
+    /// A daemon backed by the store in the temp config directory. What
+    /// every test about surviving a restart needs: `Daemon::new` hands out
+    /// a store that dies with the process, which is exactly what makes it
+    /// safe everywhere else.
+    fn persistent(config: ConfigFile) -> Arc<Daemon> {
+        Daemon::with_store(config, crate::store::Store::open().unwrap())
+    }
+
     fn added_project_with(names: &[&str]) -> (tempfile::TempDir, Arc<Daemon>) {
         let dir = tempfile::tempdir().unwrap();
         for name in names {
@@ -3360,7 +2930,7 @@ mod tests {
             std::fs::create_dir(&child).unwrap();
             let _repo = real_repo(&child);
         }
-        let d = Daemon::new(ConfigFile::default());
+        let d = persistent(ConfigFile::default());
         d.add_project(&dir.path().to_string_lossy()).unwrap();
         (dir, d)
     }
@@ -3374,11 +2944,13 @@ mod tests {
             d.remove_project(project).unwrap();
 
             assert!(d.snapshot().is_empty(), "gone from the tree");
-            let written = std::fs::read_to_string(cfg.join("projects.toml")).unwrap();
             assert!(
-                !written.contains("[[project]]"),
-                "and out of the config, not just this run:
-{written}"
+                persistent(crate::config::load().unwrap()).snapshot().is_empty(),
+                "and gone for good, not just for this run"
+            );
+            assert!(
+                !declares_a_project(cfg),
+                "without Argus having written to the user's config"
             );
             assert!(
                 dir.path().join("orion").is_dir(),
@@ -3388,9 +2960,11 @@ mod tests {
     }
 
     #[test]
-    fn removing_one_project_keeps_the_rest_of_the_users_file() {
-        // The config is hand-edited and full of comments; a removal is a
-        // text edit to one block, not a serde round-trip of the whole file.
+    fn removing_a_declared_project_hides_it_without_touching_the_file() {
+        // The config is hand-edited and full of comments, and taking a row
+        // out of the panel is not permission to edit it. The removal is
+        // recorded beside the file instead, and outlasts a restart all the
+        // same.
         with_temp_config(|cfg| {
             let cfg_path = cfg.join("projects.toml");
             std::fs::write(
@@ -3412,7 +2986,7 @@ repos = ["/also"]
             )
             .unwrap();
 
-            let d = Daemon::new(crate::config::load().unwrap());
+            let d = persistent(crate::config::load().unwrap());
             let doomed = d
                 .snapshot()
                 .into_iter()
@@ -3421,21 +2995,35 @@ repos = ["/also"]
                 .id;
             d.remove_project(doomed).unwrap();
 
-            let after = std::fs::read_to_string(&cfg_path).unwrap();
-            assert!(
-                after.contains("# what these are") && after.contains(r#"name = "also-keep""#),
-                "everything else is left exactly as it was:
-{after}"
+            assert_eq!(
+                names_of(&d),
+                vec!["keep-me", "also-keep"],
+                "gone from the panel"
             );
-            assert!(
-                !after.contains(r#"name = "doomed""#),
-                "and the block itself is gone:
-{after}"
+            assert_eq!(
+                names_of(&persistent(crate::config::load().unwrap())),
+                vec!["keep-me", "also-keep"],
+                "and still gone after a restart"
             );
-            assert!(
-                !after.contains("# the one going away"),
-                "with the comment that introduced it:
-{after}"
+
+            let before = r#"# what these are
+[[project]]
+name = "keep-me"
+repos = ["/keep"]
+
+# the one going away
+[[project]]
+name = "doomed"
+repos = ["/doomed"]
+
+[[project]]
+name = "also-keep"
+repos = ["/also"]
+"#;
+            assert_eq!(
+                std::fs::read_to_string(&cfg_path).unwrap(),
+                before,
+                "the user's file is untouched, comments and all"
             );
         });
     }
@@ -3461,7 +3049,7 @@ root = "/somewhere"
             .unwrap();
             let added = tempfile::tempdir().unwrap();
 
-            let d = Daemon::new(crate::config::load().unwrap());
+            let d = persistent(crate::config::load().unwrap());
             let first = d
                 .snapshot()
                 .into_iter()
@@ -3470,23 +3058,32 @@ root = "/somewhere"
             d.add_repository(first.id, &added.path().to_string_lossy())
                 .unwrap();
 
-            let after = std::fs::read_to_string(&cfg_path).unwrap();
-            let repos = crate::config::load().unwrap().projects.remove(0).repos;
+            let merged = crate::config::with_overlays(
+                crate::config::load().unwrap(),
+                &crate::store::Store::open().unwrap().overlays().unwrap(),
+            );
             assert_eq!(
-                repos,
+                merged.projects[0].repos,
                 vec![
                     "/one".to_string(),
                     added.path().to_string_lossy().replace('\\', "/")
                 ],
-                "the new path joins the ones already listed:
-{after}"
+                "the new path joins the ones the config already lists"
             );
-            assert!(
-                after.contains("# hand written")
-                    && after.contains(r#"name = "second""#)
-                    && after.contains(r#"root = "/somewhere""#),
-                "and nothing else in the file moved:
-{after}"
+            assert_eq!(
+                std::fs::read_to_string(&cfg_path).unwrap(),
+                r#"# hand written
+[[project]]
+name = "first"
+repos = [
+  "/one",
+]
+
+[[project]]
+name = "second"
+root = "/somewhere"
+"#,
+                "and the file itself never moved"
             );
         });
     }
@@ -3501,7 +3098,7 @@ root = "/somewhere"
             d.add_repository(d.snapshot()[0].id, &added.path().to_string_lossy())
                 .unwrap();
 
-            let restarted = Daemon::new(crate::config::load().unwrap());
+            let restarted = persistent(crate::config::load().unwrap());
             let names = repository_names(&restarted);
             assert!(
                 names.contains(&"orion".to_string()) && names.len() == 2,
@@ -3559,7 +3156,7 @@ root = "/somewhere"
 
             d.remove_repository(doomed).unwrap();
 
-            let restarted = Daemon::new(crate::config::load().unwrap());
+            let restarted = persistent(crate::config::load().unwrap());
             assert_eq!(repository_names(&restarted), kept);
         });
     }
@@ -3593,7 +3190,7 @@ root = "/somewhere"
             d.remove_repository(doomed).unwrap();
             d.remove_project(d.snapshot()[0].id).unwrap();
 
-            let restarted = Daemon::new(crate::config::load().unwrap());
+            let restarted = persistent(crate::config::load().unwrap());
             restarted
                 .add_project(&dir.path().to_string_lossy())
                 .unwrap();
@@ -3871,7 +3468,7 @@ root = "/somewhere"
     #[test]
     fn workspaces_come_from_declarations_and_from_project_references() {
         with_temp_config(|_| {
-            let d = Daemon::new(config_with_workspaces());
+            let d = persistent(config_with_workspaces());
             let names: Vec<String> = d.workspaces().into_iter().map(|w| w.name).collect();
             assert_eq!(
                 names,
@@ -3884,7 +3481,7 @@ root = "/somewhere"
     #[test]
     fn the_tree_is_scoped_to_the_open_workspace() {
         with_temp_config(|_| {
-            let d = Daemon::new(config_with_workspaces());
+            let d = persistent(config_with_workspaces());
             assert_eq!(
                 names_of(&d),
                 vec!["home-thing"],
@@ -3902,7 +3499,7 @@ root = "/somewhere"
     #[test]
     fn switching_workspace_pushes_a_new_tree_and_workspace_list() {
         with_temp_config(|_| {
-            let d = Daemon::new(config_with_workspaces());
+            let d = persistent(config_with_workspaces());
             let mut tree_rx = d.subscribe_tree();
             let mut ws_rx = d.subscribe_workspaces();
 
@@ -3919,7 +3516,7 @@ root = "/somewhere"
     #[test]
     fn exactly_one_workspace_is_open_at_a_time() {
         with_temp_config(|_| {
-            let d = Daemon::new(config_with_workspaces());
+            let d = persistent(config_with_workspaces());
             d.open_workspace(workspace_named(&d, "work")).unwrap();
             assert_eq!(d.workspaces().iter().filter(|w| w.open).count(), 1);
         });
@@ -3928,7 +3525,7 @@ root = "/somewhere"
     #[test]
     fn reopening_the_already_open_workspace_changes_nothing() {
         with_temp_config(|_| {
-            let d = Daemon::new(config_with_workspaces());
+            let d = persistent(config_with_workspaces());
             let mut tree_rx = d.subscribe_tree();
             let open = d.workspaces().into_iter().find(|w| w.open).unwrap().id;
 
@@ -3943,7 +3540,7 @@ root = "/somewhere"
     #[test]
     fn switching_to_a_workspace_that_does_not_exist_is_an_error() {
         with_temp_config(|_| {
-            let d = Daemon::new(config_with_workspaces());
+            let d = persistent(config_with_workspaces());
             assert!(d.open_workspace(WorkspaceId(9999)).is_err());
         });
     }
@@ -3951,11 +3548,11 @@ root = "/somewhere"
     #[test]
     fn the_open_workspace_is_remembered_for_the_next_daemon() {
         with_temp_config(|_| {
-            let d = Daemon::new(config_with_workspaces());
+            let d = persistent(config_with_workspaces());
             d.open_workspace(workspace_named(&d, "work")).unwrap();
             drop(d);
 
-            let next = Daemon::new(config_with_workspaces());
+            let next = persistent(config_with_workspaces());
             assert_eq!(
                 next.workspaces().into_iter().find(|w| w.open).unwrap().name,
                 "work",
@@ -3967,7 +3564,7 @@ root = "/somewhere"
     #[test]
     fn a_remembered_workspace_that_no_longer_exists_falls_back_to_default() {
         with_temp_config(|_| {
-            let d = Daemon::new(config_with_workspaces());
+            let d = persistent(config_with_workspaces());
             d.open_workspace(workspace_named(&d, "weekend")).unwrap();
             drop(d);
 
@@ -3987,7 +3584,7 @@ root = "/somewhere"
     #[test]
     fn workspace_rollups_count_projects_and_panes_across_the_whole_workspace() {
         with_temp_config(|_| {
-            let d = Daemon::new(config_with_workspaces());
+            let d = persistent(config_with_workspaces());
             let ws = d.workspaces();
             let default = ws.iter().find(|w| w.name == "default").unwrap();
             assert_eq!(default.projects, 1);
@@ -4048,7 +3645,7 @@ root = "/somewhere"
     fn adding_a_project_files_it_under_the_open_workspace() {
         let repo = tempfile::tempdir().unwrap();
         with_temp_config(|_| {
-            let d = Daemon::new(config_with_workspaces());
+            let d = persistent(config_with_workspaces());
             d.open_workspace(workspace_named(&d, "work")).unwrap();
 
             d.add_project(&repo.path().to_string_lossy()).unwrap();
@@ -4071,22 +3668,32 @@ root = "/somewhere"
     #[test]
     fn an_added_projects_workspace_is_persisted_so_it_survives_a_restart() {
         let repo = tempfile::tempdir().unwrap();
-        with_temp_config(|dir| {
-            let d = Daemon::new(config_with_workspaces());
+        with_temp_config(|_| {
+            let d = persistent(config_with_workspaces());
             d.open_workspace(workspace_named(&d, "work")).unwrap();
             d.add_project(&repo.path().to_string_lossy()).unwrap();
 
-            let written = std::fs::read_to_string(dir.join("projects.toml")).unwrap();
+            let restarted = persistent(config_with_workspaces());
+            let work = workspace_named(&restarted, "work");
             assert!(
-                written.contains(r#"workspace = "work""#),
-                "the workspace must be written out, not just held in memory:\n{written}"
+                restarted
+                    .snapshot()
+                    .iter()
+                    .any(|p| p.name == repo.path().file_name().unwrap().to_string_lossy()),
+                "the added project should be in the open workspace"
+            );
+            assert_eq!(
+                restarted.workspaces().into_iter().find(|w| w.open).unwrap().id,
+                work,
+                "which is still the one it was added to"
             );
         });
     }
+
     #[test]
     fn a_created_workspace_is_declared_on_disk_and_opened() {
         with_temp_config(|dir| {
-            let d = Daemon::new(config_with_workspaces());
+            let d = persistent(config_with_workspaces());
             d.create_workspace("side").unwrap();
 
             let ws = d.workspaces();
@@ -4095,12 +3702,20 @@ root = "/somewhere"
             assert_eq!(side.projects, 0, "and it starts empty");
             assert_eq!(names_of(&d).len(), 0, "so the tree is empty too");
 
-            // Declared, not implied: an empty workspace has no project in
-            // the file to imply it, so it would not survive a restart.
-            let written = std::fs::read_to_string(dir.join("projects.toml")).unwrap();
+            // Declared, not implied: an empty workspace has nothing in it
+            // to imply it, so without a record of its own it would not
+            // survive a restart.
             assert!(
-                written.contains("[[workspace]]") && written.contains(r#"name = "side""#),
-                "the declaration must be written out:\n{written}"
+                crate::store::Store::open()
+                    .unwrap()
+                    .workspace_overlays()
+                    .unwrap()
+                    .contains(&"side".to_string()),
+                "the declaration must be recorded, not just held in memory"
+            );
+            assert!(
+                !declares_a_workspace(dir),
+                "and recorded beside the user's config, not in it"
             );
         });
     }
@@ -4128,11 +3743,11 @@ root = "/somewhere"
     #[test]
     fn a_created_workspace_survives_a_restart() {
         with_temp_config(|_| {
-            let d = Daemon::new(config_with_workspaces());
+            let d = persistent(config_with_workspaces());
             d.create_workspace("side").unwrap();
             drop(d);
 
-            let reloaded = Daemon::new(crate::config::load().unwrap());
+            let reloaded = persistent(crate::config::load().unwrap());
             let names: Vec<String> = reloaded.workspaces().into_iter().map(|w| w.name).collect();
             assert!(names.contains(&"side".to_string()), "{names:?}");
             assert!(
@@ -4152,7 +3767,7 @@ root = "/somewhere"
         // The picker already lists the existing rows; one gesture meaning
         // both "go there" and "make it" is how duplicates get made.
         with_temp_config(|dir| {
-            let d = Daemon::new(config_with_workspaces());
+            let d = persistent(config_with_workspaces());
             assert!(d.create_workspace("work").is_err());
             assert!(d.create_workspace("   ").is_err(), "nor an empty name");
 
@@ -4168,7 +3783,7 @@ root = "/somewhere"
     #[test]
     fn creating_a_workspace_pushes_a_new_tree_and_workspace_list() {
         with_temp_config(|_| {
-            let d = Daemon::new(config_with_workspaces());
+            let d = persistent(config_with_workspaces());
             let mut tree_rx = d.subscribe_tree();
             let mut ws_rx = d.subscribe_workspaces();
 
@@ -4961,8 +4576,20 @@ root = "/somewhere"
 
     /// A daemon whose only project is `dir`, with one agent template that
     /// runs the platform shell so restoring one actually starts something.
+    ///
+    /// Backed by the store in the temp config directory rather than an
+    /// in-memory one, so what [`record`] writes is what it reads — these
+    /// tests are about surviving a restart, and a store that does not
+    /// outlive the daemon cannot show that.
     fn daemon_for_restore(dir: &std::path::Path) -> Arc<Daemon> {
-        Daemon::new(ConfigFile {
+        Daemon::with_store(
+            restore_config(dir),
+            crate::store::Store::open().unwrap(),
+        )
+    }
+
+    fn restore_config(dir: &std::path::Path) -> ConfigFile {
+        ConfigFile {
             workspaces: Vec::new(),
             projects: vec![ProjectConfig {
                 name: "proj".to_string(),
@@ -4979,17 +4606,17 @@ root = "/somewhere"
                 restart: Default::default(),
             }],
             harnesses: Vec::new(),
-        })
+        }
     }
 
     /// Writes a session file as a previous daemon would have left it.
     /// Cheaper and more exact than running one: what is being tested is
     /// what the daemon does with the file, not the file format twice.
     fn record(panes: &[(PaneKind, &str)], checkout: &std::path::Path) {
-        crate::session::save(&crate::session::Session {
-            panes: panes
+        record_panes(
+            panes
                 .iter()
-                .map(|(kind, title)| crate::session::SessionPane {
+                .map(|(kind, title)| crate::store::SessionPane {
                     checkout_path: checkout.to_path_buf(),
                     kind: *kind,
                     title: title.to_string(),
@@ -5000,7 +4627,17 @@ root = "/somewhere"
                     harness: None,
                 })
                 .collect(),
-        });
+        );
+    }
+
+    /// Writes the store as a previous daemon would have left it. Cheaper
+    /// and more exact than running one: what is being tested is what the
+    /// daemon does with the record, not the recording twice.
+    fn record_panes(panes: Vec<crate::store::SessionPane>) {
+        crate::store::Store::open()
+            .unwrap()
+            .save_panes(&panes)
+            .unwrap();
     }
 
     fn persistent_agent_command() -> Vec<String> {
@@ -5017,7 +4654,8 @@ root = "/somewhere"
     }
 
     fn daemon_with_claude_aliases(dir: &std::path::Path, names: &[&str]) -> Arc<Daemon> {
-        Daemon::new(ConfigFile {
+        Daemon::with_store(
+            ConfigFile {
             workspaces: Vec::new(),
             projects: vec![ProjectConfig {
                 name: "proj".into(),
@@ -5026,25 +4664,27 @@ root = "/somewhere"
                 workspace: None,
                 ..Default::default()
             }],
-            agents: names
-                .iter()
-                .map(|name| AgentConfig {
-                    name: (*name).into(),
-                    cmd: persistent_agent_command(),
-                    env: Default::default(),
-                    harness: Some("claude".into()),
-                    restart: Default::default(),
-                })
-                .collect(),
-            harnesses: Vec::new(),
-        })
+                agents: names
+                    .iter()
+                    .map(|name| AgentConfig {
+                        name: (*name).into(),
+                        cmd: persistent_agent_command(),
+                        env: Default::default(),
+                        harness: Some("claude".into()),
+                        restart: Default::default(),
+                    })
+                    .collect(),
+                harnesses: Vec::new(),
+            },
+            crate::store::Store::open().unwrap(),
+        )
     }
 
     fn record_agents(checkout: &std::path::Path, agents: &[(&str, Option<&str>)]) {
-        crate::session::save(&crate::session::Session {
-            panes: agents
+        record_panes(
+            agents
                 .iter()
-                .map(|(template, session_id)| crate::session::SessionPane {
+                .map(|(template, session_id)| crate::store::SessionPane {
                     checkout_path: checkout.to_path_buf(),
                     kind: PaneKind::Agent,
                     title: (*template).into(),
@@ -5055,7 +4695,7 @@ root = "/somewhere"
                     harness: None,
                 })
                 .collect(),
-        });
+        );
     }
 
     fn close_all(d: &Daemon) {
@@ -5064,8 +4704,8 @@ root = "/somewhere"
         }
     }
 
-    fn saved_panes() -> Vec<crate::session::SessionPane> {
-        crate::session::load().unwrap().panes
+    fn saved_panes() -> Vec<crate::store::SessionPane> {
+        crate::store::Store::open().unwrap().panes().unwrap()
     }
 
     #[test]
@@ -5085,7 +4725,6 @@ root = "/somewhere"
         let dir = tempfile::tempdir().unwrap();
         with_temp_config(|_| {
             let d = daemon_for_restore(dir.path());
-            d.persist_session();
             let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
             d.spawn_shell(checkout).unwrap();
 
@@ -5128,8 +4767,7 @@ root = "/somewhere"
     async fn agent_status_and_note_survive_a_restart() {
         let dir = tempfile::tempdir().unwrap();
         with_temp_config(|_| {
-            crate::session::save(&crate::session::Session {
-                panes: vec![crate::session::SessionPane {
+            record_panes(vec![crate::store::SessionPane {
                     checkout_path: dir.path().to_path_buf(),
                     kind: PaneKind::Agent,
                     title: "review parser".to_string(),
@@ -5137,9 +4775,8 @@ root = "/somewhere"
                     status: PaneStatus::NeedsReview,
                     note: Some("ready to inspect".to_string()),
                     harness_session_id: None,
-                    harness: None,
-                }],
-            });
+                harness: None,
+            }]);
 
             let d = daemon_for_restore(dir.path());
             d.restore_session();
@@ -5176,8 +4813,7 @@ root = "/somewhere"
         // a template called "fixing the pty deadlock" and find nothing.
         let dir = tempfile::tempdir().unwrap();
         with_temp_config(|_| {
-            crate::session::save(&crate::session::Session {
-                panes: vec![crate::session::SessionPane {
+            record_panes(vec![crate::store::SessionPane {
                     checkout_path: dir.path().to_path_buf(),
                     kind: PaneKind::Agent,
                     title: "fixing the pty deadlock".to_string(),
@@ -5185,9 +4821,8 @@ root = "/somewhere"
                     status: PaneStatus::Idle,
                     note: None,
                     harness_session_id: None,
-                    harness: None,
-                }],
-            });
+                harness: None,
+            }]);
 
             let d = daemon_for_restore(dir.path());
             d.restore_session();
@@ -5245,10 +4880,10 @@ root = "/somewhere"
         with_temp_config(|_| {
             record(&[(PaneKind::Shell, "shell")], dir.path());
 
-            std::env::set_var(crate::session::NO_RESTORE, "1");
+            std::env::set_var(crate::store::NO_RESTORE, "1");
             let d = daemon_for_restore(dir.path());
             d.restore_session();
-            std::env::remove_var(crate::session::NO_RESTORE);
+            std::env::remove_var(crate::store::NO_RESTORE);
 
             assert!(d.snapshot()[0].repositories[0].checkouts[0]
                 .panes
@@ -5256,34 +4891,52 @@ root = "/somewhere"
         });
     }
 
-    #[test]
-    fn a_broken_session_is_left_untouched_for_recovery() {
+    #[tokio::test]
+    async fn a_session_file_from_an_older_argus_is_restored_from() {
+        // The upgrade path: what the previous version left behind is
+        // imported when the store first opens, and restores like anything
+        // else recorded in it.
         let dir = tempfile::tempdir().unwrap();
         with_temp_config(|cfg| {
-            let path = cfg.join("session.json");
-            let broken = b"{ incomplete";
-            std::fs::write(&path, broken).unwrap();
+            std::fs::write(
+                cfg.join("session.json"),
+                format!(
+                    r#"{{"panes":[{{"checkout_path":{:?},"kind":"Shell","title":"shell"}}]}}"#,
+                    dir.path().to_string_lossy().replace('\\', "/")
+                ),
+            )
+            .unwrap();
 
-            let d = daemon_for_restore(dir.path());
-            assert!(!d.restore_session(), "main must not enable persistence");
-            assert_eq!(std::fs::read(&path).unwrap(), broken);
+            let d = Daemon::with_store(
+                restore_config(dir.path()),
+                crate::store::Store::open().unwrap(),
+            );
+            d.restore_session();
+
+            assert_eq!(
+                d.snapshot()[0].repositories[0].checkouts[0].panes.len(),
+                1,
+                "the imported pane should have come back"
+            );
+            close_all(&d);
         });
     }
 
     #[tokio::test]
-    async fn a_daemon_that_was_never_told_to_persist_records_nothing() {
+    async fn a_daemon_without_a_store_on_disk_writes_nothing() {
         // Every test builds a daemon; none of them may write over the real
-        // user's session.
+        // user's state. `Daemon::new` is what guarantees that, by handing
+        // one a store that lives and dies with the process.
         let dir = tempfile::tempdir().unwrap();
         with_temp_config(|cfg| {
-            let d = daemon_for_restore(dir.path());
+            let d = Daemon::new(restore_config(dir.path()));
             let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
             d.spawn_shell(checkout).unwrap();
             close_all(&d);
 
             assert!(
-                !cfg.join("session.json").exists(),
-                "persistence must be opt-in"
+                !cfg.join("runtime.db").exists(),
+                "a daemon persists only through the store it was given"
             );
         });
     }
@@ -5294,7 +4947,6 @@ root = "/somewhere"
         let dir = tempfile::tempdir().unwrap();
         with_temp_config(|_| {
             let d = daemon_for_restore(dir.path());
-            d.persist_session();
             let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
             let pane = d.spawn_shell(checkout).unwrap();
             let _ = d.close_pane(pane);
@@ -5308,7 +4960,6 @@ root = "/somewhere"
         let dir = tempfile::tempdir().unwrap();
         with_temp_config(|_| {
             let d = daemon_for_restore(dir.path());
-            d.persist_session();
             let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
             let pane = d.spawn_shell(checkout).unwrap();
 
@@ -5380,7 +5031,7 @@ root = "/somewhere"
                 dir.path(),
             );
 
-            let d = daemon_with_fake_claude(dir.path());
+            let d = persistent(fake_claude_config(dir.path()));
             d.restore_session();
 
             let panes = d
@@ -5443,8 +5094,7 @@ root = "/somewhere"
 
             assert_eq!(resuming_panes(&d), 2, "exact IDs need no broad claim guard");
             let mut ids: Vec<_> = d
-                .session()
-                .panes
+                .session_panes()
                 .into_iter()
                 .filter_map(|pane| pane.harness_session_id)
                 .collect();

@@ -1,4 +1,3 @@
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -332,332 +331,66 @@ pub fn load() -> Result<ConfigFile> {
     Ok(file)
 }
 
-/// Appends a `[[project]]` block to `projects.toml` on disk, so a project
-/// added at runtime (any directory, not just ones already configured)
-/// survives a daemon restart. Appends raw text rather than round-tripping
-/// through serde so a user's existing comments in the file aren't clobbered.
+/// The config as the panel should show it: what the user declared, plus
+/// what they did to the panel while Argus was running.
 ///
-/// What it writes is the root, not the repositories found under it: the
-/// point of adding a directory is that Argus keeps looking there, so a
-/// repository cloned into it next month arrives without the user editing
-/// anything.
-pub fn append_project(name: &str, root_path: &Path, workspace: &str) -> Result<()> {
-    let cfg_path = config_path();
-    let root = root_path.to_string_lossy().replace('\\', "/");
-    // `{:?}` on a &str produces a properly quote/backslash-escaped literal,
-    // which is also valid TOML basic-string syntax.
-    let block =
-        format!("\n[[project]]\nname = {name:?}\nroot = {root:?}\nworkspace = {workspace:?}\n");
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&cfg_path)
-        .with_context(|| format!("opening {}", cfg_path.display()))?;
-    f.write_all(block.as_bytes())
-        .with_context(|| format!("appending project to {}", cfg_path.display()))?;
-    Ok(())
-}
-
-/// Deletes the `[[project]]` block at `index` (counting project blocks in
-/// file order, which is the order [`ConfigFile::projects`] is built in) —
-/// how a project leaves the panel for good rather than until the next
-/// restart. Text-level like [`append_project`], and for the same reason:
-/// the rest of the file is the user's, comments included, and a serde
-/// round-trip would rewrite all of it.
+/// The two are merged here rather than written back into `projects.toml`
+/// because that file is the user's — hand-edited, full of their comments,
+/// and read-only as far as Argus is concerned. A project added from the
+/// TUI is Argus's bookkeeping about a directory, and lives in the runtime
+/// store with the rest of it.
 ///
-/// `name` is what the daemon believes sits at that index. If the file has
-/// been edited by hand since it was loaded the index may have moved, so a
-/// mismatch falls back to a block that uniquely carries that name, and
-/// removes nothing at all when even that is ambiguous.
-pub fn remove_project(index: usize, name: &str) -> Result<()> {
-    let cfg_path = config_path();
-    let raw = std::fs::read_to_string(&cfg_path)
-        .with_context(|| format!("reading {}", cfg_path.display()))?;
-    let lines: Vec<&str> = raw.lines().collect();
-    let Some((start, end)) = locate_project(&lines, index, name) else {
-        anyhow::bail!("no project named {name:?} in {}", cfg_path.display());
-    };
+/// A declared project the user removed is hidden rather than deleted, for
+/// the same reason: the block is still in their file, and taking a row out
+/// of the panel is not permission to edit it.
+pub fn with_overlays(mut config: ConfigFile, overlays: &crate::store::Overlays) -> ConfigFile {
+    config
+        .projects
+        .retain(|p| !overlays.hidden.iter().any(|h| h == &p.name));
 
-    // Comments sitting directly on top of the block introduce it, and
-    // reading them under the *next* project is worse than losing them.
-    // Anything further up is separated by a blank line and stays.
-    let mut start = start;
-    while start > 0 && lines[start - 1].trim_start().starts_with('#') {
-        start -= 1;
-    }
-
-    // The blank line `append_project` writes ahead of each block goes with
-    // it, so adding and removing the same project leaves the file as it
-    // was rather than growing a gap every round trip.
-    let start = if start > 0 && lines[start - 1].trim().is_empty() {
-        start - 1
-    } else {
-        start
-    };
-
-    let mut kept: Vec<&str> = Vec::with_capacity(lines.len());
-    kept.extend_from_slice(&lines[..start]);
-    kept.extend_from_slice(&lines[end..]);
-    let mut out = kept.join("\n");
-    if !out.is_empty() {
-        out.push('\n');
-    }
-    std::fs::write(&cfg_path, out).with_context(|| format!("rewriting {}", cfg_path.display()))?;
-    Ok(())
-}
-
-/// The line range of the `[[project]]` block the daemon believes is
-/// `name` at `index`. If the file has been edited by hand since it was
-/// loaded the index may have moved, so a mismatch falls back to a block
-/// that uniquely carries that name, and gives up when even that is
-/// ambiguous — better to touch nothing than the wrong project.
-fn locate_project(lines: &[&str], index: usize, name: &str) -> Option<(usize, usize)> {
-    let blocks = project_blocks(lines);
-    match blocks.get(index) {
-        Some(&(start, end)) if block_name(&lines[start..end]).as_deref() == Some(name) => {
-            Some((start, end))
-        }
-        _ => {
-            let mut matching = blocks
-                .iter()
-                .filter(|&&(start, end)| block_name(&lines[start..end]).as_deref() == Some(name));
-            match (matching.next(), matching.next()) {
-                (Some(&only), None) => Some(only),
-                _ => None,
-            }
+    for (project, path) in &overlays.repos {
+        if let Some(p) = config.projects.iter_mut().find(|p| &p.name == project) {
+            p.repos.push(path_str(path));
         }
     }
-}
 
-/// Adds one repository path to the `repos` list of the `[[project]]` block
-/// at `index` — the counterpart to [`append_project`] for a repository the
-/// project's root would never find, and the reason `repos` and `root` can
-/// both be set on one project.
-///
-/// Text-level like the rest of this module, so the user's other blocks and
-/// comments survive. Only the `repos` key is rewritten, and it is rewritten
-/// as one line: the paths are the value, their formatting isn't.
-pub fn append_repo(index: usize, name: &str, path: &Path) -> Result<()> {
-    let cfg_path = config_path();
-    let raw = std::fs::read_to_string(&cfg_path)
-        .with_context(|| format!("reading {}", cfg_path.display()))?;
-    let lines: Vec<&str> = raw.lines().collect();
-    let Some((start, end)) = locate_project(&lines, index, name) else {
-        anyhow::bail!("no project named {name:?} in {}", cfg_path.display());
-    };
-
-    let mut repos = block_repos(&lines[start..end]);
-    repos.push(path.to_string_lossy().replace('\\', "/"));
-    let rendered = format!(
-        "repos = [{}]",
-        repos
+    for (added, repos) in &overlays.projects {
+        // The config wins for a directory that appears in both: the file is
+        // the source of truth, and the overlay is only what it never said.
+        // Matched on the root because that is what the user added — two
+        // projects that share a basename are still two directories.
+        let declared = added.root.as_os_str();
+        if config
+            .projects
             .iter()
-            .map(|r| format!("{r:?}"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-
-    let mut out: Vec<String> = lines[..start].iter().map(|l| l.to_string()).collect();
-    match repos_span(&lines[start..end]) {
-        Some((key_start, key_end)) => {
-            out.extend(
-                lines[start..start + key_start]
-                    .iter()
-                    .map(|l| l.to_string()),
-            );
-            out.push(rendered);
-            out.extend(lines[start + key_end..end].iter().map(|l| l.to_string()));
+            .filter_map(|p| p.root.as_deref())
+            .any(|root| expand_home(root).as_os_str() == declared)
+        {
+            continue;
         }
-        None => {
-            // After the block's own keys but before the blank line that
-            // separates it from whatever follows, so the file keeps its
-            // shape.
-            let mut at = end;
-            while at > start + 1 && lines[at - 1].trim().is_empty() {
-                at -= 1;
-            }
-            out.extend(lines[start..at].iter().map(|l| l.to_string()));
-            out.push(rendered);
-            out.extend(lines[at..end].iter().map(|l| l.to_string()));
+        config.projects.push(ProjectConfig {
+            name: added.name.clone(),
+            // The root, not the repositories found under it: the point of
+            // adding a directory is that Argus keeps looking there, so a
+            // repository cloned into it next month arrives on its own.
+            root: Some(path_str(&added.root)),
+            repos: repos.iter().map(|r| path_str(r)).collect(),
+            workspace: Some(added.workspace.clone()),
+            ..Default::default()
+        });
+    }
+
+    for name in &overlays.workspaces {
+        if !config.workspaces.iter().any(|w| &w.name == name) {
+            config.workspaces.push(WorkspaceConfig { name: name.clone() });
         }
     }
-    out.extend(lines[end..].iter().map(|l| l.to_string()));
 
-    let mut text = out.join("\n");
-    if !text.is_empty() {
-        text.push('\n');
-    }
-    std::fs::write(&cfg_path, text).with_context(|| format!("rewriting {}", cfg_path.display()))?;
-    Ok(())
+    config
 }
 
-/// The `repos` a block already lists, read as TOML for the same reason
-/// [`block_name`] is.
-fn block_repos(block: &[&str]) -> Vec<String> {
-    let Some(body) = block.get(1..).map(|b| b.join("\n")) else {
-        return Vec::new();
-    };
-    let Ok(table) = toml::from_str::<toml::Table>(&body) else {
-        return Vec::new();
-    };
-    table
-        .get("repos")
-        .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// The block-relative line range the `repos` assignment occupies, arrays
-/// written across several lines included.
-fn repos_span(block: &[&str]) -> Option<(usize, usize)> {
-    let start = block.iter().position(|l| {
-        let t = l.trim_start();
-        t.strip_prefix("repos")
-            .is_some_and(|rest| rest.trim_start().starts_with('='))
-    })?;
-    let mut depth = 0i32;
-    for (offset, line) in block[start..].iter().enumerate() {
-        depth += line.chars().filter(|&c| c == '[').count() as i32;
-        depth -= line.chars().filter(|&c| c == ']').count() as i32;
-        if depth <= 0 {
-            return Some((start, start + offset + 1));
-        }
-    }
-    Some((start, block.len()))
-}
-
-/// Half-open line ranges of each `[[project]]` block, header included. A
-/// block runs until the next table header of any kind, so the trailing
-/// blank line before that header goes with the block it follows.
-fn project_blocks(lines: &[&str]) -> Vec<(usize, usize)> {
-    let header = |line: &str| line.trim_start().starts_with('[');
-    let mut blocks = Vec::new();
-    for (i, line) in lines.iter().enumerate() {
-        if line.trim_start().starts_with("[[project]]") {
-            let end = lines[i + 1..]
-                .iter()
-                .position(|l| header(l))
-                .map(|offset| i + 1 + offset)
-                .unwrap_or(lines.len());
-            blocks.push((i, end));
-        }
-    }
-    blocks
-}
-
-/// The `name` a block declares, read by parsing the block's body as the
-/// table it is — so quoting and escapes mean what TOML says they mean
-/// rather than what a regex would guess.
-fn block_name(block: &[&str]) -> Option<String> {
-    let body = block.get(1..)?.join("\n");
-    let table: toml::Table = toml::from_str(&body).ok()?;
-    Some(table.get("name")?.as_str()?.to_string())
-}
-
-/// Repository paths the user has taken out of the panel. Kept beside
-/// `projects.toml` rather than in it, for the same reason `open-workspace`
-/// is: which of a scan's results you want to look at is Argus's
-/// bookkeeping about a directory listing, not a description of the
-/// project. Removing the project drops its repositories with it, so this
-/// file only ever holds paths under projects that still exist.
-fn excluded_path() -> PathBuf {
-    config_path().with_file_name("excluded-repos")
-}
-
-/// One path per line, absolute and as written when it was excluded.
-pub fn load_excluded_repos() -> Vec<PathBuf> {
-    let Ok(raw) = std::fs::read_to_string(excluded_path()) else {
-        return Vec::new();
-    };
-    raw.lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
-        .map(PathBuf::from)
-        .collect()
-}
-
-/// Replaces the exclusion file with exactly these paths — how exclusions
-/// under a removed project are forgotten.
-pub fn rewrite_excluded_repos(paths: &[PathBuf]) -> Result<()> {
-    let file = excluded_path();
-    if paths.is_empty() {
-        // Nothing excluded and no file is the same state, and the tidier
-        // one to leave behind.
-        match std::fs::remove_file(&file) {
-            Ok(()) => return Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(e) => return Err(e).with_context(|| format!("removing {}", file.display())),
-        }
-    }
-    let body: String = paths.iter().map(|p| format!("{}\n", p.display())).collect();
-    std::fs::write(&file, body).with_context(|| format!("writing {}", file.display()))
-}
-
-pub fn append_excluded_repo(path: &Path) -> Result<()> {
-    let file = excluded_path();
-    if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
-    }
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&file)
-        .with_context(|| format!("opening {}", file.display()))?;
-    writeln!(f, "{}", path.display())
-        .with_context(|| format!("appending to {}", file.display()))?;
-    Ok(())
-}
-
-/// Appends a `[[workspace]]` block, so a workspace created from the TUI
-/// outlives the daemon. Declaring it is what makes an empty workspace
-/// exist at all: a workspace with no projects has nothing else in the file
-/// to imply it.
-pub fn append_workspace(name: &str) -> Result<()> {
-    let cfg_path = config_path();
-    let block = format!("\n[[workspace]]\nname = {name:?}\n");
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&cfg_path)
-        .with_context(|| format!("opening {}", cfg_path.display()))?;
-    f.write_all(block.as_bytes())
-        .with_context(|| format!("appending workspace to {}", cfg_path.display()))?;
-    Ok(())
-}
-
-/// Where the name of the open workspace is remembered. A file of its own
-/// rather than a key in `projects.toml`: that file is the user's, edited by
-/// hand and full of their comments, and `append_project` deliberately only
-/// ever appends to it. Which workspace happens to be open is Argus's
-/// bookkeeping, not configuration, so it lives beside it instead.
-fn open_workspace_path() -> PathBuf {
-    config_path().with_file_name("open-workspace")
-}
-
-/// The workspace that was open when the daemon last exited, if it was ever
-/// recorded. The caller resolves it against the workspaces that actually
-/// exist — the name may since have been removed from the config.
-pub fn load_open_workspace() -> Option<String> {
-    let raw = std::fs::read_to_string(open_workspace_path()).ok()?;
-    let name = raw.trim().to_string();
-    (!name.is_empty()).then_some(name)
-}
-
-/// Best-effort: failing to remember the open workspace is not worth
-/// failing the switch the user just asked for.
-pub fn save_open_workspace(name: &str) {
-    let path = open_workspace_path();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if let Err(e) = std::fs::write(&path, name) {
-        tracing::warn!("could not remember the open workspace: {e}");
-    }
+fn path_str(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }
 
 pub fn expand_home(path: &str) -> PathBuf {

@@ -32,6 +32,7 @@ ratatui = "0.28"
 crossterm = "0.28"
 tempfile = "3"
 notify = { version = "6", default-features = false, features = ["macos_fsevent"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 
 [profile.release]
 opt-level = 3

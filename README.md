@@ -164,14 +164,21 @@ The directory may contain:
 
 | File | Purpose |
 |---|---|
-| `projects.toml` | Workspaces, projects, repositories, agent templates, and harnesses |
+| `projects.toml` | Workspaces, projects, repositories, agent templates, and harnesses. Yours to edit; Argus only reads it |
 | `client.toml` | Editor, theme, layout, and notification preferences |
-| `open-workspace` | Last daemon-wide workspace |
-| `excluded-repos` | Repositories removed from the panel with `D`, one path per line, so a root scan does not find them again |
-| `session.json` | Pane descriptions used for relaunch |
+| `runtime.db` | Everything Argus writes: panes to relaunch, projects and repositories added or removed from the TUI, workspaces created at runtime, and the last workspace open |
 
 The daemon watches `projects.toml` and reloads project and agent-template changes. Existing panes
 keep the command and harness they started with.
+
+Anything you do to the panel — adding a directory as a project, adding a repository by path,
+removing either with `D`, creating a workspace — is recorded in `runtime.db` rather than written
+back into your config. A project `projects.toml` declares is *hidden* when you remove it, not
+deleted from the file, so nothing you wrote by hand is ever rewritten. Adding the same directory
+back is the undo.
+
+Upgrading from a version before `runtime.db`, the old `session.json`, `excluded-repos`, and
+`open-workspace` files are imported on first start and renamed to `*.imported`.
 
 ### `projects.toml`
 

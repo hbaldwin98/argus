@@ -3,32 +3,32 @@
 This file orders unfinished work. Current behavior is in [`DESIGN.md`](DESIGN.md), and the desired
 contract is in [`TARGET.md`](TARGET.md).
 
-Ordering is by dependency, not by appetite. Runtime storage comes first because review state, notes,
-context, and boards all need somewhere transactional to live, and each one built ahead of it becomes
-another bespoke file with its own compatibility ladder.
+Ordering is by dependency, not by appetite.
 
-## P3: Runtime Storage
+## P3: Runtime Storage — landed
 
-- Introduce transactional runtime storage for review state, notes metadata, links, UI selection,
-  and resumable agent ids.
-- Absorb `session.json` into it, retiring the per-field `serde(default)` legacy shims.
-- Move runtime-added project overlays out of raw TOML appends, so `projects.toml` goes back to being
-  configuration the user owns and Argus only reads.
-- Finish the `state.rs` split begun by `panes`, `sync`, and `git_ops` while the storage work is
-  already touching it, and give `app.rs` the same treatment.
+Storage came first because review state, notes, context, and boards all need somewhere
+transactional to live, and each one built ahead of it would have become another bespoke file with
+its own compatibility ladder. That is now `runtime.db` (DESIGN.md, "Runtime storage"): SQLite in
+WAL mode holding panes to relaunch, project and repository overlays, exclusions, runtime-created
+workspaces, and the workspace last open. `session.json`, `excluded-repos`, and `open-workspace` are
+imported once and retired; `projects.toml` is back to being configuration Argus only reads.
+
+- Give review state, notes metadata, and links their tables as those features land. The schema is
+  versioned on `user_version`, so each is a migration rather than a new file.
 
 ## P4: Agent State and Identity
-
-Lands alongside P3 rather than ahead of it: inferred state has nothing that needs to persist.
 
 - Define fallback state detection for unsupported harnesses, as the tiering TARGET.md already
   promises — explicit events authoritative, process state next, output matching last. Settle
   precedence (a real event locks out inference for that session), decay for an inferred `working`
   that will never be told to stop, the Windows answer where there is no foreground process group,
   and whether an inferred state is visually distinct from a reported one.
-- Use tool-start hooks (`PreToolUse` / `preToolUse` / equivalents) across harnesses as a
-  `working` signal when lifecycle hooks are missing or unreliable; keep turn-end events as the
-  sole authority for `idle`. Optionally surface the active tool in the pane note later.
+- Surface the active tool in the pane note. Tool-start hooks already stand in for missing
+  lifecycle events — Cursor's `agent` reports `working` from `preToolUse` and
+  `beforeShellExecution`, with `stop` still the sole authority for `idle` — so what is left is
+  displaying which tool, not detecting that one ran. Extend the same fallback to any other
+  harness whose lifecycle hooks prove unreliable.
 - Add daemon-arbitrated auto-titling.
 - Expand the template schema only after lifecycle and permission semantics are stable.
 
@@ -54,7 +54,8 @@ Closes the loop: information currently flows only upward, from agents reporting 
   completion evidence for human review and acceptance.
 - Implement explicit note forwarding.
 - Add `argus ctx` and MCP adapters over the same implementation.
-- Add delegation approval or fan-out controls.
+- Decide whether delegation needs approval on top of its cap. Agents can already open peer
+  review panes, bounded to four live agents per checkout and gated on project exclusivity.
 
 ## P7: Terminal and Performance
 
@@ -78,7 +79,6 @@ Closes the loop: information currently flows only upward, from agents reporting 
 
 - True child-process reattachment versus guaranteed termination plus harness resume.
 - Multi-repository features as coordinated checkout sets.
-- Delegation approval versus a fan-out cap.
 - Unix-first delivery versus equal Windows support, which the state-detection tiering forces first.
 - Whether a future GPU client warrants a richer protocol now.
 - PR/link lookup and whether `gh` is an acceptable optional dependency.
