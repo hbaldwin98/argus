@@ -73,7 +73,8 @@ it leaves once it holds no panes — a repository still running an agent stays u
 because a directory can go missing for reasons that have nothing to do with the operator's intent.
 A path the configuration names outright is taken at its word: one that is not a Git repository at
 all still becomes a row, and no scan removes it. A root with no repositories under it is a project
-all the same.
+all the same. The walk probes for a `.git` entry (or a bare Git directory) before opening libgit2,
+so a root of ordinary directories is not a libgit2 open per folder.
 
 Checkout rows use the branch currently occupying their path as their display name, including when
 another process switches the branch outside Argus. A live agent can report that it has started
@@ -390,12 +391,17 @@ truth and the table follows it: a pane that closed has no row to update.
 
 ## Git and checkouts
 
-Read-only Git work uses `git2`. Every two seconds, on a blocking-pool thread, the daemon refreshes:
+Read-only Git work uses `git2`. At daemon startup only HEAD is read for each checkout, so the first
+client gets branch names without a workdir walk of every repository under a project root. Every two
+seconds, on a blocking-pool thread, the daemon then refreshes:
 
 - branch or detached-HEAD state;
 - dirty state and changed-file count, including untracked files;
 - ahead/behind against the tracking branch;
 - linked worktrees added or removed outside Argus.
+
+The first of those ticks is immediate, overlapping session restore, so dirty counts follow by the
+time the tree has been on screen a moment.
 
 On a slower ten-second beat it also rescans each project root for repositories added or removed
 there. Both run on the blocking pool.

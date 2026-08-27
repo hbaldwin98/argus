@@ -108,11 +108,13 @@ struct Checkout {
     /// worktree created via `create_worktree`. Gates removal (§4 Level 2).
     primary: bool,
     panes: Vec<Pane>,
-    /// Last polled git status, or `None` before the first poll has run.
-    /// Cached rather than read on demand because `snapshot` is taken under
-    /// the daemon's one lock, and `git::status` is milliseconds of blocking
-    /// I/O per checkout — long enough to be felt as typing lag, since every
-    /// keystroke needs that same lock to find its pane (§4 Level 2).
+    /// Last git status, or `None` if this checkout is not a repository.
+    /// HEAD is filled at daemon construction so the first client sees branch
+    /// names; dirty counts arrive on the first poll. Cached rather than read
+    /// on demand because `snapshot` is taken under the daemon's one lock,
+    /// and `git::status` is milliseconds of blocking I/O per checkout —
+    /// long enough to be felt as typing lag, since every keystroke needs
+    /// that same lock to find its pane (§4 Level 2).
     git: Option<GitStatus>,
 }
 
@@ -397,10 +399,11 @@ impl Daemon {
             next_viewer: std::sync::atomic::AtomicU64::new(0),
         });
         // Checkout rows are named after the branch occupying them, and that
-        // name now comes from the cache. Filling it here rather than waiting
-        // for the first poll means the first client to connect gets branch
-        // names rather than directory names.
-        daemon.refresh_git_status();
+        // name now comes from the cache. Reading HEAD is enough for a name;
+        // a full `git::status` walks every workdir, which on a cold disk
+        // across a project root of many repositories is seconds in front of
+        // the first client. The first poll tick fills dirty counts.
+        daemon.refresh_git_status_with(crate::git::head);
         daemon
     }
 
@@ -4451,6 +4454,35 @@ root = "/somewhere"
             d.snapshot()[0].repositories[0].checkouts[0].name,
             named,
             "the snapshot went back to git instead of using the cache"
+        );
+    }
+
+    #[test]
+    fn startup_names_checkouts_from_head_without_walking_the_workdir() {
+        // Daemon construction used to run a full `git::status` on every
+        // checkout before the process listened. Untracked files made that
+        // a workdir walk of every repository under a project root. HEAD is
+        // enough to name the row; dirty counts arrive on the first poll.
+        let dir = tempfile::tempdir().unwrap();
+        init_repo(dir.path());
+        std::fs::write(dir.path().join("untracked.txt"), "x").unwrap();
+        let d = daemon_with_primary(&dir.path().to_string_lossy());
+
+        let checkout = &d.snapshot()[0].repositories[0].checkouts[0];
+        assert_eq!(checkout.name, head_of(dir.path()));
+        assert_eq!(
+            checkout.git.as_ref().map(|g| g.dirty),
+            Some(false),
+            "startup must not walk the workdir for untracked files"
+        );
+
+        d.refresh_git_status();
+        assert!(
+            d.snapshot()[0].repositories[0].checkouts[0]
+                .git
+                .as_ref()
+                .is_some_and(|g| g.dirty),
+            "the poll still sees the untracked file"
         );
     }
 
