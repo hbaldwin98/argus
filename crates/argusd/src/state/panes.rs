@@ -117,6 +117,7 @@ impl Daemon {
                 program: program.clone(),
                 args: args.to_vec(),
                 env: Vec::new(),
+                resource_policy: pty::ResourcePolicy::Unrestricted,
             },
             move |code| daemon.mark_pane_exited(id, code),
         )?;
@@ -232,6 +233,7 @@ impl Daemon {
             program: program.clone(),
             args,
             env,
+            resource_policy: pty::ResourcePolicy::Agent,
         };
 
         let daemon = self.clone();

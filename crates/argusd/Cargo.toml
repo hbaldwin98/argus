@@ -46,4 +46,7 @@ tree-sitter-toml-ng = { workspace = true }
 tree-sitter-json = { workspace = true }
 tree-sitter-md = { workspace = true }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+
 [dev-dependencies]
