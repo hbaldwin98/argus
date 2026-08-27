@@ -200,6 +200,12 @@ pub enum ServerMsg {
         /// answer: no mouse bytes get forwarded.
         #[serde(default)]
         mouse: MouseTracking,
+        /// Whether the child is on the alternate screen. A wheel over that
+        /// pane becomes a cursor key when mouse reporting is off — which is
+        /// how Claude, Codex, and Cursor Agent scroll. Defaulted off so an
+        /// older daemon never injects arrows into a shell.
+        #[serde(default)]
+        alternate_screen: bool,
     },
     /// Incremental changed spans since the last snapshot/damage for a pane.
     Damage {
@@ -208,6 +214,8 @@ pub enum ServerMsg {
         cursor: Cursor,
         #[serde(default)]
         mouse: MouseTracking,
+        #[serde(default)]
+        alternate_screen: bool,
     },
     /// The answer to `ClientMsg::Review`.
     Review(Review),

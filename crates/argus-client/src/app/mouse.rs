@@ -51,11 +51,7 @@ impl App {
                 return;
             }
             if let Some(pane) = self.overlay_pane() {
-                if let Some(bytes) =
-                    encode_mouse(&ev, self.layout.overlay.inner, self.pane_mouse(pane))
-                {
-                    let _ = self.out.send(ClientMsg::Input { pane, bytes });
-                }
+                self.forward_mouse(pane, &ev, self.layout.overlay.inner);
             }
             return;
         }
@@ -94,11 +90,7 @@ impl App {
                 self.focus = Focus::PaneContent;
             }
             if let Some(pane) = self.column_pane() {
-                if let Some(bytes) =
-                    encode_mouse(&ev, self.layout.content.inner, self.pane_mouse(pane))
-                {
-                    let _ = self.out.send(ClientMsg::Input { pane, bytes });
-                }
+                self.forward_mouse(pane, &ev, self.layout.content.inner);
             }
             return;
         }
@@ -119,6 +111,29 @@ impl App {
     /// actually said otherwise.
     fn pane_mouse(&self, pane: PaneId) -> argus_protocol::MouseTracking {
         self.grids.get(&pane).map(|g| g.mouse).unwrap_or_default()
+    }
+
+    /// Encode a mouse event for the child, or turn a wheel into a cursor
+    /// key when the child is on the alternate screen without mouse
+    /// reporting. That last path is xterm's alternate-scroll (DECSET 1007)
+    /// and what Claude, Codex, and Cursor Agent actually listen for.
+    fn forward_mouse(&mut self, pane: PaneId, ev: &MouseEvent, area: Rect) {
+        if let Some(bytes) = encode_mouse(ev, area, self.pane_mouse(pane)) {
+            let _ = self.out.send(ClientMsg::Input { pane, bytes });
+            return;
+        }
+        if !self.grids.get(&pane).is_some_and(|g| g.alternate_screen) {
+            return;
+        }
+        let code = match ev.kind {
+            MouseEventKind::ScrollUp => KeyCode::Up,
+            MouseEventKind::ScrollDown => KeyCode::Down,
+            _ => return,
+        };
+        let bytes = encode_key(&KeyEvent::new(code, KeyModifiers::NONE));
+        if !bytes.is_empty() {
+            let _ = self.out.send(ClientMsg::Input { pane, bytes });
+        }
     }
 
     fn panels(&self) -> [Panel; 5] {

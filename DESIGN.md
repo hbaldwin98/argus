@@ -205,8 +205,10 @@ rather than one per pane — but that settled selection is always sent.
 
 The client enables bracketed paste and forwards each paste as one protocol message. The daemon
 consults the pane parser and wraps the text in bracketed-paste delimiters only when the child has
-requested that mode. Keyboard, paste, mouse, and daemon updates all share the client's 16 ms redraw
-tick, so input bursts cannot trigger an unbounded number of full UI renders.
+requested that mode. A wheel over a pane whose child is on the alternate screen and has not asked
+for mouse reporting is sent as a cursor key (xterm alternate-scroll); a child that has asked for
+mouse reporting still gets the mouse sequence. Keyboard, paste, mouse, and daemon updates all share
+the client's 16 ms redraw tick, so input bursts cannot trigger an unbounded number of full UI renders.
 
 The current pane states are `Idle`, `Working`, `Waiting`, `NeedsReview`, `Done`, `Failed`, and
 `Exited { code }`. `NeedsReview` means work is ready for the operator to inspect; `Done` means it

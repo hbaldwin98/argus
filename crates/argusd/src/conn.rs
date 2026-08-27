@@ -100,8 +100,15 @@ impl Subscriptions {
                             }
                         }
                         Err(broadcast::error::RecvError::Lagged(_)) => {
-                            let Ok((rows, cols, cells, cursor, mouse, replacement)) =
-                                daemon.subscribe_pane(pane)
+                            let Ok((
+                                rows,
+                                cols,
+                                cells,
+                                cursor,
+                                mouse,
+                                alternate_screen,
+                                replacement,
+                            )) = daemon.subscribe_pane(pane)
                             else {
                                 break;
                             };
@@ -113,6 +120,7 @@ impl Subscriptions {
                                     cells,
                                     cursor,
                                     mouse,
+                                    alternate_screen,
                                 })
                                 .is_err()
                             {
@@ -172,21 +180,20 @@ fn dispatch_pane(
     viewer: ViewerId,
 ) -> DispatchResult {
     let result = match msg {
-        ClientMsg::Subscribe { pane } => {
-            daemon
-                .subscribe_pane(pane)
-                .map(|(rows, cols, cells, cursor, mouse, rx)| {
-                    subs.add(pane, rx, out_tx.clone(), daemon.clone());
-                    let _ = out_tx.send(ServerMsg::PaneSnapshot {
-                        pane,
-                        rows,
-                        cols,
-                        cells,
-                        cursor,
-                        mouse,
-                    });
-                })
-        }
+        ClientMsg::Subscribe { pane } => daemon.subscribe_pane(pane).map(
+            |(rows, cols, cells, cursor, mouse, alternate_screen, rx)| {
+                subs.add(pane, rx, out_tx.clone(), daemon.clone());
+                let _ = out_tx.send(ServerMsg::PaneSnapshot {
+                    pane,
+                    rows,
+                    cols,
+                    cells,
+                    cursor,
+                    mouse,
+                    alternate_screen,
+                });
+            },
+        ),
         ClientMsg::Unsubscribe { pane } => {
             subs.remove(pane);
             daemon.release_pane_size(viewer, pane);

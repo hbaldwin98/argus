@@ -7,6 +7,10 @@ pub struct Grid {
     /// Nothing draws it; it decides whether a click or a wheel turn is
     /// forwarded into the pty or handled here.
     pub mouse: MouseTracking,
+    /// Whether the child is drawing on the alternate screen. A wheel over
+    /// that pane is a cursor key when `mouse` is off, so TUIs that never
+    /// enable mouse tracking can still scroll.
+    pub alternate_screen: bool,
 }
 
 impl Grid {
@@ -15,6 +19,7 @@ impl Grid {
             cells,
             cursor: Cursor::default(),
             mouse: MouseTracking::default(),
+            alternate_screen: false,
         }
     }
 
@@ -23,6 +28,7 @@ impl Grid {
             cells,
             cursor,
             mouse,
+            alternate_screen: false,
         }
     }
 

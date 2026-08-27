@@ -266,6 +266,7 @@ type PaneSubscription = (
     Vec<Vec<Cell>>,
     argus_protocol::Cursor,
     argus_protocol::MouseTracking,
+    bool,
     broadcast::Receiver<ServerMsg>,
 );
 
@@ -966,7 +967,7 @@ mod tests {
     }
 
     fn pane_size(d: &Daemon, pane: PaneId) -> (u16, u16) {
-        let (rows, cols, _, _, _, _) = d.subscribe_pane(pane).unwrap();
+        let (rows, cols, _, _, _, _, _) = d.subscribe_pane(pane).unwrap();
         (rows, cols)
     }
 
@@ -4982,7 +4983,7 @@ root = "/somewhere"
 
     /// One string per row of a pane's screen.
     fn screen_of(d: &Daemon, pane: PaneId) -> Vec<String> {
-        let (_, _, grid, _, _, _rx) = d.subscribe_pane(pane).unwrap();
+        let (_, _, grid, _, _, _, _rx) = d.subscribe_pane(pane).unwrap();
         grid.iter()
             .map(|r| r.iter().map(|c| c.ch.as_str()).collect::<String>())
             .collect()

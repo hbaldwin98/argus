@@ -54,11 +54,13 @@ impl App {
                 cells,
                 cursor,
                 mouse,
+                alternate_screen,
                 ..
             } => {
                 if self.grids.contains_key(&pane) {
-                    self.grids
-                        .insert(pane, Grid::with_cursor(cells, cursor, mouse));
+                    let mut grid = Grid::with_cursor(cells, cursor, mouse);
+                    grid.alternate_screen = alternate_screen;
+                    self.grids.insert(pane, grid);
                 }
             }
             ServerMsg::Damage {
@@ -66,11 +68,13 @@ impl App {
                 spans,
                 cursor,
                 mouse,
+                alternate_screen,
             } => {
                 if let Some(grid) = self.grids.get_mut(&pane) {
                     grid.apply(&spans);
                     grid.move_cursor(cursor);
                     grid.mouse = mouse;
+                    grid.alternate_screen = alternate_screen;
                 }
             }
             ServerMsg::PaneClosed { pane, code } => {

@@ -1094,6 +1094,7 @@ mod tests {
         );
         h.app.on_server_msg(ServerMsg::Damage {
             mouse: Default::default(),
+            alternate_screen: false,
             pane: PaneId(999),
             cursor: Default::default(),
             spans: vec![CellSpan {
@@ -1113,6 +1114,7 @@ mod tests {
         let mut h = Harness::new();
         h.app.on_server_msg(ServerMsg::PaneSnapshot {
             mouse: Default::default(),
+            alternate_screen: false,
             pane: PaneId(100),
             rows: 1,
             cols: 1,
@@ -1125,6 +1127,23 @@ mod tests {
             },
         });
         assert!(h.app.grids.contains_key(&PaneId(100)));
+    }
+
+    #[test]
+    fn damage_carries_the_childs_alternate_screen() {
+        let mut h = Harness::new();
+        h.app.grids.insert(
+            PaneId(100),
+            crate::grid::Grid::new(vec![vec![Cell::default()]]),
+        );
+        h.app.on_server_msg(ServerMsg::Damage {
+            mouse: Default::default(),
+            alternate_screen: true,
+            pane: PaneId(100),
+            cursor: Default::default(),
+            spans: vec![],
+        });
+        assert!(h.app.grids[&PaneId(100)].alternate_screen);
     }
 
     // --- typing into a pane ------------------------------------------------
@@ -2465,6 +2484,16 @@ second
         };
     }
 
+    /// Say that `pane`'s child is drawing on the alternate screen without
+    /// mouse reporting — Claude, Codex, and Cursor Agent's usual mode.
+    fn on_alt_screen(h: &mut Harness, pane: PaneId) {
+        h.app
+            .grids
+            .entry(pane)
+            .or_insert_with(|| crate::grid::Grid::new(Vec::new()))
+            .alternate_screen = true;
+    }
+
     fn drag(x: u16, y: u16) -> MouseEvent {
         MouseEvent {
             kind: MouseEventKind::Drag(MouseButton::Left),
@@ -2734,6 +2763,70 @@ second
             h.app.focus,
             Focus::PaneContent,
             "the click still selects the live view"
+        );
+    }
+
+    #[test]
+    fn a_wheel_over_an_alt_screen_tui_arrives_as_arrows() {
+        // Codex enables DECSET 1007 rather than mouse tracking; Claude and
+        // Cursor Agent take the alternate screen the same way. A swallowed
+        // wheel is a conversation that cannot scroll.
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        let pane = h.app.column_pane().unwrap();
+        on_alt_screen(&mut h, pane);
+        h.sent();
+
+        h.app.on_mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 54,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        });
+        h.app.on_mouse(MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: 54,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        });
+
+        let bytes: Vec<Vec<u8>> = h
+            .sent()
+            .into_iter()
+            .filter_map(|m| match m {
+                ClientMsg::Input { bytes, .. } => Some(bytes),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(bytes, [b"\x1b[B".to_vec(), b"\x1b[A".to_vec()]);
+    }
+
+    #[test]
+    fn a_mouse_tracking_child_still_gets_wheel_reports_not_arrows() {
+        // OpenCode enables SGR mouse reporting (and the alternate screen).
+        // Those reports must win over the cursor-key fallback.
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        let pane = h.app.column_pane().unwrap();
+        wants_mouse(&mut h, pane);
+        on_alt_screen(&mut h, pane);
+        h.sent();
+
+        h.app.on_mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 54,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        });
+
+        let bytes = h.sent().iter().find_map(|m| match m {
+            ClientMsg::Input { bytes, .. } => Some(bytes.clone()),
+            _ => None,
+        });
+        let bytes = bytes.expect("the child gets a mouse report");
+        assert!(
+            bytes.starts_with(b"\x1b[<65;"),
+            "SGR wheel down, not a cursor key: {bytes:?}"
         );
     }
 

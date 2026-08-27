@@ -190,6 +190,7 @@ impl PaneRuntime {
                 // client that misses the change forwards mouse bytes to a
                 // child that will print them.
                 let mut prev_mouse = None;
+                let mut prev_alt = None;
                 let mut on_exit = Some(on_exit);
                 let mut eof = false;
                 loop {
@@ -247,27 +248,32 @@ impl PaneRuntime {
                         prev = None;
                         prev_cursor = None;
                         prev_mouse = None;
+                        prev_alt = None;
                     } else if dirty {
                         let shape = shape.lock().unwrap().shape();
                         let parser = parser.lock().unwrap();
                         let cur = snapshot_grid(&parser);
                         let cursor = snapshot_cursor(&parser, shape);
                         let mouse = snapshot_mouse(&parser);
+                        let alternate_screen = parser.screen().alternate_screen();
                         let spans = diff_grid(prev.as_ref(), &cur);
                         if !spans.is_empty()
                             || prev_cursor != Some(cursor)
                             || prev_mouse != Some(mouse)
+                            || prev_alt != Some(alternate_screen)
                         {
                             let _ = damage_tx.send(ServerMsg::Damage {
                                 pane: id,
                                 spans,
                                 cursor,
                                 mouse,
+                                alternate_screen,
                             });
                         }
                         prev = Some(cur);
                         prev_cursor = Some(cursor);
                         prev_mouse = Some(mouse);
+                        prev_alt = Some(alternate_screen);
                     }
 
                     let exited = child.lock().unwrap().try_wait().ok().flatten();
@@ -304,16 +310,19 @@ impl PaneRuntime {
                             let cur = snapshot_grid(&parser);
                             let cursor = snapshot_cursor(&parser, shape);
                             let mouse = snapshot_mouse(&parser);
+                            let alternate_screen = parser.screen().alternate_screen();
                             let spans = diff_grid(prev.as_ref(), &cur);
                             if !spans.is_empty()
                                 || prev_cursor != Some(cursor)
                                 || prev_mouse != Some(mouse)
+                                || prev_alt != Some(alternate_screen)
                             {
                                 let _ = damage_tx.send(ServerMsg::Damage {
                                     pane: id,
                                     spans,
                                     cursor,
                                     mouse,
+                                    alternate_screen,
                                 });
                             }
                         }
@@ -366,7 +375,7 @@ impl PaneRuntime {
         Ok(())
     }
 
-    pub fn full_snapshot(&self) -> (u16, u16, Vec<Vec<Cell>>, Cursor, MouseTracking) {
+    pub fn full_snapshot(&self) -> (u16, u16, Vec<Vec<Cell>>, Cursor, MouseTracking, bool) {
         let shape = self.shape.lock().unwrap().shape();
         let parser = self.parser.lock().unwrap();
         let (rows, cols) = parser.screen().size();
@@ -376,6 +385,7 @@ impl PaneRuntime {
             snapshot_grid(&parser),
             snapshot_cursor(&parser, shape),
             snapshot_mouse(&parser),
+            parser.screen().alternate_screen(),
         )
     }
 
@@ -403,6 +413,7 @@ impl PaneRuntime {
         Vec<Vec<Cell>>,
         Cursor,
         MouseTracking,
+        bool,
         broadcast::Receiver<ServerMsg>,
     ) {
         let shape = self.shape.lock().unwrap().shape();
@@ -415,6 +426,7 @@ impl PaneRuntime {
             snapshot_grid(&parser),
             snapshot_cursor(&parser, shape),
             snapshot_mouse(&parser),
+            parser.screen().alternate_screen(),
             rx,
         )
     }
@@ -424,7 +436,7 @@ impl PaneRuntime {
     /// grown or shrunk by replacing it wholesale — incremental Damage spans
     /// referencing indices outside its current size are meaningless to it.
     pub fn broadcast_snapshot(&self, pane: PaneId) {
-        let (rows, cols, cells, cursor, mouse) = self.full_snapshot();
+        let (rows, cols, cells, cursor, mouse, alternate_screen) = self.full_snapshot();
         let _ = self.damage_tx.send(ServerMsg::PaneSnapshot {
             pane,
             rows,
@@ -432,6 +444,7 @@ impl PaneRuntime {
             cells,
             cursor,
             mouse,
+            alternate_screen,
         });
     }
 }
@@ -632,6 +645,27 @@ mod tests {
     }
 
     #[test]
+    fn an_alternate_screen_request_is_visible_on_the_snapshot() {
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        assert!(!parser.screen().alternate_screen());
+        parser.process(b"[?1049h");
+        assert!(parser.screen().alternate_screen());
+        parser.process(b"[?1049l");
+        assert!(!parser.screen().alternate_screen());
+    }
+
+    #[test]
+    fn alternate_scroll_alone_does_not_enable_mouse_reporting() {
+        // Codex (and similar TUIs) send DECSET 1007 so a wheel becomes
+        // cursor keys. That is not mouse tracking; treating it as such
+        // would type `ESC [ < 65 ...` into the prompt.
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        parser.process(b"[?1007h[?1049h");
+        assert_eq!(snapshot_mouse(&parser), MouseTracking::default());
+        assert!(parser.screen().alternate_screen());
+    }
+
+    #[test]
     fn a_bar_cursor_request_is_picked_out_of_the_stream() {
         let mut scan = CursorShapeScanner::default();
         scan.feed(b"hello[6 qworld");
@@ -715,7 +749,7 @@ mod tests {
     async fn wait_for(pane: &PaneRuntime, pred: impl Fn(&[Vec<Cell>]) -> bool) -> Vec<Vec<Cell>> {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
         loop {
-            let (_, _, grid, _, _) = pane.full_snapshot();
+            let (_, _, grid, _, _, _) = pane.full_snapshot();
             if pred(&grid) {
                 return grid;
             }
@@ -849,7 +883,7 @@ mod tests {
         .unwrap();
         wait_for(&pane, |g| grid_contains(g, "unwatched-marker")).await;
 
-        let (_, _, grid, _, _, _rx) = pane.snapshot_and_subscribe();
+        let (_, _, grid, _, _, _, _rx) = pane.snapshot_and_subscribe();
         assert!(
             grid_contains(&grid, "unwatched-marker"),
             "output produced with nobody watching was lost:
@@ -957,13 +991,13 @@ mod tests {
             |_| {},
         )
         .unwrap();
-        let (rows, cols, grid, _, _) = pane.full_snapshot();
+        let (rows, cols, grid, _, _, _) = pane.full_snapshot();
         assert_eq!((rows, cols), (DEFAULT_ROWS, DEFAULT_COLS));
         assert_eq!(grid.len(), DEFAULT_ROWS as usize);
         assert_eq!(grid[0].len(), DEFAULT_COLS as usize);
 
         pane.resize(40, 120).unwrap();
-        let (rows, cols, grid, _, _) = pane.full_snapshot();
+        let (rows, cols, grid, _, _, _) = pane.full_snapshot();
         assert_eq!((rows, cols), (40, 120));
         assert_eq!(
             grid.len(),
