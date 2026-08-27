@@ -239,13 +239,15 @@ impl Daemon {
     /// pause before reading; a file caught half-written simply fails to
     /// parse, and a config that does not parse is logged and ignored rather
     /// than allowed to take the running tree with it.
+    ///
+    /// Only that one file wakes it. The log and the store are written into
+    /// the same directory, and a reload logs a line of its own, so a watch
+    /// that took every event in the directory would keep reloading for as
+    /// long as the daemon ran.
     pub fn start_config_watch(self: &Arc<Self>) {
         let path = config::config_path();
-        let Some(dir) = path.parent().map(std::path::Path::to_path_buf) else {
-            return;
-        };
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-        let Some(watch) = crate::watch::directory(&dir, move || {
+        let Some(watch) = crate::watch::file(&path, move || {
             let _ = tx.send(());
         }) else {
             return;

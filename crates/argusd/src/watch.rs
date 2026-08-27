@@ -81,21 +81,47 @@ impl GitWatch {
     }
 }
 
-/// Watches one directory, not recursively, for as long as the returned
-/// watcher is held — the config directory, where `projects.toml` is saved.
-pub fn directory(dir: &Path, on_change: impl Fn() + Send + 'static) -> Option<impl Watcher> {
+/// Watches one file — `projects.toml` — for as long as the returned
+/// watcher is held.
+///
+/// The registration is on the directory the file sits in, not on the file:
+/// an editor's save is a write to a temp file and a rename over the target,
+/// and a watch on the file itself does not survive that. The filtering is
+/// what keeps the difference invisible to the caller.
+pub fn file(path: &Path, on_change: impl Fn() + Send + 'static) -> Option<impl Watcher> {
+    let dir = path.parent()?.to_path_buf();
+    let file = path.to_path_buf();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        if res.is_ok() {
-            on_change();
+        if let Ok(event) = res {
+            if concerns(&event.paths, &file) {
+                on_change();
+            }
         }
     })
     .map_err(|e| tracing::warn!("no watch on {}: {e}", dir.display()))
     .ok()?;
     watcher
-        .watch(dir, RecursiveMode::NonRecursive)
+        .watch(&dir, RecursiveMode::NonRecursive)
         .map_err(|e| tracing::warn!("no watch on {}: {e}", dir.display()))
         .ok()?;
     Some(watcher)
+}
+
+/// Whether an event is about the file being watched.
+///
+/// It has to be asked. The daemon writes its log and its store into the
+/// same directory `projects.toml` lives in, so without this every line
+/// logged is an event — and reloading the config logs a line, which is a
+/// loop that never runs out of fuel. Matching on the file name is exact
+/// here: a non-recursive watch only ever reports entries of that one
+/// directory, and comparing names sidesteps the separator and prefix
+/// differences between a canonical path and what the backend hands back.
+///
+/// An event carrying no paths at all is a backend rescan rather than a
+/// write. Nothing the daemon does causes one, so waking on it cannot loop,
+/// and reading the config once too often costs less than missing an edit.
+fn concerns(paths: &[PathBuf], file: &Path) -> bool {
+    paths.is_empty() || paths.iter().any(|p| p.file_name() == file.file_name())
 }
 
 /// The paths under one Git directory worth watching, those that exist.
@@ -131,6 +157,25 @@ mod tests {
         assert!(
             !paths.contains(&git_dir.join("objects")),
             "objects is the one directory this must never watch"
+        );
+    }
+
+    #[test]
+    fn only_the_watched_file_wakes_the_reload() {
+        let config = PathBuf::from("/cfg/projects.toml");
+
+        assert!(concerns(&[config.clone()], &config));
+        assert!(
+            !concerns(&[PathBuf::from("/cfg/argusd.log")], &config),
+            "the daemon logging a line must not read as a config edit"
+        );
+        assert!(
+            !concerns(&[PathBuf::from("/cfg/runtime.db")], &config),
+            "nor must the store it writes beside it"
+        );
+        assert!(
+            concerns(&[], &config),
+            "a rescan says nothing about which file changed, so take it"
         );
     }
 
