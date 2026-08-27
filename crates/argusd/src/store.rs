@@ -746,6 +746,7 @@ mod tests {
 
     fn anchor(line: u32) -> ReviewAnchor {
         ReviewAnchor {
+            commit: None,
             base: argus_protocol::ReviewBase::Unstaged,
             path: "src/main.rs".to_string(),
             old_path: None,

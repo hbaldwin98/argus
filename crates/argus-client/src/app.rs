@@ -1,26 +1,27 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use argus_protocol::{
     CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId,
     ProjectInfo, RepositoryId, RepositoryInfo, ReviewAnchor, ServerMsg, WorkspaceId, WorkspaceInfo,
 };
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::dirpicker::{DirAction, DirPicker, DirTarget};
 use crate::fuzzy::Fuzzy;
 use crate::grid::Grid;
-use crate::review::ReviewView;
-use argus_protocol::ReviewBase;
-use crate::theme::Theme;
+use crate::history::HistoryView;
 use crate::keys::{encode_key, is_leader};
 use crate::mouse::encode_mouse;
+use crate::review::ReviewView;
+use crate::theme::Theme;
+use argus_protocol::ReviewBase;
 
-mod nav;
-mod server;
-mod input;
-mod pickers;
 mod actions;
+mod input;
 mod mouse;
+mod nav;
+mod pickers;
+mod server;
 
 const STATE_FLASH: std::time::Duration = std::time::Duration::from_millis(900);
 
@@ -234,13 +235,17 @@ pub enum Overlay {
     /// which window is up. Floating rather than in the column so reading a
     /// diff never costs you sight of the agent that produced it.
     Review,
+    /// Recent commits and the files each changed. Same window as review;
+    /// opening a commit replaces this with [`Overlay::Review`] without
+    /// dropping the list, so going back is instant.
+    History,
 }
 
 impl Overlay {
     fn pane(&self) -> Option<PaneId> {
         match self {
             Overlay::Pane { pane, .. } => Some(*pane),
-            Overlay::Settings { .. } | Overlay::Review => None,
+            Overlay::Settings { .. } | Overlay::Review | Overlay::History => None,
         }
     }
 }
@@ -255,8 +260,12 @@ pub enum Setting {
 }
 
 impl Setting {
-    pub const ALL: &'static [Setting] =
-        &[Setting::Editor, Setting::EditorCmd, Setting::Theme, Setting::Notifications];
+    pub const ALL: &'static [Setting] = &[
+        Setting::Editor,
+        Setting::EditorCmd,
+        Setting::Theme,
+        Setting::Notifications,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -279,7 +288,10 @@ pub enum RemoveTarget {
     Project(ProjectId),
     /// A branch with no directory of its own. It carries the checkout git
     /// will be run from, precisely because the branch hasn't got one.
-    Branch { checkout: CheckoutId, branch: String },
+    Branch {
+        checkout: CheckoutId,
+        branch: String,
+    },
 }
 
 impl RemoveTarget {
@@ -322,11 +334,22 @@ impl RemoveTarget {
 /// worktree (free text) and remove (yes/no) go through this so
 /// there's one input path and one place `on_mouse` has to know to ignore.
 pub enum Prompt {
-    NewWorktree { base: CheckoutId, input: String },
-    ConfirmRemove { target: RemoveTarget, label: String },
-    Comment { anchor: ReviewAnchor, input: String },
+    NewWorktree {
+        base: CheckoutId,
+        input: String,
+    },
+    ConfirmRemove {
+        target: RemoveTarget,
+        label: String,
+    },
+    Comment {
+        anchor: ReviewAnchor,
+        input: String,
+    },
     /// The editor command, typed rather than cycled — it is free text.
-    EditorCommand { input: String },
+    EditorCommand {
+        input: String,
+    },
 }
 
 /// One row of the checkouts column, as an index into the repository's own
@@ -428,9 +451,9 @@ fn effective_label(pane: &PaneInfo, label: &str) -> String {
 
 fn attention_of(pane: &PaneInfo) -> Option<(String, Option<String>)> {
     let (status, label, note) = effective_state(pane);
-    status.needs_you().then(|| {
-        (effective_label(pane, label), note.map(str::to_string))
-    })
+    status
+        .needs_you()
+        .then(|| (effective_label(pane, label), note.map(str::to_string)))
 }
 
 pub struct App {
@@ -494,10 +517,15 @@ pub struct App {
     /// Set when an editor is spawned for one.
     pending_overlay_new: bool,
     pub review: Option<ReviewView>,
+    pub history: Option<HistoryView>,
     /// What the outstanding request was for; a diff for anything else is
     /// stale and dropped.
     review_wanted: Option<(CheckoutId, u64)>,
     next_review_request: u64,
+    history_wanted: Option<(CheckoutId, u64)>,
+    next_history_request: u64,
+    /// Jump here once a commit review lands, when Enter was on a file row.
+    pending_history_file: Option<String>,
     /// Same, for a branch or file list.
     list_wanted: Option<CheckoutId>,
     next_browse_request: u64,
@@ -530,7 +558,6 @@ impl App {
         App::build(out, crate::settings::Settings::default(), false)
     }
 
-
     /// The real thing: preferences loaded from disk, and changes saved back.
     pub fn with_settings(
         out: UnboundedSender<ClientMsg>,
@@ -538,7 +565,6 @@ impl App {
     ) -> Self {
         App::build(out, settings, true)
     }
-
 
     fn build(
         out: UnboundedSender<ClientMsg>,
@@ -592,8 +618,12 @@ impl App {
             persist_settings: persist,
             pending_overlay_new: false,
             review: None,
+            history: None,
             review_wanted: None,
             next_review_request: 1,
+            history_wanted: None,
+            next_history_request: 1,
+            pending_history_file: None,
             list_wanted: None,
             next_browse_request: 1,
             review_base: ReviewBase::Unstaged,
@@ -626,12 +656,12 @@ fn in_rect(area: Rect, x: u16, y: u16) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use argus_protocol::{DirEntry, DirListing};
-    use crossterm::event::KeyModifiers;
     use argus_protocol::{
         Cell, CellSpan, CheckoutId, GitStatus, PaneKind, PaneStatus, ProjectId, RepositoryId,
         RepositoryInfo,
     };
+    use argus_protocol::{DirEntry, DirListing};
+    use crossterm::event::KeyModifiers;
     use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 
     fn pane(id: u64, title: &str) -> PaneInfo {
@@ -675,10 +705,19 @@ mod tests {
             ProjectInfo {
                 id: ProjectId(1),
                 name: "argus".to_string(),
-                repositories: vec![repository(5, "orion", vec![
-                    checkout(10, "master", true, vec![pane(100, "shell"), pane(101, "claude")]),
-                    checkout(11, "feat", false, vec![]),
-                ])],
+                repositories: vec![repository(
+                    5,
+                    "orion",
+                    vec![
+                        checkout(
+                            10,
+                            "master",
+                            true,
+                            vec![pane(100, "shell"), pane(101, "claude")],
+                        ),
+                        checkout(11, "feat", false, vec![]),
+                    ],
+                )],
             },
             ProjectInfo {
                 id: ProjectId(2),
@@ -770,7 +809,12 @@ mod tests {
     #[test]
     fn l_descends_and_h_ascends_through_every_column() {
         let mut h = Harness::new();
-        for expected in [Focus::Repositories, Focus::Checkouts, Focus::Panes, Focus::PaneContent] {
+        for expected in [
+            Focus::Repositories,
+            Focus::Checkouts,
+            Focus::Panes,
+            Focus::PaneContent,
+        ] {
             h.key(KeyCode::Char('l'));
             assert_eq!(h.app.focus, expected);
         }
@@ -987,7 +1031,11 @@ mod tests {
         // The rightmost column always shows a pane; it never has to take
         // over the screen for content to be visible.
         let mut h = Harness::new();
-        assert_eq!(h.app.column_pane(), Some(PaneId(100)), "first pane, from Projects focus");
+        assert_eq!(
+            h.app.column_pane(),
+            Some(PaneId(100)),
+            "first pane, from Projects focus"
+        );
         assert!(h.app.grids.contains_key(&PaneId(100)));
         assert!(h.sent().is_empty());
     }
@@ -1001,9 +1049,15 @@ mod tests {
             matches!(msgs[0], ClientMsg::Unsubscribe { pane: PaneId(100) }),
             "{msgs:?}"
         );
-        assert!(matches!(msgs[1], ClientMsg::Subscribe { pane: PaneId(101) }), "{msgs:?}");
+        assert!(
+            matches!(msgs[1], ClientMsg::Subscribe { pane: PaneId(101) }),
+            "{msgs:?}"
+        );
         assert_eq!(h.app.column_pane(), Some(PaneId(101)));
-        assert!(!h.app.grids.contains_key(&PaneId(100)), "the old grid is dropped");
+        assert!(
+            !h.app.grids.contains_key(&PaneId(100)),
+            "the old grid is dropped"
+        );
     }
 
     #[test]
@@ -1023,15 +1077,21 @@ mod tests {
         h.leader();
         h.key(KeyCode::Esc);
         assert_eq!(h.app.focus, Focus::Panes);
-        assert_eq!(h.app.column_pane(), Some(PaneId(100)), "live view keeps showing it");
+        assert_eq!(
+            h.app.column_pane(),
+            Some(PaneId(100)),
+            "live view keeps showing it"
+        );
         assert!(h.sent().is_empty(), "no resubscribe churn");
     }
 
     #[test]
     fn damage_for_an_unsubscribed_pane_is_ignored() {
         let mut h = Harness::new();
-        h.app.grids
-            .insert(PaneId(100), crate::grid::Grid::new(vec![vec![Cell::default()]]));
+        h.app.grids.insert(
+            PaneId(100),
+            crate::grid::Grid::new(vec![vec![Cell::default()]]),
+        );
         h.app.on_server_msg(ServerMsg::Damage {
             mouse: Default::default(),
             pane: PaneId(999),
@@ -1060,7 +1120,9 @@ mod tests {
             cursor: argus_protocol::Cursor {
                 row: 0,
                 col: 0,
-                visible: true, ..Default::default() },
+                visible: true,
+                ..Default::default()
+            },
         });
         assert!(h.app.grids.contains_key(&PaneId(100)));
     }
@@ -1111,16 +1173,18 @@ mod tests {
         let mut h = Harness::new();
         h.keys("llll");
         h.sent();
-        h.app.clipboard = || Some("one
-two".to_string());
+        h.app.clipboard = || Some("one\ntwo".to_string());
 
-        h.app.on_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::CONTROL));
+        h.app
+            .on_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::CONTROL));
 
-        assert!(matches!(
-            h.sent().as_slice(),
-            [ClientMsg::Paste { pane: PaneId(100), text }] if text == "one
-two"
-        ), "ctrl-v must not go to the child as a keystroke");
+        assert!(
+            matches!(
+                h.sent().as_slice(),
+                [ClientMsg::Paste { pane: PaneId(100), text }] if text == "one\ntwo"
+            ),
+            "ctrl-v must not go to the child as a keystroke"
+        );
     }
 
     #[test]
@@ -1135,10 +1199,7 @@ two"
             KeyModifiers::CONTROL | KeyModifiers::SHIFT,
         ));
 
-        assert!(matches!(
-            h.sent().as_slice(),
-            [ClientMsg::Paste { .. }]
-        ));
+        assert!(matches!(h.sent().as_slice(), [ClientMsg::Paste { .. }]));
     }
 
     #[test]
@@ -1148,11 +1209,17 @@ two"
         let mut h = Harness::new();
         h.keys("llll");
         h.sent();
-        h.app.clipboard = || Some("first
+        h.app.clipboard = || {
+            Some(
+                "first
 second
-".to_string());
+"
+                .to_string(),
+            )
+        };
 
-        h.app.on_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::CONTROL));
+        h.app
+            .on_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::CONTROL));
 
         assert!(matches!(
             h.sent().as_slice(),
@@ -1170,10 +1237,14 @@ second
         h.sent();
         h.app.clipboard = || None;
 
-        h.app.on_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::CONTROL));
+        h.app
+            .on_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::CONTROL));
 
         assert!(h.sent().is_empty(), "nothing to paste, nothing sent");
-        assert!(h.app.status_alert, "a clipboard that cannot be read is worth saying");
+        assert!(
+            h.app.status_alert,
+            "a clipboard that cannot be read is worth saying"
+        );
     }
 
     #[test]
@@ -1214,7 +1285,10 @@ second
         h.key(KeyCode::Esc);
         assert_eq!(h.app.focus, Focus::Panes);
         assert!(!h.app.leader_pending);
-        assert!(!h.app.pane_fullscreen, "leaving restores the navigation columns");
+        assert!(
+            !h.app.pane_fullscreen,
+            "leaving restores the navigation columns"
+        );
         assert!(h.sent().is_empty());
     }
 
@@ -1227,7 +1301,10 @@ second
         h.leader();
         h.key(KeyCode::Char('f'));
         assert!(h.app.pane_fullscreen);
-        assert!(h.sent().is_empty(), "the fullscreen chord never reaches the child");
+        assert!(
+            h.sent().is_empty(),
+            "the fullscreen chord never reaches the child"
+        );
 
         h.leader();
         h.key(KeyCode::Char('f'));
@@ -1244,8 +1321,15 @@ second
         h.leader();
         h.key(KeyCode::Char('x'));
         assert!(matches!(h.sent()[0], ClientMsg::Kill { pane: PaneId(100) }));
-        assert_eq!(h.app.focus, Focus::Panes, "land back in the list, not on another pane");
-        assert!(!h.app.pane_fullscreen, "closing restores the navigation columns");
+        assert_eq!(
+            h.app.focus,
+            Focus::Panes,
+            "land back in the list, not on another pane"
+        );
+        assert!(
+            !h.app.pane_fullscreen,
+            "closing restores the navigation columns"
+        );
     }
 
     #[test]
@@ -1428,13 +1512,17 @@ second
         h.key(KeyCode::Char('F'));
         assert!(matches!(
             h.sent().as_slice(),
-            [ClientMsg::Fetch { checkout: CheckoutId(11) }]
+            [ClientMsg::Fetch {
+                checkout: CheckoutId(11)
+            }]
         ));
 
         h.key(KeyCode::Char('P'));
         assert!(matches!(
             h.sent().as_slice(),
-            [ClientMsg::Pull { checkout: CheckoutId(11) }]
+            [ClientMsg::Pull {
+                checkout: CheckoutId(11)
+            }]
         ));
     }
 
@@ -1447,7 +1535,9 @@ second
 
         assert!(matches!(
             h.sent().as_slice(),
-            [ClientMsg::Fetch { checkout: CheckoutId(10) }]
+            [ClientMsg::Fetch {
+                checkout: CheckoutId(10)
+            }]
         ));
     }
 
@@ -1486,7 +1576,11 @@ second
             ),
             "the primary checkout is where a branch with no directory goes"
         );
-        assert_eq!(h.app.focus, Focus::Checkouts, "there is nothing to descend into");
+        assert_eq!(
+            h.app.focus,
+            Focus::Checkouts,
+            "there is nothing to descend into"
+        );
     }
 
     #[test]
@@ -1528,16 +1622,27 @@ second
         h.sent();
         h.key(KeyCode::Char('s'));
         assert!(
-            matches!(h.sent()[0], ClientMsg::SpawnShell { checkout: CheckoutId(11) }),
+            matches!(
+                h.sent()[0],
+                ClientMsg::SpawnShell {
+                    checkout: CheckoutId(11)
+                }
+            ),
             "spawns into the selected checkout"
         );
 
         // The daemon's next tree carries the new pane.
         let mut t = tree();
-        t[0].repositories[0].checkouts[1].panes.push(pane(102, "shell"));
+        t[0].repositories[0].checkouts[1]
+            .panes
+            .push(pane(102, "shell"));
         h.app.on_server_msg(ServerMsg::Tree(t));
         assert_eq!(h.app.sel_pane, 0);
-        assert_eq!(h.app.focus, Focus::PaneContent, "drops you straight into it");
+        assert_eq!(
+            h.app.focus,
+            Focus::PaneContent,
+            "drops you straight into it"
+        );
         assert_eq!(h.app.column_pane(), Some(PaneId(102)));
     }
 
@@ -1547,7 +1652,9 @@ second
         h.key(KeyCode::Char('s'));
         h.sent();
         let mut t = tree();
-        t[0].repositories[0].checkouts[0].panes.push(pane(102, "shell"));
+        t[0].repositories[0].checkouts[0]
+            .panes
+            .push(pane(102, "shell"));
         h.app.on_server_msg(ServerMsg::Tree(t));
         assert_eq!(h.app.column_pane(), Some(PaneId(102)));
     }
@@ -1646,7 +1753,11 @@ second
         let mut h = Harness::new();
         h.key(KeyCode::Char('a'));
         h.keys("ll");
-        assert_eq!(h.app.focus, Focus::Projects, "column focus must not move behind the modal");
+        assert_eq!(
+            h.app.focus,
+            Focus::Projects,
+            "column focus must not move behind the modal"
+        );
     }
 
     // --- prompts -----------------------------------------------------------
@@ -1808,7 +1919,11 @@ second
         h.key(KeyCode::Enter);
         match &h.sent()[0] {
             ClientMsg::CreateWorktree { checkout, branch } => {
-                assert_eq!(*checkout, CheckoutId(10), "branched off the selected checkout");
+                assert_eq!(
+                    *checkout,
+                    CheckoutId(10),
+                    "branched off the selected checkout"
+                );
                 assert_eq!(branch, "feat/x");
             }
             other => panic!("unexpected {other:?}"),
@@ -1830,10 +1945,7 @@ second
 
         h.key(KeyCode::Esc);
         assert!(h.app.prompt.is_none());
-        assert!(
-            h.sent().is_empty(),
-            "cancelling must not create a worktree"
-        );
+        assert!(h.sent().is_empty(), "cancelling must not create a worktree");
     }
 
     #[test]
@@ -1845,7 +1957,9 @@ second
         h.sent();
 
         let mut t = tree();
-        t[0].repositories[0].checkouts.push(checkout(12, "x", false, vec![]));
+        t[0].repositories[0]
+            .checkouts
+            .push(checkout(12, "x", false, vec![]));
         h.app.on_server_msg(ServerMsg::Tree(t));
         assert_eq!(h.app.current_checkout().unwrap().name, "x");
     }
@@ -1883,7 +1997,9 @@ second
             "satellite",
             vec![checkout(30, "main", true, vec![])],
         ));
-        t[0].repositories[0].checkouts.push(checkout(12, "x", false, vec![]));
+        t[0].repositories[0]
+            .checkouts
+            .push(checkout(12, "x", false, vec![]));
         h.app.sel_repository = 1;
         h.app.on_server_msg(ServerMsg::Tree(t));
 
@@ -1902,7 +2018,9 @@ second
 
         assert!(matches!(
             h.sent().as_slice(),
-            [ClientMsg::SpawnShell { checkout: CheckoutId(10) }]
+            [ClientMsg::SpawnShell {
+                checkout: CheckoutId(10)
+            }]
         ));
     }
 
@@ -2039,7 +2157,10 @@ second
                 assert_eq!(*target, RemoveTarget::Repository(RepositoryId(5)));
                 assert_eq!(label, "orion");
             }
-            other => panic!("expected a repository confirmation, got {:?}", other.is_some()),
+            other => panic!(
+                "expected a repository confirmation, got {:?}",
+                other.is_some()
+            ),
         }
         h.key(KeyCode::Char('y'));
         assert!(matches!(
@@ -2089,7 +2210,10 @@ second
         h.keys("lll");
         h.sent();
         h.key(KeyCode::Char('D'));
-        assert!(h.app.prompt.is_none(), "no removal offered from the panes column");
+        assert!(
+            h.app.prompt.is_none(),
+            "no removal offered from the panes column"
+        );
         assert!(h.sent().is_empty());
     }
 
@@ -2182,7 +2306,10 @@ second
             h.app.status, "pane exited with code 1",
             "the bar is prose, not a Debug dump"
         );
-        assert!(h.app.status_alert, "a failed exit is the thing you have to read");
+        assert!(
+            h.app.status_alert,
+            "a failed exit is the thing you have to read"
+        );
     }
 
     #[test]
@@ -2260,7 +2387,10 @@ second
             row: 3,
             modifiers: KeyModifiers::NONE,
         });
-        assert!(!h.app.status.is_empty(), "drifting across the terminal is not reading it");
+        assert!(
+            !h.app.status.is_empty(),
+            "drifting across the terminal is not reading it"
+        );
 
         h.app.on_mouse(click(2, 3));
         assert!(h.app.status.is_empty(), "{}", h.app.status);
@@ -2548,7 +2678,9 @@ second
         h.app.on_mouse(click(54, 3));
         assert_eq!(h.app.focus, Focus::PaneContent);
         assert!(
-            h.sent().iter().any(|m| matches!(m, ClientMsg::Input { .. })),
+            h.sent()
+                .iter()
+                .any(|m| matches!(m, ClientMsg::Input { .. })),
             "the child gets the click too"
         );
     }
@@ -2593,7 +2725,9 @@ second
         });
 
         assert!(
-            !h.sent().iter().any(|m| matches!(m, ClientMsg::Input { .. })),
+            !h.sent()
+                .iter()
+                .any(|m| matches!(m, ClientMsg::Input { .. })),
             "no mouse bytes reach a child that reports no mouse"
         );
         assert_eq!(
@@ -2635,7 +2769,10 @@ second
             modifiers: KeyModifiers::NONE,
         });
 
-        assert!(!h.sent().iter().any(|m| matches!(m, ClientMsg::Input { .. })));
+        assert!(!h
+            .sent()
+            .iter()
+            .any(|m| matches!(m, ClientMsg::Input { .. })));
     }
 
     #[test]
@@ -2644,7 +2781,10 @@ second
         laid_out(&mut h);
         h.key(KeyCode::Char('n'));
         h.app.on_mouse(click(14, 3));
-        assert_eq!(h.app.sel_checkout, 0, "click must not navigate behind the modal");
+        assert_eq!(
+            h.app.sel_checkout, 0,
+            "click must not navigate behind the modal"
+        );
         assert!(h.app.dir_picker.is_some());
     }
 
@@ -2667,7 +2807,8 @@ second
         // sizing both from one of them wraps the other wrongly.
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.app.open_overlay_pane(PaneId(700), "vim".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(700), "vim".to_string(), false);
         h.app.layout.overlay = Panel {
             outer: Rect::new(2, 1, 60, 20),
             inner: Rect::new(3, 2, 58, 18),
@@ -2699,7 +2840,8 @@ second
     #[test]
     fn the_open_workspace_is_remembered_from_the_daemons_list() {
         let mut h = Harness::new();
-        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("work")));
+        h.app
+            .on_server_msg(ServerMsg::Workspaces(workspaces("work")));
         assert_eq!(h.app.open_workspace, "work");
         assert_eq!(h.app.workspaces.len(), 3);
     }
@@ -2709,7 +2851,8 @@ second
         // "Look at where I am, then move" is the reason to press it, so
         // starting at the top of the list would be the wrong default.
         let mut h = Harness::new();
-        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("work")));
+        h.app
+            .on_server_msg(ServerMsg::Workspaces(workspaces("work")));
         h.key(KeyCode::Char('w'));
 
         let picker = h.app.picker.as_ref().expect("w should open the picker");
@@ -2720,7 +2863,8 @@ second
     #[test]
     fn choosing_a_workspace_asks_the_daemon_to_switch() {
         let mut h = Harness::new();
-        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
+        h.app
+            .on_server_msg(ServerMsg::Workspaces(workspaces("default")));
         h.key(KeyCode::Char('w'));
         h.key(KeyCode::Down);
         h.key(KeyCode::Enter);
@@ -2739,7 +2883,8 @@ second
         // The incoming tree is a different set of projects; keeping an index
         // that meant something else would land the user somewhere arbitrary.
         let mut h = Harness::new();
-        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
+        h.app
+            .on_server_msg(ServerMsg::Workspaces(workspaces("default")));
         h.keys("lllj"); // wander into the pane column
         h.sent();
 
@@ -2748,13 +2893,17 @@ second
         h.key(KeyCode::Enter);
 
         assert_eq!(h.app.focus, Focus::Projects);
-        assert_eq!((h.app.sel_project, h.app.sel_checkout, h.app.sel_pane), (0, 0, 0));
+        assert_eq!(
+            (h.app.sel_project, h.app.sel_checkout, h.app.sel_pane),
+            (0, 0, 0)
+        );
     }
 
     #[test]
     fn escaping_the_workspace_picker_switches_nothing() {
         let mut h = Harness::new();
-        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
+        h.app
+            .on_server_msg(ServerMsg::Workspaces(workspaces("default")));
         h.key(KeyCode::Char('w'));
         h.key(KeyCode::Down);
         h.key(KeyCode::Esc);
@@ -2786,7 +2935,8 @@ second
     #[test]
     fn a_query_naming_no_workspace_offers_to_create_it() {
         let mut h = Harness::new();
-        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
+        h.app
+            .on_server_msg(ServerMsg::Workspaces(workspaces("default")));
         h.key(KeyCode::Char('w'));
         h.app.picker.as_mut().unwrap().type_query("weekday");
 
@@ -2799,7 +2949,8 @@ second
         // Two ways to reach the same workspace, one of which would fail on
         // the daemon, is worse than one.
         let mut h = Harness::new();
-        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
+        h.app
+            .on_server_msg(ServerMsg::Workspaces(workspaces("default")));
         h.key(KeyCode::Char('w'));
         h.app.picker.as_mut().unwrap().type_query("weekend");
         assert_eq!(h.app.picker.as_ref().unwrap().create, None);
@@ -2810,12 +2961,17 @@ second
         // The rows carry "2\u{25a3}"; typing a digit must not "find" a
         // workspace by how many panes it happens to be running.
         let mut h = Harness::new();
-        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
+        h.app
+            .on_server_msg(ServerMsg::Workspaces(workspaces("default")));
         h.key(KeyCode::Char('w'));
         h.app.picker.as_mut().unwrap().type_query("2");
         let p = h.app.picker.as_ref().unwrap();
         assert!(p.shown.is_empty(), "no workspace is named 2: {:?}", p.shown);
-        assert_eq!(p.create.as_deref(), Some("2"), "it is a name to make instead");
+        assert_eq!(
+            p.create.as_deref(),
+            Some("2"),
+            "it is a name to make instead"
+        );
     }
 
     #[test]
@@ -2850,7 +3006,10 @@ second
         h.key(KeyCode::Enter);
 
         assert_eq!(h.app.focus, Focus::Projects);
-        assert_eq!((h.app.sel_project, h.app.sel_checkout, h.app.sel_pane), (0, 0, 0));
+        assert_eq!(
+            (h.app.sel_project, h.app.sel_checkout, h.app.sel_pane),
+            (0, 0, 0)
+        );
     }
 
     #[test]
@@ -2858,14 +3017,19 @@ second
         // The create row sits below the matches; enter on a match is a
         // switch, exactly as it was before the row existed.
         let mut h = Harness::new();
-        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
+        h.app
+            .on_server_msg(ServerMsg::Workspaces(workspaces("default")));
         h.key(KeyCode::Char('w'));
         h.keys("week");
         h.key(KeyCode::Enter);
 
         match &h.sent()[0] {
             ClientMsg::OpenWorkspace { workspace } => {
-                assert_eq!(*workspace, argus_protocol::WorkspaceId(3), "the 'weekend' row");
+                assert_eq!(
+                    *workspace,
+                    argus_protocol::WorkspaceId(3),
+                    "the 'weekend' row"
+                );
             }
             other => panic!("unexpected {other:?}"),
         }
@@ -2876,11 +3040,18 @@ second
         // The reason to surface counts at all: an agent working somewhere
         // you are not looking should still be visible.
         let mut h = Harness::new();
-        h.app.on_server_msg(ServerMsg::Workspaces(workspaces("default")));
+        h.app
+            .on_server_msg(ServerMsg::Workspaces(workspaces("default")));
         h.key(KeyCode::Char('w'));
         let items = &h.app.picker.as_ref().unwrap().items;
-        assert!(items[2].contains("2▣"), "weekend has two live panes: {items:?}");
-        assert!(!items[0].contains('▣'), "an idle workspace stays quiet: {items:?}");
+        assert!(
+            items[2].contains("2▣"),
+            "weekend has two live panes: {items:?}"
+        );
+        assert!(
+            !items[0].contains('▣'),
+            "an idle workspace stays quiet: {items:?}"
+        );
     }
 
     #[test]
@@ -2922,6 +3093,7 @@ second
                 }],
                 note: None,
             }],
+            commit: None,
         }
     }
 
@@ -2966,8 +3138,12 @@ second
         h.key(KeyCode::Char('R'));
         h.sent();
 
-        h.app.on_server_msg(ServerMsg::Review(diff_of(CheckoutId(9999))));
-        assert!(h.app.review.is_none(), "not for the checkout we asked about");
+        h.app
+            .on_server_msg(ServerMsg::Review(diff_of(CheckoutId(9999))));
+        assert!(
+            h.app.review.is_none(),
+            "not for the checkout we asked about"
+        );
 
         h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
         assert!(h.app.review.is_some());
@@ -3011,11 +3187,16 @@ second
                 checkout,
                 base: argus_protocol::ReviewBase::Unstaged,
                 files: Vec::new(),
+                commit: None,
             },
         );
         assert!(h.app.review.is_none());
         assert_ne!(h.app.focus, Focus::Review);
-        assert!(h.app.status.contains("no changes vs unstaged"), "{}", h.app.status);
+        assert!(
+            h.app.status.contains("no changes vs unstaged"),
+            "{}",
+            h.app.status
+        );
     }
 
     #[test]
@@ -3082,7 +3263,9 @@ second
 
         h.keys("jkgG");
         assert!(
-            !h.sent().iter().any(|m| matches!(m, ClientMsg::Input { .. })),
+            !h.sent()
+                .iter()
+                .any(|m| matches!(m, ClientMsg::Input { .. })),
             "no input should be forwarded"
         );
     }
@@ -3219,7 +3402,10 @@ second
         assert!(h.app.picker.is_none());
         assert!(matches!(
             h.sent()[0],
-            ClientMsg::ReviewComment { recipient: PaneId(51), .. }
+            ClientMsg::ReviewComment {
+                recipient: PaneId(51),
+                ..
+            }
         ));
     }
 
@@ -3271,7 +3457,10 @@ second
         assert_eq!(sent.len(), 1);
         match &sent[0] {
             ClientMsg::ReviewComment { anchor, body, .. } => {
-                assert_eq!(anchor.notification(body), "src/a.rs:1-2 (2 lines): both lines")
+                assert_eq!(
+                    anchor.notification(body),
+                    "src/a.rs:1-2 (2 lines): both lines"
+                )
             }
             other => panic!("unexpected {other:?}"),
         }
@@ -3313,7 +3502,9 @@ second
             Some("needs a password".to_string());
         let mut review_pane = pane(102, "review agent");
         review_pane.status = PaneStatus::NeedsReview;
-        updated[0].repositories[0].checkouts[1].panes.push(review_pane);
+        updated[0].repositories[0].checkouts[1]
+            .panes
+            .push(review_pane);
         h.app.on_server_msg(ServerMsg::Tree(updated));
         h.sent();
 
@@ -3330,7 +3521,9 @@ second
         h.key(KeyCode::Char('N'));
         assert_eq!(h.app.column_pane(), Some(PaneId(101)), "cycles at the end");
         assert!(
-            !h.sent().iter().any(|message| matches!(message, ClientMsg::Input { .. })),
+            !h.sent()
+                .iter()
+                .any(|message| matches!(message, ClientMsg::Input { .. })),
             "the leader chord must not reach a child"
         );
     }
@@ -3416,6 +3609,39 @@ second
     }
 
     #[test]
+    fn b_on_a_commit_review_leaves_the_side_setting_alone() {
+        // The side toggle is uncommitted-only. Flipping it here would
+        // change which side the next `R` opens on, with nothing on
+        // screen to show that it happened.
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
+        let mut review = diff_of(checkout);
+        review.base = argus_protocol::ReviewBase::Commit;
+        review.commit = Some(argus_protocol::CommitInfo {
+            oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+            short: "aaaaaaa".into(),
+            summary: "fix the thing".into(),
+            author: "t".into(),
+            time: 0,
+        });
+        open_review(&mut h, review);
+
+        h.key(KeyCode::Char('b'));
+        assert_eq!(h.app.review_base, argus_protocol::ReviewBase::Unstaged);
+        assert!(h.sent().is_empty(), "b must not re-request a commit");
+
+        h.key(KeyCode::Esc);
+        h.key(KeyCode::Char('R'));
+        match &h.sent()[0] {
+            ClientMsg::Review { base, commit, .. } => {
+                assert_eq!(*base, argus_protocol::ReviewBase::Unstaged);
+                assert!(commit.is_none());
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
     fn tab_reaches_the_review_from_the_tree_and_from_inside_a_pane() {
         // §5's entry point. Inside a pane it needs the leader, since a bare
         // Tab there belongs to the child.
@@ -3431,7 +3657,9 @@ second
         h.leader();
         h.key(KeyCode::Tab);
         assert!(
-            h.sent().iter().any(|m| matches!(m, ClientMsg::Review { .. })),
+            h.sent()
+                .iter()
+                .any(|m| matches!(m, ClientMsg::Review { .. })),
             "leader-Tab should ask for the diff"
         );
     }
@@ -3545,7 +3773,10 @@ second
         let mut h = Harness::new();
         h.key(KeyCode::Char('l'));
         h.key(KeyCode::Char('b'));
-        assert!(h.app.picker.is_none(), "no picker until the list is in hand");
+        assert!(
+            h.app.picker.is_none(),
+            "no picker until the list is in hand"
+        );
         assert!(matches!(h.sent()[0], ClientMsg::ListBranches { .. }));
     }
 
@@ -3566,7 +3797,10 @@ second
         let mut h = Harness::new();
         branches_arrive(&mut h, &["master", "feature/login", "hotfix"]);
         h.keys("log");
-        assert_eq!(h.app.picker.as_ref().unwrap().selected(), Some("feature/login"));
+        assert_eq!(
+            h.app.picker.as_ref().unwrap().selected(),
+            Some("feature/login")
+        );
     }
 
     #[test]
@@ -3777,7 +4011,8 @@ second
         h.sent();
         let column = h.app.column_pane().unwrap();
 
-        h.app.open_overlay_pane(PaneId(700), "vim".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(700), "vim".to_string(), false);
 
         assert_eq!(h.app.overlay_pane(), Some(PaneId(700)));
         assert_eq!(h.app.column_pane(), Some(column), "the column is untouched");
@@ -3796,7 +4031,8 @@ second
         h.leader();
         h.key(KeyCode::Char('f'));
 
-        h.app.open_overlay_pane(PaneId(700), "vim".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(700), "vim".to_string(), false);
 
         assert_eq!(h.app.focus, Focus::Overlay);
         assert!(!h.app.pane_fullscreen);
@@ -3805,7 +4041,8 @@ second
     #[test]
     fn typing_in_a_floating_pane_reaches_its_child() {
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.sent();
 
         h.keys("iabc");
@@ -3814,7 +4051,10 @@ second
             .sent()
             .into_iter()
             .filter_map(|m| match m {
-                ClientMsg::Input { pane: PaneId(101), bytes } => Some(bytes),
+                ClientMsg::Input {
+                    pane: PaneId(101),
+                    bytes,
+                } => Some(bytes),
                 _ => None,
             })
             .flatten()
@@ -3826,7 +4066,8 @@ second
     fn nav_keys_do_not_leak_out_of_a_floating_pane() {
         // Every key belongs to the editor while it is up — `q` especially.
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.keys("q");
         assert!(!h.app.should_quit, "q is the editor's, not ours");
         assert!(h.app.overlay.is_some());
@@ -3835,7 +4076,8 @@ second
     #[test]
     fn the_leader_closes_a_floating_pane_and_leaves_it_running() {
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.sent();
 
         h.leader();
@@ -3851,13 +4093,17 @@ second
     #[test]
     fn the_leader_can_also_kill_the_pane_in_a_floating_window() {
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.sent();
 
         h.leader();
         h.key(KeyCode::Char('x'));
 
-        assert!(h.sent().iter().any(|m| matches!(m, ClientMsg::Kill { pane } if *pane == PaneId(101))));
+        assert!(h
+            .sent()
+            .iter()
+            .any(|m| matches!(m, ClientMsg::Kill { pane } if *pane == PaneId(101))));
         assert!(h.app.overlay.is_none());
     }
 
@@ -3868,12 +4114,16 @@ second
         h.sent();
         let was = h.app.column_pane();
 
-        h.app.open_overlay_pane(PaneId(999), "vim".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(999), "vim".to_string(), false);
         h.leader();
         h.key(KeyCode::Esc);
 
         assert_eq!(h.app.column_pane(), was, "back to what the columns show");
-        assert!(!h.app.grids.contains_key(&PaneId(999)), "and the editor is dropped");
+        assert!(
+            !h.app.grids.contains_key(&PaneId(999)),
+            "and the editor is dropped"
+        );
     }
 
     #[test]
@@ -3882,7 +4132,8 @@ second
         laid_out(&mut h);
         assert_eq!(h.app.live_panes()[0].1, h.app.layout.content.inner);
 
-        h.app.open_overlay_pane(PaneId(700), "vim".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(700), "vim".to_string(), false);
         h.app.layout.overlay = Panel {
             outer: Rect::new(2, 1, 40, 20),
             inner: Rect::new(3, 2, 38, 18),
@@ -3930,7 +4181,10 @@ second
         }
         h.key(KeyCode::Char('l'));
 
-        assert_eq!(h.app.theme, crate::theme::Theme::by_name(&h.app.settings.theme));
+        assert_eq!(
+            h.app.theme,
+            crate::theme::Theme::by_name(&h.app.settings.theme)
+        );
         assert_ne!(h.app.settings.theme, "mocha");
     }
 
@@ -4008,20 +4262,19 @@ second
             note: None,
         });
         h.app.on_server_msg(ServerMsg::Tree(working.clone()));
-        h.app.expire_state_flashes(std::time::Instant::now() + STATE_FLASH);
-        working[0].repositories[0].checkouts[0].panes[1].children[0].status =
-            PaneStatus::Failed;
+        h.app
+            .expire_state_flashes(std::time::Instant::now() + STATE_FLASH);
+        working[0].repositories[0].checkouts[0].panes[1].children[0].status = PaneStatus::Failed;
         working[0].repositories[0].checkouts[0].panes[1].children[0].note =
             Some("unit tests failed".to_string());
 
         h.app.on_server_msg(ServerMsg::Tree(working));
 
         assert!(h.app.pane_is_flashing(PaneId(101)));
-        assert!(
-            h.app
-                .status
-                .contains("claude / test runner: unit tests failed")
-        );
+        assert!(h
+            .app
+            .status
+            .contains("claude / test runner: unit tests failed"));
     }
 
     #[test]
@@ -4056,7 +4309,10 @@ second
 
         h.keys("jklh");
 
-        assert!(!h.sent().iter().any(|m| matches!(m, ClientMsg::Input { .. })));
+        assert!(!h
+            .sent()
+            .iter()
+            .any(|m| matches!(m, ClientMsg::Input { .. })));
     }
 
     // --- where an editor opens ----------------------------------------------
@@ -4153,14 +4409,17 @@ second
         // floating pane swallows every other key on purpose. When both fail
         // there has to be something left to press.
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.sent();
 
         h.key(KeyCode::F(12));
 
         assert!(h.app.overlay.is_none());
         assert!(
-            !h.sent().iter().any(|m| matches!(m, ClientMsg::Input { .. })),
+            !h.sent()
+                .iter()
+                .any(|m| matches!(m, ClientMsg::Input { .. })),
             "and it is never forwarded to the child"
         );
     }
@@ -4177,7 +4436,8 @@ second
     fn clicking_outside_a_floating_window_dismisses_it() {
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.app.layout.overlay = Panel {
             outer: Rect::new(10, 4, 20, 10),
             inner: Rect::new(11, 5, 18, 8),
@@ -4193,7 +4453,8 @@ second
     fn a_click_inside_the_window_belongs_to_its_pane() {
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.app.layout.overlay = Panel {
             outer: Rect::new(10, 4, 20, 10),
             inner: Rect::new(11, 5, 18, 8),
@@ -4205,7 +4466,10 @@ second
         h.app.on_mouse(click(15, 7));
 
         assert!(h.app.overlay.is_some(), "still open");
-        assert!(h.sent().iter().any(|m| matches!(m, ClientMsg::Input { .. })));
+        assert!(h
+            .sent()
+            .iter()
+            .any(|m| matches!(m, ClientMsg::Input { .. })));
     }
 
     #[test]
@@ -4214,7 +4478,8 @@ second
         // still went to the overlay, leaving no way in and no way out.
         let mut h = Harness::new();
         laid_out(&mut h);
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.app.layout.overlay = Panel {
             outer: Rect::new(10, 4, 20, 10),
             inner: Rect::new(11, 5, 18, 8),
@@ -4224,7 +4489,10 @@ second
 
         h.app.on_mouse(click(1, 3)); // a project row, underneath
 
-        assert_eq!(h.app.sel_project, before, "the click dismissed, it did not select");
+        assert_eq!(
+            h.app.sel_project, before,
+            "the click dismissed, it did not select"
+        );
     }
 
     #[test]
@@ -4232,7 +4500,8 @@ second
         // Otherwise it sits there showing a dead grid — the shape of a hung
         // editor, with no sign anything is wrong.
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(101), "vim".to_string(), false);
 
         h.app.on_server_msg(ServerMsg::PaneClosed {
             pane: PaneId(101),
@@ -4245,7 +4514,8 @@ second
     #[test]
     fn another_panes_exit_leaves_the_window_alone() {
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(101), "vim".to_string(), false);
         h.app.on_server_msg(ServerMsg::PaneClosed {
             pane: PaneId(100),
             code: Some(0),
@@ -4257,10 +4527,13 @@ second
     fn a_window_whose_pane_vanishes_from_the_tree_closes_itself() {
         // Killed from another client, or reaped while we were not looking.
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "vim".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(101), "vim".to_string(), false);
 
         let mut t = tree();
-        t[0].repositories[0].checkouts[0].panes.retain(|p| p.id != PaneId(101));
+        t[0].repositories[0].checkouts[0]
+            .panes
+            .retain(|p| p.id != PaneId(101));
         h.app.on_server_msg(ServerMsg::Tree(t));
 
         assert!(h.app.overlay.is_none());
@@ -4389,7 +4662,11 @@ second
 
         assert_eq!(h.app.sel_pane, where_, "selection untouched");
         assert_eq!(h.app.column_pane(), watching, "column still on the agent");
-        assert_eq!(h.app.overlay_pane(), Some(PaneId(700)), "editor is the window");
+        assert_eq!(
+            h.app.overlay_pane(),
+            Some(PaneId(700)),
+            "editor is the window"
+        );
         assert!(
             h.app.grids.contains_key(&watching.unwrap()),
             "and the agent is still streaming"
@@ -4459,7 +4736,12 @@ second
     fn an_editor_does_not_inflate_the_pane_counts() {
         let mut h = Harness::new();
         h.app.on_server_msg(ServerMsg::Tree(tree_with_editor()));
-        assert_eq!(h.app.tree[0].repositories[0].checkouts[0].listed_panes().count(), 2);
+        assert_eq!(
+            h.app.tree[0].repositories[0].checkouts[0]
+                .listed_panes()
+                .count(),
+            2
+        );
     }
 
     #[test]
@@ -4467,7 +4749,8 @@ second
         // Nothing lists it afterwards, so a survivor would be a process
         // with no window and no way back to it.
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(700), "a.rs".to_string(), true);
+        h.app
+            .open_overlay_pane(PaneId(700), "a.rs".to_string(), true);
         h.sent();
 
         h.key(KeyCode::F(12));
@@ -4483,7 +4766,8 @@ second
         // A shell or agent shown floating is still in the panes column, so
         // closing the window is only ever "stop looking at it".
         let mut h = Harness::new();
-        h.app.open_overlay_pane(PaneId(101), "shell".to_string(), false);
+        h.app
+            .open_overlay_pane(PaneId(101), "shell".to_string(), false);
         h.sent();
 
         h.key(KeyCode::F(12));
@@ -4506,7 +4790,10 @@ second
 
         assert!(matches!(h.app.overlay, Some(Overlay::Review)));
         assert_eq!(h.app.column_pane(), watching, "column untouched");
-        assert!(h.app.grids.contains_key(&watching.unwrap()), "still streaming");
+        assert!(
+            h.app.grids.contains_key(&watching.unwrap()),
+            "still streaming"
+        );
     }
 
     #[test]
@@ -4547,13 +4834,25 @@ second
         h.key(KeyCode::Char('p'));
         assert!(h.app.projects_collapsed, "p collapses");
         assert_eq!(h.app.focus, Focus::Repositories, "focus leaves the strip");
-        assert!(h.app.status.contains("collapsed"), "reports collapse: {}", h.app.status);
+        assert!(
+            h.app.status.contains("collapsed"),
+            "reports collapse: {}",
+            h.app.status
+        );
         assert!(h.app.settings.projects_collapsed, "persisted to settings");
 
         h.key(KeyCode::Char('p'));
         assert!(!h.app.projects_collapsed, "p restores");
-        assert_eq!(h.app.focus, Focus::Repositories, "focus stays put on restore");
-        assert!(h.app.status.contains("expanded"), "reports expand: {}", h.app.status);
+        assert_eq!(
+            h.app.focus,
+            Focus::Repositories,
+            "focus stays put on restore"
+        );
+        assert!(
+            h.app.status.contains("expanded"),
+            "reports expand: {}",
+            h.app.status
+        );
         assert!(!h.app.settings.projects_collapsed, "cleared in settings");
     }
 
@@ -4571,7 +4870,11 @@ second
         let mut h = Harness::new();
         h.key(KeyCode::Char('p')); // collapse, focus -> Repositories
         h.key(KeyCode::Char('h')); // ascend from Repositories
-        assert_eq!(h.app.focus, Focus::Repositories, "blocked by collapsed strip");
+        assert_eq!(
+            h.app.focus,
+            Focus::Repositories,
+            "blocked by collapsed strip"
+        );
         // Expand it; now ascend works.
         h.key(KeyCode::Char('p'));
         h.key(KeyCode::Char('h'));
@@ -4587,7 +4890,11 @@ second
         };
         let app = App::build(tx, settings, false);
         assert!(app.projects_collapsed);
-        assert_eq!(app.focus, Focus::Repositories, "never lands on the hidden column");
+        assert_eq!(
+            app.focus,
+            Focus::Repositories,
+            "never lands on the hidden column"
+        );
     }
 
     #[test]
@@ -4595,8 +4902,8 @@ second
         let mut h = Harness::new();
         laid_out(&mut h); // set up a real layout
         h.key(KeyCode::Char('p')); // collapse
-        // The laid_out projects column is 12 wide; clicking anywhere in it
-        // expands because the layout hasn't been re-rendered yet.
+                                   // The laid_out projects column is 12 wide; clicking anywhere in it
+                                   // expands because the layout hasn't been re-rendered yet.
         h.app.on_mouse(click(1, 1));
         assert!(!h.app.projects_collapsed, "click expands");
     }
@@ -4634,5 +4941,4 @@ second
         });
         assert_eq!(h.app.column_widths, None);
     }
-
 }

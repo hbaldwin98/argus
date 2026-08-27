@@ -79,18 +79,19 @@ highest-severity descendant with distinct glyphs as well as color.
 
 ## Review contract
 
-Review covers uncommitted work only, split into the two sides Git keeps apart: `HEAD` against the
+Review covers uncommitted work split into the two sides Git keeps apart: `HEAD` against the
 index, and the index against the working tree. Each side captures its own endpoint, so a file
 staged and then edited again shows the correct, different diff on each. The working-tree endpoint
-includes deleted, renamed, and non-ignored untracked content.
+includes deleted, renamed, and non-ignored untracked content. A checkout's recent commits are
+reviewable one at a time against their first parent.
 
-Committed history is out of scope. Comparing a branch against a fork point, an upstream, or a
-remembered snapshot belongs to a Git client, not here.
+Comparing a branch against a fork point, an upstream, or a remembered snapshot belongs to a Git
+client, not here.
 
 Review supports durable line or range comments and live-agent selection. The daemon stores a
 comment before sending its terminal notification, and agents can read checkout-scoped feedback.
-Lazy syntax highlighting remains planned. Staging, unstaging, and reverting are deliberately not
-Argus's job.
+Syntax highlighting is produced in the daemon as token-role spans; the client theme supplies
+colour. Staging, unstaging, and reverting are deliberately not Argus's job.
 
 ## Notes and context
 

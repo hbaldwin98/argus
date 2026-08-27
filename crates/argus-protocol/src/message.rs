@@ -2,41 +2,71 @@ use serde::{Deserialize, Serialize};
 
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
-use crate::review::{Review, ReviewAnchor, ReviewBase};
+use crate::review::{HistoryCommit, Review, ReviewAnchor, ReviewBase};
 use crate::tree::{ProjectInfo, WorkspaceInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientMsg {
     /// Ask the daemon to start streaming this pane's screen. The daemon
     /// replies with a full PaneSnapshot, then incremental Damage.
-    Subscribe { pane: PaneId },
+    Subscribe {
+        pane: PaneId,
+    },
     /// Stop streaming a pane's screen.
-    Unsubscribe { pane: PaneId },
+    Unsubscribe {
+        pane: PaneId,
+    },
     /// Raw input bytes to forward to the pane's pty.
-    Input { pane: PaneId, bytes: Vec<u8> },
+    Input {
+        pane: PaneId,
+        bytes: Vec<u8>,
+    },
     /// Text pasted as one event. The daemon adds bracketed-paste delimiters
     /// only when the child requested them.
-    Paste { pane: PaneId, text: String },
+    Paste {
+        pane: PaneId,
+        text: String,
+    },
     /// The client's view of a pane has been resized.
-    Resize { pane: PaneId, rows: u16, cols: u16 },
+    Resize {
+        pane: PaneId,
+        rows: u16,
+        cols: u16,
+    },
     /// Spawn a shell pane cwd'd into a checkout.
-    SpawnShell { checkout: CheckoutId },
+    SpawnShell {
+        checkout: CheckoutId,
+    },
     /// Spawn an agent pane from a named template, cwd'd into a checkout.
-    SpawnAgent { checkout: CheckoutId, template: String },
+    SpawnAgent {
+        checkout: CheckoutId,
+        template: String,
+    },
     /// Kill a pane's process and remove it.
-    Kill { pane: PaneId },
+    Kill {
+        pane: PaneId,
+    },
     /// `git worktree add` a new checkout in `base`'s project, branched off
     /// `base`'s current HEAD, and add it to the tree.
-    CreateWorktree { checkout: CheckoutId, branch: String },
+    CreateWorktree {
+        checkout: CheckoutId,
+        branch: String,
+    },
     /// Kill every pane in a (non-primary) checkout, `git worktree remove`
     /// it, delete its branch, and drop it from the tree.
-    RemoveCheckout { checkout: CheckoutId },
+    RemoveCheckout {
+        checkout: CheckoutId,
+    },
     /// Switch which workspace is open. Daemon-global: every connected
     /// client's tree re-scopes to it.
-    OpenWorkspace { workspace: WorkspaceId },
+    OpenWorkspace {
+        workspace: WorkspaceId,
+    },
     /// Declare a new, empty workspace and open it. Persisted to config, so
     /// grouping projects never requires hand-editing `projects.toml`.
-    CreateWorkspace { name: String },
+    CreateWorkspace {
+        name: String,
+    },
     /// Ask for this checkout's uncommitted changes, for the review viewer
     /// (DESIGN.md §9 M4). A request rather than a subscription: a diff is
     /// expensive to compute and only interesting while it's on screen.
@@ -44,6 +74,15 @@ pub enum ClientMsg {
         request_id: u64,
         checkout: CheckoutId,
         base: ReviewBase,
+        /// When set, the parent of this commit against the commit itself,
+        /// ignoring `base` except as the flag [`ReviewBase::Commit`].
+        #[serde(default)]
+        commit: Option<String>,
+    },
+    /// Newest commits on this checkout's HEAD, with the files each changed.
+    ListCommits {
+        request_id: u64,
+        checkout: CheckoutId,
     },
     /// Persist a review comment, then notify the selected live agent.
     ReviewComment {
@@ -53,25 +92,42 @@ pub enum ClientMsg {
         body: String,
     },
     /// Ask for what this checkout contains, for the fuzzy pickers.
-    ListBranches { checkout: CheckoutId },
-    ListFiles { checkout: CheckoutId },
+    ListBranches {
+        checkout: CheckoutId,
+    },
+    ListFiles {
+        checkout: CheckoutId,
+    },
     /// `git switch` this checkout to an existing branch.
-    SwitchBranch { checkout: CheckoutId, branch: String },
+    SwitchBranch {
+        checkout: CheckoutId,
+        branch: String,
+    },
     /// `git switch -c`: a new branch on this checkout, in place. Distinct
     /// from `CreateWorktree`, which puts the new branch in a directory of
     /// its own and leaves this one where it was.
-    CreateBranch { checkout: CheckoutId, branch: String },
+    CreateBranch {
+        checkout: CheckoutId,
+        branch: String,
+    },
     /// `git branch -d`: drop a local branch nothing is sitting on. Refused
     /// while it holds commits no other branch has, because the row is the
     /// only thing left pointing at them.
-    DeleteBranch { checkout: CheckoutId, branch: String },
+    DeleteBranch {
+        checkout: CheckoutId,
+        branch: String,
+    },
     /// `git fetch --all --prune`: bring the remote-tracking branches up to
     /// date without touching the working tree, which is what makes the
     /// remote's branches visible as rows.
-    Fetch { checkout: CheckoutId },
+    Fetch {
+        checkout: CheckoutId,
+    },
     /// `git pull --ff-only`: move this checkout up to its upstream. Refused
     /// by git itself where that would need a merge.
-    Pull { checkout: CheckoutId },
+    Pull {
+        checkout: CheckoutId,
+    },
     /// Open `path` (repo-relative) in the user's editor as a pane.
     OpenInEditor {
         checkout: CheckoutId,
@@ -87,28 +143,40 @@ pub enum ClientMsg {
     /// Drop a project from the panel and from `projects.toml`. Nothing on
     /// disk is touched — the directories stay exactly where they are, and
     /// adding the project again brings the same tree back.
-    RemoveProject { project: ProjectId },
+    RemoveProject {
+        project: ProjectId,
+    },
     /// Drop one repository from its project's panel row. The scan that
     /// found it would otherwise put it straight back, so the path is
     /// remembered as excluded until the project is removed or the
     /// exclusion file is edited.
-    RemoveRepository { repository: RepositoryId },
+    RemoveRepository {
+        repository: RepositoryId,
+    },
     /// Add a new project rooted at an arbitrary directory — not limited to
     /// whatever's already in `projects.toml` or under the daemon's cwd.
     /// Persisted to config so it survives a daemon restart.
-    AddProject { path: String },
+    AddProject {
+        path: String,
+    },
     /// List the subdirectories of `path`, for the directory browser
     /// behind "add project" and "add repository". An empty path means
     /// "wherever a browse should start" — the daemon decides, since only
     /// it knows its own cwd. `request_id` correlates the reply: a browse
     /// walks the filesystem, and a slow listing must not land in a
     /// directory the user has already navigated away from.
-    ListDirectories { request_id: u64, path: String },
+    ListDirectories {
+        request_id: u64,
+        path: String,
+    },
     /// Add one repository to a project that already exists, by path. For a
     /// directory the project's root would never scan — anything under the
     /// root arrives on its own — so the path is written into the project's
     /// `repos` list and taken at its word, Git repository or not.
-    AddRepository { project: ProjectId, path: String },
+    AddRepository {
+        project: ProjectId,
+        path: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,7 +219,10 @@ pub enum ServerMsg {
     },
     /// The durable write succeeded. Delivery only describes the immediate
     /// terminal notification; an undelivered comment remains readable.
-    ReviewCommentSaved { id: u64, delivered: bool },
+    ReviewCommentSaved {
+        id: u64,
+        delivered: bool,
+    },
     /// The answer to `ClientMsg::ListBranches`. `current` is the branch the
     /// checkout is on, and is the first entry of `branches`.
     Branches {
@@ -165,9 +236,28 @@ pub enum ServerMsg {
         checkout: CheckoutId,
         files: Vec<String>,
     },
+    /// The answer to `ClientMsg::ListCommits`.
+    Commits {
+        request_id: u64,
+        checkout: CheckoutId,
+        commits: Vec<HistoryCommit>,
+    },
+    /// A failed history walk. Correlated like `ReviewFailed` rather than
+    /// folded into `Error`, so a client that has moved on drops it instead
+    /// of showing an alert for a list it no longer wants.
+    CommitsFailed {
+        request_id: u64,
+        checkout: CheckoutId,
+        message: String,
+    },
     /// A pane's process exited.
-    PaneClosed { pane: PaneId, code: Option<i32> },
-    Error { message: String },
+    PaneClosed {
+        pane: PaneId,
+        code: Option<i32>,
+    },
+    Error {
+        message: String,
+    },
 }
 
 /// One directory's subdirectories, as the browser needs to draw them.

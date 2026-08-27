@@ -27,9 +27,10 @@ imported once and retired; `projects.toml` is back to being configuration Argus 
 
 ## P5: Complete Review
 
-Review shows both sides of uncommitted work and nothing else — staged and unstaged, each with its
-own endpoint. Comments are durable and agents can read checkout-scoped feedback; the client selects
-a recipient when several agents share the checkout. What remains is presentation work.
+Review shows both sides of uncommitted work — staged and unstaged, each with its own endpoint —
+and a checkout's recent commits one at a time against their first parent. Comments are durable and
+agents can read checkout-scoped feedback; the client selects a recipient when several agents share
+the checkout. What remains is presentation work.
 
 - Add lazy rendering where measurements justify it. Syntax highlighting has landed (DESIGN.md,
   "Review"): tree-sitter in the daemon, ten grammars linked in and chosen by extension, spans on
@@ -41,8 +42,8 @@ a recipient when several agents share the checkout. What remains is presentation
   it belongs behind the fullscreen pane, which is where two readable sides fit. Line comments
   already carry both old and new numbers, so anchors survive the change.
 
-Deliberately out of scope: staging, unstaging, and reverting hunks, and any base that reaches into
-committed history. Dedicated Git tools do those better.
+Deliberately out of scope: staging, unstaging, and reverting hunks, and any base that compares a
+branch against a fork point or a remembered snapshot. Dedicated Git tools do those better.
 
 ## P6: Notes, Context, and Delegation
 

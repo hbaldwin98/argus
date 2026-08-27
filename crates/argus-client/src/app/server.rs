@@ -8,7 +8,6 @@
 use super::*;
 
 impl App {
-
     /// Subscribes to everything currently on screen and drops the rest.
     pub(super) fn sync_subscription(&mut self) {
         let want: Vec<PaneId> = [self.column_pane(), self.overlay_pane()]
@@ -36,7 +35,6 @@ impl App {
         }
     }
 
-
     pub fn on_server_msg(&mut self, msg: ServerMsg) {
         match msg {
             ServerMsg::Tree(tree) => self.receive_tree(tree),
@@ -59,7 +57,8 @@ impl App {
                 ..
             } => {
                 if self.grids.contains_key(&pane) {
-                    self.grids.insert(pane, Grid::with_cursor(cells, cursor, mouse));
+                    self.grids
+                        .insert(pane, Grid::with_cursor(cells, cursor, mouse));
                 }
             }
             ServerMsg::Damage {
@@ -68,12 +67,10 @@ impl App {
                 cursor,
                 mouse,
             } => {
-                {
-                    if let Some(grid) = self.grids.get_mut(&pane) {
-                        grid.apply(&spans);
-                        grid.move_cursor(cursor);
-                        grid.mouse = mouse;
-                    }
+                if let Some(grid) = self.grids.get_mut(&pane) {
+                    grid.apply(&spans);
+                    grid.move_cursor(cursor);
+                    grid.mouse = mouse;
                 }
             }
             ServerMsg::PaneClosed { pane, code } => {
@@ -129,10 +126,31 @@ impl App {
                     0,
                 ));
             }
+            ServerMsg::Commits {
+                request_id,
+                checkout,
+                commits,
+            } => {
+                self.receive_commits(request_id, checkout, commits);
+            }
+            ServerMsg::CommitsFailed {
+                request_id,
+                checkout,
+                message,
+            } => {
+                // A list we have already navigated away from must not
+                // raise an alert for a view that is no longer open.
+                if self.history_wanted == Some((checkout, request_id)) {
+                    self.history_wanted = None;
+                    self.alert(format!("history: {message}"));
+                }
+            }
             ServerMsg::Directories(listing) => {
                 // A listing for a directory we have already navigated away
                 // from would yank the browser backwards.
-                let Some(picker) = &mut self.dir_picker else { return };
+                let Some(picker) = &mut self.dir_picker else {
+                    return;
+                };
                 if picker.pending != Some(listing.request_id) {
                     return;
                 }
@@ -143,7 +161,6 @@ impl App {
             }
         }
     }
-
 
     fn receive_tree(&mut self, tree: Vec<ProjectInfo>) {
         self.record_state_transitions(&tree);
@@ -157,22 +174,32 @@ impl App {
         self.tree = tree;
         let mut followed_pane = false;
         if let Some(selected_pane) = selected_pane {
-            if let Some((project, repository, checkout, pane)) = self.tree.iter().enumerate().find_map(
-                |(project_index, project)| {
-                    project.repositories.iter().enumerate().find_map(|(repository_index, repository)| {
-                        repository.checkouts.iter().enumerate().find_map(
-                            |(checkout_index, checkout)| {
-                                checkout
-                                    .listed_panes()
-                                    .position(|candidate| candidate.id == selected_pane)
-                                    .map(|pane_index| {
-                                        (project_index, repository_index, checkout_index, pane_index)
-                                    })
-                            },
-                        )
-                    })
-                },
-            ) {
+            if let Some((project, repository, checkout, pane)) = self
+                .tree
+                .iter()
+                .enumerate()
+                .find_map(|(project_index, project)| {
+                    project.repositories.iter().enumerate().find_map(
+                        |(repository_index, repository)| {
+                            repository.checkouts.iter().enumerate().find_map(
+                                |(checkout_index, checkout)| {
+                                    checkout
+                                        .listed_panes()
+                                        .position(|candidate| candidate.id == selected_pane)
+                                        .map(|pane_index| {
+                                            (
+                                                project_index,
+                                                repository_index,
+                                                checkout_index,
+                                                pane_index,
+                                            )
+                                        })
+                                },
+                            )
+                        },
+                    )
+                })
+            {
                 self.sel_project = project;
                 self.sel_repository = repository;
                 if let Some(row) = self.checkout_row_of(checkout) {
@@ -213,16 +240,19 @@ impl App {
             }
         }
         if let Some(repository_id) = self.pending_focus_new_checkout.take() {
-            if let Some((project, repository)) = self.tree.iter().enumerate().find_map(
-                |(project_index, project)| {
-                    project.repositories.iter().enumerate().find_map(
-                        |(repository_index, repository)| {
-                            (repository.id == repository_id)
-                                .then_some((project_index, repository_index))
-                        },
-                    )
-                },
-            ) {
+            if let Some((project, repository)) =
+                self.tree
+                    .iter()
+                    .enumerate()
+                    .find_map(|(project_index, project)| {
+                        project.repositories.iter().enumerate().find_map(
+                            |(repository_index, repository)| {
+                                (repository.id == repository_id)
+                                    .then_some((project_index, repository_index))
+                            },
+                        )
+                    })
+            {
                 self.sel_project = project;
                 self.sel_repository = repository;
                 let newest = self
@@ -278,7 +308,6 @@ impl App {
         }
     }
 
-
     fn record_state_transitions(&mut self, next: &[ProjectInfo]) {
         if self.tree.is_empty() {
             return;
@@ -318,28 +347,23 @@ impl App {
         }
     }
 
-
     pub fn pane_is_flashing(&self, pane: PaneId) -> bool {
         self.state_flashes
             .get(&pane)
             .is_some_and(|deadline| *deadline > std::time::Instant::now())
     }
 
-
     pub fn next_flash_deadline(&self) -> Option<std::time::Instant> {
         self.state_flashes.values().copied().min()
     }
-
 
     pub fn expire_state_flashes(&mut self, now: std::time::Instant) {
         self.state_flashes.retain(|_, deadline| *deadline > now);
     }
 
-
     pub fn take_bell(&mut self) -> bool {
         std::mem::take(&mut self.bell_pending)
     }
-
 
     fn receive_pane_closed(&mut self, pane: PaneId, code: Option<i32>) {
         // Otherwise the window sits there showing a dead grid, which is
@@ -365,27 +389,58 @@ impl App {
         }
     }
 
-
     fn receive_review(&mut self, review: argus_protocol::Review) {
         if self.review_wanted != Some((review.checkout, review.request_id)) {
             return;
         }
         self.review_wanted = None;
         let files = review.files.len();
-        let base = review.base;
-        let view = ReviewView::new(review);
+        let label = match &review.commit {
+            Some(c) => format!("{} {}", c.short, c.summary),
+            None => format!("vs {}", review.base.label()),
+        };
+        let mut view = ReviewView::new(review);
         if view.is_empty() {
             self.review = None;
-            self.report(format!("no changes vs {}", base.label()));
+            self.pending_history_file = None;
+            self.report(format!("no changes {label}"));
             return;
+        }
+        if let Some(path) = self.pending_history_file.take() {
+            if let Some(i) = view.review.files.iter().position(|f| f.path == path) {
+                view.jump_to_file(i);
+            }
         }
         self.review = Some(view);
         self.overlay = Some(Overlay::Review);
         self.pane_fullscreen = false;
         self.focus = Focus::Review;
-        self.report(format!("{files} changed vs {}", base.label()));
+        self.report(format!("{files} changed {label}"));
     }
 
+    fn receive_commits(
+        &mut self,
+        request_id: u64,
+        checkout: CheckoutId,
+        commits: Vec<argus_protocol::HistoryCommit>,
+    ) {
+        if self.history_wanted != Some((checkout, request_id)) {
+            return;
+        }
+        self.history_wanted = None;
+        if commits.is_empty() {
+            self.history = None;
+            self.report("no commits yet");
+            return;
+        }
+        let n = commits.len();
+        self.review = None;
+        self.history = Some(crate::history::HistoryView::new(checkout, commits));
+        self.overlay = Some(Overlay::History);
+        self.pane_fullscreen = false;
+        self.focus = Focus::Review;
+        self.report(format!("{n} commits"));
+    }
 
     fn receive_review_failure(&mut self, request_id: u64, checkout: CheckoutId, message: String) {
         if self.review_wanted == Some((checkout, request_id)) {
@@ -393,7 +448,6 @@ impl App {
             self.alert(format!("error: {message}"));
         }
     }
-
 
     /// Ordinary news — what a keypress did, or what it could not do. Drawn
     /// in plain text, and it yields the bar to the keymap when both will not
@@ -403,14 +457,12 @@ impl App {
         self.status_alert = false;
     }
 
-
     /// Something the user must read: a daemon error, a pane that died. Drawn
     /// as an alarm, and it keeps the bar even when that costs the keymap.
     pub fn alert(&mut self, message: impl Into<String>) {
         self.status = message.into();
         self.status_alert = true;
     }
-
 
     pub(super) fn clear_status(&mut self) {
         self.status.clear();

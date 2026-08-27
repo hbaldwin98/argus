@@ -8,8 +8,13 @@ use argus_protocol::{FileDiff, LineKind, Review, ReviewAnchor};
 /// Headers and notes are drawn but never selected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Row {
-    File { file: usize },
-    Hunk { file: usize, hunk: usize },
+    File {
+        file: usize,
+    },
+    Hunk {
+        file: usize,
+        hunk: usize,
+    },
     Line {
         file: usize,
         hunk: usize,
@@ -17,7 +22,9 @@ pub enum Row {
     },
     /// Stands in for a binary or oversized file, which would otherwise
     /// look unchanged.
-    Note { file: usize },
+    Note {
+        file: usize,
+    },
 }
 
 impl Row {
@@ -104,11 +111,7 @@ impl ReviewView {
                 .rev()
                 .find(|&&i| i < self.sel)
                 .map(|&i| self.rows[i].file())
-                .and_then(|f| {
-                    self.rows
-                        .iter()
-                        .position(|r| r.is_line() && r.file() == f)
-                })
+                .and_then(|f| self.rows.iter().position(|r| r.is_line() && r.file() == f))
         };
         if let Some(i) = next {
             self.sel = i;
@@ -211,6 +214,7 @@ impl ReviewView {
 
         Some(ReviewAnchor {
             base: self.review.base,
+            commit: self.review.commit.as_ref().map(|c| c.oid.clone()),
             path,
             old_path,
             old_start,
@@ -291,6 +295,7 @@ mod tests {
             checkout: CheckoutId(1),
             base: argus_protocol::ReviewBase::Unstaged,
             files,
+            commit: None,
         })
     }
 
@@ -349,16 +354,37 @@ mod tests {
         // Wrapping in a long diff silently loses your place.
         let mut v = two_files();
         v.move_by(-5);
-        assert_eq!(v.rows[v.sel], Row::Line { file: 0, hunk: 0, line: 0 });
+        assert_eq!(
+            v.rows[v.sel],
+            Row::Line {
+                file: 0,
+                hunk: 0,
+                line: 0
+            }
+        );
         v.move_by(500);
-        assert_eq!(v.rows[v.sel], Row::Line { file: 1, hunk: 0, line: 1 });
+        assert_eq!(
+            v.rows[v.sel],
+            Row::Line {
+                file: 1,
+                hunk: 0,
+                line: 1
+            }
+        );
     }
 
     #[test]
     fn jumping_forward_lands_on_the_next_files_first_line() {
         let mut v = two_files();
         v.jump_file(true);
-        assert_eq!(v.rows[v.sel], Row::Line { file: 1, hunk: 0, line: 0 });
+        assert_eq!(
+            v.rows[v.sel],
+            Row::Line {
+                file: 1,
+                hunk: 0,
+                line: 0
+            }
+        );
     }
 
     #[test]
@@ -368,7 +394,14 @@ mod tests {
         v.jump_file(true);
         v.move_by(1);
         v.jump_file(false);
-        assert_eq!(v.rows[v.sel], Row::Line { file: 0, hunk: 0, line: 0 });
+        assert_eq!(
+            v.rows[v.sel],
+            Row::Line {
+                file: 0,
+                hunk: 0,
+                line: 0
+            }
+        );
     }
 
     #[test]
@@ -384,9 +417,23 @@ mod tests {
     fn g_and_shift_g_reach_both_ends() {
         let mut v = two_files();
         v.bottom_of_diff();
-        assert_eq!(v.rows[v.sel], Row::Line { file: 1, hunk: 0, line: 1 });
+        assert_eq!(
+            v.rows[v.sel],
+            Row::Line {
+                file: 1,
+                hunk: 0,
+                line: 1
+            }
+        );
         v.top_of_diff();
-        assert_eq!(v.rows[v.sel], Row::Line { file: 0, hunk: 0, line: 0 });
+        assert_eq!(
+            v.rows[v.sel],
+            Row::Line {
+                file: 0,
+                hunk: 0,
+                line: 0
+            }
+        );
     }
 
     #[test]
@@ -549,5 +596,4 @@ mod tests {
             .notification("first thought\nsecond thought");
         assert!(!m.contains('\n'), "{m:?}");
     }
-
 }

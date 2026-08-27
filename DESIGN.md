@@ -496,14 +496,23 @@ branch it was done on. Linked worktrees are Argus's own and switch under Git's r
 task with `git2`; the client opens it in a floating overlay while leaving the terminal behind it
 subscribed.
 
-Review shows uncommitted work only, split into the two sides Git itself keeps apart. `b` toggles:
+Review shows uncommitted work split into the two sides Git itself keeps apart. `b` toggles:
 
 - `unstaged`: the index against the working tree, plus non-ignored untracked content — `git diff`.
 - `staged`: `HEAD` against the index — `git diff --cached`.
 
 The chosen side is a setting rather than a per-visit choice, and it survives closing and reopening
-the overlay. Committed history is out of scope: reviewing a branch against its fork point, or
-against a remembered snapshot, is what a Git client is for.
+the overlay.
+
+A third snapshot is one commit against its first parent, reached through the history overlay rather
+than the side toggle. `H` lists the newest 100 commits on the checkout's HEAD, each with the files
+it touched and their line counts, but without hunks — a hundred rendered diffs would be the capture
+cost the cap exists to avoid. Opening a row asks for that commit as an ordinary review, so a commit
+diff is the same viewer, the same navigation, and the same comment path as uncommitted work, with
+the comment's anchor recording which commit it was made against. `h` from a commit review returns
+to the list it was opened from; escape closes both. An unborn branch is an empty history rather
+than an error. Comparing a branch against its fork point, or against a remembered snapshot, remains
+out of scope: that is what a Git client is for.
 
 Each request captures the index as a tree, and for the unstaged side also an immutable synthetic
 tree built from the index plus working-tree deletions, edits, and non-ignored untracked content.

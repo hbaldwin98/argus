@@ -5,6 +5,7 @@ mod dirpicker;
 mod fuzzy;
 mod grid;
 mod herdr;
+mod history;
 mod keys;
 mod launch;
 mod mouse;
@@ -127,10 +128,9 @@ fn enter_terminal() -> anyhow::Result<Term> {
         EnableMouseCapture,
         EnableBracketedPaste
     )?;
-    Ok(Terminal::new(TermBackend::new(io::BufWriter::with_capacity(
-        FRAME_BUFFER,
-        stdout,
-    )))?)
+    Ok(Terminal::new(TermBackend::new(
+        io::BufWriter::with_capacity(FRAME_BUFFER, stdout),
+    ))?)
 }
 
 /// One frame, presented all at once.
@@ -164,7 +164,9 @@ fn leave_terminal(terminal: &mut Term) -> anyhow::Result<()> {
     disable_raw_mode()?;
     // The cursor shape belongs to whatever the user runs next, not to the
     // last pane that happened to be focused here.
-    let _ = terminal.backend_mut().set_cursor_shape(argus_protocol::CursorShape::Default);
+    let _ = terminal
+        .backend_mut()
+        .set_cursor_shape(argus_protocol::CursorShape::Default);
     execute!(
         terminal.backend_mut(),
         DisableBracketedPaste,
@@ -358,9 +360,7 @@ fn ring_bell(terminal: &mut Term) -> io::Result<()> {
 /// arm is guarded, but the future still needs a type either way.
 async fn sleep_until(deadline: Option<std::time::Instant>) {
     match deadline {
-        Some(deadline) => {
-            tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await
-        }
+        Some(deadline) => tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await,
         None => std::future::pending().await,
     }
 }
@@ -505,15 +505,16 @@ mod tests {
 
     #[test]
     fn a_pane_that_left_the_screen_claims_its_size_again_when_it_returns() {
-        let mut last_sizes = std::collections::HashMap::from([
-            (PaneId(1), (30u16, 80u16)),
-            (PaneId(2), (30, 80)),
-        ]);
+        let mut last_sizes =
+            std::collections::HashMap::from([(PaneId(1), (30u16, 80u16)), (PaneId(2), (30, 80))]);
         let still_shown = [(PaneId(1), ratatui::layout::Rect::new(0, 0, 80, 30))];
 
         forget_offscreen(&mut last_sizes, &still_shown);
 
-        assert_eq!(last_sizes.keys().copied().collect::<Vec<_>>(), vec![PaneId(1)]);
+        assert_eq!(
+            last_sizes.keys().copied().collect::<Vec<_>>(),
+            vec![PaneId(1)]
+        );
     }
 
     #[tokio::test]
@@ -745,7 +746,10 @@ mod tests {
             ))))
         ));
 
-        assert!(app.pane_fullscreen, "a repeated NUL cancelled the leader chord");
+        assert!(
+            app.pane_fullscreen,
+            "a repeated NUL cancelled the leader chord"
+        );
     }
 
     #[test]
@@ -753,7 +757,11 @@ mod tests {
         let (tx, _rx) = mpsc::unbounded_channel();
         let mut app = App::new(tx);
 
-        assert!(!handle_terminal_event(&mut app, &mut PasteBurst::default(), None));
+        assert!(!handle_terminal_event(
+            &mut app,
+            &mut PasteBurst::default(),
+            None
+        ));
         assert!(!handle_terminal_event(
             &mut app,
             &mut PasteBurst::default(),

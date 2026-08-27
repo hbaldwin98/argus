@@ -2230,6 +2230,7 @@ mod tests {
 
     fn review_anchor(line: u32) -> ReviewAnchor {
         ReviewAnchor {
+            commit: None,
             base: ReviewBase::Unstaged,
             path: "src/main.rs".to_string(),
             old_path: None,

@@ -96,7 +96,9 @@ mod tests {
                 rows: 40,
                 cols: 120,
             },
-            ClientMsg::SpawnShell { checkout: CheckoutId(2) },
+            ClientMsg::SpawnShell {
+                checkout: CheckoutId(2),
+            },
             ClientMsg::SpawnAgent {
                 checkout: CheckoutId(2),
                 template: "claude".to_string(),
@@ -106,7 +108,9 @@ mod tests {
                 checkout: CheckoutId(2),
                 branch: "feat/x".to_string(),
             },
-            ClientMsg::RemoveCheckout { checkout: CheckoutId(2) },
+            ClientMsg::RemoveCheckout {
+                checkout: CheckoutId(2),
+            },
             ClientMsg::RemoveProject {
                 project: ProjectId(1),
             },
@@ -120,11 +124,22 @@ mod tests {
                 project: ProjectId(1),
                 path: r"C:\src\thing\repo".to_string(),
             },
+            ClientMsg::ListCommits {
+                request_id: 7,
+                checkout: CheckoutId(2),
+            },
+            ClientMsg::Review {
+                request_id: 8,
+                checkout: CheckoutId(2),
+                base: ReviewBase::Commit,
+                commit: Some("abcdef0123456789".to_string()),
+            },
             ClientMsg::ReviewComment {
                 checkout: CheckoutId(2),
                 recipient: PaneId(1),
                 anchor: Box::new(ReviewAnchor {
                     base: ReviewBase::Unstaged,
+                    commit: None,
                     path: "src/main.rs".to_string(),
                     old_path: None,
                     old_start: None,
@@ -219,7 +234,9 @@ mod tests {
             cursor: Cursor {
                 row: 4,
                 col: 8,
-                visible: true, ..Default::default() },
+                visible: true,
+                ..Default::default()
+            },
             spans: vec![CellSpan {
                 row: 4,
                 col: 7,
@@ -235,7 +252,15 @@ mod tests {
         };
         assert_eq!(spans[0].cells[0].ch, "é", "non-ascii must survive");
         assert!(spans[0].cells[0].bold);
-        assert_eq!(cursor, Cursor { row: 4, col: 8, visible: true, ..Default::default() });
+        assert_eq!(
+            cursor,
+            Cursor {
+                row: 4,
+                col: 8,
+                visible: true,
+                ..Default::default()
+            }
+        );
     }
 
     #[tokio::test]
@@ -244,7 +269,9 @@ mod tests {
         // keep messages separated when several are written before any read.
         let mut buf: Vec<u8> = Vec::new();
         for pane in 1..=3u64 {
-            write_msg(&mut buf, &ClientMsg::Subscribe { pane: PaneId(pane) }).await.unwrap();
+            write_msg(&mut buf, &ClientMsg::Subscribe { pane: PaneId(pane) })
+                .await
+                .unwrap();
         }
         let mut r = buf.as_slice();
         for pane in 1..=3u64 {
@@ -261,22 +288,30 @@ mod tests {
         // Without this guard a bogus prefix would `vec![0; 4GB]`.
         let mut buf = (MAX_FRAME + 1).to_be_bytes().to_vec();
         buf.extend_from_slice(b"whatever");
-        let err = read_msg::<_, ClientMsg>(&mut buf.as_slice()).await.unwrap_err();
+        let err = read_msg::<_, ClientMsg>(&mut buf.as_slice())
+            .await
+            .unwrap_err();
         assert!(matches!(err, FramingError::TooLarge(_)), "got {err:?}");
     }
 
     #[tokio::test]
     async fn a_truncated_frame_is_an_io_error_not_a_hang() {
         let mut buf: Vec<u8> = Vec::new();
-        write_msg(&mut buf, &ClientMsg::Kill { pane: PaneId(1) }).await.unwrap();
+        write_msg(&mut buf, &ClientMsg::Kill { pane: PaneId(1) })
+            .await
+            .unwrap();
         buf.truncate(buf.len() - 1);
-        let err = read_msg::<_, ClientMsg>(&mut buf.as_slice()).await.unwrap_err();
+        let err = read_msg::<_, ClientMsg>(&mut buf.as_slice())
+            .await
+            .unwrap_err();
         assert!(matches!(err, FramingError::Io(_)), "got {err:?}");
     }
 
     #[tokio::test]
     async fn a_closed_stream_is_an_io_error() {
-        let err = read_msg::<_, ClientMsg>(&mut [].as_slice()).await.unwrap_err();
+        let err = read_msg::<_, ClientMsg>(&mut [].as_slice())
+            .await
+            .unwrap_err();
         assert!(matches!(err, FramingError::Io(_)), "got {err:?}");
     }
 
@@ -284,7 +319,9 @@ mod tests {
     async fn garbage_payload_is_a_decode_error() {
         let mut buf = 3u32.to_be_bytes().to_vec();
         buf.extend_from_slice(&[0xff, 0xff, 0xff]);
-        let err = read_msg::<_, ClientMsg>(&mut buf.as_slice()).await.unwrap_err();
+        let err = read_msg::<_, ClientMsg>(&mut buf.as_slice())
+            .await
+            .unwrap_err();
         assert!(matches!(err, FramingError::Decode(_)), "got {err:?}");
     }
 }
