@@ -29,9 +29,10 @@ use ratatui::Frame;
 use crate::app::{App, CheckoutRow, Focus, Overlay, Panel, PickerKind, Prompt, Setting};
 use crate::dirpicker::DirRow;
 use crate::grid::Grid;
-use argus_protocol::CursorShape;
-use crate::review::{Row, ReviewView};
+use crate::history::{HistoryRow, HistoryView};
+use crate::review::{ReviewView, Row};
 use crate::theme::Theme;
+use argus_protocol::CursorShape;
 
 /// The selection marker, and the blank gutter every other row gets so text
 /// stays aligned whether or not it's selected.
@@ -106,9 +107,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // never take one away: an overlay whose child had hidden its cursor
     // left the content column's cursor stranded on top of the overlay.
     // Each layer replaces the decision outright, `None` included.
-    let fullscreen = app.pane_fullscreen
-        && app.focus == Focus::PaneContent
-        && app.column_pane().is_some();
+    let fullscreen =
+        app.pane_fullscreen && app.focus == Focus::PaneContent && app.column_pane().is_some();
     let mut cursor = if fullscreen {
         app.layout.projects = Panel::default();
         app.layout.repositories = Panel::default();
@@ -264,7 +264,10 @@ n  add one",
                 .collect()
         })
         .unwrap_or_default();
-    let nrepo = app.current_project().map(|p| p.repositories.len()).unwrap_or(0);
+    let nrepo = app
+        .current_project()
+        .map(|p| p.repositories.len())
+        .unwrap_or(0);
     app.layout.repositories = render_column(
         f,
         cols[1],
@@ -289,9 +292,7 @@ n  add one",
                 .filter_map(|row| match row {
                     CheckoutRow::Checkout(i) => r.checkouts.get(i).map(|c| checkout_item(c, th)),
                     CheckoutRow::Branch(i) => r.branches.get(i).map(|b| branch_item(b, th)),
-                    CheckoutRow::Remote(i) => {
-                        r.remote_branches.get(i).map(|b| remote_item(b, th))
-                    }
+                    CheckoutRow::Remote(i) => r.remote_branches.get(i).map(|b| remote_item(b, th)),
                 })
                 .collect()
         })
@@ -342,8 +343,7 @@ n  add one",
                         format!("#{}", p.id.0),
                         Style::default().fg(th.dim),
                     )]);
-                    std::iter::once(parent)
-                        .chain(p.children.iter().map(|c| child_item(c, th)))
+                    std::iter::once(parent).chain(p.children.iter().map(|c| child_item(c, th)))
                 })
                 .collect()
         })
@@ -351,9 +351,11 @@ n  add one",
     // The selection is a pane, but the rows it sits among include the
     // children listed under each one, so the highlight has to be moved
     // onto the row that pane actually occupies.
-    let selected_row = app
-        .current_checkout()
-        .and_then(|c| pane_row_owners(c).iter().position(|owner| *owner == app.sel_pane));
+    let selected_row = app.current_checkout().and_then(|c| {
+        pane_row_owners(c)
+            .iter()
+            .position(|owner| *owner == app.sel_pane)
+    });
     app.layout.panes = render_column(
         f,
         cols[3],
@@ -373,7 +375,10 @@ a  agent",
 }
 
 fn column_constraints(total_width: u16, preferred: Option<&[u16]>) -> Vec<Constraint> {
-    let Some(mut widths) = preferred.filter(|widths| widths.len() == 5).map(<[u16]>::to_vec) else {
+    let Some(mut widths) = preferred
+        .filter(|widths| widths.len() == 5)
+        .map(<[u16]>::to_vec)
+    else {
         return vec![
             Constraint::Percentage(16),
             Constraint::Percentage(17),
@@ -458,7 +463,11 @@ fn render_column(
 ) -> Panel {
     let block = panel_block(title, focused, th, area.width);
     let inner = block.inner(area);
-    let mut panel = Panel { outer: area, inner, first: 0 };
+    let mut panel = Panel {
+        outer: area,
+        inner,
+        first: 0,
+    };
     f.render_widget(block, area);
 
     if rows.is_empty() {
@@ -479,7 +488,9 @@ fn render_column(
     panel.first = first;
 
     for (i, item) in rows.into_iter().enumerate().skip(first).take(visible) {
-        let Some(row) = row_rect(inner, i - first) else { break };
+        let Some(row) = row_rect(inner, i - first) else {
+            break;
+        };
         render_row(f, row, item, selected == Some(i), focused, th);
     }
     panel
@@ -526,7 +537,11 @@ fn render_collapsed_projects(f: &mut Frame, area: Rect, th: Theme) -> Panel {
         .border_style(Style::default().fg(th.edge))
         .style(Style::default().bg(th.surface));
     let inner = block.inner(area);
-    let panel = Panel { outer: area, inner, first: 0 };
+    let panel = Panel {
+        outer: area,
+        inner,
+        first: 0,
+    };
     f.render_widget(block, area);
     panel
 }
@@ -591,9 +606,7 @@ fn panel_block(title: &str, focused: bool, th: Theme, width: u16) -> Block<'_> {
     let (border, label, fill) = if focused {
         (
             Style::default().fg(th.accent),
-            Style::default()
-                .fg(th.accent)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(th.accent).add_modifier(Modifier::BOLD),
             th.surface_focus,
         )
     } else {
@@ -701,7 +714,11 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
         let grid = app.column_pane().and_then(|id| app.grids.get(&id));
         render_term(f, grid, inner, focused)
     };
-    app.layout.content = Panel { outer: area, inner, first: 0 };
+    app.layout.content = Panel {
+        outer: area,
+        inner,
+        first: 0,
+    };
     cursor
 }
 
@@ -710,7 +727,9 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
 /// The diff itself. The window around it is drawn by `render_overlay`,
 /// which owns the border and the title.
 fn render_review(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
-    let Some(view) = app.review.as_mut() else { return };
+    let Some(view) = app.review.as_mut() else {
+        return;
+    };
     view.scroll_into_view(area.height as usize);
     let (from, to) = view.selection();
 
@@ -736,12 +755,24 @@ fn review_line<'a>(view: &'a ReviewView, row: Row, selected: bool, th: Theme) ->
     let spans = match row {
         Row::File { .. } => {
             let mut v = vec![
-                Span::styled(format!(" {} ", file.kind.marker()), Style::default().fg(th.on_accent).bg(th.accent)),
-                Span::styled(format!(" {}", file.path), Style::default().fg(th.text).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!(" {} ", file.kind.marker()),
+                    Style::default().fg(th.on_accent).bg(th.accent),
+                ),
+                Span::styled(
+                    format!(" {}", file.path),
+                    Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+                ),
             ];
             if file.added_lines() + file.removed_lines() > 0 {
-                v.push(Span::styled(format!("  +{}", file.added_lines()), Style::default().fg(th.ok)));
-                v.push(Span::styled(format!(" -{}", file.removed_lines()), Style::default().fg(th.err)));
+                v.push(Span::styled(
+                    format!("  +{}", file.added_lines()),
+                    Style::default().fg(th.ok),
+                ));
+                v.push(Span::styled(
+                    format!(" -{}", file.removed_lines()),
+                    Style::default().fg(th.err),
+                ));
             }
             v
         }
@@ -767,7 +798,10 @@ fn review_line<'a>(view: &'a ReviewView, row: Row, selected: bool, th: Theme) ->
             };
             vec![
                 Span::styled(format!("{no} "), Style::default().fg(th.dim)),
-                Span::styled(format!("{}{}", crate::review::marker(l.kind), l.text), Style::default().fg(fg)),
+                Span::styled(
+                    format!("{}{}", crate::review::marker(l.kind), l.text),
+                    Style::default().fg(fg),
+                ),
             ]
         }
     };
@@ -776,6 +810,66 @@ fn review_line<'a>(view: &'a ReviewView, row: Row, selected: bool, th: Theme) ->
     // and a range should read as one block.
     let mut line = Line::from(spans);
     if selected && row.is_line() {
+        line = line.style(Style::default().bg(th.sel_bg));
+    }
+    line
+}
+
+fn render_history(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    let Some(view) = app.history.as_mut() else {
+        return;
+    };
+    view.scroll_into_view(area.height as usize);
+
+    let lines: Vec<Line> = view
+        .rows
+        .iter()
+        .enumerate()
+        .skip(view.top)
+        .take(area.height as usize)
+        .map(|(i, row)| history_line(view, *row, i == view.sel, th))
+        .collect();
+
+    f.render_widget(Paragraph::new(lines), area);
+}
+
+fn history_line<'a>(view: &'a HistoryView, row: HistoryRow, selected: bool, th: Theme) -> Line<'a> {
+    let commit = &view.commits[row.commit()];
+    let spans = match row {
+        HistoryRow::Commit { .. } => vec![
+            Span::styled(
+                format!(" {} ", commit.info.short),
+                Style::default().fg(th.on_accent).bg(th.accent),
+            ),
+            Span::styled(
+                format!(" {}", commit.info.summary),
+                Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("  {}", commit.info.author),
+                Style::default().fg(th.muted),
+            ),
+        ],
+        HistoryRow::File { file, .. } => {
+            let file = &commit.files[file];
+            let mut v = vec![
+                Span::styled(
+                    format!("  {} ", file.kind.marker()),
+                    Style::default().fg(th.on_accent).bg(th.accent),
+                ),
+                Span::styled(format!(" {}", file.path), Style::default().fg(th.text)),
+            ];
+            if let Some(old) = &file.old_path {
+                v.push(Span::styled(
+                    format!(" ← {old}"),
+                    Style::default().fg(th.muted),
+                ));
+            }
+            v
+        }
+    };
+    let mut line = Line::from(spans);
+    if selected {
         line = line.style(Style::default().bg(th.sel_bg));
     }
     line
@@ -824,9 +918,7 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "type to filter or name a new one   ↑/↓ move   enter open   esc cancel"
             }
             PickerKind::Theme => "j/k move   enter apply   esc cancel",
-            PickerKind::Branch { .. } => {
-                "type to filter   ↑/↓ move   enter switch   esc cancel"
-            }
+            PickerKind::Branch { .. } => "type to filter   ↑/↓ move   enter switch   esc cancel",
             PickerKind::File { .. } => "type to filter   ↑/↓ move   enter open   esc cancel",
             PickerKind::Change => "type to filter   ↑/↓ move   enter jump   esc cancel",
             PickerKind::ReviewRecipient { .. } => "j/k move   enter send   esc cancel",
@@ -844,9 +936,27 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
         ("j/k move   h/l change   esc close", th.dim)
     } else if matches!(app.overlay, Some(Overlay::Review)) {
-        ("j/k  ]/[ file  f jump  c comment  e edit  b staged/unstaged  esc close", th.dim)
+        let hint = if app
+            .review
+            .as_ref()
+            .is_some_and(|v| v.review.commit.is_some())
+            && app.history.is_some()
+        {
+            "j/k  ]/[ file  f jump  c comment  e edit  h history  esc close"
+        } else {
+            "j/k  ]/[ file  f jump  c comment  e edit  b staged/unstaged  esc close"
+        };
+        (hint, th.dim)
+    } else if matches!(app.overlay, Some(Overlay::History)) {
+        (
+            "j/k  ]/[ commit  l open  r refresh  R review  esc close",
+            th.dim,
+        )
     } else if app.overlay.is_some() {
-        ("floating — ctrl-space then esc to close, x to kill   ctrl-v paste", th.dim)
+        (
+            "floating — ctrl-space then esc to close, x to kill   ctrl-v paste",
+            th.dim,
+        )
     } else if app.focus == Focus::PaneContent {
         let hint = if app.pane_fullscreen {
             "typing   ctrl-space: esc leave  f restore  x close   ctrl-v paste"
@@ -865,9 +975,9 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "j/k move  l open  N attention  s shell  a agent  b branch  f file  n add  D rm  q detach"
             }
             Focus::Checkouts => {
-                "j/k move  l open  b branch  B all  F fetch  P pull  f file  R review  n worktree  D rm  q detach"
+                "j/k move  l open  b branch  B all  F fetch  P pull  f file  R review  H history  n worktree  D rm  q detach"
             }
-            _ => "j/k move  l open  N attention  s shell  a agent  b branch  f file  R review  x close  q detach",
+            _ => "j/k move  l open  N attention  s shell  a agent  b branch  f file  R review  H history  x close  q detach",
         };
         (keys, th.dim)
     };
@@ -951,8 +1061,15 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
         Overlay::Pane { title, .. } => format!("{title}  ·  ctrl-space esc / F12 to close"),
         Overlay::Settings { .. } => "settings".to_string(),
         Overlay::Review => match app.review.as_ref() {
-            Some(v) => format!("review · {}", v.review.base.label()),
+            Some(v) => match &v.review.commit {
+                Some(c) => format!("review · {}  {}", c.short, c.summary),
+                None => format!("review · {}", v.review.base.label()),
+            },
             None => "review".to_string(),
+        },
+        Overlay::History => match app.history.as_ref() {
+            Some(h) => format!("history · {} commits", h.commits.len()),
+            None => "history".to_string(),
         },
     };
 
@@ -974,6 +1091,10 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
         }
         Overlay::Review => {
             render_review(f, app, inner, th);
+            None
+        }
+        Overlay::History => {
+            render_history(f, app, inner, th);
             None
         }
     }
@@ -1024,7 +1145,11 @@ fn render_settings(f: &mut Frame, app: &App, area: Rect, sel: usize, th: Theme) 
         // Only a value you can cycle gets the arrows; free text would be
         // promising a carousel that isn't there.
         let cyclable = *setting != Setting::EditorCmd;
-        let (open, close) = if cyclable { ("‹ ", " ›") } else { ("  ", "") };
+        let (open, close) = if cyclable {
+            ("‹ ", " ›")
+        } else {
+            ("  ", "")
+        };
         lines.push(Line::from(vec![
             marker,
             Span::styled(
@@ -1071,11 +1196,18 @@ fn render_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     let Some(picker) = &app.picker else { return };
     let fuzzy = picker.is_fuzzy();
 
-    let rows = picker.len().min(if fuzzy { PICKER_ROWS } else { usize::MAX });
+    let rows = picker
+        .len()
+        .min(if fuzzy { PICKER_ROWS } else { usize::MAX });
     // Borders, the top pad, and the query line with its own blank beneath.
     let chrome = 3 + if fuzzy { 2 } else { 0 };
     let height = (rows as u16 + chrome as u16).min(area.height);
-    let widest = picker.items.iter().map(|i| i.chars().count()).max().unwrap_or(0);
+    let widest = picker
+        .items
+        .iter()
+        .map(|i| i.chars().count())
+        .max()
+        .unwrap_or(0);
     let floor = if fuzzy { 44 } else { 28 };
     let width = (widest as u16 + 8).clamp(floor, 72).min(area.width);
     let popup = centered_rect(width, height, area);
@@ -1092,10 +1224,7 @@ fn render_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         let mut spans = vec![Span::styled("› ", Style::default().fg(th.accent))];
         spans.extend(field(&picker.query, th).spans);
         if picker.query.is_empty() {
-            spans.push(Span::styled(
-                " type to filter",
-                Style::default().fg(th.dim),
-            ));
+            spans.push(Span::styled(" type to filter", Style::default().fg(th.dim)));
         }
         f.render_widget(
             Paragraph::new(Line::from(spans)),
@@ -1124,8 +1253,17 @@ fn render_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         if i >= picker.len() {
             break;
         }
-        let Some(row) = row_rect_of(list, slot, 1) else { break };
-        render_row(f, row, picker_item(picker, i, th), i == picker.sel, true, th);
+        let Some(row) = row_rect_of(list, slot, 1) else {
+            break;
+        };
+        render_row(
+            f,
+            row,
+            picker_item(picker, i, th),
+            i == picker.sel,
+            true,
+            th,
+        );
     }
 }
 
@@ -1158,7 +1296,9 @@ fn picker_item<'a>(picker: &'a crate::app::Picker, i: usize, th: Theme) -> Item<
 /// because it has to show three things at once: where you are, what is
 /// under it, and which of those are repositories.
 fn render_dir_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
-    let Some(picker) = &app.dir_picker else { return };
+    let Some(picker) = &app.dir_picker else {
+        return;
+    };
 
     let rows = picker.len().min(PICKER_ROWS);
     // Borders, the block's top pad, breadcrumb, query, the blank under it,
@@ -1220,7 +1360,9 @@ fn render_dir_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         for slot in 0..visible {
             let i = first + slot;
             let Some(row) = picker.row(i) else { break };
-            let Some(rect) = row_rect_of(list, slot, 1) else { break };
+            let Some(rect) = row_rect_of(list, slot, 1) else {
+                break;
+            };
             render_row(f, rect, dir_item(row, th), i == picker.sel, true, th);
         }
     }
@@ -1483,10 +1625,7 @@ fn checkout_item(c: &argus_protocol::CheckoutInfo, th: Theme) -> Item<'static> {
                 c.name.clone(),
                 Style::default().fg(th.text).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                if shared { " ⚠" } else { "" },
-                Style::default().fg(th.warn),
-            ),
+            Span::styled(if shared { " ⚠" } else { "" }, Style::default().fg(th.warn)),
         ],
         detail,
     )
@@ -1536,7 +1675,11 @@ fn remote_item(name: &str, th: Theme) -> Item<'static> {
 /// [`git_spans`] with the branch name elided when it merely repeats the
 /// row's own label. The ahead/behind/dirty markers always survive — those
 /// are never implied by the name.
-fn git_spans_unless_branch_is(git: Option<&GitStatus>, name: &str, th: Theme) -> Vec<Span<'static>> {
+fn git_spans_unless_branch_is(
+    git: Option<&GitStatus>,
+    name: &str,
+    th: Theme,
+) -> Vec<Span<'static>> {
     let redundant = git.and_then(|g| g.branch.as_deref()) == Some(name);
     git_spans(git, th)
         .into_iter()
@@ -1625,7 +1768,11 @@ fn pane_detail(p: &argus_protocol::PaneInfo, th: Theme) -> Vec<Span<'static>> {
     match p.note.as_deref().filter(|n| !n.is_empty()) {
         Some(note) => spans.push(Span::styled(
             note.to_string(),
-            Style::default().fg(if p.status.needs_you() { th.err } else { th.muted }),
+            Style::default().fg(if p.status.needs_you() {
+                th.err
+            } else {
+                th.muted
+            }),
         )),
         None => spans.push(Span::styled(
             status_word(p.status),
@@ -1677,9 +1824,7 @@ fn exit_note(status: PaneStatus) -> String {
 
 fn worst_pane_status(c: &argus_protocol::CheckoutInfo) -> Option<PaneStatus> {
     c.listed_panes()
-        .flat_map(|p| {
-            std::iter::once(p.status).chain(p.children.iter().map(|child| child.status))
-        })
+        .flat_map(|p| std::iter::once(p.status).chain(p.children.iter().map(|child| child.status)))
         .max_by_key(rank)
 }
 
@@ -1814,14 +1959,20 @@ fn to_ratatui_color(c: PColor) -> Color {
 mod tests {
     use super::*;
     use argus_protocol::{
-        CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, ProjectId, ProjectInfo,
-        RepositoryId, RepositoryInfo,
+        CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, ProjectId, ProjectInfo, RepositoryId,
+        RepositoryInfo,
     };
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
-    fn git(branch: Option<&str>, dirty: bool, changed: usize, ahead: usize, behind: usize) -> GitStatus {
+    fn git(
+        branch: Option<&str>,
+        dirty: bool,
+        changed: usize,
+        ahead: usize,
+        behind: usize,
+    ) -> GitStatus {
         GitStatus {
             branch: branch.map(str::to_string),
             dirty,
@@ -1891,8 +2042,14 @@ mod tests {
 
     #[test]
     fn zero_counts_are_omitted_rather_than_shown_as_zero() {
-        let s = text_of(&git_spans(Some(&git(Some("m"), false, 0, 0, 0)), Theme::default()));
-        assert!(!s.contains('↑') && !s.contains('↓') && !s.contains('0'), "{s:?}");
+        let s = text_of(&git_spans(
+            Some(&git(Some("m"), false, 0, 0, 0)),
+            Theme::default(),
+        ));
+        assert!(
+            !s.contains('↑') && !s.contains('↓') && !s.contains('0'),
+            "{s:?}"
+        );
     }
 
     #[test]
@@ -1933,7 +2090,10 @@ mod tests {
     #[test]
     fn a_failed_exit_outranks_the_calm_states() {
         let c = checkout_with(&[PaneStatus::Idle, PaneStatus::Exited { code: Some(1) }]);
-        assert_eq!(worst_pane_status(&c), Some(PaneStatus::Exited { code: Some(1) }));
+        assert_eq!(
+            worst_pane_status(&c),
+            Some(PaneStatus::Exited { code: Some(1) })
+        );
     }
 
     #[test]
@@ -2100,17 +2260,26 @@ mod tests {
     #[test]
     fn a_pane_with_nothing_to_say_falls_back_to_its_state() {
         let th = Theme::default();
-        assert_eq!(text_of(&pane_detail(&pane(PaneStatus::Working, None), th)), "working");
+        assert_eq!(
+            text_of(&pane_detail(&pane(PaneStatus::Working, None), th)),
+            "working"
+        );
         assert_eq!(
             text_of(&pane_detail(&pane(PaneStatus::Waiting, None), th)),
             "needs you"
         );
-        assert_eq!(text_of(&pane_detail(&pane(PaneStatus::Failed, None), th)), "failed");
+        assert_eq!(
+            text_of(&pane_detail(&pane(PaneStatus::Failed, None), th)),
+            "failed"
+        );
         assert_eq!(
             text_of(&pane_detail(&pane(PaneStatus::NeedsReview, None), th)),
             "needs review"
         );
-        assert_eq!(text_of(&pane_detail(&pane(PaneStatus::Done, None), th)), "done");
+        assert_eq!(
+            text_of(&pane_detail(&pane(PaneStatus::Done, None), th)),
+            "done"
+        );
     }
 
     #[test]
@@ -2151,10 +2320,15 @@ mod tests {
                 },
             ];
         }
-        let out = lines(&draw_at(&mut app, 160, 24)).join("
-");
-        assert!(out.contains("⤷"), "children are marked as such:
-{out}");
+        let out = lines(&draw_at(&mut app, 160, 24)).join(
+            "
+",
+        );
+        assert!(
+            out.contains("⤷"),
+            "children are marked as such:
+{out}"
+        );
         assert!(out.contains("searching the"), "{out}");
         assert!(out.contains("running the tests"), "{out}");
         // A child stalled on a human says so where the parent's note goes,
@@ -2195,9 +2369,16 @@ mod tests {
         // The whole point of the note: "needs you" still costs you a trip
         // into the pane to find out what for.
         let th = Theme::default();
-        let spans = pane_detail(&pane(PaneStatus::Waiting, Some("needs the db password")), th);
+        let spans = pane_detail(
+            &pane(PaneStatus::Waiting, Some("needs the db password")),
+            th,
+        );
         assert_eq!(text_of(&spans), "needs the db password");
-        assert_eq!(spans[0].style.fg, Some(th.err), "a blocked row should read as one");
+        assert_eq!(
+            spans[0].style.fg,
+            Some(th.err),
+            "a blocked row should read as one"
+        );
     }
 
     #[test]
@@ -2210,7 +2391,10 @@ mod tests {
     #[test]
     fn an_empty_note_is_not_an_empty_line() {
         let th = Theme::default();
-        assert_eq!(text_of(&pane_detail(&pane(PaneStatus::Idle, Some("")), th)), "idle");
+        assert_eq!(
+            text_of(&pane_detail(&pane(PaneStatus::Idle, Some("")), th)),
+            "idle"
+        );
     }
 
     #[test]
@@ -2219,9 +2403,7 @@ mod tests {
         // still answer wants you most.
         assert!(rank(&PaneStatus::Failed) > rank(&PaneStatus::Working));
         assert!(rank(&PaneStatus::Failed) > rank(&PaneStatus::Exited { code: Some(1) }));
-        assert!(
-            rank(&PaneStatus::NeedsReview) > rank(&PaneStatus::Exited { code: Some(1) })
-        );
+        assert!(rank(&PaneStatus::NeedsReview) > rank(&PaneStatus::Exited { code: Some(1) }));
         assert!(rank(&PaneStatus::Waiting) > rank(&PaneStatus::Failed));
     }
 
@@ -2247,41 +2429,41 @@ mod tests {
                 default_branch: None,
                 remote_branches: Vec::new(),
                 checkouts: vec![
-                CheckoutInfo {
-                    id: CheckoutId(10),
-                    name: "master".to_string(),
-                    path: "/repo".to_string(),
-                    primary: true,
-                    git: Some(git(Some("master"), true, 2, 0, 0)),
-                    panes: vec![
-                        PaneInfo {
-                            id: PaneId(100),
-                            kind: PaneKind::Agent,
-                            title: "claude".to_string(),
-                            status: PaneStatus::Working,
-                            note: None,
-                            template: None,
-                            children: Vec::new(),
-                        },
-                        PaneInfo {
-                            id: PaneId(101),
-                            kind: PaneKind::Shell,
-                            title: "shell".to_string(),
-                            status: PaneStatus::Idle,
-                            note: None,
-                            template: None,
-                            children: Vec::new(),
-                        },
-                    ],
-                },
-                CheckoutInfo {
-                    id: CheckoutId(11),
-                    name: "feat".to_string(),
-                    path: "/repo/wt".to_string(),
-                    primary: false,
-                    git: None,
-                    panes: vec![],
-                },
+                    CheckoutInfo {
+                        id: CheckoutId(10),
+                        name: "master".to_string(),
+                        path: "/repo".to_string(),
+                        primary: true,
+                        git: Some(git(Some("master"), true, 2, 0, 0)),
+                        panes: vec![
+                            PaneInfo {
+                                id: PaneId(100),
+                                kind: PaneKind::Agent,
+                                title: "claude".to_string(),
+                                status: PaneStatus::Working,
+                                note: None,
+                                template: None,
+                                children: Vec::new(),
+                            },
+                            PaneInfo {
+                                id: PaneId(101),
+                                kind: PaneKind::Shell,
+                                title: "shell".to_string(),
+                                status: PaneStatus::Idle,
+                                note: None,
+                                template: None,
+                                children: Vec::new(),
+                            },
+                        ],
+                    },
+                    CheckoutInfo {
+                        id: CheckoutId(11),
+                        name: "feat".to_string(),
+                        path: "/repo/wt".to_string(),
+                        primary: false,
+                        git: None,
+                        panes: vec![],
+                    },
                 ],
             }],
         }]
@@ -2374,7 +2556,10 @@ mod tests {
 
         click_checkout(&mut app, 0);
 
-        let name = app.current_checkout().map(|c| c.name.clone()).unwrap_or_default();
+        let name = app
+            .current_checkout()
+            .map(|c| c.name.clone())
+            .unwrap_or_default();
         assert!(
             first_drawn.contains(&name),
             "clicking the top row must select the checkout drawn there: {first_drawn:?} selected {name:?}"
@@ -2524,7 +2709,10 @@ mod tests {
         app.focus = Focus::PaneContent;
         let text = lines(&draw(&mut app)).join("\n");
         for title in ["projects", "repositories", "checkouts", "panes"] {
-            assert!(text.contains(title), "{title} column missing while inside a pane");
+            assert!(
+                text.contains(title),
+                "{title} column missing while inside a pane"
+            );
         }
     }
 
@@ -2545,10 +2733,17 @@ mod tests {
             app.layout.checkouts,
             app.layout.panes,
         ] {
-            assert_eq!(panel.outer, Rect::default(), "hidden columns must not remain clickable");
+            assert_eq!(
+                panel.outer,
+                Rect::default(),
+                "hidden columns must not remain clickable"
+            );
         }
         for title in ["projects", "repositories", "checkouts", "panes"] {
-            assert!(!text.contains(title), "{title} column remained visible in fullscreen");
+            assert!(
+                !text.contains(title),
+                "{title} column remained visible in fullscreen"
+            );
         }
         assert!(text.contains("argus › orion › master › claude"));
         assert!(text.contains("f restore"));
@@ -2565,7 +2760,9 @@ mod tests {
                 argus_protocol::Cursor {
                     row: 1,
                     col: 2,
-                    visible: true, ..Default::default() },
+                    visible: true,
+                    ..Default::default()
+                },
                 Default::default(),
             ),
         );
@@ -2593,7 +2790,12 @@ mod tests {
             PaneId(100),
             Grid::with_cursor(
                 vec![vec![Default::default(); 40]; 10],
-                argus_protocol::Cursor { row: 1, col: 2, visible: true, ..Default::default() },
+                argus_protocol::Cursor {
+                    row: 1,
+                    col: 2,
+                    visible: true,
+                    ..Default::default()
+                },
                 Default::default(),
             ),
         );
@@ -2601,7 +2803,12 @@ mod tests {
             PaneId(101),
             Grid::with_cursor(
                 vec![vec![Default::default(); 40]; 10],
-                argus_protocol::Cursor { row: 1, col: 2, visible: false, ..Default::default() },
+                argus_protocol::Cursor {
+                    row: 1,
+                    col: 2,
+                    visible: false,
+                    ..Default::default()
+                },
                 Default::default(),
             ),
         );
@@ -2629,14 +2836,21 @@ mod tests {
             PaneId(100),
             Grid::with_cursor(
                 vec![vec![Default::default(); 40]; 10],
-                argus_protocol::Cursor { row: 1, col: 2, visible: true, ..Default::default() },
+                argus_protocol::Cursor {
+                    row: 1,
+                    col: 2,
+                    visible: true,
+                    ..Default::default()
+                },
                 Default::default(),
             ),
         );
         draw(&mut app);
         assert!(app.layout.cursor.is_some());
 
-        app.prompt = Some(Prompt::EditorCommand { input: String::new() });
+        app.prompt = Some(Prompt::EditorCommand {
+            input: String::new(),
+        });
         draw(&mut app);
 
         assert_eq!(app.layout.cursor, None);
@@ -2651,7 +2865,12 @@ mod tests {
         let area = Rect::new(0, 0, 80, 40);
         let grid = Grid::with_cursor(
             vec![vec![Default::default(); 80]; 24],
-            argus_protocol::Cursor { row: 30, col: 0, visible: true, ..Default::default() },
+            argus_protocol::Cursor {
+                row: 30,
+                col: 0,
+                visible: true,
+                ..Default::default()
+            },
             Default::default(),
         );
 
@@ -2663,7 +2882,12 @@ mod tests {
         let area = Rect::new(3, 5, 80, 40);
         let grid = Grid::with_cursor(
             vec![vec![Default::default(); 80]; 24],
-            argus_protocol::Cursor { row: 7, col: 9, visible: true, ..Default::default() },
+            argus_protocol::Cursor {
+                row: 7,
+                col: 9,
+                visible: true,
+                ..Default::default()
+            },
             Default::default(),
         );
 
@@ -2678,12 +2902,22 @@ mod tests {
         let area = Rect::new(0, 0, 80, 40);
         let visible = Grid::with_cursor(
             vec![vec![Default::default(); 80]; 24],
-            argus_protocol::Cursor { row: 1, col: 1, visible: true, ..Default::default() },
+            argus_protocol::Cursor {
+                row: 1,
+                col: 1,
+                visible: true,
+                ..Default::default()
+            },
             Default::default(),
         );
         let hidden = Grid::with_cursor(
             vec![vec![Default::default(); 80]; 24],
-            argus_protocol::Cursor { row: 1, col: 1, visible: false, ..Default::default() },
+            argus_protocol::Cursor {
+                row: 1,
+                col: 1,
+                visible: false,
+                ..Default::default()
+            },
             Default::default(),
         );
 
@@ -2755,9 +2989,18 @@ mod tests {
 
         let buf = draw_at(&mut app, 140, 20);
         let text = lines(&buf).join("\n");
-        assert!(text.contains("satellite"), "repository row missing:\n{text}");
-        assert!(text.contains("2 repositories"), "project rollup missing:\n{text}");
-        assert!(text.contains("1 ▣"), "repository pane rollup missing:\n{text}");
+        assert!(
+            text.contains("satellite"),
+            "repository row missing:\n{text}"
+        );
+        assert!(
+            text.contains("2 repositories"),
+            "project rollup missing:\n{text}"
+        );
+        assert!(
+            text.contains("1 ▣"),
+            "repository pane rollup missing:\n{text}"
+        );
 
         let status = buf
             .cell((
@@ -2792,9 +3035,15 @@ mod tests {
 
         // A blank cell inside each panel, below the last row.
         let blank = |p: Panel| {
-            buf.cell((p.inner.x, p.inner.y + p.inner.height - 1)).unwrap().bg
+            buf.cell((p.inner.x, p.inner.y + p.inner.height - 1))
+                .unwrap()
+                .bg
         };
-        assert_eq!(blank(app.layout.projects), th.surface_focus, "focused panel");
+        assert_eq!(
+            blank(app.layout.projects),
+            th.surface_focus,
+            "focused panel"
+        );
         assert_eq!(blank(app.layout.checkouts), th.surface, "unfocused panel");
         assert_eq!(buf.cell((0, 0)).unwrap().bg, th.bg, "the page behind them");
     }
@@ -2809,12 +3058,20 @@ mod tests {
 
         let inner = app.layout.checkouts.inner;
         let marker = buf.cell((inner.x, inner.y + ROW_HEIGHT)).unwrap();
-        assert_eq!(marker.symbol(), MARKER, "selection marker on the selected row");
+        assert_eq!(
+            marker.symbol(),
+            MARKER,
+            "selection marker on the selected row"
+        );
         assert_eq!(marker.fg, th.accent);
         assert_eq!(marker.bg, th.sel_bg);
 
         let unselected = buf.cell((inner.x, inner.y)).unwrap();
-        assert_eq!(unselected.symbol(), GUTTER, "other rows keep an aligned gutter");
+        assert_eq!(
+            unselected.symbol(),
+            GUTTER,
+            "other rows keep an aligned gutter"
+        );
         assert!(
             !unselected.modifier.contains(Modifier::REVERSED),
             "reverse video would fight the status colors"
@@ -2831,7 +3088,10 @@ mod tests {
 
         let inner = app.layout.checkouts.inner;
         let cell = buf.cell((inner.x + 1, inner.y)).unwrap();
-        assert_eq!(cell.bg, th.sel_bg_dim, "you should still see where you were");
+        assert_eq!(
+            cell.bg, th.sel_bg_dim,
+            "you should still see where you were"
+        );
     }
 
     #[test]
@@ -2841,8 +3101,11 @@ mod tests {
         app.focus = Focus::Panes;
         let text = lines(&draw(&mut app)).join("\n");
         assert!(text.contains("nothing running"), "{text}");
-        assert!(text.contains("shell"), "an empty panes column says what to press:
-{text}");
+        assert!(
+            text.contains("shell"),
+            "an empty panes column says what to press:
+{text}"
+        );
     }
 
     #[test]
@@ -2859,8 +3122,14 @@ mod tests {
 
         app.focus = Focus::PaneContent;
         let typing = lines(&draw(&mut app)).join("\n");
-        assert!(typing.contains("typing"), "a pane's keys are the child's, and it should say so");
-        assert!(!typing.contains("q detach"), "the nav keymap would be a lie here");
+        assert!(
+            typing.contains("typing"),
+            "a pane's keys are the child's, and it should say so"
+        );
+        assert!(
+            !typing.contains("q detach"),
+            "the nav keymap would be a lie here"
+        );
     }
 
     #[test]
@@ -2869,7 +3138,10 @@ mod tests {
         app.focus = Focus::PaneContent;
         app.leader_pending = true;
         let text = lines(&draw(&mut app)).join("\n");
-        assert!(text.contains("leader"), "a half-entered chord must be visible");
+        assert!(
+            text.contains("leader"),
+            "a half-entered chord must be visible"
+        );
     }
 
     #[test]
@@ -2879,7 +3151,10 @@ mod tests {
             message: "git worktree add failed".to_string(),
         });
         let text = lines(&draw(&mut app)).join("\n");
-        assert!(text.contains("git worktree add failed"), "errors must be read, not buried");
+        assert!(
+            text.contains("git worktree add failed"),
+            "errors must be read, not buried"
+        );
     }
 
     #[test]
@@ -2898,8 +3173,11 @@ mod tests {
             "a read error must not outlive the key that acknowledges it:
 {bar}"
         );
-        assert!(bar.trim_start().starts_with("projects"), "the breadcrumb gets its seat back:
-{bar}");
+        assert!(
+            bar.trim_start().starts_with("projects"),
+            "the breadcrumb gets its seat back:
+{bar}"
+        );
     }
 
     #[test]
@@ -2960,7 +3238,8 @@ mod tests {
         let text = lines(&buf).join("\n");
         assert!(text.contains("remove checkout?"));
         assert!(
-            (0..buf.area.height).any(|y| (0..buf.area.width).any(|x| buf.cell((x, y)).unwrap().fg == th.err)),
+            (0..buf.area.height)
+                .any(|y| (0..buf.area.width).any(|x| buf.cell((x, y)).unwrap().fg == th.err)),
             "a removal must not look like an ordinary text field"
         );
     }
@@ -2974,7 +3253,10 @@ mod tests {
         ));
         let text = lines(&draw(&mut app)).join("\n");
         assert!(text.contains("add project"));
-        assert!(text.contains("enter add"), "a prompt should say how to commit it");
+        assert!(
+            text.contains("enter add"),
+            "a prompt should say how to commit it"
+        );
     }
 
     fn comment_prompt(input: &str) -> App {
@@ -2982,6 +3264,7 @@ mod tests {
         app.prompt = Some(Prompt::Comment {
             anchor: argus_protocol::ReviewAnchor {
                 base: argus_protocol::ReviewBase::Unstaged,
+                commit: None,
                 path: "crates/argus-client/src/ui.rs".to_string(),
                 old_path: None,
                 old_start: Some(1013),
@@ -2999,7 +3282,11 @@ mod tests {
     /// over excluded. The box is found rather than assumed: it is centered
     /// and sized to its own content.
     fn box_rows(buf: &ratatui::buffer::Buffer) -> Vec<String> {
-        let sym = |x: u16, y: u16| buf.cell((x, y)).map(|c| c.symbol().to_string()).unwrap_or_default();
+        let sym = |x: u16, y: u16| {
+            buf.cell((x, y))
+                .map(|c| c.symbol().to_string())
+                .unwrap_or_default()
+        };
         // The panels are drawn first and start higher up, so the last
         // top-left corner on the screen belongs to the modal over them.
         let (x0, y0) = (0..buf.area.height)
@@ -3048,7 +3335,10 @@ mod tests {
         assert!(rows.len() > 3, "the box grew to fit: {rows:?}");
         let typed: String = rows.join(" ");
         for word in ["rebuilds", "keystroke", "thousand"] {
-            assert!(typed.contains(word), "{word:?} should be readable: {rows:?}");
+            assert!(
+                typed.contains(word),
+                "{word:?} should be readable: {rows:?}"
+            );
         }
     }
 
@@ -3089,7 +3379,10 @@ mod tests {
             .iter()
             .position(|r| r.contains("make this lazy"))
             .expect("and so is the comment");
-        assert!(anchored < typed, "on separate lines, anchor first: {rows:?}");
+        assert!(
+            anchored < typed,
+            "on separate lines, anchor first: {rows:?}"
+        );
     }
 
     #[test]
@@ -3133,8 +3426,14 @@ mod tests {
         let mut app = app_with_tree();
         app.focus = Focus::Checkouts;
         app.templates = vec!["claude".to_string()];
-        let w = std::env::var("DUMP_W").ok().and_then(|v| v.parse().ok()).unwrap_or(100);
-        let h = std::env::var("DUMP_H").ok().and_then(|v| v.parse().ok()).unwrap_or(20);
+        let w = std::env::var("DUMP_W")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(100);
+        let h = std::env::var("DUMP_H")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(20);
         for line in lines(&draw_at(&mut app, w, h)) {
             println!("|{line}");
         }
@@ -3288,7 +3587,10 @@ mod tests {
         // The hint wraps across the narrow column, so assert on its words
         // rather than on a contiguous phrase.
         let text = lines(&draw(&mut app)).join("\n");
-        assert!(text.contains("no projects"), "a first run should say the tree is empty");
+        assert!(
+            text.contains("no projects"),
+            "a first run should say the tree is empty"
+        );
         assert!(text.contains("add"), "and how to start:\n{text}");
     }
     // --- review viewer ------------------------------------------------------
@@ -3328,8 +3630,44 @@ mod tests {
                 }],
                 note: None,
             }],
+            commit: None,
         }));
         app.overlay = Some(Overlay::Review);
+        app.focus = Focus::Review;
+        app
+    }
+
+    fn app_with_history() -> App {
+        let mut app = app_with_tree();
+        app.history = Some(crate::history::HistoryView::new(
+            CheckoutId(1),
+            vec![argus_protocol::HistoryCommit {
+                info: argus_protocol::CommitInfo {
+                    oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                    short: "aaaaaaa".into(),
+                    summary: "Wake a pane's pump on the byte".into(),
+                    author: "hunt".into(),
+                    time: 0,
+                },
+                files: vec![
+                    argus_protocol::CommitFile {
+                        path: "crates/argusd/src/pty.rs".into(),
+                        old_path: None,
+                        kind: argus_protocol::ChangeKind::Modified,
+                        added: 12,
+                        removed: 3,
+                    },
+                    argus_protocol::CommitFile {
+                        path: "DESIGN.md".into(),
+                        old_path: None,
+                        kind: argus_protocol::ChangeKind::Added,
+                        added: 40,
+                        removed: 0,
+                    },
+                ],
+            }],
+        ));
+        app.overlay = Some(Overlay::History);
         app.focus = Focus::Review;
         app
     }
@@ -3341,7 +3679,61 @@ mod tests {
         let mut app = app_with_review();
         let out = lines(&draw(&mut app)).join("\n");
         assert!(out.contains("argus"), "the project is still listed:\n{out}");
-        assert!(out.contains("src/thing.rs"), "and the diff is up too:\n{out}");
+        assert!(
+            out.contains("src/thing.rs"),
+            "and the diff is up too:\n{out}"
+        );
+    }
+
+    #[test]
+    fn the_history_never_hides_the_nav_columns() {
+        // Same standing rule as the review: opening the log must not take
+        // the tree off screen.
+        let mut app = app_with_history();
+        let out = lines(&draw(&mut app)).join(
+            "
+",
+        );
+        assert!(
+            out.contains("argus"),
+            "the project is still listed:
+{out}"
+        );
+    }
+
+    #[test]
+    fn a_commit_row_shows_its_short_hash_summary_and_author() {
+        let mut app = app_with_history();
+        let out = lines(&draw(&mut app)).join(
+            "
+",
+        );
+        assert!(
+            out.contains("aaaaaaa"),
+            "the short hash:
+{out}"
+        );
+        assert!(
+            out.contains("Wake a pane's pump"),
+            "the subject:
+{out}"
+        );
+        assert!(
+            out.contains("hunt"),
+            "the author:
+{out}"
+        );
+    }
+
+    #[test]
+    fn the_files_a_commit_touched_are_listed_under_it() {
+        let mut app = app_with_history();
+        let out = lines(&draw(&mut app)).join(
+            "
+",
+        );
+        assert!(out.contains("crates/argusd/src/pty.rs"), "{out}");
+        assert!(out.contains("DESIGN.md"), "{out}");
     }
 
     #[test]
@@ -3359,7 +3751,10 @@ mod tests {
         let out = lines(&draw(&mut app)).join("\n");
         assert!(out.contains("+arrived"), "{out}");
         assert!(out.contains("-gone"), "{out}");
-        assert!(out.contains("@@ -10,3 +10,3 @@"), "the hunk header too:\n{out}");
+        assert!(
+            out.contains("@@ -10,3 +10,3 @@"),
+            "the hunk header too:\n{out}"
+        );
     }
 
     #[test]
@@ -3380,8 +3775,16 @@ mod tests {
         app.review.as_mut().unwrap().move_by(1);
         let buf = draw(&mut app);
         assert_eq!(bg_of(&buf, "unchanged"), Some(app.theme.sel_bg));
-        assert_eq!(bg_of(&buf, "-gone"), Some(app.theme.sel_bg), "the whole range");
-        assert_ne!(bg_of(&buf, "+arrived"), Some(app.theme.sel_bg), "but no further");
+        assert_eq!(
+            bg_of(&buf, "-gone"),
+            Some(app.theme.sel_bg),
+            "the whole range"
+        );
+        assert_ne!(
+            bg_of(&buf, "+arrived"),
+            Some(app.theme.sel_bg),
+            "but no further"
+        );
     }
 
     #[test]
@@ -3389,7 +3792,10 @@ mod tests {
         let mut app = app_with_review();
         app.review.as_mut().unwrap().bottom_of_diff();
         let out = lines(&draw_at(&mut app, 100, 10)).join("\n");
-        assert!(out.contains("+arrived"), "the cursor's line is on screen:\n{out}");
+        assert!(
+            out.contains("+arrived"),
+            "the cursor's line is on screen:\n{out}"
+        );
     }
 
     fn fg_of(buf: &ratatui::buffer::Buffer, needle: &str) -> Option<Color> {
@@ -3400,7 +3806,10 @@ mod tests {
         cell_at(buf, needle).map(|c| c.bg)
     }
 
-    fn cell_at<'a>(buf: &'a ratatui::buffer::Buffer, needle: &str) -> Option<&'a ratatui::buffer::Cell> {
+    fn cell_at<'a>(
+        buf: &'a ratatui::buffer::Buffer,
+        needle: &str,
+    ) -> Option<&'a ratatui::buffer::Cell> {
         // Cell-wise: multi-byte glyphs make byte offsets lie.
         let needle: Vec<&str> = needle.split("").filter(|s| !s.is_empty()).collect();
         for y in 0..buf.area.height {
@@ -3470,7 +3879,10 @@ mod tests {
         let mut app = app_with_branch_picker("log");
         let out = lines(&draw(&mut app)).join("\n");
         assert!(out.contains("feature/login"), "{out}");
-        assert!(!out.contains("hotfix"), "a non-match should be gone:\n{out}");
+        assert!(
+            !out.contains("hotfix"),
+            "a non-match should be gone:\n{out}"
+        );
     }
 
     #[test]
@@ -3500,7 +3912,10 @@ mod tests {
         let buf = draw_at(&mut app, 100, 24);
         let out = lines(&buf).join("\n");
         assert!(out.contains("branch-000"), "{out}");
-        assert!(!out.contains("branch-199"), "the box must stay a modal:\n{out}");
+        assert!(
+            !out.contains("branch-199"),
+            "the box must stay a modal:\n{out}"
+        );
     }
 
     #[test]
@@ -3578,7 +3993,10 @@ mod tests {
         // The strip itself (first column) should only have borders, no text.
         // Check the first COLLAPSED_STRIP_WIDTH columns of each row.
         for line in lines(&buf) {
-            let strip_part = line.chars().take(COLLAPSED_STRIP_WIDTH as usize).collect::<String>();
+            let strip_part = line
+                .chars()
+                .take(COLLAPSED_STRIP_WIDTH as usize)
+                .collect::<String>();
             assert!(
                 !strip_part.contains("argus"),
                 "project name found in strip area: {:?}",
@@ -3603,7 +4021,8 @@ mod tests {
         let preferred = Some(vec![12u16, 18, 20, 20, 40]);
         let c = collapsed_projects_constraints(total, preferred.as_deref());
         match c.as_slice() {
-            [Constraint::Length(2), Constraint::Length(18), Constraint::Length(20), Constraint::Length(20), Constraint::Length(36)] => {}
+            [Constraint::Length(2), Constraint::Length(18), Constraint::Length(20), Constraint::Length(20), Constraint::Length(36)] =>
+                {}
             other => panic!("unexpected collapsed constraints: {other:?}"),
         }
     }
@@ -3619,11 +4038,14 @@ mod tests {
             other => panic!("strip must be 2: {other:?}"),
         }
         // The rest are lengths that sum with 4 gutters to total.
-        let sum: u16 = c.iter().skip(1).map(|c| match c {
-            Constraint::Length(w) => *w,
-            _ => panic!("all lengths"),
-        }).sum();
+        let sum: u16 = c
+            .iter()
+            .skip(1)
+            .map(|c| match c {
+                Constraint::Length(w) => *w,
+                _ => panic!("all lengths"),
+            })
+            .sum();
         assert_eq!(sum + 4, total - 2, "strip(2) + gutters(4) + rest = total");
     }
-
 }

@@ -7,7 +7,10 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::Context;
-use argus_protocol::{ChangeKind, DiffLine, FileDiff, Hunk, LineKind, ReviewBase};
+use argus_protocol::{
+    ChangeKind, CommitFile, CommitInfo, DiffLine, FileDiff, HistoryCommit, Hunk, LineKind,
+    ReviewBase, MAX_HISTORY_COMMITS,
+};
 
 const MAX_LINES_PER_FILE: usize = 5_000;
 const MAX_TOTAL_LINES: usize = 20_000;
@@ -17,6 +20,7 @@ const TOO_LARGE_NOTE: &str = "too large to display";
 
 pub struct GeneratedReview {
     pub files: Vec<FileDiff>,
+    pub commit: Option<CommitInfo>,
 }
 
 struct Snapshot {
@@ -32,11 +36,126 @@ pub fn generate(path: &Path, base: ReviewBase) -> anyhow::Result<GeneratedReview
     // nothing untracked can be in it; unstaged work is everything the index
     // has not been told about yet, untracked files included.
     let (old, target) = match base {
-        ReviewBase::Staged => (head_tree(&repo), Snapshot { tree: index, untracked: HashSet::new() }),
+        ReviewBase::Staged => (
+            head_tree(&repo),
+            Snapshot {
+                tree: index,
+                untracked: HashSet::new(),
+            },
+        ),
         ReviewBase::Unstaged => (Some(index), capture(&repo)?),
+        ReviewBase::Commit => anyhow::bail!("a commit review needs a commit id"),
     };
     let files = render_diff(&repo, old, target.tree, &target.untracked)?;
-    Ok(GeneratedReview { files })
+    Ok(GeneratedReview {
+        files,
+        commit: None,
+    })
+}
+
+/// Newest first, first-parent diffs, capped. An unborn HEAD is an empty
+/// history rather than an error — there is nothing to show yet.
+pub fn list_commits(path: &Path) -> anyhow::Result<Vec<HistoryCommit>> {
+    let repo = git2::Repository::open(path)
+        .with_context(|| format!("could not open Git repository at {}", path.display()))?;
+    // `revwalk.push_head` reports GenericError for an unborn branch, not
+    // UnbornBranch. `repository.head` is the call that names that case.
+    match repo.head() {
+        Ok(_) => {}
+        Err(error) if error.code() == git2::ErrorCode::UnbornBranch => return Ok(Vec::new()),
+        Err(error) => return Err(error).context("could not read HEAD"),
+    }
+    let mut walk = repo.revwalk().context("could not walk commits")?;
+    // Newest first, like `git log`. TIME is already that order; REVERSE
+    // would turn the cap below into the oldest commits in the repository.
+    walk.set_sorting(git2::Sort::TOPOLOGICAL | git2::Sort::TIME)?;
+    walk.push_head().context("could not read HEAD")?;
+    let mut commits = Vec::new();
+    for oid in walk.take(MAX_HISTORY_COMMITS) {
+        let oid = oid.context("could not read a commit from history")?;
+        let commit = repo
+            .find_commit(oid)
+            .with_context(|| format!("could not load commit {oid}"))?;
+        let files = commit_files(&repo, &commit)?;
+        commits.push(HistoryCommit {
+            info: commit_info(&commit),
+            files,
+        });
+    }
+    Ok(commits)
+}
+
+/// Parent of `rev` against `rev` itself. Merge commits use the first parent,
+/// matching `git show`.
+pub fn generate_commit(path: &Path, rev: &str) -> anyhow::Result<GeneratedReview> {
+    let repo = git2::Repository::open(path)
+        .with_context(|| format!("could not open Git repository at {}", path.display()))?;
+    let obj = repo
+        .revparse_single(rev)
+        .with_context(|| format!("could not resolve {rev}"))?;
+    let commit = obj
+        .peel_to_commit()
+        .with_context(|| format!("{rev} is not a commit"))?;
+    let new_tree = commit.tree().context("could not read the commit's tree")?;
+    let old = commit
+        .parent(0)
+        .ok()
+        .and_then(|parent| parent.tree().ok())
+        .map(|tree| tree.id());
+    let files = render_diff(&repo, old, new_tree.id(), &HashSet::new())?;
+    Ok(GeneratedReview {
+        files,
+        commit: Some(commit_info(&commit)),
+    })
+}
+
+fn commit_info(commit: &git2::Commit<'_>) -> CommitInfo {
+    let oid = commit.id().to_string();
+    CommitInfo {
+        short: oid.chars().take(7).collect(),
+        oid,
+        summary: commit.summary().unwrap_or("").to_string(),
+        author: commit.author().name().unwrap_or("").to_string(),
+        time: commit.time().seconds(),
+    }
+}
+
+fn commit_files(
+    repo: &git2::Repository,
+    commit: &git2::Commit<'_>,
+) -> anyhow::Result<Vec<CommitFile>> {
+    let old_tree = commit.parent(0).ok().map(|parent| parent.tree_id());
+    with_diff(repo, old_tree, commit.tree_id(), |diff| {
+        let files: RefCell<Vec<CommitFile>> = RefCell::new(Vec::new());
+        diff.foreach(
+            &mut |delta, _| {
+                let file = new_file(&delta, &HashSet::new());
+                files.borrow_mut().push(CommitFile {
+                    path: file.path,
+                    old_path: file.old_path,
+                    kind: file.kind,
+                    added: 0,
+                    removed: 0,
+                });
+                true
+            },
+            None,
+            None,
+            // Counted rather than rendered: the list shows a shape, and the
+            // hunks themselves wait until the commit is actually opened.
+            Some(&mut |_, _, line| {
+                if let Some(file) = files.borrow_mut().last_mut() {
+                    match line.origin() {
+                        '+' => file.added += 1,
+                        '-' => file.removed += 1,
+                        _ => {}
+                    }
+                }
+                true
+            }),
+        )?;
+        Ok(files.into_inner())
+    })
 }
 
 /// The index exactly as it stands, with no working-tree content laid over it.
@@ -179,12 +298,14 @@ fn head_tree(repo: &git2::Repository) -> Option<git2::Oid> {
     repo.head().ok()?.peel_to_tree().ok().map(|tree| tree.id())
 }
 
-fn render_diff(
+/// Both diff walks want the same options and rename detection; only what
+/// they build out of the deltas differs.
+fn with_diff<T>(
     repo: &git2::Repository,
     old: Option<git2::Oid>,
     target: git2::Oid,
-    untracked: &HashSet<String>,
-) -> anyhow::Result<Vec<FileDiff>> {
+    build: impl FnOnce(&mut git2::Diff<'_>) -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
     let old_tree = old.map(|oid| repo.find_tree(oid)).transpose()?;
     let target_tree = repo.find_tree(target)?;
     let mut opts = git2::DiffOptions::new();
@@ -195,70 +316,80 @@ fn render_diff(
     find.renames(true);
     diff.find_similar(Some(&mut find))
         .context("could not detect review renames")?;
+    build(&mut diff)
+}
 
-    let files: RefCell<Vec<FileDiff>> = RefCell::new(Vec::new());
-    let rendered_lines = ValueCell::new(0usize);
-    diff.foreach(
-        &mut |delta, _| {
-            let mut file = new_file(&delta, untracked);
-            if rendered_lines.get() >= MAX_TOTAL_LINES && file.note.is_none() {
-                file.note = Some(TOO_LARGE_NOTE.to_string());
-            }
-            files.borrow_mut().push(file);
-            true
-        },
-        None,
-        Some(&mut |_, hunk| {
-            if let Some(file) = files.borrow_mut().last_mut() {
-                if file.note.is_none() {
-                    file.hunks.push(Hunk {
-                        header: String::from_utf8_lossy(hunk.header())
-                            .trim_end()
-                            .to_string(),
-                        lines: Vec::new(),
-                    });
+fn render_diff(
+    repo: &git2::Repository,
+    old: Option<git2::Oid>,
+    target: git2::Oid,
+    untracked: &HashSet<String>,
+) -> anyhow::Result<Vec<FileDiff>> {
+    with_diff(repo, old, target, |diff| {
+        let files: RefCell<Vec<FileDiff>> = RefCell::new(Vec::new());
+        let rendered_lines = ValueCell::new(0usize);
+        diff.foreach(
+            &mut |delta, _| {
+                let mut file = new_file(&delta, untracked);
+                if rendered_lines.get() >= MAX_TOTAL_LINES && file.note.is_none() {
+                    file.note = Some(TOO_LARGE_NOTE.to_string());
                 }
-            }
-            true
-        }),
-        Some(&mut |_, _, line| {
-            let mut files = files.borrow_mut();
-            let Some(file) = files.last_mut() else {
-                return true;
-            };
-            if file.note.is_some() {
-                return true;
-            }
-            if rendered_lines.get() >= MAX_TOTAL_LINES {
-                file.hunks.clear();
-                file.note = Some(TOO_LARGE_NOTE.to_string());
-                return true;
-            }
-            let kind = match line.origin() {
-                '+' => LineKind::Added,
-                '-' => LineKind::Removed,
-                ' ' => LineKind::Context,
-                _ => return true,
-            };
-            if let Some(hunk) = file.hunks.last_mut() {
-                hunk.lines.push(DiffLine {
-                    kind,
-                    old_lineno: line.old_lineno(),
-                    new_lineno: line.new_lineno(),
-                    text: String::from_utf8_lossy(line.content())
-                        .trim_end_matches(['\n', '\r'])
-                        .to_string(),
-                });
-                rendered_lines.set(rendered_lines.get() + 1);
-            }
-            if total_lines(file) > MAX_LINES_PER_FILE {
-                file.hunks.clear();
-                file.note = Some(TOO_LARGE_NOTE.to_string());
-            }
-            true
-        }),
-    )?;
-    Ok(files.into_inner())
+                files.borrow_mut().push(file);
+                true
+            },
+            None,
+            Some(&mut |_, hunk| {
+                if let Some(file) = files.borrow_mut().last_mut() {
+                    if file.note.is_none() {
+                        file.hunks.push(Hunk {
+                            header: String::from_utf8_lossy(hunk.header())
+                                .trim_end()
+                                .to_string(),
+                            lines: Vec::new(),
+                        });
+                    }
+                }
+                true
+            }),
+            Some(&mut |_, _, line| {
+                let mut files = files.borrow_mut();
+                let Some(file) = files.last_mut() else {
+                    return true;
+                };
+                if file.note.is_some() {
+                    return true;
+                }
+                if rendered_lines.get() >= MAX_TOTAL_LINES {
+                    file.hunks.clear();
+                    file.note = Some(TOO_LARGE_NOTE.to_string());
+                    return true;
+                }
+                let kind = match line.origin() {
+                    '+' => LineKind::Added,
+                    '-' => LineKind::Removed,
+                    ' ' => LineKind::Context,
+                    _ => return true,
+                };
+                if let Some(hunk) = file.hunks.last_mut() {
+                    hunk.lines.push(DiffLine {
+                        kind,
+                        old_lineno: line.old_lineno(),
+                        new_lineno: line.new_lineno(),
+                        text: String::from_utf8_lossy(line.content())
+                            .trim_end_matches(['\n', '\r'])
+                            .to_string(),
+                    });
+                    rendered_lines.set(rendered_lines.get() + 1);
+                }
+                if total_lines(file) > MAX_LINES_PER_FILE {
+                    file.hunks.clear();
+                    file.note = Some(TOO_LARGE_NOTE.to_string());
+                }
+                true
+            }),
+        )?;
+        Ok(files.into_inner())
+    })
 }
 
 fn new_file(delta: &git2::DiffDelta, untracked: &HashSet<String>) -> FileDiff {
@@ -340,23 +471,41 @@ mod tests {
     #[test]
     fn each_side_shows_only_its_own_half_of_the_work() {
         let (_dir, path) = repo_with(&[
-            ("staged.txt", "old
-"),
-            ("unstaged.txt", "old
-"),
-            ("gone.txt", "old
-"),
+            (
+                "staged.txt",
+                "old
+",
+            ),
+            (
+                "unstaged.txt",
+                "old
+",
+            ),
+            (
+                "gone.txt", "old
+",
+            ),
         ]);
-        write(&path, "staged.txt", "staged
-");
+        write(
+            &path,
+            "staged.txt",
+            "staged
+",
+        );
         let repo = git2::Repository::open(&path).unwrap();
         let mut index = repo.index().unwrap();
         index.add_path(Path::new("staged.txt")).unwrap();
         index.write().unwrap();
-        write(&path, "unstaged.txt", "working
-");
-        write(&path, "new.txt", "new
-");
+        write(
+            &path,
+            "unstaged.txt",
+            "working
+",
+        );
+        write(
+            &path, "new.txt", "new
+",
+        );
         std::fs::remove_file(path.join("gone.txt")).unwrap();
 
         let staged = generate(&path, ReviewBase::Staged).unwrap();
@@ -381,18 +530,24 @@ mod tests {
     /// file with a different diff on each side.
     #[test]
     fn a_partly_staged_file_shows_a_different_diff_on_each_side() {
-        let (_dir, path) = repo_with(&[("a.txt", "one
-")]);
-        write(&path, "a.txt", "two
-");
+        let (_dir, path) = repo_with(&[(
+            "a.txt", "one
+",
+        )]);
+        write(
+            &path, "a.txt", "two
+",
+        );
         let repo = git2::Repository::open(&path).unwrap();
         let mut index = repo.index().unwrap();
         index.add_path(Path::new("a.txt")).unwrap();
         index.write().unwrap();
         drop(index);
         drop(repo);
-        write(&path, "a.txt", "three
-");
+        write(
+            &path, "a.txt", "three
+",
+        );
 
         let added = |review: &GeneratedReview| {
             find(&review.files, "a.txt")
@@ -403,7 +558,10 @@ mod tests {
                 .map(|line| line.text.clone())
                 .collect::<Vec<_>>()
         };
-        assert_eq!(added(&generate(&path, ReviewBase::Staged).unwrap()), ["two"]);
+        assert_eq!(
+            added(&generate(&path, ReviewBase::Staged).unwrap()),
+            ["two"]
+        );
         assert_eq!(
             added(&generate(&path, ReviewBase::Unstaged).unwrap()),
             ["three"]
@@ -427,7 +585,10 @@ mod tests {
             .iter()
             .find(|line| line.kind == LineKind::Added)
             .unwrap();
-        assert_eq!((removed.old_lineno, removed.text.as_str()), (Some(2), "two"));
+        assert_eq!(
+            (removed.old_lineno, removed.text.as_str()),
+            (Some(2), "two")
+        );
         assert_eq!((added.new_lineno, added.text.as_str()), (Some(2), "TWO"));
         assert!(file.hunks[0]
             .lines
@@ -440,7 +601,10 @@ mod tests {
         let (_dir, path) = repo_with(&[("a.txt", "one\n")]);
         write(&path, "sub/deep/new.txt", "new\n");
         let review = generate(&path, ReviewBase::Unstaged).unwrap();
-        assert_eq!(find(&review.files, "sub/deep/new.txt").kind, ChangeKind::Untracked);
+        assert_eq!(
+            find(&review.files, "sub/deep/new.txt").kind,
+            ChangeKind::Untracked
+        );
     }
 
     #[test]
@@ -527,5 +691,143 @@ mod tests {
     fn capture_errors_are_not_successful_empty_reviews() {
         let dir = tempfile::tempdir().unwrap();
         assert!(generate(dir.path(), ReviewBase::Unstaged).is_err());
+    }
+
+    #[test]
+    fn history_lists_newest_first_with_the_files_each_commit_touched() {
+        let (_dir, path) = repo_with(&[("a.txt", "one\n")]);
+        let repo = git2::Repository::open(&path).unwrap();
+        write(&path, "a.txt", "two\n");
+        write(&path, "b.txt", "new\n");
+        commit(&repo, "second");
+
+        let history = list_commits(&path).unwrap();
+        assert_eq!(
+            history
+                .iter()
+                .map(|c| c.info.summary.as_str())
+                .collect::<Vec<_>>(),
+            ["second", "first"]
+        );
+        assert_eq!(
+            history[0]
+                .files
+                .iter()
+                .map(|f| (f.kind, f.path.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                (ChangeKind::Modified, "a.txt"),
+                (ChangeKind::Added, "b.txt")
+            ]
+        );
+        assert_eq!(history[1].files[0].path, "a.txt");
+        assert_eq!(history[1].files[0].kind, ChangeKind::Added);
+    }
+
+    #[test]
+    fn a_commit_review_is_that_commit_against_its_parent() {
+        let (_dir, path) = repo_with(&[("a.txt", "one\n")]);
+        let repo = git2::Repository::open(&path).unwrap();
+        write(&path, "a.txt", "two\n");
+        commit(&repo, "second");
+
+        let history = list_commits(&path).unwrap();
+        let review = generate_commit(&path, &history[0].info.oid).unwrap();
+        assert_eq!(review.commit.as_ref().unwrap().summary, "second");
+        assert_eq!(find(&review.files, "a.txt").added_lines(), 1);
+        assert_eq!(find(&review.files, "a.txt").removed_lines(), 1);
+        assert!(
+            review.files.iter().all(|f| f.path == "a.txt"),
+            "only the second commit's edit: {:?}",
+            review.files.iter().map(|f| &f.path).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn an_unborn_repository_has_empty_history() {
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        assert!(list_commits(dir.path()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn history_stays_newest_first_past_the_first_two_commits() {
+        // Guards the revwalk sorting: a REVERSE in there reads correctly
+        // on two commits but hands back the oldest once the cap bites.
+        let (_dir, path) = repo_with(&[(
+            "a.txt", "0
+",
+        )]);
+        let repo = git2::Repository::open(&path).unwrap();
+        for i in 1..5 {
+            write(
+                &path,
+                "a.txt",
+                &format!(
+                    "{i}
+"
+                ),
+            );
+            commit(&repo, &format!("c{i}"));
+        }
+        drop(repo);
+
+        let history = list_commits(&path).unwrap();
+        assert_eq!(
+            history
+                .iter()
+                .map(|c| c.info.summary.as_str())
+                .collect::<Vec<_>>(),
+            ["c4", "c3", "c2", "c1", "first"]
+        );
+    }
+
+    #[test]
+    fn a_history_file_carries_the_lines_it_changed() {
+        let (_dir, path) = repo_with(&[(
+            "a.txt", "one
+",
+        )]);
+        let repo = git2::Repository::open(&path).unwrap();
+        write(
+            &path,
+            "a.txt",
+            "two
+three
+",
+        );
+        commit(&repo, "second");
+        drop(repo);
+
+        let history = list_commits(&path).unwrap();
+        let file = &history[0].files[0];
+        assert_eq!(file.path, "a.txt");
+        assert_eq!((file.added, file.removed), (2, 1));
+    }
+
+    #[test]
+    fn a_root_commit_review_lists_its_files_as_added() {
+        let (_dir, path) = repo_with(&[(
+            "a.txt", "one
+",
+        )]);
+        let history = list_commits(&path).unwrap();
+        let review = generate_commit(&path, &history[0].info.oid).unwrap();
+        assert_eq!(find(&review.files, "a.txt").kind, ChangeKind::Added);
+    }
+
+    #[test]
+    fn history_of_a_non_repository_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(list_commits(dir.path()).is_err());
+    }
+
+    #[test]
+    fn a_missing_commit_is_an_error() {
+        let (_dir, path) = repo_with(&[(
+            "a.txt", "one
+",
+        )]);
+        assert!(generate_commit(&path, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef").is_err());
     }
 }

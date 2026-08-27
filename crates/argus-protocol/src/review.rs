@@ -1,6 +1,7 @@
-//! A checkout's uncommitted work as the review viewer shows it (DESIGN.md
-//! §9 M4). A rendered diff rather than a raw patch, so the client doesn't
-//! re-parse what the daemon already knows.
+//! A checkout's uncommitted work, and a single commit against its first
+//! parent, as the review viewer shows them (DESIGN.md §9 M4). A rendered
+//! diff rather than a raw patch, so the client doesn't re-parse what the
+//! daemon already knows.
 
 use serde::{Deserialize, Serialize};
 
@@ -8,17 +9,22 @@ use crate::ids::CheckoutId;
 
 pub const MAX_REVIEW_COMMENT_BYTES: usize = 4096;
 pub const MAX_REVIEW_COMMENTS: usize = 100;
+/// Newest first, walking back from HEAD. Enough to browse recent work;
+/// older than this is what `git log` is for.
+pub const MAX_HISTORY_COMMITS: usize = 100;
 
-/// Which half of a checkout's uncommitted work a review shows, toggled with
-/// `b`. These are the two sides Git itself keeps apart, and a file modified
-/// on both sides has a different diff in each — which is the whole reason
-/// not to merge them into one endpoint.
+/// Which snapshot a review shows. `b` toggles the two uncommitted sides;
+/// a committed snapshot is a separate request, not a third value of that
+/// toggle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReviewBase {
     /// `git diff`: the index against the working tree.
     Unstaged,
     /// `git diff --cached`: `HEAD` against the index.
     Staged,
+    /// The parent of a commit against that commit. Which commit is on
+    /// [`Review::commit`], not here — this stays a flag so it remains `Copy`.
+    Commit,
 }
 
 impl ReviewBase {
@@ -26,6 +32,7 @@ impl ReviewBase {
         match self {
             ReviewBase::Unstaged => ReviewBase::Staged,
             ReviewBase::Staged => ReviewBase::Unstaged,
+            ReviewBase::Commit => ReviewBase::Unstaged,
         }
     }
 
@@ -33,6 +40,7 @@ impl ReviewBase {
         match self {
             ReviewBase::Unstaged => "unstaged",
             ReviewBase::Staged => "staged",
+            ReviewBase::Commit => "commit",
         }
     }
 }
@@ -113,6 +121,52 @@ impl FileDiff {
     }
 }
 
+/// Identity of a commit as the history overlay and a commit review title
+/// need it. File lists ride on [`HistoryCommit`]; a review of the commit
+/// carries the files as [`FileDiff`]s instead.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommitInfo {
+    /// Full hex object id.
+    pub oid: String,
+    /// The usual 7-character abbreviation.
+    pub short: String,
+    /// First line of the message, empty only for a truly empty one.
+    pub summary: String,
+    pub author: String,
+    /// Committer time, seconds since epoch.
+    pub time: i64,
+}
+
+impl CommitInfo {
+    pub fn title(&self) -> String {
+        if self.summary.is_empty() {
+            self.short.clone()
+        } else {
+            format!("{}  {}", self.short, self.summary)
+        }
+    }
+}
+
+/// One path a commit touched, without the hunks — enough for the history
+/// overlay to list what changed, cheap enough to send fifty at once.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommitFile {
+    pub path: String,
+    pub old_path: Option<String>,
+    pub kind: ChangeKind,
+    /// Counted while summarizing, so the list can show a shape without
+    /// carrying the hunks that only a commit review needs.
+    pub added: usize,
+    pub removed: usize,
+}
+
+/// One row of `git log --stat` as the history overlay draws it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HistoryCommit {
+    pub info: CommitInfo,
+    pub files: Vec<CommitFile>,
+}
+
 /// Carries the checkout id so a client that moved on can drop a stale reply.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Review {
@@ -120,6 +174,9 @@ pub struct Review {
     pub checkout: CheckoutId,
     pub base: ReviewBase,
     pub files: Vec<FileDiff>,
+    /// Set when [`ReviewBase::Commit`]: the snapshot this diff is of.
+    #[serde(default)]
+    pub commit: Option<CommitInfo>,
 }
 
 impl Review {
@@ -133,6 +190,9 @@ impl Review {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReviewAnchor {
     pub base: ReviewBase,
+    /// The commit this comment was made against, when `base` is `Commit`.
+    #[serde(default)]
+    pub commit: Option<String>,
     pub path: String,
     pub old_path: Option<String>,
     pub old_start: Option<u32>,
@@ -189,9 +249,16 @@ mod tests {
     }
 
     #[test]
+    fn leaving_a_commit_returns_to_unstaged() {
+        assert_eq!(ReviewBase::Commit.next(), ReviewBase::Unstaged);
+        assert_eq!(ReviewBase::Commit.label(), "commit");
+    }
+
+    #[test]
     fn a_notification_uses_the_new_side_and_stays_on_one_line() {
         let anchor = ReviewAnchor {
             base: ReviewBase::Unstaged,
+            commit: None,
             path: "src/main.rs".into(),
             old_path: None,
             old_start: Some(4),

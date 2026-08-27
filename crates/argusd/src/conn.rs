@@ -301,6 +301,26 @@ fn dispatch_workspace_query(
                 files: crate::browse::files(&path),
             })
         }
+        ClientMsg::ListCommits {
+            request_id,
+            checkout,
+        } => reply_with(
+            daemon,
+            out_tx,
+            checkout,
+            move |path| match crate::diff::list_commits(&path) {
+                Ok(commits) => ServerMsg::Commits {
+                    request_id,
+                    checkout,
+                    commits,
+                },
+                Err(error) => ServerMsg::CommitsFailed {
+                    request_id,
+                    checkout,
+                    message: error.to_string(),
+                },
+            },
+        ),
         msg => return Err(msg),
     };
     Ok(result)
@@ -317,10 +337,14 @@ fn dispatch_worktree_change(
         // message loop — a slow worktree op must not stall keystrokes going
         // to some other pane. Each reports its own error asynchronously.
         ClientMsg::CreateWorktree { checkout, branch } => {
-            spawn_reporting(daemon, out_tx, move |d| async move { d.create_worktree(checkout, branch).await })
+            spawn_reporting(daemon, out_tx, move |d| async move {
+                d.create_worktree(checkout, branch).await
+            })
         }
         ClientMsg::RemoveCheckout { checkout } => {
-            spawn_reporting(daemon, out_tx, move |d| async move { d.remove_checkout(checkout).await })
+            spawn_reporting(daemon, out_tx, move |d| async move {
+                d.remove_checkout(checkout).await
+            })
         }
         msg => return Err(msg),
     };
@@ -334,19 +358,33 @@ fn dispatch_branch_or_editor(
 ) -> DispatchResult {
     let result = match msg {
         ClientMsg::SwitchBranch { checkout, branch } => {
-            spawn_reporting(daemon, out_tx, move |d| async move { d.switch_branch(checkout, &branch).await })
+            spawn_reporting(daemon, out_tx, move |d| async move {
+                d.switch_branch(checkout, &branch).await
+            })
         }
         ClientMsg::CreateBranch { checkout, branch } => {
-            spawn_reporting(daemon, out_tx, move |d| async move { d.create_branch(checkout, &branch).await })
+            spawn_reporting(daemon, out_tx, move |d| async move {
+                d.create_branch(checkout, &branch).await
+            })
         }
         ClientMsg::Fetch { checkout } => {
-            spawn_reporting(daemon, out_tx, move |d| async move { d.fetch(checkout).await })
+            spawn_reporting(
+                daemon,
+                out_tx,
+                move |d| async move { d.fetch(checkout).await },
+            )
         }
         ClientMsg::Pull { checkout } => {
-            spawn_reporting(daemon, out_tx, move |d| async move { d.pull(checkout).await })
+            spawn_reporting(
+                daemon,
+                out_tx,
+                move |d| async move { d.pull(checkout).await },
+            )
         }
         ClientMsg::DeleteBranch { checkout, branch } => {
-            spawn_reporting(daemon, out_tx, move |d| async move { d.delete_branch(checkout, &branch).await })
+            spawn_reporting(daemon, out_tx, move |d| async move {
+                d.delete_branch(checkout, &branch).await
+            })
         }
         ClientMsg::OpenInEditor {
             checkout,
@@ -378,6 +416,7 @@ fn dispatch_review(
             request_id,
             checkout,
             base,
+            commit,
         } => daemon.checkout_path(checkout).map(|path| {
             if let Some(task) = review_task.take() {
                 task.abort();
@@ -389,15 +428,23 @@ fn dispatch_review(
                 };
                 let generated = tokio::task::spawn_blocking(move || {
                     let _permit = permit;
-                    crate::diff::generate(&path, base)
+                    match commit.as_deref() {
+                        Some(rev) => crate::diff::generate_commit(&path, rev),
+                        None => crate::diff::generate(&path, base),
+                    }
                 })
                 .await;
                 let message = match generated {
                     Ok(Ok(generated)) => ServerMsg::Review(argus_protocol::Review {
                         request_id,
                         checkout,
-                        base,
+                        base: if generated.commit.is_some() {
+                            argus_protocol::ReviewBase::Commit
+                        } else {
+                            base
+                        },
                         files: generated.files,
+                        commit: generated.commit,
                     }),
                     Ok(Err(error)) => ServerMsg::ReviewFailed {
                         request_id,
@@ -442,7 +489,6 @@ fn reply_with(
     });
     Ok(())
 }
-
 
 async fn writer_task<W>(mut wr: W, mut rx: mpsc::UnboundedReceiver<ServerMsg>)
 where
@@ -554,12 +600,24 @@ mod tests {
         let branch = || "nope".to_string();
 
         let sent = [
-            ClientMsg::SwitchBranch { checkout: gone, branch: branch() },
-            ClientMsg::CreateBranch { checkout: gone, branch: branch() },
-            ClientMsg::DeleteBranch { checkout: gone, branch: branch() },
+            ClientMsg::SwitchBranch {
+                checkout: gone,
+                branch: branch(),
+            },
+            ClientMsg::CreateBranch {
+                checkout: gone,
+                branch: branch(),
+            },
+            ClientMsg::DeleteBranch {
+                checkout: gone,
+                branch: branch(),
+            },
             ClientMsg::Fetch { checkout: gone },
             ClientMsg::Pull { checkout: gone },
-            ClientMsg::CreateWorktree { checkout: gone, branch: branch() },
+            ClientMsg::CreateWorktree {
+                checkout: gone,
+                branch: branch(),
+            },
             ClientMsg::RemoveCheckout { checkout: gone },
         ];
         let expected = sent.len();
@@ -604,7 +662,10 @@ mod tests {
             h.replies().first(),
             Some(ServerMsg::PaneSnapshot { .. })
         ));
-        assert!(h.subs.0.contains_key(&pane), "damage must flow after a subscribe");
+        assert!(
+            h.subs.0.contains_key(&pane),
+            "damage must flow after a subscribe"
+        );
 
         h.send(ClientMsg::Unsubscribe { pane });
         assert!(!h.subs.0.contains_key(&pane));
@@ -663,6 +724,7 @@ mod tests {
             request_id: 42,
             checkout,
             base: ReviewBase::Unstaged,
+            commit: None,
         });
 
         // The diff runs on a blocking thread, so the reply is not immediate.
@@ -695,6 +757,7 @@ mod tests {
                 request_id,
                 checkout,
                 base: ReviewBase::Unstaged,
+                commit: None,
             });
         }
         drop(permit);
@@ -723,6 +786,7 @@ mod tests {
             request_id: 1,
             checkout: CheckoutId(9999),
             base: ReviewBase::Unstaged,
+            commit: None,
         });
         assert!(h.error().await.contains("no such checkout"));
     }
@@ -815,5 +879,4 @@ mod tests {
 
         let _ = h.daemon.close_pane(pane);
     }
-
 }

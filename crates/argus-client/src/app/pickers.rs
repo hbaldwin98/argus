@@ -9,7 +9,6 @@
 use super::*;
 
 impl App {
-
     /// Opens the directory browser at wherever the daemon thinks a browse
     /// should start. The picker goes up straight away, empty: waiting for
     /// the first listing before showing anything would make `n` look like
@@ -24,13 +23,11 @@ impl App {
         });
     }
 
-
     pub(super) fn move_picker(&mut self, delta: isize) {
         let Some(p) = &mut self.picker else { return };
         let last = p.len().saturating_sub(1);
         p.sel = (p.sel as isize + delta).clamp(0, last as isize) as usize;
     }
-
 
     /// Puts a review up directly, for tests that must not disturb the
     /// column selection by navigating to it.
@@ -39,12 +36,10 @@ impl App {
         self.review_wanted = Some((checkout, 1));
     }
 
-
     pub fn open_settings(&mut self) {
         self.overlay = Some(Overlay::Settings { sel: 0 });
         self.focus = Focus::Overlay;
     }
-
 
     /// Folds the projects column away to a thin strip, or brings it back.
     /// The other four columns absorb the reclaimed width, so collapsing is a
@@ -70,14 +65,12 @@ impl App {
         }
     }
 
-
     pub(super) fn move_setting(&mut self, delta: isize) {
         if let Some(Overlay::Settings { sel }) = &mut self.overlay {
             let last = Setting::ALL.len() as isize - 1;
             *sel = (*sel as isize + delta).clamp(0, last) as usize;
         }
     }
-
 
     /// Changing a setting applies it at once and writes it out — there is
     /// no separate save, so there is nothing to forget to press.
@@ -117,7 +110,6 @@ impl App {
         }
     }
 
-
     /// Opens `pane` in a floating window alongside whatever the columns
     /// are showing. `ephemeral` panes are killed when the window closes.
     pub fn open_overlay_pane(&mut self, pane: PaneId, title: String, ephemeral: bool) {
@@ -130,7 +122,6 @@ impl App {
         self.focus = Focus::Overlay;
         self.sync_subscription();
     }
-
 
     pub fn close_overlay(&mut self) {
         // An editor is its window. Nothing lists it once the window is
@@ -145,6 +136,9 @@ impl App {
         }
         self.review = None;
         self.review_wanted = None;
+        self.history = None;
+        self.history_wanted = None;
+        self.pending_history_file = None;
         self.overlay = None;
         self.leader_pending = false;
         self.pane_fullscreen = false;
@@ -158,17 +152,18 @@ impl App {
         self.sync_subscription();
     }
 
-
     pub(super) fn open_theme_picker(&mut self) {
         let here = self.theme.name();
         self.picker = Some(Picker::new(
             PickerKind::Theme,
             "theme",
             crate::theme::THEMES.iter().map(|t| t.to_string()).collect(),
-            crate::theme::THEMES.iter().position(|t| *t == here).unwrap_or(0),
+            crate::theme::THEMES
+                .iter()
+                .position(|t| *t == here)
+                .unwrap_or(0),
         ));
     }
-
 
     /// `n` is contextual on which column has focus: a new project (any
     /// directory, not just preconfigured ones) from the projects column, a
@@ -197,13 +192,15 @@ impl App {
                     let Some(base) = self.primary_checkout().map(|c| c.id) else {
                         return;
                     };
-                    let _ = self.out.send(ClientMsg::CreateWorktree { checkout: base, branch });
+                    let _ = self.out.send(ClientMsg::CreateWorktree {
+                        checkout: base,
+                        branch,
+                    });
                 }
             }
             _ => {}
         }
     }
-
 
     /// Opens a confirmation to remove whatever the focused column selects,
     /// the way `n` adds to whatever it is focused on: a project, one of its
@@ -217,11 +214,15 @@ impl App {
     pub(super) fn remove_prompt(&mut self) {
         let (target, label) = match self.focus {
             Focus::Projects => {
-                let Some(p) = self.current_project() else { return };
+                let Some(p) = self.current_project() else {
+                    return;
+                };
                 (RemoveTarget::Project(p.id), p.name.clone())
             }
             Focus::Repositories => {
-                let Some(r) = self.current_repository() else { return };
+                let Some(r) = self.current_repository() else {
+                    return;
+                };
                 (RemoveTarget::Repository(r.id), r.name.clone())
             }
             // Deleting a remote branch is a push, which is not what `D`
@@ -247,7 +248,9 @@ impl App {
                 )
             }
             Focus::Checkouts => {
-                let Some(c) = self.current_checkout() else { return };
+                let Some(c) = self.current_checkout() else {
+                    return;
+                };
                 if c.primary {
                     self.report("can't remove the primary checkout");
                     return;
@@ -258,7 +261,6 @@ impl App {
         };
         self.prompt = Some(Prompt::ConfirmRemove { target, label });
     }
-
 
     pub(super) fn open_picker(&mut self) {
         if self.templates.is_empty() || self.current_checkout().is_none() {
@@ -271,7 +273,6 @@ impl App {
             0,
         ));
     }
-
 
     /// `w` switches workspace — the scope of the whole project column, and
     /// daemon-global, so every attached client follows. Opens on the one
@@ -313,7 +314,6 @@ impl App {
         ));
     }
 
-
     /// `b` asks the daemon for this checkout's branches; the picker opens
     /// when they arrive, so it never shows a stale list.
     pub(super) fn open_branch_picker(&mut self) {
@@ -325,7 +325,6 @@ impl App {
         let _ = self.out.send(ClientMsg::ListBranches { checkout: id });
     }
 
-
     pub(super) fn open_file_picker(&mut self) {
         let Some(id) = self.current_checkout().map(|c| c.id) else {
             self.report("no checkout selected");
@@ -334,7 +333,6 @@ impl App {
         self.list_wanted = Some(id);
         let _ = self.out.send(ClientMsg::ListFiles { checkout: id });
     }
-
 
     /// The changed files of the review that is already open — no round
     /// trip, since the diff is in hand.
@@ -352,9 +350,10 @@ impl App {
         self.picker = Some(Picker::new(PickerKind::Change, "jump to change", items, 0));
     }
 
-
     pub(super) fn confirm_picker(&mut self) {
-        let Some(picker) = self.picker.take() else { return };
+        let Some(picker) = self.picker.take() else {
+            return;
+        };
         // A create row carries the typed name rather than a list entry, so
         // it is handled before anything reads the selection.
         if let (Some(name), true) = (picker.create.clone(), picker.on_create_row()) {
@@ -378,14 +377,18 @@ impl App {
         }
         match &picker.kind {
             PickerKind::Branch { checkout } => {
-                let Some(branch) = picker.selected() else { return };
+                let Some(branch) = picker.selected() else {
+                    return;
+                };
                 let _ = self.out.send(ClientMsg::SwitchBranch {
                     checkout: *checkout,
                     branch: branch.to_string(),
                 });
             }
             PickerKind::File { checkout } => {
-                let Some(path) = picker.selected() else { return };
+                let Some(path) = picker.selected() else {
+                    return;
+                };
                 let _ = self.out.send(ClientMsg::OpenInEditor {
                     checkout: *checkout,
                     path: path.to_string(),
@@ -396,7 +399,9 @@ impl App {
                 self.want_editor();
             }
             PickerKind::Change => {
-                let Some(idx) = picker.shown.get(picker.sel).copied() else { return };
+                let Some(idx) = picker.shown.get(picker.sel).copied() else {
+                    return;
+                };
                 if let Some(view) = &mut self.review {
                     view.jump_to_file(idx);
                 }
@@ -417,7 +422,9 @@ impl App {
                 }
             }
             PickerKind::Agent => {
-                let Some(name) = picker.selected() else { return };
+                let Some(name) = picker.selected() else {
+                    return;
+                };
                 if let Some(checkout) = self.current_checkout() {
                     let _ = self.out.send(ClientMsg::SpawnAgent {
                         checkout: checkout.id,
@@ -437,7 +444,9 @@ impl App {
                 self.reset_navigation();
             }
             PickerKind::Theme => {
-                let Some(name) = picker.selected() else { return };
+                let Some(name) = picker.selected() else {
+                    return;
+                };
                 self.theme = crate::theme::Theme::by_name(name);
                 self.report(format!("theme: {name}"));
             }

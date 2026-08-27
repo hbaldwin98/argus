@@ -8,7 +8,6 @@
 use super::*;
 
 impl App {
-
     /// Shows or hides the branches that have no checkout. The main branch
     /// keeps its row either way, so the toggle is about the rest of them.
     pub(super) fn toggle_branches(&mut self) {
@@ -20,7 +19,6 @@ impl App {
             "showing checkouts only"
         });
     }
-
 
     /// `F` brings the remotes up to date. Nothing about the working tree
     /// changes, so it is safe to press from any row; what changes is which
@@ -34,7 +32,6 @@ impl App {
         self.report("fetching…");
     }
 
-
     /// `P` moves the selected checkout up to its upstream, fast-forward
     /// only. On a branch row that is the primary checkout, which is the
     /// same checkout every other repository-wide action uses.
@@ -47,7 +44,6 @@ impl App {
         self.report("pulling…");
     }
 
-
     /// The checkout a git command runs in: the selected one, or the
     /// repository's primary when the selection is a branch with no
     /// directory of its own.
@@ -57,13 +53,32 @@ impl App {
             .map(|c| c.id)
     }
 
-
-    /// Works from any column that still implies a checkout.
+    /// Works from any column that still implies a checkout. `R` on a commit
+    /// refreshes that commit; otherwise this is the uncommitted sides.
     pub(super) fn open_review(&mut self) {
-        let Some(id) = self.current_checkout().map(|c| c.id) else {
+        if let Some(oid) = self
+            .review
+            .as_ref()
+            .and_then(|view| view.review.commit.as_ref())
+            .map(|commit| commit.oid.clone())
+        {
+            self.open_commit_review(oid, None);
+            return;
+        }
+        let Some(id) = self
+            .current_checkout()
+            .map(|c| c.id)
+            .or_else(|| self.review.as_ref().map(|v| v.review.checkout))
+        else {
             self.report("nothing to review");
             return;
         };
+        self.history = None;
+        self.history_wanted = None;
+        self.request_uncommitted(id);
+    }
+
+    pub(super) fn request_uncommitted(&mut self, id: CheckoutId) {
         let request_id = self.next_review_request;
         self.next_review_request = self.next_review_request.wrapping_add(1).max(1);
         self.review_wanted = Some((id, request_id));
@@ -72,9 +87,87 @@ impl App {
             request_id,
             checkout: id,
             base: self.review_base,
+            commit: None,
         });
     }
 
+    /// `H` from the tree, or from a review that is already up.
+    pub(super) fn open_history(&mut self) {
+        let Some(id) = self
+            .current_checkout()
+            .map(|c| c.id)
+            .or_else(|| self.history.as_ref().map(|h| h.checkout))
+            .or_else(|| self.review.as_ref().map(|v| v.review.checkout))
+            .or_else(|| self.git_checkout())
+        else {
+            self.report("nothing to show history for");
+            return;
+        };
+        let request_id = self.next_history_request;
+        self.next_history_request = self.next_history_request.wrapping_add(1).max(1);
+        self.history_wanted = Some((id, request_id));
+        self.report("loading history…");
+        let _ = self.out.send(ClientMsg::ListCommits {
+            request_id,
+            checkout: id,
+        });
+    }
+
+    pub(super) fn open_selected_commit(&mut self) {
+        let Some(view) = &self.history else {
+            return;
+        };
+        let Some(oid) = view.selected_oid().map(str::to_string) else {
+            return;
+        };
+        let file = view.selected_file().map(|f| f.path.clone());
+        self.open_commit_review(oid, file);
+    }
+
+    pub(super) fn open_commit_review(&mut self, oid: String, file: Option<String>) {
+        let Some(id) = self
+            .history
+            .as_ref()
+            .map(|h| h.checkout)
+            .or_else(|| self.review.as_ref().map(|v| v.review.checkout))
+        else {
+            return;
+        };
+        let request_id = self.next_review_request;
+        self.next_review_request = self.next_review_request.wrapping_add(1).max(1);
+        self.review_wanted = Some((id, request_id));
+        self.pending_history_file = file;
+        self.report("loading commit…");
+        let _ = self.out.send(ClientMsg::Review {
+            request_id,
+            checkout: id,
+            base: ReviewBase::Commit,
+            commit: Some(oid),
+        });
+    }
+
+    /// `h`/Left: back to history when a commit review was opened from it.
+    /// Escape/`q` use [`Self::close_overlay`] and drop both.
+    pub(super) fn close_review(&mut self) {
+        let from_history = self
+            .review
+            .as_ref()
+            .is_some_and(|v| v.review.commit.is_some())
+            && self.history.is_some();
+        self.review = None;
+        self.review_wanted = None;
+        self.pending_history_file = None;
+        if from_history {
+            self.overlay = Some(Overlay::History);
+            self.focus = Focus::Review;
+            return;
+        }
+        self.history = None;
+        self.history_wanted = None;
+        self.overlay = None;
+        self.pane_fullscreen = false;
+        self.focus = Focus::Checkouts;
+    }
 
     pub(super) fn send_to_agent(&mut self, anchor: ReviewAnchor, body: String) {
         let Some(checkout) = self.review.as_ref().map(|view| view.review.checkout) else {
@@ -101,7 +194,6 @@ impl App {
         }
     }
 
-
     pub(super) fn send_review_comment(
         &mut self,
         checkout: CheckoutId,
@@ -117,7 +209,6 @@ impl App {
         });
         self.report("saving comment…");
     }
-
 
     /// Shells and exited agents are skipped: neither can receive a comment.
     fn review_agents(&self) -> Vec<(PaneId, String)> {
@@ -139,7 +230,6 @@ impl App {
             .collect()
     }
 
-
     pub(super) fn is_live_agent(&self, pane: PaneId) -> bool {
         self.tree
             .iter()
@@ -153,13 +243,11 @@ impl App {
             })
     }
 
-
     /// The configured editor command, or `None` to leave it to the daemon.
     pub(super) fn editor_command(&self) -> Option<String> {
         let cmd = self.settings.editor_cmd.trim();
         (!cmd.is_empty()).then(|| cmd.to_string())
     }
-
 
     /// Where the editor about to be spawned should land. Nothing at all
     /// for an external one: it has no pane to focus.
@@ -173,16 +261,6 @@ impl App {
             }
         }
     }
-
-
-    pub(super) fn close_review(&mut self) {
-        self.review = None;
-        self.review_wanted = None;
-        self.overlay = None;
-        self.pane_fullscreen = false;
-        self.focus = Focus::Checkouts;
-    }
-
 
     /// Moves the repository's primary checkout onto the selected branch row.
     /// The daemon refuses this when that checkout is dirty and says so; the
@@ -198,21 +276,20 @@ impl App {
         let _ = self.out.send(ClientMsg::SwitchBranch { checkout, branch });
     }
 
-
     pub(super) fn spawn_shell(&mut self) {
         if let Some(checkout) = self.current_checkout() {
-            let _ = self.out.send(ClientMsg::SpawnShell { checkout: checkout.id });
+            let _ = self.out.send(ClientMsg::SpawnShell {
+                checkout: checkout.id,
+            });
             self.pending_focus_new = true;
         }
     }
-
 
     pub(super) fn kill_selected(&mut self) {
         if self.focus == Focus::Panes {
             self.close_current();
         }
     }
-
 
     /// Closes whatever pane is currently shown in the live view — reachable
     /// both from the open-agents list (`x`) and, via the leader chord, from

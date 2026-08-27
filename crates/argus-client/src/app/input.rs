@@ -9,7 +9,6 @@
 use super::*;
 
 impl App {
-
     /// Shuts any floating window, from anywhere, whatever has focus.
     ///
     /// The leader is the *nice* way out, but it depends on the terminal
@@ -22,7 +21,6 @@ impl App {
         key.code == KeyCode::F(12)
     }
 
-
     /// Ctrl-V, with or without shift. Taken by Argus everywhere, including
     /// inside a pane: what the child would have made of it (quoted-insert
     /// in a line editor, visual block in vim) is worth less than pasting
@@ -31,7 +29,6 @@ impl App {
         key.modifiers.contains(KeyModifiers::CONTROL)
             && matches!(key.code, KeyCode::Char('v') | KeyCode::Char('V'))
     }
-
 
     pub fn on_key(&mut self, key: KeyEvent) {
         // The left of the bar is the breadcrumb's seat and a message only
@@ -68,7 +65,6 @@ impl App {
         }
     }
 
-
     /// Whether pasted text has somewhere to land — the same routing
     /// `on_paste` walks, asked ahead of time so a coalesced burst with no
     /// target is replayed as keystrokes instead of vanishing.
@@ -85,16 +81,15 @@ impl App {
         self.input_pane().is_some()
     }
 
-
     /// The pane typed text goes to: the floating window if one is up,
     /// otherwise the focused column's pane.
     pub fn input_pane(&self) -> Option<PaneId> {
-        self.overlay
-            .as_ref()
-            .and_then(Overlay::pane)
-            .or_else(|| (self.focus == Focus::PaneContent).then(|| self.column_pane()).flatten())
+        self.overlay.as_ref().and_then(Overlay::pane).or_else(|| {
+            (self.focus == Focus::PaneContent)
+                .then(|| self.column_pane())
+                .flatten()
+        })
     }
-
 
     /// Pastes what is actually on the clipboard, rather than what the
     /// timing of a run of keystrokes suggested was one.
@@ -119,7 +114,6 @@ impl App {
         ));
     }
 
-
     pub fn on_paste(&mut self, text: String) {
         self.clear_status();
         if let Some(prompt) = &mut self.prompt {
@@ -140,7 +134,9 @@ impl App {
         }
         if let Some(picker) = &mut self.picker {
             if picker.kind.is_fuzzy() {
-                picker.query.extend(text.chars().filter(|c| !c.is_control()));
+                picker
+                    .query
+                    .extend(text.chars().filter(|c| !c.is_control()));
                 picker.refilter();
             }
             return;
@@ -150,9 +146,10 @@ impl App {
         }
     }
 
-
     fn on_key_prompt(&mut self, key: KeyEvent) {
-        let Some(prompt) = &mut self.prompt else { return };
+        let Some(prompt) = &mut self.prompt else {
+            return;
+        };
         match prompt {
             Prompt::NewWorktree { base, input } => match key.code {
                 KeyCode::Enter => {
@@ -160,7 +157,10 @@ impl App {
                     let base = *base;
                     self.prompt = None;
                     if !branch.is_empty() {
-                        let _ = self.out.send(ClientMsg::CreateWorktree { checkout: base, branch });
+                        let _ = self.out.send(ClientMsg::CreateWorktree {
+                            checkout: base,
+                            branch,
+                        });
                         self.pending_focus_new_checkout = self.current_repository().map(|r| r.id);
                     }
                 }
@@ -215,9 +215,10 @@ impl App {
         }
     }
 
-
     fn on_key_dir_picker(&mut self, key: KeyEvent) {
-        let Some(picker) = &mut self.dir_picker else { return };
+        let Some(picker) = &mut self.dir_picker else {
+            return;
+        };
         match picker.on_key(key) {
             DirAction::None => {}
             DirAction::Close => self.dir_picker = None,
@@ -246,7 +247,6 @@ impl App {
             }
         }
     }
-
 
     fn on_key_picker(&mut self, key: KeyEvent) {
         let fuzzy = self.picker.as_ref().is_some_and(|p| p.kind.is_fuzzy());
@@ -282,12 +282,15 @@ impl App {
         }
     }
 
-
     /// An overlay holding a pane is a typing surface like the content
     /// column, so the same leader gets you out of it.
     fn on_key_overlay(&mut self, key: KeyEvent) {
         if matches!(self.overlay, Some(Overlay::Review)) {
             self.on_key_review(key);
+            return;
+        }
+        if matches!(self.overlay, Some(Overlay::History)) {
+            self.on_key_history(key);
             return;
         }
         if let Some(Overlay::Settings { sel }) = &mut self.overlay {
@@ -332,7 +335,6 @@ impl App {
         }
     }
 
-
     fn on_key_pane_content(&mut self, key: KeyEvent) {
         if self.leader_pending && is_leader(&key) {
             return;
@@ -342,6 +344,7 @@ impl App {
             match key.code {
                 KeyCode::Esc => self.ascend(),
                 KeyCode::Tab => self.open_review(),
+                KeyCode::Char('H') => self.open_history(),
                 KeyCode::Char('f') => self.pane_fullscreen = !self.pane_fullscreen,
                 KeyCode::Char('x') => self.close_current(),
                 KeyCode::Char('N') => self.jump_to_next_attention(),
@@ -353,13 +356,14 @@ impl App {
             self.leader_pending = true;
             return;
         }
-        let Some(pane) = self.column_pane() else { return };
+        let Some(pane) = self.column_pane() else {
+            return;
+        };
         let bytes = encode_key(&key);
         if !bytes.is_empty() {
             let _ = self.out.send(ClientMsg::Input { pane, bytes });
         }
     }
-
 
     fn on_key_nav(&mut self, key: KeyEvent) {
         match key.code {
@@ -381,6 +385,7 @@ impl App {
             KeyCode::Char('P') => self.pull(),
             KeyCode::Char('f') => self.open_file_picker(),
             KeyCode::Char('R') | KeyCode::Tab => self.open_review(),
+            KeyCode::Char('H') => self.open_history(),
             KeyCode::Char('x') => self.kill_selected(),
             KeyCode::Char('p') => self.toggle_projects_collapsed(),
             KeyCode::Char('N') => self.jump_to_next_attention(),
@@ -388,19 +393,37 @@ impl App {
         }
     }
 
-
     fn on_key_review(&mut self, key: KeyEvent) {
         // Taken first so they don't sit inside the view borrow.
         match key.code {
-            KeyCode::Char('R') | KeyCode::Char('r') => return self.open_review(),
+            KeyCode::Char('R') | KeyCode::Char('r') => {
+                if let Some(oid) = self
+                    .review
+                    .as_ref()
+                    .and_then(|v| v.review.commit.as_ref().map(|c| c.oid.clone()))
+                {
+                    return self.open_commit_review(oid, None);
+                }
+                return self.open_review();
+            }
+            KeyCode::Char('H') => return self.open_history(),
             KeyCode::Char('b') => {
+                // The side toggle is meaningless on a commit, and flipping
+                // it here would silently change which side the next
+                // uncommitted review opens on.
+                if self
+                    .review
+                    .as_ref()
+                    .is_some_and(|v| v.review.commit.is_some())
+                {
+                    return;
+                }
                 self.review_base = self.review_base.next();
                 return self.open_review();
             }
             KeyCode::Char('f') => return self.open_change_picker(),
-            KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc | KeyCode::Char('q') => {
-                return self.close_review()
-            }
+            KeyCode::Char('h') | KeyCode::Left => return self.close_review(),
+            KeyCode::Esc | KeyCode::Char('q') => return self.close_overlay(),
             _ => {}
         }
         let Some(v) = &mut self.review else {
@@ -431,7 +454,7 @@ impl App {
                         command: self.editor_command(),
                     });
                     self.want_editor();
-                    self.close_review();
+                    self.close_overlay();
                 }
             }
             KeyCode::Char('c') => {
@@ -444,6 +467,35 @@ impl App {
                 }
             }
             // The tree has likely moved on under an agent still editing it.
+            _ => {}
+        }
+    }
+
+    fn on_key_history(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('R') => return self.open_review(),
+            KeyCode::Char('r') | KeyCode::Char('H') => return self.open_history(),
+            KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc | KeyCode::Char('q') => {
+                return self.close_overlay()
+            }
+            KeyCode::Char('l') | KeyCode::Enter | KeyCode::Right => {
+                return self.open_selected_commit()
+            }
+            _ => {}
+        }
+        let Some(v) = &mut self.history else {
+            self.focus = Focus::Checkouts;
+            return;
+        };
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => v.move_by(1),
+            KeyCode::Char('k') | KeyCode::Up => v.move_by(-1),
+            KeyCode::Char('d') | KeyCode::PageDown => v.move_by(10),
+            KeyCode::Char('u') | KeyCode::PageUp => v.move_by(-10),
+            KeyCode::Char(']') => v.jump_commit(true),
+            KeyCode::Char('[') => v.jump_commit(false),
+            KeyCode::Char('g') | KeyCode::Home => v.top_of_list(),
+            KeyCode::Char('G') | KeyCode::End => v.bottom_of_list(),
             _ => {}
         }
     }
