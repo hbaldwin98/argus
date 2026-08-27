@@ -453,6 +453,10 @@ pub struct App {
     /// running behind it.
     pub grids: std::collections::HashMap<PaneId, Grid>,
     pub leader_pending: bool,
+    /// Whether the selected pane temporarily owns the main content area.
+    /// This is view state only; the renderer's existing live-pane sizing
+    /// turns the larger area into a PTY resize.
+    pub pane_fullscreen: bool,
     /// How the clipboard is read. A field so a test can hand the app a
     /// clipboard without there being a desktop session to hold one.
     pub clipboard: fn() -> Option<String>,
@@ -569,6 +573,7 @@ impl App {
             sel_pane: 0,
             grids: std::collections::HashMap::new(),
             leader_pending: false,
+            pane_fullscreen: false,
             clipboard: crate::clipboard::read,
             should_quit: false,
             // Empty, not a keymap: the bar's left half is the breadcrumb's
@@ -1204,10 +1209,29 @@ second
         h.leader();
         assert!(h.app.leader_pending);
         assert!(h.sent().is_empty(), "the leader itself is never forwarded");
+        h.app.pane_fullscreen = true;
 
         h.key(KeyCode::Esc);
         assert_eq!(h.app.focus, Focus::Panes);
         assert!(!h.app.leader_pending);
+        assert!(!h.app.pane_fullscreen, "leaving restores the navigation columns");
+        assert!(h.sent().is_empty());
+    }
+
+    #[test]
+    fn leader_then_f_toggles_pane_fullscreen_without_typing() {
+        let mut h = Harness::new();
+        h.keys("llll");
+        h.sent();
+
+        h.leader();
+        h.key(KeyCode::Char('f'));
+        assert!(h.app.pane_fullscreen);
+        assert!(h.sent().is_empty(), "the fullscreen chord never reaches the child");
+
+        h.leader();
+        h.key(KeyCode::Char('f'));
+        assert!(!h.app.pane_fullscreen);
         assert!(h.sent().is_empty());
     }
 
@@ -1216,10 +1240,12 @@ second
         let mut h = Harness::new();
         h.keys("llll");
         h.sent();
+        h.app.pane_fullscreen = true;
         h.leader();
         h.key(KeyCode::Char('x'));
         assert!(matches!(h.sent()[0], ClientMsg::Kill { pane: PaneId(100) }));
         assert_eq!(h.app.focus, Focus::Panes, "land back in the list, not on another pane");
+        assert!(!h.app.pane_fullscreen, "closing restores the navigation columns");
     }
 
     #[test]
@@ -1825,6 +1851,25 @@ second
     }
 
     #[test]
+    fn a_pending_new_worktree_restores_the_columns_before_moving_selection() {
+        let mut h = Harness::new();
+        h.keys("llll");
+        h.leader();
+        h.key(KeyCode::Char('f'));
+        h.app.pending_focus_new_checkout = Some(RepositoryId(5));
+        let mut t = tree();
+        t[0].repositories[0]
+            .checkouts
+            .push(checkout(12, "x", false, vec![]));
+
+        h.app.on_server_msg(ServerMsg::Tree(t));
+
+        assert_eq!(h.app.current_checkout().unwrap().name, "x");
+        assert_eq!(h.app.focus, Focus::Panes);
+        assert!(!h.app.pane_fullscreen);
+    }
+
+    #[test]
     fn a_new_worktree_selects_its_repository_even_if_navigation_moved() {
         let mut h = Harness::new();
         h.keys("lln");
@@ -2084,6 +2129,22 @@ second
     }
 
     #[test]
+    fn a_fullscreen_pane_that_vanishes_restores_the_pane_list() {
+        let mut h = Harness::new();
+        h.keys("llll");
+        h.leader();
+        h.key(KeyCode::Char('f'));
+        let mut t = tree();
+        t[0].repositories[0].checkouts[0].panes.remove(0);
+
+        h.app.on_server_msg(ServerMsg::Tree(t));
+
+        assert_eq!(h.app.focus, Focus::Panes);
+        assert!(!h.app.pane_fullscreen);
+        assert_eq!(h.app.column_pane(), Some(PaneId(101)));
+    }
+
+    #[test]
     fn an_empty_tree_leaves_nothing_selected_and_nothing_subscribed() {
         let mut h = Harness::new();
         h.app.on_server_msg(ServerMsg::Tree(Vec::new()));
@@ -2122,6 +2183,22 @@ second
             "the bar is prose, not a Debug dump"
         );
         assert!(h.app.status_alert, "a failed exit is the thing you have to read");
+    }
+
+    #[test]
+    fn a_fullscreen_pane_exit_restores_the_pane_list() {
+        let mut h = Harness::new();
+        h.keys("llll");
+        h.leader();
+        h.key(KeyCode::Char('f'));
+
+        h.app.on_server_msg(ServerMsg::PaneClosed {
+            pane: PaneId(100),
+            code: Some(0),
+        });
+
+        assert_eq!(h.app.focus, Focus::Panes);
+        assert!(!h.app.pane_fullscreen);
     }
 
     #[test]
@@ -3360,6 +3437,23 @@ second
     }
 
     #[test]
+    fn a_review_restores_the_columns_after_a_fullscreen_pane() {
+        let mut h = Harness::new();
+        h.keys("llll");
+        let checkout = h.app.current_checkout().unwrap().id;
+        h.leader();
+        h.key(KeyCode::Char('f'));
+        h.leader();
+        h.key(KeyCode::Tab);
+        h.sent();
+
+        h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
+
+        assert_eq!(h.app.focus, Focus::Review);
+        assert!(!h.app.pane_fullscreen);
+    }
+
+    #[test]
     fn t_opens_the_theme_picker_on_the_theme_already_in_use() {
         let mut h = Harness::new();
         h.app.theme = crate::theme::Theme::by_name("frappe");
@@ -3693,6 +3787,19 @@ second
             h.sent().last(),
             Some(ClientMsg::Subscribe { pane: PaneId(700) })
         ));
+    }
+
+    #[test]
+    fn a_floating_pane_restores_the_columns_before_taking_focus() {
+        let mut h = Harness::new();
+        h.keys("llll");
+        h.leader();
+        h.key(KeyCode::Char('f'));
+
+        h.app.open_overlay_pane(PaneId(700), "vim".to_string(), false);
+
+        assert_eq!(h.app.focus, Focus::Overlay);
+        assert!(!h.app.pane_fullscreen);
     }
 
     #[test]

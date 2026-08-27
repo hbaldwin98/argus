@@ -302,6 +302,9 @@ impl App {
             }
             return;
         }
+        if self.leader_pending && is_leader(&key) {
+            return;
+        }
         if self.leader_pending {
             self.leader_pending = false;
             match key.code {
@@ -331,11 +334,15 @@ impl App {
 
 
     fn on_key_pane_content(&mut self, key: KeyEvent) {
+        if self.leader_pending && is_leader(&key) {
+            return;
+        }
         if self.leader_pending {
             self.leader_pending = false;
             match key.code {
                 KeyCode::Esc => self.ascend(),
                 KeyCode::Tab => self.open_review(),
+                KeyCode::Char('f') => self.pane_fullscreen = !self.pane_fullscreen,
                 KeyCode::Char('x') => self.close_current(),
                 KeyCode::Char('N') => self.jump_to_next_attention(),
                 _ => {}

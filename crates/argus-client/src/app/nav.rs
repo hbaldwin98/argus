@@ -404,6 +404,7 @@ impl App {
                 // Deliberately does not unsubscribe: the live view keeps
                 // showing this pane in the rightmost column while browsing.
                 self.leader_pending = false;
+                self.pane_fullscreen = false;
                 self.focus = Focus::Panes;
             }
             Focus::Panes => self.focus = Focus::Checkouts,

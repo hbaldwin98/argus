@@ -265,6 +265,17 @@ impl App {
                 }
             }
         }
+        if self.pane_fullscreen
+            && (self.focus != Focus::PaneContent
+                || selected_pane.is_none()
+                || self.column_pane() != selected_pane)
+        {
+            self.leader_pending = false;
+            self.pane_fullscreen = false;
+            if self.focus == Focus::PaneContent {
+                self.focus = Focus::Panes;
+            }
+        }
     }
 
 
@@ -336,6 +347,11 @@ impl App {
         if self.overlay_pane() == Some(pane) {
             self.close_overlay();
         }
+        if self.pane_fullscreen && self.column_pane() == Some(pane) {
+            self.leader_pending = false;
+            self.pane_fullscreen = false;
+            self.focus = Focus::Panes;
+        }
         self.grids.remove(&pane);
         if self.column_pane() == Some(pane) {
             // Ranked the way the pane rows rank an exit (§8b): a clean one is
@@ -365,6 +381,7 @@ impl App {
         }
         self.review = Some(view);
         self.overlay = Some(Overlay::Review);
+        self.pane_fullscreen = false;
         self.focus = Focus::Review;
         self.report(format!("{files} changed vs {}", base.label()));
     }

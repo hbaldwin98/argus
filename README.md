@@ -369,6 +369,7 @@ connects instantly and a rebuild only pays for what changed.
 | Chord | Action |
 |---|---|
 | `Ctrl-Space`, Escape | Leave terminal input or close a floating pane |
+| `Ctrl-Space`, `f` | Toggle fullscreen for the selected pane |
 | `Ctrl-Space`, `x` | Kill the pane |
 | `Ctrl-Space`, Tab | Open review |
 | `Ctrl-Space`, `N` | Jump to the next pane waiting, failed, or ready for review |

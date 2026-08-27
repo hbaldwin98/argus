@@ -117,7 +117,7 @@ fn classify(key: &KeyEvent) -> Class {
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
         return Class::Ignore;
     }
-    if matches!(key.code, KeyCode::Modifier(_) | KeyCode::Null) {
+    if matches!(key.code, KeyCode::Modifier(_)) {
         return Class::Ignore;
     }
     if text_char(key).is_some() {
