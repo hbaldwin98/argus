@@ -4872,9 +4872,32 @@ root = "/somewhere"
         daemon_running(dir, names, persistent_agent_command())
     }
 
-    fn daemon_running(dir: &std::path::Path, names: &[&str], cmd: Vec<String>) -> Arc<Daemon> {
+    /// Like [`daemon_with_claude_aliases`], but the store is the temp config
+    /// directory's — so [`record_agents`] is what a restart reads. Caller
+    /// holds [`with_temp_config`].
+    fn daemon_with_claude_aliases_for_restore(
+        dir: &std::path::Path,
+        names: &[&str],
+    ) -> Arc<Daemon> {
         Daemon::with_store(
-            ConfigFile {
+            running_config(dir, names, persistent_agent_command()),
+            crate::store::Store::open().unwrap(),
+        )
+    }
+
+    fn daemon_running(dir: &std::path::Path, names: &[&str], cmd: Vec<String>) -> Arc<Daemon> {
+        // In-memory: these daemons live for whole seconds while a pane
+        // starts, and [`Store::open`] would hold the process-global
+        // `runtime.db` the tests running beside this one also open.
+        Daemon::with_store(
+            running_config(dir, names, cmd),
+            crate::store::Store::in_memory()
+                .expect("an in-memory runtime store needs nothing that can fail"),
+        )
+    }
+
+    fn running_config(dir: &std::path::Path, names: &[&str], cmd: Vec<String>) -> ConfigFile {
+        ConfigFile {
             workspaces: Vec::new(),
             projects: vec![ProjectConfig {
                 name: "proj".into(),
@@ -4883,20 +4906,18 @@ root = "/somewhere"
                 workspace: None,
                 ..Default::default()
             }],
-                agents: names
-                    .iter()
-                    .map(|name| AgentConfig {
-                        name: (*name).into(),
-                        cmd: cmd.clone(),
-                        env: Default::default(),
-                        harness: Some("claude".into()),
-                        restart: Default::default(),
-                    })
-                    .collect(),
-                harnesses: Vec::new(),
-            },
-            crate::store::Store::open().unwrap(),
-        )
+            agents: names
+                .iter()
+                .map(|name| AgentConfig {
+                    name: (*name).into(),
+                    cmd: cmd.clone(),
+                    env: Default::default(),
+                    harness: Some("claude".into()),
+                    restart: Default::default(),
+                })
+                .collect(),
+            harnesses: Vec::new(),
+        }
     }
 
     /// A stand-in for an agent CLI that takes its time. For two seconds it
@@ -5212,6 +5233,21 @@ root = "/somewhere"
         });
     }
 
+    #[test]
+    fn a_running_test_daemon_does_not_open_the_config_store() {
+        // `daemon_with_claude_aliases` used to call `Store::open`, so every
+        // pane-start test held the process-global `runtime.db` for seconds
+        // and the tests running beside it failed with SQLITE_BUSY.
+        with_temp_config(|cfg| {
+            let dir = tempfile::tempdir().unwrap();
+            let _d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+            assert!(
+                !cfg.join("runtime.db").exists(),
+                "holding the shared store is how parallel tests lose to SQLITE_BUSY"
+            );
+        });
+    }
+
     #[tokio::test]
     async fn a_pane_you_closed_does_not_come_back() {
         // The file follows the tree, so closing one forgets it.
@@ -5360,7 +5396,7 @@ root = "/somewhere"
                 dir.path(),
                 &[("first", Some("session-a")), ("second", Some("session-b"))],
             );
-            let d = daemon_with_claude_aliases(dir.path(), &["first", "second"]);
+            let d = daemon_with_claude_aliases_for_restore(dir.path(), &["first", "second"]);
             d.restore_session();
 
             assert_eq!(resuming_panes(&d), 2, "exact IDs need no broad claim guard");
@@ -5380,7 +5416,7 @@ root = "/somewhere"
         let dir = tempfile::tempdir().unwrap();
         with_temp_config(|_| {
             record_agents(dir.path(), &[("first", None), ("second", None)]);
-            let d = daemon_with_claude_aliases(dir.path(), &["first", "second"]);
+            let d = daemon_with_claude_aliases_for_restore(dir.path(), &["first", "second"]);
             d.restore_session();
 
             assert_eq!(d.snapshot()[0].repositories[0].checkouts[0].panes.len(), 2);

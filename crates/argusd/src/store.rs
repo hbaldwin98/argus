@@ -96,6 +96,12 @@ pub struct Store {
 
 impl Store {
     /// Opens the store beside the config, creating and migrating it.
+    ///
+    /// Tests that do not need the file should use [`Self::in_memory`]: this
+    /// path is the process-global config directory unless `ARGUS_CONFIG_DIR`
+    /// is set, so two callers without a private directory share one file
+    /// and will lock. Tests that do need the file point that variable at a
+    /// temp dir and serialize against each other.
     pub fn open() -> Result<Self> {
         let dir = argus_protocol::config_dir();
         std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
