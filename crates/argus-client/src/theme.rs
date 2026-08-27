@@ -23,6 +23,30 @@ const fn rgb(hex: u32) -> Color {
 /// first.
 pub const THEMES: &[&str] = &["mocha", "macchiato", "frappe", "latte"];
 
+/// What a token *is*, coloured. The daemon sends review diffs tagged with
+/// these roles and never with colours, so this is the only place a language
+/// turns into a palette.
+///
+/// Nine roles for ten span kinds: constants and numbers share one, which is
+/// what Catppuccin itself does. Identifiers have no role at all — the daemon
+/// does not tag them, because a diff where every name is coloured hides the
+/// thing a diff is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Syntax {
+    pub keyword: Color,
+    pub string: Color,
+    /// Drawn italic as well, so prose reads as prose at a glance.
+    pub comment: Color,
+    /// Numbers and constants both.
+    pub number: Color,
+    pub type_name: Color,
+    pub function: Color,
+    pub property: Color,
+    pub operator: Color,
+    /// Brackets and delimiters, kept quiet: they are structure, not content.
+    pub punctuation: Color,
+}
+
 /// Semantic color roles for the whole client.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Theme {
@@ -56,6 +80,17 @@ pub struct Theme {
     /// Selected-row fill in unfocused columns; barely raised, just enough
     /// to remember where you were.
     pub sel_bg_dim: Color,
+    /// The wash behind an added or removed diff line. Background, because
+    /// syntax highlighting owns the foreground: a `+` line has to stay
+    /// readable as code and still read as added from across the screen.
+    pub add_bg: Color,
+    pub del_bg: Color,
+    /// The same wash under the review's selection. A selected range covers
+    /// whole lines, so selection cannot simply take the background over
+    /// without erasing which side of the diff each line was on.
+    pub add_bg_sel: Color,
+    pub del_bg_sel: Color,
+    pub syntax: Syntax,
 }
 
 impl Default for Theme {
@@ -112,6 +147,21 @@ impl Theme {
             edge: rgb(0x313244),        // surface0
             sel_bg: rgb(0x45475a),      // surface1
             sel_bg_dim: rgb(0x313244),
+            add_bg: rgb(0x1c3327),
+            del_bg: rgb(0x3a2130),
+            add_bg_sel: rgb(0x27452f),
+            del_bg_sel: rgb(0x4d2c3e),
+            syntax: Syntax {
+                keyword: rgb(0xcba6f7),
+                string: rgb(0xa6e3a1),
+                comment: rgb(0x7f849c),
+                number: rgb(0xfab387),
+                type_name: rgb(0xf9e2af),
+                function: rgb(0x89b4fa),
+                property: rgb(0x94e2d5),
+                operator: rgb(0x89dceb),
+                punctuation: rgb(0x9399b2),
+            },
         }
     }
 
@@ -131,6 +181,21 @@ impl Theme {
             edge: rgb(0x363a4f),
             sel_bg: rgb(0x494d64),
             sel_bg_dim: rgb(0x363a4f),
+            add_bg: rgb(0x22392e),
+            del_bg: rgb(0x402734),
+            add_bg_sel: rgb(0x2d4a3a),
+            del_bg_sel: rgb(0x533341),
+            syntax: Syntax {
+                keyword: rgb(0xc6a0f6),
+                string: rgb(0xa6da95),
+                comment: rgb(0x8087a2),
+                number: rgb(0xf5a97f),
+                type_name: rgb(0xeed49f),
+                function: rgb(0x8aadf4),
+                property: rgb(0x8bd5ca),
+                operator: rgb(0x91d7e3),
+                punctuation: rgb(0x939ab7),
+            },
         }
     }
 
@@ -150,6 +215,21 @@ impl Theme {
             edge: rgb(0x414559),
             sel_bg: rgb(0x51576d),
             sel_bg_dim: rgb(0x414559),
+            add_bg: rgb(0x2c4335),
+            del_bg: rgb(0x47303c),
+            add_bg_sel: rgb(0x385440),
+            del_bg_sel: rgb(0x573c4a),
+            syntax: Syntax {
+                keyword: rgb(0xca9ee6),
+                string: rgb(0xa6d189),
+                comment: rgb(0x838ba7),
+                number: rgb(0xef9f76),
+                type_name: rgb(0xe5c890),
+                function: rgb(0x8caaee),
+                property: rgb(0x81c8be),
+                operator: rgb(0x99d5ce),
+                punctuation: rgb(0x949cbb),
+            },
         }
     }
 
@@ -172,6 +252,21 @@ impl Theme {
             edge: rgb(0xbcc0cc),
             sel_bg: rgb(0xbcc0cc),
             sel_bg_dim: rgb(0xccd0da),
+            add_bg: rgb(0xd8f0d0),
+            del_bg: rgb(0xf7d8dd),
+            add_bg_sel: rgb(0xc3e6b8),
+            del_bg_sel: rgb(0xefc2ca),
+            syntax: Syntax {
+                keyword: rgb(0x8839ef),
+                string: rgb(0x40a02b),
+                comment: rgb(0x8c8fa1),
+                number: rgb(0xfe640b),
+                type_name: rgb(0xdf8e1d),
+                function: rgb(0x1e66f5),
+                property: rgb(0x179299),
+                operator: rgb(0x04a5e5),
+                punctuation: rgb(0x7c7f93),
+            },
         }
     }
 }

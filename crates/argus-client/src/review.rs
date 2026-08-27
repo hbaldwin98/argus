@@ -268,6 +268,7 @@ mod tests {
             old_lineno,
             new_lineno,
             text: text.to_string(),
+            spans: Vec::new(),
         }
     }
 

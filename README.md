@@ -395,6 +395,11 @@ Other supported keys are forwarded to the child PTY.
 The chosen side persists across reopens. Review covers uncommitted work only; comparing against
 committed history is left to a dedicated Git tool.
 
+Diffs are syntax highlighted for Rust, TypeScript, TSX and JavaScript, Python, C#, CSS, YAML, TOML,
+JSON, and Markdown, picked by file extension; anything else is shown as plain text. Added and
+removed lines are marked by a background wash and by their `+` and `-` markers, leaving the
+foreground to the syntax colours.
+
 Comments are stored in `runtime.db` before Argus notifies the selected live agent. They remain
 visible to every live agent in that checkout through `argus-hook comments`; the command returns the
 newest 100 comments in order. If terminal delivery fails after the save, the comment remains stored.

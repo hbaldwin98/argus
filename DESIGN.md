@@ -494,6 +494,21 @@ files over 1 MiB, files over 5,000 rendered lines, and content beyond the review
 budget are listed without their content. Capture and diff failures are reported rather than
 rendered as empty work.
 
+Diff lines carry syntax spans, produced by tree-sitter in the daemon. The daemon parses because
+the daemon is the side holding whole blobs: the client is sent hunks, and a parser given a bare
+hunk reads a fragment torn out of its syntax. Each side is parsed from its own tree, so a removed
+line is read in the file it was removed from rather than the one that replaced it. A span carries
+what a token *is* — keyword, string, comment, number, type, function, constant, property,
+operator, punctuation — never a colour, so the client's theme keeps the palette. Identifiers are
+deliberately untagged: colouring every name buries which lines changed.
+
+Ten grammars link in and are chosen by file extension: Rust, TypeScript, TSX (which also serves
+JavaScript), Python, C#, CSS, YAML, TOML, JSON, and Markdown. Both TypeScript grammars are
+configured with the JavaScript query concatenated underneath their own, which is only its
+additions; without it they parse correctly and highlight nothing. Anything else is plain text, and
+so is a file over 512 KiB, an unreadable blob, or a parse that fails — highlighting is decoration
+and never costs a review. The client validates every offset against the line before slicing it.
+
 Every request has an id and the client accepts only the latest exact reply. Review capture is
 globally serialized, and a connection drops an older queued capture when a newer request replaces
 it.
@@ -506,8 +521,13 @@ under the checkout path, then sends a flattened one-line notification to the rec
 failed PTY write does not discard the stored comment. Live agents in the checkout can read the
 newest 100 comments with `argus-hook comments`.
 
-Review is a viewer. There is no vetted state, no stage/unstage/revert action, no syntax
-highlighting, or comment-resolution lifecycle. Closing the review sends no daemon message.
+Added and removed lines are marked by a background wash rather than by foreground colour, which
+syntax now owns; the `+` and `-` markers keep their own colour so the signal survives a terminal
+that drops backgrounds. Selecting a line brightens its wash instead of replacing it, so a
+selected range still shows which side each line was on.
+
+Review is a viewer. There is no vetted state, no stage/unstage/revert action, and no
+comment-resolution lifecycle. Closing the review sends no daemon message.
 
 ## Editors and overlays
 

@@ -20,7 +20,10 @@
 //!   is true about it. Packing both onto one line is what made the old
 //!   layout feel cramped.
 
-use argus_protocol::{ChildAgentInfo, Color as PColor, GitStatus, LineKind, PaneStatus};
+use argus_protocol::{
+    ChildAgentInfo, Color as PColor, GitStatus, HighlightKind, HighlightSpan, LineKind,
+    PaneStatus,
+};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -722,6 +725,55 @@ fn render_review(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
 /// Four digits covers nearly every file; the code matters more than the rest.
 const LINENO_WIDTH: usize = 4;
 
+/// Splits one diff line into styled runs. Text no span covers is drawn plain,
+/// which is most identifiers and all of any file with no grammar.
+///
+/// Offsets arrive from another process, so every one of them is checked
+/// against this string before it is used to slice it. A bad span is dropped
+/// rather than trusted: colour is not worth a panic in the renderer.
+fn highlighted<'a>(text: &'a str, spans: &[HighlightSpan], th: Theme) -> Vec<Span<'a>> {
+    if spans.is_empty() {
+        return vec![Span::styled(text, Style::default().fg(th.text))];
+    }
+    let mut out = Vec::with_capacity(spans.len() * 2 + 1);
+    let mut at = 0usize;
+    for span in spans {
+        let (start, end) = (span.start as usize, span.end as usize);
+        if start < at
+            || end > text.len()
+            || start >= end
+            || !text.is_char_boundary(start)
+            || !text.is_char_boundary(end)
+        {
+            continue;
+        }
+        if start > at {
+            out.push(Span::styled(&text[at..start], Style::default().fg(th.text)));
+        }
+        out.push(Span::styled(&text[start..end], syntax_style(span.kind, th)));
+        at = end;
+    }
+    if at < text.len() {
+        out.push(Span::styled(&text[at..], Style::default().fg(th.text)));
+    }
+    out
+}
+
+fn syntax_style(kind: HighlightKind, th: Theme) -> Style {
+    let s = th.syntax;
+    match kind {
+        HighlightKind::Keyword => Style::default().fg(s.keyword),
+        HighlightKind::Str => Style::default().fg(s.string),
+        HighlightKind::Comment => Style::default().fg(s.comment).add_modifier(Modifier::ITALIC),
+        HighlightKind::Number | HighlightKind::Constant => Style::default().fg(s.number),
+        HighlightKind::Type => Style::default().fg(s.type_name),
+        HighlightKind::Function => Style::default().fg(s.function),
+        HighlightKind::Property => Style::default().fg(s.property),
+        HighlightKind::Operator => Style::default().fg(s.operator),
+        HighlightKind::Punctuation => Style::default().fg(s.punctuation),
+    }
+}
+
 fn review_line<'a>(view: &'a ReviewView, row: Row, selected: bool, th: Theme) -> Line<'a> {
     let file = &view.review.files[row.file()];
     let pad = " ".repeat(LINENO_WIDTH + 1);
@@ -753,23 +805,44 @@ fn review_line<'a>(view: &'a ReviewView, row: Row, selected: bool, th: Theme) ->
                 Some(n) => format!("{n:>LINENO_WIDTH$}"),
                 None => " ".repeat(LINENO_WIDTH),
             };
-            let fg = match l.kind {
+            // The marker keeps its colour even though the wash already says
+            // which side this is: the wash is gone wherever a terminal drops
+            // backgrounds, and the marker column is what is left.
+            let marker_fg = match l.kind {
                 LineKind::Added => th.ok,
                 LineKind::Removed => th.err,
-                LineKind::Context => th.text,
+                LineKind::Context => th.dim,
             };
-            vec![
+            let mut spans = vec![
                 Span::styled(format!("{no} "), Style::default().fg(th.dim)),
-                Span::styled(format!("{}{}", crate::review::marker(l.kind), l.text), Style::default().fg(fg)),
-            ]
+                Span::styled(
+                    crate::review::marker(l.kind).to_string(),
+                    Style::default().fg(marker_fg),
+                ),
+            ];
+            spans.extend(highlighted(&l.text, &l.spans, th));
+            spans
         }
     };
 
     // A wash rather than a marker column: the left edge is already spent,
-    // and a range should read as one block.
+    // and a range should read as one block. Added and removed lines carry
+    // their own wash whether or not they are selected, which is what frees
+    // the foreground for syntax; selecting one brightens that wash instead
+    // of replacing it, so a selected range still shows both sides.
     let mut line = Line::from(spans);
-    if selected && row.is_line() {
-        line = line.style(Style::default().bg(th.sel_bg));
+    if let Row::Line { hunk, line: idx, .. } = row {
+        let bg = match (file.hunks[hunk].lines[idx].kind, selected) {
+            (LineKind::Added, false) => Some(th.add_bg),
+            (LineKind::Added, true) => Some(th.add_bg_sel),
+            (LineKind::Removed, false) => Some(th.del_bg),
+            (LineKind::Removed, true) => Some(th.del_bg_sel),
+            (LineKind::Context, true) => Some(th.sel_bg),
+            (LineKind::Context, false) => None,
+        };
+        if let Some(bg) = bg {
+            line = line.style(Style::default().bg(bg));
+        }
     }
     line
 }
@@ -3270,18 +3343,21 @@ mod tests {
                             old_lineno: Some(10),
                             new_lineno: Some(10),
                             text: "unchanged".to_string(),
+                            spans: Vec::new(),
                         },
                         argus_protocol::DiffLine {
                             kind: argus_protocol::LineKind::Removed,
                             old_lineno: Some(11),
                             new_lineno: None,
                             text: "gone".to_string(),
+                            spans: Vec::new(),
                         },
                         argus_protocol::DiffLine {
                             kind: argus_protocol::LineKind::Added,
                             old_lineno: None,
                             new_lineno: Some(11),
                             text: "arrived".to_string(),
+                            spans: Vec::new(),
                         },
                     ],
                 }],
@@ -3324,7 +3400,8 @@ mod tests {
     #[test]
     fn added_and_removed_lines_are_told_apart_by_color() {
         // The markers alone are one character wide; color is what makes a
-        // diff scannable.
+        // diff scannable. The marker keeps its own colour because a
+        // terminal that drops backgrounds leaves nothing else.
         let mut app = app_with_review();
         let buf = draw(&mut app);
         let th = app.theme;
@@ -3332,15 +3409,72 @@ mod tests {
         assert_eq!(fg_of(&buf, "-gone"), Some(th.err));
     }
 
+    /// The foreground now belongs to syntax, so which side a line is on is
+    /// carried by a background wash that does not depend on the selection.
+    #[test]
+    fn added_and_removed_lines_are_washed_whether_or_not_they_are_selected() {
+        let mut app = app_with_review();
+        let th = app.theme;
+        let buf = draw(&mut app);
+        assert_eq!(bg_of(&buf, "+arrived"), Some(th.add_bg));
+        assert_eq!(bg_of(&buf, "-gone"), Some(th.del_bg));
+        assert_ne!(bg_of(&buf, "unchanged"), Some(th.add_bg), "context is not washed");
+    }
+
     #[test]
     fn the_selected_line_is_washed_so_a_range_reads_as_one_block() {
         let mut app = app_with_review();
+        let th = app.theme;
         app.review.as_mut().unwrap().toggle_mark();
         app.review.as_mut().unwrap().move_by(1);
         let buf = draw(&mut app);
-        assert_eq!(bg_of(&buf, "unchanged"), Some(app.theme.sel_bg));
-        assert_eq!(bg_of(&buf, "-gone"), Some(app.theme.sel_bg), "the whole range");
-        assert_ne!(bg_of(&buf, "+arrived"), Some(app.theme.sel_bg), "but no further");
+        assert_eq!(bg_of(&buf, "unchanged"), Some(th.sel_bg));
+        // Selecting a removed line brightens its wash rather than replacing
+        // it: a selected range must still show which side each line was on.
+        assert_eq!(bg_of(&buf, "-gone"), Some(th.del_bg_sel), "the whole range");
+        assert_eq!(bg_of(&buf, "+arrived"), Some(th.add_bg), "but no further");
+    }
+
+    /// End to end from the wire: a span the daemon sent reaches the screen as
+    /// its theme colour, and the text around it stays plain.
+    #[test]
+    fn a_highlight_span_colours_only_the_run_it_covers() {
+        let mut app = app_with_review();
+        {
+            let view = app.review.as_mut().unwrap();
+            let line = &mut view.review.files[0].hunks[0].lines[0];
+            line.text = "let x = 1".to_string();
+            line.spans = vec![argus_protocol::HighlightSpan {
+                start: 0,
+                end: 3,
+                kind: argus_protocol::HighlightKind::Keyword,
+            }];
+        }
+        let th = app.theme;
+        let buf = draw(&mut app);
+        assert_eq!(fg_of(&buf, "let"), Some(th.syntax.keyword));
+        assert_eq!(fg_of(&buf, "x = 1"), Some(th.text), "uncovered text stays plain");
+    }
+
+    /// Offsets cross a process boundary, so the renderer treats them as
+    /// untrusted. A span past the end of the line must not panic or colour
+    /// anything, and the line must still draw.
+    #[test]
+    fn a_span_that_overruns_its_line_is_dropped_rather_than_sliced() {
+        let mut app = app_with_review();
+        {
+            let view = app.review.as_mut().unwrap();
+            let line = &mut view.review.files[0].hunks[0].lines[0];
+            line.text = "short".to_string();
+            line.spans = vec![argus_protocol::HighlightSpan {
+                start: 2,
+                end: 99,
+                kind: argus_protocol::HighlightKind::Keyword,
+            }];
+        }
+        let th = app.theme;
+        let buf = draw(&mut app);
+        assert_eq!(fg_of(&buf, "short"), Some(th.text));
     }
 
     #[test]
