@@ -44,6 +44,12 @@ pub enum Focus {
 pub struct Panel {
     pub outer: Rect,
     pub inner: Rect,
+    /// The list index drawn on this card's first row. A column taller than
+    /// its card is scrolled, and then a row on screen is not the row's
+    /// index: everything mapping a click back to a row has to add this,
+    /// and the next frame scrolls from here rather than recomputing an
+    /// offset from the selection alone.
+    pub first: usize,
 }
 
 /// Screen regions from the most recent render, so mouse clicks can be
@@ -2219,6 +2225,7 @@ second
         let panel = |x: u16, w: u16| Panel {
             outer: Rect::new(x, 0, w, 8),
             inner: Rect::new(x + 1, 1, w - 2, 6),
+            first: 0,
         };
         h.app.layout = Layout {
             projects: panel(0, 12),
@@ -2261,6 +2268,7 @@ second
         let panel = |x: u16, w: u16| Panel {
             outer: Rect::new(x, 0, w, 8),
             inner: Rect::new(x + 1, 1, w.saturating_sub(2), 6),
+            first: 0,
         };
         h.app.layout = Layout {
             projects: panel(0, 12),
@@ -2317,6 +2325,7 @@ second
         let panel = |x: u16, w: u16| Panel {
             outer: Rect::new(x, 0, w, 8),
             inner: Rect::new(x + 1, 1, w.saturating_sub(2), 6),
+            first: 0,
         };
         h.app.layout = Layout {
             projects: panel(0, 12),
@@ -2580,6 +2589,7 @@ second
         h.app.layout.overlay = Panel {
             outer: Rect::new(2, 1, 60, 20),
             inner: Rect::new(3, 2, 58, 18),
+            first: 0,
         };
 
         let live = h.app.live_panes();
@@ -3826,6 +3836,7 @@ second
         h.app.layout.overlay = Panel {
             outer: Rect::new(2, 1, 40, 20),
             inner: Rect::new(3, 2, 38, 18),
+            first: 0,
         };
         let live = h.app.live_panes();
         assert_eq!(live.len(), 2);
@@ -4120,6 +4131,7 @@ second
         h.app.layout.overlay = Panel {
             outer: Rect::new(10, 4, 20, 10),
             inner: Rect::new(11, 5, 18, 8),
+            first: 0,
         };
 
         h.app.on_mouse(click(1, 1)); // out on the projects column
@@ -4135,6 +4147,7 @@ second
         h.app.layout.overlay = Panel {
             outer: Rect::new(10, 4, 20, 10),
             inner: Rect::new(11, 5, 18, 8),
+            first: 0,
         };
         wants_mouse(&mut h, PaneId(101));
         h.sent();
@@ -4155,6 +4168,7 @@ second
         h.app.layout.overlay = Panel {
             outer: Rect::new(10, 4, 20, 10),
             inner: Rect::new(11, 5, 18, 8),
+            first: 0,
         };
         let before = h.app.sel_project;
 
@@ -4543,6 +4557,7 @@ second
         let panel = |x: u16, w: u16| Panel {
             outer: Rect::new(x, 0, w, 8),
             inner: Rect::new(x + 1, 1, w.saturating_sub(2), 6),
+            first: 0,
         };
         // Strip at 0..2, gutter at 2, repositories at 3..15.
         h.app.layout = Layout {

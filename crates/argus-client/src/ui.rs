@@ -212,6 +212,7 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option<CursorPlac
             project_rows,
             app.focus == Focus::Projects,
             (!app.tree.is_empty()).then_some(app.sel_project),
+            app.layout.projects.first,
             "no projects yet
 
 n  add one",
@@ -264,6 +265,7 @@ n  add one",
         repository_rows,
         app.focus == Focus::Repositories,
         (nrepo > 0).then_some(app.sel_repository),
+        app.layout.repositories.first,
         "no repositories
 
 n  add one",
@@ -295,6 +297,7 @@ n  add one",
         checkout_rows,
         app.focus == Focus::Checkouts,
         (ncheck > 0).then_some(app.sel_checkout),
+        app.layout.checkouts.first,
         "no checkouts",
         th,
     );
@@ -351,6 +354,7 @@ n  add one",
         pane_rows,
         app.focus == Focus::Panes,
         selected_row,
+        app.layout.panes.first,
         "nothing running
 
 s  shell
@@ -441,12 +445,13 @@ fn render_column(
     rows: Vec<Item>,
     focused: bool,
     selected: Option<usize>,
+    scrolled_to: usize,
     empty_hint: &str,
     th: Theme,
 ) -> Panel {
     let block = panel_block(title, focused, th, area.width);
     let inner = block.inner(area);
-    let panel = Panel { outer: area, inner };
+    let mut panel = Panel { outer: area, inner, first: 0 };
     f.render_widget(block, area);
 
     if rows.is_empty() {
@@ -463,16 +468,44 @@ fn render_column(
 
     // Scroll the window so the selection stays on screen in a long list.
     let visible = (inner.height / ROW_HEIGHT) as usize;
-    let first = selected
-        .filter(|s| visible > 0 && *s >= visible)
-        .map(|s| s + 1 - visible)
-        .unwrap_or(0);
+    let first = scrolled_to_show(scrolled_to, selected, visible, rows.len());
+    panel.first = first;
 
     for (i, item) in rows.into_iter().enumerate().skip(first).take(visible) {
         let Some(row) = row_rect(inner, i - first) else { break };
         render_row(f, row, item, selected == Some(i), focused, th);
     }
     panel
+}
+
+/// Where a column's window sits after this frame: `scrolled_to` is where
+/// the last frame left it, and it moves as little as it can to keep the
+/// selection on screen.
+///
+/// Deliberately not derived from the selection alone. Doing that pins the
+/// selected row to the bottom of the card the moment the list is longer
+/// than the card — nothing below the cursor is ever visible, every step
+/// drags the whole list under it, and a row appearing above the selection
+/// (a branch losing its checkout pins one) makes the column lurch.
+fn scrolled_to_show(
+    scrolled_to: usize,
+    selected: Option<usize>,
+    visible: usize,
+    len: usize,
+) -> usize {
+    if visible == 0 || len <= visible {
+        return 0;
+    }
+    // Never leave blank rows below a list that could fill them.
+    let mut first = scrolled_to.min(len - visible);
+    if let Some(selected) = selected {
+        if selected < first {
+            first = selected;
+        } else if selected >= first + visible {
+            first = selected + 1 - visible;
+        }
+    }
+    first
 }
 
 /// The projects column folded away: a rail exactly as wide as its own
@@ -486,7 +519,7 @@ fn render_collapsed_projects(f: &mut Frame, area: Rect, th: Theme) -> Panel {
         .border_style(Style::default().fg(th.edge))
         .style(Style::default().bg(th.surface));
     let inner = block.inner(area);
-    let panel = Panel { outer: area, inner };
+    let panel = Panel { outer: area, inner, first: 0 };
     f.render_widget(block, area);
     panel
 }
@@ -661,7 +694,7 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
         let grid = app.column_pane().and_then(|id| app.grids.get(&id));
         render_term(f, grid, inner, focused)
     };
-    app.layout.content = Panel { outer: area, inner };
+    app.layout.content = Panel { outer: area, inner, first: 0 };
     cursor
 }
 
@@ -913,6 +946,7 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
     app.layout.overlay = Panel {
         outer: popup,
         inner,
+        first: 0,
     };
 
     match overlay {
@@ -2279,6 +2313,89 @@ mod tests {
         let mut app = App::new(tx);
         app.on_server_msg(argus_protocol::ServerMsg::Tree(tree()));
         app
+    }
+
+    // --- a column taller than its card ---------------------------------------
+
+    /// Eight checkouts in one repository, so a short column has to scroll.
+    fn app_with_a_long_checkout_column() -> App {
+        let mut app = app_with_tree();
+        let r = &mut app.tree[0].repositories[0];
+        r.checkouts = (0..8)
+            .map(|i| argus_protocol::CheckoutInfo {
+                id: CheckoutId(20 + i),
+                name: format!("wt-{i}"),
+                path: format!("/repo/wt-{i}"),
+                primary: i == 0,
+                git: None,
+                panes: Vec::new(),
+            })
+            .collect();
+        app.focus = Focus::Checkouts;
+        app
+    }
+
+    /// The row of the checkouts column that a given screen row sits on.
+    fn click_checkout(app: &mut App, drawn_row: u16) {
+        let inner = app.layout.checkouts.inner;
+        app.on_mouse(crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: inner.x + 1,
+            row: inner.y + drawn_row * ROW_HEIGHT,
+            modifiers: KeyModifiers::NONE,
+        });
+    }
+
+    #[test]
+    fn a_click_in_a_scrolled_column_selects_the_row_it_landed_on() {
+        let mut app = app_with_a_long_checkout_column();
+        app.sel_checkout = 7;
+        // Tall enough for a few rows, far short of eight.
+        let buf = draw_at(&mut app, 100, 12);
+        let top = app.layout.checkouts.inner.y;
+        let first_drawn = lines(&buf)[top as usize].clone();
+
+        click_checkout(&mut app, 0);
+
+        let name = app.current_checkout().map(|c| c.name.clone()).unwrap_or_default();
+        assert!(
+            first_drawn.contains(&name),
+            "clicking the top row must select the checkout drawn there: {first_drawn:?} selected {name:?}"
+        );
+    }
+
+    #[test]
+    fn a_scrolled_column_does_not_slide_when_the_selection_moves_back_up() {
+        let mut app = app_with_a_long_checkout_column();
+        app.sel_checkout = 7;
+        let buf = draw_at(&mut app, 100, 12);
+        let top = app.layout.checkouts.inner.y as usize;
+        assert!(lines(&buf)[top].contains("wt-6"), "the column is scrolled");
+
+        app.on_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
+        let buf = draw_at(&mut app, 100, 12);
+
+        assert!(
+            lines(&buf)[top].contains("wt-6"),
+            "the selection is still on screen, so the list must not move under it: {:?}",
+            lines(&buf)[top]
+        );
+    }
+
+    /// The policy itself. Deriving the offset from the selection alone
+    /// pins the selected row to the bottom of the card, which is what made
+    /// the columns lurch whenever a row appeared above the cursor.
+    #[test]
+    fn a_column_scrolls_the_least_it_can_to_keep_the_selection_visible() {
+        // Already on screen: nothing moves.
+        assert_eq!(scrolled_to_show(3, Some(4), 5, 20), 3);
+        // Above the window, and below it.
+        assert_eq!(scrolled_to_show(3, Some(1), 5, 20), 1);
+        assert_eq!(scrolled_to_show(3, Some(8), 5, 20), 4);
+        // A list that fits needs no offset at all, and one that shrank
+        // must not leave blank rows under it.
+        assert_eq!(scrolled_to_show(3, Some(1), 5, 4), 0);
+        assert_eq!(scrolled_to_show(9, Some(6), 5, 8), 3);
     }
 
     #[test]

@@ -207,9 +207,10 @@ impl App {
     }
 
 
-    /// Which list column a point falls in, anywhere on its card, and that
-    /// card's row area.
-    fn column_at(&self, x: u16, y: u16) -> Option<(Focus, Rect)> {
+    /// Which list column a point falls in, anywhere on its card, along with
+    /// the card itself — a long column is scrolled, so the row a click
+    /// landed on is only a row index once the card's offset is added back.
+    fn column_at(&self, x: u16, y: u16) -> Option<(Focus, Panel)> {
         for (focus, panel) in [
             (Focus::Projects, self.layout.projects),
             (Focus::Repositories, self.layout.repositories),
@@ -217,7 +218,7 @@ impl App {
             (Focus::Panes, self.layout.panes),
         ] {
             if in_rect(panel.outer, x, y) {
-                return Some((focus, panel.inner));
+                return Some((focus, panel));
             }
         }
         None
@@ -241,7 +242,7 @@ impl App {
             return;
         }
 
-        let Some((target, inner)) = self.column_at(x, y) else {
+        let Some((target, panel)) = self.column_at(x, y) else {
             return;
         };
         let count = match target {
@@ -251,15 +252,18 @@ impl App {
             _ => self.visible_pane_count(),
         };
 
-        // The panes column draws each pane's children under it, so a row
-        // there is not an index into the panes: a click on a child row
-        // means the pane it is running in.
+        // Two things stand between the row clicked and the row meant. The
+        // card may be scrolled, so its first row is `panel.first` rather
+        // than row zero; and the panes column draws each pane's children
+        // under it, so a row there is not an index into the panes — a
+        // click on a child row means the pane it is running in.
+        let row = row_in(panel.inner, x, y).map(|row| row + panel.first);
         let hit = match target {
-            Focus::Panes => row_in(inner, x, y).and_then(|row| {
+            Focus::Panes => row.and_then(|row| {
                 self.current_checkout()
                     .and_then(|c| crate::ui::pane_row_owners(c).get(row).copied())
             }),
-            _ => row_in(inner, x, y).filter(|idx| *idx < count),
+            _ => row.filter(|idx| *idx < count),
         };
         let already = self.focus == target && hit == Some(self.selection_in(target));
         if let Some(idx) = hit {
