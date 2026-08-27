@@ -2164,6 +2164,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_delegated_task_waits_for_the_agent_that_has_to_read_it() {
+        // Regression: the task used to be typed at the new pane in the same
+        // breath as spawning it, seconds before any agent CLI has a prompt
+        // to type into. The text survived in the pty buffer and turned up in
+        // the input box eventually, but the Return that submits it did not —
+        // so the pane sat there with the task typed and never ran it, which
+        // reads from the outside as an agent opening panes for no reason.
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_running(dir.path(), &["slow"], slow_starting_agent_command());
+        let source = d.spawn_agent(only_checkout(&d), "slow").unwrap();
+
+        let pane = d.delegate_agent(source, None, "argus-delegated-marker").unwrap();
+
+        // The stand-in spends its first seconds not listening, the way a
+        // real harness spends its startup. Nothing may be typed at it yet:
+        // a terminal echoes what it is given, so the marker showing up here
+        // is the old bug, not early delivery.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert!(
+            !screen_of(&d, pane)
+                .iter()
+                .any(|row| row.contains("argus-delegated-marker")),
+            "the task was typed at an agent that was still starting"
+        );
+        wait_for_screen(&d, pane, "argus-delegated-marker").await;
+        close_all(&d);
+    }
+
+    #[tokio::test]
+    async fn a_new_pane_says_what_it_was_opened_to_do() {
+        // Until the agent reads its message and renames itself, the row is
+        // the only place the human can see why a pane appeared at all.
+        let dir = tempfile::tempdir().unwrap();
+        let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+        let source = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+
+        let delegated = d.delegate_agent(source, None, "review the diff").unwrap();
+        let continued = d.handoff_agent(source, None, "everything I know").unwrap();
+
+        assert_eq!(pane_info(&d, delegated).title, "review the diff");
+        assert_eq!(pane_info(&d, continued).title, "handoff");
+        close_all(&d);
+    }
+
+    #[tokio::test]
     async fn delegation_requires_a_live_agent_source_and_a_bounded_task() {
         let dir = tempfile::tempdir().unwrap();
         let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
@@ -4824,6 +4869,10 @@ root = "/somewhere"
     }
 
     fn daemon_with_claude_aliases(dir: &std::path::Path, names: &[&str]) -> Arc<Daemon> {
+        daemon_running(dir, names, persistent_agent_command())
+    }
+
+    fn daemon_running(dir: &std::path::Path, names: &[&str], cmd: Vec<String>) -> Arc<Daemon> {
         Daemon::with_store(
             ConfigFile {
             workspaces: Vec::new(),
@@ -4838,7 +4887,7 @@ root = "/somewhere"
                     .iter()
                     .map(|name| AgentConfig {
                         name: (*name).into(),
-                        cmd: persistent_agent_command(),
+                        cmd: cmd.clone(),
                         env: Default::default(),
                         harness: Some("claude".into()),
                         restart: Default::default(),
@@ -4848,6 +4897,58 @@ root = "/somewhere"
             },
             crate::store::Store::open().unwrap(),
         )
+    }
+
+    /// A stand-in for an agent CLI that takes its time. For two seconds it
+    /// is not reading, and what arrived while it was not is gone — a TUI
+    /// that clears the console before drawing loses it the same way. Then
+    /// it turns bracketed paste on the way an agent's prompt does, and
+    /// echoes what it is given from then on.
+    fn slow_starting_agent_command() -> Vec<String> {
+        if cfg!(windows) {
+            vec![
+                "powershell".into(),
+                "-NoProfile".into(),
+                "-Command".into(),
+                "Start-Sleep -Seconds 2; \
+                 while ([Console]::KeyAvailable) { $null = [Console]::ReadKey($true) }; \
+                 [Console]::Out.Write([char]27 + '[?2004h'); \
+                 while ($true) { $l = [Console]::In.ReadLine(); if ($l) { [Console]::Out.WriteLine($l) } }"
+                    .into(),
+            ]
+        } else {
+            vec![
+                "sh".into(),
+                "-c".into(),
+                "sleep 2; printf '\x1b[?2004h'; cat".into(),
+            ]
+        }
+    }
+
+    /// One string per row of a pane's screen.
+    fn screen_of(d: &Daemon, pane: PaneId) -> Vec<String> {
+        let (_, _, grid, _, _, _rx) = d.subscribe_pane(pane).unwrap();
+        grid.iter()
+            .map(|r| r.iter().map(|c| c.ch.as_str()).collect::<String>())
+            .collect()
+    }
+
+    /// Polls a pane's own screen until `needle` shows up on it.
+    async fn wait_for_screen(d: &Daemon, pane: PaneId, needle: &str) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        loop {
+            let rows = screen_of(d, pane);
+            if rows.iter().any(|row| row.contains(needle)) {
+                return;
+            }
+            if tokio::time::Instant::now() > deadline {
+                panic!(
+                    "{needle:?} never reached the pane; its screen was:\n{}",
+                    rows.join("\n")
+                );
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
     fn record_agents(checkout: &std::path::Path, agents: &[(&str, Option<&str>)]) {

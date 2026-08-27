@@ -172,7 +172,7 @@ impl Daemon {
             anyhow::bail!("delegation task exceeds {MAX_DELEGATE_TASK_BYTES} bytes");
         }
 
-        self.spawn_related_agent(source_id, template_name, &task)
+        self.spawn_related_agent(source_id, template_name, &task, &task)
     }
 
     /// Starts a fresh agent beside `source_id` with an in-memory handoff as
@@ -191,14 +191,18 @@ impl Daemon {
             anyhow::bail!("handoff exceeds {MAX_HANDOFF_BYTES} bytes");
         }
 
-        self.spawn_related_agent(source_id, template_name, &message)
+        self.spawn_related_agent(source_id, template_name, &message, "handoff")
     }
 
+    /// The shared half of delegation and handoff: one source, template,
+    /// checkout and live-agent rule, differing only in what the new pane is
+    /// told and what its row says while it reads it.
     fn spawn_related_agent(
         self: &Arc<Self>,
         source_id: PaneId,
         template_name: Option<&str>,
         message: &str,
+        label: &str,
     ) -> anyhow::Result<PaneId> {
         const MAX_LIVE_AGENTS: usize = 4;
 
@@ -242,14 +246,103 @@ impl Daemon {
             .or(inherited_template)
             .ok_or_else(|| anyhow::anyhow!("source pane has no agent template"))?;
         let pane = self.spawn_agent(checkout_id, &template_name)?;
-        if let Err(error) = self
-            .write_pane(pane, message.as_bytes())
-            .and_then(|_| self.write_pane(pane, b"\r"))
-        {
-            let _ = self.close_pane(pane);
-            return Err(error.context("could not deliver initial message"));
-        }
+        // Says why the pane exists from the moment it appears, for the gap
+        // before the agent reads its message and renames itself — and for
+        // good if it never does.
+        self.set_pane_title(pane, label);
+        self.deliver_first_message(pane, message.to_string());
         Ok(pane)
+    }
+
+    /// Types a fresh agent's first message at it once it can take one.
+    ///
+    /// The harness process is seconds old and still starting, and a CLI that
+    /// has not reached its prompt swallows everything written at it — which
+    /// is how a delegated pane opens empty and a handoff arrives nowhere.
+    /// So the message waits for the pane to say it is listening, and is
+    /// pasted rather than typed, a handoff being a document.
+    ///
+    /// On a thread because it outlives the request that asked for it: the
+    /// caller is told which pane was opened, not how the typing went.
+    fn deliver_first_message(self: &Arc<Self>, pane: PaneId, message: String) {
+        /// How long a harness gets to reach its prompt before the message
+        /// goes anyway. Sending blind is the thing this exists to avoid,
+        /// but a harness that never asks for bracketed paste is better
+        /// served by a message it might miss than by none at all.
+        const READY_TIMEOUT: Duration = Duration::from_secs(30);
+        const POLL: Duration = Duration::from_millis(50);
+        /// How often the wait looks up whether the pane is still there.
+        const LIVENESS: Duration = Duration::from_secs(1);
+        /// A prompt that has just appeared is still drawing itself, and the
+        /// paste and the Return that submits it want to arrive as two
+        /// separate reads.
+        const SETTLE: Duration = Duration::from_millis(200);
+        /// How many more times to press Return while nothing happens. A
+        /// harness that reports no lifecycle at all looks the same as one
+        /// that missed it, and spends these on an empty prompt, which costs
+        /// nothing; a pane left holding an unsent message costs the whole
+        /// delegation.
+        const SUBMIT_RETRIES: usize = 3;
+        const SUBMIT_WAIT: Duration = Duration::from_secs(2);
+
+        let daemon = self.clone();
+        std::thread::spawn(move || {
+            // The handle outlives the lookup, so waiting costs the pane's
+            // own parser lock rather than the whole tree's, twenty times a
+            // second. Whether the pane is still there is asked far less
+            // often, since the answer only ever changes once.
+            let Some(input) = daemon.pane_input(pane) else {
+                return;
+            };
+            let deadline = std::time::Instant::now() + READY_TIMEOUT;
+            let mut still_there = std::time::Instant::now() + LIVENESS;
+            while !input.ready_for_input() {
+                if std::time::Instant::now() >= deadline {
+                    tracing::warn!(
+                        "pane {} never asked for input; sending its first message anyway",
+                        pane.0
+                    );
+                    break;
+                }
+                std::thread::sleep(POLL);
+                if std::time::Instant::now() >= still_there {
+                    if daemon.pane_input(pane).is_none() {
+                        return; // closed or died while it was starting
+                    }
+                    still_there = std::time::Instant::now() + LIVENESS;
+                }
+            }
+            std::thread::sleep(SETTLE);
+            let sent = daemon.paste_pane(pane, &message).and_then(|_| {
+                std::thread::sleep(SETTLE);
+                daemon.write_pane(pane, b"\r")
+            });
+            if let Err(error) = sent {
+                tracing::warn!(
+                    "could not deliver the first message to pane {}: {error}",
+                    pane.0
+                );
+                return;
+            }
+
+            // Return can be missed even by a prompt that is already drawn,
+            // and the agent reporting that it started working is the only
+            // proof it was not. Ask again while nothing has happened.
+            for _ in 0..SUBMIT_RETRIES {
+                std::thread::sleep(SUBMIT_WAIT);
+                if daemon.pane_is_idle(pane) != Some(true) {
+                    return;
+                }
+                let _ = daemon.write_pane(pane, b"\r");
+            }
+        });
+    }
+
+    /// Whether a pane is still sitting there doing nothing. `None` once it
+    /// has gone away, which is not the same answer.
+    fn pane_is_idle(&self, pane: PaneId) -> Option<bool> {
+        let inner = self.inner.lock().unwrap();
+        find_pane_ref(&inner.projects, pane).map(|p| matches!(p.status, PaneStatus::Idle))
     }
 
     pub(super) fn start_agent(
@@ -524,23 +617,23 @@ impl Daemon {
     }
 
     pub fn write_pane(&self, pane: PaneId, bytes: &[u8]) -> anyhow::Result<()> {
-        let input = {
-            let inner = self.inner.lock().unwrap();
-            let pane = find_pane_ref(&inner.projects, pane)
-                .ok_or_else(|| anyhow::anyhow!("no such pane"))?;
-            pane.runtime.input()
-        };
-        input.write(bytes)
+        self.pane_input(pane)
+            .ok_or_else(|| anyhow::anyhow!("no such pane"))?
+            .write(bytes)
     }
 
     pub fn paste_pane(&self, pane: PaneId, text: &str) -> anyhow::Result<()> {
-        let input = {
-            let inner = self.inner.lock().unwrap();
-            let pane = find_pane_ref(&inner.projects, pane)
-                .ok_or_else(|| anyhow::anyhow!("no such pane"))?;
-            pane.runtime.input()
-        };
-        input.paste(text.as_bytes())
+        self.pane_input(pane)
+            .ok_or_else(|| anyhow::anyhow!("no such pane"))?
+            .paste(text.as_bytes())
+    }
+
+    /// A handle to a live pane's keyboard, held without the tree lock so it
+    /// can outlast the lookup that found it.
+    fn pane_input(&self, pane: PaneId) -> Option<pty::PaneInput> {
+        let inner = self.inner.lock().unwrap();
+        let pane = find_pane_ref(&inner.projects, pane)?;
+        (!matches!(pane.status, PaneStatus::Exited { .. })).then(|| pane.runtime.input())
     }
 
     /// Persists first, then best-effort notifies the selected agent through
