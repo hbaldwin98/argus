@@ -167,7 +167,10 @@ pub fn git_dir(path: &Path) -> Option<PathBuf> {
 /// starting a new one.
 pub fn has_local_branch(path: &Path, branch: &str) -> bool {
     git2::Repository::open(path)
-        .and_then(|repo| repo.find_branch(branch, git2::BranchType::Local).map(|_| ()))
+        .and_then(|repo| {
+            repo.find_branch(branch, git2::BranchType::Local)
+                .map(|_| ())
+        })
         .is_ok()
 }
 
@@ -234,7 +237,9 @@ fn remote_head(repo: &git2::Repository) -> Option<String> {
     } else {
         return None;
     };
-    let head = repo.find_reference(&format!("refs/remotes/{remote}/HEAD")).ok()?;
+    let head = repo
+        .find_reference(&format!("refs/remotes/{remote}/HEAD"))
+        .ok()?;
     head.symbolic_target()?
         .strip_prefix(&format!("refs/remotes/{remote}/"))
         .map(str::to_string)
@@ -409,7 +414,9 @@ fn ahead_behind(repo: &git2::Repository, head: Option<&git2::Reference>) -> Opti
     let head = head?;
     let local_oid = head.target()?;
     let branch_name = head.shorthand()?;
-    let branch = repo.find_branch(branch_name, git2::BranchType::Local).ok()?;
+    let branch = repo
+        .find_branch(branch_name, git2::BranchType::Local)
+        .ok()?;
     let upstream = branch.upstream().ok()?;
     let upstream_oid = upstream.get().target()?;
     repo.graph_ahead_behind(local_oid, upstream_oid).ok()
@@ -430,7 +437,8 @@ mod tests {
         index.write().unwrap();
         let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
         let sig = git2::Signature::now("t", "t@example.com").unwrap();
-        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[]).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[])
+            .unwrap();
         drop(tree);
         repo
     }
@@ -450,7 +458,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let repo = repo_with_a_commit(dir.path());
         rename_head_branch(&repo, "trunk");
-        repo.remote("origin", "https://example.invalid/x.git").unwrap();
+        repo.remote("origin", "https://example.invalid/x.git")
+            .unwrap();
         repo.reference_symbolic(
             "refs/remotes/origin/HEAD",
             "refs/remotes/origin/trunk",

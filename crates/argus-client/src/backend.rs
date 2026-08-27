@@ -22,7 +22,7 @@ use argus_protocol::CursorShape;
 use crossterm::cursor::{Hide, SetCursorStyle, Show};
 use crossterm::queue;
 use crossterm::terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate};
-use ratatui::backend::{Backend, CrosstermBackend, ClearType, WindowSize};
+use ratatui::backend::{Backend, ClearType, CrosstermBackend, WindowSize};
 use ratatui::buffer::Cell;
 use ratatui::layout::{Position, Size};
 

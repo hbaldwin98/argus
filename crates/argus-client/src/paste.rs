@@ -193,13 +193,22 @@ mod tests {
         // capital, and the short pieces went in as keystrokes — which is
         // one submitted message per line all over again.
         let mut burst = PasteBurst::default();
-        let shift = KeyEvent::new(KeyCode::Modifier(crossterm::event::ModifierKeyCode::LeftShift), KeyModifiers::SHIFT);
+        let shift = KeyEvent::new(
+            KeyCode::Modifier(crossterm::event::ModifierKeyCode::LeftShift),
+            KeyModifiers::SHIFT,
+        );
         let keys = [key('a'), shift, key('B'), enter(), key('c')];
 
         feed(&mut burst, &keys, Duration::from_millis(1));
 
-        assert_eq!(burst.take(true), Some(Flush::Paste("B
-c".to_string())));
+        assert_eq!(
+            burst.take(true),
+            Some(Flush::Paste(
+                "B
+c"
+                .to_string()
+            ))
+        );
     }
 
     #[test]
@@ -209,7 +218,11 @@ c".to_string())));
 
         let dispatched = feed(&mut burst, &keys, Duration::from_millis(1));
 
-        assert_eq!(dispatched, vec![key('a')], "only the leading key goes early");
+        assert_eq!(
+            dispatched,
+            vec![key('a')],
+            "only the leading key goes early"
+        );
         assert_eq!(
             burst.take(true),
             Some(Flush::Paste("\nb\nc".to_string())),

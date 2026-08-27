@@ -108,7 +108,9 @@ mod imp {
                 }
             }
         }
-        Err(last_err.unwrap_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "could not open argus pipe")))
+        Err(last_err.unwrap_or_else(|| {
+            io::Error::new(io::ErrorKind::TimedOut, "could not open argus pipe")
+        }))
     }
 
     pub fn is_daemon_listening() -> bool {
@@ -135,10 +137,7 @@ mod tests {
     /// instance name so it never touches a daemon the developer has running.
     #[tokio::test]
     async fn a_client_and_a_daemon_meet_on_the_endpoint_and_talk_both_ways() {
-        std::env::set_var(
-            "ARGUS_INSTANCE",
-            format!("selftest-{}", std::process::id()),
-        );
+        std::env::set_var("ARGUS_INSTANCE", format!("selftest-{}", std::process::id()));
 
         let mut listener = Listener::bind().await.expect("the endpoint should bind");
 

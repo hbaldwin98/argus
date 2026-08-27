@@ -19,8 +19,7 @@
 //!   layout feel cramped.
 
 use argus_protocol::{
-    ChildAgentInfo, Color as PColor, GitStatus, HighlightKind, HighlightSpan, LineKind,
-    PaneStatus,
+    ChildAgentInfo, Color as PColor, GitStatus, HighlightKind, HighlightSpan, LineKind, PaneStatus,
 };
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
@@ -790,7 +789,9 @@ fn syntax_style(kind: HighlightKind, th: Theme) -> Style {
     match kind {
         HighlightKind::Keyword => Style::default().fg(s.keyword),
         HighlightKind::Str => Style::default().fg(s.string),
-        HighlightKind::Comment => Style::default().fg(s.comment).add_modifier(Modifier::ITALIC),
+        HighlightKind::Comment => Style::default()
+            .fg(s.comment)
+            .add_modifier(Modifier::ITALIC),
         HighlightKind::Number | HighlightKind::Constant => Style::default().fg(s.number),
         HighlightKind::Type => Style::default().fg(s.type_name),
         HighlightKind::Function => Style::default().fg(s.function),
@@ -869,7 +870,10 @@ fn review_line<'a>(view: &'a ReviewView, row: Row, selected: bool, th: Theme) ->
     // the foreground for syntax; selecting one brightens that wash instead
     // of replacing it, so a selected range still shows both sides.
     let mut line = Line::from(spans);
-    if let Row::Line { hunk, line: idx, .. } = row {
+    if let Row::Line {
+        hunk, line: idx, ..
+    } = row
+    {
         let bg = match (file.hunks[hunk].lines[idx].kind, selected) {
             (LineKind::Added, false) => Some(th.add_bg),
             (LineKind::Added, true) => Some(th.add_bg_sel),
@@ -3851,7 +3855,11 @@ mod tests {
         let buf = draw(&mut app);
         assert_eq!(bg_of(&buf, "+arrived"), Some(th.add_bg));
         assert_eq!(bg_of(&buf, "-gone"), Some(th.del_bg));
-        assert_ne!(bg_of(&buf, "unchanged"), Some(th.add_bg), "context is not washed");
+        assert_ne!(
+            bg_of(&buf, "unchanged"),
+            Some(th.add_bg),
+            "context is not washed"
+        );
     }
 
     #[test]
@@ -3886,7 +3894,11 @@ mod tests {
         let th = app.theme;
         let buf = draw(&mut app);
         assert_eq!(fg_of(&buf, "let"), Some(th.syntax.keyword));
-        assert_eq!(fg_of(&buf, "x = 1"), Some(th.text), "uncovered text stays plain");
+        assert_eq!(
+            fg_of(&buf, "x = 1"),
+            Some(th.text),
+            "uncovered text stays plain"
+        );
     }
 
     /// Offsets cross a process boundary, so the renderer treats them as

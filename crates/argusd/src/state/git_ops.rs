@@ -384,7 +384,10 @@ async fn run_setup(commands: &[String], dir: &std::path::Path) -> anyhow::Result
             Ok(output) => String::from_utf8_lossy(&output.stderr).trim().to_string(),
             Err(e) => e.to_string(),
         };
-        tracing::warn!("setup command {line:?} failed in {}: {failed}", dir.display());
+        tracing::warn!(
+            "setup command {line:?} failed in {}: {failed}",
+            dir.display()
+        );
         anyhow::bail!("the worktree is there, but setup command {line:?} failed: {failed}");
     }
     Ok(())

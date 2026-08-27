@@ -202,7 +202,11 @@ pub fn line_spans(path: &str, source: &str) -> Option<Vec<Vec<HighlightSpan>>> {
     for (i, b) in bytes.iter().enumerate() {
         if *b == b'\n' {
             let start = *starts.last().unwrap();
-            let end = if i > start && bytes[i - 1] == b'\r' { i - 1 } else { i };
+            let end = if i > start && bytes[i - 1] == b'\r' {
+                i - 1
+            } else {
+                i
+            };
             widths.push(end - start);
             starts.push(i + 1);
         }
@@ -211,9 +215,7 @@ pub fn line_spans(path: &str, source: &str) -> Option<Vec<Vec<HighlightSpan>>> {
 
     let mut spans: Vec<Vec<HighlightSpan>> = vec![Vec::new(); starts.len()];
     let mut highlighter = Highlighter::new();
-    let events = highlighter
-        .highlight(config, bytes, None, |_| None)
-        .ok()?;
+    let events = highlighter.highlight(config, bytes, None, |_| None).ok()?;
 
     let mut stack: Vec<HighlightKind> = Vec::new();
     for event in events {
@@ -279,7 +281,12 @@ mod tests {
         let start: usize = source.split_inclusive('\n').take(line).map(str::len).sum();
         all[line]
             .iter()
-            .map(|s| (&source[start + s.start as usize..start + s.end as usize], s.kind))
+            .map(|s| {
+                (
+                    &source[start + s.start as usize..start + s.end as usize],
+                    s.kind,
+                )
+            })
             .collect()
     }
 
@@ -301,11 +308,13 @@ mod tests {
         let src = "fn main() {\n    let s = \"hi\";\n}\n";
         let line = spans_on(src, "main.rs", 1);
         assert!(
-            line.iter().any(|(t, k)| *t == "let" && *k == HighlightKind::Keyword),
+            line.iter()
+                .any(|(t, k)| *t == "let" && *k == HighlightKind::Keyword),
             "expected a let keyword, got {line:?}"
         );
         assert!(
-            line.iter().any(|(t, k)| t.contains("hi") && *k == HighlightKind::Str),
+            line.iter()
+                .any(|(t, k)| t.contains("hi") && *k == HighlightKind::Str),
             "expected a string, got {line:?}"
         );
     }
@@ -343,7 +352,10 @@ mod tests {
             let mut last = 0;
             for span in line {
                 assert!(span.start >= last, "line {i} spans out of order: {line:?}");
-                assert!(span.end > span.start, "line {i} has an empty span: {span:?}");
+                assert!(
+                    span.end > span.start,
+                    "line {i} has an empty span: {span:?}"
+                );
                 last = span.end;
             }
         }
@@ -355,7 +367,8 @@ mod tests {
         let src = "let a = 1;\r\nlet b = 2;\r\n";
         let line = spans_on(src, "a.rs", 1);
         assert!(
-            line.iter().any(|(t, k)| *t == "let" && *k == HighlightKind::Keyword),
+            line.iter()
+                .any(|(t, k)| *t == "let" && *k == HighlightKind::Keyword),
             "expected a let keyword on the second line, got {line:?}"
         );
         // Nothing may reach past the text the diff would actually carry.
@@ -371,7 +384,12 @@ mod tests {
     fn every_grammar_finds_its_own_landmark() {
         let cases: &[(&str, &str, &str, HighlightKind)] = &[
             ("a.rs", "pub fn f() {}", "fn", HighlightKind::Keyword),
-            ("a.ts", "export const x: number = 1;", "const", HighlightKind::Keyword),
+            (
+                "a.ts",
+                "export const x: number = 1;",
+                "const",
+                HighlightKind::Keyword,
+            ),
             // Proves the JSX query is layered in as well as JavaScript's.
             (
                 "a.tsx",
@@ -380,8 +398,18 @@ mod tests {
                 HighlightKind::Property,
             ),
             ("a.py", "def f(n): return n", "def", HighlightKind::Keyword),
-            ("a.cs", "public class C { }", "class", HighlightKind::Keyword),
-            ("a.css", "body { color: red; }", "color", HighlightKind::Property),
+            (
+                "a.cs",
+                "public class C { }",
+                "class",
+                HighlightKind::Keyword,
+            ),
+            (
+                "a.css",
+                "body { color: red; }",
+                "color",
+                HighlightKind::Property,
+            ),
             ("a.yaml", "key: value", "key", HighlightKind::Property),
             ("a.toml", "[table]", "table", HighlightKind::Type),
             ("a.json", "{\"a\": 1}", "1", HighlightKind::Number),

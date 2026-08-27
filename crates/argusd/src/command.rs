@@ -80,5 +80,4 @@ mod tests {
             String::from_utf8_lossy(&out.stdout)
         );
     }
-
 }

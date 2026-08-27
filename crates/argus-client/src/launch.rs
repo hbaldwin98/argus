@@ -62,7 +62,11 @@ fn spawn_daemon() -> anyhow::Result<()> {
 }
 
 fn daemon_exe_path() -> PathBuf {
-    let name = if cfg!(windows) { "argusd.exe" } else { "argusd" };
+    let name = if cfg!(windows) {
+        "argusd.exe"
+    } else {
+        "argusd"
+    };
     if let Ok(mut path) = std::env::current_exe() {
         path.pop();
         path.push(name);

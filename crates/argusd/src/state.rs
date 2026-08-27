@@ -1,4 +1,3 @@
-
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -11,11 +10,11 @@ use argus_protocol::{
 use tokio::sync::broadcast;
 
 mod git_ops;
-mod session;
-mod tree;
-mod panes;
-mod sync;
 mod hook;
+mod panes;
+mod session;
+mod sync;
+mod tree;
 
 use hook::{gen_token, valid_session_id};
 use session::{agent_args, nothing_to_resume, Resumed};
@@ -92,7 +91,6 @@ const MAX_CHILDREN: usize = 8;
 /// the common endings are handled without waiting for it, so this is only
 /// the backstop for a child that vanishes silently.
 const CHILD_SILENCE: Duration = Duration::from_secs(600);
-
 
 /// Whether a spawn opens a new conversation or continues the one the pane
 /// had before the daemon stopped.
@@ -285,7 +283,6 @@ impl Daemon {
         Self::with_store(config, store)
     }
 
-
     pub fn with_store(config: ConfigFile, store: crate::store::Store) -> Arc<Self> {
         let mut ids = IdGen::default();
 
@@ -407,7 +404,6 @@ impl Daemon {
         daemon
     }
 
-
     /// Clears any managed agent hooks left in a configured checkout by a
     /// previous daemon. They name that daemon's ephemeral port and per-boot
     /// token, so every one of them is stale by definition the moment this
@@ -428,7 +424,6 @@ impl Daemon {
         }
     }
 
-
     fn checkout_paths(&self) -> Vec<PathBuf> {
         let inner = self.inner.lock().unwrap();
         inner
@@ -439,7 +434,6 @@ impl Daemon {
             .map(|c| c.path.clone())
             .collect()
     }
-
 
     /// The harness an agent template speaks. A template that names none
     /// falls back to one matching its own name, so `name = "claude"` needs
@@ -454,11 +448,14 @@ impl Daemon {
             .unwrap_or_else(crate::harness::Harness::generic)
     }
 
-
     pub fn template_names(&self) -> Vec<String> {
-        self.templates.lock().unwrap().iter().map(|t| t.name.clone()).collect()
+        self.templates
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|t| t.name.clone())
+            .collect()
     }
-
 
     /// The tree as clients see it: only the open workspace's projects.
     /// Panes in the other workspaces are still alive and still updating —
@@ -532,16 +529,13 @@ impl Daemon {
             .collect()
     }
 
-
     pub fn subscribe_tree(&self) -> broadcast::Receiver<Vec<ProjectInfo>> {
         self.tree_tx.subscribe()
     }
 
-
     pub fn subscribe_workspaces(&self) -> broadcast::Receiver<Vec<WorkspaceInfo>> {
         self.workspaces_tx.subscribe()
     }
-
 
     /// Every workspace with its rollup, open flag included. Ordered as
     /// configured so the picker doesn't reshuffle under the user.
@@ -572,7 +566,6 @@ impl Daemon {
             .collect()
     }
 
-
     /// Switches which workspace is open, for every connected client at
     /// once. A no-op if it is already open, so a stray keypress doesn't
     /// churn the tree. Remembered on disk for the next daemon.
@@ -596,7 +589,6 @@ impl Daemon {
         self.broadcast_workspaces();
         Ok(())
     }
-
 
     /// Declares a new workspace and opens it. Empty by definition: what
     /// puts projects in it is adding them while it is open, which is how
@@ -636,7 +628,6 @@ impl Daemon {
         Ok(())
     }
 
-
     /// Best-effort: failing to remember the open workspace is not worth
     /// failing the switch the user just asked for.
     fn save_open_workspace(&self, name: &str) {
@@ -644,7 +635,6 @@ impl Daemon {
             tracing::warn!("could not remember the open workspace: {e}");
         }
     }
-
 
     /// The open workspace's id and name — what `add_project` files new
     /// projects under, and what the client shows above the project list.
@@ -659,7 +649,6 @@ impl Daemon {
         (inner.open, name)
     }
 
-
     fn broadcast_tree(&self) {
         // Structural changes only — pane output never reaches here — so
         // recording the session on the same edge is cheap and means the
@@ -667,7 +656,6 @@ impl Daemon {
         self.record_session();
         let _ = self.tree_tx.send(self.snapshot());
     }
-
 
     /// The checkout at `path`, whatever workspace it is in.
     fn checkout_at(&self, path: &std::path::Path) -> Option<CheckoutId> {
@@ -680,7 +668,6 @@ impl Daemon {
             .find(|c| c.path == path || c.path.canonicalize().ok() == path.canonicalize().ok())
             .map(|c| c.id)
     }
-
 
     fn broadcast_workspaces(&self) {
         let _ = self.workspaces_tx.send(self.workspaces());
@@ -755,10 +742,10 @@ async fn run_git(dir: &std::path::Path, args: &[&str]) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::session::RESUME_GRACE;
-    use argus_protocol::{parse_pane_path, Endpoint, ReviewAnchor, ReviewBase};
+    use super::*;
     use crate::config::ProjectConfig;
+    use argus_protocol::{parse_pane_path, Endpoint, ReviewAnchor, ReviewBase};
 
     /// A daemon with one project whose primary checkout is `primary`, and no
     /// panes. Nothing here touches disk: `Daemon::new` only expands paths,
@@ -908,7 +895,6 @@ mod tests {
         d.close_pane(pane).unwrap();
     }
 
-
     #[tokio::test]
     async fn an_exited_parent_forgets_its_children() {
         let dir = tempfile::tempdir().unwrap();
@@ -1052,11 +1038,19 @@ mod tests {
         let mut viewers = Viewers::default();
         let pane = PaneId(1);
         let (first, second) = (ViewerId(0), ViewerId(1));
-        viewers.wanted.entry(pane).or_default().insert(first, (30, 80));
+        viewers
+            .wanted
+            .entry(pane)
+            .or_default()
+            .insert(first, (30, 80));
         assert_eq!(viewers.pending(pane), Some((30, 80)));
         viewers.applied.insert(pane, (30, 80));
 
-        viewers.wanted.entry(pane).or_default().insert(second, (30, 80));
+        viewers
+            .wanted
+            .entry(pane)
+            .or_default()
+            .insert(second, (30, 80));
 
         assert_eq!(viewers.pending(pane), None);
     }
@@ -1523,7 +1517,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn status_arriving_before_pane_registration_is_retained() {
         let d = daemon_with_primary("/repo");
@@ -1612,7 +1605,10 @@ mod tests {
 
         let starting = d.starting_agents.lock().unwrap();
         let pending = &starting[&pane];
-        assert_eq!(pending.harness_session_id.as_deref(), Some("parent-session"));
+        assert_eq!(
+            pending.harness_session_id.as_deref(),
+            Some("parent-session")
+        );
         assert_eq!(pending.children.len(), 1);
         assert_eq!(pending.children[0].session_id, "child-session");
     }
@@ -1951,7 +1947,10 @@ mod tests {
             .find(|c| c.id == worktree)
             .unwrap()
             .clone();
-        assert_eq!(c.name, "dev", "the row must not rename itself on a failed read");
+        assert_eq!(
+            c.name, "dev",
+            "the row must not rename itself on a failed read"
+        );
         assert_eq!(
             c.git.and_then(|g| g.branch),
             Some("dev".to_string()),
@@ -1969,7 +1968,11 @@ mod tests {
             Some(status_on(if path.ends_with("wt") { "dev" } else { "main" }))
         });
         d.refresh_git_status_with(|path| {
-            Some(status_on(if path.ends_with("wt") { "spike" } else { "main" }))
+            Some(status_on(if path.ends_with("wt") {
+                "spike"
+            } else {
+                "main"
+            }))
         });
 
         let names: Vec<String> = d.snapshot()[0].repositories[0]
@@ -2114,10 +2117,7 @@ mod tests {
         let err = d.spawn_agent(checkout, "claude").unwrap_err().to_string();
 
         assert!(err.contains("worktree"), "say what to do instead: {err:?}");
-        assert_eq!(
-            d.snapshot()[0].repositories[0].checkouts[0].panes.len(),
-            1
-        );
+        assert_eq!(d.snapshot()[0].repositories[0].checkouts[0].panes.len(), 1);
         let _ = d.close_pane(first);
     }
 
@@ -2159,7 +2159,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(pane_info(&d, inherited).template.as_deref(), Some("first"));
-        assert_eq!(pane_info(&d, overridden).template.as_deref(), Some("second"));
+        assert_eq!(
+            pane_info(&d, overridden).template.as_deref(),
+            Some("second")
+        );
         close_all(&d);
     }
 
@@ -2175,7 +2178,9 @@ mod tests {
         let d = daemon_running(dir.path(), &["slow"], slow_starting_agent_command());
         let source = d.spawn_agent(only_checkout(&d), "slow").unwrap();
 
-        let pane = d.delegate_agent(source, None, "argus-delegated-marker").unwrap();
+        let pane = d
+            .delegate_agent(source, None, "argus-delegated-marker")
+            .unwrap();
 
         // The stand-in spends its first seconds not listening, the way a
         // real harness spends its startup. Nothing may be typed at it yet:
@@ -2481,8 +2486,13 @@ mod tests {
         d.start_hook_server().unwrap();
         let checkout = only_checkout(&d);
         let source = d.spawn_agent(checkout, "claude").unwrap();
-        d.submit_review_comment(checkout, source, review_anchor(6), "consider this".to_string())
-            .unwrap();
+        d.submit_review_comment(
+            checkout,
+            source,
+            review_anchor(6),
+            "consider this".to_string(),
+        )
+        .unwrap();
 
         let response = post_agent_hook(&d, source, Endpoint::Comments, "").await;
 
@@ -2492,8 +2502,7 @@ mod tests {
             .position(|window| window == b"\r\n\r\n")
             .map(|index| &response[index + 4..])
             .unwrap();
-        let comments: Vec<argus_protocol::ReviewComment> =
-            serde_json::from_slice(body).unwrap();
+        let comments: Vec<argus_protocol::ReviewComment> = serde_json::from_slice(body).unwrap();
         assert_eq!(comments.len(), 1);
         assert_eq!(comments[0].body, "consider this");
         close_all(&d);
@@ -3161,7 +3170,9 @@ mod tests {
 
             assert!(d.snapshot().is_empty(), "gone from the tree");
             assert!(
-                persistent(crate::config::load().unwrap()).snapshot().is_empty(),
+                persistent(crate::config::load().unwrap())
+                    .snapshot()
+                    .is_empty(),
                 "and gone for good, not just for this run"
             );
             assert!(
@@ -3578,13 +3589,19 @@ root = "/somewhere"
     #[test]
     fn reloading_replaces_the_agent_templates() {
         with_temp_config(|dir| {
-            std::fs::write(dir.join("projects.toml"), "[[agent]]\nname = \"old\"\ncmd = [\"x\"]\n")
-                .unwrap();
+            std::fs::write(
+                dir.join("projects.toml"),
+                "[[agent]]\nname = \"old\"\ncmd = [\"x\"]\n",
+            )
+            .unwrap();
             let d = Daemon::new(config::load().unwrap());
             assert_eq!(d.template_names(), vec!["old".to_string()]);
 
-            std::fs::write(dir.join("projects.toml"), "[[agent]]\nname = \"new\"\ncmd = [\"y\"]\n")
-                .unwrap();
+            std::fs::write(
+                dir.join("projects.toml"),
+                "[[agent]]\nname = \"new\"\ncmd = [\"y\"]\n",
+            )
+            .unwrap();
             d.reload_config().unwrap();
 
             assert_eq!(d.template_names(), vec!["new".to_string()]);
@@ -3899,7 +3916,12 @@ root = "/somewhere"
                 "the added project should be in the open workspace"
             );
             assert_eq!(
-                restarted.workspaces().into_iter().find(|w| w.open).unwrap().id,
+                restarted
+                    .workspaces()
+                    .into_iter()
+                    .find(|w| w.open)
+                    .unwrap()
+                    .id,
                 work,
                 "which is still the one it was added to"
             );
@@ -4221,14 +4243,20 @@ root = "/somewhere"
         branch_off_head(dir.path(), "doomed");
         d.refresh_branches();
         assert!(
-            d.snapshot()[0].repositories[0].branches.iter().any(|b| b == "doomed"),
+            d.snapshot()[0].repositories[0]
+                .branches
+                .iter()
+                .any(|b| b == "doomed"),
             "the branch has to be there to be deleted"
         );
 
         d.delete_branch(only_checkout(&d), "doomed").await.unwrap();
 
         assert!(
-            !d.snapshot()[0].repositories[0].branches.iter().any(|b| b == "doomed"),
+            !d.snapshot()[0].repositories[0]
+                .branches
+                .iter()
+                .any(|b| b == "doomed"),
             "and the row goes with it, without waiting for the next poll"
         );
     }
@@ -4242,8 +4270,15 @@ root = "/somewhere"
         let head = repo.head().unwrap().peel_to_commit().unwrap();
         let tree = head.tree().unwrap();
         let sig = git2::Signature::now("t", "t@example.com").unwrap();
-        repo.commit(Some("refs/heads/spike"), &sig, &sig, "work", &tree, &[&head])
-            .unwrap();
+        repo.commit(
+            Some("refs/heads/spike"),
+            &sig,
+            &sig,
+            "work",
+            &tree,
+            &[&head],
+        )
+        .unwrap();
 
         let err = d
             .delete_branch(only_checkout(&d), "spike")
@@ -4569,8 +4604,7 @@ root = "/somewhere"
     #[tokio::test]
     async fn a_configured_worktree_root_is_where_worktrees_go() {
         let elsewhere = tempfile::tempdir().unwrap();
-        let (dir, d) =
-            daemon_on_a_repo_with(Some(&elsewhere.path().to_string_lossy()), &[]);
+        let (dir, d) = daemon_on_a_repo_with(Some(&elsewhere.path().to_string_lossy()), &[]);
 
         d.create_worktree(only_checkout(&d), "over-there".to_string())
             .await
@@ -4665,7 +4699,9 @@ root = "/somewhere"
         // is a branch that already exists.
         let (_dir, d) = daemon_on_a_repo();
         let checkout = only_checkout(&d);
-        let on_it = head_of(&PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[0].path));
+        let on_it = head_of(&PathBuf::from(
+            &d.snapshot()[0].repositories[0].checkouts[0].path,
+        ));
         d.create_branch(checkout, "waiting").await.unwrap();
         d.switch_branch(checkout, &on_it).await.unwrap();
 
@@ -4798,10 +4834,7 @@ root = "/somewhere"
     /// tests are about surviving a restart, and a store that does not
     /// outlive the daemon cannot show that.
     fn daemon_for_restore(dir: &std::path::Path) -> Arc<Daemon> {
-        Daemon::with_store(
-            restore_config(dir),
-            crate::store::Store::open().unwrap(),
-        )
+        Daemon::with_store(restore_config(dir), crate::store::Store::open().unwrap())
     }
 
     fn restore_config(dir: &std::path::Path) -> ConfigFile {
@@ -5061,13 +5094,13 @@ root = "/somewhere"
         let dir = tempfile::tempdir().unwrap();
         with_temp_config(|_| {
             record_panes(vec![crate::store::SessionPane {
-                    checkout_path: dir.path().to_path_buf(),
-                    kind: PaneKind::Agent,
-                    title: "review parser".to_string(),
-                    template: Some("test-agent".to_string()),
-                    status: PaneStatus::NeedsReview,
-                    note: Some("ready to inspect".to_string()),
-                    harness_session_id: None,
+                checkout_path: dir.path().to_path_buf(),
+                kind: PaneKind::Agent,
+                title: "review parser".to_string(),
+                template: Some("test-agent".to_string()),
+                status: PaneStatus::NeedsReview,
+                note: Some("ready to inspect".to_string()),
+                harness_session_id: None,
                 harness: None,
             }]);
 
@@ -5107,13 +5140,13 @@ root = "/somewhere"
         let dir = tempfile::tempdir().unwrap();
         with_temp_config(|_| {
             record_panes(vec![crate::store::SessionPane {
-                    checkout_path: dir.path().to_path_buf(),
-                    kind: PaneKind::Agent,
-                    title: "fixing the pty deadlock".to_string(),
-                    template: Some("test-agent".to_string()),
-                    status: PaneStatus::Idle,
-                    note: None,
-                    harness_session_id: None,
+                checkout_path: dir.path().to_path_buf(),
+                kind: PaneKind::Agent,
+                title: "fixing the pty deadlock".to_string(),
+                template: Some("test-agent".to_string()),
+                status: PaneStatus::Idle,
+                note: None,
+                harness_session_id: None,
                 harness: None,
             }]);
 

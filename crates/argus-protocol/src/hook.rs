@@ -189,18 +189,9 @@ mod tests {
         assert_eq!(pane_path(PaneId(3), Endpoint::Title), "/pane/3/title");
         assert_eq!(pane_path(PaneId(3), Endpoint::Checkout), "/pane/3/checkout");
         assert_eq!(pane_path(PaneId(3), Endpoint::Session), "/pane/3/session");
-        assert_eq!(
-            pane_path(PaneId(3), Endpoint::Delegate),
-            "/pane/3/delegate"
-        );
-        assert_eq!(
-            pane_path(PaneId(3), Endpoint::Handoff),
-            "/pane/3/handoff"
-        );
-        assert_eq!(
-            pane_path(PaneId(3), Endpoint::Comments),
-            "/pane/3/comments"
-        );
+        assert_eq!(pane_path(PaneId(3), Endpoint::Delegate), "/pane/3/delegate");
+        assert_eq!(pane_path(PaneId(3), Endpoint::Handoff), "/pane/3/handoff");
+        assert_eq!(pane_path(PaneId(3), Endpoint::Comments), "/pane/3/comments");
         assert_eq!(
             pane_path(PaneId(3), Endpoint::Status(Report::NeedsReview)),
             "/pane/3/status/needs-review"
@@ -239,6 +230,10 @@ mod tests {
             assert_eq!(Report::parse(report.as_str()), Some(report));
             assert_eq!(report.status(), report.status(), "{report:?}");
         }
-        assert_eq!(Report::parse("needs_review"), None, "underscores are not it");
+        assert_eq!(
+            Report::parse("needs_review"),
+            None,
+            "underscores are not it"
+        );
     }
 }

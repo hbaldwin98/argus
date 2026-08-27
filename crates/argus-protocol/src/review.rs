@@ -328,6 +328,9 @@ mod tests {
 
         assert_eq!(line.new_lineno, Some(7));
         assert_eq!(line.text, "let x = 1;");
-        assert!(line.spans.is_empty(), "an absent field reads as no highlighting");
+        assert!(
+            line.spans.is_empty(),
+            "an absent field reads as no highlighting"
+        );
     }
 }

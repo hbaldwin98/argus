@@ -100,9 +100,12 @@ impl DirPicker {
         self.pending = None;
         self.query.clear();
         self.rows = std::iter::once(DirRow::Here)
-            .chain(listing.entries.into_iter().map(|DirEntry { name, is_repo }| {
-                DirRow::Child { name, is_repo }
-            }))
+            .chain(
+                listing
+                    .entries
+                    .into_iter()
+                    .map(|DirEntry { name, is_repo }| DirRow::Child { name, is_repo }),
+            )
             .collect();
         self.names = self.rows.iter().map(row_name).collect();
         self.refilter();
@@ -308,14 +311,21 @@ mod tests {
     }
 
     fn shown(p: &DirPicker) -> Vec<String> {
-        (0..p.len()).filter_map(|i| p.row(i)).map(row_name).collect()
+        (0..p.len())
+            .filter_map(|i| p.row(i))
+            .map(row_name)
+            .collect()
     }
 
     #[test]
     fn a_listing_shows_this_directory_first_then_its_children() {
         // "Here" on top is how adding the directory you navigated to stays
         // a visible option rather than a hidden key.
-        let p = at("/home/u", Some("/home"), &[("code", false), ("docs", false)]);
+        let p = at(
+            "/home/u",
+            Some("/home"),
+            &[("code", false), ("docs", false)],
+        );
         assert_eq!(shown(&p), vec![".", "code", "docs"]);
     }
 
@@ -458,7 +468,11 @@ mod tests {
     fn a_repository_is_marked_as_one() {
         // Which children are repos is the difference between a project
         // root and a repository, and it is invisible from the name.
-        let p = at("/home/u", Some("/home"), &[("argus", true), ("notes", false)]);
+        let p = at(
+            "/home/u",
+            Some("/home"),
+            &[("argus", true), ("notes", false)],
+        );
         assert_eq!(
             p.rows()[1],
             DirRow::Child {

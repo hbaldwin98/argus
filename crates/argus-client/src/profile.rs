@@ -231,7 +231,9 @@ mod tests {
         let mut since = start;
         c.draw(Duration::from_millis(4), Duration::from_millis(1));
 
-        assert!(c.due(start + Duration::from_millis(999), &mut since).is_none());
+        assert!(c
+            .due(start + Duration::from_millis(999), &mut since)
+            .is_none());
         assert!(c.due(start + FLUSH_INTERVAL, &mut since).is_some());
     }
 

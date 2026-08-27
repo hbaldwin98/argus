@@ -8,12 +8,15 @@
 
 use super::*;
 
-
 /// The id of the workspace by this name, creating it if this is the first
 /// time it has been mentioned. Workspaces come from three places — the
 /// built-in default, `[[workspace]]` blocks, and any name a project refers
 /// to without declaring — so declaring one is optional.
-pub(super) fn intern_workspace(workspaces: &mut Vec<Workspace>, ids: &mut IdGen, name: &str) -> WorkspaceId {
+pub(super) fn intern_workspace(
+    workspaces: &mut Vec<Workspace>,
+    ids: &mut IdGen,
+    name: &str,
+) -> WorkspaceId {
     if let Some(w) = workspaces.iter().find(|w| w.name == name) {
         return w.id;
     }
@@ -25,7 +28,6 @@ pub(super) fn intern_workspace(workspaces: &mut Vec<Workspace>, ids: &mut IdGen,
     id
 }
 
-
 pub(super) fn find_checkout(projects: &mut [Project], id: CheckoutId) -> Option<&mut Checkout> {
     projects
         .iter_mut()
@@ -33,7 +35,6 @@ pub(super) fn find_checkout(projects: &mut [Project], id: CheckoutId) -> Option<
         .flat_map(|r| r.checkouts.iter_mut())
         .find(|c| c.id == id)
 }
-
 
 pub(super) fn find_checkout_ref(projects: &[Project], id: CheckoutId) -> Option<&Checkout> {
     projects
@@ -43,14 +44,15 @@ pub(super) fn find_checkout_ref(projects: &[Project], id: CheckoutId) -> Option<
         .find(|c| c.id == id)
 }
 
-
-pub(super) fn find_repository(projects: &mut [Project], id: RepositoryId) -> Option<&mut Repository> {
+pub(super) fn find_repository(
+    projects: &mut [Project],
+    id: RepositoryId,
+) -> Option<&mut Repository> {
     projects
         .iter_mut()
         .flat_map(|p| p.repositories.iter_mut())
         .find(|r| r.id == id)
 }
-
 
 /// For a checkout, the id of its owning repository, that checkout's own path
 /// (the base to branch off / run `git worktree` commands from), and its
@@ -69,7 +71,6 @@ pub(super) fn find_checkout_context(
         })
 }
 
-
 /// Everything creating a worktree needs to know about where it goes.
 pub(super) struct WorktreeContext {
     pub(super) repository: RepositoryId,
@@ -81,7 +82,6 @@ pub(super) struct WorktreeContext {
     /// The project's setup commands, run in whatever is created.
     pub(super) setup: Vec<String>,
 }
-
 
 /// Where this repository's worktrees go: the project's configured root with
 /// a directory per repository under it, or `.argus/worktrees` beside the
@@ -109,7 +109,6 @@ pub(super) fn worktree_context(projects: &[Project], id: CheckoutId) -> Option<W
     })
 }
 
-
 /// Prefers the checked-out branch name for a newly-discovered worktree —
 /// matches how `create_worktree` names ones Argus made itself — falling
 /// back to the directory name for a detached HEAD or an unreadable repo.
@@ -124,7 +123,6 @@ pub(super) fn worktree_display_name(path: &std::path::Path, is_primary: bool) ->
         .unwrap_or_else(|| path.to_string_lossy().to_string())
 }
 
-
 pub(super) fn remove_checkout_entry(projects: &mut [Project], id: CheckoutId) -> Option<Checkout> {
     for project in projects.iter_mut() {
         for repository in project.repositories.iter_mut() {
@@ -136,7 +134,6 @@ pub(super) fn remove_checkout_entry(projects: &mut [Project], id: CheckoutId) ->
     None
 }
 
-
 pub(super) fn all_panes(projects: &mut [Project]) -> impl Iterator<Item = &mut Pane> {
     projects
         .iter_mut()
@@ -144,7 +141,6 @@ pub(super) fn all_panes(projects: &mut [Project]) -> impl Iterator<Item = &mut P
         .flat_map(|r| r.checkouts.iter_mut())
         .flat_map(|c| c.panes.iter_mut())
 }
-
 
 /// The pane and the id of the checkout holding it — which the pane itself
 /// does not carry, and which a caller acting on the pane's exit needs in
@@ -159,10 +155,12 @@ pub(super) fn find_pane_with_checkout(
         .flat_map(|r| r.checkouts.iter_mut())
         .find_map(|c| {
             let checkout = c.id;
-            c.panes.iter_mut().find(|p| p.id == id).map(|p| (p, checkout))
+            c.panes
+                .iter_mut()
+                .find(|p| p.id == id)
+                .map(|p| (p, checkout))
         })
 }
-
 
 pub(super) fn find_pane(projects: &mut [Project], id: PaneId) -> Option<&mut Pane> {
     projects
@@ -173,7 +171,6 @@ pub(super) fn find_pane(projects: &mut [Project], id: PaneId) -> Option<&mut Pan
         .find(|p| p.id == id)
 }
 
-
 pub(super) fn find_pane_ref(projects: &[Project], id: PaneId) -> Option<&Pane> {
     projects
         .iter()
@@ -182,7 +179,6 @@ pub(super) fn find_pane_ref(projects: &[Project], id: PaneId) -> Option<&Pane> {
         .flat_map(|c| c.panes.iter())
         .find(|p| p.id == id)
 }
-
 
 /// Whether any agent pane is still open in the checkout at `path`. Gates
 /// tearing down that checkout's managed hooks, which are shared by every
@@ -211,7 +207,6 @@ pub(super) fn exclusive_conflict(projects: &[Project], checkout: CheckoutId) -> 
         .map(|p| p.title.clone())
 }
 
-
 pub(super) fn checkout_has_agent(projects: &[Project], path: &std::path::Path) -> bool {
     projects
         .iter()
@@ -221,11 +216,13 @@ pub(super) fn checkout_has_agent(projects: &[Project], path: &std::path::Path) -
         .any(|c| c.panes.iter().any(|p| p.kind == PaneKind::Agent))
 }
 
-
 /// Removes a pane from whichever checkout holds it, returning it along with
 /// that checkout's path — which the caller can't look up afterwards, the
 /// pane being gone by then.
-pub(super) fn remove_pane_with_checkout(projects: &mut [Project], id: PaneId) -> Option<(Pane, PathBuf)> {
+pub(super) fn remove_pane_with_checkout(
+    projects: &mut [Project],
+    id: PaneId,
+) -> Option<(Pane, PathBuf)> {
     for project in projects.iter_mut() {
         for repository in project.repositories.iter_mut() {
             for checkout in repository.checkouts.iter_mut() {
@@ -238,12 +235,10 @@ pub(super) fn remove_pane_with_checkout(projects: &mut [Project], id: PaneId) ->
     None
 }
 
-
 pub(super) fn has_windows_drive_prefix(path: &str) -> bool {
     let bytes = path.as_bytes();
     bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
-
 
 /// A repository holding only its primary checkout, which is what both a
 /// configured path and a discovered one start as. Linked worktrees arrive
@@ -271,7 +266,6 @@ pub(super) fn new_repository(ids: &mut IdGen, path: PathBuf, discovered: bool) -
     }
 }
 
-
 /// Adds the repositories a scan found that aren't there yet, and reports
 /// whether it added any. Repositories already present are left exactly as
 /// they are, ids, checkouts and panes included: a scan is a way of noticing
@@ -297,12 +291,10 @@ pub(super) fn install_discovered(
     added
 }
 
-
 /// Whether this path is one the user has taken out of the panel.
 pub(super) fn is_excluded(excluded: &[PathBuf], path: &std::path::Path) -> bool {
     excluded.iter().any(|e| same_path(e, path))
 }
-
 
 pub(super) fn retain_included(excluded: &[PathBuf], found: Vec<PathBuf>) -> Vec<PathBuf> {
     found
@@ -310,7 +302,6 @@ pub(super) fn retain_included(excluded: &[PathBuf], found: Vec<PathBuf>) -> Vec<
         .filter(|path| !is_excluded(excluded, path))
         .collect()
 }
-
 
 pub(super) fn same_path(a: &std::path::Path, b: &std::path::Path) -> bool {
     match (a.canonicalize(), b.canonicalize()) {

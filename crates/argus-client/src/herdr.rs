@@ -59,11 +59,8 @@ fn aggregate(tree: &[ProjectInfo], workspace: &str) -> Option<Update> {
         .flat_map(|checkout| &checkout.panes)
         .filter(|pane| pane.kind == PaneKind::Agent)
         .flat_map(|pane| {
-            std::iter::once((pane, None)).chain(
-                pane.children
-                    .iter()
-                    .map(move |child| (pane, Some(child))),
-            )
+            std::iter::once((pane, None))
+                .chain(pane.children.iter().map(move |child| (pane, Some(child))))
         })
         .filter(|agent| !matches!(agent_status(*agent), PaneStatus::Exited { .. }))
         .collect::<Vec<_>>();
@@ -106,11 +103,7 @@ fn attention_message((pane, child): (&PaneInfo, Option<&ChildAgentInfo>)) -> Opt
             Some(child) => child.note.as_deref(),
             None => pane.note.as_deref(),
         };
-        format!(
-            "{}: {}",
-            name,
-            note.unwrap_or_else(|| status_label(status))
-        )
+        format!("{}: {}", name, note.unwrap_or_else(|| status_label(status)))
     })
 }
 
@@ -273,8 +266,8 @@ impl HerdrReporter {
 #[cfg(test)]
 mod tests {
     use argus_protocol::{
-        CheckoutId, CheckoutInfo, ChildAgentInfo, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId,
-        ProjectInfo, RepositoryId, RepositoryInfo,
+        CheckoutId, CheckoutInfo, ChildAgentInfo, PaneId, PaneInfo, PaneKind, PaneStatus,
+        ProjectId, ProjectInfo, RepositoryId, RepositoryInfo,
     };
 
     use super::{AgentState, HerdrSync, Update};

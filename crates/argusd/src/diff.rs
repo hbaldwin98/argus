@@ -816,7 +816,11 @@ mod tests {
         write(&path, "notes.xyz", "two\n");
         let review = generate(&path, ReviewBase::Unstaged).unwrap();
         let file = find(&review.files, "notes.xyz");
-        assert!(file.hunks.iter().flat_map(|h| &h.lines).all(|l| l.spans.is_empty()));
+        assert!(file
+            .hunks
+            .iter()
+            .flat_map(|h| &h.lines)
+            .all(|l| l.spans.is_empty()));
     }
 
     #[test]

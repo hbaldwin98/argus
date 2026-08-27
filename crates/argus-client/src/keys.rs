@@ -98,7 +98,10 @@ mod tests {
 
     #[test]
     fn ordinary_keys_are_not_the_leader() {
-        assert!(!is_leader(&k(KeyCode::Char(' '))), "plain space types a space");
+        assert!(
+            !is_leader(&k(KeyCode::Char(' '))),
+            "plain space types a space"
+        );
         assert!(!is_leader(&ctrl('a')));
         assert!(!is_leader(&k(KeyCode::Esc)));
     }
@@ -119,8 +122,16 @@ mod tests {
     #[test]
     fn control_letters_encode_as_c0() {
         assert_eq!(encode_key(&ctrl('a')), vec![0x01]);
-        assert_eq!(encode_key(&ctrl('c')), vec![0x03], "SIGINT must reach the child");
-        assert_eq!(encode_key(&ctrl('d')), vec![0x04], "EOF must reach the child");
+        assert_eq!(
+            encode_key(&ctrl('c')),
+            vec![0x03],
+            "SIGINT must reach the child"
+        );
+        assert_eq!(
+            encode_key(&ctrl('d')),
+            vec![0x04],
+            "EOF must reach the child"
+        );
         assert_eq!(encode_key(&ctrl('z')), vec![0x1a]);
     }
 
@@ -229,7 +240,12 @@ mod tests {
 
     #[test]
     fn alt_prefixes_an_escape_onto_every_key_that_encodes() {
-        for code in [KeyCode::Char('a'), KeyCode::Up, KeyCode::Delete, KeyCode::F(5)] {
+        for code in [
+            KeyCode::Char('a'),
+            KeyCode::Up,
+            KeyCode::Delete,
+            KeyCode::F(5),
+        ] {
             let plain = encode_key(&k(code));
             let alt = encode_key(&KeyEvent::new(code, KeyModifiers::ALT));
             assert_eq!(alt.first(), Some(&0x1b), "{code:?}");
@@ -251,6 +267,9 @@ mod tests {
         // non-empty — an unmapped key must not send a stray empty Input.
         assert!(encode_key(&k(KeyCode::CapsLock)).is_empty());
         let alt_unknown = KeyEvent::new(KeyCode::CapsLock, KeyModifiers::ALT);
-        assert!(encode_key(&alt_unknown).is_empty(), "alt must not resurrect it");
+        assert!(
+            encode_key(&alt_unknown).is_empty(),
+            "alt must not resurrect it"
+        );
     }
 }

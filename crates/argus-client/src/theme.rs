@@ -133,19 +133,19 @@ impl Theme {
 
     pub fn mocha() -> Self {
         Theme {
-            bg: rgb(0x11111b),          // crust
-            surface: rgb(0x181825),     // mantle
+            bg: rgb(0x11111b),            // crust
+            surface: rgb(0x181825),       // mantle
             surface_focus: rgb(0x1e1e2e), // base
-            accent: rgb(0xcba6f7),      // mauve
+            accent: rgb(0xcba6f7),        // mauve
             on_accent: rgb(0x11111b),
             text: rgb(0xcdd6f4),
-            muted: rgb(0xa6adc8),       // subtext0
-            dim: rgb(0x6c7086),         // overlay0
-            ok: rgb(0xa6e3a1),          // green
-            warn: rgb(0xf9e2af),        // yellow
-            err: rgb(0xf38ba8),         // red
-            edge: rgb(0x313244),        // surface0
-            sel_bg: rgb(0x45475a),      // surface1
+            muted: rgb(0xa6adc8),  // subtext0
+            dim: rgb(0x6c7086),    // overlay0
+            ok: rgb(0xa6e3a1),     // green
+            warn: rgb(0xf9e2af),   // yellow
+            err: rgb(0xf38ba8),    // red
+            edge: rgb(0x313244),   // surface0
+            sel_bg: rgb(0x45475a), // surface1
             sel_bg_dim: rgb(0x313244),
             add_bg: rgb(0x1c3327),
             del_bg: rgb(0x3a2130),
@@ -238,10 +238,10 @@ impl Theme {
     /// inverts while the roles stay the same.
     pub fn latte() -> Self {
         Theme {
-            bg: rgb(0xdce0e8),          // crust
-            surface: rgb(0xe6e9ef),     // mantle
+            bg: rgb(0xdce0e8),            // crust
+            surface: rgb(0xe6e9ef),       // mantle
             surface_focus: rgb(0xeff1f5), // base
-            accent: rgb(0x8839ef),      // mauve
+            accent: rgb(0x8839ef),        // mauve
             on_accent: rgb(0xeff1f5),
             text: rgb(0x4c4f69),
             muted: rgb(0x5c5f77),
@@ -333,7 +333,10 @@ mod tests {
     #[test]
     fn selection_fills_are_distinguishable_and_never_the_panel_itself() {
         for t in all() {
-            assert_ne!(t.sel_bg, t.sel_bg_dim, "focused selection must read stronger");
+            assert_ne!(
+                t.sel_bg, t.sel_bg_dim,
+                "focused selection must read stronger"
+            );
             assert_ne!(t.sel_bg, t.surface_focus);
             assert_ne!(t.sel_bg_dim, t.surface);
         }
@@ -345,8 +348,20 @@ mod tests {
         // the look this palette exists to get away from.
         for t in all() {
             for c in [
-                t.bg, t.surface, t.surface_focus, t.accent, t.on_accent, t.text, t.muted, t.dim,
-                t.ok, t.warn, t.err, t.edge, t.sel_bg, t.sel_bg_dim,
+                t.bg,
+                t.surface,
+                t.surface_focus,
+                t.accent,
+                t.on_accent,
+                t.text,
+                t.muted,
+                t.dim,
+                t.ok,
+                t.warn,
+                t.err,
+                t.edge,
+                t.sel_bg,
+                t.sel_bg_dim,
             ] {
                 assert!(matches!(c, Color::Rgb(..)), "{c:?} is not truecolor");
             }

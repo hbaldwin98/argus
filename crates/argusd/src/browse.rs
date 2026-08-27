@@ -330,7 +330,10 @@ mod tests {
     fn gits_own_directory_is_never_offered_to_browse_into() {
         let (_d, path) = repo(&[("a.txt", "x\n")]);
         let listing = directories(&path.to_string_lossy());
-        assert!(!names(&listing).contains(&".git".to_string()), "{listing:?}");
+        assert!(
+            !names(&listing).contains(&".git".to_string()),
+            "{listing:?}"
+        );
     }
 
     #[test]
@@ -341,12 +344,12 @@ mod tests {
 
         let listing = directories(&inner.to_string_lossy());
         let parent = listing.parent.expect("a child has a parent");
+        assert!(listing.path.ends_with("child"), "{}", listing.path);
         assert!(
-            listing.path.ends_with("child"),
-            "{}",
+            parent.len() < listing.path.len(),
+            "{parent} vs {}",
             listing.path
         );
-        assert!(parent.len() < listing.path.len(), "{parent} vs {}", listing.path);
     }
 
     #[test]

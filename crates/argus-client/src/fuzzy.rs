@@ -125,14 +125,21 @@ mod tests {
     fn the_file_name_is_enough_to_find_a_deep_path() {
         let list = items(&["a/b/c/d/e/needle.rs", "a/haystack.rs"]);
         let mut f = Fuzzy::paths();
-        assert_eq!(matched(&mut f, "needle", &list), vec!["a/b/c/d/e/needle.rs"]);
+        assert_eq!(
+            matched(&mut f, "needle", &list),
+            vec!["a/b/c/d/e/needle.rs"]
+        );
     }
 
     #[test]
     fn a_lowercase_query_ignores_case_but_an_uppercase_one_does_not() {
         let list = items(&["README.md", "readme-draft.txt"]);
         let mut f = Fuzzy::new();
-        assert_eq!(matched(&mut f, "readme", &list).len(), 2, "smart case is lenient");
+        assert_eq!(
+            matched(&mut f, "readme", &list).len(),
+            2,
+            "smart case is lenient"
+        );
         assert_eq!(
             matched(&mut f, "README", &list),
             vec!["README.md"],
@@ -165,5 +172,4 @@ mod tests {
         assert_eq!(hits, vec![2]);
         assert_eq!(list[hits[0]], "two");
     }
-
 }

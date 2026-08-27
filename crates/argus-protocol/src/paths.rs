@@ -14,8 +14,7 @@ pub fn instance_name() -> Option<String> {
 }
 
 fn parse_instance(raw: Option<String>) -> Option<String> {
-    raw.map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+    raw.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
 /// `ARGUS_CONFIG_DIR` overrides the platform location. Tests need it, so

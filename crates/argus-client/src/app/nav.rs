@@ -9,17 +9,14 @@
 use super::*;
 
 impl App {
-
     pub fn current_project(&self) -> Option<&ProjectInfo> {
         self.tree.get(self.sel_project)
     }
-
 
     pub fn current_repository(&self) -> Option<&RepositoryInfo> {
         self.current_project()
             .and_then(|p| p.repositories.get(self.sel_repository))
     }
-
 
     pub fn current_checkout(&self) -> Option<&CheckoutInfo> {
         match self.checkout_rows().get(self.sel_checkout).copied()? {
@@ -27,7 +24,6 @@ impl App {
             CheckoutRow::Branch(_) | CheckoutRow::Remote(_) => None,
         }
     }
-
 
     /// The checkouts column, in the order it is drawn.
     ///
@@ -48,7 +44,11 @@ impl App {
         let leads = |i: &usize| default.is_some_and(|d| on_branch(&r.checkouts[*i], d));
 
         let mut rows: Vec<CheckoutRow> = pinned.map(CheckoutRow::Branch).into_iter().collect();
-        rows.extend((0..r.checkouts.len()).filter(leads).map(CheckoutRow::Checkout));
+        rows.extend(
+            (0..r.checkouts.len())
+                .filter(leads)
+                .map(CheckoutRow::Checkout),
+        );
         rows.extend(
             (0..r.checkouts.len())
                 .filter(|i| !leads(i))
@@ -67,7 +67,6 @@ impl App {
         rows
     }
 
-
     /// The selected row when it is a branch nothing is sitting on.
     /// Everything reached through `current_checkout` — panes, review,
     /// spawning — is `None` there, which is what a branch with no directory
@@ -85,7 +84,6 @@ impl App {
         }
     }
 
-
     /// The same row as `origin/feature`, for the places that have to care
     /// which side of the remote it is on.
     pub fn current_remote_row(&self) -> Option<&str> {
@@ -99,11 +97,9 @@ impl App {
         }
     }
 
-
     pub fn checkout_row_count(&self) -> usize {
         self.checkout_rows().len()
     }
-
 
     /// The row the checkout at `index` is drawn on.
     ///
@@ -119,7 +115,6 @@ impl App {
             .position(|row| matches!(row, CheckoutRow::Checkout(i) if *i == index))
     }
 
-
     /// The inverse: where the selected row sits in `checkouts`, for the
     /// places that compare a cursor against one.
     fn selected_checkout_index(&self) -> Option<usize> {
@@ -128,7 +123,6 @@ impl App {
             CheckoutRow::Branch(_) | CheckoutRow::Remote(_) => None,
         }
     }
-
 
     /// The selected checkout row as an identity, paired with the repository
     /// it belongs to. Taken before a new tree replaces the old one.
@@ -143,28 +137,36 @@ impl App {
         Some((r.id, anchor))
     }
 
-
     /// Puts the cursor back on the row the anchor names. The column's order
     /// is not stable across trees: a checkout whose git status has not
     /// landed yet leaves its own branch looking unoccupied, which pins a
     /// branch row above every checkout and slides a bare index up by one.
     /// Repeat that and the selection walks to the top row, which is exactly
     /// where the main branch is pinned.
-    pub(super) fn restore_checkout_anchor(&mut self, repository: RepositoryId, anchor: &CheckoutAnchor) {
+    pub(super) fn restore_checkout_anchor(
+        &mut self,
+        repository: RepositoryId,
+        anchor: &CheckoutAnchor,
+    ) {
         let Some((project_index, repository_index)) =
-            self.tree.iter().enumerate().find_map(|(project_index, project)| {
-                project
-                    .repositories
-                    .iter()
-                    .position(|r| r.id == repository)
-                    .map(|repository_index| (project_index, repository_index))
-            })
+            self.tree
+                .iter()
+                .enumerate()
+                .find_map(|(project_index, project)| {
+                    project
+                        .repositories
+                        .iter()
+                        .position(|r| r.id == repository)
+                        .map(|repository_index| (project_index, repository_index))
+                })
         else {
             return;
         };
         self.sel_project = project_index;
         self.sel_repository = repository_index;
-        let Some(r) = self.current_repository() else { return };
+        let Some(r) = self.current_repository() else {
+            return;
+        };
         let rows = self.checkout_rows();
         let found = rows.iter().position(|row| match (row, anchor) {
             (CheckoutRow::Checkout(i), CheckoutAnchor::Checkout(id)) => {
@@ -178,10 +180,9 @@ impl App {
             }
             // A branch that has just been given a directory is still the
             // row the user was on, so follow it into its new checkout.
-            (CheckoutRow::Checkout(i), CheckoutAnchor::Branch(name)) => r
-                .checkouts
-                .get(*i)
-                .is_some_and(|c| on_branch(c, name)),
+            (CheckoutRow::Checkout(i), CheckoutAnchor::Branch(name)) => {
+                r.checkouts.get(*i).is_some_and(|c| on_branch(c, name))
+            }
             _ => false,
         });
         if let Some(index) = found {
@@ -189,19 +190,19 @@ impl App {
         }
     }
 
-
     /// The checkout a repository-wide action runs in: its primary one,
     /// which is where a branch without a directory would be switched to.
     pub(super) fn primary_checkout(&self) -> Option<&CheckoutInfo> {
-        self.current_repository()?.checkouts.iter().find(|c| c.primary)
+        self.current_repository()?
+            .checkouts
+            .iter()
+            .find(|c| c.primary)
     }
-
 
     pub fn current_pane(&self) -> Option<&PaneInfo> {
         self.current_checkout()
             .and_then(|c| c.listed_panes().nth(self.sel_pane))
     }
-
 
     pub(super) fn clamp(&mut self) {
         let nproj = self.tree.len();
@@ -210,7 +211,10 @@ impl App {
         } else if self.sel_project >= nproj {
             self.sel_project = nproj - 1;
         }
-        let nrepo = self.current_project().map(|p| p.repositories.len()).unwrap_or(0);
+        let nrepo = self
+            .current_project()
+            .map(|p| p.repositories.len())
+            .unwrap_or(0);
         if nrepo == 0 {
             self.sel_repository = 0;
         } else if self.sel_repository >= nrepo {
@@ -231,7 +235,6 @@ impl App {
         self.sync_subscription();
     }
 
-
     /// Keeps the live view subscribed to whatever pane current navigation
     /// state implies, independent of `focus` — the rightmost column always
     /// shows this pane's content alongside the project/checkout columns,
@@ -242,18 +245,15 @@ impl App {
             .unwrap_or(0)
     }
 
-
     /// The pane the rightmost column draws: whatever the tree selection
     /// implies, untouched by anything floating above it.
     pub fn column_pane(&self) -> Option<PaneId> {
         self.current_pane().map(|p| p.id)
     }
 
-
     pub fn overlay_pane(&self) -> Option<PaneId> {
         self.overlay.as_ref().and_then(Overlay::pane)
     }
-
 
     pub(super) fn jump_to_next_attention(&mut self) {
         // Compared against candidates walked out of `checkouts`, so the
@@ -270,20 +270,12 @@ impl App {
             .iter()
             .enumerate()
             .flat_map(|(project_index, project)| {
-                project
-                    .repositories
-                    .iter()
-                    .enumerate()
-                    .flat_map(move |(repository_index, repository)| {
-                        repository
-                            .checkouts
-                            .iter()
-                            .enumerate()
-                            .flat_map(move |(checkout_index, checkout)| {
-                                checkout
-                                    .listed_panes()
-                                    .enumerate()
-                                    .filter_map(move |(pane_index, pane)| {
+                project.repositories.iter().enumerate().flat_map(
+                    move |(repository_index, repository)| {
+                        repository.checkouts.iter().enumerate().flat_map(
+                            move |(checkout_index, checkout)| {
+                                checkout.listed_panes().enumerate().filter_map(
+                                    move |(pane_index, pane)| {
                                         let (label, note) = attention_of(pane)?;
                                         Some((
                                             project_index,
@@ -293,9 +285,12 @@ impl App {
                                             label,
                                             note,
                                         ))
-                                    })
-                            })
-                    })
+                                    },
+                                )
+                            },
+                        )
+                    },
+                )
             })
             .collect();
 
@@ -322,7 +317,6 @@ impl App {
         self.sync_subscription();
     }
 
-
     pub(super) fn selection_in(&self, target: Focus) -> usize {
         match target {
             Focus::Projects => self.sel_project,
@@ -331,7 +325,6 @@ impl App {
             _ => self.sel_pane,
         }
     }
-
 
     pub(super) fn selection_mut(&mut self, target: Focus) -> &mut usize {
         match target {
@@ -342,11 +335,9 @@ impl App {
         }
     }
 
-
     pub(super) fn move_selection(&mut self, delta: i32) {
         self.adjust_selection(self.focus, delta);
     }
-
 
     pub(super) fn adjust_selection(&mut self, target: Focus, delta: i32) {
         let sel = match target {
@@ -362,7 +353,6 @@ impl App {
         }
         self.clamp();
     }
-
 
     pub(super) fn descend(&mut self) {
         match self.focus {
@@ -397,7 +387,6 @@ impl App {
         }
     }
 
-
     pub(super) fn ascend(&mut self) {
         match self.focus {
             Focus::PaneContent => {
@@ -420,7 +409,6 @@ impl App {
             Focus::Review | Focus::Overlay => self.focus = Focus::Checkouts,
         }
     }
-
 
     /// Back to the top of the tree. Anything that swaps the whole project
     /// column out from under the columns needs it: the old indices refer

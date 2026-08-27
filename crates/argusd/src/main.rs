@@ -9,14 +9,17 @@ mod harness;
 mod highlight;
 mod logging;
 mod pty;
-mod store;
 mod state;
+mod store;
 mod watch;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     logging::init();
-    tracing::info!("argusd starting; logging to {}", logging::log_path().display());
+    tracing::info!(
+        "argusd starting; logging to {}",
+        logging::log_path().display()
+    );
 
     let cfg = config::load()?;
     // A store that will not open costs this run its memory, not its

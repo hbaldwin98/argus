@@ -7,7 +7,6 @@
 use super::*;
 
 impl App {
-
     /// Whether a mouse event can be ignored outright.
     ///
     /// Nothing in the client follows the pointer — there is no hover state,
@@ -19,7 +18,6 @@ impl App {
     pub fn mouse_is_idle(&self, ev: &MouseEvent) -> bool {
         matches!(ev.kind, MouseEventKind::Moved) && self.resizing_gutter.is_none()
     }
-
 
     pub fn on_mouse(&mut self, ev: MouseEvent) {
         if self.picker.is_some() || self.prompt.is_some() || self.dir_picker.is_some() {
@@ -116,17 +114,12 @@ impl App {
         }
     }
 
-
     /// What mouse reporting the child in `pane` has asked for. An unknown
     /// pane defaults to none, so nothing is forwarded until a snapshot has
     /// actually said otherwise.
     fn pane_mouse(&self, pane: PaneId) -> argus_protocol::MouseTracking {
-        self.grids
-            .get(&pane)
-            .map(|g| g.mouse)
-            .unwrap_or_default()
+        self.grids.get(&pane).map(|g| g.mouse).unwrap_or_default()
     }
-
 
     fn panels(&self) -> [Panel; 5] {
         [
@@ -138,11 +131,12 @@ impl App {
         ]
     }
 
-
     fn rendered_column_widths(&self) -> Vec<u16> {
-        self.panels().iter().map(|panel| panel.outer.width).collect()
+        self.panels()
+            .iter()
+            .map(|panel| panel.outer.width)
+            .collect()
     }
-
 
     /// Returns the blank separator under the pointer. Separators remain one
     /// cell wide, which gives dragging an unambiguous target without taking
@@ -151,22 +145,27 @@ impl App {
         let panels = self.panels();
         // The collapsed projects strip has no width to drag; suppress its
         // gutter so it isn't a one-cell trap between it and the next column.
-        let skip = if self.projects_collapsed { Some(0) } else { None };
-        panels.windows(2).position(|pair| {
-            let left = pair[0].outer;
-            let right = pair[1].outer;
-            let left_edge = left.x.saturating_add(left.width);
-            x >= left_edge
-                && x < right.x
-                && y >= left.y.max(right.y)
-                && y
-                    < left
+        let skip = if self.projects_collapsed {
+            Some(0)
+        } else {
+            None
+        };
+        panels
+            .windows(2)
+            .position(|pair| {
+                let left = pair[0].outer;
+                let right = pair[1].outer;
+                let left_edge = left.x.saturating_add(left.width);
+                x >= left_edge
+                    && x < right.x
+                    && y >= left.y.max(right.y)
+                    && y < left
                         .y
                         .saturating_add(left.height)
                         .min(right.y.saturating_add(right.height))
-        }).filter(|g| Some(*g) != skip)
+            })
+            .filter(|g| Some(*g) != skip)
     }
-
 
     fn resize_columns_at(&mut self, gutter: usize, x: u16) {
         let panels = self.panels();
@@ -189,7 +188,6 @@ impl App {
         widths[gutter + 1] = pair_width - left_width;
     }
 
-
     /// Scroll-wheel selection change for whichever list column the cursor is
     /// over, independent of `focus` — so scrolling a background column
     /// doesn't steal focus away from a pane you're typing into.
@@ -205,7 +203,6 @@ impl App {
         };
         self.adjust_selection(target, delta);
     }
-
 
     /// Which list column a point falls in, anywhere on its card, along with
     /// the card itself — a long column is scrolled, so the row a click
@@ -223,7 +220,6 @@ impl App {
         }
         None
     }
-
 
     /// A click on a card moves focus to it and leaves the selection alone;
     /// a click that lands on a row selects that row as well. Clicking the
@@ -247,7 +243,10 @@ impl App {
         };
         let count = match target {
             Focus::Projects => self.tree.len(),
-            Focus::Repositories => self.current_project().map(|p| p.repositories.len()).unwrap_or(0),
+            Focus::Repositories => self
+                .current_project()
+                .map(|p| p.repositories.len())
+                .unwrap_or(0),
             Focus::Checkouts => self.checkout_row_count(),
             _ => self.visible_pane_count(),
         };
@@ -276,11 +275,9 @@ impl App {
         }
     }
 
-
     pub fn resize_pane(&mut self, pane: PaneId, rows: u16, cols: u16) {
         let _ = self.out.send(ClientMsg::Resize { pane, rows, cols });
     }
-
 
     /// Every pane on screen with the area it is drawn in. Each pty is sized
     /// from its own, so a floating editor and the column behind it do not

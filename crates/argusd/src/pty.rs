@@ -254,7 +254,10 @@ impl PaneRuntime {
                         let cursor = snapshot_cursor(&parser, shape);
                         let mouse = snapshot_mouse(&parser);
                         let spans = diff_grid(prev.as_ref(), &cur);
-                        if !spans.is_empty() || prev_cursor != Some(cursor) || prev_mouse != Some(mouse) {
+                        if !spans.is_empty()
+                            || prev_cursor != Some(cursor)
+                            || prev_mouse != Some(mouse)
+                        {
                             let _ = damage_tx.send(ServerMsg::Damage {
                                 pane: id,
                                 spans,
@@ -302,7 +305,10 @@ impl PaneRuntime {
                             let cursor = snapshot_cursor(&parser, shape);
                             let mouse = snapshot_mouse(&parser);
                             let spans = diff_grid(prev.as_ref(), &cur);
-                            if !spans.is_empty() || prev_cursor != Some(cursor) || prev_mouse != Some(mouse) {
+                            if !spans.is_empty()
+                                || prev_cursor != Some(cursor)
+                                || prev_mouse != Some(mouse)
+                            {
                                 let _ = damage_tx.send(ServerMsg::Damage {
                                     pane: id,
                                     spans,
@@ -515,7 +521,9 @@ impl CursorShapeScanner {
                 (_, 0x1b) => ScanState::Escape,
                 (ScanState::Escape, b'[') => ScanState::Params(None),
                 (ScanState::Params(n), b'0'..=b'9') => ScanState::Params(Some(
-                    n.unwrap_or(0).saturating_mul(10).saturating_add(u16::from(b - b'0')),
+                    n.unwrap_or(0)
+                        .saturating_mul(10)
+                        .saturating_add(u16::from(b - b'0')),
                 )),
                 (ScanState::Params(n), b' ') => ScanState::Intermediate(n),
                 (ScanState::Intermediate(n), b'q') => {
@@ -595,14 +603,14 @@ mod tests {
         command.env("HERDR_PANE_ID", "w1:p1");
         command.env("ARGUS_PANE", "7");
 
-        strip_herdr_context(
-            &mut command,
-            ["HERDR_ENV".into(), "HERDR_PANE_ID".into()],
-        );
+        strip_herdr_context(&mut command, ["HERDR_ENV".into(), "HERDR_PANE_ID".into()]);
 
         assert_eq!(command.get_env("HERDR_ENV"), None);
         assert_eq!(command.get_env("HERDR_PANE_ID"), None);
-        assert_eq!(command.get_env("ARGUS_PANE"), Some(std::ffi::OsStr::new("7")));
+        assert_eq!(
+            command.get_env("ARGUS_PANE"),
+            Some(std::ffi::OsStr::new("7"))
+        );
     }
 
     #[test]
@@ -679,7 +687,13 @@ mod tests {
     /// Flattens a grid to one string per row, trailing blanks trimmed.
     fn rows_of(grid: &[Vec<Cell>]) -> Vec<String> {
         grid.iter()
-            .map(|r| r.iter().map(|c| c.ch.as_str()).collect::<String>().trim_end().to_string())
+            .map(|r| {
+                r.iter()
+                    .map(|c| c.ch.as_str())
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
             .collect()
     }
 
@@ -714,7 +728,13 @@ mod tests {
 
     #[tokio::test]
     async fn a_programs_output_lands_on_the_panes_grid() {
-        let pane = PaneRuntime::spawn(PaneId(1), &std::env::temp_dir(), echo("argus-marker"), |_| {}).unwrap();
+        let pane = PaneRuntime::spawn(
+            PaneId(1),
+            &std::env::temp_dir(),
+            echo("argus-marker"),
+            |_| {},
+        )
+        .unwrap();
         wait_for(&pane, |g| grid_contains(g, "argus-marker")).await;
     }
 
@@ -728,14 +748,21 @@ mod tests {
         for i in 0..10 {
             let marker = format!("fast-exit-{i}");
             let pane =
-                PaneRuntime::spawn(PaneId(20 + i), &std::env::temp_dir(), echo(&marker), |_| {}).unwrap();
+                PaneRuntime::spawn(PaneId(20 + i), &std::env::temp_dir(), echo(&marker), |_| {})
+                    .unwrap();
             wait_for(&pane, |g| grid_contains(g, &marker)).await;
         }
     }
 
     #[tokio::test]
     async fn output_is_broadcast_as_damage_to_subscribers() {
-        let pane = PaneRuntime::spawn(PaneId(7), &std::env::temp_dir(), echo("damage-marker"), |_| {}).unwrap();
+        let pane = PaneRuntime::spawn(
+            PaneId(7),
+            &std::env::temp_dir(),
+            echo("damage-marker"),
+            |_| {},
+        )
+        .unwrap();
         let mut rx = pane.subscribe();
 
         let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
@@ -754,7 +781,9 @@ mod tests {
                         return;
                     }
                 }
-                ServerMsg::PaneClosed { .. } => panic!("exited before the marker appeared; saw {seen:?}"),
+                ServerMsg::PaneClosed { .. } => {
+                    panic!("exited before the marker appeared; saw {seen:?}")
+                }
                 _ => {}
             }
         }
@@ -811,9 +840,13 @@ mod tests {
         // the parser: the screen a later subscriber is handed comes from
         // there, and a pane that ran unwatched would otherwise come back
         // blank.
-        let pane =
-            PaneRuntime::spawn(PaneId(30), &std::env::temp_dir(), echo("unwatched-marker"), |_| {})
-                .unwrap();
+        let pane = PaneRuntime::spawn(
+            PaneId(30),
+            &std::env::temp_dir(),
+            echo("unwatched-marker"),
+            |_| {},
+        )
+        .unwrap();
         wait_for(&pane, |g| grid_contains(g, "unwatched-marker")).await;
 
         let (_, _, grid, _, _, _rx) = pane.snapshot_and_subscribe();
@@ -821,8 +854,10 @@ mod tests {
             grid_contains(&grid, "unwatched-marker"),
             "output produced with nobody watching was lost:
 {}",
-            rows_of(&grid).join("
-")
+            rows_of(&grid).join(
+                "
+"
+            )
         );
     }
 
@@ -832,9 +867,13 @@ mod tests {
         // first frame after someone subscribes has to be a full repaint.
         // Diffing against the stale one would silently drop every cell that
         // happens to match it.
-        let pane =
-            PaneRuntime::spawn(PaneId(31), &std::env::temp_dir(), Spawn::DefaultShell, |_| {})
-                .unwrap();
+        let pane = PaneRuntime::spawn(
+            PaneId(31),
+            &std::env::temp_dir(),
+            Spawn::DefaultShell,
+            |_| {},
+        )
+        .unwrap();
         // Long enough for the shell to draw a prompt with nobody watching.
         tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -887,8 +926,13 @@ mod tests {
 
     #[tokio::test]
     async fn killing_a_pane_makes_it_exit() {
-        let pane =
-            PaneRuntime::spawn(PaneId(4), &std::env::temp_dir(), Spawn::DefaultShell, |_| {}).unwrap();
+        let pane = PaneRuntime::spawn(
+            PaneId(4),
+            &std::env::temp_dir(),
+            Spawn::DefaultShell,
+            |_| {},
+        )
+        .unwrap();
         let mut rx = pane.subscribe();
         tokio::time::sleep(Duration::from_millis(300)).await;
         pane.kill().unwrap();
@@ -906,8 +950,13 @@ mod tests {
 
     #[tokio::test]
     async fn a_pane_starts_at_the_default_size_and_resize_changes_it() {
-        let pane =
-            PaneRuntime::spawn(PaneId(5), &std::env::temp_dir(), Spawn::DefaultShell, |_| {}).unwrap();
+        let pane = PaneRuntime::spawn(
+            PaneId(5),
+            &std::env::temp_dir(),
+            Spawn::DefaultShell,
+            |_| {},
+        )
+        .unwrap();
         let (rows, cols, grid, _, _) = pane.full_snapshot();
         assert_eq!((rows, cols), (DEFAULT_ROWS, DEFAULT_COLS));
         assert_eq!(grid.len(), DEFAULT_ROWS as usize);
@@ -916,7 +965,11 @@ mod tests {
         pane.resize(40, 120).unwrap();
         let (rows, cols, grid, _, _) = pane.full_snapshot();
         assert_eq!((rows, cols), (40, 120));
-        assert_eq!(grid.len(), 40, "the grid must actually grow, not just the pty");
+        assert_eq!(
+            grid.len(),
+            40,
+            "the grid must actually grow, not just the pty"
+        );
         assert_eq!(grid[0].len(), 120);
         let _ = pane.kill();
     }
@@ -925,8 +978,13 @@ mod tests {
     async fn resize_pushes_a_full_snapshot_so_new_area_is_not_left_blank() {
         // Incremental Damage can't grow a subscriber's cached grid, so a
         // resize has to re-send the whole screen at the new size.
-        let pane =
-            PaneRuntime::spawn(PaneId(6), &std::env::temp_dir(), Spawn::DefaultShell, |_| {}).unwrap();
+        let pane = PaneRuntime::spawn(
+            PaneId(6),
+            &std::env::temp_dir(),
+            Spawn::DefaultShell,
+            |_| {},
+        )
+        .unwrap();
         let mut rx = pane.subscribe();
         pane.resize(40, 120).unwrap();
         pane.broadcast_snapshot(PaneId(6));
@@ -948,7 +1006,8 @@ mod tests {
             cols,
             cells,
             ..
-        } = msg else {
+        } = msg
+        else {
             unreachable!()
         };
         assert_eq!(id, PaneId(6));
@@ -962,13 +1021,22 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // The randomly-named leaf is the marker: the child can only print it
         // if it inherited the checkout's directory as its cwd.
-        let leaf = dir.path().file_name().unwrap().to_string_lossy().to_string();
+        let leaf = dir
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
 
         let pane = PaneRuntime::spawn(
             PaneId(8),
             dir.path(),
             Spawn::Program {
-                program: if cfg!(windows) { "cd".to_string() } else { "pwd".to_string() },
+                program: if cfg!(windows) {
+                    "cd".to_string()
+                } else {
+                    "pwd".to_string()
+                },
                 args: Vec::new(),
                 env: Vec::new(),
             },
@@ -1021,7 +1089,10 @@ mod tests {
     fn colors_convert_across_all_three_forms() {
         assert_eq!(convert_color(vt100::Color::Default), Color::Default);
         assert_eq!(convert_color(vt100::Color::Idx(9)), Color::Idx(9));
-        assert_eq!(convert_color(vt100::Color::Rgb(1, 2, 3)), Color::Rgb(1, 2, 3));
+        assert_eq!(
+            convert_color(vt100::Color::Rgb(1, 2, 3)),
+            Color::Rgb(1, 2, 3)
+        );
     }
 
     #[test]
@@ -1030,9 +1101,16 @@ mod tests {
         parser.process(b"hi");
         let grid = snapshot_grid(&parser);
         assert_eq!(grid.len(), 4);
-        assert!(grid.iter().all(|r| r.len() == 10), "every row is full width");
+        assert!(
+            grid.iter().all(|r| r.len() == 10),
+            "every row is full width"
+        );
         assert_eq!(rows_of(&grid)[0], "hi");
-        assert_eq!(rows_of(&grid)[1], "", "untouched rows are blank, not missing");
+        assert_eq!(
+            rows_of(&grid)[1],
+            "",
+            "untouched rows are blank, not missing"
+        );
     }
 
     #[test]
@@ -1046,8 +1124,16 @@ mod tests {
         parser.process(b"\x1b[41m\x1b[K");
         let grid = snapshot_grid(&parser);
         assert_eq!(grid[0][0].ch, " ", "still drawn as a blank");
-        assert_eq!(grid[0][3].bg, Color::Idx(1), "the cleared-to background is lost");
-        assert_eq!(grid[1][0].bg, Color::Default, "an untouched row stays default");
+        assert_eq!(
+            grid[0][3].bg,
+            Color::Idx(1),
+            "the cleared-to background is lost"
+        );
+        assert_eq!(
+            grid[1][0].bg,
+            Color::Default,
+            "an untouched row stays default"
+        );
     }
 
     #[test]

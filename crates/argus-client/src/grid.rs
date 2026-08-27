@@ -82,8 +82,16 @@ mod tests {
     fn several_spans_apply_in_order() {
         let mut g = grid(&["aaa"]);
         g.apply(&[
-            CellSpan { row: 0, col: 0, cells: vec![cell('X')] },
-            CellSpan { row: 0, col: 0, cells: vec![cell('Y')] },
+            CellSpan {
+                row: 0,
+                col: 0,
+                cells: vec![cell('X')],
+            },
+            CellSpan {
+                row: 0,
+                col: 0,
+                cells: vec![cell('Y')],
+            },
         ]);
         assert_eq!(render(&g), vec!["Yaa"]);
     }
@@ -133,7 +141,17 @@ mod tests {
         g.move_cursor(Cursor {
             row: 3,
             col: 7,
-            visible: false, ..Default::default() });
-        assert_eq!(g.cursor, Cursor { row: 3, col: 7, visible: false, ..Default::default() });
+            visible: false,
+            ..Default::default()
+        });
+        assert_eq!(
+            g.cursor,
+            Cursor {
+                row: 3,
+                col: 7,
+                visible: false,
+                ..Default::default()
+            }
+        );
     }
 }

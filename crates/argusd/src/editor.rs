@@ -248,14 +248,24 @@ mod tests {
         assert!(is_gui("notepad"));
         assert!(is_gui("Notepad.exe"));
         assert!(is_gui(r"C:\Windows\System32\notepad.exe"));
-        assert!(is_gui(r#""C:\Program Files\Microsoft VS Code\code.exe" -w"#));
+        assert!(is_gui(
+            r#""C:\Program Files\Microsoft VS Code\code.exe" -w"#
+        ));
         assert!(is_gui("code -w"));
         assert!(is_gui("/usr/bin/subl"));
     }
 
     #[test]
     fn terminal_editors_are_not_mistaken_for_gui_ones() {
-        for e in ["nvim", "vim", "hx", "nano", "emacs", "/usr/bin/nvim", "vim -u NONE"] {
+        for e in [
+            "nvim",
+            "vim",
+            "hx",
+            "nano",
+            "emacs",
+            "/usr/bin/nvim",
+            "vim -u NONE",
+        ] {
             assert!(!is_gui(e), "{e} belongs in a pane");
         }
     }

@@ -58,8 +58,11 @@ impl NotificationMode {
 }
 
 impl EditorMode {
-    pub const ALL: &'static [EditorMode] =
-        &[EditorMode::Overlay, EditorMode::Column, EditorMode::External];
+    pub const ALL: &'static [EditorMode] = &[
+        EditorMode::Overlay,
+        EditorMode::Column,
+        EditorMode::External,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {

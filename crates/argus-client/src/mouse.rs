@@ -60,7 +60,10 @@ pub fn encode_mouse(ev: &MouseEvent, area: Rect, tracking: MouseTracking) -> Opt
             let mut push = |v: u16| {
                 let mut buf = [0u8; 4];
                 out.extend_from_slice(
-                    char::from_u32(32 + v as u32).unwrap().encode_utf8(&mut buf).as_bytes(),
+                    char::from_u32(32 + v as u32)
+                        .unwrap()
+                        .encode_utf8(&mut buf)
+                        .as_bytes(),
                 );
             };
             push(cb as u16);
@@ -167,13 +170,19 @@ mod tests {
         let area = Rect::new(0, 0, 80, 24);
         let drag = ev(MouseEventKind::Drag(MouseButton::Left), 1, 1);
         assert_eq!(
-            encode_mouse(&drag, area, tracking(MouseMode::PressRelease, MouseEncoding::Sgr)),
+            encode_mouse(
+                &drag,
+                area,
+                tracking(MouseMode::PressRelease, MouseEncoding::Sgr)
+            ),
             None
         );
-        assert!(
-            encode_mouse(&drag, area, tracking(MouseMode::ButtonMotion, MouseEncoding::Sgr))
-                .is_some()
-        );
+        assert!(encode_mouse(
+            &drag,
+            area,
+            tracking(MouseMode::ButtonMotion, MouseEncoding::Sgr)
+        )
+        .is_some());
     }
 
     #[test]

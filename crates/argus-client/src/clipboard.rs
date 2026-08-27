@@ -29,7 +29,10 @@ mod tests {
 
     #[test]
     fn windows_line_endings_do_not_arrive_as_enter() {
-        assert_eq!(normalize("one\r\ntwo\rthree\nfour"), "one\ntwo\nthree\nfour");
+        assert_eq!(
+            normalize("one\r\ntwo\rthree\nfour"),
+            "one\ntwo\nthree\nfour"
+        );
     }
 
     #[test]

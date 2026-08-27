@@ -77,7 +77,6 @@ pub(super) struct Resumed {
 pub(super) const RESUME_GRACE: Duration = Duration::from_secs(5);
 
 impl Daemon {
-
     /// What is running, in a form that survives ids being reissued.
     pub(super) fn session_panes(&self) -> Vec<crate::store::SessionPane> {
         let inner = self.inner.lock().unwrap();
@@ -104,7 +103,6 @@ impl Daemon {
             .collect()
     }
 
-
     pub(super) fn record_session(&self) {
         // Half a restore is not a session worth remembering.
         if self.restoring.load(std::sync::atomic::Ordering::Relaxed) {
@@ -114,7 +112,6 @@ impl Daemon {
             tracing::warn!("could not record the session: {e}");
         }
     }
-
 
     /// Starts again whatever was running when the daemon last stopped, and
     /// asks each agent CLI to reopen the conversation it had.
@@ -138,9 +135,8 @@ impl Daemon {
         // gone, and is dropped.
         self.reconcile_worktrees();
         let known = self.checkout_paths();
-        let wanted: Vec<crate::store::SessionPane> = crate::store::restorable(&saved, &known)
-            .cloned()
-            .collect();
+        let wanted: Vec<crate::store::SessionPane> =
+            crate::store::restorable(&saved, &known).cloned().collect();
         if wanted.is_empty() {
             return;
         }
@@ -212,7 +208,6 @@ impl Daemon {
         tracing::info!("restored {restored} of {} panes", wanted.len());
         self.broadcast_tree();
     }
-
 
     pub(super) fn restore_pane_metadata(&self, id: PaneId, saved: &crate::store::SessionPane) {
         let mut inner = self.inner.lock().unwrap();

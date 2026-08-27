@@ -284,11 +284,7 @@ impl Store {
         tx.execute(
             "INSERT INTO project_overlay (root, name, workspace) VALUES (?1, ?2, ?3)
              ON CONFLICT(root) DO UPDATE SET name = excluded.name, workspace = excluded.workspace",
-            rusqlite::params![
-                path_text(&overlay.root),
-                overlay.name,
-                overlay.workspace
-            ],
+            rusqlite::params![path_text(&overlay.root), overlay.name, overlay.workspace],
         )?;
         // Adding a project back is the undo for having removed it.
         tx.execute(
@@ -468,10 +464,12 @@ impl Store {
         let mut repos = Vec::new();
         {
             let conn = self.conn();
-            let mut stmt =
-                conn.prepare("SELECT project, path FROM repo_overlay ORDER BY rowid")?;
+            let mut stmt = conn.prepare("SELECT project, path FROM repo_overlay ORDER BY rowid")?;
             let rows = stmt.query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, PathBuf::from(r.get::<_, String>(1)?)))
+                Ok((
+                    r.get::<_, String>(0)?,
+                    PathBuf::from(r.get::<_, String>(1)?),
+                ))
             })?;
             for row in rows {
                 repos.push(row?);
@@ -542,7 +540,11 @@ impl Store {
         for p in &paths {
             self.exclude_repo(p)?;
         }
-        tracing::info!("imported {} exclusions from {}", paths.len(), path.display());
+        tracing::info!(
+            "imported {} exclusions from {}",
+            paths.len(),
+            path.display()
+        );
         retire(path);
         Ok(())
     }
@@ -583,8 +585,9 @@ fn encode<T: serde::Serialize>(value: &T) -> Result<String> {
 }
 
 fn decode_row<T: serde::de::DeserializeOwned>(raw: &str, column: usize) -> rusqlite::Result<T> {
-    serde_json::from_str(raw)
-        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(column, rusqlite::types::Type::Text, Box::new(e)))
+    serde_json::from_str(raw).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(column, rusqlite::types::Type::Text, Box::new(e))
+    })
 }
 
 const SCHEMA_V1: &str = r#"
@@ -783,7 +786,10 @@ mod tests {
             .add_review_comment(Path::new("/repo"), anchor(9), "second".to_string())
             .unwrap();
 
-        assert_eq!(s.review_comments(Path::new("/repo")).unwrap(), [first, second]);
+        assert_eq!(
+            s.review_comments(Path::new("/repo")).unwrap(),
+            [first, second]
+        );
         assert!(s.review_comments(Path::new("/other")).unwrap().is_empty());
     }
 
@@ -944,7 +950,8 @@ mod tests {
         // `projects.toml` is the user's file, so the only way to take a
         // project it declares out of the panel is to record the removal.
         let s = store();
-        s.remove_project("declared", Some(Path::new("/declared"))).unwrap();
+        s.remove_project("declared", Some(Path::new("/declared")))
+            .unwrap();
         assert_eq!(
             s.hidden_projects().unwrap(),
             ["declared"],
@@ -963,7 +970,8 @@ mod tests {
         .unwrap();
         s.add_repo("added", Path::new("/added/repo")).unwrap();
 
-        s.remove_project("added", Some(Path::new("/added"))).unwrap();
+        s.remove_project("added", Some(Path::new("/added")))
+            .unwrap();
 
         assert!(s.project_overlays().unwrap().is_empty());
         assert!(s.repos_for("added").unwrap().is_empty());
@@ -1033,7 +1041,8 @@ mod tests {
         })
         .unwrap();
         s.add_repo("added", Path::new("/added/extra")).unwrap();
-        s.add_repo("declared", Path::new("/declared/extra")).unwrap();
+        s.add_repo("declared", Path::new("/declared/extra"))
+            .unwrap();
 
         let o = s.overlays().unwrap();
         assert_eq!(o.projects.len(), 1);

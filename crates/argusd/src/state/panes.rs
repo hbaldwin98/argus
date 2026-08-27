@@ -12,8 +12,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use argus_protocol::{
-    CheckoutId, PaneId, PaneKind, PaneStatus, ReviewAnchor, ReviewComment,
-    MAX_DELEGATE_TASK_BYTES, MAX_HANDOFF_BYTES, MAX_REVIEW_COMMENT_BYTES,
+    CheckoutId, PaneId, PaneKind, PaneStatus, ReviewAnchor, ReviewComment, MAX_DELEGATE_TASK_BYTES,
+    MAX_HANDOFF_BYTES, MAX_REVIEW_COMMENT_BYTES,
 };
 
 use super::*;
@@ -780,7 +780,11 @@ impl Daemon {
         p.runtime.resize(rows, cols)?;
         // Only once it took. Recording a size the pty rejected would make
         // every later request agreeing with it a no-op.
-        self.viewers.lock().unwrap().applied.insert(pane, (rows, cols));
+        self.viewers
+            .lock()
+            .unwrap()
+            .applied
+            .insert(pane, (rows, cols));
         // A subscribed client's cached grid is only ever sized by whatever
         // snapshot it last received; incremental Damage can't grow it.
         // Push a fresh full snapshot at the new size so growing a pane
@@ -881,8 +885,7 @@ impl Daemon {
             }
             // A child that has gone idle is no longer something running
             // under this row, so it stops being listed under it.
-            children
-                .retain(|c| !matches!(c.status, PaneStatus::Idle | PaneStatus::Exited { .. }));
+            children.retain(|c| !matches!(c.status, PaneStatus::Idle | PaneStatus::Exited { .. }));
         }
         self.broadcast_tree();
     }
@@ -930,7 +933,12 @@ impl Daemon {
         }
     }
 
-    pub(super) fn set_pane_hook_status(&self, pane: PaneId, status: PaneStatus, note: Option<String>) {
+    pub(super) fn set_pane_hook_status(
+        &self,
+        pane: PaneId,
+        status: PaneStatus,
+        note: Option<String>,
+    ) {
         let changed = {
             let mut starting = self.starting_agents.lock().unwrap();
             let mut inner = self.inner.lock().unwrap();
