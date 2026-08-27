@@ -45,12 +45,6 @@ pub enum ClientMsg {
         checkout: CheckoutId,
         base: ReviewBase,
     },
-    /// Accept exactly the review endpoint currently displayed by the client.
-    AcknowledgeReview {
-        checkout: CheckoutId,
-        target_snapshot: String,
-        expected_baseline: Option<String>,
-    },
     /// Ask for what this checkout contains, for the fuzzy pickers.
     ListBranches { checkout: CheckoutId },
     ListFiles { checkout: CheckoutId },
@@ -146,15 +140,6 @@ pub enum ServerMsg {
     ReviewFailed {
         request_id: u64,
         checkout: CheckoutId,
-        message: String,
-    },
-    ReviewAcknowledged {
-        checkout: CheckoutId,
-        target_snapshot: String,
-    },
-    ReviewAcknowledgeFailed {
-        checkout: CheckoutId,
-        target_snapshot: String,
         message: String,
     },
     /// The answer to `ClientMsg::ListBranches`. `current` is the branch the

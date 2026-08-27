@@ -19,8 +19,8 @@ The workspace builds three executables:
 - Starts and discovers Git worktrees and switches branches from the TUI.
 - Runs Claude Code, Codex, OpenCode, Google Antigravity (AGY), Cursor Agent (`agent`), or custom command-line agent templates.
 - Shows Git status, changed-file counts, and ahead/behind state.
-- Reviews uncommitted work, branch work, or changes since the last explicitly accepted snapshot.
-- Captures staged, unstaged, deleted, renamed, and non-ignored untracked content for review.
+- Reviews staged and unstaged work as two separate diffs, the way Git itself keeps them apart.
+- Captures deleted, renamed, and non-ignored untracked content for review.
 - Opens files in a floating terminal editor, the terminal column, or an external editor.
 - Restores non-exited shell and agent panes after a daemon restart, reopening each agent's last
   conversation where its CLI can be asked to.
@@ -388,13 +388,12 @@ Other supported keys are forwarded to the child PTY.
 | `f` | Open the changed-file picker |
 | `c` | Send a comment to an agent in the checkout; choose one when several are running |
 | `e` | Open the selected line in the editor |
-| `b` | Cycle uncommitted, branch-point, and last-looked bases |
+| `b` | Toggle between staged and unstaged changes |
 | `r` / `R` | Refresh |
-| `A` | Accept the exact displayed snapshot as last looked |
-| `h`, Left, Escape, `q` | Close review without accepting it |
+| `h`, Left, Escape, `q` | Close review |
 
-Review acceptance is explicit. Closing, refreshing, changing bases, commenting, or opening an editor
-does not advance the last-looked baseline.
+The chosen side persists across reopens. Review covers uncommitted work only; comparing against
+committed history is left to a dedicated Git tool.
 
 ## Sessions and Git Data
 
@@ -410,9 +409,8 @@ claim. An agent that exits non-zero within five seconds of a resumed start is ta
 nothing to continue and is replaced by a plain new agent. Editors are not restored. Set
 `ARGUS_NO_RESTORE=1` to start clean.
 
-Review captures write blobs and trees to the repository's Git object database. Accepted last-looked
-baselines are retained under worktree-specific `refs/argus/review/...` refs. Argus does not change
-`HEAD`, branch refs, the real index, or working files while capturing a review.
+Review captures write blobs and trees to the repository's Git object database. Argus does not
+change `HEAD`, branch refs, the real index, or working files while capturing a review.
 
 Read-only Git operations use embedded libgit2. Branch switching and worktree creation/removal require
 the `git` executable.

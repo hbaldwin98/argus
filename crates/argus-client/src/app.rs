@@ -586,7 +586,7 @@ impl App {
             next_review_request: 1,
             list_wanted: None,
             next_browse_request: 1,
-            review_base: ReviewBase::WorkingTree,
+            review_base: ReviewBase::Unstaged,
             prompt: None,
             theme,
             pending_focus_new: false,
@@ -2814,9 +2814,7 @@ second
         argus_protocol::Review {
             request_id: 1,
             checkout,
-            base: argus_protocol::ReviewBase::WorkingTree,
-            target_snapshot: "target-1".to_string(),
-            baseline_snapshot: None,
+            base: argus_protocol::ReviewBase::Unstaged,
             files: vec![argus_protocol::FileDiff {
                 path: "src/a.rs".to_string(),
                 old_path: None,
@@ -2927,98 +2925,13 @@ second
             argus_protocol::Review {
                 request_id: 1,
                 checkout,
-                base: argus_protocol::ReviewBase::WorkingTree,
-                target_snapshot: "target-1".to_string(),
-                baseline_snapshot: None,
+                base: argus_protocol::ReviewBase::Unstaged,
                 files: Vec::new(),
             },
         );
         assert!(h.app.review.is_none());
         assert_ne!(h.app.focus, Focus::Review);
-        assert!(h.app.status.contains("no changes vs uncommitted"), "{}", h.app.status);
-    }
-
-    #[test]
-    fn an_empty_first_since_last_looked_review_can_be_acknowledged() {
-        let mut h = Harness::new();
-        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
-        let mut review = diff_of(checkout);
-        review.base = ReviewBase::SinceLastLooked;
-        review.files.clear();
-        open_review(&mut h, review);
-        assert!(h.app.review.is_some(), "empty view keeps the explicit action reachable");
-
-        h.key(KeyCode::Char('A'));
-        assert!(matches!(
-            &h.sent()[0],
-            ClientMsg::AcknowledgeReview {
-                checkout: id,
-                target_snapshot,
-                expected_baseline: None,
-            } if *id == checkout && target_snapshot == "target-1"
-        ));
-    }
-
-    #[test]
-    fn acknowledgement_updates_only_the_review_snapshot_that_was_displayed() {
-        let mut h = Harness::new();
-        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
-        open_review(&mut h, diff_of(checkout));
-
-        h.app.on_server_msg(ServerMsg::ReviewAcknowledged {
-            checkout,
-            target_snapshot: "stale-target".to_string(),
-        });
-        assert_eq!(
-            h.app.review.as_ref().unwrap().review.baseline_snapshot,
-            None,
-            "a delayed acknowledgement must not mutate a newer review"
-        );
-
-        h.app.on_server_msg(ServerMsg::ReviewAcknowledged {
-            checkout,
-            target_snapshot: "target-1".to_string(),
-        });
-        assert_eq!(
-            h.app.review.as_ref().unwrap().review.baseline_snapshot.as_deref(),
-            Some("target-1")
-        );
-        assert_eq!(h.app.status, "review baseline accepted");
-    }
-
-    #[test]
-    fn acknowledgement_failure_is_shown_only_for_the_displayed_snapshot() {
-        let mut h = Harness::new();
-        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
-        open_review(&mut h, diff_of(checkout));
-        let before = h.app.status.clone();
-
-        h.app.on_server_msg(ServerMsg::ReviewAcknowledgeFailed {
-            checkout,
-            target_snapshot: "stale-target".to_string(),
-            message: "conflict".to_string(),
-        });
-        assert_eq!(h.app.status, before);
-
-        h.app.on_server_msg(ServerMsg::ReviewAcknowledgeFailed {
-            checkout,
-            target_snapshot: "target-1".to_string(),
-            message: "conflict".to_string(),
-        });
-        assert_eq!(h.app.status, "error: conflict");
-    }
-
-    #[test]
-    fn closing_and_refreshing_never_acknowledge_a_review() {
-        let mut h = Harness::new();
-        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
-        open_review(&mut h, diff_of(checkout));
-        h.key(KeyCode::Char('r'));
-        h.key(KeyCode::Esc);
-        assert!(h.sent().iter().all(|message| !matches!(
-            message,
-            ClientMsg::AcknowledgeReview { .. }
-        )));
+        assert!(h.app.status.contains("no changes vs unstaged"), "{}", h.app.status);
     }
 
     #[test]
@@ -3366,13 +3279,13 @@ second
     }
 
     #[test]
-    fn b_cycles_the_diff_base_and_asks_again() {
+    fn b_toggles_the_diff_side_and_asks_again() {
         let mut h = review_with_agent();
         h.key(KeyCode::Char('b'));
 
         match &h.sent()[0] {
             ClientMsg::Review { base, .. } => {
-                assert_eq!(*base, argus_protocol::ReviewBase::BranchPoint)
+                assert_eq!(*base, argus_protocol::ReviewBase::Staged)
             }
             other => panic!("unexpected {other:?}"),
         }
@@ -3389,7 +3302,7 @@ second
         h.key(KeyCode::Char('R'));
         match &h.sent()[0] {
             ClientMsg::Review { base, .. } => {
-                assert_eq!(*base, argus_protocol::ReviewBase::BranchPoint)
+                assert_eq!(*base, argus_protocol::ReviewBase::Staged)
             }
             other => panic!("unexpected {other:?}"),
         }

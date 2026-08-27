@@ -89,19 +89,6 @@ impl App {
             } => {
                 self.receive_review_failure(request_id, checkout, message);
             }
-            ServerMsg::ReviewAcknowledged {
-                checkout,
-                target_snapshot,
-            } => {
-                self.receive_review_acknowledgement(checkout, &target_snapshot, None);
-            }
-            ServerMsg::ReviewAcknowledgeFailed {
-                checkout,
-                target_snapshot,
-                message,
-            } => {
-                self.receive_review_acknowledgement(checkout, &target_snapshot, Some(message));
-            }
             ServerMsg::Branches { checkout, branches } => {
                 if self.list_wanted != Some(checkout) {
                     return;
@@ -364,7 +351,7 @@ impl App {
         let files = review.files.len();
         let base = review.base;
         let view = ReviewView::new(review);
-        if view.is_empty() && base != ReviewBase::SinceLastLooked {
+        if view.is_empty() {
             self.review = None;
             self.report(format!("no changes vs {}", base.label()));
             return;
@@ -380,26 +367,6 @@ impl App {
         if self.review_wanted == Some((checkout, request_id)) {
             self.review_wanted = None;
             self.alert(format!("error: {message}"));
-        }
-    }
-
-
-    fn receive_review_acknowledgement(
-        &mut self,
-        checkout: CheckoutId,
-        target_snapshot: &str,
-        error: Option<String>,
-    ) {
-        let Some(view) = self.review.as_mut().filter(|view| {
-            view.review.checkout == checkout && view.review.target_snapshot == target_snapshot
-        }) else {
-            return;
-        };
-        if let Some(message) = error {
-            self.alert(format!("error: {message}"));
-        } else {
-            view.review.baseline_snapshot = Some(target_snapshot.to_string());
-            self.report("review baseline accepted");
         }
     }
 

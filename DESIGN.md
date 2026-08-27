@@ -467,34 +467,33 @@ branch it was done on. Linked worktrees are Argus's own and switch under Git's r
 task with `git2`; the client opens it in a floating overlay while leaving the terminal behind it
 subscribed.
 
-Three bases cycle with `b`:
+Review shows uncommitted work only, split into the two sides Git itself keeps apart. `b` toggles:
 
-- `uncommitted`: `HEAD` against index and working tree.
-- `this branch`: merge base against a conventional local default branch, then the branch's
-  upstream when no default exists, falling back to `HEAD`.
-- `last looked`: the last target explicitly accepted with `A`. With no baseline it falls back to
-  uncommitted work and remains uninitialized until accepted, including for an empty review.
+- `unstaged`: the index against the working tree, plus non-ignored untracked content — `git diff`.
+- `staged`: `HEAD` against the index — `git diff --cached`.
 
-Each request captures an immutable synthetic tree from the real index plus working-tree deletions,
-edits, and non-ignored untracked content. The objects are written to Git's object database without
-changing HEAD, branches, the index, or files. Diffs use three context lines, preserve old and new
-line numbers, and detect renames. Binary files, files over 1 MiB, files over 5,000 rendered lines,
-and content beyond the review's 20,000-line budget are listed without their content. Capture and
-diff failures are reported rather than rendered as empty work.
+The chosen side is a setting rather than a per-visit choice, and it survives closing and reopening
+the overlay. Committed history is out of scope: reviewing a branch against its fork point, or
+against a remembered snapshot, is what a Git client is for.
 
-Every request has an id and the client accepts only the latest exact reply. Accepted last-looked
-trees live under a hidden `refs/argus/review/...` ref keyed by the worktree Git directory, so linked
-worktrees do not share baselines and daemon restarts retain them. `A` updates the ref with
-compare-and-swap against the displayed baseline. Closing, refreshing, changing base, editing, and
-commenting do not acknowledge anything. Review capture is globally serialized, and a connection
-drops an older queued capture when a newer request replaces it.
+Each request captures the index as a tree, and for the unstaged side also an immutable synthetic
+tree built from the index plus working-tree deletions, edits, and non-ignored untracked content.
+Both are written to Git's object database without changing HEAD, branches, the index, or files.
+Diffs use three context lines, preserve old and new line numbers, and detect renames. Binary files,
+files over 1 MiB, files over 5,000 rendered lines, and content beyond the review's 20,000-line
+budget are listed without their content. Capture and diff failures are reported rather than
+rendered as empty work.
+
+Every request has an id and the client accepts only the latest exact reply. Review capture is
+globally serialized, and a connection drops an older queued capture when a newer request replaces
+it.
 
 The client supports line and file navigation, single-file range marking, a changed-file fuzzy
 picker, refresh, and opening the selected line in an editor. A comment is flattened and typed into
 the first agent PTY in the checkout; it is not durable review state.
 
-There is no vetted state, stage/unstage/revert action, syntax highlighting, or persistent comment
-store. Closing the review sends no daemon message.
+Review is a viewer. There is no vetted state, no stage/unstage/revert action, no syntax
+highlighting, and no persistent comment store. Closing the review sends no daemon message.
 
 ## Editors and overlays
 

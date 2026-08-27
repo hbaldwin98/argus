@@ -389,17 +389,6 @@ impl App {
                 self.review_base = self.review_base.next();
                 return self.open_review();
             }
-            KeyCode::Char('A') => {
-                if let Some(view) = &self.review {
-                    let _ = self.out.send(ClientMsg::AcknowledgeReview {
-                        checkout: view.review.checkout,
-                        target_snapshot: view.review.target_snapshot.clone(),
-                        expected_baseline: view.review.baseline_snapshot.clone(),
-                    });
-                    self.report("accepting review baseline…");
-                }
-                return;
-            }
             KeyCode::Char('f') => return self.open_change_picker(),
             KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc | KeyCode::Char('q') => {
                 return self.close_review()

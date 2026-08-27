@@ -4,9 +4,9 @@
 
 use std::cell::{Cell as ValueCell, RefCell};
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use argus_protocol::{ChangeKind, DiffLine, FileDiff, Hunk, LineKind, ReviewBase};
 
 const MAX_LINES_PER_FILE: usize = 5_000;
@@ -16,8 +16,6 @@ const BINARY_NOTE: &str = "binary file";
 const TOO_LARGE_NOTE: &str = "too large to display";
 
 pub struct GeneratedReview {
-    pub target_snapshot: String,
-    pub baseline_snapshot: Option<String>,
     pub files: Vec<FileDiff>,
 }
 
@@ -29,47 +27,25 @@ struct Snapshot {
 pub fn generate(path: &Path, base: ReviewBase) -> anyhow::Result<GeneratedReview> {
     let repo = git2::Repository::open(path)
         .with_context(|| format!("could not open Git repository at {}", path.display()))?;
-    let target = capture(&repo)?;
-    let baseline = baseline(&repo)?;
-    let old = match base {
-        ReviewBase::WorkingTree => head_tree(&repo),
-        ReviewBase::BranchPoint => branch_point_tree(&repo),
-        // First use deliberately falls back to uncommitted work. It does not
-        // establish a baseline until the client explicitly acknowledges it.
-        ReviewBase::SinceLastLooked => baseline.or_else(|| head_tree(&repo)),
+    let index = index_tree(&repo)?;
+    // The two sides Git keeps apart. Staged work is already in the index, so
+    // nothing untracked can be in it; unstaged work is everything the index
+    // has not been told about yet, untracked files included.
+    let (old, target) = match base {
+        ReviewBase::Staged => (head_tree(&repo), Snapshot { tree: index, untracked: HashSet::new() }),
+        ReviewBase::Unstaged => (Some(index), capture(&repo)?),
     };
     let files = render_diff(&repo, old, target.tree, &target.untracked)?;
-    Ok(GeneratedReview {
-        target_snapshot: target.tree.to_string(),
-        baseline_snapshot: baseline.map(|oid| oid.to_string()),
-        files,
-    })
+    Ok(GeneratedReview { files })
 }
 
-/// Move the hidden per-worktree ref only if its current value is exactly what
-/// the displayed review said it was.
-pub fn acknowledge(path: &Path, target: &str, expected: Option<&str>) -> anyhow::Result<()> {
-    let repo = git2::Repository::open(path)?;
-    let target = git2::Oid::from_str(target).context("invalid review snapshot")?;
-    repo.find_tree(target)
-        .context("review snapshot is no longer available")?;
-    let expected = expected
-        .map(git2::Oid::from_str)
-        .transpose()
-        .context("invalid expected review baseline")?;
-    let name = baseline_ref(&repo)?;
-    let mut tx = repo.transaction()?;
-    tx.lock_ref(&name)?;
-    let current = repo.find_reference(&name).ok().and_then(|r| r.target());
-    if current != expected {
-        return Err(anyhow!(
-            "review baseline changed; refresh before acknowledging"
-        ));
-    }
-    let sig = git2::Signature::now("Argus", "argus@localhost")?;
-    tx.set_target(&name, target, Some(&sig), "review acknowledged")?;
-    tx.commit()?;
-    Ok(())
+/// The index exactly as it stands, with no working-tree content laid over it.
+/// Writes a tree object and nothing else: the on-disk index is never rewritten.
+fn index_tree(repo: &git2::Repository) -> anyhow::Result<git2::Oid> {
+    let mut index = repo.index().context("could not read Git index")?;
+    index
+        .write_tree_to(repo)
+        .context("could not capture the Git index")
 }
 
 fn capture(repo: &git2::Repository) -> anyhow::Result<Snapshot> {
@@ -199,73 +175,8 @@ fn worktree_mode(_path: &Path, indexed: u32) -> u32 {
     indexed
 }
 
-fn baseline(repo: &git2::Repository) -> anyhow::Result<Option<git2::Oid>> {
-    let name = baseline_ref(repo)?;
-    match repo.find_reference(&name) {
-        Ok(reference) => {
-            let oid = reference.target().context("review baseline is symbolic")?;
-            repo.find_tree(oid)
-                .context("review baseline does not name a tree")?;
-            Ok(Some(oid))
-        }
-        Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(None),
-        Err(e) => Err(e.into()),
-    }
-}
-
-fn baseline_ref(repo: &git2::Repository) -> anyhow::Result<String> {
-    let git_dir: PathBuf = repo
-        .path()
-        .canonicalize()
-        .unwrap_or_else(|_| repo.path().to_path_buf());
-    // Hashing the private worktree Git directory as a blob gives a stable,
-    // ref-safe identity and keeps linked worktrees in the common ref store apart.
-    let identity = repo.blob(git_dir.to_string_lossy().as_bytes())?;
-    Ok(format!("refs/argus/review/{identity}"))
-}
-
 fn head_tree(repo: &git2::Repository) -> Option<git2::Oid> {
     repo.head().ok()?.peel_to_tree().ok().map(|tree| tree.id())
-}
-
-fn branch_point_tree(repo: &git2::Repository) -> Option<git2::Oid> {
-    let head = repo.head().ok()?;
-    let fork = || {
-        let mine = head.peel_to_commit().ok()?.id();
-        let other = fork_candidate(repo, &head)?;
-        let base = repo.merge_base(mine, other).ok()?;
-        repo.find_commit(base)
-            .ok()?
-            .tree()
-            .ok()
-            .map(|tree| tree.id())
-    };
-    fork().or_else(|| head.peel_to_tree().ok().map(|tree| tree.id()))
-}
-
-fn fork_candidate(repo: &git2::Repository, head: &git2::Reference) -> Option<git2::Oid> {
-    let name = head.shorthand().unwrap_or_default().to_string();
-    ["main", "master", "develop", "trunk"]
-        .iter()
-        .filter(|d| **d != name)
-        .find_map(|d| {
-            repo.find_branch(d, git2::BranchType::Local)
-                .ok()?
-                .get()
-                .peel_to_commit()
-                .ok()
-                .map(|c| c.id())
-        })
-        .or_else(|| {
-            repo.find_branch(&name, git2::BranchType::Local)
-                .ok()?
-                .upstream()
-                .ok()?
-                .get()
-                .peel_to_commit()
-                .ok()
-                .map(|c| c.id())
-        })
 }
 
 fn render_diff(
@@ -388,6 +299,7 @@ fn total_lines(file: &FileDiff) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     fn repo_with(files: &[(&str, &str)]) -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
@@ -425,40 +337,77 @@ mod tests {
         files.iter().find(|f| f.path == path).unwrap()
     }
 
-    fn commit_on_branch(path: &Path, branch: &str, files: &[(&str, &str)]) {
-        let repo = git2::Repository::open(path).unwrap();
-        let head = repo.head().unwrap().peel_to_commit().unwrap();
-        repo.branch(branch, &head, false).unwrap();
-        repo.set_head(&format!("refs/heads/{branch}")).unwrap();
-        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
-            .unwrap();
-        for (name, body) in files {
-            write(path, name, body);
-        }
-        commit(&repo, "branch work");
-    }
-
     #[test]
-    fn snapshot_contains_staged_unstaged_untracked_and_deletions() {
+    fn each_side_shows_only_its_own_half_of_the_work() {
         let (_dir, path) = repo_with(&[
-            ("staged.txt", "old\n"),
-            ("unstaged.txt", "old\n"),
-            ("gone.txt", "old\n"),
+            ("staged.txt", "old
+"),
+            ("unstaged.txt", "old
+"),
+            ("gone.txt", "old
+"),
         ]);
-        write(&path, "staged.txt", "staged\n");
+        write(&path, "staged.txt", "staged
+");
         let repo = git2::Repository::open(&path).unwrap();
         let mut index = repo.index().unwrap();
         index.add_path(Path::new("staged.txt")).unwrap();
         index.write().unwrap();
-        write(&path, "unstaged.txt", "working\n");
-        write(&path, "new.txt", "new\n");
+        write(&path, "unstaged.txt", "working
+");
+        write(&path, "new.txt", "new
+");
         std::fs::remove_file(path.join("gone.txt")).unwrap();
 
-        let review = generate(&path, ReviewBase::WorkingTree).unwrap();
-        assert_eq!(find(&review.files, "staged.txt").added_lines(), 1);
-        assert_eq!(find(&review.files, "unstaged.txt").added_lines(), 1);
-        assert_eq!(find(&review.files, "new.txt").kind, ChangeKind::Untracked);
-        assert_eq!(find(&review.files, "gone.txt").kind, ChangeKind::Deleted);
+        let staged = generate(&path, ReviewBase::Staged).unwrap();
+        assert_eq!(find(&staged.files, "staged.txt").added_lines(), 1);
+        assert!(
+            staged.files.iter().all(|f| f.path == "staged.txt"),
+            "only the indexed edit is staged: {:?}",
+            staged.files.iter().map(|f| &f.path).collect::<Vec<_>>()
+        );
+
+        let unstaged = generate(&path, ReviewBase::Unstaged).unwrap();
+        assert_eq!(find(&unstaged.files, "unstaged.txt").added_lines(), 1);
+        assert_eq!(find(&unstaged.files, "new.txt").kind, ChangeKind::Untracked);
+        assert_eq!(find(&unstaged.files, "gone.txt").kind, ChangeKind::Deleted);
+        assert!(
+            unstaged.files.iter().all(|f| f.path != "staged.txt"),
+            "an edit already in the index is not still unstaged"
+        );
+    }
+
+    /// The case the single collapsed endpoint could not express at all: one
+    /// file with a different diff on each side.
+    #[test]
+    fn a_partly_staged_file_shows_a_different_diff_on_each_side() {
+        let (_dir, path) = repo_with(&[("a.txt", "one
+")]);
+        write(&path, "a.txt", "two
+");
+        let repo = git2::Repository::open(&path).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("a.txt")).unwrap();
+        index.write().unwrap();
+        drop(index);
+        drop(repo);
+        write(&path, "a.txt", "three
+");
+
+        let added = |review: &GeneratedReview| {
+            find(&review.files, "a.txt")
+                .hunks
+                .iter()
+                .flat_map(|hunk| &hunk.lines)
+                .filter(|line| line.kind == LineKind::Added)
+                .map(|line| line.text.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(added(&generate(&path, ReviewBase::Staged).unwrap()), ["two"]);
+        assert_eq!(
+            added(&generate(&path, ReviewBase::Unstaged).unwrap()),
+            ["three"]
+        );
     }
 
     #[test]
@@ -466,7 +415,7 @@ mod tests {
         let (_dir, path) = repo_with(&[("a.txt", "one\ntwo\nthree\n")]);
         write(&path, "a.txt", "one\nTWO\nthree\n");
 
-        let review = generate(&path, ReviewBase::WorkingTree).unwrap();
+        let review = generate(&path, ReviewBase::Unstaged).unwrap();
         let file = find(&review.files, "a.txt");
         let removed = file.hunks[0]
             .lines
@@ -490,7 +439,7 @@ mod tests {
     fn untracked_directories_are_captured_as_files() {
         let (_dir, path) = repo_with(&[("a.txt", "one\n")]);
         write(&path, "sub/deep/new.txt", "new\n");
-        let review = generate(&path, ReviewBase::WorkingTree).unwrap();
+        let review = generate(&path, ReviewBase::Unstaged).unwrap();
         assert_eq!(find(&review.files, "sub/deep/new.txt").kind, ChangeKind::Untracked);
     }
 
@@ -503,7 +452,7 @@ mod tests {
             .collect();
         write(&path, "big.txt", &big);
 
-        let review = generate(&path, ReviewBase::WorkingTree).unwrap();
+        let review = generate(&path, ReviewBase::Unstaged).unwrap();
         let binary = find(&review.files, "blob.bin");
         assert_eq!(binary.note.as_deref(), Some(BINARY_NOTE));
         assert!(binary.hunks.is_empty());
@@ -517,45 +466,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         git2::Repository::init(dir.path()).unwrap();
         write(dir.path(), "a.txt", "one\n");
-        let review = generate(dir.path(), ReviewBase::WorkingTree).unwrap();
+        let review = generate(dir.path(), ReviewBase::Unstaged).unwrap();
         assert_eq!(find(&review.files, "a.txt").added_lines(), 1);
-    }
-
-    #[test]
-    fn branch_bases_keep_committed_work_out_of_uncommitted_review() {
-        let (_dir, path) = repo_with(&[("a.txt", "one\n")]);
-        commit_on_branch(&path, "feature", &[("b.txt", "committed\n")]);
-        write(&path, "c.txt", "working\n");
-
-        let uncommitted = generate(&path, ReviewBase::WorkingTree).unwrap();
-        assert!(uncommitted.files.iter().all(|file| file.path != "b.txt"));
-        let branch = generate(&path, ReviewBase::BranchPoint).unwrap();
-        assert_eq!(find(&branch.files, "b.txt").added_lines(), 1);
-        assert_eq!(find(&branch.files, "c.txt").added_lines(), 1);
-    }
-
-    #[test]
-    fn branch_point_includes_work_already_pushed_to_the_feature_upstream() {
-        let (_dir, path) = repo_with(&[("base.txt", "base\n")]);
-        commit_on_branch(&path, "feature", &[("pushed.txt", "pushed\n")]);
-
-        let repo = git2::Repository::open(&path).unwrap();
-        let pushed = repo.head().unwrap().target().unwrap();
-        repo.reference("refs/remotes/origin/feature", pushed, true, "test")
-            .unwrap();
-        repo.remote("origin", path.to_str().unwrap()).unwrap();
-        let mut feature = repo
-            .find_branch("feature", git2::BranchType::Local)
-            .unwrap();
-        feature.set_upstream(Some("origin/feature")).unwrap();
-        drop(feature);
-        write(&path, "local.txt", "local\n");
-        commit(&repo, "local work");
-        drop(repo);
-
-        let review = generate(&path, ReviewBase::BranchPoint).unwrap();
-        assert_eq!(find(&review.files, "pushed.txt").added_lines(), 1);
-        assert_eq!(find(&review.files, "local.txt").added_lines(), 1);
     }
 
     #[test]
@@ -568,7 +480,7 @@ mod tests {
             write(&path, &format!("large-{file}.txt"), &body);
         }
 
-        let review = generate(&path, ReviewBase::WorkingTree).unwrap();
+        let review = generate(&path, ReviewBase::Unstaged).unwrap();
         let rendered: usize = review.files.iter().map(total_lines).sum();
         assert!(rendered <= MAX_TOTAL_LINES, "rendered {rendered} lines");
         assert!(review
@@ -581,14 +493,14 @@ mod tests {
     fn rename_detection_reports_both_paths() {
         let (_dir, path) = repo_with(&[("old.txt", "same content\n")]);
         std::fs::rename(path.join("old.txt"), path.join("new.txt")).unwrap();
-        let review = generate(&path, ReviewBase::WorkingTree).unwrap();
+        let review = generate(&path, ReviewBase::Unstaged).unwrap();
         let file = find(&review.files, "new.txt");
         assert_eq!(file.kind, ChangeKind::Renamed);
         assert_eq!(file.old_path.as_deref(), Some("old.txt"));
     }
 
     #[test]
-    fn a_staged_rename_is_detected_from_the_synthetic_tree() {
+    fn a_staged_rename_is_detected_on_the_staged_side() {
         let (_dir, path) = repo_with(&[("old.txt", "same content\n")]);
         std::fs::rename(path.join("old.txt"), path.join("new.txt")).unwrap();
         let repo = git2::Repository::open(&path).unwrap();
@@ -597,7 +509,7 @@ mod tests {
         index.add_path(Path::new("new.txt")).unwrap();
         index.write().unwrap();
 
-        let review = generate(&path, ReviewBase::WorkingTree).unwrap();
+        let review = generate(&path, ReviewBase::Staged).unwrap();
         assert_eq!(find(&review.files, "new.txt").kind, ChangeKind::Renamed);
     }
 
@@ -605,77 +517,15 @@ mod tests {
     fn ignored_untracked_content_is_not_captured() {
         let (_dir, path) = repo_with(&[(".gitignore", "ignored.txt\n")]);
         write(&path, "ignored.txt", "secret\n");
-        assert!(generate(&path, ReviewBase::WorkingTree)
+        assert!(generate(&path, ReviewBase::Unstaged)
             .unwrap()
             .files
             .is_empty());
-    }
-
-    #[test]
-    fn first_since_last_looked_falls_back_without_creating_a_baseline() {
-        let (_dir, path) = repo_with(&[("a.txt", "old\n")]);
-        write(&path, "a.txt", "new\n");
-        let review = generate(&path, ReviewBase::SinceLastLooked).unwrap();
-        assert!(review.baseline_snapshot.is_none());
-        assert_eq!(review.files.len(), 1);
-        assert!(generate(&path, ReviewBase::SinceLastLooked)
-            .unwrap()
-            .baseline_snapshot
-            .is_none());
-    }
-
-    #[test]
-    fn acknowledged_baseline_is_durable_and_cas_protected() {
-        let (_dir, path) = repo_with(&[("a.txt", "old\n")]);
-        write(&path, "a.txt", "one\n");
-        let first = generate(&path, ReviewBase::SinceLastLooked).unwrap();
-        acknowledge(&path, &first.target_snapshot, None).unwrap();
-        drop(git2::Repository::open(&path).unwrap());
-        assert!(generate(&path, ReviewBase::SinceLastLooked)
-            .unwrap()
-            .files
-            .is_empty());
-
-        write(&path, "a.txt", "two\n");
-        let second = generate(&path, ReviewBase::SinceLastLooked).unwrap();
-        assert!(acknowledge(&path, &second.target_snapshot, None).is_err());
-        acknowledge(
-            &path,
-            &second.target_snapshot,
-            second.baseline_snapshot.as_deref(),
-        )
-            .unwrap();
-    }
-
-    #[test]
-    fn acknowledging_a_displayed_snapshot_does_not_hide_later_edits() {
-        let (_dir, path) = repo_with(&[("a.txt", "old\n")]);
-        write(&path, "a.txt", "displayed\n");
-        let displayed = generate(&path, ReviewBase::SinceLastLooked).unwrap();
-        write(&path, "a.txt", "later\n");
-
-        acknowledge(&path, &displayed.target_snapshot, None).unwrap();
-        let remaining = generate(&path, ReviewBase::SinceLastLooked).unwrap();
-        let file = find(&remaining.files, "a.txt");
-        assert!(file.hunks.iter().flat_map(|hunk| &hunk.lines).any(|line| {
-            line.kind == LineKind::Added && line.text == "later"
-        }));
-    }
-
-    #[test]
-    fn linked_worktrees_use_distinct_baseline_refs() {
-        let (_dir, path) = repo_with(&[("a.txt", "old\n")]);
-        let linked_root = tempfile::tempdir().unwrap();
-        let linked = linked_root.path().join("worktree");
-        let repo = git2::Repository::open(&path).unwrap();
-        repo.worktree("linked", &linked, None).unwrap();
-        let other = git2::Repository::open(&linked).unwrap();
-        assert_ne!(baseline_ref(&repo).unwrap(), baseline_ref(&other).unwrap());
     }
 
     #[test]
     fn capture_errors_are_not_successful_empty_reviews() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(generate(dir.path(), ReviewBase::WorkingTree).is_err());
+        assert!(generate(dir.path(), ReviewBase::Unstaged).is_err());
     }
 }

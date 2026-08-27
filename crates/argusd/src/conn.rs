@@ -397,8 +397,6 @@ fn dispatch_review(
                         request_id,
                         checkout,
                         base,
-                        target_snapshot: generated.target_snapshot,
-                        baseline_snapshot: generated.baseline_snapshot,
                         files: generated.files,
                     }),
                     Ok(Err(error)) => ServerMsg::ReviewFailed {
@@ -414,31 +412,6 @@ fn dispatch_review(
                 };
                 let _ = out_tx.send(message);
             }));
-        }),
-        ClientMsg::AcknowledgeReview {
-            checkout,
-            target_snapshot,
-            expected_baseline,
-        } => daemon.checkout_path(checkout).map(|path| {
-            let out_tx = out_tx.clone();
-            tokio::task::spawn_blocking(move || {
-                let message = match crate::diff::acknowledge(
-                    &path,
-                    &target_snapshot,
-                    expected_baseline.as_deref(),
-                ) {
-                    Ok(()) => ServerMsg::ReviewAcknowledged {
-                        checkout,
-                        target_snapshot,
-                    },
-                    Err(error) => ServerMsg::ReviewAcknowledgeFailed {
-                        checkout,
-                        target_snapshot,
-                        message: error.to_string(),
-                    },
-                };
-                let _ = out_tx.send(message);
-            });
         }),
         msg => return Err(msg),
     };
@@ -679,7 +652,7 @@ mod tests {
         h.send(ClientMsg::Review {
             request_id: 42,
             checkout,
-            base: ReviewBase::WorkingTree,
+            base: ReviewBase::Unstaged,
         });
 
         // The diff runs on a blocking thread, so the reply is not immediate.
@@ -691,7 +664,7 @@ mod tests {
             ServerMsg::Review(r) => {
                 assert_eq!(r.checkout, checkout);
                 assert_eq!(r.request_id, 42);
-                assert_eq!(r.base, ReviewBase::WorkingTree);
+                assert_eq!(r.base, ReviewBase::Unstaged);
                 assert_eq!(r.files[0].path, "a.txt");
             }
             other => panic!("unexpected {other:?}"),
@@ -711,7 +684,7 @@ mod tests {
             h.send(ClientMsg::Review {
                 request_id,
                 checkout,
-                base: ReviewBase::WorkingTree,
+                base: ReviewBase::Unstaged,
             });
         }
         drop(permit);
@@ -739,7 +712,7 @@ mod tests {
         h.send(ClientMsg::Review {
             request_id: 1,
             checkout: CheckoutId(9999),
-            base: ReviewBase::WorkingTree,
+            base: ReviewBase::Unstaged,
         });
         assert!(h.error().await.contains("no such checkout"));
     }

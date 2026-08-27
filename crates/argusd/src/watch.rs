@@ -164,7 +164,7 @@ mod tests {
     fn only_the_watched_file_wakes_the_reload() {
         let config = PathBuf::from("/cfg/projects.toml");
 
-        assert!(concerns(&[config.clone()], &config));
+        assert!(concerns(std::slice::from_ref(&config), &config));
         assert!(
             !concerns(&[PathBuf::from("/cfg/argusd.log")], &config),
             "the daemon logging a line must not read as a config edit"

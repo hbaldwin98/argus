@@ -832,7 +832,7 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
         ("j/k move   h/l change   esc close", th.dim)
     } else if matches!(app.overlay, Some(Overlay::Review)) {
-        ("j/k  ]/[ file  f jump  c comment  e edit  b base  A accept  esc close", th.dim)
+        ("j/k  ]/[ file  f jump  c comment  e edit  b staged/unstaged  esc close", th.dim)
     } else if app.overlay.is_some() {
         ("floating — ctrl-space then esc to close, x to kill   ctrl-v paste", th.dim)
     } else if app.focus == Focus::PaneContent {
@@ -2877,9 +2877,9 @@ mod tests {
         // Feedback the user asked for by pressing something — it is no use
         // to anyone if only errors are allowed on screen.
         let mut app = app_with_tree();
-        app.report("review baseline accepted");
+        app.report("4 changed vs staged");
         let bar = bar(&draw(&mut app));
-        assert!(bar.contains("review baseline accepted"), "{bar}");
+        assert!(bar.contains("4 changed vs staged"), "{bar}");
     }
 
     #[test]
@@ -2887,7 +2887,7 @@ mod tests {
         let th = Theme::default();
         let mut app = app_with_tree();
 
-        app.report("review baseline accepted");
+        app.report("4 changed vs staged");
         let buf = draw(&mut app);
         // Status bar is always the second-to-last row (height 20, status bar at row 18).
         let y = buf.area.height - 2;
@@ -3253,9 +3253,7 @@ mod tests {
         app.review = Some(crate::review::ReviewView::new(argus_protocol::Review {
             request_id: 1,
             checkout: CheckoutId(1),
-            base: argus_protocol::ReviewBase::WorkingTree,
-            target_snapshot: "target-1".to_string(),
-            baseline_snapshot: None,
+            base: argus_protocol::ReviewBase::Unstaged,
             files: vec![argus_protocol::FileDiff {
                 path: "src/thing.rs".to_string(),
                 old_path: None,
@@ -3376,7 +3374,7 @@ mod tests {
         let mut app = app_with_review();
         let out = lines(&draw(&mut app)).join("\n");
         assert!(out.contains("c comment"), "{out}");
-        assert!(out.contains("A accept"), "{out}");
+        assert!(out.contains("b staged/unstaged"), "{out}");
         assert!(!out.contains("s shell"), "not the tree keymap:\n{out}");
     }
 

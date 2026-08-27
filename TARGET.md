@@ -77,24 +77,16 @@ show the highest-severity descendant with distinct glyphs as well as color.
 
 ## Review contract
 
-Review compares one stable checkout endpoint against three bases:
+Review covers uncommitted work only, split into the two sides Git keeps apart: `HEAD` against the
+index, and the index against the working tree. Each side captures its own endpoint, so a file
+staged and then edited again shows the correct, different diff on each. The working-tree endpoint
+includes deleted, renamed, and non-ignored untracked content.
 
-- uncommitted work;
-- the branch point;
-- the last explicitly acknowledged review snapshot.
+Committed history is out of scope. Comparing a branch against a fork point, an upstream, or a
+remembered snapshot belongs to a Git client, not here.
 
-The endpoint includes committed, staged, unstaged, deleted, renamed, and non-ignored untracked
-content. All bases for one response compare against the same captured endpoint.
-
-“Since I last looked” advances only when the operator explicitly acknowledges the exact snapshot
-currently displayed. Closing, refreshing, changing base, opening an editor, commenting, losing a
-connection, or receiving an empty/error/stale response does not advance it. Compare-and-swap
-prevents two clients from moving a baseline backward. Changes made after the displayed snapshot
-remain visible on the next review.
-
-Review eventually supports vetted state keyed by content identity, stage/unstage/revert by hunk,
-durable line or range comments, agent selection, and lazy syntax highlighting. Re-editing a vetted
-file invalidates its vetted state.
+Review eventually supports durable line or range comments, agent selection, and lazy syntax
+highlighting. Staging, unstaging, and reverting are deliberately not Argus's job.
 
 ## Notes and context
 

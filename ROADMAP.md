@@ -24,25 +24,24 @@ imported once and retired; `projects.toml` is back to being configuration Argus 
   precedence (a real event locks out inference for that session), decay for an inferred `working`
   that will never be told to stop, the Windows answer where there is no foreground process group,
   and whether an inferred state is visually distinct from a reported one.
-- Surface the active tool in the pane note. Tool-start hooks already stand in for missing
-  lifecycle events — Cursor's `agent` reports `working` from `preToolUse` and
-  `beforeShellExecution`, with `stop` still the sole authority for `idle` — so what is left is
-  displaying which tool, not detecting that one ran. Extend the same fallback to any other
-  harness whose lifecycle hooks prove unreliable.
+- Extend tool-start hooks as a lifecycle fallback to any other harness whose own lifecycle events
+  prove unreliable. Cursor's `agent` already reports `working` from `preToolUse` and
+  `beforeShellExecution`, with `stop` still the sole authority for `idle`.
 - Add daemon-arbitrated auto-titling.
 - Expand the template schema only after lifecycle and permission semantics are stable.
 
 ## P5: Complete Review
 
-Review is the half of the premise that is still a viewer. Vetting and staging are what turn Argus
-from somewhere you watch agents work into somewhere you accept or reject what they produced.
+Review shows both sides of uncommitted work and nothing else — staged and unstaged, each with its
+own endpoint. What is left is making it durable rather than making it a Git client.
 
-- Track vetted content and invalidate it on edits.
-- Stage, unstage, and revert addressed hunks safely.
 - Persist review comments and let agents read them.
 - Select a comment recipient when several agents share a checkout.
 - Add syntax highlighting and lazy rendering where measurements justify them.
 - Decide whether to retain the current scrolling surface or adopt separate file and diff columns.
+
+Deliberately out of scope: staging, unstaging, and reverting hunks, and any base that reaches into
+committed history. Dedicated Git tools do those better.
 
 ## P6: Notes, Context, and Delegation
 

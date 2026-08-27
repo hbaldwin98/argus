@@ -6,32 +6,30 @@ use serde::{Deserialize, Serialize};
 
 use crate::ids::CheckoutId;
 
-/// What a review is a diff *against* (DESIGN.md §5), cycled with `b`.
+/// Which half of a checkout's uncommitted work a review shows, toggled with
+/// `b`. These are the two sides Git itself keeps apart, and a file modified
+/// on both sides has a different diff in each — which is the whole reason
+/// not to merge them into one endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReviewBase {
-    /// Uncommitted edits: `HEAD` against the working tree.
-    WorkingTree,
-    /// Everything this branch did: its fork point against the working tree,
-    /// falling back to the upstream branch where there is no fork point.
-    BranchPoint,
-    /// Changes after the last snapshot the operator explicitly accepted.
-    SinceLastLooked,
+    /// `git diff`: the index against the working tree.
+    Unstaged,
+    /// `git diff --cached`: `HEAD` against the index.
+    Staged,
 }
 
 impl ReviewBase {
     pub fn next(self) -> Self {
         match self {
-            ReviewBase::WorkingTree => ReviewBase::BranchPoint,
-            ReviewBase::BranchPoint => ReviewBase::SinceLastLooked,
-            ReviewBase::SinceLastLooked => ReviewBase::WorkingTree,
+            ReviewBase::Unstaged => ReviewBase::Staged,
+            ReviewBase::Staged => ReviewBase::Unstaged,
         }
     }
 
     pub fn label(self) -> &'static str {
         match self {
-            ReviewBase::WorkingTree => "uncommitted",
-            ReviewBase::BranchPoint => "this branch",
-            ReviewBase::SinceLastLooked => "last looked",
+            ReviewBase::Unstaged => "unstaged",
+            ReviewBase::Staged => "staged",
         }
     }
 }
@@ -118,9 +116,6 @@ pub struct Review {
     pub request_id: u64,
     pub checkout: CheckoutId,
     pub base: ReviewBase,
-    /// Opaque identities understood only by the daemon.
-    pub target_snapshot: String,
-    pub baseline_snapshot: Option<String>,
     pub files: Vec<FileDiff>,
 }
 
@@ -135,9 +130,8 @@ mod tests {
     use super::ReviewBase;
 
     #[test]
-    fn review_bases_cycle_through_all_three_choices() {
-        assert_eq!(ReviewBase::WorkingTree.next(), ReviewBase::BranchPoint);
-        assert_eq!(ReviewBase::BranchPoint.next(), ReviewBase::SinceLastLooked);
-        assert_eq!(ReviewBase::SinceLastLooked.next(), ReviewBase::WorkingTree);
+    fn review_bases_toggle_between_the_two_sides() {
+        assert_eq!(ReviewBase::Unstaged.next(), ReviewBase::Staged);
+        assert_eq!(ReviewBase::Staged.next(), ReviewBase::Unstaged);
     }
 }

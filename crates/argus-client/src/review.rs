@@ -306,9 +306,7 @@ mod tests {
         ReviewView::new(Review {
             request_id: 1,
             checkout: CheckoutId(1),
-            base: argus_protocol::ReviewBase::WorkingTree,
-            target_snapshot: "target-1".to_string(),
-            baseline_snapshot: None,
+            base: argus_protocol::ReviewBase::Unstaged,
             files,
         })
     }
