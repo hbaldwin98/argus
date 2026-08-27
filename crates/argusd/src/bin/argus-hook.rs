@@ -9,8 +9,6 @@
 //! argus-hook status working
 //! argus-hook checkout                            # reports the current directory
 //! argus-hook session <id>                        # records exact resume identity
-//! argus-hook delegate [--template NAME] "task"  # opens another agent pane
-//! argus-hook handoff [--template NAME]           # reads a handoff from stdin
 //! argus-hook comments                            # reads durable review feedback
 //! argus-hook say "text"                          # prints, calls nobody
 //! argus-hook <url> <token> [--note-from-stdin]  # the installed hook form
@@ -34,7 +32,7 @@
 //! continue — Cursor wants `permission`, Claude wants `decision` — never a
 //! human-readable message. Some agent CLIs inject a hook's stdout into the
 //! model's context, so staying silent keeps Argus's bookkeeping out of the
-//! conversation. The deliberate `say` and `delegate` commands do return
+//! conversation. The deliberate `say` and `comments` commands do return
 //! useful output.
 //!
 //! On Windows it is a GUI-subsystem binary. Not because it has a UI — it
@@ -52,10 +50,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-use argus_protocol::{
-    DelegateRequest, DelegateResponse, Endpoint, HandoffRequest, Report, ReviewComment,
-    MAX_DELEGATE_TASK_BYTES, MAX_HANDOFF_BYTES,
-};
+use argus_protocol::{Endpoint, Report, ReviewComment};
 
 const TIMEOUT: Duration = Duration::from_secs(2);
 const NOTE_FLAG: &str = "--note-from-stdin";
@@ -85,8 +80,6 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("status", status),
     ("checkout", checkout),
     ("session", session),
-    ("delegate", delegate),
-    ("handoff", handoff),
     ("comments", comments),
 ];
 
@@ -157,134 +150,6 @@ fn session(rest: &[&str]) {
             &id,
         );
     }
-}
-
-fn delegate(rest: &[&str]) {
-    let mut out = std::io::stdout();
-    let _ = writeln!(
-        out,
-        "{}",
-        delegation_message(rest, &env_url(), &env_token())
-    );
-    let _ = out.flush();
-}
-
-fn delegation_message(rest: &[&str], base_url: &str, token: &str) -> String {
-    match request_delegation(rest, base_url, token) {
-        Ok(response) => opened(response),
-        Err(error) => format!("could not open agent: {error}"),
-    }
-}
-
-/// What the agent that asked is told. The pane is open, but the harness
-/// inside it is still starting and is given its message once it can read
-/// one — so this says the sending is under way, rather than leaving the
-/// caller to conclude from a silent pane that it should ask again.
-fn opened(response: DelegateResponse) -> String {
-    format!(
-        "opened agent pane {}; it is sent its message once it finishes starting",
-        response.pane.0
-    )
-}
-
-fn request_delegation(
-    rest: &[&str],
-    base_url: &str,
-    token: &str,
-) -> Result<DelegateResponse, String> {
-    let request = delegate_args(rest).map_err(str::to_string)?;
-    request_agent(&request, Endpoint::Delegate, base_url, token)
-}
-
-fn request_agent(
-    request: &impl serde::Serialize,
-    endpoint: Endpoint,
-    base_url: &str,
-    token: &str,
-) -> Result<DelegateResponse, String> {
-    let body = serde_json::to_string(&request).map_err(|_| "invalid request".to_string())?;
-    let (status, response_body) = post_response(&endpoint_url(base_url, endpoint), token, &body)
-        .ok_or_else(|| "daemon unavailable".to_string())?;
-    if status != 201 {
-        let reason = response_body.trim();
-        return Err(if reason.is_empty() {
-            "daemon refused the request".to_string()
-        } else {
-            reason.to_string()
-        });
-    }
-    serde_json::from_str(&response_body).map_err(|_| "invalid daemon response".to_string())
-}
-
-fn delegate_args(rest: &[&str]) -> Result<DelegateRequest, &'static str> {
-    let (template, task_args) = if rest.first() == Some(&"--template") {
-        let template = rest
-            .get(1)
-            .filter(|name| !name.trim().is_empty())
-            .ok_or("--template requires a name and task")?;
-        (Some((*template).to_string()), &rest[2..])
-    } else {
-        (None, rest)
-    };
-    let task = task_args.join(" ");
-    if task.trim().is_empty() {
-        return Err("delegate requires a task");
-    }
-    if task.len() > MAX_DELEGATE_TASK_BYTES {
-        return Err("delegate task exceeds 2048 bytes");
-    }
-    Ok(DelegateRequest { template, task })
-}
-
-fn handoff(rest: &[&str]) {
-    let message = match read_handoff(std::io::stdin().lock()) {
-        Ok(input) => handoff_message(rest, &input, &env_url(), &env_token()),
-        Err(error) => format!("could not open agent: {error}"),
-    };
-    let mut out = std::io::stdout();
-    let _ = writeln!(out, "{message}");
-    let _ = out.flush();
-}
-
-fn read_handoff(reader: impl Read) -> Result<String, &'static str> {
-    let mut bytes = Vec::new();
-    reader
-        .take((MAX_HANDOFF_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(|_| "could not read handoff from stdin")?;
-    if bytes.len() > MAX_HANDOFF_BYTES {
-        return Err("handoff exceeds 32768 bytes");
-    }
-    String::from_utf8(bytes).map_err(|_| "handoff on stdin is not UTF-8")
-}
-
-fn handoff_message(rest: &[&str], input: &str, base_url: &str, token: &str) -> String {
-    match handoff_args(rest, input)
-        .map_err(str::to_string)
-        .and_then(|request| request_agent(&request, Endpoint::Handoff, base_url, token))
-    {
-        Ok(response) => opened(response),
-        Err(error) => format!("could not open agent: {error}"),
-    }
-}
-
-fn handoff_args(rest: &[&str], input: &str) -> Result<HandoffRequest, &'static str> {
-    let template = match rest {
-        [] => None,
-        ["--template", name] if !name.trim().is_empty() => Some((*name).to_string()),
-        ["--template"] | ["--template", _] => return Err("--template requires a name"),
-        _ => return Err("handoff accepts only --template NAME"),
-    };
-    if input.trim().is_empty() {
-        return Err("handoff requires a message on stdin");
-    }
-    if input.len() > MAX_HANDOFF_BYTES {
-        return Err("handoff exceeds 32768 bytes");
-    }
-    Ok(HandoffRequest {
-        template,
-        message: input.to_string(),
-    })
 }
 
 fn comments(rest: &[&str]) {
@@ -849,211 +714,6 @@ mod tests {
     #[test]
     fn checkout_without_a_path_reports_the_current_directory() {
         assert_eq!(reported_checkout(&[]), std::env::current_dir().ok());
-    }
-
-    #[test]
-    fn delegation_accepts_an_optional_template_and_joins_the_task() {
-        assert_eq!(
-            delegate_args(&["review", "DESIGN.md"]).unwrap(),
-            DelegateRequest {
-                template: None,
-                task: "review DESIGN.md".into(),
-            }
-        );
-        assert_eq!(
-            delegate_args(&["--template", "codex", "review", "the", "diff"]).unwrap(),
-            DelegateRequest {
-                template: Some("codex".into()),
-                task: "review the diff".into(),
-            }
-        );
-    }
-
-    #[test]
-    fn delegation_requires_a_task_and_a_template_name() {
-        assert_eq!(delegate_args(&[]), Err("delegate requires a task"));
-        assert_eq!(
-            delegate_args(&["--template"]),
-            Err("--template requires a name and task")
-        );
-        assert_eq!(
-            delegate_args(&["--template", "codex"]),
-            Err("delegate requires a task")
-        );
-    }
-
-    #[test]
-    fn delegation_posts_the_request_and_reports_the_created_pane() {
-        use std::io::BufRead as _;
-
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let response_body = serde_json::to_string(&DelegateResponse {
-            pane: argus_protocol::PaneId(9),
-        })
-        .unwrap();
-        let response = format!(
-            "HTTP/1.1 201 Created\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            response_body.len(),
-            response_body
-        );
-        let server = std::thread::spawn(move || {
-            let (stream, _) = listener.accept().unwrap();
-            let mut reader = std::io::BufReader::new(stream);
-            let mut head = String::new();
-            loop {
-                let mut line = String::new();
-                reader.read_line(&mut line).unwrap();
-                if line == "\r\n" {
-                    break;
-                }
-                head.push_str(&line);
-            }
-            let content_length = head
-                .lines()
-                .find_map(|line| line.strip_prefix("Content-Length: "))
-                .unwrap()
-                .parse()
-                .unwrap();
-            let mut body = vec![0; content_length];
-            reader.read_exact(&mut body).unwrap();
-            reader.get_mut().write_all(response.as_bytes()).unwrap();
-            (head, body)
-        });
-
-        let message = delegation_message(
-            &["--template", "codex", "review", "the", "diff"],
-            &format!("http://{address}/pane/4"),
-            "secret",
-        );
-        let (head, body) = server.join().unwrap();
-
-        assert!(message.starts_with("opened agent pane 9;"), "{message}");
-        assert!(head.starts_with("POST /pane/4/delegate HTTP/1.1\r\n"));
-        assert!(head.contains("\r\nAuthorization: Bearer secret\r\n"));
-        assert_eq!(
-            serde_json::from_slice::<DelegateRequest>(&body).unwrap(),
-            DelegateRequest {
-                template: Some("codex".into()),
-                task: "review the diff".into(),
-            }
-        );
-        assert_eq!(
-            delegation_message(&[], "", ""),
-            "could not open agent: delegate requires a task"
-        );
-    }
-
-    #[test]
-    fn handoff_accepts_stdin_and_an_optional_template() {
-        assert_eq!(
-            handoff_args(&[], "# Handoff\nContinue the review").unwrap(),
-            HandoffRequest {
-                template: None,
-                message: "# Handoff\nContinue the review".into(),
-            }
-        );
-        assert_eq!(
-            handoff_args(&["--template", "codex"], "continue").unwrap(),
-            HandoffRequest {
-                template: Some("codex".into()),
-                message: "continue".into(),
-            }
-        );
-    }
-
-    #[test]
-    fn handoff_requires_bounded_stdin_and_valid_options() {
-        assert_eq!(
-            handoff_args(&[], "   "),
-            Err("handoff requires a message on stdin")
-        );
-        assert_eq!(
-            handoff_args(&["--template"], "continue"),
-            Err("--template requires a name")
-        );
-        assert_eq!(
-            handoff_args(&["unexpected"], "continue"),
-            Err("handoff accepts only --template NAME")
-        );
-        assert_eq!(
-            handoff_args(&[], &"x".repeat(MAX_HANDOFF_BYTES + 1)),
-            Err("handoff exceeds 32768 bytes")
-        );
-    }
-
-    #[test]
-    fn handoff_stdin_is_read_through_a_bounded_utf8_buffer() {
-        assert_eq!(
-            read_handoff(std::io::Cursor::new("continue")),
-            Ok("continue".into())
-        );
-        assert_eq!(
-            read_handoff(std::io::Cursor::new(vec![b'x'; MAX_HANDOFF_BYTES + 1])),
-            Err("handoff exceeds 32768 bytes")
-        );
-        assert_eq!(
-            read_handoff(std::io::Cursor::new(vec![0xff])),
-            Err("handoff on stdin is not UTF-8")
-        );
-    }
-
-    #[test]
-    fn handoff_posts_stdin_without_using_the_checkout() {
-        use std::io::BufRead as _;
-
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let response_body = serde_json::to_string(&DelegateResponse {
-            pane: argus_protocol::PaneId(12),
-        })
-        .unwrap();
-        let response = format!(
-            "HTTP/1.1 201 Created\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            response_body.len(),
-            response_body
-        );
-        let server = std::thread::spawn(move || {
-            let (stream, _) = listener.accept().unwrap();
-            let mut reader = std::io::BufReader::new(stream);
-            let mut head = String::new();
-            loop {
-                let mut line = String::new();
-                reader.read_line(&mut line).unwrap();
-                if line == "\r\n" {
-                    break;
-                }
-                head.push_str(&line);
-            }
-            let content_length = head
-                .lines()
-                .find_map(|line| line.strip_prefix("Content-Length: "))
-                .unwrap()
-                .parse()
-                .unwrap();
-            let mut body = vec![0; content_length];
-            reader.read_exact(&mut body).unwrap();
-            reader.get_mut().write_all(response.as_bytes()).unwrap();
-            (head, body)
-        });
-
-        let message = handoff_message(
-            &["--template", "codex"],
-            "# Handoff\nContinue the review",
-            &format!("http://{address}/pane/4"),
-            "secret",
-        );
-        let (head, body) = server.join().unwrap();
-
-        assert!(message.starts_with("opened agent pane 12;"), "{message}");
-        assert!(head.starts_with("POST /pane/4/handoff HTTP/1.1\r\n"));
-        assert_eq!(
-            serde_json::from_slice::<HandoffRequest>(&body).unwrap(),
-            HandoffRequest {
-                template: Some("codex".into()),
-                message: "# Handoff\nContinue the review".into(),
-            }
-        );
     }
 
     #[test]

@@ -449,34 +449,16 @@ Every agent pane receives `ARGUS_HOOK`, `ARGUS_HOOK_URL`, `ARGUS_HOOK_TOKEN`, `A
 "$ARGUS_HOOK" title "repairing session restore"
 "$ARGUS_HOOK" checkout
 "$ARGUS_HOOK" session "harness-session-id"
-"$ARGUS_HOOK" delegate "review the current diff for correctness"
-"$ARGUS_HOOK" delegate --template codex "review DESIGN.md for contradictions"
-generate-handoff | "$ARGUS_HOOK" handoff
-generate-handoff | "$ARGUS_HOOK" handoff --template codex
 "$ARGUS_HOOK" comments
 ```
 
 `argus-hook say "text"` writes text to stdout for harnesses that inject command output into the
-agent's context. Lifecycle reporting forms are silent; `delegate` and `handoff` print the new pane
-ID or a concise refusal, and `comments` prints the checkout's stored review feedback. All forms
-always exit successfully so a stopped daemon cannot break an agent turn.
+agent's context. Lifecycle reporting forms are silent, and `comments` prints the checkout's stored
+review feedback. All forms always exit successfully so a stopped daemon cannot break an agent turn.
 Run `argus-hook checkout` after changing to another checkout in the same project;
 Argus moves the existing pane under that checkout without restarting it. An explicit path may follow
 `checkout`, but reporting the current directory is the normal form. `needs-review` marks work ready
 to inspect; `done` marks reviewed, completed work. A later `working` report resumes either state.
-
-`delegate` opens a normal independent agent pane in the caller's checkout and queues a single task.
-It inherits the caller's agent template unless `--template NAME` selects another configured template.
-Tasks are flattened to one line and limited to 2 KiB. Delegation is refused once the checkout has four
-live agents, including the caller. The new pane does not take focus from an attached TUI. Delegation
-does not create a read-only sandbox: both agents share the checkout's files, so use it for review-only
-work or create a worktree when the delegated agent needs to edit in isolation.
-
-`handoff` opens the same kind of fresh agent pane, but reads up to 32 KiB of session context from
-stdin. It inherits the caller's template unless `--template NAME` selects another one. Argus reduces
-the document to one logical line before sending it as the new harness's first message; this avoids
-submitting each source line as a separate prompt before an interactive harness enables bracketed
-paste. The document stays in memory and is not written to the checkout or a temporary file.
 
 Claude Code, Codex, OpenCode, AGY, Cursor Agent (`agent`), and the generic environment-only harness are built in. The Claude
 harness manages

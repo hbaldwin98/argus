@@ -14,10 +14,7 @@ pub use cell::{
 };
 pub use compact_str::{CompactString, ToCompactString};
 pub use framing::{read_msg, write_msg, FramingError};
-pub use hook::{
-    pane_path, pane_prefix, parse_pane_path, DelegateRequest, DelegateResponse, Endpoint,
-    HandoffRequest, Report, MAX_DELEGATE_TASK_BYTES, MAX_HANDOFF_BYTES,
-};
+pub use hook::{pane_path, pane_prefix, parse_pane_path, Endpoint, Report};
 pub use ids::{CheckoutId, IdGen, PaneId, ProjectId, RepositoryId, WorkspaceId};
 pub use message::{ClientMsg, DirEntry, DirListing, ServerMsg};
 pub use paths::{config_dir, instance_name};

@@ -100,16 +100,6 @@ impl PaneInput {
             .write_all(&paste_bytes(bytes, bracketed))?;
         Ok(())
     }
-
-    /// Whether the child has said it is ready to be typed at.
-    ///
-    /// Bracketed paste is the one thing every agent TUI turns on once its
-    /// prompt is drawn, so the mode answers "is this thing listening yet"
-    /// without knowing which harness is starting. Anything written before
-    /// that is swallowed by whatever is still booting.
-    pub fn ready_for_input(&self) -> bool {
-        self.parser.lock().unwrap().screen().bracketed_paste()
-    }
 }
 
 impl PaneRuntime {
@@ -846,24 +836,6 @@ mod tests {
         pane.input().write(b"echo argus-typed\r").unwrap();
         wait_for(&pane, |g| grid_contains(g, "argus-typed")).await;
         let _ = pane.kill();
-    }
-
-    #[tokio::test]
-    async fn a_pane_knows_when_its_child_started_reading_keys() {
-        // What delegation waits for before typing a task at a fresh agent.
-        // Every agent TUI turns bracketed paste on with its prompt, so the
-        // mode doubles as "this thing is listening now".
-        let pane = PaneRuntime::spawn(
-            PaneId(31),
-            &std::env::temp_dir(),
-            echo("\x1b[?2004hargus-prompt-up"),
-            |_| {},
-        )
-        .unwrap();
-
-        wait_for(&pane, |g| grid_contains(g, "argus-prompt-up")).await;
-
-        assert!(pane.input().ready_for_input());
     }
 
     #[tokio::test]

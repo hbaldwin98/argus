@@ -12,26 +12,6 @@ use serde::{Deserialize, Serialize};
 use crate::ids::PaneId;
 use crate::tree::PaneStatus;
 
-pub const MAX_DELEGATE_TASK_BYTES: usize = 2048;
-pub const MAX_HANDOFF_BYTES: usize = 32 * 1024;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DelegateRequest {
-    pub template: Option<String>,
-    pub task: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HandoffRequest {
-    pub template: Option<String>,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DelegateResponse {
-    pub pane: PaneId,
-}
-
 /// What an agent can say about itself.
 ///
 /// The wire spelling is the one in the URL, which is also the one a harness
@@ -93,8 +73,6 @@ pub enum Endpoint {
     Title,
     Checkout,
     Session,
-    Delegate,
-    Handoff,
     Comments,
 }
 
@@ -111,8 +89,6 @@ impl Endpoint {
             Endpoint::Title => Cow::Borrowed("title"),
             Endpoint::Checkout => Cow::Borrowed("checkout"),
             Endpoint::Session => Cow::Borrowed("session"),
-            Endpoint::Delegate => Cow::Borrowed("delegate"),
-            Endpoint::Handoff => Cow::Borrowed("handoff"),
             Endpoint::Comments => Cow::Borrowed("comments"),
         }
     }
@@ -142,8 +118,6 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "title" => Endpoint::Title,
         "checkout" => Endpoint::Checkout,
         "session" => Endpoint::Session,
-        "delegate" => Endpoint::Delegate,
-        "handoff" => Endpoint::Handoff,
         "comments" => Endpoint::Comments,
         _ => return None,
     };
@@ -162,8 +136,6 @@ mod tests {
             Endpoint::Title,
             Endpoint::Checkout,
             Endpoint::Session,
-            Endpoint::Delegate,
-            Endpoint::Handoff,
             Endpoint::Comments,
         ];
         all.extend(Report::ALL.into_iter().map(Endpoint::Status));
@@ -189,8 +161,6 @@ mod tests {
         assert_eq!(pane_path(PaneId(3), Endpoint::Title), "/pane/3/title");
         assert_eq!(pane_path(PaneId(3), Endpoint::Checkout), "/pane/3/checkout");
         assert_eq!(pane_path(PaneId(3), Endpoint::Session), "/pane/3/session");
-        assert_eq!(pane_path(PaneId(3), Endpoint::Delegate), "/pane/3/delegate");
-        assert_eq!(pane_path(PaneId(3), Endpoint::Handoff), "/pane/3/handoff");
         assert_eq!(pane_path(PaneId(3), Endpoint::Comments), "/pane/3/comments");
         assert_eq!(
             pane_path(PaneId(3), Endpoint::Status(Report::NeedsReview)),
@@ -208,6 +178,8 @@ mod tests {
             "/pane/7/status",
             "/pane/7/status/pondering",
             "/pane/7/title/extra",
+            "/pane/7/delegate",
+            "/pane/7/handoff",
             "/panes/7/title",
             "/status/idle",
             "",
