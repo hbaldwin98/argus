@@ -22,9 +22,9 @@ pub use ids::{CheckoutId, IdGen, PaneId, ProjectId, RepositoryId, WorkspaceId};
 pub use message::{ClientMsg, DirEntry, DirListing, ServerMsg};
 pub use paths::{config_dir, instance_name};
 pub use review::{
-    ChangeKind, CommitFile, CommitInfo, DiffLine, FileDiff, HighlightKind, HighlightSpan,
-    HistoryCommit, Hunk, LineKind, Review, ReviewAnchor, ReviewBase, ReviewComment,
-    MAX_HISTORY_COMMITS, MAX_REVIEW_COMMENTS, MAX_REVIEW_COMMENT_BYTES,
+    ChangeKind, CommitFile, CommitInfo, DiffLine, FileDiff, HighlightKind, HighlightSpan, Hunk,
+    LineKind, Review, ReviewAnchor, ReviewBase, ReviewComment, MAX_HISTORY_COMMITS,
+    MAX_REVIEW_COMMENTS, MAX_REVIEW_COMMENT_BYTES,
 };
 pub use tree::{
     CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneStatus, ProjectInfo,

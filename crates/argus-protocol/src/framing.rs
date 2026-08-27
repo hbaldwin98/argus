@@ -128,6 +128,10 @@ mod tests {
                 request_id: 7,
                 checkout: CheckoutId(2),
             },
+            ClientMsg::ListCommitFiles {
+                checkout: CheckoutId(2),
+                commit: "abcdef0123456789".to_string(),
+            },
             ClientMsg::Review {
                 request_id: 8,
                 checkout: CheckoutId(2),

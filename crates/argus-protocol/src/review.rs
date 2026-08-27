@@ -153,8 +153,9 @@ impl FileDiff {
 }
 
 /// Identity of a commit as the history overlay and a commit review title
-/// need it. File lists ride on [`HistoryCommit`]; a review of the commit
-/// carries the files as [`FileDiff`]s instead.
+/// need it. This is the whole of what listing history sends: the files a
+/// commit touched are a separate request per commit ([`CommitFile`]), and a
+/// review of the commit carries them as [`FileDiff`]s instead.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommitInfo {
     /// Full hex object id.
@@ -179,7 +180,7 @@ impl CommitInfo {
 }
 
 /// One path a commit touched, without the hunks — enough for the history
-/// overlay to list what changed, cheap enough to send fifty at once.
+/// overlay to list what changed once the viewer drills into that commit.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommitFile {
     pub path: String,
@@ -189,13 +190,6 @@ pub struct CommitFile {
     /// carrying the hunks that only a commit review needs.
     pub added: usize,
     pub removed: usize,
-}
-
-/// One row of `git log --stat` as the history overlay draws it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HistoryCommit {
-    pub info: CommitInfo,
-    pub files: Vec<CommitFile>,
 }
 
 /// Carries the checkout id so a client that moved on can drop a stale reply.

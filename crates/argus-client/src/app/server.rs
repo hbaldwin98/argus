@@ -133,6 +133,28 @@ impl App {
             } => {
                 self.receive_commits(request_id, checkout, commits);
             }
+            ServerMsg::CommitFiles {
+                checkout,
+                commit,
+                files,
+            } => {
+                self.receive_commit_files(checkout, &commit, files);
+            }
+            ServerMsg::CommitFilesFailed {
+                checkout,
+                commit,
+                message,
+            } => {
+                // Only worth an alert while the row it belongs to is still
+                // on screen, unfolded and waiting for it.
+                if self
+                    .history
+                    .as_mut()
+                    .is_some_and(|v| v.checkout == checkout && v.fail_files(&commit))
+                {
+                    self.alert(format!("commit files: {message}"));
+                }
+            }
             ServerMsg::CommitsFailed {
                 request_id,
                 checkout,
@@ -418,11 +440,30 @@ impl App {
         self.report(format!("{files} changed {label}"));
     }
 
+    fn receive_commit_files(
+        &mut self,
+        checkout: CheckoutId,
+        commit: &str,
+        files: Vec<argus_protocol::CommitFile>,
+    ) {
+        let Some(view) = self.history.as_mut() else {
+            return;
+        };
+        if view.checkout != checkout {
+            return;
+        }
+        let n = files.len();
+        if view.receive_files(commit, files) {
+            let s = if n == 1 { "" } else { "s" };
+            self.report(format!("{n} file{s} changed"));
+        }
+    }
+
     fn receive_commits(
         &mut self,
         request_id: u64,
         checkout: CheckoutId,
-        commits: Vec<argus_protocol::HistoryCommit>,
+        commits: Vec<argus_protocol::CommitInfo>,
     ) {
         if self.history_wanted != Some((checkout, request_id)) {
             return;

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
-use crate::review::{HistoryCommit, Review, ReviewAnchor, ReviewBase};
+use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
 use crate::tree::{ProjectInfo, WorkspaceInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,10 +79,20 @@ pub enum ClientMsg {
         #[serde(default)]
         commit: Option<String>,
     },
-    /// Newest commits on this checkout's HEAD, with the files each changed.
+    /// Newest commits on this checkout's HEAD, identities only. What each
+    /// one changed is [`ClientMsg::ListCommitFiles`], asked for one commit
+    /// at a time.
     ListCommits {
         request_id: u64,
         checkout: CheckoutId,
+    },
+    /// The paths one commit touched, for a history row the viewer has just
+    /// drilled into. Its own message because summarizing a commit means
+    /// diffing it against its parent: affordable once, ruinous a hundred
+    /// times over while the overlay is still opening.
+    ListCommitFiles {
+        checkout: CheckoutId,
+        commit: String,
     },
     /// Persist a review comment, then notify the selected live agent.
     ReviewComment {
@@ -240,7 +250,21 @@ pub enum ServerMsg {
     Commits {
         request_id: u64,
         checkout: CheckoutId,
-        commits: Vec<HistoryCommit>,
+        commits: Vec<CommitInfo>,
+    },
+    /// The answer to `ClientMsg::ListCommitFiles`. Correlated by `commit`
+    /// rather than a request id: the oid already names the row these files
+    /// belong to, and a second answer for it is the same answer.
+    CommitFiles {
+        checkout: CheckoutId,
+        commit: String,
+        files: Vec<CommitFile>,
+    },
+    /// A failed summary of one commit, correlated like `CommitFiles`.
+    CommitFilesFailed {
+        checkout: CheckoutId,
+        commit: String,
+        message: String,
     },
     /// A failed history walk. Correlated like `ReviewFailed` rather than
     /// folded into `Error`, so a client that has moved on drops it instead

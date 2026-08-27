@@ -505,14 +505,16 @@ The chosen side is a setting rather than a per-visit choice, and it survives clo
 the overlay.
 
 A third snapshot is one commit against its first parent, reached through the history overlay rather
-than the side toggle. `H` lists the newest 100 commits on the checkout's HEAD, each with the files
-it touched and their line counts, but without hunks — a hundred rendered diffs would be the capture
-cost the cap exists to avoid. Opening a row asks for that commit as an ordinary review, so a commit
-diff is the same viewer, the same navigation, and the same comment path as uncommitted work, with
-the comment's anchor recording which commit it was made against. `h` from a commit review returns
-to the list it was opened from; escape closes both. An unborn branch is an empty history rather
-than an error. Comparing a branch against its fork point, or against a remembered snapshot, remains
-out of scope: that is what a Git client is for.
+than the side toggle. `H` lists the newest 100 commits on the checkout's HEAD — identities only,
+which is one revwalk and no diffs at all. Naming the files a commit touched means diffing it
+against its parent, so that is asked for one commit at a time, when `l` drills into its row, and
+kept while the overlay stays open; `h` folds a commit back up before it closes the overlay.
+Drilling into a commit that is already unfolded, or into one of its file rows, asks for that commit
+as an ordinary review, so a commit diff is the same viewer, the same navigation, and the same
+comment path as uncommitted work, with the comment's anchor recording which commit it was made
+against. `h` from a commit review returns to the list it was opened from; escape closes both. An
+unborn branch is an empty history rather than an error. Comparing a branch against its fork point,
+or against a remembered snapshot, remains out of scope: that is what a Git client is for.
 
 Each request captures the index as a tree, and for the unstaged side also an immutable synthetic
 tree built from the index plus working-tree deletions, edits, and non-ignored untracked content.
