@@ -22,6 +22,7 @@ The workspace builds three executables:
 - Shows Git status, changed-file counts, and ahead/behind state.
 - Reviews staged and unstaged work as two separate diffs, the way Git itself keeps them apart.
 - Captures deleted, renamed, and non-ignored untracked content for review.
+- Reads a diff unified or split side by side, with comments meaning the same thing in either.
 - Opens files in a floating terminal editor, the terminal column, or an external editor.
 - Restores non-exited shell and agent panes after a daemon restart, reopening each agent's last
   conversation where its CLI can be asked to.
@@ -394,10 +395,16 @@ Other supported keys are forwarded to the child PTY.
 | `c` | Send a comment to an agent in the checkout; choose one when several are running |
 | `e` | Open the selected line in the editor |
 | `b` | Toggle between staged and unstaged changes |
+| `s` | Toggle between the unified and split diff |
 | `r` / `R` | Refresh |
 | `h`, Left, Escape, `q` | Close review |
 
-The chosen side persists across reopens. Review covers uncommitted work only; comparing against
+The split view puts each removal beside what replaced it, numbered from the old file on the left
+and the new one on the right; where one side has no counterpart it is left empty. It wants width,
+so it pairs well with a fullscreen pane. A comment means the same thing in either view, because a
+comment already records both line numbers.
+
+The chosen side and the chosen view both persist across reopens. Review covers uncommitted work only; comparing against
 committed history is left to a dedicated Git tool.
 
 Diffs are syntax highlighted for Rust, TypeScript, TSX and JavaScript, Python, C#, CSS, YAML, TOML,

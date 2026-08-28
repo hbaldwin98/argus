@@ -93,7 +93,9 @@ client, not here.
 Review supports durable line or range comments and live-agent selection. The daemon stores a
 comment before sending its terminal notification, and agents can read checkout-scoped feedback.
 Syntax highlighting is produced in the daemon as token-role spans; the client theme supplies
-colour. Staging, unstaging, and reverting are deliberately not Argus's job.
+colour. The same diff reads unified or split side by side, chosen in the client over data the wire
+already carries; a comment means the same thing in either, because it anchors by both line
+numbers. Staging, unstaging, and reverting are deliberately not Argus's job.
 
 ## Notes and context
 
