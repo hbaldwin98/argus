@@ -50,7 +50,10 @@ branch against a fork point or a remembered snapshot. Dedicated Git tools do tho
 
 Closes the loop: information currently flows only upward, from agents reporting to humans reading.
 
-- Implement Markdown notes and todo/pinned rollups.
+- Markdown notes and todo/pinned rollups have landed (DESIGN.md, "Notes"): projects and checkouts
+  hold plain Markdown, the checkbox line is the one construct read out of it, and its three states
+  roll up checkout to repository to project. Storage is schema v3, keyed by name and path so a note
+  outlives the ids it was written under.
 - Add scoped context read APIs, then policy-gated writes with audit records.
 - Add project feature boards where agents can claim tasks, report progress or blockers, and submit
   completion evidence for human review and acceptance.

@@ -9,6 +9,7 @@ mod history;
 mod keys;
 mod launch;
 mod mouse;
+mod notes;
 mod paste;
 mod profile;
 mod review;

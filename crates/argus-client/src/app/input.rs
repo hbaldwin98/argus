@@ -293,6 +293,10 @@ impl App {
             self.on_key_history(key);
             return;
         }
+        if matches!(self.overlay, Some(Overlay::Notes)) {
+            self.on_key_notes(key);
+            return;
+        }
         if let Some(Overlay::Settings { sel }) = &mut self.overlay {
             let sel = *sel;
             match key.code {
@@ -333,6 +337,88 @@ impl App {
         if !bytes.is_empty() {
             let _ = self.out.send(ClientMsg::Input { pane, bytes });
         }
+    }
+
+    /// Two keymaps, because a note is read far more often than it is
+    /// written. View mode navigates and ticks boxes with single keys; in
+    /// insert mode every key is a character, and `Esc` is the way back.
+    fn on_key_notes(&mut self, key: KeyEvent) {
+        let Some(view) = &mut self.notes else {
+            self.close_overlay();
+            return;
+        };
+        if view.mode == NoteMode::Insert {
+            match key.code {
+                KeyCode::Esc => {
+                    view.view_mode();
+                    // Leaving insert is the save point: it is the moment
+                    // the user stops typing, and it costs no extra key.
+                    self.save_notes();
+                }
+                KeyCode::Enter => view.newline(),
+                KeyCode::Backspace => view.backspace(),
+                KeyCode::Left => view.move_column(-1),
+                KeyCode::Right => view.move_column(1),
+                KeyCode::Up => view.move_by(-1),
+                KeyCode::Down => view.move_by(1),
+                KeyCode::Home => view.start_of_line(),
+                KeyCode::End => view.end_of_line(),
+                KeyCode::Tab => {
+                    for _ in 0..2 {
+                        view.insert_char(' ');
+                    }
+                }
+                KeyCode::Char(c) => view.insert_char(c),
+                _ => {}
+            }
+            return;
+        }
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => view.move_by(1),
+            KeyCode::Char('k') | KeyCode::Up => view.move_by(-1),
+            KeyCode::Char('d') | KeyCode::PageDown => view.move_by(10),
+            KeyCode::Char('u') | KeyCode::PageUp => view.move_by(-10),
+            KeyCode::Char('h') | KeyCode::Left => view.move_column(-1),
+            KeyCode::Char('l') | KeyCode::Right => view.move_column(1),
+            KeyCode::Char('g') => view.top_of_note(),
+            KeyCode::Char('G') => view.bottom_of_note(),
+            KeyCode::Char('0') | KeyCode::Home => view.start_of_line(),
+            KeyCode::Char('$') | KeyCode::End => view.end_of_line(),
+            KeyCode::Char('i') => view.insert_mode(),
+            KeyCode::Char('a') => {
+                view.move_column(1);
+                view.insert_mode();
+            }
+            KeyCode::Char('o') => view.open_below(),
+            // The tick goes to the daemon as a line and a state rather
+            // than as a new body: see `ClientMsg::SetTodo`.
+            KeyCode::Char(' ') | KeyCode::Enter => self.toggle_note_todo(),
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.save_notes();
+                self.close_overlay();
+            }
+            _ => {}
+        }
+    }
+
+    /// Ticks the box under the cursor, if there is one.
+    fn toggle_note_todo(&mut self) {
+        // An unsaved body means the line numbers the daemon holds are not
+        // the ones on screen, so the text goes first.
+        self.save_notes();
+        let Some(view) = &mut self.notes else {
+            return;
+        };
+        let Some((line, state)) = view.toggle_here() else {
+            self.report("no checkbox on this line");
+            return;
+        };
+        let target = view.target;
+        let _ = self.out.send(ClientMsg::SetTodo {
+            target,
+            line,
+            state,
+        });
     }
 
     fn on_key_pane_content(&mut self, key: KeyEvent) {
@@ -388,6 +474,7 @@ impl App {
             KeyCode::Char('H') => self.open_history(),
             KeyCode::Char('x') => self.kill_selected(),
             KeyCode::Char('p') => self.toggle_projects_collapsed(),
+            KeyCode::Char('m') => self.open_notes(),
             KeyCode::Char('N') => self.jump_to_next_attention(),
             _ => {}
         }

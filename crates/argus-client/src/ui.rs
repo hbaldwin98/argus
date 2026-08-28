@@ -19,7 +19,8 @@
 //!   layout feel cramped.
 
 use argus_protocol::{
-    ChildAgentInfo, Color as PColor, GitStatus, HighlightKind, HighlightSpan, LineKind, PaneStatus,
+    ChildAgentInfo, Color as PColor, GitStatus, HighlightKind, HighlightSpan, LineKind, NoteCounts,
+    PaneStatus, TodoState,
 };
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
@@ -32,6 +33,7 @@ use crate::app::{App, CheckoutRow, Focus, Overlay, Panel, PickerKind, Prompt, Se
 use crate::dirpicker::DirRow;
 use crate::grid::Grid;
 use crate::history::{HistoryRow, HistoryView};
+use crate::notes::NoteMode;
 use crate::review::{ReviewView, Row};
 use crate::theme::Theme;
 use argus_protocol::CursorShape;
@@ -190,6 +192,14 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option<CursorPlac
                     .flat_map(|r| r.checkouts.iter())
                     .filter_map(worst_pane_status)
                     .max_by_key(rank);
+                let mut detail = vec![Span::styled(
+                    plural(p.repositories.len(), "repository"),
+                    Style::default().fg(th.dim),
+                )];
+                // The rollup, not just this project's own note: from the
+                // leftmost column the question is whether anything in
+                // there is owed, not where it was written down.
+                detail.extend(note_detail(p.note_rollup(), p.has_note, th));
                 let item = Item::new(
                     vec![
                         status_dot(status, th),
@@ -198,10 +208,7 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option<CursorPlac
                             Style::default().fg(th.text).add_modifier(Modifier::BOLD),
                         ),
                     ],
-                    vec![Span::styled(
-                        plural(p.repositories.len(), "repository"),
-                        Style::default().fg(th.dim),
-                    )],
+                    detail,
                 );
                 if panes == 0 {
                     item
@@ -247,6 +254,11 @@ n  add one",
                         .iter()
                         .filter_map(worst_pane_status)
                         .max_by_key(rank);
+                    let mut detail = vec![Span::styled(
+                        plural(r.checkouts.len(), "checkout"),
+                        Style::default().fg(th.dim),
+                    )];
+                    detail.extend(note_detail(r.note_rollup(), false, th));
                     let item = Item::new(
                         vec![
                             status_dot(status, th),
@@ -255,10 +267,7 @@ n  add one",
                                 Style::default().fg(th.text).add_modifier(Modifier::BOLD),
                             ),
                         ],
-                        vec![Span::styled(
-                            plural(r.checkouts.len(), "checkout"),
-                            Style::default().fg(th.dim),
-                        )],
+                        detail,
                     );
                     if panes == 0 {
                         item
@@ -1061,6 +1070,16 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             "j/k  ]/[ commit  l files/open  h fold  r refresh  R review  esc close",
             th.dim,
         )
+    } else if matches!(app.overlay, Some(Overlay::Notes)) {
+        // The two modes have almost no keys in common, so the bar shows
+        // the one you are actually in.
+        match app.notes.as_ref().map(|v| v.mode) {
+            Some(NoteMode::Insert) => ("typing — esc to stop and save", th.accent),
+            _ => (
+                "j/k move  0/$ line  space tick  i insert  o new line  q close",
+                th.dim,
+            ),
+        }
     } else if app.overlay.is_some() {
         (
             "floating — ctrl-space then esc to close, x to kill   ctrl-v paste",
@@ -1180,6 +1199,20 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
             Some(h) => format!("history · {} commits", h.commits.len()),
             None => "history".to_string(),
         },
+        Overlay::Notes => match app.notes.as_ref() {
+            // The mode is in the title because it changes what every key
+            // does, and a modal surface that does not say which mode it is
+            // in is a trap.
+            Some(v) => format!(
+                "note · {}  ·  {}",
+                v.title,
+                match v.mode {
+                    NoteMode::View => "i edit · space tick · q close",
+                    NoteMode::Insert => "INSERT · esc to save",
+                }
+            ),
+            None => "note".to_string(),
+        },
     };
 
     f.render_widget(Clear, popup);
@@ -1206,7 +1239,172 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
             render_history(f, app, inner, th);
             None
         }
+        Overlay::Notes => render_notes(f, app, inner, th),
     }
+}
+
+/// The note, one line per line, with the checkbox lines picked out.
+///
+/// Returns where the hardware cursor goes: shown while typing, hidden in
+/// view mode, where a block on a random character would read as a
+/// selection rather than as an insertion point.
+fn render_notes(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option<CursorPlacement> {
+    // One row of the window pays for the count footer.
+    let body = Rect {
+        height: area.height.saturating_sub(1),
+        ..area
+    };
+    let view = app.notes.as_mut()?;
+    view.follow_cursor(body.height as usize);
+    let view = app.notes.as_ref()?;
+
+    let mut lines: Vec<Line> = Vec::new();
+    let todos = view.todos();
+    for (i, text) in view
+        .lines
+        .iter()
+        .enumerate()
+        .skip(view.scroll)
+        .take(body.height as usize)
+    {
+        let on_cursor = i == view.line;
+        let bar = if on_cursor {
+            Style::default().bg(th.sel_bg)
+        } else {
+            Style::default()
+        };
+        let state = todos.iter().find(|t| t.line == i).map(|t| t.state);
+        lines.push(Line::from(note_line(text, state, bar, th)));
+    }
+    if view.body().is_empty() {
+        lines = vec![Line::from(Span::styled(
+            "empty — press i to write something",
+            Style::default().fg(th.dim),
+        ))];
+    }
+    f.render_widget(Paragraph::new(lines), body);
+
+    let footer = Rect {
+        y: area.y + area.height.saturating_sub(1),
+        height: 1,
+        ..area
+    };
+    let mut summary = match &view.error {
+        Some(message) => vec![Span::styled(
+            format!("not saved: {message}"),
+            Style::default().fg(th.err),
+        )],
+        None => note_counts_spans(view.counts(), "  ", th),
+    };
+    if summary.is_empty() {
+        summary.push(Span::styled(
+            "no checkboxes yet — a line like \"- [ ] thing\" is counted",
+            Style::default().fg(th.dim),
+        ));
+    }
+    f.render_widget(Paragraph::new(Line::from(summary)), footer);
+
+    if view.mode != NoteMode::Insert {
+        return None;
+    }
+    // The column is a character offset; the screen wants cells.
+    let x: usize = view.lines[view.line]
+        .chars()
+        .take(view.column)
+        .map(|c| Span::raw(c.to_string()).width())
+        .sum();
+    let row = view.line.checked_sub(view.scroll)?;
+    Some(CursorPlacement {
+        position: Position::new(
+            body.x + (x as u16).min(body.width.saturating_sub(1)),
+            body.y + (row as u16).min(body.height.saturating_sub(1)),
+        ),
+        // A bar, because this is an insertion point in text rather than a
+        // terminal's own cursor.
+        shape: argus_protocol::CursorShape::SteadyBar,
+    })
+}
+
+/// One note line. A checkbox gets its marker coloured by state and its
+/// text struck through once done; everything else is prose.
+fn note_line(text: &str, state: Option<TodoState>, bar: Style, th: Theme) -> Vec<Span<'static>> {
+    let Some(state) = state else {
+        return vec![Span::styled(
+            text.to_string(),
+            Style::default().fg(th.text).patch(bar),
+        )];
+    };
+    // Split at the marker so only it is recoloured: the rest of the line
+    // is the user's text and keeps its indent and bullet verbatim.
+    let Some(open) = text.find('[') else {
+        return vec![Span::styled(
+            text.to_string(),
+            Style::default().fg(th.text).patch(bar),
+        )];
+    };
+    let (colour, glyph) = match state {
+        TodoState::Open => (th.warn, "☐"),
+        TodoState::Done => (th.ok, "☑"),
+        TodoState::Pinned => (th.accent, "★"),
+    };
+    let rest = &text[open + 3..];
+    let mut text_style = Style::default().fg(th.text).patch(bar);
+    if state == TodoState::Done {
+        text_style = Style::default()
+            .fg(th.muted)
+            .add_modifier(Modifier::CROSSED_OUT)
+            .patch(bar);
+    }
+    vec![
+        Span::styled(text[..open].to_string(), Style::default().fg(th.dim).patch(bar)),
+        Span::styled(glyph.to_string(), Style::default().fg(colour).patch(bar)),
+        Span::styled(rest.to_string(), text_style),
+    ]
+}
+
+/// Counts as they are shown: what is outstanding first, because it is the
+/// only one of the three that is a claim on anybody.
+///
+/// `gap` separates them — two spaces in the note's own footer, none in a
+/// tree row, where the detail line is already carrying git status and a
+/// column is thirteen characters wide.
+fn note_counts_spans(counts: NoteCounts, gap: &str, th: Theme) -> Vec<Span<'static>> {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut push = |text: String, colour| {
+        if !spans.is_empty() {
+            spans.push(Span::raw(gap.to_string()));
+        }
+        spans.push(Span::styled(text, Style::default().fg(colour)));
+    };
+    if counts.open > 0 {
+        push(format!("☐{}", counts.open), th.warn);
+    }
+    if counts.pinned > 0 {
+        push(format!("★{}", counts.pinned), th.accent);
+    }
+    if counts.done > 0 {
+        push(format!("☑{}", counts.done), th.dim);
+    }
+    spans
+}
+
+/// What a tree row says about its note, appended to the row's detail line.
+///
+/// A note with nothing to count still says it exists: the point of the
+/// mark is knowing there is something written down here, and "no open
+/// items" is not the same as "nothing written".
+fn note_detail(counts: NoteCounts, has_note: bool, th: Theme) -> Vec<Span<'static>> {
+    if !has_note && counts.is_empty() {
+        return Vec::new();
+    }
+    let mut spans = vec![Span::raw("  ")];
+    let counted = note_counts_spans(counts, " ", th);
+    if counted.is_empty() {
+        spans.push(Span::styled("✎", Style::default().fg(th.dim)));
+    } else {
+        spans.extend(counted);
+    }
+    spans
 }
 
 /// Each setting gets a name, its current value, and a line saying what
@@ -1723,6 +1921,7 @@ fn checkout_item(c: &argus_protocol::CheckoutInfo, th: Theme) -> Item<'static> {
             Style::default().fg(th.warn),
         ));
     }
+    detail.extend(note_detail(c.notes, c.has_note, th));
     Item::new(
         vec![
             status_dot(worst_pane_status(c), th),
@@ -2114,8 +2313,6 @@ mod tests {
             notes: Default::default(),
             has_note: false,
         }
-        notes: Default::default(),
-        has_note: false,
     }
 
     fn text_of(spans: &[Span]) -> String {
@@ -3569,6 +3766,156 @@ mod tests {
     #[ignore]
     fn dump_review() {
         let mut app = app_with_review();
+        for line in lines(&draw_at(&mut app, 100, 20)) {
+            println!("|{line}");
+        }
+    }
+
+    // --- notes ---------------------------------------------------------------
+
+    fn app_with_a_note(body: &str) -> App {
+        let mut app = app_with_tree();
+        let target = argus_protocol::NoteTarget::Checkout(CheckoutId(10));
+        let note = argus_protocol::Note::new(target, body.to_string());
+        app.notes = Some(crate::notes::NoteView::new(&note, "master".to_string()));
+        app.overlay = Some(Overlay::Notes);
+        app
+    }
+
+    #[test]
+    fn the_note_window_draws_its_text_with_the_boxes_picked_out() {
+        let mut app = app_with_a_note("# Plan
+- [ ] open one
+- [x] done one
+- [!] pinned one");
+        let rendered = lines(&draw(&mut app)).join("
+");
+
+        assert!(rendered.contains("note · master"), "{rendered}");
+        assert!(rendered.contains("# Plan"), "prose is drawn as written");
+        assert!(rendered.contains("☐ open one"), "{rendered}");
+        assert!(rendered.contains("☑ done one"), "{rendered}");
+        assert!(rendered.contains("★ pinned one"), "{rendered}");
+    }
+
+    #[test]
+    fn the_note_window_counts_what_is_in_it() {
+        let mut app = app_with_a_note("- [ ] a
+- [ ] b
+- [x] c
+- [!] d");
+        let rendered = lines(&draw(&mut app)).join("
+");
+        assert!(rendered.contains("☐2"), "{rendered}");
+        assert!(rendered.contains("★1"), "{rendered}");
+        assert!(rendered.contains("☑1"), "{rendered}");
+    }
+
+    #[test]
+    fn an_empty_note_says_how_to_start_one() {
+        let mut app = app_with_a_note("");
+        let rendered = lines(&draw(&mut app)).join("
+");
+        assert!(rendered.contains("press i to write something"), "{rendered}");
+    }
+
+    #[test]
+    fn the_title_says_which_mode_the_note_is_in() {
+        let mut app = app_with_a_note("x");
+        assert!(lines(&draw(&mut app)).join("
+").contains("i edit"));
+
+        app.notes.as_mut().unwrap().insert_mode();
+        let rendered = lines(&draw(&mut app)).join("
+");
+        assert!(rendered.contains("INSERT"), "{rendered}");
+        assert!(rendered.contains("esc to save"), "{rendered}");
+    }
+
+    #[test]
+    fn a_refused_write_replaces_the_counts_with_the_reason() {
+        let mut app = app_with_a_note("- [ ] a");
+        app.notes.as_mut().unwrap().error = Some("note exceeds 65536 bytes".to_string());
+        let rendered = lines(&draw(&mut app)).join("
+");
+        assert!(rendered.contains("not saved: note exceeds"), "{rendered}");
+    }
+
+    #[test]
+    fn a_checkout_with_open_items_says_so_from_its_row() {
+        let mut app = app_with_tree();
+        app.tree[0].repositories[0].checkouts[0].notes = NoteCounts {
+            open: 3,
+            done: 1,
+            pinned: 0,
+        };
+        app.tree[0].repositories[0].checkouts[0].has_note = true;
+        let rendered = lines(&draw_at(&mut app, 160, 20)).join("
+");
+        assert!(rendered.contains("☐3"), "{rendered}");
+    }
+
+    #[test]
+    fn a_note_with_nothing_to_count_still_marks_its_row() {
+        // "Nothing open" and "nothing written down" are different answers,
+        // and the row has to tell them apart.
+        let mut app = app_with_tree();
+        app.tree[0].repositories[0].checkouts[0].has_note = true;
+        let rendered = lines(&draw_at(&mut app, 160, 20)).join("
+");
+        assert!(rendered.contains("✎"), "{rendered}");
+    }
+
+    #[test]
+    fn a_row_with_no_note_says_nothing_about_notes() {
+        let mut app = app_with_tree();
+        let rendered = lines(&draw_at(&mut app, 160, 20)).join("
+");
+        assert!(!rendered.contains("✎"), "{rendered}");
+        assert!(!rendered.contains("☐"), "{rendered}");
+    }
+
+    #[test]
+    fn the_projects_column_shows_what_is_owed_beneath_it() {
+        let mut app = app_with_tree();
+        app.tree[0].repositories[0].checkouts[1].notes = NoteCounts {
+            open: 4,
+            done: 0,
+            pinned: 0,
+        };
+        app.tree[0].repositories[0].checkouts[1].has_note = true;
+        let rendered = lines(&draw_at(&mut app, 160, 20));
+        let project_row = rendered
+            .iter()
+            .find(|r| r.contains("repository"))
+            .expect("the project detail line");
+        assert!(project_row.contains("☐4"), "{project_row}");
+    }
+
+    #[test]
+    fn the_status_bar_offers_the_notes_own_keys_while_it_is_up() {
+        let mut app = app_with_a_note("- [ ] a");
+        let rendered = lines(&draw(&mut app)).join("
+");
+        assert!(rendered.contains("space tick"), "{rendered}");
+        assert!(!rendered.contains("ctrl-v paste"), "not the pane keymap");
+
+        app.notes.as_mut().unwrap().insert_mode();
+        let rendered = lines(&draw(&mut app)).join("
+");
+        assert!(rendered.contains("esc to stop and save"), "{rendered}");
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_note() {
+        let mut app = app_with_a_note("# Plan
+
+- [!] read the design doc first
+- [ ] wire the store
+- [x] parse the checkboxes
+
+prose about the plan");
         for line in lines(&draw_at(&mut app, 100, 20)) {
             println!("|{line}");
         }
