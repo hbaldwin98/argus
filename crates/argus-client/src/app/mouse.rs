@@ -123,6 +123,17 @@ impl App {
             return;
         }
         if !self.grids.get(&pane).is_some_and(|g| g.alternate_screen) {
+            // The normal screen is the one with history behind it, so a
+            // wheel there moves this client's view rather than reaching the
+            // child at all. A shell prints and scrolls away; this is the
+            // only way back to what it said.
+            match ev.kind {
+                MouseEventKind::ScrollUp => self.scroll_pane(pane, super::scroll::wheel_lines(true)),
+                MouseEventKind::ScrollDown => {
+                    self.scroll_pane(pane, super::scroll::wheel_lines(false))
+                }
+                _ => {}
+            }
             return;
         }
         let code = match ev.kind {

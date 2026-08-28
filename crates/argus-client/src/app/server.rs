@@ -57,10 +57,17 @@ impl App {
                 alternate_screen,
                 ..
             } => {
-                if self.grids.contains_key(&pane) {
+                if let Some(previous) = self.grids.get(&pane) {
+                    // A snapshot is how a resize reaches the client, so a
+                    // parked view has to be re-read: its rows are the old
+                    // width and nothing else will replace them.
+                    let parked = previous.scrollback.as_ref().map(|sb| sb.offset);
                     let mut grid = Grid::with_cursor(cells, cursor, mouse);
                     grid.alternate_screen = alternate_screen;
                     self.grids.insert(pane, grid);
+                    if let Some(offset) = parked {
+                        self.park_pane(pane, offset);
+                    }
                 }
             }
             ServerMsg::Damage {
@@ -76,6 +83,14 @@ impl App {
                     grid.mouse = mouse;
                     grid.alternate_screen = alternate_screen;
                 }
+            }
+            ServerMsg::ScrollbackRows {
+                pane,
+                offset,
+                depth,
+                cells,
+            } => {
+                self.receive_scrollback(pane, offset, depth, cells);
             }
             ServerMsg::PaneClosed { pane, code } => {
                 self.receive_pane_closed(pane, code);
