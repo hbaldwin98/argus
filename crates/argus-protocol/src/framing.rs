@@ -198,8 +198,12 @@ mod tests {
                         template: None,
                         children: Vec::new(),
                     }],
+                    notes: Default::default(),
+                    has_note: false,
                 }],
             }],
+            notes: Default::default(),
+            has_note: false,
         }]);
         let ServerMsg::Tree(tree) = roundtrip(&sent).await else {
             panic!("variant changed across the wire");

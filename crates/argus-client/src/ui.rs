@@ -2111,7 +2111,11 @@ mod tests {
                     children: Vec::new(),
                 })
                 .collect(),
+            notes: Default::default(),
+            has_note: false,
         }
+        notes: Default::default(),
+        has_note: false,
     }
 
     fn text_of(spans: &[Span]) -> String {
@@ -2231,6 +2235,8 @@ mod tests {
             id: ProjectId(3),
             name: "project".to_string(),
             repositories: vec![repository],
+            notes: Default::default(),
+            has_note: false,
         };
 
         let checkout_status = worst_pane_status(&project.repositories[0].checkouts[0]);
@@ -2564,6 +2570,8 @@ mod tests {
                                 children: Vec::new(),
                             },
                         ],
+                        notes: Default::default(),
+                        has_note: false,
                     },
                     CheckoutInfo {
                         id: CheckoutId(11),
@@ -2572,9 +2580,13 @@ mod tests {
                         primary: false,
                         git: None,
                         panes: vec![],
+                        notes: Default::default(),
+                        has_note: false,
                     },
                 ],
             }],
+            notes: Default::default(),
+            has_note: false,
         }]
     }
 
@@ -2637,6 +2649,8 @@ mod tests {
                 primary: i == 0,
                 git: None,
                 panes: Vec::new(),
+                notes: Default::default(),
+                has_note: false,
             })
             .collect();
         app.focus = Focus::Checkouts;
@@ -3093,6 +3107,8 @@ mod tests {
                     template: None,
                     children: Vec::new(),
                 }],
+                notes: Default::default(),
+                has_note: false,
             }],
         });
 

@@ -213,6 +213,42 @@ fn dispatch_pane(
             })
         }
         ClientMsg::Kill { pane } => daemon.close_pane(pane),
+        ClientMsg::GetNote { target } => daemon.note(target).map(|note| {
+            let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
+        }),
+        // A note write answers with the stored note rather than an
+        // acknowledgement: the client's editor then shows what the daemon
+        // holds instead of what it guessed the write would produce.
+        ClientMsg::SetNote { target, body } => match daemon.set_note(target, body) {
+            Ok(note) => {
+                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
+                Ok(())
+            }
+            Err(e) => {
+                let _ = out_tx.send(ServerMsg::NoteFailed {
+                    target,
+                    message: e.to_string(),
+                });
+                Ok(())
+            }
+        },
+        ClientMsg::SetTodo {
+            target,
+            line,
+            state,
+        } => match daemon.set_todo(target, line, state) {
+            Ok(note) => {
+                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
+                Ok(())
+            }
+            Err(e) => {
+                let _ = out_tx.send(ServerMsg::NoteFailed {
+                    target,
+                    message: e.to_string(),
+                });
+                Ok(())
+            }
+        },
         msg => return Err(msg),
     };
     Ok(result)
@@ -345,6 +381,42 @@ fn dispatch_workspace_query(
                 },
             },
         ),
+        ClientMsg::GetNote { target } => daemon.note(target).map(|note| {
+            let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
+        }),
+        // A note write answers with the stored note rather than an
+        // acknowledgement: the client's editor then shows what the daemon
+        // holds instead of what it guessed the write would produce.
+        ClientMsg::SetNote { target, body } => match daemon.set_note(target, body) {
+            Ok(note) => {
+                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
+                Ok(())
+            }
+            Err(e) => {
+                let _ = out_tx.send(ServerMsg::NoteFailed {
+                    target,
+                    message: e.to_string(),
+                });
+                Ok(())
+            }
+        },
+        ClientMsg::SetTodo {
+            target,
+            line,
+            state,
+        } => match daemon.set_todo(target, line, state) {
+            Ok(note) => {
+                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
+                Ok(())
+            }
+            Err(e) => {
+                let _ = out_tx.send(ServerMsg::NoteFailed {
+                    target,
+                    message: e.to_string(),
+                });
+                Ok(())
+            }
+        },
         msg => return Err(msg),
     };
     Ok(result)
@@ -370,6 +442,42 @@ fn dispatch_worktree_change(
                 d.remove_checkout(checkout).await
             })
         }
+        ClientMsg::GetNote { target } => daemon.note(target).map(|note| {
+            let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
+        }),
+        // A note write answers with the stored note rather than an
+        // acknowledgement: the client's editor then shows what the daemon
+        // holds instead of what it guessed the write would produce.
+        ClientMsg::SetNote { target, body } => match daemon.set_note(target, body) {
+            Ok(note) => {
+                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
+                Ok(())
+            }
+            Err(e) => {
+                let _ = out_tx.send(ServerMsg::NoteFailed {
+                    target,
+                    message: e.to_string(),
+                });
+                Ok(())
+            }
+        },
+        ClientMsg::SetTodo {
+            target,
+            line,
+            state,
+        } => match daemon.set_todo(target, line, state) {
+            Ok(note) => {
+                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
+                Ok(())
+            }
+            Err(e) => {
+                let _ = out_tx.send(ServerMsg::NoteFailed {
+                    target,
+                    message: e.to_string(),
+                });
+                Ok(())
+            }
+        },
         msg => return Err(msg),
     };
     Ok(result)
@@ -424,6 +532,42 @@ fn dispatch_branch_or_editor(
                     .map(|_| ())
             })
         }
+        ClientMsg::GetNote { target } => daemon.note(target).map(|note| {
+            let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
+        }),
+        // A note write answers with the stored note rather than an
+        // acknowledgement: the client's editor then shows what the daemon
+        // holds instead of what it guessed the write would produce.
+        ClientMsg::SetNote { target, body } => match daemon.set_note(target, body) {
+            Ok(note) => {
+                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
+                Ok(())
+            }
+            Err(e) => {
+                let _ = out_tx.send(ServerMsg::NoteFailed {
+                    target,
+                    message: e.to_string(),
+                });
+                Ok(())
+            }
+        },
+        ClientMsg::SetTodo {
+            target,
+            line,
+            state,
+        } => match daemon.set_todo(target, line, state) {
+            Ok(note) => {
+                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
+                Ok(())
+            }
+            Err(e) => {
+                let _ = out_tx.send(ServerMsg::NoteFailed {
+                    target,
+                    message: e.to_string(),
+                });
+                Ok(())
+            }
+        },
         msg => return Err(msg),
     };
     Ok(result)
@@ -494,6 +638,42 @@ fn dispatch_review(
             .map(|(id, delivered)| {
                 let _ = out_tx.send(ServerMsg::ReviewCommentSaved { id, delivered });
             }),
+        ClientMsg::GetNote { target } => daemon.note(target).map(|note| {
+            let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
+        }),
+        // A note write answers with the stored note rather than an
+        // acknowledgement: the client's editor then shows what the daemon
+        // holds instead of what it guessed the write would produce.
+        ClientMsg::SetNote { target, body } => match daemon.set_note(target, body) {
+            Ok(note) => {
+                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
+                Ok(())
+            }
+            Err(e) => {
+                let _ = out_tx.send(ServerMsg::NoteFailed {
+                    target,
+                    message: e.to_string(),
+                });
+                Ok(())
+            }
+        },
+        ClientMsg::SetTodo {
+            target,
+            line,
+            state,
+        } => match daemon.set_todo(target, line, state) {
+            Ok(note) => {
+                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
+                Ok(())
+            }
+            Err(e) => {
+                let _ = out_tx.send(ServerMsg::NoteFailed {
+                    target,
+                    message: e.to_string(),
+                });
+                Ok(())
+            }
+        },
         msg => return Err(msg),
     };
     Ok(result)

@@ -684,7 +684,11 @@ mod tests {
             primary,
             git: None,
             panes,
+            notes: Default::default(),
+            has_note: false,
         }
+        notes: Default::default(),
+        has_note: false,
     }
 
     fn repository(id: u64, name: &str, checkouts: Vec<CheckoutInfo>) -> RepositoryInfo {
@@ -718,6 +722,8 @@ mod tests {
                         checkout(11, "feat", false, vec![]),
                     ],
                 )],
+                notes: Default::default(),
+                has_note: false,
             },
             ProjectInfo {
                 id: ProjectId(2),
@@ -727,6 +733,8 @@ mod tests {
                     "other-repo",
                     vec![checkout(20, "main", true, vec![])],
                 )],
+                notes: Default::default(),
+                has_note: false,
             },
         ]
     }
@@ -1864,6 +1872,8 @@ second
                 "new-repo",
                 vec![checkout(30, "new", true, vec![])],
             )],
+            notes: Default::default(),
+            has_note: false,
         });
         h.app.on_server_msg(ServerMsg::Tree(t));
         assert_eq!(h.app.current_project().unwrap().name, "new");

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
+use crate::notes::NoteCounts;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PaneKind {
@@ -117,6 +118,14 @@ pub struct CheckoutInfo {
     /// for a linked worktree Argus created. The primary checkout can't be
     /// removed — see DESIGN.md §4 Level 2.
     pub primary: bool,
+    /// What this checkout's own note holds, so a row can show what it owes
+    /// without the client fetching a note per row.
+    #[serde(default)]
+    pub notes: NoteCounts,
+    /// Whether a note exists at all. Distinct from an empty `notes`: a note
+    /// of pure prose has nothing to count but is still there to open.
+    #[serde(default)]
+    pub has_note: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,11 +153,36 @@ pub struct RepositoryInfo {
     pub remote_branches: Vec<String>,
 }
 
+impl RepositoryInfo {
+    /// A repository holds no note of its own — notes attach to projects and
+    /// checkouts — so this is purely what its checkouts owe.
+    pub fn note_rollup(&self) -> NoteCounts {
+        self.checkouts.iter().map(|c| c.notes).sum()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectInfo {
     pub id: ProjectId,
     pub name: String,
     pub repositories: Vec<RepositoryInfo>,
+    /// What this project's own note holds.
+    #[serde(default)]
+    pub notes: NoteCounts,
+    #[serde(default)]
+    pub has_note: bool,
+}
+
+impl ProjectInfo {
+    /// The project's own note plus every checkout beneath it. What the
+    /// projects column shows: one number for everything in there.
+    pub fn note_rollup(&self) -> NoteCounts {
+        self.repositories
+            .iter()
+            .map(RepositoryInfo::note_rollup)
+            .sum::<NoteCounts>()
+            + self.notes
+    }
 }
 
 /// A named group of projects. Exactly one workspace is *open* at a time —
