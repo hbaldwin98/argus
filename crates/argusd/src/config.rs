@@ -126,7 +126,8 @@ pub struct HarnessConfig {
     #[serde(default = "default_shape")]
     pub shape: crate::harness::Shape,
     /// Event name -> what it reports, e.g. `turn_end = "idle"` or
-    /// `ask = { reports = "waiting", note = true }`.
+    /// `ask = { reports = "waiting", note = true }` or
+    /// `prompt = { reports = "working", title = true }`.
     #[serde(default)]
     pub events: std::collections::BTreeMap<String, EventConfig>,
     /// An event whose command's stdout the harness feeds to the model.
@@ -156,6 +157,8 @@ pub enum EventConfig {
         #[serde(default)]
         note: bool,
         #[serde(default)]
+        title: bool,
+        #[serde(default)]
         matcher: Option<String>,
         /// Top-level stdin JSON key containing the harness session ID.
         #[serde(default)]
@@ -175,6 +178,7 @@ impl EventConfig {
                 reports,
                 matcher: None,
                 note_from_stdin: false,
+                title_from_stdin: false,
                 session_id_key: None,
                 owns_session: false,
                 claim_only: false,
@@ -182,6 +186,7 @@ impl EventConfig {
             EventConfig::Detailed {
                 reports,
                 note,
+                title,
                 matcher,
                 session_id,
                 owns_session,
@@ -190,6 +195,7 @@ impl EventConfig {
                 reports,
                 matcher,
                 note_from_stdin: note,
+                title_from_stdin: title,
                 session_id_key: session_id,
                 owns_session,
                 claim_only: false,
@@ -308,6 +314,7 @@ const DEFAULT_CONFIG: &str = r#"# Argus projects. Each project groups one or mor
 # turn_start = "working"
 # turn_end = "idle"
 # ask = { reports = "waiting", note = true }   # note: stdin explains why
+# prompt = { reports = "working", title = true } # title: stdin is the user prompt
 # start = { reports = "idle", session_id = "session_id" }
 #
 # [[agent]]
@@ -507,6 +514,35 @@ SessionStart = { reports = "idle", matcher = "startup|resume|clear|fork" }
             harness.events[0].matcher.as_deref(),
             Some("startup|resume|clear|fork")
         );
+    }
+
+    #[test]
+    fn a_custom_harness_can_title_the_pane_from_a_prompt_event() {
+        let cfg = parse(
+            r#"
+[[harness]]
+name = "herdr"
+
+[harness.events]
+prompt = { reports = "working", title = true }
+ask = { reports = "waiting", note = true }
+"#,
+        );
+        let harness: crate::harness::Harness = cfg.harnesses.into_iter().next().unwrap().into();
+        let prompt = harness
+            .events
+            .iter()
+            .find(|e| e.name == "prompt")
+            .expect("prompt event");
+        assert!(prompt.title_from_stdin);
+        assert!(!prompt.note_from_stdin);
+        let ask = harness
+            .events
+            .iter()
+            .find(|e| e.name == "ask")
+            .expect("ask event");
+        assert!(ask.note_from_stdin);
+        assert!(!ask.title_from_stdin);
     }
 
     #[test]

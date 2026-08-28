@@ -71,6 +71,23 @@ function ownedByPane(sessionID) {
   return sessionID === rootSession;
 }
 
+async function reportTitle(sessionID, title) {
+  if (!BASE || !TOKEN || !sessionID || !title) return;
+  try {
+    await fetch(`${BASE}/title`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${TOKEN}`,
+        "X-Argus-Session": sessionID,
+      },
+      body: title,
+      signal: AbortSignal.timeout(2000),
+    });
+  } catch {
+    // Title is best-effort for the same reason as status.
+  }
+}
+
 // One line a human can act on, from whichever field this event carries it
 // in. An empty note is better than a serialized event under a row.
 function noteFrom(props) {
@@ -83,16 +100,31 @@ function noteFrom(props) {
   return typeof raw === "string" ? raw.split("\n")[0].trim().slice(0, 200) : "";
 }
 
+// The user's prompt, from the parts OpenCode hands chat.message. Assistant
+// turns never reach this hook.
+function titleFrom(output) {
+  const parts = output?.parts;
+  if (!Array.isArray(parts)) return "";
+  for (const part of parts) {
+    if (part?.type === "text" && typeof part.text === "string") {
+      const text = part.text.split("\n")[0].trim();
+      if (text) return text.slice(0, 200);
+    }
+  }
+  return "";
+}
+
 export const ArgusStatus = async () => {
   if (!BASE || !TOKEN) return {};
 
   return {
     // The instant signal: this fires when the prompt is submitted, before
     // any model call, which is what turns the row over as you hit enter.
-    "chat.message": async ({ sessionID }) => {
+    "chat.message": async ({ sessionID }, output = {}) => {
       if (ownedByPane(sessionID)) {
         await reportSession(rootSession);
         await report(rootSession, "working");
+        await reportTitle(rootSession, titleFrom(output));
       } else {
         await report(sessionID, "working");
       }

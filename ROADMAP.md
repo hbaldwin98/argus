@@ -22,7 +22,8 @@ imported once and retired; `projects.toml` is back to being configuration Argus 
 - Extend tool-start hooks as a lifecycle fallback to any other harness whose own lifecycle events
   prove unreliable. Cursor's `agent` already reports `working` from `preToolUse` and
   `beforeShellExecution`, with `stop` still the sole authority for `idle`.
-- Add daemon-arbitrated auto-titling.
+- Daemon-arbitrated auto-titling has landed (DESIGN.md, "Panes and terminal state"): prompt-submit
+  events name the row from the user's text; `argus-hook title` still refines it.
 - Expand the template schema only after lifecycle and permission semantics are stable.
 
 ## P5: Complete Review

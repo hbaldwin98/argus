@@ -318,7 +318,14 @@ backstop for one that was killed mid-turn. A background agent outliving its pare
 by the second of those: its next report lists it again. A pane lists at most eight. A report with no
 session at all — `argus-hook status` run by hand — is the pane's own voice, as before.
 
-Agents name their own rows. At session start a harness with a `context_event` is handed
+Agents name their own rows, and the daemon names them first. A prompt-submit
+event — Claude `UserPromptSubmit`, Cursor `beforeSubmitPrompt`, AGY
+`PreInvocation`, OpenCode `chat.message` — carries the user's text; the helper
+posts it to `/title` the same way an explicit `argus-hook title` does. Tool-start
+events are not titles: a working pane named "Shell" says less than the template
+already does. An agent can still refine the name once it knows the task; the
+next prompt replaces it. Children still cannot rename the parent row. At session
+start a harness with a `context_event` is handed
 instructions telling it to run `argus-hook title "..."` once it knows what it is working on, and
 `argus-hook status waiting "..."` when it needs a human, `needs-review` when work is ready to
 inspect, and `done` once reviewed and complete. The instructions also ask it to run

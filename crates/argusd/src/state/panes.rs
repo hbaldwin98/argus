@@ -805,12 +805,10 @@ impl Daemon {
         }
     }
 
-    /// Renames a pane at the agent's own request (`argus-hook title ...`).
-    ///
-    /// A column of four rows all reading "claude" says nothing about which
-    /// one is worth looking at; the agent knows what it is doing, so it is
-    /// the one asked. Ignored for a pane that has exited — a rename racing
-    /// a crash shouldn't relabel a dead row.
+    /// Renames a pane. The daemon does this from a prompt-submit event so
+    /// a column of agents is not four rows all called "claude"; the agent
+    /// can still refine it with `argus-hook title`. Ignored for a pane that
+    /// has exited — a rename racing a crash shouldn't relabel a dead row.
     pub(super) fn set_pane_title(&self, pane: PaneId, title: &str) {
         let title = clean_title(title);
         if title.is_empty() {

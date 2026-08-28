@@ -18,6 +18,7 @@ The workspace builds three executables:
 - Keeps panes running when the client closes.
 - Starts and discovers Git worktrees and switches branches from the TUI.
 - Runs Claude Code, Codex, OpenCode, Google Antigravity (AGY), Cursor Agent (`agent`), or custom command-line agent templates.
+- Names each agent pane from the user's latest prompt, so a column of running agents is not a list of identical template names.
 - Shows Git status, changed-file counts, and ahead/behind state.
 - Reviews staged and unstaged work as two separate diffs, the way Git itself keeps them apart.
 - Captures deleted, renamed, and non-ignored untracked content for review.
@@ -264,6 +265,7 @@ resume_id = ["--resume", "{session_id}"] # exact resume when identity was captur
 turn_start = "working"
 turn_end = "idle"
 ask = { reports = "waiting", note = true }
+prompt = { reports = "working", title = true }
 start = { reports = "idle", session_id = "session_id" }
 
 [[agent]]
@@ -275,6 +277,8 @@ harness = "herdr"
 `settings` is relative to the checkout. Event values are `working`, `idle`, `waiting`,
 `needs-review`, `done`, or `failed`.
 Set `note = true` when the harness sends a useful JSON or text explanation to the hook on stdin.
+Set `title = true` when that stdin carries the user's prompt, so the daemon can name the pane
+without waiting for the model to run `argus-hook title`.
 Set `session_id` to the top-level stdin JSON key containing its stable conversation identity.
 `resume_id` is an argv template; every `{session_id}` placeholder is replaced without invoking a
 shell. `resume` remains the broad fallback for session records created before identity capture.

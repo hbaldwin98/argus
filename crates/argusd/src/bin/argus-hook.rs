@@ -11,7 +11,7 @@
 //! argus-hook session <id>                        # records exact resume identity
 //! argus-hook comments                            # reads durable review feedback
 //! argus-hook say "text"                          # prints, calls nobody
-//! argus-hook <url> <token> [--note-from-stdin]  # the installed hook form
+//! argus-hook <url> <token> [--note-from-stdin] [--title-from-stdin]  # the installed hook form
 //! ```
 //!
 //! The named forms read `ARGUS_HOOK_URL` and `ARGUS_HOOK_TOKEN` from the
@@ -54,6 +54,7 @@ use argus_protocol::{Endpoint, Report, ReviewComment};
 
 const TIMEOUT: Duration = Duration::from_secs(2);
 const NOTE_FLAG: &str = "--note-from-stdin";
+const TITLE_FLAG: &str = "--title-from-stdin";
 const SESSION_KEY_FLAG: &str = "--session-id-from-stdin";
 const OWNS_SESSION_FLAG: &str = "--owns-session";
 /// Names the conversation a report comes from, so the daemon can tell the
@@ -197,7 +198,7 @@ fn comments_message(rest: &[&str], base_url: &str, token: &str) -> String {
 
 fn installed_hook(url: &str, rest: &[&str]) {
     let Some(token) = rest.first() else { return };
-    let (key, raw, note) = installed_input(rest);
+    let (key, raw, note, title) = installed_input(rest, std::io::stdin());
     let inherited_url = env_url();
     let inherited_token = env_token();
     let (url, token) = routed_hook(url, token, &inherited_url, &inherited_token);
@@ -206,6 +207,7 @@ fn installed_hook(url: &str, rest: &[&str]) {
     if rest.contains(&OWNS_SESSION_FLAG) {
         post_session_id(&url, &token, session.as_deref());
     }
+    post_title(&url, &token, &title, session.as_deref());
 
     let mut out = std::io::stdout();
     let _ = writeln!(
@@ -244,20 +246,28 @@ fn env_instructions() -> String {
     std::env::var("ARGUS_INSTRUCTIONS").unwrap_or_default()
 }
 
-fn installed_input<'a>(rest: &'a [&str]) -> (Option<&'a str>, Option<String>, String) {
+fn installed_input<'a>(
+    rest: &'a [&str],
+    stdin: impl Read,
+) -> (Option<&'a str>, Option<String>, String, String) {
     let key = rest
         .iter()
         .position(|arg| *arg == SESSION_KEY_FLAG)
         .and_then(|index| rest.get(index + 1))
         .copied();
-    let raw =
-        (rest.contains(&NOTE_FLAG) || key.is_some()).then(|| read_hook_input(std::io::stdin()));
+    let raw = (rest.contains(&NOTE_FLAG) || rest.contains(&TITLE_FLAG) || key.is_some())
+        .then(|| read_hook_input(stdin));
     let note = if rest.contains(&NOTE_FLAG) {
         raw.as_deref().map(note_from).unwrap_or_default()
     } else {
         String::new()
     };
-    (key, raw, note)
+    let title = if rest.contains(&TITLE_FLAG) {
+        raw.as_deref().map(title_from).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    (key, raw, note, title)
 }
 
 /// Records the conversation identity Argus resumes this pane with. Only the
@@ -269,6 +279,15 @@ fn post_session_id(url: &str, token: &str, id: Option<&str>) {
     };
     if let Some(base) = pane_base(url) {
         let _ = post_as(&endpoint_url(&base, Endpoint::Session), token, id, Some(id));
+    }
+}
+
+fn post_title(url: &str, token: &str, title: &str, session: Option<&str>) {
+    if title.is_empty() {
+        return;
+    }
+    if let Some(base) = pane_base(url) {
+        let _ = post_as(&endpoint_url(&base, Endpoint::Title), token, title, session);
     }
 }
 
@@ -436,6 +455,39 @@ fn note_from(raw: &str) -> String {
         .find(|l| !l.is_empty())
         .unwrap_or_default()
         .to_string()
+}
+
+/// The user's prompt, when a harness event carries one. Tool names and
+/// session bookkeeping are not titles — a working pane named "Shell" says
+/// less than the template already does.
+fn title_from(raw: &str) -> String {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return raw
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or_default()
+            .to_string();
+    };
+    for key in ["prompt", "query", "user_message", "userMessage", "text"] {
+        if let Some(s) = json_prompt_string(&v, key) {
+            return s;
+        }
+    }
+    String::new()
+}
+
+fn json_prompt_string(v: &serde_json::Value, key: &str) -> Option<String> {
+    let field = v.get(key)?;
+    if let Some(s) = field.as_str().map(str::trim).filter(|s| !s.is_empty()) {
+        return Some(s.to_string());
+    }
+    field
+        .get("text")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// Best-effort POST. Every error is discarded by the caller; the return type
@@ -701,6 +753,102 @@ mod tests {
         // Better an empty note than a wall of serialized event under a row.
         assert_eq!(note_from(r#"{"session_id":"x","cwd":"/tmp"}"#), "");
         assert_eq!(note_from(""), "");
+    }
+
+    #[test]
+    fn a_prompt_event_gives_up_the_text_the_daemon_should_name_the_row() {
+        // Cursor beforeSubmitPrompt and Claude UserPromptSubmit both put
+        // the user's text on `prompt`. That is what a column of "claude"
+        // rows is missing: the task, without waiting for the model to
+        // remember `argus-hook title`.
+        assert_eq!(
+            title_from(
+                r#"{"conversation_id":"c","prompt":"fixing the pty deadlock","attachments":[]}"#
+            ),
+            "fixing the pty deadlock"
+        );
+        assert_eq!(
+            title_from(r#"{"session_id":"s","prompt":"  review split view  "}"#),
+            "review split view"
+        );
+    }
+
+    #[test]
+    fn a_tool_start_event_is_not_a_title() {
+        // preToolUse stdin names a tool. Using that as the row would label
+        // every working pane "Shell".
+        assert_eq!(
+            title_from(r#"{"conversation_id":"c","tool_name":"Shell","toolCall":{"name":"Bash"}}"#),
+            ""
+        );
+        assert_eq!(title_from(r#"{"session_id":"x","cwd":"/tmp"}"#), "");
+    }
+
+    #[test]
+    fn a_title_flag_reads_the_prompt_without_turning_it_into_a_note() {
+        let raw = r#"{"conversation_id":"c","prompt":"fixing the pty deadlock"}"#;
+        let (key, body, note, title) = installed_input(
+            &["tok", TITLE_FLAG, SESSION_KEY_FLAG, "conversation_id"],
+            std::io::Cursor::new(raw),
+        );
+        assert_eq!(key, Some("conversation_id"));
+        assert_eq!(body.as_deref(), Some(raw));
+        assert_eq!(note, "");
+        assert_eq!(title, "fixing the pty deadlock");
+    }
+
+    #[test]
+    fn without_the_title_flag_a_prompt_event_does_not_rename_the_row() {
+        let (key, _, note, title) = installed_input(
+            &["tok", SESSION_KEY_FLAG, "conversation_id"],
+            std::io::Cursor::new(r#"{"conversation_id":"c","prompt":"secret task"}"#),
+        );
+        assert_eq!(key, Some("conversation_id"));
+        assert_eq!(note, "");
+        assert_eq!(title, "");
+    }
+
+    #[test]
+    fn a_prompt_title_posts_to_the_pane_title_endpoint() {
+        use std::io::BufRead as _;
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = std::io::BufReader::new(stream);
+            let mut head = String::new();
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+                head.push_str(&line);
+            }
+            let len = head
+                .lines()
+                .find_map(|line| line.strip_prefix("Content-Length: "))
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(0);
+            let mut body = vec![0; len];
+            reader.read_exact(&mut body).unwrap();
+            (head, String::from_utf8(body).unwrap())
+        });
+
+        post_title(
+            &format!("http://{address}/pane/7/status/working"),
+            "tok",
+            "fixing the pty deadlock",
+            Some("c"),
+        );
+        let (head, body) = server.join().unwrap();
+        assert!(
+            head.starts_with("POST /pane/7/title HTTP/1.1\r\n"),
+            "{head}"
+        );
+        assert!(head.contains("\r\nX-Argus-Session: c\r\n"), "{head}");
+        assert_eq!(body, "fixing the pty deadlock");
     }
 
     #[test]

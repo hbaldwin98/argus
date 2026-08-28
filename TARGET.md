@@ -58,7 +58,9 @@ shown as shared; optional project exclusivity can make that a hard block.
 
 Templates may define command arguments, environment, prompt interpolation, pinned notes,
 permissions, one-shot behavior, sandboxing, redaction, and harness-specific resume behavior.
-Template identity and display title are separate persisted fields.
+Template identity and display title are separate persisted fields. The daemon
+names a pane from the latest user prompt a harness reports; an agent may refine
+that name with an explicit title command.
 
 The target state model is:
 

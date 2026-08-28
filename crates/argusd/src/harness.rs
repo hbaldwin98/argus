@@ -66,6 +66,11 @@ pub struct Event {
     /// the text saying what it is waiting for.
     #[serde(default)]
     pub note_from_stdin: bool,
+    /// Whether this event's stdin carries the user's prompt, which the
+    /// daemon should use as the pane's title. Prompt-submit events do;
+    /// tool-start events must not, or every row is named after a tool.
+    #[serde(default)]
+    pub title_from_stdin: bool,
     /// Optional top-level JSON key whose string value identifies the session.
     /// Every event that has one tags its report with it, which is how a
     /// report from an agent spawned inside the pane is told apart from the
@@ -188,6 +193,7 @@ impl Harness {
                     reports: Report::Working,
                     matcher: None,
                     note_from_stdin: false,
+                    title_from_stdin: true,
                     session_id_key: Some("session_id".into()),
                     owns_session: false,
                     claim_only: false,
@@ -197,6 +203,7 @@ impl Harness {
                     reports: Report::Idle,
                     matcher: None,
                     note_from_stdin: false,
+                    title_from_stdin: false,
                     session_id_key: Some("session_id".into()),
                     owns_session: false,
                     claim_only: false,
@@ -207,6 +214,7 @@ impl Harness {
                     matcher: None,
                     // Carries the text of what it is asking for.
                     note_from_stdin: true,
+                    title_from_stdin: false,
                     session_id_key: Some("session_id".into()),
                     owns_session: false,
                     claim_only: false,
@@ -218,6 +226,7 @@ impl Harness {
                     // is still running, so it must not make the pane idle.
                     matcher: Some("startup|resume|clear|fork".into()),
                     note_from_stdin: false,
+                    title_from_stdin: false,
                     session_id_key: Some("session_id".into()),
                     owns_session: true,
                     claim_only: false,
@@ -250,6 +259,7 @@ impl Harness {
                 reports: Report::Idle,
                 matcher: Some("startup|resume|clear".into()),
                 note_from_stdin: false,
+                title_from_stdin: false,
                 session_id_key: Some("session_id".into()),
                 owns_session: true,
                 claim_only: false,
@@ -311,6 +321,7 @@ impl Harness {
                     reports: Report::Working,
                     matcher: None,
                     note_from_stdin: false,
+                    title_from_stdin: true,
                     session_id_key: Some("conversationId".into()),
                     owns_session: true,
                     claim_only: false,
@@ -320,6 +331,7 @@ impl Harness {
                     reports: Report::Idle,
                     matcher: None,
                     note_from_stdin: false,
+                    title_from_stdin: false,
                     session_id_key: Some("conversationId".into()),
                     owns_session: false,
                     claim_only: false,
@@ -356,6 +368,7 @@ impl Harness {
                     reports: Report::Idle,
                     matcher: None,
                     note_from_stdin: false,
+                    title_from_stdin: false,
                     session_id_key: Some("conversation_id".into()),
                     owns_session: true,
                     claim_only: true,
@@ -365,6 +378,7 @@ impl Harness {
                     reports: Report::Working,
                     matcher: None,
                     note_from_stdin: false,
+                    title_from_stdin: true,
                     session_id_key: Some("conversation_id".into()),
                     owns_session: false,
                     claim_only: false,
@@ -374,6 +388,7 @@ impl Harness {
                     reports: Report::Working,
                     matcher: None,
                     note_from_stdin: false,
+                    title_from_stdin: false,
                     session_id_key: Some("conversation_id".into()),
                     owns_session: false,
                     claim_only: false,
@@ -383,6 +398,7 @@ impl Harness {
                     reports: Report::Working,
                     matcher: None,
                     note_from_stdin: false,
+                    title_from_stdin: false,
                     session_id_key: Some("conversation_id".into()),
                     owns_session: false,
                     claim_only: false,
@@ -392,6 +408,7 @@ impl Harness {
                     reports: Report::Idle,
                     matcher: None,
                     note_from_stdin: false,
+                    title_from_stdin: false,
                     session_id_key: Some("conversation_id".into()),
                     owns_session: false,
                     claim_only: false,
@@ -817,16 +834,7 @@ fn status_entry(
     bake_command: bool,
 ) -> Value {
     let mut args = vec![event_target_url(pane, port, event), token.to_string()];
-    if event.note_from_stdin {
-        args.push(NOTE_FLAG.to_string());
-    }
-    if let Some(key) = &event.session_id_key {
-        args.push(SESSION_KEY_FLAG.to_string());
-        args.push(key.clone());
-    }
-    if event.owns_session {
-        args.push(OWNS_SESSION_FLAG.to_string());
-    }
+    push_event_flags(&mut args, event);
     if command_string {
         let line = if bake_command {
             baked_command_line(command, pane, port, token, event)
@@ -866,6 +874,8 @@ const PLUGIN_MARKER: &str = "argus:managed-plugin";
 /// the pane's note. Only passed on events that actually supply one — the
 /// helper must never block on a stdin nobody is writing to.
 pub const NOTE_FLAG: &str = "--note-from-stdin";
+/// Same stdin, posted as the pane title. Prompt-submit events only.
+pub const TITLE_FLAG: &str = "--title-from-stdin";
 pub const SESSION_KEY_FLAG: &str = "--session-id-from-stdin";
 /// Marks the one event per harness that may claim the pane's resume
 /// identity. Without it a CLI started from inside a pane would overwrite
@@ -881,16 +891,7 @@ fn baked_command_line(helper: &str, pane: PaneId, port: u16, token: &str, event:
         event_target_url(pane, port, event),
         token.to_string(),
     ];
-    if event.note_from_stdin {
-        parts.push(NOTE_FLAG.to_string());
-    }
-    if let Some(key) = &event.session_id_key {
-        parts.push(SESSION_KEY_FLAG.to_string());
-        parts.push(key.clone());
-    }
-    if event.owns_session {
-        parts.push(OWNS_SESSION_FLAG.to_string());
-    }
+    push_event_flags(&mut parts, event);
     quote_command_parts(parts)
 }
 
@@ -913,16 +914,7 @@ fn env_command_line(event: &Event, windows: bool) -> String {
         )
     };
     let mut parts = vec![helper, url, token];
-    if event.note_from_stdin {
-        parts.push(NOTE_FLAG.to_string());
-    }
-    if let Some(key) = &event.session_id_key {
-        parts.push(SESSION_KEY_FLAG.to_string());
-        parts.push(key.clone());
-    }
-    if event.owns_session {
-        parts.push(OWNS_SESSION_FLAG.to_string());
-    }
+    push_event_flags(&mut parts, event);
     quote_command_parts(parts)
 }
 
@@ -932,6 +924,22 @@ fn quote_command_parts(parts: Vec<String>) -> String {
         .map(|part| format!("\"{}\"", part.replace('"', "\\\"")))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn push_event_flags(parts: &mut Vec<String>, event: &Event) {
+    if event.note_from_stdin {
+        parts.push(NOTE_FLAG.to_string());
+    }
+    if event.title_from_stdin {
+        parts.push(TITLE_FLAG.to_string());
+    }
+    if let Some(key) = &event.session_id_key {
+        parts.push(SESSION_KEY_FLAG.to_string());
+        parts.push(key.clone());
+    }
+    if event.owns_session {
+        parts.push(OWNS_SESSION_FLAG.to_string());
+    }
 }
 
 /// A hook that only prints. `say` needs no daemon and no network, so the
@@ -1019,6 +1027,7 @@ mod tests {
                     reports: Report::Working,
                     matcher: None,
                     note_from_stdin: false,
+                    title_from_stdin: false,
                     session_id_key: None,
                     owns_session: false,
                     claim_only: false,
@@ -1028,6 +1037,7 @@ mod tests {
                     reports: Report::Idle,
                     matcher: None,
                     note_from_stdin: false,
+                    title_from_stdin: false,
                     session_id_key: None,
                     owns_session: false,
                     claim_only: false,
@@ -1113,6 +1123,28 @@ mod tests {
                 args[0]
             );
         }
+    }
+
+    #[test]
+    fn a_prompt_submit_event_asks_the_helper_to_title_the_pane() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = Harness::claude();
+        h.install(dir.path(), PaneId(3), 5555, "tok").unwrap();
+
+        let hooks = settings_of(dir.path(), &h)["hooks"].clone();
+        let prompt: Vec<String> =
+            serde_json::from_value(hooks["UserPromptSubmit"][0]["hooks"][0]["args"].clone())
+                .unwrap();
+        assert!(
+            prompt.contains(&TITLE_FLAG.to_string()),
+            "UserPromptSubmit carries the user's prompt: {prompt:?}"
+        );
+        let stop: Vec<String> =
+            serde_json::from_value(hooks["Stop"][0]["hooks"][0]["args"].clone()).unwrap();
+        assert!(
+            !stop.contains(&TITLE_FLAG.to_string()),
+            "Stop is not a title: {stop:?}"
+        );
     }
 
     #[test]
@@ -1778,6 +1810,61 @@ process.stdout.write(JSON.stringify(reports));
     }
 
     #[test]
+    fn the_opencode_plugin_titles_the_pane_from_the_user_prompt() {
+        let dir = tempfile::tempdir().unwrap();
+        let plugin = dir.path().join("argus-status.mjs");
+        let runner = dir.path().join("runner.mjs");
+        std::fs::write(&plugin, Harness::opencode().plugin.unwrap().source).unwrap();
+        std::fs::write(
+            &runner,
+            r#"
+import { pathToFileURL } from "node:url";
+
+const reports = [];
+globalThis.fetch = async (url, init) => {
+  reports.push({ url, note: init.body });
+};
+
+const { ArgusStatus } = await import(pathToFileURL(process.argv[2]));
+const hooks = await ArgusStatus();
+await hooks["chat.message"](
+  { sessionID: "s1" },
+  { parts: [{ type: "text", text: "fixing the pty deadlock\nmore" }] },
+);
+await hooks["chat.message"]({ sessionID: "s1" }, { parts: [] });
+process.stdout.write(JSON.stringify(reports));
+"#,
+        )
+        .unwrap();
+
+        let output = match std::process::Command::new("node")
+            .arg(&runner)
+            .arg(&plugin)
+            .env("ARGUS_HOOK_URL", "http://127.0.0.1/pane/1")
+            .env("ARGUS_HOOK_TOKEN", "test-token")
+            .output()
+        {
+            Ok(output) => output,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+            Err(e) => panic!("could not run opencode plugin test: {e}"),
+        };
+        assert!(
+            output.status.success(),
+            "node failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let reports: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(
+            reports,
+            json!([
+                { "url": "http://127.0.0.1/pane/1/session", "note": "s1" },
+                { "url": "http://127.0.0.1/pane/1/status/working", "note": "" },
+                { "url": "http://127.0.0.1/pane/1/title", "note": "fixing the pty deadlock" },
+            ])
+        );
+    }
+
+    #[test]
     fn the_opencode_plugin_calls_the_same_pane_api_the_helper_does() {
         // The module posts for itself rather than shelling out, so nothing
         // but this stops a change to the route or the environment's names
@@ -1787,6 +1874,10 @@ process.stdout.write(JSON.stringify(reports));
             assert!(source.contains(var), "the plugin never reads {var}");
         }
         assert!(source.contains("/status/${status}"), "wrong pane route");
+        assert!(
+            source.contains("${BASE}/title"),
+            "the plugin never titles the pane"
+        );
         assert!(source.contains("Bearer ${TOKEN}"), "wrong authorization");
     }
 
@@ -1846,8 +1937,9 @@ process.stdout.write(JSON.stringify(reports));
         let pre_args: Vec<String> = serde_json::from_value(pre_entry["args"].clone()).unwrap();
         assert_eq!(pre_args[0], "http://127.0.0.1:4242/pane/5/status/working");
         assert_eq!(pre_args[1], "tok");
-        assert_eq!(pre_args[2], SESSION_KEY_FLAG);
-        assert_eq!(pre_args[3], "conversationId");
+        assert_eq!(pre_args[2], TITLE_FLAG);
+        assert_eq!(pre_args[3], SESSION_KEY_FLAG);
+        assert_eq!(pre_args[4], "conversationId");
 
         let stop = argus["Stop"].as_array().unwrap();
         assert_eq!(stop.len(), 1);
@@ -1916,6 +2008,10 @@ process.stdout.write(JSON.stringify(reports));
         assert_eq!(working.len(), 1);
         let working_cmd = working[0]["command"].as_str().unwrap();
         assert!(working_cmd.contains("/status/working"));
+        assert!(
+            working_cmd.contains(TITLE_FLAG),
+            "beforeSubmitPrompt carries the user's prompt:\n{working_cmd}"
+        );
 
         // Tool-start is the CLI-reliable working signal when lifecycle hooks
         // do not fire; neither event may clear idle on its own.
@@ -1925,6 +2021,10 @@ process.stdout.write(JSON.stringify(reports));
             let cmd = entries[0]["command"].as_str().unwrap();
             assert!(cmd.contains("/status/working"), "{event}");
             assert!(cmd.contains("conversation_id"), "{event}");
+            assert!(
+                !cmd.contains(TITLE_FLAG),
+                "a tool-start event is not a title:\n{cmd}"
+            );
             assert!(!cmd.contains("ARGUS_HOOK"), "{event}");
         }
 
