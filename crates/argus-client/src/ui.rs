@@ -19,7 +19,8 @@
 //!   layout feel cramped.
 
 use argus_protocol::{
-    ChildAgentInfo, Color as PColor, GitStatus, HighlightKind, HighlightSpan, LineKind, PaneStatus,
+    ChildAgentInfo, Color as PColor, FileDiff, GitStatus, HighlightKind, HighlightSpan, LineKind,
+    NoteCounts, PaneStatus, TodoState,
 };
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
@@ -34,6 +35,7 @@ use crate::app::{
 use crate::dirpicker::DirRow;
 use crate::grid::Grid;
 use crate::history::{HistoryRow, HistoryView};
+use crate::notes::NoteMode;
 use crate::review::{ReviewView, Row};
 use crate::theme::Theme;
 use argus_protocol::CursorShape;
@@ -192,6 +194,14 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option<CursorPlac
                     .flat_map(|r| r.checkouts.iter())
                     .filter_map(worst_pane_status)
                     .max_by_key(rank);
+                let mut detail = vec![Span::styled(
+                    plural(p.repositories.len(), "repository"),
+                    Style::default().fg(th.dim),
+                )];
+                // The rollup, not just this project's own note: from the
+                // leftmost column the question is whether anything in
+                // there is owed, not where it was written down.
+                detail.extend(note_detail(p.note_rollup(), p.has_note, th));
                 let item = Item::new(
                     vec![
                         status_dot(status, th),
@@ -200,10 +210,7 @@ fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option<CursorPlac
                             Style::default().fg(th.text).add_modifier(Modifier::BOLD),
                         ),
                     ],
-                    vec![Span::styled(
-                        plural(p.repositories.len(), "repository"),
-                        Style::default().fg(th.dim),
-                    )],
+                    detail,
                 );
                 if panes == 0 {
                     item
@@ -249,6 +256,11 @@ n  add one",
                         .iter()
                         .filter_map(worst_pane_status)
                         .max_by_key(rank);
+                    let mut detail = vec![Span::styled(
+                        plural(r.checkouts.len(), "checkout"),
+                        Style::default().fg(th.dim),
+                    )];
+                    detail.extend(note_detail(r.note_rollup(), false, th));
                     let item = Item::new(
                         vec![
                             status_dot(status, th),
@@ -257,10 +269,7 @@ n  add one",
                                 Style::default().fg(th.text).add_modifier(Modifier::BOLD),
                             ),
                         ],
-                        vec![Span::styled(
-                            plural(r.checkouts.len(), "checkout"),
-                            Style::default().fg(th.dim),
-                        )],
+                        detail,
                     );
                     if panes == 0 {
                         item
@@ -729,7 +738,12 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
     // Typing focus is what the accent border promises here, so only
     // PaneContent lights it up — merely selecting a pane does not.
     let focused = app.focus == Focus::PaneContent;
-    let title = content_title(app);
+    // A parked pane looks exactly like a quiet one, so the title has to say
+    // that the rows on screen are history rather than the current output.
+    let title = match app.scroll_indicator() {
+        Some(where_) => format!("{where_} · {}", content_title(app)),
+        None => content_title(app),
+    };
     let block = panel_block(&title, focused, th, area.width);
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -775,7 +789,7 @@ fn render_review(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         .enumerate()
         .skip(view.top)
         .take(area.height as usize)
-        .map(|(i, row)| review_line(view, *row, i >= from && i <= to, th))
+        .map(|(i, row)| review_line(view, *row, i >= from && i <= to, area.width as usize, th))
         .collect();
 
     f.render_widget(Paragraph::new(lines), area);
@@ -835,7 +849,13 @@ fn syntax_style(kind: HighlightKind, th: Theme) -> Style {
     }
 }
 
-fn review_line<'a>(view: &'a ReviewView, row: Row, selected: bool, th: Theme) -> Line<'a> {
+fn review_line<'a>(
+    view: &'a ReviewView,
+    row: Row,
+    selected: bool,
+    width: usize,
+    th: Theme,
+) -> Line<'a> {
     let file = &view.review.files[row.file()];
     let pad = " ".repeat(LINENO_WIDTH + 1);
 
@@ -871,6 +891,19 @@ fn review_line<'a>(view: &'a ReviewView, row: Row, selected: bool, th: Theme) ->
             format!("{pad}{}", file.note.as_deref().unwrap_or("")),
             Style::default().fg(th.dim).add_modifier(Modifier::ITALIC),
         )],
+        // The only row that splits. Headers and notes span the width in
+        // either view, and the wash below is skipped because each side
+        // carries its own.
+        Row::Pair {
+            hunk, left, right, ..
+        } => {
+            // Cells, not bytes: the rule is a three-byte glyph.
+            let half = width.saturating_sub(DIVIDER.chars().count()) / 2;
+            let mut spans = diff_side(file, hunk, left, true, half, selected, th);
+            spans.push(Span::styled(DIVIDER, Style::default().fg(th.edge)));
+            spans.extend(diff_side(file, hunk, right, false, half, selected, th));
+            spans
+        }
         Row::Line { hunk, line, .. } => {
             let l = &file.hunks[hunk].lines[line];
             // The old side's number only where there is no new one.
@@ -901,26 +934,90 @@ fn review_line<'a>(view: &'a ReviewView, row: Row, selected: bool, th: Theme) ->
     // A wash rather than a marker column: the left edge is already spent,
     // and a range should read as one block. Added and removed lines carry
     // their own wash whether or not they are selected, which is what frees
-    // the foreground for syntax; selecting one brightens that wash instead
-    // of replacing it, so a selected range still shows both sides.
+    // the foreground for syntax.
     let mut line = Line::from(spans);
     if let Row::Line {
         hunk, line: idx, ..
     } = row
     {
-        let bg = match (file.hunks[hunk].lines[idx].kind, selected) {
-            (LineKind::Added, false) => Some(th.add_bg),
-            (LineKind::Added, true) => Some(th.add_bg_sel),
-            (LineKind::Removed, false) => Some(th.del_bg),
-            (LineKind::Removed, true) => Some(th.del_bg_sel),
-            (LineKind::Context, true) => Some(th.sel_bg),
-            (LineKind::Context, false) => None,
-        };
-        if let Some(bg) = bg {
+        if let Some(bg) = wash(file.hunks[hunk].lines[idx].kind, selected, th) {
             line = line.style(Style::default().bg(bg));
         }
     }
     line
+}
+
+/// Between the two sides. Air either side of the rule keeps one side's
+/// wash from running into the other's.
+const DIVIDER: &str = " │ ";
+
+/// One half of a split row, padded to exactly `width` so the divider and
+/// the far side land in the same columns on every row. Each side is
+/// ellipsized on its own: half a screen is narrower than a diff line often
+/// is, and letting one side overrun would push the other off the row.
+///
+/// `old` picks which of the line's two numbers this side is showing, which
+/// is the whole reason a split view can label both. Where a run of removals
+/// is longer than the run that replaced it the far side has no line at all;
+/// it is drawn recessed rather than blank, so the gap reads as absence
+/// rather than as an empty line of code.
+fn diff_side<'a>(
+    file: &'a FileDiff,
+    hunk: usize,
+    line: Option<usize>,
+    old: bool,
+    width: usize,
+    selected: bool,
+    th: Theme,
+) -> Vec<Span<'a>> {
+    let Some(i) = line else {
+        return vec![Span::styled(
+            " ".repeat(width),
+            Style::default().bg(th.surface),
+        )];
+    };
+    let l = &file.hunks[hunk].lines[i];
+    let no = match if old { l.old_lineno } else { l.new_lineno } {
+        Some(n) => format!("{n:>LINENO_WIDTH$}"),
+        None => " ".repeat(LINENO_WIDTH),
+    };
+    let marker_fg = match l.kind {
+        LineKind::Added => th.ok,
+        LineKind::Removed => th.err,
+        LineKind::Context => th.dim,
+    };
+    let mut spans = vec![
+        Span::styled(format!("{no} "), Style::default().fg(th.dim)),
+        Span::styled(
+            crate::review::marker(l.kind).to_string(),
+            Style::default().fg(marker_fg),
+        ),
+    ];
+    spans.extend(highlighted(&l.text, &l.spans, th));
+
+    let mut spans = ellipsize_spans(spans, width);
+    let used: usize = spans.iter().map(Span::width).sum();
+    spans.push(Span::raw(" ".repeat(width.saturating_sub(used))));
+    if let Some(bg) = wash(l.kind, selected, th) {
+        for span in &mut spans {
+            span.style = span.style.bg(bg);
+        }
+    }
+    spans
+}
+
+/// Which side of the diff a line is on, as a background. Selecting a line
+/// brightens its wash rather than replacing it, so a selected range still
+/// shows both sides.
+fn wash(kind: LineKind, selected: bool, th: Theme) -> Option<Color> {
+    match (kind, selected) {
+        (LineKind::Added, false) => Some(th.add_bg),
+        (LineKind::Added, true) => Some(th.add_bg_sel),
+        (LineKind::Removed, false) => Some(th.del_bg),
+        (LineKind::Removed, true) => Some(th.del_bg_sel),
+        (LineKind::Context, true) => Some(th.sel_bg),
+        (LineKind::Context, false) => None,
+    }
 }
 
 fn render_history(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
@@ -1060,15 +1157,27 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
         ("j/k move   h/l change   esc close", th.dim)
     } else if matches!(app.overlay, Some(Overlay::Review)) {
-        let hint = if app
+        // A commit reached from the history overlay goes back to it rather
+        // than flipping a side that means nothing there. `s` names where it
+        // would take you, not where you are.
+        let from_history = app
             .review
             .as_ref()
             .is_some_and(|v| v.review.commit.is_some())
-            && app.history.is_some()
-        {
-            "j/k  ]/[ file  f jump  c comment  e edit  h history  esc close"
-        } else {
-            "j/k  ]/[ file  f jump  c comment  e edit  b staged/unstaged  esc close"
+            && app.history.is_some();
+        let hint = match (from_history, app.review_split) {
+            (true, false) => {
+                "j/k  ]/[ file  f jump  c comment  e edit  s split  h history  esc close"
+            }
+            (true, true) => {
+                "j/k  ]/[ file  f jump  c comment  e edit  s unified  h history  esc close"
+            }
+            (false, false) => {
+                "j/k  ]/[ file  f jump  c comment  e edit  s split  b staged/unstaged  esc close"
+            }
+            (false, true) => {
+                "j/k  ]/[ file  f jump  c comment  e edit  s unified  b staged/unstaged  esc close"
+            }
         };
         (hint, th.dim)
     } else if matches!(app.overlay, Some(Overlay::History)) {
@@ -1076,18 +1185,40 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             "j/k  ]/[ commit  l files/open  h fold  r refresh  R review  esc close",
             th.dim,
         )
+    } else if matches!(app.overlay, Some(Overlay::Notes)) {
+        // The two modes have almost no keys in common, so the bar shows
+        // the one you are actually in.
+        match app.notes.as_ref().map(|v| v.mode) {
+            Some(NoteMode::Insert) => ("typing — esc to stop and save", th.accent),
+            _ => (
+                "j/k move  0/$ line  space tick  i insert  o new line  q close",
+                th.dim,
+            ),
+        }
     } else if app.overlay.is_some() {
         (
             "floating — ctrl-space then esc to close, x to kill   ctrl-v paste",
             th.dim,
         )
     } else if app.focus == Focus::PaneContent {
-        let hint = if app.pane_fullscreen {
-            "typing   ctrl-space: esc leave  f restore  x close   ctrl-v paste"
+        // A parked pane is not taking input anywhere the operator can see,
+        // so the way back to the live screen outranks the usual keymap.
+        if app.scroll_indicator().is_some() {
+            (
+                "scrolled back   shift-pgup/pgdn move   type or scroll down to return",
+                th.accent,
+            )
+        } else if app.pane_fullscreen {
+            (
+                "typing   ctrl-space: esc leave  f restore  x close   shift-pgup scroll",
+                th.dim,
+            )
         } else {
-            "typing   ctrl-space: esc leave  f fullscreen  x close   ctrl-v paste"
-        };
-        (hint, th.dim)
+            (
+                "typing   ctrl-space: esc leave  f fullscreen  x close   shift-pgup scroll",
+                th.dim,
+            )
+        }
     } else {
         // Per column rather than one list of everything: the bar cannot
         // hold every key at once, and most of them only apply somewhere.
@@ -1096,7 +1227,7 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "j/k  l open  N needs  n add  D rm  w wksp  p fold  S settings  q detach"
             }
             Focus::Repositories => {
-                "j/k move  l open  N attention  s shell  a agent  b branch  f file  n add  D rm  q detach"
+                "j/k move  l open  N attention  s shell  a agent  b branch  f file  n add  i init  D rm  q detach"
             }
             Focus::Checkouts => {
                 "j/k move  l open  b branch  B all  F fetch  P pull  f file  R review  H history  n worktree  D rm  q detach"
@@ -1195,6 +1326,20 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
             Some(h) => format!("history · {} commits", h.commits.len()),
             None => "history".to_string(),
         },
+        Overlay::Notes => match app.notes.as_ref() {
+            // The mode is in the title because it changes what every key
+            // does, and a modal surface that does not say which mode it is
+            // in is a trap.
+            Some(v) => format!(
+                "note · {}  ·  {}",
+                v.title,
+                match v.mode {
+                    NoteMode::View => "i edit · space tick · q close",
+                    NoteMode::Insert => "INSERT · esc to save",
+                }
+            ),
+            None => "note".to_string(),
+        },
     };
 
     f.render_widget(Clear, popup);
@@ -1221,7 +1366,172 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
             render_history(f, app, inner, th);
             None
         }
+        Overlay::Notes => render_notes(f, app, inner, th),
     }
+}
+
+/// The note, one line per line, with the checkbox lines picked out.
+///
+/// Returns where the hardware cursor goes: shown while typing, hidden in
+/// view mode, where a block on a random character would read as a
+/// selection rather than as an insertion point.
+fn render_notes(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option<CursorPlacement> {
+    // One row of the window pays for the count footer.
+    let body = Rect {
+        height: area.height.saturating_sub(1),
+        ..area
+    };
+    let view = app.notes.as_mut()?;
+    view.follow_cursor(body.height as usize);
+    let view = app.notes.as_ref()?;
+
+    let mut lines: Vec<Line> = Vec::new();
+    let todos = view.todos();
+    for (i, text) in view
+        .lines
+        .iter()
+        .enumerate()
+        .skip(view.scroll)
+        .take(body.height as usize)
+    {
+        let on_cursor = i == view.line;
+        let bar = if on_cursor {
+            Style::default().bg(th.sel_bg)
+        } else {
+            Style::default()
+        };
+        let state = todos.iter().find(|t| t.line == i).map(|t| t.state);
+        lines.push(Line::from(note_line(text, state, bar, th)));
+    }
+    if view.body().is_empty() {
+        lines = vec![Line::from(Span::styled(
+            "empty — press i to write something",
+            Style::default().fg(th.dim),
+        ))];
+    }
+    f.render_widget(Paragraph::new(lines), body);
+
+    let footer = Rect {
+        y: area.y + area.height.saturating_sub(1),
+        height: 1,
+        ..area
+    };
+    let mut summary = match &view.error {
+        Some(message) => vec![Span::styled(
+            format!("not saved: {message}"),
+            Style::default().fg(th.err),
+        )],
+        None => note_counts_spans(view.counts(), "  ", th),
+    };
+    if summary.is_empty() {
+        summary.push(Span::styled(
+            "no checkboxes yet — a line like \"- [ ] thing\" is counted",
+            Style::default().fg(th.dim),
+        ));
+    }
+    f.render_widget(Paragraph::new(Line::from(summary)), footer);
+
+    if view.mode != NoteMode::Insert {
+        return None;
+    }
+    // The column is a character offset; the screen wants cells.
+    let x: usize = view.lines[view.line]
+        .chars()
+        .take(view.column)
+        .map(|c| Span::raw(c.to_string()).width())
+        .sum();
+    let row = view.line.checked_sub(view.scroll)?;
+    Some(CursorPlacement {
+        position: Position::new(
+            body.x + (x as u16).min(body.width.saturating_sub(1)),
+            body.y + (row as u16).min(body.height.saturating_sub(1)),
+        ),
+        // A bar, because this is an insertion point in text rather than a
+        // terminal's own cursor.
+        shape: argus_protocol::CursorShape::SteadyBar,
+    })
+}
+
+/// One note line. A checkbox gets its marker coloured by state and its
+/// text struck through once done; everything else is prose.
+fn note_line(text: &str, state: Option<TodoState>, bar: Style, th: Theme) -> Vec<Span<'static>> {
+    let Some(state) = state else {
+        return vec![Span::styled(
+            text.to_string(),
+            Style::default().fg(th.text).patch(bar),
+        )];
+    };
+    // Split at the marker so only it is recoloured: the rest of the line
+    // is the user's text and keeps its indent and bullet verbatim.
+    let Some(open) = text.find('[') else {
+        return vec![Span::styled(
+            text.to_string(),
+            Style::default().fg(th.text).patch(bar),
+        )];
+    };
+    let (colour, glyph) = match state {
+        TodoState::Open => (th.warn, "☐"),
+        TodoState::Done => (th.ok, "☑"),
+        TodoState::Pinned => (th.accent, "★"),
+    };
+    let rest = &text[open + 3..];
+    let mut text_style = Style::default().fg(th.text).patch(bar);
+    if state == TodoState::Done {
+        text_style = Style::default()
+            .fg(th.muted)
+            .add_modifier(Modifier::CROSSED_OUT)
+            .patch(bar);
+    }
+    vec![
+        Span::styled(text[..open].to_string(), Style::default().fg(th.dim).patch(bar)),
+        Span::styled(glyph.to_string(), Style::default().fg(colour).patch(bar)),
+        Span::styled(rest.to_string(), text_style),
+    ]
+}
+
+/// Counts as they are shown: what is outstanding first, because it is the
+/// only one of the three that is a claim on anybody.
+///
+/// `gap` separates them — two spaces in the note's own footer, none in a
+/// tree row, where the detail line is already carrying git status and a
+/// column is thirteen characters wide.
+fn note_counts_spans(counts: NoteCounts, gap: &str, th: Theme) -> Vec<Span<'static>> {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    let mut push = |text: String, colour| {
+        if !spans.is_empty() {
+            spans.push(Span::raw(gap.to_string()));
+        }
+        spans.push(Span::styled(text, Style::default().fg(colour)));
+    };
+    if counts.open > 0 {
+        push(format!("☐{}", counts.open), th.warn);
+    }
+    if counts.pinned > 0 {
+        push(format!("★{}", counts.pinned), th.accent);
+    }
+    if counts.done > 0 {
+        push(format!("☑{}", counts.done), th.dim);
+    }
+    spans
+}
+
+/// What a tree row says about its note, appended to the row's detail line.
+///
+/// A note with nothing to count still says it exists: the point of the
+/// mark is knowing there is something written down here, and "no open
+/// items" is not the same as "nothing written".
+fn note_detail(counts: NoteCounts, has_note: bool, th: Theme) -> Vec<Span<'static>> {
+    if !has_note && counts.is_empty() {
+        return Vec::new();
+    }
+    let mut spans = vec![Span::raw("  ")];
+    let counted = note_counts_spans(counts, " ", th);
+    if counted.is_empty() {
+        spans.push(Span::styled("✎", Style::default().fg(th.dim)));
+    } else {
+        spans.extend(counted);
+    }
+    spans
 }
 
 /// Each setting gets a name, its current value, and a line saying what
@@ -1495,13 +1805,20 @@ fn render_dir_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             let Some(rect) = row_rect_of(list, slot, 1) else {
                 break;
             };
-            render_row(f, rect, dir_item(row, th), i == picker.sel, true, th);
+            render_row(
+                f,
+                rect,
+                dir_item(row, picker.here_label(), th),
+                i == picker.sel,
+                true,
+                th,
+            );
         }
     }
 
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            "tab open   ← up   enter add   esc cancel",
+            format!("tab open   ← up   {}   esc cancel", picker.choose_label()),
             Style::default().fg(th.dim),
         ))),
         Rect {
@@ -1512,12 +1829,12 @@ fn render_dir_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     );
 }
 
-fn dir_item(row: &DirRow, th: Theme) -> Item<'static> {
+fn dir_item(row: &DirRow, here: &str, th: Theme) -> Item<'static> {
     match row {
         DirRow::Here => Item::new(
             vec![
                 Span::styled("· ", Style::default().fg(th.accent)),
-                Span::styled("add this directory", Style::default().fg(th.text)),
+                Span::styled(here.to_string(), Style::default().fg(th.text)),
             ],
             Vec::new(),
         ),
@@ -1585,6 +1902,28 @@ fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             "enter create   esc cancel",
             false,
         ),
+        Prompt::NewRepository { parent, input, .. } => {
+            // The path it will land at, resolved as you type: the name
+            // alone would leave the one thing worth checking — where this
+            // is going — off the screen that asks for it.
+            let name = input.trim();
+            let dest = if name.is_empty() {
+                parent.clone()
+            } else {
+                crate::dirpicker::join(parent, name)
+            };
+            let mut lines = vec![Line::from(Span::styled(
+                elide_head(&dest, inner_width as usize),
+                Style::default().fg(th.muted),
+            ))];
+            lines.extend(wrapped_field(input, inner_width, th));
+            (
+                "new repository",
+                lines,
+                "empty to use the directory itself   enter create   esc cancel",
+                false,
+            )
+        }
         Prompt::EditorCommand { input } => (
             "editor command",
             wrapped_field(input, inner_width, th),
@@ -1746,6 +2085,7 @@ fn checkout_item(c: &argus_protocol::CheckoutInfo, th: Theme) -> Item<'static> {
             Style::default().fg(th.warn),
         ));
     }
+    detail.extend(note_detail(c.notes, c.has_note, th));
     Item::new(
         vec![
             status_dot(worst_pane_status(c), th),
@@ -2035,9 +2375,11 @@ fn render_term(
 /// the cursor at a coordinate the drawn rows don't reach puts it in empty
 /// space — better to skip a frame than to point at nothing.
 fn term_cursor(grid: Option<&Grid>, area: Rect, focused: bool) -> Option<CursorPlacement> {
-    let grid = grid.filter(|grid| focused && grid.cursor.visible)?;
-    let rows = grid.cells.len();
-    let cols = grid.cells.first().map_or(0, Vec::len);
+    // A parked view is history: the child's cursor belongs to the live
+    // screen, which is not the one being drawn.
+    let grid = grid.filter(|grid| focused && grid.cursor.visible && !grid.is_scrolled())?;
+    let rows = grid.view().len();
+    let cols = grid.view().first().map_or(0, Vec::len);
     let row = usize::from(grid.cursor.row);
     let col = usize::from(grid.cursor.col);
     if row >= rows.min(usize::from(area.height)) || col >= cols.min(usize::from(area.width)) {
@@ -2052,7 +2394,7 @@ fn term_cursor(grid: Option<&Grid>, area: Rect, focused: bool) -> Option<CursorP
 impl Widget for TermView<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let Some(grid) = self.grid else { return };
-        for (r, row) in grid.cells.iter().enumerate() {
+        for (r, row) in grid.view().iter().enumerate() {
             if r as u16 >= area.height {
                 break;
             }
@@ -2140,6 +2482,8 @@ mod tests {
                     children: Vec::new(),
                 })
                 .collect(),
+            notes: Default::default(),
+            has_note: false,
         }
     }
 
@@ -2260,6 +2604,8 @@ mod tests {
             id: ProjectId(3),
             name: "project".to_string(),
             repositories: vec![repository],
+            notes: Default::default(),
+            has_note: false,
         };
 
         let checkout_status = worst_pane_status(&project.repositories[0].checkouts[0]);
@@ -2611,6 +2957,8 @@ mod tests {
                                 children: Vec::new(),
                             },
                         ],
+                        notes: Default::default(),
+                        has_note: false,
                     },
                     CheckoutInfo {
                         id: CheckoutId(11),
@@ -2619,9 +2967,13 @@ mod tests {
                         primary: false,
                         git: None,
                         panes: vec![],
+                        notes: Default::default(),
+                        has_note: false,
                     },
                 ],
             }],
+            notes: Default::default(),
+            has_note: false,
         }]
     }
 
@@ -2653,7 +3005,7 @@ mod tests {
     fn bar_row(buf: &ratatui::buffer::Buffer) -> u16 {
         lines(buf)
             .iter()
-            .position(|r| r.contains("q detach"))
+            .rposition(|r| !r.trim().is_empty())
             .expect("the status bar") as u16
     }
 
@@ -2670,6 +3022,79 @@ mod tests {
         app
     }
 
+    fn cell(ch: char) -> argus_protocol::Cell {
+        argus_protocol::Cell {
+            ch: ch.to_string().into(),
+            ..Default::default()
+        }
+    }
+
+    // --- a pane parked in its scrollback -------------------------------------
+
+    /// An app inside a pane whose view is parked `offset` lines back, with
+    /// `mark` filling the rows the daemon answered with.
+    fn app_scrolled_back(offset: u32, depth: u32, mark: char) -> App {
+        let mut app = app_with_tree();
+        app.focus = Focus::PaneContent;
+        let pane = app.column_pane().expect("the fixture pane");
+        let live = |c: char| vec![vec![cell(c); 30]; 5];
+        let mut grid = crate::grid::Grid::new(live('L'));
+        grid.scrollback = Some(crate::grid::Scrollback {
+            offset,
+            depth,
+            cells: live(mark),
+        });
+        app.grids.insert(pane, grid);
+        app
+    }
+
+    #[test]
+    fn a_parked_pane_draws_its_history_rather_than_the_live_screen() {
+        let mut app = app_scrolled_back(120, 4000, 'H');
+        let text = lines(&draw(&mut app)).join("\n");
+        assert!(text.contains("HHH"), "the rows read out of the scrollback");
+        assert!(
+            !text.contains("LLL"),
+            "and not the live screen underneath them"
+        );
+    }
+
+    #[test]
+    fn a_parked_pane_shows_how_far_back_it_is_in_its_title() {
+        // A pane parked in history looks exactly like a quiet one. Without
+        // this the operator has no way to tell that what is on screen is
+        // not what the child is doing now.
+        let mut app = app_scrolled_back(120, 4000, 'H');
+        let text = lines(&draw(&mut app)).join("\n");
+        assert!(text.contains("\u{2191} 120/4000"), "got:\n{text}");
+    }
+
+    #[test]
+    fn a_parked_pane_says_how_to_get_back_to_the_live_screen() {
+        let mut app = app_scrolled_back(120, 4000, 'H');
+        assert!(bar(&draw(&mut app)).contains("scrolled back"));
+
+        let mut live = app_with_tree();
+        live.focus = Focus::PaneContent;
+        assert!(bar(&draw(&mut live)).contains("shift-pgup scroll"));
+    }
+
+    #[test]
+    fn a_parked_pane_does_not_take_the_hardware_cursor() {
+        // The child's cursor belongs to the live screen, which is not the
+        // one being drawn. Placing it here points at unrelated history.
+        let mut app = app_scrolled_back(120, 4000, 'H');
+        let pane = app.column_pane().unwrap();
+        app.grids.get_mut(&pane).unwrap().cursor = argus_protocol::Cursor {
+            row: 1,
+            col: 1,
+            visible: true,
+            ..Default::default()
+        };
+        draw(&mut app);
+        assert_eq!(app.layout.cursor, None);
+    }
+
     // --- a column taller than its card ---------------------------------------
 
     /// Eight checkouts in one repository, so a short column has to scroll.
@@ -2684,6 +3109,8 @@ mod tests {
                 primary: i == 0,
                 git: None,
                 panes: Vec::new(),
+                notes: Default::default(),
+                has_note: false,
             })
             .collect();
         app.focus = Focus::Checkouts;
@@ -3140,6 +3567,8 @@ mod tests {
                     template: None,
                     children: Vec::new(),
                 }],
+                notes: Default::default(),
+                has_note: false,
             }],
         });
 
@@ -3605,6 +4034,194 @@ mod tests {
         }
     }
 
+    // --- notes ---------------------------------------------------------------
+
+    fn app_with_a_note(body: &str) -> App {
+        let mut app = app_with_tree();
+        let target = argus_protocol::NoteTarget::Checkout(CheckoutId(10));
+        let note = argus_protocol::Note::new(target, body.to_string());
+        app.notes = Some(crate::notes::NoteView::new(&note, "master".to_string()));
+        app.overlay = Some(Overlay::Notes);
+        app
+    }
+
+    #[test]
+    fn the_note_window_draws_its_text_with_the_boxes_picked_out() {
+        let mut app = app_with_a_note("# Plan
+- [ ] open one
+- [x] done one
+- [!] pinned one");
+        let rendered = lines(&draw(&mut app)).join("
+");
+
+        assert!(rendered.contains("note · master"), "{rendered}");
+        assert!(rendered.contains("# Plan"), "prose is drawn as written");
+        assert!(rendered.contains("☐ open one"), "{rendered}");
+        assert!(rendered.contains("☑ done one"), "{rendered}");
+        assert!(rendered.contains("★ pinned one"), "{rendered}");
+    }
+
+    #[test]
+    fn the_note_window_counts_what_is_in_it() {
+        let mut app = app_with_a_note("- [ ] a
+- [ ] b
+- [x] c
+- [!] d");
+        let rendered = lines(&draw(&mut app)).join("
+");
+        assert!(rendered.contains("☐2"), "{rendered}");
+        assert!(rendered.contains("★1"), "{rendered}");
+        assert!(rendered.contains("☑1"), "{rendered}");
+    }
+
+    #[test]
+    fn an_empty_note_says_how_to_start_one() {
+        let mut app = app_with_a_note("");
+        let rendered = lines(&draw(&mut app)).join("
+");
+        assert!(rendered.contains("press i to write something"), "{rendered}");
+    }
+
+    #[test]
+    fn the_title_says_which_mode_the_note_is_in() {
+        let mut app = app_with_a_note("x");
+        assert!(lines(&draw(&mut app)).join("
+").contains("i edit"));
+
+        app.notes.as_mut().unwrap().insert_mode();
+        let rendered = lines(&draw(&mut app)).join("
+");
+        assert!(rendered.contains("INSERT"), "{rendered}");
+        assert!(rendered.contains("esc to save"), "{rendered}");
+    }
+
+    #[test]
+    fn a_refused_write_replaces_the_counts_with_the_reason() {
+        let mut app = app_with_a_note("- [ ] a");
+        app.notes.as_mut().unwrap().error = Some("note exceeds 65536 bytes".to_string());
+        let rendered = lines(&draw(&mut app)).join("
+");
+        assert!(rendered.contains("not saved: note exceeds"), "{rendered}");
+    }
+
+    #[test]
+    fn a_checkout_with_open_items_says_so_from_its_row() {
+        let mut app = app_with_tree();
+        app.tree[0].repositories[0].checkouts[0].notes = NoteCounts {
+            open: 3,
+            done: 1,
+            pinned: 0,
+        };
+        app.tree[0].repositories[0].checkouts[0].has_note = true;
+        let rendered = lines(&draw_at(&mut app, 160, 20)).join("
+");
+        assert!(rendered.contains("☐3"), "{rendered}");
+    }
+
+    #[test]
+    fn a_note_with_nothing_to_count_still_marks_its_row() {
+        // "Nothing open" and "nothing written down" are different answers,
+        // and the row has to tell them apart.
+        let mut app = app_with_tree();
+        app.tree[0].repositories[0].checkouts[0].has_note = true;
+        let rendered = lines(&draw_at(&mut app, 160, 20)).join("
+");
+        assert!(rendered.contains("✎"), "{rendered}");
+    }
+
+    #[test]
+    fn a_row_with_no_note_says_nothing_about_notes() {
+        let mut app = app_with_tree();
+        let rendered = lines(&draw_at(&mut app, 160, 20)).join("
+");
+        assert!(!rendered.contains("✎"), "{rendered}");
+        assert!(!rendered.contains("☐"), "{rendered}");
+    }
+
+    #[test]
+    fn the_projects_column_shows_what_is_owed_beneath_it() {
+        let mut app = app_with_tree();
+        app.tree[0].repositories[0].checkouts[1].notes = NoteCounts {
+            open: 4,
+            done: 0,
+            pinned: 0,
+        };
+        app.tree[0].repositories[0].checkouts[1].has_note = true;
+        let rendered = lines(&draw_at(&mut app, 160, 20));
+        let project_row = rendered
+            .iter()
+            .find(|r| r.contains("repository"))
+            .expect("the project detail line");
+        assert!(project_row.contains("☐4"), "{project_row}");
+    }
+
+    #[test]
+    fn the_status_bar_offers_the_notes_own_keys_while_it_is_up() {
+        let mut app = app_with_a_note("- [ ] a");
+        let rendered = lines(&draw(&mut app)).join("
+");
+        assert!(rendered.contains("space tick"), "{rendered}");
+        assert!(!rendered.contains("ctrl-v paste"), "not the pane keymap");
+
+        app.notes.as_mut().unwrap().insert_mode();
+        let rendered = lines(&draw(&mut app)).join("
+");
+        assert!(rendered.contains("esc to stop and save"), "{rendered}");
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_note() {
+        let mut app = app_with_a_note("# Plan
+
+- [!] read the design doc first
+- [ ] wire the store
+- [x] parse the checkboxes
+
+prose about the plan");
+        for line in lines(&draw_at(&mut app, 100, 20)) {
+            println!("|{line}");
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_split_review() {
+        let mut app = app_with_diff(
+            true,
+            vec![
+                diff_line(
+                    argus_protocol::LineKind::Context,
+                    Some(9),
+                    Some(9),
+                    "fn f() {",
+                ),
+                diff_line(
+                    argus_protocol::LineKind::Removed,
+                    Some(10),
+                    None,
+                    "    let x = old();",
+                ),
+                diff_line(
+                    argus_protocol::LineKind::Removed,
+                    Some(11),
+                    None,
+                    "    drop(x);",
+                ),
+                diff_line(
+                    argus_protocol::LineKind::Added,
+                    None,
+                    Some(10),
+                    "    let x = new();",
+                ),
+                diff_line(argus_protocol::LineKind::Context, Some(12), Some(11), "}"),
+            ],
+        );
+        for line in lines(&draw_at(&mut app, 120, 20)) {
+            println!("|{line}");
+        }
+    }
+
     // --- the directory browser ----------------------------------------------
 
     fn app_browsing() -> App {
@@ -3636,6 +4253,50 @@ mod tests {
         assert!(rendered.contains("add this directory"), "{rendered}");
         assert!(rendered.contains("orion"), "{rendered}");
         assert!(rendered.contains("tab open"), "the keys are on screen");
+    }
+
+    #[test]
+    fn browsing_for_somewhere_to_put_a_repository_says_so() {
+        // The same rows, asked a different question: confirming here puts
+        // the new repository in this directory rather than adding the
+        // directory itself.
+        let mut app = app_browsing();
+        app.dir_picker.as_mut().unwrap().target =
+            crate::dirpicker::DirTarget::NewRepository(ProjectId(1));
+        let rendered = lines(&draw(&mut app)).join("\n");
+        assert!(rendered.contains("new repository"), "{rendered}");
+        assert!(rendered.contains("make it in this directory"), "{rendered}");
+        assert!(!rendered.contains("add this directory"), "{rendered}");
+        assert!(rendered.contains("enter choose"), "{rendered}");
+    }
+
+    #[test]
+    fn naming_a_new_repository_shows_where_it_will_land() {
+        let mut app = app_with_tree();
+        app.prompt = Some(Prompt::NewRepository {
+            project: ProjectId(1),
+            parent: "/home/u/Source".to_string(),
+            input: "thing".to_string(),
+        });
+        let rendered = lines(&draw(&mut app)).join("\n");
+        assert!(rendered.contains("new repository"), "{rendered}");
+        assert!(rendered.contains("/home/u/Source/thing"), "{rendered}");
+        assert!(
+            rendered.contains("empty to use the directory"),
+            "{rendered}"
+        );
+    }
+
+    #[test]
+    fn a_new_repository_with_no_name_yet_points_at_the_directory_itself() {
+        let mut app = app_with_tree();
+        app.prompt = Some(Prompt::NewRepository {
+            project: ProjectId(1),
+            parent: "/home/u/Source".to_string(),
+            input: String::new(),
+        });
+        let rendered = lines(&draw(&mut app)).join("\n");
+        assert!(rendered.contains("/home/u/Source"), "{rendered}");
     }
 
     #[test]
@@ -3752,45 +4413,62 @@ mod tests {
     // --- review viewer ------------------------------------------------------
 
     fn app_with_review() -> App {
+        app_with_review_split(false)
+    }
+
+    fn app_with_review_split(split: bool) -> App {
+        app_with_diff(
+            split,
+            vec![
+                diff_line(
+                    argus_protocol::LineKind::Context,
+                    Some(10),
+                    Some(10),
+                    "unchanged",
+                ),
+                diff_line(argus_protocol::LineKind::Removed, Some(11), None, "gone"),
+                diff_line(argus_protocol::LineKind::Added, None, Some(11), "arrived"),
+            ],
+        )
+    }
+
+    fn diff_line(
+        kind: argus_protocol::LineKind,
+        old_lineno: Option<u32>,
+        new_lineno: Option<u32>,
+        text: &str,
+    ) -> argus_protocol::DiffLine {
+        argus_protocol::DiffLine {
+            kind,
+            old_lineno,
+            new_lineno,
+            text: text.to_string(),
+            spans: Vec::new(),
+        }
+    }
+
+    fn app_with_diff(split: bool, lines: Vec<argus_protocol::DiffLine>) -> App {
         let mut app = app_with_tree();
-        app.review = Some(crate::review::ReviewView::new(argus_protocol::Review {
-            request_id: 1,
-            checkout: CheckoutId(1),
-            base: argus_protocol::ReviewBase::Unstaged,
-            files: vec![argus_protocol::FileDiff {
-                path: "src/thing.rs".to_string(),
-                old_path: None,
-                kind: argus_protocol::ChangeKind::Modified,
-                hunks: vec![argus_protocol::Hunk {
-                    header: "@@ -10,3 +10,3 @@ fn f()".to_string(),
-                    lines: vec![
-                        argus_protocol::DiffLine {
-                            kind: argus_protocol::LineKind::Context,
-                            old_lineno: Some(10),
-                            new_lineno: Some(10),
-                            text: "unchanged".to_string(),
-                            spans: Vec::new(),
-                        },
-                        argus_protocol::DiffLine {
-                            kind: argus_protocol::LineKind::Removed,
-                            old_lineno: Some(11),
-                            new_lineno: None,
-                            text: "gone".to_string(),
-                            spans: Vec::new(),
-                        },
-                        argus_protocol::DiffLine {
-                            kind: argus_protocol::LineKind::Added,
-                            old_lineno: None,
-                            new_lineno: Some(11),
-                            text: "arrived".to_string(),
-                            spans: Vec::new(),
-                        },
-                    ],
+        app.review_split = split;
+        app.review = Some(crate::review::ReviewView::new(
+            argus_protocol::Review {
+                request_id: 1,
+                checkout: CheckoutId(1),
+                base: argus_protocol::ReviewBase::Unstaged,
+                files: vec![argus_protocol::FileDiff {
+                    path: "src/thing.rs".to_string(),
+                    old_path: None,
+                    kind: argus_protocol::ChangeKind::Modified,
+                    hunks: vec![argus_protocol::Hunk {
+                        header: "@@ -10,3 +10,3 @@ fn f()".to_string(),
+                        lines,
+                    }],
+                    note: None,
                 }],
-                note: None,
-            }],
-            commit: None,
-        }));
+                commit: None,
+            },
+            split,
+        ));
         app.overlay = Some(Overlay::Review);
         app.focus = Focus::Review;
         app
@@ -4066,6 +4744,143 @@ mod tests {
             }
         }
         None
+    }
+
+    // --- the split view -----------------------------------------------------
+
+    #[test]
+    fn a_split_row_draws_both_sides_of_one_change_on_the_same_line() {
+        let mut app = app_with_review_split(true);
+        let out = lines(&draw(&mut app));
+        assert!(
+            out.iter()
+                .any(|l| l.contains("-gone") && l.contains("+arrived")),
+            "the removal and its replacement share a row:
+{}",
+            out.join(
+                "
+"
+            )
+        );
+    }
+
+    #[test]
+    fn the_unified_view_still_stacks_them() {
+        // The whole point of the toggle is that this is the other shape.
+        let mut app = app_with_review();
+        let out = lines(&draw(&mut app));
+        assert!(
+            !out.iter()
+                .any(|l| l.contains("-gone") && l.contains("+arrived")),
+            "{}",
+            out.join(
+                "
+"
+            )
+        );
+    }
+
+    #[test]
+    fn each_side_of_a_split_row_keeps_its_own_wash() {
+        // One row, two sides: a single line-wide background would say the
+        // whole row was added, or removed, and it is both.
+        let mut app = app_with_review_split(true);
+        let th = app.theme;
+        let buf = draw(&mut app);
+        assert_eq!(bg_of(&buf, "-gone"), Some(th.del_bg));
+        assert_eq!(bg_of(&buf, "+arrived"), Some(th.add_bg));
+    }
+
+    #[test]
+    fn a_split_row_numbers_each_side_from_its_own_file() {
+        // The reason a split view can show both numbers at all: the left is
+        // read from the old file, the right from the new one.
+        let mut app = app_with_diff(
+            true,
+            vec![
+                diff_line(argus_protocol::LineKind::Removed, Some(11), None, "gone"),
+                diff_line(argus_protocol::LineKind::Added, None, Some(207), "arrived"),
+            ],
+        );
+        let buf = draw(&mut app);
+        let y = row_of(&buf, "-gone").expect("the removed line is drawn");
+        // Inside the overlay only: the panel borders down the screen are
+        // the same glyph as the divider.
+        let row = row_text(&buf, y, app.layout.overlay.inner);
+        let (left, right) = row.split_once('│').expect("a divider between the sides");
+        assert!(left.contains("11"), "the old number on the left: {left:?}");
+        assert!(
+            right.contains("207"),
+            "the new number on the right: {right:?}"
+        );
+    }
+
+    #[test]
+    fn a_side_with_nothing_opposite_it_is_recessed_rather_than_blank() {
+        // An added line with no removal against it leaves half the row
+        // empty; dropping it a step in elevation says "nothing here"
+        // instead of "an empty line of code".
+        let mut app = app_with_diff(
+            true,
+            vec![diff_line(
+                argus_protocol::LineKind::Added,
+                None,
+                Some(1),
+                "solo",
+            )],
+        );
+        let th = app.theme;
+        let buf = draw(&mut app);
+        let y = row_of(&buf, "+solo").expect("the added line is drawn");
+        assert_eq!(
+            buf.cell((app.layout.overlay.inner.x, y)).map(|c| c.bg),
+            Some(th.surface),
+            "the empty left side"
+        );
+    }
+
+    #[test]
+    fn a_long_line_is_cut_at_its_own_half_rather_than_over_the_divider() {
+        // One side overrunning would push the other off the row, and the
+        // columns would stop lining up down the screen.
+        let mut app = app_with_diff(
+            true,
+            vec![
+                diff_line(
+                    argus_protocol::LineKind::Removed,
+                    Some(1),
+                    None,
+                    &"x".repeat(400),
+                ),
+                diff_line(argus_protocol::LineKind::Added, None, Some(1), "short"),
+            ],
+        );
+        let out = lines(&draw(&mut app));
+        assert!(
+            out.iter().any(|l| l.contains("+short")),
+            "the far side survives the long one:
+{}",
+            out.join(
+                "
+"
+            )
+        );
+    }
+
+    fn row_text(buf: &ratatui::buffer::Buffer, y: u16, area: Rect) -> String {
+        (area.x..area.x + area.width)
+            .filter_map(|x| buf.cell((x, y)).map(|c| c.symbol()))
+            .collect()
+    }
+
+    fn row_of(buf: &ratatui::buffer::Buffer, needle: &str) -> Option<u16> {
+        let needle: Vec<&str> = needle.split("").filter(|s| !s.is_empty()).collect();
+        (0..buf.area.height).find(|&y| {
+            let row: Vec<&str> = (0..buf.area.width)
+                .map(|x| buf.cell((x, y)).map(|c| c.symbol()).unwrap_or(" "))
+                .collect();
+            row.windows(needle.len()).any(|w| w == needle)
+        })
     }
 
     #[test]

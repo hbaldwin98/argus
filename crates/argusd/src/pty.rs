@@ -533,7 +533,7 @@ impl PaneRuntime {
             pixel_width: 0,
             pixel_height: 0,
         })?;
-        self.parser.lock().unwrap().set_size(rows, cols);
+        self.parser.lock().unwrap().screen_mut().set_size(rows, cols);
         Ok(())
     }
 
@@ -602,6 +602,22 @@ impl PaneRuntime {
         )
     }
 
+    /// Rows sitting `offset` lines above the live screen, with the offset
+    /// actually reached and how deep the buffer goes.
+    ///
+    /// The read moves the parser's scrollback offset and puts it straight
+    /// back under one hold of the lock. That offset is parser-global, not
+    /// per-client: left set, it would drag every other subscriber's frames
+    /// back with this client's view, and the pump would diff scrolled-back
+    /// rows against live ones and broadcast the difference as damage.
+    ///
+    /// The alternate screen has no scrollback of its own, so a full-screen
+    /// child answers with a depth of zero rather than the shell's history
+    /// showing through underneath it.
+    pub fn scrollback(&self, offset: usize) -> (Vec<Vec<Cell>>, usize, usize) {
+        read_scrollback(&mut self.parser.lock().unwrap(), offset)
+    }
+
     /// Pushes a fresh full-grid snapshot to whoever is currently subscribed.
     /// Used after a resize, since a subscriber's cached grid can only be
     /// grown or shrunk by replacing it wholesale — incremental Damage spans
@@ -618,6 +634,24 @@ impl PaneRuntime {
             alternate_screen,
         });
     }
+}
+
+/// Reads a scrolled-back screen and leaves the parser where it found it.
+///
+/// Split out from [`PaneRuntime::scrollback`] so the offset arithmetic can
+/// be driven by a parser a test fed directly, with no child to spawn.
+fn read_scrollback(parser: &mut vt100::Parser, offset: usize) -> (Vec<Vec<Cell>>, usize, usize) {
+    // vt100 clamps to what it actually retained and exposes no count of its
+    // own — `scrollback_len` is the configured cap, not the fill level.
+    // Asking for more than exists and reading back what stuck is the only
+    // honest way to measure the depth.
+    parser.screen_mut().set_scrollback(usize::MAX);
+    let depth = parser.screen().scrollback();
+    parser.screen_mut().set_scrollback(offset);
+    let offset = parser.screen().scrollback();
+    let cells = snapshot_grid(parser);
+    parser.screen_mut().set_scrollback(0);
+    (cells, offset, depth)
 }
 
 fn snapshot_grid(parser: &vt100::Parser) -> Vec<Vec<Cell>> {
@@ -813,6 +847,66 @@ mod tests {
 
         parser.process(b"[?1002l");
         assert_eq!(snapshot_mouse(&parser).mode, MouseMode::None);
+    }
+
+    /// A parser holding `lines` numbered lines on a 4-row screen, so the
+    /// live screen is the last four and everything before it is scrollback.
+    fn scrolled(lines: usize) -> vt100::Parser {
+        let mut parser = vt100::Parser::new(4, 20, SCROLLBACK_LINES);
+        for i in 1..=lines {
+            parser.process(format!("line {i}\r\n").as_bytes());
+        }
+        parser
+    }
+
+    fn first_row(cells: &[Vec<Cell>]) -> String {
+        cells[0].iter().map(|c| c.ch.as_str()).collect::<String>()
+            .trim_end()
+            .to_string()
+    }
+
+    #[test]
+    fn an_offset_reads_the_lines_that_scrolled_off_the_top() {
+        let mut parser = scrolled(10);
+
+        // 10 lines written, 4 rows visible, and the cursor sits on the row
+        // after the last one: rows 8..11 are live, so 7 lines are behind.
+        let (live, offset, depth) = read_scrollback(&mut parser, 0);
+        assert_eq!((offset, depth), (0, 7));
+        assert_eq!(first_row(&live), "line 8");
+
+        let (back, offset, _) = read_scrollback(&mut parser, 3);
+        assert_eq!(offset, 3);
+        assert_eq!(first_row(&back), "line 5");
+    }
+
+    #[test]
+    fn an_offset_past_the_top_stops_at_the_oldest_line_it_has() {
+        let mut parser = scrolled(10);
+        let (cells, offset, depth) = read_scrollback(&mut parser, 999);
+        assert_eq!(offset, depth, "clamped to the top rather than refused");
+        assert_eq!(first_row(&cells), "line 1");
+    }
+
+    #[test]
+    fn reading_scrollback_leaves_the_parser_on_the_live_screen() {
+        // The offset is parser-global. Left set, the pump would diff
+        // scrolled-back rows against live ones and broadcast the difference
+        // to every other subscriber as damage.
+        let mut parser = scrolled(10);
+        read_scrollback(&mut parser, 5);
+        assert_eq!(parser.screen().scrollback(), 0);
+        assert_eq!(first_row(&snapshot_grid(&parser)), "line 8");
+    }
+
+    #[test]
+    fn the_alternate_screen_reports_no_scrollback_of_its_own() {
+        // A full-screen child manages its own history, and the shell's
+        // must not show through underneath it.
+        let mut parser = scrolled(10);
+        parser.process(b"[?1049h");
+        let (_, offset, depth) = read_scrollback(&mut parser, 5);
+        assert_eq!((offset, depth), (0, 0));
     }
 
     #[test]
@@ -1075,6 +1169,59 @@ mod tests {
                     .unwrap();
             wait_for(&pane, |g| grid_contains(g, &marker)).await;
         }
+    }
+
+    /// A child that prints `count` numbered lines and exits, so more output
+    /// goes past than the 24-row pty can hold.
+    fn counter(count: usize) -> Spawn {
+        #[cfg(windows)]
+        let (program, args) = (
+            "cmd".to_string(),
+            vec![
+                "/C".to_string(),
+                format!("for /l %i in (1,1,{count}) do @echo line%i"),
+            ],
+        );
+        #[cfg(not(windows))]
+        let (program, args) = (
+            "sh".to_string(),
+            vec![
+                "-c".to_string(),
+                format!("i=1; while [ $i -le {count} ]; do echo line$i; i=$((i+1)); done"),
+            ],
+        );
+        Spawn::Program {
+            program,
+            args,
+            env: Vec::new(),
+            resource_policy: ResourcePolicy::Unrestricted,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_childs_earlier_output_is_still_readable_after_it_scrolls_off() {
+        // The whole point of the feature, through the real pipeline: reader
+        // thread, pump, parser, and the scrollback read on top of them.
+        let pane =
+            PaneRuntime::spawn(PaneId(40), &std::env::temp_dir(), counter(60), |_| {}).unwrap();
+        wait_for(&pane, |g| grid_contains(g, "line60")).await;
+
+        let (live, offset, depth) = pane.scrollback(0);
+        assert_eq!(offset, 0);
+        assert!(depth > 0, "60 lines do not fit in 24 rows");
+        assert!(
+            !rows_of(&live).iter().any(|r| r == "line1"),
+            "the first line is off the live screen: {:?}",
+            rows_of(&live)
+        );
+
+        let (back, offset, _) = pane.scrollback(depth);
+        assert_eq!(offset, depth, "clamped to the oldest line it kept");
+        assert!(
+            rows_of(&back).iter().any(|r| r == "line1"),
+            "the first line is recoverable: {:?}",
+            rows_of(&back)
+        );
     }
 
     #[tokio::test]
@@ -1497,3 +1644,4 @@ mod tests {
         );
     }
 }
+

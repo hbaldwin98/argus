@@ -11,6 +11,7 @@ use tokio::sync::broadcast;
 
 mod git_ops;
 mod hook;
+mod notes;
 mod panes;
 mod session;
 mod sync;
@@ -21,6 +22,7 @@ use session::{agent_args, nothing_to_resume, Resumed};
 use tree::*;
 
 use crate::config::{self, AgentConfig, ConfigFile};
+use crate::store::NoteKey;
 use crate::pty::{self, PaneRuntime};
 
 struct Pane {
@@ -462,6 +464,10 @@ impl Daemon {
     /// their rollups show up in [`Daemon::workspaces`] so a working agent
     /// somewhere you are not looking is still visible.
     pub fn snapshot(&self) -> Vec<ProjectInfo> {
+        // Read before the tree lock: this touches the store, and holding
+        // the tree while doing so would put SQLite on the path of every
+        // pane update.
+        let notes = self.note_summaries();
         let inner = self.inner.lock().unwrap();
         let open = inner.open;
         inner
@@ -520,11 +526,15 @@ impl Daemon {
                                         .collect(),
                                     git,
                                     primary: c.primary,
+                                    notes: note_of(&notes, &NoteKey::checkout(&c.path)).0,
+                                    has_note: note_of(&notes, &NoteKey::checkout(&c.path)).1,
                                 }
                             })
                             .collect(),
                     })
                     .collect(),
+                notes: note_of(&notes, &NoteKey::Project(p.name.clone())).0,
+                has_note: note_of(&notes, &NoteKey::Project(p.name.clone())).1,
             })
             .collect()
     }
@@ -674,6 +684,14 @@ impl Daemon {
     }
 }
 
+/// A row's note summary, or nothing on both counts when it has no note.
+fn note_of(
+    notes: &HashMap<NoteKey, notes::NoteSummary>,
+    key: &NoteKey,
+) -> notes::NoteSummary {
+    notes.get(key).copied().unwrap_or_default()
+}
+
 /// Whether a hook's report should be dropped rather than applied, for
 /// either of two reasons. The pane has already exited, and nothing said
 /// afterwards — a `Stop` racing a crash, say — should resurrect its row. Or
@@ -745,7 +763,10 @@ mod tests {
     use super::session::RESUME_GRACE;
     use super::*;
     use crate::config::ProjectConfig;
-    use argus_protocol::{parse_pane_path, Endpoint, ReviewAnchor, ReviewBase};
+    use argus_protocol::{
+        parse_pane_path, Endpoint, NoteCounts, NoteTarget, ReviewAnchor, ReviewBase, TodoState,
+        MAX_NOTE_BYTES,
+    };
 
     /// A daemon with one project whose primary checkout is `primary`, and no
     /// panes. Nothing here touches disk: `Daemon::new` only expands paths,
@@ -787,6 +808,169 @@ mod tests {
             .flat_map(|r| r.checkouts)
             .map(|c| c.path)
             .collect()
+    }
+
+    // ---- notes -------------------------------------------------------
+
+    #[test]
+    fn a_checkout_note_round_trips_and_its_counts_reach_the_tree() {
+        let d = daemon_with_primary("/repo");
+        let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
+        let target = NoteTarget::Checkout(checkout);
+
+        assert_eq!(d.note(target).unwrap().body, "", "an unwritten note is empty");
+        assert!(!d.snapshot()[0].repositories[0].checkouts[0].has_note);
+
+        d.set_note(target, "- [ ] one
+- [x] two
+- [!] three
+".to_string())
+            .unwrap();
+
+        let checkout = &d.snapshot()[0].repositories[0].checkouts[0];
+        assert!(checkout.has_note);
+        assert_eq!(
+            checkout.notes,
+            NoteCounts {
+                open: 1,
+                done: 1,
+                pinned: 1
+            }
+        );
+        assert_eq!(d.note(target).unwrap().todos.len(), 3);
+    }
+
+    #[test]
+    fn a_project_note_is_separate_from_its_checkouts() {
+        let d = daemon_with_primary("/repo");
+        let project = d.snapshot()[0].id;
+        let checkout = d.snapshot()[0].repositories[0].checkouts[0].id;
+
+        d.set_note(NoteTarget::Project(project), "- [ ] project work".to_string())
+            .unwrap();
+        d.set_note(
+            NoteTarget::Checkout(checkout),
+            "- [ ] checkout work
+- [ ] more".to_string(),
+        )
+        .unwrap();
+
+        let tree = d.snapshot();
+        assert_eq!(tree[0].notes.open, 1);
+        assert_eq!(tree[0].repositories[0].checkouts[0].notes.open, 2);
+    }
+
+    #[test]
+    fn counts_roll_up_from_every_checkout_to_the_project() {
+        let d = daemon_with_primary("/repo");
+        d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
+        let tree = d.snapshot();
+        let project = tree[0].id;
+        for checkout in &tree[0].repositories[0].checkouts {
+            d.set_note(
+                NoteTarget::Checkout(checkout.id),
+                "- [ ] a
+- [ ] b
+- [x] c
+".to_string(),
+            )
+            .unwrap();
+        }
+        d.set_note(NoteTarget::Project(project), "- [!] read me first".to_string())
+            .unwrap();
+
+        let tree = d.snapshot();
+        assert_eq!(
+            tree[0].repositories[0].note_rollup(),
+            NoteCounts {
+                open: 4,
+                done: 2,
+                pinned: 0
+            },
+            "the repository sums its checkouts and holds no note of its own"
+        );
+        assert_eq!(
+            tree[0].note_rollup(),
+            NoteCounts {
+                open: 4,
+                done: 2,
+                pinned: 1
+            },
+            "the project adds its own note to what is beneath it"
+        );
+    }
+
+    #[test]
+    fn emptying_a_note_clears_the_row() {
+        let d = daemon_with_primary("/repo");
+        let target = NoteTarget::Checkout(d.snapshot()[0].repositories[0].checkouts[0].id);
+        d.set_note(target, "- [ ] something".to_string()).unwrap();
+        assert!(d.snapshot()[0].repositories[0].checkouts[0].has_note);
+
+        d.set_note(target, String::new()).unwrap();
+
+        let checkout = &d.snapshot()[0].repositories[0].checkouts[0];
+        assert!(!checkout.has_note);
+        assert!(checkout.notes.is_empty());
+    }
+
+    #[test]
+    fn toggling_a_checkbox_leaves_the_rest_of_the_note_alone() {
+        let d = daemon_with_primary("/repo");
+        let target = NoteTarget::Checkout(d.snapshot()[0].repositories[0].checkouts[0].id);
+        d.set_note(target, "# Plan
+
+- [ ] first
+- [ ] second
+".to_string())
+            .unwrap();
+
+        let note = d.set_todo(target, 2, TodoState::Done).unwrap();
+
+        assert_eq!(note.body, "# Plan
+
+- [x] first
+- [ ] second
+");
+        assert_eq!(note.counts(), NoteCounts { open: 1, done: 1, pinned: 0 });
+    }
+
+    #[test]
+    fn toggling_a_line_that_is_not_a_checkbox_is_refused() {
+        let d = daemon_with_primary("/repo");
+        let target = NoteTarget::Checkout(d.snapshot()[0].repositories[0].checkouts[0].id);
+        d.set_note(target, "# Plan
+- [ ] first
+".to_string())
+            .unwrap();
+
+        let err = d.set_todo(target, 0, TodoState::Done).unwrap_err().to_string();
+
+        assert!(err.contains("not a checkbox"), "{err}");
+        assert_eq!(d.note(target).unwrap().body, "# Plan
+- [ ] first
+");
+    }
+
+    #[test]
+    fn a_note_on_a_stale_id_is_refused_rather_than_filed_somewhere_else() {
+        let d = daemon_with_primary("/repo");
+        let err = d
+            .set_note(NoteTarget::Checkout(CheckoutId(9999)), "x".to_string())
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no such checkout"), "{err}");
+    }
+
+    #[test]
+    fn a_note_too_large_to_carry_is_refused() {
+        let d = daemon_with_primary("/repo");
+        let target = NoteTarget::Checkout(d.snapshot()[0].repositories[0].checkouts[0].id);
+        let err = d
+            .set_note(target, "x".repeat(MAX_NOTE_BYTES + 1))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("exceeds"), "{err}");
     }
 
     fn listing(paths: &[&str]) -> Vec<PathBuf> {
@@ -2855,6 +3039,70 @@ mod tests {
             // The exclusion is gone too, or a restart would drop it again.
             let restarted = persistent(crate::config::load().unwrap());
             assert_eq!(repository_names(&restarted), vec!["orion"]);
+        });
+    }
+
+    /// `init_repository` shells out to `git`, so its tests need a runtime.
+    /// Built here rather than with `#[tokio::test]` because the config
+    /// guard around them is synchronous.
+    fn blocking<T>(future: impl std::future::Future<Output = T>) -> T {
+        tokio::runtime::Runtime::new().unwrap().block_on(future)
+    }
+
+    #[test]
+    fn a_brand_new_repository_is_created_where_it_was_asked_for_and_added() {
+        with_temp_config(|_| {
+            let (root, _outside, d) = project_and_an_outside_repository();
+            let project = d.snapshot()[0].id;
+            let dest = root.path().join("fresh");
+
+            blocking(d.init_repository(project, &dest.to_string_lossy())).unwrap();
+
+            assert!(dest.join(".git").exists(), "git init ran in it");
+            assert_eq!(repository_names(&d), vec!["orion", "fresh"]);
+        });
+    }
+
+    #[test]
+    fn a_new_repository_survives_a_restart_the_way_an_added_one_does() {
+        with_temp_config(|_| {
+            let (root, _outside, d) = project_and_an_outside_repository();
+            let project = d.snapshot()[0].id;
+            blocking(d.init_repository(project, &root.path().join("fresh").to_string_lossy()))
+                .unwrap();
+
+            let restarted = persistent(crate::config::load().unwrap());
+            assert_eq!(repository_names(&restarted), vec!["fresh", "orion"]);
+        });
+    }
+
+    #[test]
+    fn a_directory_that_is_already_a_repository_is_added_without_being_reinited() {
+        with_temp_config(|_| {
+            let (_root, outside, d) = project_and_an_outside_repository();
+            let project = d.snapshot()[0].id;
+            let notes = outside.path().join("notes");
+            let before = head_of(&notes);
+
+            blocking(d.init_repository(project, &notes.to_string_lossy())).unwrap();
+
+            assert_eq!(head_of(&notes), before, "its history is untouched");
+            assert_eq!(repository_names(&d), vec!["orion", "notes"]);
+        });
+    }
+
+    #[test]
+    fn making_a_repository_where_a_file_already_sits_is_refused() {
+        with_temp_config(|_| {
+            let (root, _outside, d) = project_and_an_outside_repository();
+            let project = d.snapshot()[0].id;
+            let file = root.path().join("taken");
+            std::fs::write(&file, "").unwrap();
+
+            let err = blocking(d.init_repository(project, &file.to_string_lossy()))
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("is a file"), "{err}");
         });
     }
 

@@ -57,10 +57,17 @@ impl App {
                 alternate_screen,
                 ..
             } => {
-                if self.grids.contains_key(&pane) {
+                if let Some(previous) = self.grids.get(&pane) {
+                    // A snapshot is how a resize reaches the client, so a
+                    // parked view has to be re-read: its rows are the old
+                    // width and nothing else will replace them.
+                    let parked = previous.scrollback.as_ref().map(|sb| sb.offset);
                     let mut grid = Grid::with_cursor(cells, cursor, mouse);
                     grid.alternate_screen = alternate_screen;
                     self.grids.insert(pane, grid);
+                    if let Some(offset) = parked {
+                        self.park_pane(pane, offset);
+                    }
                 }
             }
             ServerMsg::Damage {
@@ -76,6 +83,14 @@ impl App {
                     grid.mouse = mouse;
                     grid.alternate_screen = alternate_screen;
                 }
+            }
+            ServerMsg::ScrollbackRows {
+                pane,
+                offset,
+                depth,
+                cells,
+            } => {
+                self.receive_scrollback(pane, offset, depth, cells);
             }
             ServerMsg::PaneClosed { pane, code } => {
                 self.receive_pane_closed(pane, code);
@@ -96,6 +111,21 @@ impl App {
                 } else {
                     self.report(format!("comment #{id} saved; agent unavailable"));
                 }
+            }
+            ServerMsg::Note(note) => {
+                if let Some(view) = &mut self.notes {
+                    if view.target == note.target {
+                        view.adopt(&note);
+                    }
+                }
+            }
+            ServerMsg::NoteFailed { target, message } => {
+                if let Some(view) = &mut self.notes {
+                    if view.target == target {
+                        view.error = Some(message.clone());
+                    }
+                }
+                self.alert(format!("note: {message}"));
             }
             ServerMsg::Branches { checkout, branches } => {
                 if self.list_wanted != Some(checkout) {
@@ -425,7 +455,7 @@ impl App {
             Some(c) => format!("{} {}", c.short, c.summary),
             None => format!("vs {}", review.base.label()),
         };
-        let mut view = ReviewView::new(review);
+        let mut view = ReviewView::new(review, self.review_split);
         if view.is_empty() {
             self.review = None;
             self.pending_history_file = None;

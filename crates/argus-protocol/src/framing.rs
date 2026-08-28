@@ -124,6 +124,10 @@ mod tests {
                 project: ProjectId(1),
                 path: r"C:\src\thing\repo".to_string(),
             },
+            ClientMsg::InitRepository {
+                project: ProjectId(1),
+                path: r"C:\src\thing\fresh".to_string(),
+            },
             ClientMsg::ListCommits {
                 request_id: 7,
                 checkout: CheckoutId(2),
@@ -198,8 +202,12 @@ mod tests {
                         template: None,
                         children: Vec::new(),
                     }],
+                    notes: Default::default(),
+                    has_note: false,
                 }],
             }],
+            notes: Default::default(),
+            has_note: false,
         }]);
         let ServerMsg::Tree(tree) = roundtrip(&sent).await else {
             panic!("variant changed across the wire");

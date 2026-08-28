@@ -119,6 +119,7 @@ impl App {
         if let Some(prompt) = &mut self.prompt {
             let input = match prompt {
                 Prompt::NewWorktree { input, .. }
+                | Prompt::NewRepository { input, .. }
                 | Prompt::Comment { input, .. }
                 | Prompt::EditorCommand { input } => Some(input),
                 Prompt::ConfirmRemove { .. } => None,
@@ -196,6 +197,34 @@ impl App {
                 KeyCode::Char(c) => input.push(c),
                 _ => {}
             },
+            Prompt::NewRepository {
+                project,
+                parent,
+                input,
+            } => match key.code {
+                KeyCode::Enter => {
+                    let project = *project;
+                    // An empty name is not an empty request: the browse
+                    // already said where, and this is "that directory
+                    // itself" — a folder that exists and only wants a
+                    // `git init`.
+                    let name = input.trim();
+                    let path = if name.is_empty() {
+                        parent.clone()
+                    } else {
+                        crate::dirpicker::join(parent, name)
+                    };
+                    self.prompt = None;
+                    let _ = self.out.send(ClientMsg::InitRepository { project, path });
+                    self.pending_focus_new_repository = Some(project);
+                }
+                KeyCode::Esc => self.prompt = None,
+                KeyCode::Backspace => {
+                    input.pop();
+                }
+                KeyCode::Char(c) => input.push(c),
+                _ => {}
+            },
             Prompt::EditorCommand { input } => match key.code {
                 KeyCode::Enter => {
                     let cmd = input.trim().to_string();
@@ -242,6 +271,15 @@ impl App {
                     DirTarget::Repository(project) => {
                         let _ = self.out.send(ClientMsg::AddRepository { project, path });
                         self.pending_focus_new_repository = Some(project);
+                    }
+                    // Nothing is created yet: the directory just chosen is
+                    // where the repository goes, and it still needs a name.
+                    DirTarget::NewRepository(project) => {
+                        self.prompt = Some(Prompt::NewRepository {
+                            project,
+                            parent: path,
+                            input: String::new(),
+                        });
                     }
                 }
             }
@@ -293,6 +331,10 @@ impl App {
             self.on_key_history(key);
             return;
         }
+        if matches!(self.overlay, Some(Overlay::Notes)) {
+            self.on_key_notes(key);
+            return;
+        }
         if let Some(Overlay::Settings { sel }) = &mut self.overlay {
             let sel = *sel;
             match key.code {
@@ -335,6 +377,88 @@ impl App {
         }
     }
 
+    /// Two keymaps, because a note is read far more often than it is
+    /// written. View mode navigates and ticks boxes with single keys; in
+    /// insert mode every key is a character, and `Esc` is the way back.
+    fn on_key_notes(&mut self, key: KeyEvent) {
+        let Some(view) = &mut self.notes else {
+            self.close_overlay();
+            return;
+        };
+        if view.mode == NoteMode::Insert {
+            match key.code {
+                KeyCode::Esc => {
+                    view.view_mode();
+                    // Leaving insert is the save point: it is the moment
+                    // the user stops typing, and it costs no extra key.
+                    self.save_notes();
+                }
+                KeyCode::Enter => view.newline(),
+                KeyCode::Backspace => view.backspace(),
+                KeyCode::Left => view.move_column(-1),
+                KeyCode::Right => view.move_column(1),
+                KeyCode::Up => view.move_by(-1),
+                KeyCode::Down => view.move_by(1),
+                KeyCode::Home => view.start_of_line(),
+                KeyCode::End => view.end_of_line(),
+                KeyCode::Tab => {
+                    for _ in 0..2 {
+                        view.insert_char(' ');
+                    }
+                }
+                KeyCode::Char(c) => view.insert_char(c),
+                _ => {}
+            }
+            return;
+        }
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => view.move_by(1),
+            KeyCode::Char('k') | KeyCode::Up => view.move_by(-1),
+            KeyCode::Char('d') | KeyCode::PageDown => view.move_by(10),
+            KeyCode::Char('u') | KeyCode::PageUp => view.move_by(-10),
+            KeyCode::Char('h') | KeyCode::Left => view.move_column(-1),
+            KeyCode::Char('l') | KeyCode::Right => view.move_column(1),
+            KeyCode::Char('g') => view.top_of_note(),
+            KeyCode::Char('G') => view.bottom_of_note(),
+            KeyCode::Char('0') | KeyCode::Home => view.start_of_line(),
+            KeyCode::Char('$') | KeyCode::End => view.end_of_line(),
+            KeyCode::Char('i') => view.insert_mode(),
+            KeyCode::Char('a') => {
+                view.move_column(1);
+                view.insert_mode();
+            }
+            KeyCode::Char('o') => view.open_below(),
+            // The tick goes to the daemon as a line and a state rather
+            // than as a new body: see `ClientMsg::SetTodo`.
+            KeyCode::Char(' ') | KeyCode::Enter => self.toggle_note_todo(),
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.save_notes();
+                self.close_overlay();
+            }
+            _ => {}
+        }
+    }
+
+    /// Ticks the box under the cursor, if there is one.
+    fn toggle_note_todo(&mut self) {
+        // An unsaved body means the line numbers the daemon holds are not
+        // the ones on screen, so the text goes first.
+        self.save_notes();
+        let Some(view) = &mut self.notes else {
+            return;
+        };
+        let Some((line, state)) = view.toggle_here() else {
+            self.report("no checkbox on this line");
+            return;
+        };
+        let target = view.target;
+        let _ = self.out.send(ClientMsg::SetTodo {
+            target,
+            line,
+            state,
+        });
+    }
+
     fn on_key_pane_content(&mut self, key: KeyEvent) {
         if self.leader_pending && is_leader(&key) {
             return;
@@ -359,8 +483,22 @@ impl App {
         let Some(pane) = self.column_pane() else {
             return;
         };
+        // Shift-PageUp/Down is the terminal convention for scrollback, and
+        // taking only the shifted pair leaves the child its own paging keys
+        // — a pager or an editor inside the pane still gets them unshifted.
+        if key.modifiers.contains(KeyModifiers::SHIFT) {
+            match key.code {
+                KeyCode::PageUp => return self.page_pane(pane, -1),
+                KeyCode::PageDown => return self.page_pane(pane, 1),
+                _ => {}
+            }
+        }
         let bytes = encode_key(&key);
         if !bytes.is_empty() {
+            // Typing is a statement that the present is what matters; every
+            // terminal snaps to the bottom on it, and the child's echo would
+            // otherwise land somewhere the operator cannot see.
+            self.scroll_to_live(pane);
             let _ = self.out.send(ClientMsg::Input { pane, bytes });
         }
     }
@@ -375,6 +513,7 @@ impl App {
             KeyCode::Char('s') => self.spawn_shell(),
             KeyCode::Char('a') => self.open_picker(),
             KeyCode::Char('n') => self.new_prompt(),
+            KeyCode::Char('i') => self.new_repository_prompt(),
             KeyCode::Char('D') => self.remove_prompt(),
             KeyCode::Char('w') => self.open_workspace_picker(),
             KeyCode::Char('t') => self.open_theme_picker(),
@@ -389,6 +528,7 @@ impl App {
             KeyCode::Char('x') => self.kill_selected(),
             KeyCode::Char('p') => self.toggle_projects_collapsed(),
             KeyCode::Char('v') => self.toggle_pane_view(),
+            KeyCode::Char('m') => self.open_notes(),
             KeyCode::Char('N') => self.jump_to_next_attention(),
             _ => {}
         }
@@ -423,6 +563,7 @@ impl App {
                 return self.open_review();
             }
             KeyCode::Char('f') => return self.open_change_picker(),
+            KeyCode::Char('s') => return self.toggle_review_split(),
             KeyCode::Char('h') | KeyCode::Left => return self.close_review(),
             KeyCode::Esc | KeyCode::Char('q') => return self.close_overlay(),
             _ => {}
