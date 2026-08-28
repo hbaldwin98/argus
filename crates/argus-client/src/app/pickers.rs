@@ -65,6 +65,25 @@ impl App {
         }
     }
 
+    /// Reflattens the open review the other way. The preference outlives
+    /// the view so the next review opens the way this one was left, and is
+    /// written through to disk like the other layout choices.
+    pub fn toggle_review_split(&mut self) {
+        self.review_split = !self.review_split;
+        self.settings.review_split = self.review_split;
+        if self.persist_settings {
+            crate::settings::save(&self.settings);
+        }
+        if let Some(view) = &mut self.review {
+            view.set_split(self.review_split);
+        }
+        if self.review_split {
+            self.report("split diff — s for unified");
+        } else {
+            self.report("unified diff");
+        }
+    }
+
     pub(super) fn move_setting(&mut self, delta: isize) {
         if let Some(Overlay::Settings { sel }) = &mut self.overlay {
             let last = Setting::ALL.len() as isize - 1;

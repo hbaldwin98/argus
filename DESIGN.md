@@ -541,6 +541,17 @@ additions; without it they parse correctly and highlight nothing. Anything else 
 so is a file over 512 KiB, an unreadable blob, or a parse that fails — highlighting is decoration
 and never costs a review. The client validates every offset against the line before slicing it.
 
+`s` flattens the same diff the other way. Unified gives every diff line a row; split pairs a
+hunk's removals against the additions that replaced them, one row holding both sides, and ends a
+run at each context line because that is where the two sides are known to line up again. Where a
+run of one side is longer than the other, the surplus rows leave the far side empty and recessed.
+Nothing is asked of the daemon: the rows are rebuilt from the hunks the client already holds. Each
+side is ellipsized at its own half so one long line cannot push the other off the row, and each is
+numbered from its own tree — the old file on the left, the new one on the right. The cursor stays
+on the line it was on across a toggle, a half-made range is dropped, and the choice is a setting
+that persists like the side toggle. A row holding both sides anchors a comment to both, which is
+the anchor the unified view produces for the same two lines selected together.
+
 Every request has an id and the client accepts only the latest exact reply. Review capture is
 globally serialized, and a connection drops an older queued capture when a newer request replaces
 it.

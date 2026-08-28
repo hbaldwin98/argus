@@ -461,6 +461,7 @@ impl App {
                 return self.open_review();
             }
             KeyCode::Char('f') => return self.open_change_picker(),
+            KeyCode::Char('s') => return self.toggle_review_split(),
             KeyCode::Char('h') | KeyCode::Left => return self.close_review(),
             KeyCode::Esc | KeyCode::Char('q') => return self.close_overlay(),
             _ => {}

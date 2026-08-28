@@ -425,7 +425,7 @@ impl App {
             Some(c) => format!("{} {}", c.short, c.summary),
             None => format!("vs {}", review.base.label()),
         };
-        let mut view = ReviewView::new(review);
+        let mut view = ReviewView::new(review, self.review_split);
         if view.is_empty() {
             self.review = None;
             self.pending_history_file = None;

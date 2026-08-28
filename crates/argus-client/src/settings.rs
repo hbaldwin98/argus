@@ -117,6 +117,10 @@ pub struct Settings {
     /// its width to the other four columns. Remembered so the layout a user
     /// settled on survives a restart.
     pub projects_collapsed: bool,
+    /// Whether review pairs the two sides of a change side by side instead
+    /// of stacking them. Unified by default: it is the shape git itself
+    /// prints, and it reads at any width.
+    pub review_split: bool,
     /// Audible attention signal. Off by default: attaching another client
     /// must not make an existing session unexpectedly noisy.
     pub notifications: NotificationMode,
@@ -130,6 +134,7 @@ impl Default for Settings {
             theme: crate::theme::THEMES[0].to_string(),
             column_widths: None,
             projects_collapsed: false,
+            review_split: false,
             notifications: NotificationMode::Off,
         }
     }
@@ -230,6 +235,7 @@ mod tests {
             theme: "latte".to_string(),
             column_widths: Some(vec![12, 16, 18, 24, 46]),
             projects_collapsed: true,
+            review_split: true,
             notifications: NotificationMode::Bell,
         };
         let back: Settings = toml::from_str(&toml::to_string_pretty(&s).unwrap()).unwrap();
@@ -243,6 +249,7 @@ mod tests {
         assert_eq!(s.theme, "frappe");
         assert_eq!(s.editor, Settings::default().editor);
         assert_eq!(s.column_widths, None);
+        assert!(!s.review_split);
         assert_eq!(s.notifications, NotificationMode::Off);
     }
 

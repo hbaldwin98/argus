@@ -540,6 +540,10 @@ pub struct App {
     /// Sticky across reopens, so `b` is a setting rather than a per-visit
     /// choice.
     pub review_base: ReviewBase,
+    /// Whether review pairs the two sides of a change rather than stacking
+    /// them. Held here for whichever view opens next; the open view carries
+    /// its own copy, because its rows are built from it.
+    pub review_split: bool,
     pub prompt: Option<Prompt>,
     /// Active color theme. Every color the UI draws comes from here, so a
     /// preset swap is one assignment rather than a sweep of call sites.
@@ -589,6 +593,7 @@ impl App {
             .column_widths
             .clone()
             .filter(|widths| widths.len() == 5);
+        let review_split = settings.review_split;
         App {
             tree: Vec::new(),
             templates: Vec::new(),
@@ -635,6 +640,7 @@ impl App {
             list_wanted: None,
             next_browse_request: 1,
             review_base: ReviewBase::Unstaged,
+            review_split,
             prompt: None,
             theme,
             pending_focus_new: false,
@@ -5154,6 +5160,40 @@ second
 
         assert!(h.app.overlay.is_none());
         assert!(h.app.review.is_none(), "and the diff goes with it");
+    }
+
+    #[test]
+    fn s_flips_the_open_diff_between_split_and_unified() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
+        h.app.review_for_test(checkout);
+        h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
+        assert!(!h.app.review_split, "unified to begin with");
+
+        h.key(KeyCode::Char('s'));
+        assert!(h.app.review.as_ref().unwrap().split, "the open view flips");
+        assert!(h.app.settings.review_split, "and is remembered");
+        assert!(h.app.status.contains("split"), "{}", h.app.status);
+
+        h.key(KeyCode::Char('s'));
+        assert!(!h.app.review.as_ref().unwrap().split);
+        assert!(!h.app.settings.review_split);
+    }
+
+    #[test]
+    fn the_next_diff_opens_the_way_the_last_one_was_left() {
+        // The same standing rule as the side toggle: a view is a setting,
+        // not a per-visit choice.
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
+        h.app.review_for_test(checkout);
+        h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
+        h.key(KeyCode::Char('s'));
+        h.key(KeyCode::Esc);
+
+        h.app.review_for_test(checkout);
+        h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
+        assert!(h.app.review.as_ref().unwrap().split);
     }
 
     // --- collapse projects pane ----------------------------------------------
