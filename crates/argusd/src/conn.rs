@@ -202,6 +202,18 @@ fn dispatch_pane(
         ClientMsg::Input { pane, bytes } => daemon.write_pane(pane, &bytes),
         ClientMsg::Paste { pane, text } => daemon.paste_pane(pane, &text),
         ClientMsg::Resize { pane, rows, cols } => daemon.resize_pane(viewer, pane, rows, cols),
+        ClientMsg::Scrollback { pane, offset } => {
+            daemon
+                .pane_scrollback(pane, offset as usize)
+                .map(|(cells, offset, depth)| {
+                    let _ = out_tx.send(ServerMsg::ScrollbackRows {
+                        pane,
+                        offset: offset as u32,
+                        depth: depth as u32,
+                        cells,
+                    });
+                })
+        }
         ClientMsg::SpawnShell { checkout } => {
             let daemon = daemon.clone();
             spawn_pane(out_tx, move || daemon.spawn_shell(checkout).map(|_| ()))
@@ -478,6 +490,13 @@ fn dispatch_worktree_change(
                 Ok(())
             }
         },
+        // Same reasoning: `git init` is a subprocess, and the directory it
+        // lands in may not exist yet.
+        ClientMsg::InitRepository { project, path } => {
+            spawn_reporting(daemon, out_tx, move |d| async move {
+                d.init_repository(project, &path).await
+            })
+        }
         msg => return Err(msg),
     };
     Ok(result)

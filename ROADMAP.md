@@ -37,11 +37,10 @@ the checkout. What remains is presentation work.
   "Review"): tree-sitter in the daemon, ten grammars linked in and chosen by extension, spans on
   the wire carrying token roles rather than colours.
 - Decide whether to retain the current scrolling surface or adopt separate file and diff columns.
-- Offer a split view alongside the unified one, toggled. The wire needs nothing: a split pairs each
-  hunk's removed and added lines into rows over the `Hunk` data the client already has. What it
-  needs is width, and review draws in the live pane's column at roughly a third of the screen — so
-  it belongs behind the fullscreen pane, which is where two readable sides fit. Line comments
-  already carry both old and new numbers, so anchors survive the change.
+- The split view has landed (DESIGN.md, "Review"): `s` reflattens the diff so each hunk's removals
+  sit beside what replaced them, built in the client over `Hunk` data the wire already carried.
+  Anchors survived it, as expected — a line comment records both old and new numbers, so the two
+  views produce the same anchor for the same change.
 
 Deliberately out of scope: staging, unstaging, and reverting hunks, and any base that compares a
 branch against a fork point or a remembered snapshot. Dedicated Git tools do those better.
@@ -62,9 +61,11 @@ Closes the loop: information currently flows only upward, from agents reporting 
 
 ## P7: Terminal and Performance
 
-- Expose scrollback navigation.
+- Anchor a parked scrollback view to a line rather than to the live screen, so a pane still printing
+  does not shift the rows out from under a reader. Navigation itself has landed (DESIGN.md, "Panes
+  and terminal state"): the daemon answers an offset with the rows there, and the wheel,
+  Shift-PageUp/PageDown, and typing move between history and live.
 - Add child-negotiated mouse behavior, bracketed paste, focus events, OSC 52, and extended keys.
-- Add fullscreen mode for a pane (hide navigation columns, give terminal full window).
 - Replace idle 16 ms pane wakeups with event-driven work where possible.
 - Implement packed, byte-bounded scrollback, then cold eviction, spill, and redaction.
 - Benchmark frame time, startup, RSS, pane scaling, high-output children, and slow clients.

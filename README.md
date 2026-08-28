@@ -22,6 +22,8 @@ The workspace builds three executables:
 - Shows Git status, changed-file counts, and ahead/behind state.
 - Reviews staged and unstaged work as two separate diffs, the way Git itself keeps them apart.
 - Captures deleted, renamed, and non-ignored untracked content for review.
+- Reads a diff unified or split side by side, with comments meaning the same thing in either.
+- Scrolls a pane back through what its child has already printed, by wheel or Shift-PageUp.
 - Keeps a Markdown note on any project or checkout, counting its `- [ ]`, `- [x]`, and `- [!]`
   lines and rolling those counts up the tree.
 - Opens files in a floating terminal editor, the terminal column, or an external editor.
@@ -97,6 +99,10 @@ Start Argus once to create the configuration directory, or create `projects.toml
 under [Configuration](#configuration). You can also press `n` in the projects column and enter a
 directory: every Git repository at or beneath it becomes one of the project's repositories, so
 naming a repository adds that one and naming the directory a dozen of them live in adds the dozen.
+
+If the repository does not exist yet, press `i` in the repositories column instead: browse to where
+it should live, give it a name, and Argus creates the directory, runs `git init` in it, and adds it
+to the project.
 
 ### 4. Run
 
@@ -354,6 +360,7 @@ connects instantly and a rebuild only pays for what changed.
 | `s` | Start a shell |
 | `a` | Choose and start an agent |
 | `n` | Add a project, add a repository to one, create a worktree, or give a branch row a worktree, depending on the column |
+| `i` | In the repositories column, make a repository that does not exist yet: browse to where it should go, name it, and Argus creates the directory, runs `git init` in it, and adds it to the project. An empty name uses the chosen directory itself, which is how a folder that is already there gets initialized |
 | `D` | Remove what the column selects, after confirmation: a project or repository (out of the panel only — nothing on disk is touched), a linked worktree (deleted), or a branch row (the local branch, deleted; the remote is untouched) |
 | `w` | Switch workspace |
 | `b` | Open the branch picker |
@@ -396,10 +403,16 @@ Other supported keys are forwarded to the child PTY.
 | `c` | Send a comment to an agent in the checkout; choose one when several are running |
 | `e` | Open the selected line in the editor |
 | `b` | Toggle between staged and unstaged changes |
+| `s` | Toggle between the unified and split diff |
 | `r` / `R` | Refresh |
 | `h`, Left, Escape, `q` | Close review |
 
-The chosen side persists across reopens. Review covers uncommitted work only; comparing against
+The split view puts each removal beside what replaced it, numbered from the old file on the left
+and the new one on the right; where one side has no counterpart it is left empty. It wants width,
+so it pairs well with a fullscreen pane. A comment means the same thing in either view, because a
+comment already records both line numbers.
+
+The chosen side and the chosen view both persist across reopens. Review covers uncommitted work only; comparing against
 committed history is left to a dedicated Git tool.
 
 Diffs are syntax highlighted for Rust, TypeScript, TSX and JavaScript, Python, C#, CSS, YAML, TOML,

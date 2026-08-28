@@ -23,6 +23,7 @@ mod input;
 mod mouse;
 mod nav;
 mod pickers;
+mod scroll;
 mod server;
 
 const STATE_FLASH: std::time::Duration = std::time::Duration::from_millis(900);
@@ -347,6 +348,14 @@ pub enum Prompt {
         base: CheckoutId,
         input: String,
     },
+    /// The name of a repository to create, once the directory browser has
+    /// settled where it goes. Empty means the chosen directory itself —
+    /// the folder is already there and only needs a `git init`.
+    NewRepository {
+        project: ProjectId,
+        parent: String,
+        input: String,
+    },
     ConfirmRemove {
         target: RemoveTarget,
         label: String,
@@ -543,6 +552,10 @@ pub struct App {
     /// Sticky across reopens, so `b` is a setting rather than a per-visit
     /// choice.
     pub review_base: ReviewBase,
+    /// Whether review pairs the two sides of a change rather than stacking
+    /// them. Held here for whichever view opens next; the open view carries
+    /// its own copy, because its rows are built from it.
+    pub review_split: bool,
     pub prompt: Option<Prompt>,
     /// Active color theme. Every color the UI draws comes from here, so a
     /// preset swap is one assignment rather than a sweep of call sites.
@@ -592,6 +605,7 @@ impl App {
             .column_widths
             .clone()
             .filter(|widths| widths.len() == 5);
+        let review_split = settings.review_split;
         App {
             tree: Vec::new(),
             templates: Vec::new(),
@@ -639,6 +653,7 @@ impl App {
             list_wanted: None,
             next_browse_request: 1,
             review_base: ReviewBase::Unstaged,
+            review_split,
             prompt: None,
             theme,
             pending_focus_new: false,
@@ -2154,6 +2169,104 @@ second
     }
 
     #[test]
+    fn i_in_the_repositories_column_makes_a_repository_that_is_not_there_yet() {
+        let mut h = Harness::new();
+        h.keys("l");
+        h.sent();
+
+        h.key(KeyCode::Char('i'));
+        h.browse("/src", Some("/"), &[("existing", true)]);
+        h.sent();
+        // The directory is where it goes, not what it is — so the browse
+        // is followed by a name.
+        h.key(KeyCode::Enter);
+        assert!(h.app.dir_picker.is_none());
+        assert!(matches!(h.app.prompt, Some(Prompt::NewRepository { .. })));
+
+        h.keys("thing");
+        h.key(KeyCode::Enter);
+        match &h.sent()[0] {
+            ClientMsg::InitRepository { project, path } => {
+                assert_eq!(*project, ProjectId(1), "the project in view");
+                assert_eq!(path, "/src/thing");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(h.app.prompt.is_none());
+    }
+
+    #[test]
+    fn a_new_repository_with_no_name_is_the_directory_that_was_chosen() {
+        let mut h = Harness::new();
+        h.keys("l");
+        h.key(KeyCode::Char('i'));
+        h.browse("/src/already-made", Some("/src"), &[]);
+        h.sent();
+        h.key(KeyCode::Enter);
+        h.key(KeyCode::Enter);
+        match &h.sent()[0] {
+            ClientMsg::InitRepository { path, .. } => assert_eq!(path, "/src/already-made"),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn esc_cancels_making_a_repository_at_either_step() {
+        let mut h = Harness::new();
+        h.keys("l");
+        h.key(KeyCode::Char('i'));
+        h.browse("/src", Some("/"), &[]);
+        h.sent();
+        h.key(KeyCode::Esc);
+        assert!(h.app.dir_picker.is_none());
+        assert!(h.sent().is_empty());
+
+        h.key(KeyCode::Char('i'));
+        h.browse("/src", Some("/"), &[]);
+        h.sent();
+        h.key(KeyCode::Enter);
+        h.keys("half-typed");
+        h.key(KeyCode::Esc);
+        assert!(h.app.prompt.is_none());
+        assert!(h.sent().is_empty(), "nothing was created");
+    }
+
+    #[test]
+    fn i_does_nothing_outside_the_repositories_column() {
+        let mut h = Harness::new();
+        assert_eq!(h.app.focus, Focus::Projects);
+        h.key(KeyCode::Char('i'));
+        assert!(h.app.dir_picker.is_none());
+
+        h.keys("ll");
+        h.sent();
+        assert_eq!(h.app.focus, Focus::Checkouts);
+        h.key(KeyCode::Char('i'));
+        assert!(h.app.dir_picker.is_none());
+    }
+
+    #[test]
+    fn a_repository_just_made_becomes_the_selected_one() {
+        let mut h = Harness::new();
+        h.keys("l");
+        h.key(KeyCode::Char('i'));
+        h.browse("/src", Some("/"), &[]);
+        h.key(KeyCode::Enter);
+        h.keys("thing");
+        h.key(KeyCode::Enter);
+        h.sent();
+
+        let mut t = tree();
+        t[0].repositories.push(repository(
+            7,
+            "thing",
+            vec![checkout(30, "main", true, vec![])],
+        ));
+        h.app.on_server_msg(ServerMsg::Tree(t));
+        assert_eq!(h.app.current_repository().unwrap().name, "thing");
+    }
+
+    #[test]
     fn n_in_the_checkouts_column_prompts_for_a_branch() {
         let mut h = Harness::new();
         h.keys("ll");
@@ -3093,6 +3206,247 @@ second
             .sent()
             .iter()
             .any(|m| matches!(m, ClientMsg::Input { .. })));
+    }
+
+    // --- Pane scrollback ---------------------------------------------------
+
+    fn wheel(kind: MouseEventKind) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column: 54,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    /// A pane showing three live rows, entered, subscribed and drained.
+    fn live_pane(h: &mut Harness) -> PaneId {
+        laid_out(h);
+        h.keys("llll");
+        assert_eq!(h.app.focus, Focus::PaneContent);
+        let pane = h.app.column_pane().unwrap();
+        h.app.grids.insert(
+            pane,
+            crate::grid::Grid::new(vec![vec![Cell::default(); 4]; 3]),
+        );
+        h.sent();
+        pane
+    }
+
+    /// Answer an outstanding Scrollback request the way the daemon would,
+    /// with rows whose first cell carries `mark` so a test can tell which
+    /// depth it is looking at.
+    fn answer_scrollback(h: &mut Harness, pane: PaneId, offset: u32, depth: u32, mark: char) {
+        let mut row = vec![Cell::default(); 4];
+        row[0].ch = mark.to_string().into();
+        h.app.on_server_msg(ServerMsg::ScrollbackRows {
+            pane,
+            offset,
+            depth,
+            cells: vec![row; 3],
+        });
+    }
+
+    fn drawn_mark(h: &Harness, pane: PaneId) -> String {
+        h.app.grids[&pane].view()[0][0].ch.to_string()
+    }
+
+    /// The offsets asked for since the last drain. `ClientMsg` carries no
+    /// `PartialEq`, so the traffic is compared by what it requested.
+    fn scrollback_asks(h: &mut Harness) -> Vec<u32> {
+        h.sent()
+            .into_iter()
+            .filter_map(|m| match m {
+                ClientMsg::Scrollback { offset, .. } => Some(offset),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_wheel_over_a_shell_asks_for_the_lines_above_it() {
+        // The normal screen is the case with history behind it, and nothing
+        // used to happen at all: a shell's output was gone once it passed
+        // the top of the pane.
+        let mut h = Harness::new();
+        live_pane(&mut h);
+
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+
+        let sent = h.sent();
+        let asked: Vec<u32> = sent
+            .iter()
+            .filter_map(|m| match m {
+                ClientMsg::Scrollback { offset, .. } => Some(*offset),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(asked, [3], "one notch is three lines");
+        assert!(
+            !sent.iter().any(|m| matches!(m, ClientMsg::Input { .. })),
+            "and no bytes reach the child"
+        );
+    }
+
+    #[test]
+    fn scrolling_back_draws_the_rows_the_daemon_answers_with() {
+        let mut h = Harness::new();
+        let pane = live_pane(&mut h);
+        assert_eq!(drawn_mark(&h, pane), " ", "live to begin with");
+
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        answer_scrollback(&mut h, pane, 3, 500, 'H');
+
+        assert_eq!(drawn_mark(&h, pane), "H");
+        assert!(h.app.grids[&pane].is_scrolled());
+    }
+
+    #[test]
+    fn scrolling_back_down_to_the_bottom_returns_to_the_live_screen() {
+        let mut h = Harness::new();
+        let pane = live_pane(&mut h);
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        answer_scrollback(&mut h, pane, 3, 500, 'H');
+        h.sent();
+
+        h.app.on_mouse(wheel(MouseEventKind::ScrollDown));
+
+        assert!(!h.app.grids[&pane].is_scrolled());
+        assert_eq!(drawn_mark(&h, pane), " ", "the live grid, still current");
+        assert!(
+            h.sent().is_empty(),
+            "the live screen is already streaming; asking for it again is waste"
+        );
+    }
+
+    #[test]
+    fn scrolling_stops_at_the_depth_the_daemon_reported() {
+        let mut h = Harness::new();
+        let pane = live_pane(&mut h);
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        answer_scrollback(&mut h, pane, 3, 4, 'H');
+        h.sent();
+
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        assert_eq!(scrollback_asks(&mut h), [4]);
+
+        answer_scrollback(&mut h, pane, 4, 4, 'T');
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        assert!(
+            h.sent().is_empty(),
+            "already at the top: no point asking for rows that do not exist"
+        );
+    }
+
+    #[test]
+    fn a_daemon_with_nothing_behind_the_screen_leaves_the_pane_live() {
+        // What a freshly started shell answers, and what any child on the
+        // alternate screen answers: an offset of zero means there is no
+        // history to park in.
+        let mut h = Harness::new();
+        let pane = live_pane(&mut h);
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+
+        answer_scrollback(&mut h, pane, 0, 0, 'X');
+
+        assert!(!h.app.grids[&pane].is_scrolled());
+        assert_eq!(drawn_mark(&h, pane), " ");
+    }
+
+    #[test]
+    fn typing_snaps_a_scrolled_pane_back_to_the_live_screen() {
+        // The child's echo lands on the live screen. Leaving the view parked
+        // would type into somewhere the operator cannot see.
+        let mut h = Harness::new();
+        let pane = live_pane(&mut h);
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        answer_scrollback(&mut h, pane, 3, 500, 'H');
+        h.sent();
+
+        h.key(KeyCode::Char('x'));
+
+        assert!(!h.app.grids[&pane].is_scrolled());
+        assert!(
+            h.sent()
+                .iter()
+                .any(|m| matches!(m, ClientMsg::Input { .. })),
+            "and the keystroke still reaches the child"
+        );
+    }
+
+    #[test]
+    fn shift_page_up_pages_by_a_screen_and_leaves_the_child_its_own_keys() {
+        let mut h = Harness::new();
+        live_pane(&mut h);
+
+        h.app
+            .on_key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::SHIFT));
+        assert_eq!(
+            scrollback_asks(&mut h),
+            [5],
+            "the content panel is six rows, paged with one line of overlap"
+        );
+
+        h.app
+            .on_key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE));
+        assert!(
+            h.sent()
+                .iter()
+                .any(|m| matches!(m, ClientMsg::Input { .. })),
+            "unshifted paging is the child's"
+        );
+    }
+
+    #[test]
+    fn a_scrolled_pane_says_so_in_its_title() {
+        let mut h = Harness::new();
+        let pane = live_pane(&mut h);
+        assert_eq!(h.app.scroll_indicator(), None);
+
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        answer_scrollback(&mut h, pane, 3, 500, 'H');
+
+        assert_eq!(h.app.scroll_indicator().as_deref(), Some("\u{2191} 3/500"));
+    }
+
+    #[test]
+    fn a_stale_answer_cannot_pull_a_pane_that_went_live_back_up() {
+        let mut h = Harness::new();
+        let pane = live_pane(&mut h);
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        h.app.on_mouse(wheel(MouseEventKind::ScrollDown));
+        assert!(!h.app.grids[&pane].is_scrolled());
+
+        answer_scrollback(&mut h, pane, 3, 500, 'H');
+
+        assert!(
+            !h.app.grids[&pane].is_scrolled(),
+            "the request was abandoned before its answer arrived"
+        );
+    }
+
+    #[test]
+    fn a_resize_re_reads_the_parked_rows_at_the_new_width() {
+        // A snapshot is how a resize reaches the client. The parked rows are
+        // the old width, and only a fresh read can replace them.
+        let mut h = Harness::new();
+        let pane = live_pane(&mut h);
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        answer_scrollback(&mut h, pane, 3, 500, 'H');
+        h.sent();
+
+        h.app.on_server_msg(ServerMsg::PaneSnapshot {
+            pane,
+            rows: 3,
+            cols: 8,
+            cells: vec![vec![Cell::default(); 8]; 3],
+            cursor: argus_protocol::Cursor::default(),
+            mouse: Default::default(),
+            alternate_screen: false,
+        });
+
+        assert_eq!(scrollback_asks(&mut h), [3]);
+        assert!(h.app.grids[&pane].is_scrolled(), "and stays where it was");
     }
 
     #[test]
@@ -5275,6 +5629,40 @@ second
 
         assert!(h.app.overlay.is_none());
         assert!(h.app.review.is_none(), "and the diff goes with it");
+    }
+
+    #[test]
+    fn s_flips_the_open_diff_between_split_and_unified() {
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
+        h.app.review_for_test(checkout);
+        h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
+        assert!(!h.app.review_split, "unified to begin with");
+
+        h.key(KeyCode::Char('s'));
+        assert!(h.app.review.as_ref().unwrap().split, "the open view flips");
+        assert!(h.app.settings.review_split, "and is remembered");
+        assert!(h.app.status.contains("split"), "{}", h.app.status);
+
+        h.key(KeyCode::Char('s'));
+        assert!(!h.app.review.as_ref().unwrap().split);
+        assert!(!h.app.settings.review_split);
+    }
+
+    #[test]
+    fn the_next_diff_opens_the_way_the_last_one_was_left() {
+        // The same standing rule as the side toggle: a view is a setting,
+        // not a per-visit choice.
+        let mut h = Harness::new();
+        let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
+        h.app.review_for_test(checkout);
+        h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
+        h.key(KeyCode::Char('s'));
+        h.key(KeyCode::Esc);
+
+        h.app.review_for_test(checkout);
+        h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
+        assert!(h.app.review.as_ref().unwrap().split);
     }
 
     // --- collapse projects pane ----------------------------------------------

@@ -75,7 +75,16 @@ it leaves once it holds no panes — a repository still running an agent stays u
 because a directory can go missing for reasons that have nothing to do with the operator's intent.
 A path the configuration names outright is taken at its word: one that is not a Git repository at
 all still becomes a row, and no scan removes it. A root with no repositories under it is a project
-all the same. The walk probes for a `.git` entry (or a bare Git directory) before opening libgit2,
+all the same.
+
+`i` in the repositories column is the one gesture that makes a repository rather than finding one:
+the directory browser picks where it goes, a prompt names it, and the daemon creates the directory,
+runs `git init` in it, and adds it to the project the same way a named path is added. An empty name
+means the chosen directory itself, so a folder that already exists gets initialized where it
+stands; a directory that is already a repository is added without being re-inited, since rewriting
+the hooks of a repository that exists is not what the gesture asked for. `git init` does the work
+rather than a `.git` written by hand, so the result is whatever the user's own git configuration
+would have produced. The walk probes for a `.git` entry (or a bare Git directory) before opening libgit2,
 so a root of ordinary directories is not a libgit2 open per folder.
 
 Checkout rows use the branch currently occupying their path as their display name, including when
@@ -190,8 +199,30 @@ attributes it was cleared to, so a TUI's coloured bars survive. The encoding is 
 a plain string on the wire. The
 client also bounds incoming daemon messages and coalesces redraws to the same interval. Cursor-only
 changes are broadcast even when no cell changed. The client places its hardware cursor there only
-while that pane has typing focus. The parser retains 4,000 scrollback lines, though the client has
-no scrollback navigation. An exiting process gets a 500 ms output-flush grace period.
+while that pane has typing focus. The parser retains 4,000 scrollback lines. An exiting process gets a 500 ms output-flush grace period.
+
+A client can park a pane's view above its live screen. It asks for an offset in lines and the
+daemon answers with the rows there, the offset it could actually reach, and how far back the buffer
+goes; the parked rows are drawn in place of the live grid until the view returns to the bottom. The
+read moves the parser's scrollback offset and puts it straight back under one hold of the lock,
+because that offset is parser-global: left set, it would drag every other subscriber's frames back
+with one client's view, and the pump would broadcast the difference as damage. The alternate screen
+keeps no scrollback of its own, so a full-screen child answers with a depth of zero rather than
+showing the shell's history underneath it.
+
+Damage keeps landing on the live grid the whole time a pane is parked, so returning to the bottom is
+immediate and never needs a fresh subscription. The parked rows are deliberately not re-read as that
+damage arrives: they are what the operator scrolled up to read, and a pane still producing output
+would otherwise shift the text out from under them. The consequence is that an offset is relative to
+the live screen at the moment it is requested, so on a pane that is actively printing, scrolling
+again lands lower than the arithmetic suggests. Anchoring an offset to a line rather than to the
+screen needs the daemon to count what it evicts, which the parser does not report.
+
+A wheel over a pane on the normal screen moves that view rather than reaching the child, since that
+is the screen with history behind it. Shift-PageUp and Shift-PageDown page by a screen less a line,
+leaving the child its own unshifted paging keys. Typing returns the pane to the live screen: the
+child's echo lands there, and the parked view is not somewhere input can be seen. A parked pane
+leads its title with how far back it is, because it is otherwise indistinguishable from a quiet one.
 
 Clients receive a full grid when they subscribe, then incremental damage. The grid and the damage
 stream are taken under one hold of the parser lock, so no frame can be published between them and
@@ -456,7 +487,8 @@ Git mutations use the `git` executable:
 - add a worktree, creating the branch unless it already exists;
 - delete a local branch, refusing an unmerged one;
 - fetch every remote, and pull one checkout fast-forward-only;
-- force-remove a linked worktree and best-effort delete its branch.
+- force-remove a linked worktree and best-effort delete its branch;
+- `git init` a repository that does not exist yet.
 
 A root scan skips `.git`, `.argus`, `node_modules`, and `target` for every project. `exclude` adds to
 that and `include` overrides it, both taking either a bare directory name, matched anywhere under
@@ -533,6 +565,17 @@ configured with the JavaScript query concatenated underneath their own, which is
 additions; without it they parse correctly and highlight nothing. Anything else is plain text, and
 so is a file over 512 KiB, an unreadable blob, or a parse that fails — highlighting is decoration
 and never costs a review. The client validates every offset against the line before slicing it.
+
+`s` flattens the same diff the other way. Unified gives every diff line a row; split pairs a
+hunk's removals against the additions that replaced them, one row holding both sides, and ends a
+run at each context line because that is where the two sides are known to line up again. Where a
+run of one side is longer than the other, the surplus rows leave the far side empty and recessed.
+Nothing is asked of the daemon: the rows are rebuilt from the hunks the client already holds. Each
+side is ellipsized at its own half so one long line cannot push the other off the row, and each is
+numbered from its own tree — the old file on the left, the new one on the right. The cursor stays
+on the line it was on across a toggle, a half-made range is dropped, and the choice is a setting
+that persists like the side toggle. A row holding both sides anchors a comment to both, which is
+the anchor the unified view produces for the same two lines selected together.
 
 Every request has an id and the client accepts only the latest exact reply. Review capture is
 globally serialized, and a connection drops an older queued capture when a newer request replaces

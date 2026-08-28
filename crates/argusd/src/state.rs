@@ -3042,6 +3042,70 @@ mod tests {
         });
     }
 
+    /// `init_repository` shells out to `git`, so its tests need a runtime.
+    /// Built here rather than with `#[tokio::test]` because the config
+    /// guard around them is synchronous.
+    fn blocking<T>(future: impl std::future::Future<Output = T>) -> T {
+        tokio::runtime::Runtime::new().unwrap().block_on(future)
+    }
+
+    #[test]
+    fn a_brand_new_repository_is_created_where_it_was_asked_for_and_added() {
+        with_temp_config(|_| {
+            let (root, _outside, d) = project_and_an_outside_repository();
+            let project = d.snapshot()[0].id;
+            let dest = root.path().join("fresh");
+
+            blocking(d.init_repository(project, &dest.to_string_lossy())).unwrap();
+
+            assert!(dest.join(".git").exists(), "git init ran in it");
+            assert_eq!(repository_names(&d), vec!["orion", "fresh"]);
+        });
+    }
+
+    #[test]
+    fn a_new_repository_survives_a_restart_the_way_an_added_one_does() {
+        with_temp_config(|_| {
+            let (root, _outside, d) = project_and_an_outside_repository();
+            let project = d.snapshot()[0].id;
+            blocking(d.init_repository(project, &root.path().join("fresh").to_string_lossy()))
+                .unwrap();
+
+            let restarted = persistent(crate::config::load().unwrap());
+            assert_eq!(repository_names(&restarted), vec!["fresh", "orion"]);
+        });
+    }
+
+    #[test]
+    fn a_directory_that_is_already_a_repository_is_added_without_being_reinited() {
+        with_temp_config(|_| {
+            let (_root, outside, d) = project_and_an_outside_repository();
+            let project = d.snapshot()[0].id;
+            let notes = outside.path().join("notes");
+            let before = head_of(&notes);
+
+            blocking(d.init_repository(project, &notes.to_string_lossy())).unwrap();
+
+            assert_eq!(head_of(&notes), before, "its history is untouched");
+            assert_eq!(repository_names(&d), vec!["orion", "notes"]);
+        });
+    }
+
+    #[test]
+    fn making_a_repository_where_a_file_already_sits_is_refused() {
+        with_temp_config(|_| {
+            let (root, _outside, d) = project_and_an_outside_repository();
+            let project = d.snapshot()[0].id;
+            let file = root.path().join("taken");
+            std::fs::write(&file, "").unwrap();
+
+            let err = blocking(d.init_repository(project, &file.to_string_lossy()))
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("is a file"), "{err}");
+        });
+    }
+
     // --- removing what was added --------------------------------------------
 
     /// A project rooted at a temp directory holding one repository per

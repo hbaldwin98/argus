@@ -21,6 +21,11 @@ use crate::fuzzy::Fuzzy;
 pub enum DirTarget {
     Project,
     Repository(ProjectId),
+    /// Where a repository that does not exist yet should go. The confirmed
+    /// directory is the parent, not the repository — the name comes from
+    /// the prompt this opens, because the directory being browsed for is
+    /// one that is not on screen to be picked.
+    NewRepository(ProjectId),
 }
 
 /// One row. The listing is preceded by the directory you are standing in,
@@ -88,6 +93,26 @@ impl DirPicker {
         match self.target {
             DirTarget::Project => "add project",
             DirTarget::Repository(_) => "add repository",
+            DirTarget::NewRepository(_) => "new repository",
+        }
+    }
+
+    /// What confirming the directory you are standing in does. The row is
+    /// the same one either way; what it means is not, and "add this
+    /// directory" over a browse that is looking for somewhere to *put* a
+    /// repository reads as adding the parent by mistake.
+    pub fn here_label(&self) -> &'static str {
+        match self.target {
+            DirTarget::Project | DirTarget::Repository(_) => "add this directory",
+            DirTarget::NewRepository(_) => "make it in this directory",
+        }
+    }
+
+    /// The word for Enter in the key hint, for the same reason.
+    pub fn choose_label(&self) -> &'static str {
+        match self.target {
+            DirTarget::Project | DirTarget::Repository(_) => "enter add",
+            DirTarget::NewRepository(_) => "enter choose",
         }
     }
 
@@ -258,7 +283,7 @@ fn row_name(row: &DirRow) -> String {
 /// Joining without `PathBuf`, so the separator already in `base` is the one
 /// that comes back out: a Windows breadcrumb that grows a forward slash
 /// halfway along reads like a bug even when the path resolves.
-fn join(base: &str, name: &str) -> String {
+pub fn join(base: &str, name: &str) -> String {
     let sep = if base.contains('\\') && !base.contains('/') {
         '\\'
     } else {

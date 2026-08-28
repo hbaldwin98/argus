@@ -10,7 +10,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use argus_protocol::CheckoutId;
+use anyhow::Context;
+use argus_protocol::{CheckoutId, ProjectId};
 
 use super::*;
 
@@ -231,6 +232,42 @@ impl Daemon {
         self.broadcast_tree();
 
         run_setup(&context.setup, &dest).await
+    }
+
+    /// Makes a repository that does not exist yet and adds it to `project`:
+    /// the directory at `path` is created if it is not there, `git init`
+    /// runs in it, and the result joins the project's `repos` list exactly
+    /// as `add_repository` puts any other directory there.
+    ///
+    /// Every other way into the panel takes the checkouts on disk as
+    /// given — this is the only one that makes one. `git init` does it
+    /// rather than a `.git` written by hand, so what the user gets is
+    /// whatever their own git config would have made: default branch name,
+    /// templates, hooks and all.
+    ///
+    /// A directory that is already a repository is added without being
+    /// re-inited. `git init` would happily rerun there, but rewriting the
+    /// hooks of a repository that already exists is not what "make me a
+    /// new one" asked for.
+    pub async fn init_repository(&self, project: ProjectId, path: &str) -> anyhow::Result<()> {
+        let expanded = config::expand_home(path);
+        if expanded.is_file() {
+            anyhow::bail!("{} is a file", expanded.display());
+        }
+        // Made here rather than left to `git init <dir>`, so a path whose
+        // parents are missing fails as a directory that could not be
+        // created instead of as a git error about somewhere else.
+        std::fs::create_dir_all(&expanded)
+            .with_context(|| format!("could not create {}", expanded.display()))?;
+
+        if crate::git::git_dir(&expanded).is_none() {
+            run_git(&expanded, &["init"]).await?;
+        }
+
+        // The path is passed on as the daemon resolved it, not as the
+        // client spelled it: `add_repository` expands again, and a `~` that
+        // survived to here would be expanded against the same home anyway.
+        self.add_repository(project, &expanded.to_string_lossy())
     }
 
     /// Errors rather than `None`, so a stale id reaches the user as text.
