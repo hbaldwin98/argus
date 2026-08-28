@@ -21,6 +21,7 @@ mod input;
 mod mouse;
 mod nav;
 mod pickers;
+mod scroll;
 mod server;
 
 const STATE_FLASH: std::time::Duration = std::time::Duration::from_millis(900);
@@ -2866,6 +2867,247 @@ second
             .sent()
             .iter()
             .any(|m| matches!(m, ClientMsg::Input { .. })));
+    }
+
+    // --- Pane scrollback ---------------------------------------------------
+
+    fn wheel(kind: MouseEventKind) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column: 54,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        }
+    }
+
+    /// A pane showing three live rows, entered, subscribed and drained.
+    fn live_pane(h: &mut Harness) -> PaneId {
+        laid_out(h);
+        h.keys("llll");
+        assert_eq!(h.app.focus, Focus::PaneContent);
+        let pane = h.app.column_pane().unwrap();
+        h.app.grids.insert(
+            pane,
+            crate::grid::Grid::new(vec![vec![Cell::default(); 4]; 3]),
+        );
+        h.sent();
+        pane
+    }
+
+    /// Answer an outstanding Scrollback request the way the daemon would,
+    /// with rows whose first cell carries `mark` so a test can tell which
+    /// depth it is looking at.
+    fn answer_scrollback(h: &mut Harness, pane: PaneId, offset: u32, depth: u32, mark: char) {
+        let mut row = vec![Cell::default(); 4];
+        row[0].ch = mark.to_string().into();
+        h.app.on_server_msg(ServerMsg::ScrollbackRows {
+            pane,
+            offset,
+            depth,
+            cells: vec![row; 3],
+        });
+    }
+
+    fn drawn_mark(h: &Harness, pane: PaneId) -> String {
+        h.app.grids[&pane].view()[0][0].ch.to_string()
+    }
+
+    /// The offsets asked for since the last drain. `ClientMsg` carries no
+    /// `PartialEq`, so the traffic is compared by what it requested.
+    fn scrollback_asks(h: &mut Harness) -> Vec<u32> {
+        h.sent()
+            .into_iter()
+            .filter_map(|m| match m {
+                ClientMsg::Scrollback { offset, .. } => Some(offset),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_wheel_over_a_shell_asks_for_the_lines_above_it() {
+        // The normal screen is the case with history behind it, and nothing
+        // used to happen at all: a shell's output was gone once it passed
+        // the top of the pane.
+        let mut h = Harness::new();
+        live_pane(&mut h);
+
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+
+        let sent = h.sent();
+        let asked: Vec<u32> = sent
+            .iter()
+            .filter_map(|m| match m {
+                ClientMsg::Scrollback { offset, .. } => Some(*offset),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(asked, [3], "one notch is three lines");
+        assert!(
+            !sent.iter().any(|m| matches!(m, ClientMsg::Input { .. })),
+            "and no bytes reach the child"
+        );
+    }
+
+    #[test]
+    fn scrolling_back_draws_the_rows_the_daemon_answers_with() {
+        let mut h = Harness::new();
+        let pane = live_pane(&mut h);
+        assert_eq!(drawn_mark(&h, pane), " ", "live to begin with");
+
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        answer_scrollback(&mut h, pane, 3, 500, 'H');
+
+        assert_eq!(drawn_mark(&h, pane), "H");
+        assert!(h.app.grids[&pane].is_scrolled());
+    }
+
+    #[test]
+    fn scrolling_back_down_to_the_bottom_returns_to_the_live_screen() {
+        let mut h = Harness::new();
+        let pane = live_pane(&mut h);
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        answer_scrollback(&mut h, pane, 3, 500, 'H');
+        h.sent();
+
+        h.app.on_mouse(wheel(MouseEventKind::ScrollDown));
+
+        assert!(!h.app.grids[&pane].is_scrolled());
+        assert_eq!(drawn_mark(&h, pane), " ", "the live grid, still current");
+        assert!(
+            h.sent().is_empty(),
+            "the live screen is already streaming; asking for it again is waste"
+        );
+    }
+
+    #[test]
+    fn scrolling_stops_at_the_depth_the_daemon_reported() {
+        let mut h = Harness::new();
+        let pane = live_pane(&mut h);
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        answer_scrollback(&mut h, pane, 3, 4, 'H');
+        h.sent();
+
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        assert_eq!(scrollback_asks(&mut h), [4]);
+
+        answer_scrollback(&mut h, pane, 4, 4, 'T');
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        assert!(
+            h.sent().is_empty(),
+            "already at the top: no point asking for rows that do not exist"
+        );
+    }
+
+    #[test]
+    fn a_daemon_with_nothing_behind_the_screen_leaves_the_pane_live() {
+        // What a freshly started shell answers, and what any child on the
+        // alternate screen answers: an offset of zero means there is no
+        // history to park in.
+        let mut h = Harness::new();
+        let pane = live_pane(&mut h);
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+
+        answer_scrollback(&mut h, pane, 0, 0, 'X');
+
+        assert!(!h.app.grids[&pane].is_scrolled());
+        assert_eq!(drawn_mark(&h, pane), " ");
+    }
+
+    #[test]
+    fn typing_snaps_a_scrolled_pane_back_to_the_live_screen() {
+        // The child's echo lands on the live screen. Leaving the view parked
+        // would type into somewhere the operator cannot see.
+        let mut h = Harness::new();
+        let pane = live_pane(&mut h);
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        answer_scrollback(&mut h, pane, 3, 500, 'H');
+        h.sent();
+
+        h.key(KeyCode::Char('x'));
+
+        assert!(!h.app.grids[&pane].is_scrolled());
+        assert!(
+            h.sent()
+                .iter()
+                .any(|m| matches!(m, ClientMsg::Input { .. })),
+            "and the keystroke still reaches the child"
+        );
+    }
+
+    #[test]
+    fn shift_page_up_pages_by_a_screen_and_leaves_the_child_its_own_keys() {
+        let mut h = Harness::new();
+        live_pane(&mut h);
+
+        h.app
+            .on_key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::SHIFT));
+        assert_eq!(
+            scrollback_asks(&mut h),
+            [5],
+            "the content panel is six rows, paged with one line of overlap"
+        );
+
+        h.app
+            .on_key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE));
+        assert!(
+            h.sent()
+                .iter()
+                .any(|m| matches!(m, ClientMsg::Input { .. })),
+            "unshifted paging is the child's"
+        );
+    }
+
+    #[test]
+    fn a_scrolled_pane_says_so_in_its_title() {
+        let mut h = Harness::new();
+        let pane = live_pane(&mut h);
+        assert_eq!(h.app.scroll_indicator(), None);
+
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        answer_scrollback(&mut h, pane, 3, 500, 'H');
+
+        assert_eq!(h.app.scroll_indicator().as_deref(), Some("\u{2191} 3/500"));
+    }
+
+    #[test]
+    fn a_stale_answer_cannot_pull_a_pane_that_went_live_back_up() {
+        let mut h = Harness::new();
+        let pane = live_pane(&mut h);
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        h.app.on_mouse(wheel(MouseEventKind::ScrollDown));
+        assert!(!h.app.grids[&pane].is_scrolled());
+
+        answer_scrollback(&mut h, pane, 3, 500, 'H');
+
+        assert!(
+            !h.app.grids[&pane].is_scrolled(),
+            "the request was abandoned before its answer arrived"
+        );
+    }
+
+    #[test]
+    fn a_resize_re_reads_the_parked_rows_at_the_new_width() {
+        // A snapshot is how a resize reaches the client. The parked rows are
+        // the old width, and only a fresh read can replace them.
+        let mut h = Harness::new();
+        let pane = live_pane(&mut h);
+        h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+        answer_scrollback(&mut h, pane, 3, 500, 'H');
+        h.sent();
+
+        h.app.on_server_msg(ServerMsg::PaneSnapshot {
+            pane,
+            rows: 3,
+            cols: 8,
+            cells: vec![vec![Cell::default(); 8]; 3],
+            cursor: argus_protocol::Cursor::default(),
+            mouse: Default::default(),
+            alternate_screen: false,
+        });
+
+        assert_eq!(scrollback_asks(&mut h), [3]);
+        assert!(h.app.grids[&pane].is_scrolled(), "and stays where it was");
     }
 
     #[test]

@@ -59,7 +59,10 @@ Closes the loop: information currently flows only upward, from agents reporting 
 
 ## P7: Terminal and Performance
 
-- Expose scrollback navigation.
+- Anchor a parked scrollback view to a line rather than to the live screen, so a pane still printing
+  does not shift the rows out from under a reader. Navigation itself has landed (DESIGN.md, "Panes
+  and terminal state"): the daemon answers an offset with the rows there, and the wheel,
+  Shift-PageUp/PageDown, and typing move between history and live.
 - Add child-negotiated mouse behavior, bracketed paste, focus events, OSC 52, and extended keys.
 - Add fullscreen mode for a pane (hide navigation columns, give terminal full window).
 - Replace idle 16 ms pane wakeups with event-driven work where possible.

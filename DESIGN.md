@@ -187,8 +187,30 @@ attributes it was cleared to, so a TUI's coloured bars survive. The encoding is 
 a plain string on the wire. The
 client also bounds incoming daemon messages and coalesces redraws to the same interval. Cursor-only
 changes are broadcast even when no cell changed. The client places its hardware cursor there only
-while that pane has typing focus. The parser retains 4,000 scrollback lines, though the client has
-no scrollback navigation. An exiting process gets a 500 ms output-flush grace period.
+while that pane has typing focus. The parser retains 4,000 scrollback lines. An exiting process gets a 500 ms output-flush grace period.
+
+A client can park a pane's view above its live screen. It asks for an offset in lines and the
+daemon answers with the rows there, the offset it could actually reach, and how far back the buffer
+goes; the parked rows are drawn in place of the live grid until the view returns to the bottom. The
+read moves the parser's scrollback offset and puts it straight back under one hold of the lock,
+because that offset is parser-global: left set, it would drag every other subscriber's frames back
+with one client's view, and the pump would broadcast the difference as damage. The alternate screen
+keeps no scrollback of its own, so a full-screen child answers with a depth of zero rather than
+showing the shell's history underneath it.
+
+Damage keeps landing on the live grid the whole time a pane is parked, so returning to the bottom is
+immediate and never needs a fresh subscription. The parked rows are deliberately not re-read as that
+damage arrives: they are what the operator scrolled up to read, and a pane still producing output
+would otherwise shift the text out from under them. The consequence is that an offset is relative to
+the live screen at the moment it is requested, so on a pane that is actively printing, scrolling
+again lands lower than the arithmetic suggests. Anchoring an offset to a line rather than to the
+screen needs the daemon to count what it evicts, which the parser does not report.
+
+A wheel over a pane on the normal screen moves that view rather than reaching the child, since that
+is the screen with history behind it. Shift-PageUp and Shift-PageDown page by a screen less a line,
+leaving the child its own unshifted paging keys. Typing returns the pane to the live screen: the
+child's echo lands there, and the parked view is not somewhere input can be seen. A parked pane
+leads its title with how far back it is, because it is otherwise indistinguishable from a quiet one.
 
 Clients receive a full grid when they subscribe, then incremental damage. The grid and the damage
 stream are taken under one hold of the parser lock, so no frame can be published between them and

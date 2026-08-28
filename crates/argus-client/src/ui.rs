@@ -714,7 +714,12 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
     // Typing focus is what the accent border promises here, so only
     // PaneContent lights it up — merely selecting a pane does not.
     let focused = app.focus == Focus::PaneContent;
-    let title = content_title(app);
+    // A parked pane looks exactly like a quiet one, so the title has to say
+    // that the rows on screen are history rather than the current output.
+    let title = match app.scroll_indicator() {
+        Some(where_) => format!("{where_} · {}", content_title(app)),
+        None => content_title(app),
+    };
     let block = panel_block(&title, focused, th, area.width);
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -1067,12 +1072,24 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             th.dim,
         )
     } else if app.focus == Focus::PaneContent {
-        let hint = if app.pane_fullscreen {
-            "typing   ctrl-space: esc leave  f restore  x close   ctrl-v paste"
+        // A parked pane is not taking input anywhere the operator can see,
+        // so the way back to the live screen outranks the usual keymap.
+        if app.scroll_indicator().is_some() {
+            (
+                "scrolled back   shift-pgup/pgdn move   type or scroll down to return",
+                th.accent,
+            )
+        } else if app.pane_fullscreen {
+            (
+                "typing   ctrl-space: esc leave  f restore  x close   shift-pgup scroll",
+                th.dim,
+            )
         } else {
-            "typing   ctrl-space: esc leave  f fullscreen  x close   ctrl-v paste"
-        };
-        (hint, th.dim)
+            (
+                "typing   ctrl-space: esc leave  f fullscreen  x close   shift-pgup scroll",
+                th.dim,
+            )
+        }
     } else {
         // Per column rather than one list of everything: the bar cannot
         // hold every key at once, and most of them only apply somewhere.
@@ -2006,9 +2023,11 @@ fn render_term(
 /// the cursor at a coordinate the drawn rows don't reach puts it in empty
 /// space — better to skip a frame than to point at nothing.
 fn term_cursor(grid: Option<&Grid>, area: Rect, focused: bool) -> Option<CursorPlacement> {
-    let grid = grid.filter(|grid| focused && grid.cursor.visible)?;
-    let rows = grid.cells.len();
-    let cols = grid.cells.first().map_or(0, Vec::len);
+    // A parked view is history: the child's cursor belongs to the live
+    // screen, which is not the one being drawn.
+    let grid = grid.filter(|grid| focused && grid.cursor.visible && !grid.is_scrolled())?;
+    let rows = grid.view().len();
+    let cols = grid.view().first().map_or(0, Vec::len);
     let row = usize::from(grid.cursor.row);
     let col = usize::from(grid.cursor.col);
     if row >= rows.min(usize::from(area.height)) || col >= cols.min(usize::from(area.width)) {
@@ -2023,7 +2042,7 @@ fn term_cursor(grid: Option<&Grid>, area: Rect, focused: bool) -> Option<CursorP
 impl Widget for TermView<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let Some(grid) = self.grid else { return };
-        for (r, row) in grid.cells.iter().enumerate() {
+        for (r, row) in grid.view().iter().enumerate() {
             if r as u16 >= area.height {
                 break;
             }
@@ -2606,7 +2625,7 @@ mod tests {
     fn bar_row(buf: &ratatui::buffer::Buffer) -> u16 {
         lines(buf)
             .iter()
-            .position(|r| r.contains("q detach"))
+            .rposition(|r| !r.trim().is_empty())
             .expect("the status bar") as u16
     }
 
@@ -2621,6 +2640,79 @@ mod tests {
         let mut app = App::new(tx);
         app.on_server_msg(argus_protocol::ServerMsg::Tree(tree()));
         app
+    }
+
+    fn cell(ch: char) -> argus_protocol::Cell {
+        argus_protocol::Cell {
+            ch: ch.to_string().into(),
+            ..Default::default()
+        }
+    }
+
+    // --- a pane parked in its scrollback -------------------------------------
+
+    /// An app inside a pane whose view is parked `offset` lines back, with
+    /// `mark` filling the rows the daemon answered with.
+    fn app_scrolled_back(offset: u32, depth: u32, mark: char) -> App {
+        let mut app = app_with_tree();
+        app.focus = Focus::PaneContent;
+        let pane = app.column_pane().expect("the fixture pane");
+        let live = |c: char| vec![vec![cell(c); 30]; 5];
+        let mut grid = crate::grid::Grid::new(live('L'));
+        grid.scrollback = Some(crate::grid::Scrollback {
+            offset,
+            depth,
+            cells: live(mark),
+        });
+        app.grids.insert(pane, grid);
+        app
+    }
+
+    #[test]
+    fn a_parked_pane_draws_its_history_rather_than_the_live_screen() {
+        let mut app = app_scrolled_back(120, 4000, 'H');
+        let text = lines(&draw(&mut app)).join("\n");
+        assert!(text.contains("HHH"), "the rows read out of the scrollback");
+        assert!(
+            !text.contains("LLL"),
+            "and not the live screen underneath them"
+        );
+    }
+
+    #[test]
+    fn a_parked_pane_shows_how_far_back_it_is_in_its_title() {
+        // A pane parked in history looks exactly like a quiet one. Without
+        // this the operator has no way to tell that what is on screen is
+        // not what the child is doing now.
+        let mut app = app_scrolled_back(120, 4000, 'H');
+        let text = lines(&draw(&mut app)).join("\n");
+        assert!(text.contains("\u{2191} 120/4000"), "got:\n{text}");
+    }
+
+    #[test]
+    fn a_parked_pane_says_how_to_get_back_to_the_live_screen() {
+        let mut app = app_scrolled_back(120, 4000, 'H');
+        assert!(bar(&draw(&mut app)).contains("scrolled back"));
+
+        let mut live = app_with_tree();
+        live.focus = Focus::PaneContent;
+        assert!(bar(&draw(&mut live)).contains("shift-pgup scroll"));
+    }
+
+    #[test]
+    fn a_parked_pane_does_not_take_the_hardware_cursor() {
+        // The child's cursor belongs to the live screen, which is not the
+        // one being drawn. Placing it here points at unrelated history.
+        let mut app = app_scrolled_back(120, 4000, 'H');
+        let pane = app.column_pane().unwrap();
+        app.grids.get_mut(&pane).unwrap().cursor = argus_protocol::Cursor {
+            row: 1,
+            col: 1,
+            visible: true,
+            ..Default::default()
+        };
+        draw(&mut app);
+        assert_eq!(app.layout.cursor, None);
     }
 
     // --- a column taller than its card ---------------------------------------

@@ -27,6 +27,13 @@ pub enum ClientMsg {
         pane: PaneId,
         text: String,
     },
+    /// Ask for the rows sitting `offset` lines above a pane's live screen.
+    /// `0` is the live screen itself, which is how the client says it has
+    /// scrolled back to the bottom.
+    Scrollback {
+        pane: PaneId,
+        offset: u32,
+    },
     /// The client's view of a pane has been resized.
     Resize {
         pane: PaneId,
@@ -226,6 +233,16 @@ pub enum ServerMsg {
         mouse: MouseTracking,
         #[serde(default)]
         alternate_screen: bool,
+    },
+    /// The answer to `ClientMsg::Scrollback`. `offset` is what the daemon
+    /// could actually reach after clamping and `depth` how far back the
+    /// buffer goes, so the client can stop at the top rather than asking
+    /// for rows that do not exist.
+    ScrollbackRows {
+        pane: PaneId,
+        offset: u32,
+        depth: u32,
+        cells: Vec<Vec<Cell>>,
     },
     /// The answer to `ClientMsg::Review`.
     Review(Review),

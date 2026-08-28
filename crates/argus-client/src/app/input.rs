@@ -359,8 +359,22 @@ impl App {
         let Some(pane) = self.column_pane() else {
             return;
         };
+        // Shift-PageUp/Down is the terminal convention for scrollback, and
+        // taking only the shifted pair leaves the child its own paging keys
+        // — a pager or an editor inside the pane still gets them unshifted.
+        if key.modifiers.contains(KeyModifiers::SHIFT) {
+            match key.code {
+                KeyCode::PageUp => return self.page_pane(pane, -1),
+                KeyCode::PageDown => return self.page_pane(pane, 1),
+                _ => {}
+            }
+        }
         let bytes = encode_key(&key);
         if !bytes.is_empty() {
+            // Typing is a statement that the present is what matters; every
+            // terminal snaps to the bottom on it, and the child's echo would
+            // otherwise land somewhere the operator cannot see.
+            self.scroll_to_live(pane);
             let _ = self.out.send(ClientMsg::Input { pane, bytes });
         }
     }

@@ -1,5 +1,23 @@
 use argus_protocol::{Cell, CellSpan, Cursor, MouseTracking};
 
+/// A pane's view parked above its live screen.
+///
+/// Held alongside the live grid rather than replacing it: damage keeps
+/// landing on `Grid::cells` the whole time, so dropping back to the bottom
+/// is instant and never needs a fresh subscription.
+pub struct Scrollback {
+    /// Lines above the live screen. A grid showing the live screen holds
+    /// `None` rather than an offset of zero.
+    pub offset: u32,
+    /// How far back the daemon says the buffer goes, so the client can stop
+    /// at the top instead of asking for rows that do not exist.
+    pub depth: u32,
+    /// The rows the daemon last read at `offset`. Seeded from the live grid
+    /// so the first scroll draws something rather than blanking the pane
+    /// for the frame it takes the answer to arrive.
+    pub cells: Vec<Vec<Cell>>,
+}
+
 pub struct Grid {
     pub cells: Vec<Vec<Cell>>,
     pub cursor: Cursor,
@@ -11,6 +29,8 @@ pub struct Grid {
     /// that pane is a cursor key when `mouse` is off, so TUIs that never
     /// enable mouse tracking can still scroll.
     pub alternate_screen: bool,
+    /// Where this pane is parked in its history, if it is not live.
+    pub scrollback: Option<Scrollback>,
 }
 
 impl Grid {
@@ -20,6 +40,7 @@ impl Grid {
             cursor: Cursor::default(),
             mouse: MouseTracking::default(),
             alternate_screen: false,
+            scrollback: None,
         }
     }
 
@@ -29,6 +50,7 @@ impl Grid {
             cursor,
             mouse,
             alternate_screen: false,
+            scrollback: None,
         }
     }
 
@@ -47,6 +69,18 @@ impl Grid {
 
     pub fn move_cursor(&mut self, cursor: Cursor) {
         self.cursor = cursor;
+    }
+
+    /// The rows to draw: the parked view when there is one, otherwise live.
+    pub fn view(&self) -> &[Vec<Cell>] {
+        match &self.scrollback {
+            Some(sb) => &sb.cells,
+            None => &self.cells,
+        }
+    }
+
+    pub fn is_scrolled(&self) -> bool {
+        self.scrollback.is_some()
     }
 }
 

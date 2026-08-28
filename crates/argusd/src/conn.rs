@@ -202,6 +202,18 @@ fn dispatch_pane(
         ClientMsg::Input { pane, bytes } => daemon.write_pane(pane, &bytes),
         ClientMsg::Paste { pane, text } => daemon.paste_pane(pane, &text),
         ClientMsg::Resize { pane, rows, cols } => daemon.resize_pane(viewer, pane, rows, cols),
+        ClientMsg::Scrollback { pane, offset } => {
+            daemon
+                .pane_scrollback(pane, offset as usize)
+                .map(|(cells, offset, depth)| {
+                    let _ = out_tx.send(ServerMsg::ScrollbackRows {
+                        pane,
+                        offset: offset as u32,
+                        depth: depth as u32,
+                        cells,
+                    });
+                })
+        }
         ClientMsg::SpawnShell { checkout } => {
             let daemon = daemon.clone();
             spawn_pane(out_tx, move || daemon.spawn_shell(checkout).map(|_| ()))
