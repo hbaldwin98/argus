@@ -1,3 +1,6 @@
+//! A pane's screen as the client holds it: the live grid the daemon's
+//! damage lands on, and the parked view above it when scrolled back.
+
 use argus_protocol::{Cell, CellSpan, Cursor, MouseTracking};
 
 /// A pane's view parked above its live screen.

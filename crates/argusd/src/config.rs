@@ -1,3 +1,10 @@
+//! `projects.toml`: what the user declares.
+//!
+//! Read-only — nothing here is ever written back. What the user does to
+//! the panel while it is running is an overlay in the store, folded over
+//! this at startup by [`with_overlays`], so hand-editing the file and
+//! adding a project from the UI never fight over the same lines.
+
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};

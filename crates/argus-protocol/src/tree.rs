@@ -1,3 +1,10 @@
+//! The tree a client renders: projects, their repositories, each
+//! repository's checkouts and branches, and the panes running in them.
+//!
+//! Sent whole on every structural change rather than as a patch — it is
+//! small, and a client that can only ever be handed the current truth has
+//! no stale-state bugs to have.
+
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
@@ -42,6 +49,23 @@ impl PaneStatus {
             self,
             PaneStatus::Waiting | PaneStatus::NeedsReview | PaneStatus::Failed
         )
+    }
+
+    /// An order, not a scale: a row standing for several agents shows the
+    /// largest state beneath it (DESIGN.md §8b). Here rather than in the
+    /// client because two clients disagreeing on which agent is the more
+    /// urgent would be two different products.
+    pub fn urgency(self) -> u8 {
+        match self {
+            PaneStatus::Exited { code: Some(0) } => 0,
+            PaneStatus::Idle => 1,
+            PaneStatus::Done => 2,
+            PaneStatus::Working => 3,
+            PaneStatus::Exited { .. } => 4,
+            PaneStatus::NeedsReview => 5,
+            PaneStatus::Failed => 6,
+            PaneStatus::Waiting => 7,
+        }
     }
 }
 

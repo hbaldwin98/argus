@@ -1,3 +1,7 @@
+//! Getting a connection to the daemon, starting one if nothing is
+//! listening. The daemon outlives the client that started it, so this
+//! runs at most once per client and never stops anything.
+
 use std::path::PathBuf;
 use std::time::Duration;
 

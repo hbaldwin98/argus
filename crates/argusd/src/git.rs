@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use argus_protocol::GitStatus;
 
+use crate::paths::same_path;
+
 /// Returns `None` if `path` isn't inside a git repo at all, or if the repo
 /// could not be read right now — a transient lock, or HEAD mid-rewrite
 /// during a checkout elsewhere. `None` means "unknown", never "clean and on
@@ -277,15 +279,6 @@ fn conventional(repo: &git2::Repository) -> Option<String> {
         .into_iter()
         .find(|b| repo.find_branch(b, git2::BranchType::Local).is_ok())
         .map(str::to_string)
-}
-
-/// Worktree paths come back from libgit2 canonicalized while a configured
-/// one is however the user spelled it; compare them resolved.
-fn same_path(a: &Path, b: &Path) -> bool {
-    match (a.canonicalize(), b.canonicalize()) {
-        (Ok(a), Ok(b)) => a == b,
-        _ => a == b,
-    }
 }
 
 /// Directories a project scan never walks into: Git's own storage, the

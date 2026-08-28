@@ -1,3 +1,6 @@
+//! Daemon startup: build the `Daemon`, start the pollers, watchers and
+//! hook receiver, then accept clients until the process is asked to stop.
+
 mod browse;
 mod command;
 mod config;
@@ -8,6 +11,7 @@ mod git;
 mod harness;
 mod highlight;
 mod logging;
+mod paths;
 mod pty;
 mod state;
 mod store;

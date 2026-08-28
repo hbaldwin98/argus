@@ -167,20 +167,11 @@ async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
         if n == 0 || line == "\r\n" || line == "\n" {
             break;
         }
-        if let Some(v) = line
-            .strip_prefix("Authorization:")
-            .or_else(|| line.strip_prefix("authorization:"))
-        {
-            authorized = v.trim().eq_ignore_ascii_case(&format!("Bearer {token}"));
-        } else if let Some(v) = line
-            .strip_prefix("Content-Length:")
-            .or_else(|| line.strip_prefix("content-length:"))
-        {
-            content_length = v.trim().parse().unwrap_or(0);
-        } else if let Some(v) = line
-            .strip_prefix("X-Argus-Session:")
-            .or_else(|| line.strip_prefix("x-argus-session:"))
-        {
+        if let Some(v) = strip_header(&line, "Authorization") {
+            authorized = v.eq_ignore_ascii_case(&format!("Bearer {token}"));
+        } else if let Some(v) = strip_header(&line, "Content-Length") {
+            content_length = v.parse().unwrap_or(0);
+        } else if let Some(v) = strip_header(&line, argus_protocol::SESSION_HEADER) {
             reporter = valid_session_id(v);
         }
     }
@@ -221,4 +212,11 @@ pub(super) fn gen_token() -> String {
         .as_nanos() as u64;
     let sequence = NEXT_TOKEN.fetch_add(1, Ordering::Relaxed);
     format!("{now:016x}{sequence:016x}")
+}
+
+/// One header's value, matched without regard to case — which HTTP allows
+/// and the harnesses in the wild disagree about.
+fn strip_header<'a>(line: &'a str, name: &str) -> Option<&'a str> {
+    let (head, value) = line.split_once(':')?;
+    head.eq_ignore_ascii_case(name).then(|| value.trim())
 }

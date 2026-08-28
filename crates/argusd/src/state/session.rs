@@ -80,11 +80,7 @@ impl Daemon {
     /// What is running, in a form that survives ids being reissued.
     pub(super) fn session_panes(&self) -> Vec<crate::store::SessionPane> {
         let inner = self.inner.lock().unwrap();
-        inner
-            .projects
-            .iter()
-            .flat_map(|p| p.repositories.iter())
-            .flat_map(|r| r.checkouts.iter())
+        checkouts(&inner.projects)
             .flat_map(|c| {
                 c.panes
                     .iter()

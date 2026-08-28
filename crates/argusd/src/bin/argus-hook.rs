@@ -50,17 +50,12 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-use argus_protocol::{Endpoint, Report, ReviewComment};
+use argus_protocol::{
+    Endpoint, Report, ReviewComment, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
+    SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
+};
 
 const TIMEOUT: Duration = Duration::from_secs(2);
-const NOTE_FLAG: &str = "--note-from-stdin";
-const TITLE_FLAG: &str = "--title-from-stdin";
-const SESSION_KEY_FLAG: &str = "--session-id-from-stdin";
-const OWNS_SESSION_FLAG: &str = "--owns-session";
-/// Names the conversation a report comes from, so the daemon can tell the
-/// agent that owns a pane from one spawned inside it — which inherits this
-/// process's environment and would otherwise rewrite its parent's row.
-const SESSION_HEADER: &str = "X-Argus-Session";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -243,7 +238,7 @@ fn hook_reply(raw: Option<&str>, inject_instructions: bool, instructions: &str) 
 }
 
 fn env_instructions() -> String {
-    std::env::var("ARGUS_INSTRUCTIONS").unwrap_or_default()
+    std::env::var(INSTRUCTIONS_VAR).unwrap_or_default()
 }
 
 fn installed_input<'a>(
@@ -300,11 +295,11 @@ fn reported_checkout(args: &[&str]) -> Option<std::path::PathBuf> {
 }
 
 fn env_url() -> String {
-    std::env::var("ARGUS_HOOK_URL").unwrap_or_default()
+    std::env::var(URL_VAR).unwrap_or_default()
 }
 
 fn env_token() -> String {
-    std::env::var("ARGUS_HOOK_TOKEN").unwrap_or_default()
+    std::env::var(TOKEN_VAR).unwrap_or_default()
 }
 
 /// The message a harness hands its hook on stdin.

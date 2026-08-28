@@ -15,7 +15,37 @@ use argus_protocol::{CheckoutId, ProjectId};
 
 use super::*;
 
+/// Runs git in `dir` and turns a non-zero exit into git's own message.
+/// Anything the user is going to have to act on is already in there.
+async fn run_git(dir: &std::path::Path, args: &[&str]) -> anyhow::Result<()> {
+    let output = crate::command::git()
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .await?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let message = if stderr.trim().is_empty() {
+            stdout.trim()
+        } else {
+            stderr.trim()
+        };
+        anyhow::bail!("{message}");
+    }
+    Ok(())
+}
+
 impl Daemon {
+    /// What every write to a repository owes the clients afterwards: this
+    /// checkout's own status, the repository's branch lists (a switch or a
+    /// delete moves a name between "occupied" and "free"), and a tree.
+    fn after_git_write(&self, checkout: CheckoutId) {
+        self.refresh_checkout_git(checkout);
+        self.refresh_branches();
+        self.broadcast_tree();
+    }
+
     /// Moves this checkout onto an existing branch. `git` refuses when the
     /// switch would clobber uncommitted work, and that refusal is exactly
     /// what should reach the user, so its stderr is passed through.
@@ -63,9 +93,7 @@ impl Daemon {
     pub async fn fetch(&self, checkout: CheckoutId) -> anyhow::Result<()> {
         let path = self.checkout_path(checkout)?;
         run_git(&path, &["fetch", "--all", "--prune"]).await?;
-        self.refresh_checkout_git(checkout);
-        self.refresh_branches();
-        self.broadcast_tree();
+        self.after_git_write(checkout);
         Ok(())
     }
 
@@ -76,9 +104,7 @@ impl Daemon {
     pub async fn pull(&self, checkout: CheckoutId) -> anyhow::Result<()> {
         let path = self.checkout_path(checkout)?;
         run_git(&path, &["pull", "--ff-only"]).await?;
-        self.refresh_checkout_git(checkout);
-        self.refresh_branches();
-        self.broadcast_tree();
+        self.after_git_write(checkout);
         Ok(())
     }
 
@@ -144,16 +170,9 @@ impl Daemon {
         let branch = checked_branch_name(branch)?;
         let path = self.checkout_path(checkout)?;
 
-        let output = crate::command::git()
-            .args(flags)
-            .arg(&branch)
-            .current_dir(&path)
-            .output()
-            .await?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("{}", stderr.trim());
-        }
+        let mut args = flags.to_vec();
+        args.push(&branch);
+        run_git(&path, &args).await?;
 
         // The checkout's name follows the branch it sits on, the way it did
         // when the worktree was created.
@@ -163,9 +182,7 @@ impl Daemon {
                 c.name = branch.to_string();
             }
         }
-        self.refresh_checkout_git(checkout);
-        self.refresh_branches();
-        self.broadcast_tree();
+        self.after_git_write(checkout);
         Ok(())
     }
 
@@ -307,7 +324,7 @@ impl Daemon {
             let inner = self.inner.lock().unwrap();
             let c = find_checkout_ref(&inner.projects, checkout)
                 .ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
-            let (_, _, primary_path) = find_checkout_context(&inner.projects, checkout)
+            let primary_path = primary_path_of(&inner.projects, checkout)
                 .ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
             (
                 c.path.clone(),

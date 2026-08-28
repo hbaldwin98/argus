@@ -27,17 +27,65 @@ records framed by a four-byte big-endian length. Frames larger than 64 MiB are r
 Several clients may connect at once and each connection may subscribe to several pane screens.
 There is no protocol negotiation or transport authentication.
 
-The daemon's state is one `Daemon` type behind a small set of mutexes, but it is not one file.
-`state.rs` holds the tree itself — the types, the workspace and session handling, and the snapshot
-clients render — and four sibling modules hold `impl Daemon` blocks for the concerns that only touch
-it: `state/panes.rs` for pane lifecycle, sizing, and what an agent reports about itself;
-`state/sync.rs` for the polls and watchers that keep the tree level with the disk; `state/git_ops.rs`
-for the writes to Git; and `state/hook.rs` for the loopback receiver. The type and its locking are
-unchanged by the split — only which file a concern is read in.
+## Where each responsibility lives
 
-The pane API's URL grammar lives in `argus-protocol` rather than in the daemon, because
-`argus-hook` builds the paths the daemon parses. Written once, a new endpoint cannot compile on one
-side and fail at runtime against the other.
+One rule decides which file a thing goes in: a module is named after the question it answers, and
+answers only that one. Nothing is split across two files, and no file holds two subjects. Tests sit
+beside the code they cover, in a `tests/` module split the same way.
+
+`argus-protocol` is everything the three binaries have to agree on, and nothing else. Anything
+written on both sides of a boundary belongs here, because three binaries share no types unless they
+live in this crate and a contract written twice drifts in silence.
+
+| module | answers |
+| --- | --- |
+| `message` | what a client asks for, and what the daemon sends back |
+| `tree` | what a client renders, and which pane state outranks which |
+| `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses |
+| `cell`, `framing`, `transport` | a screen cell, a frame, and the endpoint they travel over |
+| `review`, `notes`, `ids`, `paths` | the shapes review, note, identity and location data travel in |
+
+`argusd` owns PTYs, Git, and everything that outlives a client. Its state is one `Daemon` type
+behind a small set of mutexes; the split below is which file a concern is *read* in, not a change
+to the type or its locking.
+
+| module | answers |
+| --- | --- |
+| `state` | what the tree is, and what a client is shown of it |
+| `state/panes` | a pane's lifecycle: spawned, restarted, closed, written to |
+| `state/agents` | what an agent reports about itself, and what it is told |
+| `state/viewers` | the one pty size reconciled out of what every client asks for |
+| `state/git_ops` | the writes to Git |
+| `state/sync` | the polls and watchers that keep the tree level with the disk |
+| `state/panel` | the rows the user adds and removes by hand |
+| `state/notes` | what is written down against a row |
+| `state/hook_server` | the loopback receiver agents report to |
+| `state/session` | what survives a daemon restart |
+| `state/tree` | finding your way around the tree |
+| `conn` | one client connection, and which task each message runs on |
+| `pty`, `pty/job`, `pty/vt` | a pane's child process, its resource bounds, and the vt100 translation |
+| `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
+| `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
+| `git`, `diff`, `browse`, `highlight` | the read-only questions asked of a repository |
+| `config` | `projects.toml`, which is read and never written |
+| `editor`, `watch`, `command`, `logging`, `paths` | the small services the rest of the daemon uses |
+
+`argus` is a replaceable renderer over one model. `app` holds the state and never predicts the
+result of a request; `ui` is a pure function of it.
+
+| module | answers |
+| --- | --- |
+| `main`, `redraw`, `terminal`, `wire`, `launch` | the event loop, and the screen and socket it runs over |
+| `app` | the model: the tree, the selection, and which modal is up |
+| `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |
+| `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
+| `app/server` | what arrives back, and what it does to the selection |
+| `ui` | the frame, and where the cursor goes on it |
+| `ui/columns`, `ui/rows`, `ui/text` | the spine, the vocabulary of a row, and fitting text to a width |
+| `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
+| `review`, `history`, `notes`, `dirpicker` | the view state behind each overlay |
+| `grid`, `pty_input`, `paste`, `clipboard`, `fuzzy` | a pane's screen, and the input primitives |
+| `settings`, `theme`, `backend`, `herdr`, `profile` | preferences, palette, the ratatui backend, and what is reported outward |
 
 ## Navigation model
 

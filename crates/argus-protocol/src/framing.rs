@@ -1,3 +1,8 @@
+//! Length-prefixed MessagePack frames: a four-byte big-endian length and
+//! then the record. Frames past a hard cap are refused rather than
+//! allocated for, since either side may be talking to a wrong or wedged
+//! peer.
+
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 

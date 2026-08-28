@@ -12,6 +12,36 @@ use serde::{Deserialize, Serialize};
 use crate::ids::PaneId;
 use crate::tree::PaneStatus;
 
+/// The environment every agent pane is handed. The daemon sets these and
+/// `argus-hook` reads them back, so they are named here for the reason the
+/// URL grammar is: written on both sides they drift in silence.
+pub const URL_VAR: &str = "ARGUS_HOOK_URL";
+pub const TOKEN_VAR: &str = "ARGUS_HOOK_TOKEN";
+pub const HELPER_VAR: &str = "ARGUS_HOOK";
+pub const PANE_VAR: &str = "ARGUS_PANE";
+pub const INSTRUCTIONS_VAR: &str = "ARGUS_INSTRUCTIONS";
+
+/// Names the conversation a report comes from, so the daemon can tell the
+/// agent that owns a pane from one spawned inside it — which inherits the
+/// pane's environment and would otherwise rewrite its parent's row.
+pub const SESSION_HEADER: &str = "X-Argus-Session";
+
+/// Flags a managed hook command carries. The installer writes them into a
+/// harness's settings file and the helper parses them back out.
+///
+/// Read the harness's message off stdin and send it as the pane's note.
+/// Only passed on events that actually supply one — the helper must never
+/// block on a stdin nobody is writing to.
+pub const NOTE_FLAG: &str = "--note-from-stdin";
+/// Same stdin, posted as the pane title. Prompt-submit events only.
+pub const TITLE_FLAG: &str = "--title-from-stdin";
+/// The key under which that stdin carries the harness's session id.
+pub const SESSION_KEY_FLAG: &str = "--session-id-from-stdin";
+/// Marks the one event per harness that may claim the pane's resume
+/// identity. Without it a CLI started from inside a pane would overwrite
+/// the conversation Argus reopens for that row.
+pub const OWNS_SESSION_FLAG: &str = "--owns-session";
+
 /// What an agent can say about itself.
 ///
 /// The wire spelling is the one in the URL, which is also the one a harness

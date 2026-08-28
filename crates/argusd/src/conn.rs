@@ -1,3 +1,12 @@
+//! One client connection: read a message, dispatch it, write what comes
+//! back.
+//!
+//! Dispatch is a chain of small functions, each matching the messages it
+//! owns and handing the rest on. Anything that does real I/O — a git
+//! subprocess, a directory walk, a diff — leaves the message loop for a
+//! task of its own, because a slow answer for one client must never delay
+//! a keystroke going to some other pane.
+
 use std::sync::Arc;
 
 use argus_protocol::{read_msg, write_msg, ClientMsg, PaneId, ServerMsg};
@@ -159,6 +168,7 @@ fn handle_client_msg(
     viewer: ViewerId,
 ) {
     let result = dispatch_pane(msg, daemon, out_tx, subs, viewer)
+        .or_else(|msg| dispatch_notes(msg, daemon, out_tx))
         .or_else(|msg| dispatch_workspace(msg, daemon, out_tx))
         .or_else(|msg| dispatch_branch_or_editor(msg, daemon, out_tx))
         .or_else(|msg| dispatch_review(msg, daemon, out_tx, review_task))
@@ -225,45 +235,52 @@ fn dispatch_pane(
             })
         }
         ClientMsg::Kill { pane } => daemon.close_pane(pane),
+        msg => return Err(msg),
+    };
+    Ok(result)
+}
+
+/// A write answers with the stored note rather than an acknowledgement, so
+/// the client's editor shows what the daemon holds instead of what it
+/// guessed its own write would produce.
+fn dispatch_notes(
+    msg: ClientMsg,
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) -> DispatchResult {
+    let result = match msg {
         ClientMsg::GetNote { target } => daemon.note(target).map(|note| {
             let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
         }),
-        // A note write answers with the stored note rather than an
-        // acknowledgement: the client's editor then shows what the daemon
-        // holds instead of what it guessed the write would produce.
-        ClientMsg::SetNote { target, body } => match daemon.set_note(target, body) {
-            Ok(note) => {
-                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
-                Ok(())
-            }
-            Err(e) => {
-                let _ = out_tx.send(ServerMsg::NoteFailed {
-                    target,
-                    message: e.to_string(),
-                });
-                Ok(())
-            }
-        },
+        ClientMsg::SetNote { target, body } => {
+            answer_note(out_tx, target, daemon.set_note(target, body))
+        }
         ClientMsg::SetTodo {
             target,
             line,
             state,
-        } => match daemon.set_todo(target, line, state) {
-            Ok(note) => {
-                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
-                Ok(())
-            }
-            Err(e) => {
-                let _ = out_tx.send(ServerMsg::NoteFailed {
-                    target,
-                    message: e.to_string(),
-                });
-                Ok(())
-            }
-        },
+        } => answer_note(out_tx, target, daemon.set_todo(target, line, state)),
         msg => return Err(msg),
     };
     Ok(result)
+}
+
+/// Never an `Err`: a refusal goes back as `NoteFailed`, which names the
+/// note it was about, rather than as a bare `Error`.
+fn answer_note(
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    target: argus_protocol::NoteTarget,
+    written: anyhow::Result<argus_protocol::Note>,
+) -> anyhow::Result<()> {
+    let msg = match written {
+        Ok(note) => ServerMsg::Note(Box::new(note)),
+        Err(e) => ServerMsg::NoteFailed {
+            target,
+            message: e.to_string(),
+        },
+    };
+    let _ = out_tx.send(msg);
+    Ok(())
 }
 
 /// Runs a daemon call on its own task, reporting a refusal to the client
@@ -393,42 +410,6 @@ fn dispatch_workspace_query(
                 },
             },
         ),
-        ClientMsg::GetNote { target } => daemon.note(target).map(|note| {
-            let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
-        }),
-        // A note write answers with the stored note rather than an
-        // acknowledgement: the client's editor then shows what the daemon
-        // holds instead of what it guessed the write would produce.
-        ClientMsg::SetNote { target, body } => match daemon.set_note(target, body) {
-            Ok(note) => {
-                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
-                Ok(())
-            }
-            Err(e) => {
-                let _ = out_tx.send(ServerMsg::NoteFailed {
-                    target,
-                    message: e.to_string(),
-                });
-                Ok(())
-            }
-        },
-        ClientMsg::SetTodo {
-            target,
-            line,
-            state,
-        } => match daemon.set_todo(target, line, state) {
-            Ok(note) => {
-                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
-                Ok(())
-            }
-            Err(e) => {
-                let _ = out_tx.send(ServerMsg::NoteFailed {
-                    target,
-                    message: e.to_string(),
-                });
-                Ok(())
-            }
-        },
         msg => return Err(msg),
     };
     Ok(result)
@@ -454,42 +435,6 @@ fn dispatch_worktree_change(
                 d.remove_checkout(checkout).await
             })
         }
-        ClientMsg::GetNote { target } => daemon.note(target).map(|note| {
-            let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
-        }),
-        // A note write answers with the stored note rather than an
-        // acknowledgement: the client's editor then shows what the daemon
-        // holds instead of what it guessed the write would produce.
-        ClientMsg::SetNote { target, body } => match daemon.set_note(target, body) {
-            Ok(note) => {
-                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
-                Ok(())
-            }
-            Err(e) => {
-                let _ = out_tx.send(ServerMsg::NoteFailed {
-                    target,
-                    message: e.to_string(),
-                });
-                Ok(())
-            }
-        },
-        ClientMsg::SetTodo {
-            target,
-            line,
-            state,
-        } => match daemon.set_todo(target, line, state) {
-            Ok(note) => {
-                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
-                Ok(())
-            }
-            Err(e) => {
-                let _ = out_tx.send(ServerMsg::NoteFailed {
-                    target,
-                    message: e.to_string(),
-                });
-                Ok(())
-            }
-        },
         // Same reasoning: `git init` is a subprocess, and the directory it
         // lands in may not exist yet.
         ClientMsg::InitRepository { project, path } => {
@@ -568,42 +513,6 @@ fn dispatch_branch_or_editor(
                     .map(|_| ())
             })
         }
-        ClientMsg::GetNote { target } => daemon.note(target).map(|note| {
-            let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
-        }),
-        // A note write answers with the stored note rather than an
-        // acknowledgement: the client's editor then shows what the daemon
-        // holds instead of what it guessed the write would produce.
-        ClientMsg::SetNote { target, body } => match daemon.set_note(target, body) {
-            Ok(note) => {
-                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
-                Ok(())
-            }
-            Err(e) => {
-                let _ = out_tx.send(ServerMsg::NoteFailed {
-                    target,
-                    message: e.to_string(),
-                });
-                Ok(())
-            }
-        },
-        ClientMsg::SetTodo {
-            target,
-            line,
-            state,
-        } => match daemon.set_todo(target, line, state) {
-            Ok(note) => {
-                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
-                Ok(())
-            }
-            Err(e) => {
-                let _ = out_tx.send(ServerMsg::NoteFailed {
-                    target,
-                    message: e.to_string(),
-                });
-                Ok(())
-            }
-        },
         msg => return Err(msg),
     };
     Ok(result)
@@ -674,42 +583,6 @@ fn dispatch_review(
             .map(|(id, delivered)| {
                 let _ = out_tx.send(ServerMsg::ReviewCommentSaved { id, delivered });
             }),
-        ClientMsg::GetNote { target } => daemon.note(target).map(|note| {
-            let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
-        }),
-        // A note write answers with the stored note rather than an
-        // acknowledgement: the client's editor then shows what the daemon
-        // holds instead of what it guessed the write would produce.
-        ClientMsg::SetNote { target, body } => match daemon.set_note(target, body) {
-            Ok(note) => {
-                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
-                Ok(())
-            }
-            Err(e) => {
-                let _ = out_tx.send(ServerMsg::NoteFailed {
-                    target,
-                    message: e.to_string(),
-                });
-                Ok(())
-            }
-        },
-        ClientMsg::SetTodo {
-            target,
-            line,
-            state,
-        } => match daemon.set_todo(target, line, state) {
-            Ok(note) => {
-                let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
-                Ok(())
-            }
-            Err(e) => {
-                let _ = out_tx.send(ServerMsg::NoteFailed {
-                    target,
-                    message: e.to_string(),
-                });
-                Ok(())
-            }
-        },
         msg => return Err(msg),
     };
     Ok(result)

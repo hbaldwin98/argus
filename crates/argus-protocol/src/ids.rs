@@ -1,3 +1,7 @@
+//! The identities the daemon hands out. Distinct types rather than bare
+//! integers so a pane id cannot be passed where a checkout id belongs;
+//! all of them come from one counter and none survives a daemon restart.
+
 use serde::{Deserialize, Serialize};
 use std::fmt;
 

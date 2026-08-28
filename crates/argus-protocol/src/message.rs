@@ -1,3 +1,8 @@
+//! The two message enums: what a client asks for, and what the daemon
+//! sends back. Every field is documented with what it means rather than
+//! what it is, because this is the contract two binaries are built
+//! against.
+
 use serde::{Deserialize, Serialize};
 
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};

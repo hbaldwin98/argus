@@ -1,3 +1,12 @@
+//! Everything the client, the daemon, and `argus-hook` have to agree on.
+//!
+//! Three binaries share no types unless they live here, so anything
+//! written on both sides of a boundary belongs in this crate: the two
+//! message enums and their framing, the tree a client renders, the pane
+//! API's URL grammar and environment, and the shapes review and note data
+//! travel in. Written twice they drift in silence; written once they
+//! cannot.
+
 pub mod cell;
 pub mod framing;
 pub mod hook;
@@ -15,7 +24,10 @@ pub use cell::{
 };
 pub use compact_str::{CompactString, ToCompactString};
 pub use framing::{read_msg, write_msg, FramingError};
-pub use hook::{pane_path, pane_prefix, parse_pane_path, Endpoint, Report};
+pub use hook::{
+    pane_path, parse_pane_path, Endpoint, Report, HELPER_VAR, INSTRUCTIONS_VAR, NOTE_FLAG,
+    OWNS_SESSION_FLAG, PANE_VAR, SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
+};
 pub use ids::{CheckoutId, IdGen, PaneId, ProjectId, RepositoryId, WorkspaceId};
 pub use message::{ClientMsg, DirEntry, DirListing, ServerMsg};
 pub use notes::{

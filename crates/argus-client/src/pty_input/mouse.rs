@@ -1,3 +1,7 @@
+//! Turning a mouse event into the tracking sequence a pty child asked
+//! for — and dropping it when the child asked for none, since a pty does
+//! not quietly discard what it did not enable.
+
 use argus_protocol::{MouseEncoding, MouseTracking};
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;

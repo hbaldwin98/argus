@@ -8,6 +8,30 @@
 
 use super::*;
 
+/// The four levels of the tree, flattened. Every lookup here is one of
+/// these plus a `find`, so the walk itself is written once.
+pub(super) fn checkouts(projects: &[Project]) -> impl Iterator<Item = &Checkout> {
+    projects
+        .iter()
+        .flat_map(|p| p.repositories.iter())
+        .flat_map(|r| r.checkouts.iter())
+}
+
+pub(super) fn checkouts_mut(projects: &mut [Project]) -> impl Iterator<Item = &mut Checkout> {
+    projects
+        .iter_mut()
+        .flat_map(|p| p.repositories.iter_mut())
+        .flat_map(|r| r.checkouts.iter_mut())
+}
+
+pub(super) fn panes(projects: &[Project]) -> impl Iterator<Item = &Pane> {
+    checkouts(projects).flat_map(|c| c.panes.iter())
+}
+
+pub(super) fn panes_mut(projects: &mut [Project]) -> impl Iterator<Item = &mut Pane> {
+    checkouts_mut(projects).flat_map(|c| c.panes.iter_mut())
+}
+
 /// The id of the workspace by this name, creating it if this is the first
 /// time it has been mentioned. Workspaces come from three places — the
 /// built-in default, `[[workspace]]` blocks, and any name a project refers
@@ -29,19 +53,11 @@ pub(super) fn intern_workspace(
 }
 
 pub(super) fn find_checkout(projects: &mut [Project], id: CheckoutId) -> Option<&mut Checkout> {
-    projects
-        .iter_mut()
-        .flat_map(|p| p.repositories.iter_mut())
-        .flat_map(|r| r.checkouts.iter_mut())
-        .find(|c| c.id == id)
+    checkouts_mut(projects).find(|c| c.id == id)
 }
 
 pub(super) fn find_checkout_ref(projects: &[Project], id: CheckoutId) -> Option<&Checkout> {
-    projects
-        .iter()
-        .flat_map(|p| p.repositories.iter())
-        .flat_map(|r| r.checkouts.iter())
-        .find(|c| c.id == id)
+    checkouts(projects).find(|c| c.id == id)
 }
 
 pub(super) fn find_repository(
@@ -54,20 +70,18 @@ pub(super) fn find_repository(
         .find(|r| r.id == id)
 }
 
-/// For a checkout, the id of its owning repository, that checkout's own path
-/// (the base to branch off / run `git worktree` commands from), and its
-/// repository's primary checkout path (where new worktrees get placed).
-pub(super) fn find_checkout_context(
-    projects: &[Project],
-    id: CheckoutId,
-) -> Option<(RepositoryId, PathBuf, PathBuf)> {
+/// The primary checkout of whichever repository holds `id` — where a
+/// worktree command has to run, since a linked worktree is not where git
+/// keeps the registration it is about to change. Falls back to the
+/// checkout itself for a repository with no primary row.
+pub(super) fn primary_path_of(projects: &[Project], id: CheckoutId) -> Option<PathBuf> {
     projects
         .iter()
         .flat_map(|p| p.repositories.iter())
         .find_map(|r| {
             let base = r.checkouts.iter().find(|c| c.id == id)?;
             let primary = r.checkouts.iter().find(|c| c.primary).unwrap_or(base);
-            Some((r.id, base.path.clone(), primary.path.clone()))
+            Some(primary.path.clone())
         })
 }
 
@@ -134,14 +148,6 @@ pub(super) fn remove_checkout_entry(projects: &mut [Project], id: CheckoutId) ->
     None
 }
 
-pub(super) fn all_panes(projects: &mut [Project]) -> impl Iterator<Item = &mut Pane> {
-    projects
-        .iter_mut()
-        .flat_map(|p| p.repositories.iter_mut())
-        .flat_map(|r| r.checkouts.iter_mut())
-        .flat_map(|c| c.panes.iter_mut())
-}
-
 /// The pane and the id of the checkout holding it — which the pane itself
 /// does not carry, and which a caller acting on the pane's exit needs in
 /// order to put something back in its place.
@@ -149,40 +155,23 @@ pub(super) fn find_pane_with_checkout(
     projects: &mut [Project],
     id: PaneId,
 ) -> Option<(&mut Pane, CheckoutId)> {
-    projects
-        .iter_mut()
-        .flat_map(|p| p.repositories.iter_mut())
-        .flat_map(|r| r.checkouts.iter_mut())
-        .find_map(|c| {
-            let checkout = c.id;
-            c.panes
-                .iter_mut()
-                .find(|p| p.id == id)
-                .map(|p| (p, checkout))
-        })
+    checkouts_mut(projects).find_map(|c| {
+        let checkout = c.id;
+        c.panes
+            .iter_mut()
+            .find(|p| p.id == id)
+            .map(|p| (p, checkout))
+    })
 }
 
 pub(super) fn find_pane(projects: &mut [Project], id: PaneId) -> Option<&mut Pane> {
-    projects
-        .iter_mut()
-        .flat_map(|p| p.repositories.iter_mut())
-        .flat_map(|r| r.checkouts.iter_mut())
-        .flat_map(|c| c.panes.iter_mut())
-        .find(|p| p.id == id)
+    panes_mut(projects).find(|p| p.id == id)
 }
 
 pub(super) fn find_pane_ref(projects: &[Project], id: PaneId) -> Option<&Pane> {
-    projects
-        .iter()
-        .flat_map(|p| p.repositories.iter())
-        .flat_map(|r| r.checkouts.iter())
-        .flat_map(|c| c.panes.iter())
-        .find(|p| p.id == id)
+    panes(projects).find(|p| p.id == id)
 }
 
-/// Whether any agent pane is still open in the checkout at `path`. Gates
-/// tearing down that checkout's managed hooks, which are shared by every
-/// agent running there.
 /// The agent already working in this checkout, if its project allows only
 /// one. `None` when the project has not asked for that, or when nothing is
 /// running there — sharing a checkout is otherwise allowed, and merely
@@ -207,11 +196,11 @@ pub(super) fn exclusive_conflict(projects: &[Project], checkout: CheckoutId) -> 
         .map(|p| p.title.clone())
 }
 
+/// Whether any agent pane is still open in the checkout at `path`. Gates
+/// tearing down that checkout's managed hooks, which are shared by every
+/// agent running there.
 pub(super) fn checkout_has_agent(projects: &[Project], path: &std::path::Path) -> bool {
-    projects
-        .iter()
-        .flat_map(|p| p.repositories.iter())
-        .flat_map(|r| r.checkouts.iter())
+    checkouts(projects)
         .filter(|c| c.path == path)
         .any(|c| c.panes.iter().any(|p| p.kind == PaneKind::Agent))
 }
@@ -233,11 +222,6 @@ pub(super) fn remove_pane_with_checkout(
         }
     }
     None
-}
-
-pub(super) fn has_windows_drive_prefix(path: &str) -> bool {
-    let bytes = path.as_bytes();
-    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
 /// A repository holding only its primary checkout, which is what both a
@@ -303,9 +287,3 @@ pub(super) fn retain_included(excluded: &[PathBuf], found: Vec<PathBuf>) -> Vec<
         .collect()
 }
 
-pub(super) fn same_path(a: &std::path::Path, b: &std::path::Path) -> bool {
-    match (a.canonicalize(), b.canonicalize()) {
-        (Ok(a), Ok(b)) => a == b,
-        _ => a == b,
-    }
-}

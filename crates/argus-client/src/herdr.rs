@@ -1,3 +1,9 @@
+//! Reporting the tree outward to `herdr`, when the user runs one.
+//!
+//! Argus is one of several things herdr watches, so what goes out is a
+//! rollup — how many agents are working, and what the most urgent one is
+//! blocked on — rather than the tree itself.
+
 use std::ffi::OsString;
 use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};

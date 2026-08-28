@@ -334,13 +334,7 @@ impl App {
         }
         // A pane killed from elsewhere leaves its window orphaned.
         if let Some(pane) = self.overlay.as_ref().and_then(Overlay::pane) {
-            let alive = self
-                .tree
-                .iter()
-                .flat_map(|p| p.repositories.iter())
-                .flat_map(|r| r.checkouts.iter())
-                .flat_map(|c| c.panes.iter())
-                .any(|p| p.id == pane);
+            let alive = panes_in(&self.tree).any(|p| p.id == pane);
             if !alive {
                 self.close_overlay();
             }

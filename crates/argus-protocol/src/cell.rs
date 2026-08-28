@@ -1,3 +1,6 @@
+//! One screen cell on the wire, and the diff that turns a new grid into
+//! the changed spans a client can apply to the one it already has.
+
 use compact_str::CompactString;
 use serde::{Deserialize, Serialize};
 

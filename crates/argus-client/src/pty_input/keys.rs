@@ -1,3 +1,5 @@
+//! Turning a key event back into the bytes a pty child expects to read.
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// Leader key: Ctrl-Space by default. Some terminals report this as

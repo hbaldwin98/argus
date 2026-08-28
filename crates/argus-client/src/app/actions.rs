@@ -280,14 +280,11 @@ impl App {
         let Some(checkout) = self.review.as_ref().map(|v| v.review.checkout) else {
             return Vec::new();
         };
-        self.tree
-            .iter()
-            .flat_map(|p| p.repositories.iter())
-            .flat_map(|r| r.checkouts.iter())
+        checkouts_in(&self.tree)
             .find(|c| c.id == checkout)
             .into_iter()
             .flat_map(|c| c.panes.iter())
-            .filter(|p| p.kind == PaneKind::Agent && !matches!(p.status, PaneStatus::Exited { .. }))
+            .filter(|p| is_live_agent_pane(p))
             .map(|p| {
                 let template = p.template.as_deref().unwrap_or("agent");
                 (p.id, format!("{}  {}  #{}", p.title, template, p.id.0))
@@ -296,16 +293,7 @@ impl App {
     }
 
     pub(super) fn is_live_agent(&self, pane: PaneId) -> bool {
-        self.tree
-            .iter()
-            .flat_map(|p| p.repositories.iter())
-            .flat_map(|r| r.checkouts.iter())
-            .flat_map(|c| c.panes.iter())
-            .any(|p| {
-                p.id == pane
-                    && p.kind == PaneKind::Agent
-                    && !matches!(p.status, PaneStatus::Exited { .. })
-            })
+        panes_in(&self.tree).any(|p| p.id == pane && is_live_agent_pane(p))
     }
 
     /// The configured editor command, or `None` to leave it to the daemon.
