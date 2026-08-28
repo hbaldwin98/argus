@@ -122,10 +122,13 @@ pub enum ClientMsg {
     },
     /// `git branch -d`: drop a local branch nothing is sitting on. Refused
     /// while it holds commits no other branch has, because the row is the
-    /// only thing left pointing at them.
+    /// only thing left pointing at them — and answered with
+    /// `BranchNotMerged`, which is what `force` comes back as. Forced, it
+    /// is `git branch -D` and those commits stop being reachable.
     DeleteBranch {
         checkout: CheckoutId,
         branch: String,
+        force: bool,
     },
     /// `git fetch --all --prune`: bring the remote-tracking branches up to
     /// date without touching the working tree, which is what makes the
@@ -295,6 +298,14 @@ pub enum ServerMsg {
     PaneClosed {
         pane: PaneId,
         code: Option<i32>,
+    },
+    /// `git branch -d` was refused because the branch holds commits no
+    /// other branch does. Correlated rather than folded into `Error` so
+    /// the client can offer the forced deletion, which is the only thing
+    /// the user can do about it, instead of only reciting git's refusal.
+    BranchNotMerged {
+        checkout: CheckoutId,
+        branch: String,
     },
     Error {
         message: String,

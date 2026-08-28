@@ -4,7 +4,7 @@ use argus_protocol::{read_msg, write_msg, ClientMsg, PaneId, ServerMsg};
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc, Semaphore};
 
-use crate::state::{Daemon, ViewerId};
+use crate::state::{BranchDeletion, Daemon, ViewerId};
 
 static REVIEW_PERMIT: Semaphore = Semaphore::const_new(1);
 
@@ -412,10 +412,27 @@ fn dispatch_branch_or_editor(
                 move |d| async move { d.pull(checkout).await },
             )
         }
-        ClientMsg::DeleteBranch { checkout, branch } => {
-            spawn_reporting(daemon, out_tx, move |d| async move {
-                d.delete_branch(checkout, &branch).await
-            })
+        // Not `spawn_reporting`: an unmerged branch comes back as a
+        // question for the user rather than as an error, and only this
+        // call has one to send.
+        ClientMsg::DeleteBranch {
+            checkout,
+            branch,
+            force,
+        } => {
+            let daemon = daemon.clone();
+            let out_tx = out_tx.clone();
+            tokio::spawn(async move {
+                let msg = match daemon.delete_branch(checkout, &branch, force).await {
+                    Ok(BranchDeletion::Deleted) => return,
+                    Ok(BranchDeletion::NotMerged) => ServerMsg::BranchNotMerged { checkout, branch },
+                    Err(error) => ServerMsg::Error {
+                        message: error.to_string(),
+                    },
+                };
+                let _ = out_tx.send(msg);
+            });
+            Ok(())
         }
         ClientMsg::OpenInEditor {
             checkout,
@@ -642,6 +659,7 @@ mod tests {
             ClientMsg::DeleteBranch {
                 checkout: gone,
                 branch: branch(),
+                force: false,
             },
             ClientMsg::Fetch { checkout: gone },
             ClientMsg::Pull { checkout: gone },

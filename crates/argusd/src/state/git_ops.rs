@@ -90,31 +90,45 @@ impl Daemon {
     /// `refs/remotes`, and nothing here pushes a deletion. Removing a
     /// branch from the panel is not removing it from the remote.
     ///
-    /// `-d`, never `-D`. A branch is a name on commits, and the row you
+    /// `-d` unless `force`. A branch is a name on commits, and the row you
     /// delete it from says nothing about whether those commits are anywhere
     /// else; git already knows, so its refusal is the answer and is passed
     /// back as it stands. The main branch is refused outright — it is the
     /// row the column is anchored on, and nobody means to delete it from
     /// here.
-    pub async fn delete_branch(&self, checkout: CheckoutId, branch: &str) -> anyhow::Result<()> {
+    ///
+    /// An unmerged branch reports `NotMerged` rather than failing, because
+    /// that refusal is the one the user has an answer to: `force` reruns it
+    /// as `-D`. Every other refusal is still an error, since `-D` would not
+    /// have helped.
+    pub async fn delete_branch(
+        &self,
+        checkout: CheckoutId,
+        branch: &str,
+        force: bool,
+    ) -> anyhow::Result<BranchDeletion> {
         let branch = checked_branch_name(branch)?;
         let path = self.checkout_path(checkout)?;
         if crate::git::default_branch(&path).as_deref() == Some(branch.as_str()) {
             anyhow::bail!("{branch} is the repository's main branch");
         }
 
+        let flag = if force { "-D" } else { "-d" };
         let output = crate::command::git()
-            .args(["branch", "-d", &branch])
+            .args(["branch", flag, &branch])
             .current_dir(&path)
             .output()
             .await?;
         if !output.status.success() {
+            if !force && is_unmerged(&path, &branch).await {
+                return Ok(BranchDeletion::NotMerged);
+            }
             anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
         }
 
         self.refresh_branches();
         self.broadcast_tree();
-        Ok(())
+        Ok(BranchDeletion::Deleted)
     }
 
     /// `flags` are everything before the branch name, which this appends
@@ -377,6 +391,35 @@ impl Daemon {
             last = String::from_utf8_lossy(&output.stderr).trim().to_string();
         }
         anyhow::bail!("git worktree remove failed: {last}");
+    }
+}
+
+/// What `delete_branch` did, for the one refusal that is worth telling
+/// apart: an unmerged branch is a question to put back to the user, not a
+/// failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BranchDeletion {
+    Deleted,
+    NotMerged,
+}
+
+/// Whether `git branch -d` refused because the branch holds commits
+/// nothing else reaches — asked of git rather than read out of its stderr,
+/// which is translated and so is not something to match on.
+///
+/// `--no-merged HEAD` is git's own answer to the question `-d` asks, and
+/// listing the branch under it means the forced deletion is the only way
+/// through. Anything else `-d` refuses (a branch checked out somewhere, a
+/// name that isn't there) would refuse `-D` just the same.
+async fn is_unmerged(path: &std::path::Path, branch: &str) -> bool {
+    let output = crate::command::git()
+        .args(["branch", "--no-merged", "HEAD", "--list", branch])
+        .current_dir(path)
+        .output()
+        .await;
+    match output {
+        Ok(output) => output.status.success() && !output.stdout.is_empty(),
+        Err(_) => false,
     }
 }
 

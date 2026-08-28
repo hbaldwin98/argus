@@ -288,9 +288,14 @@ pub enum RemoveTarget {
     Project(ProjectId),
     /// A branch with no directory of its own. It carries the checkout git
     /// will be run from, precisely because the branch hasn't got one.
+    ///
+    /// `force` is the second ask, raised only after git has refused the
+    /// first: it is `git branch -D`, and what it takes away is commits, not
+    /// just a name.
     Branch {
         checkout: CheckoutId,
         branch: String,
+        force: bool,
     },
 }
 
@@ -304,9 +309,14 @@ impl RemoveTarget {
                 repository: *repository,
             },
             RemoveTarget::Project(project) => ClientMsg::RemoveProject { project: *project },
-            RemoveTarget::Branch { checkout, branch } => ClientMsg::DeleteBranch {
+            RemoveTarget::Branch {
+                checkout,
+                branch,
+                force,
+            } => ClientMsg::DeleteBranch {
                 checkout: *checkout,
                 branch: branch.clone(),
+                force: *force,
             },
         }
     }
@@ -322,9 +332,13 @@ impl RemoveTarget {
                 ("remove repository?", "  — from this panel only; files stay")
             }
             RemoveTarget::Project(_) => ("remove project?", "  — from this panel only; files stay"),
-            RemoveTarget::Branch { .. } => (
+            RemoveTarget::Branch { force: false, .. } => (
                 "delete branch?",
                 "  — the local branch only; the remote is untouched",
+            ),
+            RemoveTarget::Branch { force: true, .. } => (
+                "branch isn't merged — delete anyway?",
+                "  — its commits stop being reachable",
             ),
         }
     }
@@ -1458,6 +1472,7 @@ second
                     RemoveTarget::Branch {
                         checkout: CheckoutId(10),
                         branch: "hotfix/tls".to_string(),
+                        force: false,
                     },
                     "the primary checkout is what git is run from"
                 );
@@ -1470,8 +1485,63 @@ second
         h.key(KeyCode::Char('y'));
         assert!(matches!(
             h.sent().as_slice(),
-            [ClientMsg::DeleteBranch { checkout: CheckoutId(10), branch }] if branch == "hotfix/tls"
+            [ClientMsg::DeleteBranch { checkout: CheckoutId(10), branch, force: false }]
+                if branch == "hotfix/tls"
         ));
+    }
+
+    #[test]
+    fn an_unmerged_branch_comes_back_as_the_harder_question() {
+        let mut h = harness_on_a_branch_row();
+        h.key(KeyCode::Char('D'));
+        h.key(KeyCode::Char('y'));
+        h.sent();
+
+        h.app.on_server_msg(ServerMsg::BranchNotMerged {
+            checkout: CheckoutId(10),
+            branch: "hotfix/tls".to_string(),
+        });
+
+        match &h.app.prompt {
+            Some(Prompt::ConfirmRemove { target, label }) => {
+                assert_eq!(
+                    *target,
+                    RemoveTarget::Branch {
+                        checkout: CheckoutId(10),
+                        branch: "hotfix/tls".to_string(),
+                        force: true,
+                    }
+                );
+                assert_eq!(label, "hotfix/tls");
+            }
+            _ => panic!("expected the forced-delete confirmation"),
+        }
+        assert!(
+            h.app.status.is_empty(),
+            "the refusal is the popup, not an alert on top of it"
+        );
+
+        h.key(KeyCode::Char('y'));
+        assert!(matches!(
+            h.sent().as_slice(),
+            [ClientMsg::DeleteBranch { checkout: CheckoutId(10), branch, force: true }]
+                if branch == "hotfix/tls"
+        ));
+    }
+
+    #[test]
+    fn the_harder_question_can_still_be_declined() {
+        let mut h = harness_on_a_branch_row();
+        h.app.on_server_msg(ServerMsg::BranchNotMerged {
+            checkout: CheckoutId(10),
+            branch: "hotfix/tls".to_string(),
+        });
+        h.sent();
+
+        h.key(KeyCode::Esc);
+
+        assert!(h.app.prompt.is_none());
+        assert!(h.sent().is_empty(), "nothing forced on the way out");
     }
 
     /// The fixture tree with one branch that exists only on the remote,

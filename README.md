@@ -358,7 +358,7 @@ connects instantly and a rebuild only pays for what changed.
 | `a` | Choose and start an agent |
 | `n` | Add a project, add a repository to one, create a worktree, or give a branch row a worktree, depending on the column |
 | `i` | In the repositories column, make a repository that does not exist yet: browse to where it should go, name it, and Argus creates the directory, runs `git init` in it, and adds it to the project. An empty name uses the chosen directory itself, which is how a folder that is already there gets initialized |
-| `D` | Remove what the column selects, after confirmation: a project or repository (out of the panel only — nothing on disk is touched), a linked worktree (deleted), or a branch row (the local branch, deleted; the remote is untouched) |
+| `D` | Remove what the column selects, after confirmation: a project or repository (out of the panel only — nothing on disk is touched), a linked worktree (deleted), or a branch row (the local branch, deleted; the remote is untouched). An unmerged branch is refused and asked about again, and confirming that second prompt force-deletes it |
 | `w` | Switch workspace |
 | `b` | Open the branch picker |
 | `B` | Show or hide the branches no checkout is sitting on, including the ones only a remote has; the main branch keeps its row either way |
