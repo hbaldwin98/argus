@@ -187,6 +187,15 @@ pub enum ClientMsg {
         project: ProjectId,
         path: String,
     },
+    /// Make a repository that does not exist yet: create `path` if it is
+    /// not there, `git init` it, and add it to `project` the way
+    /// [`ClientMsg::AddRepository`] would. The one gesture in Argus that
+    /// creates a repository rather than finding one — everything else
+    /// takes the checkouts on disk as given.
+    InitRepository {
+        project: ProjectId,
+        path: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

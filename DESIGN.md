@@ -75,7 +75,16 @@ it leaves once it holds no panes — a repository still running an agent stays u
 because a directory can go missing for reasons that have nothing to do with the operator's intent.
 A path the configuration names outright is taken at its word: one that is not a Git repository at
 all still becomes a row, and no scan removes it. A root with no repositories under it is a project
-all the same. The walk probes for a `.git` entry (or a bare Git directory) before opening libgit2,
+all the same.
+
+`i` in the repositories column is the one gesture that makes a repository rather than finding one:
+the directory browser picks where it goes, a prompt names it, and the daemon creates the directory,
+runs `git init` in it, and adds it to the project the same way a named path is added. An empty name
+means the chosen directory itself, so a folder that already exists gets initialized where it
+stands; a directory that is already a repository is added without being re-inited, since rewriting
+the hooks of a repository that exists is not what the gesture asked for. `git init` does the work
+rather than a `.git` written by hand, so the result is whatever the user's own git configuration
+would have produced. The walk probes for a `.git` entry (or a bare Git directory) before opening libgit2,
 so a root of ordinary directories is not a libgit2 open per folder.
 
 Checkout rows use the branch currently occupying their path as their display name, including when
@@ -453,7 +462,8 @@ Git mutations use the `git` executable:
 - add a worktree, creating the branch unless it already exists;
 - delete a local branch, refusing an unmerged one;
 - fetch every remote, and pull one checkout fast-forward-only;
-- force-remove a linked worktree and best-effort delete its branch.
+- force-remove a linked worktree and best-effort delete its branch;
+- `git init` a repository that does not exist yet.
 
 A root scan skips `.git`, `.argus`, `node_modules`, and `target` for every project. `exclude` adds to
 that and `include` overrides it, both taking either a bare directory name, matched anywhere under

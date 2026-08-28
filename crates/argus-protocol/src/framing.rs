@@ -124,6 +124,10 @@ mod tests {
                 project: ProjectId(1),
                 path: r"C:\src\thing\repo".to_string(),
             },
+            ClientMsg::InitRepository {
+                project: ProjectId(1),
+                path: r"C:\src\thing\fresh".to_string(),
+            },
             ClientMsg::ListCommits {
                 request_id: 7,
                 checkout: CheckoutId(2),

@@ -1081,7 +1081,7 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "j/k  l open  N needs  n add  D rm  w wksp  p fold  S settings  q detach"
             }
             Focus::Repositories => {
-                "j/k move  l open  N attention  s shell  a agent  b branch  f file  n add  D rm  q detach"
+                "j/k move  l open  N attention  s shell  a agent  b branch  f file  n add  i init  D rm  q detach"
             }
             Focus::Checkouts => {
                 "j/k move  l open  b branch  B all  F fetch  P pull  f file  R review  H history  n worktree  D rm  q detach"
@@ -1472,13 +1472,20 @@ fn render_dir_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             let Some(rect) = row_rect_of(list, slot, 1) else {
                 break;
             };
-            render_row(f, rect, dir_item(row, th), i == picker.sel, true, th);
+            render_row(
+                f,
+                rect,
+                dir_item(row, picker.here_label(), th),
+                i == picker.sel,
+                true,
+                th,
+            );
         }
     }
 
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            "tab open   ← up   enter add   esc cancel",
+            format!("tab open   ← up   {}   esc cancel", picker.choose_label()),
             Style::default().fg(th.dim),
         ))),
         Rect {
@@ -1489,12 +1496,12 @@ fn render_dir_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     );
 }
 
-fn dir_item(row: &DirRow, th: Theme) -> Item<'static> {
+fn dir_item(row: &DirRow, here: &str, th: Theme) -> Item<'static> {
     match row {
         DirRow::Here => Item::new(
             vec![
                 Span::styled("· ", Style::default().fg(th.accent)),
-                Span::styled("add this directory", Style::default().fg(th.text)),
+                Span::styled(here.to_string(), Style::default().fg(th.text)),
             ],
             Vec::new(),
         ),
@@ -1562,6 +1569,28 @@ fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             "enter create   esc cancel",
             false,
         ),
+        Prompt::NewRepository { parent, input, .. } => {
+            // The path it will land at, resolved as you type: the name
+            // alone would leave the one thing worth checking — where this
+            // is going — off the screen that asks for it.
+            let name = input.trim();
+            let dest = if name.is_empty() {
+                parent.clone()
+            } else {
+                crate::dirpicker::join(parent, name)
+            };
+            let mut lines = vec![Line::from(Span::styled(
+                elide_head(&dest, inner_width as usize),
+                Style::default().fg(th.muted),
+            ))];
+            lines.extend(wrapped_field(input, inner_width, th));
+            (
+                "new repository",
+                lines,
+                "empty to use the directory itself   enter create   esc cancel",
+                false,
+            )
+        }
         Prompt::EditorCommand { input } => (
             "editor command",
             wrapped_field(input, inner_width, th),
@@ -3589,6 +3618,50 @@ mod tests {
         assert!(rendered.contains("add this directory"), "{rendered}");
         assert!(rendered.contains("orion"), "{rendered}");
         assert!(rendered.contains("tab open"), "the keys are on screen");
+    }
+
+    #[test]
+    fn browsing_for_somewhere_to_put_a_repository_says_so() {
+        // The same rows, asked a different question: confirming here puts
+        // the new repository in this directory rather than adding the
+        // directory itself.
+        let mut app = app_browsing();
+        app.dir_picker.as_mut().unwrap().target =
+            crate::dirpicker::DirTarget::NewRepository(ProjectId(1));
+        let rendered = lines(&draw(&mut app)).join("\n");
+        assert!(rendered.contains("new repository"), "{rendered}");
+        assert!(rendered.contains("make it in this directory"), "{rendered}");
+        assert!(!rendered.contains("add this directory"), "{rendered}");
+        assert!(rendered.contains("enter choose"), "{rendered}");
+    }
+
+    #[test]
+    fn naming_a_new_repository_shows_where_it_will_land() {
+        let mut app = app_with_tree();
+        app.prompt = Some(Prompt::NewRepository {
+            project: ProjectId(1),
+            parent: "/home/u/Source".to_string(),
+            input: "thing".to_string(),
+        });
+        let rendered = lines(&draw(&mut app)).join("\n");
+        assert!(rendered.contains("new repository"), "{rendered}");
+        assert!(rendered.contains("/home/u/Source/thing"), "{rendered}");
+        assert!(
+            rendered.contains("empty to use the directory"),
+            "{rendered}"
+        );
+    }
+
+    #[test]
+    fn a_new_repository_with_no_name_yet_points_at_the_directory_itself() {
+        let mut app = app_with_tree();
+        app.prompt = Some(Prompt::NewRepository {
+            project: ProjectId(1),
+            parent: "/home/u/Source".to_string(),
+            input: String::new(),
+        });
+        let rendered = lines(&draw(&mut app)).join("\n");
+        assert!(rendered.contains("/home/u/Source"), "{rendered}");
     }
 
     #[test]

@@ -370,6 +370,13 @@ fn dispatch_worktree_change(
                 d.remove_checkout(checkout).await
             })
         }
+        // Same reasoning: `git init` is a subprocess, and the directory it
+        // lands in may not exist yet.
+        ClientMsg::InitRepository { project, path } => {
+            spawn_reporting(daemon, out_tx, move |d| async move {
+                d.init_repository(project, &path).await
+            })
+        }
         msg => return Err(msg),
     };
     Ok(result)

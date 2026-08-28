@@ -202,6 +202,20 @@ impl App {
         }
     }
 
+    /// `i` makes a repository instead of finding one: the browser picks
+    /// where it goes and a prompt names it, and `git init` runs there.
+    /// Contextual like `n`, and for the same reason — it belongs to the
+    /// repositories column, whose project is the one the new repository
+    /// joins.
+    pub(super) fn new_repository_prompt(&mut self) {
+        if self.focus != Focus::Repositories {
+            return;
+        }
+        if let Some(p) = self.current_project() {
+            self.browse_for(DirTarget::NewRepository(p.id));
+        }
+    }
+
     /// Opens a confirmation to remove whatever the focused column selects,
     /// the way `n` adds to whatever it is focused on: a project, one of its
     /// repositories, or a checkout. No-op in the pane columns — a pane is

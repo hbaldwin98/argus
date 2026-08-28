@@ -338,6 +338,14 @@ pub enum Prompt {
         base: CheckoutId,
         input: String,
     },
+    /// The name of a repository to create, once the directory browser has
+    /// settled where it goes. Empty means the chosen directory itself —
+    /// the folder is already there and only needs a `git init`.
+    NewRepository {
+        project: ProjectId,
+        parent: String,
+        input: String,
+    },
     ConfirmRemove {
         target: RemoveTarget,
         label: String,
@@ -1924,6 +1932,104 @@ second
         h.key(KeyCode::Esc);
         assert!(h.app.dir_picker.is_none());
         assert!(h.sent().is_empty());
+    }
+
+    #[test]
+    fn i_in_the_repositories_column_makes_a_repository_that_is_not_there_yet() {
+        let mut h = Harness::new();
+        h.keys("l");
+        h.sent();
+
+        h.key(KeyCode::Char('i'));
+        h.browse("/src", Some("/"), &[("existing", true)]);
+        h.sent();
+        // The directory is where it goes, not what it is — so the browse
+        // is followed by a name.
+        h.key(KeyCode::Enter);
+        assert!(h.app.dir_picker.is_none());
+        assert!(matches!(h.app.prompt, Some(Prompt::NewRepository { .. })));
+
+        h.keys("thing");
+        h.key(KeyCode::Enter);
+        match &h.sent()[0] {
+            ClientMsg::InitRepository { project, path } => {
+                assert_eq!(*project, ProjectId(1), "the project in view");
+                assert_eq!(path, "/src/thing");
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(h.app.prompt.is_none());
+    }
+
+    #[test]
+    fn a_new_repository_with_no_name_is_the_directory_that_was_chosen() {
+        let mut h = Harness::new();
+        h.keys("l");
+        h.key(KeyCode::Char('i'));
+        h.browse("/src/already-made", Some("/src"), &[]);
+        h.sent();
+        h.key(KeyCode::Enter);
+        h.key(KeyCode::Enter);
+        match &h.sent()[0] {
+            ClientMsg::InitRepository { path, .. } => assert_eq!(path, "/src/already-made"),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn esc_cancels_making_a_repository_at_either_step() {
+        let mut h = Harness::new();
+        h.keys("l");
+        h.key(KeyCode::Char('i'));
+        h.browse("/src", Some("/"), &[]);
+        h.sent();
+        h.key(KeyCode::Esc);
+        assert!(h.app.dir_picker.is_none());
+        assert!(h.sent().is_empty());
+
+        h.key(KeyCode::Char('i'));
+        h.browse("/src", Some("/"), &[]);
+        h.sent();
+        h.key(KeyCode::Enter);
+        h.keys("half-typed");
+        h.key(KeyCode::Esc);
+        assert!(h.app.prompt.is_none());
+        assert!(h.sent().is_empty(), "nothing was created");
+    }
+
+    #[test]
+    fn i_does_nothing_outside_the_repositories_column() {
+        let mut h = Harness::new();
+        assert_eq!(h.app.focus, Focus::Projects);
+        h.key(KeyCode::Char('i'));
+        assert!(h.app.dir_picker.is_none());
+
+        h.keys("ll");
+        h.sent();
+        assert_eq!(h.app.focus, Focus::Checkouts);
+        h.key(KeyCode::Char('i'));
+        assert!(h.app.dir_picker.is_none());
+    }
+
+    #[test]
+    fn a_repository_just_made_becomes_the_selected_one() {
+        let mut h = Harness::new();
+        h.keys("l");
+        h.key(KeyCode::Char('i'));
+        h.browse("/src", Some("/"), &[]);
+        h.key(KeyCode::Enter);
+        h.keys("thing");
+        h.key(KeyCode::Enter);
+        h.sent();
+
+        let mut t = tree();
+        t[0].repositories.push(repository(
+            7,
+            "thing",
+            vec![checkout(30, "main", true, vec![])],
+        ));
+        h.app.on_server_msg(ServerMsg::Tree(t));
+        assert_eq!(h.app.current_repository().unwrap().name, "thing");
     }
 
     #[test]

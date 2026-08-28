@@ -96,6 +96,10 @@ under [Configuration](#configuration). You can also press `n` in the projects co
 directory: every Git repository at or beneath it becomes one of the project's repositories, so
 naming a repository adds that one and naming the directory a dozen of them live in adds the dozen.
 
+If the repository does not exist yet, press `i` in the repositories column instead: browse to where
+it should live, give it a name, and Argus creates the directory, runs `git init` in it, and adds it
+to the project.
+
 ### 4. Run
 
 Linux and macOS:
@@ -352,6 +356,7 @@ connects instantly and a rebuild only pays for what changed.
 | `s` | Start a shell |
 | `a` | Choose and start an agent |
 | `n` | Add a project, add a repository to one, create a worktree, or give a branch row a worktree, depending on the column |
+| `i` | In the repositories column, make a repository that does not exist yet: browse to where it should go, name it, and Argus creates the directory, runs `git init` in it, and adds it to the project. An empty name uses the chosen directory itself, which is how a folder that is already there gets initialized |
 | `D` | Remove what the column selects, after confirmation: a project or repository (out of the panel only — nothing on disk is touched), a linked worktree (deleted), or a branch row (the local branch, deleted; the remote is untouched) |
 | `w` | Switch workspace |
 | `b` | Open the branch picker |

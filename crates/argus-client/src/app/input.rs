@@ -119,6 +119,7 @@ impl App {
         if let Some(prompt) = &mut self.prompt {
             let input = match prompt {
                 Prompt::NewWorktree { input, .. }
+                | Prompt::NewRepository { input, .. }
                 | Prompt::Comment { input, .. }
                 | Prompt::EditorCommand { input } => Some(input),
                 Prompt::ConfirmRemove { .. } => None,
@@ -196,6 +197,34 @@ impl App {
                 KeyCode::Char(c) => input.push(c),
                 _ => {}
             },
+            Prompt::NewRepository {
+                project,
+                parent,
+                input,
+            } => match key.code {
+                KeyCode::Enter => {
+                    let project = *project;
+                    // An empty name is not an empty request: the browse
+                    // already said where, and this is "that directory
+                    // itself" — a folder that exists and only wants a
+                    // `git init`.
+                    let name = input.trim();
+                    let path = if name.is_empty() {
+                        parent.clone()
+                    } else {
+                        crate::dirpicker::join(parent, name)
+                    };
+                    self.prompt = None;
+                    let _ = self.out.send(ClientMsg::InitRepository { project, path });
+                    self.pending_focus_new_repository = Some(project);
+                }
+                KeyCode::Esc => self.prompt = None,
+                KeyCode::Backspace => {
+                    input.pop();
+                }
+                KeyCode::Char(c) => input.push(c),
+                _ => {}
+            },
             Prompt::EditorCommand { input } => match key.code {
                 KeyCode::Enter => {
                     let cmd = input.trim().to_string();
@@ -242,6 +271,15 @@ impl App {
                     DirTarget::Repository(project) => {
                         let _ = self.out.send(ClientMsg::AddRepository { project, path });
                         self.pending_focus_new_repository = Some(project);
+                    }
+                    // Nothing is created yet: the directory just chosen is
+                    // where the repository goes, and it still needs a name.
+                    DirTarget::NewRepository(project) => {
+                        self.prompt = Some(Prompt::NewRepository {
+                            project,
+                            parent: path,
+                            input: String::new(),
+                        });
                     }
                 }
             }
@@ -375,6 +413,7 @@ impl App {
             KeyCode::Char('s') => self.spawn_shell(),
             KeyCode::Char('a') => self.open_picker(),
             KeyCode::Char('n') => self.new_prompt(),
+            KeyCode::Char('i') => self.new_repository_prompt(),
             KeyCode::Char('D') => self.remove_prompt(),
             KeyCode::Char('w') => self.open_workspace_picker(),
             KeyCode::Char('t') => self.open_theme_picker(),
