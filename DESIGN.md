@@ -465,8 +465,12 @@ on a remote and nowhere here, as `origin/feature`: what the last fetch turned up
 
 On any branch row, Enter switches the primary checkout to it, `n` gives it a worktree, and `D`
 deletes it — `git branch -d` in the primary checkout, so the deletion is local, never pushed, and
-refused while the branch holds commits nothing else does. The main branch is refused outright, and
-so is a remote-only row: deleting one of those would be a push, which nothing in this column does.
+refused while the branch holds commits nothing else does. That refusal is the one the user has an
+answer to, so it comes back as a second confirmation rather than an alert: an unmerged branch is
+reported as such, the popup reopens asking whether to delete it anyway, and yes reruns the deletion
+as `git branch -D`. Every other refusal is still an error, because forcing would not have helped
+it. The main branch is refused outright, and so is a remote-only row: deleting one of those would
+be a push, which nothing in this column does.
 A remote-only row answers to the local name it would take, so Enter and `n` name `feature` and let
 git take it from `origin/feature` — a worktree for one starts from the remote branch rather than
 from this checkout's HEAD.
@@ -485,7 +489,7 @@ Git mutations use the `git` executable:
 - switch to an existing branch;
 - create and switch to a branch;
 - add a worktree, creating the branch unless it already exists;
-- delete a local branch, refusing an unmerged one;
+- delete a local branch, refusing an unmerged one until the user confirms the forced deletion;
 - fetch every remote, and pull one checkout fast-forward-only;
 - force-remove a linked worktree and best-effort delete its branch;
 - `git init` a repository that does not exist yet.

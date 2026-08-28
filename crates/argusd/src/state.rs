@@ -17,6 +17,7 @@ mod session;
 mod sync;
 mod tree;
 
+pub use git_ops::BranchDeletion;
 use hook::{gen_token, valid_session_id};
 use session::{agent_args, nothing_to_resume, Resumed};
 use tree::*;
@@ -4221,7 +4222,9 @@ root = "/somewhere"
             "the branch has to be there to be deleted"
         );
 
-        d.delete_branch(only_checkout(&d), "doomed").await.unwrap();
+        d.delete_branch(only_checkout(&d), "doomed", false)
+            .await
+            .unwrap();
 
         assert!(
             !d.snapshot()[0].repositories[0]
@@ -4233,31 +4236,19 @@ root = "/somewhere"
     }
 
     #[tokio::test]
-    async fn a_branch_holding_commits_nothing_else_has_is_refused() {
-        // `-d`, never `-D`: the row you delete from says nothing about
-        // whether those commits survive anywhere, so git's refusal stands.
+    async fn a_branch_holding_commits_nothing_else_has_is_put_back_to_the_user() {
+        // `-d` first: the row you delete from says nothing about whether
+        // those commits survive anywhere, so the refusal stands until the
+        // user answers it themselves.
         let (dir, d) = daemon_on_a_repo();
-        let repo = git2::Repository::open(dir.path()).unwrap();
-        let head = repo.head().unwrap().peel_to_commit().unwrap();
-        let tree = head.tree().unwrap();
-        let sig = git2::Signature::now("t", "t@example.com").unwrap();
-        repo.commit(
-            Some("refs/heads/spike"),
-            &sig,
-            &sig,
-            "work",
-            &tree,
-            &[&head],
-        )
-        .unwrap();
+        commit_on_a_branch(dir.path(), "spike");
 
-        let err = d
-            .delete_branch(only_checkout(&d), "spike")
+        let outcome = d
+            .delete_branch(only_checkout(&d), "spike", false)
             .await
-            .unwrap_err()
-            .to_string();
+            .unwrap();
 
-        assert!(err.contains("not fully merged"), "got {err:?}");
+        assert_eq!(outcome, BranchDeletion::NotMerged);
         assert!(
             git2::Repository::open(dir.path())
                 .unwrap()
@@ -4268,12 +4259,72 @@ root = "/somewhere"
     }
 
     #[tokio::test]
+    async fn forcing_deletes_the_unmerged_branch() {
+        let (dir, d) = daemon_on_a_repo();
+        commit_on_a_branch(dir.path(), "spike");
+        d.refresh_branches();
+
+        let outcome = d
+            .delete_branch(only_checkout(&d), "spike", true)
+            .await
+            .unwrap();
+
+        assert_eq!(outcome, BranchDeletion::Deleted);
+        assert!(
+            git2::Repository::open(dir.path())
+                .unwrap()
+                .find_branch("spike", git2::BranchType::Local)
+                .is_err(),
+            "-D takes the branch even though nothing else holds its commits"
+        );
+        assert!(
+            !d.snapshot()[0].repositories[0]
+                .branches
+                .iter()
+                .any(|b| b == "spike"),
+            "and the row goes with it"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refusal_that_forcing_would_not_fix_is_still_an_error() {
+        // The branch isn't there at all: `-D` has nothing more to offer
+        // than `-d` did, so git's message is the answer.
+        let (_dir, d) = daemon_on_a_repo();
+
+        let err = d
+            .delete_branch(only_checkout(&d), "never-existed", false)
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("never-existed"), "got {err:?}");
+    }
+
+    /// A branch one commit ahead of HEAD, which is what makes `-d` refuse.
+    fn commit_on_a_branch(dir: &std::path::Path, branch: &str) {
+        let repo = git2::Repository::open(dir).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        let tree = head.tree().unwrap();
+        let sig = git2::Signature::now("t", "t@example.com").unwrap();
+        repo.commit(
+            Some(&format!("refs/heads/{branch}")),
+            &sig,
+            &sig,
+            "work",
+            &tree,
+            &[&head],
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
     async fn the_main_branch_is_not_deletable_from_its_own_row() {
         let (dir, d) = daemon_on_a_repo();
         branch_off_head(dir.path(), "main");
 
         let err = d
-            .delete_branch(only_checkout(&d), "main")
+            .delete_branch(only_checkout(&d), "main", false)
             .await
             .unwrap_err()
             .to_string();

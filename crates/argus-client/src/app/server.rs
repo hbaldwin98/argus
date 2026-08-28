@@ -212,6 +212,19 @@ impl App {
                 }
                 picker.show(listing);
             }
+            // Straight back into the same popup with the harder question,
+            // rather than an alert the user would have to answer by
+            // finding the row again.
+            ServerMsg::BranchNotMerged { checkout, branch } => {
+                self.prompt = Some(Prompt::ConfirmRemove {
+                    target: RemoveTarget::Branch {
+                        checkout,
+                        branch: branch.clone(),
+                        force: true,
+                    },
+                    label: branch,
+                });
+            }
             ServerMsg::Error { message } => {
                 self.alert(format!("error: {message}"));
             }

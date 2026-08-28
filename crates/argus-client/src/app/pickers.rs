@@ -301,6 +301,7 @@ impl App {
                     RemoveTarget::Branch {
                         checkout,
                         branch: branch.clone(),
+                        force: false,
                     },
                     branch,
                 )
