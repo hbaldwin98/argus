@@ -55,6 +55,53 @@ impl App {
 
     /// Works from any column that still implies a checkout. `R` on a commit
     /// refreshes that commit; otherwise this is the uncommitted sides.
+    /// Opens the note for whatever the spine currently has selected: the
+    /// checkout when one is in hand, the project otherwise.
+    ///
+    /// The column you are in decides what the note is about, rather than a
+    /// second choice on top of the one you already made by navigating
+    /// here. A checkout row with no directory — a bare branch — has no
+    /// note, so the project's stands in.
+    pub(super) fn open_notes(&mut self) {
+        let target = match self.focus {
+            Focus::Projects => self.current_project().map(|p| (NoteTarget::Project(p.id), p.name.clone())),
+            _ => self
+                .current_checkout()
+                .map(|c| (NoteTarget::Checkout(c.id), c.name.clone()))
+                .or_else(|| {
+                    self.current_project()
+                        .map(|p| (NoteTarget::Project(p.id), p.name.clone()))
+                }),
+        };
+        let Some((target, title)) = target else {
+            self.report("nothing to take notes on");
+            return;
+        };
+        // Opened empty and filled in when the daemon answers, so the
+        // window is up on the keypress rather than a round trip later.
+        let placeholder = argus_protocol::Note::new(target, String::new());
+        self.notes = Some(NoteView::new(&placeholder, title));
+        self.overlay = Some(Overlay::Notes);
+        let _ = self.out.send(ClientMsg::GetNote { target });
+    }
+
+    /// Sends the edited body if it has changed since the last write.
+    pub(super) fn save_notes(&mut self) {
+        let Some(view) = &mut self.notes else {
+            return;
+        };
+        if !view.dirty {
+            return;
+        }
+        let target = view.target;
+        let body = view.body();
+        // Marked sent before the answer arrives: the daemon echoes every
+        // write back, and a view still flagged dirty would refuse its own
+        // echo forever.
+        view.saved();
+        let _ = self.out.send(ClientMsg::SetNote { target, body });
+    }
+
     pub(super) fn open_review(&mut self) {
         if let Some(oid) = self
             .review

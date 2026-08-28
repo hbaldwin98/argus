@@ -123,6 +123,9 @@ Persistence is a store a daemon is given, not a flag it can be told to set: `Dae
 an in-memory one, and only `main` passes the store on disk. That is what keeps the test suite off
 the user's state.
 
+Schema v3 adds `note`, keyed on scope and key rather than on an id: a scope this version does not
+recognise is dropped when the table is read, not guessed at.
+
 `session.json`, `excluded-repos`, and `open-workspace` are read once, on the first start that finds
 them, and renamed to `*.imported` afterwards. A `session.json` that will not parse is left where it
 is, since a file this version cannot read is one a later version might.
@@ -593,6 +596,46 @@ selected range still shows which side each line was on.
 
 Review is a viewer. There is no vetted state, no stage/unstage/revert action, and no
 comment-resolution lifecycle. Closing the review sends no daemon message.
+
+## Notes
+
+`m` opens a note on whatever the spine has selected: the project when focus is in the projects
+column, otherwise the checkout, falling back to the project on a branch row that has no directory
+of its own. Notes are plain Markdown the user owns; the daemon stores the text and reads exactly
+one construct out of it.
+
+That construct is the checkbox line — GitHub's task list grammar plus one state. Optional indent, a
+bullet (`-`, `*`, or `+`), a space, `[`, one state character, `]`, and then end of line or a space
+before the text:
+
+- `- [ ]` open: outstanding, and the only one of the three that is a claim on anybody.
+- `- [x]` done.
+- `- [!]` pinned: a standing instruction, meant to be read by an agent without being asked for.
+  Ticking a box never unpins one, since a pinned item was set deliberately.
+
+Counts are derived from the body on every read rather than stored beside it, and ride the tree: a
+checkout row shows its own note's counts, a repository row sums its checkouts, and a project row
+sums everything beneath it plus its own note. A row with a note but nothing to count still says so,
+because "nothing open" and "nothing written down" are different answers.
+
+The window is modal, because a note is read and ticked far more often than it is written. View mode
+navigates with `j`/`k`, `0`/`$`, and `g`/`G`, ticks the box under the cursor with `space`, and
+starts typing with `i`, `a`, or `o`. Insert mode is text, and `Esc` leaves it and saves. Closing
+with `q` saves too; nothing goes out mid-word.
+
+Ticking sends the line number and the new state rather than a body, because the counts a client is
+acting on arrived with the tree rather than from opening the note, and a whole-body write from a
+stale copy would discard whatever an agent wrote in the meantime. The client sends its own text
+first when it has unsaved edits, so the line number means what the daemon thinks it means. Every
+write is answered with the stored note, so the editor shows what the daemon holds rather than what
+it predicted; a note arriving while there are unsent edits is ignored in favour of them.
+
+Notes are stored in `runtime.db` under durable identity — a project by its name, a checkout by its
+path — because ids are handed out fresh on every start. Saving an empty body deletes the note;
+there is no separate delete. A note over 64 KiB is refused.
+
+Not yet implemented: scoped context read APIs, pinned-note injection into a template's prompt,
+explicit forwarding to an agent, and `argus ctx`.
 
 ## Editors and overlays
 

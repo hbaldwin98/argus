@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
+use crate::notes::{Note, NoteTarget, TodoState};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
 use crate::tree::{ProjectInfo, WorkspaceInfo};
 
@@ -107,6 +108,28 @@ pub enum ClientMsg {
         recipient: PaneId,
         anchor: Box<ReviewAnchor>,
         body: String,
+    },
+    /// Read a project's or checkout's note. The daemon answers with
+    /// `ServerMsg::Note` — an absent note comes back as an empty body, so
+    /// opening one that does not exist yet is the same code path as
+    /// opening one that does.
+    GetNote {
+        target: NoteTarget,
+    },
+    /// Replace a note's body. Saving an empty body deletes the note, which
+    /// is how a note is removed: there is no separate delete.
+    SetNote {
+        target: NoteTarget,
+        body: String,
+    },
+    /// Flip one checkbox line. Distinct from `SetNote` because the client
+    /// toggling a box has not necessarily read the note it is toggling in
+    /// — the counts came down with the tree — and a whole-body write from
+    /// a stale copy would lose whatever an agent wrote in the meantime.
+    SetTodo {
+        target: NoteTarget,
+        line: usize,
+        state: TodoState,
     },
     /// Ask for what this checkout contains, for the fuzzy pickers.
     ListBranches {
@@ -266,6 +289,16 @@ pub enum ServerMsg {
     ReviewCommentSaved {
         id: u64,
         delivered: bool,
+    },
+    /// The answer to `ClientMsg::GetNote`, and what every client receives
+    /// when a note changes — including the one that changed it, so the
+    /// editor's text and the daemon's agree without the client predicting
+    /// the result of its own write.
+    Note(Box<Note>),
+    /// A note write that could not be stored, with the reason to show.
+    NoteFailed {
+        target: NoteTarget,
+        message: String,
     },
     /// The answer to `ClientMsg::ListBranches`. `current` is the branch the
     /// checkout is on, and is the first entry of `branches`.

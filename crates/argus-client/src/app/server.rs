@@ -112,6 +112,21 @@ impl App {
                     self.report(format!("comment #{id} saved; agent unavailable"));
                 }
             }
+            ServerMsg::Note(note) => {
+                if let Some(view) = &mut self.notes {
+                    if view.target == note.target {
+                        view.adopt(&note);
+                    }
+                }
+            }
+            ServerMsg::NoteFailed { target, message } => {
+                if let Some(view) = &mut self.notes {
+                    if view.target == target {
+                        view.error = Some(message.clone());
+                    }
+                }
+                self.alert(format!("note: {message}"));
+            }
             ServerMsg::Branches { checkout, branches } => {
                 if self.list_wanted != Some(checkout) {
                     return;

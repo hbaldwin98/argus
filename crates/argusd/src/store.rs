@@ -48,6 +48,47 @@ impl SessionPane {
     }
 }
 
+/// What a note is filed under, once ids are out of the picture.
+///
+/// The client speaks in `NoteTarget`, which is ids; the store speaks in
+/// this, which is what those ids referred to. The daemon translates, and is
+/// the only place that knows both.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum NoteKey {
+    Project(String),
+    Checkout(PathBuf),
+}
+
+impl NoteKey {
+    pub fn checkout(path: &Path) -> NoteKey {
+        NoteKey::Checkout(path.to_path_buf())
+    }
+
+    fn scope(&self) -> &'static str {
+        match self {
+            NoteKey::Project(_) => "project",
+            NoteKey::Checkout(_) => "checkout",
+        }
+    }
+
+    fn key(&self) -> String {
+        match self {
+            NoteKey::Project(name) => name.clone(),
+            NoteKey::Checkout(path) => path_text(path),
+        }
+    }
+
+    /// A row from a store that may be newer than this code. An unknown
+    /// scope is dropped rather than guessed at.
+    fn from_row(scope: &str, key: String) -> Option<NoteKey> {
+        match scope {
+            "project" => Some(NoteKey::Project(key)),
+            "checkout" => Some(NoteKey::Checkout(PathBuf::from(key))),
+            _ => None,
+        }
+    }
+}
+
 /// A project the user added at runtime rather than by editing the config.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectOverlay {
@@ -79,7 +120,7 @@ pub struct Overlays {
 pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -161,6 +202,9 @@ impl Store {
         }
         if from < 2 {
             tx.execute_batch(SCHEMA_V2)?;
+        }
+        if from < 3 {
+            tx.execute_batch(SCHEMA_V3)?;
         }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
@@ -274,6 +318,62 @@ impl Store {
             },
         )?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    // ---- notes -------------------------------------------------------
+
+    /// This note's body, or `None` if it has never been written.
+    pub fn note(&self, key: &NoteKey) -> Result<Option<String>> {
+        let conn = self.conn();
+        Ok(conn
+            .query_row(
+                "SELECT body FROM note WHERE scope = ?1 AND key = ?2",
+                rusqlite::params![key.scope(), key.key()],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Writes a note, or removes it when the body has nothing left in it.
+    ///
+    /// Emptying a note is how a note is deleted: there is no separate
+    /// delete, because "select all, backspace, save" is what a person
+    /// actually does when they mean to be rid of one.
+    pub fn set_note(&self, key: &NoteKey, body: &str) -> Result<()> {
+        let conn = self.conn();
+        if body.trim().is_empty() {
+            conn.execute(
+                "DELETE FROM note WHERE scope = ?1 AND key = ?2",
+                rusqlite::params![key.scope(), key.key()],
+            )?;
+            return Ok(());
+        }
+        conn.execute(
+            "INSERT INTO note (scope, key, body) VALUES (?1, ?2, ?3)
+             ON CONFLICT(scope, key) DO UPDATE SET body = excluded.body",
+            rusqlite::params![key.scope(), key.key(), body],
+        )?;
+        Ok(())
+    }
+
+    /// Every note there is, for folding counts into a tree snapshot.
+    ///
+    /// One query rather than one per row: the tree is rebuilt on every
+    /// change, and a note lookup per checkout would put a statement per
+    /// checkout on a path that already walks the whole tree.
+    pub fn notes(&self) -> Result<Vec<(NoteKey, String)>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT scope, key, body FROM note")?;
+        let rows = stmt.query_map([], |r| {
+            let scope: String = r.get(0)?;
+            let key: String = r.get(1)?;
+            Ok((NoteKey::from_row(&scope, key), r.get::<_, String>(2)?))
+        })?;
+        Ok(rows
+            .collect::<rusqlite::Result<Vec<_>>>()?
+            .into_iter()
+            .filter_map(|(k, body)| k.map(|k| (k, body)))
+            .collect())
     }
 
     // ---- project overlays --------------------------------------------
@@ -634,6 +734,19 @@ CREATE TABLE ui_state (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+"#;
+
+/// Notes are keyed by durable identity, not by id: ids are handed out
+/// fresh every start, and a note has to survive being written today and
+/// read next week. A project is its name and a checkout is its path, the
+/// same keys the pane and overlay tables already use.
+const SCHEMA_V3: &str = r#"
+CREATE TABLE note (
+    scope TEXT NOT NULL,
+    key   TEXT NOT NULL,
+    body  TEXT NOT NULL,
+    PRIMARY KEY (scope, key)
+) WITHOUT ROWID;
 "#;
 
 const SCHEMA_V2: &str = r#"
@@ -1121,6 +1234,101 @@ mod tests {
             .add_review_comment(Path::new("/repo"), anchor(3), "persist this".to_string())
             .unwrap();
         assert_eq!(s.review_comments(Path::new("/repo")).unwrap(), [saved]);
+        s.set_note(&NoteKey::checkout(Path::new("/repo")), "- [ ] and this")
+            .unwrap();
+        assert_eq!(
+            s.note(&NoteKey::checkout(Path::new("/repo"))).unwrap(),
+            Some("- [ ] and this".to_string())
+        );
+    }
+
+    #[test]
+    fn a_note_round_trips_per_scope_and_key() {
+        let s = Store::in_memory().unwrap();
+        let repo = NoteKey::checkout(Path::new("/repo"));
+        let other = NoteKey::checkout(Path::new("/other"));
+        let project = NoteKey::Project("repo".to_string());
+
+        s.set_note(&repo, "checkout note").unwrap();
+        s.set_note(&project, "project note").unwrap();
+
+        assert_eq!(s.note(&repo).unwrap(), Some("checkout note".to_string()));
+        assert_eq!(s.note(&project).unwrap(), Some("project note".to_string()));
+        assert_eq!(
+            s.note(&other).unwrap(),
+            None,
+            "a checkout with no note has none"
+        );
+    }
+
+    #[test]
+    fn a_project_and_a_checkout_of_the_same_name_hold_separate_notes() {
+        let s = Store::in_memory().unwrap();
+        s.set_note(&NoteKey::Project("argus".to_string()), "the project")
+            .unwrap();
+        s.set_note(&NoteKey::Checkout(PathBuf::from("argus")), "the checkout")
+            .unwrap();
+        assert_eq!(
+            s.note(&NoteKey::Project("argus".to_string())).unwrap(),
+            Some("the project".to_string())
+        );
+        assert_eq!(
+            s.note(&NoteKey::Checkout(PathBuf::from("argus"))).unwrap(),
+            Some("the checkout".to_string())
+        );
+    }
+
+    #[test]
+    fn rewriting_a_note_replaces_it_rather_than_adding_a_second() {
+        let s = Store::in_memory().unwrap();
+        let key = NoteKey::checkout(Path::new("/repo"));
+        s.set_note(&key, "first").unwrap();
+        s.set_note(&key, "second").unwrap();
+        assert_eq!(s.note(&key).unwrap(), Some("second".to_string()));
+        assert_eq!(s.notes().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn emptying_a_note_deletes_it() {
+        let s = Store::in_memory().unwrap();
+        let key = NoteKey::checkout(Path::new("/repo"));
+        s.set_note(&key, "- [ ] something").unwrap();
+        s.set_note(&key, "   
+  
+").unwrap();
+        assert_eq!(s.note(&key).unwrap(), None);
+        assert!(s.notes().unwrap().is_empty());
+    }
+
+    #[test]
+    fn every_note_reads_back_in_one_pass_for_the_tree() {
+        let s = Store::in_memory().unwrap();
+        s.set_note(&NoteKey::checkout(Path::new("/a")), "a").unwrap();
+        s.set_note(&NoteKey::checkout(Path::new("/b")), "b").unwrap();
+        s.set_note(&NoteKey::Project("p".to_string()), "p").unwrap();
+
+        let mut notes = s.notes().unwrap();
+        notes.sort_by(|a, b| a.1.cmp(&b.1));
+        assert_eq!(
+            notes,
+            [
+                (NoteKey::checkout(Path::new("/a")), "a".to_string()),
+                (NoteKey::checkout(Path::new("/b")), "b".to_string()),
+                (NoteKey::Project("p".to_string()), "p".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_note_scope_this_argus_does_not_know_is_dropped_rather_than_guessed() {
+        let s = Store::in_memory().unwrap();
+        s.conn()
+            .execute(
+                "INSERT INTO note (scope, key, body) VALUES ('board', 'x', 'from the future')",
+                [],
+            )
+            .unwrap();
+        assert!(s.notes().unwrap().is_empty());
     }
 
     #[test]
