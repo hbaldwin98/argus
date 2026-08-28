@@ -28,7 +28,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget, Wrap};
 use ratatui::Frame;
 
-use crate::app::{App, CheckoutRow, Focus, Overlay, Panel, PickerKind, Prompt, Setting};
+use crate::app::{
+    App, CheckoutRow, Focus, Overlay, PaneLocation, Panel, PickerKind, Prompt, Setting,
+};
 use crate::dirpicker::DirRow;
 use crate::grid::Grid;
 use crate::history::{HistoryRow, HistoryView};
@@ -318,56 +320,69 @@ n  add one",
         th,
     );
 
+    let flat = app.settings.pane_view == crate::settings::PaneView::Flat;
     let pane_rows: Vec<Item> = app
-        .current_checkout()
-        .map(|c| {
-            c.listed_panes()
-                .flat_map(|p| {
-                    let flash = if app.pane_is_flashing(p.id) {
-                        Style::default().bg(th.sel_bg_dim)
-                    } else {
+        .pane_column_locations()
+        .into_iter()
+        .flat_map(|location| {
+            let p = app
+                .pane_at(location)
+                .expect("pane column locations must point at panes");
+            let flash = if app.pane_is_flashing(p.id) {
+                Style::default().bg(th.sel_bg_dim)
+            } else {
+                Style::default()
+            };
+            let mut state = status_dot(Some(p.status), th);
+            state.style = state.style.patch(flash);
+            let detail = if flat {
+                let (project, repository, checkout) = app
+                    .pane_path(location)
+                    .expect("pane locations must have a tree path");
+                let mut detail = vec![Span::styled(
+                    format!("{project} › {repository} › {checkout}  "),
+                    Style::default().fg(th.accent),
+                )];
+                detail.extend(pane_detail(p, th));
+                detail
+            } else {
+                pane_detail(p, th)
+            };
+            let parent = Item::new(
+                vec![
+                    state,
+                    Span::styled(
+                        p.title.clone(),
                         Style::default()
-                    };
-                    let mut state = status_dot(Some(p.status), th);
-                    state.style = state.style.patch(flash);
-                    let parent = Item::new(
-                        vec![
-                            state,
-                            Span::styled(
-                                p.title.clone(),
-                                Style::default()
-                                    .fg(th.text)
-                                    .add_modifier(Modifier::BOLD)
-                                    .patch(flash),
-                            ),
-                            Span::styled(
-                                exit_note(p.status),
-                                Style::default().fg(th.err).patch(flash),
-                            ),
-                        ],
-                        pane_detail(p, th),
-                    )
-                    .badged(vec![Span::styled(
-                        format!("#{}", p.id.0),
-                        Style::default().fg(th.dim),
-                    )]);
-                    std::iter::once(parent).chain(p.children.iter().map(|c| child_item(c, th)))
-                })
-                .collect()
+                            .fg(th.text)
+                            .add_modifier(Modifier::BOLD)
+                            .patch(flash),
+                    ),
+                    Span::styled(
+                        exit_note(p.status),
+                        Style::default().fg(th.err).patch(flash),
+                    ),
+                ],
+                detail,
+            )
+            .badged(vec![Span::styled(
+                format!("#{}", p.id.0),
+                Style::default().fg(th.dim),
+            )]);
+            std::iter::once(parent).chain(p.children.iter().map(|c| child_item(c, th)))
         })
-        .unwrap_or_default();
+        .collect();
     // The selection is a pane, but the rows it sits among include the
     // children listed under each one, so the highlight has to be moved
     // onto the row that pane actually occupies.
-    let selected_row = app.current_checkout().and_then(|c| {
-        pane_row_owners(c)
-            .iter()
-            .position(|owner| *owner == app.sel_pane)
-    });
+    let selected = app.pane_location();
+    let selected_row = pane_row_owners(app)
+        .iter()
+        .position(|owner| Some(*owner) == selected);
     app.layout.panes = render_column(
         f,
         col(3),
-        "panes",
+        if flat { "panes · all" } else { "panes" },
         pane_rows,
         app.focus == Focus::Panes,
         selected_row,
@@ -1086,7 +1101,7 @@ fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             Focus::Checkouts => {
                 "j/k move  l open  b branch  B all  F fetch  P pull  f file  R review  H history  n worktree  D rm  q detach"
             }
-            _ => "j/k move  l open  N attention  s shell  a agent  b branch  f file  R review  H history  x close  q detach",
+            _ => "j/k move  l open  v panes  N attention  s shell  a agent  b branch  f file  R review  H history  x close  q detach",
         };
         (keys, th.dim)
     };
@@ -1155,9 +1170,9 @@ fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
 
     let width = (area.width * OVERLAY_FRACTION.0 / 100).max(20.min(area.width));
     let minimum_height = if matches!(overlay, Overlay::Settings { .. }) {
-        // Two border rows and the panel's vertical padding sit outside the
-        // setting lines and the two-line save-location footer.
-        (Setting::ALL.len() as u16 * 3 + 7).min(area.height)
+        // Two border rows and the panel's top padding sit outside the
+        // setting lines and save-location footer.
+        (Setting::ALL.len() as u16 * 3 + 3).min(area.height)
     } else {
         6.min(area.height)
     };
@@ -1236,6 +1251,10 @@ fn render_settings(f: &mut Frame, app: &App, area: Rect, sel: usize, th: Theme) 
                     "the command to run, flags and all — enter to change".to_string(),
                 )
             }
+            Setting::PaneView => (
+                app.settings.pane_view.label().to_string(),
+                app.settings.pane_view.detail().to_string(),
+            ),
             Setting::Theme => (
                 app.settings.theme.clone(),
                 "colours for the whole client".to_string(),
@@ -1282,17 +1301,21 @@ fn render_settings(f: &mut Frame, app: &App, area: Rect, sel: usize, th: Theme) 
                 Style::default().fg(th.dim).patch(bar),
             ),
         ]));
-        lines.push(Line::raw(""));
+        if i + 1 < Setting::ALL.len() {
+            lines.push(Line::raw(""));
+        }
     }
 
-    lines.push(Line::from(vec![Span::styled(
-        " changes save as you make them",
-        Style::default().fg(th.dim).add_modifier(Modifier::ITALIC),
-    )]));
-    lines.push(Line::from(vec![Span::styled(
-        format!(" {}", crate::settings::path().display()),
-        Style::default().fg(th.dim),
-    )]));
+    lines.push(Line::from(vec![
+        Span::styled(
+            " save: ",
+            Style::default().fg(th.dim).add_modifier(Modifier::ITALIC),
+        ),
+        Span::styled(
+            crate::settings::path().display().to_string(),
+            Style::default().fg(th.dim),
+        ),
+    ]));
 
     f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), area);
 }
@@ -1915,10 +1938,16 @@ fn child_item(c: &ChildAgentInfo, th: Theme) -> Item<'static> {
 /// Which pane each row of the panes column belongs to: a pane's own row,
 /// then one row per child listed under it. Shared with `app` so a click
 /// lands on the same pane the renderer drew there.
-pub fn pane_row_owners(c: &argus_protocol::CheckoutInfo) -> Vec<usize> {
-    c.listed_panes()
-        .enumerate()
-        .flat_map(|(i, p)| std::iter::repeat_n(i, 1 + p.children.len()))
+pub fn pane_row_owners(app: &App) -> Vec<PaneLocation> {
+    app.pane_column_locations()
+        .into_iter()
+        .flat_map(|location| {
+            let children = app
+                .pane_at(location)
+                .map(|pane| pane.children.len())
+                .unwrap_or(0);
+            std::iter::repeat_n(location, 1 + children)
+        })
         .collect()
 }
 
@@ -2462,6 +2491,24 @@ mod tests {
         // Row 0 is the pane, row 1 its child, so the second pane is row 2.
         let marker = buf.cell((inner.x, inner.y + ROW_HEIGHT * 2)).unwrap();
         assert_eq!(marker.symbol(), MARKER, "the marker follows the pane's row");
+    }
+
+    #[test]
+    fn flat_pane_rows_show_panes_from_other_checkouts_with_their_path() {
+        let mut app = app_with_tree();
+        let mut feature = pane(PaneStatus::Working, Some("updating navigation"));
+        feature.id = PaneId(102);
+        feature.title = "feature agent".to_string();
+        app.tree[0].repositories[0].checkouts[1].panes.push(feature);
+
+        let grouped = lines(&draw_at(&mut app, 200, 24)).join("\n");
+        assert!(!grouped.contains("feature agent"));
+
+        app.settings.pane_view = crate::settings::PaneView::Flat;
+        let flat = lines(&draw_at(&mut app, 200, 24)).join("\n");
+        assert!(flat.contains("panes · all"), "{flat}");
+        assert!(flat.contains("feature agent"), "{flat}");
+        assert!(flat.contains("argus › orion › feat"), "{flat}");
     }
 
     #[test]

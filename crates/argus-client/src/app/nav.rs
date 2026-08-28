@@ -204,6 +204,96 @@ impl App {
             .and_then(|c| c.listed_panes().nth(self.sel_pane))
     }
 
+    pub fn pane_location(&self) -> Option<PaneLocation> {
+        self.current_pane()?;
+        Some(PaneLocation {
+            project: self.sel_project,
+            repository: self.sel_repository,
+            checkout: self.selected_checkout_index()?,
+            pane: self.sel_pane,
+        })
+    }
+
+    /// Every listed pane in the open workspace, in tree order.
+    pub fn flat_pane_locations(&self) -> Vec<PaneLocation> {
+        self.tree
+            .iter()
+            .enumerate()
+            .flat_map(|(project, p)| {
+                p.repositories
+                    .iter()
+                    .enumerate()
+                    .flat_map(move |(repository, r)| {
+                        r.checkouts
+                            .iter()
+                            .enumerate()
+                            .flat_map(move |(checkout, c)| {
+                                c.listed_panes()
+                                    .enumerate()
+                                    .map(move |(pane, _)| PaneLocation {
+                                        project,
+                                        repository,
+                                        checkout,
+                                        pane,
+                                    })
+                            })
+                    })
+            })
+            .collect()
+    }
+
+    pub fn pane_column_locations(&self) -> Vec<PaneLocation> {
+        if self.settings.pane_view == crate::settings::PaneView::Flat {
+            return self.flat_pane_locations();
+        }
+        let (Some(checkout), Some(checkout_index)) =
+            (self.current_checkout(), self.selected_checkout_index())
+        else {
+            return Vec::new();
+        };
+        (0..checkout.listed_panes().count())
+            .map(|pane| PaneLocation {
+                project: self.sel_project,
+                repository: self.sel_repository,
+                checkout: checkout_index,
+                pane,
+            })
+            .collect()
+    }
+
+    pub fn pane_at(&self, location: PaneLocation) -> Option<&PaneInfo> {
+        self.tree
+            .get(location.project)?
+            .repositories
+            .get(location.repository)?
+            .checkouts
+            .get(location.checkout)?
+            .listed_panes()
+            .nth(location.pane)
+    }
+
+    pub fn pane_path(&self, location: PaneLocation) -> Option<(&str, &str, &str)> {
+        let project = self.tree.get(location.project)?;
+        let repository = project.repositories.get(location.repository)?;
+        let checkout = repository.checkouts.get(location.checkout)?;
+        Some((&project.name, &repository.name, &checkout.name))
+    }
+
+    pub fn select_pane_location(&mut self, location: PaneLocation) -> bool {
+        let valid = self.pane_at(location).is_some();
+        if !valid {
+            return false;
+        }
+        self.sel_project = location.project;
+        self.sel_repository = location.repository;
+        let Some(row) = self.checkout_row_of(location.checkout) else {
+            return false;
+        };
+        self.sel_checkout = row;
+        self.sel_pane = location.pane;
+        true
+    }
+
     pub(super) fn clamp(&mut self) {
         let nproj = self.tree.len();
         if nproj == 0 {
@@ -340,6 +430,20 @@ impl App {
     }
 
     pub(super) fn adjust_selection(&mut self, target: Focus, delta: i32) {
+        if target == Focus::Panes && self.settings.pane_view == crate::settings::PaneView::Flat {
+            let locations = self.flat_pane_locations();
+            if locations.is_empty() {
+                return;
+            }
+            let here = self
+                .pane_location()
+                .and_then(|current| locations.iter().position(|location| *location == current))
+                .unwrap_or(0) as i32;
+            let next = (here + delta).clamp(0, locations.len() as i32 - 1) as usize;
+            self.select_pane_location(locations[next]);
+            self.sync_subscription();
+            return;
+        }
         let sel = match target {
             Focus::Projects => &mut self.sel_project,
             Focus::Repositories => &mut self.sel_repository,
@@ -371,6 +475,13 @@ impl App {
             Focus::Checkouts => {
                 if self.current_checkout().is_some() {
                     self.sel_pane = 0;
+                    if self.settings.pane_view == crate::settings::PaneView::Flat
+                        && self.current_pane().is_none()
+                    {
+                        if let Some(first) = self.flat_pane_locations().first().copied() {
+                            self.select_pane_location(first);
+                        }
+                    }
                     self.focus = Focus::Panes;
                 } else if self.current_branch_row().is_some() {
                     // A branch with no directory has no panes to descend

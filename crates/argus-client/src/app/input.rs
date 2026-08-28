@@ -388,6 +388,7 @@ impl App {
             KeyCode::Char('H') => self.open_history(),
             KeyCode::Char('x') => self.kill_selected(),
             KeyCode::Char('p') => self.toggle_projects_collapsed(),
+            KeyCode::Char('v') => self.toggle_pane_view(),
             KeyCode::Char('N') => self.jump_to_next_attention(),
             _ => {}
         }

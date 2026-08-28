@@ -65,6 +65,28 @@ impl App {
         }
     }
 
+    pub fn toggle_pane_view(&mut self) {
+        let view = self.settings.pane_view.toggle();
+        self.set_pane_view(view);
+        if self.persist_settings {
+            crate::settings::save(&self.settings);
+        }
+        self.report(match view {
+            crate::settings::PaneView::Checkout => "showing panes by checkout",
+            crate::settings::PaneView::Flat => "showing all panes — v to group by checkout",
+        });
+    }
+
+    fn set_pane_view(&mut self, view: crate::settings::PaneView) {
+        self.settings.pane_view = view;
+        if view == crate::settings::PaneView::Flat && self.current_pane().is_none() {
+            if let Some(first) = self.flat_pane_locations().first().copied() {
+                self.select_pane_location(first);
+            }
+        }
+        self.clamp();
+    }
+
     pub(super) fn move_setting(&mut self, delta: isize) {
         if let Some(Overlay::Settings { sel }) = &mut self.overlay {
             let last = Setting::ALL.len() as isize - 1;
@@ -88,6 +110,9 @@ impl App {
                 } else {
                     self.settings.editor.prev()
                 };
+            }
+            Some(Setting::PaneView) => {
+                self.set_pane_view(self.settings.pane_view.toggle());
             }
             Some(Setting::Theme) => {
                 let themes = crate::theme::THEMES;

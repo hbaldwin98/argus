@@ -270,6 +270,26 @@ impl App {
         let Some((target, panel)) = self.column_at(x, y) else {
             return;
         };
+        // Two things stand between the row clicked and the row meant. The
+        // card may be scrolled, so its first row is `panel.first` rather
+        // than row zero; and the panes column draws each pane's children
+        // under it, so a row there is not an index into the panes — a
+        // click on a child row means the pane it is running in.
+        let row = row_in(panel.inner, x, y).map(|row| row + panel.first);
+        if target == Focus::Panes {
+            let hit = row.and_then(|row| crate::ui::pane_row_owners(self).get(row).copied());
+            let already = self.focus == target && hit == self.pane_location();
+            if let Some(location) = hit {
+                self.select_pane_location(location);
+            }
+            self.focus = target;
+            self.clamp();
+            if already {
+                self.descend();
+            }
+            return;
+        }
+
         let count = match target {
             Focus::Projects => self.tree.len(),
             Focus::Repositories => self
@@ -277,22 +297,9 @@ impl App {
                 .map(|p| p.repositories.len())
                 .unwrap_or(0),
             Focus::Checkouts => self.checkout_row_count(),
-            _ => self.visible_pane_count(),
+            _ => 0,
         };
-
-        // Two things stand between the row clicked and the row meant. The
-        // card may be scrolled, so its first row is `panel.first` rather
-        // than row zero; and the panes column draws each pane's children
-        // under it, so a row there is not an index into the panes — a
-        // click on a child row means the pane it is running in.
-        let row = row_in(panel.inner, x, y).map(|row| row + panel.first);
-        let hit = match target {
-            Focus::Panes => row.and_then(|row| {
-                self.current_checkout()
-                    .and_then(|c| crate::ui::pane_row_owners(c).get(row).copied())
-            }),
-            _ => row.filter(|idx| *idx < count),
-        };
+        let hit = row.filter(|idx| *idx < count);
         let already = self.focus == target && hit == Some(self.selection_in(target));
         if let Some(idx) = hit {
             *self.selection_mut(target) = idx;

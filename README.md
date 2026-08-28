@@ -166,7 +166,7 @@ The directory may contain:
 | File | Purpose |
 |---|---|
 | `projects.toml` | Workspaces, projects, repositories, agent templates, and harnesses. Yours to edit; Argus only reads it |
-| `client.toml` | Editor, theme, layout, and notification preferences |
+| `client.toml` | Editor, theme, layout, pane-view, and notification preferences |
 | `runtime.db` | Everything Argus writes: panes to relaunch, projects and repositories added or removed from the TUI, workspaces created at runtime, and the last workspace open |
 
 The daemon watches `projects.toml` and reloads project and agent-template changes. Existing panes
@@ -361,6 +361,7 @@ connects instantly and a rebuild only pays for what changed.
 | `f` | Open the file picker |
 | `R` / Tab | Open review |
 | `N` | Jump to the next pane, or parent of a child, waiting, failed, or ready for review |
+| `v` | Toggle the panes column between the selected checkout and one list across every checkout; flat rows show their project, repository, and checkout |
 | `S` | Open settings |
 | `t` | Choose a theme for this client process |
 | `x` | Kill the selected pane |

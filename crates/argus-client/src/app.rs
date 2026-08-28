@@ -255,6 +255,7 @@ impl Overlay {
 pub enum Setting {
     Editor,
     EditorCmd,
+    PaneView,
     Theme,
     Notifications,
 }
@@ -263,6 +264,7 @@ impl Setting {
     pub const ALL: &'static [Setting] = &[
         Setting::Editor,
         Setting::EditorCmd,
+        Setting::PaneView,
         Setting::Theme,
         Setting::Notifications,
     ];
@@ -271,6 +273,7 @@ impl Setting {
         match self {
             Setting::Editor => "editor opens",
             Setting::EditorCmd => "editor command",
+            Setting::PaneView => "pane view",
             Setting::Theme => "theme",
             Setting::Notifications => "notifications",
         }
@@ -376,6 +379,16 @@ pub enum CheckoutAnchor {
     /// give it one is the same row as far as the user is concerned.
     Branch(String),
     Remote(String),
+}
+
+/// A pane's coordinates in the daemon tree. `checkout` indexes the
+/// repository's checkouts, while `pane` indexes `listed_panes()`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PaneLocation {
+    pub project: usize,
+    pub repository: usize,
+    pub checkout: usize,
+    pub pane: usize,
 }
 
 /// The branch a remote-tracking name would become locally:
@@ -872,6 +885,42 @@ mod tests {
         h.keys("hhh"); // back to projects
         h.keys("lll"); // descend again
         assert_eq!(h.app.sel_pane, 0, "re-entering a column starts at the top");
+    }
+
+    #[test]
+    fn flat_view_moves_through_panes_across_checkout_and_project_boundaries() {
+        let mut h = Harness::new();
+        h.app.tree[0].repositories[0].checkouts[1]
+            .panes
+            .push(pane(102, "feature agent"));
+        h.app.tree[1].repositories[0].checkouts[0]
+            .panes
+            .push(pane(200, "other agent"));
+        h.keys("lllv");
+
+        assert_eq!(h.app.settings.pane_view, crate::settings::PaneView::Flat);
+        assert_eq!(h.app.column_pane(), Some(PaneId(100)));
+
+        h.keys("jj");
+        assert_eq!(h.app.column_pane(), Some(PaneId(102)));
+        assert_eq!(
+            h.app.current_checkout().map(|checkout| checkout.id),
+            Some(CheckoutId(11))
+        );
+
+        h.key(KeyCode::Char('j'));
+        assert_eq!(h.app.column_pane(), Some(PaneId(200)));
+        assert_eq!(
+            h.app.current_project().map(|project| project.id),
+            Some(ProjectId(2))
+        );
+
+        h.key(KeyCode::Char('v'));
+        assert_eq!(
+            h.app.settings.pane_view,
+            crate::settings::PaneView::Checkout
+        );
+        assert_eq!(h.app.pane_column_locations().len(), 1);
     }
 
     #[test]
@@ -2615,6 +2664,26 @@ second
 
         h.app.on_mouse(click(38, 5));
         assert_eq!(h.app.sel_pane, 1, "and the rows below it have shifted down");
+    }
+
+    #[test]
+    fn clicking_a_flat_row_selects_its_checkout_and_pane() {
+        let mut h = Harness::new();
+        laid_out(&mut h);
+        h.app.tree[0].repositories[0].checkouts[1]
+            .panes
+            .push(pane(102, "feature agent"));
+        h.app.settings.pane_view = crate::settings::PaneView::Flat;
+
+        // The first checkout owns rows 0 and 1; row 2 belongs to `feat`.
+        h.app.on_mouse(click(38, 5));
+
+        assert_eq!(h.app.focus, Focus::Panes);
+        assert_eq!(h.app.column_pane(), Some(PaneId(102)));
+        assert_eq!(
+            h.app.current_checkout().map(|checkout| checkout.id),
+            Some(CheckoutId(11))
+        );
     }
 
     #[test]
