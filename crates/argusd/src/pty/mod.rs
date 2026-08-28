@@ -430,15 +430,11 @@ impl PaneRuntime {
     /// Rows sitting `offset` lines above the live screen, with the offset
     /// actually reached and how deep the buffer goes.
     ///
-    /// The read moves the parser's scrollback offset and puts it straight
-    /// back under one hold of the lock. That offset is parser-global, not
-    /// per-client: left set, it would drag every other subscriber's frames
-    /// back with this client's view, and the pump would diff scrolled-back
-    /// rows against live ones and broadcast the difference as damage.
-    ///
-    /// The alternate screen has no scrollback of its own, so a full-screen
-    /// child answers with a depth of zero rather than the shell's history
-    /// showing through underneath it.
+    /// The parser's offset is moved and put straight back under one hold
+    /// of the lock, because it is parser-global: left set, it would drag
+    /// every other subscriber's frames back with this client's view. The
+    /// alternate screen answers with a depth of zero rather than letting
+    /// the shell's history show through underneath a full-screen child.
     pub fn scrollback(&self, offset: usize) -> (Vec<Vec<Cell>>, usize, usize) {
         read_scrollback(&mut self.parser.lock().unwrap(), offset)
     }

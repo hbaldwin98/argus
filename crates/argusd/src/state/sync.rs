@@ -59,20 +59,15 @@ impl Daemon {
         });
     }
 
-    /// Re-reads every checkout's git status and caches it on the checkout,
-    /// so the tree snapshots that clients actually render cost nothing but
-    /// a clone.
+    /// Re-reads every checkout's git status and caches it, so a snapshot
+    /// costs nothing but a clone.
     ///
-    /// Deliberately three phases — collect paths, read git, store results —
-    /// with the lock dropped in the middle. Reading git under the lock is
-    /// what this exists to avoid: status is several milliseconds of
-    /// blocking I/O per checkout, and `write_pane` needs the same lock to
-    /// find the pty a keystroke belongs to, so holding it across a sweep of
-    /// every checkout puts that whole sweep in front of the next key.
-    ///
-    /// Checkouts are matched back by id: the tree can be rearranged while
-    /// the lock is down, and a stale result must be dropped rather than
-    /// land on whatever now occupies that position.
+    /// Three phases — collect paths, read git, store results — with the
+    /// lock dropped in the middle. Status is milliseconds of blocking I/O
+    /// per checkout and `write_pane` needs the same lock to find the pty a
+    /// keystroke belongs to, so reading git under it would put the whole
+    /// sweep in front of the next key. Results are matched back by id: the
+    /// tree can be rearranged while the lock is down.
     pub fn refresh_git_status(&self) {
         self.refresh_git_status_with(crate::git::status);
     }
@@ -115,16 +110,14 @@ impl Daemon {
 
     /// Re-reads `projects.toml` and folds it into the running tree.
     ///
-    /// Nothing is rebuilt: projects, repositories and checkouts are matched
-    /// to what the file now says and updated in place, so ids stay valid
-    /// and every pane keeps running. What the file no longer mentions is
-    /// removed — unless it is holding panes, which are somebody's work in
-    /// progress and not the config file's to end. Those rows stay until
-    /// they are empty, and the next reload takes them.
+    /// Nothing is rebuilt: rows are matched to what the file now says and
+    /// updated in place, so ids stay valid and every pane keeps running.
+    /// What the file no longer mentions is dropped, unless it is holding
+    /// panes — somebody's work in progress is not the config file's to end.
     ///
-    /// Agent templates are replaced wholesale, since a template is looked
-    /// up by name each time an agent starts. Harnesses are not: a running
-    /// agent's hooks on disk were written by the harness it started under.
+    /// Templates are replaced wholesale, since one is looked up by name at
+    /// each start. Harnesses are not: a running agent's hooks on disk were
+    /// written by the harness it started under.
     pub fn reload_config(self: &Arc<Self>) -> anyhow::Result<()> {
         let config = config::load()?;
         let templates = if config.agents.is_empty() {

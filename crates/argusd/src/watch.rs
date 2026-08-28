@@ -109,17 +109,15 @@ pub fn file(path: &Path, on_change: impl Fn() + Send + 'static) -> Option<impl W
 
 /// Whether an event is about the file being watched.
 ///
-/// It has to be asked. The daemon writes its log and its store into the
-/// same directory `projects.toml` lives in, so without this every line
-/// logged is an event — and reloading the config logs a line, which is a
-/// loop that never runs out of fuel. Matching on the file name is exact
-/// here: a non-recursive watch only ever reports entries of that one
-/// directory, and comparing names sidesteps the separator and prefix
-/// differences between a canonical path and what the backend hands back.
+/// It has to be asked: the daemon writes its log and its store into the
+/// directory `projects.toml` lives in, and reloading the config logs a
+/// line — a loop that never runs out of fuel. Matched on file name, since
+/// a non-recursive watch only reports entries of that one directory and
+/// names sidestep the separator differences between a canonical path and
+/// what the backend hands back.
 ///
-/// An event carrying no paths at all is a backend rescan rather than a
-/// write. Nothing the daemon does causes one, so waking on it cannot loop,
-/// and reading the config once too often costs less than missing an edit.
+/// An event carrying no paths is a backend rescan, not a write. Nothing
+/// the daemon does causes one, so waking on it cannot loop.
 fn concerns(paths: &[PathBuf], file: &Path) -> bool {
     paths.is_empty() || paths.iter().any(|p| p.file_name() == file.file_name())
 }

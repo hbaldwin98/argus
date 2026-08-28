@@ -52,12 +52,14 @@ to the type or its locking.
 | module | answers |
 | --- | --- |
 | `state` | what the tree is, and what a client is shown of it |
+| `state/build` | turning what the config declares into the tree the daemon runs on |
 | `state/panes` | a pane's lifecycle: spawned, restarted, closed, written to |
 | `state/agents` | what an agent reports about itself, and what it is told |
 | `state/viewers` | the one pty size reconciled out of what every client asks for |
 | `state/git_ops` | the writes to Git |
 | `state/sync` | the polls and watchers that keep the tree level with the disk |
 | `state/panel` | the rows the user adds and removes by hand |
+| `state/workspaces` | which scope is open, daemon-wide |
 | `state/notes` | what is written down against a row |
 | `state/hook_server` | the loopback receiver agents report to |
 | `state/session` | what survives a daemon restart |

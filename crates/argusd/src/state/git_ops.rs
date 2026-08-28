@@ -108,25 +108,14 @@ impl Daemon {
         Ok(())
     }
 
-    /// Drops a local branch. Run from the checkout that asked, which is
-    /// the repository's primary one whenever the row was a branch rather
-    /// than a directory.
+    /// Drops a local branch — `refs/heads` only; nothing here pushes a
+    /// deletion, so removing a branch from the panel never removes it from
+    /// the remote. The main branch is refused outright: it is the row the
+    /// column is anchored on.
     ///
-    /// Local only: `git branch -d` touches `refs/heads`, never
-    /// `refs/remotes`, and nothing here pushes a deletion. Removing a
-    /// branch from the panel is not removing it from the remote.
-    ///
-    /// `-d` unless `force`. A branch is a name on commits, and the row you
-    /// delete it from says nothing about whether those commits are anywhere
-    /// else; git already knows, so its refusal is the answer and is passed
-    /// back as it stands. The main branch is refused outright — it is the
-    /// row the column is anchored on, and nobody means to delete it from
-    /// here.
-    ///
-    /// An unmerged branch reports `NotMerged` rather than failing, because
-    /// that refusal is the one the user has an answer to: `force` reruns it
-    /// as `-D`. Every other refusal is still an error, since `-D` would not
-    /// have helped.
+    /// `-d` unless `force`, and git's refusal is passed back as it stands.
+    /// An unmerged branch reports `NotMerged` instead, because that is the
+    /// one refusal the user has an answer to: `force` reruns it as `-D`.
     pub async fn delete_branch(
         &self,
         checkout: CheckoutId,
@@ -265,21 +254,15 @@ impl Daemon {
         run_setup(&context.setup, &dest).await
     }
 
-    /// Makes a repository that does not exist yet and adds it to `project`:
-    /// the directory at `path` is created if it is not there, `git init`
-    /// runs in it, and the result joins the project's `repos` list exactly
-    /// as `add_repository` puts any other directory there.
-    ///
-    /// Every other way into the panel takes the checkouts on disk as
-    /// given — this is the only one that makes one. `git init` does it
-    /// rather than a `.git` written by hand, so what the user gets is
-    /// whatever their own git config would have made: default branch name,
-    /// templates, hooks and all.
+    /// The only way into the panel that makes a repository rather than
+    /// finding one: create `path`, `git init` it, and add it as
+    /// `add_repository` would. Shelling out to `git init` rather than
+    /// writing a `.git` by hand, so the user gets whatever their own git
+    /// config would have made.
     ///
     /// A directory that is already a repository is added without being
-    /// re-inited. `git init` would happily rerun there, but rewriting the
-    /// hooks of a repository that already exists is not what "make me a
-    /// new one" asked for.
+    /// re-inited — rewriting its hooks is not what "make me a new one"
+    /// asked for.
     pub async fn init_repository(&self, project: ProjectId, path: &str) -> anyhow::Result<()> {
         let expanded = config::expand_home(path);
         if expanded.is_file() {

@@ -418,15 +418,11 @@ impl Store {
 
     /// Takes a project out of the panel for good.
     ///
-    /// A project the user added is simply dropped. One the config declares
-    /// cannot be — the file is the user's, and taking a row out of the
-    /// panel is not permission to edit it — so it is recorded as hidden
-    /// instead. Which of the two this is answers itself: an overlay is
-    /// identified by its root, so a root with a row here is one Argus added
-    /// and a root without one came from the config.
-    ///
-    /// Extra repositories go with it either way. Repositories under a
-    /// project that is no longer shown describe nothing.
+    /// One the user added is dropped; one the config declares is recorded
+    /// as hidden instead, since taking a row out of the panel is not
+    /// permission to edit their file. Which it is answers itself: an
+    /// overlay is keyed by root, so a root with a row here is one Argus
+    /// added. Extra repositories go with it either way.
     pub fn remove_project(&self, name: &str, root: Option<&Path>) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;

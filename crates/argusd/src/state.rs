@@ -1,17 +1,18 @@
-//! The daemon's tree, and everything the rest of the daemon does to it.
+//! The daemon's tree: what it is, and what a client is shown of it.
 //!
-//! One `Daemon` behind a small set of mutexes, in one file per concern:
-//! `panes` for a pane's lifecycle, `agents` for what an agent reports
-//! about itself, `viewers` for the size each client asks a pty for,
-//! `git_ops` for the writes to Git, `sync` for the polls and watchers
-//! that keep the tree level with the disk, `panel` for the rows the user
-//! adds and removes, `notes` for what is written down against a row,
-//! `hook_server` for the loopback receiver, `session` for what survives a
-//! restart, and `tree` for finding your way around.
+//! One `Daemon` type behind a small set of mutexes. Everything done *to*
+//! the tree lives in a sibling module named after it — `build` for
+//! constructing one, `panes` for a pane's lifecycle, `agents` for what an
+//! agent reports about itself, `viewers` for the size each client asks a
+//! pty for, `git_ops` for the writes to Git, `sync` for the polls and
+//! watchers that keep the tree level with the disk, `panel` for the rows
+//! the user adds and removes, `workspaces` for which scope is open,
+//! `notes` for what is written down against a row, `hook_server` for the
+//! loopback receiver, `session` for what survives a restart, and `tree`
+//! for finding your way around.
 //!
 //! The type and its locking are one thing; only which file a concern is
 //! read in is split.
-
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -24,6 +25,7 @@ use argus_protocol::{
 use tokio::sync::broadcast;
 
 mod agents;
+mod build;
 mod git_ops;
 mod hook_server;
 mod notes;
@@ -33,6 +35,7 @@ mod session;
 mod sync;
 mod tree;
 mod viewers;
+mod workspaces;
 
 pub use git_ops::BranchDeletion;
 pub use viewers::ViewerId;
@@ -258,178 +261,6 @@ type PaneSubscription = (
 );
 
 impl Daemon {
-    /// A daemon that remembers nothing past this process, for tests.
-    ///
-    /// Persistence is a store you hand a daemon, not a flag it can be
-    /// talked into setting, and this is what keeps the several hundred
-    /// tests that build one off the real user's disk without any of them
-    /// having to remember to ask.
-    #[cfg(test)]
-    pub fn new(config: ConfigFile) -> Arc<Self> {
-        let store = crate::store::Store::in_memory()
-            .expect("an in-memory runtime store needs nothing that can fail");
-        Self::with_store(config, store)
-    }
-
-    pub fn with_store(config: ConfigFile, store: crate::store::Store) -> Arc<Self> {
-        let mut ids = IdGen::default();
-
-        // What the user declared, plus what they did to the panel while it
-        // was running. A store that cannot be read costs the overlays, not
-        // the config: showing the declared projects beats showing nothing.
-        let overlays = store.overlays().unwrap_or_else(|e| {
-            tracing::warn!("could not read runtime state: {e}");
-            Default::default()
-        });
-        let config = config::with_overlays(config, &overlays);
-
-        // Workspaces come from three places, in this order: the built-in
-        // default (always present, so a config that predates workspaces
-        // keeps working), any `[[workspace]]` blocks, and any name a
-        // project refers to without declaring. Declaring is therefore
-        // optional — `workspace = "x"` on a project is enough to create it.
-        let mut workspaces: Vec<Workspace> = Vec::new();
-        let intern = intern_workspace;
-        let default_ws = intern(&mut workspaces, &mut ids, config::DEFAULT_WORKSPACE);
-        for w in &config.workspaces {
-            intern(&mut workspaces, &mut ids, &w.name);
-        }
-
-        let excluded = overlays.excluded.clone();
-        let projects = config
-            .projects
-            .into_iter()
-            .map(|p| {
-                let root = p.root.as_deref().map(config::expand_home);
-                // An excluded path is out whether the scan turned it up or
-                // the config named it outright: "remove this row" means the
-                // same thing either way.
-                let mut repositories: Vec<Repository> = p
-                    .repos
-                    .iter()
-                    .map(|repo| config::expand_home(repo))
-                    .filter(|path| !is_excluded(&excluded, path))
-                    .map(|path| new_repository(&mut ids, path, false))
-                    .collect();
-                // A root is scanned once here so the tree is complete the
-                // moment the first client attaches, rather than filling in
-                // a tick later. Reconciliation keeps it current after that.
-                let scan = crate::git::Scan {
-                    exclude: p.exclude.clone(),
-                    include: p.include.clone(),
-                };
-                if let Some(root) = &root {
-                    let found = retain_included(
-                        &excluded,
-                        crate::git::discover_repositories_within(root, &scan),
-                    );
-                    install_discovered(&mut ids, &mut repositories, &found);
-                }
-                Project {
-                    id: ProjectId(ids.alloc()),
-                    workspace: match p.workspace.as_deref() {
-                        Some(name) => intern(&mut workspaces, &mut ids, name),
-                        None => default_ws,
-                    },
-                    name: p.name,
-                    root,
-                    repositories,
-                    worktree_root: p.worktree_root.as_deref().map(config::expand_home),
-                    setup: p.setup,
-                    exclusive: p.exclusive,
-                    scan: crate::git::Scan {
-                        exclude: p.exclude,
-                        include: p.include,
-                    },
-                }
-            })
-            .collect();
-
-        let templates = if config.agents.is_empty() {
-            config::default_agents()
-        } else {
-            config.agents
-        };
-        let harnesses = config::harnesses(config.harnesses);
-
-        // Reopen whatever was open last time, if that workspace still
-        // exists — a name can disappear from the config between runs.
-        let open = overlays
-            .open_workspace
-            .as_deref()
-            .and_then(|name| workspaces.iter().find(|w| w.name == name).map(|w| w.id))
-            .unwrap_or(default_ws);
-
-        let (tree_tx, _) = broadcast::channel(32);
-        let (workspaces_tx, _) = broadcast::channel(32);
-        let daemon = Arc::new(Daemon {
-            inner: StdMutex::new(Inner {
-                workspaces,
-                projects,
-                ids,
-                open,
-                excluded,
-            }),
-            starting_agents: StdMutex::new(HashMap::new()),
-            workspaces_tx,
-            tree_tx,
-            templates: StdMutex::new(templates),
-            harnesses,
-            hook_port: std::sync::atomic::AtomicU16::new(0),
-            hook_token: gen_token(),
-            restoring: std::sync::atomic::AtomicBool::new(false),
-            store,
-            restart_attempts: StdMutex::new(HashMap::new()),
-            viewers: StdMutex::new(Viewers::default()),
-            next_viewer: std::sync::atomic::AtomicU64::new(0),
-        });
-        // Checkout rows are named after the branch occupying them, and that
-        // name now comes from the cache. Reading HEAD is enough for a name;
-        // a full `git::status` walks every workdir, which on a cold disk
-        // across a project root of many repositories is seconds in front of
-        // the first client. The first poll tick fills dirty counts.
-        daemon.refresh_git_status_with(crate::git::head);
-        daemon
-    }
-
-    /// Clears any managed agent hooks left in a configured checkout by a
-    /// previous daemon. They name that daemon's ephemeral port and per-boot
-    /// token, so every one of them is stale by definition the moment this
-    /// process starts — and a stale block fires on every turn of any agent
-    /// the user later runs in that directory by hand. Best-effort per
-    /// checkout: an unreadable or read-only one must not stop startup.
-    pub fn sweep_stale_hooks(&self) {
-        for path in self.checkout_paths() {
-            for h in &self.harnesses {
-                if let Err(e) = h.uninstall(&path) {
-                    tracing::warn!(
-                        "failed to clear stale {} hooks in {}: {e}",
-                        h.name,
-                        path.display()
-                    );
-                }
-            }
-        }
-    }
-
-    fn checkout_paths(&self) -> Vec<PathBuf> {
-        let inner = self.inner.lock().unwrap();
-        checkouts(&inner.projects).map(|c| c.path.clone()).collect()
-    }
-
-    /// The harness an agent template speaks. A template that names none
-    /// falls back to one matching its own name, so `name = "claude"` needs
-    /// no extra key; anything unrecognized gets [`Harness::generic`], which
-    /// installs nothing but still hands the pane the environment.
-    fn harness_for(&self, template: &AgentConfig) -> crate::harness::Harness {
-        let wanted = template.harness.as_deref().unwrap_or(&template.name);
-        self.harnesses
-            .iter()
-            .find(|h| h.name == wanted)
-            .cloned()
-            .unwrap_or_else(crate::harness::Harness::generic)
-    }
-
     pub fn template_names(&self) -> Vec<String> {
         self.templates
             .lock()
@@ -525,118 +356,6 @@ impl Daemon {
 
     pub fn subscribe_workspaces(&self) -> broadcast::Receiver<Vec<WorkspaceInfo>> {
         self.workspaces_tx.subscribe()
-    }
-
-    /// Every workspace with its rollup, open flag included. Ordered as
-    /// configured so the picker doesn't reshuffle under the user.
-    pub fn workspaces(&self) -> Vec<WorkspaceInfo> {
-        let inner = self.inner.lock().unwrap();
-        inner
-            .workspaces
-            .iter()
-            .map(|w| {
-                let projects: Vec<&Project> = inner
-                    .projects
-                    .iter()
-                    .filter(|p| p.workspace == w.id)
-                    .collect();
-                WorkspaceInfo {
-                    id: w.id,
-                    name: w.name.clone(),
-                    projects: projects.len(),
-                    panes: projects
-                        .iter()
-                        .flat_map(|p| p.repositories.iter())
-                        .flat_map(|r| r.checkouts.iter())
-                        .map(|c| c.panes.len())
-                        .sum(),
-                    open: w.id == inner.open,
-                }
-            })
-            .collect()
-    }
-
-    /// Switches which workspace is open, for every connected client at
-    /// once. A no-op if it is already open, so a stray keypress doesn't
-    /// churn the tree. Remembered on disk for the next daemon.
-    pub fn open_workspace(&self, workspace: WorkspaceId) -> anyhow::Result<()> {
-        let name = {
-            let mut inner = self.inner.lock().unwrap();
-            if inner.open == workspace {
-                return Ok(());
-            }
-            let name = inner
-                .workspaces
-                .iter()
-                .find(|w| w.id == workspace)
-                .map(|w| w.name.clone())
-                .ok_or_else(|| anyhow::anyhow!("no such workspace"))?;
-            inner.open = workspace;
-            name
-        };
-        self.save_open_workspace(&name);
-        self.broadcast_tree();
-        self.broadcast_workspaces();
-        Ok(())
-    }
-
-    /// Declares a new workspace and opens it. Empty by definition: what
-    /// puts projects in it is adding them while it is open, which is how
-    /// `add_project` already behaves. Persisted with a `[[workspace]]`
-    /// block, because an empty workspace has no project to imply it.
-    ///
-    /// Reopening rather than rejecting a name that already exists would
-    /// make one gesture mean two things; the picker already offers the
-    /// existing rows, so the create row only ever means a new name.
-    pub fn create_workspace(&self, name: &str) -> anyhow::Result<()> {
-        let name = name.trim();
-        if name.is_empty() {
-            anyhow::bail!("a workspace needs a name");
-        }
-        {
-            let inner = self.inner.lock().unwrap();
-            if inner.workspaces.iter().any(|w| w.name == name) {
-                anyhow::bail!("workspace already exists: {name}");
-            }
-        }
-        // Written before it exists in memory: a workspace the daemon opens
-        // but forgets on restart is worse than one that was never made.
-        self.store.add_workspace(name)?;
-
-        {
-            let mut inner = self.inner.lock().unwrap();
-            let id = WorkspaceId(inner.ids.alloc());
-            inner.workspaces.push(Workspace {
-                id,
-                name: name.to_string(),
-            });
-            inner.open = id;
-        }
-        self.save_open_workspace(name);
-        self.broadcast_tree();
-        self.broadcast_workspaces();
-        Ok(())
-    }
-
-    /// Best-effort: failing to remember the open workspace is not worth
-    /// failing the switch the user just asked for.
-    fn save_open_workspace(&self, name: &str) {
-        if let Err(e) = self.store.set_open_workspace(name) {
-            tracing::warn!("could not remember the open workspace: {e}");
-        }
-    }
-
-    /// The open workspace's id and name — what `add_project` files new
-    /// projects under, and what the client shows above the project list.
-    fn open_workspace_ref(&self) -> (WorkspaceId, String) {
-        let inner = self.inner.lock().unwrap();
-        let name = inner
-            .workspaces
-            .iter()
-            .find(|w| w.id == inner.open)
-            .map(|w| w.name.clone())
-            .unwrap_or_else(|| config::DEFAULT_WORKSPACE.to_string());
-        (inner.open, name)
     }
 
     fn broadcast_tree(&self) {

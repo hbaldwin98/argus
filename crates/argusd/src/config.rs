@@ -350,15 +350,11 @@ pub fn load() -> Result<ConfigFile> {
 /// The config as the panel should show it: what the user declared, plus
 /// what they did to the panel while Argus was running.
 ///
-/// The two are merged here rather than written back into `projects.toml`
-/// because that file is the user's — hand-edited, full of their comments,
-/// and read-only as far as Argus is concerned. A project added from the
-/// TUI is Argus's bookkeeping about a directory, and lives in the runtime
-/// store with the rest of it.
-///
-/// A declared project the user removed is hidden rather than deleted, for
-/// the same reason: the block is still in their file, and taking a row out
-/// of the panel is not permission to edit it.
+/// Merged here rather than written back, because `projects.toml` is the
+/// user's — hand-edited, full of their comments, and read-only as far as
+/// Argus is concerned. So a project added from the TUI lives in the store,
+/// and a declared one the user removed is hidden rather than deleted:
+/// taking a row out of the panel is not permission to edit their file.
 pub fn with_overlays(mut config: ConfigFile, overlays: &crate::store::Overlays) -> ConfigFile {
     config
         .projects

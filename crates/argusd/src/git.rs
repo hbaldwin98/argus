@@ -295,17 +295,11 @@ const MAX_DEPTH: usize = 8;
 /// Every distinct Git repository at or beneath `root`, ordered by path so
 /// the repository column doesn't reshuffle between scans.
 ///
-/// The walk stops at each repository it finds: what lives inside a
-/// repository — a submodule, a vendored checkout, a linked worktree — belongs
-/// to that repository rather than beside it as a sibling row. Linked
-/// worktrees are never rows of their own for the same reason, wherever they
-/// sit, and neither are bare repositories, which have nothing to check out.
-/// Directory symlinks are not followed, so a scan can neither cycle nor
-/// wander out of the root.
-///
-/// Like the rest of this module it is libgit2 rather than `git`: it runs on
-/// the daemon's reconciliation tick, and see `list_worktrees` for what
-/// spawning a process there costs on Windows.
+/// The walk stops at each repository it finds: a submodule, a vendored
+/// checkout or a linked worktree belongs to the repository containing it
+/// rather than beside it as a sibling. Bare repositories are skipped —
+/// nothing to check out — and directory symlinks are not followed, so a
+/// scan can neither cycle nor wander out of the root.
 pub fn discover_repositories(root: &Path) -> Vec<PathBuf> {
     discover_repositories_within(root, &Scan::default())
 }
