@@ -145,7 +145,11 @@ impl PaneRuntime {
         #[cfg(not(windows))]
         let _ = resource_policy;
 
+        // Windows `assign_to_job` takes `&mut child`; Unix never mutates it.
+        #[cfg(windows)]
         let mut child = pair.slave.spawn_command(cmd)?;
+        #[cfg(not(windows))]
+        let child = pair.slave.spawn_command(cmd)?;
         #[cfg(windows)]
         assign_to_job(job.as_ref(), &mut child)?;
         drop(pair.slave);
