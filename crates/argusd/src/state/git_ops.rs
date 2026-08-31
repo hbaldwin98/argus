@@ -265,6 +265,9 @@ impl Daemon {
     /// asked for.
     pub async fn init_repository(&self, project: ProjectId, path: &str) -> anyhow::Result<()> {
         let expanded = config::expand_home(path);
+        if !expanded.is_absolute() {
+            anyhow::bail!("repository path must be absolute: {}", expanded.display());
+        }
         if expanded.is_file() {
             anyhow::bail!("{} is a file", expanded.display());
         }

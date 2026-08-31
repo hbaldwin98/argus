@@ -19,6 +19,12 @@ fn n_in_the_projects_column_opens_the_directory_browser() {
     h.keys("dir");
     h.key(KeyCode::Enter);
     match &h.sent()[0] {
+        ClientMsg::ListDirectories { path, .. } => assert_eq!(path, "/some/dir"),
+        other => panic!("unexpected {other:?}"),
+    }
+    h.browse("/some/dir", Some("/some"), &[]);
+    h.key(KeyCode::Enter);
+    match &h.sent()[0] {
         ClientMsg::AddProject { path } => assert_eq!(path, "/some/dir"),
         other => panic!("unexpected {other:?}"),
     }
@@ -26,14 +32,14 @@ fn n_in_the_projects_column_opens_the_directory_browser() {
 }
 
 #[test]
-fn tab_walks_into_a_directory_and_enter_adds_where_you_land() {
+fn enter_walks_into_a_directory_and_enter_again_adds_where_you_land() {
     let mut h = Harness::new();
     h.key(KeyCode::Char('n'));
     h.browse("/home", Some("/"), &[("u", false)]);
     h.sent();
 
     h.keys("u");
-    h.key(KeyCode::Tab);
+    h.key(KeyCode::Enter);
     match &h.sent()[0] {
         ClientMsg::ListDirectories { path, .. } => assert_eq!(path, "/home/u"),
         other => panic!("unexpected {other:?}"),
@@ -106,6 +112,12 @@ fn n_in_the_repositories_column_adds_a_repository_to_that_project() {
     h.browse("/some", Some("/"), &[("repo", true)]);
     h.sent();
     h.keys("repo");
+    h.key(KeyCode::Enter);
+    match &h.sent()[0] {
+        ClientMsg::ListDirectories { path, .. } => assert_eq!(path, "/some/repo"),
+        other => panic!("unexpected {other:?}"),
+    }
+    h.browse("/some/repo", Some("/some"), &[]);
     h.key(KeyCode::Enter);
     match &h.sent()[0] {
         ClientMsg::AddRepository { project, path } => {

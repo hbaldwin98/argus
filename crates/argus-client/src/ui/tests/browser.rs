@@ -10,7 +10,8 @@ fn the_browser_shows_where_you_are_and_what_is_under_it() {
     assert!(rendered.contains("github.com"), "the breadcrumb");
     assert!(rendered.contains("add this directory"), "{rendered}");
     assert!(rendered.contains("orion"), "{rendered}");
-    assert!(rendered.contains("tab open"), "the keys are on screen");
+    assert!(rendered.contains("enter open"), "the keys are on screen");
+    assert!(rendered.contains("← up"), "the parent key is on screen");
 }
 
 #[test]
@@ -25,7 +26,7 @@ fn browsing_for_somewhere_to_put_a_repository_says_so() {
     assert!(rendered.contains("new repository"), "{rendered}");
     assert!(rendered.contains("make it in this directory"), "{rendered}");
     assert!(!rendered.contains("add this directory"), "{rendered}");
-    assert!(rendered.contains("enter choose"), "{rendered}");
+    assert!(rendered.contains("enter choose on ·"), "{rendered}");
 }
 
 #[test]

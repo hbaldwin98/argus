@@ -713,7 +713,7 @@ fn a_prompt_draws_over_the_columns_rather_than_beside_them() {
     let text = lines(&draw(&mut app)).join("\n");
     assert!(text.contains("add project"));
     assert!(
-        text.contains("enter add"),
+        text.contains("enter add on ·"),
         "a prompt should say how to commit it"
     );
 }

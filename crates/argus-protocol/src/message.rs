@@ -229,7 +229,8 @@ pub enum ClientMsg {
     /// not there, `git init` it, and add it to `project` the way
     /// [`ClientMsg::AddRepository`] would. The one gesture in Argus that
     /// creates a repository rather than finding one — everything else
-    /// takes the checkouts on disk as given.
+    /// takes the checkouts on disk as given. `path` must be absolute so a
+    /// daemon working directory can never decide where files are created.
     InitRepository {
         project: ProjectId,
         path: String,

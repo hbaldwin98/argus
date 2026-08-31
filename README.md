@@ -96,9 +96,9 @@ for `argus-hook` beside itself.
 ### 3. Configure a project
 
 Start Argus once to create the configuration directory, or create `projects.toml` yourself as shown
-under [Configuration](#configuration). You can also press `n` in the projects column and enter a
+under [Configuration](#configuration). You can also press `n` in the projects column and browse to a
 directory: every Git repository at or beneath it becomes one of the project's repositories, so
-naming a repository adds that one and naming the directory a dozen of them live in adds the dozen.
+choosing a repository adds that one and choosing the directory a dozen of them live in adds the dozen.
 
 If the repository does not exist yet, press `i` in the repositories column instead: browse to where
 it should live, give it a name, and Argus creates the directory, runs `git init` in it, and adds it
@@ -349,6 +349,10 @@ keeps running, untouched. The daemon outlives the client, so the next launch
 connects instantly and a rebuild only pays for what changed.
 
 ## Controls
+
+In the directory browser, use Up and Down to select a folder, Enter to open it, and Left to return
+to its parent. Enter on the `add this directory` or `make it in this directory` row confirms the
+location. Typing filters the folders in the current directory.
 
 ### Navigation
 

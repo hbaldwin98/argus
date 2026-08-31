@@ -108,11 +108,11 @@ impl DirPicker {
         }
     }
 
-    /// The word for Enter in the key hint, for the same reason.
-    pub fn choose_label(&self) -> &'static str {
+    /// The action named beside the current-directory marker in the key hint.
+    pub fn here_action(&self) -> &'static str {
         match self.target {
-            DirTarget::Project | DirTarget::Repository(_) => "enter add",
-            DirTarget::NewRepository(_) => "enter choose",
+            DirTarget::Project | DirTarget::Repository(_) => "add",
+            DirTarget::NewRepository(_) => "choose",
         }
     }
 
@@ -183,7 +183,7 @@ impl DirPicker {
                     self.ascend()
                 }
             }
-            KeyCode::Enter => self.confirm(),
+            KeyCode::Enter => self.activate(),
             KeyCode::Char(c) if !ctrl => {
                 self.query.push(c);
                 self.refilter();
@@ -200,14 +200,15 @@ impl DirPicker {
         self.refilter();
     }
 
-    fn confirm(&mut self) -> DirAction {
+    fn activate(&mut self) -> DirAction {
         // A typed or pasted absolute path with nothing to show for it is
         // someone telling us where to go, not a filter that failed.
         if self.shown.is_empty() {
             return self.jump().unwrap_or(DirAction::None);
         }
         match self.selected() {
-            Some(row) => DirAction::Choose(self.path_of(row)),
+            Some(DirRow::Here) => DirAction::Choose(self.path.clone()),
+            Some(row) => DirAction::Browse(self.path_of(row)),
             None => DirAction::None,
         }
     }
@@ -364,12 +365,12 @@ mod tests {
     }
 
     #[test]
-    fn enter_on_a_child_adds_that_child_by_its_full_path() {
+    fn enter_on_a_child_browses_into_it() {
         let mut p = at("/home/u", Some("/home"), &[("code", false)]);
         press(&mut p, KeyCode::Down);
         assert_eq!(
             press(&mut p, KeyCode::Enter),
-            DirAction::Choose("/home/u/code".to_string())
+            DirAction::Browse("/home/u/code".to_string())
         );
     }
 
@@ -508,12 +509,12 @@ mod tests {
     }
 
     #[test]
-    fn a_windows_path_keeps_its_backslashes_when_a_child_is_joined() {
+    fn a_windows_path_keeps_its_backslashes_when_a_child_is_opened() {
         let mut p = at(r"C:\Source", Some(r"C:\"), &[("orion", true)]);
         press(&mut p, KeyCode::Down);
         assert_eq!(
             press(&mut p, KeyCode::Enter),
-            DirAction::Choose(r"C:\Source\orion".to_string())
+            DirAction::Browse(r"C:\Source\orion".to_string())
         );
     }
 
@@ -523,7 +524,7 @@ mod tests {
         press(&mut p, KeyCode::Down);
         assert_eq!(
             press(&mut p, KeyCode::Enter),
-            DirAction::Choose(r"C:\Source".to_string())
+            DirAction::Browse(r"C:\Source".to_string())
         );
     }
 
@@ -533,7 +534,7 @@ mod tests {
         press(&mut p, KeyCode::Down);
         assert_eq!(
             press(&mut p, KeyCode::Enter),
-            DirAction::Choose("/home".to_string())
+            DirAction::Browse("/home".to_string())
         );
     }
 

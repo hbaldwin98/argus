@@ -191,7 +191,10 @@ pub(super) fn render_dir_picker(f: &mut Frame, app: &App, area: Rect, th: Theme)
 
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            format!("tab open   ← up   {}   esc cancel", picker.choose_label()),
+            format!(
+                "enter open   ← up   enter {} on ·   esc cancel",
+                picker.here_action()
+            ),
             Style::default().fg(th.dim),
         ))),
         Rect {

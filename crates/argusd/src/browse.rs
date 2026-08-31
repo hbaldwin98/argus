@@ -124,7 +124,14 @@ fn resolve(path: &str) -> PathBuf {
         "" => return home,
         "~" => home,
         p if p.starts_with("~/") || p.starts_with("~\\") => home.join(&p[2..]),
-        p => PathBuf::from(p),
+        p => {
+            let path = PathBuf::from(p);
+            if path.is_absolute() {
+                path
+            } else {
+                home.join(path)
+            }
+        }
     };
     // Canonicalizing collapses the `..` a climb to the parent leaves
     // behind, so the breadcrumb never grows a tail of them.
@@ -137,6 +144,7 @@ fn resolve(path: &str) -> PathBuf {
 fn home_dir() -> PathBuf {
     directories::UserDirs::new()
         .map(|d| d.home_dir().to_path_buf())
+        .or_else(|| std::env::current_dir().ok())
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
@@ -373,6 +381,18 @@ mod tests {
         // The path still comes back, so the browser can say where it is
         // stuck and the user can climb out.
         assert!(listing.path.ends_with("never-existed"), "{}", listing.path);
+    }
+
+    #[test]
+    fn a_relative_path_is_resolved_from_home_before_it_is_returned() {
+        let relative = PathBuf::from(format!(
+            "argus-missing-browser-path-{}/child",
+            std::process::id()
+        ));
+
+        let listing = directories(&relative.to_string_lossy());
+
+        assert_eq!(PathBuf::from(listing.path), home_dir().join(relative));
     }
 
     #[test]

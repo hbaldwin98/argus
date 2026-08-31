@@ -739,6 +739,27 @@ fn a_brand_new_repository_is_created_where_it_was_asked_for_and_added() {
 }
 
 #[test]
+fn a_relative_new_repository_path_is_refused_without_touching_disk() {
+    with_temp_config(|_| {
+        let (root, _outside, d) = project_and_an_outside_repository();
+        let project = d.snapshot()[0].id;
+        let relative = format!("argus-relative-init-{}/fresh", std::process::id());
+        assert!(!std::path::Path::new(&relative).exists());
+
+        let err = blocking(d.init_repository(project, &relative))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("must be absolute"), "{err}");
+        assert!(
+            !std::path::Path::new(&relative).exists(),
+            "no directory was created"
+        );
+        assert!(root.path().exists(), "the fixture remains intact");
+    });
+}
+
+#[test]
 fn a_new_repository_survives_a_restart_the_way_an_added_one_does() {
     with_temp_config(|_| {
         let (root, _outside, d) = project_and_an_outside_repository();
