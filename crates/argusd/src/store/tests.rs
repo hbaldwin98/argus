@@ -416,6 +416,129 @@ fn migrating_a_v1_store_preserves_existing_state_and_adds_comments() {
             .len(),
         1
     );
+    // And v5's board.
+    s.add_decision("argus", &chose("sqlite"), 1, None, None).unwrap();
+    assert_eq!(s.decisions("argus").unwrap().len(), 1);
+}
+
+fn chose(chose: &str) -> DecisionWrite {
+    DecisionWrite {
+        chose: chose.to_string(),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_decision_hangs_where_it_was_told_to() {
+    let s = store();
+    let root = s.add_decision("argus", &chose("sqlite"), 1, None, None).unwrap();
+    let child = s
+        .add_decision(
+            "argus",
+            &DecisionWrite {
+                chose: "wal mode".into(),
+                over: Some("rollback".into()),
+                because: Some("readers must not block the daemon".into()),
+                under: Some(root),
+                ..Default::default()
+            },
+            2,
+            Some("sess-1"),
+            Some("/repo"),
+        )
+        .unwrap();
+
+    let board = s.decisions("argus").unwrap();
+    assert_eq!(board.len(), 2);
+    assert_eq!(board[1].id, child);
+    assert_eq!(board[1].parent, Some(root));
+    assert_eq!(board[1].over.as_deref(), Some("rollback"));
+    assert_eq!(board[1].session.as_deref(), Some("sess-1"));
+    assert_eq!(board[1].checkout.as_deref(), Some("/repo"));
+    assert!(!board[1].superseded());
+}
+
+#[test]
+fn superseding_marks_the_old_decision_rather_than_removing_it() {
+    let s = store();
+    let root = s.add_decision("argus", &chose("sqlite"), 1, None, None).unwrap();
+    let old = s
+        .add_decision(
+            "argus",
+            &DecisionWrite {
+                chose: "one table per note".into(),
+                under: Some(root),
+                ..Default::default()
+            },
+            2,
+            None,
+            None,
+        )
+        .unwrap();
+    let new = s
+        .add_decision(
+            "argus",
+            &DecisionWrite {
+                chose: "one row per note".into(),
+                supersedes: Some(old),
+                ..Default::default()
+            },
+            3,
+            None,
+            None,
+        )
+        .unwrap();
+
+    let board = s.decisions("argus").unwrap();
+    let find = |id: i64| board.iter().find(|d| d.id == id).unwrap();
+    assert_eq!(find(old).superseded_by, Some(new));
+    assert_eq!(
+        find(new).parent,
+        Some(root),
+        "the replacement answers the same question, so it takes the same place"
+    );
+}
+
+#[test]
+fn a_decision_cannot_hang_off_one_that_is_not_on_this_board() {
+    let s = store();
+    let elsewhere = s.add_decision("other", &chose("sqlite"), 1, None, None).unwrap();
+    assert!(s
+        .add_decision(
+            "argus",
+            &DecisionWrite {
+                chose: "wal mode".into(),
+                under: Some(elsewhere),
+                ..Default::default()
+            },
+            2,
+            None,
+            None,
+        )
+        .is_err());
+    assert!(s
+        .add_decision(
+            "argus",
+            &DecisionWrite {
+                chose: "wal mode".into(),
+                supersedes: Some(elsewhere),
+                ..Default::default()
+            },
+            2,
+            None,
+            None,
+        )
+        .is_err());
+    assert!(s.decisions("argus").unwrap().is_empty());
+}
+
+#[test]
+fn one_projects_board_is_not_anothers() {
+    let s = store();
+    s.add_decision("argus", &chose("sqlite"), 1, None, None).unwrap();
+    s.add_decision("other", &chose("postgres"), 1, None, None).unwrap();
+    assert_eq!(s.decisions("argus").unwrap().len(), 1);
+    assert_eq!(s.decisions("argus").unwrap()[0].chose, "sqlite");
 }
 
 fn audit(action: &str, detail: &str) -> TodoAudit {

@@ -96,3 +96,31 @@ CREATE TABLE review_comment (
 );
 CREATE INDEX review_comment_checkout ON review_comment (checkout_path, id);
 "#;
+
+/// The decision board, one row per decision, keyed by project name for the
+/// same reason notes are: ids do not survive a restart.
+///
+/// `parent` is a self-reference rather than a foreign key. A board is read
+/// whole and reassembled in the client, which already has to survive a
+/// parent it cannot see — a decision recorded against a project that was
+/// renamed, say — so a constraint here would refuse writes to protect an
+/// invariant the reader does not rely on.
+///
+/// Append-only by design. A decision that turns out to be wrong gets a new
+/// row, and the old row's `superseded_by` is what says so; nothing but
+/// that column is ever updated.
+pub(super) const SCHEMA_V5: &str = r#"
+CREATE TABLE decision (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    project       TEXT    NOT NULL,
+    parent        INTEGER,
+    at            INTEGER NOT NULL,
+    session       TEXT,
+    checkout      TEXT,
+    chose         TEXT    NOT NULL,
+    over_         TEXT,
+    because       TEXT,
+    superseded_by INTEGER
+);
+CREATE INDEX decision_project ON decision (project, id);
+"#;

@@ -17,7 +17,8 @@ use std::sync::Mutex as StdMutex;
 
 use anyhow::{Context, Result};
 use argus_protocol::{
-    PaneKind, PaneStatus, ReviewAnchor, ReviewComment, TodoAudit, MAX_REVIEW_COMMENTS,
+    Decision, DecisionWrite, PaneKind, PaneStatus, ReviewAnchor, ReviewComment, TodoAudit,
+    MAX_REVIEW_COMMENTS,
 };
 use rusqlite::{Connection, OptionalExtension};
 
@@ -26,7 +27,7 @@ use crate::paths::same_path;
 mod legacy;
 mod schema;
 
-use schema::{SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4};
+use schema::{SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5};
 
 /// One pane worth starting again, as it stood when the daemon stopped.
 ///
@@ -133,7 +134,7 @@ pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 const MAX_NOTE_AUDIT: i64 = 20;
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -221,6 +222,9 @@ impl Store {
         }
         if from < 4 {
             tx.execute_batch(SCHEMA_V4)?;
+        }
+        if from < 5 {
+            tx.execute_batch(SCHEMA_V5)?;
         }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
@@ -427,6 +431,98 @@ impl Store {
         )?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// Records one decision on a project's board and returns its id.
+    ///
+    /// One transaction, because superseding is two writes: the new row,
+    /// and the mark on the row it replaces. A board that had gained the
+    /// reversal but not the mark would show two live decisions
+    /// contradicting each other.
+    ///
+    /// A superseding decision takes the place of the one it replaces —
+    /// its parent, not its children. It is a different answer to the same
+    /// question, so it belongs where that question was asked.
+    pub fn add_decision(
+        &self,
+        project: &str,
+        write: &DecisionWrite,
+        at: i64,
+        session: Option<&str>,
+        checkout: Option<&str>,
+    ) -> Result<i64> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let parent = match write.supersedes {
+            Some(old) => tx
+                .query_row(
+                    "SELECT parent FROM decision WHERE id = ?1 AND project = ?2",
+                    rusqlite::params![old, project],
+                    |r| r.get::<_, Option<i64>>(0),
+                )
+                .optional()?
+                .ok_or_else(|| anyhow::anyhow!("there is no decision {old} on this board"))?,
+            None => write.under,
+        };
+        if let Some(under) = write.under {
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM decision WHERE id = ?1 AND project = ?2)",
+                rusqlite::params![under, project],
+                |r| r.get(0),
+            )?;
+            if !exists {
+                anyhow::bail!("there is no decision {under} on this board");
+            }
+        }
+        tx.execute(
+            "INSERT INTO decision
+                 (project, parent, at, session, checkout, chose, over_, because)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                project,
+                parent,
+                at,
+                session,
+                checkout,
+                write.chose,
+                write.over,
+                write.because
+            ],
+        )?;
+        let id = tx.last_insert_rowid();
+        if let Some(old) = write.supersedes {
+            tx.execute(
+                "UPDATE decision SET superseded_by = ?1 WHERE id = ?2 AND project = ?3",
+                rusqlite::params![id, old, project],
+            )?;
+        }
+        tx.commit()?;
+        Ok(id)
+    }
+
+    /// One project's board, oldest first. Unbounded on purpose: a decision
+    /// tree with the old half cut off is a tree with no roots, which is
+    /// the part that explains the rest.
+    pub fn decisions(&self, project: &str) -> Result<Vec<Decision>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, parent, at, session, checkout, chose, over_, because, superseded_by
+             FROM decision WHERE project = ?1 ORDER BY id",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![project], |r| {
+            Ok(Decision {
+                id: r.get(0)?,
+                parent: r.get(1)?,
+                at: r.get(2)?,
+                session: r.get(3)?,
+                checkout: r.get(4)?,
+                chose: r.get(5)?,
+                over: r.get(6)?,
+                because: r.get(7)?,
+                superseded_by: r.get(8)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     /// What agents have done to one note, newest first and bounded.

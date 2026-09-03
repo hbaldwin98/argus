@@ -201,6 +201,13 @@ pub struct App {
     pub history: Option<HistoryView>,
     /// The note being read or written, if one is open.
     pub notes: Option<NoteView>,
+    /// The decision board of the project the board view is showing, and
+    /// which row of it is selected. Held on the app rather than created
+    /// with the view, because the daemon pushes a changed board whether or
+    /// not anyone is looking at it — a tree is meant to be watched being
+    /// built.
+    pub board: Option<argus_protocol::DecisionBoard>,
+    pub board_sel: usize,
     /// What the outstanding request was for; a diff for anything else is
     /// stale and dropped.
     review_wanted: Option<(CheckoutId, u64)>,
@@ -311,6 +318,8 @@ impl App {
             review: None,
             history: None,
             notes: None,
+            board: None,
+            board_sel: 0,
             review_wanted: None,
             next_review_request: 1,
             history_wanted: None,

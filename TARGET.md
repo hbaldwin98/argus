@@ -116,16 +116,20 @@ review requests, and worktree creation are audited and template-policy gated.
 ## Boards
 
 Two project-scoped views, both written by agents and read by humans, both built on the same
-policy-gated, audited write path as note changes.
+attributed write path as note changes — though not the same policy gate. A note is the human's
+document, so writing to one is permission the project grants; a board exists to be written by
+agents, is append-only, and attributes every entry, so a gate would protect nothing.
 
 **The decision board** is the record of *why* a feature looks the way it does. An agent adds a
-decision as it makes one: what was chosen, what it was chosen over, and what forced it. Decisions
-descend from decisions, so what accumulates is a tree rather than a log — a later choice hangs off
-the one that constrained it, and a reversal is a new node that supersedes an old one rather than an
-edit that hides it. The view draws that tree, so the shape of the reasoning is visible at a glance
-and a question like "why is storage SQLite" is answered by walking to a node instead of reading
-back through a transcript. Superseded branches stay drawn, dimmed: the road not taken is most of
-the value.
+decision while it is planning a feature and choosing between real options — not for routine steps,
+and not as a running commentary: what was chosen, what it was chosen over, and what forced it.
+Decisions descend from decisions, so what accumulates is a tree rather than a log — a later choice
+hangs off the one that constrained it, and a reversal is a new node that supersedes an old one
+rather than an edit that hides it. An earlier decision is revisited only when something found since
+actually invalidates it, which is what keeps the board a reference rather than a diary. The view
+draws that tree, so the shape of the reasoning is visible at a glance and a question like "why is
+storage SQLite" is answered by walking to a node instead of reading back through a transcript.
+Superseded branches stay drawn, dimmed: the road not taken is most of the value.
 
 **The feature board** is the work itself, in the Kanban sense — items in columns by state, moving
 left to right as they progress. An agent claims an item, reports progress or a blocker against it,

@@ -130,6 +130,17 @@ const SETTINGS: Group = Group {
     ],
 };
 
+const BOARD: Group = Group {
+    title: "the decision board",
+    keys: &[
+        ("j / k", "decision by decision"),
+        ("d / u", "ten at a time"),
+        ("g / G", "top and bottom"),
+        ("r", "re-ask the daemon for it"),
+        ("esc  q", "back to the spine"),
+    ],
+};
+
 /// True everywhere, so it is worth saying once rather than per mode.
 const EVERYWHERE: Group = Group {
     title: "everywhere",
@@ -153,6 +164,8 @@ pub(super) fn groups(app: &App) -> Vec<&'static Group> {
         vec![&NOTES]
     } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
         vec![&SETTINGS]
+    } else if app.focus == Focus::View {
+        vec![&BOARD, &VIEW]
     } else if app.input_pane().is_some() || app.focus == Focus::PaneContent {
         vec![&PANE]
     } else {

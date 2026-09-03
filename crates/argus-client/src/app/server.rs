@@ -133,6 +133,19 @@ impl App {
                     }
                 }
             }
+            // Adopted only when it is the board on screen: every client
+            // is told about every project's board, because the daemon does
+            // not track which view anyone has open.
+            ServerMsg::Decisions(board) => {
+                let ours = self
+                    .current_project()
+                    .map(|p| p.name == board.name)
+                    .unwrap_or(false);
+                if ours {
+                    self.board_sel = self.board_sel.min(board.decisions.len().saturating_sub(1));
+                    self.board = Some(*board);
+                }
+            }
             ServerMsg::NoteFailed { target, message } => {
                 if let Some(view) = &mut self.notes {
                     if view.target == target {

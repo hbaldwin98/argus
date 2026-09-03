@@ -84,19 +84,94 @@ pub(super) fn render_view_tabs(f: &mut Frame, app: &mut App, area: Rect, th: The
     };
 }
 
-/// The decision board.
+/// How much of a row's width the tree guides may take before the text is
+/// what suffers. A decision nested past this is drawn at the last indent
+/// that still leaves room to read it.
+const MAX_BOARD_INDENT: usize = 24;
+
+/// The decision board, drawn as the tree it is.
 ///
-/// Empty until agents can write to it (ROADMAP.md, "P6.5"). It says what
-/// it is for rather than nothing at all, because a blank card on a tab
-/// somebody just pressed reads as a bug.
+/// Two lines per decision, like every other list in Argus: what was
+/// chosen, then the dimmer line of what it was chosen over and what forced
+/// it. A superseded decision keeps its place and goes dim — the road not
+/// taken is most of what a reader came for.
 pub(super) fn render_decisions(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
-    let title = match app.current_project() {
-        Some(p) => format!("decisions · {}", p.name),
+    let title = match app.board.as_ref().map(|b| b.name.clone()) {
+        Some(name) => format!("decisions · {name}"),
         None => "decisions".to_string(),
     };
     let block = panel_block(&title, true, th, area.width);
     let inner = block.inner(area);
     f.render_widget(block, area);
+    app.layout.content = Panel {
+        outer: area,
+        inner,
+        first: 0,
+    };
+
+    let rows = app.board_rows();
+    if rows.is_empty() {
+        render_empty_board(f, inner, th);
+        return;
+    }
+
+    let per_row = ROW_HEIGHT as usize;
+    let visible = (inner.height as usize) / per_row.max(1);
+    let first = scrolled_to_show(0, Some(app.board_sel), visible, rows.len());
+    let mut lines = Vec::new();
+    for (index, (depth, decision)) in rows.iter().enumerate().skip(first).take(visible) {
+        let selected = index == app.board_sel;
+        let indent = " ".repeat((depth * 2).min(MAX_BOARD_INDENT));
+        let dim = decision.superseded();
+        let name_style = match (selected, dim) {
+            (_, true) => Style::default().fg(th.dim),
+            (true, false) => Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+            (false, false) => Style::default().fg(th.text),
+        };
+        let mut name = vec![
+            Span::styled(
+                if selected { MARKER } else { GUTTER },
+                Style::default().fg(th.accent),
+            ),
+            Span::styled(format!("{indent}#{} ", decision.id), Style::default().fg(th.dim)),
+            Span::styled(decision.chose.clone(), name_style),
+        ];
+        if let Some(by) = decision.superseded_by {
+            name.push(Span::styled(
+                format!("  superseded by #{by}"),
+                Style::default().fg(th.dim),
+            ));
+        }
+        lines.push(Line::from(name));
+        lines.push(Line::from(Span::styled(
+            format!(" {indent}  {}", board_detail(decision)),
+            Style::default().fg(th.dim),
+        )));
+    }
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// The dimmer second line: what it was chosen over, and what forced it.
+/// Both are optional, and a decision with neither says so rather than
+/// leaving a blank row that reads as a rendering fault.
+fn board_detail(decision: &argus_protocol::Decision) -> String {
+    let mut parts = Vec::new();
+    if let Some(over) = &decision.over {
+        parts.push(format!("over {over}"));
+    }
+    if let Some(because) = &decision.because {
+        parts.push(format!("because {because}"));
+    }
+    if parts.is_empty() {
+        parts.push("no alternative or reason recorded".to_string());
+    }
+    parts.join(" · ")
+}
+
+/// A board nobody has written to yet. It says what it is for rather than
+/// nothing at all, because a blank card on a tab somebody just pressed
+/// reads as a bug.
+fn render_empty_board(f: &mut Frame, inner: Rect, th: Theme) {
     f.render_widget(
         Paragraph::new(vec![
             Line::from(Span::styled(
@@ -105,23 +180,19 @@ pub(super) fn render_decisions(f: &mut Frame, app: &mut App, area: Rect, th: The
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "Agents write here as they choose between options: what was chosen, what \
-                 it was chosen over, and what forced it. Each one hangs off the decision \
-                 that constrained it, so what accumulates is a tree rather than a log.",
+                "Agents record a decision when they choose between real options while \
+                 planning work: what was chosen, what it was chosen over, and what \
+                 forced it. Each one hangs off the decision that constrained it, so \
+                 what accumulates is a reference tree for the feature rather than a log.",
                 Style::default().fg(th.dim),
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "1 goes back to the spine.",
+                "r refreshes · 1 goes back to the spine",
                 Style::default().fg(th.dim),
             )),
         ])
         .wrap(Wrap { trim: true }),
         inner,
     );
-    app.layout.content = Panel {
-        outer: area,
-        inner,
-        first: 0,
-    };
 }

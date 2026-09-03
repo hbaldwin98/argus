@@ -109,6 +109,11 @@ pub enum Endpoint {
     /// note. Separate from `Context` because reading is unconditional and
     /// this is not — the daemon refuses it unless the project allows it.
     Todo,
+    /// The project's decision board, read whole. A tree with its roots cut
+    /// off explains nothing, so this is not scoped the way `Context` is.
+    Decisions,
+    /// One decision appended to that board.
+    Decide,
 }
 
 impl Endpoint {
@@ -127,6 +132,8 @@ impl Endpoint {
             Endpoint::Comments => Cow::Borrowed("comments"),
             Endpoint::Context => Cow::Borrowed("context"),
             Endpoint::Todo => Cow::Borrowed("todo"),
+            Endpoint::Decisions => Cow::Borrowed("decisions"),
+            Endpoint::Decide => Cow::Borrowed("decide"),
         }
     }
 }
@@ -158,6 +165,8 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "comments" => Endpoint::Comments,
         "context" => Endpoint::Context,
         "todo" => Endpoint::Todo,
+        "decisions" => Endpoint::Decisions,
+        "decide" => Endpoint::Decide,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -178,6 +187,8 @@ mod tests {
             Endpoint::Comments,
             Endpoint::Context,
             Endpoint::Todo,
+            Endpoint::Decisions,
+            Endpoint::Decide,
         ];
         all.extend(Report::ALL.into_iter().map(Endpoint::Status));
         all
@@ -205,6 +216,11 @@ mod tests {
         assert_eq!(pane_path(PaneId(3), Endpoint::Comments), "/pane/3/comments");
         assert_eq!(pane_path(PaneId(3), Endpoint::Context), "/pane/3/context");
         assert_eq!(pane_path(PaneId(3), Endpoint::Todo), "/pane/3/todo");
+        assert_eq!(
+            pane_path(PaneId(3), Endpoint::Decisions),
+            "/pane/3/decisions"
+        );
+        assert_eq!(pane_path(PaneId(3), Endpoint::Decide), "/pane/3/decide");
         assert_eq!(
             pane_path(PaneId(3), Endpoint::Status(Report::NeedsReview)),
             "/pane/3/status/needs-review"

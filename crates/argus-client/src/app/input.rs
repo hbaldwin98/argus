@@ -590,6 +590,13 @@ impl App {
                 self.open_view(View::from_digit(c).unwrap())
             }
             KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Spine),
+            KeyCode::Char('j') | KeyCode::Down => self.move_board_selection(1),
+            KeyCode::Char('k') | KeyCode::Up => self.move_board_selection(-1),
+            KeyCode::Char('d') | KeyCode::PageDown => self.move_board_selection(10),
+            KeyCode::Char('u') | KeyCode::PageUp => self.move_board_selection(-10),
+            KeyCode::Char('g') | KeyCode::Home => self.board_sel = 0,
+            KeyCode::Char('G') | KeyCode::End => self.move_board_selection(i32::MAX),
+            KeyCode::Char('r') => self.ask_for_decisions(),
             _ => {}
         }
     }

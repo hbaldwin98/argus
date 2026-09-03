@@ -58,8 +58,8 @@ Closes the loop: information currently flows only upward, from agents reporting 
 - Policy-gated writes have landed (DESIGN.md, "Notes"): `argus-hook todo` adds and ticks off
   checkboxes on the asking pane's checkout note, refused unless the project sets `agent_todos`,
   never reaching the project note or a `- [!]` line, and recorded in schema v4's `note_audit`
-  alongside the change itself. Boards are the next thing built on it: the write path, the policy,
-  and the record are the parts a board would otherwise have invented.
+  alongside the change itself. The decision board was built on it: the write path, the agent scope,
+  and the attributed record are the parts it would otherwise have invented.
 - Implement explicit note forwarding.
 - Add `argus ctx` and MCP adapters over the same implementation.
 
@@ -67,26 +67,25 @@ Closes the loop: information currently flows only upward, from agents reporting 
 
 Boards are the first thing Argus has wanted that is not a column. A decision tree and a work board
 are read at project scope, all at once, and neither says anything useful in a 30-column strip
-beside a pane — so the client needs a second top-level surface before either can be built. That
-ordering is the whole of this section: the view mechanism first, then the two boards on it, then
-the link between them.
+beside a pane — so the client needed a second top-level surface before either could be built. That
+ordering was the whole of this section: the view mechanism first, then the two boards on it, then
+the link between them. The first two have landed.
 
-- Add views: a named, full-content-area surface switched as a tab, with the project spine as the
-  default view. What a view replaces is the screen, not the running work — panes keep running, and
-  the spine is one keystroke back (TARGET.md, "Product boundary"). Decide where the tab strip
-  lives, what key cycles views, and whether the open view is per-client (it should be — two people
-  attached to one daemon are not necessarily reading the same thing).
-- Add the decision board (TARGET.md, "Boards"): agents append decisions as they make them — what
-  was chosen, what over, what forced it — each descending from the decision that constrained it,
-  so the accumulated shape is a tree. Superseding replaces a node without hiding it; the view draws
-  superseded branches dimmed, because the road not taken is most of the value. Storage is a
-  migration on `user_version`, and the write path, policy gate, and audit record are the ones
-  `argus-hook todo` already established.
+- Views have landed (DESIGN.md, "Views"): the content area holds one named view at a time, with
+  the project spine as the default and a one-row tab strip naming the rest. The strip lives in the
+  page's top gutter, so it costs the view underneath nothing; digits open a view, the leader plus a
+  digit does it from inside a pane, and the open view is per-client and never sent to the daemon.
+- The decision board has landed (DESIGN.md, "Decision board"): schema v5's `decision` table,
+  `argus-hook decisions` to read a project's whole tree and `argus-hook decide` to append to it,
+  and a view that draws the tree with superseded branches dimmed. Ungated, unlike note writes —
+  the board exists for agents to write and attributes every row.
 - Add the feature board (TARGET.md, "Boards"): items in columns by state, claimed by an agent,
   carrying progress, blockers, and submitted completion evidence, accepted or sent back by a human
   and never by the agent that did the work. It has to read as well as it writes — an agent starting
   work infers what is in flight and what is already decided from the board, which is the reason it
   exists rather than a checklist in a note.
+- Give the board its own reads for a client: it is pushed whole on every change, which is right
+  while a board is a few dozen rows and wrong once it is a few thousand.
 - Link the two: a decision is taken about an item, an item carries the decisions taken under it,
   and either one reaches the other.
 - Decide how a board reaches an agent: whole-board reads will not fit a prompt for long, so the

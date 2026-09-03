@@ -94,6 +94,28 @@ pub fn instructions() -> String {
          \x20 {hook} todo add \"ported the parser\"\n\
          \x20 {hook} todo done 4\n\
          \n\
+         The project has a decision board: a reference tree of the choices made while \
+         building each feature, which you read before you start and add to as you plan. \
+         Read it with:\n\
+         \n\
+         \x20 {hook} decisions\n\
+         \n\
+         Record a decision when you are planning a feature and you pick one real option \
+         over another — not for routine steps, and not as a running commentary. Say what \
+         you chose, what you chose it over, and what forced it, and hang it under the \
+         decision that constrained it, using the number `decisions` prints:\n\
+         \n\
+         \x20 {hook} decide \"one row per note\" --over \"a table per note\" \
+         --because \"the key has to outlive the ids\"\n\
+         \x20 {hook} decide \"key notes by path\" --under 4\n\
+         \n\
+         Only revisit an earlier decision when something you have since found actually \
+         invalidates it. Then replace it rather than editing it, so the board still shows \
+         what was believed before:\n\
+         \n\
+         \x20 {hook} decide \"key notes by path\" --supersedes 4 \
+         --because \"ids are handed out fresh every start\"\n\
+         \n\
          After you start working in another checkout, run this from that checkout so the \
          pane moves under it in Argus:\n\
          \n\

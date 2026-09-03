@@ -26,6 +26,7 @@ use tokio::sync::broadcast;
 
 mod agents;
 mod build;
+mod decisions;
 mod git_ops;
 mod hook_server;
 mod notes;
@@ -218,6 +219,11 @@ pub struct Daemon {
     starting_agents: StdMutex<HashMap<PaneId, PendingStart>>,
     tree_tx: broadcast::Sender<Vec<ProjectInfo>>,
     workspaces_tx: broadcast::Sender<Vec<WorkspaceInfo>>,
+    /// Whole boards rather than one decision each: a client watching a
+    /// tree being built needs the tree, and a board is small enough that
+    /// sending the whole of it is cheaper than teaching both sides how to
+    /// splice a node into one.
+    decisions_tx: broadcast::Sender<argus_protocol::DecisionBoard>,
     /// Agent templates, replaceable: `reload_config` swaps them, and every
     /// start looks its template up by name at the time it runs.
     templates: StdMutex<Vec<AgentConfig>>,
@@ -359,6 +365,10 @@ impl Daemon {
 
     pub fn subscribe_workspaces(&self) -> broadcast::Receiver<Vec<WorkspaceInfo>> {
         self.workspaces_tx.subscribe()
+    }
+
+    pub fn subscribe_decisions(&self) -> broadcast::Receiver<argus_protocol::DecisionBoard> {
+        self.decisions_tx.subscribe()
     }
 
     fn broadcast_tree(&self) {

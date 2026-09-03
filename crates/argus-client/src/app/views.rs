@@ -71,7 +71,35 @@ impl App {
             _ => Focus::View,
         };
         self.leader_pending = false;
+        if view == View::Decisions {
+            self.ask_for_decisions();
+        }
         self.report(view.label());
+    }
+
+    /// Asks for the board of the project the spine is on. Sent on opening
+    /// the view and on `r`, because a client that attached after the last
+    /// write has never been pushed one.
+    pub(super) fn ask_for_decisions(&mut self) {
+        let Some(project) = self.current_project().map(|p| p.id) else {
+            self.board = None;
+            return;
+        };
+        let _ = self.out.send(ClientMsg::GetDecisions { project });
+    }
+
+    /// The board as it is drawn: depth-first, with each row's depth.
+    pub fn board_rows(&self) -> Vec<(usize, &argus_protocol::Decision)> {
+        self.board.as_ref().map(|b| b.tree()).unwrap_or_default()
+    }
+
+    pub(super) fn move_board_selection(&mut self, delta: i32) {
+        let rows = self.board_rows().len();
+        if rows == 0 {
+            return;
+        }
+        let next = (self.board_sel as i32).saturating_add(delta).clamp(0, rows as i32 - 1);
+        self.board_sel = next as usize;
     }
 }
 

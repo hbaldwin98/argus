@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
+use crate::decisions::DecisionBoard;
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::notes::{Note, NoteTarget, TodoState};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
@@ -135,6 +136,11 @@ pub enum ClientMsg {
         target: NoteTarget,
         line: usize,
         state: TodoState,
+    },
+    /// Read a project's decision board. Whole rather than scoped: a
+    /// decision hanging off three others means nothing without them.
+    GetDecisions {
+        project: ProjectId,
     },
     /// Ask for what this checkout contains, for the fuzzy pickers.
     ListBranches {
@@ -304,6 +310,10 @@ pub enum ServerMsg {
     /// editor's text and the daemon's agree without the client predicting
     /// the result of its own write.
     Note(Box<Note>),
+    /// The answer to `ClientMsg::GetDecisions`, and what every client
+    /// receives when a board changes — a decision tree is meant to be
+    /// watched being built, not polled.
+    Decisions(Box<DecisionBoard>),
     /// A note write that could not be stored, with the reason to show.
     NoteFailed {
         target: NoteTarget,

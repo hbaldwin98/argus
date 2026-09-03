@@ -2,7 +2,7 @@
 //! running in it, and their removal when the last one leaves.
 
 use super::*;
-use argus_protocol::{ContextScope, TodoState, TodoWrite};
+use argus_protocol::{ContextScope, DecisionWrite, TodoState, TodoWrite};
 #[tokio::test]
 async fn sharing_a_checkout_is_allowed_unless_the_project_says_otherwise() {
     let dir = tempfile::tempdir().unwrap();
@@ -487,6 +487,169 @@ async fn a_refused_todo_hook_says_why_and_a_bad_one_is_not_a_note_change() {
     assert_eq!(
         d.note(NoteTarget::Checkout(checkout)).unwrap().body,
         "- [ ] through the wire\n"
+    );
+    close_all(&d);
+}
+
+// --- the decision board -------------------------------------------------
+
+#[tokio::test]
+async fn a_decision_lands_on_its_projects_board_wherever_the_agent_was() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let checkout = only_checkout(&d);
+    let project = d.snapshot()[0].id;
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+    let root = d
+        .record_agent_decision(
+            agent,
+            Some("sess-1"),
+            DecisionWrite {
+                chose: "sqlite".into(),
+                over: Some("a file per feature".into()),
+                because: Some("both need migrations".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let child = d
+        .record_agent_decision(
+            agent,
+            Some("sess-1"),
+            DecisionWrite {
+                chose: "wal mode".into(),
+                under: Some(root.id),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let board = d.decision_board(project).unwrap();
+    assert_eq!(board.name, d.snapshot()[0].name);
+    assert_eq!(
+        board
+            .tree()
+            .iter()
+            .map(|(depth, d)| (*depth, d.chose.as_str()))
+            .collect::<Vec<_>>(),
+        [(0, "sqlite"), (1, "wal mode")]
+    );
+    // Attribution is the point of allowing the write at all.
+    assert_eq!(child.session.as_deref(), Some("sess-1"));
+    assert!(child.checkout.is_some(), "and which checkout it was made in");
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn only_a_live_agent_may_record_a_decision() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let checkout = only_checkout(&d);
+    let project = d.snapshot()[0].id;
+    let shell = d.spawn_shell(checkout).unwrap();
+
+    let write = DecisionWrite {
+        chose: "sqlite".into(),
+        ..Default::default()
+    };
+    assert!(
+        d.record_agent_decision(shell, None, write.clone()).is_err(),
+        "a shell is not an agent"
+    );
+    assert!(
+        d.record_agent_decision(PaneId(9999), None, write).is_err(),
+        "nor is nobody"
+    );
+    assert!(d.decision_board(project).unwrap().decisions.is_empty());
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn superseding_leaves_the_decision_it_replaced_on_the_board() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let checkout = only_checkout(&d);
+    let project = d.snapshot()[0].id;
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+    let old = d
+        .record_agent_decision(
+            agent,
+            None,
+            DecisionWrite {
+                chose: "key notes by id".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let new = d
+        .record_agent_decision(
+            agent,
+            None,
+            DecisionWrite {
+                chose: "key notes by path".into(),
+                because: Some("ids are handed out fresh every start".into()),
+                supersedes: Some(old.id),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let board = d.decision_board(project).unwrap();
+    assert_eq!(board.decisions.len(), 2, "the old one is marked, not removed");
+    let old = board.decisions.iter().find(|d| d.id == old.id).unwrap();
+    assert_eq!(old.superseded_by, Some(new.id));
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn the_board_reaches_an_agent_whole_and_a_bad_decision_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    d.start_hook_server().unwrap();
+    let checkout = only_checkout(&d);
+    let source = d.spawn_agent(checkout, "claude").unwrap();
+
+    let recorded = String::from_utf8_lossy(
+        &post_agent_hook(
+            &d,
+            source,
+            Endpoint::Decide,
+            r#"{"chose":"sqlite","over":"a file per feature"}"#,
+        )
+        .await,
+    )
+    .to_string();
+    assert!(recorded.starts_with("HTTP/1.1 200 OK"), "{recorded}");
+    assert!(recorded.contains(r#""chose":"sqlite""#), "{recorded}");
+
+    let read = String::from_utf8_lossy(&post_agent_hook(&d, source, Endpoint::Decisions, "").await)
+        .to_string();
+    assert!(read.contains(r#""over":"a file per feature""#), "{read}");
+
+    let garbage =
+        String::from_utf8_lossy(&post_agent_hook(&d, source, Endpoint::Decide, "hello").await)
+            .to_string();
+    assert!(garbage.starts_with("HTTP/1.1 400"), "{garbage}");
+
+    let empty = String::from_utf8_lossy(
+        &post_agent_hook(&d, source, Endpoint::Decide, r#"{"chose":"  "}"#).await,
+    )
+    .to_string();
+    assert!(empty.starts_with("HTTP/1.1 409"), "{empty}");
+    assert!(empty.ends_with("a decision has to say what was chosen"), "{empty}");
+
+    let orphan = String::from_utf8_lossy(
+        &post_agent_hook(&d, source, Endpoint::Decide, r#"{"chose":"x","under":99}"#).await,
+    )
+    .to_string();
+    assert!(orphan.starts_with("HTTP/1.1 409"), "{orphan}");
+
+    assert_eq!(
+        d.decision_board(d.snapshot()[0].id).unwrap().decisions.len(),
+        1,
+        "only the one that was accepted"
     );
     close_all(&d);
 }

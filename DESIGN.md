@@ -105,8 +105,7 @@ is a key nobody can see the effect of — and returns to the column it left. Whi
 this client's own state and is never sent to the daemon: two people attached to one daemon are not
 necessarily reading the same thing.
 
-The views are the spine and the decision board. The board is drawn but empty: agents cannot yet
-write decisions, so it says what it is for (ROADMAP.md, "P6.5").
+The views are the spine and the decision board (see "Decision board").
 
 ## Navigation model
 
@@ -256,6 +255,9 @@ the user's state.
 Schema v3 adds `note`, keyed on scope and key rather than on an id: a scope this version does not
 recognise is dropped when the table is read, not guessed at. Schema v4 adds `note_audit`, keyed the
 same way: one row per change an agent made to a note, kept even after the note itself is deleted.
+Schema v5 adds `decision`, keyed by project name: one row per recorded decision, with `parent` a
+self-reference rather than a foreign key, since a board is read whole and reassembled by a reader
+that already has to survive a parent it cannot see.
 
 `session.json`, `excluded-repos`, and `open-workspace` are read once, on the first start that finds
 them, and renamed to `*.imported` afterwards. A `session.json` that will not parse is left where it
@@ -804,9 +806,43 @@ to tell the user it was refused, and "this project does not allow it" is a diffe
 "that line is not a checkbox".
 
 Not yet implemented: pinned-note injection into a template's prompt, explicit forwarding to an
-agent, `argus ctx`, and the two project boards — a decision tree and a feature board (TARGET.md,
-"Boards"). The view they need exists (see "Views") and the decision board has its tab; what is
-missing is anything to draw on it.
+agent, `argus ctx`, and the feature board (TARGET.md, "Boards"). The decision board has
+landed (see "Decision board"); the two are not yet linked.
+
+## Decision board
+
+Each project has one board: a tree of the choices made while building its features. A decision
+records what was chosen, what it was chosen over, and what forced it, and hangs off the decision
+that constrained it — so what accumulates is a reference an agent picking up a feature can read,
+rather than a log. Storage is schema v5's `decision` table, keyed by project name for the same
+reason notes are keyed by name and path: ids are handed out fresh on every start.
+
+The board is append-only. Nothing is ever edited, and there is no delete. A decision that a later
+finding invalidates is *superseded*: the replacement is a new row that takes the old one's place in
+the tree — its parent, not its children — and the old row's `superseded_by` records what replaced
+it. The old node stays on the board and the view draws it dimmed, because the road not taken is
+most of what a reader came back for.
+
+Agents reach it through two pane API endpoints. `argus-hook decisions` reads the whole board of the
+project the asking pane belongs to; unlike `context`, which is scoped to one checkout's note, a
+decision tree cannot be scoped and stay meaningful — a node hanging off three others says nothing
+without them. `argus-hook decide "<chose>" [--over ...] [--because ...] [--under <id>]
+[--supersedes <id>]` appends one and answers with the id the next decision hangs off. The caller
+must be a live agent pane, and every row carries the harness session and the checkout it was
+decided in.
+
+There is no policy flag on the write, unlike note writes. A note is the human's document and an
+agent writing to it needs permission; the board exists for agents to write, is append-only, and
+attributes every row, so there is nothing for a gate to protect. The instructions every agent
+receives say when to use it: while planning a feature and choosing between real options, not as a
+running commentary, and revisiting an earlier decision only when a later finding actually
+invalidates it.
+
+Clients read it with `ClientMsg::GetDecisions` and are pushed `ServerMsg::Decisions` whenever any
+board changes — a tree is meant to be watched being built, and the daemon deliberately does not
+track which view a client has open, so every client is told and one with another project open
+drops it by name. The board view draws the tree two lines per decision, `j`/`k` through it, `r` to
+re-ask.
 
 ## Editors and overlays
 

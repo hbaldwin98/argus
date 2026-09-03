@@ -13,6 +13,10 @@
 //! argus-hook context                             # reads the notes for this checkout
 //! argus-hook todo add "ported the parser"        # writes to the checkout's note
 //! argus-hook todo done 4                         # ticks line 4 of it off
+//! argus-hook decisions                            # reads the project's decision board
+//! argus-hook decide "sqlite" --over "a file per feature" --because "both need migrations"
+//! argus-hook decide "one row per note" --under 3  # hangs under decision 3
+//! argus-hook decide "one row per note" --supersedes 7   # replaces decision 7
 //! argus-hook say "text"                          # prints, calls nobody
 //! argus-hook <url> <token> [--note-from-stdin] [--title-from-stdin]  # the installed hook form
 //! ```
@@ -35,8 +39,8 @@
 //! continue — Cursor wants `permission`, Claude wants `decision` — never a
 //! human-readable message. Some agent CLIs inject a hook's stdout into the
 //! model's context, so staying silent keeps Argus's bookkeeping out of the
-//! conversation. The deliberate `say`, `comments`, `context`, and `todo`
-//! commands do return useful output.
+//! conversation. The deliberate `say`, `comments`, `context`, `todo`,
+//! `decisions`, and `decide` commands do return useful output.
 //!
 //! On Windows it is a GUI-subsystem binary. Not because it has a UI — it
 //! has none — but because the agent CLI that runs it decides how it is
@@ -54,8 +58,9 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use argus_protocol::{
-    AgentContext, Endpoint, Report, ReviewComment, TodoState, TodoWrite, INSTRUCTIONS_VAR,
-    NOTE_FLAG, OWNS_SESSION_FLAG, SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
+    AgentContext, Decision, DecisionBoard, DecisionWrite, Endpoint, Report, ReviewComment,
+    TodoState, TodoWrite, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG, SESSION_HEADER,
+    SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(2);
@@ -82,6 +87,8 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("comments", comments),
     ("context", context),
     ("todo", todo),
+    ("decisions", decisions),
+    ("decide", decide),
 ];
 
 fn dispatch(command: Option<&str>, rest: &[&str]) {
@@ -260,6 +267,133 @@ fn todo_message(rest: &[&str], base_url: &str, token: &str) -> String {
         TodoWrite::Add { text } => format!("added \"{text}\" — {response}"),
         TodoWrite::Set { state, .. } => format!("marked {} — {response}", state_word(state)),
     }
+}
+
+/// The project's decision board, drawn as the tree it is. Read rather than
+/// written, and on stdout for the same reason `context` is: it is what an
+/// agent picking up a feature is meant to consult before adding to it.
+fn decisions(rest: &[&str]) {
+    let mut out = std::io::stdout();
+    let _ = writeln!(out, "{}", decisions_message(rest, &env_url(), &env_token()));
+    let _ = out.flush();
+}
+
+fn decisions_message(rest: &[&str], base_url: &str, token: &str) -> String {
+    let board: DecisionBoard =
+        match read_json("decisions", Endpoint::Decisions, rest, base_url, token) {
+            Ok(board) => board,
+            Err(message) => return message,
+        };
+    if board.decisions.is_empty() {
+        return "no decisions recorded for this project".to_string();
+    }
+    let mut lines = vec![format!("Decisions on {}, newest last:", board.name)];
+    for (depth, decision) in board.tree() {
+        // The id leads because it is what the next decision is hung off,
+        // and the indent is what says which one that would be under.
+        let pad = " ".repeat(depth * 2);
+        let mark = match decision.superseded_by {
+            Some(by) => format!("  (superseded by #{by})"),
+            None => String::new(),
+        };
+        lines.push(format!("{pad}#{} {}{mark}", decision.id, decision.chose));
+        if let Some(over) = &decision.over {
+            lines.push(format!("{pad}   over: {over}"));
+        }
+        if let Some(because) = &decision.because {
+            lines.push(format!("{pad}   because: {because}"));
+        }
+    }
+    lines.join("\n")
+}
+
+/// Appends one decision. Reports the id it was given, because that id is
+/// the only part of the answer the agent has to keep.
+fn decide(rest: &[&str]) {
+    let mut out = std::io::stdout();
+    let _ = writeln!(out, "{}", decide_message(rest, &env_url(), &env_token()));
+    let _ = out.flush();
+}
+
+fn decide_message(rest: &[&str], base_url: &str, token: &str) -> String {
+    let write = match parse_decide_args(rest) {
+        Ok(write) => write,
+        Err(message) => return format!("could not record the decision: {message}"),
+    };
+    let body = match serde_json::to_string(&write) {
+        Ok(body) => body,
+        Err(_) => return "could not record the decision: unencodable".to_string(),
+    };
+    let url = endpoint_url(base_url, Endpoint::Decide);
+    let Some((status, response)) = post_response(&url, token, &body) else {
+        return "could not record the decision: daemon unavailable".to_string();
+    };
+    let response = response.trim();
+    if status != 200 {
+        return if response.is_empty() {
+            "could not record the decision: daemon refused the request".to_string()
+        } else {
+            format!("could not record the decision: {response}")
+        };
+    }
+    match serde_json::from_str::<Decision>(response) {
+        Ok(decision) => {
+            let place = match (decision.parent, write.supersedes) {
+                (_, Some(old)) => format!(" replacing #{old}"),
+                (Some(parent), None) => format!(" under #{parent}"),
+                (None, None) => String::new(),
+            };
+            format!(
+                "recorded decision #{}{place}: {}",
+                decision.id, decision.chose
+            )
+        }
+        // The write landed; only the account of it did not.
+        Err(_) => "recorded the decision".to_string(),
+    }
+}
+
+/// `decide <what was chosen> [--over <what against>] [--because <why>]
+/// [--under <id>] [--supersedes <id>]`.
+///
+/// The chosen thing is positional because it is the one field a decision
+/// cannot be recorded without, and an agent writing the common case should
+/// not have to name it.
+fn parse_decide_args(rest: &[&str]) -> Result<DecisionWrite, String> {
+    let mut write = DecisionWrite::default();
+    let mut chose: Vec<&str> = Vec::new();
+    let mut args = rest.iter().copied();
+    while let Some(arg) = args.next() {
+        let mut value = || {
+            args.next()
+                .ok_or_else(|| format!("{arg} needs something after it"))
+        };
+        match arg {
+            "--over" => write.over = Some(value()?.to_string()),
+            "--because" => write.because = Some(value()?.to_string()),
+            "--under" => {
+                write.under = Some(id_arg(arg, value()?)?);
+            }
+            "--supersedes" => {
+                write.supersedes = Some(id_arg(arg, value()?)?);
+            }
+            other if other.starts_with("--") => {
+                return Err(format!(
+                    "{other} is not one of --over, --because, --under, --supersedes"
+                ))
+            }
+            word => chose.push(word),
+        }
+    }
+    write.chose = chose.join(" ");
+    write.checked().map_err(str::to_string)
+}
+
+fn id_arg(flag: &str, raw: &str) -> Result<i64, String> {
+    raw.parse::<i64>()
+        .ok()
+        .filter(|id| *id > 0)
+        .ok_or_else(|| format!("{flag} wants a decision number, not {raw:?}"))
 }
 
 fn state_word(state: TodoState) -> &'static str {
@@ -1092,6 +1226,107 @@ mod tests {
             todo_message(&["done", "2"], "http://127.0.0.1:1/pane/1", "t"),
             "could not write the note: daemon unavailable"
         );
+    }
+
+    #[test]
+    fn the_decision_grammar_puts_the_choice_first_and_the_rest_behind_flags() {
+        let write = parse_decide_args(&[
+            "one",
+            "row",
+            "per",
+            "note",
+            "--over",
+            "a table per note",
+            "--because",
+            "the key is durable",
+            "--under",
+            "3",
+        ])
+        .unwrap();
+        assert_eq!(write.chose, "one row per note");
+        assert_eq!(write.over.as_deref(), Some("a table per note"));
+        assert_eq!(write.because.as_deref(), Some("the key is durable"));
+        assert_eq!(write.under, Some(3));
+        assert_eq!(write.supersedes, None);
+    }
+
+    #[test]
+    fn a_decision_that_could_not_be_recorded_says_which_part_was_wrong() {
+        for (bad, expected) in [
+            (vec!["--over", "nothing chosen"], "what was chosen"),
+            (vec!["x", "--under"], "needs something after it"),
+            (vec!["x", "--under", "zero"], "wants a decision number"),
+            (vec!["x", "--why", "no"], "is not one of"),
+            (
+                vec!["x", "--under", "1", "--supersedes", "2"],
+                "not both",
+            ),
+        ] {
+            let message = decide_message(&bad, "", "");
+            assert!(
+                message.starts_with("could not record the decision:")
+                    && message.contains(expected),
+                "{bad:?} gave {message:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_recorded_decision_reports_the_id_the_next_one_hangs_off() {
+        let recorded = r#"{"id":7,"parent":3,"at":1,"session":null,"checkout":null,
+             "chose":"one row per note","over":null,"because":null,"superseded_by":null}"#;
+        let (address, server) = serve_once(recorded);
+
+        let message = decide_message(
+            &["one", "row", "per", "note", "--under", "3"],
+            &format!("http://{address}/pane/4"),
+            "secret",
+        );
+
+        assert_eq!(
+            message,
+            "recorded decision #7 under #3: one row per note"
+        );
+        assert!(server
+            .join()
+            .unwrap()
+            .starts_with("POST /pane/4/decide HTTP/1.1\r\n"));
+    }
+
+    #[test]
+    fn a_board_is_drawn_as_the_tree_it_is() {
+        let board = r#"{"project":null,"name":"argus","decisions":[
+            {"id":1,"parent":null,"at":1,"session":null,"checkout":null,
+             "chose":"sqlite","over":"a file per feature",
+             "because":"both need migrations","superseded_by":null},
+            {"id":2,"parent":1,"at":2,"session":null,"checkout":null,
+             "chose":"one table per note","over":null,"because":null,
+             "superseded_by":3},
+            {"id":3,"parent":1,"at":3,"session":null,"checkout":null,
+             "chose":"one row per note","over":null,"because":null,
+             "superseded_by":null}]}"#;
+        let (address, server) = serve_once(board);
+
+        let message = decisions_message(&[], &format!("http://{address}/pane/4"), "t");
+        let _ = server.join();
+
+        assert_eq!(
+            message,
+            "Decisions on argus, newest last:\n\
+             #1 sqlite\n\
+             \x20  over: a file per feature\n\
+             \x20  because: both need migrations\n\
+             \x20 #2 one table per note  (superseded by #3)\n\
+             \x20 #3 one row per note"
+        );
+    }
+
+    #[test]
+    fn an_empty_board_says_so_rather_than_nothing() {
+        let (address, server) = serve_once(r#"{"project":null,"name":"argus","decisions":[]}"#);
+        let message = decisions_message(&[], &format!("http://{address}/pane/4"), "t");
+        let _ = server.join();
+        assert_eq!(message, "no decisions recorded for this project");
     }
 
     /// Serves one canned response at a chosen status, for the endpoint that

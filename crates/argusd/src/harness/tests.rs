@@ -638,6 +638,21 @@ fn agents_are_told_they_may_be_allowed_to_write_items_and_may_not() {
     assert!(text.contains("refuses the write"));
 }
 
+#[test]
+fn agents_are_told_when_to_record_a_decision_and_when_not_to() {
+    let text = instructions();
+    assert!(text.contains("decisions"), "and how to read the board");
+    assert!(text.contains("decide "));
+    assert!(text.contains("--over"));
+    assert!(text.contains("--because"));
+    assert!(text.contains("--supersedes"));
+    // The two limits that keep the board a reference rather than a log:
+    // decisions are recorded while planning, not as commentary, and an
+    // earlier one is replaced only when a later finding undoes it.
+    assert!(text.contains("not as a running commentary"));
+    assert!(text.contains("invalidates it"));
+}
+
 // --- the plugin mechanism ----------------------------------------------
 
 fn plugin_path(dir: &Path, h: &Harness) -> PathBuf {

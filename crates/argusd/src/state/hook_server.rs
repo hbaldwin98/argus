@@ -162,6 +162,10 @@ async fn handle_hook_request(
             Some((pane, Endpoint::Todo)) => {
                 todo_response(&daemon, pane, reporter.as_deref(), &body)
             }
+            Some((pane, Endpoint::Decisions)) => decisions_response(&daemon, pane)?,
+            Some((pane, Endpoint::Decide)) => {
+                decide_response(&daemon, pane, reporter.as_deref(), &body)
+            }
             // A checkout move from an agent that does not own the pane is
             // dropped: the row follows the agent Argus started in it.
             _ => HookResponse::empty(200, "OK"),
@@ -234,6 +238,45 @@ fn todo_response(
             "OK",
             format!("{} open, {} done", counts.open, counts.done),
         ),
+        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
+    }
+}
+
+fn decisions_response(daemon: &Arc<Daemon>, source: PaneId) -> anyhow::Result<HookResponse> {
+    Ok(match daemon.decisions_for_agent(source) {
+        Ok(board) => HookResponse {
+            code: 200,
+            reason: "OK",
+            body: serde_json::to_vec(&board)?,
+        },
+        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
+    })
+}
+
+/// Answers with the decision as recorded, because its id is what the next
+/// decision hangs off — the one write here whose answer the agent has to
+/// keep.
+fn decide_response(
+    daemon: &Arc<Daemon>,
+    source: PaneId,
+    session: Option<&str>,
+    body: &[u8],
+) -> HookResponse {
+    let write: argus_protocol::DecisionWrite = match serde_json::from_slice(body) {
+        Ok(write) => write,
+        Err(_) => {
+            return HookResponse::text(400, "Bad Request", "not a decision".into());
+        }
+    };
+    match daemon.record_agent_decision(source, session, write) {
+        Ok(decision) => match serde_json::to_vec(&decision) {
+            Ok(body) => HookResponse {
+                code: 200,
+                reason: "OK",
+                body,
+            },
+            Err(e) => HookResponse::text(500, "Internal Server Error", e.to_string()),
+        },
         Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
     }
 }

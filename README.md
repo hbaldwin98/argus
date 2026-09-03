@@ -28,6 +28,9 @@ The workspace builds three executables:
   lines and rolling those counts up the tree.
 - Lets an agent read the notes for where it is running, and — where the project asks for it — add
   to and tick off its checkout's checkboxes, with every change attributed and recorded.
+- Keeps a decision board per project: a tree of what agents chose while planning each feature, what
+  they chose it over, and what forced it — readable by the next agent that picks the feature up,
+  and drawn as a full view of its own. Reversing a decision supersedes it rather than erasing it.
 - Opens files in a floating terminal editor, the terminal column, or an external editor.
 - Restores non-exited shell and agent panes after a daemon restart, reopening each agent's last
   conversation where its CLI can be asked to.

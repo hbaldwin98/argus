@@ -49,6 +49,7 @@ where
 
     let mut tree_rx = daemon.subscribe_tree();
     let mut workspaces_rx = daemon.subscribe_workspaces();
+    let mut decisions_rx = daemon.subscribe_decisions();
     let mut subs = Subscriptions::default();
     let mut review_task = None;
 
@@ -72,6 +73,13 @@ where
             }
             Ok(ws) = workspaces_rx.recv() => {
                 let _ = out_tx.send(ServerMsg::Workspaces(ws));
+            }
+            // Every client is told, and one with another project open
+            // drops it by name. Filtering here would mean the daemon
+            // tracking what each client is looking at, which is the one
+            // thing about a view it deliberately does not know.
+            Ok(board) = decisions_rx.recv() => {
+                let _ = out_tx.send(ServerMsg::Decisions(Box::new(board)));
             }
         }
     }
@@ -169,6 +177,7 @@ fn handle_client_msg(
 ) {
     let result = dispatch_pane(msg, daemon, out_tx, subs, viewer)
         .or_else(|msg| dispatch_notes(msg, daemon, out_tx))
+        .or_else(|msg| dispatch_decisions(msg, daemon, out_tx))
         .or_else(|msg| dispatch_workspace(msg, daemon, out_tx))
         .or_else(|msg| dispatch_branch_or_editor(msg, daemon, out_tx))
         .or_else(|msg| dispatch_review(msg, daemon, out_tx, review_task))
@@ -243,6 +252,23 @@ fn dispatch_pane(
 /// A write answers with the stored note rather than an acknowledgement, so
 /// the client's editor shows what the daemon holds instead of what it
 /// guessed its own write would produce.
+/// Its own dispatcher rather than an arm of `dispatch_notes`, because a
+/// board is not a note: it is read at project scope, whole, and it is
+/// pushed at every client rather than answered to one.
+fn dispatch_decisions(
+    msg: ClientMsg,
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) -> DispatchResult {
+    let result = match msg {
+        ClientMsg::GetDecisions { project } => daemon.decision_board(project).map(|board| {
+            let _ = out_tx.send(ServerMsg::Decisions(Box::new(board)));
+        }),
+        msg => return Err(msg),
+    };
+    Ok(result)
+}
+
 fn dispatch_notes(
     msg: ClientMsg,
     daemon: &Arc<Daemon>,

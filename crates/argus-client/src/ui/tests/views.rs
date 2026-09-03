@@ -121,3 +121,128 @@ fn a_terminal_too_short_for_a_strip_still_draws_the_spine() {
     assert_eq!(app.layout.views.outer.height, 0);
     assert!(app.layout.checkouts.outer.width > 0);
 }
+
+fn decision(id: i64, parent: Option<i64>, chose: &str) -> argus_protocol::Decision {
+    argus_protocol::Decision {
+        id,
+        parent,
+        at: 0,
+        session: None,
+        checkout: None,
+        chose: chose.to_string(),
+        over: None,
+        because: None,
+        superseded_by: None,
+    }
+}
+
+fn app_with_a_board(decisions: Vec<argus_protocol::Decision>) -> App {
+    let mut app = app_with_tree();
+    let name = app.current_project().unwrap().name.clone();
+    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(
+        argus_protocol::DecisionBoard {
+            project: None,
+            name,
+            decisions,
+        },
+    )));
+    press(&mut app, View::Decisions.digit());
+    app
+}
+
+#[test]
+fn the_board_draws_a_decision_under_the_one_that_constrained_it() {
+    let mut app = app_with_a_board(vec![
+        argus_protocol::Decision {
+            over: Some("a file per feature".into()),
+            because: Some("both need migrations".into()),
+            ..decision(1, None, "sqlite")
+        },
+        decision(2, Some(1), "wal mode"),
+    ]);
+    let buf = draw_at(&mut app, 100, 30);
+    let out = lines(&buf);
+    let top = app.layout.content.inner.y as usize;
+
+    assert!(out[top].contains("#1 sqlite"), "{:?}", out[top]);
+    assert!(
+        out[top + 1].contains("over a file per feature")
+            && out[top + 1].contains("because both need migrations"),
+        "{:?}",
+        out[top + 1]
+    );
+    let child = out[top + 2].clone();
+    assert!(child.contains("#2 wal mode"), "{child:?}");
+    // Counted in cells, not bytes: the selection marker is three bytes
+    // wide and one column wide.
+    let column = |line: &str| line.chars().position(|c| c == '#').unwrap();
+    assert!(
+        column(&child) > column(&out[top]),
+        "the child is indented under its parent: {child:?} vs {:?}",
+        out[top]
+    );
+}
+
+#[test]
+fn a_decision_with_neither_an_alternative_nor_a_reason_says_so() {
+    let mut app = app_with_a_board(vec![decision(1, None, "sqlite")]);
+    let buf = draw_at(&mut app, 100, 30);
+    let out = lines(&buf);
+    let top = app.layout.content.inner.y as usize;
+    assert!(
+        out[top + 1].contains("no alternative or reason recorded"),
+        "{:?}",
+        out[top + 1]
+    );
+}
+
+#[test]
+fn a_superseded_decision_keeps_its_place_and_says_what_replaced_it() {
+    let mut app = app_with_a_board(vec![
+        argus_protocol::Decision {
+            superseded_by: Some(2),
+            ..decision(1, None, "key notes by id")
+        },
+        decision(2, None, "key notes by path"),
+    ]);
+    let buf = draw_at(&mut app, 100, 30);
+    let out = lines(&buf).join("
+");
+
+    assert!(out.contains("#1 key notes by id"), "{out}");
+    assert!(out.contains("superseded by #2"), "{out}");
+}
+
+#[test]
+fn the_board_scrolls_to_keep_the_selection_on_screen() {
+    let many = (1..=40).map(|id| decision(id, None, "a choice")).collect();
+    let mut app = app_with_a_board(many);
+    draw_at(&mut app, 100, 30);
+
+    app.on_key(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE));
+    let buf = draw_at(&mut app, 100, 30);
+    let out = lines(&buf).join("
+");
+
+    assert_eq!(app.board_sel, 39);
+    assert!(out.contains("#40"), "the last row is drawn: {out}");
+}
+
+#[test]
+fn a_board_for_another_project_is_dropped_rather_than_drawn() {
+    let mut app = app_with_tree();
+    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(
+        argus_protocol::DecisionBoard {
+            project: None,
+            name: "something else".into(),
+            decisions: vec![decision(1, None, "not ours")],
+        },
+    )));
+    press(&mut app, View::Decisions.digit());
+    let buf = draw_at(&mut app, 100, 30);
+    let out = lines(&buf).join("
+");
+
+    assert!(!out.contains("not ours"), "{out}");
+    assert!(out.contains("no decisions recorded yet"), "{out}");
+}
