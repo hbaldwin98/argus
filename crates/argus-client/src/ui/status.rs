@@ -25,7 +25,14 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         ..area
     };
 
-    let (hints, tone) = if let Some(p) = &app.picker {
+    let (hints, tone) = if app.help.is_some() {
+        // The keymap window is up, so the bar stops advertising keys and
+        // says how to work the window instead.
+        (
+            &["j/k scroll   any other key closes", "any key closes"][..],
+            th.dim,
+        )
+    } else if let Some(p) = &app.picker {
         // What Enter does differs per picker, and "spawn" on the theme list
         // would be a small lie.
         let hints: &[&str] = match p.kind {
@@ -171,24 +178,24 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         // hold every key at once, and most of them only apply somewhere.
         let keys: &[&str] = match app.focus {
             Focus::Projects => &[
-                "j/k  l open  N needs  n add  D rm  w wksp  p fold  S settings  q detach",
-                "j/k  l open  n add  D rm  w wksp  p fold  S settings",
-                "l open  n add  p fold  S settings",
+                "j/k  l open  n add  D rm  w wksp  p fold",
+                "l open  n add  p fold",
+                "l open  n add",
             ],
             Focus::Repositories => &[
-                "j/k move  l open  N attention  s shell  a agent  b branch  f file  n add  i init  D rm  q detach",
-                "j/k  l open  s shell  a agent  b branch  f file  n add  D rm",
-                "l open  s shell  a agent  n add",
+                "j/k  l open  s shell  a agent  b branch  n add",
+                "l open  s shell  a agent",
+                "l open  a agent",
             ],
             Focus::Checkouts => &[
-                "j/k move  l open  b branch  B all  F fetch  P pull  f file  R review  H history  n worktree  D rm  q detach",
-                "j/k  l open  b branch  F fetch  P pull  R review  H history  n worktree",
-                "l open  b branch  R review  H history",
+                "j/k  l open  b branch  F fetch  R review  H history",
+                "l open  R review  H history",
+                "l open  R review",
             ],
             _ => &[
-                "j/k move  l open  v panes  N attention  s shell  a agent  b branch  f file  R review  H history  x close  q detach",
-                "j/k  l open  v panes  s shell  a agent  R review  H history  x close",
-                "l open  s shell  a agent  R review  x close",
+                "j/k  l open  s shell  a agent  R review  x close",
+                "l open  a agent  R review  x close",
+                "l open  R review",
             ],
         };
         (keys, th.dim)
@@ -203,6 +210,8 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
 /// still leaves the breadcrumb a real gap is preferred, and failing that
 /// the breadcrumb is dropped and the widest tier that fits on its own is
 /// drawn. Only when none of them fits does the bar give up on the keys.
+const ASK: &str = "? keys";
+
 fn draw_bar<S: AsRef<str>>(
     f: &mut Frame,
     app: &App,
@@ -225,9 +234,22 @@ fn draw_bar<S: AsRef<str>>(
         )
     };
 
+    // Every context ends at the same place: the one key that lists the
+    // rest. It is appended rather than written into each tier so it cannot
+    // be the thing a narrow bar drops, and it earns its cell by letting
+    // every tier above it be shorter than it used to be.
+    let mut tiers: Vec<String> = Vec::with_capacity(hints.len() + 1);
+    if app.help.is_some() {
+        tiers.extend(hints.iter().map(|h| h.as_ref().to_string()));
+    } else {
+        tiers.extend(hints.iter().map(|h| format!("{}   {ASK}", h.as_ref())));
+        tiers.push(ASK.to_string());
+    }
+
     let left_len = left.content.chars().count();
     let width = area.width as usize;
-    let len = |hint: &S| hint.as_ref().chars().count();
+    let len = |hint: &String| hint.chars().count();
+    let hints = &tiers;
     let beside = hints.iter().find(|h| left_len + len(h) + 3 <= width);
     let alone = || hints.iter().find(|h| len(h) + 2 <= width);
 
@@ -236,7 +258,7 @@ fn draw_bar<S: AsRef<str>>(
         (Some(hint), _) => {
             spans.push(left);
             spans.push(Span::raw(" ".repeat(width - left_len - len(hint) - 2)));
-            spans.push(Span::styled(hint.as_ref().to_string(), Style::default().fg(tone)));
+            spans.push(Span::styled(hint.clone(), Style::default().fg(tone)));
         }
         // Not enough room for both: the alert stays, the keymap goes. The
         // keys are discoverable elsewhere; a swallowed error is not.
@@ -244,7 +266,7 @@ fn draw_bar<S: AsRef<str>>(
         (None, false) => {
             if let Some(hint) = alone() {
                 spans.push(Span::raw(" ".repeat(width.saturating_sub(len(hint) + 2))));
-                spans.push(Span::styled(hint.as_ref().to_string(), Style::default().fg(tone)));
+                spans.push(Span::styled(hint.clone(), Style::default().fg(tone)));
             }
         }
     }

@@ -148,6 +148,14 @@ impl Picker {
     }
 }
 
+/// The keymap window. Holds only how far down it has been scrolled: what
+/// it lists is decided per frame from where the user is, so it can never
+/// go stale against the mode it is describing.
+#[derive(Debug, Default)]
+pub struct Help {
+    pub scroll: usize,
+}
+
 /// A window floating above the columns, for things the five-column spine
 /// has no room for. Unlike a picker it can be large and can hold a live
 /// pane: a terminal editor in a 38%-wide column is unusable, and the whole

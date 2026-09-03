@@ -31,7 +31,7 @@ use crate::review::ReviewView;
 use crate::theme::Theme;
 
 pub use layout::{Focus, Fold, Layout, Panel};
-pub use modal::{Overlay, Picker, PickerKind, Prompt, RemoveTarget, Setting};
+pub use modal::{Help, Overlay, Picker, PickerKind, Prompt, RemoveTarget, Setting};
 pub use rows::{CheckoutAnchor, CheckoutRow, PaneLocation};
 use layout::{in_rect, row_in};
 use argus_protocol::ReviewBase;
@@ -178,6 +178,10 @@ pub struct App {
     /// repository is being added.
     pub dir_picker: Option<DirPicker>,
     pub overlay: Option<Overlay>,
+    /// The keymap window. Its own field rather than an [`Overlay`] variant
+    /// because `?` has to work *over* whatever is already open — a review
+    /// you asked the keys about is still there when you close them.
+    pub help: Option<Help>,
     pub settings: crate::settings::Settings,
     /// False for an app that must not write to the user's config — every
     /// test, and anything constructed with [`App::new`].
@@ -290,6 +294,7 @@ impl App {
             picker: None,
             dir_picker: None,
             overlay: None,
+            help: None,
             settings,
             persist_settings: persist,
             pending_overlay_new: false,

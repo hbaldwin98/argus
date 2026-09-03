@@ -190,6 +190,14 @@ impl App {
         self.sync_subscription();
     }
 
+    /// Moves the keymap window's view, for the wheel. The renderer holds
+    /// it inside the content, so this only has to not go below zero.
+    pub(super) fn scroll_help(&mut self, delta: isize) {
+        if let Some(help) = &mut self.help {
+            help.scroll = help.scroll.saturating_add_signed(delta * 3);
+        }
+    }
+
     pub fn close_overlay(&mut self) {
         // An editor is its window. Nothing lists it once the window is
         // gone, so leaving it running would strand the process.

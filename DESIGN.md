@@ -123,6 +123,18 @@ doing so would leave too little room to identify the row at all, in which case t
 goes. The status bar's keymaps are written as tiers and the widest that fits is drawn, so a narrow
 bar shows fewer keys rather than one cut mid-word.
 
+The bar is a reminder rather than a reference. It carries the handful of keys worth having in
+front of you and ends, at every width and in every mode, with the one key that lists the rest —
+appended after the tiers are chosen, so it is never the thing a narrow bar drops. `?` opens that
+list as a window sized to its own content, grouped by what the keys act on rather than by
+character, and answering for the mode you are actually in: the diff's keys in a diff, the
+column's in the columns. It opens *over* whatever raised the question rather than instead of it,
+so the review you asked about is still there when you close it, and any key that is not a scroll
+key closes it — having to hunt for the way out of a window you opened to be told something is the
+problem it exists to solve. `?` is only this where nothing is taking text; on a prompt, in a
+pane, or in a note being written it is a character, and the leader chord reaches the list from
+inside a pane.
+
 A project takes its repositories from a root directory, from paths named one at a time, or from
 both. Each becomes a repository with its own primary checkout and linked worktrees. Repository
 identity is carried through daemon state and the protocol, so worktree discovery, creation, and

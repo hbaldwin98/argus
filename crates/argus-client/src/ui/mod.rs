@@ -41,6 +41,7 @@ use crate::theme::Theme;
 use argus_protocol::CursorShape;
 
 mod columns;
+mod help;
 mod history;
 mod modals;
 mod overlay;
@@ -51,6 +52,7 @@ mod term;
 mod text;
 
 use columns::*;
+use help::*;
 use history::*;
 use modals::*;
 use overlay::*;
@@ -228,6 +230,15 @@ pub fn render(f: &mut Frame, app: &mut App) {
     if app.prompt.is_some() {
         render_prompt(f, app, f.area(), th);
         cursor = None;
+    }
+
+    // Last, over everything: the keymap is asked for on top of whatever
+    // raised the question, and it hands the screen straight back.
+    if app.help.is_some() {
+        render_help(f, app, root[0], th);
+        cursor = None;
+    } else {
+        app.layout.help = Panel::default();
     }
 
     app.layout.cursor = cursor;

@@ -578,7 +578,7 @@ fn the_live_view_titles_itself_with_the_path_through_the_tree() {
 fn the_status_bar_shows_the_keymap_and_swaps_it_inside_a_pane() {
     let mut app = app_with_tree();
     let nav = lines(&draw(&mut app)).join("\n");
-    assert!(nav.contains("q detach"), "nav keymap");
+    assert!(nav.contains("l open"), "nav keymap");
 
     app.focus = Focus::PaneContent;
     let typing = lines(&draw(&mut app)).join("\n");
@@ -587,7 +587,7 @@ fn the_status_bar_shows_the_keymap_and_swaps_it_inside_a_pane() {
         "a pane's keys are the child's, and it should say so"
     );
     assert!(
-        !typing.contains("q detach"),
+        !typing.contains("l open"),
         "the nav keymap would be a lie here"
     );
 }

@@ -18,6 +18,7 @@ fn dragging_a_gutter_resizes_the_two_adjacent_columns() {
         panes: panel(63, 20),
         content: panel(84, 30),
         overlay: Panel::default(),
+        help: Panel::default(),
         cursor: None,
     };
 
@@ -77,6 +78,7 @@ fn dragging_a_gutter_cannot_collapse_either_column() {
         panes: panel(63, 20),
         content: panel(84, 30),
         overlay: Panel::default(),
+        help: Panel::default(),
         cursor: None,
     };
 

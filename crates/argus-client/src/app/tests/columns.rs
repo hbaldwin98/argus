@@ -114,6 +114,7 @@ fn the_gutter_next_to_a_fold_tab_is_not_draggable() {
         panes: panel(28, 12),
         content: panel(41, 20),
         overlay: Panel::default(),
+        help: Panel::default(),
         cursor: None,
     };
     h.app.fold = Fold::Projects;

@@ -23,6 +23,18 @@ impl App {
         if self.picker.is_some() || self.prompt.is_some() || self.dir_picker.is_some() {
             return;
         }
+        // The keymap window is the same kind of modal as an overlay: a
+        // click anywhere puts it away, and none of it reaches what is
+        // underneath. Scrolling reads it.
+        if self.help.is_some() {
+            match ev.kind {
+                MouseEventKind::ScrollDown => self.scroll_help(1),
+                MouseEventKind::ScrollUp => self.scroll_help(-1),
+                MouseEventKind::Down(_) => self.help = None,
+                _ => {}
+            }
+            return;
+        }
         // Clicking the folded-away tab is the mouse equivalent of `p`: it
         // expands the column again. Handled before the column hit-test,
         // which would otherwise park focus on a handle with no rows.

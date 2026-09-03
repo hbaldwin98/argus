@@ -127,6 +127,8 @@ pub struct Layout {
     pub content: Panel,
     /// Zero-sized when no overlay is up.
     pub overlay: Panel,
+    /// The keymap window, zero-sized when it is not up.
+    pub help: Panel,
     /// Where the last frame put the hardware cursor, `None` when it hid it.
     /// Recorded as well as applied so the decision — which is one decision
     /// for the whole frame, made across several layers — can be asserted on.

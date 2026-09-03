@@ -6,6 +6,7 @@ mod browser;
 mod diff;
 mod frame;
 mod geometry;
+mod help;
 mod narrow;
 mod notes;
 mod panes;

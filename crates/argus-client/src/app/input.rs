@@ -48,6 +48,17 @@ impl App {
             }
             return;
         }
+        // The keymap opens over whatever is already up: "what can I press
+        // here" is a question about the mode you are in, not a reason to
+        // leave it. `?` is a character on a typing surface, so it only
+        // means this where nothing is taking text.
+        if self.help.is_some() {
+            return self.on_key_help(key);
+        }
+        if key.code == KeyCode::Char('?') && !self.takes_text() {
+            self.help = Some(Help::default());
+            return;
+        }
         if self.prompt.is_some() {
             self.on_key_prompt(key);
         } else if self.dir_picker.is_some() {
@@ -62,6 +73,33 @@ impl App {
             self.on_key_pane_content(key);
         } else {
             self.on_key_nav(key);
+        }
+    }
+
+    /// Whether a printable key would be typed into something rather than
+    /// read as a command. The same surfaces that take a paste, plus a note
+    /// being written.
+    fn takes_text(&self) -> bool {
+        self.accepts_paste()
+            || self
+                .notes
+                .as_ref()
+                .is_some_and(|v| v.mode == NoteMode::Insert)
+    }
+
+    /// The keymap window's own keys: scrolling, and out.
+    fn on_key_help(&mut self, key: KeyEvent) {
+        let Some(help) = &mut self.help else { return };
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => help.scroll += 1,
+            KeyCode::Char('k') | KeyCode::Up => help.scroll = help.scroll.saturating_sub(1),
+            KeyCode::Char('d') | KeyCode::PageDown => help.scroll += 10,
+            KeyCode::Char('u') | KeyCode::PageUp => help.scroll = help.scroll.saturating_sub(10),
+            KeyCode::Char('g') | KeyCode::Home => help.scroll = 0,
+            // Anything else closes it. A window opened to be read is one
+            // you want out of the way again, and having to find its exit
+            // key is the problem it exists to solve.
+            _ => self.help = None,
         }
     }
 
@@ -354,6 +392,7 @@ impl App {
             self.leader_pending = false;
             match key.code {
                 KeyCode::Esc => self.close_overlay(),
+                KeyCode::Char('?') => self.help = Some(Help::default()),
                 KeyCode::Char('x') => {
                     if let Some(pane) = self.overlay.as_ref().and_then(Overlay::pane) {
                         let _ = self.out.send(ClientMsg::Kill { pane });
@@ -472,6 +511,7 @@ impl App {
                 KeyCode::Char('f') => self.pane_fullscreen = !self.pane_fullscreen,
                 KeyCode::Char('x') => self.close_current(),
                 KeyCode::Char('N') => self.jump_to_next_attention(),
+                KeyCode::Char('?') => self.help = Some(Help::default()),
                 _ => {}
             }
             return;
