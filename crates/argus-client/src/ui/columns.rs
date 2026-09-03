@@ -47,126 +47,68 @@ pub(super) fn rollup_item<'a>(
     }
 }
 
-/// Draws the spine. Its leading columns may be folded away to tabs in the
-/// left gutter, in which case their width is ceded to the ones that remain.
-pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option<CursorPlacement> {
-    let th = app.theme;
-    let fold = app.fold;
-    let hidden = fold.hidden();
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .spacing(GUTTER_COLS)
-        .constraints(column_constraints(
-            area.width,
-            fold,
-            app.column_widths.as_deref(),
-        ))
-        .split(area);
+/// What a column says when it has nothing to list. Named rather than
+/// written at the call site because the width is measured from them too,
+/// and a hint that is measured and a hint that is drawn have to be the
+/// same string.
+const NO_PROJECTS: &str = "no projects yet
 
-    // Folded columns draw no card, so the survivors occupy `cols[0..]`.
-    // `col(i)` is the expanded index, the one the code below thinks in.
-    let col = |i: usize| cols[i - hidden];
+n  add one";
+const NO_REPOSITORIES: &str = "no repositories
 
-    // A row is two lines where the card can afford it, and one where the
-    // detail line would cost an item. Every column shares the height, and
-    // hit-testing needs the answer, so it is decided once here.
-    let rows_high = row_height(area.height.saturating_sub(4));
-    app.layout.row_height = rows_high;
+n  add one";
+const NO_CHECKOUTS: &str = "no checkouts";
+const NOTHING_RUNNING: &str = "nothing running
 
-    // Where each card was scrolled to last frame, read before the tabs
-    // overwrite the panels a folded column leaves behind.
-    let (projects_first, repositories_first) = (
-        app.layout.projects.first,
-        app.layout.repositories.first,
-    );
-    let tabs = render_fold_tabs(f, area, fold, th);
-    app.layout.projects = tabs[0];
-    app.layout.repositories = tabs[1];
+s  shell
+a  agent";
 
-    if !fold.hides(Focus::Projects) {
-        let project_rows: Vec<Item> = app
-            .tree
-            .iter()
-            .map(|p| {
-                // The rollup, not just this project's own note: from the
-                // leftmost column the question is whether anything in
-                // there is owed, not where it was written down.
-                rollup_item(
-                    &p.name,
-                    plural(p.repositories.len(), "repository"),
-                    p.repositories.iter().flat_map(|r| r.checkouts.iter()),
-                    p.note_rollup(),
-                    p.has_note,
-                    th,
-                )
-            })
-            .collect();
-        // The projects column is scoped to the open workspace, so it says so
-        // in its own title rather than leaving the scope to be inferred.
-        let projects_title = if app.open_workspace.is_empty() {
-            "projects".to_string()
-        } else {
-            format!("projects · {}", app.open_workspace)
-        };
-        app.layout.projects = render_column(
-            f,
-            col(0),
-            &projects_title,
-            project_rows,
-            app.focus == Focus::Projects,
-            (!app.tree.is_empty()).then_some(app.sel_project),
-            projects_first,
-            "no projects yet
+/// The rows of each nav column. Split out of [`render_columns`] so the
+/// widths can be decided from what the columns hold, which means building
+/// them before there is anywhere to draw them.
+fn project_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
+    app.tree
+        .iter()
+        .map(|p| {
+            // The rollup, not just this project's own note: from the
+            // leftmost column the question is whether anything in there is
+            // owed, not where it was written down.
+            rollup_item(
+                &p.name,
+                plural(p.repositories.len(), "repository"),
+                p.repositories.iter().flat_map(|r| r.checkouts.iter()),
+                p.note_rollup(),
+                p.has_note,
+                th,
+            )
+        })
+        .collect()
+}
 
-n  add one",
-            rows_high,
-            th,
-        );
-    }
+fn repository_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
+    app.current_project()
+        .map(|p| {
+            p.repositories
+                .iter()
+                .map(|r| {
+                    rollup_item(
+                        &r.name,
+                        plural(r.checkouts.len(), "checkout"),
+                        r.checkouts.iter(),
+                        r.note_rollup(),
+                        false,
+                        th,
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
 
-    if !fold.hides(Focus::Repositories) {
-        let repository_rows: Vec<Item> = app
-            .current_project()
-            .map(|p| {
-                p.repositories
-                    .iter()
-                    .map(|r| {
-                        rollup_item(
-                            &r.name,
-                            plural(r.checkouts.len(), "checkout"),
-                            r.checkouts.iter(),
-                            r.note_rollup(),
-                            false,
-                            th,
-                        )
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        let nrepo = app
-            .current_project()
-            .map(|p| p.repositories.len())
-            .unwrap_or(0);
-        app.layout.repositories = render_column(
-            f,
-            col(1),
-            "repositories",
-            repository_rows,
-            app.focus == Focus::Repositories,
-            (nrepo > 0).then_some(app.sel_repository),
-            repositories_first,
-            "no repositories
-
-n  add one",
-            rows_high,
-            th,
-        );
-    }
-
-    // The column's order is the app's, not either list's: the main branch
-    // leads it whether it has a directory or not.
-    let checkout_rows: Vec<Item> = app
-        .current_repository()
+/// The column's order is the app's, not either list's: the main branch
+/// leads it whether it has a directory or not.
+fn checkout_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
+    app.current_repository()
         .map(|r| {
             app.checkout_rows()
                 .into_iter()
@@ -177,24 +119,12 @@ n  add one",
                 })
                 .collect()
         })
-        .unwrap_or_default();
-    let ncheck = app.checkout_row_count();
-    app.layout.checkouts = render_column(
-        f,
-        col(2),
-        "checkouts",
-        checkout_rows,
-        app.focus == Focus::Checkouts,
-        (ncheck > 0).then_some(app.sel_checkout),
-        app.layout.checkouts.first,
-        "no checkouts",
-        rows_high,
-        th,
-    );
+        .unwrap_or_default()
+}
 
+fn pane_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
     let flat = app.settings.pane_view == crate::settings::PaneView::Flat;
-    let pane_rows: Vec<Item> = app
-        .pane_column_locations()
+    app.pane_column_locations()
         .into_iter()
         .flat_map(|location| {
             let p = app
@@ -243,7 +173,119 @@ n  add one",
             )]);
             std::iter::once(parent).chain(p.children.iter().map(|c| child_item(c, th)))
         })
-        .collect();
+        .collect()
+}
+
+/// Draws the spine. Its leading columns may be folded away to tabs in the
+/// left gutter, in which case their width is ceded to the ones that remain.
+pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option<CursorPlacement> {
+    let th = app.theme;
+    let fold = app.fold;
+    let hidden = fold.hidden();
+
+    // Every column's rows are built before any width is decided, because
+    // what a column is worth is what it has to say. They are all `'static`,
+    // so carrying them across the layout borrows nothing.
+    let projects_title = if app.open_workspace.is_empty() {
+        "projects".to_string()
+    } else {
+        format!("projects · {}", app.open_workspace)
+    };
+    let panes_title = if app.settings.pane_view == crate::settings::PaneView::Flat {
+        "panes · all"
+    } else {
+        "panes"
+    };
+    let project_rows = project_rows(app, th);
+    let repository_rows = repository_rows(app, th);
+    let checkout_rows = checkout_rows(app, th);
+    let pane_rows = pane_rows(app, th);
+    let natural = [
+        natural_width(&project_rows, &projects_title, NO_PROJECTS),
+        natural_width(&repository_rows, "repositories", NO_REPOSITORIES),
+        natural_width(&checkout_rows, "checkouts", NO_CHECKOUTS),
+        natural_width(&pane_rows, panes_title, NOTHING_RUNNING),
+    ];
+
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .spacing(GUTTER_COLS)
+        .constraints(column_constraints(
+            area.width,
+            fold,
+            app.column_widths.as_deref(),
+            &natural,
+        ))
+        .split(area);
+
+    // Folded columns draw no card, so the survivors occupy `cols[0..]`.
+    // `col(i)` is the expanded index, the one the code below thinks in.
+    let col = |i: usize| cols[i - hidden];
+
+    // A row is two lines where the card can afford it, and one where the
+    // detail line would cost an item. Every column shares the height, and
+    // hit-testing needs the answer, so it is decided once here.
+    let rows_high = row_height(area.height.saturating_sub(2));
+    app.layout.row_height = rows_high;
+
+    // Where each card was scrolled to last frame, read before the tabs
+    // overwrite the panels a folded column leaves behind.
+    let (projects_first, repositories_first) = (
+        app.layout.projects.first,
+        app.layout.repositories.first,
+    );
+    let tabs = render_fold_tabs(f, area, fold, th);
+    app.layout.projects = tabs[0];
+    app.layout.repositories = tabs[1];
+
+    if !fold.hides(Focus::Projects) {
+        app.layout.projects = render_column(
+            f,
+            col(0),
+            &projects_title,
+            project_rows,
+            app.focus == Focus::Projects,
+            (!app.tree.is_empty()).then_some(app.sel_project),
+            projects_first,
+            NO_PROJECTS,
+            rows_high,
+            th,
+        );
+    }
+
+    if !fold.hides(Focus::Repositories) {
+        let nrepo = app
+            .current_project()
+            .map(|p| p.repositories.len())
+            .unwrap_or(0);
+        app.layout.repositories = render_column(
+            f,
+            col(1),
+            "repositories",
+            repository_rows,
+            app.focus == Focus::Repositories,
+            (nrepo > 0).then_some(app.sel_repository),
+            repositories_first,
+            NO_REPOSITORIES,
+            rows_high,
+            th,
+        );
+    }
+
+    let ncheck = app.checkout_row_count();
+    app.layout.checkouts = render_column(
+        f,
+        col(2),
+        "checkouts",
+        checkout_rows,
+        app.focus == Focus::Checkouts,
+        (ncheck > 0).then_some(app.sel_checkout),
+        app.layout.checkouts.first,
+        NO_CHECKOUTS,
+        rows_high,
+        th,
+    );
+
     // The selection is a pane, but the rows it sits among include the
     // children listed under each one, so the highlight has to be moved
     // onto the row that pane actually occupies.
@@ -254,15 +296,12 @@ n  add one",
     app.layout.panes = render_column(
         f,
         col(3),
-        if flat { "panes · all" } else { "panes" },
+        panes_title,
         pane_rows,
         app.focus == Focus::Panes,
         selected_row,
         app.layout.panes.first,
-        "nothing running
-
-s  shell
-a  agent",
+        NOTHING_RUNNING,
         rows_high,
         th,
     );
@@ -270,29 +309,62 @@ a  agent",
     render_content(f, app, col(4), th)
 }
 
-/// Widths for the columns this fold still draws. Gutters dragged before
-/// folding are absolute preferences, not fractions, so the survivors keep
-/// them as-is and the slack lands in the live view; with nothing captured
-/// yet the default split is re-dealt over however many columns are left.
+/// What one column would take if it could have what it wants: enough for
+/// its widest row, and for its own title, and never more than a list of
+/// names is worth.
+///
+/// Content-sized rather than a fixed share of the screen, because a column
+/// holding one project and a column holding twelve panes are not the same
+/// size of thing. A share hands the first more room than it can use and
+/// the second less than it needs, and the same screen ends up looking
+/// empty and truncated at once.
+///
+/// Rounded up to [`WIDTH_STEP`] so the answer is stable. Sized to the cell,
+/// a column would twitch every time an agent renamed a pane or changed
+/// what its note says, which is worse than the truncation this is here to
+/// stop; on a step, a row has to grow several cells before anything moves.
+pub(super) fn natural_width(rows: &[Item], title: &str, empty_hint: &str) -> u16 {
+    // An empty column still has something to say, and it is the one thing
+    // in the card the user has to be able to read: a first run whose only
+    // instruction is ellipsized has nowhere to go.
+    let widest = match rows.iter().map(Item::wanted_width).max() {
+        Some(widest) => widest,
+        None => empty_hint
+            .lines()
+            .map(|line| line.chars().count())
+            .max()
+            .unwrap_or(0),
+    };
+    let wanted = widest.max(title.chars().count()) + CARD_CHROME;
+    let stepped = wanted.next_multiple_of(WIDTH_STEP);
+    (stepped as u16).clamp(MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH)
+}
+
+/// Widths for the columns this fold still draws.
+///
+/// Gutters dragged before folding are absolute preferences, not fractions,
+/// so the survivors keep them as-is and the slack lands in the live view;
+/// with nothing dragged, each column asks for what its content needs and
+/// the live view gets everything left over.
 pub(super) fn column_constraints(
     total_width: u16,
     fold: Fold,
     preferred: Option<&[u16]>,
+    natural: &[u16; 4],
 ) -> Vec<Constraint> {
-    let shares: &[u32] = match fold {
-        Fold::None => &[16, 17, 17, 18, 32],
-        Fold::Projects => &[20, 21, 21, 38],
-        Fold::Repositories => &[26, 27, 47],
-    };
-    spine_constraints(total_width, preferred, shares)
+    // The live view asks for its floor and is handed the rest; it is the
+    // one column that can always use more.
+    let mut wanted: Vec<u16> = natural[fold.hidden()..].to_vec();
+    wanted.push(MIN_CONTENT_WIDTH);
+    spine_constraints(total_width, preferred, &wanted)
 }
 
-/// Shares `total_width` out over one column per entry in `shares`, honouring
+/// Shares `total_width` out over one column per entry in `wanted`, honouring
 /// the floors. `preferred` is the full five-column preference the user has
 /// dragged, if any; its tail is taken when the leading columns are folded
 /// away, since those widths are absolute rather than fractions.
-fn spine_constraints(total_width: u16, preferred: Option<&[u16]>, shares: &[u32]) -> Vec<Constraint> {
-    let columns = shares.len();
+fn spine_constraints(total_width: u16, preferred: Option<&[u16]>, wanted: &[u16]) -> Vec<Constraint> {
+    let columns = wanted.len();
     let gutters = GUTTER_COLS * (columns as u16 - 1);
     let available = total_width.saturating_sub(gutters);
     if available == 0 {
@@ -301,10 +373,7 @@ fn spine_constraints(total_width: u16, preferred: Option<&[u16]>, shares: &[u32]
     let (floor, content_floor) = floors(available, columns as u16);
     let mut widths: Vec<u16> = match preferred.filter(|w| w.len() == 5) {
         Some(w) => w[5 - columns..].to_vec(),
-        None => shares
-            .iter()
-            .map(|share| (u32::from(available) * share / 100) as u16)
-            .collect(),
+        None => wanted.to_vec(),
     };
     fit_widths(&mut widths, available, floor, content_floor);
     widths.into_iter().map(Constraint::Length).collect()
@@ -388,10 +457,11 @@ pub(super) fn render_column(
     height: u16,
     th: Theme,
 ) -> Panel {
-    // A nav card breathes on all four sides. The modals keep the tighter
-    // default: their height is chosen for the rows they hold, so a bottom
-    // gutter there costs a row of content rather than a row of blank.
-    let block = panel_block(title, focused, th, area.width).padding(Padding::uniform(1));
+    // Sides only. The border and its title already hold the first row off
+    // the top of the card, so a padding row under them is a blank band
+    // across the whole spine that buys nothing -- and it was costing every
+    // column an item.
+    let block = panel_block(title, focused, th, area.width).padding(Padding::horizontal(1));
     let inner = block.inner(area);
     let mut panel = Panel {
         outer: area,

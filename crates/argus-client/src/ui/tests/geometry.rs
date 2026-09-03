@@ -96,3 +96,80 @@ fn the_thumb_stays_inside_its_card() {
         }
     }
 }
+
+// --- content-sized columns ----------------------------------------------
+
+fn row(name: &str, detail: &str) -> Item<'static> {
+    Item::new(
+        vec![Span::raw("● "), Span::raw(name.to_string())],
+        vec![Span::raw(detail.to_string())],
+    )
+}
+
+#[test]
+fn a_column_asks_for_the_width_its_widest_row_needs() {
+    let narrow = natural_width(&[row("a", "b")], "panes", "");
+    let wide = natural_width(&[row("a-much-longer-pane-name", "b")], "panes", "");
+    assert!(wide > narrow, "{wide} should beat {narrow}");
+    assert!(narrow >= MIN_COLUMN_WIDTH && wide <= MAX_COLUMN_WIDTH);
+}
+
+#[test]
+fn the_detail_line_and_the_title_are_measured_too() {
+    // Both can be the longest thing in the card, and either being cut is
+    // the truncation this exists to stop.
+    let by_detail = natural_width(&[row("a", "twenty-four chars of it!")], "x", "");
+    let by_name = natural_width(&[row("a", "b")], "x", "");
+    assert!(by_detail > by_name);
+
+    let by_title = natural_width(&[row("a", "b")], "projects · some-workspace", "");
+    assert!(by_title > by_name, "a title is not allowed to be ellipsized");
+}
+
+#[test]
+fn an_empty_column_is_sized_by_what_it_says_instead() {
+    // A first run whose only instruction is cut off has nowhere to go.
+    let hint = natural_width(&[], "projects", "no projects yet
+
+n  add one");
+    assert!(hint as usize >= "no projects yet".len() + CARD_CHROME, "{hint}");
+}
+
+#[test]
+fn widths_move_in_steps_so_a_renamed_pane_does_not_shift_the_spine() {
+    // An agent renaming its pane, or changing what its note says, must not
+    // drag every column sideways.
+    let widths: Vec<u16> = ["claude", "claude!", "claude!!", "claude!!!"]
+        .iter()
+        .map(|name| natural_width(&[row(name, "working")], "panes", ""))
+        .collect();
+    assert_eq!(widths[0], widths[1]);
+    assert!(widths.iter().all(|w| w % WIDTH_STEP as u16 == 0));
+}
+
+#[test]
+fn a_column_never_hoards_more_than_a_list_of_names_is_worth() {
+    let huge = natural_width(&[row(&"x".repeat(200), "y")], "panes", "");
+    assert_eq!(huge, MAX_COLUMN_WIDTH, "the live view can always use it better");
+}
+
+#[test]
+fn the_live_view_gets_what_the_nav_columns_did_not_want() {
+    let mut app = app_with_tree();
+    let wide = draw_at(&mut app, 200, 24);
+    let _ = wide;
+    let nav: u16 = [
+        app.layout.projects.outer.width,
+        app.layout.repositories.outer.width,
+        app.layout.checkouts.outer.width,
+        app.layout.panes.outer.width,
+    ]
+    .iter()
+    .sum();
+    assert!(
+        app.layout.content.outer.width > nav,
+        "a wide terminal should go to the pty, not be shared out four ways:          {} vs {nav}",
+        app.layout.content.outer.width
+    );
+}
+

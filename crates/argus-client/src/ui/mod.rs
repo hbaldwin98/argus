@@ -19,6 +19,9 @@
 //!   selected row, which is the path you are on and stays legible.
 //! - **Overflow** is a thumb in the card's right padding cell, so a column
 //!   never scrolls without admitting there is more of it.
+//! - **Width follows content**: a nav column asks for what its widest row
+//!   needs and the live view takes the rest, rather than every column
+//!   taking a fixed share of the screen whatever it holds.
 //! - **Rows are two lines**: what the thing is, then a dimmer line of what
 //!   is true about it. Packing both onto one line is what made the old
 //!   layout feel cramped.
@@ -124,6 +127,19 @@ pub fn spine_min_width(columns: usize) -> u16 {
         + GUTTER_COLS * columns.saturating_sub(1)
 }
 
+/// The borders and the side padding: what a card spends before a row gets
+/// a cell.
+pub const CARD_CHROME: usize = 4;
+
+/// Content-sized column widths are rounded up to this, so a column does not
+/// twitch every time a row grows by a letter.
+pub const WIDTH_STEP: usize = 4;
+
+/// The widest a nav column will ask to be. Past this a list of names is
+/// hoarding width the live view can always use better, and a very long
+/// name is better ellipsized than paid for by every other column.
+pub const MAX_COLUMN_WIDTH: u16 = 34;
+
 /// A dragged column cannot be collapsed beyond this outer width. Below it
 /// a card has no room to say anything: two cells go to the border and two
 /// to the inner gutter, so eight cells of column were four cells of text —
@@ -176,6 +192,19 @@ impl<'a> Item<'a> {
         }
     }
 
+    /// The inner width this row would like: its selection gutter, then
+    /// whichever of its two lines is longer. What a column is measured
+    /// from, so it is asked of the row rather than guessed from the model.
+    fn wanted_width(&self) -> usize {
+        let w = |spans: &[Span]| spans.iter().map(Span::width).sum::<usize>();
+        let badge = if self.badge.is_empty() {
+            0
+        } else {
+            w(&self.badge) + 1
+        };
+        1 + (w(&self.name) + badge).max(self.indent + w(&self.detail))
+    }
+
     fn badged(mut self, badge: Vec<Span<'a>>) -> Self {
         self.badge = badge;
         self
@@ -196,7 +225,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // page and panel is what makes the panels read as cards.
     f.render_widget(Block::default().style(Style::default().bg(th.bg)), f.area());
 
-    let page = inset(f.area(), GUTTER_COLS);
+    let page = inset(f.area(), GUTTER_COLS, 0);
     // A resize is noticed here rather than plumbed in as an event, because
     // here is where the answer is used. Folding only ever tightens: a
     // terminal that has grown wide enough for five columns is not a reason
@@ -209,7 +238,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
         }
     }
 
-    // A blank row above the status bar keeps it off the panel borders.
+    // A blank row above the status bar keeps it off the panel borders; the
+    // bar itself sits on the last row of the terminal, where a status bar
+    // belongs and where it costs the page no margin.
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(2)])

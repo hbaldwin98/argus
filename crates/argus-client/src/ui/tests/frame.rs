@@ -7,7 +7,7 @@ fn a_click_in_a_scrolled_column_selects_the_row_it_landed_on() {
     let mut app = app_with_a_long_checkout_column();
     app.sel_checkout = 7;
     // Tall enough for a few rows, far short of eight.
-    let buf = draw_at(&mut app, 100, 12);
+    let buf = draw_at(&mut app, 100, 10);
     let top = app.layout.checkouts.inner.y;
     let first_drawn = lines(&buf)[top as usize].clone();
 
@@ -27,7 +27,7 @@ fn a_click_in_a_scrolled_column_selects_the_row_it_landed_on() {
 fn a_scrolled_column_does_not_slide_when_the_selection_moves_back_up() {
     let mut app = app_with_a_long_checkout_column();
     app.sel_checkout = 7;
-    let buf = draw_at(&mut app, 100, 12);
+    let buf = draw_at(&mut app, 100, 10);
     let top = app.layout.checkouts.inner.y as usize;
     // Which row that is depends on how many the card can hold, so it is
     // read off the frame rather than named: what matters is that it does
@@ -36,7 +36,7 @@ fn a_scrolled_column_does_not_slide_when_the_selection_moves_back_up() {
     assert!(app.layout.checkouts.first > 0, "the column is scrolled");
 
     app.on_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
-    let buf = draw_at(&mut app, 100, 12);
+    let buf = draw_at(&mut app, 100, 10);
 
     assert_eq!(
         lines(&buf)[top],
@@ -695,8 +695,8 @@ fn only_an_alarm_is_colored_like_one() {
 
     app.report("4 changed vs staged");
     let buf = draw(&mut app);
-    // Status bar is always the second-to-last row (height 20, status bar at row 18).
-    let y = buf.area.height - 2;
+    // The status bar is the last row of the terminal.
+    let y = buf.area.height - 1;
     assert!(
         (0..buf.area.width).all(|x| buf.cell((x, y)).unwrap().fg != th.err),
         "an ordinary report is news, not an alarm"
@@ -704,7 +704,7 @@ fn only_an_alarm_is_colored_like_one() {
 
     app.alert("error: git worktree add failed");
     let buf = draw(&mut app);
-    let y = buf.area.height - 2;
+    let y = buf.area.height - 1;
     assert!(
         (0..buf.area.width).any(|x| buf.cell((x, y)).unwrap().fg == th.err),
         "and an error still has to look like one"

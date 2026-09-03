@@ -168,7 +168,7 @@ fn folded_constraints_cede_the_folded_column_width() {
     // lands in the content column, same as dragging a gutter.
     let total = 100;
     let preferred = Some(vec![12u16, 18, 20, 20, 40]);
-    let c = column_constraints(total, Fold::Projects, preferred.as_deref());
+    let c = column_constraints(total, Fold::Projects, preferred.as_deref(), &[14; 4]);
     match c.as_slice() {
         // The shortfall comes off a nav column, not off the live view.
         [Constraint::Length(18), Constraint::Length(20), Constraint::Length(19), Constraint::Length(40)] =>
@@ -178,16 +178,19 @@ fn folded_constraints_cede_the_folded_column_width() {
 }
 
 #[test]
-fn folded_constraints_default_redeals_over_the_columns_left() {
-    let total = 100;
-    let c = column_constraints(total, Fold::Projects, None);
-    assert_eq!(c.len(), 4);
-    let sum: u16 = c
-        .iter()
-        .map(|c| match c {
-            Constraint::Length(w) => w,
-            _ => panic!("all lengths"),
-        })
-        .sum();
-    assert_eq!(sum + 3, total, "4 columns + 3 gutters = total");
+fn undragged_columns_take_the_width_their_content_asks_for() {
+    // 100 cells, three gutters, three surviving nav columns wanting
+    // 16/20/20 and a live view whose floor is 40: everything fits with 1
+    // to spare, and the spare goes where spare width does the most good.
+    let c = column_constraints(100, Fold::Projects, None, &[24, 16, 20, 20]);
+    assert_eq!(
+        c,
+        vec![
+            Constraint::Length(16),
+            Constraint::Length(20),
+            Constraint::Length(20),
+            Constraint::Length(41),
+        ],
+        "the folded column's want is dropped, not redistributed by share"
+    );
 }

@@ -105,6 +105,15 @@ and wraps back to none; clicking a tab brings that column back. While typing in 
 `Ctrl-Space`, `f` lets its terminal take the main content area; repeating the chord restores the
 columns. The status bar remains visible in both layouts.
 
+A nav column is as wide as what it holds. It asks for its widest row — name line or detail line,
+whichever is longer — and for its own title, floored, capped at what a list of names is worth, and
+rounded up to a step so that renaming a pane or changing a note does not drag the whole spine
+sideways. Everything left over goes to the live view. Fixed percentage shares were the reason the
+same screen managed to look empty and truncated at once: they gave a column holding one project
+more room than it could use and a column holding twelve panes less than it needed, and no width of
+terminal changed the ratio. A dragged gutter still wins over all of this — it is an absolute
+preference, not a share.
+
 The layout answers a small terminal by folding rather than by squeezing. Every nav column has a
 floor, the live view has its own and much larger one, and the width at which a column folds away
 is derived from those floors rather than picked separately, so the two cannot drift: the spine
