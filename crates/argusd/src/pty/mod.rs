@@ -375,6 +375,7 @@ impl PaneRuntime {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn full_snapshot(&self) -> (u16, u16, Vec<Vec<Cell>>, Cursor, MouseTracking, bool) {
         let shape = self.shape.lock().unwrap().shape();
         let parser = self.parser.lock().unwrap();
@@ -447,18 +448,44 @@ impl PaneRuntime {
     /// Used after a resize, since a subscriber's cached grid can only be
     /// grown or shrunk by replacing it wholesale — incremental Damage spans
     /// referencing indices outside its current size are meaningless to it.
+    ///
+    /// Captured and sent under one hold of the parser lock, for the same
+    /// reason [`PaneRuntime::snapshot_and_subscribe`] is atomic. The pump
+    /// holds that lock across producing a frame *and* publishing it, so a
+    /// snapshot taken with the lock released could be overtaken by a Damage
+    /// newer than itself. The subscriber would apply the newer spans to a
+    /// grid that is still the old size — where [`Grid::apply`] silently
+    /// drops everything out of range — and then replace the lot with the
+    /// older snapshot. The pump's `prev` has moved on either way, so those
+    /// cells are never sent again and the pane keeps drawing text that is
+    /// no longer on the screen it came from.
     pub fn broadcast_snapshot(&self, pane: PaneId) {
-        let (rows, cols, cells, cursor, mouse, alternate_screen) = self.full_snapshot();
-        let _ = self.damage_tx.send(ServerMsg::PaneSnapshot {
-            pane,
-            rows,
-            cols,
-            cells,
-            cursor,
-            mouse,
-            alternate_screen,
-        });
+        publish_snapshot(&self.parser, &self.shape, &self.damage_tx, pane);
     }
+}
+
+/// The body of [`PaneRuntime::broadcast_snapshot`], over the handles it
+/// shares with the pump rather than over the runtime itself — which is not
+/// `Sync`, and so cannot be handed to a thread that wants to prove the lock
+/// is held for the whole of it.
+fn publish_snapshot(
+    parser: &Arc<StdMutex<vt100::Parser>>,
+    shape: &Arc<StdMutex<CursorShapeScanner>>,
+    damage_tx: &broadcast::Sender<ServerMsg>,
+    pane: PaneId,
+) {
+    let shape = shape.lock().unwrap().shape();
+    let parser = parser.lock().unwrap();
+    let (rows, cols) = parser.screen().size();
+    let _ = damage_tx.send(ServerMsg::PaneSnapshot {
+        pane,
+        rows,
+        cols,
+        cells: snapshot_grid(&parser),
+        cursor: snapshot_cursor(&parser, shape),
+        mouse: snapshot_mouse(&parser),
+        alternate_screen: parser.screen().alternate_screen(),
+    });
 }
 
 #[cfg(test)]

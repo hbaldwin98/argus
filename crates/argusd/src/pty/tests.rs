@@ -658,6 +658,84 @@ async fn resize_pushes_a_full_snapshot_so_new_area_is_not_left_blank() {
     let _ = pane.kill();
 }
 
+#[test]
+fn a_resize_snapshot_is_never_older_than_the_damage_ahead_of_it() {
+    // Regression: the snapshot used to be captured with the parser lock and
+    // then published without it. The pump holds that lock across producing a
+    // frame *and* publishing it, so a Damage newer than the snapshot could
+    // reach the subscriber first. The subscriber applied those spans to a
+    // grid still at the old size — where out-of-range cells are dropped —
+    // and then replaced everything with the older snapshot, while the pump's
+    // `prev` had already moved past them. The cells were never sent again,
+    // and the pane went on drawing text that had left the screen.
+    //
+    // Stated as the property that inversion breaks: whatever order the two
+    // land in, a snapshot published *after* a Damage must already contain
+    // what that Damage carried. Only holding the lock across both halves of
+    // the publish can promise that.
+    //
+    // No pty here. These are the three handles the publish works over, and
+    // driving them directly is what makes a trial cheap enough to repeat
+    // until the interleaving that used to break shows up.
+    let parser = Arc::new(StdMutex::new(vt100::Parser::new(24, 80, 0)));
+    let shape = Arc::new(StdMutex::new(CursorShapeScanner::default()));
+    let (tx, _keep) = broadcast::channel(64);
+
+    for trial in 0..1_000 {
+        parser.lock().unwrap().process(b"[2J[H");
+        let mut rx = tx.subscribe();
+
+        let held = parser.lock().unwrap();
+        std::thread::scope(|scope| {
+            let publisher = {
+                let (parser, shape, tx) = (parser.clone(), shape.clone(), tx.clone());
+                scope.spawn(move || publish_snapshot(&parser, &shape, &tx, PaneId(61)))
+            };
+            // The pump, as far as this matters: it changes the screen and
+            // announces the change without ever letting go of the parser.
+            let pump = {
+                let (parser, tx) = (parser.clone(), tx.clone());
+                scope.spawn(move || {
+                    let mut parser = parser.lock().unwrap();
+                    parser.process(b"ZZZ");
+                    let _ = tx.send(ServerMsg::Damage {
+                        pane: PaneId(61),
+                        spans: Vec::new(),
+                        cursor: snapshot_cursor(&parser, CursorShape::Default),
+                        mouse: snapshot_mouse(&parser),
+                        alternate_screen: false,
+                    });
+                })
+            };
+            // Both are now contending for it, so releasing starts the race.
+            drop(held);
+            publisher.join().unwrap();
+            pump.join().unwrap();
+        });
+
+        let sent: Vec<ServerMsg> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        let damage_at = sent
+            .iter()
+            .position(|m| matches!(m, ServerMsg::Damage { .. }));
+        let snapshot = sent
+            .iter()
+            .enumerate()
+            .find_map(|(i, m)| match m {
+                ServerMsg::PaneSnapshot { cells, .. } => Some((i, cells)),
+                _ => None,
+            })
+            .expect("the snapshot should be published");
+
+        if damage_at < Some(snapshot.0) {
+            let top: String = snapshot.1[0].iter().map(|c| c.ch.as_str()).collect();
+            assert!(
+                top.starts_with("ZZZ"),
+                "trial {trial}: a snapshot published behind a Damage did not contain it, so the pane keeps drawing text that has left the screen"
+            );
+        }
+    }
+}
+
 #[tokio::test]
 async fn a_pane_runs_in_the_checkouts_directory() {
     let dir = tempfile::tempdir().unwrap();
