@@ -7,6 +7,13 @@ use super::*;
 /// right. Context-sensitive, because the same key means different things
 /// inside a pane and in the nav columns.
 ///
+/// Every keymap is given as tiers, longest first, and the widest one that
+/// fits is what gets drawn. A single string would be cut mid-word on a
+/// narrow terminal -- "j/k move  l open  b branch  B all  F fe" -- which
+/// spends the same row on strictly less. Which keys to drop is a judgement
+/// about what is worth knowing, so it is made here rather than left to
+/// whichever character the width happens to land on.
+///
 /// The left half is the breadcrumb's seat, on loan to whatever the last
 /// action reported. `App::on_key` hands it back on the next keypress, so a
 /// report is read once and then gets out of the way.
@@ -18,32 +25,57 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         ..area
     };
 
-    let (hint, tone) = if let Some(p) = &app.picker {
+    let (hints, tone) = if let Some(p) = &app.picker {
         // What Enter does differs per picker, and "spawn" on the theme list
         // would be a small lie.
-        let hint = match p.kind {
-            PickerKind::Agent => "j/k move   enter spawn   esc cancel",
-            PickerKind::Workspace { .. } => {
-                "type to filter or name a new one   ↑/↓ move   enter open   esc cancel"
+        let hints: &[&str] = match p.kind {
+            PickerKind::Agent => &["j/k move   enter spawn   esc cancel", "enter spawn  esc"],
+            PickerKind::Workspace { .. } => &[
+                "type to filter or name a new one   ↑/↓ move   enter open   esc cancel",
+                "type to filter   ↑/↓ move   enter open   esc cancel",
+                "enter open  esc",
+            ],
+            PickerKind::Theme => &["j/k move   enter apply   esc cancel", "enter apply  esc"],
+            PickerKind::Branch { .. } => &[
+                "type to filter   ↑/↓ move   enter switch   esc cancel",
+                "enter switch  esc",
+            ],
+            PickerKind::File { .. } => &[
+                "type to filter   ↑/↓ move   enter open   esc cancel",
+                "enter open  esc",
+            ],
+            PickerKind::Change => &[
+                "type to filter   ↑/↓ move   enter jump   esc cancel",
+                "enter jump  esc",
+            ],
+            PickerKind::ReviewRecipient { .. } => {
+                &["j/k move   enter send   esc cancel", "enter send  esc"]
             }
-            PickerKind::Theme => "j/k move   enter apply   esc cancel",
-            PickerKind::Branch { .. } => "type to filter   ↑/↓ move   enter switch   esc cancel",
-            PickerKind::File { .. } => "type to filter   ↑/↓ move   enter open   esc cancel",
-            PickerKind::Change => "type to filter   ↑/↓ move   enter jump   esc cancel",
-            PickerKind::ReviewRecipient { .. } => "j/k move   enter send   esc cancel",
         };
-        (hint, th.dim)
+        (hints, th.dim)
     } else if app.prompt.is_some() {
-        ("type to edit   enter confirm   esc cancel", th.dim)
+        (
+            &["type to edit   enter confirm   esc cancel", "enter confirm  esc"][..],
+            th.dim,
+        )
     } else if app.leader_pending {
-        let hint = if app.pane_fullscreen {
-            "leader…   esc back   f restore   N attention   x close"
+        let hints: &[&str] = if app.pane_fullscreen {
+            &[
+                "leader…   esc back   f restore   N attention   x close",
+                "leader…  esc  f restore  N  x close",
+            ]
         } else {
-            "leader…   esc back   f fullscreen   N attention   x close"
+            &[
+                "leader…   esc back   f fullscreen   N attention   x close",
+                "leader…  esc  f full  N  x close",
+            ]
         };
-        (hint, th.accent)
+        (hints, th.accent)
     } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
-        ("j/k move   h/l change   esc close", th.dim)
+        (
+            &["j/k move   h/l change   esc close", "h/l change  esc"][..],
+            th.dim,
+        )
     } else if matches!(app.overlay, Some(Overlay::Review)) {
         // A commit reached from the history overlay goes back to it rather
         // than flipping a side that means nothing there. `s` names where it
@@ -53,39 +85,54 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             .as_ref()
             .is_some_and(|v| v.review.commit.is_some())
             && app.history.is_some();
-        let hint = match (from_history, app.review_split) {
-            (true, false) => {
-                "j/k  ]/[ file  f jump  c comment  e edit  s split  h history  esc close"
-            }
-            (true, true) => {
-                "j/k  ]/[ file  f jump  c comment  e edit  s unified  h history  esc close"
-            }
-            (false, false) => {
-                "j/k  ]/[ file  f jump  c comment  e edit  s split  b staged/unstaged  esc close"
-            }
-            (false, true) => {
-                "j/k  ]/[ file  f jump  c comment  e edit  s unified  b staged/unstaged  esc close"
-            }
+        let split = if app.review_split { "s unified" } else { "s split" };
+        let base = if from_history {
+            "h history"
+        } else {
+            "b staged/unstaged"
         };
-        (hint, th.dim)
+        // Built rather than matched out: the two switches are independent,
+        // and four spelled-out combinations times three tiers is twelve
+        // strings nobody could keep in step.
+        let hints: [String; 3] = [
+            format!("j/k  ]/[ file  f jump  c comment  e edit  {split}  {base}  esc close"),
+            format!("j/k  ]/[ file  c comment  {split}  {base}  esc"),
+            format!("]/[ file  c comment  {split}  esc"),
+        ];
+        return draw_bar(f, app, area, &hints, th.dim, th);
     } else if matches!(app.overlay, Some(Overlay::History)) {
         (
-            "j/k  ]/[ commit  l files/open  h fold  r refresh  R review  esc close",
+            &[
+                "j/k  ]/[ commit  l files/open  h fold  r refresh  R review  esc close",
+                "]/[ commit  l open  h fold  R review  esc",
+                "]/[ commit  R review  esc",
+            ][..],
             th.dim,
         )
     } else if matches!(app.overlay, Some(Overlay::Notes)) {
         // The two modes have almost no keys in common, so the bar shows
         // the one you are actually in.
         match app.notes.as_ref().map(|v| v.mode) {
-            Some(NoteMode::Insert) => ("typing — esc to stop and save", th.accent),
+            Some(NoteMode::Insert) => (
+                &["typing — esc to stop and save", "esc saves"][..],
+                th.accent,
+            ),
             _ => (
-                "j/k move  0/$ line  space tick  i insert  o new line  q close",
+                &[
+                    "j/k move  0/$ line  space tick  i insert  o new line  q close",
+                    "j/k  space tick  i insert  o new line  q close",
+                    "space tick  i insert  q close",
+                ][..],
                 th.dim,
             ),
         }
     } else if app.overlay.is_some() {
         (
-            "floating — ctrl-space then esc to close, x to kill   ctrl-v paste",
+            &[
+                "floating — ctrl-space then esc to close, x to kill   ctrl-v paste",
+                "floating — ctrl-space then esc, x to kill",
+                "ctrl-space esc",
+            ][..],
             th.dim,
         )
     } else if app.focus == Focus::PaneContent {
@@ -93,38 +140,77 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         // so the way back to the live screen outranks the usual keymap.
         if app.scroll_indicator().is_some() {
             (
-                "scrolled back   shift-pgup/pgdn move   type or scroll down to return",
+                &[
+                    "scrolled back   shift-pgup/pgdn move   type or scroll down to return",
+                    "scrolled back   type or scroll down to return",
+                    "scrolled back — type to return",
+                ][..],
                 th.accent,
             )
         } else if app.pane_fullscreen {
             (
-                "typing   ctrl-space: esc leave  f restore  x close   shift-pgup scroll",
+                &[
+                    "typing   ctrl-space: esc leave  f restore  x close   shift-pgup scroll",
+                    "typing   ctrl-space: esc leave  f restore  x close",
+                    "typing   ctrl-space esc",
+                ][..],
                 th.dim,
             )
         } else {
             (
-                "typing   ctrl-space: esc leave  f fullscreen  x close   shift-pgup scroll",
+                &[
+                    "typing   ctrl-space: esc leave  f fullscreen  x close   shift-pgup scroll",
+                    "typing   ctrl-space: esc leave  f full  x close",
+                    "typing   ctrl-space esc",
+                ][..],
                 th.dim,
             )
         }
     } else {
         // Per column rather than one list of everything: the bar cannot
         // hold every key at once, and most of them only apply somewhere.
-        let keys = match app.focus {
-            Focus::Projects => {
-                "j/k  l open  N needs  n add  D rm  w wksp  p fold  S settings  q detach"
-            }
-            Focus::Repositories => {
-                "j/k move  l open  N attention  s shell  a agent  b branch  f file  n add  i init  D rm  q detach"
-            }
-            Focus::Checkouts => {
-                "j/k move  l open  b branch  B all  F fetch  P pull  f file  R review  H history  n worktree  D rm  q detach"
-            }
-            _ => "j/k move  l open  v panes  N attention  s shell  a agent  b branch  f file  R review  H history  x close  q detach",
+        let keys: &[&str] = match app.focus {
+            Focus::Projects => &[
+                "j/k  l open  N needs  n add  D rm  w wksp  p fold  S settings  q detach",
+                "j/k  l open  n add  D rm  w wksp  p fold  S settings",
+                "l open  n add  p fold  S settings",
+            ],
+            Focus::Repositories => &[
+                "j/k move  l open  N attention  s shell  a agent  b branch  f file  n add  i init  D rm  q detach",
+                "j/k  l open  s shell  a agent  b branch  f file  n add  D rm",
+                "l open  s shell  a agent  n add",
+            ],
+            Focus::Checkouts => &[
+                "j/k move  l open  b branch  B all  F fetch  P pull  f file  R review  H history  n worktree  D rm  q detach",
+                "j/k  l open  b branch  F fetch  P pull  R review  H history  n worktree",
+                "l open  b branch  R review  H history",
+            ],
+            _ => &[
+                "j/k move  l open  v panes  N attention  s shell  a agent  b branch  f file  R review  H history  x close  q detach",
+                "j/k  l open  v panes  s shell  a agent  R review  H history  x close",
+                "l open  s shell  a agent  R review  x close",
+            ],
         };
         (keys, th.dim)
     };
 
+    draw_bar(f, app, area, hints, tone, th);
+}
+
+/// Lays the chosen tiers out against the space there is.
+///
+/// The keymap is what the user acts on, so it wins: the widest tier that
+/// still leaves the breadcrumb a real gap is preferred, and failing that
+/// the breadcrumb is dropped and the widest tier that fits on its own is
+/// drawn. Only when none of them fits does the bar give up on the keys.
+fn draw_bar<S: AsRef<str>>(
+    f: &mut Frame,
+    app: &App,
+    area: Rect,
+    hints: &[S],
+    tone: Color,
+    th: Theme,
+) {
     // An alert is the one thing on this bar the user *must* read, so it
     // outranks the keymap for space. An ordinary report is news rather than
     // an alarm: brighter than the breadcrumb it stands in for, but it yields
@@ -139,27 +225,28 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         )
     };
 
-    let hint_span = Span::styled(hint, Style::default().fg(tone));
-
-    // The keymap is what the user acts on, so it wins the space. If the
-    // breadcrumb can't fit beside it with a real gap, drop the breadcrumb
-    // rather than letting the two run together and truncate the keys.
-    let hint_len = hint_span.content.chars().count();
     let left_len = left.content.chars().count();
     let width = area.width as usize;
+    let len = |hint: &S| hint.as_ref().chars().count();
+    let beside = hints.iter().find(|h| left_len + len(h) + 3 <= width);
+    let alone = || hints.iter().find(|h| len(h) + 2 <= width);
 
     let mut spans = vec![Span::raw(" ")];
-    if left_len + hint_len + 3 <= width {
-        spans.push(left);
-        spans.push(Span::raw(" ".repeat(width - left_len - hint_len - 2)));
-        spans.push(hint_span);
-    } else if alert {
+    match (beside, alert) {
+        (Some(hint), _) => {
+            spans.push(left);
+            spans.push(Span::raw(" ".repeat(width - left_len - len(hint) - 2)));
+            spans.push(Span::styled(hint.as_ref().to_string(), Style::default().fg(tone)));
+        }
         // Not enough room for both: the alert stays, the keymap goes. The
         // keys are discoverable elsewhere; a swallowed error is not.
-        spans.push(left);
-    } else {
-        spans.push(Span::raw(" ".repeat(width.saturating_sub(hint_len + 2))));
-        spans.push(hint_span);
+        (None, true) => spans.push(left),
+        (None, false) => {
+            if let Some(hint) = alone() {
+                spans.push(Span::raw(" ".repeat(width.saturating_sub(len(hint) + 2))));
+                spans.push(Span::styled(hint.as_ref().to_string(), Style::default().fg(tone)));
+            }
+        }
     }
 
     f.render_widget(Paragraph::new(Line::from(spans)), area);

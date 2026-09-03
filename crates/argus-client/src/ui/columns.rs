@@ -47,30 +47,43 @@ pub(super) fn rollup_item<'a>(
     }
 }
 
-/// Draws the normal five-column spine. The projects column may be folded
-/// away to a tab in the left gutter, in which case its width is ceded to
-/// the other four.
+/// Draws the spine. Its leading columns may be folded away to tabs in the
+/// left gutter, in which case their width is ceded to the ones that remain.
 pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option<CursorPlacement> {
     let th = app.theme;
-    let collapsed = app.projects_collapsed;
-    let constraints = if collapsed {
-        collapsed_projects_constraints(area.width, app.column_widths.as_deref())
-    } else {
-        column_constraints(area.width, app.column_widths.as_deref())
-    };
+    let fold = app.fold;
+    let hidden = fold.hidden();
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .spacing(GUTTER_COLS)
-        .constraints(constraints)
+        .constraints(column_constraints(
+            area.width,
+            fold,
+            app.column_widths.as_deref(),
+        ))
         .split(area);
 
-    // When projects is folded away there is no leading card, so the
-    // remaining four occupy `cols[0..4]`. `col(i)` is the expanded index.
-    let col = |i: usize| cols[if collapsed { i - 1 } else { i }];
+    // Folded columns draw no card, so the survivors occupy `cols[0..]`.
+    // `col(i)` is the expanded index, the one the code below thinks in.
+    let col = |i: usize| cols[i - hidden];
 
-    app.layout.projects = if collapsed {
-        render_collapsed_projects(f, area, th)
-    } else {
+    // A row is two lines where the card can afford it, and one where the
+    // detail line would cost an item. Every column shares the height, and
+    // hit-testing needs the answer, so it is decided once here.
+    let rows_high = row_height(area.height.saturating_sub(3));
+    app.layout.row_height = rows_high;
+
+    // Where each card was scrolled to last frame, read before the tabs
+    // overwrite the panels a folded column leaves behind.
+    let (projects_first, repositories_first) = (
+        app.layout.projects.first,
+        app.layout.repositories.first,
+    );
+    let tabs = render_fold_tabs(f, area, fold, th);
+    app.layout.projects = tabs[0];
+    app.layout.repositories = tabs[1];
+
+    if !fold.hides(Focus::Projects) {
         let project_rows: Vec<Item> = app
             .tree
             .iter()
@@ -95,56 +108,60 @@ pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option
         } else {
             format!("projects · {}", app.open_workspace)
         };
-        render_column(
+        app.layout.projects = render_column(
             f,
             col(0),
             &projects_title,
             project_rows,
             app.focus == Focus::Projects,
             (!app.tree.is_empty()).then_some(app.sel_project),
-            app.layout.projects.first,
+            projects_first,
             "no projects yet
 
 n  add one",
+            rows_high,
             th,
-        )
-    };
+        );
+    }
 
-    let repository_rows: Vec<Item> = app
-        .current_project()
-        .map(|p| {
-            p.repositories
-                .iter()
-                .map(|r| {
-                    rollup_item(
-                        &r.name,
-                        plural(r.checkouts.len(), "checkout"),
-                        r.checkouts.iter(),
-                        r.note_rollup(),
-                        false,
-                        th,
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let nrepo = app
-        .current_project()
-        .map(|p| p.repositories.len())
-        .unwrap_or(0);
-    app.layout.repositories = render_column(
-        f,
-        col(1),
-        "repositories",
-        repository_rows,
-        app.focus == Focus::Repositories,
-        (nrepo > 0).then_some(app.sel_repository),
-        app.layout.repositories.first,
-        "no repositories
+    if !fold.hides(Focus::Repositories) {
+        let repository_rows: Vec<Item> = app
+            .current_project()
+            .map(|p| {
+                p.repositories
+                    .iter()
+                    .map(|r| {
+                        rollup_item(
+                            &r.name,
+                            plural(r.checkouts.len(), "checkout"),
+                            r.checkouts.iter(),
+                            r.note_rollup(),
+                            false,
+                            th,
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let nrepo = app
+            .current_project()
+            .map(|p| p.repositories.len())
+            .unwrap_or(0);
+        app.layout.repositories = render_column(
+            f,
+            col(1),
+            "repositories",
+            repository_rows,
+            app.focus == Focus::Repositories,
+            (nrepo > 0).then_some(app.sel_repository),
+            repositories_first,
+            "no repositories
 
 n  add one",
-        th,
-    );
+            rows_high,
+            th,
+        );
+    }
 
     // The column's order is the app's, not either list's: the main branch
     // leads it whether it has a directory or not.
@@ -171,6 +188,7 @@ n  add one",
         (ncheck > 0).then_some(app.sel_checkout),
         app.layout.checkouts.first,
         "no checkouts",
+        rows_high,
         th,
     );
 
@@ -245,80 +263,113 @@ n  add one",
 
 s  shell
 a  agent",
+        rows_high,
         th,
     );
 
     render_content(f, app, col(4), th)
 }
 
-pub(super) fn column_constraints(total_width: u16, preferred: Option<&[u16]>) -> Vec<Constraint> {
-    let Some(mut widths) = preferred
-        .filter(|widths| widths.len() == 5)
-        .map(<[u16]>::to_vec)
-    else {
-        return vec![
-            Constraint::Percentage(16),
-            Constraint::Percentage(17),
-            Constraint::Percentage(17),
-            Constraint::Percentage(18),
-            Constraint::Percentage(32),
-        ];
+/// Widths for the columns this fold still draws. Gutters dragged before
+/// folding are absolute preferences, not fractions, so the survivors keep
+/// them as-is and the slack lands in the live view; with nothing captured
+/// yet the default split is re-dealt over however many columns are left.
+pub(super) fn column_constraints(
+    total_width: u16,
+    fold: Fold,
+    preferred: Option<&[u16]>,
+) -> Vec<Constraint> {
+    let shares: &[u32] = match fold {
+        Fold::None => &[16, 17, 17, 18, 32],
+        Fold::Projects => &[20, 21, 21, 38],
+        Fold::Repositories => &[26, 27, 47],
     };
+    spine_constraints(total_width, preferred, shares)
+}
 
-    let available = total_width.saturating_sub(GUTTER_COLS * 4);
+/// Shares `total_width` out over one column per entry in `shares`, honouring
+/// the floors. `preferred` is the full five-column preference the user has
+/// dragged, if any; its tail is taken when the leading columns are folded
+/// away, since those widths are absolute rather than fractions.
+fn spine_constraints(total_width: u16, preferred: Option<&[u16]>, shares: &[u32]) -> Vec<Constraint> {
+    let columns = shares.len();
+    let gutters = GUTTER_COLS * (columns as u16 - 1);
+    let available = total_width.saturating_sub(gutters);
     if available == 0 {
-        return vec![Constraint::Length(0); 5];
+        return vec![Constraint::Length(0); columns];
     }
-    let floor = MIN_COLUMN_WIDTH.min(available / 5).max(1);
-    fit_widths(&mut widths, available, floor);
+    let (floor, content_floor) = floors(available, columns as u16);
+    let mut widths: Vec<u16> = match preferred.filter(|w| w.len() == 5) {
+        Some(w) => w[5 - columns..].to_vec(),
+        None => shares
+            .iter()
+            .map(|share| (u32::from(available) * share / 100) as u16)
+            .collect(),
+    };
+    fit_widths(&mut widths, available, floor, content_floor);
     widths.into_iter().map(Constraint::Length).collect()
 }
 
-/// The collapsed layout: no projects card, its width passing to the other
-/// four columns. Gutters dragged before collapsing are absolute preferences,
-/// not fractions, so the four survivors keep them as-is and the slack lands
-/// in the live view; with nothing captured yet the default split is re-dealt
-/// over four columns instead of five.
-pub(super) fn collapsed_projects_constraints(total_width: u16, preferred: Option<&[u16]>) -> Vec<Constraint> {
-    let available = total_width.saturating_sub(GUTTER_COLS * 3);
-    if available == 0 {
-        return vec![Constraint::Length(0); 4];
+/// The floors this many columns can actually be held to in `available`
+/// cells. They are the real floors whenever the spine fits; on a terminal
+/// too narrow even for that they scale down together, because a column
+/// that has shrunk past legibility still beats one that is not drawn.
+pub(super) fn floors(available: u16, columns: u16) -> (u16, u16) {
+    let nav = columns.saturating_sub(1);
+    let wanted = nav * MIN_COLUMN_WIDTH + MIN_CONTENT_WIDTH;
+    if available >= wanted || wanted == 0 {
+        return (MIN_COLUMN_WIDTH, MIN_CONTENT_WIDTH);
     }
-    let floor = MIN_COLUMN_WIDTH.min(available / 4).max(1);
-    let mut widths: Vec<u16> = match preferred.filter(|widths| widths.len() == 5) {
-        Some(widths) => widths[1..].to_vec(),
-        None => [20u32, 21, 21, 38]
-            .iter()
-            .map(|share| (u32::from(available) * share / 100).max(u32::from(floor)) as u16)
-            .collect(),
+    let scale = |n: u16| {
+        ((u32::from(n) * u32::from(available)) / u32::from(wanted)).max(1) as u16
     };
-    fit_widths(&mut widths, available, floor);
-    widths.into_iter().map(Constraint::Length).collect()
+    (scale(MIN_COLUMN_WIDTH), scale(MIN_CONTENT_WIDTH))
 }
 
 /// Reconciles preferred widths with what is actually available: nothing
-/// below the floor, any shortfall reclaimed from the right, any spare
-/// handed to the last column (the live view, where spare width does the
-/// most good).
-pub(super) fn fit_widths(widths: &mut [u16], available: u16, floor: u16) {
-    for width in widths.iter_mut() {
-        *width = (*width).max(floor);
+/// below its floor, any spare handed to the last column (the live view,
+/// where spare width does the most good).
+///
+/// Any shortfall is reclaimed from the nav columns first, rightmost first,
+/// and only from the live view once they are all at their floor. Taking it
+/// from the right unconditionally — which is the cheap way to write this —
+/// means the pty is the first thing crushed on a narrow terminal, which is
+/// backwards: a squeezed list is still a list, and a squeezed terminal is
+/// a program that has stopped drawing.
+pub(super) fn fit_widths(widths: &mut [u16], available: u16, floor: u16, content_floor: u16) {
+    let last = widths.len().saturating_sub(1);
+    let floor_of = |i: usize| if i == last { content_floor } else { floor };
+    for (i, width) in widths.iter_mut().enumerate() {
+        *width = (*width).max(floor_of(i));
     }
     let mut sum: u32 = widths.iter().map(|w| u32::from(*w)).sum();
     let available = u32::from(available);
     if sum < available {
-        if let Some(last) = widths.last_mut() {
-            *last = last.saturating_add((available - sum) as u16);
+        if let Some(width) = widths.last_mut() {
+            *width = width.saturating_add((available - sum) as u16);
         }
-    } else {
-        for width in widths.iter_mut().rev() {
-            if sum <= available {
-                break;
-            }
-            let take = (sum - available).min(u32::from(width.saturating_sub(floor)));
-            *width -= take as u16;
-            sum -= take;
+        return;
+    }
+    // Nav columns, rightmost first, then the live view.
+    let order = (0..last).rev().chain(std::iter::once(last));
+    for i in order {
+        if sum <= available {
+            return;
         }
+        let take = (sum - available).min(u32::from(widths[i].saturating_sub(floor_of(i))));
+        widths[i] -= take as u16;
+        sum -= take;
+    }
+    // Every column is at a floor and they still do not fit, which only
+    // happens when `floors` itself had to round up off a tiny terminal.
+    // Give away the remainder one cell at a time rather than letting the
+    // last column overrun the screen and be clipped.
+    while sum > available {
+        let Some(i) = (0..widths.len()).rev().find(|i| widths[*i] > 1) else {
+            break;
+        };
+        widths[i] -= 1;
+        sum -= 1;
     }
 }
 
@@ -334,6 +385,7 @@ pub(super) fn render_column(
     selected: Option<usize>,
     scrolled_to: usize,
     empty_hint: &str,
+    height: u16,
     th: Theme,
 ) -> Panel {
     let block = panel_block(title, focused, th, area.width);
@@ -358,12 +410,12 @@ pub(super) fn render_column(
     }
 
     // Scroll the window so the selection stays on screen in a long list.
-    let visible = (inner.height / ROW_HEIGHT) as usize;
+    let visible = (inner.height / height.max(1)) as usize;
     let first = scrolled_to_show(scrolled_to, selected, visible, rows.len());
     panel.first = first;
 
     for (i, item) in rows.into_iter().enumerate().skip(first).take(visible) {
-        let Some(row) = row_rect(inner, i - first) else {
+        let Some(row) = row_rect_of(inner, i - first, height) else {
             break;
         };
         render_row(f, row, item, selected == Some(i), focused, th);
@@ -401,14 +453,18 @@ pub(super) fn scrolled_to_show(
     first
 }
 
-/// The projects column folded away: a disclosure mark in the page's left
-/// gutter, sitting beside the first remaining card's top border. The rest
-/// of that gutter is empty page, so nothing reads as a second column —
-/// clicking it (or `p`) brings the column back. Losing the project name is
-/// fine because the breadcrumb still carries it.
-pub(super) fn render_collapsed_projects(f: &mut Frame, columns: Rect, th: Theme) -> Panel {
+/// The folded-away columns: a disclosure mark each in the page's left
+/// gutter, stacked beside the first remaining card's top border. The rest
+/// of that gutter is empty page, so nothing reads as a narrow column —
+/// clicking a mark (or `p`) brings a column back. Losing the names is fine
+/// because the live view's title still carries the whole path.
+///
+/// Returns a panel per leading column, in tree order, so a click lands on
+/// something whether or not that column drew a card this frame.
+pub(super) fn render_fold_tabs(f: &mut Frame, columns: Rect, fold: Fold, th: Theme) -> [Panel; 2] {
+    let mut panels = [Panel::default(); 2];
     let Some(x) = columns.x.checked_sub(GUTTER_COLS) else {
-        return Panel::default();
+        return panels;
     };
     let gutter = Rect {
         x,
@@ -416,30 +472,39 @@ pub(super) fn render_collapsed_projects(f: &mut Frame, columns: Rect, th: Theme)
         width: GUTTER_COLS,
         height: columns.height,
     };
-    let chip = Rect {
-        x,
-        y: columns.y,
-        width: 1,
-        height: 1,
-    };
-    f.render_widget(
-        Paragraph::new(Span::styled(
-            COLLAPSED_TAB,
-            Style::default().fg(th.accent).bg(th.surface),
-        )),
-        chip,
-    );
-    Panel {
-        outer: gutter,
-        inner: chip,
-        first: 0,
+    for (i, panel) in panels.iter_mut().enumerate().take(fold.hidden()) {
+        let chip = Rect {
+            x,
+            y: columns.y.saturating_add(i as u16),
+            width: 1,
+            height: 1,
+        };
+        if chip.y >= columns.y.saturating_add(columns.height) {
+            break;
+        }
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                COLLAPSED_TAB,
+                Style::default().fg(th.accent).bg(th.surface),
+            )),
+            chip,
+        );
+        // The whole gutter is the click target; the mark is only where it
+        // is drawn. One cell is too small to ask anyone to hit.
+        *panel = Panel {
+            outer: gutter,
+            inner: chip,
+            first: 0,
+        };
     }
+    panels
 }
 
-/// A two-line item: name, then detail. The selection is a raised bar over
-/// both lines with an accent marker pinning the first; unselected rows get
-/// a blank gutter so text lines up either way. `dim` spans would sink into
-/// the selection fill, so they are lifted to `muted` there.
+/// An item: name, then — when the card is tall enough to afford it — a
+/// detail line. The selection is a raised bar over the whole row with an
+/// accent marker pinning the first line; unselected rows get a blank
+/// gutter so text lines up either way. `dim` spans would sink into the
+/// selection fill, so they are lifted to `muted` there.
 pub(super) fn render_row(f: &mut Frame, area: Rect, item: Item, selected: bool, focused: bool, th: Theme) {
     let bar = match (selected, focused) {
         (true, true) => Style::default().bg(th.sel_bg),
@@ -468,25 +533,41 @@ pub(super) fn render_row(f: &mut Frame, area: Rect, item: Item, selected: bool, 
     let mut name = vec![marker];
     name.extend(lift(item.name, bar, selected, th));
 
+    let width = area.width as usize;
     let badge = lift(item.badge, bar, selected, th);
-    if !badge.is_empty() {
-        let used: usize = name.iter().chain(badge.iter()).map(Span::width).sum();
-        // One trailing column of air, and nothing at all if it won't fit.
-        if let Some(pad) = (area.width as usize).checked_sub(used + 1) {
-            name.push(Span::styled(" ".repeat(pad), bar));
-            name.extend(badge);
+    let name = if badge.is_empty() {
+        ellipsize_spans(name, width)
+    } else {
+        // The badge is a count, and a count survives truncation better than
+        // the tail of a name does: "argus-cl…" with a `4 ▣` beside it says
+        // more than the two extra letters would. So the badge is reserved
+        // for first and the name ellipsized around it — unless doing that
+        // would leave the name too short to identify anything, in which
+        // case the badge is the part that goes.
+        let badge_width: usize = badge.iter().map(Span::width).sum();
+        match width
+            .checked_sub(badge_width + 1)
+            .filter(|room| *room >= NAME_FLOOR)
+        {
+            Some(room) => {
+                let mut name = ellipsize_spans(name, room);
+                let used: usize = name.iter().map(Span::width).sum();
+                name.push(Span::styled(" ".repeat(width - used - badge_width), bar));
+                name.extend(badge);
+                name
+            }
+            None => ellipsize_spans(name, width),
         }
+    };
+
+    let mut lines = vec![Line::from(name)];
+    if area.height >= ROW_HEIGHT {
+        let mut detail = vec![Span::styled(GUTTER, bar), Span::styled("  ", bar)];
+        detail.extend(lift(item.detail, bar, selected, th));
+        lines.push(Line::from(ellipsize_spans(detail, width)));
     }
-    let mut detail = vec![Span::styled(GUTTER, bar), Span::styled("  ", bar)];
-    detail.extend(lift(item.detail, bar, selected, th));
 
-    let name = ellipsize_spans(name, area.width as usize);
-    let detail = ellipsize_spans(detail, area.width as usize);
-
-    f.render_widget(
-        Paragraph::new(vec![Line::from(name), Line::from(detail)]).style(bar),
-        area,
-    );
+    f.render_widget(Paragraph::new(lines).style(bar), area);
 }
 
 /// A padded card. Focus has to be unmissable at a glance, so the focused
@@ -520,10 +601,6 @@ pub(super) fn panel_block(title: &str, focused: bool, th: Theme, width: u16) -> 
             ),
             label,
         ))
-}
-
-pub(super) fn row_rect(inner: Rect, i: usize) -> Option<Rect> {
-    row_rect_of(inner, i, ROW_HEIGHT)
 }
 
 pub(super) fn row_rect_of(inner: Rect, i: usize, height: u16) -> Option<Rect> {

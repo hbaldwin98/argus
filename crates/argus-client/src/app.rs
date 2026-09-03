@@ -30,7 +30,7 @@ use crate::notes::{NoteMode, NoteView};
 use crate::review::ReviewView;
 use crate::theme::Theme;
 
-pub use layout::{Focus, Layout, Panel};
+pub use layout::{Focus, Fold, Layout, Panel};
 pub use modal::{Overlay, Picker, PickerKind, Prompt, RemoveTarget, Setting};
 pub use rows::{CheckoutAnchor, CheckoutRow, PaneLocation};
 use layout::{in_rect, row_in};
@@ -167,7 +167,7 @@ pub struct App {
     pub column_widths: Option<Vec<u16>>,
     /// True when the projects column is folded away to a left-edge tab.
     /// Stored both here (for the renderer) and on `settings` (so it persists).
-    pub projects_collapsed: bool,
+    pub fold: Fold,
     /// True while the checkouts column also lists the branches nothing is
     /// sitting on. Off by default — the column is for what is running, and
     /// the main branch is pinned to the top of it either way.
@@ -264,7 +264,7 @@ impl App {
             open_workspace: String::new(),
             // A remembered folded-away tab is not a focus target, so a
             // restart from that state lands a column further in.
-            focus: if settings.projects_collapsed {
+            focus: if settings.fold().hides(Focus::Projects) {
                 Focus::Repositories
             } else {
                 Focus::Projects
@@ -284,7 +284,7 @@ impl App {
             status_alert: false,
             layout: Layout::default(),
             column_widths,
-            projects_collapsed: settings.projects_collapsed,
+            fold: settings.fold(),
             show_branches: false,
             resizing_gutter: None,
             picker: None,

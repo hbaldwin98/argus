@@ -26,11 +26,8 @@ impl App {
         // Clicking the folded-away tab is the mouse equivalent of `p`: it
         // expands the column again. Handled before the column hit-test,
         // which would otherwise park focus on a handle with no rows.
-        if self.projects_collapsed
-            && matches!(ev.kind, MouseEventKind::Down(_))
-            && in_rect(self.layout.projects.outer, ev.column, ev.row)
-        {
-            self.toggle_projects_collapsed();
+        if matches!(ev.kind, MouseEventKind::Down(_)) && self.on_fold_tabs(ev.column, ev.row) {
+            self.unfold_one();
             return;
         }
         // Same acknowledgement as a keypress, but only for a deliberate one:
@@ -163,15 +160,15 @@ impl App {
             .iter()
             .map(|panel| panel.outer.width)
             .collect();
-        if self.projects_collapsed {
-            // The tab is not a column. Keep the remembered projects width
-            // so expanding — or dragging another gutter while folded — does
-            // not shrink it to one cell.
-            widths[0] = self
+        // A tab is not a column. Keep the remembered width of each folded
+        // one so expanding — or dragging another gutter while folded — does
+        // not shrink it to a single cell.
+        for (i, width) in widths.iter_mut().enumerate().take(self.fold.hidden()) {
+            *width = self
                 .column_widths
                 .as_ref()
                 .filter(|w| w.len() == 5)
-                .and_then(|w| w.first().copied())
+                .and_then(|w| w.get(i).copied())
                 .filter(|w| *w >= crate::ui::MIN_COLUMN_WIDTH)
                 .unwrap_or(crate::ui::MIN_COLUMN_WIDTH);
         }
@@ -183,13 +180,9 @@ impl App {
     /// clicks away from either panel's border.
     fn gutter_at(&self, x: u16, y: u16) -> Option<usize> {
         let panels = self.panels();
-        // The folded-away tab is not a column; suppress a gutter against it
-        // so a gap on the left edge is not a one-cell resize trap.
-        let skip = if self.projects_collapsed {
-            Some(0)
-        } else {
-            None
-        };
+        // A folded-away tab is not a column; suppress the gutters against
+        // them so the gap on the left edge is not a one-cell resize trap.
+        let hidden = self.fold.hidden();
         panels
             .windows(2)
             .position(|pair| {
@@ -204,7 +197,7 @@ impl App {
                         .saturating_add(left.height)
                         .min(right.y.saturating_add(right.height))
             })
-            .filter(|g| Some(*g) != skip)
+            .filter(|g| *g >= hidden)
     }
 
     fn resize_columns_at(&mut self, gutter: usize, x: u16) {
@@ -216,12 +209,26 @@ impl App {
             return;
         }
 
-        // On very small terminals the effective floor scales down, but a
-        // column always retains at least one cell instead of disappearing.
-        let floor = crate::ui::MIN_COLUMN_WIDTH.min(pair_width / 2).max(1);
+        // The live view keeps its own, larger floor: dragging is how a user
+        // gives a column room, not how they squeeze a terminal shut. On very
+        // small terminals both scale down, but a column always retains at
+        // least one cell instead of disappearing.
+        let right_floor = if gutter + 1 == panels.len() - 1 {
+            crate::ui::MIN_CONTENT_WIDTH
+        } else {
+            crate::ui::MIN_COLUMN_WIDTH
+        };
+        let room = crate::ui::MIN_COLUMN_WIDTH.saturating_add(right_floor);
+        let scale = |n: u16| {
+            if pair_width >= room || room == 0 {
+                n
+            } else {
+                ((u32::from(n) * u32::from(pair_width)) / u32::from(room)).max(1) as u16
+            }
+        };
         let left_width = x
             .saturating_sub(left.x)
-            .clamp(floor, pair_width.saturating_sub(floor));
+            .clamp(scale(crate::ui::MIN_COLUMN_WIDTH), pair_width.saturating_sub(scale(right_floor)));
         let rendered = self.rendered_column_widths();
         let widths = self.column_widths.get_or_insert(rendered);
         widths[gutter] = left_width;
@@ -232,10 +239,10 @@ impl App {
     /// over, independent of `focus` — so scrolling a background column
     /// doesn't steal focus away from a pane you're typing into.
     fn scroll_at(&mut self, x: u16, y: u16, delta: i32) {
-        // The folded-away tab has nothing visible to scroll; a wheel event
-        // landing there would otherwise change the hidden project
-        // selection, which is only ever confusing.
-        if self.projects_collapsed && in_rect(self.layout.projects.outer, x, y) {
+        // A folded-away tab has nothing visible to scroll; a wheel event
+        // landing there would otherwise change a hidden selection, which is
+        // only ever confusing.
+        if self.on_fold_tabs(x, y) {
             return;
         }
         let Some((target, _)) = self.column_at(x, y) else {
@@ -254,11 +261,21 @@ impl App {
             (Focus::Checkouts, self.layout.checkouts),
             (Focus::Panes, self.layout.panes),
         ] {
-            if in_rect(panel.outer, x, y) {
+            if !self.fold.hides(focus) && in_rect(panel.outer, x, y) {
                 return Some((focus, panel));
             }
         }
         None
+    }
+
+    /// Whether a point is in the left page gutter the folded columns' tabs
+    /// live in. Their panels are stacked there rather than laid out as
+    /// cards, so this is one test rather than a search.
+    fn on_fold_tabs(&self, x: u16, y: u16) -> bool {
+        [self.layout.projects, self.layout.repositories]
+            .iter()
+            .take(self.fold.hidden())
+            .any(|panel| in_rect(panel.outer, x, y))
     }
 
     /// A click on a card moves focus to it and leaves the selection alone;
@@ -286,7 +303,7 @@ impl App {
         // than row zero; and the panes column draws each pane's children
         // under it, so a row there is not an index into the panes — a
         // click on a child row means the pane it is running in.
-        let row = row_in(panel.inner, x, y).map(|row| row + panel.first);
+        let row = row_in(panel.inner, self.layout.row_height, x, y).map(|row| row + panel.first);
         if target == Focus::Panes {
             let hit = row.and_then(|row| crate::ui::pane_row_owners(self).get(row).copied());
             let already = self.focus == target && hit == self.pane_location();

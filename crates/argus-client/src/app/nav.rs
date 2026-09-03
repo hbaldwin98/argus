@@ -508,11 +508,15 @@ impl App {
                 self.focus = Focus::Panes;
             }
             Focus::Panes => self.focus = Focus::Checkouts,
-            Focus::Checkouts => self.focus = Focus::Repositories,
+            // Ascending into a folded-away column would park the cursor on a
+            // tab with no rows, so focus stays put instead.
+            Focus::Checkouts => {
+                if !self.fold.hides(Focus::Repositories) {
+                    self.focus = Focus::Repositories;
+                }
+            }
             Focus::Repositories => {
-                // Ascending into a folded-away projects column would park the
-                // cursor on a tab with no rows, so it stays put instead.
-                if !self.projects_collapsed {
+                if !self.fold.hides(Focus::Projects) {
                     self.focus = Focus::Projects;
                 }
             }
@@ -523,18 +527,14 @@ impl App {
 
     /// Back to the top of the tree. Anything that swaps the whole project
     /// column out from under the columns needs it: the old indices refer
-    /// to rows that are no longer there. If the projects column is
-    /// collapsed there is nothing for it to park the cursor on, so land on
-    /// repositories — the same place a collapsed startup does.
+    /// to rows that are no longer there. A folded-away column has nothing
+    /// for it to park the cursor on, so it lands on the leftmost column
+    /// still drawn — the same place a folded startup does.
     pub(super) fn reset_navigation(&mut self) {
         self.sel_project = 0;
         self.sel_repository = 0;
         self.sel_checkout = 0;
         self.sel_pane = 0;
-        self.focus = if self.projects_collapsed {
-            Focus::Repositories
-        } else {
-            Focus::Projects
-        };
+        self.focus = self.fold.first_focus();
     }
 }

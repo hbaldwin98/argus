@@ -278,7 +278,7 @@ fn a_working_child_gets_its_own_row_under_its_pane() {
             },
         ];
     }
-    let out = lines(&draw_at(&mut app, 160, 24)).join(
+    let out = lines(&draw_at(&mut app, 170, 24)).join(
         "
 ",
     );
@@ -306,7 +306,7 @@ fn the_selection_stays_on_the_pane_when_children_push_rows_down() {
     }
     app.focus = Focus::Panes;
     app.sel_pane = 1;
-    let buf = draw_at(&mut app, 160, 24);
+    let buf = draw_at(&mut app, 170, 24);
     let inner = app.layout.panes.inner;
     // Row 0 is the pane, row 1 its child, so the second pane is row 2.
     let marker = buf.cell((inner.x, inner.y + ROW_HEIGHT * 2)).unwrap();

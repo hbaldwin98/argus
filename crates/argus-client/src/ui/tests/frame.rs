@@ -29,13 +29,13 @@ fn a_scrolled_column_does_not_slide_when_the_selection_moves_back_up() {
     app.sel_checkout = 7;
     let buf = draw_at(&mut app, 100, 12);
     let top = app.layout.checkouts.inner.y as usize;
-    assert!(lines(&buf)[top].contains("wt-6"), "the column is scrolled");
+    assert!(lines(&buf)[top].contains("wt-3"), "the column is scrolled");
 
     app.on_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
     let buf = draw_at(&mut app, 100, 12);
 
     assert!(
-        lines(&buf)[top].contains("wt-6"),
+        lines(&buf)[top].contains("wt-3"),
         "the selection is still on screen, so the list must not move under it: {:?}",
         lines(&buf)[top]
     );
@@ -393,18 +393,19 @@ fn preferred_column_widths_are_used_and_keep_a_minimum() {
     assert_eq!(app.layout.repositories.outer.width, 18);
     assert_eq!(app.layout.checkouts.outer.width, 20);
     assert_eq!(app.layout.panes.outer.width, 20);
-    assert_eq!(app.layout.content.outer.width, 28);
+    assert_eq!(app.layout.content.outer.width, 42, "the slack lands in the live view");
 }
 
 #[test]
 fn narrow_row_text_ends_in_an_ellipsis() {
     let mut app = app_with_tree();
-    app.column_widths = Some(vec![8, 18, 18, 18, 34]);
+    app.tree[0].name = "a-project-with-a-very-long-name".to_string();
+    app.column_widths = Some(vec![MIN_COLUMN_WIDTH, 18, 18, 18, 34]);
     let text = lines(&draw(&mut app)).join("\n");
 
     assert!(
-        text.contains("● …"),
-        "narrow project name should end in an ellipsis:\n{text}"
+        text.contains("● a-proj…"),
+        "a name past the column's width should end in an ellipsis:\n{text}"
     );
 }
 
@@ -757,7 +758,7 @@ fn the_box_never_overruns_the_screen_it_floats_over() {
     let buf = draw(&mut app);
     // `lines` trims the right edge, so an overrun shows up as a row
     // wider than the terminal or a panic in `draw`.
-    assert!(lines(&buf).iter().all(|l| l.chars().count() <= 100));
+    assert!(lines(&buf).iter().all(|l| l.chars().count() <= buf.area.width as usize));
     assert!(
         lines(&buf).len() <= 20,
         "and it stays a modal rather than becoming the screen"

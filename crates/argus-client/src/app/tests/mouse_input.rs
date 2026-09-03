@@ -10,16 +10,18 @@ fn dragging_a_gutter_resizes_the_two_adjacent_columns() {
         first: 0,
     };
     h.app.layout = Layout {
-        projects: panel(0, 12),
-        repositories: panel(13, 12),
-        checkouts: panel(26, 12),
-        panes: panel(39, 12),
-        content: panel(52, 20),
+        width: 100,
+        row_height: crate::ui::ROW_HEIGHT,
+        projects: panel(0, 20),
+        repositories: panel(21, 20),
+        checkouts: panel(42, 20),
+        panes: panel(63, 20),
+        content: panel(84, 30),
         overlay: Panel::default(),
         cursor: None,
     };
 
-    h.app.on_mouse(click(12, 3));
+    h.app.on_mouse(click(20, 3));
     h.app.on_mouse(drag(16, 3));
     h.app.on_mouse(MouseEvent {
         kind: MouseEventKind::Up(MouseButton::Left),
@@ -28,7 +30,7 @@ fn dragging_a_gutter_resizes_the_two_adjacent_columns() {
         modifiers: KeyModifiers::NONE,
     });
 
-    assert_eq!(h.app.column_widths, Some(vec![16, 8, 12, 12, 20]));
+    assert_eq!(h.app.column_widths, Some(vec![16, 24, 20, 20, 30]));
     assert_eq!(h.app.settings.column_widths, h.app.column_widths);
 }
 
@@ -67,19 +69,25 @@ fn dragging_a_gutter_cannot_collapse_either_column() {
         first: 0,
     };
     h.app.layout = Layout {
-        projects: panel(0, 12),
-        repositories: panel(13, 12),
-        checkouts: panel(26, 12),
-        panes: panel(39, 12),
-        content: panel(52, 20),
+        width: 100,
+        row_height: crate::ui::ROW_HEIGHT,
+        projects: panel(0, 20),
+        repositories: panel(21, 20),
+        checkouts: panel(42, 20),
+        panes: panel(63, 20),
+        content: panel(84, 30),
         overlay: Panel::default(),
         cursor: None,
     };
 
-    h.app.on_mouse(click(12, 3));
-    h.app.on_mouse(drag(30, 3));
+    h.app.on_mouse(click(20, 3));
+    h.app.on_mouse(drag(90, 3));
 
-    assert_eq!(h.app.column_widths, Some(vec![16, 8, 12, 12, 20]));
+    assert_eq!(
+        h.app.column_widths,
+        Some(vec![26, crate::ui::MIN_COLUMN_WIDTH, 20, 20, 30]),
+        "the column being squeezed stops at its floor"
+    );
 }
 
 #[test]

@@ -30,7 +30,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Wi
 use ratatui::Frame;
 
 use crate::app::{
-    App, CheckoutRow, Focus, Overlay, PaneLocation, Panel, PickerKind, Prompt, Setting,
+    App, CheckoutRow, Focus, Fold, Overlay, PaneLocation, Panel, PickerKind, Prompt, Setting,
 };
 use crate::dirpicker::DirRow;
 use crate::grid::Grid;
@@ -76,18 +76,64 @@ const GUTTER: &str = " ";
 /// clicks against this, so it is shared rather than local.
 pub const ROW_HEIGHT: u16 = 2;
 
+/// The same item on one line, name only. Two lines is what stops a wide
+/// column reading as cramped, but on a short terminal it is what makes it
+/// cramped: a card with room for five items has to spend that room on
+/// which items exist, not on what is true about each.
+pub const COMPACT_ROW_HEIGHT: u16 = 1;
+
+/// The card height below which detail lines cost more than they pay for —
+/// six two-line items. Measured on the padded inside of a card, so the
+/// borders and the top gutter are already out of it.
+const COMFORTABLE_MIN_HEIGHT: u16 = 12;
+
+/// How tall a row in the nav columns is, for a card of this inner height.
+/// The renderer records the answer in [`crate::app::Layout`] so hit-testing
+/// resolves a click against the rows that were actually drawn.
+pub fn row_height(inner_height: u16) -> u16 {
+    if inner_height < COMFORTABLE_MIN_HEIGHT {
+        COMPACT_ROW_HEIGHT
+    } else {
+        ROW_HEIGHT
+    }
+}
+
 /// Blank columns between panels, and between the panels and the screen
 /// edge. Without it the cards touch and stop reading as separate surfaces.
-const GUTTER_COLS: u16 = 1;
+pub const GUTTER_COLS: u16 = 1;
 
-/// A dragged column cannot be collapsed beyond this outer width. The
-/// renderer scales the floor down only when the terminal itself is too
-/// narrow to fit five such columns.
-pub const MIN_COLUMN_WIDTH: u16 = 8;
+/// The narrowest a spine of `columns` cards can be drawn without any of
+/// them going under its floor. What the fold breakpoints are derived from,
+/// so the two cannot drift: the layout folds exactly when the widths it
+/// would otherwise have to hand out stop being honest.
+pub fn spine_min_width(columns: usize) -> u16 {
+    let columns = columns as u16;
+    columns.saturating_sub(1) * MIN_COLUMN_WIDTH
+        + MIN_CONTENT_WIDTH
+        + GUTTER_COLS * columns.saturating_sub(1)
+}
+
+/// A dragged column cannot be collapsed beyond this outer width. Below it
+/// a card has no room to say anything: two cells go to the border and two
+/// to the inner gutter, so eight cells of column were four cells of text —
+/// a status glyph, a letter, and an ellipsis. The renderer scales the floor
+/// down only when the terminal itself is too narrow to fit the spine.
+pub const MIN_COLUMN_WIDTH: u16 = 14;
+
+/// The live view's own floor, which is much larger because what it holds is
+/// not a list but somebody's terminal. Width is reclaimed from the nav
+/// columns before this is touched: a squeezed column is still readable, and
+/// a forty-column pty is already the point at which most programs give up.
+pub const MIN_CONTENT_WIDTH: u16 = 40;
 
 /// Folded-away projects: a disclosure mark in the left page gutter, not a
 /// full-height rail. The rest of that gutter is the click target.
 const COLLAPSED_TAB: &str = "▸";
+
+/// How much of a row has to be left for the name before a badge is worth
+/// keeping. Below it the badge is winning space from the only part of the
+/// row that says which thing this is.
+const NAME_FLOOR: usize = 8;
 
 /// One list item: what it is, a dimmer line of what's true about it, and
 /// an optional count pinned to the right of the name line. The badge is
@@ -122,6 +168,18 @@ pub fn render(f: &mut Frame, app: &mut App) {
     f.render_widget(Block::default().style(Style::default().bg(th.bg)), f.area());
 
     let page = inset(f.area(), GUTTER_COLS);
+    // A resize is noticed here rather than plumbed in as an event, because
+    // here is where the answer is used. Folding only ever tightens: a
+    // terminal that has grown wide enough for five columns is not a reason
+    // to undo a layout the user chose, and `p` is how they change it back.
+    if app.layout.width != f.area().width {
+        app.layout.width = f.area().width;
+        app.fold = app.fold.max(Fold::required(f.area().width));
+        if app.fold.hides(app.focus) {
+            app.focus = app.fold.first_focus();
+        }
+    }
+
     // A blank row above the status bar keeps it off the panel borders.
     let root = Layout::default()
         .direction(Direction::Vertical)
@@ -143,6 +201,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         app.layout.repositories = Panel::default();
         app.layout.checkouts = Panel::default();
         app.layout.panes = Panel::default();
+        app.layout.row_height = ROW_HEIGHT;
         render_content(f, app, root[0], th)
     } else {
         render_columns(f, app, root[0])

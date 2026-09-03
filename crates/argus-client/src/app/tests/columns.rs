@@ -1,73 +1,80 @@
-//! Column widths, and folding the projects column away.
+//! Column widths, and folding the leading columns away.
 
 use super::*;
-// --- collapse projects pane ----------------------------------------------
+// --- folding columns away ------------------------------------------------
 
 #[test]
-fn p_collapses_and_restores_the_projects_column() {
+fn p_cycles_through_the_fold_levels() {
     let mut h = Harness::new();
-    assert!(!h.app.projects_collapsed, "starts expanded");
+    assert_eq!(h.app.fold, Fold::None, "starts expanded");
     assert_eq!(h.app.focus, Focus::Projects);
 
     h.key(KeyCode::Char('p'));
-    assert!(h.app.projects_collapsed, "p collapses");
+    assert_eq!(h.app.fold, Fold::Projects, "p folds projects away");
     assert_eq!(h.app.focus, Focus::Repositories, "focus leaves the tab");
     assert!(
-        h.app.status.contains("collapsed"),
-        "reports collapse: {}",
+        h.app.status.contains("folded"),
+        "reports the fold: {}",
         h.app.status
     );
-    assert!(h.app.settings.projects_collapsed, "persisted to settings");
+    assert_eq!(h.app.settings.folded_columns, 1, "persisted to settings");
 
     h.key(KeyCode::Char('p'));
-    assert!(!h.app.projects_collapsed, "p restores");
+    assert_eq!(h.app.fold, Fold::Repositories, "p folds repositories too");
+    assert_eq!(h.app.focus, Focus::Checkouts, "focus leaves that tab as well");
+    assert_eq!(h.app.settings.folded_columns, 2);
+
+    h.key(KeyCode::Char('p'));
+    assert_eq!(h.app.fold, Fold::None, "and wraps back to none");
     assert_eq!(
         h.app.focus,
-        Focus::Repositories,
-        "focus stays put on restore"
+        Focus::Checkouts,
+        "focus stays put on expand"
     );
     assert!(
         h.app.status.contains("expanded"),
         "reports expand: {}",
         h.app.status
     );
-    assert!(!h.app.settings.projects_collapsed, "cleared in settings");
+    assert_eq!(h.app.settings.folded_columns, 0, "cleared in settings");
 }
 
 #[test]
-fn collapsing_moves_focus_off_projects() {
+fn folding_moves_focus_off_the_hidden_column() {
     let mut h = Harness::new();
     h.app.focus = Focus::Projects;
     h.key(KeyCode::Char('p'));
-    assert!(h.app.projects_collapsed);
+    assert_eq!(h.app.fold, Fold::Projects);
     assert_eq!(h.app.focus, Focus::Repositories);
 }
 
 #[test]
-fn ascending_into_a_collapsed_projects_column_stays_put() {
+fn ascending_into_a_folded_away_column_stays_put() {
     let mut h = Harness::new();
-    h.key(KeyCode::Char('p')); // collapse, focus -> Repositories
+    h.key(KeyCode::Char('p')); // fold projects, focus -> Repositories
     h.key(KeyCode::Char('h')); // ascend from Repositories
     assert_eq!(
         h.app.focus,
         Focus::Repositories,
         "blocked by the folded-away tab"
     );
-    // Expand it; now ascend works.
+    // All the way round to expanded; now ascend works.
     h.key(KeyCode::Char('p'));
-    h.key(KeyCode::Char('h'));
+    h.key(KeyCode::Char('p'));
+    h.key(KeyCode::Char('h')); // checkouts -> repositories
+    h.key(KeyCode::Char('h')); // repositories -> projects
     assert_eq!(h.app.focus, Focus::Projects);
 }
 
 #[test]
-fn starting_collapsed_lands_on_repositories() {
+fn starting_folded_lands_on_the_leftmost_column_drawn() {
     let (tx, _rx) = unbounded_channel();
     let settings = crate::settings::Settings {
-        projects_collapsed: true,
+        folded_columns: 1,
         ..crate::settings::Settings::default()
     };
     let app = App::build(tx, settings, false);
-    assert!(app.projects_collapsed);
+    assert_eq!(app.fold, Fold::Projects);
     assert_eq!(
         app.focus,
         Focus::Repositories,
@@ -76,20 +83,20 @@ fn starting_collapsed_lands_on_repositories() {
 }
 
 #[test]
-fn clicking_the_collapsed_tab_expands_it() {
+fn clicking_a_fold_tab_brings_that_column_back() {
     let mut h = Harness::new();
-    h.app.projects_collapsed = true;
+    h.app.fold = Fold::Projects;
     h.app.layout.projects = Panel {
         outer: Rect::new(0, 1, 1, 16),
         inner: Rect::new(0, 1, 1, 1),
         first: 0,
     };
     h.app.on_mouse(click(0, 1));
-    assert!(!h.app.projects_collapsed, "click expands");
+    assert_eq!(h.app.fold, Fold::None, "click expands");
 }
 
 #[test]
-fn the_gutter_next_to_a_collapsed_tab_is_not_draggable() {
+fn the_gutter_next_to_a_fold_tab_is_not_draggable() {
     let mut h = Harness::new();
     let panel = |x: u16, w: u16| Panel {
         outer: Rect::new(x, 0, w, 8),
@@ -97,8 +104,10 @@ fn the_gutter_next_to_a_collapsed_tab_is_not_draggable() {
         first: 0,
     };
     // Tab at 0..1, a one-cell gap, repositories at 2..14. The gap would
-    // otherwise be gutter 0; collapsed layout suppresses it.
+    // otherwise be gutter 0; a folded layout suppresses it.
     h.app.layout = Layout {
+        width: 61,
+        row_height: crate::ui::ROW_HEIGHT,
         projects: panel(0, 1),
         repositories: panel(2, 12),
         checkouts: panel(15, 12),
@@ -107,7 +116,7 @@ fn the_gutter_next_to_a_collapsed_tab_is_not_draggable() {
         overlay: Panel::default(),
         cursor: None,
     };
-    h.app.projects_collapsed = true;
+    h.app.fold = Fold::Projects;
 
     h.app.on_mouse(click(1, 3)); // the gap
     assert!(h.app.resizing_gutter.is_none(), "gutter suppressed");

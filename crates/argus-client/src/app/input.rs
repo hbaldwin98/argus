@@ -526,7 +526,7 @@ impl App {
             KeyCode::Char('R') | KeyCode::Tab => self.open_review(),
             KeyCode::Char('H') => self.open_history(),
             KeyCode::Char('x') => self.kill_selected(),
-            KeyCode::Char('p') => self.toggle_projects_collapsed(),
+            KeyCode::Char('p') => self.cycle_fold(),
             KeyCode::Char('v') => self.toggle_pane_view(),
             KeyCode::Char('m') => self.open_notes(),
             KeyCode::Char('N') => self.jump_to_next_attention(),

@@ -116,9 +116,9 @@ fn an_editor_never_appears_in_the_panes_column() {
 }
 
 #[test]
-fn collapsed_projects_column_renders_as_a_tab() {
+fn a_folded_projects_column_renders_as_a_tab() {
     let mut app = app_with_tree();
-    app.projects_collapsed = true;
+    app.fold = Fold::Projects;
     let buf = draw(&mut app);
 
     // The tab occupies the left page gutter: one cell wide, the column
@@ -163,28 +163,29 @@ fn collapsed_projects_column_renders_as_a_tab() {
 }
 
 #[test]
-fn collapsed_constraints_cede_the_projects_width() {
+fn folded_constraints_cede_the_folded_column_width() {
     // With captured widths, the four survivors keep them and the slack
     // lands in the content column, same as dragging a gutter.
     let total = 100;
     let preferred = Some(vec![12u16, 18, 20, 20, 40]);
-    let c = collapsed_projects_constraints(total, preferred.as_deref());
+    let c = column_constraints(total, Fold::Projects, preferred.as_deref());
     match c.as_slice() {
-        [Constraint::Length(18), Constraint::Length(20), Constraint::Length(20), Constraint::Length(39)] =>
+        // The shortfall comes off a nav column, not off the live view.
+        [Constraint::Length(18), Constraint::Length(20), Constraint::Length(19), Constraint::Length(40)] =>
             {}
-        other => panic!("unexpected collapsed constraints: {other:?}"),
+        other => panic!("unexpected folded constraints: {other:?}"),
     }
 }
 
 #[test]
-fn collapsed_constraints_default_redeals_over_four_columns() {
+fn folded_constraints_default_redeals_over_the_columns_left() {
     let total = 100;
-    let c = collapsed_projects_constraints(total, None);
+    let c = column_constraints(total, Fold::Projects, None);
     assert_eq!(c.len(), 4);
     let sum: u16 = c
         .iter()
         .map(|c| match c {
-            Constraint::Length(w) => *w,
+            Constraint::Length(w) => w,
             _ => panic!("all lengths"),
         })
         .sum();

@@ -6,6 +6,7 @@ mod browser;
 mod diff;
 mod frame;
 mod geometry;
+mod narrow;
 mod notes;
 mod panes;
 mod picker;
@@ -98,7 +99,11 @@ pub(super) fn tree() -> Vec<ProjectInfo> {
 /// Renders a real frame through ratatui's test backend and hands back
 /// the buffer, so the UI can be asserted on without a terminal.
 pub(super) fn draw(app: &mut App) -> ratatui::buffer::Buffer {
-    draw_at(app, 100, 20)
+    // Wide enough for the whole spine: five cards at their floors plus a
+    // live view at its own is exactly what `spine_min_width` says, and a
+    // narrower default would fold a column away under every test that was
+    // not about folding.
+    draw_at(app, 120, 20)
 }
 
 pub(super) fn draw_at(app: &mut App, w: u16, h: u16) -> ratatui::buffer::Buffer {
@@ -175,7 +180,7 @@ pub(super) fn click_checkout(app: &mut App, drawn_row: u16) {
     app.on_mouse(crossterm::event::MouseEvent {
         kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
         column: inner.x + 1,
-        row: inner.y + drawn_row * ROW_HEIGHT,
+        row: inner.y + drawn_row * app.layout.row_height,
         modifiers: KeyModifiers::NONE,
     });
 }

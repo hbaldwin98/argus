@@ -20,8 +20,8 @@ fn a_modal_larger_than_the_screen_is_pinned_not_wrapped_negative() {
 fn rows_stack_down_the_panel_and_stop_at_its_bottom() {
     // Two lines per item, and a half-drawn item is worse than none.
     let inner = Rect::new(1, 1, 10, 5);
-    assert_eq!(row_rect(inner, 0).unwrap().y, 1);
-    assert_eq!(row_rect(inner, 0).unwrap().height, ROW_HEIGHT);
-    assert_eq!(row_rect(inner, 1).unwrap().y, 3);
-    assert!(row_rect(inner, 2).is_none(), "no room for both its lines");
+    assert_eq!(row_rect_of(inner, 0, ROW_HEIGHT).unwrap().y, 1);
+    assert_eq!(row_rect_of(inner, 0, ROW_HEIGHT).unwrap().height, ROW_HEIGHT);
+    assert_eq!(row_rect_of(inner, 1, ROW_HEIGHT).unwrap().y, 3);
+    assert!(row_rect_of(inner, 2, ROW_HEIGHT).is_none(), "no room for both its lines");
 }

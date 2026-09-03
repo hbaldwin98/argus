@@ -146,10 +146,12 @@ pub struct Settings {
     /// renderer discards lengths that do not match the current layout.
     /// Absent until the user first drags a column separator.
     pub column_widths: Option<Vec<u16>>,
-    /// Whether the projects column is folded away to a left-edge tab, ceding
-    /// its width to the other four columns. Remembered so the layout a user
-    /// settled on survives a restart.
-    pub projects_collapsed: bool,
+    /// How many leading nav columns are folded away to left-edge tabs,
+    /// ceding their width to the columns that remain. Remembered so the
+    /// layout a user settled on survives a restart. Stored as a count
+    /// rather than as [`crate::app::Fold`] so a file written by a version
+    /// that knows more fold levels still loads.
+    pub folded_columns: u8,
     /// Whether panes are grouped by the selected checkout or listed across
     /// the whole workspace.
     pub pane_view: PaneView,
@@ -169,11 +171,20 @@ impl Default for Settings {
             editor_cmd: String::new(),
             theme: crate::theme::THEMES[0].to_string(),
             column_widths: None,
-            projects_collapsed: false,
+            folded_columns: 0,
             pane_view: PaneView::Checkout,
             review_split: false,
             notifications: NotificationMode::Off,
         }
+    }
+}
+
+impl Settings {
+    pub fn fold(&self) -> crate::app::Fold {
+        crate::app::Fold::ALL
+            .get(self.folded_columns as usize)
+            .copied()
+            .unwrap_or(crate::app::Fold::Repositories)
     }
 }
 
@@ -271,7 +282,7 @@ mod tests {
             editor_cmd: "code -w".to_string(),
             theme: "latte".to_string(),
             column_widths: Some(vec![12, 16, 18, 24, 46]),
-            projects_collapsed: true,
+            folded_columns: 1,
             pane_view: PaneView::Flat,
             review_split: true,
             notifications: NotificationMode::Bell,

@@ -99,11 +99,29 @@ Workspace scope -> Project -> Repository -> Checkout -> Pane
 
 A workspace is a daemon-wide scope, not a navigation column. Switching it changes every attached
 client. Panes in other workspaces continue to run. The TUI draws project, repository, checkout,
-and pane columns followed by the selected pane's terminal. Pressing `p` folds the
-projects column away to a disclosure tab on the left edge, ceding its width to the
-rest; pressing `p` again, or clicking the tab, brings it back. While typing in a pane, `Ctrl-Space`,
-`f` lets its terminal take the main content area; repeating the chord restores the columns. The
-status bar remains visible in both layouts.
+and pane columns followed by the selected pane's terminal. Pressing `p` folds the leading
+columns away one at a time to disclosure tabs on the left edge, ceding their width to the rest,
+and wraps back to none; clicking a tab brings that column back. While typing in a pane,
+`Ctrl-Space`, `f` lets its terminal take the main content area; repeating the chord restores the
+columns. The status bar remains visible in both layouts.
+
+The layout answers a small terminal by folding rather than by squeezing. Every nav column has a
+floor, the live view has its own and much larger one, and the width at which a column folds away
+is derived from those floors rather than picked separately, so the two cannot drift: the spine
+folds exactly when the widths it would otherwise hand out stop being honest. Shortfall is
+reclaimed from the nav columns before the live view, since a squeezed list is still a list where
+a squeezed terminal is a program that has stopped drawing. A resize only ever folds further —
+widening does not undo a layout the user chose — and `p` overrides in either direction at any
+width, so a folded column is never unreachable. Nothing is lost while folded: the live view's
+title is the full breadcrumb.
+
+Short terminals are answered the same way, in the other axis. A row is normally two lines, a name
+and a dimmer line of what is true about it, but on a card too short to afford both the detail line
+is dropped and the items are kept. Where a row carries a count badge, the badge is reserved before
+the name is fitted — a count survives truncation better than the tail of a name does — unless
+doing so would leave too little room to identify the row at all, in which case the badge is what
+goes. The status bar's keymaps are written as tiers and the widest that fits is drawn, so a narrow
+bar shows fewer keys rather than one cut mid-word.
 
 A project takes its repositories from a root directory, from paths named one at a time, or from
 both. Each becomes a repository with its own primary checkout and linked worktrees. Repository
