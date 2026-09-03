@@ -102,8 +102,19 @@ impl App {
         if self.view != View::Spine {
             match ev.kind {
                 MouseEventKind::Down(MouseButton::Left) => {
-                    if in_rect(self.layout.content.outer, ev.column, ev.row) {
+                    if in_rect(self.layout.features.outer, ev.column, ev.row) {
                         self.focus = Focus::View;
+                        if let Some(row) = row_in(
+                            self.layout.features.inner,
+                            crate::ui::ROW_HEIGHT,
+                            ev.column,
+                            ev.row,
+                        ) {
+                            self.select_feature_row(row + self.layout.features.first);
+                        }
+                    } else if in_rect(self.layout.content.outer, ev.column, ev.row) {
+                        self.focus = Focus::View;
+                        self.board_on_features = false;
                         if let Some(row) = row_in(
                             self.layout.content.inner,
                             crate::ui::ROW_HEIGHT,
@@ -114,8 +125,8 @@ impl App {
                         }
                     }
                 }
-                MouseEventKind::ScrollUp => self.move_board_selection(-1),
-                MouseEventKind::ScrollDown => self.move_board_selection(1),
+                MouseEventKind::ScrollUp => self.move_in_board(-1),
+                MouseEventKind::ScrollDown => self.move_in_board(1),
                 _ => {}
             }
             return;

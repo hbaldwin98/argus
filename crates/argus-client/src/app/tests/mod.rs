@@ -345,6 +345,7 @@ pub(super) fn laid_out(h: &mut Harness) {
         checkouts: panel(24, 12),
         panes: panel(36, 12),
         content: panel(48, 20),
+        features: Panel::default(),
         overlay: Panel::default(),
         help: Panel::default(),
         cursor: None,

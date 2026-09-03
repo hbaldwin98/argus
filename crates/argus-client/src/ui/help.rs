@@ -135,7 +135,8 @@ const SETTINGS: Group = Group {
 const BOARD: Group = Group {
     title: "the decision board",
     keys: &[
-        ("j / k", "decision by decision"),
+        ("h / l", "the features, and the tree under one"),
+        ("j / k", "feature by feature, or decision by decision"),
         ("d / u", "ten at a time"),
         ("g / G", "top and bottom"),
         ("r", "re-ask the daemon for it"),

@@ -114,6 +114,7 @@ fn the_gutter_next_to_a_fold_tab_is_not_draggable() {
         checkouts: panel(15, 12),
         panes: panel(28, 12),
         content: panel(41, 20),
+        features: Panel::default(),
         overlay: Panel::default(),
         help: Panel::default(),
         cursor: None,

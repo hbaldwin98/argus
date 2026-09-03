@@ -142,8 +142,21 @@ impl App {
                     .map(|p| p.name == board.name)
                     .unwrap_or(false);
                 if ours {
-                    self.board_sel = self.board_sel.min(board.decisions.len().saturating_sub(1));
+                    // Held by slug across the swap: a board arriving while
+                    // an agent writes must not move the reader to another
+                    // feature's tree.
+                    let was = self.current_feature_row().and_then(|row| row.slug);
                     self.board = Some(*board);
+                    if let Some(slug) = was {
+                        if let Some(at) = self
+                            .feature_rows()
+                            .iter()
+                            .position(|row| row.slug.as_deref() == Some(slug.as_str()))
+                        {
+                            self.board_feature_sel = at;
+                        }
+                    }
+                    self.rescope_board();
                 }
             }
             ServerMsg::NoteFailed { target, message } => {

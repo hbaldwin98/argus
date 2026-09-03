@@ -40,7 +40,7 @@ fn a_digit_opens_its_view_over_the_whole_content_area() {
 
     assert_eq!(app.view, View::Decisions);
     assert!(
-        out.contains("no decisions recorded yet"),
+        out.contains("nothing decided under this feature yet"),
         "a tab somebody pressed must say what it is for:
 {out}"
     );
@@ -49,7 +49,7 @@ fn a_digit_opens_its_view_over_the_whole_content_area() {
         "no column is drawn, so no click may resolve against one"
     );
     assert!(
-        app.layout.content.outer.width > 80,
+        app.layout.features.outer.width + app.layout.content.outer.width > 80,
         "the view has the content area rather than a column of it"
     );
 }
@@ -232,6 +232,8 @@ fn the_board_scrolls_to_keep_the_selection_on_screen() {
     let mut app = app_with_a_board(many);
     draw_at(&mut app, 100, 30);
 
+    // The keys start on the feature column, and `l` crosses into the tree.
+    app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
     app.on_key(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE));
     let buf = draw_at(&mut app, 100, 30);
     let out = lines(&buf).join("
@@ -239,6 +241,79 @@ fn the_board_scrolls_to_keep_the_selection_on_screen() {
 
     assert_eq!(app.board_sel, 39);
     assert!(out.contains("#40"), "the last row is drawn: {out}");
+}
+
+fn feature(slug: &str, title: &str) -> argus_protocol::Feature {
+    argus_protocol::Feature {
+        slug: slug.to_string(),
+        title: title.to_string(),
+        body: String::new(),
+        origin_checkout: None,
+        origin_branch: Some("main".into()),
+        at: 0,
+        session: None,
+    }
+}
+
+fn app_with_features(
+    features: Vec<argus_protocol::Feature>,
+    decisions: Vec<argus_protocol::Decision>,
+) -> App {
+    let mut app = app_with_tree();
+    let name = app.current_project().unwrap().name.clone();
+    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(
+        argus_protocol::DecisionBoard {
+            project: None,
+            name,
+            features,
+            decisions,
+        },
+    )));
+    press(&mut app, View::Decisions.digit());
+    app
+}
+
+#[test]
+fn the_board_draws_one_features_decisions_and_offers_the_others() {
+    let mut notes = decision(1, None, "one row per note");
+    notes.feature = Some("notes".into());
+    let mut pty = decision(2, None, "one reader thread");
+    pty.feature = Some("pty".into());
+    let mut app = app_with_features(
+        vec![feature("notes", "Notes storage"), feature("pty", "The pty")],
+        vec![notes, pty],
+    );
+
+    let out = lines(&draw_at(&mut app, 100, 30)).join("\n");
+    assert!(out.contains("Notes storage"), "both features are offered: {out}");
+    assert!(out.contains("The pty"), "{out}");
+    assert!(out.contains("one row per note"), "{out}");
+    assert!(
+        !out.contains("one reader thread"),
+        "another feature's decisions are not on this board: {out}"
+    );
+
+    // Moving down the feature column swaps the tree beside it.
+    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    let out = lines(&draw_at(&mut app, 100, 30)).join("\n");
+    assert!(out.contains("one reader thread"), "{out}");
+    assert!(!out.contains("one row per note"), "{out}");
+}
+
+#[test]
+fn decisions_from_before_features_are_kept_on_a_row_of_their_own() {
+    let mut filed = decision(1, None, "one row per note");
+    filed.feature = Some("notes".into());
+    let mut app = app_with_features(
+        vec![feature("notes", "Notes storage")],
+        vec![filed, decision(2, None, "sqlite")],
+    );
+
+    let out = lines(&draw_at(&mut app, 100, 30)).join("\n");
+    assert!(out.contains("before features"), "nothing is silently lost: {out}");
+    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    let out = lines(&draw_at(&mut app, 100, 30)).join("\n");
+    assert!(out.contains("sqlite"), "{out}");
 }
 
 #[test]
@@ -258,7 +333,7 @@ fn a_board_for_another_project_is_dropped_rather_than_drawn() {
 ");
 
     assert!(!out.contains("not ours"), "{out}");
-    assert!(out.contains("no decisions recorded yet"), "{out}");
+    assert!(out.contains("nothing decided under this feature yet"), "{out}");
 }
 
 #[test]

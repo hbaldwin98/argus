@@ -207,7 +207,15 @@ pub struct App {
     /// not anyone is looking at it — a tree is meant to be watched being
     /// built.
     pub board: Option<argus_protocol::DecisionBoard>,
+    /// The board narrowed to the feature on screen. Kept rather than
+    /// derived per frame because the rows a renderer walks borrow from it.
+    pub board_scoped: Option<argus_protocol::DecisionBoard>,
     pub board_sel: usize,
+    /// Which feature the left column is on, as a place in `feature_rows`.
+    pub board_feature_sel: usize,
+    /// Whether keys move through the features or through the tree. The
+    /// features have it first: a tree is read after choosing which one.
+    pub board_on_features: bool,
     /// What the outstanding request was for; a diff for anything else is
     /// stale and dropped.
     review_wanted: Option<(CheckoutId, u64)>,
@@ -319,7 +327,10 @@ impl App {
             history: None,
             notes: None,
             board: None,
+            board_scoped: None,
             board_sel: 0,
+            board_feature_sel: 0,
+            board_on_features: true,
             review_wanted: None,
             next_review_request: 1,
             history_wanted: None,

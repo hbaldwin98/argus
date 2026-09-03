@@ -867,10 +867,12 @@ Clients read the whole project — every feature and every decision — with `Cl
 and are pushed `ServerMsg::Decisions` whenever any board changes, since a tree is meant to be
 watched being built and the daemon deliberately does not track which view a client has open; a
 client with another project open drops it by name. `DecisionBoard::scoped` is what narrows that to
-one feature in the client, so switching scope costs no round trip. The board view draws the tree
-two lines per decision with branch rails and elbows connecting every child to its parent;
-`argus-hook decisions` draws the same topology for agents. `j`/`k` move through it, a click selects
-the row it lands on, and `r` re-asks by hand.
+one feature in the client, so switching scope costs no round trip. The board view is two columns: the project's features on the
+left, and the tree of whichever one is selected on the right, drawn two lines per decision with
+branch rails and elbows connecting every child to its parent. `argus-hook decisions` draws the same
+topology for agents. `h`/`l` cross between the columns and `j`/`k` move through whichever has the
+keys, a click selects the row it lands on, and `r` re-asks by hand. Decisions from before features
+existed get a row of their own at the end of the feature column rather than being hidden.
 
 ## Editors and overlays
 

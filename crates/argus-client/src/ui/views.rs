@@ -96,11 +96,93 @@ const MAX_BOARD_INDENT: usize = 24;
 /// it. A superseded decision keeps its place and goes dim — the road not
 /// taken is most of what a reader came for.
 pub(super) fn render_decisions(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    let split = feature_column_width(area.width);
+    let features = Rect {
+        width: split,
+        ..area
+    };
+    let board = Rect {
+        x: area.x + split,
+        width: area.width.saturating_sub(split),
+        ..area
+    };
+    render_feature_column(f, app, features, th);
+    render_feature_board(f, app, board, th);
+}
+
+/// How wide the feature column gets. Fixed rather than proportional past a
+/// point: a feature is a short title, and a column that grew with the
+/// terminal would spend the width the tree needs for its branches.
+fn feature_column_width(total: u16) -> u16 {
+    const IDEAL: u16 = 30;
+    (total / 3).clamp(0, IDEAL)
+}
+
+/// The features of the project, which is the scope the tree beside it is
+/// read at. Left of the tree and always drawn, because a board with no way
+/// to see what else there is answers only the question you already asked.
+fn render_feature_column(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    let focused = app.board_on_features;
     let title = match app.board.as_ref().map(|b| b.name.clone()) {
-        Some(name) => format!("decisions · {name}"),
+        Some(name) => format!("features · {name}"),
+        None => "features".to_string(),
+    };
+    let block = panel_block(&title, focused, th, area.width);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let rows = app.feature_rows();
+    let per_row = ROW_HEIGHT as usize;
+    let visible = (inner.height as usize) / per_row.max(1);
+    let first = scrolled_to_show(0, Some(app.board_feature_sel), visible, rows.len());
+    app.layout.features = Panel {
+        outer: area,
+        inner,
+        first,
+    };
+    if rows.is_empty() {
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                "no features yet",
+                Style::default().fg(th.dim),
+            )),
+            inner,
+        );
+        return;
+    }
+    let mut lines = Vec::new();
+    for (index, row) in rows.iter().enumerate().skip(first).take(visible) {
+        let selected = index == app.board_feature_sel;
+        let name_style = match (selected, row.slug.is_some()) {
+            (_, false) => Style::default().fg(th.dim),
+            (true, _) => Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+            (false, _) => Style::default().fg(th.text),
+        };
+        lines.push(Line::from(vec![
+            Span::styled(
+                if selected { MARKER } else { GUTTER },
+                Style::default().fg(th.accent),
+            ),
+            Span::styled(row.title.clone(), name_style),
+        ]));
+        let detail = match (&row.branch, row.decisions) {
+            (Some(branch), n) => format!("{branch} · {n} decided"),
+            (None, n) => format!("{n} decided"),
+        };
+        lines.push(Line::from(Span::styled(
+            format!("   {detail}"),
+            Style::default().fg(th.dim),
+        )));
+    }
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+fn render_feature_board(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    let title = match app.current_feature_row() {
+        Some(row) => format!("decisions · {}", row.title),
         None => "decisions".to_string(),
     };
-    let block = panel_block(&title, true, th, area.width);
+    let block = panel_block(&title, !app.board_on_features, th, area.width);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -219,15 +301,16 @@ fn render_empty_board(f: &mut Frame, inner: Rect, th: Theme) {
     f.render_widget(
         Paragraph::new(vec![
             Line::from(Span::styled(
-                "no decisions recorded yet",
+                "nothing decided under this feature yet",
                 Style::default().fg(th.text),
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "Agents record a decision when they choose between real options while \
-                 planning work: what was chosen, what it was chosen over, and what \
-                 forced it. Each one hangs off the decision that constrained it, so \
-                 what accumulates is a reference tree for the feature rather than a log.",
+                "Work is scoped to a feature, and agents record a decision under it when \
+                 they choose between real options while planning: what was chosen, what \
+                 it was chosen over, and what forced it. Each one hangs off the decision \
+                 that constrained it, so what accumulates is a reference tree for this \
+                 feature rather than a log of the whole project.",
                 Style::default().fg(th.dim),
             )),
             Line::from(""),

@@ -129,6 +129,9 @@ pub struct Layout {
     pub checkouts: Panel,
     pub panes: Panel,
     pub content: Panel,
+    /// The decision view's feature column. Zero-sized while another view
+    /// is open, so a click cannot land on a column that is not drawn.
+    pub features: Panel,
     /// The row of view tabs above everything else. Zero-sized on a
     /// terminal too short to spend a row on it.
     pub views: Panel,
