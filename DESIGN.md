@@ -855,8 +855,9 @@ track which view a client has open, so every client is told and one with another
 drops it by name. Opening the view asks once, and the client asks again on any tree that leaves the
 board showing a project other than the selected one — the view is reachable before the first tree
 arrives, and a workspace switch re-scopes the tree under whatever is open. Between those, a write
-arrives on its own. The board view draws the tree two lines per decision, `j`/`k` through it, a
-click selecting the row it lands on, and `r` to re-ask by hand.
+arrives on its own. The board view draws the tree two lines per decision with branch rails and
+elbows connecting every child to its parent; `argus-hook decisions` draws the same topology for
+agents. `j`/`k` move through it, a click selects the row it lands on, and `r` re-asks by hand.
 
 ## Editors and overlays
 

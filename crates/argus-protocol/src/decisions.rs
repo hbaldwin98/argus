@@ -118,6 +118,18 @@ pub struct DecisionBoard {
     pub decisions: Vec<Decision>,
 }
 
+/// One row of a decision tree, including the topology a renderer needs to
+/// draw the branches that lead to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecisionTreeRow<'a> {
+    pub depth: usize,
+    pub decision: &'a Decision,
+    /// Whether each non-root ancestor has a sibling below this row.
+    pub ancestor_continuations: Vec<bool>,
+    pub has_next_sibling: bool,
+    pub has_children: bool,
+}
+
 impl DecisionBoard {
     /// The board flattened depth-first with each decision's depth, which
     /// is the order it is drawn in.
@@ -126,6 +138,15 @@ impl DecisionBoard {
     /// treated as roots rather than dropped. A board that silently loses
     /// records is worse than one that draws a node in the wrong place.
     pub fn tree(&self) -> Vec<(usize, &Decision)> {
+        self.tree_rows()
+            .into_iter()
+            .map(|row| (row.depth, row.decision))
+            .collect()
+    }
+
+    /// The board flattened depth-first with enough sibling information to
+    /// draw branch guides between its rows.
+    pub fn tree_rows(&self) -> Vec<DecisionTreeRow<'_>> {
         let known: std::collections::HashSet<i64> = self.decisions.iter().map(|d| d.id).collect();
         let mut children: std::collections::HashMap<Option<i64>, Vec<&Decision>> =
             std::collections::HashMap::new();
@@ -134,7 +155,7 @@ impl DecisionBoard {
             children.entry(parent).or_default().push(d);
         }
         let mut out = Vec::new();
-        walk(&children, None, 0, &mut out);
+        walk(&children, None, 0, &mut Vec::new(), &mut out);
         out
     }
 }
@@ -143,14 +164,34 @@ fn walk<'a>(
     children: &std::collections::HashMap<Option<i64>, Vec<&'a Decision>>,
     parent: Option<i64>,
     depth: usize,
-    out: &mut Vec<(usize, &'a Decision)>,
+    ancestor_continuations: &mut Vec<bool>,
+    out: &mut Vec<DecisionTreeRow<'a>>,
 ) {
     let Some(here) = children.get(&parent) else {
         return;
     };
-    for decision in here {
-        out.push((depth, decision));
-        walk(children, Some(decision.id), depth + 1, out);
+    for (index, decision) in here.iter().enumerate() {
+        let has_next_sibling = index + 1 < here.len();
+        out.push(DecisionTreeRow {
+            depth,
+            decision,
+            ancestor_continuations: ancestor_continuations.clone(),
+            has_next_sibling,
+            has_children: children.contains_key(&Some(decision.id)),
+        });
+        if depth > 0 {
+            ancestor_continuations.push(has_next_sibling);
+        }
+        walk(
+            children,
+            Some(decision.id),
+            depth + 1,
+            ancestor_continuations,
+            out,
+        );
+        if depth > 0 {
+            ancestor_continuations.pop();
+        }
     }
 }
 
@@ -208,6 +249,22 @@ mod tests {
         let board = board(vec![decision(2, Some(99), "wal mode")]);
         assert_eq!(board.tree().len(), 1, "an orphan is a root, not a loss");
         assert_eq!(board.tree()[0].0, 0);
+    }
+
+    #[test]
+    fn tree_rows_carry_the_branch_lines_a_renderer_must_continue() {
+        let board = board(vec![
+            decision(1, None, "root"),
+            decision(2, Some(1), "first child"),
+            decision(3, Some(2), "grandchild"),
+            decision(4, Some(1), "last child"),
+        ]);
+
+        let rows = board.tree_rows();
+        assert!(rows[0].has_children);
+        assert!(rows[1].has_next_sibling);
+        assert_eq!(rows[2].ancestor_continuations, [true]);
+        assert!(!rows[3].has_next_sibling);
     }
 
     #[test]

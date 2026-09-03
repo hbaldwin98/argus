@@ -110,9 +110,13 @@ impl App {
         }
     }
 
-    /// The board as it is drawn: depth-first, with each row's depth.
-    pub fn board_rows(&self) -> Vec<(usize, &argus_protocol::Decision)> {
-        self.board.as_ref().map(|b| b.tree()).unwrap_or_default()
+    /// The board as it is drawn: depth-first, with the topology needed to
+    /// connect each row to the decisions around it.
+    pub fn board_rows(&self) -> Vec<argus_protocol::DecisionTreeRow<'_>> {
+        self.board
+            .as_ref()
+            .map(|b| b.tree_rows())
+            .unwrap_or_default()
     }
 
     /// Selects the row a click landed on, ignoring a click past the last

@@ -122,36 +122,77 @@ pub(super) fn render_decisions(f: &mut Frame, app: &mut App, area: Rect, th: The
 
     let rows = app.board_rows();
     let mut lines = Vec::new();
-    for (index, (depth, decision)) in rows.iter().enumerate().skip(first).take(visible) {
-        let selected = index == app.board_sel;
-        let indent = " ".repeat((depth * 2).min(MAX_BOARD_INDENT));
-        let dim = decision.superseded();
-        let name_style = match (selected, dim) {
-            (_, true) => Style::default().fg(th.dim),
-            (true, false) => Style::default().fg(th.text).add_modifier(Modifier::BOLD),
-            (false, false) => Style::default().fg(th.text),
-        };
-        let mut name = vec![
-            Span::styled(
-                if selected { MARKER } else { GUTTER },
-                Style::default().fg(th.accent),
-            ),
-            Span::styled(format!("{indent}#{} ", decision.id), Style::default().fg(th.dim)),
-            Span::styled(decision.chose.clone(), name_style),
-        ];
-        if let Some(by) = decision.superseded_by {
-            name.push(Span::styled(
-                format!("  superseded by #{by}"),
-                Style::default().fg(th.dim),
-            ));
-        }
-        lines.push(Line::from(name));
-        lines.push(Line::from(Span::styled(
-            format!(" {indent}  {}", board_detail(decision)),
-            Style::default().fg(th.dim),
-        )));
+    for (index, row) in rows.iter().enumerate().skip(first).take(visible) {
+        push_board_row(&mut lines, row, index == app.board_sel, th);
     }
     f.render_widget(Paragraph::new(lines), inner);
+}
+
+fn push_board_row(
+    lines: &mut Vec<Line<'static>>,
+    row: &argus_protocol::DecisionTreeRow<'_>,
+    selected: bool,
+    th: Theme,
+) {
+    let decision = row.decision;
+    let name_style = match (selected, decision.superseded()) {
+        (_, true) => Style::default().fg(th.dim),
+        (true, false) => Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+        (false, false) => Style::default().fg(th.text),
+    };
+    let mut name = vec![
+        Span::styled(
+            if selected { MARKER } else { GUTTER },
+            Style::default().fg(th.accent),
+        ),
+        Span::styled(
+            format!("{}#{} ", board_branch(row), decision.id),
+            Style::default().fg(th.dim),
+        ),
+        Span::styled(decision.chose.clone(), name_style),
+    ];
+    if let Some(by) = decision.superseded_by {
+        name.push(Span::styled(
+            format!("  superseded by #{by}"),
+            Style::default().fg(th.dim),
+        ));
+    }
+    lines.push(Line::from(name));
+    lines.push(Line::from(Span::styled(
+        format!(" {}  {}", board_continuation(row), board_detail(decision)),
+        Style::default().fg(th.dim),
+    )));
+}
+
+fn board_branch(row: &argus_protocol::DecisionTreeRow<'_>) -> String {
+    if row.depth == 0 {
+        return String::new();
+    }
+    let mut branch = board_ancestor_guides(row, 1);
+    branch.push_str(if row.has_next_sibling { "├─ " } else { "└─ " });
+    branch
+}
+
+fn board_continuation(row: &argus_protocol::DecisionTreeRow<'_>) -> String {
+    let reserved = usize::from(row.depth > 0) + usize::from(row.has_children);
+    let mut continuation = board_ancestor_guides(row, reserved);
+    if row.depth > 0 {
+        continuation.push_str(if row.has_next_sibling { "│  " } else { "   " });
+    }
+    continuation.push_str(if row.has_children { "│  " } else { "   " });
+    continuation
+}
+
+fn board_ancestor_guides(
+    row: &argus_protocol::DecisionTreeRow<'_>,
+    reserved_slots: usize,
+) -> String {
+    let slots = (MAX_BOARD_INDENT / 3).saturating_sub(reserved_slots);
+    let first = row.ancestor_continuations.len().saturating_sub(slots);
+    row.ancestor_continuations[first..]
+        .iter()
+        .map(|continues| if *continues { "│  " } else { "   " })
+        .collect()
 }
 
 /// The dimmer second line: what it was chosen over, and what forced it.

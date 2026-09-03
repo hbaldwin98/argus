@@ -173,15 +173,25 @@ fn the_board_draws_a_decision_under_the_one_that_constrained_it() {
         out[top + 1]
     );
     let child = out[top + 2].clone();
-    assert!(child.contains("#2 wal mode"), "{child:?}");
-    // Counted in cells, not bytes: the selection marker is three bytes
-    // wide and one column wide.
-    let column = |line: &str| line.chars().position(|c| c == '#').unwrap();
-    assert!(
-        column(&child) > column(&out[top]),
-        "the child is indented under its parent: {child:?} vs {:?}",
-        out[top]
-    );
+    assert!(child.contains("└─ #2 wal mode"), "{child:?}");
+    assert!(out[top + 1].contains('│'), "the branch crosses the detail row");
+}
+
+#[test]
+fn sibling_and_nested_decisions_draw_a_connected_tree() {
+    let mut app = app_with_a_board(vec![
+        decision(1, None, "root"),
+        decision(2, Some(1), "first child"),
+        decision(3, Some(2), "grandchild"),
+        decision(4, Some(1), "last child"),
+    ]);
+    let buf = draw_at(&mut app, 100, 30);
+    let out = lines(&buf);
+    let top = app.layout.content.inner.y as usize;
+
+    assert!(out[top + 2].contains("├─ #2 first child"), "{:?}", out[top + 2]);
+    assert!(out[top + 4].contains("│  └─ #3 grandchild"), "{:?}", out[top + 4]);
+    assert!(out[top + 6].contains("└─ #4 last child"), "{:?}", out[top + 6]);
 }
 
 #[test]
