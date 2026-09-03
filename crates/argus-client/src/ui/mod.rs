@@ -225,7 +225,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // page and panel is what makes the panels read as cards.
     f.render_widget(Block::default().style(Style::default().bg(th.bg)), f.area());
 
-    let page = inset(f.area(), GUTTER_COLS, 0);
+    let page = inset(f.area(), GUTTER_COLS, 1);
     // A resize is noticed here rather than plumbed in as an event, because
     // here is where the answer is used. Folding only ever tightens: a
     // terminal that has grown wide enough for five columns is not a reason
@@ -238,9 +238,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
         }
     }
 
-    // A blank row above the status bar keeps it off the panel borders; the
-    // bar itself sits on the last row of the terminal, where a status bar
-    // belongs and where it costs the page no margin.
+    // A blank row above the status bar keeps it off the panel borders.
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(2)])

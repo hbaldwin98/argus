@@ -37,10 +37,10 @@ pub(super) fn ellipsize_spans<'a>(spans: Vec<Span<'a>>, width: usize) -> Vec<Spa
 }
 
 /// Shrinks a rect by `n` on every side, clamping rather than underflowing.
-/// The page margin, given per axis. A screen is short and wide, so the two
-/// are not the same number: a blank column down each side keeps the cards
-/// off the edge and gives the fold tabs somewhere to live, where a blank
-/// row top and bottom is a row of list nobody asked to give up.
+/// The page margin, given per axis, because a cell is about twice as tall
+/// as it is wide: the same number on both reads as more space above and
+/// below than beside. The columns need theirs wider anyway — the fold tabs
+/// live in the left one.
 pub(super) fn inset(area: Rect, x: u16, y: u16) -> Rect {
     Rect {
         x: area.x.saturating_add(x),

@@ -695,8 +695,7 @@ fn only_an_alarm_is_colored_like_one() {
 
     app.report("4 changed vs staged");
     let buf = draw(&mut app);
-    // The status bar is the last row of the terminal.
-    let y = buf.area.height - 1;
+    let y = bar_row(&buf);
     assert!(
         (0..buf.area.width).all(|x| buf.cell((x, y)).unwrap().fg != th.err),
         "an ordinary report is news, not an alarm"
@@ -704,7 +703,7 @@ fn only_an_alarm_is_colored_like_one() {
 
     app.alert("error: git worktree add failed");
     let buf = draw(&mut app);
-    let y = buf.area.height - 1;
+    let y = bar_row(&buf);
     assert!(
         (0..buf.area.width).any(|x| buf.cell((x, y)).unwrap().fg == th.err),
         "and an error still has to look like one"

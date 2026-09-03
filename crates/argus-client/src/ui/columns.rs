@@ -225,7 +225,7 @@ pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option
     // A row is two lines where the card can afford it, and one where the
     // detail line would cost an item. Every column shares the height, and
     // hit-testing needs the answer, so it is decided once here.
-    let rows_high = row_height(area.height.saturating_sub(2));
+    let rows_high = row_height(area.height.saturating_sub(3));
     app.layout.row_height = rows_high;
 
     // Where each card was scrolled to last frame, read before the tabs
@@ -457,11 +457,7 @@ pub(super) fn render_column(
     height: u16,
     th: Theme,
 ) -> Panel {
-    // Sides only. The border and its title already hold the first row off
-    // the top of the card, so a padding row under them is a blank band
-    // across the whole spine that buys nothing -- and it was costing every
-    // column an item.
-    let block = panel_block(title, focused, th, area.width).padding(Padding::horizontal(1));
+    let block = panel_block(title, focused, th, area.width);
     let inner = block.inner(area);
     let mut panel = Panel {
         outer: area,
