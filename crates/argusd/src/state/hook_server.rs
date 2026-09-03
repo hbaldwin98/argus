@@ -31,14 +31,25 @@ impl Daemon {
 
         let daemon = self.clone();
         tokio::spawn(async move {
+            // One failed accept used to end this loop for the life of the
+            // daemon, so a moment of fd pressure left every hook silently
+            // doing nothing until a restart. Back off and keep listening.
+            let mut backoff = ACCEPT_BACKOFF_MIN;
             loop {
-                let Ok((stream, _)) = listener.accept().await else {
-                    break;
-                };
-                let daemon = daemon.clone();
-                tokio::spawn(async move {
-                    let _ = handle_hook_request(stream, daemon).await;
-                });
+                match listener.accept().await {
+                    Ok((stream, _)) => {
+                        backoff = ACCEPT_BACKOFF_MIN;
+                        let daemon = daemon.clone();
+                        tokio::spawn(async move {
+                            let _ = handle_hook_request(stream, daemon).await;
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!("could not accept a hook: {e}; retrying in {backoff:?}");
+                        tokio::time::sleep(backoff).await;
+                        backoff = (backoff * 2).min(ACCEPT_BACKOFF_MAX);
+                    }
+                }
             }
         });
         Ok(())
@@ -46,6 +57,10 @@ impl Daemon {
 }
 
 const MAX_BODY: usize = 4096;
+
+/// The shortest and longest a failed accept waits before trying again.
+const ACCEPT_BACKOFF_MIN: std::time::Duration = std::time::Duration::from_millis(50);
+const ACCEPT_BACKOFF_MAX: std::time::Duration = std::time::Duration::from_secs(2);
 
 struct HookResponse {
     code: u16,

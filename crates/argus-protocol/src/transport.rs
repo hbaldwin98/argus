@@ -77,7 +77,15 @@ mod imp {
 
     pub struct Listener {
         name: String,
-        current: NamedPipeServer,
+        /// The instance waiting for the next client, when there is one.
+        ///
+        /// `None` is a recoverable state, not a broken one: an accept that
+        /// hands back a client and then cannot create the replacement
+        /// leaves it empty, and the next accept makes one. The instance is
+        /// never replaced while a client is still holding it, which is what
+        /// stops a failed `create` from stranding a connected pipe that
+        /// nobody would ever read.
+        current: Option<NamedPipeServer>,
     }
 
     impl Listener {
@@ -86,13 +94,24 @@ mod imp {
             let current = ServerOptions::new()
                 .first_pipe_instance(true)
                 .create(&name)?;
-            Ok(Listener { name, current })
+            Ok(Listener {
+                name,
+                current: Some(current),
+            })
         }
 
         pub async fn accept(&mut self) -> io::Result<NamedPipeServer> {
-            self.current.connect().await?;
-            let next = ServerOptions::new().create(&self.name)?;
-            Ok(std::mem::replace(&mut self.current, next))
+            let server = match self.current.take() {
+                Some(server) => server,
+                None => ServerOptions::new().create(&self.name)?,
+            };
+            server.connect().await?;
+            // Best effort, and deliberately after the client is in hand: a
+            // replacement that cannot be created right now costs the next
+            // client a retry, whereas failing here would cost this one its
+            // connection.
+            self.current = ServerOptions::new().create(&self.name).ok();
+            Ok(server)
         }
     }
 
