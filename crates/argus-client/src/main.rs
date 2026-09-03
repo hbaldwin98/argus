@@ -158,24 +158,24 @@ async fn run(terminal: &mut Term, connection: Connection) -> anyhow::Result<()> 
                 match msg {
                     Some(msg) => {
                         let now = std::time::Instant::now();
-                        // Damage from the pane being typed into is the echo
-                        // of a keystroke, and somebody is waiting on it —
-                        // the rest of what the daemon sends is background
-                        // and can wait for the tick. Still bounded by the
-                        // present gap, so a chatty agent in the focused pane
-                        // cannot buy a frame per chunk.
-                        let awaited = match &msg {
-                            ServerMsg::Damage { pane, .. } => {
-                                let pane = *pane;
-                                profile.record(|c| c.damage(pane, now));
-                                app.input_pane() == Some(pane)
+                        let mut awaited = false;
+                        // Everything the daemon has already queued is
+                        // applied before the frame that will show it. One
+                        // message per turn of the loop meant a burst from
+                        // several agents was drained a message per select,
+                        // each one re-arming five futures, and the frame in
+                        // between showed a screen that was already stale.
+                        // The model is cheap to update; the frame is not.
+                        let mut batch = Some(msg);
+                        let mut drained = 0;
+                        while let Some(msg) = batch.take() {
+                            awaited |= take_server_msg(
+                                &mut app, terminal, &mut profile, msg, now,
+                            )?;
+                            drained += 1;
+                            if drained < MAX_DRAINED_MESSAGES {
+                                batch = out_rx.try_recv().ok();
                             }
-                            _ => false,
-                        };
-                        profile.record(profile::Counters::server_msg);
-                        app.on_server_msg(msg);
-                        if app.take_bell() {
-                            ring_bell(terminal)?;
                         }
                         if awaited {
                             redraw.input(now);
@@ -218,6 +218,38 @@ async fn run(terminal: &mut Term, connection: Connection) -> anyhow::Result<()> 
     release_herdr(&mut herdr);
 
     Ok(())
+}
+
+/// How many of the daemon's messages one turn of the loop may apply before
+/// it goes back to the select. A cap rather than the whole queue, so a
+/// backlog cannot hold off a keystroke indefinitely.
+const MAX_DRAINED_MESSAGES: usize = 512;
+
+/// Applies one message to the model. `true` when it was the echo of a
+/// keystroke — damage from the pane being typed into, which somebody is
+/// waiting on. Everything else the daemon sends is background and can wait
+/// for the tick.
+fn take_server_msg(
+    app: &mut App,
+    terminal: &mut Term,
+    profile: &mut Option<Profile>,
+    msg: ServerMsg,
+    now: std::time::Instant,
+) -> anyhow::Result<bool> {
+    let awaited = match &msg {
+        ServerMsg::Damage { pane, .. } => {
+            let pane = *pane;
+            profile.record(|c| c.damage(pane, now));
+            app.input_pane() == Some(pane)
+        }
+        _ => false,
+    };
+    profile.record(profile::Counters::server_msg);
+    app.on_server_msg(msg);
+    if app.take_bell() {
+        ring_bell(terminal)?;
+    }
+    Ok(awaited)
 }
 
 /// arm is guarded, but the future still needs a type either way.

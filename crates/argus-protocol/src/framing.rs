@@ -20,7 +20,13 @@ pub enum FramingError {
     TooLarge(u32),
 }
 
-pub async fn write_msg<W, T>(w: &mut W, msg: &T) -> Result<(), FramingError>
+/// One frame, written but not flushed.
+///
+/// The half of [`write_msg`] worth having on its own: a writer with a batch
+/// of messages for the same peer wants them in one buffer and one flush,
+/// not a flush apiece. A caller that uses this owes the peer a `flush`
+/// before it waits for anything.
+pub async fn write_frame<W, T>(w: &mut W, msg: &T) -> Result<(), FramingError>
 where
     W: AsyncWrite + Unpin,
     T: Serialize,
@@ -29,6 +35,15 @@ where
     let len = buf.len() as u32;
     w.write_all(&len.to_be_bytes()).await?;
     w.write_all(&buf).await?;
+    Ok(())
+}
+
+pub async fn write_msg<W, T>(w: &mut W, msg: &T) -> Result<(), FramingError>
+where
+    W: AsyncWrite + Unpin,
+    T: Serialize,
+{
+    write_frame(w, msg).await?;
     w.flush().await?;
     Ok(())
 }

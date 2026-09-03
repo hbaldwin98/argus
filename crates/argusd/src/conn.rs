@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use argus_protocol::{read_msg, write_msg, ClientMsg, PaneId, ServerMsg};
+use argus_protocol::{read_msg, write_frame, ClientMsg, PaneId, ServerMsg};
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc, Semaphore};
 
@@ -603,22 +603,80 @@ fn reply_with(
     Ok(())
 }
 
-async fn writer_task<W>(mut wr: W, mut rx: mpsc::UnboundedReceiver<ServerMsg>)
+/// Writes what the connection has queued, in batches.
+///
+/// A message used to cost two writes and a flush of its own. With several
+/// agents running that is a few hundred flushes a second on a socket
+/// nobody is reading between them, and the queue behind it is unbounded —
+/// so a client that fell behind stayed behind, and the backlog was paid for
+/// in latency on every pane rather than just the noisy one. Draining
+/// everything already queued into one buffer and flushing once collapses a
+/// burst into a single write, which is what keeps the queue from being the
+/// thing that makes the next frame late.
+///
+/// Ordering is exactly what it was: the batch is written in the order it
+/// was queued, and the flush is the only thing that moved.
+async fn writer_task<W>(wr: W, mut rx: mpsc::UnboundedReceiver<ServerMsg>)
 where
     W: AsyncWrite + Unpin,
 {
+    let mut wr = tokio::io::BufWriter::new(wr);
     while let Some(msg) = rx.recv().await {
-        if write_msg(&mut wr, &msg).await.is_err() {
+        if write_frame(&mut wr, &msg).await.is_err() {
+            break;
+        }
+        // Whatever else is already waiting rides along on this flush.
+        let mut batched = 0;
+        while batched < MAX_BATCHED_MESSAGES {
+            let Ok(msg) = rx.try_recv() else { break };
+            if write_frame(&mut wr, &msg).await.is_err() {
+                return;
+            }
+            batched += 1;
+        }
+        if tokio::io::AsyncWriteExt::flush(&mut wr).await.is_err() {
             break;
         }
     }
 }
+
+/// How much of the queue one flush may carry. A cap rather than the whole
+/// backlog so a client that has been away for a while still starts seeing
+/// frames while the rest is still going out.
+const MAX_BATCHED_MESSAGES: usize = 256;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::{ConfigFile, ProjectConfig};
     use argus_protocol::{CheckoutId, PaneId, ReviewBase};
+
+    #[tokio::test]
+    async fn a_burst_is_written_in_order_and_flushed_once() {
+        // The batching exists to stop a few hundred flushes a second on a
+        // socket nobody is reading between them. What it must not change is
+        // the order, since a pane's snapshot and the damage that continues
+        // it travel this queue together.
+        let (client, mut daemon) = tokio::io::duplex(1024 * 1024);
+        let (tx, rx) = mpsc::unbounded_channel();
+        for i in 0..MAX_BATCHED_MESSAGES * 2 {
+            tx.send(ServerMsg::Error {
+                message: i.to_string(),
+            })
+            .unwrap();
+        }
+        drop(tx);
+
+        tokio::spawn(writer_task(client, rx));
+
+        for i in 0..MAX_BATCHED_MESSAGES * 2 {
+            let msg: ServerMsg = read_msg(&mut daemon).await.expect("a framed message");
+            assert!(
+                matches!(msg, ServerMsg::Error { ref message } if *message == i.to_string()),
+                "message {i} arrived out of order: {msg:?}"
+            );
+        }
+    }
 
     struct Harness {
         daemon: Arc<Daemon>,
