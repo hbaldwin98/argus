@@ -60,7 +60,8 @@ Closes the loop: information currently flows only upward, from agents reporting 
   never reaching the project note or a `- [!]` line, and recorded in schema v4's `note_audit`
   alongside the change itself. The decision board was built on it: the write path, the agent scope,
   and the attributed record are the parts it would otherwise have invented.
-- Implement explicit note forwarding.
+- Explicit note forwarding has landed (DESIGN.md, "Notes"): `f` stages the current line and `F`
+  stages the whole visible note in a chosen in-scope agent's prompt without submitting it.
 - Add `argus ctx` and MCP adapters over the same implementation.
 
 ## P6.5: Views and Boards

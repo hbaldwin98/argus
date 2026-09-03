@@ -284,6 +284,72 @@ async fn context_is_refused_to_anything_that_is_not_a_live_agent() {
 }
 
 #[tokio::test]
+async fn note_text_can_be_forwarded_only_to_a_live_agent_in_scope() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    let checkout = only_checkout(&d);
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+    let shell = d.spawn_shell(checkout).unwrap();
+
+    d.forward_note(
+        NoteTarget::Checkout(checkout),
+        agent,
+        "# Exact markdown\n- [!] stay editable".to_string(),
+    )
+    .unwrap();
+    assert!(d
+        .forward_note(NoteTarget::Checkout(checkout), shell, "no".to_string())
+        .unwrap_err()
+        .to_string()
+        .contains("live agent"));
+    assert!(d
+        .forward_note(NoteTarget::Checkout(checkout), agent, " \n ".to_string())
+        .unwrap_err()
+        .to_string()
+        .contains("empty"));
+    assert!(d
+        .forward_note(
+            NoteTarget::Checkout(checkout),
+            agent,
+            "x".repeat(MAX_NOTE_BYTES + 1),
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("exceeds"));
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn project_forwarding_crosses_checkouts_but_checkout_forwarding_does_not() {
+    let first = tempfile::tempdir().unwrap();
+    let second = tempfile::tempdir().unwrap();
+    let d = daemon_with_two_agent_checkouts(first.path(), second.path());
+    let snapshot = d.snapshot();
+    let project = snapshot[0].id;
+    let first_checkout = snapshot[0].repositories[0].checkouts[0].id;
+    let second_checkout = snapshot[0].repositories[1].checkouts[0].id;
+    let agent = d.spawn_agent(second_checkout, "claude").unwrap();
+
+    assert!(d
+        .forward_note(
+            NoteTarget::Checkout(first_checkout),
+            agent,
+            "wrong checkout".to_string(),
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("scope"));
+    d.forward_note(
+        NoteTarget::Project(project),
+        agent,
+        "project-wide context".to_string(),
+    )
+    .unwrap();
+
+    let _ = d.close_pane(agent);
+}
+
+#[tokio::test]
 async fn an_authorized_context_hook_returns_the_checkout_notes() {
     let dir = tempfile::tempdir().unwrap();
     let d = daemon_with_claude_aliases(dir.path(), &["claude"]);

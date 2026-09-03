@@ -765,6 +765,13 @@ navigates with `j`/`k`, `0`/`$`, and `g`/`G`, ticks the box under the cursor wit
 starts typing with `i`, `a`, or `o`. Insert mode is text, and `Esc` leaves it and saves. Closing
 with `q` saves too; nothing goes out mid-word.
 
+`f` forwards the current line and `F` forwards the whole visible note. A checkout note can reach
+only a live agent in that checkout; a project note can reach any live agent in that project. One
+eligible agent is chosen directly and several open a recipient picker. The client sends the
+visible text, including unsaved edits, and preserves its Markdown and whitespace. The daemon
+checks the scope and live-agent status again, then uses bracketed paste without Enter, so the text
+remains editable in the agent's prompt rather than silently commanding it.
+
 Ticking sends the line number and the new state rather than a body, because the counts a client is
 acting on arrived with the tree rather than from opening the note, and a whole-body write from a
 stale copy would discard whatever an agent wrote in the meantime. The client sends its own text
@@ -809,8 +816,8 @@ only to the client that asked for it. Unlike every other pane-API write, this on
 to tell the user it was refused, and "this project does not allow it" is a different situation from
 "that line is not a checkbox".
 
-Not yet implemented: pinned-note injection into a template's prompt, explicit forwarding to an
-agent, `argus ctx`, and the feature board (TARGET.md, "Boards"). The decision board has
+Not yet implemented: pinned-note injection into a template's prompt, `argus ctx`, and the feature
+board (TARGET.md, "Boards"). The decision board has
 landed (see "Decision board"); the two are not yet linked.
 
 ## Decision board

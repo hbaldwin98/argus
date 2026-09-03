@@ -154,6 +154,9 @@ impl App {
                 }
                 self.alert(format!("note: {message}"));
             }
+            ServerMsg::NoteForwarded { recipient } => {
+                self.report(format!("note forwarded to agent #{}", recipient.0));
+            }
             ServerMsg::Branches { checkout, branches } => {
                 if self.list_wanted != Some(checkout) {
                     return;

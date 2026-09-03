@@ -118,6 +118,8 @@ fn the_status_bar_offers_the_notes_own_keys_while_it_is_up() {
     let rendered = lines(&draw(&mut app)).join("
 ");
     assert!(rendered.contains("space tick"), "{rendered}");
+    assert!(rendered.contains("f line"), "{rendered}");
+    assert!(rendered.contains("F note"), "{rendered}");
     assert!(!rendered.contains("ctrl-v paste"), "not the pane keymap");
 
     app.notes.as_mut().unwrap().insert_mode();

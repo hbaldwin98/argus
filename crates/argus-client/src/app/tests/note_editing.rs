@@ -164,6 +164,138 @@ fn in_insert_mode_navigation_keys_are_just_letters() {
 }
 
 #[test]
+fn f_forwards_the_exact_line_to_the_only_live_agent() {
+    let mut h = harness_with_a_note("# Plan\n  - [!] keep the spaces  \nlast");
+    h.app.tree[0].repositories[0].checkouts[0].panes[1].kind = PaneKind::Agent;
+    h.key(KeyCode::Char('j'));
+
+    h.key(KeyCode::Char('f'));
+
+    assert!(matches!(
+        h.sent().as_slice(),
+        [ClientMsg::ForwardNote { target, recipient: PaneId(101), body }]
+            if *target == NoteTarget::Checkout(CheckoutId(10))
+                && body == "  - [!] keep the spaces  "
+    ));
+    assert_eq!(h.app.status, "forwarding note…");
+}
+
+#[test]
+fn uppercase_f_forwards_the_visible_whole_note() {
+    let mut h = harness_with_a_note("# Plan\n\n- [ ] one");
+    h.app.tree[0].repositories[0].checkouts[0].panes[1].kind = PaneKind::Agent;
+
+    h.key(KeyCode::Char('F'));
+
+    assert!(matches!(
+        h.sent().as_slice(),
+        [ClientMsg::ForwardNote { body, .. }] if body == "# Plan\n\n- [ ] one"
+    ));
+}
+
+#[test]
+fn forwarding_chooses_between_live_agents_in_the_note_scope() {
+    let mut h = harness_with_a_note("route this");
+    let checkout = &mut h.app.tree[0].repositories[0].checkouts[0];
+    checkout.panes[0].kind = PaneKind::Agent;
+    checkout.panes[0].template = Some("codex".to_string());
+    checkout.panes[1].kind = PaneKind::Agent;
+    checkout.panes[1].template = Some("claude".to_string());
+
+    h.key(KeyCode::Char('F'));
+
+    assert!(matches!(
+        &h.app.picker.as_ref().unwrap().kind,
+        PickerKind::NoteRecipient { panes, target, body }
+            if panes == &[PaneId(100), PaneId(101)]
+                && *target == NoteTarget::Checkout(CheckoutId(10))
+                && body == "route this"
+    ));
+    assert!(h.sent().is_empty());
+    h.key(KeyCode::Char('j'));
+    h.key(KeyCode::Enter);
+    assert!(matches!(
+        h.sent().as_slice(),
+        [ClientMsg::ForwardNote { recipient: PaneId(101), .. }]
+    ));
+}
+
+#[test]
+fn a_project_note_can_reach_an_agent_in_any_project_checkout() {
+    let mut h = Harness::new();
+    h.app.tree[0].repositories[0].checkouts[1]
+        .panes
+        .push(PaneInfo {
+            id: PaneId(111),
+            kind: PaneKind::Agent,
+            title: "feature agent".to_string(),
+            status: PaneStatus::Working,
+            note: None,
+            template: Some("claude".to_string()),
+            children: Vec::new(),
+        });
+    h.key(KeyCode::Char('m'));
+    h.app.on_server_msg(ServerMsg::Note(Box::new(argus_protocol::Note::new(
+        NoteTarget::Project(ProjectId(1)),
+        "project rule".to_string(),
+    ))));
+    h.sent();
+
+    h.key(KeyCode::Char('F'));
+
+    assert!(matches!(
+        h.sent().as_slice(),
+        [ClientMsg::ForwardNote {
+            target: NoteTarget::Project(ProjectId(1)),
+            recipient: PaneId(111),
+            body,
+        }] if body == "project rule"
+    ));
+}
+
+#[test]
+fn a_recipient_that_leaves_the_scope_while_the_picker_is_open_is_refused() {
+    let mut h = harness_with_a_note("route this");
+    for pane in &mut h.app.tree[0].repositories[0].checkouts[0].panes {
+        pane.kind = PaneKind::Agent;
+    }
+    h.key(KeyCode::Char('F'));
+    h.app.tree[0].repositories[0].checkouts[0].panes[0].status =
+        PaneStatus::Exited { code: Some(0) };
+
+    h.key(KeyCode::Enter);
+
+    assert!(h.sent().is_empty());
+    assert_eq!(h.app.status, "that agent is no longer in this note's scope");
+}
+
+#[test]
+fn empty_note_text_and_missing_agents_are_reported_without_sending() {
+    let mut h = harness_with_a_note("   \ncontent");
+    h.key(KeyCode::Char('f'));
+    assert_eq!(h.app.status, "line is empty");
+    assert!(h.sent().is_empty());
+
+    h.key(KeyCode::Char('j'));
+    h.key(KeyCode::Char('f'));
+    assert_eq!(h.app.status, "no agent running in this note's scope");
+    assert!(h.sent().is_empty());
+}
+
+#[test]
+fn forwarding_keys_are_text_in_insert_mode_and_success_is_acknowledged() {
+    let mut h = harness_with_a_note("");
+    h.key(KeyCode::Char('i'));
+    h.keys("fF");
+    assert_eq!(h.app.notes.as_ref().unwrap().body(), "fF");
+    assert!(h.sent().is_empty());
+
+    h.app
+        .on_server_msg(ServerMsg::NoteForwarded { recipient: PaneId(7) });
+    assert_eq!(h.app.status, "note forwarded to agent #7");
+}
+
+#[test]
 fn a_refused_write_is_shown_on_the_note_rather_than_only_in_the_bar() {
     let mut h = harness_with_a_note("x");
     h.app.on_server_msg(ServerMsg::NoteFailed {

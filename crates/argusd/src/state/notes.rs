@@ -91,6 +91,40 @@ impl Daemon {
         Ok(Note::new(target, body))
     }
 
+    /// Stages note text in one agent's prompt. The target is checked again
+    /// here because pane ids and tree membership may change while a client
+    /// has its recipient picker open.
+    pub fn forward_note(
+        &self,
+        target: NoteTarget,
+        recipient: PaneId,
+        body: String,
+    ) -> anyhow::Result<()> {
+        validate_forward_text(&body)?;
+        let input = self.note_recipient_input(target, recipient)?;
+
+        input
+            .paste(body.as_bytes())
+            .map_err(|error| anyhow::anyhow!("forwarding note text: {error}"))
+    }
+
+    fn note_recipient_input(
+        &self,
+        target: NoteTarget,
+        recipient: PaneId,
+    ) -> anyhow::Result<crate::pty::PaneInput> {
+        let inner = self.inner.lock().unwrap();
+        let pane = match target {
+            NoteTarget::Project(project) => {
+                project_note_recipient(&inner.projects, project, recipient)
+            }
+            NoteTarget::Checkout(checkout) => {
+                checkout_note_recipient(&inner.projects, checkout, recipient)
+            }
+        }?;
+        live_agent_input(pane)
+    }
+
     /// The notes a live agent pane may read: its project's, then its
     /// checkout's.
     ///
@@ -228,4 +262,51 @@ impl Daemon {
             })
             .collect()
     }
+}
+
+fn validate_forward_text(body: &str) -> anyhow::Result<()> {
+    if body.trim().is_empty() {
+        anyhow::bail!("note text is empty");
+    }
+    if body.len() > MAX_NOTE_BYTES {
+        anyhow::bail!("note text exceeds {MAX_NOTE_BYTES} bytes");
+    }
+    Ok(())
+}
+
+fn project_note_recipient(
+    projects: &[Project],
+    project_id: ProjectId,
+    recipient: PaneId,
+) -> anyhow::Result<&Pane> {
+    projects
+        .iter()
+        .find(|project| project.id == project_id)
+        .ok_or_else(|| anyhow::anyhow!("no such project"))?
+        .repositories
+        .iter()
+        .flat_map(|repository| repository.checkouts.iter())
+        .flat_map(|checkout| checkout.panes.iter())
+        .find(|pane| pane.id == recipient)
+        .ok_or_else(|| anyhow::anyhow!("recipient is not in that note's scope"))
+}
+
+fn checkout_note_recipient(
+    projects: &[Project],
+    checkout_id: CheckoutId,
+    recipient: PaneId,
+) -> anyhow::Result<&Pane> {
+    find_checkout_ref(projects, checkout_id)
+        .ok_or_else(|| anyhow::anyhow!("no such checkout"))?
+        .panes
+        .iter()
+        .find(|pane| pane.id == recipient)
+        .ok_or_else(|| anyhow::anyhow!("recipient is not in that note's scope"))
+}
+
+fn live_agent_input(pane: &Pane) -> anyhow::Result<crate::pty::PaneInput> {
+    if pane.kind != PaneKind::Agent || matches!(pane.status, PaneStatus::Exited { .. }) {
+        anyhow::bail!("recipient must be a live agent pane");
+    }
+    Ok(pane.runtime.input())
 }

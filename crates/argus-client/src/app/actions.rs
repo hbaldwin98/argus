@@ -102,6 +102,78 @@ impl App {
         let _ = self.out.send(ClientMsg::SetNote { target, body });
     }
 
+    /// Chooses where explicit context goes. A checkout note stays in its
+    /// checkout; a project note may go to any agent in that project.
+    pub(super) fn forward_note(&mut self, whole: bool) {
+        let Some(view) = &self.notes else {
+            return;
+        };
+        let target = view.target;
+        let body = match view.forward_text(whole) {
+            Ok(body) => body,
+            Err(message) => return self.report(message),
+        };
+        let agents = self.note_agents(target);
+        match agents.as_slice() {
+            [] => self.report("no agent running in this note's scope"),
+            [(pane, _)] => self.send_note(target, *pane, body),
+            _ => {
+                self.picker = Some(Picker::new(
+                    PickerKind::NoteRecipient {
+                        panes: agents.iter().map(|(pane, _)| *pane).collect(),
+                        target,
+                        body,
+                    },
+                    "forward note to",
+                    agents.into_iter().map(|(_, label)| label).collect(),
+                    0,
+                ));
+            }
+        }
+    }
+
+    pub(super) fn send_note(&mut self, target: NoteTarget, recipient: PaneId, body: String) {
+        let _ = self.out.send(ClientMsg::ForwardNote {
+            target,
+            recipient,
+            body,
+        });
+        self.report("forwarding note…");
+    }
+
+    fn note_agents(&self, target: NoteTarget) -> Vec<(PaneId, String)> {
+        let panes: Vec<&PaneInfo> = match target {
+            NoteTarget::Project(project) => self
+                .tree
+                .iter()
+                .find(|p| p.id == project)
+                .into_iter()
+                .flat_map(|p| p.repositories.iter())
+                .flat_map(|r| r.checkouts.iter())
+                .flat_map(|c| c.panes.iter())
+                .collect(),
+            NoteTarget::Checkout(checkout) => checkouts_in(&self.tree)
+                .find(|c| c.id == checkout)
+                .into_iter()
+                .flat_map(|c| c.panes.iter())
+                .collect(),
+        };
+        panes
+            .into_iter()
+            .filter(|p| is_live_agent_pane(p))
+            .map(|p| {
+                let template = p.template.as_deref().unwrap_or("agent");
+                (p.id, format!("{}  {}  #{}", p.title, template, p.id.0))
+            })
+            .collect()
+    }
+
+    pub(super) fn is_agent_for_note(&self, target: NoteTarget, pane: PaneId) -> bool {
+        self.note_agents(target)
+            .iter()
+            .any(|(candidate, _)| *candidate == pane)
+    }
+
     pub(super) fn open_review(&mut self) {
         if let Some(oid) = self
             .review

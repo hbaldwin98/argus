@@ -82,6 +82,26 @@ impl NoteView {
         self.lines.join("\n")
     }
 
+    /// The visible line under the cursor, byte-for-byte. Forwarding should
+    /// not reinterpret a checkbox or discard the user's Markdown.
+    pub fn line(&self) -> &str {
+        &self.lines[self.line]
+    }
+
+    /// Selects the exact text requested for forwarding and rejects blank
+    /// context before a recipient is chosen.
+    pub fn forward_text(&self, whole: bool) -> Result<String, &'static str> {
+        let text = if whole {
+            self.body()
+        } else {
+            self.line().to_string()
+        };
+        if text.trim().is_empty() {
+            return Err(if whole { "note is empty" } else { "line is empty" });
+        }
+        Ok(text)
+    }
+
     pub fn todos(&self) -> Vec<Todo> {
         parse_todos(&self.body())
     }

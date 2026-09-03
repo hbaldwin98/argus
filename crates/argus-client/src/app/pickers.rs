@@ -511,6 +511,20 @@ impl App {
                     self.report("that agent is no longer running");
                 }
             }
+            PickerKind::NoteRecipient {
+                panes,
+                target,
+                body,
+            } => {
+                let Some(pane) = picker.shown.get(picker.sel).and_then(|i| panes.get(*i)) else {
+                    return;
+                };
+                if self.is_agent_for_note(*target, *pane) {
+                    self.send_note(*target, *pane, body.clone());
+                } else {
+                    self.report("that agent is no longer in this note's scope");
+                }
+            }
             PickerKind::Agent => {
                 let Some(name) = picker.selected() else {
                     return;

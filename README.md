@@ -26,6 +26,8 @@ The workspace builds three executables:
 - Scrolls a pane back through what its child has already printed, by wheel or Shift-PageUp.
 - Keeps a Markdown note on any project or checkout, counting its `- [ ]`, `- [x]`, and `- [!]`
   lines and rolling those counts up the tree.
+- Forwards the current note line or whole note to an agent in that note's scope, leaving the text
+  editable in the agent's prompt rather than submitting it.
 - Lets an agent read the notes for where it is running, and — where the project asks for it — add
   to and tick off its checkout's checkboxes, with every change attributed and recorded.
 - Keeps a decision board per project: a tree of what agents chose while planning each feature, what

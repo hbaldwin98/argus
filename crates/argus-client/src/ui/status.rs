@@ -58,6 +58,9 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             PickerKind::ReviewRecipient { .. } => {
                 &["j/k move   enter send   esc cancel", "enter send  esc"]
             }
+            PickerKind::NoteRecipient { .. } => {
+                &["j/k move   enter forward   esc cancel", "enter forward  esc"]
+            }
         };
         (hints, th.dim)
     } else if app.prompt.is_some() {
@@ -126,9 +129,9 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             ),
             _ => (
                 &[
-                    "j/k move  0/$ line  space tick  i insert  o new line  q close",
-                    "j/k  space tick  i insert  o new line  q close",
-                    "space tick  i insert  q close",
+                    "j/k move  space tick  f line  F note  i insert  o new line  q close",
+                    "j/k  space tick  f line  F note  i insert  q close",
+                    "f line  F note  i insert  q close",
                 ][..],
                 th.dim,
             ),

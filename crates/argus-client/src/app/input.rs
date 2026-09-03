@@ -469,6 +469,8 @@ impl App {
                 view.insert_mode();
             }
             KeyCode::Char('o') => view.open_below(),
+            KeyCode::Char('f') => self.forward_note(false),
+            KeyCode::Char('F') => self.forward_note(true),
             // The tick goes to the daemon as a line and a state rather
             // than as a new body: see `ClientMsg::SetTodo`.
             KeyCode::Char(' ') | KeyCode::Enter => self.toggle_note_todo(),

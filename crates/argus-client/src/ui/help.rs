@@ -114,6 +114,8 @@ const NOTES: Group = Group {
         ("j / k  h / l", "move the cursor"),
         ("0 / $", "start and end of the line"),
         ("space", "tick the box on this line"),
+        ("f", "forward this line to an agent"),
+        ("F", "forward the whole note to an agent"),
         ("i  a", "start typing"),
         ("o", "a new line below"),
         ("esc", "stop typing, and save"),

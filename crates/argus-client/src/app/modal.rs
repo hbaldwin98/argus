@@ -37,6 +37,12 @@ pub enum PickerKind {
         anchor: ReviewAnchor,
         body: String,
     },
+    /// Forward prepared note text to one live agent in the note's scope.
+    NoteRecipient {
+        panes: Vec<PaneId>,
+        target: NoteTarget,
+        body: String,
+    },
 }
 
 impl PickerKind {

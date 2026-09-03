@@ -176,6 +176,7 @@ fn handle_client_msg(
     viewer: ViewerId,
 ) {
     let result = dispatch_pane(msg, daemon, out_tx, subs, viewer)
+        .or_else(|msg| dispatch_note_forward(msg, daemon, out_tx))
         .or_else(|msg| dispatch_notes(msg, daemon, out_tx))
         .or_else(|msg| dispatch_decisions(msg, daemon, out_tx))
         .or_else(|msg| dispatch_workspace(msg, daemon, out_tx))
@@ -286,6 +287,24 @@ fn dispatch_notes(
             line,
             state,
         } => answer_note(out_tx, target, daemon.set_todo(target, line, state)),
+        msg => return Err(msg),
+    };
+    Ok(result)
+}
+
+fn dispatch_note_forward(
+    msg: ClientMsg,
+    daemon: &Arc<Daemon>,
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+) -> DispatchResult {
+    let result = match msg {
+        ClientMsg::ForwardNote {
+            target,
+            recipient,
+            body,
+        } => daemon.forward_note(target, recipient, body).map(|()| {
+            let _ = out_tx.send(ServerMsg::NoteForwarded { recipient });
+        }),
         msg => return Err(msg),
     };
     Ok(result)

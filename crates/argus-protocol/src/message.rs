@@ -137,6 +137,15 @@ pub enum ClientMsg {
         line: usize,
         state: TodoState,
     },
+    /// Put note text into one live agent's prompt without submitting it.
+    /// The target is carried so the daemon can prove that the recipient is
+    /// inside the note's project or checkout rather than trusting the
+    /// client's recipient picker.
+    ForwardNote {
+        target: NoteTarget,
+        recipient: PaneId,
+        body: String,
+    },
     /// Read a project's decision board. Whole rather than scoped: a
     /// decision hanging off three others means nothing without them.
     GetDecisions {
@@ -318,6 +327,11 @@ pub enum ServerMsg {
     NoteFailed {
         target: NoteTarget,
         message: String,
+    },
+    /// Note text reached the selected pane's input. It remains editable in
+    /// the child because forwarding never presses Enter for the operator.
+    NoteForwarded {
+        recipient: PaneId,
     },
     /// The answer to `ClientMsg::ListBranches`. `current` is the branch the
     /// checkout is on, and is the first entry of `branches`.
