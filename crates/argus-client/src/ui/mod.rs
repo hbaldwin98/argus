@@ -1,6 +1,8 @@
-//! The renderer. Its normal spine has five columns: projects, repositories,
-//! checkouts, open panes, and the selected pane's live view. A pane can
-//! temporarily take the main content area while its terminal has focus.
+//! The renderer. Its default view is the spine: five columns — projects,
+//! repositories, checkouts, open panes, and the selected pane's live view.
+//! A pane can temporarily take the main content area while its terminal
+//! has focus, and another view can take it outright (see [`views`]); the
+//! tab strip along the top says which views there are and which is open.
 //!
 //! Every color goes through [`crate::theme::Theme`] rather than being named
 //! here, and the visual language is deliberately narrow:
@@ -38,7 +40,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Wi
 use ratatui::Frame;
 
 use crate::app::{
-    App, CheckoutRow, Focus, Fold, Overlay, PaneLocation, Panel, PickerKind, Prompt, Setting,
+    App, CheckoutRow, Focus, Fold, Overlay, PaneLocation, Panel, PickerKind, Prompt, Setting, View,
 };
 use crate::dirpicker::DirRow;
 use crate::grid::Grid;
@@ -58,6 +60,7 @@ mod rows;
 mod status;
 mod term;
 mod text;
+mod views;
 
 use columns::*;
 use help::*;
@@ -69,8 +72,10 @@ use rows::*;
 use status::*;
 use term::*;
 use text::*;
+use views::*;
 
 pub use rows::pane_row_owners;
+pub use views::tab_at;
 pub use term::CursorPlacement;
 
 /// The text caret, drawn rather than using the terminal cursor: the
@@ -226,6 +231,13 @@ pub fn render(f: &mut Frame, app: &mut App) {
     f.render_widget(Block::default().style(Style::default().bg(th.bg)), f.area());
 
     let page = inset(f.area(), GUTTER_COLS, 1);
+    // Above everything, page frame included: which views exist is not a
+    // property of whichever one is open.
+    if let Some(strip) = strip_row(f.area(), page) {
+        render_view_tabs(f, app, strip, th);
+    } else {
+        app.layout.views = Panel::default();
+    }
     // A resize is noticed here rather than plumbed in as an event, because
     // here is where the answer is used. Folding only ever tightens: a
     // terminal that has grown wide enough for five columns is not a reason
@@ -254,15 +266,20 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // Each layer replaces the decision outright, `None` included.
     let fullscreen =
         app.pane_fullscreen && app.focus == Focus::PaneContent && app.column_pane().is_some();
-    let mut cursor = if fullscreen {
-        app.layout.projects = Panel::default();
-        app.layout.repositories = Panel::default();
-        app.layout.checkouts = Panel::default();
-        app.layout.panes = Panel::default();
-        app.layout.row_height = ROW_HEIGHT;
-        render_content(f, app, root[0], th)
-    } else {
-        render_columns(f, app, root[0])
+    let mut cursor = match app.view {
+        // A view that is not the spine draws no columns, so the regions a
+        // click is resolved against have to be forgotten rather than left
+        // pointing at cards that are no longer there.
+        View::Decisions => {
+            forget_spine(app);
+            render_decisions(f, app, root[0], th);
+            None
+        }
+        View::Spine if fullscreen => {
+            forget_spine(app);
+            render_content(f, app, root[0], th)
+        }
+        View::Spine => render_columns(f, app, root[0]),
     };
     render_status(f, app, root[1], th);
 
@@ -301,6 +318,16 @@ pub fn render(f: &mut Frame, app: &mut App) {
     if let Some(placement) = cursor {
         f.set_cursor_position(placement.position);
     }
+}
+
+/// Zeroes the nav columns' recorded regions, for the frames that draw none
+/// of them: a stale rect is a click that selects a row nobody can see.
+fn forget_spine(app: &mut App) {
+    app.layout.projects = Panel::default();
+    app.layout.repositories = Panel::default();
+    app.layout.checkouts = Panel::default();
+    app.layout.panes = Panel::default();
+    app.layout.row_height = ROW_HEIGHT;
 }
 
 /// The selected pane's live terminal. It normally occupies the rightmost

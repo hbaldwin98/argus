@@ -449,7 +449,7 @@ impl App {
             Focus::Repositories => &mut self.sel_repository,
             Focus::Checkouts => &mut self.sel_checkout,
             Focus::Panes => &mut self.sel_pane,
-            Focus::PaneContent | Focus::Review | Focus::Overlay => return,
+            Focus::PaneContent | Focus::Review | Focus::Overlay | Focus::View => return,
         };
         let new = *sel as i32 + delta;
         if new >= 0 {
@@ -494,7 +494,7 @@ impl App {
                     self.focus = Focus::PaneContent;
                 }
             }
-            Focus::PaneContent | Focus::Review | Focus::Overlay => {}
+            Focus::PaneContent | Focus::Review | Focus::Overlay | Focus::View => {}
         }
     }
 
@@ -522,6 +522,9 @@ impl App {
             }
             Focus::Projects => {}
             Focus::Review | Focus::Overlay => self.focus = Focus::Checkouts,
+            // A view is left by opening another one, not by backing out
+            // of it: there is no column above it to land on.
+            Focus::View => {}
         }
     }
 

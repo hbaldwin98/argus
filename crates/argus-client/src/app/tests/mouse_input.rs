@@ -12,6 +12,7 @@ fn dragging_a_gutter_resizes_the_two_adjacent_columns() {
     h.app.layout = Layout {
         width: 100,
         row_height: crate::ui::ROW_HEIGHT,
+        views: Panel::default(),
         projects: panel(0, 20),
         repositories: panel(21, 20),
         checkouts: panel(42, 20),
@@ -72,6 +73,7 @@ fn dragging_a_gutter_cannot_collapse_either_column() {
     h.app.layout = Layout {
         width: 100,
         row_height: crate::ui::ROW_HEIGHT,
+        views: Panel::default(),
         projects: panel(0, 20),
         repositories: panel(21, 20),
         checkouts: panel(42, 20),

@@ -89,6 +89,25 @@ result of a request; `ui` is a pure function of it.
 | `grid`, `pty_input`, `paste`, `clipboard`, `fuzzy` | a pane's screen, and the input primitives |
 | `settings`, `theme`, `backend`, `herdr`, `profile` | preferences, palette, the ratatui backend, and what is reported outward |
 
+## Views
+
+The content area holds one *view* at a time. The spine — the five columns below — is the default
+view and the one every other view is left back to. A one-row tab strip along the top of the frame
+names the views that exist and marks the open one; each tab carries the digit that opens it, and a
+click on a tab does the same. From inside a pane the digits belong to the child, so a view is
+reached through the leader (`Ctrl-Space`, then the digit) the way review and history are. The strip
+is drawn in the blank row the page is already inset by, so it costs the view underneath nothing.
+
+Switching views changes the screen and nothing else. Every pane keeps running, its subscription
+stands, and the spine is one keystroke back. Focus moves out of the columns while another view is
+open — a view has no columns to move between, and a key left reaching a pane that is not on screen
+is a key nobody can see the effect of — and returns to the column it left. Which view is open is
+this client's own state and is never sent to the daemon: two people attached to one daemon are not
+necessarily reading the same thing.
+
+The views are the spine and the decision board. The board is drawn but empty: agents cannot yet
+write decisions, so it says what it is for (ROADMAP.md, "P6.5").
+
 ## Navigation model
 
 The runtime hierarchy is:
@@ -785,9 +804,9 @@ to tell the user it was refused, and "this project does not allow it" is a diffe
 "that line is not a checkbox".
 
 Not yet implemented: pinned-note injection into a template's prompt, explicit forwarding to an
-agent, `argus ctx`, and the two project boards — a decision tree and a feature board — which want a
-view of their own rather than a column (TARGET.md, "Boards"). The client has no views yet: the
-project spine is the only top-level surface, and everything else is an overlay over it.
+agent, `argus ctx`, and the two project boards — a decision tree and a feature board (TARGET.md,
+"Boards"). The view they need exists (see "Views") and the decision board has its tab; what is
+missing is anything to draw on it.
 
 ## Editors and overlays
 

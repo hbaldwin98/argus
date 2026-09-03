@@ -339,6 +339,7 @@ pub(super) fn laid_out(h: &mut Harness) {
     h.app.layout = Layout {
         width: 100,
         row_height: crate::ui::ROW_HEIGHT,
+        views: Panel::default(),
         projects: panel(0, 12),
         repositories: panel(12, 12),
         checkouts: panel(24, 12),

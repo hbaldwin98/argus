@@ -12,6 +12,7 @@ mod notes;
 mod panes;
 mod picker;
 mod rows;
+mod views;
 
 use super::*;
 use argus_protocol::{

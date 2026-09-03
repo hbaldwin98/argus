@@ -108,6 +108,7 @@ fn the_gutter_next_to_a_fold_tab_is_not_draggable() {
     h.app.layout = Layout {
         width: 61,
         row_height: crate::ui::ROW_HEIGHT,
+        views: Panel::default(),
         projects: panel(0, 1),
         repositories: panel(2, 12),
         checkouts: panel(15, 12),

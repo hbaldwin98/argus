@@ -33,6 +33,7 @@ use crate::theme::Theme;
 pub use layout::{Focus, Fold, Layout, Panel};
 pub use modal::{Help, Overlay, Picker, PickerKind, Prompt, RemoveTarget, Setting};
 pub use rows::{CheckoutAnchor, CheckoutRow, PaneLocation};
+pub use views::View;
 use layout::{in_rect, row_in};
 use argus_protocol::ReviewBase;
 
@@ -46,6 +47,7 @@ mod pickers;
 mod rows;
 mod scroll;
 mod server;
+mod views;
 
 const STATE_FLASH: std::time::Duration = std::time::Duration::from_millis(900);
 
@@ -136,6 +138,12 @@ pub struct App {
     /// scope of that column is never a guess.
     pub open_workspace: String,
     pub focus: Focus,
+    /// Which top-level surface is open. Client-only state: see
+    /// [`views`].
+    pub view: View,
+    /// Where focus was on the spine when another view took the screen, so
+    /// coming back lands on the column you left rather than at the root.
+    spine_focus: Focus,
     pub sel_project: usize,
     pub sel_repository: usize,
     pub sel_checkout: usize,
@@ -273,6 +281,8 @@ impl App {
             } else {
                 Focus::Projects
             },
+            view: View::default(),
+            spine_focus: Focus::Panes,
             sel_project: 0,
             sel_repository: 0,
             sel_checkout: 0,

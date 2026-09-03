@@ -67,6 +67,8 @@ impl App {
             self.on_key_picker(key);
         } else if self.overlay.is_some() {
             self.on_key_overlay(key);
+        } else if self.focus == Focus::View {
+            self.on_key_view(key);
         } else if self.focus == Focus::Review {
             self.on_key_review(key);
         } else if self.focus == Focus::PaneContent {
@@ -512,6 +514,9 @@ impl App {
                 KeyCode::Char('x') => self.close_current(),
                 KeyCode::Char('N') => self.jump_to_next_attention(),
                 KeyCode::Char('?') => self.help = Some(Help::default()),
+                KeyCode::Char(c) if View::from_digit(c).is_some() => {
+                    self.open_view(View::from_digit(c).unwrap())
+                }
                 _ => {}
             }
             return;
@@ -570,6 +575,21 @@ impl App {
             KeyCode::Char('v') => self.toggle_pane_view(),
             KeyCode::Char('m') => self.open_notes(),
             KeyCode::Char('N') => self.jump_to_next_attention(),
+            KeyCode::Char(c) if View::from_digit(c).is_some() => {
+                self.open_view(View::from_digit(c).unwrap())
+            }
+            _ => {}
+        }
+    }
+
+    /// A view that is not the spine. It has no columns, so the only keys
+    /// that mean anything here are the ones that leave.
+    fn on_key_view(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char(c) if View::from_digit(c).is_some() => {
+                self.open_view(View::from_digit(c).unwrap())
+            }
+            KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Spine),
             _ => {}
         }
     }

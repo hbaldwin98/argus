@@ -35,6 +35,14 @@ impl App {
             }
             return;
         }
+        // The tab strip is above every other surface, overlays included:
+        // it is the one row on screen that is not about whatever is open.
+        if matches!(ev.kind, MouseEventKind::Down(_)) {
+            if let Some(view) = crate::ui::tab_at(self.layout.views.outer, ev.column, ev.row) {
+                self.open_view(view);
+                return;
+            }
+        }
         // Clicking the folded-away tab is the mouse equivalent of `p`: it
         // expands the column again. Handled before the column hit-test,
         // which would otherwise park focus on a handle with no rows.

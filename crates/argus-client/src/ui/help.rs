@@ -50,6 +50,8 @@ const SELECTION: Group = Group {
 const VIEW: Group = Group {
     title: "the view",
     keys: &[
+        ("1", "the spine — projects through to the live pane"),
+        ("2", "the decision board"),
         ("p", "fold a column away, and back"),
         ("v", "where panes are listed"),
         ("t", "theme"),
@@ -68,6 +70,7 @@ const PANE: Group = Group {
         ("ctrl-space tab", "review"),
         ("ctrl-space H", "history"),
         ("ctrl-space N", "next needing attention"),
+        ("ctrl-space 1 / 2", "another view"),
         ("shift-pgup", "back through the scrollback"),
     ],
 };

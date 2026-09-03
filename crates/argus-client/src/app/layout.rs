@@ -17,6 +17,10 @@ pub enum Focus {
     Review,
     /// A floating window over everything else — see [`Overlay`].
     Overlay,
+    /// The open view, when it is not the spine. One variant for all of
+    /// them: a view owns the whole content area, so there is never a
+    /// second thing on screen for focus to pick between.
+    View,
 }
 
 /// How many of the leading nav columns are folded away to tabs in the left
@@ -125,6 +129,9 @@ pub struct Layout {
     pub checkouts: Panel,
     pub panes: Panel,
     pub content: Panel,
+    /// The row of view tabs above everything else. Zero-sized on a
+    /// terminal too short to spend a row on it.
+    pub views: Panel,
     /// Zero-sized when no overlay is up.
     pub overlay: Panel,
     /// The keymap window, zero-sized when it is not up.
