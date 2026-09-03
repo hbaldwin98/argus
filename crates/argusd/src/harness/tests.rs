@@ -620,6 +620,13 @@ fn agents_are_told_how_to_read_review_comments() {
     assert!(text.contains("comments"));
 }
 
+#[test]
+fn agents_are_told_where_the_humans_notes_are() {
+    let text = instructions();
+    assert!(text.contains("standing instructions"));
+    assert!(text.contains("context"));
+}
+
 // --- the plugin mechanism ----------------------------------------------
 
 fn plugin_path(dir: &Path, h: &Harness) -> PathBuf {

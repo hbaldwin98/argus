@@ -80,6 +80,12 @@ pub fn instructions() -> String {
          \n\
          \x20 {hook} comments\n\
          \n\
+         The human keeps notes on this checkout and the project above it, and lines \
+         marked `- [!]` in them are standing instructions meant for you. Read them \
+         before you start, and again whenever the task changes shape:\n\
+         \n\
+         \x20 {hook} context\n\
+         \n\
          After you start working in another checkout, run this from that checkout so the \
          pane moves under it in Argus:\n\
          \n\

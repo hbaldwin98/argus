@@ -9,6 +9,12 @@ use argus_protocol::{ReviewAnchor, ReviewComment, MAX_REVIEW_COMMENT_BYTES};
 
 use super::*;
 
+/// The durable identity of the place an agent is running.
+pub(super) struct AgentScope {
+    pub project_name: String,
+    pub checkout_path: std::path::PathBuf,
+}
+
 /// Whether a hook's report should be dropped rather than applied, for
 /// either of two reasons. The pane has already exited, and nothing said
 /// afterwards — a `Stop` racing a crash, say — should resurrect its row. Or
@@ -83,27 +89,39 @@ impl Daemon {
     /// Comments visible to the checkout containing this live agent. Pane ids
     /// are runtime-only, so durable access is deliberately checkout-scoped.
     pub fn review_comments_for_agent(&self, pane_id: PaneId) -> anyhow::Result<Vec<ReviewComment>> {
-        let checkout_path = {
-            let inner = self.inner.lock().unwrap();
-            let mut found = None;
-            'projects: for project in &inner.projects {
-                for repository in &project.repositories {
-                    for checkout in &repository.checkouts {
-                        if let Some(pane) = checkout.panes.iter().find(|pane| pane.id == pane_id) {
-                            if pane.kind != PaneKind::Agent
-                                || matches!(pane.status, PaneStatus::Exited { .. })
-                            {
-                                anyhow::bail!("source must be a live agent pane");
-                            }
-                            found = Some(checkout.path.clone());
-                            break 'projects;
-                        }
+        let scope = self.agent_scope(pane_id)?;
+        self.store.review_comments(&scope.checkout_path)
+    }
+
+    /// Where a live agent pane sits: the project that owns it and the
+    /// checkout it is working in, both named the way the store files them
+    /// rather than by the ids a restart throws away.
+    ///
+    /// Every durable read an agent is allowed to make resolves through
+    /// here, so the rule that a caller must be a live agent pane is written
+    /// once. A shell pane, an exited one, or an id from another Argus gets
+    /// the same refusal whatever it asked for.
+    pub(super) fn agent_scope(&self, pane_id: PaneId) -> anyhow::Result<AgentScope> {
+        let inner = self.inner.lock().unwrap();
+        for project in &inner.projects {
+            for repository in &project.repositories {
+                for checkout in &repository.checkouts {
+                    let Some(pane) = checkout.panes.iter().find(|pane| pane.id == pane_id) else {
+                        continue;
+                    };
+                    if pane.kind != PaneKind::Agent
+                        || matches!(pane.status, PaneStatus::Exited { .. })
+                    {
+                        anyhow::bail!("source must be a live agent pane");
                     }
+                    return Ok(AgentScope {
+                        project_name: project.name.clone(),
+                        checkout_path: checkout.path.clone(),
+                    });
                 }
             }
-            found.ok_or_else(|| anyhow::anyhow!("no such source pane"))?
-        };
-        self.store.review_comments(&checkout_path)
+        }
+        anyhow::bail!("no such source pane")
     }
 
     /// Applies a hook report to whichever agent sent it.

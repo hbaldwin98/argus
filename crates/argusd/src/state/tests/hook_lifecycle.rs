@@ -2,6 +2,7 @@
 //! running in it, and their removal when the last one leaves.
 
 use super::*;
+use argus_protocol::ContextScope;
 #[tokio::test]
 async fn sharing_a_checkout_is_allowed_unless_the_project_says_otherwise() {
     let dir = tempfile::tempdir().unwrap();
@@ -212,4 +213,104 @@ async fn closing_a_shell_pane_does_not_disturb_an_agents_hooks() {
 
     d.close_pane(shell).unwrap();
     assert!(settings_of(dir.path()).exists());
+}
+
+#[tokio::test]
+async fn context_reads_the_project_and_checkout_notes_of_the_asking_agent() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    let checkout = only_checkout(&d);
+    let project = d.snapshot()[0].id;
+    d.set_note(
+        NoteTarget::Project(project),
+        "- [!] house style\n- [ ] outstanding\n".to_string(),
+    )
+    .unwrap();
+    d.set_note(
+        NoteTarget::Checkout(checkout),
+        "# This branch\n- [!] leave the schema alone\n".to_string(),
+    )
+    .unwrap();
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+    let context = d.context_for_agent(agent).unwrap();
+
+    assert_eq!(
+        context
+            .notes
+            .iter()
+            .map(|note| note.scope)
+            .collect::<Vec<_>>(),
+        [ContextScope::Project, ContextScope::Checkout],
+        "outermost scope first"
+    );
+    assert!(context.notes[1].body.contains("# This branch"));
+    assert_eq!(
+        context
+            .pinned()
+            .map(|(_, todo)| todo.text.as_str())
+            .collect::<Vec<_>>(),
+        ["house style", "leave the schema alone"]
+    );
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn context_omits_a_note_that_was_never_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    let checkout = only_checkout(&d);
+    d.set_note(NoteTarget::Checkout(checkout), "- [ ] just here\n".to_string())
+        .unwrap();
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+    let context = d.context_for_agent(agent).unwrap();
+
+    assert_eq!(context.notes.len(), 1, "the empty project note is left out");
+    assert_eq!(context.notes[0].scope, ContextScope::Checkout);
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn context_is_refused_to_anything_that_is_not_a_live_agent() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    let checkout = only_checkout(&d);
+    let shell = d.spawn_shell(checkout).unwrap();
+
+    assert!(d.context_for_agent(shell).is_err(), "a shell is not an agent");
+    assert!(d.context_for_agent(PaneId(9999)).is_err(), "nor is nobody");
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn an_authorized_context_hook_returns_the_checkout_notes() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    d.start_hook_server().unwrap();
+    let checkout = only_checkout(&d);
+    d.set_note(
+        NoteTarget::Checkout(checkout),
+        "- [!] read me first\n".to_string(),
+    )
+    .unwrap();
+    let source = d.spawn_agent(checkout, "claude").unwrap();
+
+    let response = post_agent_hook(&d, source, Endpoint::Context, "").await;
+
+    assert!(response.starts_with(b"HTTP/1.1 200 OK"));
+    let body = response
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|index| &response[index + 4..])
+        .unwrap();
+    let context: argus_protocol::AgentContext = serde_json::from_slice(body).unwrap();
+    assert_eq!(
+        context
+            .pinned()
+            .map(|(_, todo)| todo.text.clone())
+            .collect::<Vec<_>>(),
+        ["read me first"]
+    );
+    close_all(&d);
 }

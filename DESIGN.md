@@ -688,8 +688,20 @@ Notes are stored in `runtime.db` under durable identity — a project by its nam
 path — because ids are handed out fresh on every start. Saving an empty body deletes the note;
 there is no separate delete. A note over 64 KiB is refused.
 
-Not yet implemented: scoped context read APIs, pinned-note injection into a template's prompt,
-explicit forwarding to an agent, and `argus ctx`.
+A live agent reads those notes with `argus-hook context`, which posts to `/pane/<id>/context` on
+the same loopback pane API its status reports use. What comes back is its project's note and its
+checkout's note, in that order, each with its body and its parsed checkboxes; an unwritten or blank
+note is left out rather than sent as an empty document. Scope is the point. The pane the request
+arrives on decides which two notes exist for it, so there is no target to name and nothing else to
+reach, and the caller must be a live agent pane — the same rule review comments are read under, and
+for the same reason: pane ids are runtime-only, so anything durable keys off the checkout directory.
+
+The helper prints the pinned lines once above the bodies they came from. That repetition is
+deliberate: `- [!]` is Argus's spelling rather than Markdown's, and an agent reading a note cold has
+no reason to know it means "standing instruction".
+
+Reads only. Not yet implemented: policy-gated writes with audit records, pinned-note injection into
+a template's prompt, explicit forwarding to an agent, and `argus ctx`.
 
 ## Editors and overlays
 

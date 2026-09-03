@@ -8,6 +8,7 @@
 //! cannot.
 
 pub mod cell;
+pub mod context;
 pub mod framing;
 pub mod hook;
 pub mod ids;
@@ -22,6 +23,7 @@ pub use cell::{
     diff_grid, Cell, CellSpan, Color, Cursor, CursorShape, MouseEncoding, MouseMode, MouseTracking,
     BLANK,
 };
+pub use context::{AgentContext, ContextNote, ContextScope};
 pub use compact_str::{CompactString, ToCompactString};
 pub use framing::{read_msg, write_frame, write_msg, FramingError};
 pub use hook::{

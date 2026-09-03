@@ -158,6 +158,7 @@ async fn handle_hook_request(
                 HookResponse::empty(200, "OK")
             }
             Some((pane, Endpoint::Comments)) => comments_response(&daemon, pane)?,
+            Some((pane, Endpoint::Context)) => context_response(&daemon, pane)?,
             // A checkout move from an agent that does not own the pane is
             // dropped: the row follows the agent Argus started in it.
             _ => HookResponse::empty(200, "OK"),
@@ -191,6 +192,17 @@ async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
         }
     }
     Ok((authorized, content_length, reporter))
+}
+
+fn context_response(daemon: &Arc<Daemon>, source: PaneId) -> anyhow::Result<HookResponse> {
+    Ok(match daemon.context_for_agent(source) {
+        Ok(context) => HookResponse {
+            code: 200,
+            reason: "OK",
+            body: serde_json::to_vec(&context)?,
+        },
+        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
+    })
 }
 
 fn comments_response(daemon: &Arc<Daemon>, source: PaneId) -> anyhow::Result<HookResponse> {

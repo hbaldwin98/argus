@@ -8,7 +8,10 @@
 
 use std::collections::HashMap;
 
-use argus_protocol::{Note, NoteCounts, NoteTarget, TodoState, MAX_NOTE_BYTES};
+use argus_protocol::{
+    AgentContext, ContextNote, ContextScope, Note, NoteCounts, NoteTarget, TodoState,
+    MAX_NOTE_BYTES,
+};
 
 use super::*;
 use crate::store::NoteKey;
@@ -80,6 +83,44 @@ impl Daemon {
         self.store.set_note(&key, &body)?;
         self.broadcast_tree();
         Ok(Note::new(target, body))
+    }
+
+    /// The notes a live agent pane may read: its project's, then its
+    /// checkout's.
+    ///
+    /// Read straight from the store by durable key rather than through
+    /// [`Daemon::note`], because an agent has no ids to name a target with
+    /// and should not be handed any — the pane it asks from is what decides
+    /// which two notes exist for it. Nothing outside that pair is
+    /// reachable, which is the whole of the scoping.
+    ///
+    /// Notes are optional and usually absent, so an unwritten one is left
+    /// out instead of arriving as an empty document.
+    pub fn context_for_agent(&self, pane_id: PaneId) -> anyhow::Result<AgentContext> {
+        let scope = self.agent_scope(pane_id)?;
+        let sources = [
+            (
+                ContextScope::Project,
+                scope.project_name.clone(),
+                NoteKey::Project(scope.project_name),
+            ),
+            (
+                ContextScope::Checkout,
+                scope.checkout_path.to_string_lossy().to_string(),
+                NoteKey::checkout(&scope.checkout_path),
+            ),
+        ];
+        let mut notes = Vec::new();
+        for (context_scope, name, key) in sources {
+            let Some(body) = self.store.note(&key)? else {
+                continue;
+            };
+            if body.trim().is_empty() {
+                continue;
+            }
+            notes.push(ContextNote::new(context_scope, name, body));
+        }
+        Ok(AgentContext { notes })
     }
 
     /// Every note's counts in one read, keyed for the snapshot to look up.

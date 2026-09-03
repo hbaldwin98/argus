@@ -10,6 +10,7 @@
 //! argus-hook checkout                            # reports the current directory
 //! argus-hook session <id>                        # records exact resume identity
 //! argus-hook comments                            # reads durable review feedback
+//! argus-hook context                             # reads the notes for this checkout
 //! argus-hook say "text"                          # prints, calls nobody
 //! argus-hook <url> <token> [--note-from-stdin] [--title-from-stdin]  # the installed hook form
 //! ```
@@ -32,8 +33,8 @@
 //! continue — Cursor wants `permission`, Claude wants `decision` — never a
 //! human-readable message. Some agent CLIs inject a hook's stdout into the
 //! model's context, so staying silent keeps Argus's bookkeeping out of the
-//! conversation. The deliberate `say` and `comments` commands do return
-//! useful output.
+//! conversation. The deliberate `say`, `comments`, and `context` commands do
+//! return useful output.
 //!
 //! On Windows it is a GUI-subsystem binary. Not because it has a UI — it
 //! has none — but because the agent CLI that runs it decides how it is
@@ -51,7 +52,7 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use argus_protocol::{
-    Endpoint, Report, ReviewComment, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
+    AgentContext, Endpoint, Report, ReviewComment, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
     SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };
 
@@ -77,6 +78,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("checkout", checkout),
     ("session", session),
     ("comments", comments),
+    ("context", context),
 ];
 
 fn dispatch(command: Option<&str>, rest: &[&str]) {
@@ -155,25 +157,11 @@ fn comments(rest: &[&str]) {
 }
 
 fn comments_message(rest: &[&str], base_url: &str, token: &str) -> String {
-    if !rest.is_empty() {
-        return "could not read comments: comments takes no arguments".to_string();
-    }
-    let Some((status, body)) =
-        post_response(&endpoint_url(base_url, Endpoint::Comments), token, "")
-    else {
-        return "could not read comments: daemon unavailable".to_string();
-    };
-    if status != 200 {
-        let reason = body.trim();
-        return if reason.is_empty() {
-            "could not read comments: daemon refused the request".to_string()
-        } else {
-            format!("could not read comments: {reason}")
+    let comments: Vec<ReviewComment> =
+        match read_json("comments", Endpoint::Comments, rest, base_url, token) {
+            Ok(comments) => comments,
+            Err(message) => return message,
         };
-    }
-    let Ok(comments) = serde_json::from_str::<Vec<ReviewComment>>(&body) else {
-        return "could not read comments: invalid daemon response".to_string();
-    };
     if comments.is_empty() {
         return "no review comments".to_string();
     }
@@ -189,6 +177,76 @@ fn comments_message(rest: &[&str], base_url: &str, token: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// A read of whatever the human wrote down about this checkout and the
+/// project above it. Deliberately on stdout, like `comments`: it is
+/// context for the model.
+fn context(rest: &[&str]) {
+    let mut out = std::io::stdout();
+    let _ = writeln!(out, "{}", context_message(rest, &env_url(), &env_token()));
+    let _ = out.flush();
+}
+
+fn context_message(rest: &[&str], base_url: &str, token: &str) -> String {
+    let context: AgentContext = match read_json("context", Endpoint::Context, rest, base_url, token)
+    {
+        Ok(context) => context,
+        Err(message) => return message,
+    };
+    if context.is_empty() {
+        return "no notes for this checkout".to_string();
+    }
+    let mut sections = Vec::new();
+    // The pinned lines are repeated out of the bodies below on purpose.
+    // `- [!]` is Argus's spelling, not Markdown's, and an agent reading a
+    // note cold has no reason to know it means "standing instruction".
+    let pinned: Vec<String> = context
+        .pinned()
+        .map(|(scope, todo)| format!("- ({}) {}", scope.label(), todo.text))
+        .collect();
+    if !pinned.is_empty() {
+        sections.push(format!(
+            "Standing instructions, which apply without being asked for:\n{}",
+            pinned.join("\n")
+        ));
+    }
+    for note in &context.notes {
+        sections.push(format!(
+            "--- {} note: {} ---\n{}",
+            note.scope.label(),
+            note.name,
+            note.body.trim_end()
+        ));
+    }
+    sections.join("\n\n")
+}
+
+/// One JSON read from the pane API, with every way it can fail phrased for
+/// the agent that ran the command rather than for a log.
+fn read_json<T: serde::de::DeserializeOwned>(
+    what: &str,
+    endpoint: Endpoint,
+    rest: &[&str],
+    base_url: &str,
+    token: &str,
+) -> Result<T, String> {
+    if !rest.is_empty() {
+        return Err(format!("could not read {what}: {what} takes no arguments"));
+    }
+    let Some((status, body)) = post_response(&endpoint_url(base_url, endpoint), token, "") else {
+        return Err(format!("could not read {what}: daemon unavailable"));
+    };
+    if status != 200 {
+        let reason = body.trim();
+        return Err(if reason.is_empty() {
+            format!("could not read {what}: daemon refused the request")
+        } else {
+            format!("could not read {what}: {reason}")
+        });
+    }
+    serde_json::from_str(&body)
+        .map_err(|_| format!("could not read {what}: invalid daemon response"))
 }
 
 fn installed_hook(url: &str, rest: &[&str]) {
@@ -861,10 +919,6 @@ mod tests {
 
     #[test]
     fn comments_are_read_from_the_daemon_and_rendered_in_order() {
-        use std::io::BufRead as _;
-
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
         let comments = vec![ReviewComment {
             id: 4,
             anchor: argus_protocol::ReviewAnchor {
@@ -880,11 +934,31 @@ mod tests {
             },
             body: "fix this".to_string(),
         }];
-        let response_body = serde_json::to_string(&comments).unwrap();
+        let (address, server) = serve_once(&serde_json::to_string(&comments).unwrap());
+
+        let message = comments_message(&[], &format!("http://{address}/pane/4"), "secret");
+        let head = server.join().unwrap();
+
+        assert_eq!(message, "#4 [staged] src/main.rs:10 `+changed`: fix this");
+        assert!(head.starts_with("POST /pane/4/comments HTTP/1.1\r\n"));
+        assert!(head.contains("\r\nAuthorization: Bearer secret\r\n"));
+        assert_eq!(
+            comments_message(&["extra"], "", ""),
+            "could not read comments: comments takes no arguments"
+        );
+    }
+
+    /// Serves one canned JSON response and hands back the request head, so
+    /// a rendering test can also assert what went over the wire.
+    fn serve_once(body: &str) -> (std::net::SocketAddr, std::thread::JoinHandle<String>) {
+        use std::io::BufRead as _;
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            response_body.len(),
-            response_body
+            body.len(),
+            body
         );
         let server = std::thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
@@ -901,16 +975,63 @@ mod tests {
             reader.get_mut().write_all(response.as_bytes()).unwrap();
             head
         });
+        (address, server)
+    }
 
-        let message = comments_message(&[], &format!("http://{address}/pane/4"), "secret");
+    fn context_note(
+        scope: argus_protocol::ContextScope,
+        name: &str,
+        body: &str,
+    ) -> argus_protocol::ContextNote {
+        argus_protocol::ContextNote::new(scope, name.to_string(), body.to_string())
+    }
+
+    #[test]
+    fn context_renders_standing_instructions_ahead_of_the_notes_they_came_from() {
+        use argus_protocol::ContextScope;
+
+        let context = AgentContext {
+            notes: vec![
+                context_note(ContextScope::Project, "orion", "- [!] house style\n"),
+                context_note(ContextScope::Checkout, "/wt/a", "# Branch\n- [ ] a task\n"),
+            ],
+        };
+        let (address, server) = serve_once(&serde_json::to_string(&context).unwrap());
+
+        let message = context_message(&[], &format!("http://{address}/pane/4"), "secret");
         let head = server.join().unwrap();
 
-        assert_eq!(message, "#4 [staged] src/main.rs:10 `+changed`: fix this");
-        assert!(head.starts_with("POST /pane/4/comments HTTP/1.1\r\n"));
-        assert!(head.contains("\r\nAuthorization: Bearer secret\r\n"));
         assert_eq!(
-            comments_message(&["extra"], "", ""),
-            "could not read comments: comments takes no arguments"
+            message,
+            "Standing instructions, which apply without being asked for:\n\
+             - (project) house style\n\
+             \n\
+             --- project note: orion ---\n\
+             - [!] house style\n\
+             \n\
+             --- checkout note: /wt/a ---\n\
+             # Branch\n\
+             - [ ] a task"
+        );
+        assert!(head.starts_with("POST /pane/4/context HTTP/1.1\r\n"));
+        assert!(head.contains("\r\nAuthorization: Bearer secret\r\n"));
+    }
+
+    #[test]
+    fn context_with_nothing_written_down_says_so_rather_than_nothing() {
+        let (address, server) = serve_once("{\"notes\":[]}");
+
+        let message = context_message(&[], &format!("http://{address}/pane/1"), "t");
+        server.join().unwrap();
+
+        assert_eq!(message, "no notes for this checkout");
+        assert_eq!(
+            context_message(&["extra"], "", ""),
+            "could not read context: context takes no arguments"
+        );
+        assert_eq!(
+            context_message(&[], "http://127.0.0.1:1/pane/1", "t"),
+            "could not read context: daemon unavailable"
         );
     }
 }
