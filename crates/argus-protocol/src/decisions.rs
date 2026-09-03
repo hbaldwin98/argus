@@ -13,6 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::features::Feature;
 use crate::ids::ProjectId;
 
 /// Past this a field has stopped being a decision and started being a
@@ -35,6 +36,11 @@ pub struct Decision {
     /// branches make different decisions, and which branch is often the
     /// whole explanation.
     pub checkout: Option<String>,
+    /// The feature it was decided under, by slug. `None` for a decision
+    /// recorded before features existed: those stay on the board unfiled
+    /// rather than being dragged under a feature nobody chose.
+    #[serde(default)]
+    pub feature: Option<String>,
     /// What was chosen. The one thing a decision cannot be recorded
     /// without.
     pub chose: String,
@@ -113,6 +119,10 @@ impl DecisionWrite {
 pub struct DecisionBoard {
     pub project: Option<ProjectId>,
     pub name: String,
+    /// The project's features, oldest first. A board is read one feature
+    /// at a time, so the client needs the list to offer the choice.
+    #[serde(default)]
+    pub features: Vec<Feature>,
     /// Oldest first, so a parent is always already known by the time its
     /// children are read.
     pub decisions: Vec<Decision>,
@@ -131,6 +141,36 @@ pub struct DecisionTreeRow<'a> {
 }
 
 impl DecisionBoard {
+    /// The same board holding only one feature's decisions — or, for
+    /// `None`, only the unfiled ones.
+    ///
+    /// Filtering here rather than in the daemon because the client is
+    /// pushed one board per project and switches scope without a round
+    /// trip, and because a parent outside the scope is left to
+    /// [`DecisionBoard::tree_rows`], which already draws the child of a
+    /// parent it cannot see as a root.
+    pub fn scoped(&self, feature: Option<&str>) -> DecisionBoard {
+        DecisionBoard {
+            project: self.project,
+            name: self.name.clone(),
+            features: self.features.clone(),
+            decisions: self
+                .decisions
+                .iter()
+                .filter(|d| d.feature.as_deref() == feature)
+                .cloned()
+                .collect(),
+        }
+    }
+
+    /// How many decisions are filed under one feature, or under none.
+    pub fn count_for(&self, feature: Option<&str>) -> usize {
+        self.decisions
+            .iter()
+            .filter(|d| d.feature.as_deref() == feature)
+            .count()
+    }
+
     /// The board flattened depth-first with each decision's depth, which
     /// is the order it is drawn in.
     ///
@@ -206,6 +246,7 @@ mod tests {
             at: 0,
             session: None,
             checkout: None,
+            feature: None,
             chose: chose.to_string(),
             over: None,
             because: None,
@@ -217,6 +258,7 @@ mod tests {
         DecisionBoard {
             project: None,
             name: "argus".into(),
+            features: Vec::new(),
             decisions,
         }
     }
@@ -265,6 +307,45 @@ mod tests {
         assert!(rows[1].has_next_sibling);
         assert_eq!(rows[2].ancestor_continuations, [true]);
         assert!(!rows[3].has_next_sibling);
+    }
+
+    #[test]
+    fn a_board_is_read_one_feature_at_a_time() {
+        let mut decisions = vec![
+            decision(1, None, "sqlite"),
+            decision(2, Some(1), "wal mode"),
+            decision(3, None, "one reader thread"),
+        ];
+        decisions[0].feature = Some("notes".into());
+        decisions[1].feature = Some("notes".into());
+        decisions[2].feature = Some("pty".into());
+        let board = board(decisions);
+
+        assert_eq!(
+            board
+                .scoped(Some("notes"))
+                .tree()
+                .iter()
+                .map(|(depth, d)| (*depth, d.chose.as_str()))
+                .collect::<Vec<_>>(),
+            [(0, "sqlite"), (1, "wal mode")]
+        );
+        assert_eq!(board.count_for(Some("pty")), 1);
+        assert_eq!(
+            board.count_for(None),
+            0,
+            "a decision filed under a feature is not also unfiled"
+        );
+    }
+
+    #[test]
+    fn a_child_whose_parent_is_under_another_feature_is_still_drawn() {
+        let mut decisions = vec![decision(1, None, "sqlite"), decision(2, Some(1), "wal mode")];
+        decisions[0].feature = Some("notes".into());
+        decisions[1].feature = Some("pty".into());
+        let scoped = board(decisions).scoped(Some("pty"));
+        assert_eq!(scoped.tree().len(), 1, "an orphan is a root, not a loss");
+        assert_eq!(scoped.tree()[0].0, 0);
     }
 
     #[test]

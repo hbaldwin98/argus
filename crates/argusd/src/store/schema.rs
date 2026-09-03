@@ -124,3 +124,36 @@ CREATE TABLE decision (
 );
 CREATE INDEX decision_project ON decision (project, id);
 "#;
+
+/// Features, and which feature each checkout is working on.
+///
+/// A decision gains a `feature` so a board can be read one feature at a
+/// time; rows written before this stay NULL, and are reported as unfiled
+/// rather than dragged under a feature nobody chose.
+///
+/// `feature_scope` is keyed by checkout path, the same durable identity
+/// notes use. It is what makes `decide` need no flag: the checkout an
+/// agent is in answers which feature it is deciding under, and survives
+/// the restart that throws pane ids away.
+pub(super) const SCHEMA_V6: &str = r#"
+CREATE TABLE feature (
+    project         TEXT    NOT NULL,
+    slug            TEXT    NOT NULL,
+    title           TEXT    NOT NULL,
+    body            TEXT    NOT NULL DEFAULT '',
+    origin_checkout TEXT,
+    origin_branch   TEXT,
+    at              INTEGER NOT NULL,
+    session         TEXT,
+    PRIMARY KEY (project, slug)
+) WITHOUT ROWID;
+
+CREATE TABLE feature_scope (
+    checkout_path TEXT PRIMARY KEY,
+    project       TEXT NOT NULL,
+    slug          TEXT NOT NULL
+) WITHOUT ROWID;
+
+ALTER TABLE decision ADD COLUMN feature TEXT;
+CREATE INDEX decision_feature ON decision (project, feature, id);
+"#;

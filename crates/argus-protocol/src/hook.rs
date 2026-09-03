@@ -109,11 +109,18 @@ pub enum Endpoint {
     /// note. Separate from `Context` because reading is unconditional and
     /// this is not — the daemon refuses it unless the project allows it.
     Todo,
-    /// The project's decision board, read whole. A tree with its roots cut
-    /// off explains nothing, so this is not scoped the way `Context` is.
+    /// The decision board of the feature this pane's checkout is on, read
+    /// whole. A tree with its roots cut off explains nothing, so it is
+    /// never trimmed inside a feature — but it is scoped to one, because a
+    /// project-wide board is a pile rather than a reference.
     Decisions,
     /// One decision appended to that board.
     Decide,
+    /// The project's features, and which one this checkout is on.
+    Features,
+    /// A change to that: opening a feature, pointing this checkout at one,
+    /// or adding a paragraph to its document.
+    Feature,
 }
 
 impl Endpoint {
@@ -134,6 +141,8 @@ impl Endpoint {
             Endpoint::Todo => Cow::Borrowed("todo"),
             Endpoint::Decisions => Cow::Borrowed("decisions"),
             Endpoint::Decide => Cow::Borrowed("decide"),
+            Endpoint::Features => Cow::Borrowed("features"),
+            Endpoint::Feature => Cow::Borrowed("feature"),
         }
     }
 }
@@ -167,6 +176,8 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "todo" => Endpoint::Todo,
         "decisions" => Endpoint::Decisions,
         "decide" => Endpoint::Decide,
+        "features" => Endpoint::Features,
+        "feature" => Endpoint::Feature,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -189,6 +200,8 @@ mod tests {
             Endpoint::Todo,
             Endpoint::Decisions,
             Endpoint::Decide,
+            Endpoint::Features,
+            Endpoint::Feature,
         ];
         all.extend(Report::ALL.into_iter().map(Endpoint::Status));
         all

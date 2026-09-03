@@ -557,6 +557,138 @@ async fn a_refused_todo_hook_says_why_and_a_bad_one_is_not_a_note_change() {
     close_all(&d);
 }
 
+// --- features and the decision board ------------------------------------
+
+/// Opens a feature and points the pane's checkout at it, which every
+/// decision now needs: a decision with nowhere to be filed is the pile
+/// this scoping exists to end.
+fn open_feature(d: &Daemon, agent: PaneId, title: &str) -> String {
+    let board = d
+        .open_feature_for_agent(
+            agent,
+            None,
+            argus_protocol::FeatureWrite {
+                title: title.into(),
+                body: None,
+            },
+        )
+        .unwrap();
+    board.current.expect("opening a feature works on it")
+}
+
+#[tokio::test]
+async fn a_decision_has_nowhere_to_go_until_the_checkout_is_on_a_feature() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let checkout = only_checkout(&d);
+    let project = d.snapshot()[0].id;
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+    let refused = d
+        .record_agent_decision(
+            agent,
+            None,
+            DecisionWrite {
+                chose: "sqlite".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("not on a feature"), "{refused}");
+    assert!(d.decision_board(project).unwrap().decisions.is_empty());
+
+    open_feature(&d, agent, "notes storage");
+    assert!(d
+        .record_agent_decision(
+            agent,
+            None,
+            DecisionWrite {
+                chose: "sqlite".into(),
+                ..Default::default()
+            },
+        )
+        .is_ok());
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn an_agent_reads_its_own_features_decisions_and_not_the_projects() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let checkout = only_checkout(&d);
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+    open_feature(&d, agent, "notes storage");
+    d.record_agent_decision(
+        agent,
+        None,
+        DecisionWrite {
+            chose: "sqlite".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    // The same checkout moves on to something else, the way an agent that
+    // finished one feature and started another does.
+    let second = open_feature(&d, agent, "the pty deadlock");
+    d.record_agent_decision(
+        agent,
+        None,
+        DecisionWrite {
+            chose: "one reader thread".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let board = d.decisions_for_agent(agent).unwrap();
+    assert_eq!(
+        board
+            .decisions
+            .iter()
+            .map(|d| d.chose.as_str())
+            .collect::<Vec<_>>(),
+        ["one reader thread"],
+        "the board an agent reads is the feature it is on, not the project"
+    );
+    let features = d.feature_board_for_agent(agent).unwrap();
+    assert_eq!(features.current.as_deref(), Some(second.as_str()));
+    assert_eq!(features.features.len(), 2, "the others are still offered");
+    // The project-wide board is what the client draws, and keeps both.
+    assert_eq!(d.decision_board(d.snapshot()[0].id).unwrap().decisions.len(), 2);
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn a_feature_document_grows_and_a_checkout_can_go_back_to_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let checkout = only_checkout(&d);
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+    let first = open_feature(&d, agent, "notes storage");
+    d.append_to_feature_for_agent(agent, "the key has to outlive the ids")
+        .unwrap();
+    open_feature(&d, agent, "the pty deadlock");
+
+    let board = d.select_feature_for_agent(agent, &first).unwrap();
+    assert_eq!(board.current.as_deref(), Some(first.as_str()));
+    let document = &board
+        .features
+        .iter()
+        .find(|f| f.slug == first)
+        .unwrap()
+        .body;
+    assert_eq!(document, "the key has to outlive the ids");
+
+    assert!(
+        d.select_feature_for_agent(agent, "no-such-feature").is_err(),
+        "a checkout cannot be pointed at a feature that does not exist"
+    );
+    close_all(&d);
+}
+
 // --- the decision board -------------------------------------------------
 
 #[tokio::test]
@@ -566,6 +698,7 @@ async fn a_decision_lands_on_its_projects_board_wherever_the_agent_was() {
     let checkout = only_checkout(&d);
     let project = d.snapshot()[0].id;
     let agent = d.spawn_agent(checkout, "claude").unwrap();
+    open_feature(&d, agent, "notes storage");
 
     let root = d
         .record_agent_decision(
@@ -613,6 +746,7 @@ async fn a_recorded_decision_is_pushed_at_every_attached_client() {
     let d = daemon_with_fake_claude(dir.path());
     let checkout = only_checkout(&d);
     let agent = d.spawn_agent(checkout, "claude").unwrap();
+    open_feature(&d, agent, "notes storage");
     // Subscribed before the write, the way a connection is: a client that
     // has to ask again has already shown the operator a stale board.
     let mut rx = d.subscribe_decisions();
@@ -668,6 +802,7 @@ async fn superseding_leaves_the_decision_it_replaced_on_the_board() {
     let checkout = only_checkout(&d);
     let project = d.snapshot()[0].id;
     let agent = d.spawn_agent(checkout, "claude").unwrap();
+    open_feature(&d, agent, "notes storage");
 
     let old = d
         .record_agent_decision(
@@ -706,6 +841,7 @@ async fn the_board_reaches_an_agent_whole_and_a_bad_decision_is_refused() {
     d.start_hook_server().unwrap();
     let checkout = only_checkout(&d);
     let source = d.spawn_agent(checkout, "claude").unwrap();
+    open_feature(&d, source, "notes storage");
 
     let recorded = String::from_utf8_lossy(
         &post_agent_hook(

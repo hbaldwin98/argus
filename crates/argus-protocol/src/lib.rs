@@ -10,6 +10,7 @@
 pub mod cell;
 pub mod context;
 pub mod decisions;
+pub mod features;
 pub mod framing;
 pub mod hook;
 pub mod ids;
@@ -26,6 +27,10 @@ pub use cell::{
 };
 pub use context::{AgentContext, ContextNote, ContextScope, TodoWrite};
 pub use decisions::{Decision, DecisionBoard, DecisionTreeRow, DecisionWrite, MAX_DECISION_BYTES};
+pub use features::{
+    slugify, Feature, FeatureAction, FeatureBoard, FeatureWrite, MAX_FEATURE_BODY_BYTES,
+    MAX_FEATURE_TITLE_BYTES,
+};
 pub use compact_str::{CompactString, ToCompactString};
 pub use framing::{read_msg, write_frame, write_msg, FramingError};
 pub use hook::{

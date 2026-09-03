@@ -10,7 +10,7 @@ use argus_protocol::{ReviewAnchor, ReviewComment, MAX_REVIEW_COMMENT_BYTES};
 use super::*;
 
 /// The durable identity of the place an agent is running.
-pub(super) struct AgentScope {
+pub(crate) struct AgentScope {
     pub project_name: String,
     pub checkout_path: std::path::PathBuf,
     /// Whether this project lets an agent write to its checkout's note.

@@ -13,7 +13,12 @@
 //! argus-hook context                             # reads the notes for this checkout
 //! argus-hook todo add "ported the parser"        # writes to the checkout's note
 //! argus-hook todo done 4                         # ticks line 4 of it off
-//! argus-hook decisions                            # reads the project's decision board
+//! argus-hook feature                            # the feature this checkout is on
+//! argus-hook feature list                       # every feature of the project
+//! argus-hook feature open "decision scoping"    # opens one and works on it
+//! argus-hook feature use decision-scoping       # works on one that already exists
+//! argus-hook feature note "the board is per feature"   # adds to its document
+//! argus-hook decisions                          # this feature's decision board
 //! argus-hook decide "sqlite" --over "a file per feature" --because "both need migrations"
 //! argus-hook decide "one row per note" --under 3  # hangs under decision 3
 //! argus-hook decide "one row per note" --supersedes 7   # replaces decision 7
@@ -40,7 +45,7 @@
 //! human-readable message. Some agent CLIs inject a hook's stdout into the
 //! model's context, so staying silent keeps Argus's bookkeeping out of the
 //! conversation. The deliberate `say`, `comments`, `context`, `todo`,
-//! `decisions`, and `decide` commands do return useful output.
+//! `feature`, `decisions`, and `decide` commands do return useful output.
 //!
 //! On Windows it is a GUI-subsystem binary. Not because it has a UI — it
 //! has none — but because the agent CLI that runs it decides how it is
@@ -58,9 +63,9 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use argus_protocol::{
-    AgentContext, Decision, DecisionBoard, DecisionWrite, Endpoint, Report, ReviewComment,
-    TodoState, TodoWrite, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG, SESSION_HEADER,
-    SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
+    AgentContext, Decision, DecisionBoard, DecisionWrite, Endpoint, FeatureAction, FeatureBoard,
+    FeatureWrite, Report, ReviewComment, TodoState, TodoWrite, INSTRUCTIONS_VAR, NOTE_FLAG,
+    OWNS_SESSION_FLAG, SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(2);
@@ -87,6 +92,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("comments", comments),
     ("context", context),
     ("todo", todo),
+    ("feature", feature),
     ("decisions", decisions),
     ("decide", decide),
 ];
@@ -269,7 +275,186 @@ fn todo_message(rest: &[&str], base_url: &str, token: &str) -> String {
     }
 }
 
-/// The project's decision board, drawn as the tree it is. Read rather than
+/// The feature this checkout is working on: what it is for, and what has
+/// been decided under it.
+///
+/// One command rather than four because they are one thing from the
+/// agent's side — where am I, and how do I say where I am. Bare, it
+/// answers the first; `list`, `open`, `use` and `note` answer the second.
+fn feature(rest: &[&str]) {
+    let mut out = std::io::stdout();
+    let _ = writeln!(out, "{}", feature_message(rest, &env_url(), &env_token()));
+    let _ = out.flush();
+}
+
+fn feature_message(rest: &[&str], base_url: &str, token: &str) -> String {
+    match rest.first().copied() {
+        None => match read_feature_board(&[], base_url, token) {
+            Ok(board) => format_feature(&board),
+            Err(message) => message,
+        },
+        Some("list") => match read_feature_board(&rest[1..], base_url, token) {
+            Ok(board) => format_feature_list(&board),
+            Err(message) => message,
+        },
+        Some("open") => {
+            let title = rest[1..]
+                .iter()
+                .take_while(|a| **a != "--body")
+                .copied()
+                .collect::<Vec<_>>()
+                .join(" ");
+            let body = rest[1..]
+                .iter()
+                .position(|a| *a == "--body")
+                .map(|at| rest[2 + at..].join(" "));
+            write_feature(
+                FeatureAction::Open(FeatureWrite { title, body }),
+                base_url,
+                token,
+            )
+        }
+        Some("use") => match rest.get(1) {
+            Some(slug) => write_feature(
+                FeatureAction::Select {
+                    slug: (*slug).to_string(),
+                },
+                base_url,
+                token,
+            ),
+            None => "could not change feature: use wants the slug of a feature".to_string(),
+        },
+        Some("note") => write_feature(
+            FeatureAction::Append {
+                text: rest[1..].join(" "),
+            },
+            base_url,
+            token,
+        ),
+        Some(other) => format!(
+            "{other} is not one of list, open, use, note — \
+             `argus-hook feature use {other}` works on an existing feature"
+        ),
+    }
+}
+
+fn read_feature_board(rest: &[&str], base_url: &str, token: &str) -> Result<FeatureBoard, String> {
+    read_json("the feature", Endpoint::Features, rest, base_url, token)
+}
+
+fn write_feature(action: FeatureAction, base_url: &str, token: &str) -> String {
+    let Ok(body) = serde_json::to_string(&action) else {
+        return "could not change feature: unencodable".to_string();
+    };
+    let url = endpoint_url(base_url, Endpoint::Feature);
+    let Some((status, response)) = post_response(&url, token, &body) else {
+        return "could not change feature: daemon unavailable".to_string();
+    };
+    let response = response.trim();
+    if status != 200 {
+        return if response.is_empty() {
+            "could not change feature: daemon refused the request".to_string()
+        } else {
+            format!("could not change feature: {response}")
+        };
+    }
+    match serde_json::from_str::<FeatureBoard>(response) {
+        Ok(board) => format_feature(&board),
+        // The change landed; only the account of it did not.
+        Err(_) => "the feature changed".to_string(),
+    }
+}
+
+/// What the agent is meant to read before it starts: the brief, then the
+/// reasoning underneath it. Deliberately one answer — a decision without
+/// what the feature is for explains half of itself.
+fn format_feature(board: &FeatureBoard) -> String {
+    let Some(current) = board
+        .current
+        .as_ref()
+        .and_then(|slug| board.features.iter().find(|f| &f.slug == slug))
+    else {
+        return no_feature_here(board);
+    };
+    let mut lines = vec![format!("Feature: {} ({})", current.title, current.slug)];
+    if let Some(branch) = &current.origin_branch {
+        lines.push(format!("Started on {branch}."));
+    }
+    if !current.body.trim().is_empty() {
+        lines.push(String::new());
+        lines.push(current.body.trim().to_string());
+    }
+    lines.push(String::new());
+    if board.decisions.is_empty() {
+        lines.push("Nothing decided under it yet.".to_string());
+    } else {
+        lines.push("Decided under it, newest last:".to_string());
+        let tree = DecisionBoard {
+            project: board.project,
+            name: board.project_name.clone(),
+            features: board.features.clone(),
+            decisions: board.decisions.clone(),
+        };
+        for row in tree.tree_rows() {
+            push_decision_lines(&mut lines, &row);
+        }
+    }
+    lines.join("\n")
+}
+
+/// The answer that has to teach, because it is what an agent hits first on
+/// a checkout nobody has scoped yet.
+fn no_feature_here(board: &FeatureBoard) -> String {
+    let mut lines = vec![
+        "This checkout is not on a feature yet, so there is nothing to decide under.".to_string(),
+    ];
+    if board.features.is_empty() {
+        lines.push(
+            "Open one with `argus-hook feature open \"<title>\"` when you know what you are \
+             building."
+                .to_string(),
+        );
+    } else {
+        lines.push("Open one with `argus-hook feature open \"<title>\"`, or work on one of:".into());
+        for feature in &board.features {
+            lines.push(format!("  {} — {}", feature.slug, feature.title));
+        }
+        lines.push("with `argus-hook feature use <slug>`.".to_string());
+    }
+    if board.unfiled > 0 {
+        lines.push(format!(
+            "({} older decision(s) predate features and are on no board.)",
+            board.unfiled
+        ));
+    }
+    lines.join("\n")
+}
+
+fn format_feature_list(board: &FeatureBoard) -> String {
+    if board.features.is_empty() {
+        return format!("no features on {} yet", board.project_name);
+    }
+    let mut lines = vec![format!("Features of {}:", board.project_name)];
+    for feature in &board.features {
+        let here = if board.current.as_deref() == Some(feature.slug.as_str()) {
+            " (this checkout)"
+        } else {
+            ""
+        };
+        let branch = feature
+            .origin_branch
+            .as_deref()
+            .map(|b| format!(" [{b}]"))
+            .unwrap_or_default();
+        lines.push(format!(
+            "  {} — {}{branch}{here}",
+            feature.slug, feature.title
+        ));
+    }
+    lines.join("\n")
+}
+
+/// This feature's decision board, drawn as the tree it is. Read rather than
 /// written, and on stdout for the same reason `context` is: it is what an
 /// agent picking up a feature is meant to consult before adding to it.
 fn decisions(rest: &[&str]) {
@@ -285,13 +470,23 @@ fn decisions_message(rest: &[&str], base_url: &str, token: &str) -> String {
             Err(message) => return message,
         };
     if board.decisions.is_empty() {
-        return "no decisions recorded for this project".to_string();
+        return "nothing decided under this feature yet".to_string();
     }
     format_decision_board(&board)
 }
 
 fn format_decision_board(board: &DecisionBoard) -> String {
-    let mut lines = vec![format!("Decisions on {}, newest last:", board.name)];
+    // Named for the feature rather than the project: the board an agent
+    // reads is one feature's, and a heading that said otherwise would
+    // invite exactly the project-wide pile this scoping ended.
+    let scope = board
+        .decisions
+        .first()
+        .and_then(|d| d.feature.as_deref())
+        .and_then(|slug| board.features.iter().find(|f| f.slug == slug))
+        .map(|f| f.title.clone())
+        .unwrap_or_else(|| board.name.clone());
+    let mut lines = vec![format!("Decisions on {scope}, newest last:")];
     for row in board.tree_rows() {
         push_decision_lines(&mut lines, &row);
     }
@@ -1333,6 +1528,50 @@ mod tests {
     }
 
     #[test]
+    fn a_feature_is_read_as_its_brief_and_then_its_reasoning() {
+        let board = r#"{"project":null,"project_name":"argus","current":"notes-storage",
+            "unfiled":2,
+            "features":[{"slug":"notes-storage","title":"Notes storage","body":"keys outlive ids",
+                         "origin_checkout":null,"origin_branch":"notes","at":1,"session":null}],
+            "decisions":[
+              {"id":1,"parent":null,"at":1,"session":null,"checkout":null,
+               "feature":"notes-storage","chose":"one row per note","over":"a table per note",
+               "because":null,"superseded_by":null}]}"#;
+        let (address, server) = serve_once(board);
+
+        let message = feature_message(&[], &format!("http://{address}/pane/4"), "t");
+        let _ = server.join();
+
+        assert_eq!(
+            message,
+            "Feature: Notes storage (notes-storage)\n\
+             Started on notes.\n\
+             \n\
+             keys outlive ids\n\
+             \n\
+             Decided under it, newest last:\n\
+             #1 one row per note\n\
+             \x20     over: a table per note"
+        );
+    }
+
+    #[test]
+    fn a_checkout_on_no_feature_is_told_what_to_do_about_it() {
+        let board = r#"{"project":null,"project_name":"argus","current":null,"unfiled":3,
+            "features":[{"slug":"the-pty-deadlock","title":"The pty deadlock","body":"",
+                         "origin_checkout":null,"origin_branch":null,"at":1,"session":null}],
+            "decisions":[]}"#;
+        let (address, server) = serve_once(board);
+
+        let message = feature_message(&[], &format!("http://{address}/pane/4"), "t");
+        let _ = server.join();
+
+        assert!(message.starts_with("This checkout is not on a feature yet"), "{message}");
+        assert!(message.contains("the-pty-deadlock — The pty deadlock"), "{message}");
+        assert!(message.contains("3 older decision(s)"), "{message}");
+    }
+
+    #[test]
     fn a_board_is_drawn_as_the_tree_it_is() {
         let board = r#"{"project":null,"name":"argus","decisions":[
             {"id":1,"parent":null,"at":1,"session":null,"checkout":null,
@@ -1369,7 +1608,7 @@ mod tests {
         let (address, server) = serve_once(r#"{"project":null,"name":"argus","decisions":[]}"#);
         let message = decisions_message(&[], &format!("http://{address}/pane/4"), "t");
         let _ = server.join();
-        assert_eq!(message, "no decisions recorded for this project");
+        assert_eq!(message, "nothing decided under this feature yet");
     }
 
     /// Serves one canned response at a chosen status, for the endpoint that

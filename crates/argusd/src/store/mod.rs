@@ -17,8 +17,8 @@ use std::sync::Mutex as StdMutex;
 
 use anyhow::{Context, Result};
 use argus_protocol::{
-    Decision, DecisionWrite, PaneKind, PaneStatus, ReviewAnchor, ReviewComment, TodoAudit,
-    MAX_REVIEW_COMMENTS,
+    slugify, Decision, DecisionWrite, Feature, FeatureWrite, PaneKind, PaneStatus, ReviewAnchor,
+    ReviewComment, TodoAudit, MAX_REVIEW_COMMENTS,
 };
 use rusqlite::{Connection, OptionalExtension};
 
@@ -27,7 +27,7 @@ use crate::paths::same_path;
 mod legacy;
 mod schema;
 
-use schema::{SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5};
+use schema::{SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6};
 
 /// One pane worth starting again, as it stood when the daemon stopped.
 ///
@@ -134,7 +134,7 @@ pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 const MAX_NOTE_AUDIT: i64 = 20;
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 6;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -225,6 +225,9 @@ impl Store {
         }
         if from < 5 {
             tx.execute_batch(SCHEMA_V5)?;
+        }
+        if from < 6 {
+            tx.execute_batch(SCHEMA_V6)?;
         }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
@@ -447,6 +450,7 @@ impl Store {
         &self,
         project: &str,
         write: &DecisionWrite,
+        feature: Option<&str>,
         at: i64,
         session: Option<&str>,
         checkout: Option<&str>,
@@ -476,14 +480,15 @@ impl Store {
         }
         tx.execute(
             "INSERT INTO decision
-                 (project, parent, at, session, checkout, chose, over_, because)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 (project, parent, at, session, checkout, feature, chose, over_, because)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![
                 project,
                 parent,
                 at,
                 session,
                 checkout,
+                feature,
                 write.chose,
                 write.over,
                 write.because
@@ -506,7 +511,8 @@ impl Store {
     pub fn decisions(&self, project: &str) -> Result<Vec<Decision>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT id, parent, at, session, checkout, chose, over_, because, superseded_by
+            "SELECT id, parent, at, session, checkout, feature, chose, over_, because,
+                    superseded_by
              FROM decision WHERE project = ?1 ORDER BY id",
         )?;
         let rows = stmt.query_map(rusqlite::params![project], |r| {
@@ -516,10 +522,11 @@ impl Store {
                 at: r.get(2)?,
                 session: r.get(3)?,
                 checkout: r.get(4)?,
-                chose: r.get(5)?,
-                over: r.get(6)?,
-                because: r.get(7)?,
-                superseded_by: r.get(8)?,
+                feature: r.get(5)?,
+                chose: r.get(6)?,
+                over: r.get(7)?,
+                because: r.get(8)?,
+                superseded_by: r.get(9)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -548,6 +555,158 @@ impl Store {
             },
         )?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    // ---- features ----------------------------------------------------
+
+    /// Opens a feature and returns it with the slug it was given.
+    ///
+    /// The slug is derived from the title and made unique by suffix inside
+    /// the transaction: two agents opening the same-sounding feature on two
+    /// branches at the same moment must neither collide on one key nor end
+    /// up quietly filing decisions on the same board.
+    pub fn add_feature(
+        &self,
+        project: &str,
+        write: &FeatureWrite,
+        origin_checkout: Option<&str>,
+        origin_branch: Option<&str>,
+        at: i64,
+        session: Option<&str>,
+    ) -> Result<Feature> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let base = slugify(&write.title);
+        let mut slug = base.clone();
+        for n in 2.. {
+            let taken: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
+                rusqlite::params![project, slug],
+                |r| r.get(0),
+            )?;
+            if !taken {
+                break;
+            }
+            slug = format!("{base}-{n}");
+        }
+        let feature = Feature {
+            slug,
+            title: write.title.clone(),
+            body: write.body.clone().unwrap_or_default(),
+            origin_checkout: origin_checkout.map(str::to_string),
+            origin_branch: origin_branch.map(str::to_string),
+            at,
+            session: session.map(str::to_string),
+        };
+        tx.execute(
+            "INSERT INTO feature
+                 (project, slug, title, body, origin_checkout, origin_branch, at, session)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                project,
+                feature.slug,
+                feature.title,
+                feature.body,
+                feature.origin_checkout,
+                feature.origin_branch,
+                feature.at,
+                feature.session
+            ],
+        )?;
+        tx.commit()?;
+        Ok(feature)
+    }
+
+    /// One project's features, oldest first.
+    pub fn features(&self, project: &str) -> Result<Vec<Feature>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT slug, title, body, origin_checkout, origin_branch, at, session
+             FROM feature WHERE project = ?1 ORDER BY at, slug",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![project], |r| {
+            Ok(Feature {
+                slug: r.get(0)?,
+                title: r.get(1)?,
+                body: r.get(2)?,
+                origin_checkout: r.get(3)?,
+                origin_branch: r.get(4)?,
+                at: r.get(5)?,
+                session: r.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Adds a paragraph to a feature's document, and answers with the
+    /// document as it now stands.
+    ///
+    /// The document is the one part of a feature that is not append-only in
+    /// the decision-board sense: it is prose both sides write, so it grows
+    /// rather than being superseded. Bounded, because a brief that has
+    /// grown past a screen has become the design document it was meant to
+    /// point at.
+    pub fn append_to_feature(&self, project: &str, slug: &str, text: &str) -> Result<String> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let body: String = tx
+            .query_row(
+                "SELECT body FROM feature WHERE project = ?1 AND slug = ?2",
+                rusqlite::params![project, slug],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| anyhow::anyhow!("there is no feature {slug} on this project"))?;
+        let body = if body.trim().is_empty() {
+            text.trim().to_string()
+        } else {
+            format!("{}\n\n{}", body.trim_end(), text.trim())
+        };
+        if body.len() > argus_protocol::MAX_FEATURE_BODY_BYTES {
+            anyhow::bail!("this feature's document is full; what is left belongs in the checkout");
+        }
+        tx.execute(
+            "UPDATE feature SET body = ?1 WHERE project = ?2 AND slug = ?3",
+            rusqlite::params![body, project, slug],
+        )?;
+        tx.commit()?;
+        Ok(body)
+    }
+
+    /// Points a checkout at a feature, which is what decisions recorded
+    /// from it are filed under afterwards.
+    pub fn set_feature_scope(&self, checkout: &Path, project: &str, slug: &str) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
+            rusqlite::params![project, slug],
+            |r| r.get(0),
+        )?;
+        if !exists {
+            anyhow::bail!("there is no feature {slug} on this project");
+        }
+        tx.execute(
+            "INSERT INTO feature_scope (checkout_path, project, slug) VALUES (?1, ?2, ?3)
+             ON CONFLICT(checkout_path) DO UPDATE SET project = excluded.project,
+                                                      slug = excluded.slug",
+            rusqlite::params![path_text(checkout), project, slug],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// The feature a checkout was last pointed at, if it is still one of
+    /// this project's.
+    pub fn feature_scope(&self, checkout: &Path, project: &str) -> Result<Option<String>> {
+        let conn = self.conn();
+        Ok(conn
+            .query_row(
+                "SELECT slug FROM feature_scope WHERE checkout_path = ?1 AND project = ?2",
+                rusqlite::params![path_text(checkout), project],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?)
     }
 
     // ---- project overlays --------------------------------------------

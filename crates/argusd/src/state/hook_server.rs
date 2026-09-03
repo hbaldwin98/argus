@@ -166,6 +166,10 @@ async fn handle_hook_request(
             Some((pane, Endpoint::Decide)) => {
                 decide_response(&daemon, pane, reporter.as_deref(), &body)
             }
+            Some((pane, Endpoint::Features)) => features_response(&daemon, pane)?,
+            Some((pane, Endpoint::Feature)) => {
+                feature_response(&daemon, pane, reporter.as_deref(), &body)
+            }
             // A checkout move from an agent that does not own the pane is
             // dropped: the row follows the agent Argus started in it.
             _ => HookResponse::empty(200, "OK"),
@@ -276,6 +280,47 @@ fn decide_response(
                 body,
             },
             Err(e) => HookResponse::text(500, "Internal Server Error", e.to_string()),
+        },
+        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
+    }
+}
+
+fn features_response(daemon: &Arc<Daemon>, source: PaneId) -> anyhow::Result<HookResponse> {
+    Ok(match daemon.feature_board_for_agent(source) {
+        Ok(board) => HookResponse {
+            code: 200,
+            reason: "OK",
+            body: serde_json::to_vec(&board)?,
+        },
+        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
+    })
+}
+
+/// Answers with the board as it stands afterwards, because every one of
+/// these changes what the next `decide` from this checkout is filed under
+/// — the agent has to be able to see where it now is.
+fn feature_response(
+    daemon: &Arc<Daemon>,
+    source: PaneId,
+    session: Option<&str>,
+    body: &[u8],
+) -> HookResponse {
+    use argus_protocol::FeatureAction;
+
+    let action: FeatureAction = match serde_json::from_slice(body) {
+        Ok(action) => action,
+        Err(_) => return HookResponse::text(400, "Bad Request", "not a feature change".into()),
+    };
+    let board = match action {
+        FeatureAction::Open(write) => daemon.open_feature_for_agent(source, session, write),
+        FeatureAction::Select { slug } => daemon.select_feature_for_agent(source, &slug),
+        FeatureAction::Append { text } => daemon.append_to_feature_for_agent(source, &text),
+    };
+    match board.and_then(|board| Ok(serde_json::to_vec(&board)?)) {
+        Ok(body) => HookResponse {
+            code: 200,
+            reason: "OK",
+            body,
         },
         Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
     }

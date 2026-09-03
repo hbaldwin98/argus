@@ -109,7 +109,7 @@ is a key nobody can see the effect of — and returns to the column it left. Whi
 this client's own state and is never sent to the daemon: two people attached to one daemon are not
 necessarily reading the same thing.
 
-The views are the spine and the decision board (see "Decision board").
+The views are the spine and the decision board (see "Features and the decision board").
 
 ## Navigation model
 
@@ -817,47 +817,60 @@ to tell the user it was refused, and "this project does not allow it" is a diffe
 "that line is not a checkbox".
 
 Not yet implemented: pinned-note injection into a template's prompt, `argus ctx`, and the feature
-board (TARGET.md, "Boards"). The decision board has
-landed (see "Decision board"); the two are not yet linked.
+board in the Kanban sense (TARGET.md, "Boards"). Features and the decision board have landed (see
+"Features and the decision board"); what is missing is the columns-by-state view over them.
 
-## Decision board
+## Features and the decision board
 
-Each project has one board: a tree of the choices made while building its features. A decision
-records what was chosen, what it was chosen over, and what forced it, and hangs off the decision
-that constrained it — so what accumulates is a reference an agent picking up a feature can read,
-rather than a log. Storage is schema v5's `decision` table, keyed by project name for the same
-reason notes are keyed by name and path: ids are handed out fresh on every start.
+Work is scoped to a **feature**: a short document saying what is being built, with the decisions
+taken while building it hanging off it. The board used to be one tree per project, which answered
+"what has this project ever decided" — a question nobody asks. What an agent picking up work needs
+is the handful of choices made about the thing it is about to touch, and everything else on a
+project-wide board is noise it reads past. So a decision is filed under a feature, and a board is
+read one feature at a time.
 
-The board is append-only. Nothing is ever edited, and there is no delete. A decision that a later
-finding invalidates is *superseded*: the replacement is a new row that takes the old one's place in
-the tree — its parent, not its children — and the old row's `superseded_by` records what replaced
-it. The old node stays on the board and the view draws it dimmed, because the road not taken is
-most of what a reader came back for.
+A feature is stored, not derived: schema v6's `feature` table holds a slug, a title, the document
+body, and the checkout and branch it originated in. The slug is derived from the title once, at
+creation, and made unique by suffix inside the transaction — a title someone later rewords must not
+orphan the decisions under it, and two agents opening the same-sounding feature on two branches must
+not silently share a board. The document is the one part that is edited rather than appended to as
+a tree: it is prose both sides write, bounded at 8 KiB, because a brief that has outgrown a screen
+has become the design document it was meant to point at.
 
-Agents reach it through two pane API endpoints. `argus-hook decisions` reads the whole board of the
-project the asking pane belongs to; unlike `context`, which is scoped to one checkout's note, a
-decision tree cannot be scoped and stay meaningful — a node hanging off three others says nothing
-without them. `argus-hook decide "<chose>" [--over ...] [--because ...] [--under <id>]
-[--supersedes <id>]` appends one and answers with the id the next decision hangs off. The caller
-must be a live agent pane, and every row carries the harness session and the checkout it was
-decided in.
+Which feature an agent is on is resolved from the checkout, not from a flag. `feature_scope` maps a
+checkout path to a slug, and a checkout that was never pointed anywhere falls back to the one
+feature that originated there — which is what makes worktree-per-feature need no ceremony. The
+fallback deliberately gives up when a checkout has two features to its name: guessing would file a
+decision under whichever happened to be older, which is worse than asking. `decide` from a checkout
+on no feature is **refused**, in prose that says how to open one, because a decision nobody can find
+again is the pile this scoping exists to end.
 
-There is no policy flag on the write, unlike note writes. A note is the human's document and an
+Agents reach it through four pane API endpoints. `argus-hook feature` reads the current feature —
+its brief, then its decision tree, as one answer, since a decision without what the feature is for
+explains half of itself. `argus-hook feature list`, `feature open "<title>"`, `feature use <slug>`
+and `feature note "<text>"` are the writes. `argus-hook decisions` reads the same tree alone, and
+`argus-hook decide "<chose>" [--over ...] [--because ...] [--under <id>] [--supersedes <id>]`
+appends to it, answering with the id the next decision hangs off.
+
+The board itself is append-only. Nothing is ever edited, and there is no delete. A decision that a
+later finding invalidates is *superseded*: the replacement is a new row that takes the old one's
+place in the tree — its parent, not its children — and the old row's `superseded_by` records what
+replaced it. The old node stays on the board and the view draws it dimmed, because the road not
+taken is most of what a reader came back for. Decisions recorded before features existed keep a
+NULL `feature` and are reported as unfiled rather than dragged under a feature nobody chose.
+
+There is no policy flag on these writes, unlike note writes. A note is the human's document and an
 agent writing to it needs permission; the board exists for agents to write, is append-only, and
-attributes every row, so there is nothing for a gate to protect. The instructions every agent
-receives say when to use it: while planning a feature and choosing between real options, not as a
-running commentary, and revisiting an earlier decision only when a later finding actually
-invalidates it.
+attributes every row, so there is nothing for a gate to protect.
 
-Clients read it with `ClientMsg::GetDecisions` and are pushed `ServerMsg::Decisions` whenever any
-board changes — a tree is meant to be watched being built, and the daemon deliberately does not
-track which view a client has open, so every client is told and one with another project open
-drops it by name. Opening the view asks once, and the client asks again on any tree that leaves the
-board showing a project other than the selected one — the view is reachable before the first tree
-arrives, and a workspace switch re-scopes the tree under whatever is open. Between those, a write
-arrives on its own. The board view draws the tree two lines per decision with branch rails and
-elbows connecting every child to its parent; `argus-hook decisions` draws the same topology for
-agents. `j`/`k` move through it, a click selects the row it lands on, and `r` re-asks by hand.
+Clients read the whole project — every feature and every decision — with `ClientMsg::GetDecisions`
+and are pushed `ServerMsg::Decisions` whenever any board changes, since a tree is meant to be
+watched being built and the daemon deliberately does not track which view a client has open; a
+client with another project open drops it by name. `DecisionBoard::scoped` is what narrows that to
+one feature in the client, so switching scope costs no round trip. The board view draws the tree
+two lines per decision with branch rails and elbows connecting every child to its parent;
+`argus-hook decisions` draws the same topology for agents. `j`/`k` move through it, a click selects
+the row it lands on, and `r` re-asks by hand.
 
 ## Editors and overlays
 

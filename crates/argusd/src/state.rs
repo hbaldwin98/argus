@@ -27,6 +27,7 @@ use tokio::sync::broadcast;
 mod agents;
 mod build;
 mod decisions;
+mod features;
 mod git_ops;
 mod hook_server;
 mod notes;

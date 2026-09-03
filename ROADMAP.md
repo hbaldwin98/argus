@@ -76,10 +76,12 @@ the link between them. The first two have landed.
   the project spine as the default and a one-row tab strip naming the rest. The strip lives in the
   page's top gutter, so it costs the view underneath nothing; digits open a view, the leader plus a
   digit does it from inside a pane, and the open view is per-client and never sent to the daemon.
-- The decision board has landed (DESIGN.md, "Decision board"): schema v5's `decision` table,
-  `argus-hook decisions` to read a project's whole tree and `argus-hook decide` to append to it,
-  and a view that draws the tree with superseded branches dimmed. Ungated, unlike note writes —
-  the board exists for agents to write and attributes every row.
+- Features and the decision board have landed (DESIGN.md, "Features and the decision board"):
+  schema v5's `decision` table and v6's `feature`/`feature_scope`, `argus-hook feature` to read and
+  move the scope, `argus-hook decisions` to read the current feature's tree and `argus-hook decide`
+  to append to it, and a view that draws the tree with superseded branches dimmed. Ungated, unlike
+  note writes — the board exists for agents to write and attributes every row. A decision is filed
+  under the feature its checkout is on, and `decide` from a checkout on none is refused.
 - Add the feature board (TARGET.md, "Boards"): items in columns by state, claimed by an agent,
   carrying progress, blockers, and submitted completion evidence, accepted or sent back by a human
   and never by the agent that did the work. Both sides can add an item — the human from the view,

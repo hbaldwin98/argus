@@ -130,6 +130,7 @@ fn decision(id: i64, parent: Option<i64>, chose: &str) -> argus_protocol::Decisi
         at: 0,
         session: None,
         checkout: None,
+        feature: None,
         chose: chose.to_string(),
         over: None,
         because: None,
@@ -144,6 +145,7 @@ fn app_with_a_board(decisions: Vec<argus_protocol::Decision>) -> App {
         argus_protocol::DecisionBoard {
             project: None,
             name,
+            features: Vec::new(),
             decisions,
         },
     )));
@@ -246,6 +248,7 @@ fn a_board_for_another_project_is_dropped_rather_than_drawn() {
         argus_protocol::DecisionBoard {
             project: None,
             name: "something else".into(),
+            features: Vec::new(),
             decisions: vec![decision(1, None, "not ours")],
         },
     )));
@@ -321,6 +324,7 @@ fn a_tree_that_moves_nothing_does_not_ask_for_the_board_again() {
         argus_protocol::DecisionBoard {
             project: Some(project.id),
             name: project.name.clone(),
+            features: Vec::new(),
             decisions: vec![decision(1, None, "sqlite")],
         },
     )));

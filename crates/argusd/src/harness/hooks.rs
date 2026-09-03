@@ -94,14 +94,30 @@ pub fn instructions() -> String {
          \x20 {hook} todo add \"ported the parser\"\n\
          \x20 {hook} todo done 4\n\
          \n\
-         The project has a decision board: a reference tree of the choices made while \
-         building each feature, which you read before you start and add to as you plan. \
+         Work is scoped to a feature: a short document saying what is being built, \
+         with the decisions taken while building it hanging off it. Everything you \
+         read and record here is that feature's, not the whole project's. Start by \
+         reading where this checkout is:\n\
+         \n\
+         \x20 {hook} feature\n\
+         \x20 {hook} feature list\n\
+         \n\
+         If it is on none, open one as soon as you know what you are building, or work \
+         on one that already exists. Add to the document when you learn something a \
+         later agent would need and the decisions below do not say:\n\
+         \n\
+         \x20 {hook} feature open \"streaming the pty\"\n\
+         \x20 {hook} feature use streaming-the-pty\n\
+         \x20 {hook} feature note \"the reader thread owns the handle\"\n\
+         \n\
+         Under that feature is its decision board: a reference tree of the choices made \
+         while building it, which you read before you start and add to as you plan. \
          Read it with:\n\
          \n\
          \x20 {hook} decisions\n\
          \n\
-         Record a decision when you are planning a feature and you pick one real option \
-         over another — not for routine steps, and not as a running commentary. Say what \
+         Record a decision when you are planning this feature and you pick one real \
+         option over another — not for routine steps, and not as a running commentary. Say what \
          you chose, what you chose it over, and what forced it, and hang it under the \
          decision that constrained it, using the number `decisions` prints:\n\
          \n\

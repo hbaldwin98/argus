@@ -417,7 +417,7 @@ fn migrating_a_v1_store_preserves_existing_state_and_adds_comments() {
         1
     );
     // And v5's board.
-    s.add_decision("argus", &chose("sqlite"), 1, None, None).unwrap();
+    s.add_decision("argus", &chose("sqlite"), None, 1, None, None).unwrap();
     assert_eq!(s.decisions("argus").unwrap().len(), 1);
 }
 
@@ -431,7 +431,7 @@ fn chose(chose: &str) -> DecisionWrite {
 #[test]
 fn a_decision_hangs_where_it_was_told_to() {
     let s = store();
-    let root = s.add_decision("argus", &chose("sqlite"), 1, None, None).unwrap();
+    let root = s.add_decision("argus", &chose("sqlite"), None, 1, None, None).unwrap();
     let child = s
         .add_decision(
             "argus",
@@ -442,6 +442,7 @@ fn a_decision_hangs_where_it_was_told_to() {
                 under: Some(root),
                 ..Default::default()
             },
+            None,
             2,
             Some("sess-1"),
             Some("/repo"),
@@ -461,7 +462,7 @@ fn a_decision_hangs_where_it_was_told_to() {
 #[test]
 fn superseding_marks_the_old_decision_rather_than_removing_it() {
     let s = store();
-    let root = s.add_decision("argus", &chose("sqlite"), 1, None, None).unwrap();
+    let root = s.add_decision("argus", &chose("sqlite"), None, 1, None, None).unwrap();
     let old = s
         .add_decision(
             "argus",
@@ -470,6 +471,7 @@ fn superseding_marks_the_old_decision_rather_than_removing_it() {
                 under: Some(root),
                 ..Default::default()
             },
+            None,
             2,
             None,
             None,
@@ -483,6 +485,7 @@ fn superseding_marks_the_old_decision_rather_than_removing_it() {
                 supersedes: Some(old),
                 ..Default::default()
             },
+            None,
             3,
             None,
             None,
@@ -502,7 +505,7 @@ fn superseding_marks_the_old_decision_rather_than_removing_it() {
 #[test]
 fn a_decision_cannot_hang_off_one_that_is_not_on_this_board() {
     let s = store();
-    let elsewhere = s.add_decision("other", &chose("sqlite"), 1, None, None).unwrap();
+    let elsewhere = s.add_decision("other", &chose("sqlite"), None, 1, None, None).unwrap();
     assert!(s
         .add_decision(
             "argus",
@@ -511,6 +514,7 @@ fn a_decision_cannot_hang_off_one_that_is_not_on_this_board() {
                 under: Some(elsewhere),
                 ..Default::default()
             },
+            None,
             2,
             None,
             None,
@@ -524,6 +528,7 @@ fn a_decision_cannot_hang_off_one_that_is_not_on_this_board() {
                 supersedes: Some(elsewhere),
                 ..Default::default()
             },
+            None,
             2,
             None,
             None,
@@ -535,10 +540,89 @@ fn a_decision_cannot_hang_off_one_that_is_not_on_this_board() {
 #[test]
 fn one_projects_board_is_not_anothers() {
     let s = store();
-    s.add_decision("argus", &chose("sqlite"), 1, None, None).unwrap();
-    s.add_decision("other", &chose("postgres"), 1, None, None).unwrap();
+    s.add_decision("argus", &chose("sqlite"), None, 1, None, None).unwrap();
+    s.add_decision("other", &chose("postgres"), None, 1, None, None).unwrap();
     assert_eq!(s.decisions("argus").unwrap().len(), 1);
     assert_eq!(s.decisions("argus").unwrap()[0].chose, "sqlite");
+}
+
+fn feature(title: &str) -> argus_protocol::FeatureWrite {
+    argus_protocol::FeatureWrite {
+        title: title.to_string(),
+        body: None,
+    }
+}
+
+#[test]
+fn two_features_that_read_alike_do_not_share_a_board() {
+    let s = store();
+    let first = s
+        .add_feature("argus", &feature("Retry the poll"), None, None, 1, None)
+        .unwrap();
+    let second = s
+        .add_feature("argus", &feature("retry the poll"), None, None, 2, None)
+        .unwrap();
+    assert_eq!(first.slug, "retry-the-poll");
+    assert_eq!(second.slug, "retry-the-poll-2");
+}
+
+#[test]
+fn a_decision_is_read_back_under_the_feature_it_was_filed_under() {
+    let s = store();
+    s.add_feature("argus", &feature("notes storage"), None, None, 1, None)
+        .unwrap();
+    s.add_decision("argus", &chose("sqlite"), Some("notes-storage"), 1, None, None)
+        .unwrap();
+    s.add_decision("argus", &chose("one reader thread"), Some("pty"), 2, None, None)
+        .unwrap();
+
+    let board = s.decisions("argus").unwrap();
+    assert_eq!(board[0].feature.as_deref(), Some("notes-storage"));
+    assert_eq!(board[1].feature.as_deref(), Some("pty"));
+}
+
+#[test]
+fn a_checkout_remembers_the_feature_it_was_pointed_at() {
+    let s = store();
+    s.add_feature("argus", &feature("notes storage"), None, None, 1, None)
+        .unwrap();
+    assert_eq!(s.feature_scope(Path::new("/repo"), "argus").unwrap(), None);
+
+    s.set_feature_scope(Path::new("/repo"), "argus", "notes-storage")
+        .unwrap();
+    assert_eq!(
+        s.feature_scope(Path::new("/repo"), "argus").unwrap().as_deref(),
+        Some("notes-storage")
+    );
+    assert_eq!(
+        s.feature_scope(Path::new("/repo"), "other").unwrap(),
+        None,
+        "one project's scope is not another's"
+    );
+    assert!(
+        s.set_feature_scope(Path::new("/repo"), "argus", "nothing")
+            .is_err(),
+        "a checkout cannot be pointed at a feature that does not exist"
+    );
+}
+
+#[test]
+fn a_feature_document_grows_by_paragraph() {
+    let s = store();
+    s.add_feature("argus", &feature("notes storage"), None, None, 1, None)
+        .unwrap();
+    let body = s
+        .append_to_feature("argus", "notes-storage", "the key has to outlive the ids")
+        .unwrap();
+    assert_eq!(body, "the key has to outlive the ids");
+    let body = s
+        .append_to_feature("argus", "notes-storage", "so notes are keyed by path")
+        .unwrap();
+    assert_eq!(
+        body,
+        "the key has to outlive the ids\n\nso notes are keyed by path"
+    );
+    assert!(s.append_to_feature("argus", "nothing", "x").is_err());
 }
 
 fn audit(action: &str, detail: &str) -> TodoAudit {
