@@ -115,10 +115,11 @@ review requests, and worktree creation are audited and template-policy gated.
 
 ## Boards
 
-Two project-scoped views, both written by agents and read by humans, both built on the same
-attributed write path as note changes — though not the same policy gate. A note is the human's
-document, so writing to one is permission the project grants; a board exists to be written by
-agents, is append-only, and attributes every entry, so a gate would protect nothing.
+Two project-scoped views, both built on the same attributed write path as note changes — though
+not the same policy gate. A note is the human's document, so writing to one is permission the
+project grants; a board is written by agents, is append-only, and attributes every entry, so a gate
+would protect nothing. The decision board is the agents' alone: the reasoning recorded there is
+theirs, and a human reads it. The feature board takes work from either side.
 
 **The decision board** is the record of *why* a feature looks the way it does. An agent adds a
 decision while it is planning a feature and choosing between real options — not for routine steps,
@@ -132,11 +133,13 @@ storage SQLite" is answered by walking to a node instead of reading back through
 Superseded branches stay drawn, dimmed: the road not taken is most of the value.
 
 **The feature board** is the work itself, in the Kanban sense — items in columns by state, moving
-left to right as they progress. An agent claims an item, reports progress or a blocker against it,
-and submits completion evidence; a human accepts it or sends it back. It is as much an input as an
-output: an agent starting work reads the board to infer what is in flight, what is blocked on what,
-and what has already been decided about the thing it is about to touch, which is the half that a
-list of tasks in a chat window cannot do.
+left to right as they progress. Either side can put an item on it: a human adds one from the view,
+the way they edit a note, and an agent adds one when it finds work it is not doing now — so the
+board holds what was asked for as well as what was discovered. An agent claims an item, reports
+progress or a blocker against it, and submits completion evidence; a human accepts it or sends it
+back. It is as much an input as an output: an agent starting work reads the board to infer what is
+in flight, what is blocked on what, and what has already been decided about the thing it is about
+to touch, which is the half that a list of tasks in a chat window cannot do.
 
 The two are linked. A decision is made *about* an item, and an item carries the decisions taken
 under it, so opening either reaches the other. Both are project-scoped and durable in `runtime.db`,

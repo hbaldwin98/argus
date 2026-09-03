@@ -94,6 +94,32 @@ impl App {
                 return;
             }
         }
+        // A view that is not the spine owns the content area outright, and
+        // the pane whose column used to be there is not on screen. Without
+        // this, a click on the board reads as a click on that pane: focus
+        // lands in it and every later keypress goes to a child nobody can
+        // see.
+        if self.view != View::Spine {
+            match ev.kind {
+                MouseEventKind::Down(MouseButton::Left) => {
+                    if in_rect(self.layout.content.outer, ev.column, ev.row) {
+                        self.focus = Focus::View;
+                        if let Some(row) = row_in(
+                            self.layout.content.inner,
+                            crate::ui::ROW_HEIGHT,
+                            ev.column,
+                            ev.row,
+                        ) {
+                            self.select_board_row(row + self.layout.content.first);
+                        }
+                    }
+                }
+                MouseEventKind::ScrollUp => self.move_board_selection(-1),
+                MouseEventKind::ScrollDown => self.move_board_selection(1),
+                _ => {}
+            }
+            return;
+        }
         // The live view is always visible in the rightmost column, so a
         // click landing on it both forwards to the child and (for presses)
         // switches into typing mode, regardless of what was focused before.

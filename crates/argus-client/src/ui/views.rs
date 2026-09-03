@@ -103,21 +103,24 @@ pub(super) fn render_decisions(f: &mut Frame, app: &mut App, area: Rect, th: The
     let block = panel_block(&title, true, th, area.width);
     let inner = block.inner(area);
     f.render_widget(block, area);
+
+    let count = app.board_rows().len();
+    let per_row = ROW_HEIGHT as usize;
+    let visible = (inner.height as usize) / per_row.max(1);
+    // A scrolled board's top row is `first`, not row zero, and a click has
+    // to resolve against the rows that were actually drawn.
+    let first = scrolled_to_show(0, Some(app.board_sel), visible, count);
     app.layout.content = Panel {
         outer: area,
         inner,
-        first: 0,
+        first,
     };
-
-    let rows = app.board_rows();
-    if rows.is_empty() {
+    if count == 0 {
         render_empty_board(f, inner, th);
         return;
     }
 
-    let per_row = ROW_HEIGHT as usize;
-    let visible = (inner.height as usize) / per_row.max(1);
-    let first = scrolled_to_show(0, Some(app.board_sel), visible, rows.len());
+    let rows = app.board_rows();
     let mut lines = Vec::new();
     for (index, (depth, decision)) in rows.iter().enumerate().skip(first).take(visible) {
         let selected = index == app.board_sel;

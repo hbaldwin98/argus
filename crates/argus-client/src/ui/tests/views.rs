@@ -107,6 +107,7 @@ fn clicking_a_tab_opens_it() {
     });
 
     assert_eq!(app.view, View::Decisions);
+    assert_eq!(app.focus, Focus::View, "clicking a tab hands it the keyboard");
 }
 
 #[test]
@@ -245,4 +246,47 @@ fn a_board_for_another_project_is_dropped_rather_than_drawn() {
 
     assert!(!out.contains("not ours"), "{out}");
     assert!(out.contains("no decisions recorded yet"), "{out}");
+}
+
+#[test]
+fn a_click_on_the_board_stays_in_the_view_and_picks_the_row() {
+    let mut app = app_with_a_board(vec![
+        decision(1, None, "sqlite"),
+        decision(2, Some(1), "one row per note"),
+        decision(3, Some(1), "key notes by path"),
+    ]);
+    app.open_view(View::Decisions);
+    draw_at(&mut app, 100, 30);
+    let inner = app.layout.content.inner;
+
+    click(&mut app, inner.x + 2, inner.y + 2 * crate::ui::ROW_HEIGHT);
+
+    assert_eq!(
+        app.focus,
+        Focus::View,
+        "the board is not the pane whose column used to be there"
+    );
+    assert_eq!(app.board_sel, 2, "and the row clicked is the row selected");
+}
+
+#[test]
+fn a_click_past_the_last_row_selects_nothing_new() {
+    let mut app = app_with_a_board(vec![decision(1, None, "sqlite")]);
+    app.open_view(View::Decisions);
+    draw_at(&mut app, 100, 30);
+    let inner = app.layout.content.inner;
+
+    click(&mut app, inner.x + 2, inner.y + inner.height - 1);
+
+    assert_eq!(app.focus, Focus::View);
+    assert_eq!(app.board_sel, 0);
+}
+
+fn click(app: &mut App, column: u16, row: u16) {
+    app.on_mouse(crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    });
 }

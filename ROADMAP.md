@@ -81,7 +81,9 @@ the link between them. The first two have landed.
   the board exists for agents to write and attributes every row.
 - Add the feature board (TARGET.md, "Boards"): items in columns by state, claimed by an agent,
   carrying progress, blockers, and submitted completion evidence, accepted or sent back by a human
-  and never by the agent that did the work. It has to read as well as it writes — an agent starting
+  and never by the agent that did the work. Both sides can add an item — the human from the view,
+  over a client message the way note edits go, and an agent over the pane API — so the write path
+  is the note's dual shape rather than the decision board's agent-only one. It has to read as well as it writes — an agent starting
   work infers what is in flight and what is already decided from the board, which is the reason it
   exists rather than a checklist in a note.
 - Give the board its own reads for a client: it is pushed whole on every change, which is right

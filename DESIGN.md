@@ -98,6 +98,10 @@ click on a tab does the same. From inside a pane the digits belong to the child,
 reached through the leader (`Ctrl-Space`, then the digit) the way review and history are. The strip
 is drawn in the blank row the page is already inset by, so it costs the view underneath nothing.
 
+While a view other than the spine is open, the content area is that view's: a click in it selects a
+row there and keeps the keyboard on the view, rather than resolving against the pane whose column
+used to occupy the same cells.
+
 Switching views changes the screen and nothing else. Every pane keeps running, its subscription
 stands, and the spine is one keystroke back. Focus moves out of the columns while another view is
 open — a view has no columns to move between, and a key left reaching a pane that is not on screen

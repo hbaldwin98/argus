@@ -93,6 +93,14 @@ impl App {
         self.board.as_ref().map(|b| b.tree()).unwrap_or_default()
     }
 
+    /// Selects the row a click landed on, ignoring a click past the last
+    /// one: the empty space under a short board is not a row.
+    pub(super) fn select_board_row(&mut self, row: usize) {
+        if row < self.board_rows().len() {
+            self.board_sel = row;
+        }
+    }
+
     pub(super) fn move_board_selection(&mut self, delta: i32) {
         let rows = self.board_rows().len();
         if rows == 0 {
