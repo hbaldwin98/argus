@@ -121,11 +121,11 @@ fn a_folded_projects_column_renders_as_a_tab() {
     app.fold = Fold::Projects;
     let buf = draw(&mut app);
 
-    // The tab occupies the left page gutter: the gutter's width, the
-    // column band tall (so the whole edge is clickable), sitting on x = 0.
-    assert_eq!(app.layout.projects.outer.width, GUTTER_COLS);
+    // The tab occupies the left page gutter: one cell wide, the column
+    // band tall (so the whole edge is clickable), sitting on x = 0.
+    assert_eq!(app.layout.projects.outer.width, 1);
     assert_eq!(app.layout.projects.outer.x, 0);
-    assert_eq!(app.layout.repositories.outer.x, GUTTER_COLS);
+    assert_eq!(app.layout.repositories.outer.x, 1);
 
     // The other columns absorb the freed space; the live view is widest.
     assert!(app.layout.repositories.outer.width > 10);
@@ -171,7 +171,7 @@ fn folded_constraints_cede_the_folded_column_width() {
     let c = column_constraints(total, Fold::Projects, preferred.as_deref());
     match c.as_slice() {
         // The shortfall comes off a nav column, not off the live view.
-        [Constraint::Length(18), Constraint::Length(20), Constraint::Length(16), Constraint::Length(40)] =>
+        [Constraint::Length(18), Constraint::Length(20), Constraint::Length(19), Constraint::Length(40)] =>
             {}
         other => panic!("unexpected folded constraints: {other:?}"),
     }
@@ -189,5 +189,5 @@ fn folded_constraints_default_redeals_over_the_columns_left() {
             _ => panic!("all lengths"),
         })
         .sum();
-    assert_eq!(sum + 3 * GUTTER_COLS, total, "4 columns + 3 gutters = total");
+    assert_eq!(sum + 3, total, "4 columns + 3 gutters = total");
 }

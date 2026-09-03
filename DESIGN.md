@@ -126,16 +126,6 @@ a thumb in the blank cell between its rows and its border, sized and placed like
 without it a column scrolls silently, and twenty checkouts in a card that fits six look exactly
 like six.
 
-The spine's cards are not boxes. Five boxed columns spend ten of the screen's cells on vertical
-line-drawing and make the layout read as a form rather than as a surface, which is the look the
-elevation between page and panel exists to avoid — undone by then drawing the edges anyway. A card
-is its fill, a rule across the top carrying its name, and the page showing through the gutter
-beside it as a seam; the gutter is two cells rather than one, since one is a hairline on a palette
-whose page and surface are a few points apart. Focus is the accent on that rule and its label over
-a fill a step nearer the viewer. Floating windows keep their border: a window over the spine has to
-cut itself out of what is behind it, which is what a border does and a fill cannot. Dropping the
-boxes gives every column two more cells of text and two more rows of list.
-
 Weight recedes with focus. Five cards drawn in one weight read as five of the same thing rather
 than as a path with a working end, so a column nobody is in drops its names from `text` to `muted`
 and loses its bold; the selected row keeps full weight in every column, since the selections are

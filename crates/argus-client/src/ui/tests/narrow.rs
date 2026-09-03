@@ -73,7 +73,7 @@ fn widening_the_terminal_does_not_undo_a_fold_the_user_chose() {
     assert_eq!(app.fold, Fold::None);
     let text = lines(&draw_at(&mut app, 80, 24)).join("\n");
     assert!(
-        text.contains("repos"),
+        text.contains("reposit"),
         "brought back anyway, squeezed rather than refused:\n{text}"
     );
 }
@@ -87,7 +87,7 @@ fn a_short_terminal_drops_the_detail_line_rather_than_the_items() {
     assert_eq!(app.layout.row_height, ROW_HEIGHT);
     let tall_rows = app.layout.checkouts.inner.height / ROW_HEIGHT;
 
-    let short = draw_at(&mut app, 120, 16);
+    let short = draw_at(&mut app, 120, 18);
     assert_eq!(app.layout.row_height, COMPACT_ROW_HEIGHT);
     let short_rows = app.layout.checkouts.inner.height;
     assert!(
@@ -104,7 +104,7 @@ fn a_short_terminal_drops_the_detail_line_rather_than_the_items() {
 #[test]
 fn a_click_lands_on_the_row_it_looks_like_with_compact_rows() {
     let mut app = app_with_a_long_checkout_column();
-    draw_at(&mut app, 120, 16);
+    draw_at(&mut app, 120, 18);
     assert_eq!(app.layout.row_height, COMPACT_ROW_HEIGHT);
 
     let inner = app.layout.checkouts.inner;
