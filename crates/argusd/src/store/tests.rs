@@ -400,6 +400,81 @@ fn migrating_a_v1_store_preserves_existing_state_and_adds_comments() {
         s.note(&NoteKey::checkout(Path::new("/repo"))).unwrap(),
         Some("- [ ] and this".to_string())
     );
+    // The v4 table too: a store that predates it can still take an
+    // agent's write.
+    s.set_note_as_agent(
+        &NoteKey::checkout(Path::new("/repo")),
+        "- [ ] and this
+- [ ] and one more
+",
+        &audit("add", "and one more"),
+    )
+    .unwrap();
+    assert_eq!(
+        s.note_audit(&NoteKey::checkout(Path::new("/repo")))
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+fn audit(action: &str, detail: &str) -> TodoAudit {
+    TodoAudit {
+        at: 1_700_000_000,
+        session: Some("sess-1".to_string()),
+        action: action.to_string(),
+        detail: detail.to_string(),
+    }
+}
+
+#[test]
+fn an_agents_note_write_and_its_record_arrive_together() {
+    let s = Store::in_memory().unwrap();
+    let repo = NoteKey::checkout(Path::new("/repo"));
+    let other = NoteKey::checkout(Path::new("/other"));
+
+    s.set_note_as_agent(&repo, "- [ ] first
+", &audit("add", "first"))
+        .unwrap();
+    s.set_note_as_agent(&repo, "- [x] first
+", &audit("done", "first"))
+        .unwrap();
+    s.set_note_as_agent(&other, "- [ ] elsewhere
+", &audit("add", "elsewhere"))
+        .unwrap();
+
+    assert_eq!(s.note(&repo).unwrap(), Some("- [x] first
+".to_string()));
+    assert_eq!(
+        s.note_audit(&repo)
+            .unwrap()
+            .iter()
+            .map(|e| e.action.clone())
+            .collect::<Vec<_>>(),
+        ["done", "add"],
+        "newest first"
+    );
+    assert_eq!(
+        s.note_audit(&other).unwrap().len(),
+        1,
+        "one note's record is not another's"
+    );
+}
+
+#[test]
+fn a_notes_record_outlives_the_note_itself() {
+    let s = Store::in_memory().unwrap();
+    let repo = NoteKey::checkout(Path::new("/repo"));
+
+    s.set_note_as_agent(&repo, "- [ ] first
+", &audit("add", "first"))
+        .unwrap();
+    // Emptying a note deletes it; what an agent did to it is still the
+    // answer to "who wrote that".
+    s.set_note(&repo, "").unwrap();
+
+    assert_eq!(s.note(&repo).unwrap(), None);
+    assert_eq!(s.note_audit(&repo).unwrap().len(), 1);
 }
 
 #[test]

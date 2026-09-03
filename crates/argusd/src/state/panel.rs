@@ -60,6 +60,7 @@ impl Daemon {
                 worktree_root: None,
                 setup: Vec::new(),
                 exclusive: false,
+                agent_todos: false,
                 scan: crate::git::Scan::default(),
             });
         }

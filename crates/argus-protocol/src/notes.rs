@@ -29,6 +29,12 @@ pub enum NoteTarget {
 /// which is a different thing to do about a line, not a decoration on
 /// being open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+// Lowercase because these names reach the pane API, where an agent writes
+// them by hand: `todo done 4` posts `"done"`, and `"Done"` is not a
+// spelling anyone would guess. Nothing stores them — a note keeps its
+// states as the markers in its own text — so the wire is the only place
+// this spelling has to hold.
+#[serde(rename_all = "lowercase")]
 pub enum TodoState {
     /// `- [ ]`
     Open,
@@ -114,12 +120,34 @@ impl std::iter::Sum for NoteCounts {
     }
 }
 
+/// One change an agent made to a note, as the human reads it back.
+///
+/// Carried with the note rather than fetched separately: the question it
+/// answers — "who added this line?" — is only ever asked while looking at
+/// the note, and a note has at most a handful of these.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TodoAudit {
+    /// Unix seconds. Recorded by the daemon, which is the only clock both
+    /// sides agree on.
+    pub at: i64,
+    /// The harness session that asked, when it named one. Absent for an
+    /// agent whose CLI reports no session identity.
+    pub session: Option<String>,
+    pub action: String,
+    pub detail: String,
+}
+
 /// A note as it stands, with what was read out of it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Note {
     pub target: NoteTarget,
     pub body: String,
     pub todos: Vec<Todo>,
+    /// What agents have done to this note, newest first. Empty unless the
+    /// note was asked for by a client — the point of it is to be read by a
+    /// person.
+    #[serde(default)]
+    pub audit: Vec<TodoAudit>,
 }
 
 impl Note {
@@ -129,7 +157,12 @@ impl Note {
             target,
             body,
             todos,
+            audit: Vec::new(),
         }
+    }
+
+    pub fn with_audit(self, audit: Vec<TodoAudit>) -> Note {
+        Note { audit, ..self }
     }
 
     pub fn counts(&self) -> NoteCounts {
@@ -220,9 +253,50 @@ pub fn set_todo_state(body: &str, line: usize, state: TodoState) -> Option<Strin
     Some(out)
 }
 
+/// Appends one open checkbox to a note body, returning the new body.
+///
+/// The joins are the whole of the difficulty: a body that does not end in
+/// a newline would otherwise grow a checkbox glued to its last prose line,
+/// and a body that has never been written would start with a blank one.
+/// The text is folded to a single line because an item is one claim — a
+/// newline inside it would arrive as several checkboxes, only the first of
+/// which anyone agreed to.
+pub fn append_todo(body: &str, text: &str) -> String {
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut out = body.to_string();
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str("- [ ] ");
+    out.push_str(&text);
+    out.push('\n');
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn appending_leaves_the_body_above_it_alone() {
+        assert_eq!(
+            append_todo("# Branch\n\n- [ ] a\n", "b"),
+            "# Branch\n\n- [ ] a\n- [ ] b\n"
+        );
+        assert_eq!(append_todo("", "first"), "- [ ] first\n");
+    }
+
+    #[test]
+    fn appending_to_a_body_with_no_trailing_newline_still_starts_a_line() {
+        assert_eq!(append_todo("prose", "a"), "prose\n- [ ] a\n");
+    }
+
+    #[test]
+    fn an_appended_item_is_one_checkbox_however_it_was_typed() {
+        let body = append_todo("", "two\nlines   and  spaces");
+        assert_eq!(body, "- [ ] two lines and spaces\n");
+        assert_eq!(parse_todos(&body).len(), 1);
+    }
 
     #[test]
     fn reads_the_three_checkbox_states() {

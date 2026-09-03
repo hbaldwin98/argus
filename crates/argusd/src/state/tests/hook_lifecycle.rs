@@ -2,7 +2,7 @@
 //! running in it, and their removal when the last one leaves.
 
 use super::*;
-use argus_protocol::ContextScope;
+use argus_protocol::{ContextScope, TodoState, TodoWrite};
 #[tokio::test]
 async fn sharing_a_checkout_is_allowed_unless_the_project_says_otherwise() {
     let dir = tempfile::tempdir().unwrap();
@@ -311,6 +311,182 @@ async fn an_authorized_context_hook_returns_the_checkout_notes() {
             .map(|(_, todo)| todo.text.clone())
             .collect::<Vec<_>>(),
         ["read me first"]
+    );
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn an_agent_may_add_and_tick_off_items_where_the_project_allows_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_allowing_agent_todos(dir.path());
+    let checkout = only_checkout(&d);
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+    let counts = d
+        .write_agent_todo(
+            agent,
+            Some("sess-1"),
+            &TodoWrite::Add {
+                text: "ported the parser".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!((counts.open, counts.done), (1, 0));
+
+    let counts = d
+        .write_agent_todo(
+            agent,
+            Some("sess-1"),
+            &TodoWrite::Set {
+                line: 0,
+                state: TodoState::Done,
+            },
+        )
+        .unwrap();
+    assert_eq!((counts.open, counts.done), (0, 1));
+
+    let note = d.note(NoteTarget::Checkout(checkout)).unwrap();
+    assert_eq!(note.body, "- [x] ported the parser\n");
+    // Both changes are accounted for, newest first, against the agent that
+    // made them.
+    assert_eq!(
+        note.audit
+            .iter()
+            .map(|entry| (entry.action.as_str(), entry.detail.as_str()))
+            .collect::<Vec<_>>(),
+        [("done", "ported the parser"), ("add", "ported the parser")]
+    );
+    assert_eq!(note.audit[0].session.as_deref(), Some("sess-1"));
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn an_agent_note_write_is_refused_unless_the_project_asked_for_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    let checkout = only_checkout(&d);
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+    let refusal = d
+        .write_agent_todo(
+            agent,
+            None,
+            &TodoWrite::Add {
+                text: "unasked for".into(),
+            },
+        )
+        .unwrap_err()
+        .to_string();
+
+    assert!(refusal.contains("does not allow"), "{refusal}");
+    let note = d.note(NoteTarget::Checkout(checkout)).unwrap();
+    assert_eq!(note.body, "", "a refused write leaves nothing behind");
+    assert!(note.audit.is_empty(), "and records nothing");
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn an_agent_may_not_touch_a_standing_instruction() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_allowing_agent_todos(dir.path());
+    let checkout = only_checkout(&d);
+    d.set_note(
+        NoteTarget::Checkout(checkout),
+        "- [!] leave the schema alone\n".to_string(),
+    )
+    .unwrap();
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+    for state in [TodoState::Done, TodoState::Open] {
+        assert!(
+            d.write_agent_todo(agent, None, &TodoWrite::Set { line: 0, state })
+                .is_err(),
+            "ticking off a pinned line would delete the instruction"
+        );
+    }
+    assert!(
+        d.write_agent_todo(
+            agent,
+            None,
+            &TodoWrite::Set {
+                line: 0,
+                state: TodoState::Pinned,
+            }
+        )
+        .is_err(),
+        "nor may an agent pin anything"
+    );
+    let note = d.note(NoteTarget::Checkout(checkout)).unwrap();
+    assert_eq!(note.body, "- [!] leave the schema alone\n");
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn an_agent_note_write_reaches_only_its_own_live_checkout() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_allowing_agent_todos(dir.path());
+    let checkout = only_checkout(&d);
+    let project = d.snapshot()[0].id;
+    d.set_note(NoteTarget::Project(project), "- [!] house style\n".to_string())
+        .unwrap();
+    let shell = d.spawn_shell(checkout).unwrap();
+
+    let add = TodoWrite::Add {
+        text: "from nowhere".into(),
+    };
+    assert!(
+        d.write_agent_todo(shell, None, &add).is_err(),
+        "a shell is not an agent"
+    );
+    assert!(
+        d.write_agent_todo(PaneId(9999), None, &add).is_err(),
+        "nor is nobody"
+    );
+    // The project note is unreachable by construction — there is no way to
+    // name it — so what is asserted is that it stayed as the human left it.
+    assert_eq!(
+        d.note(NoteTarget::Project(project)).unwrap().body,
+        "- [!] house style\n"
+    );
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn a_refused_todo_hook_says_why_and_a_bad_one_is_not_a_note_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_allowing_agent_todos(dir.path());
+    d.start_hook_server().unwrap();
+    let checkout = only_checkout(&d);
+    let source = d.spawn_agent(checkout, "claude").unwrap();
+
+    let written = String::from_utf8_lossy(
+        &post_agent_hook(
+            &d,
+            source,
+            Endpoint::Todo,
+            r#"{"add":{"text":"through the wire"}}"#,
+        )
+        .await,
+    )
+    .to_string();
+    assert!(written.starts_with("HTTP/1.1 200 OK"), "{written}");
+    assert!(written.ends_with("1 open, 0 done"), "{written}");
+
+    let garbage =
+        String::from_utf8_lossy(&post_agent_hook(&d, source, Endpoint::Todo, "hello").await)
+            .to_string();
+    assert!(garbage.starts_with("HTTP/1.1 400"), "{garbage}");
+
+    let missing = String::from_utf8_lossy(
+        &post_agent_hook(&d, source, Endpoint::Todo, r#"{"set":{"line":7,"state":"done"}}"#).await,
+    )
+    .to_string();
+    assert!(missing.starts_with("HTTP/1.1 409"), "{missing}");
+    assert!(missing.ends_with("line 8 is not a checkbox"), "{missing}");
+
+    assert_eq!(
+        d.note(NoteTarget::Checkout(checkout)).unwrap().body,
+        "- [ ] through the wire\n"
     );
     close_all(&d);
 }

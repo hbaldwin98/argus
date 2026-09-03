@@ -54,8 +54,12 @@ Closes the loop: information currently flows only upward, from agents reporting 
   roll up checkout to repository to project. Storage is schema v3, keyed by name and path so a note
   outlives the ids it was written under.
 - Scoped context reads have landed (DESIGN.md, "Notes"): `argus-hook context` returns the project
-  and checkout notes of the pane that asked, and nothing else. Add policy-gated writes with audit
-  records next.
+  and checkout notes of the pane that asked, and nothing else.
+- Policy-gated writes have landed (DESIGN.md, "Notes"): `argus-hook todo` adds and ticks off
+  checkboxes on the asking pane's checkout note, refused unless the project sets `agent_todos`,
+  never reaching the project note or a `- [!]` line, and recorded in schema v4's `note_audit`
+  alongside the change itself. Boards are the next thing built on it: the write path, the policy,
+  and the record are the parts a board would otherwise have invented.
 - Add project feature boards where agents can claim tasks, report progress or blockers, and submit
   completion evidence for human review and acceptance.
 - Implement explicit note forwarding.

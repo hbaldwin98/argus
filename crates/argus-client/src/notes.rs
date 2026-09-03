@@ -10,7 +10,7 @@
 //! it and `App` decides when to send it, which keeps the editing rules
 //! testable without a screen.
 
-use argus_protocol::{parse_todos, Note, NoteCounts, NoteTarget, Todo, TodoState};
+use argus_protocol::{parse_todos, Note, NoteCounts, NoteTarget, Todo, TodoAudit, TodoState};
 
 /// Whether keys navigate or type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +40,10 @@ pub struct NoteView {
     pub dirty: bool,
     /// Why the last write did not land, if it did not.
     pub error: Option<String>,
+    /// What agents have done to this note, newest first. Read-only here:
+    /// the editor edits the body, and this is the account of who else has
+    /// been in it.
+    pub audit: Vec<TodoAudit>,
 }
 
 impl NoteView {
@@ -54,6 +58,7 @@ impl NoteView {
             scroll: 0,
             dirty: false,
             error: None,
+            audit: note.audit.clone(),
         }
     }
 
@@ -69,6 +74,7 @@ impl NoteView {
         }
         self.lines = split(&note.body);
         self.error = None;
+        self.audit = note.audit.clone();
         self.clamp();
     }
 
@@ -226,6 +232,39 @@ impl NoteView {
 
     fn clamp_column(&mut self) {
         self.column = self.column.min(self.lines[self.line].chars().count());
+    }
+}
+
+impl NoteView {
+    /// The last thing an agent did to this note, phrased for the footer.
+    ///
+    /// One line rather than a list: the question a person asks with a note
+    /// open is "did something change under me", and the answer is the most
+    /// recent change. The rest of the record is on the wire for when there
+    /// is somewhere to show it.
+    pub fn last_agent_change(&self, now: i64) -> Option<String> {
+        let entry = self.audit.first()?;
+        Some(format!(
+            "agent {} \"{}\" {}",
+            entry.action,
+            entry.detail,
+            since(entry.at, now)
+        ))
+    }
+}
+
+/// How long ago, in the coarsest unit that still says something. Written
+/// here rather than pulled in because the whole requirement is one line in
+/// a footer, and a wrong-by-a-second answer costs nothing.
+fn since(at: i64, now: i64) -> String {
+    let seconds = now.saturating_sub(at);
+    match seconds {
+        // A clock that disagrees with the daemon's is not worth reporting
+        // as a negative age.
+        i64::MIN..=59 => "just now".to_string(),
+        60..=3599 => format!("{}m ago", seconds / 60),
+        3600..=86_399 => format!("{}h ago", seconds / 3600),
+        _ => format!("{}d ago", seconds / 86_400),
     }
 }
 
@@ -420,5 +459,45 @@ mod tests {
         v.move_column(-3);
         v.insert_char('x');
         assert_eq!(v.body(), "hxéll");
+    }
+
+    #[test]
+    fn the_footer_names_the_last_thing_an_agent_did_and_how_long_ago() {
+        let note = Note::new(NoteTarget::Checkout(CheckoutId(1)), "- [x] a\n".to_string())
+            .with_audit(vec![
+                audit(1_700_000_000, "done", "a"),
+                audit(1_699_000_000, "add", "a"),
+            ]);
+        let written_to = NoteView::new(&note, "repo".to_string());
+
+        assert_eq!(
+            written_to.last_agent_change(1_700_000_600).as_deref(),
+            Some("agent done \"a\" 10m ago"),
+            "the newest record, not the whole history"
+        );
+        assert_eq!(view("- [ ] a").last_agent_change(0), None);
+    }
+
+    #[test]
+    fn an_age_reads_in_the_coarsest_unit_that_still_says_something() {
+        assert_eq!(since(100, 100), "just now");
+        assert_eq!(since(100, 159), "just now");
+        assert_eq!(since(0, 60), "1m ago");
+        assert_eq!(since(0, 3_599), "59m ago");
+        assert_eq!(since(0, 3_600), "1h ago");
+        assert_eq!(since(0, 86_399), "23h ago");
+        assert_eq!(since(0, 86_400), "1d ago");
+        // A client whose clock is behind the daemon's does not report a
+        // change from the future.
+        assert_eq!(since(500, 100), "just now");
+    }
+
+    fn audit(at: i64, action: &str, detail: &str) -> TodoAudit {
+        TodoAudit {
+            at,
+            session: None,
+            action: action.to_string(),
+            detail: detail.to_string(),
+        }
     }
 }

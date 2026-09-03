@@ -235,7 +235,8 @@ an in-memory one, and only `main` passes the store on disk. That is what keeps t
 the user's state.
 
 Schema v3 adds `note`, keyed on scope and key rather than on an id: a scope this version does not
-recognise is dropped when the table is read, not guessed at.
+recognise is dropped when the table is read, not guessed at. Schema v4 adds `note_audit`, keyed the
+same way: one row per change an agent made to a note, kept even after the note itself is deleted.
 
 `session.json`, `excluded-repos`, and `open-workspace` are read once, on the first start that finds
 them, and renamed to `*.imported` afterwards. A `session.json` that will not parse is left where it
@@ -258,6 +259,7 @@ workspace = "work"
 worktree_root = "~/worktrees"
 setup = ["pnpm install"]
 exclusive = true
+agent_todos = true
 exclude = ["vendor"]
 include = ["target/scratch"]
 
@@ -761,8 +763,29 @@ The helper prints the pinned lines once above the bodies they came from. That re
 deliberate: `- [!]` is Argus's spelling rather than Markdown's, and an agent reading a note cold has
 no reason to know it means "standing instruction".
 
-Reads only. Not yet implemented: policy-gated writes with audit records, pinned-note injection into
-a template's prompt, explicit forwarding to an agent, and `argus ctx`.
+Writes are the same surface narrowed. `argus-hook todo add "<text>"` appends one open checkbox to
+the *checkout's* note, and `argus-hook todo done <line>` or `todo open <line>` moves an existing
+one, by the line number a person reads off the note. Three things gate it, cheapest first: the
+caller must be a live agent pane, the project must carry `agent_todos = true`, and the change must
+be one the note can take. The default is off, because a note is what the human wrote down.
+
+Neither write can reach the project note — there is no target to name — and neither can touch a
+`- [!]` line: ticking off a standing instruction would delete the instruction rather than complete
+a task, and pinning is a human's judgement about what an agent should read. An item's text is
+folded to a single line, so one claim cannot arrive as several checkboxes.
+
+The change and its record commit together. Each record holds the time, the harness session that
+asked, what it did (`add`, `done`, `reopen`), and the item's text; the twenty most recent travel
+with the note whenever a client reads one, and the note window's footer names the last of them. The
+records outlive the note, since a note being emptied is exactly when "who wrote that" is worth
+answering. A note already open in a client does not yet redraw when an agent writes to it — the
+counts on the tree do, and reopening the note shows the change — because a stored note is answered
+only to the client that asked for it. Unlike every other pane-API write, this one answers in prose — the agent has to be able
+to tell the user it was refused, and "this project does not allow it" is a different situation from
+"that line is not a checkbox".
+
+Not yet implemented: pinned-note injection into a template's prompt, explicit forwarding to an
+agent, project feature boards, and `argus ctx`.
 
 ## Editors and overlays
 

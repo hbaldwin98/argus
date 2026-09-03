@@ -161,6 +161,7 @@ impl Daemon {
                         live.worktree_root = p.worktree_root.as_deref().map(config::expand_home);
                         live.setup = p.setup.clone();
                         live.exclusive = p.exclusive;
+                        live.agent_todos = p.agent_todos;
                         live.scan = crate::git::Scan {
                             exclude: p.exclude.clone(),
                             include: p.include.clone(),
@@ -199,6 +200,7 @@ impl Daemon {
                             worktree_root: p.worktree_root.as_deref().map(config::expand_home),
                             setup: p.setup.clone(),
                             exclusive: p.exclusive,
+                            agent_todos: p.agent_todos,
                             scan: crate::git::Scan {
                                 exclude: p.exclude.clone(),
                                 include: p.include.clone(),

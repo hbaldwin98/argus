@@ -186,6 +186,9 @@ struct Project {
     setup: Vec<String>,
     /// Whether a checkout here may hold only one agent at a time.
     exclusive: bool,
+    /// Whether an agent here may write to its checkout's note. See
+    /// `ProjectConfig::agent_todos`.
+    agent_todos: bool,
     /// What this project's root scan may and may not walk into.
     scan: crate::git::Scan,
 }

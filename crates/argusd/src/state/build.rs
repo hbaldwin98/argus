@@ -89,6 +89,7 @@ impl Daemon {
                     worktree_root: p.worktree_root.as_deref().map(config::expand_home),
                     setup: p.setup,
                     exclusive: p.exclusive,
+                    agent_todos: p.agent_todos,
                     scan: crate::git::Scan {
                         exclude: p.exclude,
                         include: p.include,

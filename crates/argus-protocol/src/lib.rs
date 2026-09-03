@@ -23,7 +23,7 @@ pub use cell::{
     diff_grid, Cell, CellSpan, Color, Cursor, CursorShape, MouseEncoding, MouseMode, MouseTracking,
     BLANK,
 };
-pub use context::{AgentContext, ContextNote, ContextScope};
+pub use context::{AgentContext, ContextNote, ContextScope, TodoWrite};
 pub use compact_str::{CompactString, ToCompactString};
 pub use framing::{read_msg, write_frame, write_msg, FramingError};
 pub use hook::{
@@ -33,8 +33,8 @@ pub use hook::{
 pub use ids::{CheckoutId, IdGen, PaneId, ProjectId, RepositoryId, WorkspaceId};
 pub use message::{ClientMsg, DirEntry, DirListing, ServerMsg};
 pub use notes::{
-    counts as note_counts, parse_todos, set_todo_state, Note, NoteCounts, NoteTarget, Todo,
-    TodoState, MAX_NOTE_BYTES,
+    append_todo, counts as note_counts, parse_todos, set_todo_state, Note, NoteCounts, NoteTarget,
+    Todo, TodoAudit, TodoState, MAX_NOTE_BYTES,
 };
 pub use paths::{config_dir, instance_name};
 pub use review::{

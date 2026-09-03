@@ -627,6 +627,17 @@ fn agents_are_told_where_the_humans_notes_are() {
     assert!(text.contains("context"));
 }
 
+#[test]
+fn agents_are_told_they_may_be_allowed_to_write_items_and_may_not() {
+    let text = instructions();
+    // The instructions are the same for every pane, so the one thing they
+    // must not do is promise a write that the project will refuse.
+    assert!(text.contains("Where the project allows it"));
+    assert!(text.contains("todo add"));
+    assert!(text.contains("todo done"));
+    assert!(text.contains("refuses the write"));
+}
+
 // --- the plugin mechanism ----------------------------------------------
 
 fn plugin_path(dir: &Path, h: &Harness) -> PathBuf {

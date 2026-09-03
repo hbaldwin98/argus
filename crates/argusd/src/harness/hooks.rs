@@ -86,6 +86,14 @@ pub fn instructions() -> String {
          \n\
          \x20 {hook} context\n\
          \n\
+         Where the project allows it, you can also add to the checkout's note and tick \
+         items off it. Use it to record work the human will want to see, not as a \
+         scratchpad. Every change is attributed to you, and a project that has not \
+         asked for this refuses the write and says so:\n\
+         \n\
+         \x20 {hook} todo add \"ported the parser\"\n\
+         \x20 {hook} todo done 4\n\
+         \n\
          After you start working in another checkout, run this from that checkout so the \
          pane moves under it in Argus:\n\
          \n\

@@ -26,6 +26,8 @@ The workspace builds three executables:
 - Scrolls a pane back through what its child has already printed, by wheel or Shift-PageUp.
 - Keeps a Markdown note on any project or checkout, counting its `- [ ]`, `- [x]`, and `- [!]`
   lines and rolling those counts up the tree.
+- Lets an agent read the notes for where it is running, and — where the project asks for it — add
+  to and tick off its checkout's checkboxes, with every change attributed and recorded.
 - Opens files in a floating terminal editor, the terminal column, or an external editor.
 - Restores non-exited shell and agent panes after a daemon restart, reopening each agent's last
   conversation where its CLI can be asked to.

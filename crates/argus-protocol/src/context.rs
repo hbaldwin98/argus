@@ -11,7 +11,9 @@
 //! same reason review comments are: a pane id is runtime-only, so anything
 //! durable has to key off the directory the agent is actually working in.
 //!
-//! Reads only. Writes are policy-gated and audited, and are not this.
+//! Writes are the same scope narrowed further: [`TodoWrite`] reaches the
+//! checkout note only, is refused unless the project has opted in, and
+//! leaves an audit record behind. The project note stays the human's.
 
 use serde::{Deserialize, Serialize};
 
@@ -84,6 +86,38 @@ impl AgentContext {
     }
 }
 
+/// The only two changes an agent may make to a note.
+///
+/// Deliberately not "here is the new body": a whole-body write from an
+/// agent would silently discard whatever the human, or another agent in
+/// the same checkout, wrote in between. Both of these name the smallest
+/// claim that does the job — one new line, or one existing line's state —
+/// and the daemon applies it to whatever the note currently says.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TodoWrite {
+    /// Adds one open checkbox at the end of the checkout's note.
+    Add { text: String },
+    /// Sets an existing checkbox's state, by its zero-based line.
+    Set { line: usize, state: TodoState },
+}
+
+impl TodoWrite {
+    /// What the audit record says was asked for. Short by intent: the
+    /// record is read next to the note it changed, which already holds the
+    /// text.
+    pub fn action(&self) -> &'static str {
+        match self {
+            TodoWrite::Add { .. } => "add",
+            TodoWrite::Set {
+                state: TodoState::Done,
+                ..
+            } => "done",
+            TodoWrite::Set { .. } => "reopen",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,6 +142,27 @@ mod tests {
                 (ContextScope::Project, "house style"),
                 (ContextScope::Checkout, "this branch only"),
             ]
+        );
+    }
+
+    #[test]
+    fn a_write_is_recorded_by_what_it_did_rather_than_which_variant_it_was() {
+        assert_eq!(TodoWrite::Add { text: "a".into() }.action(), "add");
+        assert_eq!(
+            TodoWrite::Set {
+                line: 0,
+                state: TodoState::Done
+            }
+            .action(),
+            "done"
+        );
+        assert_eq!(
+            TodoWrite::Set {
+                line: 0,
+                state: TodoState::Open
+            }
+            .action(),
+            "reopen"
         );
     }
 

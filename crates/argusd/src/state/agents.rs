@@ -13,6 +13,11 @@ use super::*;
 pub(super) struct AgentScope {
     pub project_name: String,
     pub checkout_path: std::path::PathBuf,
+    /// Whether this project lets an agent write to its checkout's note.
+    /// Resolved here with the rest of the scope because the policy belongs
+    /// to the project the pane was found under, and this walk is what finds
+    /// it.
+    pub todos_allowed: bool,
 }
 
 /// Whether a hook's report should be dropped rather than applied, for
@@ -117,6 +122,7 @@ impl Daemon {
                     return Ok(AgentScope {
                         project_name: project.name.clone(),
                         checkout_path: checkout.path.clone(),
+                        todos_allowed: project.agent_todos,
                     });
                 }
             }

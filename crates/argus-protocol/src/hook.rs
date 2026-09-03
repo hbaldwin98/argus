@@ -105,6 +105,10 @@ pub enum Endpoint {
     Session,
     Comments,
     Context,
+    /// The one write an agent has: a `TodoWrite` against its own checkout's
+    /// note. Separate from `Context` because reading is unconditional and
+    /// this is not — the daemon refuses it unless the project allows it.
+    Todo,
 }
 
 impl Endpoint {
@@ -122,6 +126,7 @@ impl Endpoint {
             Endpoint::Session => Cow::Borrowed("session"),
             Endpoint::Comments => Cow::Borrowed("comments"),
             Endpoint::Context => Cow::Borrowed("context"),
+            Endpoint::Todo => Cow::Borrowed("todo"),
         }
     }
 }
@@ -152,6 +157,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "session" => Endpoint::Session,
         "comments" => Endpoint::Comments,
         "context" => Endpoint::Context,
+        "todo" => Endpoint::Todo,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -171,6 +177,7 @@ mod tests {
             Endpoint::Session,
             Endpoint::Comments,
             Endpoint::Context,
+            Endpoint::Todo,
         ];
         all.extend(Report::ALL.into_iter().map(Endpoint::Status));
         all
@@ -197,6 +204,7 @@ mod tests {
         assert_eq!(pane_path(PaneId(3), Endpoint::Session), "/pane/3/session");
         assert_eq!(pane_path(PaneId(3), Endpoint::Comments), "/pane/3/comments");
         assert_eq!(pane_path(PaneId(3), Endpoint::Context), "/pane/3/context");
+        assert_eq!(pane_path(PaneId(3), Endpoint::Todo), "/pane/3/todo");
         assert_eq!(
             pane_path(PaneId(3), Endpoint::Status(Report::NeedsReview)),
             "/pane/3/status/needs-review"

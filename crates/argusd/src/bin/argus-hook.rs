@@ -11,6 +11,8 @@
 //! argus-hook session <id>                        # records exact resume identity
 //! argus-hook comments                            # reads durable review feedback
 //! argus-hook context                             # reads the notes for this checkout
+//! argus-hook todo add "ported the parser"        # writes to the checkout's note
+//! argus-hook todo done 4                         # ticks line 4 of it off
 //! argus-hook say "text"                          # prints, calls nobody
 //! argus-hook <url> <token> [--note-from-stdin] [--title-from-stdin]  # the installed hook form
 //! ```
@@ -33,8 +35,8 @@
 //! continue — Cursor wants `permission`, Claude wants `decision` — never a
 //! human-readable message. Some agent CLIs inject a hook's stdout into the
 //! model's context, so staying silent keeps Argus's bookkeeping out of the
-//! conversation. The deliberate `say`, `comments`, and `context` commands do
-//! return useful output.
+//! conversation. The deliberate `say`, `comments`, `context`, and `todo`
+//! commands do return useful output.
 //!
 //! On Windows it is a GUI-subsystem binary. Not because it has a UI — it
 //! has none — but because the agent CLI that runs it decides how it is
@@ -52,8 +54,8 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use argus_protocol::{
-    AgentContext, Endpoint, Report, ReviewComment, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
-    SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
+    AgentContext, Endpoint, Report, ReviewComment, TodoState, TodoWrite, INSTRUCTIONS_VAR,
+    NOTE_FLAG, OWNS_SESSION_FLAG, SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(2);
@@ -79,6 +81,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("session", session),
     ("comments", comments),
     ("context", context),
+    ("todo", todo),
 ];
 
 fn dispatch(command: Option<&str>, rest: &[&str]) {
@@ -220,6 +223,73 @@ fn context_message(rest: &[&str], base_url: &str, token: &str) -> String {
         ));
     }
     sections.join("\n\n")
+}
+
+/// The one command here that changes something, so the one that reports
+/// back. Deliberately on stdout for the same reason `context` is: the agent
+/// that ran it has to be able to tell the user it was refused.
+fn todo(rest: &[&str]) {
+    let mut out = std::io::stdout();
+    let _ = writeln!(out, "{}", todo_message(rest, &env_url(), &env_token()));
+    let _ = out.flush();
+}
+
+fn todo_message(rest: &[&str], base_url: &str, token: &str) -> String {
+    let Some(write) = parse_todo_args(rest) else {
+        return "could not write the note: expected `todo add <text>`, \
+                `todo done <line>`, or `todo open <line>`"
+            .to_string();
+    };
+    let body = match serde_json::to_string(&write) {
+        Ok(body) => body,
+        Err(_) => return "could not write the note: unencodable item".to_string(),
+    };
+    let url = endpoint_url(base_url, Endpoint::Todo);
+    let Some((status, response)) = post_response(&url, token, &body) else {
+        return "could not write the note: daemon unavailable".to_string();
+    };
+    let response = response.trim();
+    if status != 200 {
+        return if response.is_empty() {
+            "could not write the note: daemon refused the request".to_string()
+        } else {
+            format!("could not write the note: {response}")
+        };
+    }
+    match write {
+        TodoWrite::Add { text } => format!("added \"{text}\" — {response}"),
+        TodoWrite::Set { state, .. } => format!("marked {} — {response}", state_word(state)),
+    }
+}
+
+fn state_word(state: TodoState) -> &'static str {
+    match state {
+        TodoState::Done => "done",
+        _ => "open",
+    }
+}
+
+/// The line numbers here are the ones a person reads off the note, so they
+/// are 1-based on the way in and 0-based on the wire.
+fn parse_todo_args(rest: &[&str]) -> Option<TodoWrite> {
+    match *rest.first()? {
+        "add" => {
+            let text = rest[1..].join(" ");
+            (!text.trim().is_empty()).then_some(TodoWrite::Add { text })
+        }
+        verb @ ("done" | "open") => {
+            let line: usize = rest.get(1)?.parse().ok()?;
+            Some(TodoWrite::Set {
+                line: line.checked_sub(1)?,
+                state: if verb == "done" {
+                    TodoState::Done
+                } else {
+                    TodoState::Open
+                },
+            })
+        }
+        _ => None,
+    }
 }
 
 /// One JSON read from the pane API, with every way it can fail phrased for
@@ -948,18 +1018,111 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_item_grammar_is_add_done_and_open() {
+        assert_eq!(
+            parse_todo_args(&["add", "ported", "the", "parser"]),
+            Some(TodoWrite::Add {
+                text: "ported the parser".to_string()
+            })
+        );
+        // The line a person reads off the note is 1-based; the wire is not.
+        assert_eq!(
+            parse_todo_args(&["done", "4"]),
+            Some(TodoWrite::Set {
+                line: 3,
+                state: TodoState::Done
+            })
+        );
+        assert_eq!(
+            parse_todo_args(&["open", "1"]),
+            Some(TodoWrite::Set {
+                line: 0,
+                state: TodoState::Open
+            })
+        );
+        for bad in [
+            vec![],
+            vec!["add"],
+            vec!["add", "   "],
+            vec!["done"],
+            vec!["done", "0"],
+            vec!["done", "last"],
+            vec!["pin", "1"],
+        ] {
+            assert_eq!(parse_todo_args(&bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_written_item_reports_what_the_note_now_holds() {
+        let (address, server) = serve_status(200, "2 open, 1 done");
+
+        let message = todo_message(
+            &["add", "ported the parser"],
+            &format!("http://{address}/pane/4"),
+            "secret",
+        );
+
+        assert_eq!(message, "added \"ported the parser\" — 2 open, 1 done");
+        assert!(server
+            .join()
+            .unwrap()
+            .starts_with("POST /pane/4/todo HTTP/1.1\r\n"));
+    }
+
+    #[test]
+    fn a_refused_item_reports_the_daemons_reason() {
+        let refusal = "project proj does not allow agents to write notes";
+        let (address, server) = serve_status(409, refusal);
+
+        let message = todo_message(&["done", "2"], &format!("http://{address}/pane/1"), "t");
+
+        assert_eq!(
+            message,
+            "could not write the note: project proj does not allow agents to write notes"
+        );
+        let _ = server.join();
+        assert_eq!(
+            todo_message(&["nonsense"], "", ""),
+            "could not write the note: expected `todo add <text>`, \
+             `todo done <line>`, or `todo open <line>`"
+        );
+        assert_eq!(
+            todo_message(&["done", "2"], "http://127.0.0.1:1/pane/1", "t"),
+            "could not write the note: daemon unavailable"
+        );
+    }
+
+    /// Serves one canned response at a chosen status, for the endpoint that
+    /// has something to say when it refuses.
+    fn serve_status(
+        status: u16,
+        body: &str,
+    ) -> (std::net::SocketAddr, std::thread::JoinHandle<String>) {
+        serve_response(&format!(
+            "HTTP/1.1 {status} Whatever\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        ))
+    }
+
     /// Serves one canned JSON response and hands back the request head, so
     /// a rendering test can also assert what went over the wire.
     fn serve_once(body: &str) -> (std::net::SocketAddr, std::thread::JoinHandle<String>) {
+        serve_response(&format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        ))
+    }
+
+    fn serve_response(response: &str) -> (std::net::SocketAddr, std::thread::JoinHandle<String>) {
         use std::io::BufRead as _;
 
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
-        let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            body.len(),
-            body
-        );
+        let response = response.to_string();
         let server = std::thread::spawn(move || {
             let (stream, _) = listener.accept().unwrap();
             let mut reader = std::io::BufReader::new(stream);

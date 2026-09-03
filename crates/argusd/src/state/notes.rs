@@ -9,8 +9,8 @@
 use std::collections::HashMap;
 
 use argus_protocol::{
-    AgentContext, ContextNote, ContextScope, Note, NoteCounts, NoteTarget, TodoState,
-    MAX_NOTE_BYTES,
+    AgentContext, ContextNote, ContextScope, Note, NoteCounts, NoteTarget, TodoAudit, TodoState,
+    TodoWrite, MAX_NOTE_BYTES,
 };
 
 use super::*;
@@ -43,7 +43,13 @@ impl Daemon {
     pub fn note(&self, target: NoteTarget) -> anyhow::Result<Note> {
         let key = self.note_key(target)?;
         let body = self.store.note(&key)?.unwrap_or_default();
-        Ok(Note::new(target, body))
+        // The audit rides along on the read a person asked for, and only
+        // there: it exists to be looked at next to the lines it explains.
+        let audit = self.store.note_audit(&key).unwrap_or_else(|e| {
+            tracing::warn!("reading a note's audit record: {e:#}");
+            Vec::new()
+        });
+        Ok(Note::new(target, body).with_audit(audit))
     }
 
     pub fn set_note(&self, target: NoteTarget, body: String) -> anyhow::Result<Note> {
@@ -121,6 +127,84 @@ impl Daemon {
             notes.push(ContextNote::new(context_scope, name, body));
         }
         Ok(AgentContext { notes })
+    }
+
+    /// One agent's change to its own checkout's note.
+    ///
+    /// Three gates, in the order they cost the least to fail: the caller
+    /// must be a live agent pane (`agent_scope`), its project must have
+    /// asked for this (`agent_todos`), and the change itself must be one
+    /// the note can take. Only the checkout note is reachable — an agent
+    /// has no way to name the project note, and would be refused if it
+    /// could, because standing instructions are the human's side of this
+    /// conversation.
+    ///
+    /// The record and the write commit together; see
+    /// [`crate::store::Store::set_note_as_agent`].
+    pub fn write_agent_todo(
+        &self,
+        pane_id: PaneId,
+        session: Option<&str>,
+        write: &TodoWrite,
+    ) -> anyhow::Result<NoteCounts> {
+        let scope = self.agent_scope(pane_id)?;
+        if !scope.todos_allowed {
+            anyhow::bail!(
+                "project {} does not allow agents to write notes; \
+                 a human can set agent_todos = true on it",
+                scope.project_name
+            );
+        }
+        let key = NoteKey::checkout(&scope.checkout_path);
+        let body = self.store.note(&key)?.unwrap_or_default();
+        let (body, detail) = match write {
+            TodoWrite::Add { text } => {
+                let text = text.trim();
+                if text.is_empty() {
+                    anyhow::bail!("an item needs some text");
+                }
+                let body = argus_protocol::append_todo(&body, text);
+                if body.len() > MAX_NOTE_BYTES {
+                    anyhow::bail!("the note is full at {MAX_NOTE_BYTES} bytes");
+                }
+                (body, text.to_string())
+            }
+            TodoWrite::Set { line, state } => {
+                // Pinned lines are standing instructions, and ticking one
+                // off would delete the instruction rather than complete a
+                // task. An agent may only move the two states that are
+                // about work.
+                if *state == TodoState::Pinned {
+                    anyhow::bail!("only a human pins an item");
+                }
+                let todo = argus_protocol::parse_todos(&body)
+                    .into_iter()
+                    .find(|todo| todo.line == *line)
+                    .ok_or_else(|| anyhow::anyhow!("line {} is not a checkbox", line + 1))?;
+                if todo.state == TodoState::Pinned {
+                    anyhow::bail!("line {} is a standing instruction", line + 1);
+                }
+                let body = argus_protocol::set_todo_state(&body, *line, *state)
+                    .ok_or_else(|| anyhow::anyhow!("line {} is not a checkbox", line + 1))?;
+                (body, todo.text)
+            }
+        };
+        let entry = TodoAudit {
+            at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or_default(),
+            session: session.map(str::to_string),
+            action: write.action().to_string(),
+            detail,
+        };
+        self.store.set_note_as_agent(&key, &body, &entry)?;
+        // A checkbox appearing or being ticked changes the counts every
+        // client's columns are drawn from.
+        self.broadcast_tree();
+        Ok(argus_protocol::note_counts(&argus_protocol::parse_todos(
+            &body,
+        )))
     }
 
     /// Every note's counts in one read, keyed for the snapshot to look up.

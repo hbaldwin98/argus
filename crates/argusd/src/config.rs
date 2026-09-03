@@ -78,6 +78,15 @@ pub struct ProjectConfig {
     /// editing the same files is never what was meant.
     #[serde(default)]
     pub exclusive: bool,
+    /// Whether an agent in this project may add to and tick off checkboxes
+    /// on its own checkout's note. Off by default, and off is the whole
+    /// reason it is a key: a note is what the human wrote down, and an
+    /// agent editing one is a thing to be asked for rather than assumed.
+    /// Even switched on it reaches the checkout note only — the project
+    /// note stays the human's — and every change lands in the note's audit
+    /// record.
+    #[serde(default)]
+    pub agent_todos: bool,
     /// Commands to run in a worktree Argus has just created — installing
     /// dependencies, seeding an untracked config file, whatever a fresh
     /// checkout needs before it is worth opening. Each is parsed into

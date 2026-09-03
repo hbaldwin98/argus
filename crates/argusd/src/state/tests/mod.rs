@@ -643,6 +643,18 @@ pub(super) fn running_config(dir: &std::path::Path, names: &[&str], cmd: Vec<Str
     }
 }
 
+/// A daemon whose one project has opted into agent note writes. Every
+/// other test daemon has not, which is the default the write path is meant
+/// to refuse.
+pub(super) fn daemon_allowing_agent_todos(dir: &std::path::Path) -> Arc<Daemon> {
+    let mut config = running_config(dir, &["claude"], persistent_agent_command());
+    config.projects[0].agent_todos = true;
+    Daemon::with_store(
+        config,
+        crate::store::Store::in_memory().expect("an in-memory store needs nothing that can fail"),
+    )
+}
+
 pub(super) fn record_agents(checkout: &std::path::Path, agents: &[(&str, Option<&str>)]) {
     record_panes(
         agents

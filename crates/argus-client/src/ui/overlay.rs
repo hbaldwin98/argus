@@ -148,6 +148,15 @@ pub(super) fn render_notes(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
             Style::default().fg(th.dim),
         ));
     }
+    // Who else has been in this note. Dim and last, because it is
+    // provenance rather than content — but present, since a note an agent
+    // may write to is one a person has to be able to audit.
+    if view.error.is_none() {
+        if let Some(change) = view.last_agent_change(now_seconds()) {
+            summary.push(Span::styled("  ", Style::default()));
+            summary.push(Span::styled(change, Style::default().fg(th.dim)));
+        }
+    }
     f.render_widget(Paragraph::new(Line::from(summary)), footer);
 
     if view.mode != NoteMode::Insert {
@@ -169,6 +178,16 @@ pub(super) fn render_notes(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
         // terminal's own cursor.
         shape: argus_protocol::CursorShape::SteadyBar,
     })
+}
+
+/// The wall clock, for ages in the footer. The only clock reading in the
+/// draw path, and it is here rather than passed in because nothing else on
+/// screen depends on the time of day.
+fn now_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or_default()
 }
 
 /// One note line. A checkbox gets its marker coloured by state and its

@@ -63,6 +63,30 @@ CREATE TABLE note (
 ) WITHOUT ROWID;
 "#;
 
+/// Every note change an agent made, in the order it made them.
+///
+/// The audit is the other half of allowing the write at all: a human
+/// reading a note that has grown three checkboxes needs to be able to ask
+/// which agent added them and when. Keyed by the same durable note
+/// identity as `note`, and holding the harness session rather than the
+/// pane id, since a pane id means nothing after a restart.
+///
+/// Kept even after the note it describes is gone: what an agent claimed to
+/// have done outlives the checkout it did it in, and a deleted note is
+/// exactly when the record matters most.
+pub(super) const SCHEMA_V4: &str = r#"
+CREATE TABLE note_audit (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    at      INTEGER NOT NULL,
+    scope   TEXT NOT NULL,
+    key     TEXT NOT NULL,
+    session TEXT,
+    action  TEXT NOT NULL,
+    detail  TEXT NOT NULL
+);
+CREATE INDEX note_audit_note ON note_audit (scope, key, id);
+"#;
+
 pub(super) const SCHEMA_V2: &str = r#"
 CREATE TABLE review_comment (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,

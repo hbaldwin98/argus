@@ -16,7 +16,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex as StdMutex;
 
 use anyhow::{Context, Result};
-use argus_protocol::{PaneKind, PaneStatus, ReviewAnchor, ReviewComment, MAX_REVIEW_COMMENTS};
+use argus_protocol::{
+    PaneKind, PaneStatus, ReviewAnchor, ReviewComment, TodoAudit, MAX_REVIEW_COMMENTS,
+};
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::paths::same_path;
@@ -24,7 +26,7 @@ use crate::paths::same_path;
 mod legacy;
 mod schema;
 
-use schema::{SCHEMA_V1, SCHEMA_V2, SCHEMA_V3};
+use schema::{SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4};
 
 /// One pane worth starting again, as it stood when the daemon stopped.
 ///
@@ -126,8 +128,12 @@ pub struct Overlays {
 /// restore is the problem — a template that now fails on launch, say.
 pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 
+/// How many of a note's agent-change records travel with it. See
+/// [`Store::note_audit`].
+const MAX_NOTE_AUDIT: i64 = 20;
+
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -212,6 +218,9 @@ impl Store {
         }
         if from < 3 {
             tx.execute_batch(SCHEMA_V3)?;
+        }
+        if from < 4 {
+            tx.execute_batch(SCHEMA_V4)?;
         }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
@@ -381,6 +390,68 @@ impl Store {
             .into_iter()
             .filter_map(|(k, body)| k.map(|k| (k, body)))
             .collect())
+    }
+
+    /// Writes a note on an agent's behalf and records that it did, in one
+    /// transaction.
+    ///
+    /// The two halves are useless apart: a body that grew a line nobody
+    /// can account for is what the audit exists to prevent, and a record
+    /// of a change that never landed is a lie about the note. So this is
+    /// one commit rather than a call to [`Self::set_note`] followed by a
+    /// second write that may not happen.
+    pub fn set_note_as_agent(
+        &self,
+        key: &NoteKey,
+        body: &str,
+        entry: &TodoAudit,
+    ) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT INTO note (scope, key, body) VALUES (?1, ?2, ?3)
+             ON CONFLICT(scope, key) DO UPDATE SET body = excluded.body",
+            rusqlite::params![key.scope(), key.key(), body],
+        )?;
+        tx.execute(
+            "INSERT INTO note_audit (at, scope, key, session, action, detail)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                entry.at,
+                key.scope(),
+                key.key(),
+                entry.session,
+                entry.action,
+                entry.detail
+            ],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// What agents have done to one note, newest first and bounded.
+    ///
+    /// Bounded because this is read to answer "where did this line come
+    /// from", not to reconstruct a history: the oldest records matter least
+    /// and the note is open on screen while they are read.
+    pub fn note_audit(&self, key: &NoteKey) -> Result<Vec<TodoAudit>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT at, session, action, detail FROM note_audit
+             WHERE scope = ?1 AND key = ?2 ORDER BY id DESC LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(
+            rusqlite::params![key.scope(), key.key(), MAX_NOTE_AUDIT],
+            |r| {
+                Ok(TodoAudit {
+                    at: r.get(0)?,
+                    session: r.get(1)?,
+                    action: r.get(2)?,
+                    detail: r.get(3)?,
+                })
+            },
+        )?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     // ---- project overlays --------------------------------------------
