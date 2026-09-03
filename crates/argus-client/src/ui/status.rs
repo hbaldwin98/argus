@@ -14,9 +14,9 @@ use super::*;
 /// about what is worth knowing, so it is made here rather than left to
 /// whichever character the width happens to land on.
 ///
-/// The left half is the breadcrumb's seat, on loan to whatever the last
-/// action reported. `App::on_key` hands it back on the next keypress, so a
-/// report is read once and then gets out of the way.
+/// The left half counts the fleet, on loan to whatever the last action
+/// reported. `App::on_key` hands it back on the next keypress, so a report
+/// is read once and then gets out of the way.
 pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     // `area` includes the blank padding row; the bar is its last row.
     let area = Rect {
@@ -225,13 +225,18 @@ fn draw_bar<S: AsRef<str>>(
     // an alarm: brighter than the breadcrumb it stands in for, but it yields
     // to the keys the same way the breadcrumb does.
     let alert = app.status_alert;
-    let left = if app.status.is_empty() {
-        Span::styled(breadcrumb(app), Style::default().fg(th.muted))
-    } else {
-        Span::styled(
+    let left = if !app.status.is_empty() {
+        vec![Span::styled(
             app.status.clone(),
             Style::default().fg(if alert { th.err } else { th.text }),
-        )
+        )]
+    } else {
+        let fleet = fleet(app, th);
+        if fleet.is_empty() {
+            vec![Span::styled(breadcrumb(app), Style::default().fg(th.muted))]
+        } else {
+            fleet
+        }
     };
 
     // Every context ends at the same place: the one key that lists the
@@ -246,7 +251,7 @@ fn draw_bar<S: AsRef<str>>(
         tiers.push(ASK.to_string());
     }
 
-    let left_len = left.content.chars().count();
+    let left_len: usize = left.iter().map(Span::width).sum();
     let width = area.width as usize;
     let len = |hint: &String| hint.chars().count();
     let hints = &tiers;
@@ -256,13 +261,13 @@ fn draw_bar<S: AsRef<str>>(
     let mut spans = vec![Span::raw(" ")];
     match (beside, alert) {
         (Some(hint), _) => {
-            spans.push(left);
+            spans.extend(left);
             spans.push(Span::raw(" ".repeat(width - left_len - len(hint) - 2)));
             spans.push(Span::styled(hint.clone(), Style::default().fg(tone)));
         }
         // Not enough room for both: the alert stays, the keymap goes. The
         // keys are discoverable elsewhere; a swallowed error is not.
-        (None, true) => spans.push(left),
+        (None, true) => spans.extend(left),
         (None, false) => {
             if let Some(hint) = alone() {
                 spans.push(Span::raw(" ".repeat(width.saturating_sub(len(hint) + 2))));
@@ -272,6 +277,78 @@ fn draw_bar<S: AsRef<str>>(
     }
 
     f.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+/// What the whole fleet is doing, in the left of the bar.
+///
+/// That seat used to hold a breadcrumb, and a breadcrumb there says nothing
+/// new: in the columns it repeats the word written on the card above it,
+/// and everywhere else it repeats the path already spelled out across the
+/// live view's title. What is *not* written anywhere on screen is the state
+/// of the agents you are not currently looking at — which is the entire
+/// reason this program has a pane list at all.
+///
+/// Ordered by urgency, so the count you have to do something about is the
+/// one nearest the corner your eye already goes to. Empty when nothing is
+/// happening, and the breadcrumb comes back: a bar reading `0 working` is a
+/// row spent saying no.
+fn fleet(app: &App, th: Theme) -> Vec<Span<'static>> {
+    let mut tally: Vec<(PaneStatus, usize)> = Vec::new();
+    let states = app
+        .tree
+        .iter()
+        .flat_map(|p| p.repositories.iter())
+        .flat_map(|r| r.checkouts.iter())
+        .flat_map(|c| c.listed_panes())
+        // Children count as their own agents here, the same way they do in
+        // the panes column: one of them waiting is a person being waited on.
+        .flat_map(|p| std::iter::once(p.status).chain(p.children.iter().map(|c| c.status)));
+    for status in states {
+        // Idle and exited are not news. Counting them gives the bar a
+        // number that is the same whether anything is happening or not.
+        if !matches!(
+            status,
+            PaneStatus::Waiting
+                | PaneStatus::Failed
+                | PaneStatus::NeedsReview
+                | PaneStatus::Working
+                | PaneStatus::Done
+        ) {
+            continue;
+        }
+        match tally.iter_mut().find(|(s, _)| *s == status) {
+            Some((_, n)) => *n += 1,
+            None => tally.push((status, 1)),
+        }
+    }
+    tally.sort_by_key(|(s, _)| std::cmp::Reverse(s.urgency()));
+
+    let mut spans = Vec::new();
+    for (status, n) in tally {
+        if !spans.is_empty() {
+            spans.push(Span::raw("   "));
+        }
+        // The same glyph the rows use, so the count and the column it is
+        // counting are read as the same thing.
+        spans.push(status_dot(Some(status), th));
+        spans.push(Span::styled(
+            format!("{n} {}", tally_word(status)),
+            Style::default().fg(if status.needs_you() { th.err } else { th.muted }),
+        ));
+    }
+    spans
+}
+
+/// Phrased for a count rather than for a row: "2 need you", not "2 needs
+/// you", and short enough that three of them still leave the keymap room.
+fn tally_word(status: PaneStatus) -> &'static str {
+    match status {
+        PaneStatus::Waiting => "need you",
+        PaneStatus::Failed => "failed",
+        PaneStatus::NeedsReview => "to review",
+        PaneStatus::Working => "working",
+        _ => "done",
+    }
 }
 
 pub(super) fn breadcrumb(app: &App) -> String {

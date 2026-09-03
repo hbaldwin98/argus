@@ -634,21 +634,44 @@ fn an_error_hands_the_bar_back_once_a_key_acknowledges_it() {
 {bar}"
     );
     assert!(
-        bar.trim_start().starts_with("projects"),
-        "the breadcrumb gets its seat back:
+        bar.contains("1 working"),
+        "and the seat goes back to counting the fleet:
 {bar}"
     );
 }
 
 #[test]
-fn a_fresh_bar_shows_the_breadcrumb_not_a_message() {
+fn a_fresh_bar_counts_the_fleet_rather_than_repeating_where_you_are() {
     let mut app = app_with_tree();
     let bar = bar(&draw(&mut app));
     assert!(
-        bar.trim_start().starts_with("projects"),
-        "nothing has happened yet, so the seat is the breadcrumb's:
+        bar.contains("1 working"),
+        "nothing has happened yet, so the seat says what the agents are doing:
 {bar}"
     );
+    // The idle shell is not news, and a bar that counts it reads the same
+    // whether anything is happening or not.
+    assert!(!bar.contains("idle"), "{bar}");
+}
+
+#[test]
+fn what_needs_a_person_is_counted_first() {
+    let mut app = app_with_tree();
+    app.tree[0].repositories[0].checkouts[0].panes[1].status = PaneStatus::Waiting;
+    let bar = bar(&draw(&mut app));
+    let (Some(waiting), Some(working)) = (bar.find("1 need you"), bar.find("1 working")) else {
+        panic!("both counts belong on the bar: {bar}");
+    };
+    assert!(waiting < working, "urgency orders the tally: {bar}");
+}
+
+#[test]
+fn a_fleet_with_nothing_happening_falls_back_to_the_breadcrumb() {
+    // A bar reading `0 working` would be a row spent saying no.
+    let mut app = app_with_tree();
+    app.tree.clear();
+    let bar = bar(&draw(&mut app));
+    assert!(bar.trim_start().starts_with("projects"), "{bar}");
 }
 
 #[test]

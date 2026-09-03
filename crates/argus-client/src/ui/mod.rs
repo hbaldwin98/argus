@@ -14,6 +14,8 @@
 //!   video — reverse fights with the per-row status colors.
 //! - **State** is a shape-distinct glyph in the row's status color (§8b),
 //!   rolled up to parents by the worst descendant.
+//! - **Overflow** is a thumb in the card's right padding cell, so a column
+//!   never scrolls without admitting there is more of it.
 //! - **Rows are two lines**: what the thing is, then a dimmer line of what
 //!   is true about it. Packing both onto one line is what made the old
 //!   layout feel cramped.
@@ -73,6 +75,10 @@ const CARET: &str = "▏";
 /// stays aligned whether or not it's selected.
 const MARKER: &str = "▌";
 const GUTTER: &str = " ";
+
+/// A column's scroll thumb, drawn in the padding cell beside the border so
+/// it reads as part of the card's edge rather than as a row of its own.
+const SCROLL_THUMB: &str = "\u{2590}";
 
 /// Every list item is a name line plus a detail line. `app` hit-tests
 /// clicks against this, so it is shared rather than local.

@@ -121,7 +121,19 @@ is dropped and the items are kept. Where a row carries a count badge, the badge 
 the name is fitted — a count survives truncation better than the tail of a name does — unless
 doing so would leave too little room to identify the row at all, in which case the badge is what
 goes. The status bar's keymaps are written as tiers and the widest that fits is drawn, so a narrow
-bar shows fewer keys rather than one cut mid-word.
+bar shows fewer keys rather than one cut mid-word. A card holding more rows than it can show puts
+a thumb in the blank cell between its rows and its border, sized and placed like a scrollbar's:
+without it a column scrolls silently, and twenty checkouts in a card that fits six look exactly
+like six.
+
+The left of the bar counts the fleet — how many agents are working, how many are done, how many
+are waiting on a person — ordered so the count you have to act on is the one nearest the corner.
+It held a breadcrumb before, which said either the word already written on the card above it or
+the path already spelled out across the live view's title. What is *not* written anywhere else on
+screen is the state of the agents you are not currently looking at, which is the reason the
+program has a pane list at all. Idle and exited panes are left out: a tally that counts them
+reads the same whether anything is happening or not, and when nothing is happening the breadcrumb
+comes back rather than the bar spending a row on `0 working`.
 
 The bar is a reminder rather than a reference. It carries the handful of keys worth having in
 front of you and ends, at every width and in every mode, with the one key that lists the rest —

@@ -411,8 +411,10 @@ pub(super) fn render_column(
 
     // Scroll the window so the selection stays on screen in a long list.
     let visible = (inner.height / height.max(1)) as usize;
-    let first = scrolled_to_show(scrolled_to, selected, visible, rows.len());
+    let len = rows.len();
+    let first = scrolled_to_show(scrolled_to, selected, visible, len);
     panel.first = first;
+    render_overflow(f, inner, first, visible, len, focused, th);
 
     for (i, item) in rows.into_iter().enumerate().skip(first).take(visible) {
         let Some(row) = row_rect_of(inner, i - first, height) else {
@@ -421,6 +423,42 @@ pub(super) fn render_column(
         render_row(f, row, item, selected == Some(i), focused, th);
     }
     panel
+}
+
+/// The mark that says a column holds more than it is showing.
+///
+/// A card scrolls silently: the rows slide under the cursor and nothing on
+/// screen ever admits there were more of them, so a list of twenty
+/// checkouts in a card that fits six looks exactly like a list of six. The
+/// thumb goes in the blank padding cell between the rows and the border,
+/// which costs the names nothing.
+pub(super) fn render_overflow(
+    f: &mut Frame,
+    inner: Rect,
+    first: usize,
+    visible: usize,
+    len: usize,
+    focused: bool,
+    th: Theme,
+) {
+    if inner.height == 0 || visible == 0 || len <= visible {
+        return;
+    }
+    let track = inner.height as usize;
+    // Proportional, but never smaller than a cell: a thumb that rounds to
+    // nothing is a scrollbar that disappears exactly when the list is long
+    // enough to need one.
+    let thumb = (track * visible / len).clamp(1, track);
+    let span = track - thumb;
+    let start = span * first / (len - visible);
+    let style = Style::default().fg(if focused { th.accent } else { th.dim });
+    for i in 0..thumb {
+        let y = inner.y + (start + i) as u16;
+        f.render_widget(
+            Paragraph::new(Span::styled(SCROLL_THUMB, style)),
+            Rect::new(inner.right(), y, 1, 1),
+        );
+    }
 }
 
 /// Where a column's window sits after this frame: `scrolled_to` is where
