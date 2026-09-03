@@ -70,7 +70,7 @@ pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option
     // A row is two lines where the card can afford it, and one where the
     // detail line would cost an item. Every column shares the height, and
     // hit-testing needs the answer, so it is decided once here.
-    let rows_high = row_height(area.height.saturating_sub(3));
+    let rows_high = row_height(area.height.saturating_sub(4));
     app.layout.row_height = rows_high;
 
     // Where each card was scrolled to last frame, read before the tabs
@@ -388,7 +388,10 @@ pub(super) fn render_column(
     height: u16,
     th: Theme,
 ) -> Panel {
-    let block = panel_block(title, focused, th, area.width);
+    // A nav card breathes on all four sides. The modals keep the tighter
+    // default: their height is chosen for the rows they hold, so a bottom
+    // gutter there costs a row of content rather than a row of blank.
+    let block = panel_block(title, focused, th, area.width).padding(Padding::uniform(1));
     let inner = block.inner(area);
     let mut panel = Panel {
         outer: area,
@@ -543,7 +546,14 @@ pub(super) fn render_fold_tabs(f: &mut Frame, columns: Rect, fold: Fold, th: The
 /// accent marker pinning the first line; unselected rows get a blank
 /// gutter so text lines up either way. `dim` spans would sink into the
 /// selection fill, so they are lifted to `muted` there.
-pub(super) fn render_row(f: &mut Frame, area: Rect, item: Item, selected: bool, focused: bool, th: Theme) {
+pub(super) fn render_row<'a>(
+    f: &mut Frame,
+    area: Rect,
+    item: Item<'a>,
+    selected: bool,
+    focused: bool,
+    th: Theme,
+) {
     let bar = match (selected, focused) {
         (true, true) => Style::default().bg(th.sel_bg),
         (true, false) => Style::default().bg(th.sel_bg_dim),
@@ -555,7 +565,12 @@ pub(super) fn render_row(f: &mut Frame, area: Rect, item: Item, selected: bool, 
     } else {
         Span::styled(GUTTER, bar)
     };
-    fn lift<'a>(spans: Vec<Span<'a>>, bar: Style, selected: bool, th: Theme) -> Vec<Span<'a>> {
+    // A column nobody is in is background: five cards all shouting in the
+    // same weight is why the spine reads as five of the same thing rather
+    // than as a path with a working end. The row on the path keeps its
+    // weight even so — the selections are how you trace where you are.
+    let recede = !focused && !selected;
+    let lift = |spans: Vec<Span<'a>>| -> Vec<Span<'a>> {
         spans
             .into_iter()
             .map(|s| {
@@ -563,16 +578,29 @@ pub(super) fn render_row(f: &mut Frame, area: Rect, item: Item, selected: bool, 
                 if selected && style.fg == Some(th.dim) {
                     style = style.fg(th.muted);
                 }
+                if recede && style.fg == Some(th.text) {
+                    style = style.fg(th.muted).remove_modifier(Modifier::BOLD);
+                }
                 Span::styled(s.content, style)
             })
             .collect()
-    }
+    };
 
+    // The deeper indent buys alignment, and it is only worth having while
+    // it is free: a detail line that would be ellipsized to pay for a tidy
+    // left edge has traded something the user reads for something they
+    // merely notice. "no checkout" beats "no checko…".
+    let detail_width: usize = item.detail.iter().map(Span::width).sum();
+    let indent = if 1 + item.indent + detail_width <= area.width as usize {
+        item.indent
+    } else {
+        STATUS_WIDTH
+    };
     let mut name = vec![marker];
-    name.extend(lift(item.name, bar, selected, th));
+    name.extend(lift(item.name));
 
     let width = area.width as usize;
-    let badge = lift(item.badge, bar, selected, th);
+    let badge = lift(item.badge);
     let name = if badge.is_empty() {
         ellipsize_spans(name, width)
     } else {
@@ -600,8 +628,11 @@ pub(super) fn render_row(f: &mut Frame, area: Rect, item: Item, selected: bool, 
 
     let mut lines = vec![Line::from(name)];
     if area.height >= ROW_HEIGHT {
-        let mut detail = vec![Span::styled(GUTTER, bar), Span::styled("  ", bar)];
-        detail.extend(lift(item.detail, bar, selected, th));
+        let mut detail = vec![
+            Span::styled(GUTTER, bar),
+            Span::styled(" ".repeat(indent), bar),
+        ];
+        detail.extend(lift(item.detail));
         lines.push(Line::from(ellipsize_spans(detail, width)));
     }
 

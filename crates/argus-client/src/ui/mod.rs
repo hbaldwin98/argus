@@ -14,6 +14,9 @@
 //!   video — reverse fights with the per-row status colors.
 //! - **State** is a shape-distinct glyph in the row's status color (§8b),
 //!   rolled up to parents by the worst descendant.
+//! - **Weight** recedes with focus: names in the column being used are
+//!   `text` and bold, and elsewhere they drop to `muted` — except the
+//!   selected row, which is the path you are on and stays legible.
 //! - **Overflow** is a thumb in the card's right padding cell, so a column
 //!   never scrolls without admitting there is more of it.
 //! - **Rows are two lines**: what the thing is, then a dimmer line of what
@@ -143,6 +146,10 @@ const COLLAPSED_TAB: &str = "▸";
 /// row that says which thing this is.
 const NAME_FLOOR: usize = 8;
 
+/// The status glyph and its trailing space, which every row's name begins
+/// with and which its detail line therefore hangs under.
+const STATUS_WIDTH: usize = 2;
+
 /// One list item: what it is, a dimmer line of what's true about it, and
 /// an optional count pinned to the right of the name line. The badge is
 /// there because these columns are narrow — a count appended to the detail
@@ -151,6 +158,12 @@ pub struct Item<'a> {
     pub name: Vec<Span<'a>>,
     pub detail: Vec<Span<'a>>,
     pub badge: Vec<Span<'a>>,
+    /// How far the detail line is indented, so it starts under the name
+    /// rather than under the glyphs in front of it. The width of that glyph
+    /// run varies by row — a checkout carries a kind mark the others don't —
+    /// and a detail hanging two cells left of its own name is the kind of
+    /// raggedness that makes a column look unconsidered.
+    pub indent: usize,
 }
 
 impl<'a> Item<'a> {
@@ -159,11 +172,19 @@ impl<'a> Item<'a> {
             name,
             detail,
             badge: Vec::new(),
+            indent: STATUS_WIDTH,
         }
     }
 
     fn badged(mut self, badge: Vec<Span<'a>>) -> Self {
         self.badge = badge;
+        self
+    }
+
+    /// For a row whose name carries more in front of it than the status
+    /// glyph — a kind mark, a child's elbow.
+    fn indented(mut self, indent: usize) -> Self {
+        self.indent = indent;
         self
     }
 }

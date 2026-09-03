@@ -48,6 +48,8 @@ pub(super) fn checkout_item(c: &argus_protocol::CheckoutInfo, th: Theme) -> Item
         ],
         detail,
     )
+    // The kind mark sits between the status glyph and the name.
+    .indented(STATUS_WIDTH + 2)
     .badged(if c.listed_panes().next().is_none() {
         Vec::new()
     } else {
@@ -69,6 +71,7 @@ pub(super) fn branch_item(name: &str, th: Theme) -> Item<'static> {
         ],
         vec![Span::styled("no checkout", Style::default().fg(th.dim))],
     )
+    .indented(STATUS_WIDTH + 2)
 }
 
 /// A branch that only exists on a remote. Named as the remote names it,
@@ -85,6 +88,7 @@ pub(super) fn remote_item(name: &str, th: Theme) -> Item<'static> {
             Style::default().fg(th.dim),
         )],
     )
+    .indented(STATUS_WIDTH + 2)
 }
 
 /// The compact git summary on a checkout row: branch name (or `detached`),
@@ -100,10 +104,19 @@ pub(super) fn git_spans_unless_branch_is(
     th: Theme,
 ) -> Vec<Span<'static>> {
     let redundant = git.and_then(|g| g.branch.as_deref()) == Some(name);
-    git_spans(git, th)
+    let mut spans: Vec<Span<'static>> = git_spans(git, th)
         .into_iter()
         .filter(|s| !(redundant && s.content.trim() == name))
-        .collect()
+        .collect();
+    // Every marker after the branch carries its own leading gap, so
+    // dropping the branch leaves the line starting two cells in — which is
+    // the common case, a checkout sitting on the branch it is named after.
+    if redundant {
+        if let Some(first) = spans.first_mut() {
+            first.content = first.content.trim_start().to_string().into();
+        }
+    }
+    spans
 }
 
 pub(super) fn git_spans(git: Option<&GitStatus>, th: Theme) -> Vec<Span<'static>> {
@@ -199,12 +212,14 @@ pub(super) fn child_item(c: &ChildAgentInfo, th: Theme) -> Item<'static> {
         ],
         vec![Span::styled(
             match c.note.as_deref().filter(|n| !n.is_empty()) {
-                Some(note) => format!("    {note}"),
-                None => format!("    {}", status_word(c.status)),
+                Some(note) => note.to_string(),
+                None => status_word(c.status).to_string(),
             },
             Style::default().fg(if c.status.needs_you() { th.err } else { th.dim }),
         )],
     )
+    // The elbow, then the status glyph.
+    .indented(4 + STATUS_WIDTH)
 }
 
 /// Which pane each row of the panes column belongs to: a pane's own row,

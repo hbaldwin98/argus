@@ -29,15 +29,19 @@ fn a_scrolled_column_does_not_slide_when_the_selection_moves_back_up() {
     app.sel_checkout = 7;
     let buf = draw_at(&mut app, 100, 12);
     let top = app.layout.checkouts.inner.y as usize;
-    assert!(lines(&buf)[top].contains("wt-3"), "the column is scrolled");
+    // Which row that is depends on how many the card can hold, so it is
+    // read off the frame rather than named: what matters is that it does
+    // not change.
+    let was = lines(&buf)[top].clone();
+    assert!(app.layout.checkouts.first > 0, "the column is scrolled");
 
     app.on_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
     let buf = draw_at(&mut app, 100, 12);
 
-    assert!(
-        lines(&buf)[top].contains("wt-3"),
-        "the selection is still on screen, so the list must not move under it: {:?}",
-        lines(&buf)[top]
+    assert_eq!(
+        lines(&buf)[top],
+        was,
+        "the selection is still on screen, so the list must not move under it"
     );
 }
 
@@ -881,3 +885,91 @@ fn dump_review() {
         println!("|{line}");
     }
 }
+
+// --- weight -------------------------------------------------------------
+
+/// The style of the first letter of a row's name, which is where the
+/// column's weight is decided.
+fn name_style(buf: &ratatui::buffer::Buffer, p: Panel, row: usize, lead: u16) -> (Color, bool) {
+    // Past the selection gutter, the status glyph, and whatever else the
+    // row carries in front of its name.
+    let x = p.inner.x + 1 + STATUS_WIDTH as u16 + lead;
+    let cell = buf
+        .cell((x, p.inner.y + row as u16 * ROW_HEIGHT))
+        .expect("the row is on screen");
+    (cell.fg, cell.modifier.contains(Modifier::BOLD))
+}
+
+#[test]
+fn a_column_nobody_is_in_recedes_behind_the_one_they_are() {
+    let mut app = app_with_tree();
+    let th = app.theme;
+
+    app.focus = Focus::Projects;
+    let buf = draw(&mut app);
+    assert_eq!(
+        name_style(&buf, app.layout.projects, 0, 0),
+        (th.text, true),
+        "the column with focus keeps full weight"
+    );
+
+    app.focus = Focus::Panes;
+    let buf = draw(&mut app);
+    assert_eq!(
+        name_style(&buf, app.layout.panes, 0, 0),
+        (th.text, true),
+        "and the weight follows the focus"
+    );
+    // The projects row is still the selected one, so it stays legible as
+    // the path you are on; it is the rest of that column that recedes.
+    assert_eq!(name_style(&buf, app.layout.projects, 0, 0), (th.text, true));
+}
+
+#[test]
+fn an_unselected_row_in_an_unfocused_column_is_the_part_that_recedes() {
+    let mut app = app_with_tree();
+    let th = app.theme;
+    app.focus = Focus::Panes;
+    let buf = draw(&mut app);
+    let panes = app.layout.panes;
+
+    assert_eq!(name_style(&buf, panes, 0, 0), (th.text, true), "selected");
+    assert_eq!(
+        // A checkout's name sits behind a kind mark as well.
+        name_style(&buf, app.layout.checkouts, 1, 2),
+        (th.muted, false),
+        "an unselected row in a column without focus is background"
+    );
+}
+
+// --- alignment ----------------------------------------------------------
+
+#[test]
+fn a_detail_line_starts_under_its_own_name() {
+    // A checkout carries a kind mark between its status glyph and its
+    // name; the ones in the other columns do not. A detail line indented
+    // by a fixed amount hangs two cells left of the name it belongs to.
+    let mut app = app_with_tree();
+    app.focus = Focus::Checkouts;
+    let buf = draw_at(&mut app, 150, 30);
+    let inner = app.layout.checkouts.inner;
+    let rows = lines(&buf);
+    let at = |y: u16| -> String { rows[y as usize].chars().skip(inner.x as usize).collect() };
+
+    for (row, name, detail) in [(0, "master", "2 changes"), (1, "feat", "worktree")] {
+        let over = at(inner.y + row * ROW_HEIGHT);
+        let under = at(inner.y + row * ROW_HEIGHT + 1);
+        // In cells, not bytes: the glyphs in front of a name are wide.
+        let column = |line: &str, text: &str| {
+            line.find(text).map(|b| line[..b].chars().count())
+        };
+        assert_eq!(
+            column(&over, name),
+            column(&under, detail),
+            "{detail:?} must start under {name:?}:
+{over:?}
+{under:?}"
+        );
+    }
+}
+

@@ -126,6 +126,16 @@ a thumb in the blank cell between its rows and its border, sized and placed like
 without it a column scrolls silently, and twenty checkouts in a card that fits six look exactly
 like six.
 
+Weight recedes with focus. Five cards drawn in one weight read as five of the same thing rather
+than as a path with a working end, so a column nobody is in drops its names from `text` to `muted`
+and loses its bold; the selected row keeps full weight in every column, since the selections are
+how the path is traced. A row's detail line is indented to start under its own name rather than by
+a fixed amount, because a checkout carries a kind mark in front of its name and the other columns
+do not — but only while the indent is free: a detail that would be ellipsized to pay for a tidy
+left edge has traded something read for something merely noticed, and `no checkout` beats
+`no checko…`. A nav card is padded on all four sides; the modals keep a tighter bottom, since
+their height is chosen for the rows they hold.
+
 The left of the bar counts the fleet — how many agents are working, how many are done, how many
 are waiting on a person — ordered so the count you have to act on is the one nearest the corner.
 It held a breadcrumb before, which said either the word already written on the card above it or
