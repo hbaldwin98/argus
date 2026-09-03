@@ -15,6 +15,12 @@ A workspace scopes the visible projects without adding another column. Argus is 
 tmux replacement, a GUI, an agent host, or a Git porcelain. It runs existing command-line
 harnesses and makes their checkouts, state, and review work visible.
 
+The spine is the default *view*, not the only one. A view owns the whole content area and is
+switched between as a tab; the boards below are views rather than columns, because a decision tree
+and a work board are read at project scope and would say nothing useful squeezed into a column
+beside a pane. Switching views never stops a pane, and the spine is always one keystroke away —
+what a view replaces is the screen, never the running work.
+
 The target budgets are sub-16 ms client frames, less than 50 MiB client RSS with twelve active
 panes, about 1.5 MiB resident per idle pane, and less than 30 ms to first paint against a warm
 daemon.
@@ -106,6 +112,32 @@ template's opt-in pinned-note injection.
 The daemon exposes the same scoped context through MCP, HTTP, and `argus ctx`. A per-checkout token
 limits every agent to approved read and write calls. Write operations such as note changes,
 review requests, and worktree creation are audited and template-policy gated.
+
+## Boards
+
+Two project-scoped views, both written by agents and read by humans, both built on the same
+policy-gated, audited write path as note changes.
+
+**The decision board** is the record of *why* a feature looks the way it does. An agent adds a
+decision as it makes one: what was chosen, what it was chosen over, and what forced it. Decisions
+descend from decisions, so what accumulates is a tree rather than a log — a later choice hangs off
+the one that constrained it, and a reversal is a new node that supersedes an old one rather than an
+edit that hides it. The view draws that tree, so the shape of the reasoning is visible at a glance
+and a question like "why is storage SQLite" is answered by walking to a node instead of reading
+back through a transcript. Superseded branches stay drawn, dimmed: the road not taken is most of
+the value.
+
+**The feature board** is the work itself, in the Kanban sense — items in columns by state, moving
+left to right as they progress. An agent claims an item, reports progress or a blocker against it,
+and submits completion evidence; a human accepts it or sends it back. It is as much an input as an
+output: an agent starting work reads the board to infer what is in flight, what is blocked on what,
+and what has already been decided about the thing it is about to touch, which is the half that a
+list of tasks in a chat window cannot do.
+
+The two are linked. A decision is made *about* an item, and an item carries the decisions taken
+under it, so opening either reaches the other. Both are project-scoped and durable in `runtime.db`,
+both attribute every entry to the session that wrote it, and neither lets an agent accept its own
+work — acceptance is the human's, for the same reason pinning a note is.
 
 ## Terminal and memory model
 

@@ -785,7 +785,9 @@ to tell the user it was refused, and "this project does not allow it" is a diffe
 "that line is not a checkbox".
 
 Not yet implemented: pinned-note injection into a template's prompt, explicit forwarding to an
-agent, project feature boards, and `argus ctx`.
+agent, `argus ctx`, and the two project boards — a decision tree and a feature board — which want a
+view of their own rather than a column (TARGET.md, "Boards"). The client has no views yet: the
+project spine is the only top-level surface, and everything else is an overlay over it.
 
 ## Editors and overlays
 

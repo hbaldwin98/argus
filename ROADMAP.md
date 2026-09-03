@@ -60,10 +60,38 @@ Closes the loop: information currently flows only upward, from agents reporting 
   never reaching the project note or a `- [!]` line, and recorded in schema v4's `note_audit`
   alongside the change itself. Boards are the next thing built on it: the write path, the policy,
   and the record are the parts a board would otherwise have invented.
-- Add project feature boards where agents can claim tasks, report progress or blockers, and submit
-  completion evidence for human review and acceptance.
 - Implement explicit note forwarding.
 - Add `argus ctx` and MCP adapters over the same implementation.
+
+## P6.5: Views and Boards
+
+Boards are the first thing Argus has wanted that is not a column. A decision tree and a work board
+are read at project scope, all at once, and neither says anything useful in a 30-column strip
+beside a pane — so the client needs a second top-level surface before either can be built. That
+ordering is the whole of this section: the view mechanism first, then the two boards on it, then
+the link between them.
+
+- Add views: a named, full-content-area surface switched as a tab, with the project spine as the
+  default view. What a view replaces is the screen, not the running work — panes keep running, and
+  the spine is one keystroke back (TARGET.md, "Product boundary"). Decide where the tab strip
+  lives, what key cycles views, and whether the open view is per-client (it should be — two people
+  attached to one daemon are not necessarily reading the same thing).
+- Add the decision board (TARGET.md, "Boards"): agents append decisions as they make them — what
+  was chosen, what over, what forced it — each descending from the decision that constrained it,
+  so the accumulated shape is a tree. Superseding replaces a node without hiding it; the view draws
+  superseded branches dimmed, because the road not taken is most of the value. Storage is a
+  migration on `user_version`, and the write path, policy gate, and audit record are the ones
+  `argus-hook todo` already established.
+- Add the feature board (TARGET.md, "Boards"): items in columns by state, claimed by an agent,
+  carrying progress, blockers, and submitted completion evidence, accepted or sent back by a human
+  and never by the agent that did the work. It has to read as well as it writes — an agent starting
+  work infers what is in flight and what is already decided from the board, which is the reason it
+  exists rather than a checklist in a note.
+- Link the two: a decision is taken about an item, an item carries the decisions taken under it,
+  and either one reaches the other.
+- Decide how a board reaches an agent: whole-board reads will not fit a prompt for long, so the
+  read wants scoping — this item, its ancestors, its blockers — the way `argus-hook context` scopes
+  notes to the asking pane.
 
 ## P7: Terminal and Performance
 
