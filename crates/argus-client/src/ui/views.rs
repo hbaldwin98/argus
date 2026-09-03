@@ -191,7 +191,7 @@ fn render_empty_board(f: &mut Frame, inner: Rect, th: Theme) {
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "r refreshes · 1 goes back to the spine",
+                "the board arrives on its own as it is written · 1 goes back to the spine",
                 Style::default().fg(th.dim),
             )),
         ])

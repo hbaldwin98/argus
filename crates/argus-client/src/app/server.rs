@@ -396,6 +396,9 @@ impl App {
                 self.focus = Focus::Panes;
             }
         }
+        // Last, because it asks about the project the selection has just
+        // landed on rather than the one it started the tree on.
+        self.refresh_board_if_stale();
     }
 
     fn record_state_transitions(&mut self, next: &[ProjectInfo]) {

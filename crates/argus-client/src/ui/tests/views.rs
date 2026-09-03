@@ -282,6 +282,51 @@ fn a_click_past_the_last_row_selects_nothing_new() {
     assert_eq!(app.board_sel, 0);
 }
 
+#[test]
+fn a_board_opened_before_the_tree_arrived_is_asked_for_when_it_does() {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut app = App::new(tx);
+    // The view is reachable before the first tree lands, and asking then
+    // means asking about a project the client does not have yet.
+    app.open_view(View::Decisions);
+    assert!(app.board.is_none());
+
+    app.on_server_msg(argus_protocol::ServerMsg::Tree(super::tree()));
+
+    let mut asked = false;
+    while let Ok(msg) = rx.try_recv() {
+        asked |= matches!(msg, argus_protocol::ClientMsg::GetDecisions { .. });
+    }
+    assert!(asked, "the board is asked for without anyone pressing r");
+}
+
+#[test]
+fn a_tree_that_moves_nothing_does_not_ask_for_the_board_again() {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut app = App::new(tx);
+    app.on_server_msg(argus_protocol::ServerMsg::Tree(super::tree()));
+    app.open_view(View::Decisions);
+    let project = app.current_project().unwrap();
+    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(
+        argus_protocol::DecisionBoard {
+            project: Some(project.id),
+            name: project.name.clone(),
+            decisions: vec![decision(1, None, "sqlite")],
+        },
+    )));
+    while rx.try_recv().is_ok() {}
+
+    app.on_server_msg(argus_protocol::ServerMsg::Tree(super::tree()));
+
+    let mut asks = 0;
+    while let Ok(msg) = rx.try_recv() {
+        if matches!(msg, argus_protocol::ClientMsg::GetDecisions { .. }) {
+            asks += 1;
+        }
+    }
+    assert_eq!(asks, 0, "the board on screen is already this project's");
+}
+
 fn click(app: &mut App, column: u16, row: u16) {
     app.on_mouse(crossterm::event::MouseEvent {
         kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
@@ -290,3 +335,4 @@ fn click(app: &mut App, column: u16, row: u16) {
         modifiers: KeyModifiers::NONE,
     });
 }
+

@@ -88,6 +88,28 @@ impl App {
         let _ = self.out.send(ClientMsg::GetDecisions { project });
     }
 
+    /// Asks again when the board on screen is not the one the view should
+    /// be showing.
+    ///
+    /// Opening the view is a fetch, but the view can be open before there
+    /// is anything to fetch for: the client draws before the first tree
+    /// arrives, and a workspace switch re-scopes the tree under whatever
+    /// is open. Called on every tree, and cheap when nothing has moved —
+    /// an adopted board carries the project's name, so the comparison
+    /// fails exactly once per change.
+    pub(super) fn refresh_board_if_stale(&mut self) {
+        if self.view != View::Decisions {
+            return;
+        }
+        let Some(name) = self.current_project().map(|p| p.name.clone()) else {
+            self.board = None;
+            return;
+        };
+        if self.board.as_ref().map(|b| b.name.as_str()) != Some(name.as_str()) {
+            self.ask_for_decisions();
+        }
+    }
+
     /// The board as it is drawn: depth-first, with each row's depth.
     pub fn board_rows(&self) -> Vec<(usize, &argus_protocol::Decision)> {
         self.board.as_ref().map(|b| b.tree()).unwrap_or_default()

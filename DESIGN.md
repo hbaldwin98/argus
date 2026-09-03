@@ -845,8 +845,11 @@ invalidates it.
 Clients read it with `ClientMsg::GetDecisions` and are pushed `ServerMsg::Decisions` whenever any
 board changes — a tree is meant to be watched being built, and the daemon deliberately does not
 track which view a client has open, so every client is told and one with another project open
-drops it by name. The board view draws the tree two lines per decision, `j`/`k` through it, `r` to
-re-ask.
+drops it by name. Opening the view asks once, and the client asks again on any tree that leaves the
+board showing a project other than the selected one — the view is reachable before the first tree
+arrives, and a workspace switch re-scopes the tree under whatever is open. Between those, a write
+arrives on its own. The board view draws the tree two lines per decision, `j`/`k` through it, a
+click selecting the row it lands on, and `r` to re-ask by hand.
 
 ## Editors and overlays
 

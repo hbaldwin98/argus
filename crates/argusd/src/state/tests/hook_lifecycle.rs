@@ -542,6 +542,36 @@ async fn a_decision_lands_on_its_projects_board_wherever_the_agent_was() {
 }
 
 #[tokio::test]
+async fn a_recorded_decision_is_pushed_at_every_attached_client() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let checkout = only_checkout(&d);
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+    // Subscribed before the write, the way a connection is: a client that
+    // has to ask again has already shown the operator a stale board.
+    let mut rx = d.subscribe_decisions();
+
+    d.record_agent_decision(
+        agent,
+        Some("sess-1"),
+        DecisionWrite {
+            chose: "sqlite".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let board = rx.try_recv().expect("the write is pushed, not waited for");
+    assert_eq!(board.name, d.snapshot()[0].name);
+    assert_eq!(board.project, Some(d.snapshot()[0].id));
+    assert_eq!(
+        board.decisions.iter().map(|d| d.chose.as_str()).collect::<Vec<_>>(),
+        ["sqlite"]
+    );
+    close_all(&d);
+}
+
+#[tokio::test]
 async fn only_a_live_agent_may_record_a_decision() {
     let dir = tempfile::tempdir().unwrap();
     let d = daemon_with_fake_claude(dir.path());
