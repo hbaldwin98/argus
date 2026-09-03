@@ -386,3 +386,30 @@ fn damage_carries_the_childs_alternate_screen() {
     });
     assert!(h.app.grids[&PaneId(100)].alternate_screen);
 }
+
+#[test]
+fn reconnecting_asks_the_new_daemon_for_every_grid_on_screen() {
+    // Regression: a client that outlived its daemon kept drawing the cells
+    // it already had. Subscriptions belong to the connection, so the new
+    // daemon is streaming nothing until it is asked again — and the grids
+    // in hand are from a pty that may have been restored from disk since,
+    // so they have to be thrown away rather than damaged on top of.
+    let mut h = Harness::new();
+    h.keys("lll");
+    h.sent();
+    let pane = h.app.column_pane().expect("a pane is selected");
+    h.app.grids.get_mut(&pane).unwrap().cells = vec![vec![Cell::default()]];
+
+    let (tx, mut rx) = unbounded_channel();
+    h.app.reconnect(tx);
+
+    assert!(
+        h.app.grids[&pane].cells.is_empty(),
+        "the stale grid survived the reconnect"
+    );
+    let resent: Vec<ClientMsg> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        matches!(resent.as_slice(), [ClientMsg::Subscribe { pane: p }] if *p == pane),
+        "{resent:?}"
+    );
+}

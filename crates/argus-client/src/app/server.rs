@@ -35,6 +35,20 @@ impl App {
         }
     }
 
+    /// Points the app at a new connection after the old one died.
+    ///
+    /// Subscriptions belong to a connection, and so do the grids they fill:
+    /// the new daemon has never heard of this client, and the cells in hand
+    /// are from a pty that may have moved on or been restored from disk
+    /// since. Dropping them is what makes [`Self::sync_subscription`] ask
+    /// for a fresh snapshot of everything on screen rather than leaving the
+    /// columns showing a screen nobody is updating any more.
+    pub fn reconnect(&mut self, out: UnboundedSender<ClientMsg>) {
+        self.out = out;
+        self.grids.clear();
+        self.sync_subscription();
+    }
+
     pub fn on_server_msg(&mut self, msg: ServerMsg) {
         match msg {
             ServerMsg::Tree(tree) => self.receive_tree(tree),

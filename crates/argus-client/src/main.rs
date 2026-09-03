@@ -36,6 +36,13 @@ use tokio::sync::mpsc;
 
 const FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
 
+/// How long a failed round of reconnection attempts waits before another.
+/// `ensure_daemon_and_connect` already spends about half a minute of its
+/// own retrying, so this is the gap between rounds, not between attempts.
+const RECONNECT_ROUND_GAP: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The two ends of a connection to the daemon.
+type Connection = (mpsc::UnboundedSender<ClientMsg>, mpsc::Receiver<ServerMsg>);
 
 use app::App;
 use redraw::RedrawScheduler;
@@ -45,21 +52,53 @@ use wire::connection_channels;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let stream = launch::ensure_daemon_and_connect().await?;
-    let (in_tx, mut out_rx) = connection_channels(stream);
+    let connection = connection_channels(stream);
     let mut terminal = enter_terminal()?;
-    let result = run(&mut terminal, in_tx, &mut out_rx).await;
+    let result = run(&mut terminal, connection).await;
     leave_terminal(&mut terminal)?;
     result
 }
 
+/// Keeps trying for a daemon in the background, and reports the connection
+/// once it has one.
+///
+/// A task rather than an await in the loop: reconnecting can take a minute
+/// if the daemon has to be started, and the client has to stay drawable and
+/// quittable the whole time. It never gives up on its own — the person
+/// watching an agent run has no better option than waiting, and quitting is
+/// always still theirs.
+fn start_reconnecting() -> mpsc::Receiver<Connection> {
+    let (tx, rx) = mpsc::channel(1);
+    tokio::spawn(async move {
+        loop {
+            if let Ok(stream) = launch::ensure_daemon_and_connect().await {
+                let _ = tx.send(connection_channels(stream)).await;
+                return;
+            }
+            tokio::time::sleep(RECONNECT_ROUND_GAP).await;
+        }
+    });
+    rx
+}
 
+/// The next connection a reconnect task produces, or never when none is
+/// running. Guarded at the call site, but the future still needs a type
+/// either way.
+async fn next_connection(pending: &mut Option<mpsc::Receiver<Connection>>) -> Option<Connection> {
+    match pending {
+        Some(rx) => rx.recv().await,
+        None => std::future::pending().await,
+    }
+}
 
-async fn run(
-    terminal: &mut Term,
-    in_tx: mpsc::UnboundedSender<ClientMsg>,
-    out_rx: &mut mpsc::Receiver<ServerMsg>,
-) -> anyhow::Result<()> {
+async fn run(terminal: &mut Term, connection: Connection) -> anyhow::Result<()> {
+    let (in_tx, mut out_rx) = connection;
     let mut app = App::with_settings(in_tx, settings::load());
+    // False from the moment the daemon's messages stop, which is what
+    // disables that arm of the select: a closed receiver is ready
+    // immediately and forever, and polling it would spin the loop.
+    let mut connected = true;
+    let mut pending_reconnect: Option<mpsc::Receiver<Connection>> = None;
     let mut events = EventStream::new();
     let mut herdr = herdr::HerdrReporter::from_env();
     let mut frames = tokio::time::interval(FRAME_INTERVAL);
@@ -93,30 +132,67 @@ async fn run(
                 redraw.changed();
                 redraw.due();
             }
-            Some(msg) = out_rx.recv() => {
-                let now = std::time::Instant::now();
-                // Damage from the pane being typed into is the echo of a
-                // keystroke, and somebody is waiting on it — the rest of
-                // what the daemon sends is background and can wait for the
-                // tick. Still bounded by the present gap, so a chatty agent
-                // in the focused pane cannot buy a frame per chunk.
-                let awaited = match &msg {
-                    ServerMsg::Damage { pane, .. } => {
-                        let pane = *pane;
-                        profile.record(|c| c.damage(pane, now));
-                        app.input_pane() == Some(pane)
-                    }
-                    _ => false,
-                };
-                profile.record(profile::Counters::server_msg);
-                app.on_server_msg(msg);
-                if app.take_bell() {
-                    ring_bell(terminal)?;
-                }
-                if awaited {
-                    redraw.input(now);
-                } else {
+            conn = next_connection(&mut pending_reconnect), if pending_reconnect.is_some() => {
+                pending_reconnect = None;
+                if let Some((in_tx, rx)) = conn {
+                    out_rx = rx;
+                    connected = true;
+                    app.reconnect(in_tx);
+                    // Every pane is about to be drawn against a grid it has
+                    // not been sized for; forgetting the old sizes is what
+                    // makes the next frame claim them again.
+                    last_sizes.clear();
+                    app.report("reconnected to argusd");
                     redraw.changed();
+                    redraw.due();
+                }
+            }
+            // `None` is the daemon going away, and it is matched rather
+            // than pattern-bound on purpose. A `Some(..) =` arm over a
+            // closed receiver is simply disabled, which is how a dead
+            // connection used to leave the client drawing a photograph of
+            // the tree and posting keystrokes into nothing, with no way
+            // back but a restart. `connected` then keeps the arm off, since
+            // a closed receiver is ready forever and would spin the loop.
+            msg = out_rx.recv(), if connected => {
+                match msg {
+                    Some(msg) => {
+                        let now = std::time::Instant::now();
+                        // Damage from the pane being typed into is the echo
+                        // of a keystroke, and somebody is waiting on it —
+                        // the rest of what the daemon sends is background
+                        // and can wait for the tick. Still bounded by the
+                        // present gap, so a chatty agent in the focused pane
+                        // cannot buy a frame per chunk.
+                        let awaited = match &msg {
+                            ServerMsg::Damage { pane, .. } => {
+                                let pane = *pane;
+                                profile.record(|c| c.damage(pane, now));
+                                app.input_pane() == Some(pane)
+                            }
+                            _ => false,
+                        };
+                        profile.record(profile::Counters::server_msg);
+                        app.on_server_msg(msg);
+                        if app.take_bell() {
+                            ring_bell(terminal)?;
+                        }
+                        if awaited {
+                            redraw.input(now);
+                        } else {
+                            redraw.changed();
+                        }
+                    }
+                    // Everything on screen is now a photograph, so say so
+                    // and start looking for another daemon rather than
+                    // pretending the keys still go anywhere.
+                    None => {
+                        connected = false;
+                        pending_reconnect = Some(start_reconnecting());
+                        app.alert("lost argusd; reconnecting…");
+                        redraw.changed();
+                        redraw.due();
+                    }
                 }
             }
             _ = frames.tick(), if redraw.pending() => {
