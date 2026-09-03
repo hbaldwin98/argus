@@ -391,13 +391,15 @@ fn an_unfocused_or_hidden_cursor_is_not_drawn() {
 fn preferred_column_widths_are_used_and_keep_a_minimum() {
     let mut app = app_with_tree();
     app.column_widths = Some(vec![2, 18, 20, 20, 40]);
-    draw(&mut app);
+    // Wide enough that the preferences all fit and there is slack left to
+    // hand out; a shortfall is taken from the nav columns, not from here.
+    draw_at(&mut app, 130, 20);
 
     assert_eq!(app.layout.projects.outer.width, MIN_COLUMN_WIDTH);
     assert_eq!(app.layout.repositories.outer.width, 18);
     assert_eq!(app.layout.checkouts.outer.width, 20);
     assert_eq!(app.layout.panes.outer.width, 20);
-    assert_eq!(app.layout.content.outer.width, 42, "the slack lands in the live view");
+    assert_eq!(app.layout.content.outer.width, 46, "the slack lands in the live view");
 }
 
 #[test]
@@ -408,7 +410,7 @@ fn narrow_row_text_ends_in_an_ellipsis() {
     let text = lines(&draw(&mut app)).join("\n");
 
     assert!(
-        text.contains("● a-proj…"),
+        text.contains("● a-pr…"),
         "a name past the column's width should end in an ellipsis:\n{text}"
     );
 }
@@ -477,15 +479,16 @@ fn repository_rows_roll_up_checkout_counts_panes_and_status() {
 }
 
 #[test]
-fn the_focused_column_alone_gets_the_accent_border() {
+fn the_focused_column_alone_gets_the_accent_rule() {
     let th = Theme::default();
     let mut app = app_with_tree();
     app.focus = Focus::Checkouts;
     let buf = draw(&mut app);
 
-    let corner = |p: Panel| buf.cell((p.outer.x, p.outer.y)).unwrap().fg;
-    assert_eq!(corner(app.layout.checkouts), th.accent, "focused column");
-    assert_eq!(corner(app.layout.projects), th.edge, "unfocused column");
+    // Past the title, on the rule the title sits in.
+    let rule = |p: Panel| buf.cell((p.outer.right() - 1, p.outer.y)).unwrap().fg;
+    assert_eq!(rule(app.layout.checkouts), th.accent, "focused column");
+    assert_eq!(rule(app.layout.projects), th.edge, "unfocused column");
 }
 
 #[test]

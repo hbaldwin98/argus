@@ -37,12 +37,15 @@ pub(super) fn ellipsize_spans<'a>(spans: Vec<Span<'a>>, width: usize) -> Vec<Spa
 }
 
 /// Shrinks a rect by `n` on every side, clamping rather than underflowing.
-pub(super) fn inset(area: Rect, n: u16) -> Rect {
+/// The page margin: the horizontal gutter, and a single row top and
+/// bottom. A screen is short and wide, so rows are the scarcer of the two
+/// and the margin is not square.
+pub(super) fn inset(area: Rect, x: u16, y: u16) -> Rect {
     Rect {
-        x: area.x.saturating_add(n),
-        y: area.y.saturating_add(n),
-        width: area.width.saturating_sub(n * 2),
-        height: area.height.saturating_sub(n * 2),
+        x: area.x.saturating_add(x),
+        y: area.y.saturating_add(y),
+        width: area.width.saturating_sub(x * 2),
+        height: area.height.saturating_sub(y * 2),
     }
 }
 

@@ -70,7 +70,7 @@ pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option
     // A row is two lines where the card can afford it, and one where the
     // detail line would cost an item. Every column shares the height, and
     // hit-testing needs the answer, so it is decided once here.
-    let rows_high = row_height(area.height.saturating_sub(4));
+    let rows_high = row_height(area.height.saturating_sub(2));
     app.layout.row_height = rows_high;
 
     // Where each card was scrolled to last frame, read before the tabs
@@ -237,10 +237,19 @@ n  add one",
                 ],
                 detail,
             )
-            .badged(vec![Span::styled(
-                format!("#{}", p.id.0),
-                Style::default().fg(th.dim),
-            )]);
+            // The id used to sit here. It is a runtime handle -- nothing
+            // durable keys off it and nothing asks the user to type it --
+            // so it was spending the busiest column's scarcest cells on a
+            // number that changes every restart. What is worth the slot is
+            // the thing you would otherwise have to expand the row to see.
+            .badged(if p.children.is_empty() {
+                Vec::new()
+            } else {
+                vec![Span::styled(
+                    format!("{} ⤷", p.children.len()),
+                    Style::default().fg(th.dim),
+                )]
+            });
             std::iter::once(parent).chain(p.children.iter().map(|c| child_item(c, th)))
         })
         .collect();
@@ -388,10 +397,7 @@ pub(super) fn render_column(
     height: u16,
     th: Theme,
 ) -> Panel {
-    // A nav card breathes on all four sides. The modals keep the tighter
-    // default: their height is chosen for the rows they hold, so a bottom
-    // gutter there costs a row of content rather than a row of blank.
-    let block = panel_block(title, focused, th, area.width).padding(Padding::uniform(1));
+    let block = card_block(title, focused, th, area.width);
     let inner = block.inner(area);
     let mut panel = Panel {
         outer: area,
@@ -637,6 +643,51 @@ pub(super) fn render_row<'a>(
     }
 
     f.render_widget(Paragraph::new(lines).style(bar), area);
+}
+
+/// A card in the spine: its own fill, and a rule across the top carrying
+/// its name. No box.
+///
+/// Five boxes side by side spend ten columns of the screen on vertical
+/// line-drawing and make the spine read as a form rather than as a
+/// surface — which is the look the elevation between page and panel exists
+/// to avoid, undone by drawing the edges anyway. The fill is what says
+/// where a card begins and ends; the page shows through the gutter between
+/// them as a dark seam, and the top rule gives the name something to sit
+/// on. Focus is the accent on that rule and its label, over a fill a step
+/// nearer the viewer.
+///
+/// Floating windows keep their box ([`panel_block`]): a window over the
+/// spine has to cut itself out of what is behind it, which is exactly the
+/// job a border does and a fill cannot.
+pub(super) fn card_block(title: &str, focused: bool, th: Theme, width: u16) -> Block<'_> {
+    let (rule, label, fill) = if focused {
+        (
+            Style::default().fg(th.accent),
+            Style::default().fg(th.accent).add_modifier(Modifier::BOLD),
+            th.surface_focus,
+        )
+    } else {
+        (
+            Style::default().fg(th.edge),
+            Style::default().fg(th.muted),
+            th.surface,
+        )
+    };
+    Block::default()
+        .borders(Borders::TOP)
+        .border_style(rule)
+        .style(Style::default().bg(fill))
+        // A clear row under the rule, and a side gutter so text does not
+        // start hard against the seam.
+        .padding(Padding::new(1, 1, 1, 0))
+        .title(Span::styled(
+            format!(
+                " {} ",
+                ellipsize_text(title, width.saturating_sub(4) as usize)
+            ),
+            label,
+        ))
 }
 
 /// A padded card. Focus has to be unmissable at a glance, so the focused

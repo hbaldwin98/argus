@@ -6,10 +6,12 @@
 //! here, and the visual language is deliberately narrow:
 //!
 //! - **Elevation** carries structure: the page sits at `bg`, an unfocused
-//!   panel at `surface`, the focused one at `surface_focus`. Panels are
-//!   padded and separated by a gutter, so they read as cards rather than
-//!   as boxes drawn in a terminal.
-//! - **Focus** is that elevation plus an accent border and title.
+//!   panel at `surface`, the focused one at `surface_focus`. The spine's
+//!   cards have no box — the fill is what says where one begins, with the
+//!   page showing through the gutter as a seam and a rule across the top
+//!   carrying the name. A floating window keeps its border, because it has
+//!   to cut itself out of what is behind it.
+//! - **Focus** is that elevation plus an accent rule and title.
 //! - **Selection** is a raised bar with an accent `▌` marker, never reverse
 //!   video — reverse fights with the per-row status colors.
 //! - **State** is a shape-distinct glyph in the row's status color (§8b),
@@ -111,7 +113,11 @@ pub fn row_height(inner_height: u16) -> u16 {
 
 /// Blank columns between panels, and between the panels and the screen
 /// edge. Without it the cards touch and stop reading as separate surfaces.
-pub const GUTTER_COLS: u16 = 1;
+///
+/// Two rather than one since the cards lost their borders: the gutter is
+/// the page showing through, and one cell of it is a hairline on a palette
+/// whose page and surface are a few points apart.
+pub const GUTTER_COLS: u16 = 2;
 
 /// The narrowest a spine of `columns` cards can be drawn without any of
 /// them going under its floor. What the fold breakpoints are derived from,
@@ -196,7 +202,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // page and panel is what makes the panels read as cards.
     f.render_widget(Block::default().style(Style::default().bg(th.bg)), f.area());
 
-    let page = inset(f.area(), GUTTER_COLS);
+    let page = inset(f.area(), GUTTER_COLS, 1);
     // A resize is noticed here rather than plumbed in as an event, because
     // here is where the answer is used. Folding only ever tightens: a
     // terminal that has grown wide enough for five columns is not a reason
@@ -287,7 +293,7 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
         Some(where_) => format!("{where_} · {}", content_title(app)),
         None => content_title(app),
     };
-    let block = panel_block(&title, focused, th, area.width);
+    let block = card_block(&title, focused, th, area.width);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
