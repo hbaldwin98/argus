@@ -287,24 +287,63 @@ fn decisions_message(rest: &[&str], base_url: &str, token: &str) -> String {
     if board.decisions.is_empty() {
         return "no decisions recorded for this project".to_string();
     }
+    format_decision_board(&board)
+}
+
+fn format_decision_board(board: &DecisionBoard) -> String {
     let mut lines = vec![format!("Decisions on {}, newest last:", board.name)];
-    for (depth, decision) in board.tree() {
-        // The id leads because it is what the next decision is hung off,
-        // and the indent is what says which one that would be under.
-        let pad = " ".repeat(depth * 2);
-        let mark = match decision.superseded_by {
-            Some(by) => format!("  (superseded by #{by})"),
-            None => String::new(),
-        };
-        lines.push(format!("{pad}#{} {}{mark}", decision.id, decision.chose));
-        if let Some(over) = &decision.over {
-            lines.push(format!("{pad}   over: {over}"));
-        }
-        if let Some(because) = &decision.because {
-            lines.push(format!("{pad}   because: {because}"));
-        }
+    for row in board.tree_rows() {
+        push_decision_lines(&mut lines, &row);
     }
     lines.join("\n")
+}
+
+fn push_decision_lines(lines: &mut Vec<String>, row: &argus_protocol::DecisionTreeRow<'_>) {
+    let decision = row.decision;
+    // The id leads because it is what the next decision is hung off,
+    // and the branch is what says which one that would be under.
+    let mark = match decision.superseded_by {
+        Some(by) => format!("  (superseded by #{by})"),
+        None => String::new(),
+    };
+    lines.push(format!(
+        "{}#{} {}{mark}",
+        decision_branch(row),
+        decision.id,
+        decision.chose
+    ));
+    let continuation = decision_continuation(row);
+    if let Some(over) = &decision.over {
+        lines.push(format!("{continuation}   over: {over}"));
+    }
+    if let Some(because) = &decision.because {
+        lines.push(format!("{continuation}   because: {because}"));
+    }
+}
+
+fn decision_branch(row: &argus_protocol::DecisionTreeRow<'_>) -> String {
+    if row.depth == 0 {
+        return String::new();
+    }
+    let mut branch = decision_ancestor_guides(row);
+    branch.push_str(if row.has_next_sibling { "├─ " } else { "└─ " });
+    branch
+}
+
+fn decision_continuation(row: &argus_protocol::DecisionTreeRow<'_>) -> String {
+    let mut continuation = decision_ancestor_guides(row);
+    if row.depth > 0 {
+        continuation.push_str(if row.has_next_sibling { "│  " } else { "   " });
+    }
+    continuation.push_str(if row.has_children { "│  " } else { "   " });
+    continuation
+}
+
+fn decision_ancestor_guides(row: &argus_protocol::DecisionTreeRow<'_>) -> String {
+    row.ancestor_continuations
+        .iter()
+        .map(|continues| if *continues { "│  " } else { "   " })
+        .collect()
 }
 
 /// Appends one decision. Reports the id it was given, because that id is
@@ -1304,6 +1343,9 @@ mod tests {
              "superseded_by":3},
             {"id":3,"parent":1,"at":3,"session":null,"checkout":null,
              "chose":"one row per note","over":null,"because":null,
+             "superseded_by":null},
+            {"id":4,"parent":2,"at":4,"session":null,"checkout":null,
+             "chose":"store the body","over":null,"because":null,
              "superseded_by":null}]}"#;
         let (address, server) = serve_once(board);
 
@@ -1314,10 +1356,11 @@ mod tests {
             message,
             "Decisions on argus, newest last:\n\
              #1 sqlite\n\
-             \x20  over: a file per feature\n\
-             \x20  because: both need migrations\n\
-             \x20 #2 one table per note  (superseded by #3)\n\
-             \x20 #3 one row per note"
+             │     over: a file per feature\n\
+             │     because: both need migrations\n\
+             ├─ #2 one table per note  (superseded by #3)\n\
+             │  └─ #4 store the body\n\
+             └─ #3 one row per note"
         );
     }
 
