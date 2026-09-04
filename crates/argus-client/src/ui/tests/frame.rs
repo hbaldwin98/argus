@@ -503,6 +503,44 @@ fn the_focused_column_alone_gets_the_accent_label() {
 }
 
 #[test]
+fn a_card_ends_where_its_contents_end() {
+    // Width has always followed content; height did too late. A column
+    // holding one project used to be drawn the full depth of the screen,
+    // and four columns of ruled emptiness is what made the spine read as a
+    // grid of containers.
+    let th = Theme::default();
+    let mut app = app_with_tree();
+    let buf = draw(&mut app);
+
+    let projects = app.layout.projects;
+    assert!(
+        projects.outer.height < app.layout.content.outer.height,
+        "a card of one project should not be as tall as the live view"
+    );
+
+    let ground = |x: u16, y: u16| buf.cell((x, y)).unwrap().bg;
+    let last = projects.outer.bottom() - 1;
+    assert_eq!(
+        ground(projects.outer.x, last),
+        th.surface_focus,
+        "the card's last row"
+    );
+    assert_eq!(
+        ground(projects.outer.x, last + 1),
+        th.bg,
+        "and the page directly beneath it"
+    );
+
+    // The live view holds somebody's terminal rather than a list, so it is
+    // the one card that still takes everything it is given.
+    assert_eq!(
+        app.layout.content.outer.bottom(),
+        projects.outer.y + app.layout.content.outer.height,
+        "the live view still runs the full depth"
+    );
+}
+
+#[test]
 fn the_three_elevations_show_up_on_screen() {
     // Page behind unfocused panel behind focused panel. This is what
     // makes the panels read as cards rather than boxes.
@@ -511,12 +549,10 @@ fn the_three_elevations_show_up_on_screen() {
     app.focus = Focus::Projects;
     let buf = draw(&mut app);
 
-    // A blank cell inside each panel, below the last row.
-    let blank = |p: Panel| {
-        buf.cell((p.inner.x, p.inner.y + p.inner.height - 1))
-            .unwrap()
-            .bg
-    };
+    // The card's bottom gutter. A card ends where its rows end now, so
+    // there is no spare row inside one to read the fill off; the padding
+    // that holds the last row off the card's edge is the fill itself.
+    let blank = |p: Panel| buf.cell((p.outer.x, p.outer.bottom() - 1)).unwrap().bg;
     assert_eq!(
         blank(app.layout.projects),
         th.surface_focus,

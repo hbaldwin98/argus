@@ -469,6 +469,29 @@ pub(super) fn render_column(
     height: u16,
     th: Theme,
 ) -> Panel {
+    // A card ends where its contents end. Width has followed content here
+    // since the column solver was written; height never did, so a card
+    // holding one project was drawn the full depth of the screen with
+    // thirty rows of nothing inside it. That ruled emptiness, four columns
+    // of it, is most of what made the spine read as a grid of containers
+    // rather than as a layout.
+    let content = match rows.is_empty() {
+        // The hint is wrapped when it is drawn, so it is wrapped to be
+        // measured: a two-line hint in a narrow column is four lines.
+        true => empty_hint
+            .lines()
+            .map(|line| wrap(line, area.width.saturating_sub(CARD_CHROME as u16)).len() as u16)
+            .sum(),
+        false => u16::try_from(rows.len())
+            .unwrap_or(u16::MAX)
+            .saturating_mul(height),
+    };
+    let area = Rect {
+        // The label, and the gutter above and below the rows. Never more
+        // than was offered: a list longer than the card still scrolls.
+        height: content.saturating_add(3).min(area.height),
+        ..area
+    };
     let inner = render_card(f, area, title, lit, th);
     let mut panel = Panel {
         outer: area,
