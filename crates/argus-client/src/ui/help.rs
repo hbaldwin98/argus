@@ -151,6 +151,8 @@ const COLUMNS_BOARD: Group = Group {
         ("j / k", "card by card"),
         ("d / u", "ten at a time"),
         ("g / G", "top and bottom"),
+        ("H / L", "move this card a column"),
+        ("s", "send it back to whoever is on it"),
         ("enter", "the decisions under this feature"),
         ("r", "re-ask the daemon for it"),
         ("esc  q", "back to the spine"),

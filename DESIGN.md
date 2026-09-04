@@ -894,6 +894,16 @@ across, since the same depth of an unrelated column is not where you were lookin
 A card's second line answers the question its column raises — a blocked card says why, a submitted
 one says what was offered, and one nobody has picked up says the branch it was cut on.
 
+`H` and `L` move the selected card a column along, over `ClientMsg::MoveFeature`, and the selection
+follows it there — a move you have to go looking for reads as having lost the card. The move is
+applied to the client's own copy at once and the pushed board is what actually redraws it, so a
+refusal puts the card back where it really is. `s` sends a card back to whoever is on it, and has a
+key of its own because it is the one human verb the layout does not teach: accepting is a step right
+from `submitted`, but sending back is two columns left, and stepping through `blocked` on the way
+would post a blocker nobody claimed. The human write names the feature outright rather than being
+resolved from a checkout, since the board is the project's and the checkout a reader happens to have
+selected has nothing to do with the card under the cursor.
+
 Schema v7 holds this: `state`, `claimed_by`, `claimed_at`, `blocker` and `evidence` on `feature`,
 and a `feature_event` row for every move. The state is a column because the board is read whole on
 every change; the moves are a table for the reason `note_audit` is one, since a column reading
@@ -904,8 +914,10 @@ still belongs to whoever carried it there — and released on `done`.
 
 `submitted` and `done` are separate states and an agent is refused the second: the review column has
 to be where work stops rather than somewhere it passes through, and the agent that did the work is
-the one party that cannot accept it. `argus-hook feature` carries the move over
-`FeatureAction::Move`.
+the one party that cannot accept it. So the two write paths differ in what they may reach rather
+than in what they do — an agent moves its own work over `FeatureAction::Move`, scoped to the feature
+its checkout is on, and a human moves any card over `ClientMsg::MoveFeature`, acceptance included.
+Every move is recorded with which side made it, so a column reading `done` says who accepted it.
 
 ## Editors and overlays
 

@@ -543,3 +543,99 @@ fn enter_on_a_card_opens_the_decisions_under_that_feature() {
         "the card you came from is the feature you land on: {out}"
     );
 }
+
+/// A board view whose outgoing messages can be read back, which
+/// `app_with_tree` deliberately throws away.
+fn board_watching(
+    features: Vec<argus_protocol::Feature>,
+) -> (App, tokio::sync::mpsc::UnboundedReceiver<argus_protocol::ClientMsg>) {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut app = App::new(tx);
+    app.on_server_msg(argus_protocol::ServerMsg::Tree(super::tree()));
+    let project = app.current_project().unwrap();
+    let (id, name) = (project.id, project.name.clone());
+    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(
+        argus_protocol::DecisionBoard {
+            project: Some(id),
+            name,
+            features,
+            decisions: Vec::new(),
+        },
+    )));
+    press(&mut app, View::Board.digit());
+    (app, rx)
+}
+
+fn moves(rx: &mut tokio::sync::mpsc::UnboundedReceiver<argus_protocol::ClientMsg>) -> Vec<(String, argus_protocol::FeatureState)> {
+    let mut out = Vec::new();
+    while let Ok(msg) = rx.try_recv() {
+        if let argus_protocol::ClientMsg::MoveFeature { slug, state, .. } = msg {
+            out.push((slug, state));
+        }
+    }
+    out
+}
+
+#[test]
+fn moving_a_card_asks_the_daemon_and_follows_it_there() {
+    use argus_protocol::FeatureState::*;
+    let (mut app, mut rx) = board_watching(vec![carded("notes", "Notes storage", Proposed)]);
+    let _ = moves(&mut rx);
+
+    app.on_key(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::NONE));
+    assert_eq!(moves(&mut rx), vec![("notes".to_string(), Active)]);
+    assert_eq!(
+        app.board_column_state(),
+        Active,
+        "the selection follows the card rather than staying where it was"
+    );
+    assert_eq!(app.selected_card().map(|f| f.slug.as_str()), Some("notes"));
+
+    app.on_key(KeyEvent::new(KeyCode::Char('H'), KeyModifiers::NONE));
+    assert_eq!(moves(&mut rx), vec![("notes".to_string(), Proposed)]);
+}
+
+#[test]
+fn a_card_cannot_be_pushed_off_either_end() {
+    use argus_protocol::FeatureState::*;
+    let (mut app, mut rx) = board_watching(vec![carded("notes", "Notes storage", Proposed)]);
+    let _ = moves(&mut rx);
+
+    app.on_key(KeyEvent::new(KeyCode::Char('H'), KeyModifiers::NONE));
+    assert!(moves(&mut rx).is_empty(), "there is nothing left of proposed");
+
+    for _ in 0..4 {
+        app.on_key(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::NONE));
+    }
+    let _ = moves(&mut rx);
+    app.on_key(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::NONE));
+    assert!(moves(&mut rx).is_empty(), "nor right of done");
+    assert_eq!(app.board_column_state(), Done);
+}
+
+#[test]
+fn sending_a_card_back_skips_the_blocked_column() {
+    use argus_protocol::FeatureState::*;
+    let (mut app, mut rx) = board_watching(vec![carded("notes", "Notes storage", Submitted)]);
+    let _ = moves(&mut rx);
+    // Onto the submitted column, where a human is deciding.
+    for _ in 0..3 {
+        app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
+    }
+
+    app.on_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
+    assert_eq!(
+        moves(&mut rx),
+        vec![("notes".to_string(), Active)],
+        "sending back returns it to whoever is on it, not through blocked"
+    );
+}
+
+#[test]
+fn an_empty_column_has_nothing_to_move() {
+    let (mut app, mut rx) = board_watching(Vec::new());
+    let _ = moves(&mut rx);
+    app.on_key(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::NONE));
+    app.on_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
+    assert!(moves(&mut rx).is_empty());
+}

@@ -265,6 +265,12 @@ fn dispatch_decisions(
         ClientMsg::GetDecisions { project } => daemon.decision_board(project).map(|board| {
             let _ = out_tx.send(ServerMsg::Decisions(Box::new(board)));
         }),
+        ClientMsg::MoveFeature {
+            project,
+            slug,
+            state,
+            detail,
+        } => daemon.move_feature_for_client(project, &slug, state, detail),
         msg => return Err(msg),
     };
     Ok(result)

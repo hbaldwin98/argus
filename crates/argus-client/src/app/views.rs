@@ -291,6 +291,70 @@ impl App {
         self.board_card = row.min(count.saturating_sub(1));
     }
 
+    /// Moves the selected card one column along, and follows it there.
+    ///
+    /// Following is the point: a move you have to go looking for reads as
+    /// having lost the card. The selection is set optimistically and the
+    /// pushed board is what actually redraws it — if the daemon refuses,
+    /// the next push puts the card back where it really is.
+    pub(super) fn move_selected_card(&mut self, delta: i32) {
+        let Some(project) = self.board.as_ref().and_then(|b| b.project) else {
+            return;
+        };
+        let Some(slug) = self.selected_card().map(|f| f.slug.clone()) else {
+            return;
+        };
+        let next = (self.board_column as i32).saturating_add(delta);
+        if next < 0 || next as usize >= COLUMNS {
+            return;
+        }
+        self.send_card_to(project, slug, next as usize);
+    }
+
+    /// Sends the selected card back to whoever is working on it.
+    ///
+    /// Its own key because it is the one human verb the layout does not
+    /// teach: accepting is a step right from `submitted`, but sending back
+    /// is two columns left, and stepping through `blocked` on the way
+    /// would post a blocker nobody claimed.
+    pub(super) fn send_selected_card_back(&mut self) {
+        let Some(project) = self.board.as_ref().and_then(|b| b.project) else {
+            return;
+        };
+        let Some(slug) = self.selected_card().map(|f| f.slug.clone()) else {
+            return;
+        };
+        let active = argus_protocol::FeatureState::ALL
+            .iter()
+            .position(|s| *s == argus_protocol::FeatureState::Active)
+            .unwrap_or(0);
+        self.send_card_to(project, slug, active);
+    }
+
+    fn send_card_to(&mut self, project: argus_protocol::ProjectId, slug: String, column: usize) {
+        let state = argus_protocol::FeatureState::ALL[column];
+        let _ = self.out.send(ClientMsg::MoveFeature {
+            project,
+            slug: slug.clone(),
+            state,
+            detail: None,
+        });
+        self.board_column = column;
+        if let Some(feature) = self
+            .board
+            .as_mut()
+            .and_then(|b| b.features.iter_mut().find(|f| f.slug == slug))
+        {
+            feature.state = state;
+        }
+        self.board_card = self
+            .column_features(state)
+            .iter()
+            .position(|f| f.slug == slug)
+            .unwrap_or(0);
+        self.report(format!("{slug} → {state}"));
+    }
+
     /// Opens the selected card's reasoning: the decisions view, already on
     /// that feature. The link the roadmap asks for, in the direction a
     /// reader actually goes — you see what is in flight, then ask why.

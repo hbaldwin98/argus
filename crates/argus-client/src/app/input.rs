@@ -623,6 +623,9 @@ impl App {
             KeyCode::Char('u') | KeyCode::PageUp => self.move_board_card(-10),
             KeyCode::Char('g') | KeyCode::Home => self.move_board_card(i32::MIN),
             KeyCode::Char('G') | KeyCode::End => self.move_board_card(i32::MAX),
+            KeyCode::Char('H') => self.move_selected_card(-1),
+            KeyCode::Char('L') => self.move_selected_card(1),
+            KeyCode::Char('s') => self.send_selected_card_back(),
             KeyCode::Enter => self.open_selected_card(),
             KeyCode::Char('r') => self.ask_for_decisions(),
             _ => {}

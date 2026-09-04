@@ -16,6 +16,7 @@
 
 use argus_protocol::{
     Actor, Decision, Feature, FeatureBoard, FeatureMove, FeatureState, FeatureWrite, PaneId,
+    ProjectId,
 };
 
 use super::agents::AgentScope;
@@ -196,6 +197,47 @@ impl Daemon {
             self.store.decisions(&scope.project_name)?,
         );
         Ok(board)
+    }
+
+    /// Moves a feature from the board view.
+    ///
+    /// Unlike the agent's move this one names the feature outright: a
+    /// human is looking at the whole project's board, and the checkout
+    /// they happen to have selected has nothing to do with the card under
+    /// the cursor. It is also the only move that may reach `done`.
+    pub fn move_feature_for_client(
+        &self,
+        project: ProjectId,
+        slug: &str,
+        state: FeatureState,
+        detail: Option<String>,
+    ) -> anyhow::Result<()> {
+        let name = {
+            let inner = self.inner.lock().unwrap();
+            inner
+                .projects
+                .iter()
+                .find(|p| p.id == project)
+                .map(|p| p.name.clone())
+                .ok_or_else(|| anyhow::anyhow!("no such project"))?
+        };
+        let at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or_default();
+        self.store.move_feature(
+            &name,
+            slug,
+            &FeatureMove {
+                state,
+                detail,
+                actor: Actor::Human,
+                session: None,
+                at,
+            },
+        )?;
+        self.broadcast_decisions(&name, self.store.decisions(&name)?);
+        Ok(())
     }
 
     /// The feature the next decision from this pane is filed under.

@@ -87,9 +87,9 @@ the link between them. All three have landed; what is left is the writes and the
   item concept, with `feature_event` holding every move; a third view draws the columns, and
   `Enter` on a card opens the decisions under it. An agent moves its own work over the pane API and
   is refused `done`.
-- Let a human move a card from the view, over a client message the way note edits go — the write
-  path is the note's dual shape rather than the decision board's agent-only one, and only the agent
-  half exists so far.
+  A human moves any card from the view with `H`/`L`, sends one back with `s`, and is the only side
+  that may accept: `ClientMsg::MoveFeature` names the feature outright, since the board is the
+  project's rather than any checkout's.
 - Give the board its own reads for a client: it is pushed whole on every change, which is right
   while a board is a few dozen rows and wrong once it is a few thousand.
 - Link the two: a decision is taken about an item, an item carries the decisions taken under it,

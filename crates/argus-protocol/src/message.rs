@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::decisions::DecisionBoard;
+use crate::features::FeatureState;
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::notes::{Note, NoteTarget, TodoState};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
@@ -150,6 +151,18 @@ pub enum ClientMsg {
     /// decision hanging off three others means nothing without them.
     GetDecisions {
         project: ProjectId,
+    },
+    /// Move a feature to another column of the board.
+    ///
+    /// A human write, and so the one that may reach `done`: an agent
+    /// moving its own work is refused acceptance over the pane API. The
+    /// answer is the pushed board every client already receives, since a
+    /// move is exactly the kind of change a board is watched for.
+    MoveFeature {
+        project: ProjectId,
+        slug: String,
+        state: FeatureState,
+        detail: Option<String>,
     },
     /// Ask for what this checkout contains, for the fuzzy pickers.
     ListBranches {

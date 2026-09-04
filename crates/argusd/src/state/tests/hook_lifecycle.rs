@@ -885,3 +885,57 @@ async fn the_board_reaches_an_agent_whole_and_a_bad_decision_is_refused() {
     );
     close_all(&d);
 }
+
+#[tokio::test]
+async fn an_agent_can_offer_work_but_only_a_human_accepts_it() {
+    use argus_protocol::FeatureState;
+
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let checkout = only_checkout(&d);
+    let project = d.snapshot()[0].id;
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+    let slug = open_feature(&d, agent, "streaming the pty");
+
+    let state_of = |slug: &str| {
+        d.decision_board(project)
+            .unwrap()
+            .features
+            .iter()
+            .find(|f| f.slug == slug)
+            .map(|f| f.state)
+            .unwrap()
+    };
+    assert_eq!(state_of(&slug), FeatureState::Proposed);
+
+    d.move_feature_for_agent(agent, Some("sess-1"), FeatureState::Active, None)
+        .unwrap();
+    assert_eq!(state_of(&slug), FeatureState::Active);
+
+    d.move_feature_for_agent(
+        agent,
+        Some("sess-1"),
+        FeatureState::Submitted,
+        Some("green on cargo test"),
+    )
+    .unwrap();
+    assert_eq!(state_of(&slug), FeatureState::Submitted);
+
+    let refused = d
+        .move_feature_for_agent(agent, Some("sess-1"), FeatureState::Done, None)
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("cannot accept its own work"), "{refused}");
+    assert_eq!(
+        state_of(&slug),
+        FeatureState::Submitted,
+        "the refusal left it where it was"
+    );
+
+    // The human is looking at the whole board, so they name the card
+    // rather than being taken to be in any checkout.
+    d.move_feature_for_client(project, &slug, FeatureState::Done, None)
+        .unwrap();
+    assert_eq!(state_of(&slug), FeatureState::Done);
+    close_all(&d);
+}
