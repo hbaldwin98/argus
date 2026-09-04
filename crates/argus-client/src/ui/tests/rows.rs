@@ -426,3 +426,32 @@ fn a_note_line_reads_as_the_markdown_it_is() {
     assert!(tail.style.add_modifier.contains(Modifier::CROSSED_OUT));
     assert_eq!(tail.content, " call `resize` first");
 }
+
+
+#[test]
+fn a_badge_ends_inside_its_row_rather_than_against_the_edge() {
+    let mut app = app_with_tree();
+    app.focus = crate::app::Focus::Checkouts;
+    let buf = draw_at(&mut app, 160, 24);
+    let panel = app.layout.checkouts;
+    let th = app.theme;
+
+    // The selected row's first line, which is the one carrying the count.
+    let y = panel.inner.y;
+    let row: String = (panel.inner.x..panel.inner.right())
+        .map(|x| buf.cell((x, y)).unwrap().symbol())
+        .collect();
+    assert!(row.contains('▣'), "the note count is drawn: {row:?}");
+    assert!(
+        row.ends_with(' '),
+        "a badge flush to the edge reads as having escaped the row: {row:?}"
+    );
+
+    // And that trailing cell is inside the highlight, not the card fill —
+    // a gap in the selection bar would look like the row stops early.
+    let last = buf.cell((panel.inner.right() - 1, y)).unwrap();
+    assert_eq!(
+        last.bg, th.sel_bg,
+        "the selection runs to the end of the row"
+    );
+}

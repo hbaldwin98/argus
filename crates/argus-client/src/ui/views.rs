@@ -218,9 +218,23 @@ fn render_feature_board(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         None => inner,
     };
 
-    let count = app.board_rows().len();
+    let rows_now = app.board_rows();
+    let count = rows_now.len();
     let per_row = ROW_HEIGHT as usize;
-    let visible = (inner.height as usize) / per_row.max(1);
+    // The expanded row costs the height of its own wrapped text, so the
+    // window has that much less to give the rows around it. Without this
+    // the selection lands at the bottom and then wraps off the card.
+    let grown = rows_now
+        .get(app.board_sel)
+        .map(|row| {
+            let mut lines = Vec::new();
+            push_board_row(&mut lines, row, true, th, inner.width);
+            lines.len().saturating_sub(per_row)
+        })
+        .unwrap_or(0);
+    let visible = (inner.height as usize)
+        .saturating_sub(grown)
+        .div_ceil(per_row.max(1));
     // A scrolled board's top row is `first`, not row zero, and a click has
     // to resolve against the rows that were actually drawn.
     let first = scrolled_to_show(0, Some(app.board_sel), visible, count);
@@ -236,10 +250,59 @@ fn render_feature_board(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
 
     let rows = app.board_rows();
     let mut lines = Vec::new();
-    for (index, row) in rows.iter().enumerate().skip(first).take(visible) {
-        push_board_row(&mut lines, row, index == app.board_sel, th);
+    for (index, row) in rows.iter().enumerate().skip(first) {
+        // The selected row is as tall as its text, so the window is filled
+        // by height rather than by a count of rows.
+        if lines.len() >= inner.height as usize {
+            break;
+        }
+        push_board_row(&mut lines, row, index == app.board_sel, th, inner.width);
     }
     f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// `text` laid out after `prefix`, wrapped over as many lines as it needs
+/// when `expand`, and left to clip at the card's edge when not.
+///
+/// Only the row the cursor is on expands. A list where every row grows to
+/// its content cannot be scanned — the fixed two lines are what let the
+/// eye run down a column — but a row clipped with no way to see the rest
+/// is a row lying about what is in it. Expanding the one row somebody is
+/// actually reading is what makes the list both scannable and complete.
+///
+/// Continuation lines are indented to `hang`, so wrapped prose sits under
+/// the text it belongs to rather than under the marker or the tree guides.
+fn text_rows(
+    prefix: Vec<Span<'static>>,
+    hang: usize,
+    text: String,
+    style: Style,
+    width: u16,
+    expand: bool,
+) -> Vec<Line<'static>> {
+    let used: usize = prefix.iter().map(Span::width).sum();
+    if !expand {
+        let mut spans = prefix;
+        spans.push(Span::styled(text, style));
+        return vec![Line::from(spans)];
+    }
+    // Every line is wrapped to the widest indent any of them carries, not
+    // to the first line's own. Wrapping to the prefix and then indenting
+    // the continuations by more than that is how they come to overrun the
+    // card and lose their last character to the clip.
+    let room = (width as usize).saturating_sub(used.max(hang)).max(1);
+    let mut rows = wrap(&text, room as u16).into_iter();
+    let first = rows.next().unwrap_or_default();
+    let mut spans = prefix;
+    spans.push(Span::styled(first, style));
+    let mut lines = vec![Line::from(spans)];
+    for row in rows {
+        lines.push(Line::from(vec![
+            Span::raw(" ".repeat(hang)),
+            Span::styled(row, style),
+        ]));
+    }
+    lines
 }
 
 fn push_board_row(
@@ -247,6 +310,7 @@ fn push_board_row(
     row: &argus_protocol::DecisionTreeRow<'_>,
     selected: bool,
     th: Theme,
+    width: u16,
 ) {
     let decision = row.decision;
     let name_style = match (selected, decision.superseded()) {
@@ -254,28 +318,43 @@ fn push_board_row(
         (true, false) => Style::default().fg(th.text).add_modifier(Modifier::BOLD),
         (false, false) => Style::default().fg(th.text),
     };
-    let mut name = vec![
+    let branch = board_branch(row);
+    let prefix = vec![
         Span::styled(
             if selected { MARKER } else { GUTTER },
             Style::default().fg(th.accent),
         ),
         Span::styled(
-            format!("{}#{} ", board_branch(row), decision.id),
+            format!("{branch}#{} ", decision.id),
             Style::default().fg(th.dim),
         ),
-        Span::styled(decision.chose.clone(), name_style),
     ];
+    // Wrapped text hangs under the choice rather than under the tree
+    // guides, so a deep decision still reads as one paragraph.
+    let hang = prefix.iter().map(Span::width).sum();
+    let mut chose = decision.chose.clone();
     if let Some(by) = decision.superseded_by {
-        name.push(Span::styled(
-            format!("  superseded by #{by}"),
-            Style::default().fg(th.dim),
-        ));
+        chose.push_str(&format!("  superseded by #{by}"));
     }
-    lines.push(Line::from(name));
-    lines.push(Line::from(Span::styled(
-        format!(" {}  {}", board_continuation(row), board_detail(decision)),
+    lines.extend(text_rows(
+        prefix,
+        hang,
+        chose,
+        name_style,
+        width,
+        selected,
+    ));
+
+    let continuation = format!(" {}  ", board_continuation(row));
+    let hang = continuation.chars().count();
+    lines.extend(text_rows(
+        vec![Span::styled(continuation, Style::default().fg(th.dim))],
+        hang,
+        board_detail(decision),
         Style::default().fg(th.dim),
-    )));
+        width,
+        selected,
+    ));
 }
 
 fn board_branch(row: &argus_protocol::DecisionTreeRow<'_>) -> String {
@@ -416,6 +495,61 @@ fn split_off_prompt(area: Rect, typing: bool) -> (Rect, Option<Rect>) {
     )
 }
 
+/// One card of the board or tasks columns: its title, and the line under
+/// it saying whatever the column it sits in leaves unsaid.
+///
+/// Shared because the two boards are the same object drawn twice, and a
+/// card that wraps in one and clips in the other is the kind of difference
+/// nobody decided on.
+fn push_card_row(
+    lines: &mut Vec<Line<'static>>,
+    title: String,
+    detail: String,
+    selected: bool,
+    th: Theme,
+    width: u16,
+) {
+    // The detail line's indent, which wrapped title text hangs to as well
+    // so a long name reads as one block rather than as two rows.
+    const HANG: usize = 3;
+    let title_style = match selected {
+        true => Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+        false => Style::default().fg(th.text),
+    };
+    lines.extend(text_rows(
+        vec![Span::styled(
+            if selected { MARKER } else { GUTTER },
+            Style::default().fg(th.accent),
+        )],
+        HANG,
+        title,
+        title_style,
+        width,
+        selected,
+    ));
+    lines.extend(text_rows(
+        vec![Span::raw(" ".repeat(HANG))],
+        HANG,
+        detail,
+        Style::default().fg(th.dim),
+        width,
+        selected,
+    ));
+}
+
+/// How many lines beyond the usual two the selected card will take once
+/// its text is wrapped. The window has that much less to give the cards
+/// around it; without allowing for it the selection is placed at the
+/// bottom of the card and its own text then wraps off the end.
+fn grown_by(selected: Option<(String, String)>, th: Theme, width: u16) -> usize {
+    let Some((title, detail)) = selected else {
+        return 0;
+    };
+    let mut lines = Vec::new();
+    push_card_row(&mut lines, title, detail, true, th, width);
+    lines.len().saturating_sub(ROW_HEIGHT as usize)
+}
+
 fn render_board_column(
     f: &mut Frame,
     app: &mut App,
@@ -436,8 +570,13 @@ fn render_board_column(
     f.render_widget(block, area);
 
     let per_row = ROW_HEIGHT as usize;
-    let visible = (inner.height as usize) / per_row.max(1);
     let selected = focused.then_some(app.board_card);
+    let grown = grown_by(selected.and_then(|i| cards.get(i)).map(|feature| {
+        (feature.title.clone(), card_detail(feature))
+    }), th, inner.width);
+    let visible = (inner.height as usize)
+        .saturating_sub(grown)
+        .div_ceil(per_row.max(1));
     let first = scrolled_to_show(0, selected, visible, cards.len());
     app.layout.board_columns[index] = Panel {
         outer: area,
@@ -449,26 +588,18 @@ fn render_board_column(
     }
 
     let mut lines = Vec::new();
-    for (row, feature) in cards.iter().enumerate().skip(first).take(visible) {
-        let on = focused && row == app.board_card;
-        lines.push(Line::from(vec![
-            Span::styled(
-                if on { MARKER } else { GUTTER },
-                Style::default().fg(th.accent),
-            ),
-            Span::styled(
-                feature.title.clone(),
-                if on {
-                    Style::default().fg(th.text).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(th.text)
-                },
-            ),
-        ]));
-        lines.push(Line::from(Span::styled(
-            format!("   {}", card_detail(feature)),
-            Style::default().fg(th.dim),
-        )));
+    for (row, feature) in cards.iter().enumerate().skip(first) {
+        if lines.len() >= inner.height as usize {
+            break;
+        }
+        push_card_row(
+            &mut lines,
+            feature.title.clone(),
+            card_detail(feature),
+            focused && row == app.board_card,
+            th,
+            inner.width,
+        );
     }
     f.render_widget(Paragraph::new(lines), inner);
 }
@@ -581,8 +712,17 @@ fn render_task_column(
     f.render_widget(block, area);
 
     let per_row = ROW_HEIGHT as usize;
-    let visible = (inner.height as usize) / per_row.max(1);
     let selected = focused.then_some(app.task_card);
+    let grown = grown_by(
+        selected
+            .and_then(|i| tasks.get(i))
+            .map(|task| (task.title.clone(), task_detail(task))),
+        th,
+        inner.width,
+    );
+    let visible = (inner.height as usize)
+        .saturating_sub(grown)
+        .div_ceil(per_row.max(1));
     let first = scrolled_to_show(0, selected, visible, tasks.len());
     app.layout.task_columns[index] = Panel {
         outer: area,
@@ -603,26 +743,18 @@ fn render_task_column(
     }
 
     let mut lines = Vec::new();
-    for (row, task) in tasks.iter().enumerate().skip(first).take(visible) {
-        let on = focused && row == app.task_card;
-        lines.push(Line::from(vec![
-            Span::styled(
-                if on { MARKER } else { GUTTER },
-                Style::default().fg(th.accent),
-            ),
-            Span::styled(
-                task.title.clone(),
-                if on {
-                    Style::default().fg(th.text).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(th.text)
-                },
-            ),
-        ]));
-        lines.push(Line::from(Span::styled(
-            format!("   {}", task_detail(task)),
-            Style::default().fg(th.dim),
-        )));
+    for (row, task) in tasks.iter().enumerate().skip(first) {
+        if lines.len() >= inner.height as usize {
+            break;
+        }
+        push_card_row(
+            &mut lines,
+            task.title.clone(),
+            task_detail(task),
+            focused && row == app.task_card,
+            th,
+            inner.width,
+        );
     }
     f.render_widget(Paragraph::new(lines), inner);
 }

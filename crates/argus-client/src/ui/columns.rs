@@ -697,15 +697,24 @@ pub(super) fn render_row<'a>(
         // would leave the name too short to identify anything, in which
         // case the badge is the part that goes.
         let badge_width: usize = badge.iter().map(Span::width).sum();
+        // A cell is kept past the badge so it ends inside the row rather
+        // than against its edge. The selection fill runs the whole width,
+        // and a count flush to the end of it reads as having escaped the
+        // highlight — the left edge has a marker and a space, so the right
+        // needs the space to answer it.
         match width
-            .checked_sub(badge_width + 1)
+            .checked_sub(badge_width + 2)
             .filter(|room| *room >= NAME_FLOOR)
         {
             Some(room) => {
                 let mut name = ellipsize_spans(name, room);
                 let used: usize = name.iter().map(Span::width).sum();
-                name.push(Span::styled(" ".repeat(width - used - badge_width), bar));
+                name.push(Span::styled(
+                    " ".repeat(width - used - badge_width - 1),
+                    bar,
+                ));
                 name.extend(badge);
+                name.push(Span::styled(GUTTER, bar));
                 name
             }
             None => ellipsize_spans(name, width),

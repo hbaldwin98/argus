@@ -204,10 +204,14 @@ impl<'a> Item<'a> {
     /// from, so it is asked of the row rather than guessed from the model.
     fn wanted_width(&self) -> usize {
         let w = |spans: &[Span]| spans.iter().map(Span::width).sum::<usize>();
+        // A space in front of the badge, and one behind it: the badge is
+        // laid out flush right, and a count that ends on the last cell of
+        // the row reads as having escaped the selection fill. Asking for
+        // the cell here is what keeps it from being taken off a name.
         let badge = if self.badge.is_empty() {
             0
         } else {
-            w(&self.badge) + 1
+            w(&self.badge) + 2
         };
         1 + (w(&self.name) + badge).max(self.indent + w(&self.detail))
     }

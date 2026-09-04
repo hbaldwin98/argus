@@ -1209,3 +1209,148 @@ fn the_first_frame_of_a_session_is_already_settled() {
     app.set_frame_now(app.epoch());
     assert_eq!(app.focus_lit(app.focus).value(), 1.0);
 }
+
+/// A decision whose reasoning is far wider than any column.
+fn a_long_decision(id: i64) -> argus_protocol::Decision {
+    argus_protocol::Decision {
+        over: Some("the obvious alternative that somebody would otherwise reach for".into()),
+        because: Some(
+            "the key has to outlive the ids, which are handed out fresh on every start, \
+             and a row that renumbers underneath a board is the one thing a board cannot take"
+                .into(),
+        ),
+        ..decision(id, None, "a choice whose title is itself long enough to run past the card edge")
+    }
+}
+
+#[test]
+fn the_decision_you_are_on_shows_all_of_itself() {
+    let mut app = app_with_a_board(vec![a_long_decision(1), decision(2, None, "short")]);
+    let out = lines(&draw_at(&mut app, 100, 30));
+    let body = out.join("\n");
+
+    // Nothing is clipped away: the tail of the reasoning is on screen.
+    assert!(
+        body.contains("cannot take"),
+        "the selected decision should show its whole reason:\n{body}"
+    );
+    // And it wrapped rather than overflowing the card.
+    assert!(
+        out.iter().all(|l| l.chars().count() <= 100),
+        "no line may run past the terminal"
+    );
+}
+
+#[test]
+fn the_decisions_you_are_not_on_stay_one_row_each() {
+    // Two long decisions, the cursor on the first. The second keeps its
+    // two lines, or the list stops being something you can scan.
+    let mut app = app_with_a_board(vec![a_long_decision(1), a_long_decision(2)]);
+    let out = lines(&draw_at(&mut app, 100, 30));
+    let second = out
+        .iter()
+        .position(|l| l.contains("#2"))
+        .expect("the second decision is drawn");
+
+    assert!(
+        !out[second].contains("cannot take"),
+        "an unselected row is not expanded: {:?}",
+        out[second]
+    );
+    assert_eq!(
+        out[second + 1..]
+            .iter()
+            .filter(|l| l.contains("cannot take"))
+            .count(),
+        0,
+        "and nothing of its detail wrapped either"
+    );
+}
+
+#[test]
+fn moving_the_cursor_moves_which_decision_is_expanded() {
+    let mut app = app_with_a_board(vec![a_long_decision(1), a_long_decision(2)]);
+    let before = lines(&draw_at(&mut app, 100, 30));
+    let expanded_before = before.iter().filter(|l| l.contains("cannot take")).count();
+
+    press(&mut app, 'j');
+    let after = lines(&draw_at(&mut app, 100, 30));
+    let expanded_after = after.iter().filter(|l| l.contains("cannot take")).count();
+
+    assert_eq!(expanded_before, 1, "exactly one row is expanded at a time");
+    assert_eq!(expanded_after, 1);
+    assert_ne!(before, after, "and it is a different one after moving");
+}
+
+#[test]
+fn an_expanded_row_does_not_push_itself_off_the_bottom() {
+    // Enough decisions that the list scrolls, with the cursor at the end:
+    // the row being read has to be wholly on screen, not just started.
+    let mut many: Vec<_> = (1..=20).map(|id| decision(id, None, "a choice")).collect();
+    many.push(a_long_decision(21));
+    let mut app = app_with_a_board(many);
+    // The view opens on the features column beside the tree; `l` is what
+    // moves onto the decisions themselves.
+    press(&mut app, 'l');
+    for _ in 0..20 {
+        press(&mut app, 'j');
+    }
+    let out = lines(&draw_at(&mut app, 100, 20));
+    let body = out.join("\n");
+
+    assert!(
+        body.contains("#21"),
+        "the selected row is on screen:\n{body}"
+    );
+    assert!(
+        body.contains("cannot take"),
+        "and so is the end of what it says:\n{body}"
+    );
+}
+
+const LONG_TITLE: &str =
+    "rewrite the checkout picker so it remembers the directory you came from";
+
+#[test]
+fn the_task_you_are_on_shows_its_whole_title() {
+    use argus_protocol::TaskState::*;
+    let (mut app, _rx) = tasks_watching(vec![
+        task(1, LONG_TITLE, Todo),
+        task(2, LONG_TITLE, Todo),
+    ]);
+
+    let out = lines(&draw_at(&mut app, 120, 20));
+    let body = out.join("\n");
+
+    assert!(
+        body.contains("came from"),
+        "the selected task should show all of its title:\n{body}"
+    );
+    assert_eq!(
+        out.iter().filter(|l| l.contains("came from")).count(),
+        1,
+        "and only the selected one:\n{body}"
+    );
+    assert!(
+        out.iter().all(|l| l.chars().count() <= 120),
+        "nothing runs past the terminal"
+    );
+}
+
+#[test]
+fn the_card_you_are_on_shows_its_whole_title() {
+    let (mut app, _rx) = board_watching(vec![carded(
+        "notes",
+        LONG_TITLE,
+        argus_protocol::FeatureState::Proposed,
+    )]);
+
+    let out = lines(&draw_at(&mut app, 120, 20));
+    let body = out.join("\n");
+
+    assert!(
+        body.contains("came from"),
+        "the selected card should show all of its title:\n{body}"
+    );
+    assert!(out.iter().all(|l| l.chars().count() <= 120));
+}
