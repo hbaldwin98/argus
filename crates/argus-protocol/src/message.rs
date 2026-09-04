@@ -165,6 +165,16 @@ pub enum ClientMsg {
         state: FeatureState,
         detail: Option<String>,
     },
+    /// Replace a feature's brief.
+    ///
+    /// Whole-body, unlike `argus-hook feature note`, which appends. The
+    /// append rule protected a tree structure the brief does not have: it
+    /// is prose, and a document nobody can correct rots.
+    SetFeatureBody {
+        project: ProjectId,
+        slug: String,
+        body: String,
+    },
     /// Read one feature's tasks. Scoped to the feature, unlike the
     /// decision board: a task means nothing outside the feature it is
     /// under, so there is no whole-project list to want.

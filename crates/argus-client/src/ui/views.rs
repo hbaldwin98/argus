@@ -186,6 +186,30 @@ fn render_feature_board(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
+    // The brief above the tree, which is the order `argus-hook feature`
+    // prints them in and the order they are read: a decision without what
+    // the feature is for explains half of itself. Bounded so a long brief
+    // cannot crowd out the reasoning it introduces — the rest is one `e`
+    // away, in the editor.
+    let inner = match brief_of(app) {
+        Some(brief) => {
+            let height = brief_height(&brief, inner);
+            let rows = Rect { height, ..inner };
+            f.render_widget(
+                Paragraph::new(brief)
+                    .wrap(Wrap { trim: true })
+                    .style(Style::default().fg(th.dim)),
+                rows,
+            );
+            Rect {
+                y: inner.y + height,
+                height: inner.height.saturating_sub(height),
+                ..inner
+            }
+        }
+        None => inner,
+    };
+
     let count = app.board_rows().len();
     let per_row = ROW_HEIGHT as usize;
     let visible = (inner.height as usize) / per_row.max(1);
@@ -292,6 +316,24 @@ fn board_detail(decision: &argus_protocol::Decision) -> String {
         parts.push("no alternative or reason recorded".to_string());
     }
     parts.join(" · ")
+}
+
+/// The brief of the feature the decision view is on, if it has one.
+fn brief_of(app: &App) -> Option<String> {
+    let brief = app.selected_feature()?.body.trim().to_string();
+    (!brief.is_empty()).then_some(brief)
+}
+
+/// How many rows the brief may have: a third of the panel, and never more
+/// than the wrapped text actually needs.
+fn brief_height(brief: &str, inner: Rect) -> u16 {
+    let width = inner.width.max(1) as usize;
+    let wrapped = brief
+        .lines()
+        .map(|line| line.chars().count().max(1).div_ceil(width))
+        .sum::<usize>() as u16;
+    // Plus a blank row under it, so the tree does not begin mid-paragraph.
+    (wrapped + 1).min(inner.height / 3)
 }
 
 /// A board nobody has written to yet. It says what it is for rather than

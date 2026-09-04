@@ -24,6 +24,14 @@ pub enum NoteMode {
 /// One note, open.
 pub struct NoteView {
     pub target: NoteTarget,
+    /// Set when what is open is a feature's brief rather than a note.
+    ///
+    /// The brief is prose in a different table, but it is edited the same
+    /// way and by the same person, so it reuses this editor rather than
+    /// growing a second one that would drift from it. `target` is left
+    /// pointing at the project so nothing that reads it has to care; the
+    /// send path is what branches.
+    pub brief: Option<(argus_protocol::ProjectId, String)>,
     /// What the note is about, for the window title. Carried rather than
     /// looked up so the title survives the row leaving the tree.
     pub title: String,
@@ -47,9 +55,23 @@ pub struct NoteView {
 }
 
 impl NoteView {
+    /// A feature's brief, opened in the note editor.
+    pub fn brief(
+        project: argus_protocol::ProjectId,
+        slug: &str,
+        title: String,
+        body: &str,
+    ) -> NoteView {
+        NoteView {
+            brief: Some((project, slug.to_string())),
+            ..NoteView::new(&Note::new(NoteTarget::Project(project), body.to_string()), title)
+        }
+    }
+
     pub fn new(note: &Note, title: String) -> NoteView {
         NoteView {
             target: note.target,
+            brief: None,
             title,
             lines: split(&note.body),
             mode: NoteMode::View,

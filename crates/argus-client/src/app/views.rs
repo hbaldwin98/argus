@@ -602,6 +602,43 @@ impl App {
         self.report(format!("{slug} → {state}"));
     }
 
+    /// The brief of whichever feature is selected, whether that is a card
+    /// on the board or a row in the decision view's feature column.
+    pub fn selected_feature(&self) -> Option<&argus_protocol::Feature> {
+        let slug = match self.view {
+            View::Board => self.selected_card().map(|f| f.slug.clone()),
+            _ => self.current_feature_row().and_then(|row| row.slug),
+        }?;
+        self.board
+            .as_ref()?
+            .features
+            .iter()
+            .find(|f| f.slug == slug)
+    }
+
+    /// Opens the selected feature's brief in the note editor.
+    ///
+    /// The same editor a note gets, because it is the same job: prose a
+    /// human reads and corrects. A second editor for a second kind of
+    /// document would only be a place for the two to drift apart.
+    pub(super) fn open_feature_brief(&mut self) {
+        let (Some(project), Some(feature)) = (
+            self.board.as_ref().and_then(|b| b.project),
+            self.selected_feature(),
+        ) else {
+            return self.report("no feature selected");
+        };
+        let view = crate::notes::NoteView::brief(
+            project,
+            &feature.slug,
+            feature.title.clone(),
+            &feature.body,
+        );
+        self.notes = Some(view);
+        self.overlay = Some(Overlay::Notes);
+        self.focus = Focus::Overlay;
+    }
+
     /// Goes into the selected card: the tasks under that feature, which
     /// is what a reader who has found the card in flight wants next.
     ///

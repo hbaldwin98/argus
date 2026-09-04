@@ -94,12 +94,20 @@ impl App {
             return;
         }
         let target = view.target;
+        let brief = view.brief.clone();
         let body = view.body();
         // Marked sent before the answer arrives: the daemon echoes every
         // write back, and a view still flagged dirty would refuse its own
         // echo forever.
         view.saved();
-        let _ = self.out.send(ClientMsg::SetNote { target, body });
+        let _ = self.out.send(match brief {
+            Some((project, slug)) => ClientMsg::SetFeatureBody {
+                project,
+                slug,
+                body,
+            },
+            None => ClientMsg::SetNote { target, body },
+        });
     }
 
     /// Chooses where explicit context goes. A checkout note stays in its
@@ -108,6 +116,9 @@ impl App {
         let Some(view) = &self.notes else {
             return;
         };
+        if view.brief.is_some() {
+            return self.report("a brief is context an agent already reads on its own");
+        }
         let target = view.target;
         let body = match view.forward_text(whole) {
             Ok(body) => body,

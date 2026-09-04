@@ -490,6 +490,12 @@ impl App {
         let Some(view) = &mut self.notes else {
             return;
         };
+        // A brief's target points at the project so nothing reading it
+        // has to branch; ticking would therefore write a checkbox into the
+        // project's note, which is not where the cursor is.
+        if view.brief.is_some() {
+            return self.report("a brief has no checkboxes — its work is in the tasks");
+        }
         let Some((line, state)) = view.toggle_here() else {
             self.report("no checkbox on this line");
             return;
@@ -607,6 +613,7 @@ impl App {
             KeyCode::Char('u') | KeyCode::PageUp => self.move_in_board(-10),
             KeyCode::Char('g') | KeyCode::Home => self.move_in_board(i32::MIN),
             KeyCode::Char('G') | KeyCode::End => self.move_in_board(i32::MAX),
+            KeyCode::Char('e') => self.open_feature_brief(),
             KeyCode::Char('r') => self.ask_for_decisions(),
             _ => {}
         }
@@ -626,6 +633,7 @@ impl App {
             KeyCode::Char('g') | KeyCode::Home => self.move_board_card(i32::MIN),
             KeyCode::Char('G') | KeyCode::End => self.move_board_card(i32::MAX),
             KeyCode::Char('D') => self.open_card_decisions(),
+            KeyCode::Char('e') => self.open_feature_brief(),
             KeyCode::Char('H') => self.move_selected_card(-1),
             KeyCode::Char('L') => self.move_selected_card(1),
             KeyCode::Char('s') => self.send_selected_card_back(),

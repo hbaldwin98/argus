@@ -145,6 +145,44 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             ][..],
             th.dim,
         )
+    } else if app.view != View::Spine {
+        // A view owns the whole content area and has its own keys. Without
+        // this the bar falls through to the spine's columns and advertises
+        // keys that do nothing here, which is worse than saying nothing.
+        match app.view {
+            View::Decisions => (
+                &[
+                    "h/l features/tree  j/k move  e brief  d/u ten  g/G ends  r refresh  q spine",
+                    "h/l features/tree  j/k move  e brief  r refresh  q spine",
+                    "h/l  j/k  e brief  q spine",
+                ][..],
+                th.dim,
+            ),
+            View::Board => (
+                &[
+                    "h/l column  j/k card  H/L move it  s send back  e brief  enter tasks  D decisions  q spine",
+                    "h/l column  j/k card  H/L move  e brief  enter tasks  q",
+                    "h/l  j/k  H/L move  enter tasks  q",
+                ][..],
+                th.dim,
+            ),
+            View::Tasks if app.task_input.is_some() => (
+                &[
+                    "typing — enter saves it, esc throws it away",
+                    "enter saves  esc drops",
+                ][..],
+                th.accent,
+            ),
+            View::Tasks => (
+                &[
+                    "h/l column  j/k card  a add  e rewrite  H/L move it  J/K order  x drop  q spine",
+                    "h/l  j/k  a add  e rewrite  H/L move  J/K order  x drop  q",
+                    "j/k  a add  e rewrite  H/L move  q",
+                ][..],
+                th.dim,
+            ),
+            View::Spine => unreachable!("the spine is not a view with its own keys"),
+        }
     } else if app.focus == Focus::PaneContent {
         // A parked pane is not taking input anywhere the operator can see,
         // so the way back to the live screen outranks the usual keymap.

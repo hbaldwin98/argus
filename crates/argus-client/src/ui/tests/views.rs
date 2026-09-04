@@ -844,3 +844,143 @@ fn escape_abandons_the_line_rather_than_the_view() {
     app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     assert_eq!(app.view, View::Spine);
 }
+
+#[test]
+fn each_view_advertises_its_own_keys_rather_than_the_spines() {
+    let mut app = app_with_features(
+        vec![carded(
+            "notes",
+            "Notes storage",
+            argus_protocol::FeatureState::Proposed,
+        )],
+        Vec::new(),
+    );
+    // The spine's own bar, for something to be different from.
+    press(&mut app, '1');
+    let spine = bar(&draw_at(&mut app, 120, 20));
+    assert!(spine.contains("n add"), "the spine offers its own keys: {spine}");
+
+    press(&mut app, View::Decisions.digit());
+    let decisions = bar(&draw_at(&mut app, 120, 20));
+    assert!(decisions.contains("features/tree"), "{decisions}");
+
+    press(&mut app, View::Board.digit());
+    let board = bar(&draw_at(&mut app, 120, 20));
+    assert!(board.contains("send back"), "{board}");
+
+    press(&mut app, View::Tasks.digit());
+    let tasks = bar(&draw_at(&mut app, 120, 20));
+    assert!(tasks.contains("drop"), "{tasks}");
+
+    for advertised in [&decisions, &board, &tasks] {
+        assert!(
+            !advertised.contains("n add"),
+            "no view offers a key that does nothing in it: {advertised}"
+        );
+    }
+}
+
+#[test]
+fn the_bar_says_you_are_typing_while_a_task_is_being_written() {
+    use argus_protocol::TaskState::*;
+    let (mut app, _rx) = tasks_watching(vec![task(1, "port the parser", Todo)]);
+    app.on_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+    let typing = bar(&draw_at(&mut app, 120, 20));
+    assert!(typing.contains("typing"), "{typing}");
+    assert!(
+        !typing.contains("x drop"),
+        "a key that is being typed is not a key that is offered: {typing}"
+    );
+}
+
+fn briefed(slug: &str, title: &str, body: &str) -> argus_protocol::Feature {
+    argus_protocol::Feature {
+        body: body.to_string(),
+        ..feature(slug, title)
+    }
+}
+
+#[test]
+fn the_decision_view_reads_the_brief_above_the_reasoning() {
+    let mut notes = decision(1, None, "one row per note");
+    notes.feature = Some("notes".into());
+    let mut app = app_with_features(
+        vec![briefed(
+            "notes",
+            "Notes storage",
+            "The key has to outlive the ids.",
+        )],
+        vec![notes],
+    );
+    press(&mut app, View::Decisions.digit());
+
+    let drawn = lines(&draw_at(&mut app, 100, 30));
+    let out = drawn.join("\n");
+    assert!(
+        out.contains("The key has to outlive the ids"),
+        "the brief is finally readable without an agent: {out}"
+    );
+    let row = |needle: &str| drawn.iter().position(|l| l.contains(needle)).unwrap();
+    assert!(
+        row("The key has to outlive") < row("one row per note"),
+        "the brief comes first: a decision without it explains half of itself"
+    );
+}
+
+#[test]
+fn e_opens_the_brief_in_the_editor_and_saving_replaces_it() {
+    let (mut app, mut rx) = board_watching(vec![argus_protocol::Feature {
+        body: "The reader thread owns the handle.".into(),
+        ..carded("pty", "The pty", argus_protocol::FeatureState::Proposed)
+    }]);
+    while rx.try_recv().is_ok() {}
+
+    app.on_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+    let view = app.notes.as_ref().expect("the brief is open");
+    assert_eq!(view.brief.as_ref().map(|(_, slug)| slug.as_str()), Some("pty"));
+    assert!(
+        view.body().contains("The reader thread owns the handle"),
+        "it opens on what is already written"
+    );
+
+    // Type a correction and close, which is what saves.
+    app.on_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+    for c in " Not the writer.".chars() {
+        app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    let sent: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        sent.iter().any(|m| matches!(
+            m,
+            argus_protocol::ClientMsg::SetFeatureBody { slug, body, .. }
+                if slug == "pty" && body.contains("Not the writer.")
+        )),
+        "a brief is replaced whole rather than appended to: {sent:?}"
+    );
+    assert!(
+        !sent
+            .iter()
+            .any(|m| matches!(m, argus_protocol::ClientMsg::SetNote { .. })),
+        "and never as a note: {sent:?}"
+    );
+}
+
+#[test]
+fn a_brief_is_not_a_note_and_says_so() {
+    let (mut app, mut rx) = board_watching(vec![argus_protocol::Feature {
+        body: "- [ ] not a checkbox here".into(),
+        ..carded("pty", "The pty", argus_protocol::FeatureState::Proposed)
+    }]);
+    while rx.try_recv().is_ok() {}
+    app.on_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+
+    app.on_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+    let sent: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        !sent
+            .iter()
+            .any(|m| matches!(m, argus_protocol::ClientMsg::SetTodo { .. })),
+        "ticking a brief must not write into the project's note: {sent:?}"
+    );
+}

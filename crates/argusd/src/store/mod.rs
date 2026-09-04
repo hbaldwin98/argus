@@ -693,6 +693,26 @@ impl Store {
         Ok(body)
     }
 
+    /// Replaces a feature's document outright.
+    ///
+    /// The append path above is what an agent has, because an agent adding
+    /// to a brief mid-task should not be able to erase what it is working
+    /// from. A human reading the same document needs to be able to fix it.
+    pub fn set_feature_body(&self, project: &str, slug: &str, body: &str) -> Result<()> {
+        if body.len() > argus_protocol::MAX_FEATURE_BODY_BYTES {
+            anyhow::bail!("this feature's document is full; what is left belongs in the checkout");
+        }
+        let conn = self.conn();
+        let changed = conn.execute(
+            "UPDATE feature SET body = ?1 WHERE project = ?2 AND slug = ?3",
+            rusqlite::params![body.trim_end(), project, slug],
+        )?;
+        if changed == 0 {
+            anyhow::bail!("there is no feature {slug} on this project");
+        }
+        Ok(())
+    }
+
     /// Points a checkout at a feature, which is what decisions recorded
     /// from it are filed under afterwards.
     pub fn set_feature_scope(&self, checkout: &Path, project: &str, slug: &str) -> Result<()> {

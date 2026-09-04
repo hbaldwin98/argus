@@ -100,7 +100,8 @@ is drawn in the blank row the page is already inset by, so it costs the view und
 
 While a view other than the spine is open, the content area is that view's: a click in it selects a
 row there and keeps the keyboard on the view, rather than resolving against the pane whose column
-used to occupy the same cells.
+used to occupy the same cells. The status bar follows: each view advertises its own keys, since a
+bar still offering the spine's columns is worse than one saying nothing.
 
 Switching views changes the screen and nothing else. Every pane keeps running, its subscription
 stands, and the spine is one keystroke back. Focus moves out of the columns while another view is
@@ -838,6 +839,18 @@ orphan the decisions under it, and two agents opening the same-sounding feature 
 not silently share a board. The document is the one part that is edited rather than appended to as
 a tree: it is prose both sides write, bounded at 8 KiB, because a brief that has outgrown a screen
 has become the design document it was meant to point at.
+
+The two sides write it differently, and deliberately. An agent *appends* — `argus-hook feature note`
+adds a paragraph — because an agent adding to a brief mid-task should not be able to erase what it
+is working from. A human *replaces*: `e` on a feature, from either board, opens the brief in the
+note editor and `ClientMsg::SetFeatureBody` writes back whatever it says. It is the same editor a
+note gets because it is the same job, prose a person reads and corrects, and a second editor for a
+second kind of document would only be somewhere for the two to drift apart. What the editor will
+not do to a brief is tick a checkbox or forward it: a brief's `NoteTarget` points at the project so
+nothing reading it has to branch, so both are refused rather than quietly writing into the project's
+note — and the work a brief might have listed lives in its tasks now. The decision view draws the
+brief above the tree, bounded to a third of the panel, which is the order `argus-hook feature`
+prints them in and the order they are read.
 
 Which feature an agent is on is resolved from the checkout, not from a flag. `feature_scope` maps a
 checkout path to a slug, and a checkout that was never pointed anywhere falls back to the one

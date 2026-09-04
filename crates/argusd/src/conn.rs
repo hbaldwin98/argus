@@ -271,6 +271,11 @@ fn dispatch_decisions(
         ClientMsg::GetDecisions { project } => daemon.decision_board(project).map(|board| {
             let _ = out_tx.send(ServerMsg::Decisions(Box::new(board)));
         }),
+        ClientMsg::SetFeatureBody {
+            project,
+            slug,
+            body,
+        } => daemon.set_feature_body_for_client(project, &slug, body),
         ClientMsg::GetTasks { project, feature } => {
             daemon.task_list_for_client(project, &feature).map(|list| {
                 let _ = out_tx.send(ServerMsg::Tasks(Box::new(list)));

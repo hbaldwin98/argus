@@ -240,6 +240,27 @@ impl Daemon {
         Ok(())
     }
 
+    /// Rewrites a feature's brief from the view.
+    pub fn set_feature_body_for_client(
+        &self,
+        project: ProjectId,
+        slug: &str,
+        body: String,
+    ) -> anyhow::Result<()> {
+        let name = {
+            let inner = self.inner.lock().unwrap();
+            inner
+                .projects
+                .iter()
+                .find(|p| p.id == project)
+                .map(|p| p.name.clone())
+                .ok_or_else(|| anyhow::anyhow!("no such project"))?
+        };
+        self.store.set_feature_body(&name, slug, &body)?;
+        self.broadcast_decisions(&name, self.store.decisions(&name)?);
+        Ok(())
+    }
+
     /// The feature the next decision from this pane is filed under.
     pub(super) fn feature_for_agent(&self, scope: &AgentScope) -> anyhow::Result<Option<String>> {
         let features = self.store.features(&scope.project_name)?;

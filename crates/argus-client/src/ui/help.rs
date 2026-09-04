@@ -136,6 +136,7 @@ const BOARD: Group = Group {
     title: "the decision board",
     keys: &[
         ("h / l", "the features, and the tree under one"),
+        ("e", "read and edit this feature's brief"),
         ("j / k", "feature by feature, or decision by decision"),
         ("d / u", "ten at a time"),
         ("g / G", "top and bottom"),
@@ -153,6 +154,7 @@ const COLUMNS_BOARD: Group = Group {
         ("g / G", "top and bottom"),
         ("H / L", "move this card a column"),
         ("s", "send it back to whoever is on it"),
+        ("e", "read and edit its brief"),
         ("enter", "the tasks under this feature"),
         ("D", "the decisions under it"),
         ("r", "re-ask the daemon for it"),

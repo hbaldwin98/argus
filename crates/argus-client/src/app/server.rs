@@ -128,7 +128,7 @@ impl App {
             }
             ServerMsg::Note(note) => {
                 if let Some(view) = &mut self.notes {
-                    if view.target == note.target {
+                    if view.brief.is_none() && view.target == note.target {
                         view.adopt(&note);
                     }
                 }
