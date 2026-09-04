@@ -144,6 +144,19 @@ const BOARD: Group = Group {
     ],
 };
 
+const COLUMNS_BOARD: Group = Group {
+    title: "the feature board",
+    keys: &[
+        ("h / l", "column by column"),
+        ("j / k", "card by card"),
+        ("d / u", "ten at a time"),
+        ("g / G", "top and bottom"),
+        ("enter", "the decisions under this feature"),
+        ("r", "re-ask the daemon for it"),
+        ("esc  q", "back to the spine"),
+    ],
+};
+
 /// True everywhere, so it is worth saying once rather than per mode.
 const EVERYWHERE: Group = Group {
     title: "everywhere",
@@ -168,7 +181,10 @@ pub(super) fn groups(app: &App) -> Vec<&'static Group> {
     } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
         vec![&SETTINGS]
     } else if app.focus == Focus::View {
-        vec![&BOARD, &VIEW]
+        match app.view {
+            crate::app::View::Board => vec![&COLUMNS_BOARD, &VIEW],
+            _ => vec![&BOARD, &VIEW],
+        }
     } else if app.input_pane().is_some() || app.focus == Focus::PaneContent {
         vec![&PANE]
     } else {

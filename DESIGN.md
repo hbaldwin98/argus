@@ -109,7 +109,8 @@ is a key nobody can see the effect of — and returns to the column it left. Whi
 this client's own state and is never sent to the daemon: two people attached to one daemon are not
 necessarily reading the same thing.
 
-The views are the spine and the decision board (see "Features and the decision board").
+The views are the spine, the decision board, and the feature board (see "Features and the
+decision board").
 
 ## Navigation model
 
@@ -817,8 +818,9 @@ to tell the user it was refused, and "this project does not allow it" is a diffe
 "that line is not a checkbox".
 
 Not yet implemented: pinned-note injection into a template's prompt, `argus ctx`, and the feature
-board in the Kanban sense (TARGET.md, "Boards"). Features and the decision board have landed (see
-"Features and the decision board"); what is missing is the columns-by-state view over them.
+board's write path from the client (TARGET.md, "Boards"). Features, the decision board and the
+columns view have landed (see "Features and the decision board"); what is missing is moving a card
+from the view rather than only over the pane API, and the scoped read an agent starts work from.
 
 ## Features and the decision board
 
@@ -873,6 +875,37 @@ branch rails and elbows connecting every child to its parent. `argus-hook decisi
 topology for agents. `h`/`l` cross between the columns and `j`/`k` move through whichever has the
 keys, a click selects the row it lands on, and `r` re-asks by hand. Decisions from before features
 existed get a row of their own at the end of the feature column rather than being hidden.
+
+### The feature board
+
+The third view draws every feature of the project in a column by state — proposed, active, blocked,
+submitted, done — which is the "what is in flight" question the decision view does not answer. It is
+its own view rather than a mode of the decision view because the two are read for different reasons,
+and a toggle would hide whichever one you were not on. It reads the same pushed `DecisionBoard`,
+which already carries every feature with its state, so switching between them costs no round trip.
+
+The columns are equal width. What is worth width here is whichever column is full, and that changes
+hour to hour — a layout that tracked it would move the columns around under a reader who is using
+their position to find them. `h`/`l` cross columns and `j`/`k` walk the cards in one, the same
+gesture the spine takes, and `Enter` opens the decisions under the selected card: you see what is in
+flight, then ask why. Moving between columns lands on the first card rather than carrying the row
+across, since the same depth of an unrelated column is not where you were looking.
+
+A card's second line answers the question its column raises — a blocked card says why, a submitted
+one says what was offered, and one nobody has picked up says the branch it was cut on.
+
+Schema v7 holds this: `state`, `claimed_by`, `claimed_at`, `blocker` and `evidence` on `feature`,
+and a `feature_event` row for every move. The state is a column because the board is read whole on
+every change; the moves are a table for the reason `note_audit` is one, since a column reading
+`submitted` cannot say who submitted it or what they claimed. `blocker` and `evidence` are cleared
+on the way out of their states, so a feature that was unblocked stops explaining why it was stuck,
+and the claim is taken entering `active`, kept through `blocked` and `submitted` — a stuck feature
+still belongs to whoever carried it there — and released on `done`.
+
+`submitted` and `done` are separate states and an agent is refused the second: the review column has
+to be where work stops rather than somewhere it passes through, and the agent that did the work is
+the one party that cannot accept it. `argus-hook feature` carries the move over
+`FeatureAction::Move`.
 
 ## Editors and overlays
 

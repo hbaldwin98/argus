@@ -275,6 +275,11 @@ pub fn render(f: &mut Frame, app: &mut App) {
             render_decisions(f, app, root[0], th);
             None
         }
+        View::Board => {
+            forget_spine(app);
+            render_board(f, app, root[0], th);
+            None
+        }
         View::Spine if fullscreen => {
             forget_spine(app);
             render_content(f, app, root[0], th)

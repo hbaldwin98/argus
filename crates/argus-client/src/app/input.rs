@@ -584,14 +584,14 @@ impl App {
         }
     }
 
-    /// A view that is not the spine. It has no columns, so the only keys
-    /// that mean anything here are the ones that leave.
+    /// A view that is not the spine.
     fn on_key_view(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Char(c) if View::from_digit(c).is_some() => {
                 self.open_view(View::from_digit(c).unwrap())
             }
             KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Spine),
+            _ if self.view == View::Board => self.on_key_board(key),
             // The two halves share j/k, the way the spine's columns do:
             // which one moves is which one is focused, and h/l is how you
             // cross between them.
@@ -605,6 +605,25 @@ impl App {
             KeyCode::Char('u') | KeyCode::PageUp => self.move_in_board(-10),
             KeyCode::Char('g') | KeyCode::Home => self.move_in_board(i32::MIN),
             KeyCode::Char('G') | KeyCode::End => self.move_in_board(i32::MAX),
+            KeyCode::Char('r') => self.ask_for_decisions(),
+            _ => {}
+        }
+    }
+
+    /// The columns view. `h`/`l` cross columns and `j`/`k` walk the cards
+    /// in one, which is the same gesture the spine's columns take — the
+    /// board is a spine over features rather than a new idea.
+    fn on_key_board(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('h') | KeyCode::Left => self.move_board_column(-1),
+            KeyCode::Char('l') | KeyCode::Right => self.move_board_column(1),
+            KeyCode::Char('j') | KeyCode::Down => self.move_board_card(1),
+            KeyCode::Char('k') | KeyCode::Up => self.move_board_card(-1),
+            KeyCode::Char('d') | KeyCode::PageDown => self.move_board_card(10),
+            KeyCode::Char('u') | KeyCode::PageUp => self.move_board_card(-10),
+            KeyCode::Char('g') | KeyCode::Home => self.move_board_card(i32::MIN),
+            KeyCode::Char('G') | KeyCode::End => self.move_board_card(i32::MAX),
+            KeyCode::Enter => self.open_selected_card(),
             KeyCode::Char('r') => self.ask_for_decisions(),
             _ => {}
         }

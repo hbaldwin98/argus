@@ -430,3 +430,116 @@ fn click(app: &mut App, column: u16, row: u16) {
     });
 }
 
+
+fn carded(slug: &str, title: &str, state: argus_protocol::FeatureState) -> argus_protocol::Feature {
+    argus_protocol::Feature {
+        state,
+        ..feature(slug, title)
+    }
+}
+
+/// Opens the board view over a set of features.
+fn board_of(features: Vec<argus_protocol::Feature>) -> App {
+    let mut app = app_with_features(features, Vec::new());
+    press(&mut app, View::Board.digit());
+    app
+}
+
+#[test]
+fn every_feature_is_drawn_under_the_column_it_is_in() {
+    use argus_protocol::FeatureState::*;
+    let mut app = board_of(vec![
+        carded("pty", "Streaming the pty", Active),
+        carded("notes", "Notes storage", Proposed),
+        carded("review", "Split review", Done),
+    ]);
+
+    let out = lines(&draw_at(&mut app, 140, 20)).join("\n");
+    for column in ["proposed", "active", "blocked", "submitted", "done"] {
+        assert!(out.contains(column), "every column is offered: {out}");
+    }
+    for title in ["Streaming the pty", "Notes storage", "Split review"] {
+        assert!(out.contains(title), "{out}");
+    }
+
+    // Each title sits under its own state, not merely somewhere on screen.
+    let drawn = lines(&draw_at(&mut app, 140, 20));
+    let row = |needle: &str| {
+        drawn
+            .iter()
+            .position(|l| l.contains(needle))
+            .unwrap_or_else(|| panic!("{needle} was not drawn"))
+    };
+    assert!(
+        row("Notes storage") > row("proposed"),
+        "a card is drawn below its column heading"
+    );
+}
+
+#[test]
+fn the_keys_cross_columns_and_walk_the_cards_in_one() {
+    use argus_protocol::FeatureState::*;
+    let mut app = board_of(vec![
+        carded("notes", "Notes storage", Proposed),
+        carded("pty", "Streaming the pty", Active),
+        carded("board", "The feature board", Active),
+    ]);
+    assert_eq!(app.selected_card().map(|f| f.slug.as_str()), Some("notes"));
+
+    app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
+    assert_eq!(app.selected_card().map(|f| f.slug.as_str()), Some("pty"));
+    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    assert_eq!(app.selected_card().map(|f| f.slug.as_str()), Some("board"));
+
+    // An empty column selects nothing rather than the card that was there.
+    app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
+    assert_eq!(app.selected_card(), None, "nothing is blocked");
+
+    app.on_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE));
+    assert_eq!(
+        app.selected_card().map(|f| f.slug.as_str()),
+        Some("pty"),
+        "coming back lands on the first card, not the one you left"
+    );
+}
+
+#[test]
+fn a_card_says_what_its_column_leaves_unsaid() {
+    use argus_protocol::FeatureState::*;
+    let mut blocked = carded("pty", "Streaming the pty", Blocked);
+    blocked.blocker = Some("ConPTY resize".into());
+    let mut submitted = carded("notes", "Notes storage", Submitted);
+    submitted.evidence = Some("green on cargo test".into());
+    let mut app = board_of(vec![blocked, submitted]);
+
+    let out = lines(&draw_at(&mut app, 140, 20)).join("\n");
+    assert!(out.contains("ConPTY resize"), "{out}");
+    assert!(out.contains("green on cargo test"), "{out}");
+}
+
+#[test]
+fn enter_on_a_card_opens_the_decisions_under_that_feature() {
+    use argus_protocol::FeatureState::*;
+    let mut notes = decision(1, None, "one row per note");
+    notes.feature = Some("notes".into());
+    let mut pty = decision(2, None, "one reader thread");
+    pty.feature = Some("pty".into());
+    let mut app = app_with_features(
+        vec![
+            carded("notes", "Notes storage", Proposed),
+            carded("pty", "Streaming the pty", Proposed),
+        ],
+        vec![notes, pty],
+    );
+    press(&mut app, View::Board.digit());
+    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_eq!(app.view, View::Decisions);
+    let out = lines(&draw_at(&mut app, 100, 30)).join("\n");
+    assert!(out.contains("one reader thread"), "{out}");
+    assert!(
+        !out.contains("one row per note"),
+        "the card you came from is the feature you land on: {out}"
+    );
+}

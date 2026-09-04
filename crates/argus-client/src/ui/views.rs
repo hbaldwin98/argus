@@ -323,3 +323,109 @@ fn render_empty_board(f: &mut Frame, inner: Rect, th: Theme) {
         inner,
     );
 }
+
+/// The board: every feature of the project in a column by state.
+///
+/// Equal columns rather than proportional. What is worth width here is
+/// whichever column is full, and that changes hour to hour — a layout that
+/// tracked it would move the columns around under a reader who is using
+/// their position to find them.
+pub(super) fn render_board(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    let states = argus_protocol::FeatureState::ALL;
+    let each = area.width / states.len() as u16;
+    for (index, state) in states.into_iter().enumerate() {
+        let x = area.x + each * index as u16;
+        // The last column takes the remainder, so a width that does not
+        // divide by five leaves no unpainted strip at the edge.
+        let width = if index + 1 == states.len() {
+            area.width.saturating_sub(each * index as u16)
+        } else {
+            each
+        };
+        render_board_column(f, app, index, state, Rect { x, width, ..area }, th);
+    }
+}
+
+fn render_board_column(
+    f: &mut Frame,
+    app: &mut App,
+    index: usize,
+    state: argus_protocol::FeatureState,
+    area: Rect,
+    th: Theme,
+) {
+    let focused = index == app.board_column;
+    let cards: Vec<_> = app
+        .column_features(state)
+        .into_iter()
+        .cloned()
+        .collect();
+    let title = format!("{state} · {}", cards.len());
+    let block = panel_block(&title, focused, th, area.width);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let per_row = ROW_HEIGHT as usize;
+    let visible = (inner.height as usize) / per_row.max(1);
+    let selected = focused.then_some(app.board_card);
+    let first = scrolled_to_show(0, selected, visible, cards.len());
+    app.layout.board_columns[index] = Panel {
+        outer: area,
+        inner,
+        first,
+    };
+    if cards.is_empty() {
+        return;
+    }
+
+    let mut lines = Vec::new();
+    for (row, feature) in cards.iter().enumerate().skip(first).take(visible) {
+        let on = focused && row == app.board_card;
+        lines.push(Line::from(vec![
+            Span::styled(
+                if on { MARKER } else { GUTTER },
+                Style::default().fg(th.accent),
+            ),
+            Span::styled(
+                feature.title.clone(),
+                if on {
+                    Style::default().fg(th.text).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(th.text)
+                },
+            ),
+        ]));
+        lines.push(Line::from(Span::styled(
+            format!("   {}", card_detail(feature)),
+            Style::default().fg(th.dim),
+        )));
+    }
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// A card's second line: whatever the column it is in leaves unsaid.
+///
+/// A blocked card says why, a submitted one says what was offered, and one
+/// nobody has picked up says the branch it was cut on — each column's
+/// second line answers the question that column raises.
+fn card_detail(feature: &argus_protocol::Feature) -> String {
+    use argus_protocol::FeatureState::*;
+    let fallback = || {
+        feature
+            .origin_branch
+            .clone()
+            .unwrap_or_else(|| "no branch recorded".to_string())
+    };
+    match feature.state {
+        Blocked => feature.blocker.clone().unwrap_or_else(|| "blocked, reason not given".into()),
+        Submitted => feature
+            .evidence
+            .clone()
+            .unwrap_or_else(|| "submitted with no evidence".into()),
+        Active => match &feature.claimed_by {
+            Some(session) => format!("{} · {session}", fallback()),
+            None => fallback(),
+        },
+        Proposed | Done => fallback(),
+    }
+}

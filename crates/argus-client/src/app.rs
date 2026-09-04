@@ -216,6 +216,10 @@ pub struct App {
     /// Whether keys move through the features or through the tree. The
     /// features have it first: a tree is read after choosing which one.
     pub board_on_features: bool,
+    /// Which column of the board view is selected, as a place in
+    /// `FeatureState::ALL`, and which card down it.
+    pub board_column: usize,
+    pub board_card: usize,
     /// What the outstanding request was for; a diff for anything else is
     /// stale and dropped.
     review_wanted: Option<(CheckoutId, u64)>,
@@ -331,6 +335,8 @@ impl App {
             board_sel: 0,
             board_feature_sel: 0,
             board_on_features: true,
+            board_column: 0,
+            board_card: 0,
             review_wanted: None,
             next_review_request: 1,
             history_wanted: None,

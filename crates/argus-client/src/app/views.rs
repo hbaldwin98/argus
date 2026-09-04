@@ -14,6 +14,9 @@
 
 use super::*;
 
+/// How many columns the board draws — one per state.
+pub const COLUMNS: usize = argus_protocol::FeatureState::ALL.len();
+
 /// One row of the feature column: a feature, or the one row that holds
 /// whatever was decided before features existed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,12 +35,15 @@ pub enum View {
     #[default]
     Spine,
     Decisions,
+    /// The features of the project in columns by state — what is in
+    /// flight, rather than the reasoning under any one of them.
+    Board,
 }
 
 impl View {
     /// Every view, in the order the tab strip draws them. The spine is
     /// first because it is the default and the one you return to.
-    pub const ALL: [View; 2] = [View::Spine, View::Decisions];
+    pub const ALL: [View; 3] = [View::Spine, View::Decisions, View::Board];
 
     /// What the tab says. Short by intent: the strip is one row, and every
     /// cell it spends is a cell the view underneath could have used.
@@ -45,6 +51,7 @@ impl View {
         match self {
             View::Spine => "spine",
             View::Decisions => "decisions",
+            View::Board => "board",
         }
     }
 
@@ -83,7 +90,10 @@ impl App {
             _ => Focus::View,
         };
         self.leader_pending = false;
-        if view == View::Decisions {
+        // Both views read the same pushed board, so both are worth a
+        // fetch on opening: a client that attached after the last write
+        // has never been pushed one.
+        if matches!(view, View::Decisions | View::Board) {
             self.ask_for_decisions();
         }
         self.report(view.label());
@@ -110,7 +120,7 @@ impl App {
     /// an adopted board carries the project's name, so the comparison
     /// fails exactly once per change.
     pub(super) fn refresh_board_if_stale(&mut self) {
-        if self.view != View::Decisions {
+        if !matches!(self.view, View::Decisions | View::Board) {
             return;
         }
         let Some(name) = self.current_project().map(|p| p.name.clone()) else {
@@ -218,6 +228,79 @@ impl App {
     pub(super) fn select_board_row(&mut self, row: usize) {
         if row < self.board_rows().len() {
             self.board_sel = row;
+        }
+    }
+
+    /// The features in one column of the board, oldest first — which is
+    /// the order they were opened in, and so the order they were meant to
+    /// be worked in.
+    pub fn column_features(&self, state: argus_protocol::FeatureState) -> Vec<&argus_protocol::Feature> {
+        self.board
+            .as_ref()
+            .map(|b| b.features.iter().filter(|f| f.state == state).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn board_column_state(&self) -> argus_protocol::FeatureState {
+        argus_protocol::FeatureState::ALL[self.board_column.min(COLUMNS - 1)]
+    }
+
+    pub fn selected_card(&self) -> Option<&argus_protocol::Feature> {
+        let column = self.column_features(self.board_column_state());
+        column.get(self.board_card).copied()
+    }
+
+    /// Moves between columns, keeping the card selection in range.
+    ///
+    /// The row is not remembered per column. Carrying it across would put
+    /// the selection on whatever happens to sit at the same depth of an
+    /// unrelated column, which reads as a jump rather than a move; landing
+    /// on the first card of the column you moved to is at least where you
+    /// were looking.
+    pub(super) fn move_board_column(&mut self, delta: i32) {
+        let next = (self.board_column as i32)
+            .saturating_add(delta)
+            .clamp(0, COLUMNS as i32 - 1) as usize;
+        if next != self.board_column {
+            self.board_column = next;
+            self.board_card = 0;
+        }
+    }
+
+    pub(super) fn move_board_card(&mut self, delta: i32) {
+        let count = self.column_features(self.board_column_state()).len();
+        if count == 0 {
+            self.board_card = 0;
+            return;
+        }
+        self.board_card = (self.board_card as i32)
+            .saturating_add(delta)
+            .clamp(0, count as i32 - 1) as usize;
+    }
+
+    pub(super) fn select_card(&mut self, column: usize, row: usize) {
+        if column >= COLUMNS {
+            return;
+        }
+        self.board_column = column;
+        let count = self
+            .column_features(argus_protocol::FeatureState::ALL[column])
+            .len();
+        // A click on the empty space under a column's cards is a click on
+        // the column, not on a card that is not there.
+        self.board_card = row.min(count.saturating_sub(1));
+    }
+
+    /// Opens the selected card's reasoning: the decisions view, already on
+    /// that feature. The link the roadmap asks for, in the direction a
+    /// reader actually goes — you see what is in flight, then ask why.
+    pub(super) fn open_selected_card(&mut self) {
+        let Some(slug) = self.selected_card().map(|f| f.slug.clone()) else {
+            return;
+        };
+        self.open_view(View::Decisions);
+        if let Some(row) = self.feature_rows().iter().position(|r| r.slug.as_deref() == Some(slug.as_str())) {
+            self.select_feature_row(row);
         }
     }
 

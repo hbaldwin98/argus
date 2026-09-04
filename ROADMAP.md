@@ -70,7 +70,7 @@ Boards are the first thing Argus has wanted that is not a column. A decision tre
 are read at project scope, all at once, and neither says anything useful in a 30-column strip
 beside a pane — so the client needed a second top-level surface before either could be built. That
 ordering was the whole of this section: the view mechanism first, then the two boards on it, then
-the link between them. The first two have landed.
+the link between them. All three have landed; what is left is the writes and the reads over them.
 
 - Views have landed (DESIGN.md, "Views"): the content area holds one named view at a time, with
   the project spine as the default and a one-row tab strip naming the rest. The strip lives in the
@@ -82,13 +82,14 @@ the link between them. The first two have landed.
   to append to it, and a view that draws the tree with superseded branches dimmed. Ungated, unlike
   note writes — the board exists for agents to write and attributes every row. A decision is filed
   under the feature its checkout is on, and `decide` from a checkout on none is refused.
-- Add the feature board (TARGET.md, "Boards"): items in columns by state, claimed by an agent,
-  carrying progress, blockers, and submitted completion evidence, accepted or sent back by a human
-  and never by the agent that did the work. Both sides can add an item — the human from the view,
-  over a client message the way note edits go, and an agent over the pane API — so the write path
-  is the note's dual shape rather than the decision board's agent-only one. It has to read as well as it writes — an agent starting
-  work infers what is in flight and what is already decided from the board, which is the reason it
-  exists rather than a checklist in a note.
+- The feature board has landed (DESIGN.md, "The feature board"): schema v7 puts the state, the
+  claim, the blocker and the submitted evidence on the feature row itself rather than on a second
+  item concept, with `feature_event` holding every move; a third view draws the columns, and
+  `Enter` on a card opens the decisions under it. An agent moves its own work over the pane API and
+  is refused `done`.
+- Let a human move a card from the view, over a client message the way note edits go — the write
+  path is the note's dual shape rather than the decision board's agent-only one, and only the agent
+  half exists so far.
 - Give the board its own reads for a client: it is pushed whole on every change, which is right
   while a board is a few dozen rows and wrong once it is a few thousand.
 - Link the two: a decision is taken about an item, an item carries the decisions taken under it,

@@ -132,6 +132,9 @@ pub struct Layout {
     /// The decision view's feature column. Zero-sized while another view
     /// is open, so a click cannot land on a column that is not drawn.
     pub features: Panel,
+    /// The board view's columns, one per state, in `FeatureState::ALL`
+    /// order. Zero-sized while another view is open.
+    pub board_columns: [Panel; crate::app::views::COLUMNS],
     /// The row of view tabs above everything else. Zero-sized on a
     /// terminal too short to spend a row on it.
     pub views: Panel,
