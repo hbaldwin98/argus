@@ -127,7 +127,9 @@ fn render_feature_column(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         Some(name) => format!("features · {name}"),
         None => "features".to_string(),
     };
-    let inner = render_card(f, area, &title, focused, th);
+    let block = panel_block(&title, focused, th, area.width);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
 
     let rows = app.feature_rows();
     let per_row = ROW_HEIGHT as usize;
@@ -180,7 +182,9 @@ fn render_feature_board(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         Some(row) => format!("decisions · {}", row.title),
         None => "decisions".to_string(),
     };
-    let inner = render_card(f, area, &title, !app.board_on_features, th);
+    let block = panel_block(&title, !app.board_on_features, th, area.width);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
 
     // The brief above the tree, which is the order `argus-hook feature`
     // prints them in and the order they are read: a decision without what
@@ -561,7 +565,9 @@ fn render_board_column(
         .cloned()
         .collect();
     let title = format!("{state} · {}", cards.len());
-    let inner = render_card(f, area, &title, focused, th);
+    let block = panel_block(&title, focused, th, area.width);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
 
     let per_row = ROW_HEIGHT as usize;
     let selected = focused.then_some(app.board_card);
@@ -701,7 +707,9 @@ fn render_task_column(
     } else {
         format!("{state} · {}", tasks.len())
     };
-    let inner = render_card(f, area, &title, focused, th);
+    let block = panel_block(&title, focused, th, area.width);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
 
     let per_row = ROW_HEIGHT as usize;
     let selected = focused.then_some(app.task_card);

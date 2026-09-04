@@ -469,12 +469,14 @@ pub(super) fn render_column(
     height: u16,
     th: Theme,
 ) -> Panel {
-    let inner = render_card(f, area, title, lit, th);
+    let block = panel_block(title, lit, th, area.width);
+    let inner = block.inner(area);
     let mut panel = Panel {
         outer: area,
         inner,
         first: 0,
     };
+    f.render_widget(block, area);
 
     if rows.is_empty() {
         // Wrapped, not truncated: these columns are narrow, and a hint cut
@@ -732,80 +734,36 @@ pub(super) fn render_row<'a>(
     f.render_widget(Paragraph::new(lines).style(bar), area);
 }
 
-/// A card: a filled surface sitting on the page, with its name on the page
-/// above it rather than spliced into a rule drawn around it. Hands back the
-/// rect the contents go in.
-///
-/// There is no border, and that is the point. Elevation is what separates a
-/// card from the page (see the scale in [`crate::theme`]); once that reads,
-/// an outline is a line drawn around something already distinct, and a grid
-/// of outlined boxes with their titles set into the top rule is the look
-/// this whole pass exists to get away from. Popups keep their border --
-/// see [`popup_block`] -- because they float over content rather than
-/// sitting on the page, so they have no ground to be raised from.
-///
+/// A padded card. Focus has to be unmissable at a glance, so the focused
+/// panel is lifted a step in elevation and given an accent border and
+/// title, against the unfocused panels' receding edge and muted label.
 /// `lit` is how focused the card is, which is a number rather than a flag
-/// because focus fades from one card to the next: the fill and the label
-/// travel between their two ends together. Call sites that are simply
-/// focused or not still pass `true` or `false`.
-pub(super) fn render_card(
-    f: &mut Frame,
-    area: Rect,
+/// because focus fades from one card to the next: the border, the title
+/// and the fill all travel between their two ends together. Call sites
+/// that are simply focused or not still pass `true` or `false`.
+pub(super) fn panel_block(
     title: &str,
     lit: impl Into<crate::motion::Lit>,
     th: Theme,
-) -> Rect {
+    width: u16,
+) -> Block<'_> {
     let lit = lit.into();
     let t = lit.value();
-    // The label takes the row the top border used to have, so the contents
-    // below start exactly where they always did and every height derived
-    // from a card is unchanged.
-    let Some(height) = area.height.checked_sub(1) else {
-        return Rect::new(area.x, area.y, 0, 0);
-    };
-    let card = Rect {
-        y: area.y + 1,
-        height,
-        ..area
-    };
-
+    let border = Style::default().fg(crate::motion::blend(th.edge, th.accent, t));
     // Weight cannot be blended, so it flips at the midpoint. Over 120ms
     // that reads as part of the same movement rather than as a second one.
-    let mut label = Style::default().fg(crate::motion::blend(th.dim, th.accent, t));
-    if lit.is_lit() {
-        label = label.add_modifier(Modifier::BOLD);
-    }
-    // Indented to sit over the card's own left padding, so the name and the
-    // rows beneath it share an edge. The title is drawn as written rather
-    // than upper-cased: some of these are breadcrumbs and feature titles,
-    // and a label style is not worth mangling somebody's own words for.
-    let name = ellipsize_text(title, area.width.saturating_sub(2) as usize);
-    f.render_widget(
-        Paragraph::new(Span::styled(format!(" {name}"), label)),
-        Rect { height: 1, ..area },
-    );
-
+    let label = match lit.is_lit() {
+        true => Style::default()
+            .fg(crate::motion::blend(th.muted, th.accent, t))
+            .add_modifier(Modifier::BOLD),
+        false => Style::default().fg(crate::motion::blend(th.muted, th.accent, t)),
+    };
     let fill = crate::motion::blend(th.surface, th.surface_focus, t);
-    let block = Block::default()
-        .style(Style::default().bg(fill))
-        // No border to hold the text off, so the gutter is the whole of
-        // what keeps a row from sitting on the card's edge.
-        .padding(Padding::uniform(1));
-    let inner = block.inner(card);
-    f.render_widget(block, card);
-    inner
-}
-
-/// A card that floats over the page instead of sitting on it: pickers, the
-/// key sheet, the note editor. These keep their border, because what is
-/// behind them is other content rather than the page ground, and elevation
-/// alone cannot say where one stops and the other starts.
-pub(super) fn popup_block(title: &str, th: Theme, width: u16) -> Block<'_> {
     Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(th.accent))
-        .style(Style::default().bg(th.surface_focus))
+        .border_style(border)
+        .style(Style::default().bg(fill))
         // The inner gutter is what stops text from sitting on the border.
         .padding(Padding::new(1, 1, 1, 0))
         .title(Span::styled(
@@ -813,7 +771,7 @@ pub(super) fn popup_block(title: &str, th: Theme, width: u16) -> Block<'_> {
                 " {} ",
                 ellipsize_text(title, width.saturating_sub(4) as usize)
             ),
-            Style::default().fg(th.accent).add_modifier(Modifier::BOLD),
+            label,
         ))
 }
 

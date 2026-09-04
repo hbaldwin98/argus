@@ -93,21 +93,9 @@ fn dragging_a_gutter_cannot_collapse_either_column() {
     h.app.on_mouse(click(20, 3));
     h.app.on_mouse(drag(90, 3));
 
-    // The drag moves width between the pair either side of the gutter, so
-    // their total is fixed at what they started with: whatever the second
-    // one refuses to give up, the first one does not get. Derived rather
-    // than written out, so a change to the floor does not need this line
-    // edited to agree with it.
-    const PAIR: u16 = 40;
     assert_eq!(
         h.app.column_widths,
-        Some(vec![
-            PAIR - crate::ui::MIN_COLUMN_WIDTH,
-            crate::ui::MIN_COLUMN_WIDTH,
-            20,
-            20,
-            30
-        ]),
+        Some(vec![26, crate::ui::MIN_COLUMN_WIDTH, 20, 20, 30]),
         "the column being squeezed stops at its floor"
     );
 }

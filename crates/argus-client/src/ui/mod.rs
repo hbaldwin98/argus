@@ -10,15 +10,8 @@
 //! - **Elevation** carries structure: the page sits at `bg`, an unfocused
 //!   panel at `surface`, the focused one at `surface_focus`. Panels are
 //!   padded and separated by a gutter, so they read as cards rather than
-//!   as boxes drawn in a terminal. Nothing is outlined — once a card is
-//!   visibly raised, a border is a line drawn around something already
-//!   distinct, and a grid of outlined boxes with their titles set into the
-//!   top rule is the one thing that makes a TUI look like `dialog(1)`. The
-//!   exception is a popup, which floats over content rather than sitting
-//!   on the page and so has no ground to be raised from.
-//! - **A card's name sits on the page above it**, not inside its edge:
-//!   dim when the card is idle, accent and bold when it has focus.
-//! - **Focus** is that elevation plus the accent label.
+//!   as boxes drawn in a terminal.
+//! - **Focus** is that elevation plus an accent border and title.
 //! - **Selection** is a raised bar with an accent `▌` marker, never reverse
 //!   video — reverse fights with the per-row status colors.
 //! - **State** is a shape-distinct glyph in the row's status color (§8b),
@@ -141,10 +134,9 @@ pub fn spine_min_width(columns: usize) -> u16 {
         + GUTTER_COLS * columns.saturating_sub(1)
 }
 
-/// The side padding: what a card spends before a row gets a cell. Two,
-/// not four, since the borders came off -- a card's whole horizontal
-/// chrome is now the gutter that keeps text off its edge.
-pub const CARD_CHROME: usize = 2;
+/// The borders and the side padding: what a card spends before a row gets
+/// a cell.
+pub const CARD_CHROME: usize = 4;
 
 /// Content-sized column widths are rounded up to this, so a column does not
 /// twitch every time a row grows by a letter.
@@ -156,14 +148,11 @@ pub const WIDTH_STEP: usize = 4;
 pub const MAX_COLUMN_WIDTH: u16 = 34;
 
 /// A dragged column cannot be collapsed beyond this outer width. Below it
-/// a card has no room to say anything: two cells go to the inner gutter,
-/// so twelve cells of column are ten cells of text — a status glyph, a
-/// selection gutter, and seven letters. The renderer scales the floor down
-/// only when the terminal itself is too narrow to fit the spine.
-///
-/// A multiple of [`WIDTH_STEP`], because it is the value a clamped column
-/// lands on and a floor off the step would put that column off it too.
-pub const MIN_COLUMN_WIDTH: u16 = 12;
+/// a card has no room to say anything: two cells go to the border and two
+/// to the inner gutter, so eight cells of column were four cells of text —
+/// a status glyph, a letter, and an ellipsis. The renderer scales the floor
+/// down only when the terminal itself is too narrow to fit the spine.
+pub const MIN_COLUMN_WIDTH: u16 = 14;
 
 /// The live view's own floor, which is much larger because what it holds is
 /// not a list but somebody's terminal. Width is reclaimed from the nav
@@ -371,7 +360,9 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
         Some(where_) => format!("{where_} · {}", content_title(app)),
         None => content_title(app),
     };
-    let inner = render_card(f, area, &title, lit, th);
+    let block = panel_block(&title, lit, th, area.width);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
 
     let cursor = if app.current_pane().is_none() {
         f.render_widget(
