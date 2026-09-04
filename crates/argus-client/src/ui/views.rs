@@ -373,6 +373,7 @@ fn render_empty_board(f: &mut Frame, inner: Rect, th: Theme) {
 /// tracked it would move the columns around under a reader who is using
 /// their position to find them.
 pub(super) fn render_board(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    let (area, prompt) = split_off_prompt(area, app.line.is_some());
     let states = argus_protocol::FeatureState::ALL;
     let each = area.width / states.len() as u16;
     for (index, state) in states.into_iter().enumerate() {
@@ -386,6 +387,25 @@ pub(super) fn render_board(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
         };
         render_board_column(f, app, index, state, Rect { x, width, ..area }, th);
     }
+    render_line(f, app, prompt, th);
+}
+
+/// Takes the bottom row for a typed line, when there is one.
+fn split_off_prompt(area: Rect, typing: bool) -> (Rect, Option<Rect>) {
+    if !typing {
+        return (area, None);
+    }
+    (
+        Rect {
+            height: area.height.saturating_sub(1),
+            ..area
+        },
+        Some(Rect {
+            y: area.y + area.height.saturating_sub(1),
+            height: 1,
+            ..area
+        }),
+    )
 }
 
 fn render_board_column(
@@ -480,7 +500,7 @@ pub(super) fn render_tasks(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
     // The typed line takes a row off the bottom while it is up, rather
     // than floating over the cards: what you are writing and what is
     // already there have to be readable at the same time.
-    let (area, prompt) = match app.task_input.is_some() {
+    let (area, prompt) = match app.line.is_some() {
         true => (
             Rect {
                 height: area.height.saturating_sub(1),
@@ -505,20 +525,26 @@ pub(super) fn render_tasks(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
         };
         render_task_column(f, app, index, state, Rect { x, width, ..area }, th);
     }
-    if let (Some(row), Some(input)) = (prompt, app.task_input.as_ref()) {
-        let what = match input.editing {
-            Some(_) => "rewrite",
-            None => "new task",
-        };
-        f.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(format!(" {what} "), Style::default().fg(th.accent)),
-                Span::styled(input.text.clone(), Style::default().fg(th.text)),
-                Span::styled("_", Style::default().fg(th.accent)),
-            ])),
-            row,
-        );
-    }
+    render_line(f, app, prompt, th);
+}
+
+/// The line being typed, on a row of its own at the foot of a board.
+///
+/// A row taken off the bottom rather than a window floating over the
+/// cards: what you are writing and what is already there have to be
+/// readable at the same time.
+fn render_line(f: &mut Frame, app: &App, prompt: Option<Rect>, th: Theme) {
+    let (Some(row), Some(input)) = (prompt, app.line.as_ref()) else {
+        return;
+    };
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(format!(" {} ", input.label()), Style::default().fg(th.accent)),
+            Span::styled(input.text.clone(), Style::default().fg(th.text)),
+            Span::styled("_", Style::default().fg(th.accent)),
+        ])),
+        row,
+    );
 }
 
 fn render_task_column(

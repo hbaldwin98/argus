@@ -596,7 +596,7 @@ impl App {
             KeyCode::Char(c) if View::from_digit(c).is_some() => {
                 self.open_view(View::from_digit(c).unwrap())
             }
-            _ if self.view == View::Tasks && self.task_input.is_some() => self.on_key_tasks(key),
+            _ if self.line.is_some() => self.on_key_line(key),
             KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Spine),
             _ if self.view == View::Board => self.on_key_board(key),
             _ if self.view == View::Tasks => self.on_key_tasks(key),
@@ -634,6 +634,9 @@ impl App {
             KeyCode::Char('G') | KeyCode::End => self.move_board_card(i32::MAX),
             KeyCode::Char('D') => self.open_card_decisions(),
             KeyCode::Char('e') => self.open_feature_brief(),
+            KeyCode::Char('a') => self.begin_feature(),
+            KeyCode::Char('R') => self.begin_feature_rename(),
+            KeyCode::Char('x') => self.drop_selected_feature(),
             KeyCode::Char('H') => self.move_selected_card(-1),
             KeyCode::Char('L') => self.move_selected_card(1),
             KeyCode::Char('s') => self.send_selected_card_back(),
@@ -643,21 +646,22 @@ impl App {
         }
     }
 
+    /// A line being typed on either board. It takes every key, so a title
+    /// with an `x` in it does not delete the card behind it, and the first
+    /// escape puts the line away rather than the view.
+    fn on_key_line(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => self.line = None,
+            KeyCode::Enter => self.commit_line(),
+            KeyCode::Backspace => self.backspace_line(),
+            KeyCode::Char(c) => self.type_into_line(c),
+            _ => {}
+        }
+    }
+
     /// One feature's tasks. The same gesture as the feature board a
     /// level up, so going into a card does not change how the keys work.
     fn on_key_tasks(&mut self, key: KeyEvent) {
-        // A line being typed takes every key, so a title with an `x` in it
-        // does not delete the card behind it.
-        if self.task_input.is_some() {
-            match key.code {
-                KeyCode::Esc => self.task_input = None,
-                KeyCode::Enter => self.commit_task(),
-                KeyCode::Backspace => self.backspace_task(),
-                KeyCode::Char(c) => self.type_into_task(c),
-                _ => {}
-            }
-            return;
-        }
         match key.code {
             KeyCode::Char('a') => self.begin_task(),
             KeyCode::Char('e') | KeyCode::Enter => self.begin_task_edit(),

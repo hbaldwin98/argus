@@ -150,6 +150,13 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         // this the bar falls through to the spine's columns and advertises
         // keys that do nothing here, which is worse than saying nothing.
         match app.view {
+            _ if app.line.is_some() => (
+                &[
+                    "typing — enter saves it, esc throws it away",
+                    "enter saves  esc drops",
+                ][..],
+                th.accent,
+            ),
             View::Decisions => (
                 &[
                     "h/l features/tree  j/k move  e brief  d/u ten  g/G ends  r refresh  q spine",
@@ -160,18 +167,11 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             ),
             View::Board => (
                 &[
-                    "h/l column  j/k card  H/L move it  s send back  e brief  enter tasks  D decisions  q spine",
-                    "h/l column  j/k card  H/L move  e brief  enter tasks  q",
-                    "h/l  j/k  H/L move  enter tasks  q",
+                    "h/l  j/k  a add  R rename  e brief  x drop  H/L move it  s send back  enter tasks  D decisions",
+                    "h/l  j/k  a add  R rename  e brief  x drop  H/L move  enter tasks",
+                    "j/k  a add  x drop  H/L move  enter tasks  q",
                 ][..],
                 th.dim,
-            ),
-            View::Tasks if app.task_input.is_some() => (
-                &[
-                    "typing — enter saves it, esc throws it away",
-                    "enter saves  esc drops",
-                ][..],
-                th.accent,
             ),
             View::Tasks => (
                 &[

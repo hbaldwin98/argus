@@ -1052,3 +1052,60 @@ fn the_older_side_files_are_imported_too() {
     assert_eq!(excluded, [PathBuf::from("/a"), PathBuf::from("/b")]);
     assert_eq!(s.open_workspace().unwrap().as_deref(), Some("work"));
 }
+
+#[test]
+fn removing_a_feature_keeps_what_was_decided_under_it() {
+    let s = store();
+    s.add_feature("argus", &feature("the pty"), None, None, 1, None)
+        .unwrap();
+    s.add_task("argus", "the-pty", &task("port the parser"), 1, None)
+        .unwrap();
+    s.set_feature_scope(Path::new("/repo"), "argus", "the-pty")
+        .unwrap();
+    s.add_decision(
+        "argus",
+        &DecisionWrite {
+            chose: "one reader thread".into(),
+            ..Default::default()
+        },
+        Some("the-pty"),
+        1,
+        None,
+        None,
+    )
+    .unwrap();
+
+    s.remove_feature("argus", "the-pty").unwrap();
+    assert!(s.features("argus").unwrap().is_empty());
+    assert!(
+        s.tasks("argus", "the-pty").unwrap().is_empty(),
+        "a task under a feature nobody has is owed to no one"
+    );
+    assert_eq!(
+        s.feature_scope(Path::new("/repo"), "argus").unwrap(),
+        None,
+        "a checkout is not left pointing at a feature that is gone"
+    );
+
+    let decisions = s.decisions("argus").unwrap();
+    assert_eq!(decisions.len(), 1, "what was believed outlives the feature");
+    assert_eq!(
+        decisions[0].feature, None,
+        "and is unfiled rather than destroyed"
+    );
+    assert!(s.remove_feature("argus", "the-pty").is_err());
+}
+
+#[test]
+fn a_rename_leaves_the_slug_the_work_points_at() {
+    let s = store();
+    s.add_feature("argus", &feature("the pty"), None, None, 1, None)
+        .unwrap();
+    s.rename_feature("argus", "the-pty", "  Streaming the pty  ")
+        .unwrap();
+    let f = &s.features("argus").unwrap()[0];
+    assert_eq!(f.title, "Streaming the pty");
+    assert_eq!(f.slug, "the-pty", "the slug is what the work points at");
+    assert!(s.rename_feature("argus", "the-pty", "   ").is_err());
+    assert!(s.rename_feature("argus", "nothing", "x").is_err());
+}

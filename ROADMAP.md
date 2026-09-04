@@ -89,7 +89,8 @@ the link between them. All three have landed; what is left is the writes and the
   is refused `done`.
   A human moves any card from the view with `H`/`L`, sends one back with `s`, and is the only side
   that may accept: `ClientMsg::MoveFeature` names the feature outright, since the board is the
-  project's rather than any checkout's.
+  project's rather than any checkout's. Features are also opened, renamed, removed and briefed from
+  the view — removing one unfiles its decisions rather than destroying them.
 - Tasks have landed (DESIGN.md, "Tasks"): schema v8's `task` under a feature, a fourth view drawing
   them in todo/doing/done columns, `argus-hook task` for agents, and add, rewrite, move, reorder and
   drop from the view. The tracker stays the agent's problem — Argus keeps an opaque `external` key

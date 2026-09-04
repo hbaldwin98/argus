@@ -693,6 +693,70 @@ impl Store {
         Ok(body)
     }
 
+    /// Removes a feature and everything that only makes sense under it.
+    ///
+    /// Its tasks go with it — a task is a thing somebody meant to do, and
+    /// one under a feature that no longer exists is not owed to anyone.
+    /// Its decisions do not: the board is append-only because it records
+    /// what was believed at the time, which outlives the feature it was
+    /// believed about, so they are unfiled and show up on the board's
+    /// "before features" row. Any checkout pointed here is unpointed, or
+    /// its next `decide` would be refused with no way to see why.
+    pub fn remove_feature(&self, project: &str, slug: &str) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let changed = tx.execute(
+            "DELETE FROM feature WHERE project = ?1 AND slug = ?2",
+            rusqlite::params![project, slug],
+        )?;
+        if changed == 0 {
+            anyhow::bail!("there is no feature {slug} on this project");
+        }
+        tx.execute(
+            "DELETE FROM task WHERE project = ?1 AND feature = ?2",
+            rusqlite::params![project, slug],
+        )?;
+        tx.execute(
+            "DELETE FROM feature_event WHERE project = ?1 AND slug = ?2",
+            rusqlite::params![project, slug],
+        )?;
+        tx.execute(
+            "DELETE FROM feature_scope WHERE project = ?1 AND slug = ?2",
+            rusqlite::params![project, slug],
+        )?;
+        tx.execute(
+            "UPDATE decision SET feature = NULL WHERE project = ?1 AND feature = ?2",
+            rusqlite::params![project, slug],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Renames a feature, leaving its slug alone.
+    ///
+    /// The slug is what every decision row, task row and `feature_scope`
+    /// entry points at, so re-deriving it from the new title would orphan
+    /// exactly the work the feature is about. A title is what it is called;
+    /// the slug is what it is.
+    pub fn rename_feature(&self, project: &str, slug: &str, title: &str) -> Result<()> {
+        let title = title.trim();
+        if title.is_empty() {
+            anyhow::bail!("a feature has to have a title");
+        }
+        if title.len() > argus_protocol::MAX_FEATURE_TITLE_BYTES {
+            anyhow::bail!("a feature title is a short noun phrase, not a paragraph");
+        }
+        let conn = self.conn();
+        let changed = conn.execute(
+            "UPDATE feature SET title = ?1 WHERE project = ?2 AND slug = ?3",
+            rusqlite::params![title, project, slug],
+        )?;
+        if changed == 0 {
+            anyhow::bail!("there is no feature {slug} on this project");
+        }
+        Ok(())
+    }
+
     /// Replaces a feature's document outright.
     ///
     /// The append path above is what an agent has, because an agent adding

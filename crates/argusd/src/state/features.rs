@@ -240,6 +240,61 @@ impl Daemon {
         Ok(())
     }
 
+    /// Opens a feature from the board, with no checkout to its name.
+    ///
+    /// A feature written down by a person is work that has not started
+    /// yet, so there is nothing to record as its origin and no checkout to
+    /// point at it. Whichever agent picks it up says so with
+    /// `argus-hook feature use`, and that is when it gains a home.
+    pub fn open_feature_for_client(
+        &self,
+        project: ProjectId,
+        write: FeatureWrite,
+    ) -> anyhow::Result<()> {
+        let name = self.project_named(project)?;
+        let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
+        let at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or_default();
+        self.store.add_feature(&name, &write, None, None, at, None)?;
+        self.broadcast_decisions(&name, self.store.decisions(&name)?);
+        Ok(())
+    }
+
+    pub fn remove_feature_for_client(
+        &self,
+        project: ProjectId,
+        slug: &str,
+    ) -> anyhow::Result<()> {
+        let name = self.project_named(project)?;
+        self.store.remove_feature(&name, slug)?;
+        self.broadcast_decisions(&name, self.store.decisions(&name)?);
+        Ok(())
+    }
+
+    pub fn rename_feature_for_client(
+        &self,
+        project: ProjectId,
+        slug: &str,
+        title: &str,
+    ) -> anyhow::Result<()> {
+        let name = self.project_named(project)?;
+        self.store.rename_feature(&name, slug, title)?;
+        self.broadcast_decisions(&name, self.store.decisions(&name)?);
+        Ok(())
+    }
+
+    fn project_named(&self, project: ProjectId) -> anyhow::Result<String> {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .projects
+            .iter()
+            .find(|p| p.id == project)
+            .map(|p| p.name.clone())
+            .ok_or_else(|| anyhow::anyhow!("no such project"))
+    }
+
     /// Rewrites a feature's brief from the view.
     pub fn set_feature_body_for_client(
         &self,

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::decisions::DecisionBoard;
-use crate::features::FeatureState;
+use crate::features::{FeatureState, FeatureWrite};
 use crate::tasks::{TaskList, TaskState, TaskWrite};
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::notes::{Note, NoteTarget, TodoState};
@@ -164,6 +164,31 @@ pub enum ClientMsg {
         slug: String,
         state: FeatureState,
         detail: Option<String>,
+    },
+    /// Open a feature from the board.
+    ///
+    /// The human's equivalent of `argus-hook feature open`, and the only
+    /// difference is that it records no origin checkout: a feature a
+    /// person wrote down was not cut anywhere yet.
+    OpenFeature {
+        project: ProjectId,
+        write: FeatureWrite,
+    },
+    /// Rename a feature. The title only — the slug is frozen at creation,
+    /// because every decision, task and checkout scope points at it.
+    RenameFeature {
+        project: ProjectId,
+        slug: String,
+        title: String,
+    },
+    /// Remove a feature, its tasks, and any checkout pointed at it.
+    ///
+    /// Its decisions survive as unfiled: the board is append-only because
+    /// it records what was believed at the time, and that outlives the
+    /// feature it was believed about.
+    RemoveFeature {
+        project: ProjectId,
+        slug: String,
     },
     /// Replace a feature's brief.
     ///

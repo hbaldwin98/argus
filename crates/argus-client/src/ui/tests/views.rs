@@ -798,7 +798,7 @@ fn a_task_is_typed_in_on_a_line_of_its_own() {
         ),
         "{sent:?}"
     );
-    assert!(app.task_input.is_none(), "the line goes away once it is sent");
+    assert!(app.line.is_none(), "the line goes away once it is sent");
 }
 
 #[test]
@@ -809,7 +809,7 @@ fn rewriting_a_task_starts_from_what_it_says() {
 
     app.on_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
     assert_eq!(
-        app.task_input.as_ref().map(|i| i.text.as_str()),
+        app.line.as_ref().map(|i| i.text.as_str()),
         Some("port the parser"),
         "a correction is a few words off an existing line"
     );
@@ -837,7 +837,7 @@ fn escape_abandons_the_line_rather_than_the_view() {
     app.on_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
     app.on_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE));
     app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-    assert!(app.task_input.is_none());
+    assert!(app.line.is_none());
     assert_eq!(app.view, View::Tasks, "the first escape only put the line away");
     assert!(rx.try_recv().is_err(), "an abandoned line writes nothing");
 
@@ -983,4 +983,102 @@ fn a_brief_is_not_a_note_and_says_so() {
             .any(|m| matches!(m, argus_protocol::ClientMsg::SetTodo { .. })),
         "ticking a brief must not write into the project's note: {sent:?}"
     );
+}
+
+#[test]
+fn a_feature_can_be_written_down_from_the_board() {
+    let (mut app, mut rx) = board_watching(Vec::new());
+    while rx.try_recv().is_ok() {}
+
+    app.on_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+    for c in "streaming the pty".chars() {
+        app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    let out = lines(&draw_at(&mut app, 140, 20)).join("\n");
+    assert!(out.contains("new feature"), "{out}");
+    assert!(out.contains("streaming the pty"), "{out}");
+
+    app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let sent: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        matches!(
+            sent.as_slice(),
+            [argus_protocol::ClientMsg::OpenFeature { write, .. }]
+                if write.title == "streaming the pty"
+        ),
+        "a person can start a feature without an agent: {sent:?}"
+    );
+}
+
+#[test]
+fn renaming_a_feature_says_nothing_about_its_slug() {
+    let (mut app, mut rx) = board_watching(vec![carded(
+        "notes",
+        "Notes storage",
+        argus_protocol::FeatureState::Proposed,
+    )]);
+    while rx.try_recv().is_ok() {}
+
+    app.on_key(KeyEvent::new(KeyCode::Char('R'), KeyModifiers::NONE));
+    assert_eq!(
+        app.line.as_ref().map(|i| i.text.as_str()),
+        Some("Notes storage"),
+        "a rename starts from what it is called"
+    );
+    for c in " and context".chars() {
+        app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let sent: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        matches!(
+            sent.as_slice(),
+            [argus_protocol::ClientMsg::RenameFeature { slug, title, .. }]
+                if slug == "notes" && title == "Notes storage and context"
+        ),
+        "the slug travels unchanged, since the work points at it: {sent:?}"
+    );
+}
+
+#[test]
+fn a_feature_can_be_removed_from_the_board() {
+    let (mut app, mut rx) = board_watching(vec![carded(
+        "notes",
+        "Notes storage",
+        argus_protocol::FeatureState::Proposed,
+    )]);
+    while rx.try_recv().is_ok() {}
+
+    app.on_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+    let sent: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        matches!(
+            sent.as_slice(),
+            [argus_protocol::ClientMsg::RemoveFeature { slug, .. }] if slug == "notes"
+        ),
+        "{sent:?}"
+    );
+}
+
+#[test]
+fn typing_a_feature_name_does_not_work_the_board_underneath() {
+    let (mut app, mut rx) = board_watching(vec![carded(
+        "notes",
+        "Notes storage",
+        argus_protocol::FeatureState::Proposed,
+    )]);
+    while rx.try_recv().is_ok() {}
+
+    app.on_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+    for c in "xqsL".chars() {
+        app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    assert!(
+        rx.try_recv().is_err(),
+        "x, q, s and L were typed, not treated as drop, quit, send back and move"
+    );
+    assert_eq!(app.line.as_ref().map(|i| i.text.as_str()), Some("xqsL"));
+
+    app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert_eq!(app.view, View::Board, "the first escape only put the line away");
 }

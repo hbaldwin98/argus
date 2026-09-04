@@ -271,6 +271,17 @@ fn dispatch_decisions(
         ClientMsg::GetDecisions { project } => daemon.decision_board(project).map(|board| {
             let _ = out_tx.send(ServerMsg::Decisions(Box::new(board)));
         }),
+        ClientMsg::OpenFeature { project, write } => {
+            daemon.open_feature_for_client(project, write)
+        }
+        ClientMsg::RenameFeature {
+            project,
+            slug,
+            title,
+        } => daemon.rename_feature_for_client(project, &slug, &title),
+        ClientMsg::RemoveFeature { project, slug } => {
+            daemon.remove_feature_for_client(project, &slug)
+        }
         ClientMsg::SetFeatureBody {
             project,
             slug,

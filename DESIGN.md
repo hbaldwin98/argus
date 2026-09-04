@@ -907,6 +907,17 @@ across, since the same depth of an unrelated column is not where you were lookin
 A card's second line answers the question its column raises — a blocked card says why, a submitted
 one says what was offered, and one nobody has picked up says the branch it was cut on.
 
+A feature is opened from the board with `a`, renamed with `R`, and removed with `x` — the board is
+where a person writes down work, so it cannot be a surface only agents can add to. A feature opened
+here records no origin checkout, because work a person wrote down has not been cut anywhere yet;
+whichever agent picks it up says so with `argus-hook feature use`, and that is when it gains a home.
+A rename changes the title and freezes the slug: every decision row, task row and `feature_scope`
+entry points at the slug, so re-deriving it from the new title would orphan exactly the work the
+feature is about. Removing one takes its tasks, events and checkout scope with it and **unfiles its
+decisions** rather than destroying them — the board is append-only because it records what was
+believed at the time, and that outlives the feature it was believed about, so those decisions
+reappear on the "before features" row.
+
 `H` and `L` move the selected card a column along, over `ClientMsg::MoveFeature`, and the selection
 follows it there — a move you have to go looking for reads as having lost the card. The move is
 applied to the client's own copy at once and the pushed board is what actually redraws it, so a
@@ -965,11 +976,15 @@ otherwise let one feature's agent tick off another's work by arithmetic.
 
 From the view, `H`/`L` move a task a column and `J`/`K` move it earlier or later in the list — the
 order is a human's statement of what to do first, so it is theirs to set and there is no agent-side
-equivalent. `a` starts a new task and `e` rewrites the selected one, typed on a line that takes a
-row off the bottom of the view rather than floating over it: what you are writing and what is
-already there have to be readable together. While that line is up it swallows every key, so a title
-with an `x` in it does not delete the card behind it, and the first `Esc` puts the line away rather
-than the view.
+equivalent. `a` starts a new task and `e` rewrites the selected one.
+
+Both boards type on the same line — one `LineInput`, not one per board, because adding a feature and
+adding a task are the same gesture on the same kind of surface and two of them would drift. It takes
+a row off the bottom of the view rather than floating over it, so what you are writing and what is
+already there stay readable together, and while it is up it swallows every key: a title with an `x`
+in it does not delete the card behind it, and the first `Esc` puts the line away rather than the
+view. The prompt names itself — `new task`, `rewrite`, `new feature`, `rename` — which is the whole
+of the affordance, since there is no other cue that the keys have changed meaning.
 
 Lists are pushed whole on `ServerMsg::Tasks` whenever one changes, the way a board is, and a client
 holding another feature's list open drops it by name.

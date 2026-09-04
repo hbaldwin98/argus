@@ -226,10 +226,11 @@ pub struct App {
     pub tasks: Option<argus_protocol::TaskList>,
     pub task_column: usize,
     pub task_card: usize,
-    /// The line being typed on the task view, when one is. `Some` is what
-    /// makes the view swallow keys — a board whose `x` deletes a card
-    /// while you are typing a title with an x in it is not usable.
-    pub task_input: Option<crate::app::views::TaskInput>,
+    /// The line being typed on whichever board is open, when one is.
+    /// `Some` is what makes the view swallow keys — a board whose `x`
+    /// deletes a card while you are typing a title with an x in it is not
+    /// usable.
+    pub line: Option<crate::app::views::LineInput>,
     /// What the outstanding request was for; a diff for anything else is
     /// stale and dropped.
     review_wanted: Option<(CheckoutId, u64)>,
@@ -350,7 +351,7 @@ impl App {
             tasks: None,
             task_column: 0,
             task_card: 0,
-            task_input: None,
+            line: None,
             review_wanted: None,
             next_review_request: 1,
             history_wanted: None,

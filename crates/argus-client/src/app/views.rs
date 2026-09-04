@@ -14,16 +14,40 @@
 
 use super::*;
 
-/// A task title being typed, either for a new task or over an old one.
+/// A line being typed on one of the boards.
 ///
-/// One line and no cursor movement beyond the end. A task is a sentence
-/// somebody dictates to a board; anything that wants real editing wants
-/// the feature document instead.
+/// One line and no cursor movement beyond the end. A card's title is a
+/// sentence somebody dictates to a board; anything that wants real editing
+/// wants the feature document instead, which has an editor of its own.
+///
+/// Shared by both boards rather than one struct each: adding a feature and
+/// adding a task are the same gesture on the same kind of surface, and two
+/// of them would drift.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TaskInput {
+pub struct LineInput {
     pub text: String,
-    /// The task being retitled, or `None` when this will add one.
-    pub editing: Option<i64>,
+    pub what: LineEdit,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LineEdit {
+    NewTask,
+    Task(i64),
+    NewFeature,
+    Feature(String),
+}
+
+impl LineInput {
+    /// What the prompt calls itself, which is the whole of the affordance:
+    /// there is no other cue that the keys have changed meaning.
+    pub fn label(&self) -> &'static str {
+        match self.what {
+            LineEdit::NewTask => "new task",
+            LineEdit::Task(_) => "rewrite",
+            LineEdit::NewFeature => "new feature",
+            LineEdit::Feature(_) => "rename",
+        }
+    }
 }
 
 /// How many columns the task board draws.
@@ -184,10 +208,7 @@ impl App {
     /// Starts a new task, typed into the line at the foot of the view.
     pub(super) fn begin_task(&mut self) {
         if self.tasks.as_ref().and_then(|l| l.feature.as_ref()).is_some() {
-            self.task_input = Some(TaskInput {
-                text: String::new(),
-                editing: None,
-            });
+            self.begin_line(LineEdit::NewTask, String::new());
         }
     }
 
@@ -195,49 +216,76 @@ impl App {
     /// a correction is almost always a few words off an existing line.
     pub(super) fn begin_task_edit(&mut self) {
         if let Some(task) = self.selected_task() {
-            self.task_input = Some(TaskInput {
-                text: task.title.clone(),
-                editing: Some(task.id),
-            });
+            let (id, title) = (task.id, task.title.clone());
+            self.begin_line(LineEdit::Task(id), title);
         }
     }
 
-    pub(super) fn type_into_task(&mut self, c: char) {
-        if let Some(input) = self.task_input.as_mut() {
+    /// Starts a feature, which needs no checkout and no agent: this is a
+    /// person writing down work that has not begun.
+    pub(super) fn begin_feature(&mut self) {
+        if self.board.as_ref().and_then(|b| b.project).is_some() {
+            self.begin_line(LineEdit::NewFeature, String::new());
+        }
+    }
+
+    pub(super) fn begin_feature_rename(&mut self) {
+        if let Some(feature) = self.selected_feature() {
+            let (slug, title) = (feature.slug.clone(), feature.title.clone());
+            self.begin_line(LineEdit::Feature(slug), title);
+        }
+    }
+
+    fn begin_line(&mut self, what: LineEdit, text: String) {
+        self.line = Some(LineInput { text, what });
+    }
+
+    pub(super) fn type_into_line(&mut self, c: char) {
+        if let Some(input) = self.line.as_mut() {
             input.text.push(c);
         }
     }
 
-    pub(super) fn backspace_task(&mut self) {
-        if let Some(input) = self.task_input.as_mut() {
+    pub(super) fn backspace_line(&mut self) {
+        if let Some(input) = self.line.as_mut() {
             input.text.pop();
         }
     }
 
     /// Sends what was typed. An empty line cancels rather than writing a
-    /// task with no text, which the daemon would refuse anyway.
-    pub(super) fn commit_task(&mut self) {
-        let Some(input) = self.task_input.take() else {
+    /// card with no text, which the daemon would refuse anyway.
+    pub(super) fn commit_line(&mut self) {
+        let Some(input) = self.line.take() else {
             return;
         };
         let title = input.text.trim().to_string();
         if title.is_empty() {
             return;
         }
-        let (Some(project), Some(feature)) = (
-            self.board.as_ref().and_then(|b| b.project),
-            self.tasks.as_ref().and_then(|l| l.feature.clone()),
-        ) else {
+        let Some(project) = self.board.as_ref().and_then(|b| b.project) else {
             return;
         };
-        let msg = match input.editing {
-            Some(id) => ClientMsg::RetitleTask {
+        let feature = self.tasks.as_ref().and_then(|l| l.feature.clone());
+        let msg = match (input.what, feature) {
+            (LineEdit::NewFeature, _) => ClientMsg::OpenFeature {
+                project,
+                write: argus_protocol::FeatureWrite {
+                    title,
+                    body: None,
+                },
+            },
+            (LineEdit::Feature(slug), _) => ClientMsg::RenameFeature {
+                project,
+                slug,
+                title,
+            },
+            (LineEdit::Task(id), Some(feature)) => ClientMsg::RetitleTask {
                 project,
                 feature,
                 id,
                 title,
             },
-            None => ClientMsg::AddTask {
+            (LineEdit::NewTask, Some(feature)) => ClientMsg::AddTask {
                 project,
                 feature,
                 write: argus_protocol::TaskWrite {
@@ -245,8 +293,23 @@ impl App {
                     external: None,
                 },
             },
+            // A task with no feature to be under: the view cannot have
+            // been open on one, so there is nothing to write.
+            (LineEdit::Task(_) | LineEdit::NewTask, None) => return,
         };
         let _ = self.out.send(msg);
+    }
+
+    /// Removes the selected feature. Its decisions survive as unfiled; the
+    /// daemon is where that rule lives, and the push is what redraws it.
+    pub(super) fn drop_selected_feature(&mut self) {
+        let (Some(project), Some(slug)) = (
+            self.board.as_ref().and_then(|b| b.project),
+            self.selected_feature().map(|f| f.slug.clone()),
+        ) else {
+            return;
+        };
+        let _ = self.out.send(ClientMsg::RemoveFeature { project, slug });
     }
 
     fn task_target(&self) -> Option<(argus_protocol::ProjectId, String, i64)> {
