@@ -170,6 +170,9 @@ async fn handle_hook_request(
             Some((pane, Endpoint::Feature)) => {
                 feature_response(&daemon, pane, reporter.as_deref(), &body)
             }
+            Some((pane, Endpoint::Tasks)) => {
+                tasks_response(&daemon, pane, reporter.as_deref(), &body)
+            }
             // A checkout move from an agent that does not own the pane is
             // dropped: the row follows the agent Argus started in it.
             _ => HookResponse::empty(200, "OK"),
@@ -320,6 +323,40 @@ fn feature_response(
         }
     };
     match board.and_then(|board| Ok(serde_json::to_vec(&board)?)) {
+        Ok(body) => HookResponse {
+            code: 200,
+            reason: "OK",
+            body,
+        },
+        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
+    }
+}
+
+/// Every change to the current feature's task list, and the read.
+///
+/// One endpoint rather than five: they all answer with the same list, and
+/// an agent that has just added three tasks needs to see the ids they were
+/// given before it can take one up.
+fn tasks_response(
+    daemon: &Arc<Daemon>,
+    source: PaneId,
+    session: Option<&str>,
+    body: &[u8],
+) -> HookResponse {
+    use argus_protocol::TaskAction;
+
+    let action: TaskAction = match serde_json::from_slice(body) {
+        Ok(action) => action,
+        Err(_) => return HookResponse::text(400, "Bad Request", "not a task change".into()),
+    };
+    let list = match action {
+        TaskAction::List => daemon.tasks_for_agent(source),
+        TaskAction::Add(write) => daemon.add_task_for_agent(source, session, write),
+        TaskAction::Move { id, state } => daemon.move_task_for_agent(source, session, id, state),
+        TaskAction::Retitle { id, title } => daemon.retitle_task_for_agent(source, id, &title),
+        TaskAction::Remove { id } => daemon.remove_task_for_agent(source, id),
+    };
+    match list.and_then(|list| Ok(serde_json::to_vec(&list)?)) {
         Ok(body) => HookResponse {
             code: 200,
             reason: "OK",

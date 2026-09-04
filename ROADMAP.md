@@ -90,9 +90,13 @@ the link between them. All three have landed; what is left is the writes and the
   A human moves any card from the view with `H`/`L`, sends one back with `s`, and is the only side
   that may accept: `ClientMsg::MoveFeature` names the feature outright, since the board is the
   project's rather than any checkout's.
-- Give the board its own reads for a client: it is pushed whole on every change, which is right
-  while a board is a few dozen rows and wrong once it is a few thousand.
-- Link the two: a decision is taken about an item, an item carries the decisions taken under it,
+- Tasks have landed (DESIGN.md, "Tasks"): schema v8's `task` under a feature, a fourth view drawing
+  them in todo/doing/done columns, `argus-hook task` for agents, and add, rewrite, move, reorder and
+  drop from the view. The tracker stays the agent's problem — Argus keeps an opaque `external` key
+  and nothing else, so it works the same with Jira, Linear, GitHub Issues or none of them.
+- Give the boards their own reads for a client: they are pushed whole on every change, which is
+  right while a board is a few dozen rows and wrong once it is a few thousand.
+- Link the boards: a decision is taken about a task, a task carries the decisions taken under it,
   and either one reaches the other.
 - Decide how a board reaches an agent: whole-board reads will not fit a prompt for long, so the
   read wants scoping — this item, its ancestors, its blockers — the way `argus-hook context` scopes

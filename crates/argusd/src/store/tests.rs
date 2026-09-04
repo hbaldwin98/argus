@@ -1,7 +1,7 @@
 //! Round trips through a store built in memory, so no test can reach
 //! the real `runtime.db`.
 
-use argus_protocol::Actor;
+use argus_protocol::{Actor, TaskState, TaskWrite};
 
 use super::*;
 
@@ -734,6 +734,114 @@ fn a_feature_starts_proposed_and_carries_who_moved_it() {
         .is_err(),
         "a feature that does not exist cannot be moved"
     );
+}
+
+fn task(title: &str) -> TaskWrite {
+    TaskWrite {
+        title: title.into(),
+        external: None,
+    }
+}
+
+#[test]
+fn tasks_arrive_in_the_order_they_were_read_and_keep_their_ids() {
+    let s = store();
+    s.add_feature("argus", &feature("the pty"), None, None, 1, None)
+        .unwrap();
+    for title in ["port the parser", "wire the resize path", "backpressure"] {
+        s.add_task("argus", "the-pty", &task(title), 1, Some("sess-1"))
+            .unwrap();
+    }
+    let listed: Vec<_> = s
+        .tasks("argus", "the-pty")
+        .unwrap()
+        .iter()
+        .map(|t| t.title.clone())
+        .collect();
+    assert_eq!(
+        listed,
+        vec!["port the parser", "wire the resize path", "backpressure"],
+        "a list populated from a tracker arrives in the order it was read"
+    );
+
+    // Rewriting the text around a card leaves the card alone, which is
+    // the whole reason a task is a row and not a line number.
+    let ids: Vec<i64> = s.tasks("argus", "the-pty").unwrap().iter().map(|t| t.id).collect();
+    s.retitle_task("argus", ids[0], "port the vt parser").unwrap();
+    s.remove_task("argus", ids[1]).unwrap();
+    let after = s.tasks("argus", "the-pty").unwrap();
+    assert_eq!(after.len(), 2);
+    assert_eq!(after[0].id, ids[0]);
+    assert_eq!(after[0].title, "port the vt parser");
+    assert_eq!(after[1].id, ids[2], "the last card is still the last card");
+
+    assert!(
+        s.add_task("argus", "nothing", &task("x"), 1, None).is_err(),
+        "a task needs a feature to be under"
+    );
+    assert!(s.retitle_task("argus", ids[1], "gone").is_err());
+}
+
+#[test]
+fn taking_a_task_up_claims_it_and_finishing_it_lets_it_go() {
+    let s = store();
+    s.add_feature("argus", &feature("the pty"), None, None, 1, None)
+        .unwrap();
+    let id = s
+        .add_task("argus", "the-pty", &task("port the parser"), 1, None)
+        .unwrap()
+        .id;
+    let state = |id: i64| {
+        let tasks = s.tasks("argus", "the-pty").unwrap();
+        let t = tasks.iter().find(|t| t.id == id).unwrap();
+        (t.state, t.claimed_by.clone())
+    };
+    assert_eq!(state(id), (TaskState::Todo, None));
+
+    s.move_task("argus", id, TaskState::Doing, Some("sess-1"))
+        .unwrap();
+    assert_eq!(
+        state(id),
+        (TaskState::Doing, Some("sess-1".into())),
+        "the doing column says who is on each card without anyone claiming by hand"
+    );
+
+    s.move_task("argus", id, TaskState::Done, Some("sess-1"))
+        .unwrap();
+    assert_eq!(state(id), (TaskState::Done, None));
+    assert!(s.move_task("argus", 999, TaskState::Done, None).is_err());
+}
+
+#[test]
+fn a_task_can_be_put_where_a_human_wants_it() {
+    let s = store();
+    s.add_feature("argus", &feature("the pty"), None, None, 1, None)
+        .unwrap();
+    for title in ["one", "two", "three", "four"] {
+        s.add_task("argus", "the-pty", &task(title), 1, None).unwrap();
+    }
+    let titles = || -> Vec<String> {
+        s.tasks("argus", "the-pty")
+            .unwrap()
+            .iter()
+            .map(|t| t.title.clone())
+            .collect()
+    };
+    let id_of = |title: &str| -> i64 {
+        s.tasks("argus", "the-pty")
+            .unwrap()
+            .iter()
+            .find(|t| t.title == title)
+            .unwrap()
+            .id
+    };
+
+    s.reorder_task("argus", id_of("four"), 0).unwrap();
+    assert_eq!(titles(), vec!["four", "one", "two", "three"]);
+    s.reorder_task("argus", id_of("four"), 2).unwrap();
+    assert_eq!(titles(), vec!["one", "two", "four", "three"]);
+    s.reorder_task("argus", id_of("four"), 2).unwrap();
+    assert_eq!(titles(), vec!["one", "two", "four", "three"], "a move to where it already is changes nothing");
 }
 
 fn audit(action: &str, detail: &str) -> TodoAudit {

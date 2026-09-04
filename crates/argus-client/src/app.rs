@@ -220,6 +220,16 @@ pub struct App {
     /// `FeatureState::ALL`, and which card down it.
     pub board_column: usize,
     pub board_card: usize,
+    /// The task list of whichever feature the tasks view is open on, and
+    /// where the cursor is in it. `None` until one arrives, which is not
+    /// the same as a feature with no tasks.
+    pub tasks: Option<argus_protocol::TaskList>,
+    pub task_column: usize,
+    pub task_card: usize,
+    /// The line being typed on the task view, when one is. `Some` is what
+    /// makes the view swallow keys — a board whose `x` deletes a card
+    /// while you are typing a title with an x in it is not usable.
+    pub task_input: Option<crate::app::views::TaskInput>,
     /// What the outstanding request was for; a diff for anything else is
     /// stale and dropped.
     review_wanted: Option<(CheckoutId, u64)>,
@@ -337,6 +347,10 @@ impl App {
             board_on_features: true,
             board_column: 0,
             board_card: 0,
+            tasks: None,
+            task_column: 0,
+            task_card: 0,
+            task_input: None,
             review_wanted: None,
             next_review_request: 1,
             history_wanted: None,

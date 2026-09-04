@@ -518,7 +518,7 @@ fn a_card_says_what_its_column_leaves_unsaid() {
 }
 
 #[test]
-fn enter_on_a_card_opens_the_decisions_under_that_feature() {
+fn d_on_a_card_opens_the_decisions_under_that_feature() {
     use argus_protocol::FeatureState::*;
     let mut notes = decision(1, None, "one row per note");
     notes.feature = Some("notes".into());
@@ -533,7 +533,7 @@ fn enter_on_a_card_opens_the_decisions_under_that_feature() {
     );
     press(&mut app, View::Board.digit());
     app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
-    app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    app.on_key(KeyEvent::new(KeyCode::Char('D'), KeyModifiers::NONE));
 
     assert_eq!(app.view, View::Decisions);
     let out = lines(&draw_at(&mut app, 100, 30)).join("\n");
@@ -638,4 +638,209 @@ fn an_empty_column_has_nothing_to_move() {
     app.on_key(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::NONE));
     app.on_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
     assert!(moves(&mut rx).is_empty());
+}
+
+fn task(id: i64, title: &str, state: argus_protocol::TaskState) -> argus_protocol::Task {
+    argus_protocol::Task {
+        id,
+        feature: "notes".into(),
+        title: title.to_string(),
+        state,
+        claimed_by: None,
+        external: None,
+        position: id,
+        at: 0,
+        session: None,
+    }
+}
+
+/// The tasks view, open on one feature, with its messages readable.
+fn tasks_watching(
+    tasks: Vec<argus_protocol::Task>,
+) -> (App, tokio::sync::mpsc::UnboundedReceiver<argus_protocol::ClientMsg>) {
+    // Proposed, so the card is under the cursor when the board opens.
+    let (mut app, rx) = board_watching(vec![carded(
+        "notes",
+        "Notes storage",
+        argus_protocol::FeatureState::Proposed,
+    )]);
+    app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    app.on_server_msg(argus_protocol::ServerMsg::Tasks(Box::new(
+        argus_protocol::TaskList {
+            project_name: "argus".into(),
+            feature: Some("notes".into()),
+            tasks,
+        },
+    )));
+    (app, rx)
+}
+
+#[test]
+fn a_task_is_drawn_under_the_column_it_is_in() {
+    use argus_protocol::TaskState::*;
+    let (mut app, _rx) = tasks_watching(vec![
+        task(1, "port the parser", Done),
+        task(2, "wire the resize path", Doing),
+        task(3, "backpressure", Todo),
+    ]);
+
+    let drawn = lines(&draw_at(&mut app, 120, 20));
+    let out = drawn.join("\n");
+    for column in ["todo", "doing", "done"] {
+        assert!(out.contains(column), "{out}");
+    }
+    for title in ["port the parser", "wire the resize path", "backpressure"] {
+        assert!(out.contains(title), "{out}");
+    }
+    assert!(
+        out.contains("Notes storage") || out.contains("notes"),
+        "the list says whose feature it is: {out}"
+    );
+    let row = |needle: &str| drawn.iter().position(|l| l.contains(needle)).unwrap();
+    assert!(row("backpressure") > row("todo"));
+}
+
+#[test]
+fn moving_a_task_asks_the_daemon_and_follows_it_there() {
+    use argus_protocol::TaskState::*;
+    let (mut app, mut rx) = tasks_watching(vec![task(1, "port the parser", Todo)]);
+    let _ = rx.try_recv();
+    while rx.try_recv().is_ok() {}
+
+    app.on_key(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::NONE));
+    let sent: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        matches!(
+            sent.as_slice(),
+            [argus_protocol::ClientMsg::MoveTask { id: 1, state: Doing, .. }]
+        ),
+        "{sent:?}"
+    );
+    assert_eq!(app.task_column_state(), Doing);
+    assert_eq!(app.selected_task().map(|t| t.id), Some(1));
+}
+
+#[test]
+fn a_task_can_be_pushed_up_the_list_and_dropped() {
+    use argus_protocol::TaskState::*;
+    let (mut app, mut rx) = tasks_watching(vec![
+        task(1, "port the parser", Todo),
+        task(2, "backpressure", Todo),
+    ]);
+    while rx.try_recv().is_ok() {}
+
+    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    app.on_key(KeyEvent::new(KeyCode::Char('K'), KeyModifiers::NONE));
+    let sent: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        matches!(
+            sent.as_slice(),
+            [argus_protocol::ClientMsg::ReorderTask { id: 2, to: 1, .. }]
+        ),
+        "the human says what to do first: {sent:?}"
+    );
+
+    app.on_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+    let sent: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        matches!(
+            sent.as_slice(),
+            [argus_protocol::ClientMsg::RemoveTask { id: 2, .. }]
+        ),
+        "{sent:?}"
+    );
+}
+
+#[test]
+fn another_features_task_list_is_dropped_rather_than_drawn() {
+    use argus_protocol::TaskState::*;
+    let (mut app, _rx) = tasks_watching(vec![task(1, "port the parser", Todo)]);
+    app.on_server_msg(argus_protocol::ServerMsg::Tasks(Box::new(
+        argus_protocol::TaskList {
+            project_name: "argus".into(),
+            feature: Some("the-pty".into()),
+            tasks: vec![task(9, "one reader thread", Todo)],
+        },
+    )));
+    let out = lines(&draw_at(&mut app, 120, 20)).join("\n");
+    assert!(out.contains("port the parser"), "{out}");
+    assert!(!out.contains("one reader thread"), "{out}");
+}
+
+#[test]
+fn a_task_is_typed_in_on_a_line_of_its_own() {
+    use argus_protocol::TaskState::*;
+    let (mut app, mut rx) = tasks_watching(vec![task(1, "port the parser", Todo)]);
+    while rx.try_recv().is_ok() {}
+
+    app.on_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+    for c in "xq back".chars() {
+        app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    let out = lines(&draw_at(&mut app, 120, 20)).join("\n");
+    assert!(out.contains("new task"), "{out}");
+    assert!(out.contains("xq back"), "{out}");
+    assert!(
+        out.contains("port the parser"),
+        "what is already there stays readable: {out}"
+    );
+    assert!(
+        rx.try_recv().is_err(),
+        "x and q were typed, not treated as drop and quit"
+    );
+
+    app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let sent: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        matches!(
+            sent.as_slice(),
+            [argus_protocol::ClientMsg::AddTask { write, .. }] if write.title == "xq back"
+        ),
+        "{sent:?}"
+    );
+    assert!(app.task_input.is_none(), "the line goes away once it is sent");
+}
+
+#[test]
+fn rewriting_a_task_starts_from_what_it_says() {
+    use argus_protocol::TaskState::*;
+    let (mut app, mut rx) = tasks_watching(vec![task(1, "port the parser", Todo)]);
+    while rx.try_recv().is_ok() {}
+
+    app.on_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
+    assert_eq!(
+        app.task_input.as_ref().map(|i| i.text.as_str()),
+        Some("port the parser"),
+        "a correction is a few words off an existing line"
+    );
+    for c in " and its tests".chars() {
+        app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let sent: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        matches!(
+            sent.as_slice(),
+            [argus_protocol::ClientMsg::RetitleTask { id: 1, title, .. }]
+                if title == "port the parser and its tests"
+        ),
+        "{sent:?}"
+    );
+}
+
+#[test]
+fn escape_abandons_the_line_rather_than_the_view() {
+    use argus_protocol::TaskState::*;
+    let (mut app, mut rx) = tasks_watching(vec![task(1, "port the parser", Todo)]);
+    while rx.try_recv().is_ok() {}
+
+    app.on_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
+    app.on_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE));
+    app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert!(app.task_input.is_none());
+    assert_eq!(app.view, View::Tasks, "the first escape only put the line away");
+    assert!(rx.try_recv().is_err(), "an abandoned line writes nothing");
+
+    app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert_eq!(app.view, View::Spine);
 }

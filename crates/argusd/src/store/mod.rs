@@ -18,7 +18,8 @@ use std::sync::Mutex as StdMutex;
 use anyhow::{Context, Result};
 use argus_protocol::{
     slugify, Decision, DecisionWrite, Feature, FeatureEvent, FeatureMove, FeatureState,
-    FeatureWrite, PaneKind, PaneStatus, ReviewAnchor, ReviewComment, TodoAudit, MAX_REVIEW_COMMENTS,
+    FeatureWrite, PaneKind,
+    Task, TaskState, TaskWrite, PaneStatus, ReviewAnchor, ReviewComment, TodoAudit, MAX_REVIEW_COMMENTS,
 };
 use rusqlite::{Connection, OptionalExtension};
 
@@ -27,7 +28,7 @@ use crate::paths::same_path;
 mod legacy;
 mod schema;
 
-use schema::{SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7};
+use schema::{SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8};
 
 /// One pane worth starting again, as it stood when the daemon stopped.
 ///
@@ -134,7 +135,7 @@ pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 const MAX_NOTE_AUDIT: i64 = 20;
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 7;
+const SCHEMA_VERSION: i64 = 8;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -231,6 +232,9 @@ impl Store {
         }
         if from < 7 {
             tx.execute_batch(SCHEMA_V7)?;
+        }
+        if from < 8 {
+            tx.execute_batch(SCHEMA_V8)?;
         }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
@@ -818,6 +822,192 @@ impl Store {
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    // ---- tasks --------------------------------------------------------
+
+    /// Adds a task to the end of a feature's `todo` column.
+    ///
+    /// The end, because a list an agent is populating from a tracker has
+    /// to arrive in the order it was read; a human reorders afterwards.
+    pub fn add_task(
+        &self,
+        project: &str,
+        feature: &str,
+        write: &TaskWrite,
+        at: i64,
+        session: Option<&str>,
+    ) -> Result<Task> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
+            rusqlite::params![project, feature],
+            |r| r.get(0),
+        )?;
+        if !exists {
+            anyhow::bail!("there is no feature {feature} on this project");
+        }
+        let position: i64 = tx.query_row(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM task WHERE project = ?1 AND feature = ?2",
+            rusqlite::params![project, feature],
+            |r| r.get(0),
+        )?;
+        tx.execute(
+            "INSERT INTO task (project, feature, title, state, external, position, at, session)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                project,
+                feature,
+                write.title,
+                TaskState::Todo.as_str(),
+                write.external,
+                position,
+                at,
+                session
+            ],
+        )?;
+        let id = tx.last_insert_rowid();
+        tx.commit()?;
+        Ok(Task {
+            id,
+            feature: feature.to_string(),
+            title: write.title.clone(),
+            state: TaskState::Todo,
+            claimed_by: None,
+            external: write.external.clone(),
+            position,
+            at,
+            session: session.map(str::to_string),
+        })
+    }
+
+    /// One feature's tasks, in the order a human put them in.
+    pub fn tasks(&self, project: &str, feature: &str) -> Result<Vec<Task>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, feature, title, state, claimed_by, external, position, at, session
+             FROM task WHERE project = ?1 AND feature = ?2 ORDER BY position, id",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![project, feature], |r| {
+            Ok(Task {
+                id: r.get(0)?,
+                feature: r.get(1)?,
+                title: r.get(2)?,
+                state: TaskState::parse(&r.get::<_, String>(3)?).unwrap_or_default(),
+                claimed_by: r.get(4)?,
+                external: r.get(5)?,
+                position: r.get(6)?,
+                at: r.get(7)?,
+                session: r.get(8)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Moves a task to another column.
+    ///
+    /// Taking it up is what claims it and finishing it is what releases
+    /// it, so a `doing` column always says who is on each card without
+    /// anyone having to claim anything by hand.
+    pub fn move_task(
+        &self,
+        project: &str,
+        id: i64,
+        state: TaskState,
+        session: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn();
+        let claimed = match state {
+            TaskState::Doing => session,
+            TaskState::Todo | TaskState::Done => None,
+        };
+        let changed = conn.execute(
+            "UPDATE task SET state = ?1, claimed_by = ?2 WHERE project = ?3 AND id = ?4",
+            rusqlite::params![state.as_str(), claimed, project, id],
+        )?;
+        if changed == 0 {
+            anyhow::bail!("there is no task {id} on this project");
+        }
+        Ok(())
+    }
+
+    /// Rewrites a task's text, leaving where it is and who has it alone.
+    pub fn retitle_task(&self, project: &str, id: i64, title: &str) -> Result<()> {
+        let title = title.trim();
+        if title.is_empty() {
+            anyhow::bail!("a task has to say what it is");
+        }
+        if title.len() > argus_protocol::MAX_TASK_TITLE_BYTES {
+            anyhow::bail!("a task is a line, not a brief — that belongs in the feature document");
+        }
+        let conn = self.conn();
+        let changed = conn.execute(
+            "UPDATE task SET title = ?1 WHERE project = ?2 AND id = ?3",
+            rusqlite::params![title, project, id],
+        )?;
+        if changed == 0 {
+            anyhow::bail!("there is no task {id} on this project");
+        }
+        Ok(())
+    }
+
+    /// Removes a task outright.
+    ///
+    /// Unlike a decision, which is superseded rather than deleted: a
+    /// decision is a record of what was believed, and a task is a thing
+    /// somebody meant to do. One that was added by mistake should leave
+    /// no trace, or a board populated from a tracker fills with apologies.
+    pub fn remove_task(&self, project: &str, id: i64) -> Result<()> {
+        let conn = self.conn();
+        let changed = conn.execute(
+            "DELETE FROM task WHERE project = ?1 AND id = ?2",
+            rusqlite::params![project, id],
+        )?;
+        if changed == 0 {
+            anyhow::bail!("there is no task {id} on this project");
+        }
+        Ok(())
+    }
+
+    /// Puts a task at a place in the list, shifting whatever is there
+    /// down. Ordering is over the whole feature rather than per column, so
+    /// a card keeps its place in the list when it changes column.
+    pub fn reorder_task(&self, project: &str, id: i64, to: i64) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let from: i64 = tx
+            .query_row(
+                "SELECT position FROM task WHERE project = ?1 AND id = ?2",
+                rusqlite::params![project, id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| anyhow::anyhow!("there is no task {id} on this project"))?;
+        if from == to {
+            return Ok(());
+        }
+        // Everything between the two places shifts one the other way,
+        // which is the whole of a move in a dense ordering.
+        if to < from {
+            tx.execute(
+                "UPDATE task SET position = position + 1
+                 WHERE project = ?1 AND position >= ?2 AND position < ?3",
+                rusqlite::params![project, to, from],
+            )?;
+        } else {
+            tx.execute(
+                "UPDATE task SET position = position - 1
+                 WHERE project = ?1 AND position > ?2 AND position <= ?3",
+                rusqlite::params![project, from, to],
+            )?;
+        }
+        tx.execute(
+            "UPDATE task SET position = ?1 WHERE project = ?2 AND id = ?3",
+            rusqlite::params![to, project, id],
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     // ---- project overlays --------------------------------------------

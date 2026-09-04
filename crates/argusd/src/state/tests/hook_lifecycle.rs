@@ -939,3 +939,63 @@ async fn an_agent_can_offer_work_but_only_a_human_accepts_it() {
     assert_eq!(state_of(&slug), FeatureState::Done);
     close_all(&d);
 }
+
+#[tokio::test]
+async fn tasks_belong_to_the_feature_the_checkout_is_on() {
+    use argus_protocol::{TaskState, TaskWrite};
+
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let checkout = only_checkout(&d);
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+    let refused = d
+        .add_task_for_agent(
+            agent,
+            None,
+            TaskWrite {
+                title: "port the parser".into(),
+                external: None,
+            },
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("not on a feature"), "{refused}");
+
+    let pty = open_feature(&d, agent, "streaming the pty");
+    let list = d
+        .add_task_for_agent(
+            agent,
+            Some("sess-1"),
+            TaskWrite {
+                title: "backpressure on the reader".into(),
+                external: Some("ORION-412".into()),
+            },
+        )
+        .unwrap();
+    assert_eq!(list.feature.as_deref(), Some(pty.as_str()));
+    let id = list.tasks[0].id;
+    assert_eq!(list.tasks[0].external.as_deref(), Some("ORION-412"));
+
+    let list = d
+        .move_task_for_agent(agent, Some("sess-1"), id, TaskState::Doing)
+        .unwrap();
+    assert_eq!(list.tasks[0].claimed_by.as_deref(), Some("sess-1"));
+
+    // Moving the checkout to another feature moves what it can see and
+    // what it can touch, together.
+    let notes = open_feature(&d, agent, "notes storage");
+    let list = d.tasks_for_agent(agent).unwrap();
+    assert_eq!(list.feature.as_deref(), Some(notes.as_str()));
+    assert!(list.tasks.is_empty(), "another feature's tasks are not this one's");
+
+    let refused = d
+        .move_task_for_agent(agent, Some("sess-1"), id, TaskState::Done)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        refused.contains("not under this checkout's feature"),
+        "a stale id cannot tick off another feature's work: {refused}"
+    );
+    close_all(&d);
+}

@@ -590,8 +590,10 @@ impl App {
             KeyCode::Char(c) if View::from_digit(c).is_some() => {
                 self.open_view(View::from_digit(c).unwrap())
             }
+            _ if self.view == View::Tasks && self.task_input.is_some() => self.on_key_tasks(key),
             KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Spine),
             _ if self.view == View::Board => self.on_key_board(key),
+            _ if self.view == View::Tasks => self.on_key_tasks(key),
             // The two halves share j/k, the way the spine's columns do:
             // which one moves is which one is focused, and h/l is how you
             // cross between them.
@@ -623,11 +625,48 @@ impl App {
             KeyCode::Char('u') | KeyCode::PageUp => self.move_board_card(-10),
             KeyCode::Char('g') | KeyCode::Home => self.move_board_card(i32::MIN),
             KeyCode::Char('G') | KeyCode::End => self.move_board_card(i32::MAX),
+            KeyCode::Char('D') => self.open_card_decisions(),
             KeyCode::Char('H') => self.move_selected_card(-1),
             KeyCode::Char('L') => self.move_selected_card(1),
             KeyCode::Char('s') => self.send_selected_card_back(),
             KeyCode::Enter => self.open_selected_card(),
             KeyCode::Char('r') => self.ask_for_decisions(),
+            _ => {}
+        }
+    }
+
+    /// One feature's tasks. The same gesture as the feature board a
+    /// level up, so going into a card does not change how the keys work.
+    fn on_key_tasks(&mut self, key: KeyEvent) {
+        // A line being typed takes every key, so a title with an `x` in it
+        // does not delete the card behind it.
+        if self.task_input.is_some() {
+            match key.code {
+                KeyCode::Esc => self.task_input = None,
+                KeyCode::Enter => self.commit_task(),
+                KeyCode::Backspace => self.backspace_task(),
+                KeyCode::Char(c) => self.type_into_task(c),
+                _ => {}
+            }
+            return;
+        }
+        match key.code {
+            KeyCode::Char('a') => self.begin_task(),
+            KeyCode::Char('e') | KeyCode::Enter => self.begin_task_edit(),
+            KeyCode::Char('h') | KeyCode::Left => self.move_task_column(-1),
+            KeyCode::Char('l') | KeyCode::Right => self.move_task_column(1),
+            KeyCode::Char('j') | KeyCode::Down => self.move_task_card(1),
+            KeyCode::Char('k') | KeyCode::Up => self.move_task_card(-1),
+            KeyCode::Char('d') | KeyCode::PageDown => self.move_task_card(10),
+            KeyCode::Char('u') | KeyCode::PageUp => self.move_task_card(-10),
+            KeyCode::Char('g') | KeyCode::Home => self.move_task_card(i32::MIN),
+            KeyCode::Char('G') | KeyCode::End => self.move_task_card(i32::MAX),
+            KeyCode::Char('H') => self.move_selected_task(-1),
+            KeyCode::Char('L') => self.move_selected_task(1),
+            KeyCode::Char('J') => self.reorder_selected_task(1),
+            KeyCode::Char('K') => self.reorder_selected_task(-1),
+            KeyCode::Char('x') => self.drop_selected_task(),
+            KeyCode::Char('r') => self.ask_for_tasks(),
             _ => {}
         }
     }

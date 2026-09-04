@@ -110,6 +110,23 @@ pub fn instructions() -> String {
          \x20 {hook} feature use streaming-the-pty\n\
          \x20 {hook} feature note \"the reader thread owns the handle\"\n\
          \n\
+         The feature carries the tasks left to do under it, which is where the human \
+         says what they want done. Read them before you pick up work, take one up \
+         while you are on it, and finish it when it is done:\n\
+         \n\
+         \x20 {hook} task\n\
+         \x20 {hook} task doing 3\n\
+         \x20 {hook} task done 3\n\
+         \n\
+         Add tasks when you find work the list does not have, or when the human asks \
+         you to bring some in from the board they really use. `--key` keeps that \
+         board's own id so it can be matched up later; Argus does nothing with it:\n\
+         \n\
+         \x20 {hook} task add \"port the vt parser\"\n\
+         \x20 {hook} task add \"backpressure on the reader\" --key ORION-412\n\
+         \x20 {hook} task retitle 4 \"port the vt parser and its tests\"\n\
+         \x20 {hook} task drop 4\n\
+         \n\
          Under that feature is its decision board: a reference tree of the choices made \
          while building it, which you read before you start and add to as you plan. \
          Read it with:\n\

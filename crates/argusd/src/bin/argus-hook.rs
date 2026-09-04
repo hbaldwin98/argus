@@ -64,7 +64,8 @@ use std::time::Duration;
 
 use argus_protocol::{
     AgentContext, Decision, DecisionBoard, DecisionWrite, Endpoint, FeatureAction, FeatureBoard,
-    FeatureWrite, Report, ReviewComment, TodoState, TodoWrite, INSTRUCTIONS_VAR, NOTE_FLAG,
+    FeatureWrite, Report, ReviewComment, TaskAction, TaskList, TaskState, TaskWrite, TodoState,
+    TodoWrite, INSTRUCTIONS_VAR, NOTE_FLAG,
     OWNS_SESSION_FLAG, SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };
 
@@ -93,6 +94,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("context", context),
     ("todo", todo),
     ("feature", feature),
+    ("task", task),
     ("decisions", decisions),
     ("decide", decide),
 ];
@@ -336,6 +338,121 @@ fn feature_message(rest: &[&str], base_url: &str, token: &str) -> String {
              `argus-hook feature use {other}` works on an existing feature"
         ),
     }
+}
+
+fn task(rest: &[&str]) {
+    let mut out = std::io::stdout();
+    let _ = writeln!(out, "{}", task_message(rest, &env_url(), &env_token()));
+    let _ = out.flush();
+}
+
+/// `task`, `task add`, `task doing <id>`, `task done <id>`, `task todo
+/// <id>`, `task retitle <id> <text>`, `task drop <id>`.
+///
+/// The columns are named as verbs rather than hidden behind a `move`, so
+/// what an agent types is what a reader of the transcript understands
+/// happened.
+fn task_message(rest: &[&str], base_url: &str, token: &str) -> String {
+    let by_id = |verb: &str, state: TaskState| match rest.get(1).and_then(|id| id.parse::<i64>().ok())
+    {
+        Some(id) => write_task(TaskAction::Move { id, state }, base_url, token),
+        None => format!("could not change task: {verb} wants the number `task` prints"),
+    };
+    match rest.first().copied() {
+        None | Some("list") => write_task(TaskAction::List, base_url, token),
+        Some("add") => {
+            // A trailing `--key ORION-412` is the tracker's own id, kept
+            // so an agent can reconcile later. Argus never reads it.
+            let words: Vec<&str> = rest[1..].iter().take_while(|a| **a != "--key").copied().collect();
+            let external = rest[1..]
+                .iter()
+                .position(|a| *a == "--key")
+                .map(|at| rest[2 + at..].join(" "));
+            write_task(
+                TaskAction::Add(TaskWrite {
+                    title: words.join(" "),
+                    external,
+                }),
+                base_url,
+                token,
+            )
+        }
+        Some("doing") => by_id("doing", TaskState::Doing),
+        Some("done") => by_id("done", TaskState::Done),
+        Some("todo") => by_id("todo", TaskState::Todo),
+        Some("retitle") => match rest.get(1).and_then(|id| id.parse::<i64>().ok()) {
+            Some(id) => write_task(
+                TaskAction::Retitle {
+                    id,
+                    title: rest[2..].join(" "),
+                },
+                base_url,
+                token,
+            ),
+            None => "could not change task: retitle wants the number `task` prints".to_string(),
+        },
+        Some("drop") => match rest.get(1).and_then(|id| id.parse::<i64>().ok()) {
+            Some(id) => write_task(TaskAction::Remove { id }, base_url, token),
+            None => "could not change task: drop wants the number `task` prints".to_string(),
+        },
+        Some(other) => format!(
+            "could not change task: `{other}` is not one of add, doing, done, todo, retitle, drop"
+        ),
+    }
+}
+
+fn write_task(action: TaskAction, base_url: &str, token: &str) -> String {
+    let Ok(body) = serde_json::to_string(&action) else {
+        return "could not change task: unencodable".to_string();
+    };
+    let url = endpoint_url(base_url, Endpoint::Tasks);
+    let Some((status, response)) = post_response(&url, token, &body) else {
+        return "could not change task: daemon unavailable".to_string();
+    };
+    let response = response.trim();
+    if status != 200 {
+        return if response.is_empty() {
+            "could not change task: daemon refused the request".to_string()
+        } else {
+            format!("could not change task: {response}")
+        };
+    }
+    match serde_json::from_str::<TaskList>(response) {
+        Ok(list) => format_tasks(&list),
+        Err(_) => "the task list changed".to_string(),
+    }
+}
+
+/// The list as an agent reads it: the number it needs to name a task, the
+/// column it is in, and the tracker key if it came from one.
+fn format_tasks(list: &TaskList) -> String {
+    let Some(feature) = &list.feature else {
+        return "this checkout is not on a feature, so it has no tasks. \
+                `argus-hook feature` says where it is."
+            .to_string();
+    };
+    if list.tasks.is_empty() {
+        return format!(
+            "Nothing to do under {feature} yet. Add the first with \
+             `argus-hook task add \"<what to do>\"`."
+        );
+    }
+    let mut lines = vec![format!("Tasks under {feature}:")];
+    for task in &list.tasks {
+        let key = match &task.external {
+            Some(key) => format!(" [{key}]"),
+            None => String::new(),
+        };
+        let who = match (&task.state, &task.claimed_by) {
+            (TaskState::Doing, Some(session)) => format!(" — {session}"),
+            _ => String::new(),
+        };
+        lines.push(format!(
+            "#{:<3} {:<5} {}{key}{who}",
+            task.id, task.state, task.title
+        ));
+    }
+    lines.join("\n")
 }
 
 fn read_feature_board(rest: &[&str], base_url: &str, token: &str) -> Result<FeatureBoard, String> {

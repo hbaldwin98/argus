@@ -11,6 +11,7 @@ pub mod cell;
 pub mod context;
 pub mod decisions;
 pub mod features;
+pub mod tasks;
 pub mod framing;
 pub mod hook;
 pub mod ids;
@@ -31,6 +32,7 @@ pub use features::{
     slugify, Actor, Feature, FeatureAction, FeatureBoard, FeatureEvent, FeatureMove, FeatureState,
     FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES,
 };
+pub use tasks::{Task, TaskAction, TaskList, TaskState, TaskWrite, MAX_TASK_TITLE_BYTES};
 pub use compact_str::{CompactString, ToCompactString};
 pub use framing::{read_msg, write_frame, write_msg, FramingError};
 pub use hook::{

@@ -121,6 +121,8 @@ pub enum Endpoint {
     /// A change to that: opening a feature, pointing this checkout at one,
     /// or adding a paragraph to its document.
     Feature,
+    /// The current feature's tasks, and every change to them.
+    Tasks,
 }
 
 impl Endpoint {
@@ -143,6 +145,7 @@ impl Endpoint {
             Endpoint::Decide => Cow::Borrowed("decide"),
             Endpoint::Features => Cow::Borrowed("features"),
             Endpoint::Feature => Cow::Borrowed("feature"),
+            Endpoint::Tasks => Cow::Borrowed("tasks"),
         }
     }
 }
@@ -178,6 +181,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "decide" => Endpoint::Decide,
         "features" => Endpoint::Features,
         "feature" => Endpoint::Feature,
+        "tasks" => Endpoint::Tasks,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -202,6 +206,7 @@ mod tests {
             Endpoint::Decide,
             Endpoint::Features,
             Endpoint::Feature,
+            Endpoint::Tasks,
         ];
         all.extend(Report::ALL.into_iter().map(Endpoint::Status));
         all

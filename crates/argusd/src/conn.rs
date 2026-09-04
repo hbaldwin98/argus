@@ -50,6 +50,7 @@ where
     let mut tree_rx = daemon.subscribe_tree();
     let mut workspaces_rx = daemon.subscribe_workspaces();
     let mut decisions_rx = daemon.subscribe_decisions();
+    let mut tasks_rx = daemon.subscribe_tasks();
     let mut subs = Subscriptions::default();
     let mut review_task = None;
 
@@ -80,6 +81,11 @@ where
             // thing about a view it deliberately does not know.
             Ok(board) = decisions_rx.recv() => {
                 let _ = out_tx.send(ServerMsg::Decisions(Box::new(board)));
+            }
+            // Same reasoning as the board above: pushed at everyone, and a
+            // client holding another feature's list open drops it.
+            Ok(list) = tasks_rx.recv() => {
+                let _ = out_tx.send(ServerMsg::Tasks(Box::new(list)));
             }
         }
     }
@@ -265,6 +271,39 @@ fn dispatch_decisions(
         ClientMsg::GetDecisions { project } => daemon.decision_board(project).map(|board| {
             let _ = out_tx.send(ServerMsg::Decisions(Box::new(board)));
         }),
+        ClientMsg::GetTasks { project, feature } => {
+            daemon.task_list_for_client(project, &feature).map(|list| {
+                let _ = out_tx.send(ServerMsg::Tasks(Box::new(list)));
+            })
+        }
+        ClientMsg::AddTask {
+            project,
+            feature,
+            write,
+        } => daemon.add_task_for_client(project, &feature, write),
+        ClientMsg::MoveTask {
+            project,
+            feature,
+            id,
+            state,
+        } => daemon.move_task_for_client(project, &feature, id, state),
+        ClientMsg::RetitleTask {
+            project,
+            feature,
+            id,
+            title,
+        } => daemon.retitle_task_for_client(project, &feature, id, &title),
+        ClientMsg::RemoveTask {
+            project,
+            feature,
+            id,
+        } => daemon.remove_task_for_client(project, &feature, id),
+        ClientMsg::ReorderTask {
+            project,
+            feature,
+            id,
+            to,
+        } => daemon.reorder_task_for_client(project, &feature, id, to),
         ClientMsg::MoveFeature {
             project,
             slug,

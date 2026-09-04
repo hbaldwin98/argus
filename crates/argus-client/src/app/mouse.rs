@@ -99,6 +99,28 @@ impl App {
         // this, a click on the board reads as a click on that pane: focus
         // lands in it and every later keypress goes to a child nobody can
         // see.
+        if self.view == View::Tasks {
+            match ev.kind {
+                MouseEventKind::Down(MouseButton::Left) => {
+                    self.focus = Focus::View;
+                    let hit = self
+                        .layout
+                        .task_columns
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .find(|(_, panel)| in_rect(panel.outer, ev.column, ev.row));
+                    if let Some((index, panel)) = hit {
+                        let row = row_in(panel.inner, crate::ui::ROW_HEIGHT, ev.column, ev.row);
+                        self.select_task(index, row.unwrap_or(0) + panel.first);
+                    }
+                }
+                MouseEventKind::ScrollUp => self.move_task_card(-1),
+                MouseEventKind::ScrollDown => self.move_task_card(1),
+                _ => {}
+            }
+            return;
+        }
         if self.view == View::Board {
             match ev.kind {
                 MouseEventKind::Down(MouseButton::Left) => {

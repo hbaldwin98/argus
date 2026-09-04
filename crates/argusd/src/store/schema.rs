@@ -193,3 +193,34 @@ CREATE TABLE feature_event (
 );
 CREATE INDEX feature_event_feature ON feature_event (project, slug, id);
 "#;
+
+/// Tasks: the work under a feature, one row per card.
+///
+/// A row rather than a checkbox line in the feature's document. The note
+/// checkbox already has three states and an agent write path, but it is
+/// addressed by line number, and a line number moves whenever the text
+/// around it is edited — which is the one thing a board cannot take. A
+/// card has to stay the same card while a human rewrites the list.
+///
+/// `external` is whatever key the team's tracker uses. Argus stores it and
+/// nothing else about it: an agent with access to Jira, Linear or a
+/// spreadsheet is what puts tasks here, so the tracker stays the agent's
+/// problem and Argus works the same with any of them, or with none.
+///
+/// `position` orders a column. Held rather than sorted by id so a human
+/// can say what to do first, which is most of what a list is for.
+pub(super) const SCHEMA_V8: &str = r#"
+CREATE TABLE task (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    project    TEXT    NOT NULL,
+    feature    TEXT    NOT NULL,
+    title      TEXT    NOT NULL,
+    state      TEXT    NOT NULL DEFAULT 'todo',
+    claimed_by TEXT,
+    external   TEXT,
+    position   INTEGER NOT NULL DEFAULT 0,
+    at         INTEGER NOT NULL,
+    session    TEXT
+);
+CREATE INDEX task_feature ON task (project, feature, position, id);
+"#;

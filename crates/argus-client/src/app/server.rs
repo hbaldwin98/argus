@@ -159,6 +159,16 @@ impl App {
                     self.rescope_board();
                 }
             }
+            ServerMsg::Tasks(list) => {
+                // A push for a feature the view is not on is another
+                // client's business, exactly as a board for another
+                // project is.
+                let ours = self.tasks_feature().as_deref() == list.feature.as_deref();
+                if ours {
+                    self.tasks = Some(*list);
+                    self.clamp_task_selection();
+                }
+            }
             ServerMsg::NoteFailed { target, message } => {
                 if let Some(view) = &mut self.notes {
                     if view.target == target {

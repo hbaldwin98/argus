@@ -109,8 +109,8 @@ is a key nobody can see the effect of — and returns to the column it left. Whi
 this client's own state and is never sent to the daemon: two people attached to one daemon are not
 necessarily reading the same thing.
 
-The views are the spine, the decision board, and the feature board (see "Features and the
-decision board").
+The views are the spine, the decision board, the feature board, and one feature's tasks (see
+"Features and the decision board").
 
 ## Navigation model
 
@@ -918,6 +918,48 @@ the one party that cannot accept it. So the two write paths differ in what they 
 than in what they do — an agent moves its own work over `FeatureAction::Move`, scoped to the feature
 its checkout is on, and a human moves any card over `ClientMsg::MoveFeature`, acceptance included.
 Every move is recorded with which side made it, so a column reading `done` says who accepted it.
+
+### Tasks
+
+A feature says what is being built and its decision tree says why it is being built that way.
+Neither says what is *left* to do, which is what a human actually hands an agent. So a feature
+carries a list of tasks, drawn as a board of its own: `Enter` on a feature card goes into it, and
+the columns are todo, doing and done.
+
+A task is a row, not a checkbox line in the feature's document. The note checkbox already has three
+states and an agent write path, but it is addressed by line number, and a line number moves whenever
+the text around it is edited — which is the one thing a board cannot take, since a card has to stay
+the same card while a human rewrites the list. Schema v8's `task` holds the title, the column, the
+claim, a `position` and an `external` key.
+
+`external` is whatever key the team's tracker uses. Argus stores it and knows nothing else about it:
+an agent with access to Jira, Linear, GitHub Issues or a spreadsheet is what puts tasks here, which
+is why Argus works the same with any of them and needs credentials for none. `argus-hook task add
+"<what to do>" --key ORION-412` is the whole of the integration.
+
+Both sides write, and here they write the same things — there is no acceptance step and so no move
+either side is refused. That ceremony belongs to the feature the tasks are under, which is where a
+human accepts the work as a whole. An agent reads with `argus-hook task` and writes with `task add`,
+`task doing <id>`, `task done <id>`, `task todo <id>`, `task retitle <id> <text>` and `task drop
+<id>`; the columns are named as verbs rather than hidden behind a `move`, so what an agent types is
+what a reader of the transcript understands happened. Taking a task up is what claims it and
+finishing it is what releases it, so the doing column always says who is on each card without
+anyone claiming by hand.
+
+Ids are project-wide and an agent numbers its tasks from what it last read, so every agent-side
+change is refused when the task is not under the feature its checkout is on: a stale id would
+otherwise let one feature's agent tick off another's work by arithmetic.
+
+From the view, `H`/`L` move a task a column and `J`/`K` move it earlier or later in the list — the
+order is a human's statement of what to do first, so it is theirs to set and there is no agent-side
+equivalent. `a` starts a new task and `e` rewrites the selected one, typed on a line that takes a
+row off the bottom of the view rather than floating over it: what you are writing and what is
+already there have to be readable together. While that line is up it swallows every key, so a title
+with an `x` in it does not delete the card behind it, and the first `Esc` puts the line away rather
+than the view.
+
+Lists are pushed whole on `ServerMsg::Tasks` whenever one changes, the way a board is, and a client
+holding another feature's list open drops it by name.
 
 ## Editors and overlays
 

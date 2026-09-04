@@ -14,8 +14,248 @@
 
 use super::*;
 
+/// A task title being typed, either for a new task or over an old one.
+///
+/// One line and no cursor movement beyond the end. A task is a sentence
+/// somebody dictates to a board; anything that wants real editing wants
+/// the feature document instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskInput {
+    pub text: String,
+    /// The task being retitled, or `None` when this will add one.
+    pub editing: Option<i64>,
+}
+
+/// How many columns the task board draws.
+pub const TASK_COLUMNS: usize = argus_protocol::TaskState::ALL.len();
+
 /// How many columns the board draws — one per state.
 pub const COLUMNS: usize = argus_protocol::FeatureState::ALL.len();
+
+impl App {
+    /// The feature the tasks view is showing, which is whichever card the
+    /// feature board is on. There is no task list at project scope: a
+    /// task means nothing outside the feature it is under.
+    pub fn tasks_feature(&self) -> Option<String> {
+        self.selected_card()
+            .map(|f| f.slug.clone())
+            .or_else(|| self.current_feature_row().and_then(|row| row.slug))
+    }
+
+    pub(super) fn ask_for_tasks(&mut self) {
+        let (Some(project), Some(feature)) = (
+            self.board.as_ref().and_then(|b| b.project),
+            self.tasks_feature(),
+        ) else {
+            self.tasks = None;
+            return;
+        };
+        // The list on screen is another feature's until the answer lands,
+        // and drawing it under this feature's name would be a lie.
+        if self.tasks.as_ref().and_then(|l| l.feature.clone()).as_deref() != Some(feature.as_str()) {
+            self.tasks = None;
+        }
+        let _ = self.out.send(ClientMsg::GetTasks { project, feature });
+    }
+
+    /// The tasks in one column, in the order a human put them in.
+    pub fn task_column(&self, state: argus_protocol::TaskState) -> Vec<&argus_protocol::Task> {
+        self.tasks
+            .as_ref()
+            .map(|l| l.tasks.iter().filter(|t| t.state == state).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn task_column_state(&self) -> argus_protocol::TaskState {
+        argus_protocol::TaskState::ALL[self.task_column.min(TASK_COLUMNS - 1)]
+    }
+
+    pub fn selected_task(&self) -> Option<&argus_protocol::Task> {
+        self.task_column(self.task_column_state())
+            .get(self.task_card)
+            .copied()
+    }
+
+    pub(super) fn clamp_task_selection(&mut self) {
+        let count = self.task_column(self.task_column_state()).len();
+        self.task_card = self.task_card.min(count.saturating_sub(1));
+    }
+
+    pub(super) fn move_task_column(&mut self, delta: i32) {
+        let next = (self.task_column as i32)
+            .saturating_add(delta)
+            .clamp(0, TASK_COLUMNS as i32 - 1) as usize;
+        if next != self.task_column {
+            self.task_column = next;
+            self.task_card = 0;
+        }
+    }
+
+    pub(super) fn move_task_card(&mut self, delta: i32) {
+        let count = self.task_column(self.task_column_state()).len();
+        if count == 0 {
+            self.task_card = 0;
+            return;
+        }
+        self.task_card = (self.task_card as i32)
+            .saturating_add(delta)
+            .clamp(0, count as i32 - 1) as usize;
+    }
+
+    pub(super) fn select_task(&mut self, column: usize, row: usize) {
+        if column >= TASK_COLUMNS {
+            return;
+        }
+        self.task_column = column;
+        let count = self.task_column(argus_protocol::TaskState::ALL[column]).len();
+        self.task_card = row.min(count.saturating_sub(1));
+    }
+
+    /// Moves the selected task a column along, and follows it there.
+    pub(super) fn move_selected_task(&mut self, delta: i32) {
+        let next = (self.task_column as i32).saturating_add(delta);
+        if next < 0 || next as usize >= TASK_COLUMNS {
+            return;
+        }
+        let state = argus_protocol::TaskState::ALL[next as usize];
+        let Some((project, feature, id)) = self.task_target() else {
+            return;
+        };
+        let _ = self.out.send(ClientMsg::MoveTask {
+            project,
+            feature,
+            id,
+            state,
+        });
+        // Applied here as well as sent, so the card is under the cursor
+        // before the push arrives; the push is what makes it true.
+        if let Some(task) = self
+            .tasks
+            .as_mut()
+            .and_then(|l| l.tasks.iter_mut().find(|t| t.id == id))
+        {
+            task.state = state;
+        }
+        self.task_column = next as usize;
+        self.task_card = self
+            .task_column(state)
+            .iter()
+            .position(|t| t.id == id)
+            .unwrap_or(0);
+    }
+
+    pub(super) fn drop_selected_task(&mut self) {
+        let Some((project, feature, id)) = self.task_target() else {
+            return;
+        };
+        let _ = self.out.send(ClientMsg::RemoveTask {
+            project,
+            feature,
+            id,
+        });
+    }
+
+    /// Moves the selected task up or down its feature's list, which is
+    /// what says to do it first.
+    pub(super) fn reorder_selected_task(&mut self, delta: i64) {
+        let Some(position) = self.selected_task().map(|t| t.position) else {
+            return;
+        };
+        let Some((project, feature, id)) = self.task_target() else {
+            return;
+        };
+        let last = self
+            .tasks
+            .as_ref()
+            .map(|l| l.tasks.len() as i64 - 1)
+            .unwrap_or(0);
+        let to = (position + delta).clamp(0, last.max(0));
+        if to == position {
+            return;
+        }
+        let _ = self.out.send(ClientMsg::ReorderTask {
+            project,
+            feature,
+            id,
+            to,
+        });
+    }
+
+    /// Starts a new task, typed into the line at the foot of the view.
+    pub(super) fn begin_task(&mut self) {
+        if self.tasks.as_ref().and_then(|l| l.feature.as_ref()).is_some() {
+            self.task_input = Some(TaskInput {
+                text: String::new(),
+                editing: None,
+            });
+        }
+    }
+
+    /// Rewrites the selected task, starting from what it already says —
+    /// a correction is almost always a few words off an existing line.
+    pub(super) fn begin_task_edit(&mut self) {
+        if let Some(task) = self.selected_task() {
+            self.task_input = Some(TaskInput {
+                text: task.title.clone(),
+                editing: Some(task.id),
+            });
+        }
+    }
+
+    pub(super) fn type_into_task(&mut self, c: char) {
+        if let Some(input) = self.task_input.as_mut() {
+            input.text.push(c);
+        }
+    }
+
+    pub(super) fn backspace_task(&mut self) {
+        if let Some(input) = self.task_input.as_mut() {
+            input.text.pop();
+        }
+    }
+
+    /// Sends what was typed. An empty line cancels rather than writing a
+    /// task with no text, which the daemon would refuse anyway.
+    pub(super) fn commit_task(&mut self) {
+        let Some(input) = self.task_input.take() else {
+            return;
+        };
+        let title = input.text.trim().to_string();
+        if title.is_empty() {
+            return;
+        }
+        let (Some(project), Some(feature)) = (
+            self.board.as_ref().and_then(|b| b.project),
+            self.tasks.as_ref().and_then(|l| l.feature.clone()),
+        ) else {
+            return;
+        };
+        let msg = match input.editing {
+            Some(id) => ClientMsg::RetitleTask {
+                project,
+                feature,
+                id,
+                title,
+            },
+            None => ClientMsg::AddTask {
+                project,
+                feature,
+                write: argus_protocol::TaskWrite {
+                    title,
+                    external: None,
+                },
+            },
+        };
+        let _ = self.out.send(msg);
+    }
+
+    fn task_target(&self) -> Option<(argus_protocol::ProjectId, String, i64)> {
+        let project = self.board.as_ref().and_then(|b| b.project)?;
+        let feature = self.tasks.as_ref().and_then(|l| l.feature.clone())?;
+        let id = self.selected_task()?.id;
+        Some((project, feature, id))
+    }
+}
 
 /// One row of the feature column: a feature, or the one row that holds
 /// whatever was decided before features existed.
@@ -38,12 +278,15 @@ pub enum View {
     /// The features of the project in columns by state — what is in
     /// flight, rather than the reasoning under any one of them.
     Board,
+    /// One feature's tasks, in columns of their own: what is left to do,
+    /// as against what is being built and why.
+    Tasks,
 }
 
 impl View {
     /// Every view, in the order the tab strip draws them. The spine is
     /// first because it is the default and the one you return to.
-    pub const ALL: [View; 3] = [View::Spine, View::Decisions, View::Board];
+    pub const ALL: [View; 4] = [View::Spine, View::Decisions, View::Board, View::Tasks];
 
     /// What the tab says. Short by intent: the strip is one row, and every
     /// cell it spends is a cell the view underneath could have used.
@@ -52,6 +295,7 @@ impl View {
             View::Spine => "spine",
             View::Decisions => "decisions",
             View::Board => "board",
+            View::Tasks => "tasks",
         }
     }
 
@@ -95,6 +339,9 @@ impl App {
         // has never been pushed one.
         if matches!(view, View::Decisions | View::Board) {
             self.ask_for_decisions();
+        }
+        if view == View::Tasks {
+            self.ask_for_tasks();
         }
         self.report(view.label());
     }
@@ -355,10 +602,23 @@ impl App {
         self.report(format!("{slug} → {state}"));
     }
 
+    /// Goes into the selected card: the tasks under that feature, which
+    /// is what a reader who has found the card in flight wants next.
+    ///
+    /// The decisions are one tab away rather than behind this key. Both
+    /// are worth reaching from a card, and the list of what is left to do
+    /// is the one you act on.
+    pub(super) fn open_selected_card(&mut self) {
+        if self.selected_card().is_none() {
+            return;
+        }
+        self.open_view(View::Tasks);
+    }
+
     /// Opens the selected card's reasoning: the decisions view, already on
     /// that feature. The link the roadmap asks for, in the direction a
     /// reader actually goes — you see what is in flight, then ask why.
-    pub(super) fn open_selected_card(&mut self) {
+    pub(super) fn open_card_decisions(&mut self) {
         let Some(slug) = self.selected_card().map(|f| f.slug.clone()) else {
             return;
         };

@@ -429,3 +429,138 @@ fn card_detail(feature: &argus_protocol::Feature) -> String {
         Proposed | Done => fallback(),
     }
 }
+
+/// One feature's tasks, in columns of their own.
+///
+/// The same shape as the feature board a level up. Going into a card
+/// should not change how the screen works — only what is on it.
+pub(super) fn render_tasks(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    // The typed line takes a row off the bottom while it is up, rather
+    // than floating over the cards: what you are writing and what is
+    // already there have to be readable at the same time.
+    let (area, prompt) = match app.task_input.is_some() {
+        true => (
+            Rect {
+                height: area.height.saturating_sub(1),
+                ..area
+            },
+            Some(Rect {
+                y: area.y + area.height.saturating_sub(1),
+                height: 1,
+                ..area
+            }),
+        ),
+        false => (area, None),
+    };
+    let states = argus_protocol::TaskState::ALL;
+    let each = area.width / states.len() as u16;
+    for (index, state) in states.into_iter().enumerate() {
+        let x = area.x + each * index as u16;
+        let width = if index + 1 == states.len() {
+            area.width.saturating_sub(each * index as u16)
+        } else {
+            each
+        };
+        render_task_column(f, app, index, state, Rect { x, width, ..area }, th);
+    }
+    if let (Some(row), Some(input)) = (prompt, app.task_input.as_ref()) {
+        let what = match input.editing {
+            Some(_) => "rewrite",
+            None => "new task",
+        };
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(format!(" {what} "), Style::default().fg(th.accent)),
+                Span::styled(input.text.clone(), Style::default().fg(th.text)),
+                Span::styled("_", Style::default().fg(th.accent)),
+            ])),
+            row,
+        );
+    }
+}
+
+fn render_task_column(
+    f: &mut Frame,
+    app: &mut App,
+    index: usize,
+    state: argus_protocol::TaskState,
+    area: Rect,
+    th: Theme,
+) {
+    let focused = index == app.task_column;
+    let tasks: Vec<_> = app.task_column(state).into_iter().cloned().collect();
+    // The feature is named on the first column rather than in a heading of
+    // its own: a row spent on a title is a row of cards not drawn, and the
+    // board you came from already said which card you went into.
+    let title = if index == 0 {
+        match app.tasks.as_ref().and_then(|l| l.feature.as_deref()) {
+            Some(feature) => format!("{state} · {feature}"),
+            None => format!("{state} · no feature"),
+        }
+    } else {
+        format!("{state} · {}", tasks.len())
+    };
+    let block = panel_block(&title, focused, th, area.width);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let per_row = ROW_HEIGHT as usize;
+    let visible = (inner.height as usize) / per_row.max(1);
+    let selected = focused.then_some(app.task_card);
+    let first = scrolled_to_show(0, selected, visible, tasks.len());
+    app.layout.task_columns[index] = Panel {
+        outer: area,
+        inner,
+        first,
+    };
+    if tasks.is_empty() {
+        if index == 0 && app.tasks.as_ref().is_some_and(|l| l.tasks.is_empty()) {
+            f.render_widget(
+                Paragraph::new(Span::styled(
+                    "nothing to do here yet",
+                    Style::default().fg(th.dim),
+                )),
+                inner,
+            );
+        }
+        return;
+    }
+
+    let mut lines = Vec::new();
+    for (row, task) in tasks.iter().enumerate().skip(first).take(visible) {
+        let on = focused && row == app.task_card;
+        lines.push(Line::from(vec![
+            Span::styled(
+                if on { MARKER } else { GUTTER },
+                Style::default().fg(th.accent),
+            ),
+            Span::styled(
+                task.title.clone(),
+                if on {
+                    Style::default().fg(th.text).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(th.text)
+                },
+            ),
+        ]));
+        lines.push(Line::from(Span::styled(
+            format!("   {}", task_detail(task)),
+            Style::default().fg(th.dim),
+        )));
+    }
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// A task's second line: the number an agent names it by, whoever has it,
+/// and the tracker key it came from — which is the whole of what Argus
+/// knows about wherever it came from.
+fn task_detail(task: &argus_protocol::Task) -> String {
+    let mut parts = vec![format!("#{}", task.id)];
+    if let Some(key) = &task.external {
+        parts.push(key.clone());
+    }
+    if let Some(session) = &task.claimed_by {
+        parts.push(session.clone());
+    }
+    parts.join(" · ")
+}

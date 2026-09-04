@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::decisions::DecisionBoard;
 use crate::features::FeatureState;
+use crate::tasks::{TaskList, TaskState, TaskWrite};
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::notes::{Note, NoteTarget, TodoState};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
@@ -163,6 +164,44 @@ pub enum ClientMsg {
         slug: String,
         state: FeatureState,
         detail: Option<String>,
+    },
+    /// Read one feature's tasks. Scoped to the feature, unlike the
+    /// decision board: a task means nothing outside the feature it is
+    /// under, so there is no whole-project list to want.
+    GetTasks {
+        project: ProjectId,
+        feature: String,
+    },
+    AddTask {
+        project: ProjectId,
+        feature: String,
+        write: TaskWrite,
+    },
+    MoveTask {
+        project: ProjectId,
+        feature: String,
+        id: i64,
+        state: TaskState,
+    },
+    RetitleTask {
+        project: ProjectId,
+        feature: String,
+        id: i64,
+        title: String,
+    },
+    RemoveTask {
+        project: ProjectId,
+        feature: String,
+        id: i64,
+    },
+    /// Put a task at a place in its feature's list. The order is a human's
+    /// statement of what to do first, so it is theirs to set and there is
+    /// no agent-side equivalent.
+    ReorderTask {
+        project: ProjectId,
+        feature: String,
+        id: i64,
+        to: i64,
     },
     /// Ask for what this checkout contains, for the fuzzy pickers.
     ListBranches {
@@ -327,6 +366,9 @@ pub enum ServerMsg {
         id: u64,
         delivered: bool,
     },
+    /// One feature's tasks: the answer to `ClientMsg::GetTasks`, and what
+    /// every client receives whenever that list changes.
+    Tasks(Box<TaskList>),
     /// The answer to `ClientMsg::GetNote`, and what every client receives
     /// when a note changes — including the one that changed it, so the
     /// editor's text and the daemon's agree without the client predicting

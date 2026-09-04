@@ -135,6 +135,8 @@ pub struct Layout {
     /// The board view's columns, one per state, in `FeatureState::ALL`
     /// order. Zero-sized while another view is open.
     pub board_columns: [Panel; crate::app::views::COLUMNS],
+    /// The task view's columns, in `TaskState::ALL` order.
+    pub task_columns: [Panel; crate::app::views::TASK_COLUMNS],
     /// The row of view tabs above everything else. Zero-sized on a
     /// terminal too short to spend a row on it.
     pub views: Panel,

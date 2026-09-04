@@ -153,8 +153,24 @@ const COLUMNS_BOARD: Group = Group {
         ("g / G", "top and bottom"),
         ("H / L", "move this card a column"),
         ("s", "send it back to whoever is on it"),
-        ("enter", "the decisions under this feature"),
+        ("enter", "the tasks under this feature"),
+        ("D", "the decisions under it"),
         ("r", "re-ask the daemon for it"),
+        ("esc  q", "back to the spine"),
+    ],
+};
+
+const TASKS: Group = Group {
+    title: "a feature's tasks",
+    keys: &[
+        ("h / l", "column by column"),
+        ("j / k", "card by card"),
+        ("a", "add one"),
+        ("e  enter", "rewrite it"),
+        ("H / L", "move this task a column"),
+        ("J / K", "earlier or later in the list"),
+        ("x", "drop it"),
+        ("r", "re-ask the daemon for them"),
         ("esc  q", "back to the spine"),
     ],
 };
@@ -185,6 +201,7 @@ pub(super) fn groups(app: &App) -> Vec<&'static Group> {
     } else if app.focus == Focus::View {
         match app.view {
             crate::app::View::Board => vec![&COLUMNS_BOARD, &VIEW],
+            crate::app::View::Tasks => vec![&TASKS, &VIEW],
             _ => vec![&BOARD, &VIEW],
         }
     } else if app.input_pane().is_some() || app.focus == Focus::PaneContent {

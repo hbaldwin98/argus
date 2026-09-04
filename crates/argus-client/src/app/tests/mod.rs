@@ -347,6 +347,7 @@ pub(super) fn laid_out(h: &mut Harness) {
         content: panel(48, 20),
         features: Panel::default(),
         board_columns: Default::default(),
+        task_columns: Default::default(),
         overlay: Panel::default(),
         help: Panel::default(),
         cursor: None,
