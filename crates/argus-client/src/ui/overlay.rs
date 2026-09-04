@@ -191,21 +191,15 @@ fn now_seconds() -> i64 {
 }
 
 /// One note line. A checkbox gets its marker coloured by state and its
-/// text struck through once done; everything else is prose.
+/// text struck through once done; everything else is marked-up prose.
 pub(super) fn note_line(text: &str, state: Option<TodoState>, bar: Style, th: Theme) -> Vec<Span<'static>> {
     let Some(state) = state else {
-        return vec![Span::styled(
-            text.to_string(),
-            Style::default().fg(th.text).patch(bar),
-        )];
+        return crate::ui::prose::prose_spans(text, Style::default().patch(bar), th);
     };
     // Split at the marker so only it is recoloured: the rest of the line
     // is the user's text and keeps its indent and bullet verbatim.
     let Some(open) = text.find('[') else {
-        return vec![Span::styled(
-            text.to_string(),
-            Style::default().fg(th.text).patch(bar),
-        )];
+        return crate::ui::prose::prose_spans(text, Style::default().patch(bar), th);
     };
     let (colour, glyph) = match state {
         TodoState::Open => (th.warn, "☐"),
@@ -213,18 +207,29 @@ pub(super) fn note_line(text: &str, state: Option<TodoState>, bar: Style, th: Th
         TodoState::Pinned => (th.accent, "★"),
     };
     let rest = &text[open + 3..];
-    let mut text_style = Style::default().fg(th.text).patch(bar);
-    if state == TodoState::Done {
-        text_style = Style::default()
-            .fg(th.muted)
-            .add_modifier(Modifier::CROSSED_OUT)
-            .patch(bar);
-    }
-    vec![
+    let mut spans = vec![
         Span::styled(text[..open].to_string(), Style::default().fg(th.dim).patch(bar)),
         Span::styled(glyph.to_string(), Style::default().fg(colour).patch(bar)),
-        Span::styled(rest.to_string(), text_style),
-    ]
+    ];
+    // A finished item is struck through whole: its markup is no longer
+    // structure worth reading, and emphasis inside a crossed-out line
+    // fights the one thing the line is now saying.
+    if state == TodoState::Done {
+        spans.push(Span::styled(
+            rest.to_string(),
+            Style::default()
+                .fg(th.muted)
+                .add_modifier(Modifier::CROSSED_OUT)
+                .patch(bar),
+        ));
+    } else {
+        spans.extend(crate::ui::prose::prose_spans(
+            rest,
+            Style::default().patch(bar),
+            th,
+        ));
+    }
+    spans
 }
 
 /// Counts as they are shown: what is outstanding first, because it is the

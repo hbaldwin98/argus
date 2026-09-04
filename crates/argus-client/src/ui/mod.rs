@@ -55,6 +55,7 @@ mod help;
 mod history;
 mod modals;
 mod overlay;
+pub(super) mod prose;
 mod review;
 mod rows;
 mod status;
@@ -67,6 +68,7 @@ use help::*;
 use history::*;
 use modals::*;
 use overlay::*;
+
 use review::*;
 use rows::*;
 use status::*;

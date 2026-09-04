@@ -195,12 +195,20 @@ fn render_feature_board(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         Some(brief) => {
             let height = brief_height(&brief, inner);
             let rows = Rect { height, ..inner };
-            f.render_widget(
-                Paragraph::new(brief)
-                    .wrap(Wrap { trim: true })
-                    .style(Style::default().fg(th.dim)),
-                rows,
-            );
+            // Marked up, but quieter than the tree it introduces: the
+            // brief is read once for context and then skimmed past, so its
+            // headings earn their weight while the prose stays background.
+            let body: Vec<Line> = brief
+                .lines()
+                .map(|line| {
+                    Line::from(crate::ui::prose::prose_spans(
+                        line,
+                        Style::default().fg(th.dim),
+                        th,
+                    ))
+                })
+                .collect();
+            f.render_widget(Paragraph::new(body).wrap(Wrap { trim: true }), rows);
             Rect {
                 y: inner.y + height,
                 height: inner.height.saturating_sub(height),
