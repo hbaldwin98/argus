@@ -487,10 +487,11 @@ impl App {
         let spinning = self
             .any_pane_working()
             .then(|| crate::motion::spinner_deadline(self.frame_now, self.epoch));
-        match (fading, spinning) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
+        let travelling = self
+            .focus_from
+            .filter(|(_, anim)| anim.progress(self.frame_now).is_some())
+            .map(|(_, anim)| anim.deadline());
+        [fading, spinning, travelling].into_iter().flatten().min()
     }
 
     /// Whether anything on screen is mid-turn, and so whether the spinner
@@ -506,8 +507,45 @@ impl App {
 
     /// The clock the frame about to be drawn reads. Set once per frame so
     /// every animation in it agrees on the time.
+    ///
+    /// Also where a focus move is noticed. Focus is assigned from nav,
+    /// mouse, actions and input, so starting the fade at each of those
+    /// would be a rule to remember in four files; comparing what is about
+    /// to be drawn against what was drawn last cannot be missed.
     pub fn set_frame_now(&mut self, now: std::time::Instant) {
         self.frame_now = now;
+        if self.focus != self.focus_shown {
+            self.focus_from = Some((
+                self.focus_shown,
+                crate::motion::Animation::starting(now, crate::motion::FOCUS_FADE),
+            ));
+            self.focus_shown = self.focus;
+        }
+    }
+
+    /// How lit a panel should be drawn: `1.0` for the focused card, `0.0`
+    /// for a receded one, and the two of them trading places while focus
+    /// travels between them.
+    ///
+    /// Focus used to snap, and a card that is simply *replaced* by another
+    /// tells you where focus ended up but not that it moved — which is the
+    /// half that makes a spine of five cards read as one place you are
+    /// moving through rather than five that take turns lighting up.
+    pub fn focus_lit(&self, panel: Focus) -> crate::motion::Lit {
+        let moving = self
+            .focus_from
+            .and_then(|(from, anim)| Some((from, anim.progress(self.frame_now)?)));
+        let Some((from, progress)) = moving else {
+            return (self.focus == panel).into();
+        };
+        let t = crate::motion::ease_out(progress);
+        if self.focus == panel {
+            t.into()
+        } else if from == panel {
+            (1.0 - t).into()
+        } else {
+            crate::motion::Lit::OFF
+        }
     }
 
     pub fn frame_now(&self) -> std::time::Instant {

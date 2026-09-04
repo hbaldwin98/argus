@@ -346,14 +346,15 @@ fn forget_spine(app: &mut App) {
 fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option<CursorPlacement> {
     // Typing focus is what the accent border promises here, so only
     // PaneContent lights it up — merely selecting a pane does not.
-    let focused = app.focus == Focus::PaneContent;
+    let lit = app.focus_lit(Focus::PaneContent);
+    let focused = lit.is_lit();
     // A parked pane looks exactly like a quiet one, so the title has to say
     // that the rows on screen are history rather than the current output.
     let title = match app.scroll_indicator() {
         Some(where_) => format!("{where_} · {}", content_title(app)),
         None => content_title(app),
     };
-    let block = panel_block(&title, focused, th, area.width);
+    let block = panel_block(&title, lit, th, area.width);
     let inner = block.inner(area);
     f.render_widget(block, area);
 

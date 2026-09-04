@@ -256,7 +256,7 @@ pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option
             col(0),
             &projects_title,
             project_rows,
-            app.focus == Focus::Projects,
+            app.focus_lit(Focus::Projects),
             (!app.tree.is_empty()).then_some(app.sel_project),
             projects_first,
             NO_PROJECTS,
@@ -275,7 +275,7 @@ pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option
             col(1),
             "repositories",
             repository_rows,
-            app.focus == Focus::Repositories,
+            app.focus_lit(Focus::Repositories),
             (nrepo > 0).then_some(app.sel_repository),
             repositories_first,
             NO_REPOSITORIES,
@@ -290,7 +290,7 @@ pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option
         col(2),
         "checkouts",
         checkout_rows,
-        app.focus == Focus::Checkouts,
+        app.focus_lit(Focus::Checkouts),
         (ncheck > 0).then_some(app.sel_checkout),
         app.layout.checkouts.first,
         NO_CHECKOUTS,
@@ -310,7 +310,7 @@ pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option
         col(3),
         panes_title,
         pane_rows,
-        app.focus == Focus::Panes,
+        app.focus_lit(Focus::Panes),
         selected_row,
         app.layout.panes.first,
         NOTHING_RUNNING,
@@ -462,14 +462,14 @@ pub(super) fn render_column(
     area: Rect,
     title: &str,
     rows: Vec<Item>,
-    focused: bool,
+    lit: crate::motion::Lit,
     selected: Option<usize>,
     scrolled_to: usize,
     empty_hint: &str,
     height: u16,
     th: Theme,
 ) -> Panel {
-    let block = panel_block(title, focused, th, area.width);
+    let block = panel_block(title, lit, th, area.width);
     let inner = block.inner(area);
     let mut panel = Panel {
         outer: area,
@@ -495,13 +495,13 @@ pub(super) fn render_column(
     let len = rows.len();
     let first = scrolled_to_show(scrolled_to, selected, visible, len);
     panel.first = first;
-    render_overflow(f, inner, first, visible, len, focused, th);
+    render_overflow(f, inner, first, visible, len, lit, th);
 
     for (i, item) in rows.into_iter().enumerate().skip(first).take(visible) {
         let Some(row) = row_rect_of(inner, i - first, height) else {
             break;
         };
-        render_row(f, row, item, selected == Some(i), focused, th);
+        render_row(f, row, item, selected == Some(i), lit, th);
     }
     panel
 }
@@ -519,7 +519,7 @@ pub(super) fn render_overflow(
     first: usize,
     visible: usize,
     len: usize,
-    focused: bool,
+    lit: crate::motion::Lit,
     th: Theme,
 ) {
     if inner.height == 0 || visible == 0 || len <= visible {
@@ -532,7 +532,7 @@ pub(super) fn render_overflow(
     let thumb = (track * visible / len).clamp(1, track);
     let span = track - thumb;
     let start = span * first / (len - visible);
-    let style = Style::default().fg(if focused { th.accent } else { th.dim });
+    let style = Style::default().fg(crate::motion::blend(th.dim, th.accent, lit.value()));
     for i in 0..thumb {
         let y = inner.y + (start + i) as u16;
         f.render_widget(
@@ -629,13 +629,21 @@ pub(super) fn render_row<'a>(
     area: Rect,
     item: Item<'a>,
     selected: bool,
-    focused: bool,
+    lit: impl Into<crate::motion::Lit>,
     th: Theme,
 ) {
-    let bar = match (selected, focused) {
-        (true, true) => Style::default().bg(th.sel_bg),
-        (true, false) => Style::default().bg(th.sel_bg_dim),
-        _ => Style::default(),
+    let lit = lit.into();
+    let focused = lit.is_lit();
+    // The selection bar travels with the card it is in: the row you are on
+    // brightens as focus arrives and dims as it leaves, so the selection
+    // and the border are one movement rather than two.
+    let bar = match selected {
+        true => Style::default().bg(crate::motion::blend(
+            th.sel_bg_dim,
+            th.sel_bg,
+            lit.value(),
+        )),
+        false => Style::default(),
     };
 
     let marker = if selected && focused {
@@ -720,20 +728,28 @@ pub(super) fn render_row<'a>(
 /// A padded card. Focus has to be unmissable at a glance, so the focused
 /// panel is lifted a step in elevation and given an accent border and
 /// title, against the unfocused panels' receding edge and muted label.
-pub(super) fn panel_block(title: &str, focused: bool, th: Theme, width: u16) -> Block<'_> {
-    let (border, label, fill) = if focused {
-        (
-            Style::default().fg(th.accent),
-            Style::default().fg(th.accent).add_modifier(Modifier::BOLD),
-            th.surface_focus,
-        )
-    } else {
-        (
-            Style::default().fg(th.edge),
-            Style::default().fg(th.muted),
-            th.surface,
-        )
+/// `lit` is how focused the card is, which is a number rather than a flag
+/// because focus fades from one card to the next: the border, the title
+/// and the fill all travel between their two ends together. Call sites
+/// that are simply focused or not still pass `true` or `false`.
+pub(super) fn panel_block(
+    title: &str,
+    lit: impl Into<crate::motion::Lit>,
+    th: Theme,
+    width: u16,
+) -> Block<'_> {
+    let lit = lit.into();
+    let t = lit.value();
+    let border = Style::default().fg(crate::motion::blend(th.edge, th.accent, t));
+    // Weight cannot be blended, so it flips at the midpoint. Over 120ms
+    // that reads as part of the same movement rather than as a second one.
+    let label = match lit.is_lit() {
+        true => Style::default()
+            .fg(crate::motion::blend(th.muted, th.accent, t))
+            .add_modifier(Modifier::BOLD),
+        false => Style::default().fg(crate::motion::blend(th.muted, th.accent, t)),
     };
+    let fill = crate::motion::blend(th.surface, th.surface_focus, t);
     Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)

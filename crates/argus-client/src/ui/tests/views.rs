@@ -1152,3 +1152,60 @@ fn nothing_moving_means_no_frame_is_owed() {
     );
 }
 
+
+#[test]
+fn focus_travels_between_columns_rather_than_snapping() {
+    let mut app = app_with_tree();
+    let epoch = app.epoch();
+    app.focus = Focus::Projects;
+    app.set_frame_now(epoch);
+
+    let lit_of = |app: &App| {
+        (
+            app.focus_lit(Focus::Projects).value(),
+            app.focus_lit(Focus::Repositories).value(),
+        )
+    };
+    assert_eq!(lit_of(&app), (1.0, 0.0), "settled on the column it is in");
+
+    // Focus moves. The frame that notices it starts the fade, so that one
+    // still draws the old card lit: the move begins from where the eye
+    // already is rather than from a state nothing was ever drawn in.
+    app.focus = Focus::Repositories;
+    app.set_frame_now(epoch);
+    assert_eq!(lit_of(&app), (1.0, 0.0));
+
+    // The frames after it are the travel.
+    app.set_frame_now(epoch + crate::motion::FOCUS_FADE / 2);
+    let (leaving, arriving) = lit_of(&app);
+    assert!(
+        leaving > 0.0 && leaving < 1.0,
+        "the column being left should be dimming, not off: {leaving}"
+    );
+    assert!(
+        arriving > 0.0 && arriving < 1.0,
+        "the column being entered should be brightening, not on: {arriving}"
+    );
+    assert!(
+        (leaving + arriving - 1.0).abs() < f32::EPSILON,
+        "what one loses the other gains: {leaving} + {arriving}"
+    );
+    assert!(
+        app.next_motion_deadline().is_some(),
+        "a fade in flight owes the loop another frame"
+    );
+
+    // A column that is neither end of the move is untouched by it.
+    assert_eq!(app.focus_lit(Focus::Panes).value(), 0.0);
+
+    app.set_frame_now(epoch + crate::motion::FOCUS_FADE * 2);
+    assert_eq!(lit_of(&app), (0.0, 1.0), "and it settles where focus went");
+}
+
+#[test]
+fn the_first_frame_of_a_session_is_already_settled() {
+    // Nothing should fade in from wherever the default happened to sit.
+    let mut app = app_with_tree();
+    app.set_frame_now(app.epoch());
+    assert_eq!(app.focus_lit(app.focus).value(), 1.0);
+}

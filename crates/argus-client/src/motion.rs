@@ -87,6 +87,55 @@ pub fn blend(a: Color, b: Color, t: f32) -> Color {
     Color::Rgb(mix(ar, br), mix(ag, bg), mix(ab, bb))
 }
 
+/// How lit a panel is: `1.0` fully focused, `0.0` fully receded, and
+/// somewhere between while focus is moving off one card and onto another.
+///
+/// A newtype rather than a bare `f32` so the many call sites that are
+/// simply focused or not can keep saying `true`, and only the cards that
+/// actually animate have to think about the number.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Lit(f32);
+
+impl Lit {
+    pub const ON: Lit = Lit(1.0);
+    pub const OFF: Lit = Lit(0.0);
+
+    pub fn value(self) -> f32 {
+        self.0
+    }
+
+    /// Whether this reads as the focused card, for the decisions that
+    /// cannot be blended — a marker that is drawn or not, a weight that is
+    /// bold or not. Those flip at the midpoint of a fade rather than
+    /// easing, which is why the fade is short enough not to notice it.
+    pub fn is_lit(self) -> bool {
+        self.0 >= 0.5
+    }
+}
+
+impl From<bool> for Lit {
+    fn from(focused: bool) -> Self {
+        if focused {
+            Lit::ON
+        } else {
+            Lit::OFF
+        }
+    }
+}
+
+impl From<f32> for Lit {
+    fn from(t: f32) -> Self {
+        Lit(t.clamp(0.0, 1.0))
+    }
+}
+
+/// How long focus takes to move from one card to the next.
+///
+/// Short on purpose. This is on the path of every `j`, so it has to read
+/// as the focus travelling rather than as the UI taking its time: long
+/// enough to see where focus went, over before the next keystroke.
+pub const FOCUS_FADE: Duration = Duration::from_millis(120);
+
 /// How long one frame of the spinner holds.
 ///
 /// Slower than the 16ms frame interval by an order of magnitude, and

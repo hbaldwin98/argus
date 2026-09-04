@@ -274,6 +274,15 @@ pub struct App {
     /// to pin an animation mid-flight.
     frame_now: std::time::Instant,
     epoch: std::time::Instant,
+    /// The focus the last frame was drawn for, and the card focus is
+    /// travelling away from while it moves.
+    ///
+    /// Kept here rather than set wherever `focus` is assigned: focus moves
+    /// from nav, mouse, actions and input, and a fade that has to be
+    /// remembered at 38 call sites is one somebody forgets. Comparing
+    /// against what was last drawn cannot be forgotten.
+    focus_shown: Focus,
+    focus_from: Option<(Focus, crate::motion::Animation)>,
     bell_pending: bool,
     out: UnboundedSender<ClientMsg>,
 }
@@ -311,6 +320,13 @@ impl App {
             .filter(|widths| widths.len() == 5);
         let review_split = settings.review_split;
         let started = std::time::Instant::now();
+        // Hoisted so the first frame is drawn already settled on it,
+        // rather than fading in from wherever the default sat.
+        let focus = if settings.fold().hides(Focus::Projects) {
+            Focus::Repositories
+        } else {
+            Focus::Projects
+        };
         App {
             tree: Vec::new(),
             templates: Vec::new(),
@@ -318,11 +334,7 @@ impl App {
             open_workspace: String::new(),
             // A remembered folded-away tab is not a focus target, so a
             // restart from that state lands a column further in.
-            focus: if settings.fold().hides(Focus::Projects) {
-                Focus::Repositories
-            } else {
-                Focus::Projects
-            },
+            focus,
             view: View::default(),
             spine_focus: Focus::Panes,
             sel_project: 0,
@@ -382,6 +394,8 @@ impl App {
             state_flashes: std::collections::HashMap::new(),
             frame_now: started,
             epoch: started,
+            focus_shown: focus,
+            focus_from: None,
             bell_pending: false,
             out,
         }
