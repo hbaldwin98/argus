@@ -9,6 +9,56 @@ pub fn is_leader(key: &KeyEvent) -> bool {
         || key.code == KeyCode::Null
 }
 
+/// The xterm modifier parameter: 1, plus a bit per held modifier. It is
+/// what turns `\x1b[C` into `\x1b[1;5C`, and it is the only way a child
+/// ever learns that ctrl was down for a key that is not a letter.
+fn modifier_param(key: &KeyEvent) -> u8 {
+    let m = key.modifiers;
+    1 + u8::from(m.contains(KeyModifiers::SHIFT))
+        + 2 * u8::from(m.contains(KeyModifiers::ALT))
+        + 4 * u8::from(m.contains(KeyModifiers::CONTROL))
+}
+
+/// `\x1b[A` unmodified, `\x1b[1;5A` with ctrl down.
+fn csi_letter(final_byte: u8, param: u8) -> Vec<u8> {
+    if param == 1 {
+        vec![0x1b, b'[', final_byte]
+    } else {
+        format!("\x1b[1;{param}{}", final_byte as char).into_bytes()
+    }
+}
+
+/// `\x1b[3~` unmodified, `\x1b[3;5~` with ctrl down.
+fn csi_tilde(number: u8, param: u8) -> Vec<u8> {
+    if param == 1 {
+        format!("\x1b[{number}~").into_bytes()
+    } else {
+        format!("\x1b[{number};{param}~").into_bytes()
+    }
+}
+
+/// The C0 byte a ctrl-punctuation pair collapses to, for the pairs that
+/// have one. Windows reports these as `Char` + CONTROL like any other,
+/// so without this table ctrl-/ types a slash and ctrl-\ types a
+/// backslash — both of which the child reads as ordinary text.
+fn control_byte(c: char) -> Option<u8> {
+    Some(match c.to_ascii_lowercase() {
+        'a'..='z' => c.to_ascii_lowercase() as u8 - b'a' + 1,
+        '[' => 0x1b,
+        '\\' => 0x1c,
+        ']' => 0x1d,
+        '^' | '6' => 0x1e,
+        '_' | '/' => 0x1f,
+        '@' | ' ' | '2' => 0x00,
+        '3' => 0x1b,
+        '4' => 0x1c,
+        '5' => 0x1d,
+        '7' => 0x1f,
+        '8' | '?' => 0x7f,
+        _ => return None,
+    })
+}
+
 /// Translate a parsed key event back into the byte sequence a terminal
 /// child process expects to read from its pty. Covers the common case
 /// (shells, pagers, line editors); exotic function-key / kitty-protocol
@@ -16,19 +66,35 @@ pub fn is_leader(key: &KeyEvent) -> bool {
 pub fn encode_key(key: &KeyEvent) -> Vec<u8> {
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let alt = key.modifiers.contains(KeyModifiers::ALT);
+    let param = modifier_param(key);
+
+    // Named keys carry their modifiers in the sequence itself, so they
+    // are encoded whole rather than getting the alt escape bolted on
+    // afterwards — `\x1b\x1b[C` is not what a shell reads as alt-right.
+    let named = match key.code {
+        KeyCode::Left => Some(csi_letter(b'D', param)),
+        KeyCode::Right => Some(csi_letter(b'C', param)),
+        KeyCode::Up => Some(csi_letter(b'A', param)),
+        KeyCode::Down => Some(csi_letter(b'B', param)),
+        KeyCode::Home => Some(csi_letter(b'H', param)),
+        KeyCode::End => Some(csi_letter(b'F', param)),
+        KeyCode::PageUp => Some(csi_tilde(5, param)),
+        KeyCode::PageDown => Some(csi_tilde(6, param)),
+        KeyCode::Delete => Some(csi_tilde(3, param)),
+        KeyCode::Insert => Some(csi_tilde(2, param)),
+        KeyCode::F(n) => encode_function_key(n, param),
+        _ => None,
+    };
+    if let Some(bytes) = named {
+        return bytes;
+    }
 
     let mut base: Vec<u8> = match key.code {
         KeyCode::Char(c) => {
             if ctrl {
-                match c.to_ascii_lowercase() {
-                    'a'..='z' => vec![c.to_ascii_lowercase() as u8 - b'a' + 1],
-                    '[' => vec![0x1b],
-                    ']' => vec![0x1d],
-                    '\\' => vec![0x1c],
-                    '^' => vec![0x1e],
-                    '_' => vec![0x1f],
-                    '@' | ' ' => vec![0x00],
-                    _ => c.to_string().into_bytes(),
+                match control_byte(c) {
+                    Some(b) => vec![b],
+                    None => c.to_string().into_bytes(),
                 }
             } else {
                 let mut buf = [0u8; 4];
@@ -38,19 +104,12 @@ pub fn encode_key(key: &KeyEvent) -> Vec<u8> {
         KeyCode::Enter => vec![b'\r'],
         KeyCode::Tab => vec![b'\t'],
         KeyCode::BackTab => vec![0x1b, b'[', b'Z'],
+        // Ctrl-backspace is how a terminal asks for "delete the word
+        // behind me"; readline and every shell line editor bind 0x08 to
+        // it, and without this it arrives as a plain backspace.
+        KeyCode::Backspace if ctrl => vec![0x08],
         KeyCode::Backspace => vec![0x7f],
         KeyCode::Esc => vec![0x1b],
-        KeyCode::Left => vec![0x1b, b'[', b'D'],
-        KeyCode::Right => vec![0x1b, b'[', b'C'],
-        KeyCode::Up => vec![0x1b, b'[', b'A'],
-        KeyCode::Down => vec![0x1b, b'[', b'B'],
-        KeyCode::Home => vec![0x1b, b'[', b'H'],
-        KeyCode::End => vec![0x1b, b'[', b'F'],
-        KeyCode::PageUp => vec![0x1b, b'[', b'5', b'~'],
-        KeyCode::PageDown => vec![0x1b, b'[', b'6', b'~'],
-        KeyCode::Delete => vec![0x1b, b'[', b'3', b'~'],
-        KeyCode::Insert => vec![0x1b, b'[', b'2', b'~'],
-        KeyCode::F(n) => encode_function_key(n),
         _ => Vec::new(),
     };
 
@@ -62,22 +121,35 @@ pub fn encode_key(key: &KeyEvent) -> Vec<u8> {
     base
 }
 
-fn encode_function_key(n: u8) -> Vec<u8> {
-    match n {
-        1 => b"\x1bOP".to_vec(),
-        2 => b"\x1bOQ".to_vec(),
-        3 => b"\x1bOR".to_vec(),
-        4 => b"\x1bOS".to_vec(),
-        5 => b"\x1b[15~".to_vec(),
-        6 => b"\x1b[17~".to_vec(),
-        7 => b"\x1b[18~".to_vec(),
-        8 => b"\x1b[19~".to_vec(),
-        9 => b"\x1b[20~".to_vec(),
-        10 => b"\x1b[21~".to_vec(),
-        11 => b"\x1b[23~".to_vec(),
-        12 => b"\x1b[24~".to_vec(),
-        _ => Vec::new(),
+fn encode_function_key(n: u8, param: u8) -> Option<Vec<u8>> {
+    // F1-F4 are SS3 when bare and CSI once a modifier joins them; the
+    // rest keep their tilde form either way.
+    let ss3 = match n {
+        1 => Some(b'P'),
+        2 => Some(b'Q'),
+        3 => Some(b'R'),
+        4 => Some(b'S'),
+        _ => None,
+    };
+    if let Some(final_byte) = ss3 {
+        return Some(if param == 1 {
+            vec![0x1b, b'O', final_byte]
+        } else {
+            csi_letter(final_byte, param)
+        });
     }
+    let number = match n {
+        5 => 15,
+        6 => 17,
+        7 => 18,
+        8 => 19,
+        9 => 20,
+        10 => 21,
+        11 => 23,
+        12 => 24,
+        _ => return Some(Vec::new()),
+    };
+    Some(csi_tilde(number, param))
 }
 
 #[cfg(test)]
@@ -241,18 +313,94 @@ mod tests {
     }
 
     #[test]
-    fn alt_prefixes_an_escape_onto_every_key_that_encodes() {
-        for code in [
-            KeyCode::Char('a'),
-            KeyCode::Up,
-            KeyCode::Delete,
-            KeyCode::F(5),
-        ] {
+    fn alt_prefixes_an_escape_onto_the_keys_that_take_one() {
+        // Only keys that have no modifier parameter of their own; the
+        // named ones say alt inside the sequence instead.
+        for code in [KeyCode::Char('a'), KeyCode::Enter, KeyCode::Backspace] {
             let plain = encode_key(&k(code));
             let alt = encode_key(&KeyEvent::new(code, KeyModifiers::ALT));
             assert_eq!(alt.first(), Some(&0x1b), "{code:?}");
             assert_eq!(&alt[1..], &plain[..], "{code:?}");
         }
+    }
+
+    fn with(code: KeyCode, mods: KeyModifiers) -> Vec<u8> {
+        encode_key(&KeyEvent::new(code, mods))
+    }
+
+    #[test]
+    fn ctrl_arrows_carry_the_modifier_in_the_sequence() {
+        // Word-wise movement in every shell line editor. Without the
+        // parameter these arrive as bare arrows and move one column.
+        assert_eq!(with(KeyCode::Right, KeyModifiers::CONTROL), b"[1;5C");
+        assert_eq!(with(KeyCode::Left, KeyModifiers::CONTROL), b"[1;5D");
+        assert_eq!(with(KeyCode::Up, KeyModifiers::CONTROL), b"[1;5A");
+        assert_eq!(with(KeyCode::Down, KeyModifiers::CONTROL), b"[1;5B");
+    }
+
+    #[test]
+    fn every_modifier_combination_has_its_own_parameter() {
+        let table: &[(KeyModifiers, &[u8])] = &[
+            (KeyModifiers::NONE, b"[C"),
+            (KeyModifiers::SHIFT, b"[1;2C"),
+            (KeyModifiers::ALT, b"[1;3C"),
+            (KeyModifiers::CONTROL, b"[1;5C"),
+        ];
+        for (mods, expected) in table {
+            assert_eq!(&with(KeyCode::Right, *mods), expected, "{mods:?}");
+        }
+        assert_eq!(
+            with(KeyCode::Right, KeyModifiers::CONTROL | KeyModifiers::SHIFT),
+            b"[1;6C"
+        );
+        assert_eq!(
+            with(
+                KeyCode::Right,
+                KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT
+            ),
+            b"[1;8C"
+        );
+    }
+
+    #[test]
+    fn modified_home_end_and_tilde_keys_keep_their_own_shape() {
+        assert_eq!(with(KeyCode::Home, KeyModifiers::CONTROL), b"[1;5H");
+        assert_eq!(with(KeyCode::End, KeyModifiers::CONTROL), b"[1;5F");
+        assert_eq!(with(KeyCode::Delete, KeyModifiers::CONTROL), b"[3;5~");
+        assert_eq!(with(KeyCode::Insert, KeyModifiers::SHIFT), b"[2;2~");
+        assert_eq!(with(KeyCode::PageUp, KeyModifiers::CONTROL), b"[5;5~");
+        assert_eq!(with(KeyCode::PageDown, KeyModifiers::CONTROL), b"[6;5~");
+    }
+
+    #[test]
+    fn modified_function_keys_move_from_ss3_to_csi() {
+        assert_eq!(encode_key(&k(KeyCode::F(1))), b"OP", "bare stays SS3");
+        assert_eq!(with(KeyCode::F(1), KeyModifiers::CONTROL), b"[1;5P");
+        assert_eq!(with(KeyCode::F(4), KeyModifiers::SHIFT), b"[1;2S");
+        assert_eq!(with(KeyCode::F(5), KeyModifiers::CONTROL), b"[15;5~");
+        assert_eq!(with(KeyCode::F(12), KeyModifiers::ALT), b"[24;3~");
+    }
+
+    #[test]
+    fn ctrl_punctuation_windows_reports_as_chars_reaches_the_child() {
+        // These are the pairs a Windows console hands over as an ordinary
+        // Char + CONTROL; before the table they were typed literally.
+        assert_eq!(encode_key(&ctrl('/')), vec![0x1f], "undo in readline");
+        assert_eq!(encode_key(&ctrl('?')), vec![0x7f]);
+        assert_eq!(encode_key(&ctrl('2')), vec![0x00]);
+        assert_eq!(encode_key(&ctrl('3')), vec![0x1b]);
+        assert_eq!(encode_key(&ctrl('6')), vec![0x1e]);
+        assert_eq!(encode_key(&ctrl('7')), vec![0x1f]);
+        assert_eq!(encode_key(&ctrl('8')), vec![0x7f]);
+    }
+
+    #[test]
+    fn ctrl_backspace_deletes_a_word_rather_than_a_character() {
+        assert_eq!(encode_key(&k(KeyCode::Backspace)), vec![0x7f]);
+        assert_eq!(
+            encode_key(&KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL)),
+            vec![0x08]
+        );
     }
 
     #[test]
