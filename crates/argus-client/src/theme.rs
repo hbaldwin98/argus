@@ -52,6 +52,15 @@ pub struct Syntax {
 pub struct Theme {
     /// The page behind the panels. Deliberately darker than `surface` so a
     /// panel reads as a card sitting on it rather than a box drawn in it.
+    ///
+    /// These three are the elevation scale, and the whole layout rests on
+    /// them being *separable*, not merely unequal. They were first assigned
+    /// Catppuccin's crust/mantle/base, which are that flavour's background
+    /// trio — three shades of the same ground, 13/255 apart in mocha. The
+    /// scale was therefore invisible, and the panel borders ended up
+    /// carrying all of the structure, which is what made the UI read as a
+    /// grid of dialog boxes. Every surface role now sits one rung higher,
+    /// on the layers Catppuccin publishes for raised elements.
     pub bg: Color,
     /// An unfocused panel's fill.
     pub surface: Color,
@@ -134,8 +143,8 @@ impl Theme {
     pub fn mocha() -> Self {
         Theme {
             bg: rgb(0x11111b),            // crust
-            surface: rgb(0x181825),       // mantle
-            surface_focus: rgb(0x1e1e2e), // base
+            surface: rgb(0x1e1e2e),       // base
+            surface_focus: rgb(0x313244), // surface0
             accent: rgb(0xcba6f7),        // mauve
             on_accent: rgb(0x11111b),
             text: rgb(0xcdd6f4),
@@ -144,13 +153,13 @@ impl Theme {
             ok: rgb(0xa6e3a1),     // green
             warn: rgb(0xf9e2af),   // yellow
             err: rgb(0xf38ba8),    // red
-            edge: rgb(0x313244),   // surface0
-            sel_bg: rgb(0x45475a), // surface1
-            sel_bg_dim: rgb(0x313244),
-            add_bg: rgb(0x1c3327),
-            del_bg: rgb(0x3a2130),
-            add_bg_sel: rgb(0x27452f),
-            del_bg_sel: rgb(0x4d2c3e),
+            edge: rgb(0x45475a),   // surface1
+            sel_bg: rgb(0x585b70), // surface2
+            sel_bg_dim: rgb(0x45475a),
+            add_bg: rgb(0x2a4433),
+            del_bg: rgb(0x4d2c3e),
+            add_bg_sel: rgb(0x365c43),
+            del_bg_sel: rgb(0x633a4e),
             syntax: Syntax {
                 keyword: rgb(0xcba6f7),
                 string: rgb(0xa6e3a1),
@@ -168,8 +177,8 @@ impl Theme {
     pub fn macchiato() -> Self {
         Theme {
             bg: rgb(0x181926),
-            surface: rgb(0x1e2030),
-            surface_focus: rgb(0x24273a),
+            surface: rgb(0x24273a),
+            surface_focus: rgb(0x363a4f),
             accent: rgb(0xc6a0f6),
             on_accent: rgb(0x181926),
             text: rgb(0xcad3f5),
@@ -178,13 +187,13 @@ impl Theme {
             ok: rgb(0xa6da95),
             warn: rgb(0xeed49f),
             err: rgb(0xed8796),
-            edge: rgb(0x363a4f),
-            sel_bg: rgb(0x494d64),
-            sel_bg_dim: rgb(0x363a4f),
-            add_bg: rgb(0x22392e),
-            del_bg: rgb(0x402734),
-            add_bg_sel: rgb(0x2d4a3a),
-            del_bg_sel: rgb(0x533341),
+            edge: rgb(0x494d64),
+            sel_bg: rgb(0x5b6078),
+            sel_bg_dim: rgb(0x494d64),
+            add_bg: rgb(0x2e4a3c),
+            del_bg: rgb(0x533341),
+            add_bg_sel: rgb(0x3a5c48),
+            del_bg_sel: rgb(0x66404f),
             syntax: Syntax {
                 keyword: rgb(0xc6a0f6),
                 string: rgb(0xa6da95),
@@ -202,8 +211,8 @@ impl Theme {
     pub fn frappe() -> Self {
         Theme {
             bg: rgb(0x232634),
-            surface: rgb(0x292c3c),
-            surface_focus: rgb(0x303446),
+            surface: rgb(0x303446),
+            surface_focus: rgb(0x414559),
             accent: rgb(0xca9ee6),
             on_accent: rgb(0x232634),
             text: rgb(0xc6d0f5),
@@ -212,13 +221,13 @@ impl Theme {
             ok: rgb(0xa6d189),
             warn: rgb(0xe5c890),
             err: rgb(0xe78284),
-            edge: rgb(0x414559),
-            sel_bg: rgb(0x51576d),
-            sel_bg_dim: rgb(0x414559),
-            add_bg: rgb(0x2c4335),
-            del_bg: rgb(0x47303c),
-            add_bg_sel: rgb(0x385440),
-            del_bg_sel: rgb(0x573c4a),
+            edge: rgb(0x51576d),
+            sel_bg: rgb(0x626880),
+            sel_bg_dim: rgb(0x51576d),
+            add_bg: rgb(0x385440),
+            del_bg: rgb(0x573c4a),
+            add_bg_sel: rgb(0x456650),
+            del_bg_sel: rgb(0x6a4a5b),
             syntax: Syntax {
                 keyword: rgb(0xca9ee6),
                 string: rgb(0xa6d189),
@@ -238,8 +247,8 @@ impl Theme {
     /// inverts while the roles stay the same.
     pub fn latte() -> Self {
         Theme {
-            bg: rgb(0xdce0e8),            // crust
-            surface: rgb(0xe6e9ef),       // mantle
+            bg: rgb(0xccd0da),            // surface0
+            surface: rgb(0xdce0e8),       // crust
             surface_focus: rgb(0xeff1f5), // base
             accent: rgb(0x8839ef),        // mauve
             on_accent: rgb(0xeff1f5),
@@ -249,7 +258,7 @@ impl Theme {
             ok: rgb(0x40a02b),
             warn: rgb(0xdf8e1d),
             err: rgb(0xd20f39),
-            edge: rgb(0xbcc0cc),
+            edge: rgb(0xacb0be),
             sel_bg: rgb(0xbcc0cc),
             sel_bg_dim: rgb(0xccd0da),
             add_bg: rgb(0xd8f0d0),
@@ -319,14 +328,63 @@ mod tests {
         }
     }
 
+    /// Relative luminance on a 0..255 scale, sRGB coefficients without the
+    /// gamma step: enough to say whether two greys of the same family read
+    /// as different surfaces, which is all this file asks of it.
+    fn luminance(c: Color) -> f32 {
+        let Color::Rgb(r, g, b) = c else {
+            panic!("{c:?} is not truecolor");
+        };
+        0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32
+    }
+
+    /// How far apart two neighbouring elevations have to be. The scale this
+    /// replaced was `assert_ne!`-different and still invisible: its widest
+    /// step was 7, and the eye cannot separate two dark greys that close.
+    const ELEVATION_STEP: f32 = 10.0;
+
     #[test]
-    fn the_three_elevations_are_all_different() {
+    fn each_elevation_is_visibly_above_the_one_below() {
         // Page behind unfocused panel behind focused panel is the whole
-        // reason the UI reads as cards rather than boxes.
+        // reason the UI reads as cards rather than boxes. Asserting they
+        // merely differ is what let a 3%-wide scale ship: the roles were
+        // all distinct and none of them was distinguishable.
         for t in all() {
-            assert_ne!(t.bg, t.surface);
-            assert_ne!(t.surface, t.surface_focus);
-            assert_ne!(t.bg, t.surface_focus);
+            let steps = [
+                ("bg -> surface", t.bg, t.surface),
+                ("surface -> surface_focus", t.surface, t.surface_focus),
+            ];
+            for (what, lower, upper) in steps {
+                let step = (luminance(upper) - luminance(lower)).abs();
+                assert!(
+                    step >= ELEVATION_STEP,
+                    "{} in {}: {step:.1} apart, needs {ELEVATION_STEP}",
+                    what,
+                    t.name(),
+                );
+            }
+            // Latte raises by getting lighter and the dark flavours by
+            // getting lighter too, so the ladder only has to be monotone,
+            // not signed one particular way.
+            let ordered = (luminance(t.surface) - luminance(t.bg)).signum()
+                == (luminance(t.surface_focus) - luminance(t.surface)).signum();
+            assert!(ordered, "{}'s elevations are not monotone", t.name());
+        }
+    }
+
+    #[test]
+    fn a_selected_row_reads_against_the_card_it_sits_on() {
+        // The selection fill is the only thing marking where you are, and
+        // it is drawn over whichever card has focus.
+        for t in all() {
+            let on_focused = (luminance(t.sel_bg) - luminance(t.surface_focus)).abs();
+            let on_unfocused = (luminance(t.sel_bg_dim) - luminance(t.surface)).abs();
+            assert!(on_focused >= ELEVATION_STEP, "{}: {on_focused:.1}", t.name());
+            assert!(
+                on_unfocused >= ELEVATION_STEP,
+                "{}: {on_unfocused:.1}",
+                t.name()
+            );
         }
     }
 
