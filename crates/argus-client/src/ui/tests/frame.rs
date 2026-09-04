@@ -397,7 +397,15 @@ fn preferred_column_widths_are_used_and_keep_a_minimum() {
     assert_eq!(app.layout.repositories.outer.width, 18);
     assert_eq!(app.layout.checkouts.outer.width, 20);
     assert_eq!(app.layout.panes.outer.width, 20);
-    assert_eq!(app.layout.content.outer.width, 42, "the slack lands in the live view");
+    // `draw` is 120 wide, less a page gutter each side; the four nav cards
+    // and the gutters between all five come out of that, and the live view
+    // is what is left.
+    let nav: u16 = MIN_COLUMN_WIDTH + 18 + 20 + 20 + 4 * GUTTER_COLS;
+    assert_eq!(
+        app.layout.content.outer.width,
+        118 - nav,
+        "the slack lands in the live view"
+    );
 }
 
 #[test]
@@ -479,15 +487,19 @@ fn repository_rows_roll_up_checkout_counts_panes_and_status() {
 }
 
 #[test]
-fn the_focused_column_alone_gets_the_accent_border() {
+fn the_focused_column_alone_gets_the_accent_label() {
+    // The label above the card is where focus is said now: the border it
+    // used to be said on came off, because the fill already separates a
+    // card from the page.
     let th = Theme::default();
     let mut app = app_with_tree();
     app.focus = Focus::Checkouts;
     let buf = draw(&mut app);
 
-    let corner = |p: Panel| buf.cell((p.outer.x, p.outer.y)).unwrap().fg;
-    assert_eq!(corner(app.layout.checkouts), th.accent, "focused column");
-    assert_eq!(corner(app.layout.projects), th.edge, "unfocused column");
+    // Past the label's own indent, which aligns it over the card's gutter.
+    let label = |p: Panel| buf.cell((p.outer.x + 1, p.outer.y)).unwrap().fg;
+    assert_eq!(label(app.layout.checkouts), th.accent, "focused column");
+    assert_eq!(label(app.layout.projects), th.dim, "unfocused column");
 }
 
 #[test]

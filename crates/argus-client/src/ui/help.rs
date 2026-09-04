@@ -260,7 +260,7 @@ pub(super) fn render_help(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let popup = centered_rect(width, height, area);
 
     f.render_widget(Clear, popup);
-    let block = panel_block("keys · esc to close", true, th, popup.width);
+    let block = popup_block("keys · esc to close", th, popup.width);
     let inner = block.inner(popup);
     f.render_widget(block, popup);
     app.layout.help = Panel {

@@ -62,7 +62,7 @@ pub(super) fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme
     };
 
     f.render_widget(Clear, popup);
-    let block = panel_block(&title, true, th, popup.width);
+    let block = popup_block(&title, th, popup.width);
     let inner = block.inner(popup);
     f.render_widget(block, popup);
     app.layout.overlay = Panel {
