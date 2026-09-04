@@ -18,6 +18,7 @@
 //! argus-hook feature open "decision scoping"    # opens one and works on it
 //! argus-hook feature use decision-scoping       # works on one that already exists
 //! argus-hook feature note "the board is per feature"   # adds to its document
+//! argus-hook feature export                  # the feature as material to write up
 //! argus-hook decisions                          # this feature's decision board
 //! argus-hook decide "sqlite" --over "a file per feature" --because "both need migrations"
 //! argus-hook decide "one row per note" --under 3  # hangs under decision 3
@@ -333,8 +334,12 @@ fn feature_message(rest: &[&str], base_url: &str, token: &str) -> String {
             base_url,
             token,
         ),
+        Some("export") => match read_feature_board(&rest[1..], base_url, token) {
+            Ok(board) => format_export(&board),
+            Err(message) => message,
+        },
         Some(other) => format!(
-            "{other} is not one of list, open, use, note — \
+            "{other} is not one of list, open, use, note, export — \
              `argus-hook feature use {other}` works on an existing feature"
         ),
     }
@@ -570,6 +575,38 @@ fn format_feature_list(board: &FeatureBoard) -> String {
     }
     lines.join("\n")
 }
+
+/// The whole feature handed to the agent as something to write up.
+///
+/// Deliberately not a rendered document. Argus can only reorder what the
+/// board already holds, and a template that did would produce the board
+/// again with more punctuation. What a reader actually wants out of a
+/// decision tree is prose that says why it has this shape, and the only
+/// thing in the room that can write that is the model reading this. So
+/// the command prints the commission and then the material, and the
+/// writing happens where the judgement is.
+fn format_export(board: &FeatureBoard) -> String {
+    if board.current.is_none() {
+        return no_feature_here(board);
+    }
+    format!("{EXPORT_BRIEF}
+
+--- the material ---
+
+{}", format_feature(board))
+}
+
+const EXPORT_BRIEF: &str = "Write this feature up as a document somebody can read end to end: what was built, and why it has the shape it does. Everything below is the whole record — the brief, then every decision taken under it, in the tree they were recorded in. Nothing else about this feature is written down.
+
+How to write it:
+  - Open with what the feature is and where it stands, in a paragraph or two. Someone who has never seen this code should be able to stop there and still know what it is.
+  - Then follow the tree. A decision's children are the choices it forced, so they belong under it, and the shape of the tree is the shape of the argument.
+  - `over` is the road not taken, and it is usually the more interesting half. A decision that names one is only half explained until you say what the alternative was and what ruled it out.
+  - A node marked superseded was replaced by the decision it names. It is what was believed at the time, not a mistake to tidy away — say what it was and what changed.
+  - Write prose, in the register of the material. Bullets that restate chose/over/because are the board again, and the board can already be read.
+  - Do not invent a reason a decision does not give. `the board does not say` is a better sentence than a plausible one you made up.
+
+Save it where the human asked for it, and if they did not say, as a markdown file named after the feature in this checkout.";
 
 /// This feature's decision board, drawn as the tree it is. Read rather than
 /// written, and on stdout for the same reason `context` is: it is what an
@@ -1773,6 +1810,70 @@ mod tests {
             head
         });
         (address, server)
+    }
+
+    fn exportable_board() -> FeatureBoard {
+        let feature = argus_protocol::Feature {
+            slug: "streaming-the-pty".into(),
+            title: "streaming the pty".into(),
+            body: "the reader thread owns the handle.".into(),
+            origin_checkout: None,
+            origin_branch: Some("pty-stream".into()),
+            at: 0,
+            session: None,
+            state: Default::default(),
+            claimed_by: None,
+            claimed_at: None,
+            blocker: None,
+            evidence: None,
+        };
+        FeatureBoard {
+            project: None,
+            project_name: "argus".into(),
+            features: vec![feature],
+            current: Some("streaming-the-pty".into()),
+            decisions: vec![Decision {
+                id: 4,
+                parent: None,
+                at: 0,
+                session: None,
+                checkout: None,
+                feature: Some("streaming-the-pty".into()),
+                chose: "one reader thread".into(),
+                over: Some("polling the handle".into()),
+                because: Some("a poll cannot see a burst".into()),
+                superseded_by: None,
+            }],
+            unfiled: 0,
+        }
+    }
+
+    #[test]
+    fn an_export_hands_over_the_whole_feature_and_asks_for_prose() {
+        let message = format_export(&exportable_board());
+
+        // The commission first: without it this is the board again, and
+        // the point of the command is what the model does with it.
+        assert!(message.starts_with("Write this feature up"), "{message}");
+        assert!(message.contains("the road not taken"));
+        // Then every part of the record a document would need.
+        assert!(message.contains("Feature: streaming the pty (streaming-the-pty)"));
+        assert!(message.contains("the reader thread owns the handle."));
+        assert!(message.contains("#4 one reader thread"));
+        assert!(message.contains("over: polling the handle"));
+        assert!(message.contains("because: a poll cannot see a burst"));
+    }
+
+    #[test]
+    fn a_checkout_on_no_feature_is_told_that_rather_than_asked_to_write() {
+        let mut board = exportable_board();
+        board.current = None;
+        board.decisions.clear();
+
+        let message = format_export(&board);
+
+        assert!(message.starts_with("This checkout is not on a feature"), "{message}");
+        assert!(message.contains("streaming-the-pty"), "it still offers the ones that exist");
     }
 
     fn context_note(

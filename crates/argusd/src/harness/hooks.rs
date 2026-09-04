@@ -149,6 +149,12 @@ pub fn instructions() -> String {
          \x20 {hook} decide \"key notes by path\" --supersedes 4 \
          --because \"ids are handed out fresh every start\"\n\
          \n\
+         When the human asks for the reasoning as a document they can read or hand \
+         on, this prints the feature and its whole board as material and leaves the \
+         writing to you:\n\
+         \n\
+         \x20 {hook} feature export\n\
+         \n\
          After you start working in another checkout, run this from that checkout so the \
          pane moves under it in Argus:\n\
          \n\
