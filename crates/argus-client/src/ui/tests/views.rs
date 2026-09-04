@@ -252,6 +252,11 @@ fn feature(slug: &str, title: &str) -> argus_protocol::Feature {
         origin_branch: Some("main".into()),
         at: 0,
         session: None,
+        state: argus_protocol::FeatureState::Proposed,
+        claimed_by: None,
+        claimed_at: None,
+        blocker: None,
+        evidence: None,
     }
 }
 

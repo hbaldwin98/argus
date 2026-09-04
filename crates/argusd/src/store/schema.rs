@@ -157,3 +157,39 @@ CREATE TABLE feature_scope (
 ALTER TABLE decision ADD COLUMN feature TEXT;
 CREATE INDEX decision_feature ON decision (project, feature, id);
 "#;
+
+/// The board state a feature is in, and every move between states.
+///
+/// The state is a column on `feature` rather than a table of its own: a
+/// board is read whole on every change, and a column is what that read
+/// costs nothing. The moves are their own table for the reason
+/// `note_audit` is — a human looking at a column asks who put it there and
+/// what they said, and the current state cannot answer that.
+///
+/// `claimed_by` holds a harness session, not a pane id, so a claim
+/// outlives the restart that hands out fresh ids. `evidence` is what an
+/// agent offers when it submits; it is deliberately one field and not a
+/// history, because the history is `feature_event`.
+///
+/// No CHECK on `state`: SQLite cannot alter one afterwards, so a constraint
+/// here would make adding a sixth column a table rebuild. The states are
+/// enforced where they are decided, on the transition.
+pub(super) const SCHEMA_V7: &str = r#"
+ALTER TABLE feature ADD COLUMN state      TEXT NOT NULL DEFAULT 'proposed';
+ALTER TABLE feature ADD COLUMN claimed_by TEXT;
+ALTER TABLE feature ADD COLUMN claimed_at INTEGER;
+ALTER TABLE feature ADD COLUMN blocker    TEXT;
+ALTER TABLE feature ADD COLUMN evidence   TEXT;
+
+CREATE TABLE feature_event (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    at      INTEGER NOT NULL,
+    project TEXT    NOT NULL,
+    slug    TEXT    NOT NULL,
+    state   TEXT    NOT NULL,
+    actor   TEXT    NOT NULL,
+    session TEXT,
+    detail  TEXT
+);
+CREATE INDEX feature_event_feature ON feature_event (project, slug, id);
+"#;

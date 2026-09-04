@@ -28,8 +28,8 @@ pub use cell::{
 pub use context::{AgentContext, ContextNote, ContextScope, TodoWrite};
 pub use decisions::{Decision, DecisionBoard, DecisionTreeRow, DecisionWrite, MAX_DECISION_BYTES};
 pub use features::{
-    slugify, Feature, FeatureAction, FeatureBoard, FeatureWrite, MAX_FEATURE_BODY_BYTES,
-    MAX_FEATURE_TITLE_BYTES,
+    slugify, Actor, Feature, FeatureAction, FeatureBoard, FeatureEvent, FeatureMove, FeatureState,
+    FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES,
 };
 pub use compact_str::{CompactString, ToCompactString};
 pub use framing::{read_msg, write_frame, write_msg, FramingError};

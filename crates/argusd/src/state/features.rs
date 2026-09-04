@@ -14,7 +14,9 @@
 //! the case the checkout cannot answer, which is several features sharing
 //! one checkout.
 
-use argus_protocol::{Decision, Feature, FeatureBoard, FeatureWrite, PaneId};
+use argus_protocol::{
+    Actor, Decision, Feature, FeatureBoard, FeatureMove, FeatureState, FeatureWrite, PaneId,
+};
 
 use super::agents::AgentScope;
 use super::*;
@@ -148,6 +150,52 @@ impl Daemon {
         self.store
             .append_to_feature(&scope.project_name, &slug, text)?;
         self.feature_board(&scope)
+    }
+
+    /// Moves the current feature to another column.
+    ///
+    /// An agent may pick work up, say it is stuck, and offer what it has.
+    /// It may not accept its own work: `done` is the human's move, and
+    /// letting the worker make it would leave the review column a place
+    /// things pass through rather than stop at.
+    pub fn move_feature_for_agent(
+        &self,
+        pane_id: PaneId,
+        session: Option<&str>,
+        state: FeatureState,
+        detail: Option<&str>,
+    ) -> anyhow::Result<FeatureBoard> {
+        let scope = self.agent_scope(pane_id)?;
+        if !state.agent_may_enter() {
+            anyhow::bail!(
+                "an agent cannot accept its own work — submit it with                  `argus-hook feature submit \"<what you did>\"` and let a human accept it"
+            );
+        }
+        let features = self.store.features(&scope.project_name)?;
+        let Some(slug) = self.current_feature(&scope, &features)? else {
+            anyhow::bail!("this checkout is not on a feature yet");
+        };
+        let at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or_default();
+        self.store.move_feature(
+            &scope.project_name,
+            &slug,
+            &FeatureMove {
+                state,
+                detail: detail.map(str::to_string),
+                actor: Actor::Agent,
+                session: session.map(str::to_string),
+                at,
+            },
+        )?;
+        let board = self.feature_board(&scope)?;
+        self.broadcast_decisions(
+            &scope.project_name,
+            self.store.decisions(&scope.project_name)?,
+        );
+        Ok(board)
     }
 
     /// The feature the next decision from this pane is filed under.

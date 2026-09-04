@@ -1,6 +1,8 @@
 //! Round trips through a store built in memory, so no test can reach
 //! the real `runtime.db`.
 
+use argus_protocol::Actor;
+
 use super::*;
 
 fn store() -> Store {
@@ -623,6 +625,115 @@ fn a_feature_document_grows_by_paragraph() {
         "the key has to outlive the ids\n\nso notes are keyed by path"
     );
     assert!(s.append_to_feature("argus", "nothing", "x").is_err());
+}
+
+#[test]
+fn a_feature_starts_proposed_and_carries_who_moved_it() {
+    let s = store();
+    s.add_feature("argus", &feature("notes storage"), None, None, 1, None)
+        .unwrap();
+    assert_eq!(s.features("argus").unwrap()[0].state, FeatureState::Proposed);
+
+    let f = s
+        .move_feature(
+            "argus",
+            "notes-storage",
+            &FeatureMove {
+                state: FeatureState::Active,
+                detail: None,
+                actor: Actor::Agent,
+                session: Some("sess-1".into()),
+                at: 10,
+            },
+        )
+        .unwrap();
+    assert_eq!(f.state, FeatureState::Active);
+    assert_eq!(
+        f.claimed_by.as_deref(),
+        Some("sess-1"),
+        "picking work up is what claims it"
+    );
+
+    let f = s
+        .move_feature(
+            "argus",
+            "notes-storage",
+            &FeatureMove {
+                state: FeatureState::Blocked,
+                detail: Some("needs the staging password".into()),
+                actor: Actor::Agent,
+                session: Some("sess-1".into()),
+                at: 20,
+            },
+        )
+        .unwrap();
+    assert_eq!(f.blocker.as_deref(), Some("needs the staging password"));
+    assert_eq!(
+        f.claimed_by.as_deref(),
+        Some("sess-1"),
+        "a blocked feature still belongs to whoever carried it there"
+    );
+
+    let f = s
+        .move_feature(
+            "argus",
+            "notes-storage",
+            &FeatureMove {
+                state: FeatureState::Submitted,
+                detail: Some("green on cargo test".into()),
+                actor: Actor::Agent,
+                session: Some("sess-1".into()),
+                at: 30,
+            },
+        )
+        .unwrap();
+    assert_eq!(f.blocker, None, "what unblocked it stops explaining itself");
+    assert_eq!(f.evidence.as_deref(), Some("green on cargo test"));
+
+    let f = s
+        .move_feature(
+            "argus",
+            "notes-storage",
+            &FeatureMove {
+                state: FeatureState::Done,
+                detail: None,
+                actor: Actor::Human,
+                session: None,
+                at: 40,
+            },
+        )
+        .unwrap();
+    assert_eq!(f.claimed_by, None, "an accepted feature is nobody's");
+
+    let events = s.feature_events("argus", "notes-storage").unwrap();
+    let moves: Vec<_> = events.iter().map(|e| (e.state, e.actor.as_str())).collect();
+    assert_eq!(
+        moves,
+        vec![
+            (FeatureState::Active, "agent"),
+            (FeatureState::Blocked, "agent"),
+            (FeatureState::Submitted, "agent"),
+            (FeatureState::Done, "human"),
+        ],
+        "the column cannot say who put it there; the events can"
+    );
+    assert_eq!(events[1].detail.as_deref(), Some("needs the staging password"));
+
+    assert!(
+        s.move_feature(
+            "argus",
+            "nothing",
+            &FeatureMove {
+                state: FeatureState::Active,
+                detail: None,
+                actor: Actor::Agent,
+                session: None,
+                at: 50,
+            },
+        )
+        .is_err(),
+        "a feature that does not exist cannot be moved"
+    );
 }
 
 fn audit(action: &str, detail: &str) -> TodoAudit {

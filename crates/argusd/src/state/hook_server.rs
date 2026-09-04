@@ -315,6 +315,9 @@ fn feature_response(
         FeatureAction::Open(write) => daemon.open_feature_for_agent(source, session, write),
         FeatureAction::Select { slug } => daemon.select_feature_for_agent(source, &slug),
         FeatureAction::Append { text } => daemon.append_to_feature_for_agent(source, &text),
+        FeatureAction::Move { state, detail } => {
+            daemon.move_feature_for_agent(source, session, state, detail.as_deref())
+        }
     };
     match board.and_then(|board| Ok(serde_json::to_vec(&board)?)) {
         Ok(body) => HookResponse {

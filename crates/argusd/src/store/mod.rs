@@ -17,8 +17,8 @@ use std::sync::Mutex as StdMutex;
 
 use anyhow::{Context, Result};
 use argus_protocol::{
-    slugify, Decision, DecisionWrite, Feature, FeatureWrite, PaneKind, PaneStatus, ReviewAnchor,
-    ReviewComment, TodoAudit, MAX_REVIEW_COMMENTS,
+    slugify, Decision, DecisionWrite, Feature, FeatureEvent, FeatureMove, FeatureState,
+    FeatureWrite, PaneKind, PaneStatus, ReviewAnchor, ReviewComment, TodoAudit, MAX_REVIEW_COMMENTS,
 };
 use rusqlite::{Connection, OptionalExtension};
 
@@ -27,7 +27,7 @@ use crate::paths::same_path;
 mod legacy;
 mod schema;
 
-use schema::{SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6};
+use schema::{SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7};
 
 /// One pane worth starting again, as it stood when the daemon stopped.
 ///
@@ -134,7 +134,7 @@ pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 const MAX_NOTE_AUDIT: i64 = 20;
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 6;
+const SCHEMA_VERSION: i64 = 7;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -228,6 +228,9 @@ impl Store {
         }
         if from < 6 {
             tx.execute_batch(SCHEMA_V6)?;
+        }
+        if from < 7 {
+            tx.execute_batch(SCHEMA_V7)?;
         }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
@@ -597,6 +600,11 @@ impl Store {
             origin_branch: origin_branch.map(str::to_string),
             at,
             session: session.map(str::to_string),
+            state: FeatureState::default(),
+            claimed_by: None,
+            claimed_at: None,
+            blocker: None,
+            evidence: None,
         };
         tx.execute(
             "INSERT INTO feature
@@ -621,7 +629,8 @@ impl Store {
     pub fn features(&self, project: &str) -> Result<Vec<Feature>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT slug, title, body, origin_checkout, origin_branch, at, session
+            "SELECT slug, title, body, origin_checkout, origin_branch, at, session,
+                     state, claimed_by, claimed_at, blocker, evidence
              FROM feature WHERE project = ?1 ORDER BY at, slug",
         )?;
         let rows = stmt.query_map(rusqlite::params![project], |r| {
@@ -633,6 +642,13 @@ impl Store {
                 origin_branch: r.get(4)?,
                 at: r.get(5)?,
                 session: r.get(6)?,
+                // An unrecognised state means a newer Argus wrote this row.
+                // Show it where it started rather than refusing the board.
+                state: FeatureState::parse(&r.get::<_, String>(7)?).unwrap_or_default(),
+                claimed_by: r.get(8)?,
+                claimed_at: r.get(9)?,
+                blocker: r.get(10)?,
+                evidence: r.get(11)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -707,6 +723,101 @@ impl Store {
                 |r| r.get::<_, String>(0),
             )
             .optional()?)
+    }
+
+    /// Moves a feature to another column and records who moved it.
+    ///
+    /// The column and the event are written in one transaction: a board
+    /// showing `submitted` with no event saying who submitted it is worse
+    /// than either alone, because it looks like an answer.
+    ///
+    /// `detail` means what the target state needs it to mean — the blocker
+    /// when blocking, the evidence when submitting — and each is cleared
+    /// on the way out, so a feature that was unblocked does not keep
+    /// explaining why it was stuck.
+    pub fn move_feature(&self, project: &str, slug: &str, mv: &FeatureMove) -> Result<Feature> {
+        let FeatureMove {
+            state,
+            detail,
+            actor,
+            session,
+            at,
+        } = mv;
+        let (state, at) = (*state, *at);
+        let detail = detail.as_deref();
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
+            rusqlite::params![project, slug],
+            |r| r.get(0),
+        )?;
+        if !exists {
+            anyhow::bail!("there is no feature {slug} on this project");
+        }
+        let blocker = (state == FeatureState::Blocked).then_some(detail).flatten();
+        let evidence = (state == FeatureState::Submitted)
+            .then_some(detail)
+            .flatten();
+        // A claim is taken on the way into `active` and released once the
+        // work is accepted; the states between keep it, since a blocked or
+        // submitted feature still belongs to whoever carried it there.
+        match state {
+            FeatureState::Active => tx.execute(
+                "UPDATE feature SET state = ?1, blocker = NULL, evidence = NULL,
+                                    claimed_by = ?2, claimed_at = ?3
+                 WHERE project = ?4 AND slug = ?5",
+                rusqlite::params![state.as_str(), session, at, project, slug],
+            )?,
+            FeatureState::Proposed | FeatureState::Done => tx.execute(
+                "UPDATE feature SET state = ?1, blocker = NULL, evidence = ?2,
+                                    claimed_by = NULL, claimed_at = NULL
+                 WHERE project = ?3 AND slug = ?4",
+                rusqlite::params![state.as_str(), evidence, project, slug],
+            )?,
+            FeatureState::Blocked | FeatureState::Submitted => tx.execute(
+                "UPDATE feature SET state = ?1, blocker = ?2, evidence = ?3
+                 WHERE project = ?4 AND slug = ?5",
+                rusqlite::params![state.as_str(), blocker, evidence, project, slug],
+            )?,
+        };
+        tx.execute(
+            "INSERT INTO feature_event (at, project, slug, state, actor, session, detail)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![at, project, slug, state.as_str(), actor.as_str(), session, detail],
+        )?;
+        tx.commit()?;
+        drop(conn);
+        self.features(project)?
+            .into_iter()
+            .find(|f| f.slug == slug)
+            .ok_or_else(|| anyhow::anyhow!("there is no feature {slug} on this project"))
+    }
+
+    /// Every move a feature has made, oldest first.
+    ///
+    /// Not read outside tests yet: the events are written now so a board
+    /// built on this schema has a history to show, rather than starting
+    /// its history the day the view lands.
+    #[allow(dead_code)]
+    pub fn feature_events(&self, project: &str, slug: &str) -> Result<Vec<FeatureEvent>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, at, slug, state, actor, session, detail
+             FROM feature_event WHERE project = ?1 AND slug = ?2 ORDER BY id",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![project, slug], |r| {
+            Ok(FeatureEvent {
+                id: r.get(0)?,
+                at: r.get(1)?,
+                slug: r.get(2)?,
+                state: FeatureState::parse(&r.get::<_, String>(3)?).unwrap_or_default(),
+                actor: r.get(4)?,
+                session: r.get(5)?,
+                detail: r.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
     // ---- project overlays --------------------------------------------
