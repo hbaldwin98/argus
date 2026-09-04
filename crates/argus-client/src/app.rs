@@ -260,9 +260,20 @@ pub struct App {
     /// the selected one when the tree carrying it arrives.
     pending_focus_new_repository: Option<ProjectId>,
     /// A short shape-preserving highlight after an effective parent or child
-    /// state changes. The client derives this from consecutive snapshots;
-    /// the first snapshot on attach is only a baseline.
-    state_flashes: std::collections::HashMap<PaneId, std::time::Instant>,
+    /// state changes, fading out rather than snapping off. The client
+    /// derives this from consecutive snapshots; the first snapshot on
+    /// attach is only a baseline.
+    state_flashes: std::collections::HashMap<PaneId, crate::motion::Animation>,
+    /// The instant the frame being drawn is for, and the epoch every
+    /// repeating animation is phased off.
+    ///
+    /// A frame reads one clock rather than each widget calling
+    /// `Instant::now` as it draws — otherwise two spinners in the same
+    /// frame can land on different glyphs, and a render test has nothing
+    /// to hold still. `main` sets it before each draw; the tests set it
+    /// to pin an animation mid-flight.
+    frame_now: std::time::Instant,
+    epoch: std::time::Instant,
     bell_pending: bool,
     out: UnboundedSender<ClientMsg>,
 }
@@ -299,6 +310,7 @@ impl App {
             .clone()
             .filter(|widths| widths.len() == 5);
         let review_split = settings.review_split;
+        let started = std::time::Instant::now();
         App {
             tree: Vec::new(),
             templates: Vec::new(),
@@ -368,6 +380,8 @@ impl App {
             pending_focus_new_project: false,
             pending_focus_new_repository: None,
             state_flashes: std::collections::HashMap::new(),
+            frame_now: started,
+            epoch: started,
             bell_pending: false,
             out,
         }

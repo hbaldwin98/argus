@@ -15,6 +15,7 @@ mod grid;
 mod herdr;
 mod history;
 mod launch;
+mod motion;
 mod notes;
 mod paste;
 mod profile;
@@ -116,7 +117,7 @@ async fn run(terminal: &mut Term, connection: Connection) -> anyhow::Result<()> 
 
     loop {
         let burst_due = burst.deadline();
-        let flash_due = app.next_flash_deadline();
+        let motion_due = app.next_motion_deadline();
         tokio::select! {
             maybe_event = events.next() => {
                 if !take_event(&mut app, &mut burst, &mut redraw, &mut profile, maybe_event) {
@@ -127,7 +128,12 @@ async fn run(terminal: &mut Term, connection: Connection) -> anyhow::Result<()> 
                 flush_burst(&mut app, &mut burst);
                 redraw.input(std::time::Instant::now());
             }
-            _ = sleep_until(flash_due), if flash_due.is_some() => {
+            // The client has no free-running frame clock, so anything
+            // animating has to ask for its own next frame. This is that
+            // ask: a flash still fading, or a spinner whose glyph is due
+            // to turn. When nothing moves there is no deadline and the
+            // loop goes back to sleeping on events.
+            _ = sleep_until(motion_due), if motion_due.is_some() => {
                 app.expire_state_flashes(std::time::Instant::now());
                 redraw.changed();
                 redraw.due();
@@ -209,6 +215,9 @@ async fn run(terminal: &mut Term, connection: Connection) -> anyhow::Result<()> 
         if redraw.take_frame(std::time::Instant::now()) {
             update_herdr(&mut herdr, &app);
             let began = std::time::Instant::now();
+            // Every animation in the frame reads this one instant, so two
+            // spinners cannot land on different glyphs in the same frame.
+            app.set_frame_now(began);
             let ui = draw_frame(terminal, &mut app)?;
             profile.record(|c| c.draw(began.elapsed(), ui));
             resize_live_panes(&mut app, &mut last_sizes);

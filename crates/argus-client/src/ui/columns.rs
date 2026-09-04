@@ -14,6 +14,7 @@ pub(super) fn rollup_item<'a>(
     notes: NoteCounts,
     has_note: bool,
     th: Theme,
+    spin: Spin,
 ) -> Item<'static> {
     let mut panes = 0usize;
     let mut status: Option<PaneStatus> = None;
@@ -29,7 +30,7 @@ pub(super) fn rollup_item<'a>(
     detail.extend(note_detail(notes, has_note, th));
     let item = Item::new(
         vec![
-            status_dot(status, th),
+            status_dot(status, th, spin),
             Span::styled(
                 name.to_string(),
                 Style::default().fg(th.text).add_modifier(Modifier::BOLD),
@@ -67,6 +68,7 @@ a  agent";
 /// widths can be decided from what the columns hold, which means building
 /// them before there is anywhere to draw them.
 fn project_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
+    let spin = Spin::at(app.frame_now(), app.epoch());
     app.tree
         .iter()
         .map(|p| {
@@ -80,12 +82,14 @@ fn project_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
                 p.note_rollup(),
                 p.has_note,
                 th,
+                spin,
             )
         })
         .collect()
 }
 
 fn repository_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
+    let spin = Spin::at(app.frame_now(), app.epoch());
     app.current_project()
         .map(|p| {
             p.repositories
@@ -98,6 +102,7 @@ fn repository_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
                         r.note_rollup(),
                         false,
                         th,
+                        spin,
                     )
                 })
                 .collect()
@@ -108,12 +113,13 @@ fn repository_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
 /// The column's order is the app's, not either list's: the main branch
 /// leads it whether it has a directory or not.
 fn checkout_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
+    let spin = Spin::at(app.frame_now(), app.epoch());
     app.current_repository()
         .map(|r| {
             app.checkout_rows()
                 .into_iter()
                 .filter_map(|row| match row {
-                    CheckoutRow::Checkout(i) => r.checkouts.get(i).map(|c| checkout_item(c, th)),
+                    CheckoutRow::Checkout(i) => r.checkouts.get(i).map(|c| checkout_item(c, th, spin)),
                     CheckoutRow::Branch(i) => r.branches.get(i).map(|b| branch_item(b, th)),
                     CheckoutRow::Remote(i) => r.remote_branches.get(i).map(|b| remote_item(b, th)),
                 })
@@ -123,6 +129,7 @@ fn checkout_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
 }
 
 fn pane_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
+    let spin = Spin::at(app.frame_now(), app.epoch());
     let flat = app.settings.pane_view == crate::settings::PaneView::Flat;
     app.pane_column_locations()
         .into_iter()
@@ -130,12 +137,17 @@ fn pane_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
             let p = app
                 .pane_at(location)
                 .expect("pane column locations must point at panes");
-            let flash = if app.pane_is_flashing(p.id) {
-                Style::default().bg(th.sel_bg_dim)
-            } else {
-                Style::default()
+            // The wash fades back into the card it sits on rather than
+            // switching off, so a state change reads as something settling.
+            // It mixes toward the unfocused fill because a selected row's
+            // own bar is patched over the flash in `render_row`, and an
+            // unselected row is on `surface` whichever column has focus.
+            let flash = match app.flash_strength(p.id) {
+                Some(strength) => Style::default()
+                    .bg(crate::motion::blend(th.surface, th.sel_bg_dim, strength)),
+                None => Style::default(),
             };
-            let mut state = status_dot(Some(p.status), th);
+            let mut state = status_dot(Some(p.status), th, spin);
             state.style = state.style.patch(flash);
             let detail = if flat {
                 let (project, repository, checkout) = app
@@ -171,7 +183,7 @@ fn pane_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
                 format!("#{}", p.id.0),
                 Style::default().fg(th.dim),
             )]);
-            std::iter::once(parent).chain(p.children.iter().map(|c| child_item(c, th)))
+            std::iter::once(parent).chain(p.children.iter().map(|c| child_item(c, th, spin)))
         })
         .collect()
 }

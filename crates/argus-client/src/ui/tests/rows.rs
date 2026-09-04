@@ -161,7 +161,7 @@ fn every_status_has_a_shape_distinct_glyph() {
         PaneStatus::Exited { code: Some(0) },
         PaneStatus::Exited { code: Some(1) },
     ];
-    let glyphs = statuses.map(|status| status_dot(Some(status), th).content.trim().to_string());
+    let glyphs = statuses.map(|status| status_dot(Some(status), th, Spin::STILL).content.trim().to_string());
 
     for (i, glyph) in glyphs.iter().enumerate() {
         assert!(
@@ -171,8 +171,8 @@ fn every_status_has_a_shape_distinct_glyph() {
         );
     }
     assert_ne!(
-        status_dot(Some(PaneStatus::Done), th).content,
-        status_dot(Some(PaneStatus::Exited { code: Some(0) }), th).content,
+        status_dot(Some(PaneStatus::Done), th, Spin::STILL).content,
+        status_dot(Some(PaneStatus::Exited { code: Some(0) }), th, Spin::STILL).content,
         "reviewed completion and process exit remain different states"
     );
 }
@@ -180,27 +180,27 @@ fn every_status_has_a_shape_distinct_glyph() {
 #[test]
 fn each_live_state_gets_its_own_color() {
     let th = Theme::default();
-    assert_eq!(status_dot(Some(PaneStatus::Idle), th).style.fg, Some(th.ok));
+    assert_eq!(status_dot(Some(PaneStatus::Idle), th, Spin::STILL).style.fg, Some(th.ok));
     assert_eq!(
-        status_dot(Some(PaneStatus::Working), th).style.fg,
+        status_dot(Some(PaneStatus::Working), th, Spin::STILL).style.fg,
         Some(th.warn)
     );
     assert_eq!(
-        status_dot(Some(PaneStatus::Waiting), th).style.fg,
+        status_dot(Some(PaneStatus::Waiting), th, Spin::STILL).style.fg,
         Some(th.err)
     );
     assert_eq!(
-        status_dot(Some(PaneStatus::NeedsReview), th).style.fg,
+        status_dot(Some(PaneStatus::NeedsReview), th, Spin::STILL).style.fg,
         Some(th.err)
     );
-    assert_eq!(status_dot(Some(PaneStatus::Done), th).style.fg, Some(th.ok));
+    assert_eq!(status_dot(Some(PaneStatus::Done), th, Spin::STILL).style.fg, Some(th.ok));
 }
 
 #[test]
 fn exits_are_a_box_or_a_cross_not_a_live_state_glyph() {
     let th = Theme::default();
-    let clean = status_dot(Some(PaneStatus::Exited { code: Some(0) }), th);
-    let failed = status_dot(Some(PaneStatus::Exited { code: Some(1) }), th);
+    let clean = status_dot(Some(PaneStatus::Exited { code: Some(0) }), th, Spin::STILL);
+    let failed = status_dot(Some(PaneStatus::Exited { code: Some(1) }), th, Spin::STILL);
     assert_eq!(clean.content.trim(), "□");
     assert_eq!(failed.content.trim(), "✗");
     assert_eq!(failed.style.fg, Some(th.err), "a failure must be loud");
@@ -387,7 +387,7 @@ fn a_failed_pane_outranks_the_calm_ones_but_not_a_waiting_one() {
 fn a_failed_pane_is_still_running_so_it_is_not_an_exit_cross() {
     // A cross would read as "this is over"; it isn't.
     let th = Theme::default();
-    let failed = status_dot(Some(PaneStatus::Failed), th);
+    let failed = status_dot(Some(PaneStatus::Failed), th, Spin::STILL);
     assert_eq!(failed.content.trim(), "■");
     assert_eq!(failed.style.fg, Some(th.err));
 }

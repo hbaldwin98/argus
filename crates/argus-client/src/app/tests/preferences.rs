@@ -49,7 +49,10 @@ fn changing_the_theme_applies_it_at_once() {
 fn the_initial_tree_is_a_quiet_baseline() {
     let mut h = Harness::new();
 
-    assert!(h.app.next_flash_deadline().is_none());
+    assert!(
+        h.app.next_motion_deadline().is_none(),
+        "a settled screen owes nobody a frame"
+    );
     assert!(!h.app.take_bell());
     assert!(h.app.status.is_empty());
 }
@@ -86,12 +89,29 @@ fn an_actionable_transition_flashes_and_explains_the_pane() {
 
     h.app.on_server_msg(ServerMsg::Tree(next));
 
-    assert!(h.app.pane_is_flashing(PaneId(101)));
+    h.app.set_frame_now(std::time::Instant::now());
+    let lit = h.app.flash_strength(PaneId(101)).expect("the pane flashes");
     assert!(h.app.status.contains("claude: needs the staging password"));
     assert!(h.app.status_alert);
-    let deadline = h.app.next_flash_deadline().unwrap();
+
+    // Halfway through the window the wash is dimmer but still there: the
+    // flash fades rather than switching off.
+    let deadline = h.app.next_motion_deadline().unwrap();
+    h.app.set_frame_now(deadline - STATE_FLASH / 2);
+    let halfway = h
+        .app
+        .flash_strength(PaneId(101))
+        .expect("the pane is still fading");
+    assert!(halfway < lit, "the flash dims as it goes: {halfway} vs {lit}");
+    assert!(halfway > 0.0);
+
+    h.app.set_frame_now(deadline);
+    assert_eq!(h.app.flash_strength(PaneId(101)), None);
     h.app.expire_state_flashes(deadline);
-    assert!(!h.app.pane_is_flashing(PaneId(101)));
+    assert!(
+        h.app.next_motion_deadline().is_none(),
+        "a finished flash stops asking for frames"
+    );
 }
 
 #[test]
@@ -127,7 +147,8 @@ fn a_child_transition_flashes_and_names_its_parent() {
 
     h.app.on_server_msg(ServerMsg::Tree(working));
 
-    assert!(h.app.pane_is_flashing(PaneId(101)));
+    h.app.set_frame_now(std::time::Instant::now());
+    assert!(h.app.flash_strength(PaneId(101)).is_some());
     assert!(h
         .app
         .status

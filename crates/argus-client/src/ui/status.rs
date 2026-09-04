@@ -334,6 +334,7 @@ fn draw_bar<S: AsRef<str>>(
 /// happening, and the breadcrumb comes back: a bar reading `0 working` is a
 /// row spent saying no.
 fn fleet(app: &App, th: Theme) -> Vec<Span<'static>> {
+    let spin = Spin::at(app.frame_now(), app.epoch());
     let mut tally: Vec<(PaneStatus, usize)> = Vec::new();
     let states = app
         .tree
@@ -371,7 +372,7 @@ fn fleet(app: &App, th: Theme) -> Vec<Span<'static>> {
         }
         // The same glyph the rows use, so the count and the column it is
         // counting are read as the same thing.
-        spans.push(status_dot(Some(status), th));
+        spans.push(status_dot(Some(status), th, spin));
         spans.push(Span::styled(
             format!("{n} {}", tally_word(status)),
             Style::default().fg(if status.needs_you() { th.err } else { th.muted }),

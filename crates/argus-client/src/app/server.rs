@@ -450,7 +450,8 @@ impl App {
             }
         }
         for (pane, before, after, label, note) in transitions {
-            self.state_flashes.insert(pane, now + STATE_FLASH);
+            self.state_flashes
+                .insert(pane, crate::motion::Animation::starting(now, STATE_FLASH));
             if after.needs_you() && (!before.needs_you() || before != after) {
                 let message = note
                     .filter(|note| !note.is_empty())
@@ -466,18 +467,55 @@ impl App {
         }
     }
 
-    pub fn pane_is_flashing(&self, pane: PaneId) -> bool {
-        self.state_flashes
-            .get(&pane)
-            .is_some_and(|deadline| *deadline > std::time::Instant::now())
+    /// How much of the pane's state flash is left to draw, `1.0` at its
+    /// brightest and falling to nothing. `None` once it is over.
+    ///
+    /// Eased, so the highlight leaves the way a thing settles rather than
+    /// at a constant rate — and inverted from raw progress, because what
+    /// the renderer wants is how much wash to mix in, not how much of the
+    /// animation has gone by.
+    pub fn flash_strength(&self, pane: PaneId) -> Option<f32> {
+        let progress = self.state_flashes.get(&pane)?.progress(self.frame_now)?;
+        Some(1.0 - crate::motion::ease_out(progress))
     }
 
-    pub fn next_flash_deadline(&self) -> Option<std::time::Instant> {
-        self.state_flashes.values().copied().min()
+    /// When the next frame is owed to something moving: a flash still
+    /// fading, or a spinner about to change glyph. `None` when the screen
+    /// is settled and the loop can sleep until something happens.
+    pub fn next_motion_deadline(&self) -> Option<std::time::Instant> {
+        let fading = self.state_flashes.values().map(|anim| anim.deadline()).min();
+        let spinning = self
+            .any_pane_working()
+            .then(|| crate::motion::spinner_deadline(self.frame_now, self.epoch));
+        match (fading, spinning) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
+    }
+
+    /// Whether anything on screen is mid-turn, and so whether the spinner
+    /// is asking for frames at all.
+    fn any_pane_working(&self) -> bool {
+        crate::app::panes_in(&self.tree).any(|p| p.status == PaneStatus::Working)
     }
 
     pub fn expire_state_flashes(&mut self, now: std::time::Instant) {
-        self.state_flashes.retain(|_, deadline| *deadline > now);
+        self.state_flashes
+            .retain(|_, anim| anim.progress(now).is_some());
+    }
+
+    /// The clock the frame about to be drawn reads. Set once per frame so
+    /// every animation in it agrees on the time.
+    pub fn set_frame_now(&mut self, now: std::time::Instant) {
+        self.frame_now = now;
+    }
+
+    pub fn frame_now(&self) -> std::time::Instant {
+        self.frame_now
+    }
+
+    pub fn epoch(&self) -> std::time::Instant {
+        self.epoch
     }
 
     pub fn take_bell(&mut self) -> bool {

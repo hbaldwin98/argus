@@ -1082,3 +1082,73 @@ fn typing_a_feature_name_does_not_work_the_board_underneath() {
     app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     assert_eq!(app.view, View::Board, "the first escape only put the line away");
 }
+
+#[test]
+fn a_working_pane_turns_and_a_settled_one_does_not() {
+    let mut app = app_with_tree();
+    let epoch = app.epoch();
+
+    let glyphs: Vec<String> = (0..4)
+        .map(|frame| {
+            app.set_frame_now(epoch + crate::motion::SPINNER_FRAME * frame);
+            let text = lines(&draw(&mut app)).join("\n");
+            // The pane's own row, reduced to its status cell. Not the live
+            // view's title, which spells the same name out across the
+            // breadcrumb and carries no glyph of its own.
+            text.lines()
+                .find(|l| l.contains("claude") && !l.contains('\u{203a}'))
+                .expect("the working pane has a row")
+                .chars()
+                .find(|c| "⠋⠙⠹⠸⠼⠴⠦⠧●○".contains(*c))
+                .expect("the row carries a status glyph")
+                .to_string()
+        })
+        .collect();
+
+    let distinct: std::collections::HashSet<&String> = glyphs.iter().collect();
+    assert_eq!(
+        distinct.len(),
+        4,
+        "four consecutive frames should show four glyphs, not {glyphs:?}"
+    );
+
+    // The idle pane beside it is unmoved by any of that: motion marks the
+    // one state that is ongoing, and would say nothing if everything had it.
+    let idle: Vec<String> = (0..4)
+        .map(|frame| {
+            app.set_frame_now(epoch + crate::motion::SPINNER_FRAME * frame);
+            let text = lines(&draw(&mut app)).join("\n");
+            text.lines()
+                .find(|l| l.contains("shell"))
+                .expect("the idle pane has a row")
+                .to_string()
+        })
+        .collect();
+    assert!(
+        idle.windows(2).all(|w| w[0] == w[1]),
+        "an idle row should be identical frame to frame: {idle:?}"
+    );
+}
+
+#[test]
+fn nothing_moving_means_no_frame_is_owed() {
+    let mut app = app_with_tree();
+    // The fixture has a pane mid-turn, so the spinner is asking for frames.
+    assert!(app.next_motion_deadline().is_some());
+
+    for project in &mut app.tree {
+        for repository in &mut project.repositories {
+            for checkout in &mut repository.checkouts {
+                for pane in &mut checkout.panes {
+                    pane.status = argus_protocol::PaneStatus::Idle;
+                }
+            }
+        }
+    }
+
+    assert!(
+        app.next_motion_deadline().is_none(),
+        "a screen with nothing turning should let the loop sleep"
+    );
+}
+

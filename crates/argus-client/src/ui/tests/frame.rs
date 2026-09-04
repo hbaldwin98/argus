@@ -407,8 +407,10 @@ fn narrow_row_text_ends_in_an_ellipsis() {
     app.column_widths = Some(vec![MIN_COLUMN_WIDTH, 18, 18, 18, 34]);
     let text = lines(&draw(&mut app)).join("\n");
 
+    // The pane is working, so its glyph is the spinner's first frame: a
+    // test app's clock never advances past the epoch it was built at.
     assert!(
-        text.contains("● a-proj…"),
+        text.contains("⠋ a-proj…"),
         "a name past the column's width should end in an ellipsis:\n{text}"
     );
 }

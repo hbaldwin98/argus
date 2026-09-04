@@ -6,7 +6,11 @@
 use super::*;
 
 /// A checkout's row: what is running in it, and what git says about it.
-pub(super) fn checkout_item(c: &argus_protocol::CheckoutInfo, th: Theme) -> Item<'static> {
+pub(super) fn checkout_item(
+    c: &argus_protocol::CheckoutInfo,
+    th: Theme,
+    spin: Spin,
+) -> Item<'static> {
     // A checkout is usually sitting on the branch it's named after;
     // repeating it ("master master") says nothing. Show the branch only
     // when it actually differs.
@@ -35,7 +39,7 @@ pub(super) fn checkout_item(c: &argus_protocol::CheckoutInfo, th: Theme) -> Item
     detail.extend(note_detail(c.notes, c.has_note, th));
     Item::new(
         vec![
-            status_dot(worst_pane_status(c), th),
+            status_dot(worst_pane_status(c), th, spin),
             Span::styled(
                 format!("{} ", if c.primary { "⌂" } else { "⧉" }),
                 Style::default().fg(if c.primary { th.muted } else { th.dim }),
@@ -65,7 +69,7 @@ pub(super) fn checkout_item(c: &argus_protocol::CheckoutInfo, th: Theme) -> Item
 pub(super) fn branch_item(name: &str, th: Theme) -> Item<'static> {
     Item::new(
         vec![
-            status_dot(None, th),
+            status_dot(None, th, Spin::STILL),
             Span::styled("⌥ ", Style::default().fg(th.dim)),
             Span::styled(name.to_string(), Style::default().fg(th.muted)),
         ],
@@ -79,7 +83,7 @@ pub(super) fn branch_item(name: &str, th: Theme) -> Item<'static> {
 pub(super) fn remote_item(name: &str, th: Theme) -> Item<'static> {
     Item::new(
         vec![
-            status_dot(None, th),
+            status_dot(None, th, Spin::STILL),
             Span::styled("⇣ ", Style::default().fg(th.dim)),
             Span::styled(name.to_string(), Style::default().fg(th.muted)),
         ],
@@ -203,11 +207,11 @@ pub(super) fn pane_detail(p: &argus_protocol::PaneInfo, th: Theme) -> Vec<Span<'
 /// parent (DESIGN.md §8b). Indented and unbolded so the column still reads
 /// as a list of panes: a child is something happening in a pane, not
 /// somewhere else to go — selecting its row selects the pane it runs in.
-pub(super) fn child_item(c: &ChildAgentInfo, th: Theme) -> Item<'static> {
+pub(super) fn child_item(c: &ChildAgentInfo, th: Theme, spin: Spin) -> Item<'static> {
     Item::new(
         vec![
             Span::styled("  ⤷ ", Style::default().fg(th.dim)),
-            status_dot(Some(c.status), th),
+            status_dot(Some(c.status), th, spin),
             Span::styled(c.label.clone(), Style::default().fg(th.muted)),
         ],
         vec![Span::styled(
@@ -253,20 +257,48 @@ pub(super) fn worst_pane_status(c: &argus_protocol::CheckoutInfo) -> Option<Pane
         .max_by_key(|s| s.urgency())
 }
 
+/// The turning glyph for this frame, threaded beside the theme.
+///
+/// Decided once per frame and passed down rather than each row asking the
+/// clock as it draws: two spinners in one frame that read `Instant::now`
+/// a millisecond apart can land on different glyphs, and a screen of
+/// spinners out of step reads as several unrelated things happening
+/// rather than as one system that is busy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Spin(&'static str);
+
+impl Spin {
+    pub(super) fn at(now: std::time::Instant, epoch: std::time::Instant) -> Self {
+        Spin(crate::motion::spinner(now, epoch))
+    }
+
+    /// For the rows that draw a status without a clock behind them — a
+    /// branch with no checkout, and the render tests that pin a frame.
+    pub(super) const STILL: Spin = Spin("●");
+}
+
 /// Shape carries the state signal (§8b); color reinforces it but is never
 /// the only distinction. Outlined shapes mark idle or cleanly exited work.
-pub(super) fn status_dot(status: Option<PaneStatus>, th: Theme) -> Span<'static> {
+///
+/// Every glyph is one cell wide and gets the same trailing space, so the
+/// names beside them line up whatever each row's state is — including the
+/// spinner, whose braille frames were chosen to hold that width.
+pub(super) fn status_dot(status: Option<PaneStatus>, th: Theme, spin: Spin) -> Span<'static> {
     let (glyph, color) = match status {
-        None => ("· ", th.dim),
-        Some(PaneStatus::Idle) => ("○ ", th.ok),
-        Some(PaneStatus::Working) => ("● ", th.warn),
-        Some(PaneStatus::Waiting) => ("▲ ", th.err),
-        Some(PaneStatus::NeedsReview) => ("◆ ", th.err),
-        Some(PaneStatus::Done) => ("✓ ", th.ok),
+        None => ("·", th.dim),
+        Some(PaneStatus::Idle) => ("○", th.ok),
+        // The one state that is ongoing rather than settled, and so the
+        // one that turns. A still dot said "working" no differently from
+        // "idle": the tree looked the same whether an agent was thinking
+        // or had stopped.
+        Some(PaneStatus::Working) => (spin.0, th.warn),
+        Some(PaneStatus::Waiting) => ("▲", th.err),
+        Some(PaneStatus::NeedsReview) => ("◆", th.err),
+        Some(PaneStatus::Done) => ("✓", th.ok),
         // Still running, unlike an exit, so it is a block rather than a cross.
-        Some(PaneStatus::Failed) => ("■ ", th.err),
-        Some(PaneStatus::Exited { code: Some(0) }) => ("□ ", th.dim),
-        Some(PaneStatus::Exited { .. }) => ("✗ ", th.err),
+        Some(PaneStatus::Failed) => ("■", th.err),
+        Some(PaneStatus::Exited { code: Some(0) }) => ("□", th.dim),
+        Some(PaneStatus::Exited { .. }) => ("✗", th.err),
     };
-    Span::styled(glyph, Style::default().fg(color))
+    Span::styled(format!("{glyph} "), Style::default().fg(color))
 }
