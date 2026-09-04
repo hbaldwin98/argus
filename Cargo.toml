@@ -28,8 +28,8 @@ argus-protocol = { path = "crates/argus-protocol" }
 portable-pty = "0.8"
 vt100 = "0.16"
 git2 = { version = "0.19", features = ["vendored-openssl"] }
-ratatui = "0.28"
-crossterm = "0.28"
+ratatui = "0.30"
+crossterm = "0.29"
 tempfile = "3"
 notify = { version = "6", default-features = false, features = ["macos_fsevent"] }
 rusqlite = { version = "0.40", features = ["bundled"] }

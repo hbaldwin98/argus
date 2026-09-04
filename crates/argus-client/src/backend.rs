@@ -103,6 +103,10 @@ impl<W: Write> Write for TermBackend<W> {
 }
 
 impl<W: Write> Backend for TermBackend<W> {
+    /// Every method here delegates to `CrosstermBackend`, which fails with
+    /// `io::Error`, so there is nothing else for the wrapper to report.
+    type Error = io::Error;
+
     fn draw<'a, I>(&mut self, content: I) -> io::Result<()>
     where
         I: Iterator<Item = (u16, u16, &'a Cell)>,
