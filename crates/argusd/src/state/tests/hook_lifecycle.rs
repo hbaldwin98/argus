@@ -146,9 +146,11 @@ fn startup_sweeps_hooks_left_by_a_previous_daemon() {
         .install(dir.path(), PaneId(4), 65140, "old")
         .unwrap();
     assert!(settings_of(dir.path()).exists());
+    assert!(dir.path().join(".claude/skills/argus/SKILL.md").is_file());
 
     let d = daemon_with_fake_claude(dir.path());
     d.sweep_stale_hooks();
+    assert!(!dir.path().join(".claude/skills/argus").exists());
     assert!(
         !settings_of(dir.path()).exists(),
         "a previous boot's hooks must not survive startup"
@@ -176,6 +178,7 @@ async fn closing_the_last_agent_pane_takes_its_hooks_out() {
     assert!(settings_of(dir.path()).exists(), "spawning installs hooks");
 
     d.close_pane(pane).unwrap();
+    assert!(!dir.path().join(".claude/skills/argus").exists());
     assert!(
         !settings_of(dir.path()).exists(),
         "the last agent leaving takes the hooks with it"
@@ -195,6 +198,7 @@ async fn closing_one_of_two_agent_panes_leaves_the_hooks_alone() {
     let _second = d.spawn_agent(checkout, "claude").unwrap();
 
     d.close_pane(first).unwrap();
+    assert!(dir.path().join(".claude/skills/argus/SKILL.md").is_file());
     assert!(
         settings_of(dir.path()).exists(),
         "the surviving agent still needs its status hooks"

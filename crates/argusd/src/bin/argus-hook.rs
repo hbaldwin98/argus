@@ -23,6 +23,7 @@
 //! argus-hook decide "one row per note" --under 3  # hangs under decision 3
 //! argus-hook decide "one row per note" --supersedes 7   # replaces decision 7
 //! argus-hook say "text"                          # prints, calls nobody
+//! argus-hook instructions                        # prints inherited startup context
 //! argus-hook <url> <token> [--note-from-stdin] [--title-from-stdin]  # the installed hook form
 //! ```
 //!
@@ -44,7 +45,7 @@
 //! continue — Cursor wants `permission`, Claude wants `decision` — never a
 //! human-readable message. Some agent CLIs inject a hook's stdout into the
 //! model's context, so staying silent keeps Argus's bookkeeping out of the
-//! conversation. The deliberate `say`, `comments`, `context`, `todo`,
+//! conversation. The deliberate `say`, `instructions`, `comments`, `context`, `todo`,
 //! `feature`, `decisions`, and `decide` commands do return useful output.
 //!
 //! On Windows it is a GUI-subsystem binary. Not because it has a UI — it
@@ -65,7 +66,7 @@ use std::time::Duration;
 use argus_protocol::{
     AgentContext, Decision, DecisionBoard, DecisionWrite, Endpoint, FeatureAction, FeatureBoard,
     FeatureWrite, Report, ReviewComment, TaskAction, TaskList, TaskState, TaskWrite, TodoState,
-    TodoWrite, INSTRUCTIONS_VAR, NOTE_FLAG,
+    TodoWrite, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG,
     OWNS_SESSION_FLAG, SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };
 
@@ -86,6 +87,7 @@ type NamedHandler = fn(&[&str]);
 
 const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("say", say),
+    (INSTRUCTIONS_COMMAND, instructions),
     ("title", title),
     ("status", status),
     ("checkout", checkout),
@@ -118,6 +120,12 @@ fn say(rest: &[&str]) {
     let mut out = std::io::stdout();
     let _ = writeln!(out, "{}", rest.join(" "));
     let _ = out.flush();
+}
+
+fn instructions(_: &[&str]) {
+    // Read in the helper, not in a shell command string: multiline context
+    // and paths with shell metacharacters must remain data, never shell code.
+    say(&[&env_instructions()]);
 }
 
 fn title(rest: &[&str]) {
