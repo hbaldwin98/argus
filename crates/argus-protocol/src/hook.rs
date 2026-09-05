@@ -21,6 +21,9 @@ pub const HELPER_VAR: &str = "ARGUS_HOOK";
 pub const PANE_VAR: &str = "ARGUS_PANE";
 pub const INSTRUCTIONS_VAR: &str = "ARGUS_INSTRUCTIONS";
 
+/// The context-only helper command used by stable, environment-based hooks.
+pub const INSTRUCTIONS_COMMAND: &str = "instructions";
+
 /// Names the conversation a report comes from, so the daemon can tell the
 /// agent that owns a pane from one spawned inside it — which inherits the
 /// pane's environment and would otherwise rewrite its parent's row.

@@ -47,6 +47,7 @@ fn flat_harness() -> Harness {
         command_string: false,
         bake_command: false,
         rule_file: None,
+        skill_dir: None,
         settings_version: None,
     }
 }
@@ -194,24 +195,8 @@ fn the_context_hook_carries_the_instructions_and_calls_nothing() {
         .clone();
     let args: Vec<String> = serde_json::from_value(entry["args"].clone()).unwrap();
     assert_eq!(args[0], "say");
-    assert!(
-        args[1].contains("title"),
-        "should teach renaming: {}",
-        args[1]
-    );
-    assert!(
-        args[1].contains("checkout"),
-        "should teach checkout affiliation: {}",
-        args[1]
-    );
-    assert!(
-        args[1].contains("needs-review"),
-        "should teach review state"
-    );
-    assert!(
-        args[1].contains("status done"),
-        "should teach completion state"
-    );
+    assert!(args[1].contains(&dir.path().join(".claude/skills/argus/SKILL.md").display().to_string()));
+    assert!(!args[1].contains("task add"), "workflow details belong in the skill");
     assert!(
         !args[1].contains("http://"),
         "no network in the instruction hook"
@@ -324,7 +309,7 @@ fn codex_uses_its_project_hook_shape_and_cleans_up_only_its_handler() {
     let root = settings_of(dir.path(), &h);
     assert_eq!(root["description"], "mine");
     let groups = root["hooks"]["SessionStart"].as_array().unwrap();
-    assert_eq!(groups.len(), 2, "the user's SessionStart hook survives");
+    assert_eq!(groups.len(), 3, "the user's hook survives beside status and context");
     let ours = groups
         .iter()
         .find(|group| group["matcher"] == "startup|resume|clear")
@@ -359,16 +344,22 @@ fn codex_hook_content_stays_stable_across_panes_and_daemon_boots() {
 
     h.install(dir.path(), PaneId(1), 1111, "first-token")
         .unwrap();
-    let first = settings_of(dir.path(), &h)["hooks"]["SessionStart"][0]["hooks"][0].clone();
+    let first = settings_of(dir.path(), &h);
 
     h.install(dir.path(), PaneId(9), 9999, "second-token")
         .unwrap();
-    let second = settings_of(dir.path(), &h)["hooks"]["SessionStart"][0]["hooks"][0].clone();
+    let second = settings_of(dir.path(), &h);
 
     assert_eq!(
         first, second,
         "reinstalling must not invalidate Codex trust"
     );
+    let context = &second["hooks"]["SessionStart"][1]["hooks"][0];
+    assert_eq!(context["command"], format!("\"$ARGUS_HOOK\" {INSTRUCTIONS_COMMAND}"));
+    assert_eq!(context["commandWindows"], format!("\"%ARGUS_HOOK%\" {INSTRUCTIONS_COMMAND}"));
+    assert!(context.get("args").is_none());
+    assert!(second["hooks"]["SessionStart"][1].get("matcher").is_none(), "context also returns after compaction");
+    let second = &second["hooks"]["SessionStart"][0]["hooks"][0];
     assert_eq!(
         second["command"],
         r#""$ARGUS_HOOK" "$ARGUS_HOOK_URL/status/idle" "$ARGUS_HOOK_TOKEN" "--session-id-from-stdin" "session_id" "--owns-session""#
@@ -601,56 +592,6 @@ fn the_environment_also_carries_the_instructions() {
         .map(|(_, v)| v.clone())
         .unwrap();
     assert!(text.contains("title"));
-}
-
-#[test]
-fn agents_are_told_to_isolate_branch_changes() {
-    let text = instructions();
-
-    assert!(text.contains("Never run `git switch` or `git checkout`"));
-    assert!(text.contains("git worktree add"));
-    assert!(text.contains("checkout"));
-}
-
-#[test]
-fn agents_are_told_how_to_read_review_comments() {
-    let text = instructions();
-
-    assert!(text.contains("Review comments are durable"));
-    assert!(text.contains("comments"));
-}
-
-#[test]
-fn agents_are_told_where_the_humans_notes_are() {
-    let text = instructions();
-    assert!(text.contains("standing instructions"));
-    assert!(text.contains("context"));
-}
-
-#[test]
-fn agents_are_told_they_may_be_allowed_to_write_items_and_may_not() {
-    let text = instructions();
-    // The instructions are the same for every pane, so the one thing they
-    // must not do is promise a write that the project will refuse.
-    assert!(text.contains("Where the project allows it"));
-    assert!(text.contains("todo add"));
-    assert!(text.contains("todo done"));
-    assert!(text.contains("refuses the write"));
-}
-
-#[test]
-fn agents_are_told_when_to_record_a_decision_and_when_not_to() {
-    let text = instructions();
-    assert!(text.contains("decisions"), "and how to read the board");
-    assert!(text.contains("decide "));
-    assert!(text.contains("--over"));
-    assert!(text.contains("--because"));
-    assert!(text.contains("--supersedes"));
-    // The two limits that keep the board a reference rather than a log:
-    // decisions are recorded while planning, not as commentary, and an
-    // earlier one is replaced only when a later finding undoes it.
-    assert!(text.contains("not as a running commentary"));
-    assert!(text.contains("invalidates it"));
 }
 
 // --- the plugin mechanism ----------------------------------------------
@@ -949,7 +890,7 @@ fn agy_installs_into_agents_hooks_json_and_cleans_up() {
     let rule_file = dir.path().join(".agents").join("rules").join("argus.md");
     assert!(rule_file.is_file(), "should write .agents/rules/argus.md");
     let rule_content = std::fs::read_to_string(&rule_file).unwrap();
-    assert!(rule_content.contains("title"));
+    assert!(rule_content.contains("SKILL.md"));
 
     let raw = std::fs::read_to_string(&hooks_file).unwrap();
     let root: Value = serde_json::from_str(&raw).unwrap();
@@ -1005,7 +946,7 @@ fn cursor_agent_installs_into_hooks_json_and_cleans_up() {
     assert!(rule_file.is_file(), "should write .cursor/rules/argus.mdc");
     let rule_content = std::fs::read_to_string(&rule_file).unwrap();
     assert!(rule_content.contains("alwaysApply: true"));
-    assert!(rule_content.contains("title"));
+    assert!(rule_content.contains("SKILL.md"));
 
     let raw = std::fs::read_to_string(&hooks_file).unwrap();
     let root: Value = serde_json::from_str(&raw).unwrap();

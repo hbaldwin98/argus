@@ -20,7 +20,7 @@ pub fn env(pane: PaneId, port: u16, token: &str) -> Vec<(String, String)> {
         (TOKEN_VAR.into(), token.to_string()),
         (PANE_VAR.into(), pane.0.to_string()),
         (HELPER_VAR.into(), helper_path()),
-        (INSTRUCTIONS_VAR.into(), instructions()),
+        (INSTRUCTIONS_VAR.into(), skill::fallback().to_string()),
     ]
 }
 
@@ -49,126 +49,6 @@ pub(super) fn event_env_url(event: &Event, windows: bool) -> String {
     } else {
         format!("{base}/status/{}", event.reports.as_str())
     }
-}
-
-/// What an agent is told about Argus, once, at the start of its session.
-///
-/// Kept to what is actionable. An agent that reads this should come away
-/// knowing it can name its own row, which is the whole point: a column of
-/// four panes all called "claude" tells you nothing about which one is
-/// worth looking at.
-pub fn instructions() -> String {
-    let hook = helper_path();
-    format!(
-        "You are running inside Argus, which shows this session as one pane in a list.\n\
-         The pane is currently named after the agent, which is not useful when several \
-         are running. Rename it to whatever you are actually working on, as a short \
-         noun phrase of a few words, by running:\n\
-         \n\
-         \x20 {hook} title \"fixing the pty deadlock\"\n\
-         \n\
-         Do that as soon as you know what the task is, and again whenever you move on \
-         to something clearly different.\n\
-         \n\
-         Other agents may be running in the same checkout. Never run `git switch` or \
-         `git checkout` in the checkout you were started in, because that changes the \
-         branch for every agent sharing it. If you need another branch, create a new \
-         linked worktree and branch there with `git worktree add <new-path> -b \
-         <new-branch>`. Do all subsequent work from that new path.\n\
-         \n\
-         Review comments are durable and scoped to this checkout. Read the newest comments with:\n\
-         \n\
-         \x20 {hook} comments\n\
-         \n\
-         The human keeps notes on this checkout and the project above it, and lines \
-         marked `- [!]` in them are standing instructions meant for you. Read them \
-         before you start, and again whenever the task changes shape:\n\
-         \n\
-         \x20 {hook} context\n\
-         \n\
-         Where the project allows it, you can also add to the checkout's note and tick \
-         items off it. Use it to record work the human will want to see, not as a \
-         scratchpad. Every change is attributed to you, and a project that has not \
-         asked for this refuses the write and says so:\n\
-         \n\
-         \x20 {hook} todo add \"ported the parser\"\n\
-         \x20 {hook} todo done 4\n\
-         \n\
-         Work is scoped to a feature: a short document saying what is being built, \
-         with the decisions taken while building it hanging off it. Everything you \
-         read and record here is that feature's, not the whole project's. Start by \
-         reading where this checkout is:\n\
-         \n\
-         \x20 {hook} feature\n\
-         \x20 {hook} feature list\n\
-         \n\
-         If it is on none, open one as soon as you know what you are building, or work \
-         on one that already exists. Add to the document when you learn something a \
-         later agent would need and the decisions below do not say:\n\
-         \n\
-         \x20 {hook} feature open \"streaming the pty\"\n\
-         \x20 {hook} feature use streaming-the-pty\n\
-         \x20 {hook} feature note \"the reader thread owns the handle\"\n\
-         \n\
-         The feature carries the tasks left to do under it, which is where the human \
-         says what they want done. Read them before you pick up work, take one up \
-         while you are on it, and finish it when it is done:\n\
-         \n\
-         \x20 {hook} task\n\
-         \x20 {hook} task doing 3\n\
-         \x20 {hook} task done 3\n\
-         \n\
-         Add tasks when you find work the list does not have, or when the human asks \
-         you to bring some in from the board they really use. `--key` keeps that \
-         board's own id so it can be matched up later; Argus does nothing with it:\n\
-         \n\
-         \x20 {hook} task add \"port the vt parser\"\n\
-         \x20 {hook} task add \"backpressure on the reader\" --key ORION-412\n\
-         \x20 {hook} task retitle 4 \"port the vt parser and its tests\"\n\
-         \x20 {hook} task drop 4\n\
-         \n\
-         Under that feature is its decision board: a reference tree of the choices made \
-         while building it, which you read before you start and add to as you plan. \
-         Read it with:\n\
-         \n\
-         \x20 {hook} decisions\n\
-         \n\
-         Record a decision when you are planning this feature and you pick one real \
-         option over another — not for routine steps, and not as a running commentary. Say what \
-         you chose, what you chose it over, and what forced it, and hang it under the \
-         decision that constrained it, using the number `decisions` prints:\n\
-         \n\
-         \x20 {hook} decide \"one row per note\" --over \"a table per note\" \
-         --because \"the key has to outlive the ids\"\n\
-         \x20 {hook} decide \"key notes by path\" --under 4\n\
-         \n\
-         Only revisit an earlier decision when something you have since found actually \
-         invalidates it. Then replace it rather than editing it, so the board still shows \
-         what was believed before:\n\
-         \n\
-         \x20 {hook} decide \"key notes by path\" --supersedes 4 \
-         --because \"ids are handed out fresh every start\"\n\
-         \n\
-         After you start working in another checkout, run this from that checkout so the \
-         pane moves under it in Argus:\n\
-         \n\
-         \x20 {hook} checkout\n\
-         \n\
-         If you get blocked and need the human, say so in one line so they can see \
-         why from the pane list without opening it:\n\
-         \n\
-         \x20 {hook} status waiting \"needs the staging database password\"\n\
-         \x20 {hook} status failed \"cargo test is failing on a dependency I can't fix\"\n\
-         \n\
-         When your changes are ready for the human to inspect, report `needs-review`. \
-         After they are reviewed and the task is complete, report `done`:\n\
-         \n\
-         \x20 {hook} status needs-review \"ready for review\"\n\
-         \x20 {hook} status done \"reviewed and complete\"\n\
-         \n\
-         Report `working` again when you resume work. These write nothing and cost \
-         nothing. Do not mention having run them."
-    )
 }
 
 /// The helper that actually posts to the daemon (`src/bin/argus-hook.rs`),

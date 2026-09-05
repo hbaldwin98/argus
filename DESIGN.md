@@ -67,6 +67,7 @@ to the type or its locking.
 | `conn` | one client connection, and which task each message runs on |
 | `pty`, `pty/job`, `pty/vt` | a pane's child process, its resource bounds, and the vt100 translation |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
+| `harness/skill` | the skill package an agent receives and the short message that leads it there |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
 | `git`, `diff`, `browse`, `highlight` | the read-only questions asked of a repository |
 | `config` | `projects.toml`, which is read and never written |
@@ -498,20 +499,38 @@ event — Claude `UserPromptSubmit`, Cursor `beforeSubmitPrompt`, AGY
 posts it to `/title` the same way an explicit `argus-hook title` does. Tool-start
 events are not titles: a working pane named "Shell" says less than the template
 already does. An agent can still refine the name once it knows the task; the
-next prompt replaces it. Children still cannot rename the parent row. At session
-start a harness with a `context_event` is handed
-instructions telling it to run `argus-hook title "..."` once it knows what it is working on, and
-`argus-hook status waiting "..."` when it needs a human, `needs-review` when work is ready to
-inspect, and `done` once reviewed and complete. The instructions also ask it to run
-`argus-hook checkout` after moving to another checkout. The same text is in `ARGUS_INSTRUCTIONS`,
-which is where a plugin harness picks it up — OpenCode's module appends it to the system prompt.
+next prompt replaces it. Children still cannot rename the parent row.
+
+Agent workflow guidance lives in the bundled `crates/argusd/skills/argus/SKILL.md` and its
+`references/work.md`, embedded into the daemon at build time. The skill explains titles,
+semantic status reports, checkout moves, and reading context and review feedback; its reference
+covers features, tasks, decisions, and note writes. Lifecycle hooks still capture session
+identity and report their existing events. A stopped turn is not proof of completed work.
+
+Before starting a built-in agent, Argus installs the package in `.claude/skills/argus` for
+Claude Code and `.agents/skills/argus` for Codex, OpenCode, AGY, and Cursor. The latter also gives
+harnesses without a native skill loader a file they can read directly. `ARGUS_INSTRUCTIONS`
+now holds a short bootstrap pointing at the installed `SKILL.md`. Claude's context event,
+Codex's additional SessionStart context hook (including compaction), OpenCode's system-prompt
+adapter, and AGY/Cursor's rules deliver that bootstrap through their existing context surfaces.
+The Codex context command runs `argus-hook instructions`, which prints the inherited message
+without contacting the daemon or interpreting it as shell code. Its command string is stable
+across panes, boots, and changes to skill content; its separate session-identity event keeps its
+existing matcher, so compaction does not reset pane status.
+
+A generic or custom harness without `skill_dir` receives compact fallback guidance in
+`ARGUS_INSTRUCTIONS`, covering context, titles, status, and checkout isolation. Custom harnesses
+can set `skill_dir` to a checkout-relative directory to opt into the same package. Missing,
+incomplete, or conflicting packages also use the fallback. A user-owned skill or reference is
+never overwritten; a symlinked skill directory or file is left alone. Managed files carry an
+ownership marker and are removed with the hooks after the last agent leaves, on checkout moves,
+or during startup cleanup; unrelated files remain. After moving, agents resolve the skill's
+references in the new checkout. Removing the marker makes a replacement file user-owned.
+
 Titles arriving from a model are flattened to one line and cut to 48 characters. Neither a rename,
 status report, nor checkout move can touch a pane that has exited. A renamed row keeps showing its
-template on its second line, so a column of agents that have all named themselves still says which
-CLI each one is. Because panes may share a checkout, the standing instructions prohibit agents from
-switching that checkout's branch in place. An agent that needs another branch creates a linked
-worktree, continues from its path, and reports that checkout move. This keeps one agent's branch
-choice from changing the files and `HEAD` seen by every other pane in the original checkout.
+template on its second line. The skill directs agents to use linked worktrees for branch changes,
+since switching a shared checkout in place changes files and HEAD for every pane using it.
 
 ## Session restore
 
