@@ -281,6 +281,7 @@ impl App {
             ServerMsg::Error { message } => {
                 self.alert(format!("error: {message}"));
             }
+            ServerMsg::Restarting => {}
         }
     }
 

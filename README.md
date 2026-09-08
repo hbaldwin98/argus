@@ -129,6 +129,15 @@ Windows:
 The client starts `argusd` in the background when needed. Press `q` from the navigation columns to
 detach; existing panes continue running.
 
+To restart a running daemon without opening the TUI, run:
+
+```sh
+argus server restart
+```
+
+The command waits for the replacement daemon to be ready. Non-exited panes are restored from the
+runtime session store.
+
 ## Install on `PATH`
 
 ### Release archive

@@ -52,12 +52,34 @@ use wire::connection_channels;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if matches!(
+        parse_command(&std::env::args().skip(1).collect::<Vec<_>>())?,
+        Command::ServerRestart
+    ) {
+        return launch::restart_daemon().await;
+    }
     let stream = launch::ensure_daemon_and_connect().await?;
     let connection = connection_channels(stream);
     let mut terminal = enter_terminal()?;
     let result = run(&mut terminal, connection).await;
     leave_terminal(&mut terminal)?;
     result
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Command {
+    Tui,
+    ServerRestart,
+}
+
+fn parse_command(args: &[String]) -> anyhow::Result<Command> {
+    match args {
+        [] => Ok(Command::Tui),
+        [server, restart] if server == "server" && restart == "restart" => {
+            Ok(Command::ServerRestart)
+        }
+        _ => Err(anyhow::anyhow!("usage: argus [server restart]")),
+    }
 }
 
 /// Keeps trying for a daemon in the background, and reports the connection
@@ -406,6 +428,26 @@ mod tests {
     use super::*;
     use crate::app::{Focus, Prompt};
     use std::io;
+
+    #[test]
+    fn no_arguments_open_the_tui() {
+        assert!(matches!(parse_command(&[]), Ok(Command::Tui)));
+    }
+
+    #[test]
+    fn server_restart_is_the_daemon_control_command() {
+        let args = ["server".to_string(), "restart".to_string()];
+        assert!(matches!(
+            parse_command(&args),
+            Ok(Command::ServerRestart)
+        ));
+    }
+
+    #[test]
+    fn unsupported_arguments_show_usage() {
+        let args = ["server".to_string()];
+        assert!(parse_command(&args).is_err());
+    }
 
     #[test]
     fn a_pane_that_left_the_screen_claims_its_size_again_when_it_returns() {

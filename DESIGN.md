@@ -16,6 +16,11 @@ The client starts the daemon lazily when it cannot connect. On Unix the daemon p
 `setsid`; on Windows it starts in a detached process group. Closing the client does not stop the
 daemon or its child processes.
 
+`argus server restart` is the explicit clean replacement path. The client sends a protocol control
+message, waits for the daemon to flush its acknowledgement and release the endpoint, then starts
+the replacement through the same lazy-start path. The daemon removes managed hooks before exit;
+the replacement restores non-exited panes from the runtime session store.
+
 The daemon is started with its stderr on the null device, since it shares no console with the
 client and anything it printed would either land in the middle of the TUI or open a console window
 of its own. So it logs to a file beside its config as well, keeping the previous run's log — a
@@ -78,7 +83,7 @@ result of a request; `ui` is a pure function of it.
 
 | module | answers |
 | --- | --- |
-| `main`, `redraw`, `terminal`, `wire`, `launch` | the event loop, and the screen and socket it runs over |
+| `main`, `redraw`, `terminal`, `wire`, `launch` | the event loop, the screen and socket it runs over, and the daemon lifecycle command |
 | `app` | the model: the tree, the selection, and which modal is up |
 | `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |
 | `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |

@@ -1,13 +1,18 @@
 //! Getting a connection to the daemon, starting one if nothing is
-//! listening. The daemon outlives the client that started it, so this
-//! runs at most once per client and never stops anything.
+//! listening. The daemon normally outlives the client that started it, while
+//! the explicit server command can replace it through the protocol.
 
 use std::path::PathBuf;
 use std::time::Duration;
 
-use argus_protocol::transport;
+use anyhow::Context;
+use argus_protocol::{read_msg, transport, write_msg, ClientMsg, ServerMsg};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::sleep;
+
+const RESTART_ACK_TIMEOUT: Duration = Duration::from_secs(5);
+const RESTART_STOP_TIMEOUT: Duration = Duration::from_secs(10);
+const RESTART_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 pub async fn ensure_daemon_and_connect(
 ) -> anyhow::Result<impl AsyncRead + AsyncWrite + Unpin + Send + 'static> {
@@ -28,6 +33,48 @@ pub async fn ensure_daemon_and_connect(
         "could not connect to argusd: {:?}",
         last_err
     ))
+}
+
+pub async fn restart_daemon() -> anyhow::Result<()> {
+    if !transport::is_daemon_listening() {
+        anyhow::bail!("argusd is not running");
+    }
+
+    let mut stream = transport::connect()
+        .await
+        .context("could not connect to argusd for restart")?;
+    write_msg(&mut stream, &ClientMsg::Restart)
+        .await
+        .context("could not ask argusd to restart")?;
+
+    tokio::time::timeout(RESTART_ACK_TIMEOUT, async {
+        loop {
+            match read_msg::<_, ServerMsg>(&mut stream).await? {
+                ServerMsg::Restarting => return Ok(()),
+                ServerMsg::Error { message } => {
+                    anyhow::bail!("argusd refused to restart: {message}");
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .context("timed out waiting for argusd to acknowledge restart")??;
+
+    wait_for_daemon_to_stop().await?;
+    let _replacement = ensure_daemon_and_connect().await?;
+    Ok(())
+}
+
+async fn wait_for_daemon_to_stop() -> anyhow::Result<()> {
+    let deadline = std::time::Instant::now() + RESTART_STOP_TIMEOUT;
+    while transport::is_daemon_listening() {
+        if std::time::Instant::now() >= deadline {
+            anyhow::bail!("argusd did not stop after acknowledging restart");
+        }
+        sleep(RESTART_POLL_INTERVAL).await;
+    }
+    Ok(())
 }
 
 fn spawn_daemon() -> anyhow::Result<()> {

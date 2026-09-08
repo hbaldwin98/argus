@@ -49,7 +49,8 @@ async fn main() -> anyhow::Result<()> {
     let mut listener = argus_protocol::transport::Listener::bind().await?;
     tracing::info!("argusd listening");
 
-    let serve = serve(&mut listener, &daemon);
+    let (shutdown_tx, _) = tokio::sync::broadcast::channel(1);
+    let serve = serve(&mut listener, &daemon, shutdown_tx.clone());
 
     // On a clean shutdown, take the managed hooks back out rather than
     // leaving them pointing at a port this process is about to release.
@@ -69,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
 const ACCEPT_BACKOFF_MIN: std::time::Duration = std::time::Duration::from_millis(50);
 const ACCEPT_BACKOFF_MAX: std::time::Duration = std::time::Duration::from_secs(2);
 
-/// Takes clients until the process is asked to stop. Never returns.
+/// Takes clients until the process is asked to stop.
 ///
 /// A failed accept used to end the process, and with it every pty the
 /// daemon was running — a transient `EMFILE`, or a pipe instance briefly
@@ -82,20 +83,30 @@ const ACCEPT_BACKOFF_MAX: std::time::Duration = std::time::Duration::from_secs(2
 async fn serve(
     listener: &mut argus_protocol::transport::Listener,
     daemon: &std::sync::Arc<state::Daemon>,
-) -> ! {
+    shutdown: tokio::sync::broadcast::Sender<()>,
+) {
+    let mut shutdown_rx = shutdown.subscribe();
     let mut backoff = ACCEPT_BACKOFF_MIN;
     loop {
-        match listener.accept().await {
+        let accepted = tokio::select! {
+            _ = shutdown_rx.recv() => return,
+            result = listener.accept() => result,
+        };
+        match accepted {
             Ok(stream) => {
                 backoff = ACCEPT_BACKOFF_MIN;
                 let daemon = daemon.clone();
+                let shutdown = shutdown.clone();
                 tokio::spawn(async move {
-                    conn::handle(stream, daemon).await;
+                    conn::handle(stream, daemon, shutdown).await;
                 });
             }
             Err(e) => {
                 tracing::warn!("could not accept a client: {e}; retrying in {backoff:?}");
-                tokio::time::sleep(backoff).await;
+                tokio::select! {
+                    _ = shutdown_rx.recv() => return,
+                    _ = tokio::time::sleep(backoff) => {}
+                }
                 backoff = (backoff * 2).min(ACCEPT_BACKOFF_MAX);
             }
         }

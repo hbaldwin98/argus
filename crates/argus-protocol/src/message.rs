@@ -337,6 +337,9 @@ pub enum ClientMsg {
         project: ProjectId,
         path: String,
     },
+    /// Ask the daemon to flush this connection, stop accepting clients, and
+    /// exit so a fresh daemon can restore the persisted session.
+    Restart,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -480,6 +483,9 @@ pub enum ServerMsg {
     Error {
         message: String,
     },
+    /// The daemon accepted a restart request and will exit after this frame
+    /// reaches the client.
+    Restarting,
 }
 
 /// One directory's subdirectories, as the browser needs to draw them.

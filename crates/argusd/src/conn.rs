@@ -17,14 +17,19 @@ use crate::state::{BranchDeletion, Daemon, ViewerId};
 
 static REVIEW_PERMIT: Semaphore = Semaphore::const_new(1);
 
-pub async fn handle<S>(stream: S, daemon: Arc<Daemon>)
+pub async fn handle<S>(
+    stream: S,
+    daemon: Arc<Daemon>,
+    shutdown: broadcast::Sender<()>,
+)
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let (mut rd, wr) = split(stream);
     let (out_tx, out_rx) = mpsc::unbounded_channel::<ServerMsg>();
+    let (restart_flushed, mut restart_flushed_rx) = broadcast::channel(1);
 
-    tokio::spawn(writer_task(wr, out_rx));
+    tokio::spawn(writer_task(wr, out_rx, restart_flushed));
 
     if out_tx.send(ServerMsg::Tree(daemon.snapshot())).is_err() {
         return;
@@ -58,14 +63,24 @@ where
         tokio::select! {
             msg = read_msg::<_, ClientMsg>(&mut rd) => {
                 match msg {
-                    Ok(cmsg) => handle_client_msg(
-                        cmsg,
-                        &daemon,
-                        &out_tx,
-                        &mut subs,
-                        &mut review_task,
-                        viewer,
-                    ),
+                    Ok(cmsg) => {
+                        let restart = handle_client_msg(
+                            cmsg,
+                            &daemon,
+                            &out_tx,
+                            &mut subs,
+                            &mut review_task,
+                            viewer,
+                        );
+                        if restart {
+                            // The writer owns the other end of this signal and
+                            // sends it only after the acknowledgement frame is
+                            // flushed to the client.
+                            let _ = restart_flushed_rx.recv().await;
+                            let _ = shutdown.send(());
+                            break;
+                        }
+                    }
                     Err(_) => break,
                 }
             }
@@ -180,7 +195,12 @@ fn handle_client_msg(
     subs: &mut Subscriptions,
     review_task: &mut Option<tokio::task::JoinHandle<()>>,
     viewer: ViewerId,
-) {
+) -> bool {
+    if matches!(&msg, ClientMsg::Restart) {
+        let _ = out_tx.send(ServerMsg::Restarting);
+        return true;
+    }
+
     let result = dispatch_pane(msg, daemon, out_tx, subs, viewer)
         .or_else(|msg| dispatch_note_forward(msg, daemon, out_tx))
         .or_else(|msg| dispatch_notes(msg, daemon, out_tx))
@@ -194,6 +214,7 @@ fn handle_client_msg(
             message: e.to_string(),
         });
     }
+    false
 }
 
 type DispatchResult = Result<anyhow::Result<()>, ClientMsg>;
@@ -722,12 +743,17 @@ fn reply_with(
 ///
 /// Ordering is exactly what it was: the batch is written in the order it
 /// was queued, and the flush is the only thing that moved.
-async fn writer_task<W>(wr: W, mut rx: mpsc::UnboundedReceiver<ServerMsg>)
+async fn writer_task<W>(
+    wr: W,
+    mut rx: mpsc::UnboundedReceiver<ServerMsg>,
+    restart_flushed: broadcast::Sender<()>,
+)
 where
     W: AsyncWrite + Unpin,
 {
     let mut wr = tokio::io::BufWriter::new(wr);
     while let Some(msg) = rx.recv().await {
+        let mut contains_restart = matches!(&msg, ServerMsg::Restarting);
         if write_frame(&mut wr, &msg).await.is_err() {
             break;
         }
@@ -735,6 +761,7 @@ where
         let mut batched = 0;
         while batched < MAX_BATCHED_MESSAGES {
             let Ok(msg) = rx.try_recv() else { break };
+            contains_restart |= matches!(&msg, ServerMsg::Restarting);
             if write_frame(&mut wr, &msg).await.is_err() {
                 return;
             }
@@ -742,6 +769,9 @@ where
         }
         if tokio::io::AsyncWriteExt::flush(&mut wr).await.is_err() {
             break;
+        }
+        if contains_restart {
+            let _ = restart_flushed.send(());
         }
     }
 }
@@ -773,7 +803,8 @@ mod tests {
         }
         drop(tx);
 
-        tokio::spawn(writer_task(client, rx));
+        let (restart_flushed, _) = broadcast::channel(1);
+        tokio::spawn(writer_task(client, rx, restart_flushed));
 
         for i in 0..MAX_BATCHED_MESSAGES * 2 {
             let msg: ServerMsg = read_msg(&mut daemon).await.expect("a framed message");
@@ -782,6 +813,56 @@ mod tests {
                 "message {i} arrived out of order: {msg:?}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn a_restart_ack_is_signaled_after_its_frame_is_flushed() {
+        let (client, mut daemon) = tokio::io::duplex(1024 * 1024);
+        let (tx, rx) = mpsc::unbounded_channel();
+        let (restart_flushed, mut flushed_rx) = broadcast::channel(1);
+        tokio::spawn(writer_task(client, rx, restart_flushed));
+
+        tx.send(ServerMsg::Restarting).unwrap();
+        assert!(matches!(
+            read_msg::<_, ServerMsg>(&mut daemon).await.unwrap(),
+            ServerMsg::Restarting
+        ));
+        tokio::time::timeout(std::time::Duration::from_secs(1), flushed_rx.recv())
+            .await
+            .expect("the writer should signal the flushed frame")
+            .expect("the writer should remain alive");
+    }
+
+    #[tokio::test]
+    async fn a_restart_request_flushes_its_ack_before_signaling_shutdown() {
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = Harness::new(dir.path()).daemon;
+        let (client, server) = tokio::io::duplex(1024 * 1024);
+        let (shutdown, mut shutdown_rx) = broadcast::channel(1);
+        let handler = tokio::spawn(handle(server, daemon, shutdown));
+        let mut client = client;
+
+        for _ in 0..3 {
+            let _: ServerMsg = read_msg(&mut client).await.unwrap();
+        }
+        argus_protocol::write_msg(&mut client, &ClientMsg::Restart)
+            .await
+            .unwrap();
+        assert!(matches!(
+            tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                read_msg::<_, ServerMsg>(&mut client),
+            )
+            .await
+            .unwrap()
+            .unwrap(),
+            ServerMsg::Restarting
+        ));
+        tokio::time::timeout(std::time::Duration::from_secs(1), shutdown_rx.recv())
+            .await
+            .expect("the daemon should signal shutdown after the acknowledgement")
+            .expect("the shutdown sender should remain available");
+        handler.await.unwrap();
     }
 
     struct Harness {
@@ -823,7 +904,7 @@ mod tests {
             self.daemon.snapshot()[0].repositories[0].checkouts[0].id
         }
 
-        fn send(&mut self, msg: ClientMsg) {
+        fn send(&mut self, msg: ClientMsg) -> bool {
             handle_client_msg(
                 msg,
                 &self.daemon,
@@ -831,7 +912,7 @@ mod tests {
                 &mut self.subs,
                 &mut self.review_task,
                 self.viewer,
-            );
+            )
         }
 
         fn replies(&mut self) -> Vec<ServerMsg> {
@@ -864,6 +945,15 @@ mod tests {
         });
         let error = h.error().await;
         assert!(error.contains("no such checkout"), "{error}");
+    }
+
+    #[test]
+    fn a_restart_message_is_acknowledged_without_dispatching_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+
+        assert!(h.send(ClientMsg::Restart));
+        assert!(matches!(h.replies().as_slice(), [ServerMsg::Restarting]));
     }
 
     #[tokio::test]

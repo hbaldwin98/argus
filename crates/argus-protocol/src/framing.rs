@@ -148,6 +148,7 @@ mod tests {
                 project: ProjectId(1),
                 path: r"C:\src\thing\fresh".to_string(),
             },
+            ClientMsg::Restart,
             ClientMsg::ListCommits {
                 request_id: 7,
                 checkout: CheckoutId(2),
@@ -241,6 +242,18 @@ mod tests {
         assert!(c.primary);
         assert_eq!(c.git.as_ref().unwrap().changed_files, 3);
         assert_eq!(c.panes[0].status, PaneStatus::Waiting);
+    }
+
+    #[tokio::test]
+    async fn restart_control_messages_survive_the_wire() {
+        assert!(matches!(
+            roundtrip(&ClientMsg::Restart).await,
+            ClientMsg::Restart
+        ));
+        assert!(matches!(
+            roundtrip(&ServerMsg::Restarting).await,
+            ServerMsg::Restarting
+        ));
     }
 
     #[tokio::test]
