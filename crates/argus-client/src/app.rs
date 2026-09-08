@@ -28,6 +28,7 @@ use crate::history::{Drill, HistoryView};
 use crate::pty_input::{encode_key, encode_mouse, is_leader};
 use crate::notes::{NoteMode, NoteView};
 use crate::review::ReviewView;
+use crate::selection::TerminalSelection;
 use crate::theme::Theme;
 
 pub use layout::{Focus, Fold, Layout, Panel};
@@ -160,6 +161,10 @@ pub struct App {
     /// How the clipboard is read. A field so a test can hand the app a
     /// clipboard without there being a desktop session to hold one.
     pub clipboard: fn() -> Option<String>,
+    /// How selected terminal text is written, injectable for tests without
+    /// a desktop session.
+    pub clipboard_write: fn(&str) -> bool,
+    pub selection: Option<TerminalSelection>,
     pub should_quit: bool,
     /// The last thing worth saying on the status bar, and whether it is
     /// something the user *must* read. The rank rides along rather than
@@ -345,6 +350,8 @@ impl App {
             leader_pending: false,
             pane_fullscreen: false,
             clipboard: crate::clipboard::read,
+            clipboard_write: crate::clipboard::write,
+            selection: None,
             should_quit: false,
             // Empty, not a keymap: the bar's left half is the breadcrumb's
             // until something has actually happened to report.

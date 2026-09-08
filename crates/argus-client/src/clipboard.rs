@@ -1,4 +1,4 @@
-//! The clipboard, read directly.
+//! Text crossing between Argus and the desktop clipboard.
 //!
 //! Windows gives a terminal application no way to tell a paste from fast
 //! typing: the console delivers pasted text as ordinary key records, with
@@ -11,6 +11,13 @@
 /// nothing text-shaped on it.
 pub fn read() -> Option<String> {
     arboard::Clipboard::new().ok()?.get_text().ok()
+}
+
+/// Put text on the desktop clipboard, reporting whether it arrived there.
+pub fn write(text: &str) -> bool {
+    arboard::Clipboard::new()
+        .and_then(|mut clipboard| clipboard.set_text(text))
+        .is_ok()
 }
 
 /// Line endings as a pty wants them.

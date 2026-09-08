@@ -72,7 +72,14 @@ pub(super) fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme
     };
 
     match overlay {
-        Overlay::Pane { pane, .. } => render_term(f, app.grids.get(pane), inner, true),
+        Overlay::Pane { pane, .. } => render_term(
+            f,
+            app.grids.get(pane),
+            inner,
+            true,
+            Some(*pane),
+            app.selection.as_ref(),
+        ),
         Overlay::Settings { sel } => {
             render_settings(f, app, inner, *sel, th);
             None

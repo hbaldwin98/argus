@@ -1,6 +1,10 @@
 //! Clicks, drags, and the wheel.
 
 use super::*;
+
+fn accepts_copy(_: &str) -> bool {
+    true
+}
 #[test]
 fn dragging_a_gutter_resizes_the_two_adjacent_columns() {
     let mut h = Harness::new();
@@ -402,4 +406,116 @@ fn a_release_is_dropped_for_a_child_that_only_reports_presses() {
         .sent()
         .iter()
         .any(|m| matches!(m, ClientMsg::Input { .. })));
+}
+
+#[test]
+fn dragging_in_a_shell_copies_from_its_visible_grid() {
+    let mut h = Harness::new();
+    laid_out(&mut h);
+    let pane = h.app.column_pane().unwrap();
+    h.app.clipboard_write = accepts_copy;
+    h.app.grids.insert(
+        pane,
+        crate::grid::Grid::new(vec!["shell output"
+            .chars()
+            .map(|ch| Cell {
+                ch: ch.to_string().into(),
+                ..Default::default()
+            })
+            .collect()]),
+    );
+
+    h.app.on_mouse(click(49, 1));
+    h.app.on_mouse(drag(53, 1));
+    h.app.on_mouse(MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        column: 53,
+        row: 1,
+        modifiers: KeyModifiers::NONE,
+    });
+
+    assert_eq!(h.app.status, "copied selection");
+    assert_eq!(
+        h.app
+            .selection
+            .as_ref()
+            .unwrap()
+            .text(h.app.grids[&pane].view()),
+        "shell"
+    );
+    assert!(!h
+        .sent()
+        .iter()
+        .any(|m| matches!(m, ClientMsg::Input { .. })));
+}
+
+#[test]
+fn shift_drag_copies_locally_instead_of_reaching_a_mouse_aware_child() {
+    let mut h = Harness::new();
+    laid_out(&mut h);
+    let pane = h.app.column_pane().unwrap();
+    wants_mouse(&mut h, pane);
+    h.app.clipboard_write = accepts_copy;
+    h.app.grids.get_mut(&pane).unwrap().cells = vec!["abcdefgh"
+        .chars()
+        .map(|ch| Cell {
+            ch: ch.to_string().into(),
+            ..Default::default()
+        })
+        .collect()];
+    h.sent();
+    let shifted = |kind| MouseEvent {
+        kind,
+        column: 50,
+        row: 1,
+        modifiers: KeyModifiers::SHIFT,
+    };
+
+    h.app
+        .on_mouse(shifted(MouseEventKind::Down(MouseButton::Left)));
+    h.app
+        .on_mouse(shifted(MouseEventKind::Drag(MouseButton::Left)));
+    h.app.on_mouse(MouseEvent {
+        column: 52,
+        ..shifted(MouseEventKind::Up(MouseButton::Left))
+    });
+
+    assert_eq!(h.app.status, "copied selection");
+    assert!(!h
+        .sent()
+        .iter()
+        .any(|m| matches!(m, ClientMsg::Input { .. })));
+}
+
+#[test]
+fn a_shell_drag_keeps_its_release_after_leaving_the_pane() {
+    let mut h = Harness::new();
+    laid_out(&mut h);
+    let pane = h.app.column_pane().unwrap();
+    h.app.clipboard_write = accepts_copy;
+    h.app.grids.insert(
+        pane,
+        crate::grid::Grid::new(vec![
+            vec![
+                Cell {
+                    ch: "x".into(),
+                    ..Default::default()
+                };
+                18
+            ];
+            6
+        ]),
+    );
+
+    h.app.on_mouse(click(50, 2));
+    h.app.on_mouse(drag(99, 20));
+    h.app.on_mouse(MouseEvent {
+        kind: MouseEventKind::Up(MouseButton::Left),
+        column: 99,
+        row: 20,
+        modifiers: KeyModifiers::NONE,
+    });
+
+    assert_eq!(h.app.status, "copied selection");
+    assert!(h.app.selection.is_some());
 }

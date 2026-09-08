@@ -1,9 +1,12 @@
 //! A pane's live screen, drawn cell by cell, and where its cursor goes.
 
 use super::*;
+use argus_protocol::PaneId;
 
 pub(super) struct TermView<'a> {
     grid: Option<&'a Grid>,
+    pane: Option<PaneId>,
+    selection: Option<&'a crate::selection::TerminalSelection>,
 }
 
 /// Draws the pane and reports where the hardware cursor would go if this
@@ -24,8 +27,17 @@ pub(super) fn render_term(
     grid: Option<&Grid>,
     area: Rect,
     focused: bool,
+    pane: Option<PaneId>,
+    selection: Option<&crate::selection::TerminalSelection>,
 ) -> Option<CursorPlacement> {
-    f.render_widget(TermView { grid }, area);
+    f.render_widget(
+        TermView {
+            grid,
+            pane,
+            selection,
+        },
+        area,
+    );
     term_cursor(grid, area, focused)
 }
 
@@ -69,25 +81,26 @@ impl Widget for TermView<'_> {
                     continue;
                 };
                 target.set_symbol(&cell.ch);
-                let mut style = Style::default()
-                    .fg(to_ratatui_color(cell.fg))
-                    .bg(to_ratatui_color(cell.bg));
-                if cell.bold {
-                    style = style.add_modifier(Modifier::BOLD);
-                }
-                if cell.italic {
-                    style = style.add_modifier(Modifier::ITALIC);
-                }
-                if cell.underline {
-                    style = style.add_modifier(Modifier::UNDERLINED);
-                }
-                if cell.reverse {
-                    style = style.add_modifier(Modifier::REVERSED);
-                }
-                target.set_style(style);
+                let selected = self
+                    .pane
+                    .zip(self.selection)
+                    .is_some_and(|(pane, selection)| selection.contains(pane, r, c));
+                target.set_style(cell_style(cell, selected));
             }
         }
     }
+}
+
+fn cell_style(cell: &argus_protocol::Cell, selected: bool) -> Style {
+    let mut modifiers = Modifier::empty();
+    modifiers.set(Modifier::BOLD, cell.bold);
+    modifiers.set(Modifier::ITALIC, cell.italic);
+    modifiers.set(Modifier::UNDERLINED, cell.underline);
+    modifiers.set(Modifier::REVERSED, cell.reverse || selected);
+    Style::default()
+        .fg(to_ratatui_color(cell.fg))
+        .bg(to_ratatui_color(cell.bg))
+        .add_modifier(modifiers)
 }
 
 pub(super) fn to_ratatui_color(c: PColor) -> Color {

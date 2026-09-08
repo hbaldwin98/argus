@@ -92,7 +92,7 @@ result of a request; `ui` is a pure function of it.
 | `ui/columns`, `ui/rows`, `ui/text` | the spine, the vocabulary of a row, and fitting text to a width |
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
 | `review`, `history`, `notes`, `dirpicker` | the view state behind each overlay |
-| `grid`, `pty_input`, `paste`, `clipboard`, `fuzzy` | a pane's screen, and the input primitives |
+| `grid`, `selection`, `pty_input`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
 | `settings`, `theme`, `backend`, `herdr`, `profile` | preferences, palette, the ratatui backend, and what is reported outward |
 
 ## Views

@@ -23,6 +23,12 @@ impl App {
         if self.picker.is_some() || self.prompt.is_some() || self.dir_picker.is_some() {
             return;
         }
+        if self.update_selection(&ev) {
+            return;
+        }
+        if matches!(ev.kind, MouseEventKind::Down(_)) {
+            self.selection = None;
+        }
         // The keymap window is the same kind of modal as an overlay: a
         // click anywhere puts it away, and none of it reaches what is
         // underneath. Scrolling reads it.
@@ -68,6 +74,9 @@ impl App {
                 return;
             }
             if let Some(pane) = self.overlay_pane() {
+                if self.start_selection(pane, &ev, self.layout.overlay.inner) {
+                    return;
+                }
                 self.forward_mouse(pane, &ev, self.layout.overlay.inner);
             }
             return;
@@ -188,6 +197,9 @@ impl App {
                 self.focus = Focus::PaneContent;
             }
             if let Some(pane) = self.column_pane() {
+                if self.start_selection(pane, &ev, self.layout.content.inner) {
+                    return;
+                }
                 self.forward_mouse(pane, &ev, self.layout.content.inner);
             }
             return;
@@ -209,6 +221,55 @@ impl App {
     /// actually said otherwise.
     fn pane_mouse(&self, pane: PaneId) -> argus_protocol::MouseTracking {
         self.grids.get(&pane).map(|g| g.mouse).unwrap_or_default()
+    }
+
+    /// A pane without mouse reporting leaves left-drag to Argus. Shift is
+    /// the explicit escape hatch when a mouse-aware child owns plain drag.
+    fn start_selection(&mut self, pane: PaneId, ev: &MouseEvent, area: Rect) -> bool {
+        if !matches!(ev.kind, MouseEventKind::Down(MouseButton::Left)) {
+            return false;
+        }
+        let local = !self.pane_mouse(pane).enabled() || ev.modifiers.contains(KeyModifiers::SHIFT);
+        if local {
+            self.selection = Some(crate::selection::TerminalSelection::start(
+                pane, ev.column, ev.row, area,
+            ));
+        }
+        local
+    }
+
+    /// Continue a local drag even beyond the pane border, like a native
+    /// terminal selection. The selection owns events until left release.
+    fn update_selection(&mut self, ev: &MouseEvent) -> bool {
+        let relevant = matches!(
+            ev.kind,
+            MouseEventKind::Drag(MouseButton::Left) | MouseEventKind::Up(MouseButton::Left)
+        );
+        if !relevant || self.selection.is_none() {
+            return false;
+        }
+        let selection = self.selection.as_mut().expect("checked above");
+        selection.update(ev.column, ev.row);
+        if matches!(ev.kind, MouseEventKind::Up(MouseButton::Left)) {
+            self.finish_selection();
+        }
+        true
+    }
+
+    fn finish_selection(&mut self) {
+        let selection = self.selection.as_ref().expect("selection owns the release");
+        let text = self
+            .grids
+            .get(&selection.pane)
+            .map(|grid| selection.text(grid.view()))
+            .unwrap_or_default();
+        if !selection.moved() || text.is_empty() {
+            self.selection = None;
+        } else if (self.clipboard_write)(&text) {
+            self.report("copied selection");
+        } else {
+            self.alert("could not write to the clipboard");
+        }
     }
 
     /// Encode a mouse event for the child, or turn a wheel into a cursor

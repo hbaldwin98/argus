@@ -377,8 +377,9 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
         );
         None
     } else {
-        let grid = app.column_pane().and_then(|id| app.grids.get(&id));
-        render_term(f, grid, inner, focused)
+        let pane = app.column_pane();
+        let grid = pane.and_then(|id| app.grids.get(&id));
+        render_term(f, grid, inner, focused, pane, app.selection.as_ref())
     };
     app.layout.content = Panel {
         outer: area,
