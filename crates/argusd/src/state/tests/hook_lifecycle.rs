@@ -6,7 +6,7 @@ use argus_protocol::{ContextScope, DecisionWrite, TodoState, TodoWrite};
 #[tokio::test]
 async fn sharing_a_checkout_is_allowed_unless_the_project_says_otherwise() {
     let dir = tempfile::tempdir().unwrap();
-    let d = daemon_with_fake_claude(dir.path());
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
     let checkout = only_checkout(&d);
 
     let first = d.spawn_agent(checkout, "claude").unwrap();
@@ -841,7 +841,7 @@ async fn superseding_leaves_the_decision_it_replaced_on_the_board() {
 #[tokio::test]
 async fn the_board_reaches_an_agent_whole_and_a_bad_decision_is_refused() {
     let dir = tempfile::tempdir().unwrap();
-    let d = daemon_with_fake_claude(dir.path());
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
     d.start_hook_server().unwrap();
     let checkout = only_checkout(&d);
     let source = d.spawn_agent(checkout, "claude").unwrap();

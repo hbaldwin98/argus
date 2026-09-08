@@ -16,6 +16,7 @@ pub mod framing;
 pub mod hook;
 pub mod ids;
 pub mod message;
+pub mod memory;
 pub mod notes;
 pub mod paths;
 pub mod review;
@@ -41,6 +42,13 @@ pub use hook::{
 };
 pub use ids::{CheckoutId, IdGen, PaneId, ProjectId, RepositoryId, WorkspaceId};
 pub use message::{ClientMsg, DirEntry, DirListing, ServerMsg};
+pub use memory::{
+    select_context_packet, Artifact, ArtifactContent, ArtifactKind, ArtifactState,
+    ContextPacket, ContextQuery, ForwardedMaterial, InclusionReason, MemorySnapshot, PacketEntry,
+    MemorySource, PacketItem, PacketLimits, Provenance, WorkContext, DEFAULT_PACKET_MAX_BYTES,
+    DEFAULT_PACKET_MAX_ITEMS, MAX_ARTIFACT_TEXT_BYTES, MAX_WORK_CONTEXT_BRIEF_BYTES,
+    MAX_WORK_CONTEXT_TITLE_BYTES,
+};
 pub use notes::{
     append_todo, counts as note_counts, parse_todos, set_todo_state, Note, NoteCounts, NoteTarget,
     Todo, TodoAudit, TodoState, MAX_NOTE_BYTES,
