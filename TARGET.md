@@ -12,14 +12,14 @@ Project -> Repository -> Checkout -> Agent, shell, or editor
 ```
 
 A workspace scopes the visible projects without adding another column. Argus is not a general
-tmux replacement, a GUI, an agent host, or a Git porcelain. It runs existing command-line
-harnesses and makes their checkouts, state, and review work visible.
+tmux replacement, a GUI, an agent host, a Git porcelain, or a project tracker. Teams may already
+plan work in Jira, Linear, GitHub Issues, or somewhere else; Argus runs existing command-line
+harnesses and makes their checkouts, state, review work, and accumulated understanding visible.
 
 The spine is the default *view*, not the only one. A view owns the whole content area and is
-switched between as a tab; the boards below are views rather than columns, because a decision tree
-and a work board are read at project scope and would say nothing useful squeezed into a column
-beside a pane. Switching views never stops a pane, and the spine is always one keystroke away —
-what a view replaces is the screen, never the running work.
+switched between as a tab. Review and durable work context need the full area rather than another
+narrow navigation column beside a pane. Switching views never stops a pane, and the spine is always
+one keystroke away — what a view replaces is the screen, never the running work.
 
 The target budgets are sub-16 ms client frames, less than 50 MiB client RSS with twelve active
 panes, about 1.5 MiB resident per idle pane, and less than 30 ms to first paint against a warm
@@ -103,48 +103,52 @@ colour. The same diff reads unified or split side by side, chosen in the client 
 already carries; a comment means the same thing in either, because it anchors by both line
 numbers. Staging, unstaging, and reverting are deliberately not Argus's job.
 
-## Notes and context
+## Agent context and memory
 
 Projects and checkouts can hold plain Markdown notes. Checkbox lines provide open, done, and
 pinned states whose counts roll up the tree. Forwarding to an agent is explicit except for a
-template's opt-in pinned-note injection.
+template's opt-in pinned-note injection. Notes remain human-owned documents; they are one source an
+operator can pull into an agent, not Argus's model of the work.
 
 The daemon exposes the same scoped context through MCP, HTTP, and `argus ctx`. A per-checkout token
 limits every agent to approved read and write calls. Write operations such as note changes,
 review requests, and worktree creation are audited and template-policy gated.
 
-## Boards
+Argus's durable context is written primarily by agents and corrected by humans. Its purpose is to
+carry useful understanding between conversations, not to duplicate the team's work tracker. The
+normal loop is:
 
-Two project-scoped views, both built on the same attributed write path as note changes — though
-not the same policy gate. A note is the human's document, so writing to one is permission the
-project grants; a board is written by agents, is append-only, and attributes every entry, so a gate
-would protect nothing. The decision board is the agents' alone: the reasoning recorded there is
-theirs, and a human reads it. The feature board takes work from either side.
+1. A person sends an agent the sources and instructions relevant to the current work.
+2. The agent uses them and records the durable results of its work.
+3. Later agents receive a bounded, relevant subset of those results.
+4. A person corrects, removes, or supersedes anything that should not guide future work.
 
-**The decision board** is the record of *why* a feature looks the way it does. An agent adds a
-decision while it is planning a feature and choosing between real options — not for routine steps,
-and not as a running commentary: what was chosen, what it was chosen over, and what forced it.
-Decisions descend from decisions, so what accumulates is a tree rather than a log — a later choice
-hangs off the one that constrained it, and a reversal is a new node that supersedes an old one
-rather than an edit that hides it. An earlier decision is revisited only when something found since
-actually invalidates it, which is what keeps the board a reference rather than a diary. The view
-draws that tree, so the shape of the reasoning is visible at a glance and a question like "why is
-storage SQLite" is answered by walking to a node instead of reading back through a transcript.
-Superseded branches stay drawn, dimmed: the road not taken is most of the value.
+A **work context** is a durable topic around which that understanding accumulates. It may have a
+short brief and links to external work, but it is not a feature card, assignment, or lifecycle. A
+checkout may suggest a context, but sharing a checkout or being its only context never proves that
+the context applies to a new request. The pane's current work and the user's request determine what
+is relevant.
 
-**The feature board** is the work itself, in the Kanban sense — items in columns by state, moving
-left to right as they progress. Either side can put an item on it: a human adds one from the view,
-the way they edit a note, and an agent adds one when it finds work it is not doing now — so the
-board holds what was asked for as well as what was discovered. An agent claims an item, reports
-progress or a blocker against it, and submits completion evidence; a human accepts it or sends it
-back. It is as much an input as an output: an agent starting work reads the board to infer what is
-in flight, what is blocked on what, and what has already been decided about the thing it is about
-to touch, which is the half that a list of tasks in a chat window cannot do.
+Agents write typed **artifacts** into a work context: decisions, tasks, findings, assumptions, open
+questions, and compact summaries. Each artifact carries its source, authoring session, checkout,
+and time. A task may retain an opaque Jira, Linear, or GitHub key, but Argus neither synchronizes
+nor replaces that tracker. Routine transcript and progress chatter are not durable artifacts.
 
-The two are linked. A decision is made *about* an item, and an item carries the decisions taken
-under it, so opening either reaches the other. Both are project-scoped and durable in `runtime.db`,
-both attribute every entry to the session that wrote it, and neither lets an agent accept its own
-work — acceptance is the human's, for the same reason pinning a note is.
+Artifacts have correction semantics suited to their type. A decision records what was chosen, the
+real alternative, and the reason; a later decision supersedes it without erasing the old reasoning.
+A false finding or assumption can be corrected or withdrawn. Tasks can be completed or discarded.
+Human corrections take precedence in future reads, but retain provenance so an agent can explain
+where its context came from.
+
+An agent starts from a **context packet**, not a whole project database. The packet combines what
+the person explicitly forwarded with a bounded selection of applicable artifacts. It states why
+each durable item was included and omits stale, superseded, completed, or unrelated material unless
+the current request calls for history. Agents refresh the packet when its revision changes and
+write newly learned artifacts back as part of finishing work.
+
+The primary UI lets a person inspect and correct the context agents have built. A decision tree,
+task list, timeline, or board may be a useful projection of artifacts, but no projection is the
+source of truth and none requires the person to maintain a second planning system.
 
 ## Terminal and memory model
 

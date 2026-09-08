@@ -30,10 +30,9 @@ The workspace builds three executables:
   editable in the agent's prompt rather than submitting it.
 - Lets an agent read the notes for where it is running, and — where the project asks for it — add
   to and tick off its checkout's checkboxes, with every change attributed and recorded.
-- Keeps a decision board per project: a visibly connected tree of what agents chose while planning
-  each feature, what they chose it over, and what forced it — readable by the next agent that picks
-  the feature up and drawn as a full view of its own. Reversing a decision supersedes it rather than
-  erasing it.
+- Stores feature briefs, tasks, and a visibly connected tree of what agents chose, what they chose
+  it over, and what forced it. Later agents can read that durable context, and reversing a decision
+  supersedes it rather than erasing it.
 - Opens files in a floating terminal editor, the terminal column, or an external editor.
 - Restores non-exited shell and agent panes after a daemon restart, reopening each agent's last
   conversation where its CLI can be asked to.
@@ -494,9 +493,10 @@ Every agent pane receives `ARGUS_HOOK`, `ARGUS_HOOK_URL`, `ARGUS_HOOK_TOKEN`, `A
 ```
 
 Argus installs a small **argus skill** for built-in harnesses: `.claude/skills/argus` for
-Claude Code, and `.agents/skills/argus` for Codex, OpenCode, AGY, and Cursor. Startup context
-points the agent to `SKILL.md`; detailed feature, task, decision, and note commands live in its
-reference and are read when needed. Hooks keep reporting lifecycle events and session identity.
+Claude Code, and `.agents/skills/argus` for Codex, OpenCode, AGY, and Cursor. Startup context points
+the agent to `SKILL.md`; detailed commands for the currently implemented feature, task, decision,
+and note stores live in its reference and are read when needed. Hooks keep reporting lifecycle
+events and session identity.
 Generic harnesses receive compact fallback instructions instead. Custom `[[harness]]` blocks
 can opt in with `skill_dir = ".agents/skills/argus"` and deliver `ARGUS_INSTRUCTIONS` through
 their context mechanism.

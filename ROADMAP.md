@@ -7,12 +7,13 @@ Ordering is by dependency, not by appetite.
 
 ## P3: Runtime Storage — landed
 
-Storage came first because review state, notes, context, and boards all need somewhere
-transactional to live, and each one built ahead of it would have become another bespoke file with
-its own compatibility ladder. That is now `runtime.db` (DESIGN.md, "Runtime storage"): SQLite in
-WAL mode holding panes to relaunch, project and repository overlays, exclusions, runtime-created
-workspaces, and the workspace last open. `session.json`, `excluded-repos`, and `open-workspace` are
-imported once and retired; `projects.toml` is back to being configuration Argus only reads.
+Storage came first because review state, notes, context, and durable agent artifacts all need
+somewhere transactional to live, and each one built ahead of it would have become another bespoke
+file with its own compatibility ladder. That is now `runtime.db` (DESIGN.md, "Runtime storage"):
+SQLite in WAL mode holding panes to relaunch, project and repository overlays, exclusions,
+runtime-created workspaces, and the workspace last open. `session.json`, `excluded-repos`, and
+`open-workspace` are imported once and retired; `projects.toml` is back to being configuration
+Argus only reads.
 
 - Give review state, notes metadata, and links their tables as those features land. The schema is
   versioned on `user_version`, so each is a migration rather than a new file.
@@ -64,13 +65,13 @@ Closes the loop: information currently flows only upward, from agents reporting 
   stages the whole visible note in a chosen in-scope agent's prompt without submitting it.
 - Add `argus ctx` and MCP adapters over the same implementation.
 
-## P6.5: Views and Boards
+## P6.5: Agent Memory
 
-Boards are the first thing Argus has wanted that is not a column. A decision tree and a work board
-are read at project scope, all at once, and neither says anything useful in a 30-column strip
-beside a pane — so the client needed a second top-level surface before either could be built. That
-ordering was the whole of this section: the view mechanism first, then the two boards on it, then
-the link between them. All three have landed; what is left is the writes and the reads over them.
+Argus has durable feature, decision, and task storage, but its first presentation treated that
+storage as a project-management board. That makes the operator maintain a second tracker and leaves
+agents to guess whether whichever feature a checkout selected applies to their current request.
+The target is agent-maintained working context: people supply and correct information, agents build
+up durable artifacts, and later agents receive the relevant subset without browsing a board.
 
 - Views have landed (DESIGN.md, "Views"): the content area holds one named view at a time, with
   the project spine as the default and a one-row tab strip naming the rest. The strip lives in the
@@ -95,13 +96,22 @@ the link between them. All three have landed; what is left is the writes and the
   them in todo/doing/done columns, `argus-hook task` for agents, and add, rewrite, move, reorder and
   drop from the view. The tracker stays the agent's problem — Argus keeps an opaque `external` key
   and nothing else, so it works the same with Jira, Linear, GitHub Issues or none of them.
-- Give the boards their own reads for a client: they are pushed whole on every change, which is
-  right while a board is a few dozen rows and wrong once it is a few thousand.
-- Link the boards: a decision is taken about a task, a task carries the decisions taken under it,
-  and either one reaches the other.
-- Decide how a board reaches an agent: whole-board reads will not fit a prompt for long, so the
-  read wants scoping — this item, its ancestors, its blockers — the way `argus-hook context` scopes
-  notes to the asking pane.
+- Replace the feature-as-assignment contract with a work context. A checkout may suggest context,
+  but selection must not silently assign unrelated work or make the sole feature authoritative.
+- Define the durable artifact contract around what later agents need: decisions, tasks, findings,
+  assumptions, open questions, and summaries, all with source, session, checkout, and time.
+- Build one bounded context-packet read for agents. It combines explicitly forwarded material with
+  applicable artifacts, explains the scope, excludes stale or unrelated records, and exposes a
+  revision so a running agent knows when to refresh.
+- Make artifact writeback part of the managed agent workflow. Agents should record durable results
+  as they discover them without turning routine steps or transcript into memory.
+- Give human corrections explicit precedence. Preserve superseded reasoning and provenance while
+  ensuring corrected or withdrawn material no longer guides later agents.
+- Replace boards as the primary client model with an inspection and correction view over work
+  contexts. Decision trees, task lists, timelines, and boards may remain as projections where they
+  answer a useful question; none should require duplicate planning or status maintenance.
+- Reuse the landed tables and migrations where their semantics fit. Change storage only after the
+  context packet and correction behavior establish what must persist.
 
 ## P7: Terminal and Performance
 
@@ -127,7 +137,7 @@ the link between them. All three have landed; what is left is the writes and the
 ## Open Decisions
 
 - True child-process reattachment versus guaranteed termination plus harness resume.
-- Multi-repository features as coordinated checkout sets.
+- Multi-repository work contexts and how their checkout evidence is scoped.
 - Unix-first delivery versus equal Windows support, now forced by ConPTY and named-pipe behavior
   rather than by state detection.
 - Whether a future GPU client warrants a richer protocol now.

@@ -842,10 +842,8 @@ only to the client that asked for it. Unlike every other pane-API write, this on
 to tell the user it was refused, and "this project does not allow it" is a different situation from
 "that line is not a checkbox".
 
-Not yet implemented: pinned-note injection into a template's prompt, `argus ctx`, and the feature
-board's write path from the client (TARGET.md, "Boards"). Features, the decision board and the
-columns view have landed (see "Features and the decision board"); what is missing is moving a card
-from the view rather than only over the pane API, and the scoped read an agent starts work from.
+Not yet implemented: pinned-note injection into a template's prompt, `argus ctx`, and MCP adapters
+over the same scoped context read (TARGET.md, "Agent context and memory").
 
 ## Features and the decision board
 
@@ -1012,6 +1010,21 @@ of the affordance, since there is no other cue that the keys have changed meanin
 
 Lists are pushed whole on `ServerMsg::Tasks` whenever one changes, the way a board is, and a client
 holding another feature's list open drops it by name.
+
+### Limits of the current board model
+
+The implemented model makes a feature both a context container and a unit of work. Its selection is
+shared by every pane in a checkout, and a checkout with one originating feature selects it without
+an explicit assignment. The managed skill asks agents to read that feature, its decisions, and its
+tasks, but the daemon does not decide whether they apply to the user's current request. Agents pull
+these reads at startup or task changes; unlike clients, they receive no board updates while running.
+
+The stored briefs, decisions, tasks, attribution, and supersession are useful durable material. The
+Kanban states, claims, acceptance ceremony, and assumption that an agent should infer work from the
+selected card are not the target product model. TARGET.md, "Agent context and memory", replaces
+that contract with work contexts, typed agent-authored artifacts, bounded context packets, and
+human correction. This section remains the description of current behavior until that migration
+lands.
 
 ## Editors and overlays
 
