@@ -160,6 +160,9 @@ pub struct HarnessConfig {
     /// Optional workspace rule markdown file to install into checkout.
     #[serde(default)]
     pub rule_file: Option<String>,
+    /// Optional skill directory relative to the checkout; absent keeps the compact fallback.
+    #[serde(default)]
+    pub skill_dir: Option<String>,
 }
 
 /// A bare status is the common case; the table form is for an event that
@@ -249,6 +252,7 @@ impl From<HarnessConfig> for crate::harness::Harness {
             command_string: false,
             bake_command: false,
             rule_file: c.rule_file.map(PathBuf::from),
+            skill_dir: c.skill_dir.map(PathBuf::from),
             settings_version: None,
         }
     }

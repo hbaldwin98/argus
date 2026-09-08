@@ -40,14 +40,15 @@
 
 use std::path::{Path, PathBuf};
 
-use argus_protocol::PaneId;
+use argus_protocol::{PaneId, INSTRUCTIONS_COMMAND};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 mod hooks;
 mod install;
+mod skill;
 
-pub use hooks::{env, helper_path, instructions};
+pub use hooks::{env, helper_path};
 use hooks::*;
 use install::*;
 
@@ -135,7 +136,7 @@ pub struct Harness {
     pub shape: Shape,
     pub events: Vec<Event>,
     /// An event whose command's stdout the harness injects into the model's
-    /// context. Where Argus tells an agent it can rename its own pane.
+    /// context. Where Argus tells an agent how to load its skill.
     pub context_event: Option<String>,
     /// A module to drop into the checkout, for a harness that extends
     /// through code rather than through JSON.
@@ -160,6 +161,8 @@ pub struct Harness {
     pub bake_command: bool,
     /// Optional workspace rule markdown file to install into checkout.
     pub rule_file: Option<PathBuf>,
+    /// Where this harness discovers the managed Argus skill, relative to the checkout.
+    pub skill_dir: Option<PathBuf>,
     /// Top-level `version` some settings files require (Cursor's hooks.json).
     pub settings_version: Option<u64>,
 }
@@ -184,6 +187,7 @@ impl Harness {
             command_string: false,
             bake_command: false,
             rule_file: None,
+            skill_dir: None,
             settings_version: None,
         }
     }
@@ -249,6 +253,7 @@ impl Harness {
             command_string: false,
             bake_command: false,
             rule_file: None,
+            skill_dir: Some(PathBuf::from(".claude/skills/argus")),
             settings_version: None,
         }
     }
@@ -271,13 +276,14 @@ impl Harness {
                 owns_session: true,
                 claim_only: false,
             }],
-            context_event: None,
+            context_event: Some("SessionStart".to_string()),
             plugin: None,
             resume: vec!["resume".to_string(), "--last".to_string()],
             resume_id: vec!["resume".to_string(), "{session_id}".to_string()],
             command_string: true,
             bake_command: false,
             rule_file: None,
+            skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: None,
         }
     }
@@ -308,6 +314,7 @@ impl Harness {
             command_string: false,
             bake_command: false,
             rule_file: None,
+            skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: None,
         }
     }
@@ -351,6 +358,7 @@ impl Harness {
             command_string: false,
             bake_command: false,
             rule_file: Some(PathBuf::from(".agents").join("rules").join("argus.md")),
+            skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: None,
         }
     }
@@ -431,6 +439,7 @@ impl Harness {
             // still work because they inherit ARGUS_HOOK_*.
             bake_command: true,
             rule_file: Some(PathBuf::from(".cursor").join("rules").join("argus.mdc")),
+            skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: Some(1),
         }
     }

@@ -830,7 +830,9 @@ async fn moving_the_last_agent_moves_managed_hook_routing_too() {
     d.move_agent_to_checkout(pane, second.path()).unwrap();
 
     assert!(!settings_of(first.path()).exists());
+    assert!(!first.path().join(".claude/skills/argus").exists());
     assert!(settings_of(second.path()).exists());
+    assert!(second.path().join(".claude/skills/argus/SKILL.md").is_file());
     d.close_pane(pane).unwrap();
 }
 

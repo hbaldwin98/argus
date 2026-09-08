@@ -7,7 +7,7 @@ use super::*;
 
 impl Harness {
     /// Puts whatever this harness needs into the checkout: a managed block
-    /// in its settings file, its plugin module, its rules file, or neither.
+    /// in its settings file, its plugin module, a skill, or a rules file.
     ///
     /// A harness that needs nothing is the normal case, not a failure.
     pub fn install(
@@ -17,10 +17,11 @@ impl Harness {
         port: u16,
         token: &str,
     ) -> anyhow::Result<()> {
+        let skill = self.install_skill(checkout);
         let settings = self.install_settings(checkout, pane, port, token);
         let plugin = self.install_plugin(checkout);
         let rule = self.install_rule(checkout);
-        settings.and(plugin).and(rule)
+        skill.and(settings).and(plugin).and(rule)
     }
 
     fn install_rule(&self, checkout: &Path) -> anyhow::Result<()> {
@@ -39,7 +40,7 @@ impl Harness {
         };
         let content = format!(
             "---\ndescription: Argus pair-programming environment integration\n{always}\n---\n\n{}",
-            instructions()
+            self.instructions(checkout)
         );
         std::fs::write(&path, content)?;
         Ok(())
@@ -110,7 +111,18 @@ impl Harness {
             }
         }
         if let Some(name) = &self.context_event {
-            let entry = say_entry(&command, &instructions());
+            let entry = if self.command_string && !self.bake_command {
+                // The helper reads the message from its inherited environment;
+                // neither changing paths nor prose invalidates Codex hook trust.
+                json!({
+                    "type": "command",
+                    "command": format!("\"$ARGUS_HOOK\" {INSTRUCTIONS_COMMAND}"),
+                    "commandWindows": format!("\"%ARGUS_HOOK%\" {INSTRUCTIONS_COMMAND}"),
+                    "timeout": 5
+                })
+            } else {
+                say_entry(&command, &self.instructions(checkout))
+            };
             match hooks_obj.get_mut(name) {
                 Some(existing) => {
                     if !self.events.iter().any(|event| &event.name == name) {
@@ -134,7 +146,8 @@ impl Harness {
         let settings = self.uninstall_settings(checkout);
         let plugin = self.uninstall_plugin(checkout);
         let rule = self.uninstall_rule(checkout);
-        settings.and(plugin).and(rule)
+        let skill = self.uninstall_skill(checkout);
+        settings.and(plugin).and(rule).and(skill)
     }
 
     fn uninstall_rule(&self, checkout: &Path) -> anyhow::Result<()> {

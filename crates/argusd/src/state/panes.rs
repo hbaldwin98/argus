@@ -217,6 +217,9 @@ impl Daemon {
         // The template's own env wins: a user who set one of these by hand
         // meant it.
         let mut env = crate::harness::env(id, port, &self.hook_token);
+        if let Some((_, text)) = env.iter_mut().find(|(key, _)| key == argus_protocol::INSTRUCTIONS_VAR) {
+            *text = harness.instructions(&path);
+        }
         env.retain(|(k, _)| !template.env.contains_key(k));
         env.extend(template.env.clone());
 

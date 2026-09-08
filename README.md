@@ -484,6 +484,25 @@ Every agent pane receives `ARGUS_HOOK`, `ARGUS_HOOK_URL`, `ARGUS_HOOK_TOKEN`, `A
 "$ARGUS_HOOK" comments
 ```
 
+Argus installs a small **argus skill** for built-in harnesses: `.claude/skills/argus` for
+Claude Code, and `.agents/skills/argus` for Codex, OpenCode, AGY, and Cursor. Startup context
+points the agent to `SKILL.md`; detailed feature, task, decision, and note commands live in its
+reference and are read when needed. Hooks keep reporting lifecycle events and session identity.
+Generic harnesses receive compact fallback instructions instead. Custom `[[harness]]` blocks
+can opt in with `skill_dir = ".agents/skills/argus"` and deliver `ARGUS_INSTRUCTIONS` through
+their context mechanism.
+
+The skill is embedded in `argusd`, so no separate skill installation is needed. Argus preserves
+user-owned files at those paths and falls back to compact instructions if it cannot install the
+package. Generated files carry `argus:managed-skill`; remove that marker to preserve a replacement.
+Managed skills are cleaned up with the hooks when the last agent leaves the checkout.
+
+To try this after rebuilding, restart the daemon when your running work is safely stopped, then
+start a fresh agent pane. It should load the Argus skill and read its context. In Codex, trust the
+new SessionStart context hook when prompted; its command stays stable across subsequent starts.
+Existing running agents keep the instructions they started with.
+
+`argus-hook instructions` prints the inherited startup message without contacting the daemon.
 `argus-hook say "text"` writes text to stdout for harnesses that inject command output into the
 agent's context. Lifecycle reporting forms are silent, and `comments` prints the checkout's stored
 review feedback. All forms always exit successfully so a stopped daemon cannot break an agent turn.
