@@ -15,8 +15,8 @@
 //! one checkout.
 
 use argus_protocol::{
-    Actor, Decision, Feature, FeatureBoard, FeatureMove, FeatureState, FeatureWrite, PaneId,
-    ProjectId,
+    Actor, ArtifactScope, Decision, Feature, FeatureBoard, FeatureMove, FeatureState, FeatureWrite,
+    PaneId, ProjectId,
 };
 
 use super::agents::AgentScope;
@@ -26,15 +26,29 @@ impl Daemon {
     /// Everything an agent needs to know about where it is: the project's
     /// features, which one this checkout is on, and that feature's
     /// decisions.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn feature_board_for_agent(&self, pane_id: PaneId) -> anyhow::Result<FeatureBoard> {
-        let scope = self.agent_scope(pane_id)?;
-        self.feature_board(&scope)
+        self.feature_board_for_agent_in_scope(pane_id, ArtifactScope::default())
     }
 
-    fn feature_board(&self, scope: &AgentScope) -> anyhow::Result<FeatureBoard> {
-        let features = self.store.features(&scope.project_name)?;
-        let current = self.current_feature(scope, &features)?;
-        let decisions = self.store.decisions(&scope.project_name)?;
+    pub fn feature_board_for_agent_in_scope(
+        &self,
+        pane_id: PaneId,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<FeatureBoard> {
+        let scope = self.agent_scope(pane_id)?;
+        self.feature_board(&scope, artifact_scope)
+    }
+
+    fn feature_board(
+        &self,
+        scope: &AgentScope,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<FeatureBoard> {
+        let key = scope.artifact_key(artifact_scope);
+        let features = self.store.features(key)?;
+        let current = self.current_feature(scope, artifact_scope, &features)?;
+        let decisions = self.store.decisions(key)?;
         let unfiled = decisions.iter().filter(|d| d.feature.is_none()).count();
         let scoped: Vec<Decision> = match &current {
             Some(slug) => decisions
@@ -64,11 +78,12 @@ impl Daemon {
     fn current_feature(
         &self,
         scope: &AgentScope,
+        artifact_scope: ArtifactScope,
         features: &[Feature],
     ) -> anyhow::Result<Option<String>> {
         if let Some(slug) = self
             .store
-            .feature_scope(&scope.checkout_path, &scope.project_name)?
+            .artifact_feature_scope(&scope.checkout_path, scope.artifact_key(artifact_scope))?
         {
             if features.iter().any(|f| f.slug == slug) {
                 return Ok(Some(slug));
@@ -87,13 +102,25 @@ impl Daemon {
 
     /// Opens a feature, points this checkout at it, and answers with the
     /// board as it now stands.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn open_feature_for_agent(
         &self,
         pane_id: PaneId,
         session: Option<&str>,
         write: FeatureWrite,
     ) -> anyhow::Result<FeatureBoard> {
+        self.open_feature_for_agent_in_scope(pane_id, session, write, ArtifactScope::default())
+    }
+
+    pub fn open_feature_for_agent_in_scope(
+        &self,
+        pane_id: PaneId,
+        session: Option<&str>,
+        write: FeatureWrite,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<FeatureBoard> {
         let scope = self.agent_scope(pane_id)?;
+        let key = scope.artifact_key(artifact_scope);
         let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
         let at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -101,7 +128,7 @@ impl Daemon {
             .unwrap_or_default();
         let checkout = scope.checkout_path.to_string_lossy().to_string();
         let feature = self.store.add_feature(
-            &scope.project_name,
+            key,
             &write,
             Some(checkout.as_str()),
             self.branch_of(&scope.checkout_path).as_deref(),
@@ -109,12 +136,9 @@ impl Daemon {
             session,
         )?;
         self.store
-            .set_feature_scope(&scope.checkout_path, &scope.project_name, &feature.slug)?;
-        let board = self.feature_board(&scope)?;
-        self.broadcast_decisions(
-            &scope.project_name,
-            self.store.decisions(&scope.project_name)?,
-        );
+            .set_artifact_feature_scope(&scope.checkout_path, key, &feature.slug)?;
+        let board = self.feature_board(&scope, artifact_scope)?;
+        self.broadcast_decisions(&scope.project_name, key, self.store.decisions(key)?);
         Ok(board)
     }
 
@@ -123,19 +147,30 @@ impl Daemon {
     /// Pushed, because a feature row names the checkouts pointed at it:
     /// this is the moment a feature somebody wrote down gains a place
     /// where work on it can be seen happening.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn select_feature_for_agent(
         &self,
         pane_id: PaneId,
         slug: &str,
     ) -> anyhow::Result<FeatureBoard> {
+        self.select_feature_for_agent_in_scope(pane_id, slug, ArtifactScope::default())
+    }
+
+    pub fn select_feature_for_agent_in_scope(
+        &self,
+        pane_id: PaneId,
+        slug: &str,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<FeatureBoard> {
         let scope = self.agent_scope(pane_id)?;
-        self.store
-            .set_feature_scope(&scope.checkout_path, &scope.project_name, slug)?;
-        let board = self.feature_board(&scope)?;
-        self.broadcast_decisions(
-            &scope.project_name,
-            self.store.decisions(&scope.project_name)?,
-        );
+        self.store.set_artifact_feature_scope(
+            &scope.checkout_path,
+            scope.artifact_key(artifact_scope),
+            slug,
+        )?;
+        let board = self.feature_board(&scope, artifact_scope)?;
+        let key = scope.artifact_key(artifact_scope);
+        self.broadcast_decisions(&scope.project_name, key, self.store.decisions(key)?);
         Ok(board)
     }
 
@@ -144,29 +179,36 @@ impl Daemon {
     /// Refused when the checkout is on no feature, rather than opening one:
     /// what to call a feature is the decision this whole scope hangs off,
     /// and it is not one to make out of a stray note.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn append_to_feature_for_agent(
         &self,
         pane_id: PaneId,
         text: &str,
     ) -> anyhow::Result<FeatureBoard> {
+        self.append_to_feature_for_agent_in_scope(pane_id, text, ArtifactScope::default())
+    }
+
+    pub fn append_to_feature_for_agent_in_scope(
+        &self,
+        pane_id: PaneId,
+        text: &str,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<FeatureBoard> {
         let scope = self.agent_scope(pane_id)?;
-        let features = self.store.features(&scope.project_name)?;
-        let Some(slug) = self.current_feature(&scope, &features)? else {
+        let key = scope.artifact_key(artifact_scope);
+        let features = self.store.features(key)?;
+        let Some(slug) = self.current_feature(&scope, artifact_scope, &features)? else {
             anyhow::bail!("this checkout is not on a feature yet");
         };
         if text.trim().is_empty() {
             anyhow::bail!("there is nothing to add");
         }
-        self.store
-            .append_to_feature(&scope.project_name, &slug, text)?;
-        let board = self.feature_board(&scope)?;
+        self.store.append_to_feature(key, &slug, text)?;
+        let board = self.feature_board(&scope, artifact_scope)?;
         // The brief is drawn beside the decisions, so a paragraph added
         // mid-task shows up where it is being read rather than at whatever
         // point the reader next changes something else.
-        self.broadcast_decisions(
-            &scope.project_name,
-            self.store.decisions(&scope.project_name)?,
-        );
+        self.broadcast_decisions(&scope.project_name, key, self.store.decisions(key)?);
         Ok(board)
     }
 
@@ -186,21 +228,13 @@ impl Daemon {
         state: FeatureState,
         detail: Option<String>,
     ) -> anyhow::Result<()> {
-        let name = {
-            let inner = self.inner.lock().unwrap();
-            inner
-                .projects
-                .iter()
-                .find(|p| p.id == project)
-                .map(|p| p.name.clone())
-                .ok_or_else(|| anyhow::anyhow!("no such project"))?
-        };
+        let (name, key) = self.client_artifact_scope(project)?;
         let at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or_default();
         self.store.move_feature(
-            &name,
+            &key,
             slug,
             &FeatureMove {
                 state,
@@ -210,7 +244,7 @@ impl Daemon {
                 at,
             },
         )?;
-        self.broadcast_decisions(&name, self.store.decisions(&name)?);
+        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
         Ok(())
     }
 
@@ -225,25 +259,21 @@ impl Daemon {
         project: ProjectId,
         write: FeatureWrite,
     ) -> anyhow::Result<()> {
-        let name = self.project_named(project)?;
+        let (name, key) = self.client_artifact_scope(project)?;
         let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
         let at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or_default();
-        self.store.add_feature(&name, &write, None, None, at, None)?;
-        self.broadcast_decisions(&name, self.store.decisions(&name)?);
+        self.store.add_feature(&key, &write, None, None, at, None)?;
+        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
         Ok(())
     }
 
-    pub fn remove_feature_for_client(
-        &self,
-        project: ProjectId,
-        slug: &str,
-    ) -> anyhow::Result<()> {
-        let name = self.project_named(project)?;
-        self.store.remove_feature(&name, slug)?;
-        self.broadcast_decisions(&name, self.store.decisions(&name)?);
+    pub fn remove_feature_for_client(&self, project: ProjectId, slug: &str) -> anyhow::Result<()> {
+        let (name, key) = self.client_artifact_scope(project)?;
+        self.store.remove_feature(&key, slug)?;
+        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
         Ok(())
     }
 
@@ -253,20 +283,10 @@ impl Daemon {
         slug: &str,
         title: &str,
     ) -> anyhow::Result<()> {
-        let name = self.project_named(project)?;
-        self.store.rename_feature(&name, slug, title)?;
-        self.broadcast_decisions(&name, self.store.decisions(&name)?);
+        let (name, key) = self.client_artifact_scope(project)?;
+        self.store.rename_feature(&key, slug, title)?;
+        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
         Ok(())
-    }
-
-    fn project_named(&self, project: ProjectId) -> anyhow::Result<String> {
-        let inner = self.inner.lock().unwrap();
-        inner
-            .projects
-            .iter()
-            .find(|p| p.id == project)
-            .map(|p| p.name.clone())
-            .ok_or_else(|| anyhow::anyhow!("no such project"))
     }
 
     /// Rewrites a feature's brief from the view.
@@ -276,24 +296,20 @@ impl Daemon {
         slug: &str,
         body: String,
     ) -> anyhow::Result<()> {
-        let name = {
-            let inner = self.inner.lock().unwrap();
-            inner
-                .projects
-                .iter()
-                .find(|p| p.id == project)
-                .map(|p| p.name.clone())
-                .ok_or_else(|| anyhow::anyhow!("no such project"))?
-        };
-        self.store.set_feature_body(&name, slug, &body)?;
-        self.broadcast_decisions(&name, self.store.decisions(&name)?);
+        let (name, key) = self.client_artifact_scope(project)?;
+        self.store.set_feature_body(&key, slug, &body)?;
+        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
         Ok(())
     }
 
     /// The feature the next decision from this pane is filed under.
-    pub(super) fn feature_for_agent(&self, scope: &AgentScope) -> anyhow::Result<Option<String>> {
-        let features = self.store.features(&scope.project_name)?;
-        self.current_feature(scope, &features)
+    pub(super) fn feature_for_agent_in_scope(
+        &self,
+        scope: &AgentScope,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<Option<String>> {
+        let features = self.store.features(scope.artifact_key(artifact_scope))?;
+        self.current_feature(scope, artifact_scope, &features)
     }
 
     /// The branch a checkout is on, as the last git poll saw it.

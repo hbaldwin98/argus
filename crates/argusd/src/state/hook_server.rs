@@ -117,7 +117,13 @@ async fn handle_hook_request(
 
     let (authorized, content_length, reporter) =
         read_hook_headers(&mut reader, &daemon.hook_token).await?;
-    let endpoint = parse_pane_path(&path);
+    let (route, query) = path.split_once('?').unwrap_or((&path, ""));
+    let endpoint = parse_pane_path(route);
+    let artifact_scope = if query.split('&').any(|part| part == "scope=workspace") {
+        argus_protocol::ArtifactScope::Workspace
+    } else {
+        argus_protocol::ArtifactScope::RepositoryBranch
+    };
     // The server trusts nothing about a request beyond its bearer token.
     let too_large = content_length > MAX_BODY;
     let mut body = vec![0u8; if too_large { 0 } else { content_length }];
@@ -162,16 +168,16 @@ async fn handle_hook_request(
             Some((pane, Endpoint::Todo)) => {
                 todo_response(&daemon, pane, reporter.as_deref(), &body)
             }
-            Some((pane, Endpoint::Decisions)) => decisions_response(&daemon, pane)?,
+            Some((pane, Endpoint::Decisions)) => decisions_response(&daemon, pane, artifact_scope)?,
             Some((pane, Endpoint::Decide)) => {
-                decide_response(&daemon, pane, reporter.as_deref(), &body)
+                decide_response(&daemon, pane, reporter.as_deref(), &body, artifact_scope)
             }
-            Some((pane, Endpoint::Features)) => features_response(&daemon, pane)?,
+            Some((pane, Endpoint::Features)) => features_response(&daemon, pane, artifact_scope)?,
             Some((pane, Endpoint::Feature)) => {
-                feature_response(&daemon, pane, reporter.as_deref(), &body)
+                feature_response(&daemon, pane, reporter.as_deref(), &body, artifact_scope)
             }
             Some((pane, Endpoint::Tasks)) => {
-                tasks_response(&daemon, pane, reporter.as_deref(), &body)
+                tasks_response(&daemon, pane, reporter.as_deref(), &body, artifact_scope)
             }
             // A checkout move from an agent that does not own the pane is
             // dropped: the row follows the agent Argus started in it.
@@ -249,8 +255,12 @@ fn todo_response(
     }
 }
 
-fn decisions_response(daemon: &Arc<Daemon>, source: PaneId) -> anyhow::Result<HookResponse> {
-    Ok(match daemon.decisions_for_agent(source) {
+fn decisions_response(
+    daemon: &Arc<Daemon>,
+    source: PaneId,
+    scope: argus_protocol::ArtifactScope,
+) -> anyhow::Result<HookResponse> {
+    Ok(match daemon.decisions_for_agent_in_scope(source, scope) {
         Ok(board) => HookResponse {
             code: 200,
             reason: "OK",
@@ -268,6 +278,7 @@ fn decide_response(
     source: PaneId,
     session: Option<&str>,
     body: &[u8],
+    scope: argus_protocol::ArtifactScope,
 ) -> HookResponse {
     let write: argus_protocol::DecisionWrite = match serde_json::from_slice(body) {
         Ok(write) => write,
@@ -275,7 +286,7 @@ fn decide_response(
             return HookResponse::text(400, "Bad Request", "not a decision".into());
         }
     };
-    match daemon.record_agent_decision(source, session, write) {
+    match daemon.record_agent_decision_in_scope(source, session, write, scope) {
         Ok(decision) => match serde_json::to_vec(&decision) {
             Ok(body) => HookResponse {
                 code: 200,
@@ -288,15 +299,21 @@ fn decide_response(
     }
 }
 
-fn features_response(daemon: &Arc<Daemon>, source: PaneId) -> anyhow::Result<HookResponse> {
-    Ok(match daemon.feature_board_for_agent(source) {
-        Ok(board) => HookResponse {
-            code: 200,
-            reason: "OK",
-            body: serde_json::to_vec(&board)?,
+fn features_response(
+    daemon: &Arc<Daemon>,
+    source: PaneId,
+    scope: argus_protocol::ArtifactScope,
+) -> anyhow::Result<HookResponse> {
+    Ok(
+        match daemon.feature_board_for_agent_in_scope(source, scope) {
+            Ok(board) => HookResponse {
+                code: 200,
+                reason: "OK",
+                body: serde_json::to_vec(&board)?,
+            },
+            Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
         },
-        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
-    })
+    )
 }
 
 /// Answers with the board as it stands afterwards, because every one of
@@ -307,6 +324,7 @@ fn feature_response(
     source: PaneId,
     session: Option<&str>,
     body: &[u8],
+    scope: argus_protocol::ArtifactScope,
 ) -> HookResponse {
     use argus_protocol::FeatureAction;
 
@@ -315,9 +333,15 @@ fn feature_response(
         Err(_) => return HookResponse::text(400, "Bad Request", "not a feature change".into()),
     };
     let board = match action {
-        FeatureAction::Open(write) => daemon.open_feature_for_agent(source, session, write),
-        FeatureAction::Select { slug } => daemon.select_feature_for_agent(source, &slug),
-        FeatureAction::Append { text } => daemon.append_to_feature_for_agent(source, &text),
+        FeatureAction::Open(write) => {
+            daemon.open_feature_for_agent_in_scope(source, session, write, scope)
+        }
+        FeatureAction::Select { slug } => {
+            daemon.select_feature_for_agent_in_scope(source, &slug, scope)
+        }
+        FeatureAction::Append { text } => {
+            daemon.append_to_feature_for_agent_in_scope(source, &text, scope)
+        }
     };
     match board.and_then(|board| Ok(serde_json::to_vec(&board)?)) {
         Ok(body) => HookResponse {
@@ -339,6 +363,7 @@ fn tasks_response(
     source: PaneId,
     session: Option<&str>,
     body: &[u8],
+    scope: argus_protocol::ArtifactScope,
 ) -> HookResponse {
     use argus_protocol::TaskAction;
 
@@ -347,11 +372,15 @@ fn tasks_response(
         Err(_) => return HookResponse::text(400, "Bad Request", "not a task change".into()),
     };
     let list = match action {
-        TaskAction::List => daemon.tasks_for_agent(source),
-        TaskAction::Add(write) => daemon.add_task_for_agent(source, session, write),
-        TaskAction::Move { id, state } => daemon.move_task_for_agent(source, session, id, state),
-        TaskAction::Retitle { id, title } => daemon.retitle_task_for_agent(source, id, &title),
-        TaskAction::Remove { id } => daemon.remove_task_for_agent(source, id),
+        TaskAction::List => daemon.tasks_for_agent_in_scope(source, scope),
+        TaskAction::Add(write) => daemon.add_task_for_agent_in_scope(source, session, write, scope),
+        TaskAction::Move { id, state } => {
+            daemon.move_task_for_agent_in_scope(source, session, id, state, scope)
+        }
+        TaskAction::Retitle { id, title } => {
+            daemon.retitle_task_for_agent_in_scope(source, id, &title, scope)
+        }
+        TaskAction::Remove { id } => daemon.remove_task_for_agent_in_scope(source, id, scope),
     };
     match list.and_then(|list| Ok(serde_json::to_vec(&list)?)) {
         Ok(body) => HookResponse {

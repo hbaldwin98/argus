@@ -67,11 +67,12 @@ use std::time::Duration;
 use argus_protocol::{
     AgentContext, Decision, DecisionBoard, DecisionWrite, Endpoint, FeatureAction, FeatureBoard,
     FeatureWrite, Report, ReviewComment, TaskAction, TaskList, TaskState, TaskWrite, TodoState,
-    TodoWrite, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG,
-    OWNS_SESSION_FLAG, SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
+    TodoWrite, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
+    SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(2);
+const ARTIFACT_SCOPE_VAR: &str = "ARGUS_ARTIFACT_SCOPE";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -366,17 +367,21 @@ fn task(rest: &[&str]) {
 /// what an agent types is what a reader of the transcript understands
 /// happened.
 fn task_message(rest: &[&str], base_url: &str, token: &str) -> String {
-    let by_id = |verb: &str, state: TaskState| match rest.get(1).and_then(|id| id.parse::<i64>().ok())
-    {
-        Some(id) => write_task(TaskAction::Move { id, state }, base_url, token),
-        None => format!("could not change task: {verb} wants the number `task` prints"),
-    };
+    let by_id =
+        |verb: &str, state: TaskState| match rest.get(1).and_then(|id| id.parse::<i64>().ok()) {
+            Some(id) => write_task(TaskAction::Move { id, state }, base_url, token),
+            None => format!("could not change task: {verb} wants the number `task` prints"),
+        };
     match rest.first().copied() {
         None | Some("list") => write_task(TaskAction::List, base_url, token),
         Some("add") => {
             // A trailing `--key ORION-412` is the tracker's own id, kept
             // so an agent can reconcile later. Argus never reads it.
-            let words: Vec<&str> = rest[1..].iter().take_while(|a| **a != "--key").copied().collect();
+            let words: Vec<&str> = rest[1..]
+                .iter()
+                .take_while(|a| **a != "--key")
+                .copied()
+                .collect();
             let external = rest[1..]
                 .iter()
                 .position(|a| *a == "--key")
@@ -545,7 +550,8 @@ fn no_feature_here(board: &FeatureBoard) -> String {
                 .to_string(),
         );
     } else {
-        lines.push("Open one with `argus-hook feature open \"<title>\"`, or work on one of:".into());
+        lines
+            .push("Open one with `argus-hook feature open \"<title>\"`, or work on one of:".into());
         for feature in &board.features {
             lines.push(format!("  {} — {}", feature.slug, feature.title));
         }
@@ -615,11 +621,14 @@ fn format_export(board: &FeatureBoard) -> String {
     if board.current.is_none() {
         return no_feature_here(board);
     }
-    format!("{EXPORT_BRIEF}
+    format!(
+        "{EXPORT_BRIEF}
 
 --- the material ---
 
-{}", format_feature(board))
+{}",
+        format_feature(board)
+    )
 }
 
 const EXPORT_BRIEF: &str = "Write this feature up as a document somebody can read end to end: what was built, and why it has the shape it does. Everything below is the whole record — the brief, then every decision taken under it, in the tree they were recorded in. Nothing else about this feature is written down.
@@ -701,7 +710,11 @@ fn decision_branch(row: &argus_protocol::DecisionTreeRow<'_>) -> String {
         return String::new();
     }
     let mut branch = decision_ancestor_guides(row);
-    branch.push_str(if row.has_next_sibling { "├─ " } else { "└─ " });
+    branch.push_str(if row.has_next_sibling {
+        "├─ "
+    } else {
+        "└─ "
+    });
     branch
 }
 
@@ -1074,7 +1087,12 @@ fn authority(url: &str) -> Option<&str> {
 /// for. The suffix comes from `argus-protocol` so the daemon parses exactly
 /// what is built here.
 fn endpoint_url(base: &str, endpoint: Endpoint) -> String {
-    format!("{}/{}", base.trim_end_matches('/'), endpoint.suffix())
+    let url = format!("{}/{}", base.trim_end_matches('/'), endpoint.suffix());
+    if std::env::var(ARTIFACT_SCOPE_VAR).as_deref() == Ok("workspace") {
+        format!("{url}?scope=workspace")
+    } else {
+        url
+    }
 }
 
 fn pane_base(url: &str) -> Option<String> {
@@ -1671,15 +1689,11 @@ mod tests {
             (vec!["x", "--under"], "needs something after it"),
             (vec!["x", "--under", "zero"], "wants a decision number"),
             (vec!["x", "--why", "no"], "is not one of"),
-            (
-                vec!["x", "--under", "1", "--supersedes", "2"],
-                "not both",
-            ),
+            (vec!["x", "--under", "1", "--supersedes", "2"], "not both"),
         ] {
             let message = decide_message(&bad, "", "");
             assert!(
-                message.starts_with("could not record the decision:")
-                    && message.contains(expected),
+                message.starts_with("could not record the decision:") && message.contains(expected),
                 "{bad:?} gave {message:?}"
             );
         }
@@ -1697,10 +1711,7 @@ mod tests {
             "secret",
         );
 
-        assert_eq!(
-            message,
-            "recorded decision #7 under #3: one row per note"
-        );
+        assert_eq!(message, "recorded decision #7 under #3: one row per note");
         assert!(server
             .join()
             .unwrap()
@@ -1746,8 +1757,14 @@ mod tests {
         let message = feature_message(&[], &format!("http://{address}/pane/4"), "t");
         let _ = server.join();
 
-        assert!(message.starts_with("This checkout is not on a feature yet"), "{message}");
-        assert!(message.contains("the-pty-deadlock — The pty deadlock"), "{message}");
+        assert!(
+            message.starts_with("This checkout is not on a feature yet"),
+            "{message}"
+        );
+        assert!(
+            message.contains("the-pty-deadlock — The pty deadlock"),
+            "{message}"
+        );
         assert!(message.contains("3 older decision(s)"), "{message}");
     }
 
@@ -1896,8 +1913,14 @@ mod tests {
 
         let message = format_export(&board);
 
-        assert!(message.starts_with("This checkout is not on a feature"), "{message}");
-        assert!(message.contains("streaming-the-pty"), "it still offers the ones that exist");
+        assert!(
+            message.starts_with("This checkout is not on a feature"),
+            "{message}"
+        );
+        assert!(
+            message.contains("streaming-the-pty"),
+            "it still offers the ones that exist"
+        );
     }
 
     fn context_note(

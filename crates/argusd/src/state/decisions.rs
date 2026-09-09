@@ -15,26 +15,18 @@
 //! board exists for agents to write, is append-only, and attributes every
 //! row. There is nothing for a policy to protect.
 
-use argus_protocol::{Decision, DecisionBoard, DecisionWrite};
+use argus_protocol::{ArtifactScope, Decision, DecisionBoard, DecisionWrite};
 
 use super::*;
 
 impl Daemon {
     /// One project's board, by the id a client holds.
     pub fn decision_board(&self, project: ProjectId) -> anyhow::Result<DecisionBoard> {
-        let name = {
-            let inner = self.inner.lock().unwrap();
-            inner
-                .projects
-                .iter()
-                .find(|p| p.id == project)
-                .map(|p| p.name.clone())
-                .ok_or_else(|| anyhow::anyhow!("no such project"))?
-        };
+        let (name, key) = self.client_artifact_scope(project)?;
         Ok(DecisionBoard {
             project: Some(project),
-            features: self.store.features(&name)?,
-            decisions: self.store.decisions(&name)?,
+            features: self.store.features(&key)?,
+            decisions: self.store.decisions(&key)?,
             name,
         })
     }
@@ -48,18 +40,28 @@ impl Daemon {
     /// to the feature for the same reason — everything decided about some
     /// other feature is noise it has to read past to find the part that
     /// constrains it.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn decisions_for_agent(&self, pane_id: PaneId) -> anyhow::Result<DecisionBoard> {
+        self.decisions_for_agent_in_scope(pane_id, ArtifactScope::default())
+    }
+
+    pub fn decisions_for_agent_in_scope(
+        &self,
+        pane_id: PaneId,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<DecisionBoard> {
         let scope = self.agent_scope(pane_id)?;
-        let feature = self.feature_for_agent(&scope)?;
+        let key = scope.artifact_key(artifact_scope);
+        let feature = self.feature_for_agent_in_scope(&scope, artifact_scope)?;
         let decisions = self
             .store
-            .decisions(&scope.project_name)?
+            .decisions(key)?
             .into_iter()
             .filter(|d| d.feature == feature)
             .collect();
         Ok(DecisionBoard {
             project: self.project_id_named(&scope.project_name),
-            features: self.store.features(&scope.project_name)?,
+            features: self.store.features(key)?,
             name: scope.project_name,
             decisions,
         })
@@ -72,30 +74,44 @@ impl Daemon {
     /// in front of the user. The id in the answer is what the next
     /// decision hangs off, which is the only reason a write answers with
     /// more than an acknowledgement.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn record_agent_decision(
         &self,
         pane_id: PaneId,
         session: Option<&str>,
         write: DecisionWrite,
     ) -> anyhow::Result<Decision> {
+        self.record_agent_decision_in_scope(pane_id, session, write, ArtifactScope::default())
+    }
+
+    pub fn record_agent_decision_in_scope(
+        &self,
+        pane_id: PaneId,
+        session: Option<&str>,
+        write: DecisionWrite,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<Decision> {
         let scope = self.agent_scope(pane_id)?;
+        let key = scope.artifact_key(artifact_scope);
         let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
         // Refused rather than filed loose: a decision nobody can find
         // again is the pile this scoping exists to end.
-        let feature = self.feature_for_agent(&scope)?.ok_or_else(|| {
-            anyhow::anyhow!(
-                "this checkout is not on a feature yet — open one with \
+        let feature = self
+            .feature_for_agent_in_scope(&scope, artifact_scope)?
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "this checkout is not on a feature yet — open one with \
                  `argus-hook feature open \"<title>\"`, or point it at an \
                  existing one with `argus-hook feature <slug>`"
-            )
-        })?;
+                )
+            })?;
         let at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or_default();
         let checkout = scope.checkout_path.to_string_lossy().to_string();
         let id = self.store.add_decision(
-            &scope.project_name,
+            key,
             &write,
             Some(feature.as_str()),
             at,
@@ -105,23 +121,19 @@ impl Daemon {
         // Read back rather than assembled from the write: `supersedes`
         // decides the parent inside the transaction, so what the store
         // holds is the only account of where the node actually landed.
-        let board = self.store.decisions(&scope.project_name)?;
+        let board = self.store.decisions(key)?;
         let recorded = board
             .iter()
             .find(|d| d.id == id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("the decision was not recorded"))?;
-        self.broadcast_decisions(&scope.project_name, board);
+        self.broadcast_decisions(&scope.project_name, key, board);
         Ok(recorded)
     }
 
     pub(super) fn project_id_named(&self, name: &str) -> Option<ProjectId> {
         let inner = self.inner.lock().unwrap();
-        inner
-            .projects
-            .iter()
-            .find(|p| p.name == name)
-            .map(|p| p.id)
+        inner.projects.iter().find(|p| p.name == name).map(|p| p.id)
     }
 
     /// Pushes a changed board at every attached client.
@@ -130,8 +142,8 @@ impl Daemon {
     /// board is meant to be watched: the point of drawing the tree is
     /// seeing it built up while the work happens. A client with another
     /// project open drops it by name.
-    pub(super) fn broadcast_decisions(&self, name: &str, decisions: Vec<Decision>) {
-        let features = self.store.features(name).unwrap_or_default();
+    pub(super) fn broadcast_decisions(&self, name: &str, key: &str, decisions: Vec<Decision>) {
+        let features = self.store.features(key).unwrap_or_default();
         let _ = self.decisions_tx.send(DecisionBoard {
             project: self.project_id_named(name),
             name: name.to_string(),

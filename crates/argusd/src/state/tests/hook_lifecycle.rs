@@ -2,7 +2,7 @@
 //! running in it, and their removal when the last one leaves.
 
 use super::*;
-use argus_protocol::{ContextScope, DecisionWrite, TodoState, TodoWrite};
+use argus_protocol::{ArtifactScope, ContextScope, DecisionWrite, TaskWrite, TodoState, TodoWrite};
 #[tokio::test]
 async fn sharing_a_checkout_is_allowed_unless_the_project_says_otherwise() {
     let dir = tempfile::tempdir().unwrap();
@@ -264,8 +264,11 @@ async fn context_omits_a_note_that_was_never_written() {
     let dir = tempfile::tempdir().unwrap();
     let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
     let checkout = only_checkout(&d);
-    d.set_note(NoteTarget::Checkout(checkout), "- [ ] just here\n".to_string())
-        .unwrap();
+    d.set_note(
+        NoteTarget::Checkout(checkout),
+        "- [ ] just here\n".to_string(),
+    )
+    .unwrap();
     let agent = d.spawn_agent(checkout, "claude").unwrap();
 
     let context = d.context_for_agent(agent).unwrap();
@@ -282,7 +285,10 @@ async fn context_is_refused_to_anything_that_is_not_a_live_agent() {
     let checkout = only_checkout(&d);
     let shell = d.spawn_shell(checkout).unwrap();
 
-    assert!(d.context_for_agent(shell).is_err(), "a shell is not an agent");
+    assert!(
+        d.context_for_agent(shell).is_err(),
+        "a shell is not an agent"
+    );
     assert!(d.context_for_agent(PaneId(9999)).is_err(), "nor is nobody");
     close_all(&d);
 }
@@ -497,8 +503,11 @@ async fn an_agent_note_write_reaches_only_its_own_live_checkout() {
     let d = daemon_allowing_agent_todos(dir.path());
     let checkout = only_checkout(&d);
     let project = d.snapshot()[0].id;
-    d.set_note(NoteTarget::Project(project), "- [!] house style\n".to_string())
-        .unwrap();
+    d.set_note(
+        NoteTarget::Project(project),
+        "- [!] house style\n".to_string(),
+    )
+    .unwrap();
     let shell = d.spawn_shell(checkout).unwrap();
 
     let add = TodoWrite::Add {
@@ -548,7 +557,13 @@ async fn a_refused_todo_hook_says_why_and_a_bad_one_is_not_a_note_change() {
     assert!(garbage.starts_with("HTTP/1.1 400"), "{garbage}");
 
     let missing = String::from_utf8_lossy(
-        &post_agent_hook(&d, source, Endpoint::Todo, r#"{"set":{"line":7,"state":"done"}}"#).await,
+        &post_agent_hook(
+            &d,
+            source,
+            Endpoint::Todo,
+            r#"{"set":{"line":7,"state":"done"}}"#,
+        )
+        .await,
     )
     .to_string();
     assert!(missing.starts_with("HTTP/1.1 409"), "{missing}");
@@ -578,6 +593,76 @@ fn open_feature(d: &Daemon, agent: PaneId, title: &str) -> String {
         )
         .unwrap();
     board.current.expect("opening a feature works on it")
+}
+
+#[tokio::test]
+async fn artifacts_are_branch_scoped_unless_workspace_scope_is_requested() {
+    let first = tempfile::tempdir().unwrap();
+    let second = tempfile::tempdir().unwrap();
+    let d = daemon_with_two_agent_checkouts(first.path(), second.path());
+    let snapshot = d.snapshot();
+    let first_checkout = snapshot[0].repositories[0].checkouts[0].id;
+    let second_checkout = snapshot[0].repositories[1].checkouts[0].id;
+    let first_agent = d.spawn_agent(first_checkout, "claude").unwrap();
+    let second_agent = d.spawn_agent(second_checkout, "claude").unwrap();
+
+    open_feature(&d, first_agent, "branch-local work");
+    assert!(
+        d.feature_board_for_agent(second_agent)
+            .unwrap()
+            .features
+            .is_empty(),
+        "the default board does not cross repository branches"
+    );
+
+    let shared = d
+        .open_feature_for_agent_in_scope(
+            first_agent,
+            None,
+            argus_protocol::FeatureWrite {
+                title: "workspace migration".into(),
+                body: None,
+            },
+            ArtifactScope::Workspace,
+        )
+        .unwrap()
+        .current
+        .unwrap();
+    d.select_feature_for_agent_in_scope(second_agent, &shared, ArtifactScope::Workspace)
+        .unwrap();
+    d.record_agent_decision_in_scope(
+        first_agent,
+        None,
+        DecisionWrite {
+            chose: "move both repositories together".into(),
+            ..Default::default()
+        },
+        ArtifactScope::Workspace,
+    )
+    .unwrap();
+    d.add_task_for_agent_in_scope(
+        first_agent,
+        None,
+        TaskWrite {
+            title: "update both crates".into(),
+            external: None,
+        },
+        ArtifactScope::Workspace,
+    )
+    .unwrap();
+
+    let decisions = d
+        .decisions_for_agent_in_scope(second_agent, ArtifactScope::Workspace)
+        .unwrap();
+    assert_eq!(
+        decisions.decisions[0].chose,
+        "move both repositories together"
+    );
+    let tasks = d
+        .tasks_for_agent_in_scope(second_agent, ArtifactScope::Workspace)
+        .unwrap();
+    assert_eq!(tasks.tasks[0].title, "update both crates");
+    close_all(&d);
 }
 
 #[tokio::test]
@@ -660,7 +745,13 @@ async fn an_agent_reads_its_own_features_decisions_and_not_the_projects() {
     assert_eq!(features.current.as_deref(), Some(second.as_str()));
     assert_eq!(features.features.len(), 2, "the others are still offered");
     // The project-wide board is what the client draws, and keeps both.
-    assert_eq!(d.decision_board(d.snapshot()[0].id).unwrap().decisions.len(), 2);
+    assert_eq!(
+        d.decision_board(d.snapshot()[0].id)
+            .unwrap()
+            .decisions
+            .len(),
+        2
+    );
     close_all(&d);
 }
 
@@ -687,7 +778,8 @@ async fn a_feature_document_grows_and_a_checkout_can_go_back_to_it() {
     assert_eq!(document, "the key has to outlive the ids");
 
     assert!(
-        d.select_feature_for_agent(agent, "no-such-feature").is_err(),
+        d.select_feature_for_agent(agent, "no-such-feature")
+            .is_err(),
         "a checkout cannot be pointed at a feature that does not exist"
     );
     close_all(&d);
@@ -740,7 +832,10 @@ async fn a_decision_lands_on_its_projects_board_wherever_the_agent_was() {
     );
     // Attribution is the point of allowing the write at all.
     assert_eq!(child.session.as_deref(), Some("sess-1"));
-    assert!(child.checkout.is_some(), "and which checkout it was made in");
+    assert!(
+        child.checkout.is_some(),
+        "and which checkout it was made in"
+    );
     close_all(&d);
 }
 
@@ -769,7 +864,11 @@ async fn a_recorded_decision_is_pushed_at_every_attached_client() {
     assert_eq!(board.name, d.snapshot()[0].name);
     assert_eq!(board.project, Some(d.snapshot()[0].id));
     assert_eq!(
-        board.decisions.iter().map(|d| d.chose.as_str()).collect::<Vec<_>>(),
+        board
+            .decisions
+            .iter()
+            .map(|d| d.chose.as_str())
+            .collect::<Vec<_>>(),
         ["sqlite"]
     );
     close_all(&d);
@@ -832,7 +931,11 @@ async fn superseding_leaves_the_decision_it_replaced_on_the_board() {
         .unwrap();
 
     let board = d.decision_board(project).unwrap();
-    assert_eq!(board.decisions.len(), 2, "the old one is marked, not removed");
+    assert_eq!(
+        board.decisions.len(),
+        2,
+        "the old one is marked, not removed"
+    );
     let old = board.decisions.iter().find(|d| d.id == old.id).unwrap();
     assert_eq!(old.superseded_by, Some(new.id));
     close_all(&d);
@@ -874,7 +977,10 @@ async fn the_board_reaches_an_agent_whole_and_a_bad_decision_is_refused() {
     )
     .to_string();
     assert!(empty.starts_with("HTTP/1.1 409"), "{empty}");
-    assert!(empty.ends_with("a decision has to say what was chosen"), "{empty}");
+    assert!(
+        empty.ends_with("a decision has to say what was chosen"),
+        "{empty}"
+    );
 
     let orphan = String::from_utf8_lossy(
         &post_agent_hook(&d, source, Endpoint::Decide, r#"{"chose":"x","under":99}"#).await,
@@ -883,7 +989,10 @@ async fn the_board_reaches_an_agent_whole_and_a_bad_decision_is_refused() {
     assert!(orphan.starts_with("HTTP/1.1 409"), "{orphan}");
 
     assert_eq!(
-        d.decision_board(d.snapshot()[0].id).unwrap().decisions.len(),
+        d.decision_board(d.snapshot()[0].id)
+            .unwrap()
+            .decisions
+            .len(),
         1,
         "only the one that was accepted"
     );
@@ -974,7 +1083,10 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
     let notes = open_feature(&d, agent, "notes storage");
     let list = d.tasks_for_agent(agent).unwrap();
     assert_eq!(list.feature.as_deref(), Some(notes.as_str()));
-    assert!(list.tasks.is_empty(), "another feature's tasks are not this one's");
+    assert!(
+        list.tasks.is_empty(),
+        "another feature's tasks are not this one's"
+    );
 
     let refused = d
         .move_task_for_agent(agent, Some("sess-1"), id, TaskState::Done)
