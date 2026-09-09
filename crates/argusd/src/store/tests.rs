@@ -373,6 +373,76 @@ fn migrating_an_already_current_store_is_a_no_op() {
     assert_eq!(s.panes().unwrap().len(), 1);
 }
 
+/// The board that was: a v8 store with features spread across the five
+/// columns, which is what every installed Argus has on disk.
+#[test]
+fn migrating_a_v8_store_collapses_the_columns_and_keeps_what_was_believed() {
+    use schema::{SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("runtime.db");
+    {
+        let conn = Connection::open(&path).unwrap();
+        for step in [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4] {
+            conn.execute_batch(step).unwrap();
+        }
+        for step in [SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8] {
+            conn.execute_batch(step).unwrap();
+        }
+        for (slug, state) in [
+            ("pty", "proposed"),
+            ("notes", "active"),
+            ("tls", "blocked"),
+            ("review", "submitted"),
+            ("board", "done"),
+        ] {
+            conn.execute(
+                "INSERT INTO feature
+                   (project, slug, title, body, at, state, claimed_by, blocker, evidence)
+                 VALUES ('argus', ?1, ?1, '', 1, ?2, 'sess-1', 'a reason', 'green')",
+                rusqlite::params![slug, state],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO feature_event (at, project, slug, state, actor, session, detail)
+                 VALUES (1, 'argus', ?1, ?2, 'agent', 'sess-1', NULL)",
+                rusqlite::params![slug, state],
+            )
+            .unwrap();
+        }
+        conn.pragma_update(None, "user_version", 8).unwrap();
+    }
+
+    let s = Store::open_at(&path).unwrap();
+    let states: Vec<_> = s
+        .features("argus")
+        .unwrap()
+        .into_iter()
+        .map(|f| (f.slug, f.state))
+        .collect();
+    assert_eq!(
+        states,
+        vec![
+            ("board".to_string(), FeatureState::Done),
+            ("notes".to_string(), FeatureState::Open),
+            ("pty".to_string(), FeatureState::Open),
+            ("review".to_string(), FeatureState::Open),
+            ("tls".to_string(), FeatureState::Open),
+        ],
+        "only acceptance survives; the other four columns were never observed"
+    );
+
+    // The events are not rewritten: they record what was believed at the
+    // time, which is the whole reason they are a table.
+    let submitted = s.feature_events("argus", "review").unwrap();
+    assert_eq!(submitted.len(), 1);
+    assert_eq!(
+        submitted[0].state,
+        FeatureState::Open,
+        "a move recorded as submitted still happened, and still reads as something"
+    );
+}
+
 #[test]
 fn migrating_a_v1_store_preserves_existing_state_and_adds_comments() {
     let dir = tempfile::tempdir().unwrap();
@@ -628,67 +698,11 @@ fn a_feature_document_grows_by_paragraph() {
 }
 
 #[test]
-fn a_feature_starts_proposed_and_carries_who_moved_it() {
+fn a_feature_starts_open_and_carries_who_accepted_it() {
     let s = store();
     s.add_feature("argus", &feature("notes storage"), None, None, 1, None)
         .unwrap();
-    assert_eq!(s.features("argus").unwrap()[0].state, FeatureState::Proposed);
-
-    let f = s
-        .move_feature(
-            "argus",
-            "notes-storage",
-            &FeatureMove {
-                state: FeatureState::Active,
-                detail: None,
-                actor: Actor::Agent,
-                session: Some("sess-1".into()),
-                at: 10,
-            },
-        )
-        .unwrap();
-    assert_eq!(f.state, FeatureState::Active);
-    assert_eq!(
-        f.claimed_by.as_deref(),
-        Some("sess-1"),
-        "picking work up is what claims it"
-    );
-
-    let f = s
-        .move_feature(
-            "argus",
-            "notes-storage",
-            &FeatureMove {
-                state: FeatureState::Blocked,
-                detail: Some("needs the staging password".into()),
-                actor: Actor::Agent,
-                session: Some("sess-1".into()),
-                at: 20,
-            },
-        )
-        .unwrap();
-    assert_eq!(f.blocker.as_deref(), Some("needs the staging password"));
-    assert_eq!(
-        f.claimed_by.as_deref(),
-        Some("sess-1"),
-        "a blocked feature still belongs to whoever carried it there"
-    );
-
-    let f = s
-        .move_feature(
-            "argus",
-            "notes-storage",
-            &FeatureMove {
-                state: FeatureState::Submitted,
-                detail: Some("green on cargo test".into()),
-                actor: Actor::Agent,
-                session: Some("sess-1".into()),
-                at: 30,
-            },
-        )
-        .unwrap();
-    assert_eq!(f.blocker, None, "what unblocked it stops explaining itself");
-    assert_eq!(f.evidence.as_deref(), Some("green on cargo test"));
+    assert_eq!(s.features("argus").unwrap()[0].state, FeatureState::Open);
 
     let f = s
         .move_feature(
@@ -696,43 +710,110 @@ fn a_feature_starts_proposed_and_carries_who_moved_it() {
             "notes-storage",
             &FeatureMove {
                 state: FeatureState::Done,
-                detail: None,
+                detail: Some("green on cargo test".into()),
                 actor: Actor::Human,
                 session: None,
                 at: 40,
             },
         )
         .unwrap();
-    assert_eq!(f.claimed_by, None, "an accepted feature is nobody's");
+    assert_eq!(f.state, FeatureState::Done);
+
+    let f = s
+        .move_feature(
+            "argus",
+            "notes-storage",
+            &FeatureMove {
+                state: FeatureState::Open,
+                detail: None,
+                actor: Actor::Human,
+                session: None,
+                at: 50,
+            },
+        )
+        .unwrap();
+    assert_eq!(f.state, FeatureState::Open, "an acceptance is reversible");
 
     let events = s.feature_events("argus", "notes-storage").unwrap();
     let moves: Vec<_> = events.iter().map(|e| (e.state, e.actor.as_str())).collect();
     assert_eq!(
         moves,
-        vec![
-            (FeatureState::Active, "agent"),
-            (FeatureState::Blocked, "agent"),
-            (FeatureState::Submitted, "agent"),
-            (FeatureState::Done, "human"),
-        ],
-        "the column cannot say who put it there; the events can"
+        vec![(FeatureState::Done, "human"), (FeatureState::Open, "human")],
+        "the state cannot say who put it there; the events can"
     );
-    assert_eq!(events[1].detail.as_deref(), Some("needs the staging password"));
+    assert_eq!(events[0].detail.as_deref(), Some("green on cargo test"));
 
     assert!(
         s.move_feature(
             "argus",
             "nothing",
             &FeatureMove {
-                state: FeatureState::Active,
+                state: FeatureState::Done,
                 detail: None,
-                actor: Actor::Agent,
+                actor: Actor::Human,
                 session: None,
-                at: 50,
+                at: 60,
             },
         )
         .is_err(),
-        "a feature that does not exist cannot be moved"
+        "a feature that does not exist cannot be accepted"
+    );
+}
+
+/// The two things a feature row says without being opened. Both are read
+/// off what is already stored rather than maintained by anyone, which is
+/// the whole reason the columns they replaced are gone.
+#[test]
+fn a_feature_carries_its_checkouts_and_how_its_tasks_stand() {
+    let s = store();
+    s.add_feature(
+        "argus",
+        &feature("the pty"),
+        Some("/src/argus"),
+        Some("pty-stream"),
+        1,
+        None,
+    )
+    .unwrap();
+    s.add_feature("argus", &feature("notes storage"), None, None, 2, None)
+        .unwrap();
+
+    // A worktree cut for the feature later joins the one it was born in.
+    s.set_feature_scope(Path::new("/src/argus-pty"), "argus", "the-pty")
+        .unwrap();
+
+    for title in ["port the parser", "wire the resize path", "backpressure"] {
+        s.add_task("argus", "the-pty", &task(title), 1, Some("sess-1"))
+            .unwrap();
+    }
+    let ids: Vec<_> = s
+        .tasks("argus", "the-pty")
+        .unwrap()
+        .iter()
+        .map(|t| t.id)
+        .collect();
+    s.move_task("argus", ids[0], TaskState::Done, None).unwrap();
+    s.move_task("argus", ids[1], TaskState::Doing, Some("sess-1"))
+        .unwrap();
+
+    let features = s.features("argus").unwrap();
+    let pty = features.iter().find(|f| f.slug == "the-pty").unwrap();
+    assert_eq!(
+        pty.checkouts,
+        vec!["/src/argus".to_string(), "/src/argus-pty".to_string()],
+        "where it was cut, and wherever it is worked on now"
+    );
+    assert_eq!(pty.tasks.todo, 1);
+    assert_eq!(pty.tasks.doing, 1);
+    assert_eq!(pty.tasks.done, 1);
+    assert!(!pty.tasks.all_done());
+
+    let notes = features.iter().find(|f| f.slug == "notes-storage").unwrap();
+    assert!(notes.checkouts.is_empty(), "written down, never cut anywhere");
+    assert_eq!(notes.tasks.total(), 0);
+    assert!(
+        !notes.tasks.all_done(),
+        "nothing to do is not the same answer as everything done"
     );
 }
 

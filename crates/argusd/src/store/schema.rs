@@ -224,3 +224,25 @@ CREATE TABLE task (
 );
 CREATE INDEX task_feature ON task (project, feature, position, id);
 "#;
+
+/// The five board columns collapsed to two states.
+///
+/// `proposed`, `active`, `blocked` and `submitted` were the one thing in
+/// Argus a person had to keep true by hand, and nothing observed them, so
+/// they said what somebody last dragged rather than what was happening.
+/// What is left is whether a feature has been accepted; everything the
+/// other four reached for is read off the panes on the feature's checkouts
+/// and the state of its tasks, which nobody has to maintain.
+///
+/// The `claimed_by`, `claimed_at`, `blocker` and `evidence` columns are
+/// cleared rather than dropped. Nothing writes them now, and a column left
+/// in place costs a row nothing — where an `ALTER TABLE DROP COLUMN` would
+/// put a floor under the SQLite this can be built against for no gain.
+///
+/// `feature_event` is not rewritten. It records what was believed at the
+/// time, which is the whole reason it is a table; a move recorded as
+/// `submitted` still happened, and `FeatureState::parse` reads it as open.
+pub(super) const SCHEMA_V9: &str = r#"
+UPDATE feature SET state = 'open' WHERE state <> 'done';
+UPDATE feature SET claimed_by = NULL, claimed_at = NULL, blocker = NULL, evidence = NULL;
+"#;

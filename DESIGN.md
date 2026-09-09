@@ -88,8 +88,10 @@ result of a request; `ui` is a pure function of it.
 | `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |
 | `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
 | `app/server` | what arrives back, and what it does to the selection |
+| `app/views` | which surface the content area holds, and the one feature selection everything on it is read at |
 | `ui` | the frame, and where the cursor goes on it |
 | `ui/columns`, `ui/rows`, `ui/text` | the spine, the vocabulary of a row, and fitting text to a width |
+| `ui/views` | the tab strip, and the feature view: its list, brief, tasks and decision tree |
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
 | `review`, `history`, `notes`, `dirpicker` | the view state behind each overlay |
 | `grid`, `selection`, `pty_input`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
@@ -116,8 +118,11 @@ is a key nobody can see the effect of — and returns to the column it left. Whi
 this client's own state and is never sent to the daemon: two people attached to one daemon are not
 necessarily reading the same thing.
 
-The views are the spine, the decision board, the feature board, and one feature's tasks (see
-"Features and the decision board").
+There are two views: the spine, and the feature view (see "Features"). It was four — a decision
+board, a feature board and a task board beside the spine — and three of them were one object drawn
+three times, each with a selection of its own. Selections that can disagree do: opening the task
+board from the decision board showed whichever card the feature board happened to be sitting on,
+not the feature whose reasoning was on screen.
 
 ## Navigation model
 
@@ -904,79 +909,113 @@ Clients read the whole project — every feature and every decision — with `Cl
 and are pushed `ServerMsg::Decisions` whenever any board changes, since a tree is meant to be
 watched being built and the daemon deliberately does not track which view a client has open; a
 client with another project open drops it by name. `DecisionBoard::scoped` is what narrows that to
-one feature in the client, so switching scope costs no round trip. The board view is two columns: the project's features on the
-left, and the tree of whichever one is selected on the right, drawn two lines per decision with
-branch rails and elbows connecting every child to its parent. `argus-hook decisions` draws the same
-topology for agents. `h`/`l` cross between the columns and `j`/`k` move through whichever has the
-keys, a click selects the row it lands on, and `r` re-asks by hand. Decisions from before features
-existed get a row of their own at the end of the feature column rather than being hidden.
+one feature in the client, so switching scope costs no round trip. The tree is drawn two lines per
+decision with branch rails and elbows connecting every child to its parent, and `argus-hook
+decisions` draws the same topology for agents. Decisions from before features existed get a row of
+their own at the end of the feature list rather than being hidden.
 
-### The feature board
+### The feature view
 
-The third view draws every feature of the project in a column by state — proposed, active, blocked,
-submitted, done — which is the "what is in flight" question the decision view does not answer. It is
-its own view rather than a mode of the decision view because the two are read for different reasons,
-and a toggle would hide whichever one you were not on. It reads the same pushed `DecisionBoard`,
-which already carries every feature with its state, so switching between them costs no round trip.
+The one view that is not the spine draws the project's features down the left and whichever one is
+selected, whole, on the right: its brief, the tasks left under it, and the decision tree beneath
+them. That is the order they are read and the order `argus-hook feature` prints them in — a
+decision without what the feature is for explains half of itself, and a task list without either
+says what to do and never why.
 
-The columns are equal width. What is worth width here is whichever column is full, and that changes
-hour to hour — a layout that tracked it would move the columns around under a reader who is using
-their position to find them. `h`/`l` cross columns and `j`/`k` walk the cards in one, the same
-gesture the spine takes, and `Enter` opens the decisions under the selected card: you see what is in
-flight, then ask why. Moving between columns lands on the first card rather than carrying the row
-across, since the same depth of an unrelated column is not where you were looking.
+It replaced three views. A decision board, a feature board and a task board were the same object
+drawn three times, and each carried a selection of its own: `App` held `board_feature_sel` for the
+decision view's list and a `(column, card)` pair for the board, and the task list resolved the
+card first. Opening the tasks while reading a feature's decisions therefore showed a different
+feature's tasks — whichever card the board was sitting on, which by default was the first of
+`proposed`. One selection is the fix, and there is now exactly one: `feature_sel`, an index into
+the same list every panel is scoped by, so the three cannot disagree about which feature is on
+screen.
 
-A card's second line answers the question its column raises — a blocked card says why, a submitted
-one says what was offered, and one nobody has picked up says the branch it was cut on.
+The three panels take keys in turn rather than each having their own set. `h` and `l` cross between
+the list and the feature being read — `l` is a direction and stops at the last panel rather than
+wrapping — `Tab` steps through them in the order they are drawn, and `j`/`k` move in whichever has
+them. `a`, `e` and `x` act on what has the keys: a new feature or a new task, the brief or the
+task's text, remove the feature or drop the task. The decision panel refuses both in prose, because
+the board is append-only and agents are what write it. Every panel draws its own selection whether
+or not it has the keys, the way the spine's columns do — the selections are how a reader traces
+where they are, and one that vanished when the keys left would make crossing back a hunt.
 
-A feature is opened from the board with `a`, renamed with `R`, and removed with `x` — the board is
-where a person writes down work, so it cannot be a surface only agents can add to. A feature opened
-here records no origin checkout, because work a person wrote down has not been cut anywhere yet;
-whichever agent picks it up says so with `argus-hook feature use`, and that is when it gains a home.
-A rename changes the title and freezes the slug: every decision row, task row and `feature_scope`
-entry points at the slug, so re-deriving it from the new title would orphan exactly the work the
-feature is about. Removing one takes its tasks, events and checkout scope with it and **unfiles its
+The brief takes what its wrapped text needs and never more than a third of the right-hand side; the
+rest is one `e` away in the editor. Tasks take what they need, floored and ceilinged so that
+neither they nor the tree can squeeze the other out. Both the selected feature and the selected
+task grow to their full wrapped text, and the window they scroll in is sized after paying for that
+growth — rounding up there is what let an expanded row start on the last line and run off the
+bottom.
+
+### What a feature row says
+
+A feature's line is read off what Argus already observes rather than maintained by anyone:
+
+- the agent panes running in its checkouts, summarized as the one thing worth knowing — `waiting:
+  <what for>`, `failed`, `needs review`, `2 working`, or `1 idle` — and coloured like the pane that
+  stopped, since a list of features is a list of places work might be stuck;
+- how its tasks stand, as `3/7 tasks`;
+- how many decisions are filed under it;
+- and, only when there is nothing else to say, the branch it was cut on.
+
+`Feature` carries `checkouts` and `tasks` for this. The checkouts are every path `feature_scope`
+points at plus the one it originated in, so a feature a person wrote down and an agent later picked
+up with `feature use` gains a place where work on it can be seen happening; without them the
+feature list is an island describing work with no way to tell whether anything is happening to it.
+The counts are one grouped query in the daemon rather than every task of every feature on the wire.
+Both are pushed with the board, and a task change re-broadcasts the features so the heading over a
+list cannot contradict the list.
+
+This replaced five drag-maintained columns. `proposed`, `active`, `blocked` and `submitted` were the
+one surface in Argus showing an assertion rather than an observation — a pane's status comes from
+its harness, a checkout row from the branch actually occupying the path, a diff from Git, and a
+board column from whoever last pressed `H`. `argus-hook` never exposed the move at all, so the only
+thing that ever maintained them was a person dragging cards, and a column nobody updates is stale
+rather than wrong-but-current, which is worse.
+
+Schema v9 collapses `FeatureState` to `open` and `done` and maps the four old names onto `open`.
+`feature_event` is not rewritten — it records what was believed at the time, which is the whole
+reason it is a table — so `FeatureState::parse` still reads `submitted` and answers `open`. The
+`claimed_by`, `claimed_at`, `blocker` and `evidence` columns are cleared and left in place; nothing
+writes them, and the claim they held is what the panes now say directly.
+
+`done` stays stored and stays the human's. `.` accepts the selected feature and reopens one already
+accepted, over `ClientMsg::MoveFeature`, applied to the client's own copy at once so the row answers
+the key and made true by the pushed board so a refusal puts it back. There is no agent-side move:
+the only state left is acceptance, and the agent that did the work is the one party that cannot
+accept it, so the whole action would have been a refusal. `feature_event` still records who moved
+it and what they said.
+
+A feature is opened with `a`, renamed with `R`, and removed with `x` — the list is where a person
+writes down work, so it cannot be a surface only agents can add to. A feature opened here records
+no origin checkout, because work a person wrote down has not been cut anywhere yet; whichever agent
+picks it up says so with `argus-hook feature use`, and that is when it gains a home. A rename
+changes the title and freezes the slug: every decision row, task row and `feature_scope` entry
+points at the slug, so re-deriving it from the new title would orphan exactly the work the feature
+is about. Removing one takes its tasks, events and checkout scope with it and **unfiles its
 decisions** rather than destroying them — the board is append-only because it records what was
 believed at the time, and that outlives the feature it was believed about, so those decisions
 reappear on the "before features" row.
-
-`H` and `L` move the selected card a column along, over `ClientMsg::MoveFeature`, and the selection
-follows it there — a move you have to go looking for reads as having lost the card. The move is
-applied to the client's own copy at once and the pushed board is what actually redraws it, so a
-refusal puts the card back where it really is. `s` sends a card back to whoever is on it, and has a
-key of its own because it is the one human verb the layout does not teach: accepting is a step right
-from `submitted`, but sending back is two columns left, and stepping through `blocked` on the way
-would post a blocker nobody claimed. The human write names the feature outright rather than being
-resolved from a checkout, since the board is the project's and the checkout a reader happens to have
-selected has nothing to do with the card under the cursor.
-
-Schema v7 holds this: `state`, `claimed_by`, `claimed_at`, `blocker` and `evidence` on `feature`,
-and a `feature_event` row for every move. The state is a column because the board is read whole on
-every change; the moves are a table for the reason `note_audit` is one, since a column reading
-`submitted` cannot say who submitted it or what they claimed. `blocker` and `evidence` are cleared
-on the way out of their states, so a feature that was unblocked stops explaining why it was stuck,
-and the claim is taken entering `active`, kept through `blocked` and `submitted` — a stuck feature
-still belongs to whoever carried it there — and released on `done`.
-
-`submitted` and `done` are separate states and an agent is refused the second: the review column has
-to be where work stops rather than somewhere it passes through, and the agent that did the work is
-the one party that cannot accept it. So the two write paths differ in what they may reach rather
-than in what they do — an agent moves its own work over `FeatureAction::Move`, scoped to the feature
-its checkout is on, and a human moves any card over `ClientMsg::MoveFeature`, acceptance included.
-Every move is recorded with which side made it, so a column reading `done` says who accepted it.
 
 ### Tasks
 
 A feature says what is being built and its decision tree says why it is being built that way.
 Neither says what is *left* to do, which is what a human actually hands an agent. So a feature
-carries a list of tasks, drawn as a board of its own: `Enter` on a feature card goes into it, and
-the columns are todo, doing and done.
+carries a list of tasks, drawn as the middle panel of the feature view.
 
 A task is a row, not a checkbox line in the feature's document. The note checkbox already has three
 states and an agent write path, but it is addressed by line number, and a line number moves whenever
-the text around it is edited — which is the one thing a board cannot take, since a card has to stay
-the same card while a human rewrites the list. Schema v8's `task` holds the title, the column, the
+the text around it is edited — which is the one thing a list cannot take, since a row has to stay
+the same row while a human rewrites the list. Schema v8's `task` holds the title, the state, the
 claim, a `position` and an `external` key.
+
+The states are still todo, doing and done, and unlike the feature columns they sat beside they are
+maintained by whoever is doing the work: an agent takes a task up and finishes it as part of the
+job, so `doing` says which row somebody is actually on rather than which was last dragged. They are
+drawn as a mark on the row — `○`, `▶`, `✓` — rather than as three columns, which is what lets the
+list keep the order a person put it in. That order is most of what a list is for, and three columns
+spent it saying what a glyph already says. Distinct shapes rather than colour alone, since a state
+you can only see by telling two greys apart is a state half the readers cannot see.
 
 `external` is whatever key the team's tracker uses. Argus stores it and knows nothing else about it:
 an agent with access to Jira, Linear, GitHub Issues or a spreadsheet is what puts tasks here, which
@@ -987,44 +1026,44 @@ Both sides write, and here they write the same things — there is no acceptance
 either side is refused. That ceremony belongs to the feature the tasks are under, which is where a
 human accepts the work as a whole. An agent reads with `argus-hook task` and writes with `task add`,
 `task doing <id>`, `task done <id>`, `task todo <id>`, `task retitle <id> <text>` and `task drop
-<id>`; the columns are named as verbs rather than hidden behind a `move`, so what an agent types is
+<id>`; the states are named as verbs rather than hidden behind a `move`, so what an agent types is
 what a reader of the transcript understands happened. Taking a task up is what claims it and
-finishing it is what releases it, so the doing column always says who is on each card without
-anyone claiming by hand.
+finishing it is what releases it, so a row always says who is on it without anyone claiming by hand.
 
 Ids are project-wide and an agent numbers its tasks from what it last read, so every agent-side
 change is refused when the task is not under the feature its checkout is on: a stale id would
 otherwise let one feature's agent tick off another's work by arithmetic.
 
-From the view, `H`/`L` move a task a column and `J`/`K` move it earlier or later in the list — the
-order is a human's statement of what to do first, so it is theirs to set and there is no agent-side
-equivalent. `a` starts a new task and `e` rewrites the selected one.
+From the view, `H`/`L` move a task along todo → doing → done and `J`/`K` move it earlier or later in
+the list — the order is a human's statement of what to do first, so it is theirs to set and there is
+no agent-side equivalent. Both are refused unless the tasks have the keys, so a capital `H` on the
+feature list does not move a task the cursor is nowhere near. Lists are pushed whole on
+`ServerMsg::Tasks` whenever one changes, and the cursor is held by task id across the push rather
+than by row number: a card you have to go looking for reads as having been lost.
 
-Both boards type on the same line — one `LineInput`, not one per board, because adding a feature and
-adding a task are the same gesture on the same kind of surface and two of them would drift. It takes
-a row off the bottom of the view rather than floating over it, so what you are writing and what is
-already there stay readable together, and while it is up it swallows every key: a title with an `x`
-in it does not delete the card behind it, and the first `Esc` puts the line away rather than the
-view. The prompt names itself — `new task`, `rewrite`, `new feature`, `rename` — which is the whole
-of the affordance, since there is no other cue that the keys have changed meaning.
+Adding and rewriting type on one `LineInput`, shared with the feature list because adding a feature
+and adding a task are the same gesture on the same kind of surface and two of them would drift. It
+takes a row off the bottom of the view rather than floating over it, so what you are writing and
+what is already there stay readable together, and while it is up it swallows every key: a title with
+an `x` in it does not delete the row behind it, and the first `Esc` puts the line away rather than
+the view. The prompt names itself — `new task`, `rewrite`, `new feature`, `rename` — which is the
+whole of the affordance, since there is no other cue that the keys have changed meaning.
 
-Lists are pushed whole on `ServerMsg::Tasks` whenever one changes, the way a board is, and a client
-holding another feature's list open drops it by name.
+### Limits of the current model
 
-### Limits of the current board model
+A feature is still both a context container and a unit of work. Its selection is shared by every
+pane in a checkout, and a checkout with one originating feature selects it without an explicit
+assignment. The managed skill asks agents to read that feature, its decisions, and its tasks, but
+the daemon does not decide whether they apply to the user's current request. Agents pull these reads
+at startup or task changes; unlike clients, they receive no board updates while running.
 
-The implemented model makes a feature both a context container and a unit of work. Its selection is
-shared by every pane in a checkout, and a checkout with one originating feature selects it without
-an explicit assignment. The managed skill asks agents to read that feature, its decisions, and its
-tasks, but the daemon does not decide whether they apply to the user's current request. Agents pull
-these reads at startup or task changes; unlike clients, they receive no board updates while running.
-
-The stored briefs, decisions, tasks, attribution, and supersession are useful durable material. The
-Kanban states, claims, acceptance ceremony, and assumption that an agent should infer work from the
-selected card are not the target product model. TARGET.md, "Agent context and memory", replaces
-that contract with work contexts, typed agent-authored artifacts, bounded context packets, and
-human correction. This section remains the description of current behavior until that migration
-lands.
+The stored briefs, decisions, tasks, attribution, and supersession are useful durable material, and
+retiring the Kanban states removed the second tracker an operator had to maintain. What is still
+missing is the rest of TARGET.md, "Agent context and memory": work contexts that a checkout may
+suggest but never silently assign, typed artifacts beyond decisions and tasks — findings,
+assumptions, open questions, summaries — and a bounded context packet that says why each durable
+item was included. Until those land, an agent still infers its work from whichever feature its
+checkout is on.
 
 ## Editors and overlays
 

@@ -7,7 +7,7 @@
 
 use super::*;
 
-use crate::app::View;
+use crate::app::{FeaturePanel, View};
 
 /// The shortest frame that gets a strip. Below it the page has no top
 /// gutter to draw one in, and the digits still work.
@@ -84,45 +84,76 @@ pub(super) fn render_view_tabs(f: &mut Frame, app: &mut App, area: Rect, th: The
     };
 }
 
+/// How many rows a panel can show, once the one being read has been paid
+/// for.
+///
+/// The selected row is as tall as its own wrapped text, so it is counted
+/// in full first and the rest of the height is divided among the others.
+/// Rounding up instead — which is right when nothing is expanded, since a
+/// half-drawn row is still a row you can read the name off — is what let
+/// an expanded row start on the last line and run off the bottom, which is
+/// the one thing the allowance exists to prevent.
+fn visible_rows(height: u16, grown: usize) -> usize {
+    let per_row = (ROW_HEIGHT as usize).max(1);
+    let height = height as usize;
+    if grown == 0 {
+        return height.div_ceil(per_row);
+    }
+    1 + height.saturating_sub(grown + per_row) / per_row
+}
+
 /// How much of a row's width the tree guides may take before the text is
 /// what suffers. A decision nested past this is drawn at the last indent
 /// that still leaves room to read it.
 const MAX_BOARD_INDENT: usize = 24;
 
-/// The decision board, drawn as the tree it is.
+
+/// The feature view: the project's features, and the one under the cursor
+/// read whole.
 ///
-/// Two lines per decision, like every other list in Argus: what was
-/// chosen, then the dimmer line of what it was chosen over and what forced
-/// it. A superseded decision keeps its place and goes dim — the road not
-/// taken is most of what a reader came for.
-pub(super) fn render_decisions(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+/// One view rather than three. A brief, what is left to do under it and
+/// why it has the shape it does are one object, and splitting them across
+/// three tabs gave each a selection of its own — which is how pressing the
+/// tasks tab came to show a different feature's tasks than the ones you
+/// were reading about.
+pub(super) fn render_feature(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    let (area, prompt) = split_off_prompt(area, app.line.is_some());
     let split = feature_column_width(area.width);
-    let features = Rect {
-        width: split,
-        ..area
-    };
-    let board = Rect {
-        x: area.x + split,
-        width: area.width.saturating_sub(split),
-        ..area
-    };
-    render_feature_column(f, app, features, th);
-    render_feature_board(f, app, board, th);
+    render_feature_column(
+        f,
+        app,
+        Rect {
+            width: split,
+            ..area
+        },
+        th,
+    );
+    render_selected_feature(
+        f,
+        app,
+        Rect {
+            x: area.x + split,
+            width: area.width.saturating_sub(split),
+            ..area
+        },
+        th,
+    );
+    render_line(f, app, prompt, th);
 }
 
 /// How wide the feature column gets. Fixed rather than proportional past a
-/// point: a feature is a short title, and a column that grew with the
-/// terminal would spend the width the tree needs for its branches.
+/// point: a feature is a short title and a line about what is happening to
+/// it, and a column that grew with the terminal would spend the width the
+/// tree beside it needs for its branches.
 fn feature_column_width(total: u16) -> u16 {
-    const IDEAL: u16 = 30;
+    const IDEAL: u16 = 34;
     (total / 3).clamp(0, IDEAL)
 }
 
-/// The features of the project, which is the scope the tree beside it is
-/// read at. Left of the tree and always drawn, because a board with no way
-/// to see what else there is answers only the question you already asked.
+/// The features of the project, which is the scope everything to the right
+/// is read at.
 fn render_feature_column(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
-    let focused = app.board_on_features;
+    let focused = app.panel == FeaturePanel::Features;
     let title = match app.board.as_ref().map(|b| b.name.clone()) {
         Some(name) => format!("features · {name}"),
         None => "features".to_string(),
@@ -132,9 +163,14 @@ fn render_feature_column(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     f.render_widget(block, area);
 
     let rows = app.feature_rows();
-    let per_row = ROW_HEIGHT as usize;
-    let visible = (inner.height as usize) / per_row.max(1);
-    let first = scrolled_to_show(0, Some(app.board_feature_sel), visible, rows.len());
+    let grown = grown_by(
+        rows.get(app.feature_sel)
+            .map(|row| (row.title.clone(), row.detail.clone())),
+        th,
+        inner.width,
+    );
+    let visible = visible_rows(inner.height, grown);
+    let first = scrolled_to_show(0, Some(app.feature_sel), visible, rows.len());
     app.layout.features = Panel {
         outer: area,
         inner,
@@ -143,7 +179,7 @@ fn render_feature_column(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     if rows.is_empty() {
         f.render_widget(
             Paragraph::new(Span::styled(
-                "no features yet",
+                "no features yet — a opens one",
                 Style::default().fg(th.dim),
             )),
             inner,
@@ -151,94 +187,324 @@ fn render_feature_column(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         return;
     }
     let mut lines = Vec::new();
-    for (index, row) in rows.iter().enumerate().skip(first).take(visible) {
-        let selected = index == app.board_feature_sel;
-        let name_style = match (selected, row.slug.is_some()) {
+    for (index, row) in rows.iter().enumerate().skip(first) {
+        if lines.len() >= inner.height as usize {
+            break;
+        }
+        let selected = index == app.feature_sel;
+        // An accepted feature and the unfiled row both recede: neither is
+        // work anybody is going to pick up, and a list where everything
+        // reads at one weight is a list nothing stands out of.
+        let title_style = match (selected, row.slug.is_some() && !row.done) {
             (_, false) => Style::default().fg(th.dim),
             (true, _) => Style::default().fg(th.text).add_modifier(Modifier::BOLD),
             (false, _) => Style::default().fg(th.text),
         };
-        lines.push(Line::from(vec![
-            Span::styled(
-                if selected { MARKER } else { GUTTER },
-                Style::default().fg(th.accent),
-            ),
-            Span::styled(row.title.clone(), name_style),
-        ]));
-        let detail = match (&row.branch, row.decisions) {
-            (Some(branch), n) => format!("{branch} · {n} decided"),
-            (None, n) => format!("{n} decided"),
+        // The one line in the list that is not about the feature but about
+        // what is happening to it, so a row that has stopped for somebody
+        // is coloured like the pane that stopped.
+        let detail_style = match row.attention {
+            Some(argus_protocol::PaneStatus::Failed) => Style::default().fg(th.err),
+            Some(_) => Style::default().fg(th.warn),
+            None => Style::default().fg(th.dim),
         };
-        lines.push(Line::from(Span::styled(
-            format!("   {detail}"),
-            Style::default().fg(th.dim),
-        )));
+        push_card_row(
+            &mut lines,
+            Card {
+                title: row.title.clone(),
+                title_style,
+                detail: row.detail.clone(),
+                detail_style,
+            },
+            selected,
+            th,
+            inner.width,
+        );
     }
     f.render_widget(Paragraph::new(lines), inner);
 }
 
-fn render_feature_board(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
-    let title = match app.current_feature_row() {
-        Some(row) => format!("decisions · {}", row.title),
-        None => "decisions".to_string(),
+/// The selected feature, stacked: what it is for, what is left to do, and
+/// why it has the shape it does.
+///
+/// That order because it is the order they are read, and the order
+/// `argus-hook feature` prints them in. The brief takes only what it needs
+/// and never more than a third — the rest of it is one `e` away, in the
+/// editor — because a long brief must not crowd out the work it
+/// introduces.
+fn render_selected_feature(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    let brief = brief_of(app);
+    let brief_rows = brief
+        .as_deref()
+        .map(|brief| brief_height(brief, area))
+        .unwrap_or(0);
+    if let (Some(brief), true) = (brief.as_deref(), brief_rows > 0) {
+        render_brief(
+            f,
+            app,
+            brief,
+            Rect {
+                height: brief_rows,
+                ..area
+            },
+            th,
+        );
+    }
+    let rest = Rect {
+        y: area.y + brief_rows,
+        height: area.height.saturating_sub(brief_rows),
+        ..area
     };
-    let block = panel_block(&title, !app.board_on_features, th, area.width);
+    let tasks_rows = tasks_height(app.feature_tasks().len(), rest.height);
+    render_tasks(
+        f,
+        app,
+        Rect {
+            height: tasks_rows,
+            ..rest
+        },
+        th,
+    );
+    render_decisions(
+        f,
+        app,
+        Rect {
+            y: rest.y + tasks_rows,
+            height: rest.height.saturating_sub(tasks_rows),
+            ..rest
+        },
+        th,
+    );
+}
+
+/// How much of the space under the brief the tasks take.
+///
+/// What they need, bounded so neither panel can squeeze the other out: a
+/// feature with thirty tasks must still show why it has the shape it does,
+/// and one with none must still say so rather than being a border.
+fn tasks_height(tasks: usize, available: u16) -> u16 {
+    const CHROME: u16 = 3;
+    const FLOOR: u16 = 5;
+    if available < FLOOR * 2 {
+        return available / 2;
+    }
+    let wanted = tasks as u16 * ROW_HEIGHT + CHROME;
+    wanted.clamp(FLOOR, available.saturating_sub(FLOOR))
+}
+
+/// What the feature is for. Never focused — it is prose rather than a
+/// list, and `e` from the feature column opens it in the note editor,
+/// which is where prose is corrected.
+fn render_brief(f: &mut Frame, app: &App, brief: &str, area: Rect, th: Theme) {
+    let title = match app.current_feature_row() {
+        Some(row) => format!("brief · {}", row.title),
+        None => "brief".to_string(),
+    };
+    let block = panel_block(&title, false, th, area.width);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    // Marked up, but quieter than the work it introduces: the brief is
+    // read once for context and then skimmed past, so its headings earn
+    // their weight while the prose stays background.
+    let body: Vec<Line> = brief
+        .lines()
+        .map(|line| {
+            Line::from(crate::ui::prose::prose_spans(
+                line,
+                Style::default().fg(th.dim),
+                th,
+            ))
+        })
+        .collect();
+    f.render_widget(Paragraph::new(body).wrap(Wrap { trim: true }), inner);
+}
+
+/// What is left to do under the feature, as one list.
+///
+/// One list and not three columns. A task's state is a mark on its row, so
+/// the order stays what a person set it to — what to do first — rather
+/// than being spent saying the same thing the columns already said. It is
+/// also the shape that lets a reader see the feature and its work at once,
+/// which three columns of cards never left room for.
+fn render_tasks(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    let focused = app.panel == FeaturePanel::Tasks;
+    let tasks: Vec<_> = app.feature_tasks().to_vec();
+    // Counted from the list on screen when it has arrived, and from the
+    // feature row until then. Taking it only from the row would let the
+    // heading say 3/7 over a list of four, which is the kind of
+    // disagreement two sources of one number always end in.
+    let counts = match app.tasks.as_ref().map(|list| list.feature == app.feature_slug()) {
+        Some(true) => tasks.iter().fold(
+            argus_protocol::TaskCounts::default(),
+            |mut counts, task| {
+                counts.add(task.state);
+                counts
+            },
+        ),
+        _ => app.selected_feature().map(|f| f.tasks).unwrap_or_default(),
+    };
+    let title = match (app.feature_slug().is_some(), counts.total()) {
+        (false, _) | (true, 0) => "tasks".to_string(),
+        (true, total) => format!("tasks · {}/{}", counts.done, total),
+    };
+    let block = panel_block(&title, focused, th, area.width);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    // The brief above the tree, which is the order `argus-hook feature`
-    // prints them in and the order they are read: a decision without what
-    // the feature is for explains half of itself. Bounded so a long brief
-    // cannot crowd out the reasoning it introduces — the rest is one `e`
-    // away, in the editor.
-    let inner = match brief_of(app) {
-        Some(brief) => {
-            let height = brief_height(&brief, inner);
-            let rows = Rect { height, ..inner };
-            // Marked up, but quieter than the tree it introduces: the
-            // brief is read once for context and then skimmed past, so its
-            // headings earn their weight while the prose stays background.
-            let body: Vec<Line> = brief
-                .lines()
-                .map(|line| {
-                    Line::from(crate::ui::prose::prose_spans(
-                        line,
-                        Style::default().fg(th.dim),
-                        th,
-                    ))
-                })
-                .collect();
-            f.render_widget(Paragraph::new(body).wrap(Wrap { trim: true }), rows);
-            Rect {
-                y: inner.y + height,
-                height: inner.height.saturating_sub(height),
-                ..inner
-            }
-        }
-        None => inner,
+    // Drawn in every panel, focused or not: the selections are how a
+    // reader traces which feature, which task and which decision they are
+    // looking at, and a panel that forgets its own the moment the keys
+    // leave it makes crossing back a hunt.
+    let selected = Some(app.task_sel);
+    let grown = grown_by(
+        selected
+            .and_then(|i| tasks.get(i))
+            .map(|task| (task.title.clone(), task_detail(task))),
+        th,
+        inner.width,
+    );
+    let visible = visible_rows(inner.height, grown);
+    let first = scrolled_to_show(0, selected, visible, tasks.len());
+    app.layout.feature_tasks = Panel {
+        outer: area,
+        inner,
+        first,
     };
+    if tasks.is_empty() {
+        let empty = match app.feature_slug().is_some() {
+            true => "nothing to do here yet — a adds a task",
+            false => "no feature selected",
+        };
+        f.render_widget(
+            Paragraph::new(Span::styled(empty, Style::default().fg(th.dim))),
+            inner,
+        );
+        return;
+    }
+
+    let mut lines = Vec::new();
+    for (row, task) in tasks.iter().enumerate().skip(first) {
+        if lines.len() >= inner.height as usize {
+            break;
+        }
+        push_task_row(&mut lines, task, row == app.task_sel, th, inner.width);
+    }
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// The mark that says how far along a task is.
+///
+/// A glyph rather than a column, so the list keeps the order a person put
+/// it in. Distinct shapes rather than colour alone: a state you can only
+/// see if you can tell two greys apart is a state half the readers cannot
+/// see at all.
+fn task_mark(state: argus_protocol::TaskState) -> &'static str {
+    match state {
+        argus_protocol::TaskState::Todo => "○",
+        argus_protocol::TaskState::Doing => "▶",
+        argus_protocol::TaskState::Done => "✓",
+    }
+}
+
+fn push_task_row(
+    lines: &mut Vec<Line<'static>>,
+    task: &argus_protocol::Task,
+    selected: bool,
+    th: Theme,
+    width: u16,
+) {
+    use argus_protocol::TaskState;
+    // The marker, the state glyph, and a space: what the wrapped title and
+    // the detail line both hang to.
+    const HANG: usize = 3;
+    let mark_style = match task.state {
+        TaskState::Todo => Style::default().fg(th.muted),
+        TaskState::Doing => Style::default().fg(th.accent),
+        TaskState::Done => Style::default().fg(th.ok),
+    };
+    // A finished task recedes rather than leaving: what has been done is
+    // most of what says how far along the feature is, but it is not what
+    // anybody is going to pick up next.
+    let title_style = match (selected, task.state) {
+        (_, TaskState::Done) => Style::default().fg(th.dim),
+        (true, _) => Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+        (false, _) => Style::default().fg(th.text),
+    };
+    lines.extend(text_rows(
+        vec![
+            Span::styled(
+                if selected { MARKER } else { GUTTER },
+                Style::default().fg(th.accent),
+            ),
+            Span::styled(task_mark(task.state), mark_style),
+            Span::raw(" "),
+        ],
+        HANG,
+        task.title.clone(),
+        title_style,
+        width,
+        selected,
+    ));
+    lines.extend(text_rows(
+        vec![Span::raw(" ".repeat(HANG))],
+        HANG,
+        task_detail(task),
+        Style::default().fg(th.dim),
+        width,
+        selected,
+    ));
+}
+
+/// A task's second line: the number an agent names it by, whoever has it,
+/// and the tracker key it came from — which is the whole of what Argus
+/// knows about wherever it came from.
+fn task_detail(task: &argus_protocol::Task) -> String {
+    let mut parts = vec![format!("#{}", task.id)];
+    if let Some(key) = &task.external {
+        parts.push(key.clone());
+    }
+    if let Some(session) = &task.claimed_by {
+        parts.push(session.clone());
+    }
+    parts.join(" · ")
+}
+
+/// The decision board, drawn as the tree it is.
+///
+/// Two lines per decision, like every other list in Argus: what was
+/// chosen, then the dimmer line of what it was chosen over and what forced
+/// it. A superseded decision keeps its place and goes dim — the road not
+/// taken is most of what a reader came for.
+fn render_decisions(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    let focused = app.panel == FeaturePanel::Decisions;
+    let count = app.board_rows().len();
+    let title = match count {
+        0 => "decisions".to_string(),
+        n => format!("decisions · {n}"),
+    };
+    let block = panel_block(&title, focused, th, area.width);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
 
     let rows_now = app.board_rows();
-    let count = rows_now.len();
     let per_row = ROW_HEIGHT as usize;
     // The expanded row costs the height of its own wrapped text, so the
     // window has that much less to give the rows around it. Without this
     // the selection lands at the bottom and then wraps off the card.
     let grown = rows_now
-        .get(app.board_sel)
+        .get(app.decision_sel)
         .map(|row| {
             let mut lines = Vec::new();
             push_board_row(&mut lines, row, true, th, inner.width);
             lines.len().saturating_sub(per_row)
         })
         .unwrap_or(0);
-    let visible = (inner.height as usize)
-        .saturating_sub(grown)
-        .div_ceil(per_row.max(1));
-    // A scrolled board's top row is `first`, not row zero, and a click has
+    let visible = visible_rows(inner.height, grown);
+    let selected = Some(app.decision_sel);
+    // A scrolled tree's top row is `first`, not row zero, and a click has
     // to resolve against the rows that were actually drawn.
-    let first = scrolled_to_show(0, Some(app.board_sel), visible, count);
-    app.layout.content = Panel {
+    let first = scrolled_to_show(0, selected, visible, count);
+    app.layout.feature_decisions = Panel {
         outer: area,
         inner,
         first,
@@ -256,7 +522,7 @@ fn render_feature_board(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         if lines.len() >= inner.height as usize {
             break;
         }
-        push_board_row(&mut lines, row, index == app.board_sel, th, inner.width);
+        push_board_row(&mut lines, row, selected == Some(index), th, inner.width);
     }
     f.render_widget(Paragraph::new(lines), inner);
 }
@@ -406,27 +672,46 @@ fn board_detail(decision: &argus_protocol::Decision) -> String {
 }
 
 /// The brief of the feature the decision view is on, if it has one.
+/// The brief of the selected feature, if it has one.
 fn brief_of(app: &App) -> Option<String> {
     let brief = app.selected_feature()?.body.trim().to_string();
     (!brief.is_empty()).then_some(brief)
 }
 
-/// How many rows the brief may have: a third of the panel, and never more
-/// than the wrapped text actually needs.
-fn brief_height(brief: &str, inner: Rect) -> u16 {
-    let width = inner.width.max(1) as usize;
+/// How tall the brief's panel is: what the wrapped text needs plus its
+/// own chrome, and never more than a third of the space.
+///
+/// Zero when there is not enough room for a border and a line of prose,
+/// which is what keeps a short terminal from spending three rows on a
+/// panel that can show nothing.
+fn brief_height(brief: &str, area: Rect) -> u16 {
+    // Two borders and the block's top padding.
+    const CHROME: u16 = 3;
+    let width = area.width.saturating_sub(4).max(1) as usize;
     let wrapped = brief
         .lines()
         .map(|line| line.chars().count().max(1).div_ceil(width))
         .sum::<usize>() as u16;
-    // Plus a blank row under it, so the tree does not begin mid-paragraph.
-    (wrapped + 1).min(inner.height / 3)
+    let room = area.height / 3;
+    if room < CHROME + 1 {
+        return 0;
+    }
+    (wrapped + CHROME).min(room)
 }
 
-/// A board nobody has written to yet. It says what it is for rather than
-/// nothing at all, because a blank card on a tab somebody just pressed
-/// reads as a bug.
+/// A feature nobody has decided anything under yet. It says what the tree
+/// is for rather than nothing at all, because a blank panel reads as a bug.
 fn render_empty_board(f: &mut Frame, inner: Rect, th: Theme) {
+    if inner.height < 4 {
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                "nothing decided here yet",
+                Style::default().fg(th.dim),
+            )),
+            inner,
+        );
+        return;
+    }
     f.render_widget(
         Paragraph::new(vec![
             Line::from(Span::styled(
@@ -435,46 +720,16 @@ fn render_empty_board(f: &mut Frame, inner: Rect, th: Theme) {
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "Work is scoped to a feature, and agents record a decision under it when \
-                 they choose between real options while planning: what was chosen, what \
-                 it was chosen over, and what forced it. Each one hangs off the decision \
-                 that constrained it, so what accumulates is a reference tree for this \
-                 feature rather than a log of the whole project.",
-                Style::default().fg(th.dim),
-            )),
-            Line::from(""),
-            Line::from(Span::styled(
-                "the board arrives on its own as it is written · 1 goes back to the spine",
+                "Agents record a decision here when they choose between real options \
+                 while planning: what was chosen, what it was chosen over, and what \
+                 forced it. Each hangs off the decision that constrained it, so what \
+                 accumulates is a reference for this feature rather than a log.",
                 Style::default().fg(th.dim),
             )),
         ])
         .wrap(Wrap { trim: true }),
         inner,
     );
-}
-
-/// The board: every feature of the project in a column by state.
-///
-/// Equal columns rather than proportional. What is worth width here is
-/// whichever column is full, and that changes hour to hour — a layout that
-/// tracked it would move the columns around under a reader who is using
-/// their position to find them.
-pub(super) fn render_board(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
-    let (area, prompt) = split_off_prompt(area, app.line.is_some());
-    let states = argus_protocol::FeatureState::ALL;
-    let each = area.width / states.len() as u16;
-    for (index, state) in states.into_iter().enumerate() {
-        let x = area.x + each * index as u16;
-        // The last column takes the remainder, so a width that does not
-        // divide by five leaves no unpainted strip at the edge.
-        let width = if index + 1 == states.len() {
-            area.width.saturating_sub(each * index as u16)
-        } else {
-            each
-        };
-        render_board_column(f, app, index, state, Rect { x, width, ..area }, th);
-    }
-    render_line(f, app, prompt, th);
 }
 
 /// Takes the bottom row for a typed line, when there is one.
@@ -501,21 +756,32 @@ fn split_off_prompt(area: Rect, typing: bool) -> (Rect, Option<Rect>) {
 /// Shared because the two boards are the same object drawn twice, and a
 /// card that wraps in one and clips in the other is the kind of difference
 /// nobody decided on.
+pub(super) struct Card {
+    pub title: String,
+    pub title_style: Style,
+    /// The line under the name, saying whatever the list it is in leaves
+    /// unsaid — and styled by the caller, because on the feature list it
+    /// is about the panes rather than about the row.
+    pub detail: String,
+    pub detail_style: Style,
+}
+
 fn push_card_row(
     lines: &mut Vec<Line<'static>>,
-    title: String,
-    detail: String,
+    card: Card,
     selected: bool,
     th: Theme,
     width: u16,
 ) {
+    let Card {
+        title,
+        title_style,
+        detail,
+        detail_style,
+    } = card;
     // The detail line's indent, which wrapped title text hangs to as well
     // so a long name reads as one block rather than as two rows.
     const HANG: usize = 3;
-    let title_style = match selected {
-        true => Style::default().fg(th.text).add_modifier(Modifier::BOLD),
-        false => Style::default().fg(th.text),
-    };
     lines.extend(text_rows(
         vec![Span::styled(
             if selected { MARKER } else { GUTTER },
@@ -531,7 +797,7 @@ fn push_card_row(
         vec![Span::raw(" ".repeat(HANG))],
         HANG,
         detail,
-        Style::default().fg(th.dim),
+        detail_style,
         width,
         selected,
     ));
@@ -546,125 +812,19 @@ fn grown_by(selected: Option<(String, String)>, th: Theme, width: u16) -> usize 
         return 0;
     };
     let mut lines = Vec::new();
-    push_card_row(&mut lines, title, detail, true, th, width);
-    lines.len().saturating_sub(ROW_HEIGHT as usize)
-}
-
-fn render_board_column(
-    f: &mut Frame,
-    app: &mut App,
-    index: usize,
-    state: argus_protocol::FeatureState,
-    area: Rect,
-    th: Theme,
-) {
-    let focused = index == app.board_column;
-    let cards: Vec<_> = app
-        .column_features(state)
-        .into_iter()
-        .cloned()
-        .collect();
-    let title = format!("{state} · {}", cards.len());
-    let block = panel_block(&title, focused, th, area.width);
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-
-    let per_row = ROW_HEIGHT as usize;
-    let selected = focused.then_some(app.board_card);
-    let grown = grown_by(selected.and_then(|i| cards.get(i)).map(|feature| {
-        (feature.title.clone(), card_detail(feature))
-    }), th, inner.width);
-    let visible = (inner.height as usize)
-        .saturating_sub(grown)
-        .div_ceil(per_row.max(1));
-    let first = scrolled_to_show(0, selected, visible, cards.len());
-    app.layout.board_columns[index] = Panel {
-        outer: area,
-        inner,
-        first,
-    };
-    if cards.is_empty() {
-        return;
-    }
-
-    let mut lines = Vec::new();
-    for (row, feature) in cards.iter().enumerate().skip(first) {
-        if lines.len() >= inner.height as usize {
-            break;
-        }
-        push_card_row(
-            &mut lines,
-            feature.title.clone(),
-            card_detail(feature),
-            focused && row == app.board_card,
-            th,
-            inner.width,
-        );
-    }
-    f.render_widget(Paragraph::new(lines), inner);
-}
-
-/// A card's second line: whatever the column it is in leaves unsaid.
-///
-/// A blocked card says why, a submitted one says what was offered, and one
-/// nobody has picked up says the branch it was cut on — each column's
-/// second line answers the question that column raises.
-fn card_detail(feature: &argus_protocol::Feature) -> String {
-    use argus_protocol::FeatureState::*;
-    let fallback = || {
-        feature
-            .origin_branch
-            .clone()
-            .unwrap_or_else(|| "no branch recorded".to_string())
-    };
-    match feature.state {
-        Blocked => feature.blocker.clone().unwrap_or_else(|| "blocked, reason not given".into()),
-        Submitted => feature
-            .evidence
-            .clone()
-            .unwrap_or_else(|| "submitted with no evidence".into()),
-        Active => match &feature.claimed_by {
-            Some(session) => format!("{} · {session}", fallback()),
-            None => fallback(),
+    push_card_row(
+        &mut lines,
+        Card {
+            title,
+            title_style: Style::default(),
+            detail,
+            detail_style: Style::default(),
         },
-        Proposed | Done => fallback(),
-    }
-}
-
-/// One feature's tasks, in columns of their own.
-///
-/// The same shape as the feature board a level up. Going into a card
-/// should not change how the screen works — only what is on it.
-pub(super) fn render_tasks(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
-    // The typed line takes a row off the bottom while it is up, rather
-    // than floating over the cards: what you are writing and what is
-    // already there have to be readable at the same time.
-    let (area, prompt) = match app.line.is_some() {
-        true => (
-            Rect {
-                height: area.height.saturating_sub(1),
-                ..area
-            },
-            Some(Rect {
-                y: area.y + area.height.saturating_sub(1),
-                height: 1,
-                ..area
-            }),
-        ),
-        false => (area, None),
-    };
-    let states = argus_protocol::TaskState::ALL;
-    let each = area.width / states.len() as u16;
-    for (index, state) in states.into_iter().enumerate() {
-        let x = area.x + each * index as u16;
-        let width = if index + 1 == states.len() {
-            area.width.saturating_sub(each * index as u16)
-        } else {
-            each
-        };
-        render_task_column(f, app, index, state, Rect { x, width, ..area }, th);
-    }
-    render_line(f, app, prompt, th);
+        true,
+        th,
+        width,
+    );
+    lines.len().saturating_sub(ROW_HEIGHT as usize)
 }
 
 /// The line being typed, on a row of its own at the foot of a board.
@@ -686,89 +846,3 @@ fn render_line(f: &mut Frame, app: &App, prompt: Option<Rect>, th: Theme) {
     );
 }
 
-fn render_task_column(
-    f: &mut Frame,
-    app: &mut App,
-    index: usize,
-    state: argus_protocol::TaskState,
-    area: Rect,
-    th: Theme,
-) {
-    let focused = index == app.task_column;
-    let tasks: Vec<_> = app.task_column(state).into_iter().cloned().collect();
-    // The feature is named on the first column rather than in a heading of
-    // its own: a row spent on a title is a row of cards not drawn, and the
-    // board you came from already said which card you went into.
-    let title = if index == 0 {
-        match app.tasks.as_ref().and_then(|l| l.feature.as_deref()) {
-            Some(feature) => format!("{state} · {feature}"),
-            None => format!("{state} · no feature"),
-        }
-    } else {
-        format!("{state} · {}", tasks.len())
-    };
-    let block = panel_block(&title, focused, th, area.width);
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-
-    let per_row = ROW_HEIGHT as usize;
-    let selected = focused.then_some(app.task_card);
-    let grown = grown_by(
-        selected
-            .and_then(|i| tasks.get(i))
-            .map(|task| (task.title.clone(), task_detail(task))),
-        th,
-        inner.width,
-    );
-    let visible = (inner.height as usize)
-        .saturating_sub(grown)
-        .div_ceil(per_row.max(1));
-    let first = scrolled_to_show(0, selected, visible, tasks.len());
-    app.layout.task_columns[index] = Panel {
-        outer: area,
-        inner,
-        first,
-    };
-    if tasks.is_empty() {
-        if index == 0 && app.tasks.as_ref().is_some_and(|l| l.tasks.is_empty()) {
-            f.render_widget(
-                Paragraph::new(Span::styled(
-                    "nothing to do here yet",
-                    Style::default().fg(th.dim),
-                )),
-                inner,
-            );
-        }
-        return;
-    }
-
-    let mut lines = Vec::new();
-    for (row, task) in tasks.iter().enumerate().skip(first) {
-        if lines.len() >= inner.height as usize {
-            break;
-        }
-        push_card_row(
-            &mut lines,
-            task.title.clone(),
-            task_detail(task),
-            focused && row == app.task_card,
-            th,
-            inner.width,
-        );
-    }
-    f.render_widget(Paragraph::new(lines), inner);
-}
-
-/// A task's second line: the number an agent names it by, whoever has it,
-/// and the tracker key it came from — which is the whole of what Argus
-/// knows about wherever it came from.
-fn task_detail(task: &argus_protocol::Task) -> String {
-    let mut parts = vec![format!("#{}", task.id)];
-    if let Some(key) = &task.external {
-        parts.push(key.clone());
-    }
-    if let Some(session) = &task.claimed_by {
-        parts.push(session.clone());
-    }
-    parts.join(" · ")
-}

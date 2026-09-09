@@ -153,20 +153,30 @@ impl App {
                             .iter()
                             .position(|row| row.slug.as_deref() == Some(slug.as_str()))
                         {
-                            self.board_feature_sel = at;
+                            self.feature_sel = at;
                         }
                     }
-                    self.rescope_board();
+                    self.rescope_feature();
                 }
             }
             ServerMsg::Tasks(list) => {
                 // A push for a feature the view is not on is another
                 // client's business, exactly as a board for another
                 // project is.
-                let ours = self.tasks_feature().as_deref() == list.feature.as_deref();
+                let ours = self.feature_slug() == list.feature;
                 if ours {
+                    // Held by id across the swap, so a task reordered or
+                    // moved under the cursor is still the task under the
+                    // cursor: a card you have to go looking for reads as
+                    // having been lost.
+                    let was = self.selected_task().map(|task| task.id);
                     self.tasks = Some(*list);
-                    self.clamp_task_selection();
+                    match was.and_then(|id| {
+                        self.feature_tasks().iter().position(|task| task.id == id)
+                    }) {
+                        Some(at) => self.task_sel = at,
+                        None => self.clamp_task_selection(),
+                    }
                 }
             }
             ServerMsg::NoteFailed { target, message } => {

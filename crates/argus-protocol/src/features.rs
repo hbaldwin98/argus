@@ -15,6 +15,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::decisions::Decision;
+use crate::tasks::TaskCounts;
 use crate::ids::ProjectId;
 
 /// Past this a feature document has stopped being a brief and started
@@ -22,56 +23,46 @@ use crate::ids::ProjectId;
 pub const MAX_FEATURE_BODY_BYTES: usize = 8192;
 pub const MAX_FEATURE_TITLE_BYTES: usize = 200;
 
-/// Which column of the board a feature sits in.
+/// Whether a feature is still being worked on, or accepted.
 ///
-/// The states are the life of a piece of work and not a taxonomy: it is
-/// proposed, someone is on it, it is stuck, it is offered for review, it
-/// is accepted. `Submitted` and `Done` are separate on purpose — the agent
-/// that did the work can reach the first and never the second, which is
-/// the whole reason a human is in the loop.
+/// Two states, not the five columns this used to be. The others —
+/// proposed, active, blocked, submitted — were the one thing in Argus a
+/// person had to maintain by hand: nothing observed them, and a column
+/// meaning "somebody last dragged this here" is stale the moment the work
+/// moves on. What they were reaching for is read off the panes on the
+/// feature's checkouts and the state of its tasks instead, which cannot
+/// go stale because nobody maintains it.
+///
+/// `Done` stays a stored state, and stays the human's: accepting work is
+/// the one judgement no observation can stand in for.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FeatureState {
-    /// Written down, nobody on it. Where `feature open` leaves one.
     #[default]
-    Proposed,
-    Active,
-    Blocked,
-    /// Offered for review, with whatever evidence the worker gave.
-    Submitted,
+    Open,
     Done,
 }
 
 impl FeatureState {
-    pub const ALL: [FeatureState; 5] = [
-        FeatureState::Proposed,
-        FeatureState::Active,
-        FeatureState::Blocked,
-        FeatureState::Submitted,
-        FeatureState::Done,
-    ];
+    pub const ALL: [FeatureState; 2] = [FeatureState::Open, FeatureState::Done];
 
     pub fn as_str(self) -> &'static str {
         match self {
-            FeatureState::Proposed => "proposed",
-            FeatureState::Active => "active",
-            FeatureState::Blocked => "blocked",
-            FeatureState::Submitted => "submitted",
+            FeatureState::Open => "open",
             FeatureState::Done => "done",
         }
     }
 
+    /// Parses a stored or typed state, including the four the board used
+    /// to have. `feature_event` keeps the name a move was recorded under,
+    /// so those names outlive the columns and still have to read as
+    /// something rather than fail the whole board.
     pub fn parse(text: &str) -> Option<FeatureState> {
-        FeatureState::ALL
-            .into_iter()
-            .find(|s| s.as_str() == text.trim().to_ascii_lowercase())
-    }
-
-    /// Whether an agent may make this move itself. It may pick work up,
-    /// say it is stuck, and offer what it has; it may not accept its own
-    /// work, and it may not take back the acceptance.
-    pub fn agent_may_enter(self) -> bool {
-        !matches!(self, FeatureState::Done)
+        match text.trim().to_ascii_lowercase().as_str() {
+            "done" => Some(FeatureState::Done),
+            "open" | "proposed" | "active" | "blocked" | "submitted" => Some(FeatureState::Open),
+            _ => None,
+        }
     }
 }
 
@@ -100,24 +91,21 @@ pub struct Feature {
     pub at: i64,
     /// Who opened it — an agent session, or `None` when the human did.
     pub session: Option<String>,
-    /// Which column it is in. Defaulted on the wire so a board written
-    /// before the states existed reads as proposed rather than failing.
+    /// Open, or accepted. Defaulted on the wire so a feature written
+    /// before the state existed reads as open rather than failing.
     #[serde(default)]
     pub state: FeatureState,
-    /// The harness session that picked it up, not a pane id: a claim has
-    /// to outlive the restart that hands out fresh ids.
+    /// Every checkout currently pointed at this feature, plus the one it
+    /// was cut in. Carried so a reader can connect a feature to the panes
+    /// running on it: without it the feature list is an island, describing
+    /// work with no way to see whether anything is happening to it.
     #[serde(default)]
-    pub claimed_by: Option<String>,
+    pub checkouts: Vec<String>,
+    /// How its tasks stand. On the feature rather than fetched per row
+    /// because a list wants every feature's counts at once, and a round
+    /// trip per row is not a list.
     #[serde(default)]
-    pub claimed_at: Option<i64>,
-    /// Why it is stuck, set when it enters `Blocked` and cleared when it
-    /// leaves. The history of blockers is in the events, not here.
-    #[serde(default)]
-    pub blocker: Option<String>,
-    /// What was offered on submission. One field rather than a list: a
-    /// resubmission replaces what it supersedes.
-    #[serde(default)]
-    pub evidence: Option<String>,
+    pub tasks: TaskCounts,
 }
 
 /// A feature as it is asked for, before the store gives it a slug.
@@ -157,21 +145,19 @@ pub enum FeatureAction {
     Select { slug: String },
     /// Appends a paragraph to the current feature's document.
     Append { text: String },
-    /// Moves the current feature to another column. `detail` is the
-    /// blocker when the target is `Blocked` and the evidence when it is
-    /// `Submitted`; elsewhere it is a note on the move.
-    Move {
-        state: FeatureState,
-        detail: Option<String>,
-    },
 }
 
-/// One move between columns, in the order they happened.
+// There is no agent-side move. The only state left is `Done`, which is
+// acceptance, and the agent that did the work is the one party that
+// cannot accept it — so the whole action would be a refusal.
+
+/// One state change, in the order they happened.
 ///
-/// Kept because the column a feature is in cannot say who put it there.
-/// A human looking at three features submitted this morning wants to know
-/// which agent submitted each and what it claimed, and the current state
-/// has thrown all of that away.
+/// Kept because the state a feature is in cannot say who put it there. A
+/// human looking at three features accepted this morning wants to know who
+/// accepted each and what they said, and the current state has thrown all
+/// of that away. Rows written under the five old column names are still
+/// here and still read: [`FeatureState::parse`] maps them onto `open`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureEvent {
     pub id: i64,
@@ -193,8 +179,7 @@ pub struct FeatureEvent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureMove {
     pub state: FeatureState,
-    /// The blocker when blocking, the evidence when submitting, a note
-    /// otherwise.
+    /// Whatever the mover said about it.
     pub detail: Option<String>,
     pub actor: Actor,
     pub session: Option<String>,
@@ -307,18 +292,19 @@ mod state_tests {
         for state in FeatureState::ALL {
             assert_eq!(FeatureState::parse(state.as_str()), Some(state));
         }
-        assert_eq!(FeatureState::parse(" Active "), Some(FeatureState::Active));
+        assert_eq!(FeatureState::parse(" Done "), Some(FeatureState::Done));
         assert_eq!(FeatureState::parse("shipped"), None);
     }
 
     #[test]
-    fn an_agent_can_offer_work_but_not_accept_it() {
-        assert!(FeatureState::Submitted.agent_may_enter());
-        assert!(FeatureState::Blocked.agent_may_enter());
-        assert!(
-            !FeatureState::Done.agent_may_enter(),
-            "the review column is where work stops, not passes through"
-        );
+    fn the_columns_the_board_used_to_have_still_read_as_open() {
+        for old in ["proposed", "active", "blocked", "submitted"] {
+            assert_eq!(
+                FeatureState::parse(old),
+                Some(FeatureState::Open),
+                "{old} is still written on every feature_event recorded before the cut"
+            );
+        }
     }
 
     /// The shape `Feature` had before the board states existed. Kept here
@@ -336,7 +322,7 @@ mod state_tests {
     }
 
     #[test]
-    fn a_feature_written_before_the_states_reads_as_proposed() {
+    fn a_feature_written_before_the_states_reads_as_open() {
         let old = FeatureBeforeStates {
             slug: "pty".into(),
             title: "The pty".into(),
@@ -348,7 +334,8 @@ mod state_tests {
         };
         let bytes = rmp_serde::to_vec_named(&old).unwrap();
         let feature: Feature = rmp_serde::from_slice(&bytes).unwrap();
-        assert_eq!(feature.state, FeatureState::Proposed);
-        assert_eq!(feature.claimed_by, None);
+        assert_eq!(feature.state, FeatureState::Open);
+        assert_eq!(feature.checkouts, Vec::<String>::new());
+        assert_eq!(feature.tasks, TaskCounts::default());
     }
 }

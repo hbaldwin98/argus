@@ -33,6 +33,10 @@ The workspace builds three executables:
 - Stores feature briefs, tasks, and a visibly connected tree of what agents chose, what they chose
   it over, and what forced it. Later agents can read that durable context, and reversing a decision
   supersedes it rather than erasing it.
+- Shows a feature whole in one view — its brief, its tasks and its reasoning — and says what is
+  happening to it from what it already observes: the agents running in its checkouts and how far
+  its tasks have got. Nothing to drag between columns and no second tracker to keep true; the only
+  state anyone sets by hand is accepting the work.
 - Opens files in a floating terminal editor, the terminal column, or an external editor.
 - Restores non-exited shell and agent panes after a daemon restart, reopening each agent's last
   conversation where its CLI can be asked to.
@@ -396,6 +400,32 @@ location. Typing filters the folders in the current directory.
 | `x` | Kill the selected pane |
 | `q` | Detach the client |
 
+### Views
+
+The content area holds one view at a time. `1` is the spine — the navigation columns and the live
+pane — and `2` is the feature view. A one-row tab strip along the top names them and carries the
+digit that opens each; clicking a tab does the same. Switching views never stops a pane.
+
+The feature view is three panels: the project's features down the left, and the selected one read
+whole on the right — its brief, the tasks left under it, and the decisions taken while building it.
+Every panel is scoped to the same feature, and each feature's line says what is happening to it:
+the agents running in its checkouts, how its tasks stand, and how much has been decided.
+
+| Key | Action |
+|---|---|
+| `h` / `l`, arrows | Cross between the feature list and the feature being read |
+| Tab / Shift-Tab | Step through the brief, the tasks and the decisions |
+| `j` / `k` | Move in whichever panel has the keys; `d`/`u` ten at a time, `g`/`G` for the ends |
+| `a` | Write down a new feature, or a new task under one, depending on the panel |
+| `e`, Enter | Open the feature's brief in the editor, or rewrite the selected task |
+| `R` | Rename the feature — the title only; its slug is frozen so nothing filed under it is orphaned |
+| `x` | Remove the feature (its decisions survive as unfiled), or drop the selected task |
+| `.` | Accept the feature, or reopen one already accepted. The one state a person sets, and the one an agent cannot |
+| `H` / `L` | Move the selected task along todo, doing, done |
+| `J` / `K` | Move the selected task earlier or later in the list |
+| `r` | Re-ask the daemon for all of it |
+| Escape, `q` | Back to the spine |
+
 ### Terminal panes
 
 `Ctrl-Space` is the leader key:
@@ -407,6 +437,7 @@ location. Typing filters the folders in the current directory.
 | `Ctrl-Space`, `x` | Kill the pane |
 | `Ctrl-Space`, Tab | Open review |
 | `Ctrl-Space`, `N` | Jump to the next pane waiting, failed, or ready for review |
+| `Ctrl-Space`, `1` / `2` | Open a view — the digits belong to the child while you are typing in a pane |
 | F12 | Emergency close for a floating window |
 
 Other supported keys are forwarded to the child PTY.

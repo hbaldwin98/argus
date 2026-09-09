@@ -226,6 +226,10 @@ impl Daemon {
     ///
     /// A task list is watched while it is worked — that is most of why it
     /// is on screen — so a client holding one open does not have to ask.
+    ///
+    /// The features go with it. Every feature row carries how its tasks
+    /// stand, so a list that changed without the features following it
+    /// would leave the row above the list contradicting the list.
     fn broadcast_tasks(&self, name: &str, feature: &str) {
         let tasks = self.store.tasks(name, feature).unwrap_or_default();
         let _ = self.tasks_tx.send(TaskList {
@@ -233,5 +237,6 @@ impl Daemon {
             feature: Some(feature.to_string()),
             tasks,
         });
+        self.broadcast_decisions(name, self.store.decisions(name).unwrap_or_default());
     }
 }

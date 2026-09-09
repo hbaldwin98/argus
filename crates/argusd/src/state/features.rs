@@ -119,6 +119,10 @@ impl Daemon {
     }
 
     /// Points this checkout at a feature that already exists.
+    ///
+    /// Pushed, because a feature row names the checkouts pointed at it:
+    /// this is the moment a feature somebody wrote down gains a place
+    /// where work on it can be seen happening.
     pub fn select_feature_for_agent(
         &self,
         pane_id: PaneId,
@@ -127,7 +131,12 @@ impl Daemon {
         let scope = self.agent_scope(pane_id)?;
         self.store
             .set_feature_scope(&scope.checkout_path, &scope.project_name, slug)?;
-        self.feature_board(&scope)
+        let board = self.feature_board(&scope)?;
+        self.broadcast_decisions(
+            &scope.project_name,
+            self.store.decisions(&scope.project_name)?,
+        );
+        Ok(board)
     }
 
     /// Adds a paragraph to the current feature's document.
@@ -150,48 +159,10 @@ impl Daemon {
         }
         self.store
             .append_to_feature(&scope.project_name, &slug, text)?;
-        self.feature_board(&scope)
-    }
-
-    /// Moves the current feature to another column.
-    ///
-    /// An agent may pick work up, say it is stuck, and offer what it has.
-    /// It may not accept its own work: `done` is the human's move, and
-    /// letting the worker make it would leave the review column a place
-    /// things pass through rather than stop at.
-    pub fn move_feature_for_agent(
-        &self,
-        pane_id: PaneId,
-        session: Option<&str>,
-        state: FeatureState,
-        detail: Option<&str>,
-    ) -> anyhow::Result<FeatureBoard> {
-        let scope = self.agent_scope(pane_id)?;
-        if !state.agent_may_enter() {
-            anyhow::bail!(
-                "an agent cannot accept its own work — submit it with                  `argus-hook feature submit \"<what you did>\"` and let a human accept it"
-            );
-        }
-        let features = self.store.features(&scope.project_name)?;
-        let Some(slug) = self.current_feature(&scope, &features)? else {
-            anyhow::bail!("this checkout is not on a feature yet");
-        };
-        let at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or_default();
-        self.store.move_feature(
-            &scope.project_name,
-            &slug,
-            &FeatureMove {
-                state,
-                detail: detail.map(str::to_string),
-                actor: Actor::Agent,
-                session: session.map(str::to_string),
-                at,
-            },
-        )?;
         let board = self.feature_board(&scope)?;
+        // The brief is drawn beside the decisions, so a paragraph added
+        // mid-task shows up where it is being read rather than at whatever
+        // point the reader next changes something else.
         self.broadcast_decisions(
             &scope.project_name,
             self.store.decisions(&scope.project_name)?,
@@ -199,12 +170,15 @@ impl Daemon {
         Ok(board)
     }
 
-    /// Moves a feature from the board view.
+    /// Accepts a feature, or reopens one, from the feature view.
     ///
-    /// Unlike the agent's move this one names the feature outright: a
-    /// human is looking at the whole project's board, and the checkout
-    /// they happen to have selected has nothing to do with the card under
-    /// the cursor. It is also the only move that may reach `done`.
+    /// There is no agent-side counterpart. `done` means a person has
+    /// looked at the work and taken it, and the agent that did the work is
+    /// the one party that cannot make that call — so the state a feature
+    /// is in has exactly one writer. It names the feature outright rather
+    /// than resolving one from a checkout: a person is looking at the
+    /// project's features, and whichever checkout they happen to have
+    /// selected has nothing to do with the row under the cursor.
     pub fn move_feature_for_client(
         &self,
         project: ProjectId,

@@ -576,8 +576,26 @@ fn format_feature_list(board: &FeatureBoard) -> String {
             .as_deref()
             .map(|b| format!(" [{b}]"))
             .unwrap_or_default();
+        // How its tasks stand, and whether it has been accepted. An agent
+        // picking one off this list needs to know it is not choosing work
+        // somebody has already finished.
+        let mut about = Vec::new();
+        if feature.state == argus_protocol::FeatureState::Done {
+            about.push("done".to_string());
+        }
+        if feature.tasks.total() > 0 {
+            about.push(format!(
+                "{}/{} tasks",
+                feature.tasks.done,
+                feature.tasks.total()
+            ));
+        }
+        let about = match about.is_empty() {
+            true => String::new(),
+            false => format!(" ({})", about.join(", ")),
+        };
         lines.push(format!(
-            "  {} — {}{branch}{here}",
+            "  {} — {}{branch}{about}{here}",
             feature.slug, feature.title
         ));
     }
@@ -1830,10 +1848,8 @@ mod tests {
             at: 0,
             session: None,
             state: Default::default(),
-            claimed_by: None,
-            claimed_at: None,
-            blocker: None,
-            evidence: None,
+            checkouts: Vec::new(),
+            tasks: Default::default(),
         };
         FeatureBoard {
             project: None,

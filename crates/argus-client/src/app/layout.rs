@@ -129,14 +129,13 @@ pub struct Layout {
     pub checkouts: Panel,
     pub panes: Panel,
     pub content: Panel,
-    /// The decision view's feature column. Zero-sized while another view
-    /// is open, so a click cannot land on a column that is not drawn.
+    /// The feature view's three panels: the list of features, the
+    /// selected feature's tasks, and its decision tree. All zero-sized
+    /// while the spine is open, so a click cannot land on a panel that is
+    /// not drawn.
     pub features: Panel,
-    /// The board view's columns, one per state, in `FeatureState::ALL`
-    /// order. Zero-sized while another view is open.
-    pub board_columns: [Panel; crate::app::views::COLUMNS],
-    /// The task view's columns, in `TaskState::ALL` order.
-    pub task_columns: [Panel; crate::app::views::TASK_COLUMNS],
+    pub feature_tasks: Panel,
+    pub feature_decisions: Panel,
     /// The row of view tabs above everything else. Zero-sized on a
     /// terminal too short to spend a row on it.
     pub views: Panel,

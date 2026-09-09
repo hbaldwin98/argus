@@ -33,7 +33,9 @@ pub use features::{
     slugify, Actor, Feature, FeatureAction, FeatureBoard, FeatureEvent, FeatureMove, FeatureState,
     FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES,
 };
-pub use tasks::{Task, TaskAction, TaskList, TaskState, TaskWrite, MAX_TASK_TITLE_BYTES};
+pub use tasks::{
+    Task, TaskAction, TaskCounts, TaskList, TaskState, TaskWrite, MAX_TASK_TITLE_BYTES,
+};
 pub use compact_str::{CompactString, ToCompactString};
 pub use framing::{read_msg, write_frame, write_msg, FramingError};
 pub use hook::{

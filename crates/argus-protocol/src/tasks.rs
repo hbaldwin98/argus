@@ -17,12 +17,12 @@ use serde::{Deserialize, Serialize};
 /// feature document it belongs under.
 pub const MAX_TASK_TITLE_BYTES: usize = 300;
 
-/// Which column of the task board a task sits in.
+/// How far along a task is.
 ///
-/// Three, not the feature's five. A feature is a piece of work with a
-/// review step and a person who accepts it; a task is a thing on a list,
-/// and giving it its own review column would ask for a ceremony nobody
-/// performs on a checklist item.
+/// Three states, and unlike the feature columns they used to sit beside,
+/// these are maintained by whoever is doing the work: an agent takes a
+/// task up and finishes it as part of the job, so `doing` says which card
+/// somebody is actually on rather than which card was last dragged.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskState {
@@ -53,6 +53,41 @@ impl TaskState {
 impl std::fmt::Display for TaskState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+/// How a feature's tasks stand, without carrying the tasks themselves.
+///
+/// A list of features wants a progress line on every row, and the tasks
+/// behind it only on the row being read. Counting in the daemon is one
+/// grouped query; sending every task of every feature so the client can
+/// count them itself is a list that grows with the project.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskCounts {
+    pub todo: usize,
+    pub doing: usize,
+    pub done: usize,
+}
+
+impl TaskCounts {
+    pub fn total(self) -> usize {
+        self.todo + self.doing + self.done
+    }
+
+    /// Whether every task under the feature is finished. False for a
+    /// feature with no tasks at all: nothing to do is not the same answer
+    /// as everything done, and a progress line that claimed otherwise
+    /// would read as complete on work nobody has broken down yet.
+    pub fn all_done(self) -> bool {
+        self.total() > 0 && self.todo == 0 && self.doing == 0
+    }
+
+    pub fn add(&mut self, state: TaskState) {
+        match state {
+            TaskState::Todo => self.todo += 1,
+            TaskState::Doing => self.doing += 1,
+            TaskState::Done => self.done += 1,
+        }
     }
 }
 

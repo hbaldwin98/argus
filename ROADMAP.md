@@ -83,19 +83,21 @@ up durable artifacts, and later agents receive the relevant subset without brows
   to append to it, and a view that draws the tree with superseded branches dimmed. Ungated, unlike
   note writes — the board exists for agents to write and attributes every row. A decision is filed
   under the feature its checkout is on, and `decide` from a checkout on none is refused.
-- The feature board has landed (DESIGN.md, "The feature board"): schema v7 puts the state, the
-  claim, the blocker and the submitted evidence on the feature row itself rather than on a second
-  item concept, with `feature_event` holding every move; a third view draws the columns, and
-  `Enter` on a card opens the decisions under it. An agent moves its own work over the pane API and
-  is refused `done`.
-  A human moves any card from the view with `H`/`L`, sends one back with `s`, and is the only side
-  that may accept: `ClientMsg::MoveFeature` names the feature outright, since the board is the
-  project's rather than any checkout's. Features are also opened, renamed, removed and briefed from
-  the view — removing one unfiles its decisions rather than destroying them.
-- Tasks have landed (DESIGN.md, "Tasks"): schema v8's `task` under a feature, a fourth view drawing
-  them in todo/doing/done columns, `argus-hook task` for agents, and add, rewrite, move, reorder and
-  drop from the view. The tracker stays the agent's problem — Argus keeps an opaque `external` key
-  and nothing else, so it works the same with Jira, Linear, GitHub Issues or none of them.
+- The Kanban board is gone (DESIGN.md, "What a feature row says"). Its five columns were the one
+  surface in Argus showing an assertion rather than an observation, `argus-hook` never exposed the
+  move, and so the only thing that maintained them was a person dragging cards. Schema v9 collapses
+  `FeatureState` to `open` and `done`, mapping the four old names onto `open` and leaving
+  `feature_event` alone, since it records what was believed at the time. A feature's line is now
+  read off the agent panes running in its checkouts and the state of its tasks; `Feature` carries
+  `checkouts` and `tasks` for it, so a feature is no longer an island describing work with no way
+  to tell whether anything is happening to it. `done` stays stored and stays the human's, because
+  the agent that did the work cannot accept it.
+- The four views are two (DESIGN.md, "The feature view"). The decision board, the feature board and
+  the task board were one object drawn three times with a selection each, and selections that can
+  disagree did: opening the tasks from the decisions showed whichever card the board was sitting
+  on. One `feature_sel` scopes the brief, the tasks and the tree together, `Tab` and `h`/`l` cross
+  the three panels, and tasks are one ordered list with their state marked on the row rather than
+  three columns spending the order to say what a glyph says.
 - Replace the feature-as-assignment contract with a work context. A checkout may suggest context,
   but selection must not silently assign unrelated work or make the sole feature authoritative.
 - Define the durable artifact contract around what later agents need: decisions, tasks, findings,
@@ -107,9 +109,9 @@ up durable artifacts, and later agents receive the relevant subset without brows
   as they discover them without turning routine steps or transcript into memory.
 - Give human corrections explicit precedence. Preserve superseded reasoning and provenance while
   ensuring corrected or withdrawn material no longer guides later agents.
-- Replace boards as the primary client model with an inspection and correction view over work
-  contexts. Decision trees, task lists, timelines, and boards may remain as projections where they
-  answer a useful question; none should require duplicate planning or status maintenance.
+- Extend the feature view into an inspection and correction surface over work contexts, as the
+  artifact types land. The Kanban half of this is done; what remains is that the view still shows
+  one feature's stored records rather than the packet an agent was actually given.
 - Reuse the landed tables and migrations where their semantics fit. Change storage only after the
   context packet and correction behavior establish what must persist.
 

@@ -33,12 +33,12 @@ fn a_digit_opens_its_view_over_the_whole_content_area() {
     draw_at(&mut app, 100, 30);
     assert!(app.layout.checkouts.outer.width > 0, "the spine is drawn");
 
-    press(&mut app, View::Decisions.digit());
+    press(&mut app, View::Feature.digit());
     let buf = draw_at(&mut app, 100, 30);
     let out = lines(&buf).join("
 ");
 
-    assert_eq!(app.view, View::Decisions);
+    assert_eq!(app.view, View::Feature);
     assert!(
         out.contains("nothing decided under this feature yet"),
         "a tab somebody pressed must say what it is for:
@@ -49,7 +49,7 @@ fn a_digit_opens_its_view_over_the_whole_content_area() {
         "no column is drawn, so no click may resolve against one"
     );
     assert!(
-        app.layout.features.outer.width + app.layout.content.outer.width > 80,
+        app.layout.features.outer.width + app.layout.feature_decisions.outer.width > 80,
         "the view has the content area rather than a column of it"
     );
 }
@@ -59,7 +59,7 @@ fn coming_back_lands_on_the_column_you_left() {
     let mut app = app_with_tree();
     app.focus = Focus::Checkouts;
 
-    press(&mut app, View::Decisions.digit());
+    press(&mut app, View::Feature.digit());
     assert_eq!(app.focus, Focus::View, "the view owns the keyboard");
     // j would otherwise move a selection in a column that is not drawn.
     press(&mut app, 'j');
@@ -79,7 +79,7 @@ fn a_view_does_not_stop_the_panes_running_behind_it() {
     // From inside a pane every key belongs to the child, so a view is
     // reached the way review and history are: through the leader.
     app.on_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::CONTROL));
-    press(&mut app, View::Decisions.digit());
+    press(&mut app, View::Feature.digit());
 
     assert_eq!(
         app.grids.len(),
@@ -96,7 +96,7 @@ fn clicking_a_tab_opens_it() {
     let strip = app.layout.views.outer;
     // The second tab's first cell, found the way the renderer draws it.
     let x = (0..strip.width)
-        .find(|x| crate::ui::tab_at(strip, strip.x + x, strip.y) == Some(View::Decisions))
+        .find(|x| crate::ui::tab_at(strip, strip.x + x, strip.y) == Some(View::Feature))
         .expect("the decisions tab is on screen");
 
     app.on_mouse(crossterm::event::MouseEvent {
@@ -106,7 +106,7 @@ fn clicking_a_tab_opens_it() {
         modifiers: KeyModifiers::NONE,
     });
 
-    assert_eq!(app.view, View::Decisions);
+    assert_eq!(app.view, View::Feature);
     assert_eq!(app.focus, Focus::View, "clicking a tab hands it the keyboard");
 }
 
@@ -149,7 +149,7 @@ fn app_with_a_board(decisions: Vec<argus_protocol::Decision>) -> App {
             decisions,
         },
     )));
-    press(&mut app, View::Decisions.digit());
+    press(&mut app, View::Feature.digit());
     app
 }
 
@@ -165,7 +165,7 @@ fn the_board_draws_a_decision_under_the_one_that_constrained_it() {
     ]);
     let buf = draw_at(&mut app, 100, 30);
     let out = lines(&buf);
-    let top = app.layout.content.inner.y as usize;
+    let top = app.layout.feature_decisions.inner.y as usize;
 
     assert!(out[top].contains("#1 sqlite"), "{:?}", out[top]);
     assert!(
@@ -189,7 +189,7 @@ fn sibling_and_nested_decisions_draw_a_connected_tree() {
     ]);
     let buf = draw_at(&mut app, 100, 30);
     let out = lines(&buf);
-    let top = app.layout.content.inner.y as usize;
+    let top = app.layout.feature_decisions.inner.y as usize;
 
     assert!(out[top + 2].contains("├─ #2 first child"), "{:?}", out[top + 2]);
     assert!(out[top + 4].contains("│  └─ #3 grandchild"), "{:?}", out[top + 4]);
@@ -201,7 +201,7 @@ fn a_decision_with_neither_an_alternative_nor_a_reason_says_so() {
     let mut app = app_with_a_board(vec![decision(1, None, "sqlite")]);
     let buf = draw_at(&mut app, 100, 30);
     let out = lines(&buf);
-    let top = app.layout.content.inner.y as usize;
+    let top = app.layout.feature_decisions.inner.y as usize;
     assert!(
         out[top + 1].contains("no alternative or reason recorded"),
         "{:?}",
@@ -232,14 +232,16 @@ fn the_board_scrolls_to_keep_the_selection_on_screen() {
     let mut app = app_with_a_board(many);
     draw_at(&mut app, 100, 30);
 
-    // The keys start on the feature column, and `l` crosses into the tree.
+    // The keys start on the feature column; `l` crosses into the tasks
+    // and then into the tree.
+    app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
     app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
     app.on_key(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE));
     let buf = draw_at(&mut app, 100, 30);
     let out = lines(&buf).join("
 ");
 
-    assert_eq!(app.board_sel, 39);
+    assert_eq!(app.decision_sel, 39);
     assert!(out.contains("#40"), "the last row is drawn: {out}");
 }
 
@@ -252,11 +254,9 @@ fn feature(slug: &str, title: &str) -> argus_protocol::Feature {
         origin_branch: Some("main".into()),
         at: 0,
         session: None,
-        state: argus_protocol::FeatureState::Proposed,
-        claimed_by: None,
-        claimed_at: None,
-        blocker: None,
-        evidence: None,
+        state: argus_protocol::FeatureState::Open,
+        checkouts: Vec::new(),
+        tasks: Default::default(),
     }
 }
 
@@ -274,7 +274,7 @@ fn app_with_features(
             decisions,
         },
     )));
-    press(&mut app, View::Decisions.digit());
+    press(&mut app, View::Feature.digit());
     app
 }
 
@@ -332,7 +332,7 @@ fn a_board_for_another_project_is_dropped_rather_than_drawn() {
             decisions: vec![decision(1, None, "not ours")],
         },
     )));
-    press(&mut app, View::Decisions.digit());
+    press(&mut app, View::Feature.digit());
     let buf = draw_at(&mut app, 100, 30);
     let out = lines(&buf).join("
 ");
@@ -348,9 +348,9 @@ fn a_click_on_the_board_stays_in_the_view_and_picks_the_row() {
         decision(2, Some(1), "one row per note"),
         decision(3, Some(1), "key notes by path"),
     ]);
-    app.open_view(View::Decisions);
+    app.open_view(View::Feature);
     draw_at(&mut app, 100, 30);
-    let inner = app.layout.content.inner;
+    let inner = app.layout.feature_decisions.inner;
 
     click(&mut app, inner.x + 2, inner.y + 2 * crate::ui::ROW_HEIGHT);
 
@@ -359,20 +359,20 @@ fn a_click_on_the_board_stays_in_the_view_and_picks_the_row() {
         Focus::View,
         "the board is not the pane whose column used to be there"
     );
-    assert_eq!(app.board_sel, 2, "and the row clicked is the row selected");
+    assert_eq!(app.decision_sel, 2, "and the row clicked is the row selected");
 }
 
 #[test]
 fn a_click_past_the_last_row_selects_nothing_new() {
     let mut app = app_with_a_board(vec![decision(1, None, "sqlite")]);
-    app.open_view(View::Decisions);
+    app.open_view(View::Feature);
     draw_at(&mut app, 100, 30);
-    let inner = app.layout.content.inner;
+    let inner = app.layout.feature_decisions.inner;
 
     click(&mut app, inner.x + 2, inner.y + inner.height - 1);
 
     assert_eq!(app.focus, Focus::View);
-    assert_eq!(app.board_sel, 0);
+    assert_eq!(app.decision_sel, 0);
 }
 
 #[test]
@@ -381,7 +381,7 @@ fn a_board_opened_before_the_tree_arrived_is_asked_for_when_it_does() {
     let mut app = App::new(tx);
     // The view is reachable before the first tree lands, and asking then
     // means asking about a project the client does not have yet.
-    app.open_view(View::Decisions);
+    app.open_view(View::Feature);
     assert!(app.board.is_none());
 
     app.on_server_msg(argus_protocol::ServerMsg::Tree(super::tree()));
@@ -398,7 +398,7 @@ fn a_tree_that_moves_nothing_does_not_ask_for_the_board_again() {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let mut app = App::new(tx);
     app.on_server_msg(argus_protocol::ServerMsg::Tree(super::tree()));
-    app.open_view(View::Decisions);
+    app.open_view(View::Feature);
     let project = app.current_project().unwrap();
     app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(
         argus_protocol::DecisionBoard {
@@ -438,115 +438,140 @@ fn carded(slug: &str, title: &str, state: argus_protocol::FeatureState) -> argus
     }
 }
 
-/// Opens the board view over a set of features.
-fn board_of(features: Vec<argus_protocol::Feature>) -> App {
-    let mut app = app_with_features(features, Vec::new());
-    press(&mut app, View::Board.digit());
-    app
-}
-
 #[test]
-fn every_feature_is_drawn_under_the_column_it_is_in() {
-    use argus_protocol::FeatureState::*;
-    let mut app = board_of(vec![
-        carded("pty", "Streaming the pty", Active),
-        carded("notes", "Notes storage", Proposed),
-        carded("review", "Split review", Done),
-    ]);
+fn a_feature_row_says_what_is_happening_to_it_rather_than_what_state_it_was_dragged_to() {
+    let mut app = app_with_features(
+        vec![
+            feature("notes", "Notes storage"),
+            argus_protocol::Feature {
+                tasks: argus_protocol::TaskCounts {
+                    todo: 2,
+                    doing: 1,
+                    done: 4,
+                },
+                ..feature("pty", "Streaming the pty")
+            },
+        ],
+        Vec::new(),
+    );
 
-    let out = lines(&draw_at(&mut app, 140, 20)).join("\n");
-    for column in ["proposed", "active", "blocked", "submitted", "done"] {
-        assert!(out.contains(column), "every column is offered: {out}");
-    }
-    for title in ["Streaming the pty", "Notes storage", "Split review"] {
-        assert!(out.contains(title), "{out}");
-    }
-
-    // Each title sits under its own state, not merely somewhere on screen.
-    let drawn = lines(&draw_at(&mut app, 140, 20));
-    let row = |needle: &str| {
-        drawn
-            .iter()
-            .position(|l| l.contains(needle))
-            .unwrap_or_else(|| panic!("{needle} was not drawn"))
-    };
+    let out = lines(&draw_at(&mut app, 120, 30)).join("\n");
+    assert!(out.contains("4/7 tasks"), "how far along it is: {out}");
     assert!(
-        row("Notes storage") > row("proposed"),
-        "a card is drawn below its column heading"
+        out.contains("main"),
+        "and where to look when nothing is happening yet: {out}"
+    );
+    for column in ["proposed", "blocked", "submitted"] {
+        assert!(
+            !out.contains(column),
+            "the drag-maintained columns are gone: {out}"
+        );
+    }
+}
+
+#[test]
+fn a_feature_says_which_of_its_agents_has_stopped_for_somebody() {
+    // The checkout `super::tree()` builds, which is where the panes are.
+    let path = crate::app::App::new(tokio::sync::mpsc::unbounded_channel().0);
+    let _ = path;
+    let mut app = app_with_tree();
+    let checkout = app
+        .tree
+        .iter()
+        .flat_map(|p| p.repositories.iter())
+        .flat_map(|r| r.checkouts.iter())
+        .next()
+        .unwrap()
+        .path
+        .clone();
+    let name = app.current_project().unwrap().name.clone();
+    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(
+        argus_protocol::DecisionBoard {
+            project: None,
+            name,
+            features: vec![argus_protocol::Feature {
+                checkouts: vec![checkout],
+                ..feature("pty", "Streaming the pty")
+            }],
+            decisions: Vec::new(),
+        },
+    )));
+    press(&mut app, View::Feature.digit());
+
+    let row = app.feature_rows().into_iter().next().unwrap();
+    assert!(
+        row.detail.contains("working") || row.detail.contains("idle"),
+        "a feature says what its agents are doing: {}",
+        row.detail
     );
 }
 
 #[test]
-fn the_keys_cross_columns_and_walk_the_cards_in_one() {
-    use argus_protocol::FeatureState::*;
-    let mut app = board_of(vec![
-        carded("notes", "Notes storage", Proposed),
-        carded("pty", "Streaming the pty", Active),
-        carded("board", "The feature board", Active),
-    ]);
-    assert_eq!(app.selected_card().map(|f| f.slug.as_str()), Some("notes"));
+fn tab_crosses_the_three_panels_and_h_comes_back_to_the_list() {
+    use crate::app::FeaturePanel;
+    let mut app = app_with_features(vec![feature("notes", "Notes storage")], Vec::new());
+    assert_eq!(app.panel, FeaturePanel::Features);
 
-    app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
-    assert_eq!(app.selected_card().map(|f| f.slug.as_str()), Some("pty"));
-    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
-    assert_eq!(app.selected_card().map(|f| f.slug.as_str()), Some("board"));
+    app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    assert_eq!(app.panel, FeaturePanel::Tasks);
+    app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    assert_eq!(app.panel, FeaturePanel::Decisions);
+    app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    assert_eq!(app.panel, FeaturePanel::Features, "and wraps");
 
-    // An empty column selects nothing rather than the card that was there.
-    app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
-    assert_eq!(app.selected_card(), None, "nothing is blocked");
-
+    // `l` is a direction rather than a cycle: it stops at the last panel.
+    for _ in 0..4 {
+        app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
+    }
+    assert_eq!(app.panel, FeaturePanel::Decisions);
     app.on_key(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE));
-    assert_eq!(
-        app.selected_card().map(|f| f.slug.as_str()),
-        Some("pty"),
-        "coming back lands on the first card, not the one you left"
-    );
+    assert_eq!(app.panel, FeaturePanel::Features);
 }
 
 #[test]
-fn a_card_says_what_its_column_leaves_unsaid() {
-    use argus_protocol::FeatureState::*;
-    let mut blocked = carded("pty", "Streaming the pty", Blocked);
-    blocked.blocker = Some("ConPTY resize".into());
-    let mut submitted = carded("notes", "Notes storage", Submitted);
-    submitted.evidence = Some("green on cargo test".into());
-    let mut app = board_of(vec![blocked, submitted]);
-
-    let out = lines(&draw_at(&mut app, 140, 20)).join("\n");
-    assert!(out.contains("ConPTY resize"), "{out}");
-    assert!(out.contains("green on cargo test"), "{out}");
-}
-
-#[test]
-fn d_on_a_card_opens_the_decisions_under_that_feature() {
-    use argus_protocol::FeatureState::*;
+fn the_brief_the_tasks_and_the_decisions_are_all_the_feature_you_selected() {
     let mut notes = decision(1, None, "one row per note");
     notes.feature = Some("notes".into());
     let mut pty = decision(2, None, "one reader thread");
     pty.feature = Some("pty".into());
-    let mut app = app_with_features(
-        vec![
-            carded("notes", "Notes storage", Proposed),
-            carded("pty", "Streaming the pty", Proposed),
-        ],
-        vec![notes, pty],
-    );
-    press(&mut app, View::Board.digit());
-    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
-    app.on_key(KeyEvent::new(KeyCode::Char('D'), KeyModifiers::NONE));
+    let (mut app, mut rx) = feature_view_watching(vec![
+        briefed("notes", "Notes storage", "keyed by path"),
+        briefed("pty", "Streaming the pty", "one reader thread owns it"),
+    ]);
+    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(
+        argus_protocol::DecisionBoard {
+            project: app.board.as_ref().and_then(|b| b.project),
+            name: app.board.as_ref().unwrap().name.clone(),
+            features: app.board.as_ref().unwrap().features.clone(),
+            decisions: vec![notes, pty],
+        },
+    )));
 
-    assert_eq!(app.view, View::Decisions);
-    let out = lines(&draw_at(&mut app, 100, 30)).join("\n");
-    assert!(out.contains("one reader thread"), "{out}");
+    // Moving down the list re-asks for that feature's tasks, so the three
+    // panels cannot end up describing different features — which is what
+    // three views with a selection each used to do.
+    while rx.try_recv().is_ok() {}
+    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    let asked: Vec<String> = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|msg| match msg {
+            argus_protocol::ClientMsg::GetTasks { feature, .. } => Some(feature),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(asked, vec!["pty".to_string()]);
+
+    let out = lines(&draw_at(&mut app, 120, 30)).join("\n");
+    assert!(out.contains("one reader thread owns it"), "the brief: {out}");
+    assert!(out.contains("one reader thread"), "the decisions: {out}");
     assert!(
         !out.contains("one row per note"),
-        "the card you came from is the feature you land on: {out}"
+        "and nothing from the feature above it: {out}"
     );
 }
 
-/// A board view whose outgoing messages can be read back, which
+/// A feature view whose outgoing messages can be read back, which
 /// `app_with_tree` deliberately throws away.
-fn board_watching(
+fn feature_view_watching(
     features: Vec<argus_protocol::Feature>,
 ) -> (App, tokio::sync::mpsc::UnboundedReceiver<argus_protocol::ClientMsg>) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
@@ -562,11 +587,13 @@ fn board_watching(
             decisions: Vec::new(),
         },
     )));
-    press(&mut app, View::Board.digit());
+    press(&mut app, View::Feature.digit());
     (app, rx)
 }
 
-fn moves(rx: &mut tokio::sync::mpsc::UnboundedReceiver<argus_protocol::ClientMsg>) -> Vec<(String, argus_protocol::FeatureState)> {
+fn moves(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<argus_protocol::ClientMsg>,
+) -> Vec<(String, argus_protocol::FeatureState)> {
     let mut out = Vec::new();
     while let Ok(msg) = rx.try_recv() {
         if let argus_protocol::ClientMsg::MoveFeature { slug, state, .. } = msg {
@@ -577,66 +604,32 @@ fn moves(rx: &mut tokio::sync::mpsc::UnboundedReceiver<argus_protocol::ClientMsg
 }
 
 #[test]
-fn moving_a_card_asks_the_daemon_and_follows_it_there() {
+fn accepting_a_feature_is_one_key_and_it_goes_back() {
     use argus_protocol::FeatureState::*;
-    let (mut app, mut rx) = board_watching(vec![carded("notes", "Notes storage", Proposed)]);
+    let (mut app, mut rx) = feature_view_watching(vec![feature("notes", "Notes storage")]);
     let _ = moves(&mut rx);
 
-    app.on_key(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::NONE));
-    assert_eq!(moves(&mut rx), vec![("notes".to_string(), Active)]);
+    app.on_key(KeyEvent::new(KeyCode::Char('.'), KeyModifiers::NONE));
+    assert_eq!(moves(&mut rx), vec![("notes".to_string(), Done)]);
     assert_eq!(
-        app.board_column_state(),
-        Active,
-        "the selection follows the card rather than staying where it was"
+        app.selected_feature().map(|f| f.state),
+        Some(Done),
+        "applied here so the row answers the key; the push is what makes it true"
     );
-    assert_eq!(app.selected_card().map(|f| f.slug.as_str()), Some("notes"));
 
-    app.on_key(KeyEvent::new(KeyCode::Char('H'), KeyModifiers::NONE));
-    assert_eq!(moves(&mut rx), vec![("notes".to_string(), Proposed)]);
-}
-
-#[test]
-fn a_card_cannot_be_pushed_off_either_end() {
-    use argus_protocol::FeatureState::*;
-    let (mut app, mut rx) = board_watching(vec![carded("notes", "Notes storage", Proposed)]);
-    let _ = moves(&mut rx);
-
-    app.on_key(KeyEvent::new(KeyCode::Char('H'), KeyModifiers::NONE));
-    assert!(moves(&mut rx).is_empty(), "there is nothing left of proposed");
-
-    for _ in 0..4 {
-        app.on_key(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::NONE));
-    }
-    let _ = moves(&mut rx);
-    app.on_key(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::NONE));
-    assert!(moves(&mut rx).is_empty(), "nor right of done");
-    assert_eq!(app.board_column_state(), Done);
-}
-
-#[test]
-fn sending_a_card_back_skips_the_blocked_column() {
-    use argus_protocol::FeatureState::*;
-    let (mut app, mut rx) = board_watching(vec![carded("notes", "Notes storage", Submitted)]);
-    let _ = moves(&mut rx);
-    // Onto the submitted column, where a human is deciding.
-    for _ in 0..3 {
-        app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
-    }
-
-    app.on_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
+    app.on_key(KeyEvent::new(KeyCode::Char('.'), KeyModifiers::NONE));
     assert_eq!(
         moves(&mut rx),
-        vec![("notes".to_string(), Active)],
-        "sending back returns it to whoever is on it, not through blocked"
+        vec![("notes".to_string(), Open)],
+        "an acceptance made in error must not need a new feature"
     );
 }
 
 #[test]
-fn an_empty_column_has_nothing_to_move() {
-    let (mut app, mut rx) = board_watching(Vec::new());
+fn there_is_nothing_to_accept_when_no_feature_is_selected() {
+    let (mut app, mut rx) = feature_view_watching(Vec::new());
     let _ = moves(&mut rx);
-    app.on_key(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::NONE));
-    app.on_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
+    app.on_key(KeyEvent::new(KeyCode::Char('.'), KeyModifiers::NONE));
     assert!(moves(&mut rx).is_empty());
 }
 
@@ -654,17 +647,16 @@ fn task(id: i64, title: &str, state: argus_protocol::TaskState) -> argus_protoco
     }
 }
 
-/// The tasks view, open on one feature, with its messages readable.
+/// The feature view with the keys in its tasks, and its messages readable.
 fn tasks_watching(
     tasks: Vec<argus_protocol::Task>,
 ) -> (App, tokio::sync::mpsc::UnboundedReceiver<argus_protocol::ClientMsg>) {
-    // Proposed, so the card is under the cursor when the board opens.
-    let (mut app, rx) = board_watching(vec![carded(
+    let (mut app, rx) = feature_view_watching(vec![carded(
         "notes",
         "Notes storage",
-        argus_protocol::FeatureState::Proposed,
+        argus_protocol::FeatureState::Open,
     )]);
-    app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
     app.on_server_msg(argus_protocol::ServerMsg::Tasks(Box::new(
         argus_protocol::TaskList {
             project_name: "argus".into(),
@@ -676,7 +668,7 @@ fn tasks_watching(
 }
 
 #[test]
-fn a_task_is_drawn_under_the_column_it_is_in() {
+fn a_task_is_one_row_with_its_state_marked_on_it() {
     use argus_protocol::TaskState::*;
     let (mut app, _rx) = tasks_watching(vec![
         task(1, "port the parser", Done),
@@ -684,20 +676,23 @@ fn a_task_is_drawn_under_the_column_it_is_in() {
         task(3, "backpressure", Todo),
     ]);
 
-    let drawn = lines(&draw_at(&mut app, 120, 20));
+    let drawn = lines(&draw_at(&mut app, 120, 30));
     let out = drawn.join("\n");
-    for column in ["todo", "doing", "done"] {
-        assert!(out.contains(column), "{out}");
-    }
     for title in ["port the parser", "wire the resize path", "backpressure"] {
         assert!(out.contains(title), "{out}");
     }
-    assert!(
-        out.contains("Notes storage") || out.contains("notes"),
-        "the list says whose feature it is: {out}"
-    );
+    for column in ["todo", "doing"] {
+        assert!(
+            !out.contains(&format!("{column} ·")),
+            "the three columns are one list now: {out}"
+        );
+    }
     let row = |needle: &str| drawn.iter().position(|l| l.contains(needle)).unwrap();
-    assert!(row("backpressure") > row("todo"));
+    assert!(
+        row("port the parser") < row("backpressure"),
+        "the order a person put them in survives, which is what it is for"
+    );
+    assert!(out.contains("tasks · 1/3"), "how far along they are: {out}");
 }
 
 #[test]
@@ -716,8 +711,11 @@ fn moving_a_task_asks_the_daemon_and_follows_it_there() {
         ),
         "{sent:?}"
     );
-    assert_eq!(app.task_column_state(), Doing);
-    assert_eq!(app.selected_task().map(|t| t.id), Some(1));
+    assert_eq!(
+        app.selected_task().map(|t| (t.id, t.state)),
+        Some((1, Doing)),
+        "the mark under the cursor changes at once; the push is what makes it true"
+    );
 }
 
 #[test]
@@ -838,7 +836,7 @@ fn escape_abandons_the_line_rather_than_the_view() {
     app.on_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE));
     app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     assert!(app.line.is_none());
-    assert_eq!(app.view, View::Tasks, "the first escape only put the line away");
+    assert_eq!(app.view, View::Feature, "the first escape only put the line away");
     assert!(rx.try_recv().is_err(), "an abandoned line writes nothing");
 
     app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
@@ -846,36 +844,36 @@ fn escape_abandons_the_line_rather_than_the_view() {
 }
 
 #[test]
-fn each_view_advertises_its_own_keys_rather_than_the_spines() {
+fn each_panel_advertises_its_own_keys_rather_than_the_spines() {
     let mut app = app_with_features(
         vec![carded(
             "notes",
             "Notes storage",
-            argus_protocol::FeatureState::Proposed,
+            argus_protocol::FeatureState::Open,
         )],
         Vec::new(),
     );
     // The spine's own bar, for something to be different from.
     press(&mut app, '1');
-    let spine = bar(&draw_at(&mut app, 120, 20));
+    let spine = bar(&draw_at(&mut app, 130, 20));
     assert!(spine.contains("n add"), "the spine offers its own keys: {spine}");
 
-    press(&mut app, View::Decisions.digit());
-    let decisions = bar(&draw_at(&mut app, 120, 20));
-    assert!(decisions.contains("features/tree"), "{decisions}");
+    press(&mut app, View::Feature.digit());
+    let features = bar(&draw_at(&mut app, 130, 20));
+    assert!(features.contains("accept"), "{features}");
 
-    press(&mut app, View::Board.digit());
-    let board = bar(&draw_at(&mut app, 120, 20));
-    assert!(board.contains("send back"), "{board}");
-
-    press(&mut app, View::Tasks.digit());
-    let tasks = bar(&draw_at(&mut app, 120, 20));
+    app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    let tasks = bar(&draw_at(&mut app, 130, 20));
     assert!(tasks.contains("drop"), "{tasks}");
 
-    for advertised in [&decisions, &board, &tasks] {
+    app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    let decisions = bar(&draw_at(&mut app, 130, 20));
+    assert!(decisions.contains("agents write this"), "{decisions}");
+
+    for advertised in [&features, &tasks, &decisions] {
         assert!(
             !advertised.contains("n add"),
-            "no view offers a key that does nothing in it: {advertised}"
+            "and none of them offers the spine's: {advertised}"
         );
     }
 }
@@ -912,7 +910,7 @@ fn the_decision_view_reads_the_brief_above_the_reasoning() {
         )],
         vec![notes],
     );
-    press(&mut app, View::Decisions.digit());
+    press(&mut app, View::Feature.digit());
 
     let drawn = lines(&draw_at(&mut app, 100, 30));
     let out = drawn.join("\n");
@@ -929,9 +927,9 @@ fn the_decision_view_reads_the_brief_above_the_reasoning() {
 
 #[test]
 fn e_opens_the_brief_in_the_editor_and_saving_replaces_it() {
-    let (mut app, mut rx) = board_watching(vec![argus_protocol::Feature {
+    let (mut app, mut rx) = feature_view_watching(vec![argus_protocol::Feature {
         body: "The reader thread owns the handle.".into(),
-        ..carded("pty", "The pty", argus_protocol::FeatureState::Proposed)
+        ..carded("pty", "The pty", argus_protocol::FeatureState::Open)
     }]);
     while rx.try_recv().is_ok() {}
 
@@ -968,9 +966,9 @@ fn e_opens_the_brief_in_the_editor_and_saving_replaces_it() {
 
 #[test]
 fn a_brief_is_not_a_note_and_says_so() {
-    let (mut app, mut rx) = board_watching(vec![argus_protocol::Feature {
+    let (mut app, mut rx) = feature_view_watching(vec![argus_protocol::Feature {
         body: "- [ ] not a checkbox here".into(),
-        ..carded("pty", "The pty", argus_protocol::FeatureState::Proposed)
+        ..carded("pty", "The pty", argus_protocol::FeatureState::Open)
     }]);
     while rx.try_recv().is_ok() {}
     app.on_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
@@ -987,7 +985,7 @@ fn a_brief_is_not_a_note_and_says_so() {
 
 #[test]
 fn a_feature_can_be_written_down_from_the_board() {
-    let (mut app, mut rx) = board_watching(Vec::new());
+    let (mut app, mut rx) = feature_view_watching(Vec::new());
     while rx.try_recv().is_ok() {}
 
     app.on_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
@@ -1012,10 +1010,10 @@ fn a_feature_can_be_written_down_from_the_board() {
 
 #[test]
 fn renaming_a_feature_says_nothing_about_its_slug() {
-    let (mut app, mut rx) = board_watching(vec![carded(
+    let (mut app, mut rx) = feature_view_watching(vec![carded(
         "notes",
         "Notes storage",
-        argus_protocol::FeatureState::Proposed,
+        argus_protocol::FeatureState::Open,
     )]);
     while rx.try_recv().is_ok() {}
 
@@ -1042,10 +1040,10 @@ fn renaming_a_feature_says_nothing_about_its_slug() {
 
 #[test]
 fn a_feature_can_be_removed_from_the_board() {
-    let (mut app, mut rx) = board_watching(vec![carded(
+    let (mut app, mut rx) = feature_view_watching(vec![carded(
         "notes",
         "Notes storage",
-        argus_protocol::FeatureState::Proposed,
+        argus_protocol::FeatureState::Open,
     )]);
     while rx.try_recv().is_ok() {}
 
@@ -1062,10 +1060,10 @@ fn a_feature_can_be_removed_from_the_board() {
 
 #[test]
 fn typing_a_feature_name_does_not_work_the_board_underneath() {
-    let (mut app, mut rx) = board_watching(vec![carded(
+    let (mut app, mut rx) = feature_view_watching(vec![carded(
         "notes",
         "Notes storage",
-        argus_protocol::FeatureState::Proposed,
+        argus_protocol::FeatureState::Open,
     )]);
     while rx.try_recv().is_ok() {}
 
@@ -1080,7 +1078,7 @@ fn typing_a_feature_name_does_not_work_the_board_underneath() {
     assert_eq!(app.line.as_ref().map(|i| i.text.as_str()), Some("xqsL"));
 
     app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-    assert_eq!(app.view, View::Board, "the first escape only put the line away");
+    assert_eq!(app.view, View::Feature, "the first escape only put the line away");
 }
 
 #[test]
@@ -1292,10 +1290,13 @@ fn an_expanded_row_does_not_push_itself_off_the_bottom() {
     // The view opens on the features column beside the tree; `l` is what
     // moves onto the decisions themselves.
     press(&mut app, 'l');
+    // Into the tasks, then into the tree, which is what `j` then walks.
+    press(&mut app, 'l');
+    press(&mut app, 'l');
     for _ in 0..20 {
         press(&mut app, 'j');
     }
-    let out = lines(&draw_at(&mut app, 100, 20));
+    let out = lines(&draw_at(&mut app, 100, 30));
     let body = out.join("\n");
 
     assert!(
@@ -1319,7 +1320,9 @@ fn the_task_you_are_on_shows_its_whole_title() {
         task(2, LONG_TITLE, Todo),
     ]);
 
-    let out = lines(&draw_at(&mut app, 120, 20));
+    // Narrow enough that the title has to wrap; at a width where it fits
+    // on one row there is nothing for expansion to do.
+    let out = lines(&draw_at(&mut app, 80, 24));
     let body = out.join("\n");
 
     assert!(
@@ -1332,17 +1335,17 @@ fn the_task_you_are_on_shows_its_whole_title() {
         "and only the selected one:\n{body}"
     );
     assert!(
-        out.iter().all(|l| l.chars().count() <= 120),
+        out.iter().all(|l| l.chars().count() <= 80),
         "nothing runs past the terminal"
     );
 }
 
 #[test]
 fn the_card_you_are_on_shows_its_whole_title() {
-    let (mut app, _rx) = board_watching(vec![carded(
+    let (mut app, _rx) = feature_view_watching(vec![carded(
         "notes",
         LONG_TITLE,
-        argus_protocol::FeatureState::Proposed,
+        argus_protocol::FeatureState::Open,
     )]);
 
     let out = lines(&draw_at(&mut app, 120, 20));
@@ -1353,4 +1356,66 @@ fn the_card_you_are_on_shows_its_whole_title() {
         "the selected card should show all of its title:\n{body}"
     );
     assert!(out.iter().all(|l| l.chars().count() <= 120));
+}
+
+/// Not an assertion — a way to look at the feature view while working on
+/// it: `cargo test -p argus dump_feature -- --ignored --nocapture`.
+#[test]
+#[ignore = "prints a frame for eyeballing; asserts nothing"]
+fn dump_feature() {
+    let mut auth = briefed(
+        "auth",
+        "Auth rewrite",
+        "Replace the session cookie with a signed token. Rotation is out of scope; \
+         the refresh path stays where it is.",
+    );
+    auth.tasks = argus_protocol::TaskCounts {
+        todo: 3,
+        doing: 1,
+        done: 3,
+    };
+    let mut billing = feature("billing", "Billing retry");
+    billing.state = argus_protocol::FeatureState::Done;
+    billing.tasks = argus_protocol::TaskCounts {
+        todo: 0,
+        doing: 0,
+        done: 7,
+    };
+
+    let mut chose = decision(1, None, "sign with ed25519");
+    chose.over = Some("HMAC".into());
+    chose.because = Some("key rotation".into());
+    chose.feature = Some("auth".into());
+    let mut under = decision(2, Some(1), "store the key id with the pane");
+    under.feature = Some("auth".into());
+
+    let mut app = app_with_features(
+        vec![auth, billing, feature("tls", "TLS expiry")],
+        vec![chose, under],
+    );
+    app.on_server_msg(argus_protocol::ServerMsg::Tasks(Box::new(
+        argus_protocol::TaskList {
+            project_name: "argus".into(),
+            feature: Some("auth".into()),
+            tasks: vec![
+                argus_protocol::Task {
+                    feature: "auth".into(),
+                    claimed_by: Some("sess-1".into()),
+                    ..task(1, "carry the token through the pump", argus_protocol::TaskState::Doing)
+                },
+                argus_protocol::Task {
+                    feature: "auth".into(),
+                    external: Some("ORION-412".into()),
+                    ..task(2, "test reconnect after a daemon restart", argus_protocol::TaskState::Todo)
+                },
+                argus_protocol::Task {
+                    feature: "auth".into(),
+                    ..task(3, "pick a signing algorithm", argus_protocol::TaskState::Done)
+                },
+            ],
+        },
+    )));
+    for line in lines(&draw_at(&mut app, 110, 30)) {
+        println!("|{line}");
+    }
 }

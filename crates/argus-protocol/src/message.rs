@@ -153,12 +153,14 @@ pub enum ClientMsg {
     GetDecisions {
         project: ProjectId,
     },
-    /// Move a feature to another column of the board.
+    /// Accept a feature, or reopen one that was accepted.
     ///
-    /// A human write, and so the one that may reach `done`: an agent
-    /// moving its own work is refused acceptance over the pane API. The
-    /// answer is the pushed board every client already receives, since a
-    /// move is exactly the kind of change a board is watched for.
+    /// The only state a person still sets by hand, and the only one there
+    /// is: everything the old columns claimed is now read off the panes on
+    /// the feature's checkouts and the state of its tasks. There is no
+    /// agent-side equivalent, because the agent that did the work is the
+    /// one party that cannot accept it. The answer is the pushed board
+    /// every client already receives.
     MoveFeature {
         project: ProjectId,
         slug: String,

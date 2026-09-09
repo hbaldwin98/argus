@@ -34,7 +34,7 @@ use crate::theme::Theme;
 pub use layout::{Focus, Fold, Layout, Panel};
 pub use modal::{Help, Overlay, Picker, PickerKind, Prompt, RemoveTarget, Setting};
 pub use rows::{CheckoutAnchor, CheckoutRow, PaneLocation};
-pub use views::View;
+pub use views::{FeaturePanel, View};
 use layout::{in_rect, row_in};
 use argus_protocol::ReviewBase;
 
@@ -212,29 +212,27 @@ pub struct App {
     /// not anyone is looking at it — a tree is meant to be watched being
     /// built.
     pub board: Option<argus_protocol::DecisionBoard>,
-    /// The board narrowed to the feature on screen. Kept rather than
+    /// The decisions narrowed to the feature on screen. Kept rather than
     /// derived per frame because the rows a renderer walks borrow from it.
     pub board_scoped: Option<argus_protocol::DecisionBoard>,
-    pub board_sel: usize,
-    /// Which feature the left column is on, as a place in `feature_rows`.
-    pub board_feature_sel: usize,
-    /// Whether keys move through the features or through the tree. The
-    /// features have it first: a tree is read after choosing which one.
-    pub board_on_features: bool,
-    /// Which column of the board view is selected, as a place in
-    /// `FeatureState::ALL`, and which card down it.
-    pub board_column: usize,
-    pub board_card: usize,
-    /// The task list of whichever feature the tasks view is open on, and
-    /// where the cursor is in it. `None` until one arrives, which is not
-    /// the same as a feature with no tasks.
+    /// Which feature the whole view is on, as a place in `feature_rows`.
+    ///
+    /// One selection, shared by the brief, the tasks and the decisions.
+    /// They were three views with a selection each, and a selection each
+    /// meant they could disagree about which feature you were reading —
+    /// which is exactly what they did.
+    pub feature_sel: usize,
+    /// Where the cursor is in the panel that has the keys, and which panel
+    /// that is.
+    pub panel: FeaturePanel,
+    pub task_sel: usize,
+    pub decision_sel: usize,
+    /// The task list of the selected feature. `None` until one arrives,
+    /// which is not the same as a feature with no tasks.
     pub tasks: Option<argus_protocol::TaskList>,
-    pub task_column: usize,
-    pub task_card: usize,
-    /// The line being typed on whichever board is open, when one is.
-    /// `Some` is what makes the view swallow keys — a board whose `x`
-    /// deletes a card while you are typing a title with an x in it is not
-    /// usable.
+    /// The line being typed in the feature view, when one is. `Some` is
+    /// what makes the view swallow keys — a view whose `x` deletes a row
+    /// while you are typing a title with an x in it is not usable.
     pub line: Option<crate::app::views::LineInput>,
     /// What the outstanding request was for; a diff for anything else is
     /// stale and dropped.
@@ -374,14 +372,11 @@ impl App {
             notes: None,
             board: None,
             board_scoped: None,
-            board_sel: 0,
-            board_feature_sel: 0,
-            board_on_features: true,
-            board_column: 0,
-            board_card: 0,
+            feature_sel: 0,
+            panel: Default::default(),
+            task_sel: 0,
+            decision_sel: 0,
             tasks: None,
-            task_column: 0,
-            task_card: 0,
             line: None,
             review_wanted: None,
             next_review_request: 1,

@@ -276,26 +276,23 @@ pub fn render(f: &mut Frame, app: &mut App) {
         // A view that is not the spine draws no columns, so the regions a
         // click is resolved against have to be forgotten rather than left
         // pointing at cards that are no longer there.
-        View::Decisions => {
+        View::Feature => {
             forget_spine(app);
-            render_decisions(f, app, root[0], th);
-            None
-        }
-        View::Board => {
-            forget_spine(app);
-            render_board(f, app, root[0], th);
-            None
-        }
-        View::Tasks => {
-            forget_spine(app);
-            render_tasks(f, app, root[0], th);
+            // The live pane is not on screen, so its region must not stay
+            // where a click could still find it.
+            app.layout.content = Panel::default();
+            render_feature(f, app, root[0], th);
             None
         }
         View::Spine if fullscreen => {
             forget_spine(app);
+            forget_feature_view(app);
             render_content(f, app, root[0], th)
         }
-        View::Spine => render_columns(f, app, root[0]),
+        View::Spine => {
+            forget_feature_view(app);
+            render_columns(f, app, root[0])
+        }
     };
     render_status(f, app, root[1], th);
 
@@ -334,6 +331,15 @@ pub fn render(f: &mut Frame, app: &mut App) {
     if let Some(placement) = cursor {
         f.set_cursor_position(placement.position);
     }
+}
+
+/// The same, the other way round: the feature view's panels are not on
+/// screen while the spine is, and a stale rect there would swallow a click
+/// meant for a column.
+fn forget_feature_view(app: &mut App) {
+    app.layout.features = Panel::default();
+    app.layout.feature_tasks = Panel::default();
+    app.layout.feature_decisions = Panel::default();
 }
 
 /// Zeroes the nav columns' recorded regions, for the frames that draw none

@@ -51,7 +51,7 @@ const VIEW: Group = Group {
     title: "the view",
     keys: &[
         ("1", "the spine — projects through to the live pane"),
-        ("2", "the decision board"),
+        ("2", "the features, and what is happening to them"),
         ("p", "fold a column away, and back"),
         ("v", "where panes are listed"),
         ("t", "theme"),
@@ -132,50 +132,22 @@ const SETTINGS: Group = Group {
     ],
 };
 
-const BOARD: Group = Group {
-    title: "the decision board",
+const FEATURE: Group = Group {
+    title: "a feature",
     keys: &[
-        ("h / l", "the features, and the tree under one"),
-        ("e", "read and edit this feature's brief"),
-        ("j / k", "feature by feature, or decision by decision"),
+        ("h / l", "the features, and the feature under the cursor"),
+        ("tab", "brief, tasks, decisions"),
+        ("j / k", "row by row, in whichever panel has the keys"),
         ("d / u", "ten at a time"),
         ("g / G", "top and bottom"),
-        ("r", "re-ask the daemon for it"),
-        ("esc  q", "back to the spine"),
-    ],
-};
-
-const COLUMNS_BOARD: Group = Group {
-    title: "the feature board",
-    keys: &[
-        ("h / l", "column by column"),
-        ("j / k", "card by card"),
-        ("d / u", "ten at a time"),
-        ("g / G", "top and bottom"),
-        ("a", "open a feature"),
-        ("R", "rename it"),
+        ("a", "a new feature, or a new task under one"),
+        ("e  enter", "rewrite this feature's brief, or this task"),
+        ("R", "rename the feature"),
         ("x", "remove it, keeping its decisions"),
-        ("H / L", "move this card a column"),
-        ("s", "send it back to whoever is on it"),
-        ("e", "read and edit its brief"),
-        ("enter", "the tasks under this feature"),
-        ("D", "the decisions under it"),
-        ("r", "re-ask the daemon for it"),
-        ("esc  q", "back to the spine"),
-    ],
-};
-
-const TASKS: Group = Group {
-    title: "a feature's tasks",
-    keys: &[
-        ("h / l", "column by column"),
-        ("j / k", "card by card"),
-        ("a", "add one"),
-        ("e  enter", "rewrite it"),
-        ("H / L", "move this task a column"),
+        (".", "accept it, or reopen it"),
+        ("H / L", "move this task along todo, doing, done"),
         ("J / K", "earlier or later in the list"),
-        ("x", "drop it"),
-        ("r", "re-ask the daemon for them"),
+        ("r", "re-ask the daemon for all of it"),
         ("esc  q", "back to the spine"),
     ],
 };
@@ -204,11 +176,7 @@ pub(super) fn groups(app: &App) -> Vec<&'static Group> {
     } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
         vec![&SETTINGS]
     } else if app.focus == Focus::View {
-        match app.view {
-            crate::app::View::Board => vec![&COLUMNS_BOARD, &VIEW],
-            crate::app::View::Tasks => vec![&TASKS, &VIEW],
-            _ => vec![&BOARD, &VIEW],
-        }
+        vec![&FEATURE, &VIEW]
     } else if app.input_pane().is_some() || app.focus == Focus::PaneContent {
         vec![&PANE]
     } else {

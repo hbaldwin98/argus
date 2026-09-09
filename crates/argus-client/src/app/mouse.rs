@@ -108,78 +108,36 @@ impl App {
         // this, a click on the board reads as a click on that pane: focus
         // lands in it and every later keypress goes to a child nobody can
         // see.
-        if self.view == View::Tasks {
-            match ev.kind {
-                MouseEventKind::Down(MouseButton::Left) => {
-                    self.focus = Focus::View;
-                    let hit = self
-                        .layout
-                        .task_columns
-                        .iter()
-                        .copied()
-                        .enumerate()
-                        .find(|(_, panel)| in_rect(panel.outer, ev.column, ev.row));
-                    if let Some((index, panel)) = hit {
-                        let row = row_in(panel.inner, crate::ui::ROW_HEIGHT, ev.column, ev.row);
-                        self.select_task(index, row.unwrap_or(0) + panel.first);
-                    }
-                }
-                MouseEventKind::ScrollUp => self.move_task_card(-1),
-                MouseEventKind::ScrollDown => self.move_task_card(1),
-                _ => {}
-            }
-            return;
-        }
-        if self.view == View::Board {
-            match ev.kind {
-                MouseEventKind::Down(MouseButton::Left) => {
-                    self.focus = Focus::View;
-                    let hit = self
-                        .layout
-                        .board_columns
-                        .iter()
-                        .copied()
-                        .enumerate()
-                        .find(|(_, panel)| in_rect(panel.outer, ev.column, ev.row));
-                    if let Some((index, panel)) = hit {
-                        let row = row_in(panel.inner, crate::ui::ROW_HEIGHT, ev.column, ev.row);
-                        self.select_card(index, row.unwrap_or(0) + panel.first);
-                    }
-                }
-                MouseEventKind::ScrollUp => self.move_board_card(-1),
-                MouseEventKind::ScrollDown => self.move_board_card(1),
-                _ => {}
-            }
-            return;
-        }
         if self.view != View::Spine {
             match ev.kind {
                 MouseEventKind::Down(MouseButton::Left) => {
-                    if in_rect(self.layout.features.outer, ev.column, ev.row) {
-                        self.focus = Focus::View;
-                        if let Some(row) = row_in(
-                            self.layout.features.inner,
-                            crate::ui::ROW_HEIGHT,
-                            ev.column,
-                            ev.row,
-                        ) {
-                            self.select_feature_row(row + self.layout.features.first);
+                    self.focus = Focus::View;
+                    let panels = [
+                        (self.layout.features, FeaturePanel::Features),
+                        (self.layout.feature_tasks, FeaturePanel::Tasks),
+                        (self.layout.feature_decisions, FeaturePanel::Decisions),
+                    ];
+                    let hit = panels
+                        .into_iter()
+                        .find(|(panel, _)| in_rect(panel.outer, ev.column, ev.row));
+                    let Some((panel, which)) = hit else { return };
+                    let row = row_in(panel.inner, crate::ui::ROW_HEIGHT, ev.column, ev.row);
+                    // A click in a panel's empty space still moves the
+                    // keys there: the gesture said which panel to be in
+                    // even when it landed past the last row.
+                    match (which, row) {
+                        (FeaturePanel::Features, Some(row)) => {
+                            self.select_feature_row(row + panel.first)
                         }
-                    } else if in_rect(self.layout.content.outer, ev.column, ev.row) {
-                        self.focus = Focus::View;
-                        self.board_on_features = false;
-                        if let Some(row) = row_in(
-                            self.layout.content.inner,
-                            crate::ui::ROW_HEIGHT,
-                            ev.column,
-                            ev.row,
-                        ) {
-                            self.select_board_row(row + self.layout.content.first);
+                        (FeaturePanel::Tasks, Some(row)) => self.select_task(row + panel.first),
+                        (FeaturePanel::Decisions, Some(row)) => {
+                            self.select_decision_row(row + panel.first)
                         }
+                        (which, None) => self.go_to_panel(which),
                     }
                 }
-                MouseEventKind::ScrollUp => self.move_in_board(-1),
-                MouseEventKind::ScrollDown => self.move_in_board(1),
+                MouseEventKind::ScrollUp => self.move_in_feature(-1),
+                MouseEventKind::ScrollDown => self.move_in_feature(1),
                 _ => {}
             }
             return;

@@ -3,6 +3,8 @@
 
 use super::*;
 
+use crate::app::FeaturePanel;
+
 /// The status bar: where you are on the left, what you can press on the
 /// right. Context-sensitive, because the same key means different things
 /// inside a pane and in the nav columns.
@@ -157,30 +159,36 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 ][..],
                 th.accent,
             ),
-            View::Decisions => (
-                &[
-                    "h/l features/tree  j/k move  e brief  d/u ten  g/G ends  r refresh  q spine",
-                    "h/l features/tree  j/k move  e brief  r refresh  q spine",
-                    "h/l  j/k  e brief  q spine",
-                ][..],
-                th.dim,
-            ),
-            View::Board => (
-                &[
-                    "h/l  j/k  a add  R rename  e brief  x drop  H/L move it  s send back  enter tasks  D decisions",
-                    "h/l  j/k  a add  R rename  e brief  x drop  H/L move  enter tasks",
-                    "j/k  a add  x drop  H/L move  enter tasks  q",
-                ][..],
-                th.dim,
-            ),
-            View::Tasks => (
-                &[
-                    "h/l column  j/k card  a add  e rewrite  H/L move it  J/K order  x drop  q spine",
-                    "h/l  j/k  a add  e rewrite  H/L move  J/K order  x drop  q",
-                    "j/k  a add  e rewrite  H/L move  q",
-                ][..],
-                th.dim,
-            ),
+            // Named per panel, since which keys are live depends on
+            // which one has them: `a` adds a feature on the list and a
+            // task in the tasks, and a bar that said neither would be a
+            // bar saying nothing.
+            View::Feature => match app.panel {
+                FeaturePanel::Features => (
+                    &[
+                        "h/l panels  j/k move  a new  e brief  R rename  x drop  . accept  r refresh  q spine",
+                        "l tasks  j/k move  a new  e brief  R rename  x drop  . accept  q spine",
+                        "j/k  a new  e brief  . accept  q",
+                    ][..],
+                    th.dim,
+                ),
+                FeaturePanel::Tasks => (
+                    &[
+                        "h/l panels  j/k move  a add  e rewrite  H/L todo→doing→done  J/K order  x drop  q spine",
+                        "h/l panels  j/k move  a add  e rewrite  H/L move  J/K order  x drop  q",
+                        "j/k  a add  e rewrite  H/L move  q",
+                    ][..],
+                    th.dim,
+                ),
+                FeaturePanel::Decisions => (
+                    &[
+                        "h/l panels  j/k move  d/u ten  g/G ends  r refresh  q spine — agents write this",
+                        "h/l panels  j/k move  r refresh  q spine",
+                        "h/l  j/k  q spine",
+                    ][..],
+                    th.dim,
+                ),
+            },
             View::Spine => unreachable!("the spine is not a view with its own keys"),
         }
     } else if app.focus == Focus::PaneContent {

@@ -891,7 +891,7 @@ async fn the_board_reaches_an_agent_whole_and_a_bad_decision_is_refused() {
 }
 
 #[tokio::test]
-async fn an_agent_can_offer_work_but_only_a_human_accepts_it() {
+async fn accepting_a_feature_is_the_human_write_and_the_only_one() {
     use argus_protocol::FeatureState;
 
     let dir = tempfile::tempdir().unwrap();
@@ -910,37 +910,20 @@ async fn an_agent_can_offer_work_but_only_a_human_accepts_it() {
             .map(|f| f.state)
             .unwrap()
     };
-    assert_eq!(state_of(&slug), FeatureState::Proposed);
+    assert_eq!(state_of(&slug), FeatureState::Open);
 
-    d.move_feature_for_agent(agent, Some("sess-1"), FeatureState::Active, None)
-        .unwrap();
-    assert_eq!(state_of(&slug), FeatureState::Active);
-
-    d.move_feature_for_agent(
-        agent,
-        Some("sess-1"),
-        FeatureState::Submitted,
-        Some("green on cargo test"),
-    )
-    .unwrap();
-    assert_eq!(state_of(&slug), FeatureState::Submitted);
-
-    let refused = d
-        .move_feature_for_agent(agent, Some("sess-1"), FeatureState::Done, None)
-        .unwrap_err()
-        .to_string();
-    assert!(refused.contains("cannot accept its own work"), "{refused}");
-    assert_eq!(
-        state_of(&slug),
-        FeatureState::Submitted,
-        "the refusal left it where it was"
-    );
-
-    // The human is looking at the whole board, so they name the card
-    // rather than being taken to be in any checkout.
+    // The human names the feature rather than being taken to be in any
+    // checkout: they are looking at the project's features, not at one
+    // checkout's.
     d.move_feature_for_client(project, &slug, FeatureState::Done, None)
         .unwrap();
     assert_eq!(state_of(&slug), FeatureState::Done);
+
+    // And it is reversible, which is the other half of a state a person
+    // sets: an acceptance made in error must not need a new feature.
+    d.move_feature_for_client(project, &slug, FeatureState::Open, None)
+        .unwrap();
+    assert_eq!(state_of(&slug), FeatureState::Open);
     close_all(&d);
 }
 
