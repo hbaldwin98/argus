@@ -423,7 +423,8 @@ inherited from whichever workspace the TUI currently shows.
 | Tab / Shift-Tab | Step through the brief, the tasks and the decisions |
 | `j` / `k` | Move in whichever panel has the keys; `d`/`u` ten at a time, `g`/`G` for the ends |
 | `a` | Write down a new feature, or a new task under one, depending on the panel |
-| `e`, Enter | Open the feature's brief in the editor, or rewrite the selected task |
+| `e` | Open the feature's brief, or rewrite the selected task's title |
+| Enter | Open the selected feature or task brief in the multiline editor |
 | `R` | Rename the feature — the title only; its slug is frozen so nothing filed under it is orphaned |
 | `x` | Remove the feature (its decisions survive as unfiled), or drop the selected task |
 | `.` | Accept the feature, or reopen one already accepted. The one state a person sets, and the one an agent cannot |

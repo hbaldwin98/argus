@@ -128,7 +128,7 @@ impl App {
             }
             ServerMsg::Note(note) => {
                 if let Some(view) = &mut self.notes {
-                    if view.brief.is_none() && view.target == note.target {
+                    if view.brief.is_none() && view.task.is_none() && view.target == note.target {
                         view.adopt(&note);
                     }
                 }
@@ -171,9 +171,9 @@ impl App {
                     // having been lost.
                     let was = self.selected_task().map(|task| task.id);
                     self.tasks = Some(*list);
-                    match was.and_then(|id| {
-                        self.feature_tasks().iter().position(|task| task.id == id)
-                    }) {
+                    match was
+                        .and_then(|id| self.feature_tasks().iter().position(|task| task.id == id))
+                    {
                         Some(at) => self.task_sel = at,
                         None => self.clamp_task_selection(),
                     }
@@ -494,7 +494,11 @@ impl App {
     /// fading, or a spinner about to change glyph. `None` when the screen
     /// is settled and the loop can sleep until something happens.
     pub fn next_motion_deadline(&self) -> Option<std::time::Instant> {
-        let fading = self.state_flashes.values().map(|anim| anim.deadline()).min();
+        let fading = self
+            .state_flashes
+            .values()
+            .map(|anim| anim.deadline())
+            .min();
         let spinning = self
             .any_pane_working()
             .then(|| crate::motion::spinner_deadline(self.frame_now, self.epoch));

@@ -107,7 +107,6 @@ fn visible_rows(height: u16, grown: usize) -> usize {
 /// that still leaves room to read it.
 const MAX_BOARD_INDENT: usize = 24;
 
-
 /// The feature view: the selected repository branch's features, and the one under the cursor
 /// read whole.
 ///
@@ -333,14 +332,19 @@ fn render_tasks(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     // feature row until then. Taking it only from the row would let the
     // heading say 3/7 over a list of four, which is the kind of
     // disagreement two sources of one number always end in.
-    let counts = match app.tasks.as_ref().map(|list| list.feature == app.feature_slug()) {
-        Some(true) => tasks.iter().fold(
-            argus_protocol::TaskCounts::default(),
-            |mut counts, task| {
-                counts.add(task.state);
-                counts
-            },
-        ),
+    let counts = match app
+        .tasks
+        .as_ref()
+        .map(|list| list.feature == app.feature_slug())
+    {
+        Some(true) => {
+            tasks
+                .iter()
+                .fold(argus_protocol::TaskCounts::default(), |mut counts, task| {
+                    counts.add(task.state);
+                    counts
+                })
+        }
         _ => app.selected_feature().map(|f| f.tasks).unwrap_or_default(),
     };
     let title = match (app.feature_slug().is_some(), counts.total()) {
@@ -356,13 +360,10 @@ fn render_tasks(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     // looking at, and a panel that forgets its own the moment the keys
     // leave it makes crossing back a hunt.
     let selected = Some(app.task_sel);
-    let grown = grown_by(
-        selected
-            .and_then(|i| tasks.get(i))
-            .map(|task| (task.title.clone(), task_detail(task))),
-        th,
-        inner.width,
-    );
+    let grown = selected
+        .and_then(|i| tasks.get(i))
+        .map(|task| task_grown_by(task, th, inner.width))
+        .unwrap_or(0);
     let visible = visible_rows(inner.height, grown);
     let first = scrolled_to_show(0, selected, visible, tasks.len());
     app.layout.feature_tasks = Panel {
@@ -453,6 +454,24 @@ fn push_task_row(
         width,
         selected,
     ));
+    if selected {
+        if let Some(body) = task.body.as_deref().filter(|body| !body.trim().is_empty()) {
+            lines.extend(text_rows(
+                vec![Span::raw(" ".repeat(HANG))],
+                HANG,
+                body.to_string(),
+                Style::default().fg(th.muted),
+                width,
+                true,
+            ));
+        }
+    }
+}
+
+fn task_grown_by(task: &argus_protocol::Task, th: Theme, width: u16) -> usize {
+    let mut lines = Vec::new();
+    push_task_row(&mut lines, task, true, th, width);
+    lines.len().saturating_sub(ROW_HEIGHT as usize)
 }
 
 /// A task's second line: the number an agent names it by, whoever has it,
@@ -602,14 +621,7 @@ fn push_board_row(
     if let Some(by) = decision.superseded_by {
         chose.push_str(&format!("  superseded by #{by}"));
     }
-    lines.extend(text_rows(
-        prefix,
-        hang,
-        chose,
-        name_style,
-        width,
-        selected,
-    ));
+    lines.extend(text_rows(prefix, hang, chose, name_style, width, selected));
 
     let continuation = format!(" {}  ", board_continuation(row));
     let hang = continuation.chars().count();
@@ -628,7 +640,11 @@ fn board_branch(row: &argus_protocol::DecisionTreeRow<'_>) -> String {
         return String::new();
     }
     let mut branch = board_ancestor_guides(row, 1);
-    branch.push_str(if row.has_next_sibling { "├─ " } else { "└─ " });
+    branch.push_str(if row.has_next_sibling {
+        "├─ "
+    } else {
+        "└─ "
+    });
     branch
 }
 
@@ -838,7 +854,10 @@ fn render_line(f: &mut Frame, app: &App, prompt: Option<Rect>, th: Theme) {
     };
     f.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled(format!(" {} ", input.label()), Style::default().fg(th.accent)),
+            Span::styled(
+                format!(" {} ", input.label()),
+                Style::default().fg(th.accent),
+            ),
             Span::styled(input.text.clone(), Style::default().fg(th.text)),
             Span::styled("_", Style::default().fg(th.accent)),
         ])),

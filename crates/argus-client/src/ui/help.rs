@@ -141,7 +141,8 @@ const FEATURE: Group = Group {
         ("d / u", "ten at a time"),
         ("g / G", "top and bottom"),
         ("a", "a new feature, or a new task under one"),
-        ("e  enter", "rewrite this feature's brief, or this task"),
+        ("e", "rewrite this feature's brief, or this task's title"),
+        ("enter", "open this feature or task brief"),
         ("R", "rename the feature"),
         ("x", "remove it, keeping its decisions"),
         (".", "accept it, or reopen it"),
@@ -190,12 +191,7 @@ pub(super) fn groups(app: &App) -> Vec<&'static Group> {
 /// bar: the bar is where it says how to put the window away.
 pub(super) fn render_help(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let blocks: Vec<Vec<Line>> = groups(app).iter().map(|g| block_of(g, th)).collect();
-    let content_width = blocks
-        .iter()
-        .flatten()
-        .map(Line::width)
-        .max()
-        .unwrap_or(0) as u16;
+    let content_width = blocks.iter().flatten().map(Line::width).max().unwrap_or(0) as u16;
     let rows: usize = blocks.iter().map(Vec::len).sum();
 
     // Two columns only when both halves would still be wide enough to
@@ -243,8 +239,15 @@ pub(super) fn render_help(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let (left_area, right_area) = if two_up {
         let half = inner.width / 2;
         (
-            Rect { width: half, ..inner },
-            Rect { x: inner.x + half, width: inner.width - half, ..inner },
+            Rect {
+                width: half,
+                ..inner
+            },
+            Rect {
+                x: inner.x + half,
+                width: inner.width - half,
+                ..inner
+            },
         )
     } else {
         (inner, Rect { width: 0, ..inner })

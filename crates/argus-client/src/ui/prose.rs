@@ -1,6 +1,6 @@
 //! Markdown, styled where it stands.
 //!
-//! Notes and feature briefs are prose that people write in markdown and
+//! Notes, feature briefs, and task briefs are prose that people write in markdown and
 //! then read on this screen, and they used to arrive here as one
 //! undifferentiated colour: a heading looked like a paragraph, and the
 //! only thing picked out of a brief was its checkboxes. A document whose
@@ -48,10 +48,7 @@ fn block_line(
             || trimmed.chars().all(|c| c == '*')
             || trimmed.chars().all(|c| c == '_'))
     {
-        return Some(vec![Span::styled(
-            text.to_string(),
-            base.fg(th.dim),
-        )]);
+        return Some(vec![Span::styled(text.to_string(), base.fg(th.dim))]);
     }
 
     if let Some(rest) = trimmed.strip_prefix('>') {
@@ -158,8 +155,7 @@ fn inline_spans(
 /// is four literal asterisks, not emphasis around nothing.
 fn closing(rest: &[char], mark: &str) -> Option<usize> {
     let mark: Vec<char> = mark.chars().collect();
-    (1..=rest.len().saturating_sub(mark.len()))
-        .find(|i| rest[*i..].starts_with(&mark[..]))
+    (1..=rest.len().saturating_sub(mark.len())).find(|i| rest[*i..].starts_with(&mark[..]))
 }
 
 #[cfg(test)]
@@ -263,7 +259,9 @@ mod tests {
     fn an_empty_span_is_four_literal_asterisks() {
         let out = spans("****");
         assert_eq!(text_of(&out), "****");
-        assert!(out.iter().all(|s| !s.style.add_modifier.contains(Modifier::BOLD)));
+        assert!(out
+            .iter()
+            .all(|s| !s.style.add_modifier.contains(Modifier::BOLD)));
     }
 
     #[test]

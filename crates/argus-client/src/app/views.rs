@@ -228,7 +228,11 @@ impl App {
 
     pub fn selected_feature(&self) -> Option<&argus_protocol::Feature> {
         let slug = self.feature_slug()?;
-        self.board.as_ref()?.features.iter().find(|f| f.slug == slug)
+        self.board
+            .as_ref()?
+            .features
+            .iter()
+            .find(|f| f.slug == slug)
     }
 
     /// Narrows the decisions and asks for the tasks of whichever feature
@@ -316,6 +320,16 @@ impl App {
         }
     }
 
+    /// Opens the selected row's document. Task titles keep their compact
+    /// line editor on `e`; Enter reads and edits the longer brief.
+    pub(super) fn open_in_feature(&mut self) {
+        match self.panel {
+            FeaturePanel::Features => self.open_feature_brief(),
+            FeaturePanel::Tasks => self.open_task_brief(),
+            FeaturePanel::Decisions => {}
+        }
+    }
+
     pub(super) fn add_in_feature(&mut self) {
         match self.panel {
             FeaturePanel::Features => self.begin_feature(),
@@ -379,7 +393,11 @@ impl App {
             self.tasks = None;
             return;
         };
-        let _ = self.out.send(ClientMsg::GetTasks { project, checkout, feature });
+        let _ = self.out.send(ClientMsg::GetTasks {
+            project,
+            checkout,
+            feature,
+        });
     }
 
     pub(super) fn clamp_task_selection(&mut self) {
@@ -418,7 +436,10 @@ impl App {
         let Some(current) = self.selected_task().map(|t| t.state) else {
             return;
         };
-        let at = TaskState::ALL.iter().position(|s| *s == current).unwrap_or(0) as i32;
+        let at = TaskState::ALL
+            .iter()
+            .position(|s| *s == current)
+            .unwrap_or(0) as i32;
         let next = at.saturating_add(delta);
         if next < 0 || next as usize >= TaskState::ALL.len() {
             return;
@@ -497,6 +518,25 @@ impl App {
             let (id, title) = (task.id, task.title.clone());
             self.begin_line(LineEdit::Task(id), title);
         }
+    }
+
+    pub(super) fn open_task_brief(&mut self) {
+        let Some((project, _, feature, id)) = self.task_target() else {
+            return self.report("no task selected");
+        };
+        let Some(task) = self.selected_task() else {
+            return self.report("no task selected");
+        };
+        let view = crate::notes::NoteView::task(
+            project,
+            &feature,
+            id,
+            task.title.clone(),
+            task.body.as_deref().unwrap_or_default(),
+        );
+        self.notes = Some(view);
+        self.overlay = Some(Overlay::Notes);
+        self.focus = Focus::Overlay;
     }
 
     fn task_target(
@@ -640,7 +680,11 @@ impl App {
         ) else {
             return;
         };
-        let _ = self.out.send(ClientMsg::RemoveFeature { project, checkout, slug });
+        let _ = self.out.send(ClientMsg::RemoveFeature {
+            project,
+            checkout,
+            slug,
+        });
     }
 
     /// Accepts the selected feature, or reopens one already accepted.

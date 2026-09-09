@@ -493,7 +493,7 @@ impl App {
         // A brief's target points at the project so nothing reading it
         // has to branch; ticking would therefore write a checkbox into the
         // project's note, which is not where the cursor is.
-        if view.brief.is_some() {
+        if view.brief.is_some() || view.task.is_some() {
             return self.report("a brief has no checkboxes — its work is in the tasks");
         }
         let Some((line, state)) = view.toggle_here() else {
@@ -618,7 +618,8 @@ impl App {
             KeyCode::Char('g') | KeyCode::Home => self.move_in_feature(i32::MIN),
             KeyCode::Char('G') | KeyCode::End => self.move_in_feature(i32::MAX),
 
-            KeyCode::Char('e') | KeyCode::Enter => self.edit_in_feature(),
+            KeyCode::Char('e') => self.edit_in_feature(),
+            KeyCode::Enter => self.open_in_feature(),
             KeyCode::Char('a') => self.add_in_feature(),
             KeyCode::Char('x') => self.drop_in_feature(),
             KeyCode::Char('R') => self.begin_feature_rename(),

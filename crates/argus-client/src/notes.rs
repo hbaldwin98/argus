@@ -32,6 +32,8 @@ pub struct NoteView {
     /// pointing at the project so nothing that reads it has to care; the
     /// send path is what branches.
     pub brief: Option<(argus_protocol::ProjectId, String)>,
+    /// Set when what is open is a task's multiline brief.
+    pub task: Option<(argus_protocol::ProjectId, String, i64)>,
     /// What the note is about, for the window title. Carried rather than
     /// looked up so the title survives the row leaving the tree.
     pub title: String,
@@ -64,7 +66,29 @@ impl NoteView {
     ) -> NoteView {
         NoteView {
             brief: Some((project, slug.to_string())),
-            ..NoteView::new(&Note::new(NoteTarget::Project(project), body.to_string()), title)
+            task: None,
+            ..NoteView::new(
+                &Note::new(NoteTarget::Project(project), body.to_string()),
+                title,
+            )
+        }
+    }
+
+    /// A task's brief, opened in the note editor.
+    pub fn task(
+        project: argus_protocol::ProjectId,
+        feature: &str,
+        id: i64,
+        title: String,
+        body: &str,
+    ) -> NoteView {
+        NoteView {
+            brief: None,
+            task: Some((project, feature.to_string(), id)),
+            ..NoteView::new(
+                &Note::new(NoteTarget::Project(project), body.to_string()),
+                title,
+            )
         }
     }
 
@@ -72,6 +96,7 @@ impl NoteView {
         NoteView {
             target: note.target,
             brief: None,
+            task: None,
             title,
             lines: split(&note.body),
             mode: NoteMode::View,
@@ -119,7 +144,11 @@ impl NoteView {
             self.line().to_string()
         };
         if text.trim().is_empty() {
-            return Err(if whole { "note is empty" } else { "line is empty" });
+            return Err(if whole {
+                "note is empty"
+            } else {
+                "line is empty"
+            });
         }
         Ok(text)
     }
@@ -447,7 +476,14 @@ mod tests {
         for c in "- [x] two".chars() {
             v.insert_char(c);
         }
-        assert_eq!(v.counts(), NoteCounts { open: 1, done: 1, pinned: 0 });
+        assert_eq!(
+            v.counts(),
+            NoteCounts {
+                open: 1,
+                done: 1,
+                pinned: 0
+            }
+        );
     }
 
     #[test]

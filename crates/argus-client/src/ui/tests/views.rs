@@ -35,8 +35,10 @@ fn a_digit_opens_its_view_over_the_whole_content_area() {
 
     press(&mut app, View::Feature.digit());
     let buf = draw_at(&mut app, 100, 30);
-    let out = lines(&buf).join("
-");
+    let out = lines(&buf).join(
+        "
+",
+    );
 
     assert_eq!(app.view, View::Feature);
     assert!(
@@ -86,7 +88,11 @@ fn a_view_does_not_stop_the_panes_running_behind_it() {
         subscribed,
         "switching views is a change of surface, not of what is running"
     );
-    assert_eq!(app.focus, Focus::View, "but the keys stop reaching the pane");
+    assert_eq!(
+        app.focus,
+        Focus::View,
+        "but the keys stop reaching the pane"
+    );
 }
 
 #[test]
@@ -107,7 +113,11 @@ fn clicking_a_tab_opens_it() {
     });
 
     assert_eq!(app.view, View::Feature);
-    assert_eq!(app.focus, Focus::View, "clicking a tab hands it the keyboard");
+    assert_eq!(
+        app.focus,
+        Focus::View,
+        "clicking a tab hands it the keyboard"
+    );
 }
 
 #[test]
@@ -176,7 +186,10 @@ fn the_board_draws_a_decision_under_the_one_that_constrained_it() {
     );
     let child = out[top + 2].clone();
     assert!(child.contains("└─ #2 wal mode"), "{child:?}");
-    assert!(out[top + 1].contains('│'), "the branch crosses the detail row");
+    assert!(
+        out[top + 1].contains('│'),
+        "the branch crosses the detail row"
+    );
 }
 
 #[test]
@@ -191,9 +204,21 @@ fn sibling_and_nested_decisions_draw_a_connected_tree() {
     let out = lines(&buf);
     let top = app.layout.feature_decisions.inner.y as usize;
 
-    assert!(out[top + 2].contains("├─ #2 first child"), "{:?}", out[top + 2]);
-    assert!(out[top + 4].contains("│  └─ #3 grandchild"), "{:?}", out[top + 4]);
-    assert!(out[top + 6].contains("└─ #4 last child"), "{:?}", out[top + 6]);
+    assert!(
+        out[top + 2].contains("├─ #2 first child"),
+        "{:?}",
+        out[top + 2]
+    );
+    assert!(
+        out[top + 4].contains("│  └─ #3 grandchild"),
+        "{:?}",
+        out[top + 4]
+    );
+    assert!(
+        out[top + 6].contains("└─ #4 last child"),
+        "{:?}",
+        out[top + 6]
+    );
 }
 
 #[test]
@@ -219,8 +244,10 @@ fn a_superseded_decision_keeps_its_place_and_says_what_replaced_it() {
         decision(2, None, "key notes by path"),
     ]);
     let buf = draw_at(&mut app, 100, 30);
-    let out = lines(&buf).join("
-");
+    let out = lines(&buf).join(
+        "
+",
+    );
 
     assert!(out.contains("#1 key notes by id"), "{out}");
     assert!(out.contains("superseded by #2"), "{out}");
@@ -238,8 +265,10 @@ fn the_board_scrolls_to_keep_the_selection_on_screen() {
     app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
     app.on_key(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE));
     let buf = draw_at(&mut app, 100, 30);
-    let out = lines(&buf).join("
-");
+    let out = lines(&buf).join(
+        "
+",
+    );
 
     assert_eq!(app.decision_sel, 39);
     assert!(out.contains("#40"), "the last row is drawn: {out}");
@@ -290,7 +319,10 @@ fn the_board_draws_one_features_decisions_and_offers_the_others() {
     );
 
     let out = lines(&draw_at(&mut app, 100, 30)).join("\n");
-    assert!(out.contains("Notes storage"), "both features are offered: {out}");
+    assert!(
+        out.contains("Notes storage"),
+        "both features are offered: {out}"
+    );
     assert!(out.contains("The pty"), "{out}");
     assert!(out.contains("one row per note"), "{out}");
     assert!(
@@ -315,7 +347,10 @@ fn decisions_from_before_features_are_kept_on_a_row_of_their_own() {
     );
 
     let out = lines(&draw_at(&mut app, 100, 30)).join("\n");
-    assert!(out.contains("before features"), "nothing is silently lost: {out}");
+    assert!(
+        out.contains("before features"),
+        "nothing is silently lost: {out}"
+    );
     app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
     let out = lines(&draw_at(&mut app, 100, 30)).join("\n");
     assert!(out.contains("sqlite"), "{out}");
@@ -334,11 +369,16 @@ fn a_board_for_another_project_is_dropped_rather_than_drawn() {
     )));
     press(&mut app, View::Feature.digit());
     let buf = draw_at(&mut app, 100, 30);
-    let out = lines(&buf).join("
-");
+    let out = lines(&buf).join(
+        "
+",
+    );
 
     assert!(!out.contains("not ours"), "{out}");
-    assert!(out.contains("nothing decided under this feature yet"), "{out}");
+    assert!(
+        out.contains("nothing decided under this feature yet"),
+        "{out}"
+    );
 }
 
 #[test]
@@ -359,7 +399,10 @@ fn a_click_on_the_board_stays_in_the_view_and_picks_the_row() {
         Focus::View,
         "the board is not the pane whose column used to be there"
     );
-    assert_eq!(app.decision_sel, 2, "and the row clicked is the row selected");
+    assert_eq!(
+        app.decision_sel, 2,
+        "and the row clicked is the row selected"
+    );
 }
 
 #[test]
@@ -429,7 +472,6 @@ fn click(app: &mut App, column: u16, row: u16) {
         modifiers: KeyModifiers::NONE,
     });
 }
-
 
 fn carded(slug: &str, title: &str, state: argus_protocol::FeatureState) -> argus_protocol::Feature {
     argus_protocol::Feature {
@@ -561,7 +603,10 @@ fn the_brief_the_tasks_and_the_decisions_are_all_the_feature_you_selected() {
     assert_eq!(asked, vec!["pty".to_string()]);
 
     let out = lines(&draw_at(&mut app, 120, 30)).join("\n");
-    assert!(out.contains("one reader thread owns it"), "the brief: {out}");
+    assert!(
+        out.contains("one reader thread owns it"),
+        "the brief: {out}"
+    );
     assert!(out.contains("one reader thread"), "the decisions: {out}");
     assert!(
         !out.contains("one row per note"),
@@ -573,7 +618,10 @@ fn the_brief_the_tasks_and_the_decisions_are_all_the_feature_you_selected() {
 /// `app_with_tree` deliberately throws away.
 fn feature_view_watching(
     features: Vec<argus_protocol::Feature>,
-) -> (App, tokio::sync::mpsc::UnboundedReceiver<argus_protocol::ClientMsg>) {
+) -> (
+    App,
+    tokio::sync::mpsc::UnboundedReceiver<argus_protocol::ClientMsg>,
+) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let mut app = App::new(tx);
     app.on_server_msg(argus_protocol::ServerMsg::Tree(super::tree()));
@@ -638,6 +686,7 @@ fn task(id: i64, title: &str, state: argus_protocol::TaskState) -> argus_protoco
         id,
         feature: "notes".into(),
         title: title.to_string(),
+        body: None,
         state,
         claimed_by: None,
         external: None,
@@ -650,7 +699,10 @@ fn task(id: i64, title: &str, state: argus_protocol::TaskState) -> argus_protoco
 /// The feature view with the keys in its tasks, and its messages readable.
 fn tasks_watching(
     tasks: Vec<argus_protocol::Task>,
-) -> (App, tokio::sync::mpsc::UnboundedReceiver<argus_protocol::ClientMsg>) {
+) -> (
+    App,
+    tokio::sync::mpsc::UnboundedReceiver<argus_protocol::ClientMsg>,
+) {
     let (mut app, rx) = feature_view_watching(vec![carded(
         "notes",
         "Notes storage",
@@ -696,6 +748,63 @@ fn a_task_is_one_row_with_its_state_marked_on_it() {
 }
 
 #[test]
+fn only_the_selected_tasks_brief_is_expanded() {
+    use argus_protocol::TaskState::*;
+    let mut first = task(1, "port the parser", Todo);
+    first.body = Some("Accept multiline input.\nVerify Unicode boundaries.".into());
+    let mut second = task(2, "wire the resize path", Doing);
+    second.body = Some("This stays hidden until selected.".into());
+    let (mut app, _rx) = tasks_watching(vec![first, second]);
+
+    let out = lines(&draw_at(&mut app, 120, 30)).join("\n");
+    assert!(out.contains("Accept multiline input."), "{out}");
+    assert!(out.contains("Verify Unicode boundaries."), "{out}");
+    assert!(!out.contains("This stays hidden until selected."), "{out}");
+}
+
+#[test]
+fn enter_opens_a_task_brief_and_saving_replaces_it() {
+    use argus_protocol::TaskState::*;
+    let mut task = task(7, "port the parser", Todo);
+    task.body = Some("Accept multiline input.".into());
+    let (mut app, mut rx) = tasks_watching(vec![task]);
+    while rx.try_recv().is_ok() {}
+
+    app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let view = app.notes.as_ref().expect("the task brief is open");
+    assert_eq!(
+        view.task
+            .as_ref()
+            .map(|(_, feature, id)| (feature.as_str(), *id)),
+        Some(("notes", 7))
+    );
+    assert_eq!(view.body(), "Accept multiline input.");
+
+    app.on_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
+    for c in " Verify boundaries.".chars() {
+        app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    let sent: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        sent.iter().any(|message| matches!(
+            message,
+            argus_protocol::ClientMsg::SetTaskBody { feature, id: 7, body, .. }
+                if feature == "notes" && body.contains("Verify boundaries.")
+        )),
+        "the brief is replaced whole: {sent:?}"
+    );
+    assert!(
+        !sent.iter().any(|message| matches!(
+            message,
+            argus_protocol::ClientMsg::SetNote { .. }
+                | argus_protocol::ClientMsg::SetFeatureBody { .. }
+        )),
+        "a task brief must not be saved as another document: {sent:?}"
+    );
+}
+
+#[test]
 fn moving_a_task_asks_the_daemon_and_follows_it_there() {
     use argus_protocol::TaskState::*;
     let (mut app, mut rx) = tasks_watching(vec![task(1, "port the parser", Todo)]);
@@ -707,7 +816,11 @@ fn moving_a_task_asks_the_daemon_and_follows_it_there() {
     assert!(
         matches!(
             sent.as_slice(),
-            [argus_protocol::ClientMsg::MoveTask { id: 1, state: Doing, .. }]
+            [argus_protocol::ClientMsg::MoveTask {
+                id: 1,
+                state: Doing,
+                ..
+            }]
         ),
         "{sent:?}"
     );
@@ -836,7 +949,11 @@ fn escape_abandons_the_line_rather_than_the_view() {
     app.on_key(KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE));
     app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     assert!(app.line.is_none());
-    assert_eq!(app.view, View::Feature, "the first escape only put the line away");
+    assert_eq!(
+        app.view,
+        View::Feature,
+        "the first escape only put the line away"
+    );
     assert!(rx.try_recv().is_err(), "an abandoned line writes nothing");
 
     app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
@@ -856,7 +973,10 @@ fn each_panel_advertises_its_own_keys_rather_than_the_spines() {
     // The spine's own bar, for something to be different from.
     press(&mut app, '1');
     let spine = bar(&draw_at(&mut app, 130, 20));
-    assert!(spine.contains("n add"), "the spine offers its own keys: {spine}");
+    assert!(
+        spine.contains("n add"),
+        "the spine offers its own keys: {spine}"
+    );
 
     press(&mut app, View::Feature.digit());
     let features = bar(&draw_at(&mut app, 130, 20));
@@ -935,7 +1055,10 @@ fn e_opens_the_brief_in_the_editor_and_saving_replaces_it() {
 
     app.on_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
     let view = app.notes.as_ref().expect("the brief is open");
-    assert_eq!(view.brief.as_ref().map(|(_, slug)| slug.as_str()), Some("pty"));
+    assert_eq!(
+        view.brief.as_ref().map(|(_, slug)| slug.as_str()),
+        Some("pty")
+    );
     assert!(
         view.body().contains("The reader thread owns the handle"),
         "it opens on what is already written"
@@ -1078,7 +1201,11 @@ fn typing_a_feature_name_does_not_work_the_board_underneath() {
     assert_eq!(app.line.as_ref().map(|i| i.text.as_str()), Some("xqsL"));
 
     app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-    assert_eq!(app.view, View::Feature, "the first escape only put the line away");
+    assert_eq!(
+        app.view,
+        View::Feature,
+        "the first escape only put the line away"
+    );
 }
 
 #[test]
@@ -1150,7 +1277,6 @@ fn nothing_moving_means_no_frame_is_owed() {
     );
 }
 
-
 #[test]
 fn focus_travels_between_columns_rather_than_snapping() {
     let mut app = app_with_tree();
@@ -1217,7 +1343,11 @@ fn a_long_decision(id: i64) -> argus_protocol::Decision {
              and a row that renumbers underneath a board is the one thing a board cannot take"
                 .into(),
         ),
-        ..decision(id, None, "a choice whose title is itself long enough to run past the card edge")
+        ..decision(
+            id,
+            None,
+            "a choice whose title is itself long enough to run past the card edge",
+        )
     }
 }
 
@@ -1309,16 +1439,12 @@ fn an_expanded_row_does_not_push_itself_off_the_bottom() {
     );
 }
 
-const LONG_TITLE: &str =
-    "rewrite the checkout picker so it remembers the directory you came from";
+const LONG_TITLE: &str = "rewrite the checkout picker so it remembers the directory you came from";
 
 #[test]
 fn the_task_you_are_on_shows_its_whole_title() {
     use argus_protocol::TaskState::*;
-    let (mut app, _rx) = tasks_watching(vec![
-        task(1, LONG_TITLE, Todo),
-        task(2, LONG_TITLE, Todo),
-    ]);
+    let (mut app, _rx) = tasks_watching(vec![task(1, LONG_TITLE, Todo), task(2, LONG_TITLE, Todo)]);
 
     // Narrow enough that the title has to wrap; at a width where it fits
     // on one row there is nothing for expansion to do.
@@ -1401,16 +1527,28 @@ fn dump_feature() {
                 argus_protocol::Task {
                     feature: "auth".into(),
                     claimed_by: Some("sess-1".into()),
-                    ..task(1, "carry the token through the pump", argus_protocol::TaskState::Doing)
+                    ..task(
+                        1,
+                        "carry the token through the pump",
+                        argus_protocol::TaskState::Doing,
+                    )
                 },
                 argus_protocol::Task {
                     feature: "auth".into(),
                     external: Some("ORION-412".into()),
-                    ..task(2, "test reconnect after a daemon restart", argus_protocol::TaskState::Todo)
+                    ..task(
+                        2,
+                        "test reconnect after a daemon restart",
+                        argus_protocol::TaskState::Todo,
+                    )
                 },
                 argus_protocol::Task {
                     feature: "auth".into(),
-                    ..task(3, "pick a signing algorithm", argus_protocol::TaskState::Done)
+                    ..task(
+                        3,
+                        "pick a signing algorithm",
+                        argus_protocol::TaskState::Done,
+                    )
                 },
             ],
         },

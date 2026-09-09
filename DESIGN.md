@@ -1016,11 +1016,14 @@ A feature says what is being built and its decision tree says why it is being bu
 Neither says what is *left* to do, which is what a human actually hands an agent. So a feature
 carries a list of tasks, drawn as the middle panel of the feature view.
 
-A task is a row, not a checkbox line in the feature's document. The note checkbox already has three
-states and an agent write path, but it is addressed by line number, and a line number moves whenever
+A task is a row, not a checkbox line in the feature's document. Its title stays a compact line, and
+an optional multiline brief carries context, boundaries, acceptance criteria and verification when
+the title is not enough. The selected row expands to show that brief; Enter opens it in the same
+multiline editor used for feature briefs, while `e` keeps the fast title editor. The note checkbox
+already has three states and an agent write path, but it is addressed by line number, and a line number moves whenever
 the text around it is edited — which is the one thing a list cannot take, since a row has to stay
 the same row while a human rewrites the list. Schema v8's `task` holds the title, the state, the
-claim, a `position` and an `external` key.
+claim, a `position` and an `external` key; schema v11 adds its optional body.
 
 The states are still todo, doing and done, and unlike the feature columns they sat beside they are
 maintained by whoever is doing the work: an agent takes a task up and finishes it as part of the
@@ -1038,8 +1041,8 @@ is why Argus works the same with any of them and needs credentials for none. `ar
 Both sides write, and here they write the same things — there is no acceptance step and so no move
 either side is refused. That ceremony belongs to the feature the tasks are under, which is where a
 human accepts the work as a whole. An agent reads with `argus-hook task` and writes with `task add`,
-`task doing <id>`, `task done <id>`, `task todo <id>`, `task retitle <id> <text>` and `task drop
-<id>`; the states are named as verbs rather than hidden behind a `move`, so what an agent types is
+`task doing <id>`, `task done <id>`, `task todo <id>`, `task retitle <id> <text>`, `task brief <id>
+<text>` and `task drop <id>`; the states are named as verbs rather than hidden behind a `move`, so what an agent types is
 what a reader of the transcript understands happened. Taking a task up is what claims it and
 finishing it is what releases it, so a row always says who is on it without anyone claiming by hand.
 

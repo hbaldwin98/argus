@@ -64,7 +64,9 @@ impl App {
     /// note, so the project's stands in.
     pub(super) fn open_notes(&mut self) {
         let target = match self.focus {
-            Focus::Projects => self.current_project().map(|p| (NoteTarget::Project(p.id), p.name.clone())),
+            Focus::Projects => self
+                .current_project()
+                .map(|p| (NoteTarget::Project(p.id), p.name.clone())),
             _ => self
                 .current_checkout()
                 .map(|c| (NoteTarget::Checkout(c.id), c.name.clone()))
@@ -96,19 +98,27 @@ impl App {
         }
         let target = view.target;
         let brief = view.brief.clone();
+        let task = view.task.clone();
         let body = view.body();
         // Marked sent before the answer arrives: the daemon echoes every
         // write back, and a view still flagged dirty would refuse its own
         // echo forever.
         view.saved();
-        let _ = self.out.send(match brief {
-            Some((project, slug)) => ClientMsg::SetFeatureBody {
+        let _ = self.out.send(match (task, brief) {
+            (Some((project, feature, id)), _) => ClientMsg::SetTaskBody {
+                project,
+                checkout: checkout.expect("a task brief belongs to the selected checkout"),
+                feature,
+                id,
+                body,
+            },
+            (None, Some((project, slug))) => ClientMsg::SetFeatureBody {
                 project,
                 checkout: checkout.expect("a feature brief belongs to the selected checkout"),
                 slug,
                 body,
             },
-            None => ClientMsg::SetNote { target, body },
+            (None, None) => ClientMsg::SetNote { target, body },
         });
     }
 
@@ -118,7 +128,7 @@ impl App {
         let Some(view) = &self.notes else {
             return;
         };
-        if view.brief.is_some() {
+        if view.brief.is_some() || view.task.is_some() {
             return self.report("a brief is context an agent already reads on its own");
         }
         let target = view.target;
@@ -258,7 +268,9 @@ impl App {
             Drill::Shown => {}
             Drill::Fetch(commit) => {
                 self.report("loading files…");
-                let _ = self.out.send(ClientMsg::ListCommitFiles { checkout, commit });
+                let _ = self
+                    .out
+                    .send(ClientMsg::ListCommitFiles { checkout, commit });
             }
         }
     }

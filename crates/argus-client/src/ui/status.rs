@@ -60,14 +60,18 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             PickerKind::ReviewRecipient { .. } => {
                 &["j/k move   enter send   esc cancel", "enter send  esc"]
             }
-            PickerKind::NoteRecipient { .. } => {
-                &["j/k move   enter forward   esc cancel", "enter forward  esc"]
-            }
+            PickerKind::NoteRecipient { .. } => &[
+                "j/k move   enter forward   esc cancel",
+                "enter forward  esc",
+            ],
         };
         (hints, th.dim)
     } else if app.prompt.is_some() {
         (
-            &["type to edit   enter confirm   esc cancel", "enter confirm  esc"][..],
+            &[
+                "type to edit   enter confirm   esc cancel",
+                "enter confirm  esc",
+            ][..],
             th.dim,
         )
     } else if app.leader_pending {
@@ -97,7 +101,11 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             .as_ref()
             .is_some_and(|v| v.review.commit.is_some())
             && app.history.is_some();
-        let split = if app.review_split { "s unified" } else { "s split" };
+        let split = if app.review_split {
+            "s unified"
+        } else {
+            "s split"
+        };
         let base = if from_history {
             "h history"
         } else {
@@ -174,9 +182,9 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 ),
                 FeaturePanel::Tasks => (
                     &[
-                        "h/l panels  j/k move  a add  e rewrite  H/L todo→doing→done  J/K order  x drop  q spine",
-                        "h/l panels  j/k move  a add  e rewrite  H/L move  J/K order  x drop  q",
-                        "j/k  a add  e rewrite  H/L move  q",
+                        "h/l panels  j/k move  a add  e title  enter brief  H/L todo→doing→done  J/K order  x drop  q spine",
+                        "h/l panels  j/k move  a add  e title  enter brief  H/L move  J/K order  x drop  q",
+                        "j/k  a add  e title  enter brief  H/L move  q",
                     ][..],
                     th.dim,
                 ),
