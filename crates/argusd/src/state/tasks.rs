@@ -199,9 +199,10 @@ impl Daemon {
     pub fn task_list_for_client(
         &self,
         project: ProjectId,
+        checkout: CheckoutId,
         feature: &str,
     ) -> anyhow::Result<TaskList> {
-        let (name, key) = self.client_artifact_scope(project)?;
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
         Ok(TaskList {
             tasks: self.store.tasks(&key, feature)?,
             project_name: name,
@@ -212,10 +213,11 @@ impl Daemon {
     pub fn add_task_for_client(
         &self,
         project: ProjectId,
+        checkout: CheckoutId,
         feature: &str,
         write: TaskWrite,
     ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project)?;
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
         let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
         let at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -229,11 +231,12 @@ impl Daemon {
     pub fn move_task_for_client(
         &self,
         project: ProjectId,
+        checkout: CheckoutId,
         feature: &str,
         id: i64,
         state: TaskState,
     ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project)?;
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
         self.store.move_task(&key, id, state, None)?;
         self.broadcast_tasks(&name, &key, feature);
         Ok(())
@@ -242,11 +245,12 @@ impl Daemon {
     pub fn retitle_task_for_client(
         &self,
         project: ProjectId,
+        checkout: CheckoutId,
         feature: &str,
         id: i64,
         title: &str,
     ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project)?;
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
         self.store.retitle_task(&key, id, title)?;
         self.broadcast_tasks(&name, &key, feature);
         Ok(())
@@ -255,10 +259,11 @@ impl Daemon {
     pub fn remove_task_for_client(
         &self,
         project: ProjectId,
+        checkout: CheckoutId,
         feature: &str,
         id: i64,
     ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project)?;
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
         self.store.remove_task(&key, id)?;
         self.broadcast_tasks(&name, &key, feature);
         Ok(())
@@ -267,11 +272,12 @@ impl Daemon {
     pub fn reorder_task_for_client(
         &self,
         project: ProjectId,
+        checkout: CheckoutId,
         feature: &str,
         id: i64,
         to: i64,
     ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project)?;
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
         self.store.reorder_task(&key, id, to)?;
         self.broadcast_tasks(&name, &key, feature);
         Ok(())

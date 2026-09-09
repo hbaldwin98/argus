@@ -87,6 +87,7 @@ impl App {
 
     /// Sends the edited body if it has changed since the last write.
     pub(super) fn save_notes(&mut self) {
+        let checkout = self.current_checkout().map(|checkout| checkout.id);
         let Some(view) = &mut self.notes else {
             return;
         };
@@ -103,6 +104,7 @@ impl App {
         let _ = self.out.send(match brief {
             Some((project, slug)) => ClientMsg::SetFeatureBody {
                 project,
+                checkout: checkout.expect("a feature brief belongs to the selected checkout"),
                 slug,
                 body,
             },

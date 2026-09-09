@@ -371,14 +371,15 @@ impl App {
     }
 
     pub(super) fn ask_for_tasks(&mut self) {
-        let (Some(project), Some(feature)) = (
+        let (Some(project), Some(checkout), Some(feature)) = (
             self.board.as_ref().and_then(|b| b.project),
+            self.current_checkout().map(|checkout| checkout.id),
             self.feature_slug(),
         ) else {
             self.tasks = None;
             return;
         };
-        let _ = self.out.send(ClientMsg::GetTasks { project, feature });
+        let _ = self.out.send(ClientMsg::GetTasks { project, checkout, feature });
     }
 
     pub(super) fn clamp_task_selection(&mut self) {
@@ -423,11 +424,12 @@ impl App {
             return;
         }
         let state = TaskState::ALL[next as usize];
-        let Some((project, feature, id)) = self.task_target() else {
+        let Some((project, checkout, feature, id)) = self.task_target() else {
             return;
         };
         let _ = self.out.send(ClientMsg::MoveTask {
             project,
+            checkout,
             feature,
             id,
             state,
@@ -444,11 +446,12 @@ impl App {
     }
 
     pub(super) fn drop_selected_task(&mut self) {
-        let Some((project, feature, id)) = self.task_target() else {
+        let Some((project, checkout, feature, id)) = self.task_target() else {
             return;
         };
         let _ = self.out.send(ClientMsg::RemoveTask {
             project,
+            checkout,
             feature,
             id,
         });
@@ -463,7 +466,7 @@ impl App {
         let Some(position) = self.selected_task().map(|t| t.position) else {
             return;
         };
-        let Some((project, feature, id)) = self.task_target() else {
+        let Some((project, checkout, feature, id)) = self.task_target() else {
             return;
         };
         let last = self.feature_tasks().len() as i64 - 1;
@@ -473,6 +476,7 @@ impl App {
         }
         let _ = self.out.send(ClientMsg::ReorderTask {
             project,
+            checkout,
             feature,
             id,
             to,
@@ -495,11 +499,19 @@ impl App {
         }
     }
 
-    fn task_target(&self) -> Option<(argus_protocol::ProjectId, String, i64)> {
+    fn task_target(
+        &self,
+    ) -> Option<(
+        argus_protocol::ProjectId,
+        argus_protocol::CheckoutId,
+        String,
+        i64,
+    )> {
         let project = self.board.as_ref().and_then(|b| b.project)?;
+        let checkout = self.current_checkout()?.id;
         let feature = self.feature_slug()?;
         let id = self.selected_task()?.id;
-        Some((project, feature, id))
+        Some((project, checkout, feature, id))
     }
 
     // ---- decisions ---------------------------------------------------
@@ -579,25 +591,32 @@ impl App {
         let Some(project) = self.board.as_ref().and_then(|b| b.project) else {
             return;
         };
+        let Some(checkout) = self.current_checkout().map(|checkout| checkout.id) else {
+            return;
+        };
         let feature = self.feature_slug();
         let msg = match (input.what, feature) {
             (LineEdit::NewFeature, _) => ClientMsg::OpenFeature {
                 project,
+                checkout,
                 write: argus_protocol::FeatureWrite { title, body: None },
             },
             (LineEdit::Feature(slug), _) => ClientMsg::RenameFeature {
                 project,
+                checkout,
                 slug,
                 title,
             },
             (LineEdit::Task(id), Some(feature)) => ClientMsg::RetitleTask {
                 project,
+                checkout,
                 feature,
                 id,
                 title,
             },
             (LineEdit::NewTask, Some(feature)) => ClientMsg::AddTask {
                 project,
+                checkout,
                 feature,
                 write: argus_protocol::TaskWrite {
                     title,
@@ -614,13 +633,14 @@ impl App {
     /// Removes the selected feature. Its decisions survive as unfiled; the
     /// daemon is where that rule lives, and the push is what redraws it.
     pub(super) fn drop_selected_feature(&mut self) {
-        let (Some(project), Some(slug)) = (
+        let (Some(project), Some(checkout), Some(slug)) = (
             self.board.as_ref().and_then(|b| b.project),
+            self.current_checkout().map(|checkout| checkout.id),
             self.feature_slug(),
         ) else {
             return;
         };
-        let _ = self.out.send(ClientMsg::RemoveFeature { project, slug });
+        let _ = self.out.send(ClientMsg::RemoveFeature { project, checkout, slug });
     }
 
     /// Accepts the selected feature, or reopens one already accepted.
@@ -630,8 +650,9 @@ impl App {
     /// feature is read off the panes running on it and the state of its
     /// tasks, which is why there is one key here and not five columns.
     pub(super) fn toggle_selected_feature_done(&mut self) {
-        let (Some(project), Some(feature)) = (
+        let (Some(project), Some(checkout), Some(feature)) = (
             self.board.as_ref().and_then(|b| b.project),
+            self.current_checkout().map(|checkout| checkout.id),
             self.selected_feature(),
         ) else {
             return;
@@ -643,6 +664,7 @@ impl App {
         };
         let _ = self.out.send(ClientMsg::MoveFeature {
             project,
+            checkout,
             slug: slug.clone(),
             state,
             detail: None,
@@ -776,11 +798,14 @@ impl App {
     /// the view and on `r`, because a client that attached after the last
     /// write has never been pushed one.
     pub(super) fn ask_for_decisions(&mut self) {
-        let Some(project) = self.current_project().map(|p| p.id) else {
+        let (Some(project), Some(checkout)) = (
+            self.current_project().map(|project| project.id),
+            self.current_checkout().map(|checkout| checkout.id),
+        ) else {
             self.board = None;
             return;
         };
-        let _ = self.out.send(ClientMsg::GetDecisions { project });
+        let _ = self.out.send(ClientMsg::GetDecisions { project, checkout });
     }
 
     /// Asks again when the board on screen is not the one the view should

@@ -685,7 +685,11 @@ async fn a_decision_has_nowhere_to_go_until_the_checkout_is_on_a_feature() {
         .unwrap_err()
         .to_string();
     assert!(refused.contains("not on a feature"), "{refused}");
-    assert!(d.decision_board(project).unwrap().decisions.is_empty());
+    assert!(d
+        .decision_board(project, checkout)
+        .unwrap()
+        .decisions
+        .is_empty());
 
     open_feature(&d, agent, "notes storage");
     assert!(d
@@ -746,7 +750,7 @@ async fn an_agent_reads_its_own_features_decisions_and_not_the_projects() {
     assert_eq!(features.features.len(), 2, "the others are still offered");
     // The project-wide board is what the client draws, and keeps both.
     assert_eq!(
-        d.decision_board(d.snapshot()[0].id)
+        d.decision_board(d.snapshot()[0].id, checkout)
             .unwrap()
             .decisions
             .len(),
@@ -820,7 +824,7 @@ async fn a_decision_lands_on_its_projects_board_wherever_the_agent_was() {
         )
         .unwrap();
 
-    let board = d.decision_board(project).unwrap();
+    let board = d.decision_board(project, checkout).unwrap();
     assert_eq!(board.name, d.snapshot()[0].name);
     assert_eq!(
         board
@@ -894,7 +898,11 @@ async fn only_a_live_agent_may_record_a_decision() {
         d.record_agent_decision(PaneId(9999), None, write).is_err(),
         "nor is nobody"
     );
-    assert!(d.decision_board(project).unwrap().decisions.is_empty());
+    assert!(d
+        .decision_board(project, checkout)
+        .unwrap()
+        .decisions
+        .is_empty());
     close_all(&d);
 }
 
@@ -930,7 +938,7 @@ async fn superseding_leaves_the_decision_it_replaced_on_the_board() {
         )
         .unwrap();
 
-    let board = d.decision_board(project).unwrap();
+    let board = d.decision_board(project, checkout).unwrap();
     assert_eq!(
         board.decisions.len(),
         2,
@@ -989,7 +997,7 @@ async fn the_board_reaches_an_agent_whole_and_a_bad_decision_is_refused() {
     assert!(orphan.starts_with("HTTP/1.1 409"), "{orphan}");
 
     assert_eq!(
-        d.decision_board(d.snapshot()[0].id)
+        d.decision_board(d.snapshot()[0].id, checkout)
             .unwrap()
             .decisions
             .len(),
@@ -1011,7 +1019,7 @@ async fn accepting_a_feature_is_the_human_write_and_the_only_one() {
     let slug = open_feature(&d, agent, "streaming the pty");
 
     let state_of = |slug: &str| {
-        d.decision_board(project)
+        d.decision_board(project, checkout)
             .unwrap()
             .features
             .iter()
@@ -1021,16 +1029,13 @@ async fn accepting_a_feature_is_the_human_write_and_the_only_one() {
     };
     assert_eq!(state_of(&slug), FeatureState::Open);
 
-    // The human names the feature rather than being taken to be in any
-    // checkout: they are looking at the project's features, not at one
-    // checkout's.
-    d.move_feature_for_client(project, &slug, FeatureState::Done, None)
+    d.move_feature_for_client(project, checkout, &slug, FeatureState::Done, None)
         .unwrap();
     assert_eq!(state_of(&slug), FeatureState::Done);
 
     // And it is reversible, which is the other half of a state a person
     // sets: an acceptance made in error must not need a new feature.
-    d.move_feature_for_client(project, &slug, FeatureState::Open, None)
+    d.move_feature_for_client(project, checkout, &slug, FeatureState::Open, None)
         .unwrap();
     assert_eq!(state_of(&slug), FeatureState::Open);
     close_all(&d);

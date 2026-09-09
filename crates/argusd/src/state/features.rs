@@ -224,11 +224,12 @@ impl Daemon {
     pub fn move_feature_for_client(
         &self,
         project: ProjectId,
+        checkout: CheckoutId,
         slug: &str,
         state: FeatureState,
         detail: Option<String>,
     ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project)?;
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
         let at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
@@ -257,9 +258,10 @@ impl Daemon {
     pub fn open_feature_for_client(
         &self,
         project: ProjectId,
+        checkout: CheckoutId,
         write: FeatureWrite,
     ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project)?;
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
         let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
         let at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -270,8 +272,13 @@ impl Daemon {
         Ok(())
     }
 
-    pub fn remove_feature_for_client(&self, project: ProjectId, slug: &str) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project)?;
+    pub fn remove_feature_for_client(
+        &self,
+        project: ProjectId,
+        checkout: CheckoutId,
+        slug: &str,
+    ) -> anyhow::Result<()> {
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
         self.store.remove_feature(&key, slug)?;
         self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
         Ok(())
@@ -280,10 +287,11 @@ impl Daemon {
     pub fn rename_feature_for_client(
         &self,
         project: ProjectId,
+        checkout: CheckoutId,
         slug: &str,
         title: &str,
     ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project)?;
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
         self.store.rename_feature(&key, slug, title)?;
         self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
         Ok(())
@@ -293,10 +301,11 @@ impl Daemon {
     pub fn set_feature_body_for_client(
         &self,
         project: ProjectId,
+        checkout: CheckoutId,
         slug: &str,
         body: String,
     ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project)?;
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
         self.store.set_feature_body(&key, slug, &body)?;
         self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
         Ok(())

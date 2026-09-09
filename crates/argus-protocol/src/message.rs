@@ -8,10 +8,10 @@ use serde::{Deserialize, Serialize};
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::decisions::DecisionBoard;
 use crate::features::{FeatureState, FeatureWrite};
-use crate::tasks::{TaskList, TaskState, TaskWrite};
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::notes::{Note, NoteTarget, TodoState};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
+use crate::tasks::{TaskList, TaskState, TaskWrite};
 use crate::tree::{ProjectInfo, WorkspaceInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +152,7 @@ pub enum ClientMsg {
     /// decision hanging off three others means nothing without them.
     GetDecisions {
         project: ProjectId,
+        checkout: CheckoutId,
     },
     /// Accept a feature, or reopen one that was accepted.
     ///
@@ -163,6 +164,7 @@ pub enum ClientMsg {
     /// every client already receives.
     MoveFeature {
         project: ProjectId,
+        checkout: CheckoutId,
         slug: String,
         state: FeatureState,
         detail: Option<String>,
@@ -174,12 +176,14 @@ pub enum ClientMsg {
     /// person wrote down was not cut anywhere yet.
     OpenFeature {
         project: ProjectId,
+        checkout: CheckoutId,
         write: FeatureWrite,
     },
     /// Rename a feature. The title only — the slug is frozen at creation,
     /// because every decision, task and checkout scope points at it.
     RenameFeature {
         project: ProjectId,
+        checkout: CheckoutId,
         slug: String,
         title: String,
     },
@@ -190,6 +194,7 @@ pub enum ClientMsg {
     /// feature it was believed about.
     RemoveFeature {
         project: ProjectId,
+        checkout: CheckoutId,
         slug: String,
     },
     /// Replace a feature's brief.
@@ -199,6 +204,7 @@ pub enum ClientMsg {
     /// is prose, and a document nobody can correct rots.
     SetFeatureBody {
         project: ProjectId,
+        checkout: CheckoutId,
         slug: String,
         body: String,
     },
@@ -207,27 +213,32 @@ pub enum ClientMsg {
     /// under, so there is no whole-project list to want.
     GetTasks {
         project: ProjectId,
+        checkout: CheckoutId,
         feature: String,
     },
     AddTask {
         project: ProjectId,
+        checkout: CheckoutId,
         feature: String,
         write: TaskWrite,
     },
     MoveTask {
         project: ProjectId,
+        checkout: CheckoutId,
         feature: String,
         id: i64,
         state: TaskState,
     },
     RetitleTask {
         project: ProjectId,
+        checkout: CheckoutId,
         feature: String,
         id: i64,
         title: String,
     },
     RemoveTask {
         project: ProjectId,
+        checkout: CheckoutId,
         feature: String,
         id: i64,
     },
@@ -236,6 +247,7 @@ pub enum ClientMsg {
     /// no agent-side equivalent.
     ReorderTask {
         project: ProjectId,
+        checkout: CheckoutId,
         feature: String,
         id: i64,
         to: i64,

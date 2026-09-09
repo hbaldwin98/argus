@@ -21,8 +21,12 @@ use super::*;
 
 impl Daemon {
     /// One project's board, by the id a client holds.
-    pub fn decision_board(&self, project: ProjectId) -> anyhow::Result<DecisionBoard> {
-        let (name, key) = self.client_artifact_scope(project)?;
+    pub fn decision_board(
+        &self,
+        project: ProjectId,
+        checkout: CheckoutId,
+    ) -> anyhow::Result<DecisionBoard> {
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
         Ok(DecisionBoard {
             project: Some(project),
             features: self.store.features(&key)?,

@@ -172,6 +172,7 @@ impl Daemon {
     pub(super) fn client_artifact_scope(
         &self,
         project_id: ProjectId,
+        checkout_id: CheckoutId,
     ) -> anyhow::Result<(String, String)> {
         let inner = self.inner.lock().unwrap();
         let project = inner
@@ -179,14 +180,17 @@ impl Daemon {
             .iter()
             .find(|project| project.id == project_id)
             .ok_or_else(|| anyhow::anyhow!("no such project"))?;
-        let repository = project
+        let (repository, checkout) = project
             .repositories
-            .first()
-            .ok_or_else(|| anyhow::anyhow!("project has no repository"))?;
-        let checkout = repository
-            .checkouts
-            .first()
-            .ok_or_else(|| anyhow::anyhow!("repository has no checkout"))?;
+            .iter()
+            .find_map(|repository| {
+                repository
+                    .checkouts
+                    .iter()
+                    .find(|checkout| checkout.id == checkout_id)
+                    .map(|checkout| (repository, checkout))
+            })
+            .ok_or_else(|| anyhow::anyhow!("checkout is not in this project"))?;
         Ok((
             project.name.clone(),
             repository_artifact_key(repository, checkout),

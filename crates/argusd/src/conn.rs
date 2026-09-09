@@ -289,64 +289,72 @@ fn dispatch_decisions(
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
 ) -> DispatchResult {
     let result = match msg {
-        ClientMsg::GetDecisions { project } => daemon.decision_board(project).map(|board| {
+        ClientMsg::GetDecisions { project, checkout } => daemon.decision_board(project, checkout).map(|board| {
             let _ = out_tx.send(ServerMsg::Decisions(Box::new(board)));
         }),
-        ClientMsg::OpenFeature { project, write } => {
-            daemon.open_feature_for_client(project, write)
+        ClientMsg::OpenFeature { project, checkout, write } => {
+            daemon.open_feature_for_client(project, checkout, write)
         }
         ClientMsg::RenameFeature {
             project,
+            checkout,
             slug,
             title,
-        } => daemon.rename_feature_for_client(project, &slug, &title),
-        ClientMsg::RemoveFeature { project, slug } => {
-            daemon.remove_feature_for_client(project, &slug)
+        } => daemon.rename_feature_for_client(project, checkout, &slug, &title),
+        ClientMsg::RemoveFeature { project, checkout, slug } => {
+            daemon.remove_feature_for_client(project, checkout, &slug)
         }
         ClientMsg::SetFeatureBody {
             project,
+            checkout,
             slug,
             body,
-        } => daemon.set_feature_body_for_client(project, &slug, body),
-        ClientMsg::GetTasks { project, feature } => {
-            daemon.task_list_for_client(project, &feature).map(|list| {
+        } => daemon.set_feature_body_for_client(project, checkout, &slug, body),
+        ClientMsg::GetTasks { project, checkout, feature } => {
+            daemon.task_list_for_client(project, checkout, &feature).map(|list| {
                 let _ = out_tx.send(ServerMsg::Tasks(Box::new(list)));
             })
         }
         ClientMsg::AddTask {
             project,
+            checkout,
             feature,
             write,
-        } => daemon.add_task_for_client(project, &feature, write),
+        } => daemon.add_task_for_client(project, checkout, &feature, write),
         ClientMsg::MoveTask {
             project,
+            checkout,
             feature,
             id,
             state,
-        } => daemon.move_task_for_client(project, &feature, id, state),
+        } => daemon.move_task_for_client(project, checkout, &feature, id, state),
         ClientMsg::RetitleTask {
             project,
+            checkout,
             feature,
             id,
             title,
-        } => daemon.retitle_task_for_client(project, &feature, id, &title),
+        } => daemon.retitle_task_for_client(project, checkout, &feature, id, &title),
         ClientMsg::RemoveTask {
             project,
+            checkout,
             feature,
             id,
-        } => daemon.remove_task_for_client(project, &feature, id),
+        } => daemon.remove_task_for_client(project, checkout, &feature, id),
         ClientMsg::ReorderTask {
             project,
+            checkout,
             feature,
             id,
             to,
-        } => daemon.reorder_task_for_client(project, &feature, id, to),
+        } => daemon.reorder_task_for_client(project, checkout, &feature, id, to),
         ClientMsg::MoveFeature {
             project,
+            checkout,
             slug,
             state,
             detail,
-        } => daemon.move_feature_for_client(project, &slug, state, detail),
+        } => daemon.move_feature_for_client(project, checkout, &slug, state, detail),
         msg => return Err(msg),
     };
     Ok(result)
