@@ -859,6 +859,14 @@ is the handful of choices made about the thing it is about to touch, and everyth
 project-wide board is noise it reads past. So a decision is filed under a feature, and a board is
 read one feature at a time.
 
+The board containing those features defaults to one Git repository and branch. Linked worktrees on
+the same branch share it; another branch or another repository does not. The daemon derives a
+durable key from the repository's shared Git directory and branch name instead of persisting its
+runtime ids. Synthetic and non-Git checkouts use their repository path and checkout name. For work
+that deliberately crosses those boundaries, the pane API accepts an explicit workspace scope,
+selected by `ARGUS_ARTIFACT_SCOPE=workspace` in `argus-hook`. This scope is independent of the open
+workspace in the TUI: opening a workspace changes visibility, not where an artifact is filed.
+
 A feature is stored, not derived: schema v6's `feature` table holds a slug, a title, the document
 body, and the checkout and branch it originated in. The slug is derived from the title once, at
 creation, and made unique by suffix inside the transaction — a title someone later rewords must not
@@ -879,8 +887,10 @@ note — and the work a brief might have listed lives in its tasks now. The deci
 brief above the tree, bounded to a third of the panel, which is the order `argus-hook feature`
 prints them in and the order they are read.
 
-Which feature an agent is on is resolved from the checkout, not from a flag. `feature_scope` maps a
-checkout path to a slug, and a checkout that was never pointed anywhere falls back to the one
+Which feature an agent is on is resolved from the checkout and artifact scope, not from a flag.
+Schema v10's `artifact_feature_scope` maps a scope and checkout path to a slug, so repository-branch
+and workspace work can select different features in the same checkout. A checkout that was never
+pointed anywhere falls back to the one
 feature that originated there — which is what makes worktree-per-feature need no ceremony. The
 fallback deliberately gives up when a checkout has two features to its name: guessing would file a
 decision under whichever happened to be older, which is worse than asking. `decide` from a checkout
@@ -905,8 +915,10 @@ There is no policy flag on these writes, unlike note writes. A note is the human
 agent writing to it needs permission; the board exists for agents to write, is append-only, and
 attributes every row, so there is nothing for a gate to protect.
 
-Clients read the whole project — every feature and every decision — with `ClientMsg::GetDecisions`
-and are pushed `ServerMsg::Decisions` whenever any board changes, since a tree is meant to be
+Clients read the selected checkout's repository-branch board — every feature and every decision in
+that scope — with `ClientMsg::GetDecisions`. Every client artifact request carries both project and
+checkout ids; the daemon validates their relationship and resolves the durable board key. Boards are
+pushed with `ServerMsg::Decisions` whenever that scope changes, since a tree is meant to be
 watched being built and the daemon deliberately does not track which view a client has open; a
 client with another project open drops it by name. `DecisionBoard::scoped` is what narrows that to
 one feature in the client, so switching scope costs no round trip. The tree is drawn two lines per
@@ -916,9 +928,10 @@ their own at the end of the feature list rather than being hidden.
 
 ### The feature view
 
-The one view that is not the spine draws the project's features down the left and whichever one is
-selected, whole, on the right: its brief, the tasks left under it, and the decision tree beneath
-them. That is the order they are read and the order `argus-hook feature` prints them in — a
+The one view that is not the spine draws the selected checkout's repository-branch features down
+the left and whichever one is selected, whole, on the right: its brief, the tasks left under it,
+and the decision tree beneath them. That is the order they are read and the order `argus-hook
+feature` prints them in — a
 decision without what the feature is for explains half of itself, and a task list without either
 says what to do and never why.
 
@@ -1030,7 +1043,7 @@ human accepts the work as a whole. An agent reads with `argus-hook task` and wri
 what a reader of the transcript understands happened. Taking a task up is what claims it and
 finishing it is what releases it, so a row always says who is on it without anyone claiming by hand.
 
-Ids are project-wide and an agent numbers its tasks from what it last read, so every agent-side
+Ids are database-wide and an agent numbers its tasks from what it last read, so every agent-side
 change is refused when the task is not under the feature its checkout is on: a stale id would
 otherwise let one feature's agent tick off another's work by arithmetic.
 

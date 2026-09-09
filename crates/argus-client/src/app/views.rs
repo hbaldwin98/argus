@@ -730,7 +730,7 @@ pub struct FeatureRow {
 pub enum View {
     #[default]
     Spine,
-    /// The project's features, and whichever one is selected read whole:
+    /// The selected repository branch's features, and whichever one is selected read whole:
     /// its brief, what is left to do under it, and why it has the shape it
     /// does.
     Feature,

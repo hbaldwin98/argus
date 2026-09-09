@@ -108,7 +108,7 @@ fn visible_rows(height: u16, grown: usize) -> usize {
 const MAX_BOARD_INDENT: usize = 24;
 
 
-/// The feature view: the project's features, and the one under the cursor
+/// The feature view: the selected repository branch's features, and the one under the cursor
 /// read whole.
 ///
 /// One view rather than three. A brief, what is left to do under it and
@@ -845,4 +845,3 @@ fn render_line(f: &mut Frame, app: &App, prompt: Option<Rect>, th: Theme) {
         row,
     );
 }
-

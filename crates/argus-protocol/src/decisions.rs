@@ -119,7 +119,7 @@ impl DecisionWrite {
 pub struct DecisionBoard {
     pub project: Option<ProjectId>,
     pub name: String,
-    /// The project's features, oldest first. A board is read one feature
+    /// The artifact scope's features, oldest first. A board is read one feature
     /// at a time, so the client needs the list to offer the choice.
     #[serde(default)]
     pub features: Vec<Feature>,

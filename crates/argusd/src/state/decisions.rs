@@ -6,7 +6,7 @@
 //! scoped to a *feature*: a tree still has to be read whole, because a
 //! node hanging off three others says nothing without them, but the tree
 //! that has to be read whole is one feature's, not one project's. The
-//! project-wide board is what the client is pushed, since it draws the
+//! repository-branch board is what the client is pushed, since it draws the
 //! features alongside it; an agent is answered one feature at a time by
 //! `features`.
 //!

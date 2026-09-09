@@ -115,11 +115,11 @@ pub enum Endpoint {
     /// The decision board of the feature this pane's checkout is on, read
     /// whole. A tree with its roots cut off explains nothing, so it is
     /// never trimmed inside a feature — but it is scoped to one, because a
-    /// project-wide board is a pile rather than a reference.
+    /// broad board is a pile rather than a reference.
     Decisions,
     /// One decision appended to that board.
     Decide,
-    /// The project's features, and which one this checkout is on.
+    /// The artifact scope's features, and which one this checkout is on.
     Features,
     /// A change to that: opening a feature, pointing this checkout at one,
     /// or adding a paragraph to its document.

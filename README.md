@@ -406,10 +406,16 @@ The content area holds one view at a time. `1` is the spine — the navigation c
 pane — and `2` is the feature view. A one-row tab strip along the top names them and carries the
 digit that opens each; clicking a tab does the same. Switching views never stops a pane.
 
-The feature view is three panels: the project's features down the left, and the selected one read
-whole on the right — its brief, the tasks left under it, and the decisions taken while building it.
+The feature view is three panels: the selected repository branch's features down the left, and the
+selected one read whole on the right — its brief, the tasks left under it, and the decisions taken
+while building it. A branch sees only its own work by default, including across linked worktrees.
 Every panel is scoped to the same feature, and each feature's line says what is happening to it:
 the agents running in its checkouts, how its tasks stand, and how much has been decided.
+
+Agent helper commands use that same repository-and-branch scope. For a change that intentionally
+crosses repositories or branches, set `ARGUS_ARTIFACT_SCOPE=workspace` for the `argus-hook feature`,
+`task`, `decisions`, and `decide` commands involved. Workspace scope is explicit rather than
+inherited from whichever workspace the TUI currently shows.
 
 | Key | Action |
 |---|---|

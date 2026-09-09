@@ -4,7 +4,7 @@
 //! The decision board used to be one tree per project, which answered
 //! "what has this project ever decided" — a question nobody asks. An agent
 //! picking up work needs the handful of choices made while building the
-//! thing it is about to touch, and everything else on a project-wide board
+//! thing it is about to touch, and everything else on a broad board
 //! is noise it has to read past. So decisions are filed under a feature,
 //! and the feature an agent is on is resolved here.
 //!
@@ -219,7 +219,7 @@ impl Daemon {
     /// the one party that cannot make that call — so the state a feature
     /// is in has exactly one writer. It names the feature outright rather
     /// than resolving one from a checkout: a person is looking at the
-    /// project's features, and whichever checkout they happen to have
+    /// selected repository branch's features, and whichever checkout they have
     /// selected has nothing to do with the row under the cursor.
     pub fn move_feature_for_client(
         &self,

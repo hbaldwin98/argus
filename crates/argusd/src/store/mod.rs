@@ -636,7 +636,7 @@ impl Store {
         Ok(feature)
     }
 
-    /// One project's features, oldest first.
+    /// One artifact scope's features, oldest first.
     pub fn features(&self, project: &str) -> Result<Vec<Feature>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(

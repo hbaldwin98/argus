@@ -1,6 +1,6 @@
 //! Features: the scope a decision belongs to.
 //!
-//! A project-wide decision board answers "what has this project ever
+//! A broad decision board answers "what has this project ever
 //! decided", which is not the question an agent picking up a feature has.
 //! What it needs is the handful of choices made while building the thing
 //! it is about to touch. So a decision is filed under a *feature*, and a

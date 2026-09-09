@@ -170,7 +170,7 @@ impl Daemon {
 
     /// Refuses a task that is not under the feature this checkout is on.
     ///
-    /// Ids are project-wide and an agent numbers its tasks from what it
+    /// Ids are database-wide and an agent numbers its tasks from what it
     /// last read, so a stale id would otherwise let one feature's agent
     /// tick off another's work by arithmetic.
     fn guard_task(

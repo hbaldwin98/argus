@@ -83,6 +83,11 @@ up durable artifacts, and later agents receive the relevant subset without brows
   to append to it, and a view that draws the tree with superseded branches dimmed. Ungated, unlike
   note writes — the board exists for agents to write and attributes every row. A decision is filed
   under the feature its checkout is on, and `decide` from a checkout on none is refused.
+- Feature, decision, and task boards now default to the checkout's repository and branch. Linked
+  worktrees on that branch share a durable board; other branches and repositories do not. The TUI
+  sends its selected checkout with every artifact request, and agent helpers can opt into a shared
+  workspace board with `ARGUS_ARTIFACT_SCOPE=workspace`. Workspace visibility remains separate from
+  artifact scope.
 - The Kanban board is gone (DESIGN.md, "What a feature row says"). Its five columns were the one
   surface in Argus showing an assertion rather than an observation, `argus-hook` never exposed the
   move, and so the only thing that maintained them was a person dragging cards. Schema v9 collapses
@@ -139,7 +144,8 @@ up durable artifacts, and later agents receive the relevant subset without brows
 ## Open Decisions
 
 - True child-process reattachment versus guaranteed termination plus harness resume.
-- Multi-repository work contexts and how their checkout evidence is scoped.
+- How workspace-wide contexts present evidence from several repositories without implying that one
+  checkout owns the whole context.
 - Unix-first delivery versus equal Windows support, now forced by ConPTY and named-pipe behavior
   rather than by state detection.
 - Whether a future GPU client warrants a richer protocol now.
