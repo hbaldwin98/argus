@@ -101,6 +101,9 @@ impl App {
         let mut rows: Vec<FeatureRow> = board
             .features
             .iter()
+            .filter(|feature| {
+                (feature.state == FeatureState::Done) == self.show_archived_features
+            })
             .map(|f| {
                 let (detail, attention) = self.feature_detail(f, board.count_for(Some(&f.slug)));
                 FeatureRow {
@@ -113,7 +116,7 @@ impl App {
             })
             .collect();
         let unfiled = board.count_for(None);
-        if unfiled > 0 {
+        if unfiled > 0 && !self.show_archived_features {
             rows.push(FeatureRow {
                 slug: None,
                 title: "before features".to_string(),
@@ -283,6 +286,24 @@ impl App {
             self.task_sel = 0;
             self.rescope_feature();
         }
+    }
+
+    /// Switches between work in progress and accepted history. A slug is
+    /// preserved when possible; otherwise the newly visible list is safely
+    /// re-scoped before another key can act on it.
+    pub(super) fn toggle_feature_archive(&mut self) {
+        let selected = self.feature_slug();
+        self.show_archived_features = !self.show_archived_features;
+        self.feature_sel = selected
+            .and_then(|slug| {
+                self.feature_rows()
+                    .iter()
+                    .position(|row| row.slug.as_deref() == Some(&slug))
+            })
+            .unwrap_or(0);
+        self.decision_sel = 0;
+        self.task_sel = 0;
+        self.rescope_feature();
     }
 
     // ---- panels ------------------------------------------------------
@@ -713,16 +734,6 @@ impl App {
             state,
             detail: None,
         });
-        // Applied to this client's copy at once so the row answers the
-        // key; the pushed board is what actually makes it true, so a
-        // refusal puts it back to what it really is.
-        if let Some(feature) = self
-            .board
-            .as_mut()
-            .and_then(|b| b.features.iter_mut().find(|f| f.slug == slug))
-        {
-            feature.state = state;
-        }
         self.report(format!("{slug} → {state}"));
     }
 

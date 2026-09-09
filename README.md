@@ -406,13 +406,15 @@ The content area holds one view at a time. `1` is the spine — the navigation c
 pane — and `2` is the feature view. A one-row tab strip along the top names them and carries the
 digit that opens each; clicking a tab does the same. Switching views never stops a pane.
 
-The feature view is three panels: the selected repository branch's features down the left, and the
+The feature view is three panels: the selected repository's features down the left, and the
 selected one read whole on the right — its brief, the tasks left under it, and the decisions taken
-while building it. A branch sees only its own work by default, including across linked worktrees.
+while building it. Features belong to the repository rather than a branch, so they remain available
+after a feature worktree is removed. The active list stays focused on open work; `v` switches to
+accepted feature history without deleting it.
 Every panel is scoped to the same feature, and each feature's line says what is happening to it:
 the agents running in its checkouts, how its tasks stand, and how much has been decided.
 
-Agent helper commands use that same repository-and-branch scope. For a change that intentionally
+Agent helper commands use that same repository scope. For a change that intentionally
 crosses repositories or branches, set `ARGUS_ARTIFACT_SCOPE=workspace` for the `argus-hook feature`,
 `task`, `decisions`, and `decide` commands involved. Workspace scope is explicit rather than
 inherited from whichever workspace the TUI currently shows.
@@ -428,6 +430,8 @@ inherited from whichever workspace the TUI currently shows.
 | `R` | Rename the feature — the title only; its slug is frozen so nothing filed under it is orphaned |
 | `x` | Remove the feature (its decisions survive as unfiled), or drop the selected task |
 | `.` | Accept the feature, or reopen one already accepted. The one state a person sets, and the one an agent cannot |
+| `v` | Switch between active features and accepted history |
+| `m` | Transfer the selected feature from this checkout to another checkout in the repository |
 | `H` / `L` | Move the selected task along todo, doing, done |
 | `J` / `K` | Move the selected task earlier or later in the list |
 | `r` | Re-ask the daemon for all of it |

@@ -652,25 +652,49 @@ fn moves(
 }
 
 #[test]
-fn accepting_a_feature_is_one_key_and_it_goes_back() {
+fn accepted_features_leave_active_work_but_can_be_reopened_from_history() {
     use argus_protocol::FeatureState::*;
     let (mut app, mut rx) = feature_view_watching(vec![feature("notes", "Notes storage")]);
     let _ = moves(&mut rx);
 
     app.on_key(KeyEvent::new(KeyCode::Char('.'), KeyModifiers::NONE));
     assert_eq!(moves(&mut rx), vec![("notes".to_string(), Done)]);
-    assert_eq!(
-        app.selected_feature().map(|f| f.state),
-        Some(Done),
-        "applied here so the row answers the key; the push is what makes it true"
-    );
+    assert_eq!(app.selected_feature().map(|f| f.state), Some(Open));
 
+    let project = app.current_project().unwrap();
+    let (id, name) = (project.id, project.name.clone());
+    let mut accepted = feature("notes", "Notes storage");
+    accepted.state = Done;
+    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(
+        argus_protocol::DecisionBoard {
+            project: Some(id),
+            name,
+            features: vec![accepted],
+            decisions: Vec::new(),
+        },
+    )));
+    assert!(app.feature_rows().is_empty(), "done work leaves the active list");
+
+    app.on_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE));
+    assert_eq!(app.selected_feature().map(|f| f.state), Some(Done));
     app.on_key(KeyEvent::new(KeyCode::Char('.'), KeyModifiers::NONE));
     assert_eq!(
         moves(&mut rx),
         vec![("notes".to_string(), Open)],
         "an acceptance made in error must not need a new feature"
     );
+}
+
+#[test]
+fn archive_view_only_shows_accepted_features() {
+    let open = feature("active", "Active work");
+    let mut done = feature("done", "Accepted work");
+    done.state = argus_protocol::FeatureState::Done;
+    let (mut app, _rx) = feature_view_watching(vec![open, done]);
+
+    assert_eq!(app.feature_rows()[0].title, "Active work");
+    app.on_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE));
+    assert_eq!(app.feature_rows()[0].title, "Accepted work");
 }
 
 #[test]

@@ -113,10 +113,10 @@ pub struct Feature {
     /// before the state existed reads as open rather than failing.
     #[serde(default)]
     pub state: FeatureState,
-    /// Every checkout currently pointed at this feature, plus the one it
-    /// was cut in. Carried so a reader can connect a feature to the panes
-    /// running on it: without it the feature list is an island, describing
-    /// work with no way to see whether anything is happening to it.
+    /// Every checkout currently pointed at this feature. Carried so a reader
+    /// can connect a feature to the panes running on it: without it the
+    /// feature list is an island, describing work with no way to see whether
+    /// anything is happening to it.
     #[serde(default)]
     pub checkouts: Vec<String>,
     /// How its tasks stand. On the feature rather than fetched per row

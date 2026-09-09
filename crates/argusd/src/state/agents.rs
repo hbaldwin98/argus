@@ -18,21 +18,17 @@ impl AgentScope {
     }
 }
 
-fn repository_artifact_key(repository: &Repository, checkout: &Checkout) -> String {
-    let branch = checkout
-        .git
-        .as_ref()
-        .and_then(|git| git.branch.as_deref())
-        .unwrap_or(&checkout.name);
+pub(super) fn repository_artifact_key(repository: &Repository, checkout: &Checkout) -> String {
     let repository_path = repository
         .checkouts
         .first()
         .map(|checkout| checkout.path.as_path())
         .unwrap_or(&checkout.path);
-    let git_dir =
-        crate::git::git_dir(&checkout.path).unwrap_or_else(|| repository_path.to_path_buf());
+    let git_dir = crate::git::git_dir(repository_path)
+        .or_else(|| crate::git::git_dir(&checkout.path))
+        .unwrap_or_else(|| repository_path.to_path_buf());
     let git_dir = git_dir.canonicalize().unwrap_or(git_dir);
-    format!("repository\0{}\0{branch}", git_dir.to_string_lossy())
+    format!("repository\0{}", git_dir.to_string_lossy())
 }
 
 /// The durable identity of the place an agent is running.
@@ -40,7 +36,7 @@ pub(crate) struct AgentScope {
     pub project_name: String,
     pub checkout_path: std::path::PathBuf,
     /// Opaque durable board identity. The separator cannot occur in a Git
-    /// path or branch name, so repository and branch cannot alias.
+    /// path, so repositories cannot alias.
     pub artifact_key: String,
     /// Explicit broad scope for changes spanning repositories or branches.
     pub workspace_artifact_key: String,

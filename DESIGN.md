@@ -859,19 +859,21 @@ is the handful of choices made about the thing it is about to touch, and everyth
 project-wide board is noise it reads past. So a decision is filed under a feature, and a board is
 read one feature at a time.
 
-The board containing those features defaults to one Git repository and branch. Linked worktrees on
-the same branch share it; another branch or another repository does not. The daemon derives a
-durable key from the repository's shared Git directory and branch name instead of persisting its
-runtime ids. Synthetic and non-Git checkouts use their repository path and checkout name. For work
-that deliberately crosses those boundaries, the pane API accepts an explicit workspace scope,
+The board containing those features defaults to one Git repository. Every linked worktree shares it,
+so a feature can move from the primary checkout to a feature worktree and remain readable after that
+worktree is removed. The daemon derives a durable key from the repository's shared Git directory
+instead of persisting its runtime ids. Synthetic and non-Git checkouts use their repository path.
+For work that deliberately crosses repository boundaries, the pane API accepts an explicit workspace scope,
 selected by `ARGUS_ARTIFACT_SCOPE=workspace` in `argus-hook`. This scope is independent of the open
 workspace in the TUI: opening a workspace changes visibility, not where an artifact is filed.
 
 A feature is stored, not derived: schema v6's `feature` table holds a slug, a title, the document
 body, and the checkout and branch it originated in. The slug is derived from the title once, at
 creation, and made unique by suffix inside the transaction — a title someone later rewords must not
-orphan the decisions under it, and two agents opening the same-sounding feature on two branches must
-not silently share a board. The document is the one part that is edited rather than appended to as
+orphan the decisions under it, and two agents opening the same-sounding feature must not silently
+share one scope. Schema v12 merges older branch-keyed boards into their repository board; colliding
+slugs receive deterministic numeric suffixes while tasks, decisions and events follow them. The
+document is the one part that is edited rather than appended to as
 a tree: it is prose both sides write, bounded at 8 KiB, because a brief that has outgrown a screen
 has become the design document it was meant to point at.
 
@@ -888,7 +890,7 @@ brief above the tree, bounded to a third of the panel, which is the order `argus
 prints them in and the order they are read.
 
 Which feature an agent is on is resolved from the checkout and artifact scope, not from a flag.
-Schema v10's `artifact_feature_scope` maps a scope and checkout path to a slug, so repository-branch
+Schema v10's `artifact_feature_scope` maps a scope and checkout path to a slug, so repository
 and workspace work can select different features in the same checkout. A checkout that was never
 pointed anywhere falls back to the one
 feature that originated there — which is what makes worktree-per-feature need no ceremony. The
@@ -915,7 +917,7 @@ There is no policy flag on these writes, unlike note writes. A note is the human
 agent writing to it needs permission; the board exists for agents to write, is append-only, and
 attributes every row, so there is nothing for a gate to protect.
 
-Clients read the selected checkout's repository-branch board — every feature and every decision in
+Clients read the selected checkout's repository board — every feature and every decision in
 that scope — with `ClientMsg::GetDecisions`. Every client artifact request carries both project and
 checkout ids; the daemon validates their relationship and resolves the durable board key. Boards are
 pushed with `ServerMsg::Decisions` whenever that scope changes, since a tree is meant to be
@@ -928,7 +930,7 @@ their own at the end of the feature list rather than being hidden.
 
 ### The feature view
 
-The one view that is not the spine draws the selected checkout's repository-branch features down
+The one view that is not the spine draws the selected checkout's repository features down
 the left and whichever one is selected, whole, on the right: its brief, the tasks left under it,
 and the decision tree beneath them. That is the order they are read and the order `argus-hook
 feature` prints them in — a
@@ -992,12 +994,19 @@ reason it is a table — so `FeatureState::parse` still reads `submitted` and an
 `claimed_by`, `claimed_at`, `blocker` and `evidence` columns are cleared and left in place; nothing
 writes them, and the claim they held is what the panes now say directly.
 
-`done` stays stored and stays the human's. `.` accepts the selected feature and reopens one already
-accepted, over `ClientMsg::MoveFeature`, applied to the client's own copy at once so the row answers
-the key and made true by the pushed board so a refusal puts it back. There is no agent-side move:
+`done` stays stored and stays the human's. The normal list shows open features; `v` replaces it with
+accepted history so completed work remains available without crowding current work. `.` accepts the
+selected feature and reopens one already accepted over `ClientMsg::MoveFeature`; the pushed board is
+the only state change the client trusts. There is no agent-side move:
 the only state left is acceptance, and the agent that did the work is the one party that cannot
 accept it, so the whole action would have been a refusal. `feature_event` still records who moved
 it and what they said.
+
+`m` transfers the selected feature's active checkout association to another checkout in the same
+repository over `ClientMsg::TransferFeature`. The daemon validates both runtime ids, removes the
+source association and writes the destination in one store transaction. This changes where work is
+happening, not where it began: `origin_checkout` and `origin_branch` remain historical. Removing a
+worktree removes neither the repository-owned feature nor its accepted history.
 
 A feature is opened with `a`, renamed with `R`, and removed with `x` — the list is where a person
 writes down work, so it cannot be a surface only agents can add to. A feature opened here records

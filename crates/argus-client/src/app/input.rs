@@ -623,6 +623,12 @@ impl App {
             KeyCode::Char('a') => self.add_in_feature(),
             KeyCode::Char('x') => self.drop_in_feature(),
             KeyCode::Char('R') => self.begin_feature_rename(),
+            KeyCode::Char('v') if self.panel == FeaturePanel::Features => {
+                self.toggle_feature_archive()
+            }
+            KeyCode::Char('m') if self.panel == FeaturePanel::Features => {
+                self.open_feature_checkout_picker()
+            }
             // Acceptance, and the only state left for anyone to set.
             KeyCode::Char('.') => self.toggle_selected_feature_done(),
             KeyCode::Char('H') => self.move_selected_task(-1),

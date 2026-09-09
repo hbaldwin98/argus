@@ -64,6 +64,10 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "j/k move   enter forward   esc cancel",
                 "enter forward  esc",
             ],
+            PickerKind::FeatureCheckout { .. } => &[
+                "type to filter   ↑/↓ move   enter transfer   esc cancel",
+                "enter transfer  esc",
+            ],
         };
         (hints, th.dim)
     } else if app.prompt.is_some() {
@@ -174,9 +178,9 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             View::Feature => match app.panel {
                 FeaturePanel::Features => (
                     &[
-                        "h/l panels  j/k move  a new  e brief  R rename  x drop  . accept  r refresh  q spine",
-                        "l tasks  j/k move  a new  e brief  R rename  x drop  . accept  q spine",
-                        "j/k  a new  e brief  . accept  q",
+                        "h/l panels  j/k move  a new  e brief  R rename  m checkout  v archive  x drop  . accept  r refresh  q spine",
+                        "l tasks  j/k move  a new  e brief  m move  v archive  x drop  . accept  q spine",
+                        "j/k  a new  m move  v archive  . accept  q",
                     ][..],
                     th.dim,
                 ),

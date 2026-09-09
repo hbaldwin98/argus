@@ -1,6 +1,48 @@
 //! The fuzzy pickers: branches, files, changes, and agents.
 
 use super::*;
+
+fn feature(slug: &str) -> argus_protocol::Feature {
+    argus_protocol::Feature {
+        slug: slug.to_string(),
+        title: "Move plans".to_string(),
+        body: String::new(),
+        origin_checkout: Some("/tmp/argus".to_string()),
+        origin_branch: Some("master".to_string()),
+        at: 0,
+        session: None,
+        state: argus_protocol::FeatureState::Open,
+        checkouts: vec!["/tmp/argus".to_string()],
+        tasks: Default::default(),
+    }
+}
+
+#[test]
+fn feature_transfer_picker_offers_sibling_checkout_and_sends_its_id() {
+    let mut h = Harness::new();
+    h.app.on_server_msg(ServerMsg::Decisions(Box::new(
+        argus_protocol::DecisionBoard {
+            project: Some(ProjectId(1)),
+            name: "argus".to_string(),
+            features: vec![feature("move-plans")],
+            decisions: Vec::new(),
+        },
+    )));
+    h.key(KeyCode::Char('2'));
+    h.sent();
+    h.key(KeyCode::Char('m'));
+
+    assert_eq!(h.app.picker.as_ref().unwrap().items, vec!["feat"]);
+    h.key(KeyCode::Enter);
+    let sent = h.sent();
+    let [ClientMsg::TransferFeature { project, source, destination, slug }] = sent.as_slice() else {
+        panic!("expected one feature transfer, got {sent:?}");
+    };
+    assert_eq!(*project, ProjectId(1));
+    assert_eq!(*source, CheckoutId(10));
+    assert_eq!(*destination, CheckoutId(11));
+    assert_eq!(slug, "move-plans");
+}
 #[test]
 fn b_asks_for_the_branches_and_opens_only_when_they_arrive() {
     let mut h = Harness::new();

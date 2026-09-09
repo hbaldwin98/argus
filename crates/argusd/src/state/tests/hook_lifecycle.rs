@@ -596,7 +596,7 @@ fn open_feature(d: &Daemon, agent: PaneId, title: &str) -> String {
 }
 
 #[tokio::test]
-async fn artifacts_are_branch_scoped_unless_workspace_scope_is_requested() {
+async fn artifacts_are_repository_scoped_unless_workspace_scope_is_requested() {
     let first = tempfile::tempdir().unwrap();
     let second = tempfile::tempdir().unwrap();
     let d = daemon_with_two_agent_checkouts(first.path(), second.path());
@@ -612,7 +612,7 @@ async fn artifacts_are_branch_scoped_unless_workspace_scope_is_requested() {
             .unwrap()
             .features
             .is_empty(),
-        "the default board does not cross repository branches"
+        "the default board does not cross repositories"
     );
 
     let shared = d
@@ -662,6 +662,44 @@ async fn artifacts_are_branch_scoped_unless_workspace_scope_is_requested() {
         .tasks_for_agent_in_scope(second_agent, ArtifactScope::Workspace)
         .unwrap();
     assert_eq!(tasks.tasks[0].title, "update both crates");
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn repository_features_cross_branches_and_can_transfer_assignment() {
+    let dir = tempfile::tempdir().unwrap();
+    let _repo = real_repo(dir.path());
+    let d = daemon_with_fake_claude(dir.path());
+    let project = d.snapshot()[0].id;
+    let source_checkout = only_checkout(&d);
+    d.create_worktree(source_checkout, "topic".to_string())
+        .await
+        .unwrap();
+    let destination_checkout = d.snapshot()[0].repositories[0]
+        .checkouts
+        .iter()
+        .find(|checkout| checkout.id != source_checkout)
+        .unwrap()
+        .id;
+    let source_agent = d.spawn_agent(source_checkout, "claude").unwrap();
+    let destination_agent = d.spawn_agent(destination_checkout, "claude").unwrap();
+
+    let slug = open_feature(&d, source_agent, "shared work");
+    let destination_board = d.feature_board_for_agent(destination_agent).unwrap();
+    assert_eq!(destination_board.features.len(), 1);
+    assert_eq!(destination_board.current, None);
+
+    d.transfer_feature_for_client(project, source_checkout, destination_checkout, &slug)
+        .unwrap();
+    let source_board = d.feature_board_for_agent(source_agent).unwrap();
+    let destination_board = d.feature_board_for_agent(destination_agent).unwrap();
+    assert_eq!(source_board.current, None);
+    assert_eq!(destination_board.current.as_deref(), Some(slug.as_str()));
+    assert_eq!(destination_board.features[0].checkouts.len(), 1);
+    assert!(destination_board.features[0].checkouts[0].contains("topic"));
+    assert!(d
+        .transfer_feature_for_client(project, source_checkout, destination_checkout, &slug)
+        .is_err());
     close_all(&d);
 }
 

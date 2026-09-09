@@ -197,6 +197,13 @@ pub enum ClientMsg {
         checkout: CheckoutId,
         slug: String,
     },
+    /// Move a feature's current assignment between checkouts in one repository.
+    TransferFeature {
+        project: ProjectId,
+        source: CheckoutId,
+        destination: CheckoutId,
+        slug: String,
+    },
     /// Replace a feature's brief.
     ///
     /// Whole-body, unlike `argus-hook feature note`, which appends. The

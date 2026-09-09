@@ -412,6 +412,73 @@ fn migrating_a_v10_store_keeps_tasks_and_adds_empty_briefs() {
     assert_eq!(tasks[0].body, None);
 }
 
+#[test]
+fn migrating_branch_boards_merges_collisions_and_preserves_references() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("runtime.db");
+    {
+        let s = Store::open_at(&path).unwrap();
+        let conn = s.conn();
+        for (project, title, checkout, at) in [
+            ("repository\0/repo/.git\0main", "Main notes", "/repo", 1),
+            ("repository\0/repo/.git\0topic", "Topic notes", "/repo-topic", 2),
+        ] {
+            conn.execute(
+                "INSERT INTO feature (project, slug, title, body, at, state)
+                 VALUES (?1, 'notes', ?2, 'brief', ?3, 'done')",
+                rusqlite::params![project, title, at],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO decision (project, at, chose, feature) VALUES (?1, ?2, ?3, 'notes')",
+                rusqlite::params![project, at, title],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO task (project, feature, title, state, position, at)
+                 VALUES (?1, 'notes', ?2, 'todo', 0, ?3)",
+                rusqlite::params![project, title, at],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO feature_event (at, project, slug, state, actor)
+                 VALUES (?1, ?2, 'notes', 'done', 'human')",
+                rusqlite::params![at, project],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO artifact_feature_scope (artifact_scope, checkout_path, slug)
+                 VALUES (?1, ?2, 'notes')",
+                rusqlite::params![project, checkout],
+            )
+            .unwrap();
+        }
+        conn.pragma_update(None, "user_version", 11).unwrap();
+    }
+
+    let s = Store::open_at(&path).unwrap();
+    let key = "repository\0/repo/.git";
+    let features = s.features(key).unwrap();
+    assert_eq!(
+        features.iter().map(|feature| feature.slug.as_str()).collect::<Vec<_>>(),
+        ["notes", "notes-2"]
+    );
+    assert_eq!(features[0].checkouts, ["/repo"]);
+    assert_eq!(features[1].checkouts, ["/repo-topic"]);
+    assert_eq!(
+        s.decisions(key)
+            .unwrap()
+            .iter()
+            .map(|decision| decision.feature.as_deref().unwrap())
+            .collect::<Vec<_>>(),
+        ["notes", "notes-2"]
+    );
+    assert_eq!(s.tasks(key, "notes").unwrap().len(), 1);
+    assert_eq!(s.tasks(key, "notes-2").unwrap().len(), 1);
+    assert_eq!(s.feature_events(key, "notes").unwrap().len(), 1);
+    assert_eq!(s.feature_events(key, "notes-2").unwrap().len(), 1);
+}
+
 /// The board that was: a v8 store with features spread across the five
 /// columns, which is what every installed Argus has on disk.
 #[test]
@@ -772,6 +839,35 @@ fn a_checkout_remembers_a_feature_per_artifact_scope() {
 }
 
 #[test]
+fn feature_checkouts_follow_transfers_and_removal_cleans_the_mapping() {
+    let s = store();
+    let repository = "repository\0/repo/.git";
+    s.add_feature(repository, &feature("local change"), Some("/origin"), None, 1, None)
+        .unwrap();
+    s.set_artifact_feature_scope(Path::new("/source"), repository, "local-change")
+        .unwrap();
+
+    assert_eq!(s.features(repository).unwrap()[0].checkouts, ["/source"]);
+    s.transfer_artifact_feature_scope(
+        repository,
+        "local-change",
+        Path::new("/source"),
+        Path::new("/destination"),
+    )
+    .unwrap();
+    let moved = s.features(repository).unwrap().remove(0);
+    assert_eq!(moved.origin_checkout.as_deref(), Some("/origin"));
+    assert_eq!(moved.checkouts, ["/destination"]);
+
+    s.remove_feature(repository, "local-change").unwrap();
+    assert_eq!(
+        s.artifact_feature_scope(Path::new("/destination"), repository)
+            .unwrap(),
+        None
+    );
+}
+
+#[test]
 fn a_feature_document_grows_by_paragraph() {
     let s = store();
     s.add_feature("argus", &feature("notes storage"), None, None, 1, None)
@@ -871,8 +967,9 @@ fn a_feature_carries_its_checkouts_and_how_its_tasks_stand() {
     s.add_feature("argus", &feature("notes storage"), None, None, 2, None)
         .unwrap();
 
-    // A worktree cut for the feature later joins the one it was born in.
-    s.set_feature_scope(Path::new("/src/argus-pty"), "argus", "the-pty")
+    s.set_artifact_feature_scope(Path::new("/src/argus"), "argus", "the-pty")
+        .unwrap();
+    s.set_artifact_feature_scope(Path::new("/src/argus-pty"), "argus", "the-pty")
         .unwrap();
 
     for title in ["port the parser", "wire the resize path", "backpressure"] {
@@ -894,7 +991,7 @@ fn a_feature_carries_its_checkouts_and_how_its_tasks_stand() {
     assert_eq!(
         pty.checkouts,
         vec!["/src/argus".to_string(), "/src/argus-pty".to_string()],
-        "where it was cut, and wherever it is worked on now"
+        "every checkout currently working on it"
     );
     assert_eq!(pty.tasks.todo, 1);
     assert_eq!(pty.tasks.doing, 1);

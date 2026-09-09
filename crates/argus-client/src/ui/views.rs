@@ -153,9 +153,10 @@ fn feature_column_width(total: u16) -> u16 {
 /// is read at.
 fn render_feature_column(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let focused = app.panel == FeaturePanel::Features;
+    let mode = if app.show_archived_features { "archive" } else { "active" };
     let title = match app.board.as_ref().map(|b| b.name.clone()) {
-        Some(name) => format!("features · {name}"),
-        None => "features".to_string(),
+        Some(name) => format!("features · {mode} · {name}"),
+        None => format!("features · {mode}"),
     };
     let block = panel_block(&title, focused, th, area.width);
     let inner = block.inner(area);
@@ -178,7 +179,11 @@ fn render_feature_column(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     if rows.is_empty() {
         f.render_widget(
             Paragraph::new(Span::styled(
-                "no features yet — a opens one",
+                if app.show_archived_features {
+                    "no archived features"
+                } else {
+                    "no active features — a opens one"
+                },
                 Style::default().fg(th.dim),
             )),
             inner,

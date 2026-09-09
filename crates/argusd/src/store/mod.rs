@@ -29,8 +29,8 @@ mod legacy;
 mod schema;
 
 use schema::{
-    SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
-    SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
+    SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5,
+    SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
 };
 
 /// One pane worth starting again, as it stood when the daemon stopped.
@@ -138,7 +138,7 @@ pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 const MAX_NOTE_AUDIT: i64 = 20;
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 11;
+const SCHEMA_VERSION: i64 = 12;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -248,8 +248,102 @@ impl Store {
         if from < 11 {
             tx.execute_batch(SCHEMA_V11)?;
         }
+        if from < 12 {
+            tx.execute_batch(SCHEMA_V12)?;
+            Self::migrate_repository_boards(&tx)?;
+        }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
+        Ok(())
+    }
+
+    fn migrate_repository_boards(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+        let prefix = "repository\0";
+        let mut stmt = tx.prepare(
+            "SELECT project FROM feature WHERE project LIKE ?1
+             UNION SELECT project FROM decision WHERE project LIKE ?1
+             UNION SELECT project FROM task WHERE project LIKE ?1
+             UNION SELECT project FROM feature_event WHERE project LIKE ?1
+             UNION SELECT artifact_scope FROM artifact_feature_scope WHERE artifact_scope LIKE ?1
+             ORDER BY 1",
+        )?;
+        let old_keys = stmt
+            .query_map([format!("{prefix}%")], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(stmt);
+
+        for old_key in old_keys {
+            let Some((repository_key, _branch)) = old_key.rsplit_once('\0') else {
+                continue;
+            };
+            if repository_key == prefix.trim_end_matches('\0') {
+                continue;
+            }
+
+            let mut stmt =
+                tx.prepare("SELECT slug FROM feature WHERE project = ?1 ORDER BY at, slug")?;
+            let slugs = stmt
+                .query_map([&old_key], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            drop(stmt);
+            for old_slug in slugs {
+                let mut slug = old_slug.clone();
+                for suffix in 2.. {
+                    let taken: bool = tx.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
+                        rusqlite::params![repository_key, slug],
+                        |row| row.get(0),
+                    )?;
+                    if !taken {
+                        break;
+                    }
+                    slug = format!("{old_slug}-{suffix}");
+                }
+                tx.execute(
+                    "UPDATE feature SET project = ?1, slug = ?2 WHERE project = ?3 AND slug = ?4",
+                    rusqlite::params![repository_key, slug, old_key, old_slug],
+                )?;
+                for (table, feature_column) in [
+                    ("decision", "feature"),
+                    ("task", "feature"),
+                    ("feature_event", "slug"),
+                ] {
+                    tx.execute(
+                        &format!(
+                            "UPDATE {table} SET project = ?1, {feature_column} = ?2 \
+                             WHERE project = ?3 AND {feature_column} = ?4"
+                        ),
+                        rusqlite::params![repository_key, slug, old_key, old_slug],
+                    )?;
+                }
+                tx.execute(
+                    "UPDATE artifact_feature_scope SET slug = ?1
+                     WHERE artifact_scope = ?2 AND slug = ?3",
+                    rusqlite::params![slug, old_key, old_slug],
+                )?;
+                tx.execute(
+                    "INSERT INTO artifact_feature_scope (artifact_scope, checkout_path, slug)
+                     SELECT ?1, checkout_path, ?2 FROM feature_scope
+                     WHERE project = ?3 AND slug = ?4
+                     ON CONFLICT(artifact_scope, checkout_path) DO NOTHING",
+                    rusqlite::params![repository_key, slug, old_key, old_slug],
+                )?;
+            }
+            tx.execute(
+                "UPDATE decision SET project = ?1 WHERE project = ?2",
+                rusqlite::params![repository_key, old_key],
+            )?;
+            tx.execute(
+                "INSERT INTO artifact_feature_scope (artifact_scope, checkout_path, slug)
+                 SELECT ?1, checkout_path, slug FROM artifact_feature_scope WHERE artifact_scope = ?2
+                 ON CONFLICT(artifact_scope, checkout_path) DO UPDATE SET slug = excluded.slug",
+                rusqlite::params![repository_key, old_key],
+            )?;
+            tx.execute(
+                "DELETE FROM artifact_feature_scope WHERE artifact_scope = ?1",
+                [&old_key],
+            )?;
+        }
         Ok(())
     }
 
@@ -612,7 +706,7 @@ impl Store {
             at,
             session: session.map(str::to_string),
             state: FeatureState::default(),
-            checkouts: origin_checkout.map(str::to_string).into_iter().collect(),
+            checkouts: Vec::new(),
             tasks: TaskCounts::default(),
         };
         tx.execute(
@@ -653,7 +747,7 @@ impl Store {
                 // An unrecognised state means a newer Argus wrote this row.
                 // Show it as open rather than refusing the whole list.
                 state: FeatureState::parse(&r.get::<_, String>(7)?).unwrap_or_default(),
-                checkouts: origin_checkout.iter().cloned().collect(),
+                checkouts: Vec::new(),
                 origin_checkout,
                 tasks: TaskCounts::default(),
             })
@@ -665,8 +759,9 @@ impl Store {
         // a feature list say anything without being opened: the checkouts
         // are how a reader connects a feature to the panes running on it,
         // and the counts are how a row says how far along it is.
-        let mut stmt =
-            conn.prepare("SELECT slug, checkout_path FROM feature_scope WHERE project = ?1")?;
+        let mut stmt = conn.prepare(
+            "SELECT slug, checkout_path FROM artifact_feature_scope WHERE artifact_scope = ?1",
+        )?;
         let scopes = stmt
             .query_map(rusqlite::params![project], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
@@ -675,8 +770,6 @@ impl Store {
         drop(stmt);
         for (slug, path) in scopes {
             if let Some(feature) = features.iter_mut().find(|f| f.slug == slug) {
-                // The origin is already there when a checkout is still on
-                // the feature it was cut for, which is the common case.
                 if !feature
                     .checkouts
                     .iter()
@@ -777,6 +870,10 @@ impl Store {
         )?;
         tx.execute(
             "DELETE FROM feature_scope WHERE project = ?1 AND slug = ?2",
+            rusqlite::params![project, slug],
+        )?;
+        tx.execute(
+            "DELETE FROM artifact_feature_scope WHERE artifact_scope = ?1 AND slug = ?2",
             rusqlite::params![project, slug],
         )?;
         tx.execute(
@@ -911,6 +1008,42 @@ impl Store {
                 |r| r.get::<_, String>(0),
             )
             .optional()?)
+    }
+
+    /// Moves one repository feature assignment without changing its origin.
+    pub fn transfer_artifact_feature_scope(
+        &self,
+        artifact_scope: &str,
+        slug: &str,
+        source: &Path,
+        destination: &Path,
+    ) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
+            rusqlite::params![artifact_scope, slug],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            anyhow::bail!("there is no feature {slug} in this artifact scope");
+        }
+        let removed = tx.execute(
+            "DELETE FROM artifact_feature_scope
+             WHERE artifact_scope = ?1 AND checkout_path = ?2 AND slug = ?3",
+            rusqlite::params![artifact_scope, path_text(source), slug],
+        )?;
+        if removed == 0 {
+            anyhow::bail!("the source checkout is not assigned to feature {slug}");
+        }
+        tx.execute(
+            "INSERT INTO artifact_feature_scope (artifact_scope, checkout_path, slug)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(artifact_scope, checkout_path) DO UPDATE SET slug = excluded.slug",
+            rusqlite::params![artifact_scope, path_text(destination), slug],
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Accepts a feature or reopens it, and records who did.

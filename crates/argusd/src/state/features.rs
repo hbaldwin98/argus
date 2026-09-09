@@ -67,14 +67,9 @@ impl Daemon {
         })
     }
 
-    /// The feature a checkout is on: what it was last pointed at, or — if
-    /// it was never pointed anywhere — the one feature that originated
-    /// there.
-    ///
-    /// The fallback is what makes worktree-per-feature need no ceremony.
-    /// It deliberately gives up when a checkout has more than one feature
-    /// to its name: guessing there would file a decision under whichever
-    /// happened to be older, which is worse than asking.
+    /// The feature this checkout is explicitly assigned within the selected
+    /// artifact scope. Origin remains history and never recreates a removed
+    /// or transferred assignment.
     fn current_feature(
         &self,
         scope: &AgentScope,
@@ -89,15 +84,7 @@ impl Daemon {
                 return Ok(Some(slug));
             }
         }
-        let here = scope.checkout_path.to_string_lossy();
-        let mut born_here = features
-            .iter()
-            .filter(|f| f.origin_checkout.as_deref() == Some(here.as_ref()));
-        let only = born_here.next();
-        Ok(match (only, born_here.next()) {
-            (Some(feature), None) => Some(feature.slug.clone()),
-            _ => None,
-        })
+        Ok(None)
     }
 
     /// Opens a feature, points this checkout at it, and answers with the
@@ -219,7 +206,7 @@ impl Daemon {
     /// the one party that cannot make that call — so the state a feature
     /// is in has exactly one writer. It names the feature outright rather
     /// than resolving one from a checkout: a person is looking at the
-    /// selected repository branch's features, and whichever checkout they have
+    /// selected repository's features, and whichever checkout they have
     /// selected has nothing to do with the row under the cursor.
     pub fn move_feature_for_client(
         &self,
@@ -280,6 +267,56 @@ impl Daemon {
     ) -> anyhow::Result<()> {
         let (name, key) = self.client_artifact_scope(project, checkout)?;
         self.store.remove_feature(&key, slug)?;
+        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
+        Ok(())
+    }
+
+    /// Transfers current work between checkouts of the same repository.
+    pub fn transfer_feature_for_client(
+        &self,
+        project: ProjectId,
+        source: CheckoutId,
+        destination: CheckoutId,
+        slug: &str,
+    ) -> anyhow::Result<()> {
+        let (name, key, source_path, destination_path) = {
+            let inner = self.inner.lock().unwrap();
+            let project = inner
+                .projects
+                .iter()
+                .find(|candidate| candidate.id == project)
+                .ok_or_else(|| anyhow::anyhow!("no such project"))?;
+            let (repository, source_checkout) = project
+                .repositories
+                .iter()
+                .find_map(|repository| {
+                    repository
+                        .checkouts
+                        .iter()
+                        .find(|checkout| checkout.id == source)
+                        .map(|checkout| (repository, checkout))
+                })
+                .ok_or_else(|| anyhow::anyhow!("source checkout is not in this project"))?;
+            let destination_checkout = repository
+                .checkouts
+                .iter()
+                .find(|checkout| checkout.id == destination)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("destination checkout is not in the source repository")
+                })?;
+            (
+                project.name.clone(),
+                super::agents::repository_artifact_key(repository, source_checkout),
+                source_checkout.path.clone(),
+                destination_checkout.path.clone(),
+            )
+        };
+        self.store.transfer_artifact_feature_scope(
+            &key,
+            slug,
+            &source_path,
+            &destination_path,
+        )?;
         self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
         Ok(())
     }

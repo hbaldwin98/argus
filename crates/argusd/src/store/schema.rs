@@ -264,3 +264,10 @@ CREATE TABLE artifact_feature_scope (
 pub(super) const SCHEMA_V11: &str = r#"
 ALTER TABLE task ADD COLUMN body TEXT;
 "#;
+
+/// Repository boards are owned by the repository rather than one branch.
+///
+/// The data rewrite is implemented in `Store::migrate_repository_boards`
+/// because collision-safe slug allocation and dependent-row rewrites are
+/// clearer and safer as one explicit transaction than as recursive SQL.
+pub(super) const SCHEMA_V12: &str = "";

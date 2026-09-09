@@ -304,6 +304,12 @@ fn dispatch_decisions(
             checkout,
             slug,
         } => daemon.remove_feature_for_client(project, checkout, &slug),
+        ClientMsg::TransferFeature {
+            project,
+            source,
+            destination,
+            slug,
+        } => daemon.transfer_feature_for_client(project, source, destination, &slug),
         ClientMsg::SetFeatureBody {
             project,
             checkout,

@@ -424,6 +424,45 @@ impl App {
         let _ = self.out.send(ClientMsg::ListFiles { checkout: id });
     }
 
+    /// Offers only sibling checkouts: repository ownership is durable, and
+    /// this gesture changes where its work is active rather than moving data.
+    pub(super) fn open_feature_checkout_picker(&mut self) {
+        let (Some(project), Some(source), Some(slug)) = (
+            self.board.as_ref().and_then(|board| board.project),
+            self.current_checkout().map(|checkout| checkout.id),
+            self.feature_slug(),
+        ) else {
+            self.report("no feature selected");
+            return;
+        };
+        let Some(repository) = self.current_repository() else {
+            self.report("no repository selected");
+            return;
+        };
+        let destinations: Vec<CheckoutId> = repository
+            .checkouts
+            .iter()
+            .filter(|checkout| checkout.id != source)
+            .map(|checkout| checkout.id)
+            .collect();
+        let items: Vec<String> = repository
+            .checkouts
+            .iter()
+            .filter(|checkout| checkout.id != source)
+            .map(|checkout| checkout.name.clone())
+            .collect();
+        if items.is_empty() {
+            self.report("no other checkout in this repository");
+            return;
+        }
+        self.picker = Some(Picker::new(
+            PickerKind::FeatureCheckout { project, source, destinations, slug },
+            "move feature to checkout",
+            items,
+            0,
+        ));
+    }
+
     /// The changed files of the review that is already open — no round
     /// trip, since the diff is in hand.
     pub(super) fn open_change_picker(&mut self) {
@@ -524,6 +563,26 @@ impl App {
                 } else {
                     self.report("that agent is no longer in this note's scope");
                 }
+            }
+            PickerKind::FeatureCheckout {
+                project,
+                source,
+                destinations,
+                slug,
+            } => {
+                let Some(destination) = picker
+                    .shown
+                    .get(picker.sel)
+                    .and_then(|index| destinations.get(*index))
+                else {
+                    return;
+                };
+                let _ = self.out.send(ClientMsg::TransferFeature {
+                    project: *project,
+                    source: *source,
+                    destination: *destination,
+                    slug: slug.clone(),
+                });
             }
             PickerKind::Agent => {
                 let Some(name) = picker.selected() else {

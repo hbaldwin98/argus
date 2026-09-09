@@ -43,6 +43,14 @@ pub enum PickerKind {
         target: NoteTarget,
         body: String,
     },
+    /// Transfer one feature's assignment to another checkout in the same
+    /// repository. Ids stay parallel to rows so display names are not keys.
+    FeatureCheckout {
+        project: ProjectId,
+        source: CheckoutId,
+        destinations: Vec<CheckoutId>,
+        slug: String,
+    },
 }
 
 impl PickerKind {
@@ -55,6 +63,7 @@ impl PickerKind {
                 | PickerKind::File { .. }
                 | PickerKind::Change
                 | PickerKind::Workspace { .. }
+                | PickerKind::FeatureCheckout { .. }
         )
     }
 

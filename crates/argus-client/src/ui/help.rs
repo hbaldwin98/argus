@@ -146,6 +146,8 @@ const FEATURE: Group = Group {
         ("R", "rename the feature"),
         ("x", "remove it, keeping its decisions"),
         (".", "accept it, or reopen it"),
+        ("v", "switch between active features and accepted history"),
+        ("m", "move this feature to another checkout"),
         ("H / L", "move this task along todo, doing, done"),
         ("J / K", "earlier or later in the list"),
         ("r", "re-ask the daemon for all of it"),

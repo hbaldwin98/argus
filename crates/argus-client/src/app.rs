@@ -222,6 +222,9 @@ pub struct App {
     /// meant they could disagree about which feature you were reading —
     /// which is exactly what they did.
     pub feature_sel: usize,
+    /// Accepted features are history, not active work. The feature view
+    /// keeps them one key away without letting them crowd the working list.
+    pub show_archived_features: bool,
     /// Where the cursor is in the panel that has the keys, and which panel
     /// that is.
     pub panel: FeaturePanel,
@@ -373,6 +376,7 @@ impl App {
             board: None,
             board_scoped: None,
             feature_sel: 0,
+            show_archived_features: false,
             panel: Default::default(),
             task_sel: 0,
             decision_sel: 0,
