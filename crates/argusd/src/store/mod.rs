@@ -30,7 +30,7 @@ mod schema;
 
 use schema::{
     SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8,
-    SCHEMA_V9,
+    SCHEMA_V9, SCHEMA_V10,
 };
 
 /// One pane worth starting again, as it stood when the daemon stopped.
@@ -138,7 +138,7 @@ pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 const MAX_NOTE_AUDIT: i64 = 20;
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 9;
+const SCHEMA_VERSION: i64 = 10;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -241,6 +241,9 @@ impl Store {
         }
         if from < 9 {
             tx.execute_batch(SCHEMA_V9)?;
+        }
+        if from < 10 {
+            tx.execute_batch(SCHEMA_V10)?;
         }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
@@ -834,6 +837,7 @@ impl Store {
 
     /// Points a checkout at a feature, which is what decisions recorded
     /// from it are filed under afterwards.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn set_feature_scope(&self, checkout: &Path, project: &str, slug: &str) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
@@ -857,12 +861,56 @@ impl Store {
 
     /// The feature a checkout was last pointed at, if it is still one of
     /// this project's.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn feature_scope(&self, checkout: &Path, project: &str) -> Result<Option<String>> {
         let conn = self.conn();
         Ok(conn
             .query_row(
                 "SELECT slug FROM feature_scope WHERE checkout_path = ?1 AND project = ?2",
                 rusqlite::params![path_text(checkout), project],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?)
+    }
+
+    /// Points a checkout at a feature within one durable artifact scope.
+    pub fn set_artifact_feature_scope(
+        &self,
+        checkout: &Path,
+        artifact_scope: &str,
+        slug: &str,
+    ) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
+            rusqlite::params![artifact_scope, slug],
+            |r| r.get(0),
+        )?;
+        if !exists {
+            anyhow::bail!("there is no feature {slug} in this artifact scope");
+        }
+        tx.execute(
+            "INSERT INTO artifact_feature_scope (artifact_scope, checkout_path, slug)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(artifact_scope, checkout_path) DO UPDATE SET slug = excluded.slug",
+            rusqlite::params![artifact_scope, path_text(checkout), slug],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn artifact_feature_scope(
+        &self,
+        checkout: &Path,
+        artifact_scope: &str,
+    ) -> Result<Option<String>> {
+        let conn = self.conn();
+        Ok(conn
+            .query_row(
+                "SELECT slug FROM artifact_feature_scope
+                 WHERE artifact_scope = ?1 AND checkout_path = ?2",
+                rusqlite::params![artifact_scope, path_text(checkout)],
                 |r| r.get::<_, String>(0),
             )
             .optional()?)

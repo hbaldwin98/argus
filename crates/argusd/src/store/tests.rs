@@ -679,6 +679,35 @@ fn a_checkout_remembers_the_feature_it_was_pointed_at() {
 }
 
 #[test]
+fn a_checkout_remembers_a_feature_per_artifact_scope() {
+    let s = store();
+    let repository = "repository\0/repo/.git\0main";
+    let workspace = "workspace\0platform";
+    s.add_feature(repository, &feature("local change"), None, None, 1, None)
+        .unwrap();
+    s.add_feature(workspace, &feature("wide change"), None, None, 2, None)
+        .unwrap();
+
+    s.set_artifact_feature_scope(Path::new("/repo"), repository, "local-change")
+        .unwrap();
+    s.set_artifact_feature_scope(Path::new("/repo"), workspace, "wide-change")
+        .unwrap();
+
+    assert_eq!(
+        s.artifact_feature_scope(Path::new("/repo"), repository)
+            .unwrap()
+            .as_deref(),
+        Some("local-change")
+    );
+    assert_eq!(
+        s.artifact_feature_scope(Path::new("/repo"), workspace)
+            .unwrap()
+            .as_deref(),
+        Some("wide-change")
+    );
+}
+
+#[test]
 fn a_feature_document_grows_by_paragraph() {
     let s = store();
     s.add_feature("argus", &feature("notes storage"), None, None, 1, None)

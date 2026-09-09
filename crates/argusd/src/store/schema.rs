@@ -246,3 +246,15 @@ pub(super) const SCHEMA_V9: &str = r#"
 UPDATE feature SET state = 'open' WHERE state <> 'done';
 UPDATE feature SET claimed_by = NULL, claimed_at = NULL, blocker = NULL, evidence = NULL;
 "#;
+
+/// The selected feature is part of an artifact scope, not a property of a
+/// checkout alone. A checkout may use its repository branch board for normal
+/// work and the containing workspace board for a cross-cutting change.
+pub(super) const SCHEMA_V10: &str = r#"
+CREATE TABLE artifact_feature_scope (
+    artifact_scope TEXT NOT NULL,
+    checkout_path  TEXT NOT NULL,
+    slug           TEXT NOT NULL,
+    PRIMARY KEY (artifact_scope, checkout_path)
+) WITHOUT ROWID;
+"#;
