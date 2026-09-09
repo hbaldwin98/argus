@@ -17,11 +17,7 @@ use crate::state::{BranchDeletion, Daemon, ViewerId};
 
 static REVIEW_PERMIT: Semaphore = Semaphore::const_new(1);
 
-pub async fn handle<S>(
-    stream: S,
-    daemon: Arc<Daemon>,
-    shutdown: broadcast::Sender<()>,
-)
+pub async fn handle<S>(stream: S, daemon: Arc<Daemon>, shutdown: broadcast::Sender<()>)
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -249,18 +245,16 @@ fn dispatch_pane(
         ClientMsg::Input { pane, bytes } => daemon.write_pane(pane, &bytes),
         ClientMsg::Paste { pane, text } => daemon.paste_pane(pane, &text),
         ClientMsg::Resize { pane, rows, cols } => daemon.resize_pane(viewer, pane, rows, cols),
-        ClientMsg::Scrollback { pane, offset } => {
-            daemon
-                .pane_scrollback(pane, offset as usize)
-                .map(|(cells, offset, depth)| {
-                    let _ = out_tx.send(ServerMsg::ScrollbackRows {
-                        pane,
-                        offset: offset as u32,
-                        depth: depth as u32,
-                        cells,
-                    });
-                })
-        }
+        ClientMsg::Scrollback { pane, offset } => daemon
+            .pane_scrollback(pane, offset as usize)
+            .map(|(cells, offset, depth)| {
+                let _ = out_tx.send(ServerMsg::ScrollbackRows {
+                    pane,
+                    offset: offset as u32,
+                    depth: depth as u32,
+                    cells,
+                });
+            }),
         ClientMsg::SpawnShell { checkout } => {
             let daemon = daemon.clone();
             spawn_pane(out_tx, move || daemon.spawn_shell(checkout).map(|_| ()))
@@ -289,32 +283,42 @@ fn dispatch_decisions(
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
 ) -> DispatchResult {
     let result = match msg {
-        ClientMsg::GetDecisions { project, checkout } => daemon.decision_board(project, checkout).map(|board| {
-            let _ = out_tx.send(ServerMsg::Decisions(Box::new(board)));
-        }),
-        ClientMsg::OpenFeature { project, checkout, write } => {
-            daemon.open_feature_for_client(project, checkout, write)
+        ClientMsg::GetDecisions { project, checkout } => {
+            daemon.decision_board(project, checkout).map(|board| {
+                let _ = out_tx.send(ServerMsg::Decisions(Box::new(board)));
+            })
         }
+        ClientMsg::OpenFeature {
+            project,
+            checkout,
+            write,
+        } => daemon.open_feature_for_client(project, checkout, write),
         ClientMsg::RenameFeature {
             project,
             checkout,
             slug,
             title,
         } => daemon.rename_feature_for_client(project, checkout, &slug, &title),
-        ClientMsg::RemoveFeature { project, checkout, slug } => {
-            daemon.remove_feature_for_client(project, checkout, &slug)
-        }
+        ClientMsg::RemoveFeature {
+            project,
+            checkout,
+            slug,
+        } => daemon.remove_feature_for_client(project, checkout, &slug),
         ClientMsg::SetFeatureBody {
             project,
             checkout,
             slug,
             body,
         } => daemon.set_feature_body_for_client(project, checkout, &slug, body),
-        ClientMsg::GetTasks { project, checkout, feature } => {
-            daemon.task_list_for_client(project, checkout, &feature).map(|list| {
+        ClientMsg::GetTasks {
+            project,
+            checkout,
+            feature,
+        } => daemon
+            .task_list_for_client(project, checkout, &feature)
+            .map(|list| {
                 let _ = out_tx.send(ServerMsg::Tasks(Box::new(list)));
-            })
-        }
+            }),
         ClientMsg::AddTask {
             project,
             checkout,
@@ -335,6 +339,13 @@ fn dispatch_decisions(
             id,
             title,
         } => daemon.retitle_task_for_client(project, checkout, &feature, id, &title),
+        ClientMsg::SetTaskBody {
+            project,
+            checkout,
+            feature,
+            id,
+            body,
+        } => daemon.set_task_body_for_client(project, checkout, &feature, id, body),
         ClientMsg::RemoveTask {
             project,
             checkout,
@@ -625,7 +636,9 @@ fn dispatch_branch_or_editor(
             tokio::spawn(async move {
                 let msg = match daemon.delete_branch(checkout, &branch, force).await {
                     Ok(BranchDeletion::Deleted) => return,
-                    Ok(BranchDeletion::NotMerged) => ServerMsg::BranchNotMerged { checkout, branch },
+                    Ok(BranchDeletion::NotMerged) => {
+                        ServerMsg::BranchNotMerged { checkout, branch }
+                    }
                     Err(error) => ServerMsg::Error {
                         message: error.to_string(),
                     },
@@ -755,8 +768,7 @@ async fn writer_task<W>(
     wr: W,
     mut rx: mpsc::UnboundedReceiver<ServerMsg>,
     restart_flushed: broadcast::Sender<()>,
-)
-where
+) where
     W: AsyncWrite + Unpin,
 {
     let mut wr = tokio::io::BufWriter::new(wr);

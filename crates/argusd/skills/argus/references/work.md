@@ -34,6 +34,7 @@ and its decision board as source material without writing the document itself.
 "$ARGUS_HOOK" task add "restore the recorded conversation"
 "$ARGUS_HOOK" task add "test reconnect" --key PROJECT-412
 "$ARGUS_HOOK" task retitle <id> "test reconnect after daemon restart"
+"$ARGUS_HOOK" task brief <id> "acceptance criteria and verification"
 "$ARGUS_HOOK" task drop <id>
 ```
 
@@ -41,7 +42,9 @@ Read the tasks before taking one up. Move the task you are working on to `doing`
 and to `done` when complete. Task completion is separate from the human accepting
 the feature as a whole. Add relevant discovered work or import tasks when asked;
 `--key` retains an external tracker's identifier without synchronizing that tracker.
-Retitle or drop tasks only when the requested work calls for correcting the board.
+Use `brief` when a title cannot carry the task's context, outcome, boundaries, or
+verification. Running it without text clears the brief. Retitle or drop tasks only
+when the requested work calls for correcting the board.
 
 ## Decisions
 

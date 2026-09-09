@@ -1082,6 +1082,18 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
         .move_task_for_agent(agent, Some("sess-1"), id, TaskState::Doing)
         .unwrap();
     assert_eq!(list.tasks[0].claimed_by.as_deref(), Some("sess-1"));
+    let list = d
+        .set_task_body_for_agent_in_scope(
+            agent,
+            id,
+            "Accept sustained output.\nVerify bounded buffering.".into(),
+            ArtifactScope::RepositoryBranch,
+        )
+        .unwrap();
+    assert_eq!(
+        list.tasks[0].body.as_deref(),
+        Some("Accept sustained output.\nVerify bounded buffering.")
+    );
 
     // Moving the checkout to another feature moves what it can see and
     // what it can touch, together.
@@ -1100,6 +1112,19 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
     assert!(
         refused.contains("not under this checkout's feature"),
         "a stale id cannot tick off another feature's work: {refused}"
+    );
+    let refused = d
+        .set_task_body_for_agent_in_scope(
+            agent,
+            id,
+            "rewrite the wrong task".into(),
+            ArtifactScope::RepositoryBranch,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(
+        refused.contains("not under this checkout's feature"),
+        "a stale id cannot rewrite another feature's brief: {refused}"
     );
     close_all(&d);
 }

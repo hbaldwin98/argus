@@ -146,6 +146,24 @@ impl Daemon {
         Ok(list)
     }
 
+    pub fn set_task_body_for_agent_in_scope(
+        &self,
+        pane_id: PaneId,
+        id: i64,
+        body: String,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<TaskList> {
+        let scope = self.agent_scope(pane_id)?;
+        let key = scope.artifact_key(artifact_scope);
+        self.guard_task(&scope, id, artifact_scope)?;
+        self.store.set_task_body(key, id, body)?;
+        let list = self.task_list(&scope, artifact_scope)?;
+        if let Some(feature) = &list.feature {
+            self.broadcast_tasks(&scope.project_name, key, feature);
+        }
+        Ok(list)
+    }
+
     #[allow(dead_code)]
     pub fn remove_task_for_agent(&self, pane_id: PaneId, id: i64) -> anyhow::Result<TaskList> {
         self.remove_task_for_agent_in_scope(pane_id, id, ArtifactScope::default())
@@ -252,6 +270,20 @@ impl Daemon {
     ) -> anyhow::Result<()> {
         let (name, key) = self.client_artifact_scope(project, checkout)?;
         self.store.retitle_task(&key, id, title)?;
+        self.broadcast_tasks(&name, &key, feature);
+        Ok(())
+    }
+
+    pub fn set_task_body_for_client(
+        &self,
+        project: ProjectId,
+        checkout: CheckoutId,
+        feature: &str,
+        id: i64,
+        body: String,
+    ) -> anyhow::Result<()> {
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
+        self.store.set_task_body(&key, id, body)?;
         self.broadcast_tasks(&name, &key, feature);
         Ok(())
     }

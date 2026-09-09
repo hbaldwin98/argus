@@ -373,6 +373,45 @@ fn migrating_an_already_current_store_is_a_no_op() {
     assert_eq!(s.panes().unwrap().len(), 1);
 }
 
+#[test]
+fn migrating_a_v10_store_keeps_tasks_and_adds_empty_briefs() {
+    use schema::{SCHEMA_V10, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("runtime.db");
+    {
+        let conn = Connection::open(&path).unwrap();
+        for step in [SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4] {
+            conn.execute_batch(step).unwrap();
+        }
+        for step in [
+            SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9, SCHEMA_V10,
+        ] {
+            conn.execute_batch(step).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO feature (project, slug, title, body, at, state)
+             VALUES ('argus', 'briefs', 'Task briefs', '', 1, 'open')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO task (project, feature, title, state, position, at)
+             VALUES ('argus', 'briefs', 'preserve me', 'doing', 0, 1)",
+            [],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 10).unwrap();
+    }
+
+    let s = Store::open_at(&path).unwrap();
+    let tasks = s.tasks("argus", "briefs").unwrap();
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0].title, "preserve me");
+    assert_eq!(tasks[0].state, TaskState::Doing);
+    assert_eq!(tasks[0].body, None);
+}
+
 /// The board that was: a v8 store with features spread across the five
 /// columns, which is what every installed Argus has on disk.
 #[test]
@@ -489,7 +528,8 @@ fn migrating_a_v1_store_preserves_existing_state_and_adds_comments() {
         1
     );
     // And v5's board.
-    s.add_decision("argus", &chose("sqlite"), None, 1, None, None).unwrap();
+    s.add_decision("argus", &chose("sqlite"), None, 1, None, None)
+        .unwrap();
     assert_eq!(s.decisions("argus").unwrap().len(), 1);
 }
 
@@ -503,7 +543,9 @@ fn chose(chose: &str) -> DecisionWrite {
 #[test]
 fn a_decision_hangs_where_it_was_told_to() {
     let s = store();
-    let root = s.add_decision("argus", &chose("sqlite"), None, 1, None, None).unwrap();
+    let root = s
+        .add_decision("argus", &chose("sqlite"), None, 1, None, None)
+        .unwrap();
     let child = s
         .add_decision(
             "argus",
@@ -534,7 +576,9 @@ fn a_decision_hangs_where_it_was_told_to() {
 #[test]
 fn superseding_marks_the_old_decision_rather_than_removing_it() {
     let s = store();
-    let root = s.add_decision("argus", &chose("sqlite"), None, 1, None, None).unwrap();
+    let root = s
+        .add_decision("argus", &chose("sqlite"), None, 1, None, None)
+        .unwrap();
     let old = s
         .add_decision(
             "argus",
@@ -577,7 +621,9 @@ fn superseding_marks_the_old_decision_rather_than_removing_it() {
 #[test]
 fn a_decision_cannot_hang_off_one_that_is_not_on_this_board() {
     let s = store();
-    let elsewhere = s.add_decision("other", &chose("sqlite"), None, 1, None, None).unwrap();
+    let elsewhere = s
+        .add_decision("other", &chose("sqlite"), None, 1, None, None)
+        .unwrap();
     assert!(s
         .add_decision(
             "argus",
@@ -612,8 +658,10 @@ fn a_decision_cannot_hang_off_one_that_is_not_on_this_board() {
 #[test]
 fn one_projects_board_is_not_anothers() {
     let s = store();
-    s.add_decision("argus", &chose("sqlite"), None, 1, None, None).unwrap();
-    s.add_decision("other", &chose("postgres"), None, 1, None, None).unwrap();
+    s.add_decision("argus", &chose("sqlite"), None, 1, None, None)
+        .unwrap();
+    s.add_decision("other", &chose("postgres"), None, 1, None, None)
+        .unwrap();
     assert_eq!(s.decisions("argus").unwrap().len(), 1);
     assert_eq!(s.decisions("argus").unwrap()[0].chose, "sqlite");
 }
@@ -643,10 +691,24 @@ fn a_decision_is_read_back_under_the_feature_it_was_filed_under() {
     let s = store();
     s.add_feature("argus", &feature("notes storage"), None, None, 1, None)
         .unwrap();
-    s.add_decision("argus", &chose("sqlite"), Some("notes-storage"), 1, None, None)
-        .unwrap();
-    s.add_decision("argus", &chose("one reader thread"), Some("pty"), 2, None, None)
-        .unwrap();
+    s.add_decision(
+        "argus",
+        &chose("sqlite"),
+        Some("notes-storage"),
+        1,
+        None,
+        None,
+    )
+    .unwrap();
+    s.add_decision(
+        "argus",
+        &chose("one reader thread"),
+        Some("pty"),
+        2,
+        None,
+        None,
+    )
+    .unwrap();
 
     let board = s.decisions("argus").unwrap();
     assert_eq!(board[0].feature.as_deref(), Some("notes-storage"));
@@ -663,7 +725,9 @@ fn a_checkout_remembers_the_feature_it_was_pointed_at() {
     s.set_feature_scope(Path::new("/repo"), "argus", "notes-storage")
         .unwrap();
     assert_eq!(
-        s.feature_scope(Path::new("/repo"), "argus").unwrap().as_deref(),
+        s.feature_scope(Path::new("/repo"), "argus")
+            .unwrap()
+            .as_deref(),
         Some("notes-storage")
     );
     assert_eq!(
@@ -838,7 +902,10 @@ fn a_feature_carries_its_checkouts_and_how_its_tasks_stand() {
     assert!(!pty.tasks.all_done());
 
     let notes = features.iter().find(|f| f.slug == "notes-storage").unwrap();
-    assert!(notes.checkouts.is_empty(), "written down, never cut anywhere");
+    assert!(
+        notes.checkouts.is_empty(),
+        "written down, never cut anywhere"
+    );
     assert_eq!(notes.tasks.total(), 0);
     assert!(
         !notes.tasks.all_done(),
@@ -851,6 +918,34 @@ fn task(title: &str) -> TaskWrite {
         title: title.into(),
         external: None,
     }
+}
+
+#[test]
+fn a_task_brief_round_trips_and_clears_without_replacing_the_task() {
+    let s = store();
+    s.add_feature("argus", &feature("the pty"), None, None, 1, None)
+        .unwrap();
+    let id = s
+        .add_task("argus", "the-pty", &task("port the parser"), 1, None)
+        .unwrap()
+        .id;
+
+    s.set_task_body(
+        "argus",
+        id,
+        "Preserve scrollback.\n\n- Verify split escape sequences.\n".into(),
+    )
+    .unwrap();
+    let detailed = s.tasks("argus", "the-pty").unwrap().remove(0);
+    assert_eq!(detailed.id, id);
+    assert_eq!(detailed.title, "port the parser");
+    assert_eq!(
+        detailed.body.as_deref(),
+        Some("Preserve scrollback.\n\n- Verify split escape sequences.\n")
+    );
+
+    s.set_task_body("argus", id, " \n".into()).unwrap();
+    assert_eq!(s.tasks("argus", "the-pty").unwrap()[0].body, None);
 }
 
 #[test]
@@ -876,8 +971,14 @@ fn tasks_arrive_in_the_order_they_were_read_and_keep_their_ids() {
 
     // Rewriting the text around a card leaves the card alone, which is
     // the whole reason a task is a row and not a line number.
-    let ids: Vec<i64> = s.tasks("argus", "the-pty").unwrap().iter().map(|t| t.id).collect();
-    s.retitle_task("argus", ids[0], "port the vt parser").unwrap();
+    let ids: Vec<i64> = s
+        .tasks("argus", "the-pty")
+        .unwrap()
+        .iter()
+        .map(|t| t.id)
+        .collect();
+    s.retitle_task("argus", ids[0], "port the vt parser")
+        .unwrap();
     s.remove_task("argus", ids[1]).unwrap();
     let after = s.tasks("argus", "the-pty").unwrap();
     assert_eq!(after.len(), 2);
@@ -928,7 +1029,8 @@ fn a_task_can_be_put_where_a_human_wants_it() {
     s.add_feature("argus", &feature("the pty"), None, None, 1, None)
         .unwrap();
     for title in ["one", "two", "three", "four"] {
-        s.add_task("argus", "the-pty", &task(title), 1, None).unwrap();
+        s.add_task("argus", "the-pty", &task(title), 1, None)
+            .unwrap();
     }
     let titles = || -> Vec<String> {
         s.tasks("argus", "the-pty")
@@ -951,7 +1053,11 @@ fn a_task_can_be_put_where_a_human_wants_it() {
     s.reorder_task("argus", id_of("four"), 2).unwrap();
     assert_eq!(titles(), vec!["one", "two", "four", "three"]);
     s.reorder_task("argus", id_of("four"), 2).unwrap();
-    assert_eq!(titles(), vec!["one", "two", "four", "three"], "a move to where it already is changes nothing");
+    assert_eq!(
+        titles(),
+        vec!["one", "two", "four", "three"],
+        "a move to where it already is changes nothing"
+    );
 }
 
 fn audit(action: &str, detail: &str) -> TodoAudit {
@@ -969,18 +1075,36 @@ fn an_agents_note_write_and_its_record_arrive_together() {
     let repo = NoteKey::checkout(Path::new("/repo"));
     let other = NoteKey::checkout(Path::new("/other"));
 
-    s.set_note_as_agent(&repo, "- [ ] first
-", &audit("add", "first"))
-        .unwrap();
-    s.set_note_as_agent(&repo, "- [x] first
-", &audit("done", "first"))
-        .unwrap();
-    s.set_note_as_agent(&other, "- [ ] elsewhere
-", &audit("add", "elsewhere"))
-        .unwrap();
+    s.set_note_as_agent(
+        &repo,
+        "- [ ] first
+",
+        &audit("add", "first"),
+    )
+    .unwrap();
+    s.set_note_as_agent(
+        &repo,
+        "- [x] first
+",
+        &audit("done", "first"),
+    )
+    .unwrap();
+    s.set_note_as_agent(
+        &other,
+        "- [ ] elsewhere
+",
+        &audit("add", "elsewhere"),
+    )
+    .unwrap();
 
-    assert_eq!(s.note(&repo).unwrap(), Some("- [x] first
-".to_string()));
+    assert_eq!(
+        s.note(&repo).unwrap(),
+        Some(
+            "- [x] first
+"
+            .to_string()
+        )
+    );
     assert_eq!(
         s.note_audit(&repo)
             .unwrap()
@@ -1002,9 +1126,13 @@ fn a_notes_record_outlives_the_note_itself() {
     let s = Store::in_memory().unwrap();
     let repo = NoteKey::checkout(Path::new("/repo"));
 
-    s.set_note_as_agent(&repo, "- [ ] first
-", &audit("add", "first"))
-        .unwrap();
+    s.set_note_as_agent(
+        &repo,
+        "- [ ] first
+",
+        &audit("add", "first"),
+    )
+    .unwrap();
     // Emptying a note deletes it; what an agent did to it is still the
     // answer to "who wrote that".
     s.set_note(&repo, "").unwrap();
@@ -1064,9 +1192,7 @@ fn emptying_a_note_deletes_it() {
     let s = Store::in_memory().unwrap();
     let key = NoteKey::checkout(Path::new("/repo"));
     s.set_note(&key, "- [ ] something").unwrap();
-    s.set_note(&key, "   
-  
-").unwrap();
+    s.set_note(&key, "   \n  \n").unwrap();
     assert_eq!(s.note(&key).unwrap(), None);
     assert!(s.notes().unwrap().is_empty());
 }
@@ -1074,8 +1200,10 @@ fn emptying_a_note_deletes_it() {
 #[test]
 fn every_note_reads_back_in_one_pass_for_the_tree() {
     let s = Store::in_memory().unwrap();
-    s.set_note(&NoteKey::checkout(Path::new("/a")), "a").unwrap();
-    s.set_note(&NoteKey::checkout(Path::new("/b")), "b").unwrap();
+    s.set_note(&NoteKey::checkout(Path::new("/a")), "a")
+        .unwrap();
+    s.set_note(&NoteKey::checkout(Path::new("/b")), "b")
+        .unwrap();
     s.set_note(&NoteKey::Project("p".to_string()), "p").unwrap();
 
     let mut notes = s.notes().unwrap();

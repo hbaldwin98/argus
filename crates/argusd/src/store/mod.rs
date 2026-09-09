@@ -17,9 +17,9 @@ use std::sync::Mutex as StdMutex;
 
 use anyhow::{Context, Result};
 use argus_protocol::{
-    slugify, Decision, DecisionWrite, Feature, FeatureEvent, FeatureMove, FeatureState,
-    FeatureWrite, PaneKind,
-    Task, TaskCounts, TaskState, TaskWrite, PaneStatus, ReviewAnchor, ReviewComment, TodoAudit, MAX_REVIEW_COMMENTS,
+    checked_task_body, slugify, Decision, DecisionWrite, Feature, FeatureEvent, FeatureMove,
+    FeatureState, FeatureWrite, PaneKind, PaneStatus, ReviewAnchor, ReviewComment, Task,
+    TaskCounts, TaskState, TaskWrite, TodoAudit, MAX_REVIEW_COMMENTS,
 };
 use rusqlite::{Connection, OptionalExtension};
 
@@ -29,8 +29,8 @@ mod legacy;
 mod schema;
 
 use schema::{
-    SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8,
-    SCHEMA_V9, SCHEMA_V10,
+    SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6,
+    SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
 };
 
 /// One pane worth starting again, as it stood when the daemon stopped.
@@ -138,7 +138,7 @@ pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 const MAX_NOTE_AUDIT: i64 = 20;
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 10;
+const SCHEMA_VERSION: i64 = 11;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -244,6 +244,9 @@ impl Store {
         }
         if from < 10 {
             tx.execute_batch(SCHEMA_V10)?;
+        }
+        if from < 11 {
+            tx.execute_batch(SCHEMA_V11)?;
         }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
@@ -423,12 +426,7 @@ impl Store {
     /// of a change that never landed is a lie about the note. So this is
     /// one commit rather than a call to [`Self::set_note`] followed by a
     /// second write that may not happen.
-    pub fn set_note_as_agent(
-        &self,
-        key: &NoteKey,
-        body: &str,
-        entry: &TodoAudit,
-    ) -> Result<()> {
+    pub fn set_note_as_agent(&self, key: &NoteKey, body: &str, entry: &TodoAudit) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
         tx.execute(
@@ -667,9 +665,8 @@ impl Store {
         // a feature list say anything without being opened: the checkouts
         // are how a reader connects a feature to the panes running on it,
         // and the counts are how a row says how far along it is.
-        let mut stmt = conn.prepare(
-            "SELECT slug, checkout_path FROM feature_scope WHERE project = ?1",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT slug, checkout_path FROM feature_scope WHERE project = ?1")?;
         let scopes = stmt
             .query_map(rusqlite::params![project], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
@@ -948,7 +945,15 @@ impl Store {
         tx.execute(
             "INSERT INTO feature_event (at, project, slug, state, actor, session, detail)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![at, project, slug, state.as_str(), actor.as_str(), session, detail],
+            rusqlite::params![
+                at,
+                project,
+                slug,
+                state.as_str(),
+                actor.as_str(),
+                session,
+                detail
+            ],
         )?;
         tx.commit()?;
         drop(conn);
@@ -1033,6 +1038,7 @@ impl Store {
             id,
             feature: feature.to_string(),
             title: write.title.clone(),
+            body: None,
             state: TaskState::Todo,
             claimed_by: None,
             external: write.external.clone(),
@@ -1046,7 +1052,7 @@ impl Store {
     pub fn tasks(&self, project: &str, feature: &str) -> Result<Vec<Task>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT id, feature, title, state, claimed_by, external, position, at, session
+            "SELECT id, feature, title, body, state, claimed_by, external, position, at, session
              FROM task WHERE project = ?1 AND feature = ?2 ORDER BY position, id",
         )?;
         let rows = stmt.query_map(rusqlite::params![project, feature], |r| {
@@ -1054,12 +1060,13 @@ impl Store {
                 id: r.get(0)?,
                 feature: r.get(1)?,
                 title: r.get(2)?,
-                state: TaskState::parse(&r.get::<_, String>(3)?).unwrap_or_default(),
-                claimed_by: r.get(4)?,
-                external: r.get(5)?,
-                position: r.get(6)?,
-                at: r.get(7)?,
-                session: r.get(8)?,
+                body: r.get(3)?,
+                state: TaskState::parse(&r.get::<_, String>(4)?).unwrap_or_default(),
+                claimed_by: r.get(5)?,
+                external: r.get(6)?,
+                position: r.get(7)?,
+                at: r.get(8)?,
+                session: r.get(9)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -1105,6 +1112,20 @@ impl Store {
         let changed = conn.execute(
             "UPDATE task SET title = ?1 WHERE project = ?2 AND id = ?3",
             rusqlite::params![title, project, id],
+        )?;
+        if changed == 0 {
+            anyhow::bail!("there is no task {id} on this project");
+        }
+        Ok(())
+    }
+
+    /// Replaces the task's brief without changing its compact board title.
+    pub fn set_task_body(&self, project: &str, id: i64, body: String) -> Result<()> {
+        let body = checked_task_body(body).map_err(anyhow::Error::msg)?;
+        let conn = self.conn();
+        let changed = conn.execute(
+            "UPDATE task SET body = ?1 WHERE project = ?2 AND id = ?3",
+            rusqlite::params![body, project, id],
         )?;
         if changed == 0 {
             anyhow::bail!("there is no task {id} on this project");
@@ -1383,7 +1404,6 @@ impl Store {
     // ---- one-time import ------------------------------------------------
 }
 
-
 /// Paths go in with forward slashes so a checkout recorded on one run
 /// matches the same directory written the other way on the next.
 fn path_text(path: &Path) -> String {
@@ -1402,8 +1422,6 @@ fn decode_row<T: serde::de::DeserializeOwned>(raw: &str, column: usize) -> rusql
         rusqlite::Error::FromSqlConversionFailure(column, rusqlite::types::Type::Text, Box::new(e))
     })
 }
-
-
 
 /// Panes worth starting again.
 ///

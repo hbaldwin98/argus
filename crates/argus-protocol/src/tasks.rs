@@ -5,17 +5,19 @@
 //! human actually wants to hand an agent. So a feature carries a list of
 //! tasks, and those are drawn as a board of their own.
 //!
-//! A task is deliberately thin. It is a line of text, a column, and
-//! optionally the key it has in whatever tracker the team really uses —
+//! A task keeps a compact title and may carry a multiline brief. It also
+//! has a column and optionally the key it has in whatever tracker the team really uses —
 //! Argus stores that key and knows nothing else about it. Populating tasks
 //! from Jira, Linear or a spreadsheet is something an agent with access to
 //! that board does, which is why Argus works the same with any of them.
 
 use serde::{Deserialize, Serialize};
 
-/// Past this a task has stopped being a line on a card and become the
-/// feature document it belongs under.
+/// Past this a task title has stopped being a line on a card.
 pub const MAX_TASK_TITLE_BYTES: usize = 300;
+/// Enough room for task-specific context and acceptance criteria without
+/// turning one task into an unbounded document.
+pub const MAX_TASK_BODY_BYTES: usize = 8192;
 
 /// How far along a task is.
 ///
@@ -100,6 +102,8 @@ pub struct Task {
     /// The feature it is under, by slug.
     pub feature: String,
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
     pub state: TaskState,
     /// The agent session that took it. One task at a time is not enforced
     /// — two agents on one feature is a thing that happens, and a board
@@ -139,6 +143,18 @@ impl TaskWrite {
     }
 }
 
+/// Normalizes a task brief at every write boundary. Empty prose means no
+/// brief, while meaningful indentation and trailing newlines are preserved.
+pub fn checked_task_body(body: String) -> Result<Option<String>, &'static str> {
+    if body.trim().is_empty() {
+        return Ok(None);
+    }
+    if body.len() > MAX_TASK_BODY_BYTES {
+        return Err("a task brief is too large");
+    }
+    Ok(Some(body))
+}
+
 /// What an agent asks the task endpoint to do.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TaskAction {
@@ -147,11 +163,24 @@ pub enum TaskAction {
     Add(TaskWrite),
     /// Moves a task to another column, claiming it on the way into
     /// `doing` and releasing it on `done`.
-    Move { id: i64, state: TaskState },
+    Move {
+        id: i64,
+        state: TaskState,
+    },
     /// Rewrites a task's text, which is the one part of it that is not a
     /// state. Kept separate so a move never carries a title with it.
-    Retitle { id: i64, title: String },
-    Remove { id: i64 },
+    Retitle {
+        id: i64,
+        title: String,
+    },
+    /// Replaces the task-specific brief. Empty text clears it.
+    SetBody {
+        id: i64,
+        body: String,
+    },
+    Remove {
+        id: i64,
+    },
 }
 
 /// A feature's tasks, which is how both sides read them.
@@ -203,5 +232,15 @@ mod tests {
         .checked()
         .unwrap();
         assert_eq!(task.external, None, "a blank key would draw as a label");
+    }
+
+    #[test]
+    fn a_task_brief_is_optional_but_bounded() {
+        assert_eq!(checked_task_body("  \n".into()).unwrap(), None);
+        assert_eq!(
+            checked_task_body("Why this matters\n\n- observable result\n".into()).unwrap(),
+            Some("Why this matters\n\n- observable result\n".into())
+        );
+        assert!(checked_task_body("x".repeat(MAX_TASK_BODY_BYTES + 1)).is_err());
     }
 }

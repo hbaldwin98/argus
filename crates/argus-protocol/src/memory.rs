@@ -74,6 +74,8 @@ pub enum ArtifactContent {
     },
     Task {
         title: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        body: Option<String>,
         external: Option<String>,
     },
     Finding {
@@ -379,7 +381,10 @@ mod tests {
         let snapshot = MemorySnapshot {
             revision: 7,
             contexts: vec![context("one"), context("two")],
-            artifacts: vec![finding(1, "one", 1, "selected"), finding(2, "two", 2, "other")],
+            artifacts: vec![
+                finding(1, "one", 1, "selected"),
+                finding(2, "two", 2, "other"),
+            ],
             forwards: Vec::new(),
         };
         let packet = packet(
@@ -392,10 +397,7 @@ mod tests {
 
         assert_eq!(packet.revision, 7);
         assert_eq!(packet.entries.len(), 2);
-        assert!(matches!(
-            packet.entries[0].item,
-            PacketItem::WorkContext(_)
-        ));
+        assert!(matches!(packet.entries[0].item, PacketItem::WorkContext(_)));
         assert!(matches!(
             packet.entries[1].item,
             PacketItem::Artifact(Artifact { id: 1, .. })

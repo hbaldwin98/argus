@@ -380,6 +380,9 @@ fn tasks_response(
         TaskAction::Retitle { id, title } => {
             daemon.retitle_task_for_agent_in_scope(source, id, &title, scope)
         }
+        TaskAction::SetBody { id, body } => {
+            daemon.set_task_body_for_agent_in_scope(source, id, body, scope)
+        }
         TaskAction::Remove { id } => daemon.remove_task_for_agent_in_scope(source, id, scope),
     };
     match list.and_then(|list| Ok(serde_json::to_vec(&list)?)) {

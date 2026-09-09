@@ -236,6 +236,13 @@ pub enum ClientMsg {
         id: i64,
         title: String,
     },
+    SetTaskBody {
+        project: ProjectId,
+        checkout: CheckoutId,
+        feature: String,
+        id: i64,
+        body: String,
+    },
     RemoveTask {
         project: ProjectId,
         checkout: CheckoutId,

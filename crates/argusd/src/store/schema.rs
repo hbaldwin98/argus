@@ -258,3 +258,9 @@ CREATE TABLE artifact_feature_scope (
     PRIMARY KEY (artifact_scope, checkout_path)
 ) WITHOUT ROWID;
 "#;
+
+/// A task's row stays compact, while its optional brief carries the context
+/// and completion conditions specific to that unit of work.
+pub(super) const SCHEMA_V11: &str = r#"
+ALTER TABLE task ADD COLUMN body TEXT;
+"#;

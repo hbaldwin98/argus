@@ -62,7 +62,8 @@ pub use review::{
     MAX_REVIEW_COMMENTS, MAX_REVIEW_COMMENT_BYTES,
 };
 pub use tasks::{
-    Task, TaskAction, TaskCounts, TaskList, TaskState, TaskWrite, MAX_TASK_TITLE_BYTES,
+    checked_task_body, Task, TaskAction, TaskCounts, TaskList, TaskState, TaskWrite,
+    MAX_TASK_BODY_BYTES, MAX_TASK_TITLE_BYTES,
 };
 pub use tree::{
     CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneStatus, ProjectInfo,

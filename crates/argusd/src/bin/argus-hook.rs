@@ -361,7 +361,7 @@ fn task(rest: &[&str]) {
 }
 
 /// `task`, `task add`, `task doing <id>`, `task done <id>`, `task todo
-/// <id>`, `task retitle <id> <text>`, `task drop <id>`.
+/// <id>`, `task retitle <id> <text>`, `task brief <id> <text>`, `task drop <id>`.
 ///
 /// The columns are named as verbs rather than hidden behind a `move`, so
 /// what an agent types is what a reader of the transcript understands
@@ -409,12 +409,23 @@ fn task_message(rest: &[&str], base_url: &str, token: &str) -> String {
             ),
             None => "could not change task: retitle wants the number `task` prints".to_string(),
         },
+        Some("brief") => match rest.get(1).and_then(|id| id.parse::<i64>().ok()) {
+            Some(id) => write_task(
+                TaskAction::SetBody {
+                    id,
+                    body: rest[2..].join(" "),
+                },
+                base_url,
+                token,
+            ),
+            None => "could not change task: brief wants the number `task` prints".to_string(),
+        },
         Some("drop") => match rest.get(1).and_then(|id| id.parse::<i64>().ok()) {
             Some(id) => write_task(TaskAction::Remove { id }, base_url, token),
             None => "could not change task: drop wants the number `task` prints".to_string(),
         },
         Some(other) => format!(
-            "could not change task: `{other}` is not one of add, doing, done, todo, retitle, drop"
+            "could not change task: `{other}` is not one of add, doing, done, todo, retitle, brief, drop"
         ),
     }
 }
@@ -469,6 +480,9 @@ fn format_tasks(list: &TaskList) -> String {
             "#{:<3} {:<5} {}{key}{who}",
             task.id, task.state, task.title
         ));
+        if let Some(body) = &task.body {
+            lines.extend(body.lines().map(|line| format!("      {line}")));
+        }
     }
     lines.join("\n")
 }
@@ -1697,6 +1711,33 @@ mod tests {
                 "{bad:?} gave {message:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_task_brief_is_sent_whole_and_printed_beneath_its_task() {
+        let list = r#"{"project_name":"argus","feature":"task-briefs","tasks":[
+            {"id":7,"feature":"task-briefs","title":"render the brief",
+             "body":"Keep the title compact.\nVerify multiline output.","state":"doing",
+             "claimed_by":"sess-1","external":null,"position":0,"at":1,"session":null}]}"#;
+        let (address, server) = serve_once(list);
+
+        let message = task_message(
+            &[
+                "brief",
+                "7",
+                "Keep the title compact.\nVerify multiline output.",
+            ],
+            &format!("http://{address}/pane/4"),
+            "secret",
+        );
+        let _ = server.join();
+        assert_eq!(
+            message,
+            "Tasks under task-briefs:\n\
+             #7   doing render the brief — sess-1\n\
+             \x20     Keep the title compact.\n\
+             \x20     Verify multiline output."
+        );
     }
 
     #[test]
