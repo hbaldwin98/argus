@@ -35,12 +35,30 @@ pub const MAX_FEATURE_TITLE_BYTES: usize = 200;
 ///
 /// `Done` stays a stored state, and stays the human's: accepting work is
 /// the one judgement no observation can stand in for.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FeatureState {
     #[default]
     Open,
     Done,
+}
+
+/// Read by name rather than by derive, so a state this build does not know
+/// reads as open instead of failing the whole board.
+///
+/// `#[serde(default)]` on the field does not cover this: it fills in a
+/// *missing* field and has nothing to say about a present one holding
+/// `proposed`. A peer built before the columns were collapsed sends
+/// exactly that, and without this the answer it is reading is not one
+/// unknown feature but no features at all — which is what a reader sees
+/// as "invalid daemon response". The same tolerance the store's read has,
+/// for the same reason, and the protocol has no version negotiation yet
+/// to arrange it any other way (TARGET.md, "Protocol and safety").
+impl<'de> Deserialize<'de> for FeatureState {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<FeatureState, D::Error> {
+        let name = String::deserialize(d)?;
+        Ok(FeatureState::parse(&name).unwrap_or_default())
+    }
 }
 
 impl FeatureState {
@@ -305,6 +323,63 @@ mod state_tests {
                 "{old} is still written on every feature_event recorded before the cut"
             );
         }
+    }
+
+    /// A peer that predates the collapse, which for a while is every
+    /// daemon anyone has running.
+    #[test]
+    fn a_state_from_before_the_collapse_arrives_as_open_rather_than_failing() {
+        for old in ["proposed", "active", "blocked", "submitted"] {
+            let bytes = rmp_serde::to_vec_named(&old).unwrap();
+            assert_eq!(
+                rmp_serde::from_slice::<FeatureState>(&bytes).unwrap(),
+                FeatureState::Open,
+                "{old} must not take the whole board down with it"
+            );
+        }
+        // And a state only a newer Argus knows, for the same reason: one
+        // unreadable row is a better answer than no features at all.
+        let bytes = rmp_serde::to_vec_named(&"archived").unwrap();
+        assert_eq!(
+            rmp_serde::from_slice::<FeatureState>(&bytes).unwrap(),
+            FeatureState::Open
+        );
+    }
+
+    /// The whole reason the tolerance is on the state and not the field:
+    /// a feature is what actually travels, and one bad state used to mean
+    /// no features at all.
+    #[test]
+    fn a_feature_from_an_older_peer_still_arrives() {
+        #[derive(Serialize)]
+        struct FeatureWithOldColumns {
+            slug: String,
+            title: String,
+            body: String,
+            origin_checkout: Option<String>,
+            origin_branch: Option<String>,
+            at: i64,
+            session: Option<String>,
+            state: String,
+            claimed_by: Option<String>,
+            blocker: Option<String>,
+        }
+        let old = FeatureWithOldColumns {
+            slug: "pty".into(),
+            title: "The pty".into(),
+            body: String::new(),
+            origin_checkout: None,
+            origin_branch: None,
+            at: 1,
+            session: None,
+            state: "submitted".into(),
+            claimed_by: Some("sess-1".into()),
+            blocker: None,
+        };
+        let bytes = rmp_serde::to_vec_named(&old).unwrap();
+        let feature: Feature = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(feature.slug, "pty");
+        assert_eq!(feature.state, FeatureState::Open);
     }
 
     /// The shape `Feature` had before the board states existed. Kept here
