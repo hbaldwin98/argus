@@ -170,7 +170,7 @@ fn worktree_display_name_falls_back_to_the_directory_name() {
 fn a_status_read_that_failed_does_not_erase_the_branch_we_knew() {
     let d = daemon_with_primary("/repo");
     d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
-    d.refresh_git_status_with(|path| {
+    d.refresh_git_status_with(false, |path| {
         Some(status_on(if path.ends_with("wt") { "dev" } else { "main" }))
     });
 
@@ -191,7 +191,7 @@ fn a_status_read_that_failed_does_not_erase_the_branch_we_knew() {
     );
 
     // git is mid-switch and cannot answer.
-    d.refresh_git_status_with(|_| None);
+    d.refresh_git_status_with(false, |_| None);
 
     let c = d.snapshot()[0].repositories[0]
         .checkouts
@@ -210,16 +210,37 @@ fn a_status_read_that_failed_does_not_erase_the_branch_we_knew() {
     );
 }
 
+/// The fast beat of the poll skips a checkout nobody has a pane open in,
+/// since there is no dirty count anyone is waiting on. It is not starved
+/// forever: the slow, unfiltered beat still reaches it.
+#[test]
+fn an_active_only_sweep_leaves_a_paneless_checkout_stale() {
+    let d = daemon_with_primary("/repo");
+    d.refresh_git_status_with(false, |_| Some(status_on("main")));
+
+    // Only ever reads for checkouts with a pane open; "/repo" has none.
+    d.refresh_git_status_with(true, |path| {
+        panic!("an active-only sweep must not read {}", path.display())
+    });
+
+    let c = d.snapshot()[0].repositories[0].checkouts[0].clone();
+    assert_eq!(
+        c.git.and_then(|g| g.branch),
+        Some("main".to_string()),
+        "the cached status from the full sweep must survive"
+    );
+}
+
 /// A switch made outside Argus is news, not a failure: the row follows
 /// the branch that now occupies it.
 #[test]
 fn a_branch_switched_outside_argus_renames_the_row_it_happened_in() {
     let d = daemon_with_primary("/repo");
     d.reconcile_worktrees_with(|_| listing(&["/repo", "/repo/wt"]));
-    d.refresh_git_status_with(|path| {
+    d.refresh_git_status_with(false, |path| {
         Some(status_on(if path.ends_with("wt") { "dev" } else { "main" }))
     });
-    d.refresh_git_status_with(|path| {
+    d.refresh_git_status_with(false, |path| {
         Some(status_on(if path.ends_with("wt") {
             "spike"
         } else {

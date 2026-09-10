@@ -37,6 +37,14 @@ impl Daemon {
     /// async runtime's own workers (see DESIGN.md §8, "never on the input
     /// thread"). A real file watcher is a sharper version of this same idea
     /// for later — this poll is the read-only M2 slice.
+    ///
+    /// A checkout with no pane open has nobody waiting on its dirty count,
+    /// so every other tick's full working-tree walk is skipped for it —
+    /// this is the sweep's main cost, and idle checkouts are the ones a
+    /// large tree accumulates most of. They are not starved: the slow beat
+    /// still sweeps everything, at the same cadence the git-watch resync
+    /// and the root rescan already run on, so an external change (a branch
+    /// switched in another terminal) still lands within ten seconds.
     pub fn start_git_poll(self: &Arc<Self>) {
         let daemon = self.clone();
         tokio::spawn(async move {
@@ -44,13 +52,16 @@ impl Daemon {
             // The first tick is immediate. Keep it: startup only reads HEAD,
             // so this is when dirty counts, ahead/behind, and free branches
             // first land — overlapping restore rather than blocking listen.
+            let mut tick: u32 = 0;
             loop {
                 interval.tick().await;
+                let only_active = !tick.is_multiple_of(5);
+                tick = tick.wrapping_add(1);
                 let daemon = daemon.clone();
                 let _ = tokio::task::spawn_blocking(move || {
                     daemon.reconcile_worktrees();
                     daemon.drop_silent_children();
-                    daemon.refresh_git_status();
+                    daemon.refresh_git_status(only_active);
                     daemon.refresh_branches();
                     let _ = daemon.tree_tx.send(daemon.snapshot());
                 })
@@ -59,8 +70,9 @@ impl Daemon {
         });
     }
 
-    /// Re-reads every checkout's git status and caches it, so a snapshot
-    /// costs nothing but a clone.
+    /// Re-reads checkouts' git status and caches it, so a snapshot costs
+    /// nothing but a clone. `only_active` skips checkouts with no pane open
+    /// — see [`Self::start_git_poll`] for why that's safe to do most ticks.
     ///
     /// Three phases — collect paths, read git, store results — with the
     /// lock dropped in the middle. Status is milliseconds of blocking I/O
@@ -68,8 +80,8 @@ impl Daemon {
     /// keystroke belongs to, so reading git under it would put the whole
     /// sweep in front of the next key. Results are matched back by id: the
     /// tree can be rearranged while the lock is down.
-    pub fn refresh_git_status(&self) {
-        self.refresh_git_status_with(crate::git::status);
+    pub fn refresh_git_status(&self, only_active: bool) {
+        self.refresh_git_status_with(only_active, crate::git::status);
     }
 
     /// The sweep itself, with the status read injected so tests can state
@@ -77,11 +89,13 @@ impl Daemon {
     /// Production always passes `git::status`.
     pub(super) fn refresh_git_status_with(
         &self,
+        only_active: bool,
         read: impl Fn(&std::path::Path) -> Option<GitStatus>,
     ) {
         let checkouts: Vec<(CheckoutId, PathBuf)> = {
             let inner = self.inner.lock().unwrap();
             checkouts(&inner.projects)
+                .filter(|c| !only_active || !c.panes.is_empty())
                 .map(|c| (c.id, c.path.clone()))
                 .collect()
         };
@@ -227,7 +241,7 @@ impl Daemon {
         // A repository named for the first time has no status yet, and its
         // row is named from that status.
         self.reconcile_repositories();
-        self.refresh_git_status();
+        self.refresh_git_status(false);
         self.refresh_branches();
         self.broadcast_tree();
         self.broadcast_workspaces();
@@ -315,7 +329,7 @@ impl Daemon {
                         let daemon = daemon.clone();
                         let _ = tokio::task::spawn_blocking(move || {
                             daemon.reconcile_worktrees();
-                            daemon.refresh_git_status();
+                            daemon.refresh_git_status(false);
                             daemon.refresh_branches();
                             let _ = daemon.tree_tx.send(daemon.snapshot());
                         })
@@ -576,7 +590,7 @@ impl Daemon {
                     if daemon.reconcile_repositories() {
                         // A repository the scan just found has no cached
                         // status yet, and its row is named from that status.
-                        daemon.refresh_git_status();
+                        daemon.refresh_git_status(false);
                         daemon.broadcast_tree();
                         // A project gaining or losing a repository moves the
                         // workspace rollup counts too.

@@ -145,7 +145,7 @@ impl Daemon {
         // a full `git::status` walks every workdir, which on a cold disk
         // across a project root of many repositories is seconds in front of
         // the first client. The first poll tick fills dirty counts.
-        daemon.refresh_git_status_with(crate::git::head);
+        daemon.refresh_git_status_with(false, crate::git::head);
         daemon
     }
 

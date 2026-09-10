@@ -332,7 +332,7 @@ fn the_checkouts_name_follows_a_branch_switch_made_outside_argus() {
     // step `start_git_poll` runs every two seconds. `snapshot` reads the
     // cache that poll fills and never git itself, because it is taken
     // under the lock keystrokes need.
-    d.refresh_git_status();
+    d.refresh_git_status(false);
 
     assert_eq!(d.snapshot()[0].repositories[0].checkouts[0].name, "outside");
 }
@@ -346,7 +346,7 @@ fn a_tree_snapshot_reads_no_git_of_its_own() {
     // key. Asserted by moving the repo out from under the daemon: a
     // snapshot that still consulted git would lose the branch name.
     let (dir, d) = daemon_on_a_repo();
-    d.refresh_git_status();
+    d.refresh_git_status(false);
     let named = d.snapshot()[0].repositories[0].checkouts[0].name.clone();
 
     std::fs::remove_dir_all(dir.path().join(".git")).unwrap();
@@ -377,7 +377,7 @@ fn startup_names_checkouts_from_head_without_walking_the_workdir() {
         "startup must not walk the workdir for untracked files"
     );
 
-    d.refresh_git_status();
+    d.refresh_git_status(false);
     assert!(
         d.snapshot()[0].repositories[0].checkouts[0]
             .git
@@ -504,7 +504,7 @@ async fn a_branch_switch_made_outside_argus_reaches_clients_without_waiting_for_
     // The poll would find this too, two seconds later. The watch is
     // what makes an agent's commit or switch show up as it happens.
     let (dir, d) = daemon_on_a_repo();
-    d.refresh_git_status();
+    d.refresh_git_status(false);
     let mut tree = d.subscribe_tree();
     d.start_git_watch();
     // The first sync of the watched set happens on the interval's
@@ -598,7 +598,7 @@ async fn a_branch_with_no_checkout_is_listed_on_its_repository() {
     d.create_branch(checkout, "parked").await.unwrap();
     d.switch_branch(checkout, &on_it).await.unwrap();
 
-    d.refresh_git_status();
+    d.refresh_git_status(false);
     d.refresh_branches();
 
     assert_eq!(
@@ -615,7 +615,7 @@ async fn a_branch_a_checkout_is_sitting_on_is_not_offered_as_one_to_go_to() {
         .await
         .unwrap();
 
-    d.refresh_git_status();
+    d.refresh_git_status(false);
     d.refresh_branches();
 
     assert!(
