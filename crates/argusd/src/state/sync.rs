@@ -248,9 +248,11 @@ impl Daemon {
     /// long as the daemon ran.
     pub fn start_config_watch(self: &Arc<Self>) {
         let path = config::config_path();
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        // An event is only a wakeup for a full reload. One pending wakeup
+        // carries all the information an event storm could add.
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(1);
         let Some(watch) = crate::watch::file(&path, move || {
-            let _ = tx.send(());
+            let _ = tx.try_send(());
         }) else {
             return;
         };
@@ -282,9 +284,11 @@ impl Daemon {
     /// dirty state and changed-file counts still need the sweep. This is
     /// the half that can be known exactly, done exactly.
     pub fn start_git_watch(self: &Arc<Self>) {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+        // The refresh reads current Git state, so queued duplicate events
+        // only consume memory; one pending wakeup is sufficient.
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(1);
         let Some(mut watch) = crate::watch::GitWatch::new(move || {
-            let _ = tx.send(());
+            let _ = tx.try_send(());
         }) else {
             return;
         };
