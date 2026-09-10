@@ -479,6 +479,49 @@ fn migrating_branch_boards_merges_collisions_and_preserves_references() {
     assert_eq!(s.feature_events(key, "notes-2").unwrap().len(), 1);
 }
 
+/// A v12 board keyed by a linked worktree's private Git directory is read
+/// back under the directory every worktree of that repository shares —
+/// the bug where a board written from one worktree went missing when read
+/// from another, or from the primary checkout.
+#[test]
+fn a_v12_board_keyed_by_a_worktree_private_git_dir_is_read_back_under_the_shared_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("runtime.db");
+
+    let common_dir = dir.path().join("repo/.git");
+    std::fs::create_dir_all(&common_dir).unwrap();
+    let worktree_dir = dir.path().join("repo/.git/worktrees/topic");
+    std::fs::create_dir_all(&worktree_dir).unwrap();
+    std::fs::write(worktree_dir.join("commondir"), "../..\n").unwrap();
+    let common_dir = common_dir.canonicalize().unwrap();
+    let worktree_dir = worktree_dir.canonicalize().unwrap();
+
+    let old_key = format!("repository\0{}", worktree_dir.to_string_lossy());
+    {
+        let s = Store::open_at(&path).unwrap();
+        let conn = s.conn();
+        conn.execute(
+            "INSERT INTO feature (project, slug, title, body, at, state)
+             VALUES (?1, 'notes', 'Topic notes', 'brief', 1, 'open')",
+            rusqlite::params![old_key],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 12).unwrap();
+    }
+
+    let s = Store::open_at(&path).unwrap();
+    let key = format!("repository\0{}", common_dir.to_string_lossy());
+    assert_eq!(
+        s.features(&key)
+            .unwrap()
+            .iter()
+            .map(|feature| feature.slug.as_str())
+            .collect::<Vec<_>>(),
+        ["notes"]
+    );
+    assert!(s.features(&old_key).unwrap().is_empty());
+}
+
 /// The board that was: a v8 store with features spread across the five
 /// columns, which is what every installed Argus has on disk.
 #[test]

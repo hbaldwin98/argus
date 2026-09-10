@@ -3,6 +3,18 @@
 //! A step is applied once and never edited afterwards: the version number
 //! in the database says which have run, so editing an old constant would
 //! give two installs different schemas under the same version.
+//!
+//! A migration that rewrites a key derived from the filesystem (a Git
+//! directory, a checkout path) has to reach the *same* value the running
+//! daemon will compute afterwards, not just a value distinct from before.
+//! `SCHEMA_V12` learned this the hard way: it kept whichever checkout's Git
+//! directory an old key happened to carry, but a linked worktree's Git
+//! directory is private to that worktree, so a board migrated from one
+//! worktree went missing the moment it was read from another or from the
+//! primary checkout — see `SCHEMA_V13` and `Store::normalize_repository_keys`.
+//! Before shipping a migration like this, check it against the *current*
+//! code path that derives the same key at runtime, not just against the old
+//! one being replaced.
 
 pub(super) const SCHEMA_V1: &str = r#"
 CREATE TABLE pane (
@@ -271,3 +283,15 @@ ALTER TABLE task ADD COLUMN body TEXT;
 /// because collision-safe slug allocation and dependent-row rewrites are
 /// clearer and safer as one explicit transaction than as recursive SQL.
 pub(super) const SCHEMA_V12: &str = "";
+
+/// V12 keyed a repository board by whichever checkout's Git directory it
+/// was rewritten from. For a linked worktree that is a worktree-private
+/// directory (where `HEAD` lives), not the directory every worktree of the
+/// repository shares — so a board written from one worktree and read from
+/// another, or from the primary checkout, looked empty even though the
+/// V12 migration had run and the rows were intact.
+///
+/// The rewrite is implemented in `Store::normalize_repository_keys`, which
+/// resolves each key's directory to the shared one and merges rows the same
+/// collision-safe way V12 does, for the same reason.
+pub(super) const SCHEMA_V13: &str = "";

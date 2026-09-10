@@ -29,8 +29,8 @@ mod legacy;
 mod schema;
 
 use schema::{
-    SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5,
-    SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
+    SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4,
+    SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
 };
 
 /// One pane worth starting again, as it stood when the daemon stopped.
@@ -138,7 +138,7 @@ pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 const MAX_NOTE_AUDIT: i64 = 20;
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 12;
+const SCHEMA_VERSION: i64 = 13;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -252,6 +252,10 @@ impl Store {
             tx.execute_batch(SCHEMA_V12)?;
             Self::migrate_repository_boards(&tx)?;
         }
+        if from < 13 {
+            tx.execute_batch(SCHEMA_V13)?;
+            Self::normalize_repository_keys(&tx)?;
+        }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
         Ok(())
@@ -259,6 +263,44 @@ impl Store {
 
     fn migrate_repository_boards(tx: &rusqlite::Transaction<'_>) -> Result<()> {
         let prefix = "repository\0";
+        for old_key in Self::repository_keys(tx, prefix)? {
+            let Some((repository_key, _branch)) = old_key.rsplit_once('\0') else {
+                continue;
+            };
+            if repository_key == prefix.trim_end_matches('\0') {
+                continue;
+            }
+            Self::rekey_repository_project(tx, &old_key, repository_key)?;
+        }
+        Ok(())
+    }
+
+    /// Repairs the identity `migrate_repository_boards` gave a repository
+    /// board: it kept whichever checkout's Git directory the key already
+    /// carried, which for a linked worktree is private to that worktree
+    /// rather than the directory every worktree shares. Recomputes each
+    /// key's directory through the same resolution the running daemon now
+    /// uses, so a board written from one worktree is the same board read
+    /// from another.
+    fn normalize_repository_keys(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+        let prefix = "repository\0";
+        for old_key in Self::repository_keys(tx, prefix)? {
+            let Some(dir) = old_key.strip_prefix(prefix) else {
+                continue;
+            };
+            let common = crate::git::resolve_commondir(Path::new(dir));
+            let new_key = format!("{prefix}{}", common.to_string_lossy());
+            if new_key == old_key {
+                continue;
+            }
+            Self::rekey_repository_project(tx, &old_key, &new_key)?;
+        }
+        Ok(())
+    }
+
+    /// Every project/artifact-scope key in use that starts with `prefix`,
+    /// across the tables a repository board's rows live in.
+    fn repository_keys(tx: &rusqlite::Transaction<'_>, prefix: &str) -> Result<Vec<String>> {
         let mut stmt = tx.prepare(
             "SELECT project FROM feature WHERE project LIKE ?1
              UNION SELECT project FROM decision WHERE project LIKE ?1
@@ -267,83 +309,86 @@ impl Store {
              UNION SELECT artifact_scope FROM artifact_feature_scope WHERE artifact_scope LIKE ?1
              ORDER BY 1",
         )?;
-        let old_keys = stmt
+        let keys = stmt
             .query_map([format!("{prefix}%")], |row| row.get::<_, String>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(keys)
+    }
+
+    /// Moves every row filed under `old_key` to `new_key`, resolving slug
+    /// collisions the same way a live rename would: the incoming feature
+    /// keeps its slug where the destination board has no such slug yet, and
+    /// otherwise gets a numbered suffix.
+    fn rekey_repository_project(
+        tx: &rusqlite::Transaction<'_>,
+        old_key: &str,
+        new_key: &str,
+    ) -> Result<()> {
+        if new_key == old_key {
+            return Ok(());
+        }
+        let mut stmt = tx.prepare("SELECT slug FROM feature WHERE project = ?1 ORDER BY at, slug")?;
+        let slugs = stmt
+            .query_map([old_key], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         drop(stmt);
-
-        for old_key in old_keys {
-            let Some((repository_key, _branch)) = old_key.rsplit_once('\0') else {
-                continue;
-            };
-            if repository_key == prefix.trim_end_matches('\0') {
-                continue;
+        for old_slug in slugs {
+            let mut slug = old_slug.clone();
+            for suffix in 2.. {
+                let taken: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
+                    rusqlite::params![new_key, slug],
+                    |row| row.get(0),
+                )?;
+                if !taken {
+                    break;
+                }
+                slug = format!("{old_slug}-{suffix}");
             }
-
-            let mut stmt =
-                tx.prepare("SELECT slug FROM feature WHERE project = ?1 ORDER BY at, slug")?;
-            let slugs = stmt
-                .query_map([&old_key], |row| row.get::<_, String>(0))?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            drop(stmt);
-            for old_slug in slugs {
-                let mut slug = old_slug.clone();
-                for suffix in 2.. {
-                    let taken: bool = tx.query_row(
-                        "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
-                        rusqlite::params![repository_key, slug],
-                        |row| row.get(0),
-                    )?;
-                    if !taken {
-                        break;
-                    }
-                    slug = format!("{old_slug}-{suffix}");
-                }
+            tx.execute(
+                "UPDATE feature SET project = ?1, slug = ?2 WHERE project = ?3 AND slug = ?4",
+                rusqlite::params![new_key, slug, old_key, old_slug],
+            )?;
+            for (table, feature_column) in [
+                ("decision", "feature"),
+                ("task", "feature"),
+                ("feature_event", "slug"),
+            ] {
                 tx.execute(
-                    "UPDATE feature SET project = ?1, slug = ?2 WHERE project = ?3 AND slug = ?4",
-                    rusqlite::params![repository_key, slug, old_key, old_slug],
-                )?;
-                for (table, feature_column) in [
-                    ("decision", "feature"),
-                    ("task", "feature"),
-                    ("feature_event", "slug"),
-                ] {
-                    tx.execute(
-                        &format!(
-                            "UPDATE {table} SET project = ?1, {feature_column} = ?2 \
-                             WHERE project = ?3 AND {feature_column} = ?4"
-                        ),
-                        rusqlite::params![repository_key, slug, old_key, old_slug],
-                    )?;
-                }
-                tx.execute(
-                    "UPDATE artifact_feature_scope SET slug = ?1
-                     WHERE artifact_scope = ?2 AND slug = ?3",
-                    rusqlite::params![slug, old_key, old_slug],
-                )?;
-                tx.execute(
-                    "INSERT INTO artifact_feature_scope (artifact_scope, checkout_path, slug)
-                     SELECT ?1, checkout_path, ?2 FROM feature_scope
-                     WHERE project = ?3 AND slug = ?4
-                     ON CONFLICT(artifact_scope, checkout_path) DO NOTHING",
-                    rusqlite::params![repository_key, slug, old_key, old_slug],
+                    &format!(
+                        "UPDATE {table} SET project = ?1, {feature_column} = ?2 \
+                         WHERE project = ?3 AND {feature_column} = ?4"
+                    ),
+                    rusqlite::params![new_key, slug, old_key, old_slug],
                 )?;
             }
             tx.execute(
-                "UPDATE decision SET project = ?1 WHERE project = ?2",
-                rusqlite::params![repository_key, old_key],
+                "UPDATE artifact_feature_scope SET slug = ?1
+                 WHERE artifact_scope = ?2 AND slug = ?3",
+                rusqlite::params![slug, old_key, old_slug],
             )?;
             tx.execute(
                 "INSERT INTO artifact_feature_scope (artifact_scope, checkout_path, slug)
-                 SELECT ?1, checkout_path, slug FROM artifact_feature_scope WHERE artifact_scope = ?2
-                 ON CONFLICT(artifact_scope, checkout_path) DO UPDATE SET slug = excluded.slug",
-                rusqlite::params![repository_key, old_key],
-            )?;
-            tx.execute(
-                "DELETE FROM artifact_feature_scope WHERE artifact_scope = ?1",
-                [&old_key],
+                 SELECT ?1, checkout_path, ?2 FROM feature_scope
+                 WHERE project = ?3 AND slug = ?4
+                 ON CONFLICT(artifact_scope, checkout_path) DO NOTHING",
+                rusqlite::params![new_key, slug, old_key, old_slug],
             )?;
         }
+        tx.execute(
+            "UPDATE decision SET project = ?1 WHERE project = ?2",
+            rusqlite::params![new_key, old_key],
+        )?;
+        tx.execute(
+            "INSERT INTO artifact_feature_scope (artifact_scope, checkout_path, slug)
+             SELECT ?1, checkout_path, slug FROM artifact_feature_scope WHERE artifact_scope = ?2
+             ON CONFLICT(artifact_scope, checkout_path) DO UPDATE SET slug = excluded.slug",
+            rusqlite::params![new_key, old_key],
+        )?;
+        tx.execute(
+            "DELETE FROM artifact_feature_scope WHERE artifact_scope = ?1",
+            [old_key],
+        )?;
         Ok(())
     }
 

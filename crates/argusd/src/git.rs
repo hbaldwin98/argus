@@ -191,6 +191,32 @@ pub fn git_dir(path: &Path) -> Option<PathBuf> {
         .map(|repo| repo.path().to_path_buf())
 }
 
+/// The Git directory shared by every worktree of the repository at `path`.
+///
+/// `git_dir` answers with the worktree-private directory for a linked
+/// worktree (where `HEAD` and the index live), which is exactly what a file
+/// watch needs and exactly wrong for a repository identity: two worktrees
+/// of the same repository must resolve to the same key, or a board opened
+/// from one checkout goes missing when read from another. Resolved by
+/// reading `commondir` out of the worktree-private directory, the same file
+/// Git itself uses for this.
+pub fn repository_common_dir(path: &Path) -> Option<PathBuf> {
+    let git_dir = git_dir(path)?;
+    Some(resolve_commondir(&git_dir))
+}
+
+/// Reads `<git_dir>/commondir` when present — a linked worktree's
+/// worktree-private directory names its shared directory there, relative to
+/// itself — and falls back to `git_dir` unchanged for an ordinary
+/// repository, which has no such file.
+pub(crate) fn resolve_commondir(git_dir: &Path) -> PathBuf {
+    let common = match std::fs::read_to_string(git_dir.join("commondir")) {
+        Ok(contents) => git_dir.join(contents.trim()),
+        Err(_) => git_dir.to_path_buf(),
+    };
+    common.canonicalize().unwrap_or(common)
+}
+
 /// Whether the repository at `path` already has a local branch by this
 /// name — the difference between giving an existing branch a worktree and
 /// starting a new one.
