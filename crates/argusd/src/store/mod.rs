@@ -29,8 +29,8 @@ mod legacy;
 mod schema;
 
 use schema::{
-    SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4,
-    SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
+    SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V2, SCHEMA_V3,
+    SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
 };
 
 /// One pane worth starting again, as it stood when the daemon stopped.
@@ -138,7 +138,7 @@ pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 const MAX_NOTE_AUDIT: i64 = 20;
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 13;
+const SCHEMA_VERSION: i64 = 14;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -256,6 +256,10 @@ impl Store {
             tx.execute_batch(SCHEMA_V13)?;
             Self::normalize_repository_keys(&tx)?;
         }
+        if from < 14 {
+            tx.execute_batch(SCHEMA_V14)?;
+            Self::migrate_legacy_project_features(&tx)?;
+        }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
         Ok(())
@@ -333,47 +337,7 @@ impl Store {
             .collect::<rusqlite::Result<Vec<_>>>()?;
         drop(stmt);
         for old_slug in slugs {
-            let mut slug = old_slug.clone();
-            for suffix in 2.. {
-                let taken: bool = tx.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
-                    rusqlite::params![new_key, slug],
-                    |row| row.get(0),
-                )?;
-                if !taken {
-                    break;
-                }
-                slug = format!("{old_slug}-{suffix}");
-            }
-            tx.execute(
-                "UPDATE feature SET project = ?1, slug = ?2 WHERE project = ?3 AND slug = ?4",
-                rusqlite::params![new_key, slug, old_key, old_slug],
-            )?;
-            for (table, feature_column) in [
-                ("decision", "feature"),
-                ("task", "feature"),
-                ("feature_event", "slug"),
-            ] {
-                tx.execute(
-                    &format!(
-                        "UPDATE {table} SET project = ?1, {feature_column} = ?2 \
-                         WHERE project = ?3 AND {feature_column} = ?4"
-                    ),
-                    rusqlite::params![new_key, slug, old_key, old_slug],
-                )?;
-            }
-            tx.execute(
-                "UPDATE artifact_feature_scope SET slug = ?1
-                 WHERE artifact_scope = ?2 AND slug = ?3",
-                rusqlite::params![slug, old_key, old_slug],
-            )?;
-            tx.execute(
-                "INSERT INTO artifact_feature_scope (artifact_scope, checkout_path, slug)
-                 SELECT ?1, checkout_path, ?2 FROM feature_scope
-                 WHERE project = ?3 AND slug = ?4
-                 ON CONFLICT(artifact_scope, checkout_path) DO NOTHING",
-                rusqlite::params![new_key, slug, old_key, old_slug],
-            )?;
+            Self::move_feature_slug(tx, old_key, &old_slug, new_key)?;
         }
         tx.execute(
             "UPDATE decision SET project = ?1 WHERE project = ?2",
@@ -389,6 +353,106 @@ impl Store {
             "DELETE FROM artifact_feature_scope WHERE artifact_scope = ?1",
             [old_key],
         )?;
+        Ok(())
+    }
+
+    /// Moves one feature's row and everything filed under its slug —
+    /// decisions, tasks, events, and scope entries — from `old_key` to
+    /// `new_key`, keeping the slug where the destination has no such slug
+    /// yet and otherwise giving it a numbered suffix. Rows at `old_key` not
+    /// tied to this slug (another feature, or an unfiled decision) are left
+    /// where they are: the caller does not know they belong to `new_key`
+    /// too, only that this one feature does.
+    fn move_feature_slug(
+        tx: &rusqlite::Transaction<'_>,
+        old_key: &str,
+        old_slug: &str,
+        new_key: &str,
+    ) -> Result<()> {
+        let mut slug = old_slug.to_string();
+        for suffix in 2.. {
+            let taken: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
+                rusqlite::params![new_key, slug],
+                |row| row.get(0),
+            )?;
+            if !taken {
+                break;
+            }
+            slug = format!("{old_slug}-{suffix}");
+        }
+        tx.execute(
+            "UPDATE feature SET project = ?1, slug = ?2 WHERE project = ?3 AND slug = ?4",
+            rusqlite::params![new_key, slug, old_key, old_slug],
+        )?;
+        for (table, feature_column) in [
+            ("decision", "feature"),
+            ("task", "feature"),
+            ("feature_event", "slug"),
+        ] {
+            tx.execute(
+                &format!(
+                    "UPDATE {table} SET project = ?1, {feature_column} = ?2 \
+                     WHERE project = ?3 AND {feature_column} = ?4"
+                ),
+                rusqlite::params![new_key, slug, old_key, old_slug],
+            )?;
+        }
+        tx.execute(
+            "UPDATE artifact_feature_scope SET slug = ?1
+             WHERE artifact_scope = ?2 AND slug = ?3",
+            rusqlite::params![slug, old_key, old_slug],
+        )?;
+        tx.execute(
+            "INSERT INTO artifact_feature_scope (artifact_scope, checkout_path, slug)
+             SELECT ?1, checkout_path, ?2 FROM feature_scope
+             WHERE project = ?3 AND slug = ?4
+             ON CONFLICT(artifact_scope, checkout_path) DO NOTHING",
+            rusqlite::params![new_key, slug, old_key, old_slug],
+        )?;
+        Ok(())
+    }
+
+    /// A feature written before repository scoping (`5b3812e`) was filed
+    /// under its project's plain display name — the only key that existed
+    /// then — and nothing ever moved it when repository-scoped keys took
+    /// over as the only ones the client reads. It didn't go anywhere, but a
+    /// project spanning several repositories has one shared name and many
+    /// Git directories, so there is no single repository key to rename that
+    /// name to; each feature has to be relocated on its own, using the
+    /// repository its `origin_checkout` was in.
+    ///
+    /// A feature whose origin checkout is gone, or no longer a Git
+    /// repository, is left where it is — better an old feature invisible to
+    /// the current view than one silently filed under the wrong repository.
+    fn migrate_legacy_project_features(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+        let mut stmt = tx.prepare(
+            "SELECT project, slug, origin_checkout FROM feature
+             WHERE project NOT LIKE ?1 AND project NOT LIKE ?2
+             ORDER BY project, at, slug",
+        )?;
+        let rows = stmt
+            .query_map(["repository\0%", "workspace\0%"], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(stmt);
+
+        for (old_key, old_slug, origin_checkout) in rows {
+            let Some(origin_checkout) = origin_checkout else {
+                continue;
+            };
+            let Some(common) = crate::git::repository_common_dir(Path::new(&origin_checkout))
+            else {
+                continue;
+            };
+            let new_key = format!("repository\0{}", common.to_string_lossy());
+            Self::move_feature_slug(tx, &old_key, &old_slug, &new_key)?;
+        }
         Ok(())
     }
 

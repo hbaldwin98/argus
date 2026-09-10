@@ -295,3 +295,15 @@ pub(super) const SCHEMA_V12: &str = "";
 /// resolves each key's directory to the shared one and merges rows the same
 /// collision-safe way V12 does, for the same reason.
 pub(super) const SCHEMA_V13: &str = "";
+
+/// Repository scoping (`5b3812e`) introduced the `repository\0` key but
+/// never migrated data written before it: a feature from that era is still
+/// filed under its project's plain display name, a key the client stopped
+/// reading once every board request became repository-scoped. It never
+/// looked deleted in the database — only in every view built on top of it.
+///
+/// One project name can span several repositories, so there is no single
+/// new key to rename it to; `Store::migrate_legacy_project_features`
+/// relocates each such feature individually, using the repository its
+/// `origin_checkout` was in.
+pub(super) const SCHEMA_V14: &str = "";

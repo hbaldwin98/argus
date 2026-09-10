@@ -522,6 +522,62 @@ fn a_v12_board_keyed_by_a_worktree_private_git_dir_is_read_back_under_the_shared
     assert!(s.features(&old_key).unwrap().is_empty());
 }
 
+/// A feature written before repository scoping existed was filed under its
+/// project's plain display name, the only key that existed at the time.
+/// Nothing ever moved it when board reads became repository-scoped, so it
+/// went missing from every view even though the row was intact — this is
+/// the migration that relocates it, using the repository its
+/// `origin_checkout` was in.
+#[test]
+fn a_pre_repository_scoping_feature_is_relocated_by_its_origin_checkout() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("runtime.db");
+
+    let repo_dir = dir.path().join("repo");
+    std::fs::create_dir_all(&repo_dir).unwrap();
+    assert!(std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&repo_dir)
+        .status()
+        .unwrap()
+        .success());
+    let git_dir = repo_dir.join(".git").canonicalize().unwrap();
+
+    let legacy_key = "my-project";
+    {
+        let s = Store::open_at(&path).unwrap();
+        let conn = s.conn();
+        conn.execute(
+            "INSERT INTO feature (project, slug, title, body, origin_checkout, at, state)
+             VALUES (?1, 'notes', 'Legacy notes', 'brief', ?2, 1, 'open')",
+            rusqlite::params![legacy_key, repo_dir.to_string_lossy()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO decision (project, at, chose, feature) VALUES (?1, 1, 'chose it', 'notes')",
+            [legacy_key],
+        )
+        .unwrap();
+        conn.pragma_update(None, "user_version", 13).unwrap();
+    }
+
+    let s = Store::open_at(&path).unwrap();
+    let key = format!("repository\0{}", git_dir.to_string_lossy());
+    assert_eq!(
+        s.features(&key)
+            .unwrap()
+            .iter()
+            .map(|feature| feature.slug.as_str())
+            .collect::<Vec<_>>(),
+        ["notes"]
+    );
+    assert_eq!(
+        s.decisions(&key).unwrap()[0].chose,
+        "chose it"
+    );
+    assert!(s.features(legacy_key).unwrap().is_empty());
+}
+
 /// The board that was: a v8 store with features spread across the five
 /// columns, which is what every installed Argus has on disk.
 #[test]
