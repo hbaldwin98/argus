@@ -195,7 +195,11 @@ fn the_context_hook_carries_the_instructions_and_calls_nothing() {
         .clone();
     let args: Vec<String> = serde_json::from_value(entry["args"].clone()).unwrap();
     assert_eq!(args[0], "say");
-    assert!(args[1].contains(&dir.path().join(".claude/skills/argus/SKILL.md").display().to_string()));
+    // Joined the way the harness joins it: the skill directory is one
+    // configured relative path, and SKILL.md goes on after it. On Windows
+    // that puts a backslash before the file name, not a slash.
+    let skill = dir.path().join(".claude/skills/argus").join("SKILL.md");
+    assert!(args[1].contains(&skill.display().to_string()), "{}", args[1]);
     assert!(!args[1].contains("task add"), "workflow details belong in the skill");
     assert!(
         !args[1].contains("http://"),
