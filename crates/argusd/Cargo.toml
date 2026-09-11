@@ -13,7 +13,7 @@ path = "src/main.rs"
 # hook never depends on a shell, and never reports failure. See harness.rs.
 [[bin]]
 name = "argus-hook"
-path = "src/bin/argus-hook.rs"
+path = "src/bin/argus-hook/main.rs"
 
 [dependencies]
 argus-protocol = { workspace = true }

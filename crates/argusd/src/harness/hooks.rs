@@ -51,7 +51,7 @@ pub(super) fn event_env_url(event: &Event, windows: bool) -> String {
     }
 }
 
-/// The helper that actually posts to the daemon (`src/bin/argus-hook.rs`),
+/// The helper that actually posts to the daemon (`src/bin/argus-hook/`),
 /// resolved next to the running daemon rather than trusted to `PATH` —
 /// nothing installs these binaries system-wide. Falls back to the bare name
 /// if the daemon's own path can't be read.
