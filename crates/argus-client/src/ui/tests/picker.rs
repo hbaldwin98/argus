@@ -100,15 +100,7 @@ fn the_settings_panel_says_where_it_saves() {
 fn an_editor_never_appears_in_the_panes_column() {
     let mut app = app_with_tree();
     if let Some(c) = app.tree[0].repositories[0].checkouts.get_mut(0) {
-        c.panes.push(PaneInfo {
-            id: PaneId(700),
-            kind: PaneKind::Editor,
-            title: "zzz-editor.rs".to_string(),
-            status: PaneStatus::Idle,
-            note: None,
-            template: None,
-            children: Vec::new(),
-        });
+        c.panes.push(editor(700, "zzz-editor.rs"));
     }
     let out = lines(&draw(&mut app)).join("\n");
     assert!(!out.contains("zzz-editor"), "editors are not panes:\n{out}");

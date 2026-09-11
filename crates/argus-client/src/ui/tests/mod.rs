@@ -15,81 +15,53 @@ mod rows;
 mod views;
 
 use super::*;
+use crate::fixtures::*;
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, ProjectId, ProjectInfo, RepositoryId,
-    RepositoryInfo,
+    CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, ProjectId, ProjectInfo,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
-
-
 // --- what a pane row says -----------------------------------------------
 
 pub(super) fn pane(status: PaneStatus, note: Option<&str>) -> argus_protocol::PaneInfo {
     argus_protocol::PaneInfo {
-        id: PaneId(1),
-        kind: PaneKind::Agent,
-        title: "claude".to_string(),
-        status,
         note: note.map(str::to_string),
-        template: None,
-        children: Vec::new(),
+        ..pane_info(1, PaneKind::Agent, "claude", status)
     }
 }
 
 // --- rendering the whole frame -----------------------------------------
 
 pub(super) fn tree() -> Vec<ProjectInfo> {
-    vec![ProjectInfo {
-        id: ProjectId(1),
-        name: "argus".to_string(),
-        repositories: vec![RepositoryInfo {
-            id: RepositoryId(2),
-            name: "orion".to_string(),
-            branches: Vec::new(),
-            default_branch: None,
-            remote_branches: Vec::new(),
-            checkouts: vec![
+    vec![project(
+        1,
+        "argus",
+        vec![repository(
+            2,
+            "orion",
+            vec![
                 CheckoutInfo {
-                    id: CheckoutId(10),
-                    name: "master".to_string(),
                     path: "/repo".to_string(),
-                    primary: true,
                     git: Some(git(Some("master"), true, 2, 0, 0)),
-                    panes: vec![
-                        PaneInfo {
-                            id: PaneId(100),
-                            kind: PaneKind::Agent,
-                            title: "claude".to_string(),
-                            status: PaneStatus::Working,
-                            note: None,
-                            template: None,
-                            children: Vec::new(),
-                        },
-                        PaneInfo {
-                            id: PaneId(101),
-                            kind: PaneKind::Shell,
-                            title: "shell".to_string(),
-                            status: PaneStatus::Idle,
-                            note: None,
-                            template: None,
-                            children: Vec::new(),
-                        },
-                    ],
+                    ..checkout(
+                        10,
+                        "master",
+                        true,
+                        vec![
+                            pane_info(100, PaneKind::Agent, "claude", PaneStatus::Working),
+                            pane_info(101, PaneKind::Shell, "shell", PaneStatus::Idle),
+                        ],
+                    )
                 },
                 CheckoutInfo {
-                    id: CheckoutId(11),
-                    name: "feat".to_string(),
                     path: "/repo/wt".to_string(),
-                    primary: false,
-                    git: None,
-                    panes: vec![],
+                    ..checkout(11, "feat", false, vec![])
                 },
             ],
-        }],
-    }]
+        )],
+    )]
 }
 
 /// Renders a real frame through ratatui's test backend and hands back

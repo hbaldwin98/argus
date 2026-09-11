@@ -29,6 +29,9 @@ mod theme;
 mod ui;
 mod wire;
 
+#[cfg(test)]
+mod fixtures;
+
 use argus_protocol::{ClientMsg, PaneId, ServerMsg};
 use crossterm::event::{Event, EventStream, KeyEventKind};
 use futures::StreamExt;

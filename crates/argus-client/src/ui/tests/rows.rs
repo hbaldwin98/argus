@@ -104,19 +104,7 @@ fn descendant_status_rolls_up_through_checkout_repository_and_project() {
         status: PaneStatus::Waiting,
         note: None,
     });
-    let repository = RepositoryInfo {
-        id: RepositoryId(2),
-        name: "repo".to_string(),
-        branches: Vec::new(),
-        default_branch: None,
-        remote_branches: Vec::new(),
-        checkouts: vec![c],
-    };
-    let project = ProjectInfo {
-        id: ProjectId(3),
-        name: "project".to_string(),
-        repositories: vec![repository],
-    };
+    let project = project(3, "project", vec![repository(2, "repo", vec![c])]);
 
     let checkout_status = worst_pane_status(&project.repositories[0].checkouts[0]);
     let repository_status = project.repositories[0]

@@ -208,13 +208,8 @@ fn a_comment_chooses_between_multiple_live_agents() {
     h.app.tree[0].repositories[0].checkouts[0]
         .panes
         .push(PaneInfo {
-            id: PaneId(52),
-            kind: PaneKind::Agent,
-            title: "fix tests".to_string(),
-            status: PaneStatus::Working,
-            note: None,
             template: Some("codex".to_string()),
-            children: Vec::new(),
+            ..pane_info(52, PaneKind::Agent, "fix tests", PaneStatus::Working)
         });
 
     h.key(KeyCode::Char('c'));
@@ -247,13 +242,13 @@ fn an_exited_agent_is_not_offered_as_a_comment_recipient() {
     h.app.tree[0].repositories[0].checkouts[0]
         .panes
         .push(PaneInfo {
-            id: PaneId(52),
-            kind: PaneKind::Agent,
-            title: "old agent".to_string(),
-            status: PaneStatus::Exited { code: Some(0) },
-            note: None,
             template: Some("codex".to_string()),
-            children: Vec::new(),
+            ..pane_info(
+                52,
+                PaneKind::Agent,
+                "old agent",
+                PaneStatus::Exited { code: Some(0) },
+            )
         });
 
     h.key(KeyCode::Char('c'));

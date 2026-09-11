@@ -84,15 +84,11 @@ fn a_new_project_becomes_the_selected_one() {
     h.sent();
 
     let mut t = tree();
-    t.push(ProjectInfo {
-        id: ProjectId(3),
-        name: "new".to_string(),
-        repositories: vec![repository(
-            7,
-            "new-repo",
-            vec![checkout(30, "new", true, vec![])],
-        )],
-    });
+    t.push(project(
+        3,
+        "new",
+        vec![repository(7, "new-repo", vec![checkout(30, "new", true, vec![])])],
+    ));
     h.app.on_server_msg(ServerMsg::Tree(t));
     assert_eq!(h.app.current_project().unwrap().name, "new");
 }

@@ -19,34 +19,26 @@ mod windows;
 mod workspaces;
 
 use super::*;
+use crate::fixtures::*;
 use argus_protocol::{
     Cell, CellSpan, CheckoutId, GitStatus, PaneKind, PaneStatus, ProjectId, RepositoryId,
-    RepositoryInfo,
 };
 use argus_protocol::{DirEntry, DirListing};
 use crossterm::event::KeyModifiers;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 
 fn pane(id: u64, title: &str) -> PaneInfo {
-    PaneInfo {
-        id: PaneId(id),
-        kind: PaneKind::Shell,
-        title: title.to_string(),
-        status: PaneStatus::Idle,
-        note: None,
-        template: None,
-        children: Vec::new(),
-    }
+    pane_info(id, PaneKind::Shell, title, PaneStatus::Idle)
 }
 
 /// Two projects; the first has a primary checkout with two panes and a
 /// linked worktree with none, the second has a single empty checkout.
 fn tree() -> Vec<ProjectInfo> {
     vec![
-        ProjectInfo {
-            id: ProjectId(1),
-            name: "argus".to_string(),
-            repositories: vec![repository(
+        project(
+            1,
+            "argus",
+            vec![repository(
                 5,
                 "orion",
                 vec![
@@ -59,16 +51,16 @@ fn tree() -> Vec<ProjectInfo> {
                     checkout(11, "feat", false, vec![]),
                 ],
             )],
-        },
-        ProjectInfo {
-            id: ProjectId(2),
-            name: "other".to_string(),
-            repositories: vec![repository(
+        ),
+        project(
+            2,
+            "other",
+            vec![repository(
                 6,
                 "other-repo",
                 vec![checkout(20, "main", true, vec![])],
             )],
-        },
+        ),
     ]
 }
 
@@ -194,39 +186,7 @@ pub(super) fn open_editor_from_review(h: &mut Harness) {
     h.key(KeyCode::Char('e'));
     h.sent();
     // The daemon answers with a tree carrying the new editor pane.
-    let mut t = tree();
-    t[0].repositories[0].checkouts[0].panes.push(PaneInfo {
-        id: PaneId(700),
-        kind: PaneKind::Editor,
-        title: "a.rs".to_string(),
-        status: PaneStatus::Idle,
-        note: None,
-        template: None,
-        children: Vec::new(),
-    });
-    h.app.on_server_msg(ServerMsg::Tree(t));
-}
-
-pub(super) fn checkout(id: u64, name: &str, primary: bool, panes: Vec<PaneInfo>) -> CheckoutInfo {
-    CheckoutInfo {
-        id: CheckoutId(id),
-        name: name.to_string(),
-        path: format!("/repo/{name}"),
-        primary,
-        git: None,
-        panes,
-    }
-}
-
-pub(super) fn repository(id: u64, name: &str, checkouts: Vec<CheckoutInfo>) -> RepositoryInfo {
-    RepositoryInfo {
-        id: RepositoryId(id),
-        name: name.to_string(),
-        checkouts,
-        branches: Vec::new(),
-        default_branch: None,
-        remote_branches: Vec::new(),
-    }
+    h.app.on_server_msg(ServerMsg::Tree(tree_with_editor()));
 }
 
 // --- branches without a checkout ----------------------------------------
@@ -267,17 +227,7 @@ pub(super) fn editor_arrives(h: &mut Harness) {
     h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
     h.key(KeyCode::Char('e'));
     h.sent();
-    let mut t = tree();
-    t[0].repositories[0].checkouts[0].panes.push(PaneInfo {
-        id: PaneId(700),
-        kind: PaneKind::Editor,
-        title: "a.rs".to_string(),
-        status: PaneStatus::Idle,
-        note: None,
-        template: None,
-        children: Vec::new(),
-    });
-    h.app.on_server_msg(ServerMsg::Tree(t));
+    h.app.on_server_msg(ServerMsg::Tree(tree_with_editor()));
 }
 
 // --- choosing the editor ------------------------------------------------
@@ -299,15 +249,7 @@ pub(super) fn settings_row(h: &mut Harness, want: crate::app::Setting) {
 /// A tree whose first checkout has a shell, an agent, and an editor.
 pub(super) fn tree_with_editor() -> Vec<ProjectInfo> {
     let mut t = tree();
-    t[0].repositories[0].checkouts[0].panes.push(PaneInfo {
-        id: PaneId(700),
-        kind: PaneKind::Editor,
-        title: "a.rs".to_string(),
-        status: PaneStatus::Idle,
-        note: None,
-        template: None,
-        children: Vec::new(),
-    });
+    t[0].repositories[0].checkouts[0].panes.push(editor(700, "a.rs"));
     t
 }
 
@@ -472,24 +414,8 @@ pub(super) fn open_review(h: &mut Harness, review: argus_protocol::Review) {
 pub(super) fn tree_with_agent() -> Vec<ProjectInfo> {
     let mut t = tree();
     t[0].repositories[0].checkouts[0].panes = vec![
-        PaneInfo {
-            id: PaneId(50),
-            kind: PaneKind::Shell,
-            title: "sh".to_string(),
-            status: PaneStatus::Idle,
-            note: None,
-            template: None,
-            children: Vec::new(),
-        },
-        PaneInfo {
-            id: PaneId(51),
-            kind: PaneKind::Agent,
-            title: "claude".to_string(),
-            status: PaneStatus::Idle,
-            note: None,
-            template: None,
-            children: Vec::new(),
-        },
+        pane_info(50, PaneKind::Shell, "sh", PaneStatus::Idle),
+        pane_info(51, PaneKind::Agent, "claude", PaneStatus::Idle),
     ];
     t
 }

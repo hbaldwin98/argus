@@ -427,29 +427,19 @@ fn the_tree_contents_actually_reach_the_screen() {
 #[test]
 fn repository_rows_roll_up_checkout_counts_panes_and_status() {
     let mut app = app_with_tree();
-    app.tree[0].repositories.push(RepositoryInfo {
-        id: RepositoryId(3),
-        name: "satellite".to_string(),
-        branches: Vec::new(),
-        default_branch: None,
-        remote_branches: Vec::new(),
-        checkouts: vec![CheckoutInfo {
-            id: CheckoutId(12),
-            name: "main".to_string(),
+    app.tree[0].repositories.push(repository(
+        3,
+        "satellite",
+        vec![CheckoutInfo {
             path: "/satellite".to_string(),
-            primary: true,
-            git: None,
-            panes: vec![PaneInfo {
-                id: PaneId(102),
-                kind: PaneKind::Agent,
-                title: "waiting".to_string(),
-                status: PaneStatus::Waiting,
-                note: None,
-                template: None,
-                children: Vec::new(),
-            }],
+            ..checkout(
+                12,
+                "main",
+                true,
+                vec![pane_info(102, PaneKind::Agent, "waiting", PaneStatus::Waiting)],
+            )
         }],
-    });
+    ));
 
     let buf = draw_at(&mut app, 140, 20);
     let text = lines(&buf).join("\n");
