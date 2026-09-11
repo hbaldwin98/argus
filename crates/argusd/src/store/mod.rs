@@ -418,6 +418,21 @@ impl Store {
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// Runs one statement that has to touch a row, and fails with `missing`
+    /// when it touched none. A rename, rewrite or removal by id that
+    /// matched nothing would otherwise read as having worked.
+    fn update_one(
+        &self,
+        sql: &str,
+        params: impl rusqlite::Params,
+        missing: impl FnOnce() -> String,
+    ) -> Result<()> {
+        if self.conn().execute(sql, params)? == 0 {
+            anyhow::bail!(missing());
+        }
+        Ok(())
+    }
+
     // ---- panes -------------------------------------------------------
 
     /// Replaces the recorded panes with exactly these, in this order.
@@ -849,15 +864,11 @@ impl Store {
         if title.len() > argus_protocol::MAX_FEATURE_TITLE_BYTES {
             anyhow::bail!("a feature title is a short noun phrase, not a paragraph");
         }
-        let conn = self.conn();
-        let changed = conn.execute(
+        self.update_one(
             "UPDATE feature SET title = ?1 WHERE project = ?2 AND slug = ?3",
             rusqlite::params![title, project, slug],
-        )?;
-        if changed == 0 {
-            anyhow::bail!("there is no feature {slug} on this project");
-        }
-        Ok(())
+            || format!("there is no feature {slug} on this project"),
+        )
     }
 
     /// Replaces a feature's document outright.
@@ -869,15 +880,11 @@ impl Store {
         if body.len() > argus_protocol::MAX_FEATURE_BODY_BYTES {
             anyhow::bail!("this feature's document is full; what is left belongs in the checkout");
         }
-        let conn = self.conn();
-        let changed = conn.execute(
+        self.update_one(
             "UPDATE feature SET body = ?1 WHERE project = ?2 AND slug = ?3",
             rusqlite::params![body.trim_end(), project, slug],
-        )?;
-        if changed == 0 {
-            anyhow::bail!("there is no feature {slug} on this project");
-        }
-        Ok(())
+            || format!("there is no feature {slug} on this project"),
+        )
     }
 
     /// Points a checkout at a feature, which is what decisions recorded
@@ -1168,19 +1175,15 @@ impl Store {
         state: TaskState,
         session: Option<&str>,
     ) -> Result<()> {
-        let conn = self.conn();
         let claimed = match state {
             TaskState::Doing => session,
             TaskState::Todo | TaskState::Done => None,
         };
-        let changed = conn.execute(
+        self.update_one(
             "UPDATE task SET state = ?1, claimed_by = ?2 WHERE project = ?3 AND id = ?4",
             rusqlite::params![state.as_str(), claimed, project, id],
-        )?;
-        if changed == 0 {
-            anyhow::bail!("there is no task {id} on this project");
-        }
-        Ok(())
+            || format!("there is no task {id} on this project"),
+        )
     }
 
     /// Rewrites a task's text, leaving where it is and who has it alone.
@@ -1192,29 +1195,21 @@ impl Store {
         if title.len() > argus_protocol::MAX_TASK_TITLE_BYTES {
             anyhow::bail!("a task is a line, not a brief — that belongs in the feature document");
         }
-        let conn = self.conn();
-        let changed = conn.execute(
+        self.update_one(
             "UPDATE task SET title = ?1 WHERE project = ?2 AND id = ?3",
             rusqlite::params![title, project, id],
-        )?;
-        if changed == 0 {
-            anyhow::bail!("there is no task {id} on this project");
-        }
-        Ok(())
+            || format!("there is no task {id} on this project"),
+        )
     }
 
     /// Replaces the task's brief without changing its compact board title.
     pub fn set_task_body(&self, project: &str, id: i64, body: String) -> Result<()> {
         let body = checked_task_body(body).map_err(anyhow::Error::msg)?;
-        let conn = self.conn();
-        let changed = conn.execute(
+        self.update_one(
             "UPDATE task SET body = ?1 WHERE project = ?2 AND id = ?3",
             rusqlite::params![body, project, id],
-        )?;
-        if changed == 0 {
-            anyhow::bail!("there is no task {id} on this project");
-        }
-        Ok(())
+            || format!("there is no task {id} on this project"),
+        )
     }
 
     /// Removes a task outright.
@@ -1224,15 +1219,11 @@ impl Store {
     /// somebody meant to do. One that was added by mistake should leave
     /// no trace, or a board populated from a tracker fills with apologies.
     pub fn remove_task(&self, project: &str, id: i64) -> Result<()> {
-        let conn = self.conn();
-        let changed = conn.execute(
+        self.update_one(
             "DELETE FROM task WHERE project = ?1 AND id = ?2",
             rusqlite::params![project, id],
-        )?;
-        if changed == 0 {
-            anyhow::bail!("there is no task {id} on this project");
-        }
-        Ok(())
+            || format!("there is no task {id} on this project"),
+        )
     }
 
     /// Puts a task at a place in the list, shifting whatever is there

@@ -98,6 +98,30 @@ impl HookResponse {
     }
 }
 
+/// What the daemon now holds, as JSON, or its refusal as text the agent
+/// can put in front of the user. Every read and write an agent makes here
+/// is answered this way.
+fn json_reply<T: serde::Serialize>(result: anyhow::Result<T>) -> HookResponse {
+    let value = match result {
+        Ok(value) => value,
+        Err(error) => return HookResponse::text(409, "Conflict", error.to_string()),
+    };
+    match serde_json::to_vec(&value) {
+        Ok(body) => HookResponse {
+            code: 200,
+            reason: "OK",
+            body,
+        },
+        Err(e) => HookResponse::text(500, "Internal Server Error", e.to_string()),
+    }
+}
+
+/// A write's body, or the refusal that says it was not one.
+fn decode<T: serde::de::DeserializeOwned>(body: &[u8], what: &str) -> Result<T, HookResponse> {
+    serde_json::from_slice(body)
+        .map_err(|_| HookResponse::text(400, "Bad Request", format!("not a {what}")))
+}
+
 async fn handle_hook_request(
     stream: tokio::net::TcpStream,
     daemon: Arc<Daemon>,
@@ -163,12 +187,16 @@ async fn handle_hook_request(
                 daemon.set_pane_session_id(pane, &String::from_utf8_lossy(&body));
                 HookResponse::empty(200, "OK")
             }
-            Some((pane, Endpoint::Comments)) => comments_response(&daemon, pane)?,
-            Some((pane, Endpoint::Decisions)) => decisions_response(&daemon, pane, artifact_scope)?,
+            Some((pane, Endpoint::Comments)) => json_reply(daemon.review_comments_for_agent(pane)),
+            Some((pane, Endpoint::Decisions)) => {
+                json_reply(daemon.decisions_for_agent(pane, artifact_scope))
+            }
             Some((pane, Endpoint::Decide)) => {
                 decide_response(&daemon, pane, reporter.as_deref(), &body, artifact_scope)
             }
-            Some((pane, Endpoint::Features)) => features_response(&daemon, pane, artifact_scope)?,
+            Some((pane, Endpoint::Features)) => {
+                json_reply(daemon.feature_board_for_agent(pane, artifact_scope))
+            }
             Some((pane, Endpoint::Feature)) => {
                 feature_response(&daemon, pane, reporter.as_deref(), &body, artifact_scope)
             }
@@ -210,21 +238,6 @@ async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
     Ok((authorized, content_length, reporter))
 }
 
-fn decisions_response(
-    daemon: &Arc<Daemon>,
-    source: PaneId,
-    scope: argus_protocol::ArtifactScope,
-) -> anyhow::Result<HookResponse> {
-    Ok(match daemon.decisions_for_agent(source, scope) {
-        Ok(board) => HookResponse {
-            code: 200,
-            reason: "OK",
-            body: serde_json::to_vec(&board)?,
-        },
-        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
-    })
-}
-
 /// Answers with the decision as recorded, because its id is what the next
 /// decision hangs off — the one write here whose answer the agent has to
 /// keep.
@@ -235,40 +248,10 @@ fn decide_response(
     body: &[u8],
     scope: argus_protocol::ArtifactScope,
 ) -> HookResponse {
-    let write: argus_protocol::DecisionWrite = match serde_json::from_slice(body) {
-        Ok(write) => write,
-        Err(_) => {
-            return HookResponse::text(400, "Bad Request", "not a decision".into());
-        }
-    };
-    match daemon.record_agent_decision(source, session, write, scope) {
-        Ok(decision) => match serde_json::to_vec(&decision) {
-            Ok(body) => HookResponse {
-                code: 200,
-                reason: "OK",
-                body,
-            },
-            Err(e) => HookResponse::text(500, "Internal Server Error", e.to_string()),
-        },
-        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
+    match decode(body, "decision") {
+        Ok(write) => json_reply(daemon.record_agent_decision(source, session, write, scope)),
+        Err(refusal) => refusal,
     }
-}
-
-fn features_response(
-    daemon: &Arc<Daemon>,
-    source: PaneId,
-    scope: argus_protocol::ArtifactScope,
-) -> anyhow::Result<HookResponse> {
-    Ok(
-        match daemon.feature_board_for_agent(source, scope) {
-            Ok(board) => HookResponse {
-                code: 200,
-                reason: "OK",
-                body: serde_json::to_vec(&board)?,
-            },
-            Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
-        },
-    )
 }
 
 /// Answers with the board as it stands afterwards, because every one of
@@ -283,11 +266,11 @@ fn feature_response(
 ) -> HookResponse {
     use argus_protocol::FeatureAction;
 
-    let action: FeatureAction = match serde_json::from_slice(body) {
+    let action: FeatureAction = match decode(body, "feature change") {
         Ok(action) => action,
-        Err(_) => return HookResponse::text(400, "Bad Request", "not a feature change".into()),
+        Err(refusal) => return refusal,
     };
-    let board = match action {
+    json_reply(match action {
         FeatureAction::Open(write) => {
             daemon.open_feature_for_agent(source, session, write, scope)
         }
@@ -297,15 +280,7 @@ fn feature_response(
         FeatureAction::Append { text } => {
             daemon.append_to_feature_for_agent(source, &text, scope)
         }
-    };
-    match board.and_then(|board| Ok(serde_json::to_vec(&board)?)) {
-        Ok(body) => HookResponse {
-            code: 200,
-            reason: "OK",
-            body,
-        },
-        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
-    }
+    })
 }
 
 /// Every change to the current feature's task list, and the read.
@@ -322,11 +297,11 @@ fn tasks_response(
 ) -> HookResponse {
     use argus_protocol::TaskAction;
 
-    let action: TaskAction = match serde_json::from_slice(body) {
+    let action: TaskAction = match decode(body, "task change") {
         Ok(action) => action,
-        Err(_) => return HookResponse::text(400, "Bad Request", "not a task change".into()),
+        Err(refusal) => return refusal,
     };
-    let list = match action {
+    json_reply(match action {
         TaskAction::List => daemon.tasks_for_agent(source, scope),
         TaskAction::Add(write) => daemon.add_task_for_agent(source, session, write, scope),
         TaskAction::Move { id, state } => {
@@ -339,25 +314,6 @@ fn tasks_response(
             daemon.set_task_body_for_agent(source, id, body, scope)
         }
         TaskAction::Remove { id } => daemon.remove_task_for_agent(source, id, scope),
-    };
-    match list.and_then(|list| Ok(serde_json::to_vec(&list)?)) {
-        Ok(body) => HookResponse {
-            code: 200,
-            reason: "OK",
-            body,
-        },
-        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
-    }
-}
-
-fn comments_response(daemon: &Arc<Daemon>, source: PaneId) -> anyhow::Result<HookResponse> {
-    Ok(match daemon.review_comments_for_agent(source) {
-        Ok(comments) => HookResponse {
-            code: 200,
-            reason: "OK",
-            body: serde_json::to_vec(&comments)?,
-        },
-        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
     })
 }
 
