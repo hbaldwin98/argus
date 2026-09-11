@@ -172,13 +172,7 @@ impl Daemon {
                     Some(live) => {
                         live.workspace = workspace;
                         live.root = root;
-                        live.worktree_root = p.worktree_root.as_deref().map(config::expand_home);
-                        live.setup = p.setup.clone();
-                        live.exclusive = p.exclusive;
-                        live.scan = crate::git::Scan {
-                            exclude: p.exclude.clone(),
-                            include: p.include.clone(),
-                        };
+                        live.settings = ProjectSettings::from_config(p);
                         for path in &named {
                             if !live
                                 .repositories
@@ -210,13 +204,7 @@ impl Daemon {
                             name: p.name.clone(),
                             root,
                             repositories,
-                            worktree_root: p.worktree_root.as_deref().map(config::expand_home),
-                            setup: p.setup.clone(),
-                            exclusive: p.exclusive,
-                            scan: crate::git::Scan {
-                                exclude: p.exclude.clone(),
-                                include: p.include.clone(),
-                            },
+                            settings: ProjectSettings::from_config(p),
                         });
                     }
                 }
@@ -518,7 +506,7 @@ impl Daemon {
             inner
                 .projects
                 .iter()
-                .filter_map(|p| p.root.clone().map(|root| (p.id, root, p.scan.clone())))
+                .filter_map(|p| p.root.clone().map(|root| (p.id, root, p.settings.scan.clone())))
                 .collect()
         };
         if roots.is_empty() {

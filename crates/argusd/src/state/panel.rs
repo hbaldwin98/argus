@@ -57,10 +57,7 @@ impl Daemon {
                 // A project added at runtime is written to the config as a
                 // root and nothing else; worktree settings are something
                 // the user adds to the file by hand.
-                worktree_root: None,
-                setup: Vec::new(),
-                exclusive: false,
-                scan: crate::git::Scan::default(),
+                settings: ProjectSettings::default(),
             });
         }
         self.broadcast_tree();

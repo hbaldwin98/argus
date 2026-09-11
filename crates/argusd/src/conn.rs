@@ -269,12 +269,9 @@ fn dispatch_pane(
     Ok(result)
 }
 
-/// A write answers with the stored note rather than an acknowledgement, so
-/// the client's editor shows what the daemon holds instead of what it
-/// guessed its own write would produce.
-/// Its own dispatcher rather than an arm of `dispatch_notes`, because a
-/// board is not a note: it is read at project scope, whole, and it is
-/// pushed at every client rather than answered to one.
+/// Features, their decision boards and their task lists. A board is read at
+/// project scope, whole, and pushed at every client rather than answered to
+/// one.
 fn dispatch_decisions(
     msg: ClientMsg,
     daemon: &Arc<Daemon>,

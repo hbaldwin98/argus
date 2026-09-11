@@ -180,8 +180,17 @@ struct Project {
     /// cloned into it, or removed from it, since.
     root: Option<PathBuf>,
     repositories: Vec<Repository>,
+    settings: ProjectSettings,
+}
+
+/// Everything a project takes from its `projects.toml` entry beyond what
+/// shapes the tree. Built in one place so a new key is read in one place:
+/// startup and a config reload both go through `from_config`, and a
+/// project added at runtime starts from `Default`.
+#[derive(Default)]
+struct ProjectSettings {
     /// Where this project's worktrees are created, if it says. See
-    /// `worktree_dir`.
+    /// `worktree_context`.
     worktree_root: Option<PathBuf>,
     /// Commands run in a worktree this project has just created, in order.
     setup: Vec<String>,
@@ -189,6 +198,20 @@ struct Project {
     exclusive: bool,
     /// What this project's root scan may and may not walk into.
     scan: crate::git::Scan,
+}
+
+impl ProjectSettings {
+    fn from_config(p: &config::ProjectConfig) -> Self {
+        Self {
+            worktree_root: p.worktree_root.as_deref().map(config::expand_home),
+            setup: p.setup.clone(),
+            exclusive: p.exclusive,
+            scan: crate::git::Scan {
+                exclude: p.exclude.clone(),
+                include: p.include.clone(),
+            },
+        }
+    }
 }
 
 struct Workspace {

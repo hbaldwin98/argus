@@ -109,7 +109,7 @@ pub(super) fn worktree_context(projects: &[Project], id: CheckoutId) -> Option<W
         p.repositories.iter().find_map(|r| {
             let base = r.checkouts.iter().find(|c| c.id == id)?;
             let primary = r.checkouts.iter().find(|c| c.primary).unwrap_or(base);
-            let root = match &p.worktree_root {
+            let root = match &p.settings.worktree_root {
                 Some(root) => root.join(&r.name),
                 None => primary.path.join(".argus").join("worktrees"),
             };
@@ -117,7 +117,7 @@ pub(super) fn worktree_context(projects: &[Project], id: CheckoutId) -> Option<W
                 repository: r.id,
                 base: base.path.clone(),
                 root,
-                setup: p.setup.clone(),
+                setup: p.settings.setup.clone(),
             })
         })
     })
@@ -182,7 +182,7 @@ pub(super) fn exclusive_conflict(projects: &[Project], checkout: CheckoutId) -> 
             .iter()
             .any(|r| r.checkouts.iter().any(|c| c.id == checkout))
     })?;
-    if !project.exclusive {
+    if !project.settings.exclusive {
         return None;
     }
     project
