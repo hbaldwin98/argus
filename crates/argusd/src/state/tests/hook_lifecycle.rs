@@ -233,6 +233,7 @@ fn open_feature(d: &Daemon, agent: PaneId, title: &str) -> String {
                 title: title.into(),
                 body: None,
             },
+            ArtifactScope::default(),
         )
         .unwrap();
     board.current.expect("opening a feature works on it")
@@ -251,7 +252,7 @@ async fn artifacts_are_repository_scoped_unless_workspace_scope_is_requested() {
 
     open_feature(&d, first_agent, "branch-local work");
     assert!(
-        d.feature_board_for_agent(second_agent)
+        d.feature_board_for_agent(second_agent, ArtifactScope::default())
             .unwrap()
             .features
             .is_empty(),
@@ -259,7 +260,7 @@ async fn artifacts_are_repository_scoped_unless_workspace_scope_is_requested() {
     );
 
     let shared = d
-        .open_feature_for_agent_in_scope(
+        .open_feature_for_agent(
             first_agent,
             None,
             argus_protocol::FeatureWrite {
@@ -271,9 +272,9 @@ async fn artifacts_are_repository_scoped_unless_workspace_scope_is_requested() {
         .unwrap()
         .current
         .unwrap();
-    d.select_feature_for_agent_in_scope(second_agent, &shared, ArtifactScope::Workspace)
+    d.select_feature_for_agent(second_agent, &shared, ArtifactScope::Workspace)
         .unwrap();
-    d.record_agent_decision_in_scope(
+    d.record_agent_decision(
         first_agent,
         None,
         DecisionWrite {
@@ -283,7 +284,7 @@ async fn artifacts_are_repository_scoped_unless_workspace_scope_is_requested() {
         ArtifactScope::Workspace,
     )
     .unwrap();
-    d.add_task_for_agent_in_scope(
+    d.add_task_for_agent(
         first_agent,
         None,
         TaskWrite {
@@ -295,14 +296,14 @@ async fn artifacts_are_repository_scoped_unless_workspace_scope_is_requested() {
     .unwrap();
 
     let decisions = d
-        .decisions_for_agent_in_scope(second_agent, ArtifactScope::Workspace)
+        .decisions_for_agent(second_agent, ArtifactScope::Workspace)
         .unwrap();
     assert_eq!(
         decisions.decisions[0].chose,
         "move both repositories together"
     );
     let tasks = d
-        .tasks_for_agent_in_scope(second_agent, ArtifactScope::Workspace)
+        .tasks_for_agent(second_agent, ArtifactScope::Workspace)
         .unwrap();
     assert_eq!(tasks.tasks[0].title, "update both crates");
     close_all(&d);
@@ -328,14 +329,14 @@ async fn repository_features_cross_branches_and_can_transfer_assignment() {
     let destination_agent = d.spawn_agent(destination_checkout, "claude").unwrap();
 
     let slug = open_feature(&d, source_agent, "shared work");
-    let destination_board = d.feature_board_for_agent(destination_agent).unwrap();
+    let destination_board = d.feature_board_for_agent(destination_agent, ArtifactScope::default()).unwrap();
     assert_eq!(destination_board.features.len(), 1);
     assert_eq!(destination_board.current, None);
 
     d.transfer_feature_for_client(project, source_checkout, destination_checkout, &slug)
         .unwrap();
-    let source_board = d.feature_board_for_agent(source_agent).unwrap();
-    let destination_board = d.feature_board_for_agent(destination_agent).unwrap();
+    let source_board = d.feature_board_for_agent(source_agent, ArtifactScope::default()).unwrap();
+    let destination_board = d.feature_board_for_agent(destination_agent, ArtifactScope::default()).unwrap();
     assert_eq!(source_board.current, None);
     assert_eq!(destination_board.current.as_deref(), Some(slug.as_str()));
     assert_eq!(destination_board.features[0].checkouts.len(), 1);
@@ -362,6 +363,7 @@ async fn a_decision_has_nowhere_to_go_until_the_checkout_is_on_a_feature() {
                 chose: "sqlite".into(),
                 ..Default::default()
             },
+            ArtifactScope::default(),
         )
         .unwrap_err()
         .to_string();
@@ -381,6 +383,7 @@ async fn a_decision_has_nowhere_to_go_until_the_checkout_is_on_a_feature() {
                 chose: "sqlite".into(),
                 ..Default::default()
             },
+            ArtifactScope::default(),
         )
         .is_ok());
     close_all(&d);
@@ -401,6 +404,7 @@ async fn an_agent_reads_its_own_features_decisions_and_not_the_projects() {
             chose: "sqlite".into(),
             ..Default::default()
         },
+        ArtifactScope::default(),
     )
     .unwrap();
     // The same checkout moves on to something else, the way an agent that
@@ -413,10 +417,11 @@ async fn an_agent_reads_its_own_features_decisions_and_not_the_projects() {
             chose: "one reader thread".into(),
             ..Default::default()
         },
+        ArtifactScope::default(),
     )
     .unwrap();
 
-    let board = d.decisions_for_agent(agent).unwrap();
+    let board = d.decisions_for_agent(agent, ArtifactScope::default()).unwrap();
     assert_eq!(
         board
             .decisions
@@ -426,7 +431,7 @@ async fn an_agent_reads_its_own_features_decisions_and_not_the_projects() {
         ["one reader thread"],
         "the board an agent reads is the feature it is on, not the project"
     );
-    let features = d.feature_board_for_agent(agent).unwrap();
+    let features = d.feature_board_for_agent(agent, ArtifactScope::default()).unwrap();
     assert_eq!(features.current.as_deref(), Some(second.as_str()));
     assert_eq!(features.features.len(), 2, "the others are still offered");
     // The project-wide board is what the client draws, and keeps both.
@@ -448,11 +453,11 @@ async fn a_feature_document_grows_and_a_checkout_can_go_back_to_it() {
     let agent = d.spawn_agent(checkout, "claude").unwrap();
 
     let first = open_feature(&d, agent, "notes storage");
-    d.append_to_feature_for_agent(agent, "the key has to outlive the ids")
+    d.append_to_feature_for_agent(agent, "the key has to outlive the ids", ArtifactScope::default())
         .unwrap();
     open_feature(&d, agent, "the pty deadlock");
 
-    let board = d.select_feature_for_agent(agent, &first).unwrap();
+    let board = d.select_feature_for_agent(agent, &first, ArtifactScope::default()).unwrap();
     assert_eq!(board.current.as_deref(), Some(first.as_str()));
     let document = &board
         .features
@@ -463,7 +468,7 @@ async fn a_feature_document_grows_and_a_checkout_can_go_back_to_it() {
     assert_eq!(document, "the key has to outlive the ids");
 
     assert!(
-        d.select_feature_for_agent(agent, "no-such-feature")
+        d.select_feature_for_agent(agent, "no-such-feature", ArtifactScope::default())
             .is_err(),
         "a checkout cannot be pointed at a feature that does not exist"
     );
@@ -491,6 +496,7 @@ async fn a_decision_lands_on_its_projects_board_wherever_the_agent_was() {
                 because: Some("both need migrations".into()),
                 ..Default::default()
             },
+            ArtifactScope::default(),
         )
         .unwrap();
     let child = d
@@ -502,6 +508,7 @@ async fn a_decision_lands_on_its_projects_board_wherever_the_agent_was() {
                 under: Some(root.id),
                 ..Default::default()
             },
+            ArtifactScope::default(),
         )
         .unwrap();
 
@@ -542,6 +549,7 @@ async fn a_recorded_decision_is_pushed_at_every_attached_client() {
             chose: "sqlite".into(),
             ..Default::default()
         },
+        ArtifactScope::default(),
     )
     .unwrap();
 
@@ -572,11 +580,11 @@ async fn only_a_live_agent_may_record_a_decision() {
         ..Default::default()
     };
     assert!(
-        d.record_agent_decision(shell, None, write.clone()).is_err(),
+        d.record_agent_decision(shell, None, write.clone(), ArtifactScope::default()).is_err(),
         "a shell is not an agent"
     );
     assert!(
-        d.record_agent_decision(PaneId(9999), None, write).is_err(),
+        d.record_agent_decision(PaneId(9999), None, write, ArtifactScope::default()).is_err(),
         "nor is nobody"
     );
     assert!(d
@@ -604,6 +612,7 @@ async fn superseding_leaves_the_decision_it_replaced_on_the_board() {
                 chose: "key notes by id".into(),
                 ..Default::default()
             },
+            ArtifactScope::default(),
         )
         .unwrap();
     let new = d
@@ -616,6 +625,7 @@ async fn superseding_leaves_the_decision_it_replaced_on_the_board() {
                 supersedes: Some(old.id),
                 ..Default::default()
             },
+            ArtifactScope::default(),
         )
         .unwrap();
 
@@ -739,6 +749,7 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
                 title: "port the parser".into(),
                 external: None,
             },
+            ArtifactScope::default(),
         )
         .unwrap_err()
         .to_string();
@@ -753,6 +764,7 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
                 title: "backpressure on the reader".into(),
                 external: Some("ORION-412".into()),
             },
+            ArtifactScope::default(),
         )
         .unwrap();
     assert_eq!(list.feature.as_deref(), Some(pty.as_str()));
@@ -760,11 +772,11 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
     assert_eq!(list.tasks[0].external.as_deref(), Some("ORION-412"));
 
     let list = d
-        .move_task_for_agent(agent, Some("sess-1"), id, TaskState::Doing)
+        .move_task_for_agent(agent, Some("sess-1"), id, TaskState::Doing, ArtifactScope::default())
         .unwrap();
     assert_eq!(list.tasks[0].claimed_by.as_deref(), Some("sess-1"));
     let list = d
-        .set_task_body_for_agent_in_scope(
+        .set_task_body_for_agent(
             agent,
             id,
             "Accept sustained output.\nVerify bounded buffering.".into(),
@@ -779,7 +791,7 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
     // Moving the checkout to another feature moves what it can see and
     // what it can touch, together.
     let notes = open_feature(&d, agent, "notes storage");
-    let list = d.tasks_for_agent(agent).unwrap();
+    let list = d.tasks_for_agent(agent, ArtifactScope::default()).unwrap();
     assert_eq!(list.feature.as_deref(), Some(notes.as_str()));
     assert!(
         list.tasks.is_empty(),
@@ -787,7 +799,7 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
     );
 
     let refused = d
-        .move_task_for_agent(agent, Some("sess-1"), id, TaskState::Done)
+        .move_task_for_agent(agent, Some("sess-1"), id, TaskState::Done, ArtifactScope::default())
         .unwrap_err()
         .to_string();
     assert!(
@@ -795,7 +807,7 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
         "a stale id cannot tick off another feature's work: {refused}"
     );
     let refused = d
-        .set_task_body_for_agent_in_scope(
+        .set_task_body_for_agent(
             agent,
             id,
             "rewrite the wrong task".into(),

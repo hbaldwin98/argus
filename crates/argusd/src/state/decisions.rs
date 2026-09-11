@@ -1,19 +1,16 @@
 //! The decision board: appending to it, and reading it back.
 //!
-//! Same translation job as `notes` — clients speak in ids, the store
-//! speaks in project names — with one difference that shapes the whole
-//! module. A note is scoped to the pane that asks for it. A decision is
-//! scoped to a *feature*: a tree still has to be read whole, because a
-//! node hanging off three others says nothing without them, but the tree
-//! that has to be read whole is one feature's, not one project's. The
-//! repository board is what the client is pushed, since it draws the
-//! features alongside it; an agent is answered one feature at a time by
-//! `features`.
+//! Clients speak in ids and the store speaks in artifact keys; this
+//! translates between them. A decision is scoped to a *feature*: a tree
+//! still has to be read whole, because a node hanging off three others
+//! says nothing without them, but the tree that has to be read whole is
+//! one feature's, not one project's. The repository board is what the
+//! client is pushed, since it draws the features alongside it; an agent is
+//! answered one feature at a time by `features`.
 //!
-//! Nothing here is gated on a project flag the way note writes are. A note
-//! is the human's document and an agent writing to it needs permission; the
-//! board exists for agents to write, is append-only, and attributes every
-//! row. There is nothing for a policy to protect.
+//! Nothing here is gated on a project flag. The board exists for agents to
+//! write, is append-only, and attributes every row, so there is nothing for
+//! a policy to protect.
 
 use argus_protocol::{ArtifactScope, Decision, DecisionBoard, DecisionWrite};
 
@@ -44,19 +41,14 @@ impl Daemon {
     /// to the feature for the same reason — everything decided about some
     /// other feature is noise it has to read past to find the part that
     /// constrains it.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn decisions_for_agent(&self, pane_id: PaneId) -> anyhow::Result<DecisionBoard> {
-        self.decisions_for_agent_in_scope(pane_id, ArtifactScope::default())
-    }
-
-    pub fn decisions_for_agent_in_scope(
+    pub fn decisions_for_agent(
         &self,
         pane_id: PaneId,
         artifact_scope: ArtifactScope,
     ) -> anyhow::Result<DecisionBoard> {
         let scope = self.agent_scope(pane_id)?;
         let key = scope.artifact_key(artifact_scope);
-        let feature = self.feature_for_agent_in_scope(&scope, artifact_scope)?;
+        let feature = self.feature_for_agent(&scope, artifact_scope)?;
         let decisions = self
             .store
             .decisions(key)?
@@ -78,17 +70,7 @@ impl Daemon {
     /// in front of the user. The id in the answer is what the next
     /// decision hangs off, which is the only reason a write answers with
     /// more than an acknowledgement.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn record_agent_decision(
-        &self,
-        pane_id: PaneId,
-        session: Option<&str>,
-        write: DecisionWrite,
-    ) -> anyhow::Result<Decision> {
-        self.record_agent_decision_in_scope(pane_id, session, write, ArtifactScope::default())
-    }
-
-    pub fn record_agent_decision_in_scope(
         &self,
         pane_id: PaneId,
         session: Option<&str>,
@@ -101,7 +83,7 @@ impl Daemon {
         // Refused rather than filed loose: a decision nobody can find
         // again is the pile this scoping exists to end.
         let feature = self
-            .feature_for_agent_in_scope(&scope, artifact_scope)?
+            .feature_for_agent(&scope, artifact_scope)?
             .ok_or_else(|| {
                 anyhow::anyhow!(
                     "this checkout is not on a feature yet — open one with \
@@ -142,8 +124,8 @@ impl Daemon {
 
     /// Pushes a changed board at every attached client.
     ///
-    /// Unlike a note, which is answered only to the client that asked, a
-    /// board is meant to be watched: the point of drawing the tree is
+    /// Pushed rather than answered to one client, because a board is
+    /// meant to be watched: the point of drawing the tree is
     /// seeing it built up while the work happens. A client with another
     /// project open drops it by name.
     pub(super) fn broadcast_decisions(&self, name: &str, key: &str, decisions: Vec<Decision>) {

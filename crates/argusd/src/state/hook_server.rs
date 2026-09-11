@@ -215,7 +215,7 @@ fn decisions_response(
     source: PaneId,
     scope: argus_protocol::ArtifactScope,
 ) -> anyhow::Result<HookResponse> {
-    Ok(match daemon.decisions_for_agent_in_scope(source, scope) {
+    Ok(match daemon.decisions_for_agent(source, scope) {
         Ok(board) => HookResponse {
             code: 200,
             reason: "OK",
@@ -241,7 +241,7 @@ fn decide_response(
             return HookResponse::text(400, "Bad Request", "not a decision".into());
         }
     };
-    match daemon.record_agent_decision_in_scope(source, session, write, scope) {
+    match daemon.record_agent_decision(source, session, write, scope) {
         Ok(decision) => match serde_json::to_vec(&decision) {
             Ok(body) => HookResponse {
                 code: 200,
@@ -260,7 +260,7 @@ fn features_response(
     scope: argus_protocol::ArtifactScope,
 ) -> anyhow::Result<HookResponse> {
     Ok(
-        match daemon.feature_board_for_agent_in_scope(source, scope) {
+        match daemon.feature_board_for_agent(source, scope) {
             Ok(board) => HookResponse {
                 code: 200,
                 reason: "OK",
@@ -289,13 +289,13 @@ fn feature_response(
     };
     let board = match action {
         FeatureAction::Open(write) => {
-            daemon.open_feature_for_agent_in_scope(source, session, write, scope)
+            daemon.open_feature_for_agent(source, session, write, scope)
         }
         FeatureAction::Select { slug } => {
-            daemon.select_feature_for_agent_in_scope(source, &slug, scope)
+            daemon.select_feature_for_agent(source, &slug, scope)
         }
         FeatureAction::Append { text } => {
-            daemon.append_to_feature_for_agent_in_scope(source, &text, scope)
+            daemon.append_to_feature_for_agent(source, &text, scope)
         }
     };
     match board.and_then(|board| Ok(serde_json::to_vec(&board)?)) {
@@ -327,18 +327,18 @@ fn tasks_response(
         Err(_) => return HookResponse::text(400, "Bad Request", "not a task change".into()),
     };
     let list = match action {
-        TaskAction::List => daemon.tasks_for_agent_in_scope(source, scope),
-        TaskAction::Add(write) => daemon.add_task_for_agent_in_scope(source, session, write, scope),
+        TaskAction::List => daemon.tasks_for_agent(source, scope),
+        TaskAction::Add(write) => daemon.add_task_for_agent(source, session, write, scope),
         TaskAction::Move { id, state } => {
-            daemon.move_task_for_agent_in_scope(source, session, id, state, scope)
+            daemon.move_task_for_agent(source, session, id, state, scope)
         }
         TaskAction::Retitle { id, title } => {
-            daemon.retitle_task_for_agent_in_scope(source, id, &title, scope)
+            daemon.retitle_task_for_agent(source, id, &title, scope)
         }
         TaskAction::SetBody { id, body } => {
-            daemon.set_task_body_for_agent_in_scope(source, id, body, scope)
+            daemon.set_task_body_for_agent(source, id, body, scope)
         }
-        TaskAction::Remove { id } => daemon.remove_task_for_agent_in_scope(source, id, scope),
+        TaskAction::Remove { id } => daemon.remove_task_for_agent(source, id, scope),
     };
     match list.and_then(|list| Ok(serde_json::to_vec(&list)?)) {
         Ok(body) => HookResponse {

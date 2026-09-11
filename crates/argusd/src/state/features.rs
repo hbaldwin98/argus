@@ -26,12 +26,7 @@ impl Daemon {
     /// Everything an agent needs to know about where it is: the project's
     /// features, which one this checkout is on, and that feature's
     /// decisions.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn feature_board_for_agent(&self, pane_id: PaneId) -> anyhow::Result<FeatureBoard> {
-        self.feature_board_for_agent_in_scope(pane_id, ArtifactScope::default())
-    }
-
-    pub fn feature_board_for_agent_in_scope(
+    pub fn feature_board_for_agent(
         &self,
         pane_id: PaneId,
         artifact_scope: ArtifactScope,
@@ -89,17 +84,7 @@ impl Daemon {
 
     /// Opens a feature, points this checkout at it, and answers with the
     /// board as it now stands.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn open_feature_for_agent(
-        &self,
-        pane_id: PaneId,
-        session: Option<&str>,
-        write: FeatureWrite,
-    ) -> anyhow::Result<FeatureBoard> {
-        self.open_feature_for_agent_in_scope(pane_id, session, write, ArtifactScope::default())
-    }
-
-    pub fn open_feature_for_agent_in_scope(
         &self,
         pane_id: PaneId,
         session: Option<&str>,
@@ -134,16 +119,7 @@ impl Daemon {
     /// Pushed, because a feature row names the checkouts pointed at it:
     /// this is the moment a feature somebody wrote down gains a place
     /// where work on it can be seen happening.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn select_feature_for_agent(
-        &self,
-        pane_id: PaneId,
-        slug: &str,
-    ) -> anyhow::Result<FeatureBoard> {
-        self.select_feature_for_agent_in_scope(pane_id, slug, ArtifactScope::default())
-    }
-
-    pub fn select_feature_for_agent_in_scope(
         &self,
         pane_id: PaneId,
         slug: &str,
@@ -166,16 +142,7 @@ impl Daemon {
     /// Refused when the checkout is on no feature, rather than opening one:
     /// what to call a feature is the decision this whole scope hangs off,
     /// and it is not one to make out of a stray note.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn append_to_feature_for_agent(
-        &self,
-        pane_id: PaneId,
-        text: &str,
-    ) -> anyhow::Result<FeatureBoard> {
-        self.append_to_feature_for_agent_in_scope(pane_id, text, ArtifactScope::default())
-    }
-
-    pub fn append_to_feature_for_agent_in_scope(
         &self,
         pane_id: PaneId,
         text: &str,
@@ -349,7 +316,7 @@ impl Daemon {
     }
 
     /// The feature the next decision from this pane is filed under.
-    pub(super) fn feature_for_agent_in_scope(
+    pub(super) fn feature_for_agent(
         &self,
         scope: &AgentScope,
         artifact_scope: ArtifactScope,

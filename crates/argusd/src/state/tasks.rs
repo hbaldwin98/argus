@@ -15,12 +15,7 @@ use super::*;
 
 impl Daemon {
     /// The tasks of the feature this checkout is on.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn tasks_for_agent(&self, pane_id: PaneId) -> anyhow::Result<TaskList> {
-        self.tasks_for_agent_in_scope(pane_id, ArtifactScope::default())
-    }
-
-    pub fn tasks_for_agent_in_scope(
+    pub fn tasks_for_agent(
         &self,
         pane_id: PaneId,
         artifact_scope: ArtifactScope,
@@ -35,7 +30,7 @@ impl Daemon {
         artifact_scope: ArtifactScope,
     ) -> anyhow::Result<TaskList> {
         let key = scope.artifact_key(artifact_scope);
-        let feature = self.feature_for_agent_in_scope(scope, artifact_scope)?;
+        let feature = self.feature_for_agent(scope, artifact_scope)?;
         let tasks = match &feature {
             Some(slug) => self.store.tasks(key, slug)?,
             None => Vec::new(),
@@ -52,17 +47,7 @@ impl Daemon {
     /// Refused when the checkout is on no feature, for the same reason a
     /// decision is: a task with nothing to be under is the pile all of
     /// this exists to end.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn add_task_for_agent(
-        &self,
-        pane_id: PaneId,
-        session: Option<&str>,
-        write: TaskWrite,
-    ) -> anyhow::Result<TaskList> {
-        self.add_task_for_agent_in_scope(pane_id, session, write, ArtifactScope::default())
-    }
-
-    pub fn add_task_for_agent_in_scope(
         &self,
         pane_id: PaneId,
         session: Option<&str>,
@@ -72,7 +57,7 @@ impl Daemon {
         let scope = self.agent_scope(pane_id)?;
         let key = scope.artifact_key(artifact_scope);
         let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-        let Some(slug) = self.feature_for_agent_in_scope(&scope, artifact_scope)? else {
+        let Some(slug) = self.feature_for_agent(&scope, artifact_scope)? else {
             anyhow::bail!(
                 "this checkout is not on a feature yet — open one with \
                  `argus-hook feature open` before adding tasks to it"
@@ -88,18 +73,7 @@ impl Daemon {
         Ok(list)
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn move_task_for_agent(
-        &self,
-        pane_id: PaneId,
-        session: Option<&str>,
-        id: i64,
-        state: TaskState,
-    ) -> anyhow::Result<TaskList> {
-        self.move_task_for_agent_in_scope(pane_id, session, id, state, ArtifactScope::default())
-    }
-
-    pub fn move_task_for_agent_in_scope(
         &self,
         pane_id: PaneId,
         session: Option<&str>,
@@ -118,17 +92,7 @@ impl Daemon {
         Ok(list)
     }
 
-    #[allow(dead_code)]
     pub fn retitle_task_for_agent(
-        &self,
-        pane_id: PaneId,
-        id: i64,
-        title: &str,
-    ) -> anyhow::Result<TaskList> {
-        self.retitle_task_for_agent_in_scope(pane_id, id, title, ArtifactScope::default())
-    }
-
-    pub fn retitle_task_for_agent_in_scope(
         &self,
         pane_id: PaneId,
         id: i64,
@@ -146,7 +110,7 @@ impl Daemon {
         Ok(list)
     }
 
-    pub fn set_task_body_for_agent_in_scope(
+    pub fn set_task_body_for_agent(
         &self,
         pane_id: PaneId,
         id: i64,
@@ -164,12 +128,7 @@ impl Daemon {
         Ok(list)
     }
 
-    #[allow(dead_code)]
-    pub fn remove_task_for_agent(&self, pane_id: PaneId, id: i64) -> anyhow::Result<TaskList> {
-        self.remove_task_for_agent_in_scope(pane_id, id, ArtifactScope::default())
-    }
-
-    pub fn remove_task_for_agent_in_scope(
+    pub fn remove_task_for_agent(
         &self,
         pane_id: PaneId,
         id: i64,
@@ -198,7 +157,7 @@ impl Daemon {
         artifact_scope: ArtifactScope,
     ) -> anyhow::Result<()> {
         let key = scope.artifact_key(artifact_scope);
-        let Some(slug) = self.feature_for_agent_in_scope(scope, artifact_scope)? else {
+        let Some(slug) = self.feature_for_agent(scope, artifact_scope)? else {
             anyhow::bail!("this checkout is not on a feature yet");
         };
         let mine = self
