@@ -17,7 +17,7 @@ mod herdr;
 mod history;
 mod launch;
 mod motion;
-mod notes;
+mod brief;
 mod paste;
 mod profile;
 mod pty_input;

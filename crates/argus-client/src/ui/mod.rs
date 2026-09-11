@@ -30,7 +30,7 @@
 
 use argus_protocol::{
     ChildAgentInfo, Color as PColor, FileDiff, GitStatus, HighlightKind, HighlightSpan, LineKind,
-    NoteCounts, PaneStatus, TodoState,
+    PaneStatus,
 };
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
@@ -45,7 +45,7 @@ use crate::app::{
 use crate::dirpicker::DirRow;
 use crate::grid::Grid;
 use crate::history::{HistoryRow, HistoryView};
-use crate::notes::NoteMode;
+use crate::brief::BriefMode;
 use crate::review::{ReviewView, Row};
 use crate::theme::Theme;
 use argus_protocol::CursorShape;

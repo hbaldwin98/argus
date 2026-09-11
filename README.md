@@ -10,7 +10,7 @@ The workspace builds three executables:
 
 - `argus`: the terminal client.
 - `argusd`: the daemon that owns panes, Git state, and session restore.
-- `argus-hook`: a helper that lets agent harnesses report status, notes, and pane titles.
+- `argus-hook`: a helper that lets agent harnesses report status and pane titles.
 
 ## Features
 
@@ -24,12 +24,6 @@ The workspace builds three executables:
 - Captures deleted, renamed, and non-ignored untracked content for review.
 - Reads a diff unified or split side by side, with comments meaning the same thing in either.
 - Scrolls a pane back through what its child has already printed, by wheel or Shift-PageUp.
-- Keeps a Markdown note on any project or checkout, counting its `- [ ]`, `- [x]`, and `- [!]`
-  lines and rolling those counts up the tree.
-- Forwards the current note line or whole note to an agent in that note's scope, leaving the text
-  editable in the agent's prompt rather than submitting it.
-- Lets an agent read the notes for where it is running, and — where the project asks for it — add
-  to and tick off its checkout's checkboxes, with every change attributed and recorded.
 - Stores feature briefs, tasks, and a visibly connected tree of what agents chose, what they chose
   it over, and what forced it. Later agents can read that durable context, and reversing a decision
   supersedes it rather than erasing it.
@@ -536,8 +530,8 @@ Every agent pane receives `ARGUS_HOOK`, `ARGUS_HOOK_URL`, `ARGUS_HOOK_TOKEN`, `A
 
 Argus installs a small **argus skill** for built-in harnesses: `.claude/skills/argus` for
 Claude Code, and `.agents/skills/argus` for Codex, OpenCode, AGY, and Cursor. Startup context points
-the agent to `SKILL.md`; detailed commands for the currently implemented feature, task, decision,
-and note stores live in its reference and are read when needed. Hooks keep reporting lifecycle
+the agent to `SKILL.md`; detailed commands for the currently implemented feature, task, and decision
+stores live in its reference and are read when needed. Hooks keep reporting lifecycle
 events and session identity.
 Generic harnesses receive compact fallback instructions instead. Custom `[[harness]]` blocks
 can opt in with `skill_dir = ".agents/skills/argus"` and deliver `ARGUS_INSTRUCTIONS` through

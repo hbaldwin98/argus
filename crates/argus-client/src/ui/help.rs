@@ -39,7 +39,6 @@ const SELECTION: Group = Group {
         ("f", "open a file"),
         ("R  tab", "review the diff"),
         ("H", "history"),
-        ("m", "notes"),
         ("n", "add one"),
         ("i", "init a repository"),
         ("D", "remove it"),
@@ -108,14 +107,11 @@ const HISTORY: Group = Group {
     ],
 };
 
-const NOTES: Group = Group {
-    title: "a note",
+const BRIEF: Group = Group {
+    title: "a brief",
     keys: &[
         ("j / k  h / l", "move the cursor"),
         ("0 / $", "start and end of the line"),
-        ("space", "tick the box on this line"),
-        ("f", "forward this line to an agent"),
-        ("F", "forward the whole note to an agent"),
         ("i  a", "start typing"),
         ("o", "a new line below"),
         ("esc", "stop typing, and save"),
@@ -174,8 +170,8 @@ pub(super) fn groups(app: &App) -> Vec<&'static Group> {
         vec![&REVIEW]
     } else if matches!(app.overlay, Some(Overlay::History)) {
         vec![&HISTORY]
-    } else if matches!(app.overlay, Some(Overlay::Notes)) {
-        vec![&NOTES]
+    } else if matches!(app.overlay, Some(Overlay::Brief)) {
+        vec![&BRIEF]
     } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
         vec![&SETTINGS]
     } else if app.focus == Focus::View {

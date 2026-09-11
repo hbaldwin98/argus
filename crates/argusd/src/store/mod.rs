@@ -6,7 +6,7 @@
 //! the line used to be its own file — `session.json`, `excluded-repos`,
 //! `open-workspace`, and appended `[[project]]` blocks — each with its own
 //! format, its own partial-write story, and its own compatibility ladder.
-//! Review state, notes, and boards would each have added another.
+//! Review state and boards would each have added another.
 //!
 //! SQLite in WAL mode, so a write is a transaction rather than a rewrite of
 //! everything, and a reader is never blocked by one. Schema changes go
@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 use argus_protocol::{
     checked_task_body, slugify, Decision, DecisionWrite, Feature, FeatureEvent, FeatureMove,
     FeatureState, FeatureWrite, PaneKind, PaneStatus, ReviewAnchor, ReviewComment, Task,
-    TaskCounts, TaskState, TaskWrite, TodoAudit, MAX_REVIEW_COMMENTS,
+    TaskCounts, TaskState, TaskWrite, MAX_REVIEW_COMMENTS,
 };
 use rusqlite::{Connection, OptionalExtension};
 
@@ -62,47 +62,6 @@ impl SessionPane {
     }
 }
 
-/// What a note is filed under, once ids are out of the picture.
-///
-/// The client speaks in `NoteTarget`, which is ids; the store speaks in
-/// this, which is what those ids referred to. The daemon translates, and is
-/// the only place that knows both.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum NoteKey {
-    Project(String),
-    Checkout(PathBuf),
-}
-
-impl NoteKey {
-    pub fn checkout(path: &Path) -> NoteKey {
-        NoteKey::Checkout(path.to_path_buf())
-    }
-
-    fn scope(&self) -> &'static str {
-        match self {
-            NoteKey::Project(_) => "project",
-            NoteKey::Checkout(_) => "checkout",
-        }
-    }
-
-    fn key(&self) -> String {
-        match self {
-            NoteKey::Project(name) => name.clone(),
-            NoteKey::Checkout(path) => path_text(path),
-        }
-    }
-
-    /// A row from a store that may be newer than this code. An unknown
-    /// scope is dropped rather than guessed at.
-    fn from_row(scope: &str, key: String) -> Option<NoteKey> {
-        match scope {
-            "project" => Some(NoteKey::Project(key)),
-            "checkout" => Some(NoteKey::Checkout(PathBuf::from(key))),
-            _ => None,
-        }
-    }
-}
-
 /// A project the user added at runtime rather than by editing the config.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectOverlay {
@@ -132,10 +91,6 @@ pub struct Overlays {
 /// Set to anything to start clean. An escape hatch for the case where a
 /// restore is the problem — a template that now fails on launch, say.
 pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
-
-/// How many of a note's agent-change records travel with it. See
-/// [`Store::note_audit`].
-const MAX_NOTE_AUDIT: i64 = 20;
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
 const SCHEMA_VERSION: i64 = 14;
@@ -565,94 +520,6 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    // ---- notes -------------------------------------------------------
-
-    /// This note's body, or `None` if it has never been written.
-    pub fn note(&self, key: &NoteKey) -> Result<Option<String>> {
-        let conn = self.conn();
-        Ok(conn
-            .query_row(
-                "SELECT body FROM note WHERE scope = ?1 AND key = ?2",
-                rusqlite::params![key.scope(), key.key()],
-                |r| r.get(0),
-            )
-            .optional()?)
-    }
-
-    /// Writes a note, or removes it when the body has nothing left in it.
-    ///
-    /// Emptying a note is how a note is deleted: there is no separate
-    /// delete, because "select all, backspace, save" is what a person
-    /// actually does when they mean to be rid of one.
-    pub fn set_note(&self, key: &NoteKey, body: &str) -> Result<()> {
-        let conn = self.conn();
-        if body.trim().is_empty() {
-            conn.execute(
-                "DELETE FROM note WHERE scope = ?1 AND key = ?2",
-                rusqlite::params![key.scope(), key.key()],
-            )?;
-            return Ok(());
-        }
-        conn.execute(
-            "INSERT INTO note (scope, key, body) VALUES (?1, ?2, ?3)
-             ON CONFLICT(scope, key) DO UPDATE SET body = excluded.body",
-            rusqlite::params![key.scope(), key.key(), body],
-        )?;
-        Ok(())
-    }
-
-    /// Every note there is, for folding counts into a tree snapshot.
-    ///
-    /// One query rather than one per row: the tree is rebuilt on every
-    /// change, and a note lookup per checkout would put a statement per
-    /// checkout on a path that already walks the whole tree.
-    pub fn notes(&self) -> Result<Vec<(NoteKey, String)>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare("SELECT scope, key, body FROM note")?;
-        let rows = stmt.query_map([], |r| {
-            let scope: String = r.get(0)?;
-            let key: String = r.get(1)?;
-            Ok((NoteKey::from_row(&scope, key), r.get::<_, String>(2)?))
-        })?;
-        Ok(rows
-            .collect::<rusqlite::Result<Vec<_>>>()?
-            .into_iter()
-            .filter_map(|(k, body)| k.map(|k| (k, body)))
-            .collect())
-    }
-
-    /// Writes a note on an agent's behalf and records that it did, in one
-    /// transaction.
-    ///
-    /// The two halves are useless apart: a body that grew a line nobody
-    /// can account for is what the audit exists to prevent, and a record
-    /// of a change that never landed is a lie about the note. So this is
-    /// one commit rather than a call to [`Self::set_note`] followed by a
-    /// second write that may not happen.
-    pub fn set_note_as_agent(&self, key: &NoteKey, body: &str, entry: &TodoAudit) -> Result<()> {
-        let mut conn = self.conn();
-        let tx = conn.transaction()?;
-        tx.execute(
-            "INSERT INTO note (scope, key, body) VALUES (?1, ?2, ?3)
-             ON CONFLICT(scope, key) DO UPDATE SET body = excluded.body",
-            rusqlite::params![key.scope(), key.key(), body],
-        )?;
-        tx.execute(
-            "INSERT INTO note_audit (at, scope, key, session, action, detail)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![
-                entry.at,
-                key.scope(),
-                key.key(),
-                entry.session,
-                entry.action,
-                entry.detail
-            ],
-        )?;
-        tx.commit()?;
-        Ok(())
-    }
-
     /// Records one decision on a project's board and returns its id.
     ///
     /// One transaction, because superseding is two writes: the new row,
@@ -746,31 +613,6 @@ impl Store {
                 superseded_by: r.get(9)?,
             })
         })?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
-    }
-
-    /// What agents have done to one note, newest first and bounded.
-    ///
-    /// Bounded because this is read to answer "where did this line come
-    /// from", not to reconstruct a history: the oldest records matter least
-    /// and the note is open on screen while they are read.
-    pub fn note_audit(&self, key: &NoteKey) -> Result<Vec<TodoAudit>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT at, session, action, detail FROM note_audit
-             WHERE scope = ?1 AND key = ?2 ORDER BY id DESC LIMIT ?3",
-        )?;
-        let rows = stmt.query_map(
-            rusqlite::params![key.scope(), key.key(), MAX_NOTE_AUDIT],
-            |r| {
-                Ok(TodoAudit {
-                    at: r.get(0)?,
-                    session: r.get(1)?,
-                    action: r.get(2)?,
-                    detail: r.get(3)?,
-                })
-            },
-        )?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 

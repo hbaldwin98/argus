@@ -92,8 +92,6 @@ fn a_new_project_becomes_the_selected_one() {
             "new-repo",
             vec![checkout(30, "new", true, vec![])],
         )],
-        notes: Default::default(),
-        has_note: false,
     });
     h.app.on_server_msg(ServerMsg::Tree(t));
     assert_eq!(h.app.current_project().unwrap().name, "new");

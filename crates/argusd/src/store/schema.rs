@@ -66,6 +66,9 @@ CREATE TABLE ui_state (
 /// fresh every start, and a note has to survive being written today and
 /// read next week. A project is its name and a checkout is its path, the
 /// same keys the pane and overlay tables already use.
+///
+/// Notes have since been removed. This table and `note_audit` are still
+/// created on the way up from an older store, and nothing reads them.
 pub(super) const SCHEMA_V3: &str = r#"
 CREATE TABLE note (
     scope TEXT NOT NULL,

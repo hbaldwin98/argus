@@ -9,7 +9,6 @@ use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::decisions::DecisionBoard;
 use crate::features::{FeatureState, FeatureWrite};
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
-use crate::notes::{Note, NoteTarget, TodoState};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
 use crate::tasks::{TaskList, TaskState, TaskWrite};
 use crate::tree::{ProjectInfo, WorkspaceInfo};
@@ -115,37 +114,6 @@ pub enum ClientMsg {
         checkout: CheckoutId,
         recipient: PaneId,
         anchor: Box<ReviewAnchor>,
-        body: String,
-    },
-    /// Read a project's or checkout's note. The daemon answers with
-    /// `ServerMsg::Note` — an absent note comes back as an empty body, so
-    /// opening one that does not exist yet is the same code path as
-    /// opening one that does.
-    GetNote {
-        target: NoteTarget,
-    },
-    /// Replace a note's body. Saving an empty body deletes the note, which
-    /// is how a note is removed: there is no separate delete.
-    SetNote {
-        target: NoteTarget,
-        body: String,
-    },
-    /// Flip one checkbox line. Distinct from `SetNote` because the client
-    /// toggling a box has not necessarily read the note it is toggling in
-    /// — the counts came down with the tree — and a whole-body write from
-    /// a stale copy would lose whatever an agent wrote in the meantime.
-    SetTodo {
-        target: NoteTarget,
-        line: usize,
-        state: TodoState,
-    },
-    /// Put note text into one live agent's prompt without submitting it.
-    /// The target is carried so the daemon can prove that the recipient is
-    /// inside the note's project or checkout rather than trusting the
-    /// client's recipient picker.
-    ForwardNote {
-        target: NoteTarget,
-        recipient: PaneId,
         body: String,
     },
     /// Read a project's decision board. Whole rather than scoped: a
@@ -435,25 +403,10 @@ pub enum ServerMsg {
     /// One feature's tasks: the answer to `ClientMsg::GetTasks`, and what
     /// every client receives whenever that list changes.
     Tasks(Box<TaskList>),
-    /// The answer to `ClientMsg::GetNote`, and what every client receives
-    /// when a note changes — including the one that changed it, so the
-    /// editor's text and the daemon's agree without the client predicting
-    /// the result of its own write.
-    Note(Box<Note>),
     /// The answer to `ClientMsg::GetDecisions`, and what every client
     /// receives when a board changes — a decision tree is meant to be
     /// watched being built, not polled.
     Decisions(Box<DecisionBoard>),
-    /// A note write that could not be stored, with the reason to show.
-    NoteFailed {
-        target: NoteTarget,
-        message: String,
-    },
-    /// Note text reached the selected pane's input. It remains editable in
-    /// the child because forwarding never presses Enter for the operator.
-    NoteForwarded {
-        recipient: PaneId,
-    },
     /// The answer to `ClientMsg::ListBranches`. `current` is the branch the
     /// checkout is on, and is the first entry of `branches`.
     Branches {

@@ -33,11 +33,6 @@ pub(crate) struct AgentScope {
     pub artifact_key: String,
     /// Explicit broad scope for changes spanning repositories or branches.
     pub workspace_artifact_key: String,
-    /// Whether this project lets an agent write to its checkout's note.
-    /// Resolved here with the rest of the scope because the policy belongs
-    /// to the project the pane was found under, and this walk is what finds
-    /// it.
-    pub todos_allowed: bool,
 }
 
 /// Whether a hook's report should be dropped rather than applied, for
@@ -150,7 +145,6 @@ impl Daemon {
                         checkout_path: checkout.path.clone(),
                         artifact_key: repository_artifact_key(repository, checkout),
                         workspace_artifact_key: format!("workspace\0{workspace_name}"),
-                        todos_allowed: project.agent_todos,
                     });
                 }
             }

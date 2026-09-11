@@ -10,9 +10,6 @@
 //! argus-hook checkout                            # reports the current directory
 //! argus-hook session <id>                        # records exact resume identity
 //! argus-hook comments                            # reads durable review feedback
-//! argus-hook context                             # reads the notes for this checkout
-//! argus-hook todo add "ported the parser"        # writes to the checkout's note
-//! argus-hook todo done 4                         # ticks line 4 of it off
 //! argus-hook feature                            # the feature this checkout is on
 //! argus-hook feature list                       # every feature of the project
 //! argus-hook feature open "decision scoping"    # opens one and works on it
@@ -46,8 +43,8 @@
 //! continue — Cursor wants `permission`, Claude wants `decision` — never a
 //! human-readable message. Some agent CLIs inject a hook's stdout into the
 //! model's context, so staying silent keeps Argus's bookkeeping out of the
-//! conversation. The deliberate `say`, `instructions`, `comments`, `context`, `todo`,
-//! `feature`, `decisions`, and `decide` commands do return useful output.
+//! conversation. The deliberate `say`, `instructions`, `comments`, `feature`,
+//! `task`, `decisions`, and `decide` commands do return useful output.
 //!
 //! On Windows it is a GUI-subsystem binary. Not because it has a UI — it
 //! has none — but because the agent CLI that runs it decides how it is
@@ -65,10 +62,10 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use argus_protocol::{
-    AgentContext, Decision, DecisionBoard, DecisionWrite, Endpoint, FeatureAction, FeatureBoard,
-    FeatureWrite, Report, ReviewComment, TaskAction, TaskList, TaskState, TaskWrite, TodoState,
-    TodoWrite, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
-    SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
+    Decision, DecisionBoard, DecisionWrite, Endpoint, FeatureAction, FeatureBoard, FeatureWrite,
+    Report, ReviewComment, TaskAction, TaskList, TaskState, TaskWrite, INSTRUCTIONS_COMMAND,
+    INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG, SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG,
+    TOKEN_VAR, URL_VAR,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(2);
@@ -95,8 +92,6 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("checkout", checkout),
     ("session", session),
     ("comments", comments),
-    ("context", context),
-    ("todo", todo),
     ("feature", feature),
     ("task", task),
     ("decisions", decisions),
@@ -205,86 +200,6 @@ fn comments_message(rest: &[&str], base_url: &str, token: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-/// A read of whatever the human wrote down about this checkout and the
-/// project above it. Deliberately on stdout, like `comments`: it is
-/// context for the model.
-fn context(rest: &[&str]) {
-    let mut out = std::io::stdout();
-    let _ = writeln!(out, "{}", context_message(rest, &env_url(), &env_token()));
-    let _ = out.flush();
-}
-
-fn context_message(rest: &[&str], base_url: &str, token: &str) -> String {
-    let context: AgentContext = match read_json("context", Endpoint::Context, rest, base_url, token)
-    {
-        Ok(context) => context,
-        Err(message) => return message,
-    };
-    if context.is_empty() {
-        return "no notes for this checkout".to_string();
-    }
-    let mut sections = Vec::new();
-    // The pinned lines are repeated out of the bodies below on purpose.
-    // `- [!]` is Argus's spelling, not Markdown's, and an agent reading a
-    // note cold has no reason to know it means "standing instruction".
-    let pinned: Vec<String> = context
-        .pinned()
-        .map(|(scope, todo)| format!("- ({}) {}", scope.label(), todo.text))
-        .collect();
-    if !pinned.is_empty() {
-        sections.push(format!(
-            "Standing instructions, which apply without being asked for:\n{}",
-            pinned.join("\n")
-        ));
-    }
-    for note in &context.notes {
-        sections.push(format!(
-            "--- {} note: {} ---\n{}",
-            note.scope.label(),
-            note.name,
-            note.body.trim_end()
-        ));
-    }
-    sections.join("\n\n")
-}
-
-/// The one command here that changes something, so the one that reports
-/// back. Deliberately on stdout for the same reason `context` is: the agent
-/// that ran it has to be able to tell the user it was refused.
-fn todo(rest: &[&str]) {
-    let mut out = std::io::stdout();
-    let _ = writeln!(out, "{}", todo_message(rest, &env_url(), &env_token()));
-    let _ = out.flush();
-}
-
-fn todo_message(rest: &[&str], base_url: &str, token: &str) -> String {
-    let Some(write) = parse_todo_args(rest) else {
-        return "could not write the note: expected `todo add <text>`, \
-                `todo done <line>`, or `todo open <line>`"
-            .to_string();
-    };
-    let body = match serde_json::to_string(&write) {
-        Ok(body) => body,
-        Err(_) => return "could not write the note: unencodable item".to_string(),
-    };
-    let url = endpoint_url(base_url, Endpoint::Todo);
-    let Some((status, response)) = post_response(&url, token, &body) else {
-        return "could not write the note: daemon unavailable".to_string();
-    };
-    let response = response.trim();
-    if status != 200 {
-        return if response.is_empty() {
-            "could not write the note: daemon refused the request".to_string()
-        } else {
-            format!("could not write the note: {response}")
-        };
-    }
-    match write {
-        TodoWrite::Add { text } => format!("added \"{text}\" — {response}"),
-        TodoWrite::Set { state, .. } => format!("marked {} — {response}", state_word(state)),
-    }
 }
 
 /// The feature this checkout is working on: what it is for, and what has
@@ -835,36 +750,6 @@ fn id_arg(flag: &str, raw: &str) -> Result<i64, String> {
         .ok()
         .filter(|id| *id > 0)
         .ok_or_else(|| format!("{flag} wants a decision number, not {raw:?}"))
-}
-
-fn state_word(state: TodoState) -> &'static str {
-    match state {
-        TodoState::Done => "done",
-        _ => "open",
-    }
-}
-
-/// The line numbers here are the ones a person reads off the note, so they
-/// are 1-based on the way in and 0-based on the wire.
-fn parse_todo_args(rest: &[&str]) -> Option<TodoWrite> {
-    match *rest.first()? {
-        "add" => {
-            let text = rest[1..].join(" ");
-            (!text.trim().is_empty()).then_some(TodoWrite::Add { text })
-        }
-        verb @ ("done" | "open") => {
-            let line: usize = rest.get(1)?.parse().ok()?;
-            Some(TodoWrite::Set {
-                line: line.checked_sub(1)?,
-                state: if verb == "done" {
-                    TodoState::Done
-                } else {
-                    TodoState::Open
-                },
-            })
-        }
-        _ => None,
-    }
 }
 
 /// One JSON read from the pane API, with every way it can fail phrased for
@@ -1599,82 +1484,6 @@ mod tests {
     }
 
     #[test]
-    fn the_item_grammar_is_add_done_and_open() {
-        assert_eq!(
-            parse_todo_args(&["add", "ported", "the", "parser"]),
-            Some(TodoWrite::Add {
-                text: "ported the parser".to_string()
-            })
-        );
-        // The line a person reads off the note is 1-based; the wire is not.
-        assert_eq!(
-            parse_todo_args(&["done", "4"]),
-            Some(TodoWrite::Set {
-                line: 3,
-                state: TodoState::Done
-            })
-        );
-        assert_eq!(
-            parse_todo_args(&["open", "1"]),
-            Some(TodoWrite::Set {
-                line: 0,
-                state: TodoState::Open
-            })
-        );
-        for bad in [
-            vec![],
-            vec!["add"],
-            vec!["add", "   "],
-            vec!["done"],
-            vec!["done", "0"],
-            vec!["done", "last"],
-            vec!["pin", "1"],
-        ] {
-            assert_eq!(parse_todo_args(&bad), None, "{bad:?}");
-        }
-    }
-
-    #[test]
-    fn a_written_item_reports_what_the_note_now_holds() {
-        let (address, server) = serve_status(200, "2 open, 1 done");
-
-        let message = todo_message(
-            &["add", "ported the parser"],
-            &format!("http://{address}/pane/4"),
-            "secret",
-        );
-
-        assert_eq!(message, "added \"ported the parser\" — 2 open, 1 done");
-        assert!(server
-            .join()
-            .unwrap()
-            .starts_with("POST /pane/4/todo HTTP/1.1\r\n"));
-    }
-
-    #[test]
-    fn a_refused_item_reports_the_daemons_reason() {
-        let refusal = "project proj does not allow agents to write notes";
-        let (address, server) = serve_status(409, refusal);
-
-        let message = todo_message(&["done", "2"], &format!("http://{address}/pane/1"), "t");
-
-        assert_eq!(
-            message,
-            "could not write the note: project proj does not allow agents to write notes"
-        );
-        let _ = server.join();
-        assert_eq!(
-            todo_message(&["nonsense"], "", ""),
-            "could not write the note: expected `todo add <text>`, \
-             `todo done <line>`, or `todo open <line>`"
-        );
-        assert_eq!(
-            todo_message(&["done", "2"], "http://127.0.0.1:1/pane/1", "t"),
-            "could not write the note: daemon unavailable"
-        );
-    }
-
-    #[test]
     fn the_decision_grammar_puts_the_choice_first_and_the_rest_behind_flags() {
         let write = parse_decide_args(&[
             "one",
@@ -1851,17 +1660,6 @@ mod tests {
 
     /// Serves one canned response at a chosen status, for the endpoint that
     /// has something to say when it refuses.
-    fn serve_status(
-        status: u16,
-        body: &str,
-    ) -> (std::net::SocketAddr, std::thread::JoinHandle<String>) {
-        serve_response(&format!(
-            "HTTP/1.1 {status} Whatever\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-            body.len(),
-            body
-        ))
-    }
-
     /// Serves one canned JSON response and hands back the request head, so
     /// a rendering test can also assert what went over the wire.
     fn serve_once(body: &str) -> (std::net::SocketAddr, std::thread::JoinHandle<String>) {
@@ -1961,63 +1759,6 @@ mod tests {
         assert!(
             message.contains("streaming-the-pty"),
             "it still offers the ones that exist"
-        );
-    }
-
-    fn context_note(
-        scope: argus_protocol::ContextScope,
-        name: &str,
-        body: &str,
-    ) -> argus_protocol::ContextNote {
-        argus_protocol::ContextNote::new(scope, name.to_string(), body.to_string())
-    }
-
-    #[test]
-    fn context_renders_standing_instructions_ahead_of_the_notes_they_came_from() {
-        use argus_protocol::ContextScope;
-
-        let context = AgentContext {
-            notes: vec![
-                context_note(ContextScope::Project, "orion", "- [!] house style\n"),
-                context_note(ContextScope::Checkout, "/wt/a", "# Branch\n- [ ] a task\n"),
-            ],
-        };
-        let (address, server) = serve_once(&serde_json::to_string(&context).unwrap());
-
-        let message = context_message(&[], &format!("http://{address}/pane/4"), "secret");
-        let head = server.join().unwrap();
-
-        assert_eq!(
-            message,
-            "Standing instructions, which apply without being asked for:\n\
-             - (project) house style\n\
-             \n\
-             --- project note: orion ---\n\
-             - [!] house style\n\
-             \n\
-             --- checkout note: /wt/a ---\n\
-             # Branch\n\
-             - [ ] a task"
-        );
-        assert!(head.starts_with("POST /pane/4/context HTTP/1.1\r\n"));
-        assert!(head.contains("\r\nAuthorization: Bearer secret\r\n"));
-    }
-
-    #[test]
-    fn context_with_nothing_written_down_says_so_rather_than_nothing() {
-        let (address, server) = serve_once("{\"notes\":[]}");
-
-        let message = context_message(&[], &format!("http://{address}/pane/1"), "t");
-        server.join().unwrap();
-
-        assert_eq!(message, "no notes for this checkout");
-        assert_eq!(
-            context_message(&["extra"], "", ""),
-            "could not read context: context takes no arguments"
-        );
-        assert_eq!(
-            context_message(&[], "http://127.0.0.1:1/pane/1", "t"),
-            "could not read context: daemon unavailable"
         );
     }
 }

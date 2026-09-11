@@ -36,7 +36,6 @@ pub(super) fn checkout_item(
             Style::default().fg(th.warn),
         ));
     }
-    detail.extend(note_detail(c.notes, c.has_note, th));
     Item::new(
         vec![
             status_dot(worst_pane_status(c), th, spin),

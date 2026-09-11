@@ -1,5 +1,5 @@
 //! The floating window over the columns, and the two views that only
-//! ever appear in it: a note, and the settings panel.
+//! ever appear in it: a brief, and the settings panel.
 
 use super::*;
 
@@ -45,19 +45,19 @@ pub(super) fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme
             Some(h) => format!("history · {} commits", h.commits.len()),
             None => "history".to_string(),
         },
-        Overlay::Notes => match app.notes.as_ref() {
+        Overlay::Brief => match app.brief.as_ref() {
             // The mode is in the title because it changes what every key
             // does, and a modal surface that does not say which mode it is
             // in is a trap.
             Some(v) => format!(
-                "note · {}  ·  {}",
+                "brief · {}  ·  {}",
                 v.title,
                 match v.mode {
-                    NoteMode::View => "i edit · space tick · q close",
-                    NoteMode::Insert => "INSERT · esc to save",
+                    BriefMode::View => "i edit · q close",
+                    BriefMode::Insert => "INSERT · esc to save",
                 }
             ),
-            None => "note".to_string(),
+            None => "brief".to_string(),
         },
     };
 
@@ -92,42 +92,34 @@ pub(super) fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme
             render_history(f, app, inner, th);
             None
         }
-        Overlay::Notes => render_notes(f, app, inner, th),
+        Overlay::Brief => render_brief(f, app, inner, th),
     }
 }
 
-/// The note, one line per line, with the checkbox lines picked out.
+/// The brief, one line per line, as marked-up prose.
 ///
 /// Returns where the hardware cursor goes: shown while typing, hidden in
 /// view mode, where a block on a random character would read as a
 /// selection rather than as an insertion point.
-pub(super) fn render_notes(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option<CursorPlacement> {
-    // One row of the window pays for the count footer.
-    let body = Rect {
-        height: area.height.saturating_sub(1),
-        ..area
-    };
-    let view = app.notes.as_mut()?;
-    view.follow_cursor(body.height as usize);
-    let view = app.notes.as_ref()?;
+pub(super) fn render_brief(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option<CursorPlacement> {
+    let view = app.brief.as_mut()?;
+    view.follow_cursor(area.height as usize);
+    let view = app.brief.as_ref()?;
 
     let mut lines: Vec<Line> = Vec::new();
-    let todos = view.todos();
     for (i, text) in view
         .lines
         .iter()
         .enumerate()
         .skip(view.scroll)
-        .take(body.height as usize)
+        .take(area.height as usize)
     {
-        let on_cursor = i == view.line;
-        let bar = if on_cursor {
+        let bar = if i == view.line {
             Style::default().bg(th.sel_bg)
         } else {
             Style::default()
         };
-        let state = todos.iter().find(|t| t.line == i).map(|t| t.state);
-        lines.push(Line::from(note_line(text, state, bar, th)));
+        lines.push(Line::from(crate::ui::prose::prose_spans(text, bar, th)));
     }
     if view.body().is_empty() {
         lines = vec![Line::from(Span::styled(
@@ -135,38 +127,9 @@ pub(super) fn render_notes(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
             Style::default().fg(th.dim),
         ))];
     }
-    f.render_widget(Paragraph::new(lines), body);
+    f.render_widget(Paragraph::new(lines), area);
 
-    let footer = Rect {
-        y: area.y + area.height.saturating_sub(1),
-        height: 1,
-        ..area
-    };
-    let mut summary = match &view.error {
-        Some(message) => vec![Span::styled(
-            format!("not saved: {message}"),
-            Style::default().fg(th.err),
-        )],
-        None => note_counts_spans(view.counts(), "  ", th),
-    };
-    if summary.is_empty() {
-        summary.push(Span::styled(
-            "no checkboxes yet — a line like \"- [ ] thing\" is counted",
-            Style::default().fg(th.dim),
-        ));
-    }
-    // Who else has been in this note. Dim and last, because it is
-    // provenance rather than content — but present, since a note an agent
-    // may write to is one a person has to be able to audit.
-    if view.error.is_none() {
-        if let Some(change) = view.last_agent_change(now_seconds()) {
-            summary.push(Span::styled("  ", Style::default()));
-            summary.push(Span::styled(change, Style::default().fg(th.dim)));
-        }
-    }
-    f.render_widget(Paragraph::new(Line::from(summary)), footer);
-
-    if view.mode != NoteMode::Insert {
+    if view.mode != BriefMode::Insert {
         return None;
     }
     // The column is a character offset; the screen wants cells.
@@ -178,110 +141,13 @@ pub(super) fn render_notes(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
     let row = view.line.checked_sub(view.scroll)?;
     Some(CursorPlacement {
         position: Position::new(
-            body.x + (x as u16).min(body.width.saturating_sub(1)),
-            body.y + (row as u16).min(body.height.saturating_sub(1)),
+            area.x + (x as u16).min(area.width.saturating_sub(1)),
+            area.y + (row as u16).min(area.height.saturating_sub(1)),
         ),
         // A bar, because this is an insertion point in text rather than a
         // terminal's own cursor.
         shape: argus_protocol::CursorShape::SteadyBar,
     })
-}
-
-/// The wall clock, for ages in the footer. The only clock reading in the
-/// draw path, and it is here rather than passed in because nothing else on
-/// screen depends on the time of day.
-fn now_seconds() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or_default()
-}
-
-/// One note line. A checkbox gets its marker coloured by state and its
-/// text struck through once done; everything else is marked-up prose.
-pub(super) fn note_line(text: &str, state: Option<TodoState>, bar: Style, th: Theme) -> Vec<Span<'static>> {
-    let Some(state) = state else {
-        return crate::ui::prose::prose_spans(text, Style::default().patch(bar), th);
-    };
-    // Split at the marker so only it is recoloured: the rest of the line
-    // is the user's text and keeps its indent and bullet verbatim.
-    let Some(open) = text.find('[') else {
-        return crate::ui::prose::prose_spans(text, Style::default().patch(bar), th);
-    };
-    let (colour, glyph) = match state {
-        TodoState::Open => (th.warn, "☐"),
-        TodoState::Done => (th.ok, "☑"),
-        TodoState::Pinned => (th.accent, "★"),
-    };
-    let rest = &text[open + 3..];
-    let mut spans = vec![
-        Span::styled(text[..open].to_string(), Style::default().fg(th.dim).patch(bar)),
-        Span::styled(glyph.to_string(), Style::default().fg(colour).patch(bar)),
-    ];
-    // A finished item is struck through whole: its markup is no longer
-    // structure worth reading, and emphasis inside a crossed-out line
-    // fights the one thing the line is now saying.
-    if state == TodoState::Done {
-        spans.push(Span::styled(
-            rest.to_string(),
-            Style::default()
-                .fg(th.muted)
-                .add_modifier(Modifier::CROSSED_OUT)
-                .patch(bar),
-        ));
-    } else {
-        spans.extend(crate::ui::prose::prose_spans(
-            rest,
-            Style::default().patch(bar),
-            th,
-        ));
-    }
-    spans
-}
-
-/// Counts as they are shown: what is outstanding first, because it is the
-/// only one of the three that is a claim on anybody.
-///
-/// `gap` separates them — two spaces in the note's own footer, none in a
-/// tree row, where the detail line is already carrying git status and a
-/// column is thirteen characters wide.
-pub(super) fn note_counts_spans(counts: NoteCounts, gap: &str, th: Theme) -> Vec<Span<'static>> {
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    let mut push = |text: String, colour| {
-        if !spans.is_empty() {
-            spans.push(Span::raw(gap.to_string()));
-        }
-        spans.push(Span::styled(text, Style::default().fg(colour)));
-    };
-    if counts.open > 0 {
-        push(format!("☐{}", counts.open), th.warn);
-    }
-    if counts.pinned > 0 {
-        push(format!("★{}", counts.pinned), th.accent);
-    }
-    if counts.done > 0 {
-        push(format!("☑{}", counts.done), th.dim);
-    }
-    spans
-}
-
-/// What a tree row says about its note, appended to the row's detail line.
-///
-/// A note with nothing to count still says it exists: the point of the
-/// mark is knowing there is something written down here, and "no open
-/// items" is not the same as "nothing written".
-pub(super) fn note_detail(counts: NoteCounts, has_note: bool, th: Theme) -> Vec<Span<'static>> {
-    if !has_note && counts.is_empty() {
-        return Vec::new();
-    }
-    let mut spans = vec![Span::raw("  ")];
-    let counted = note_counts_spans(counts, " ", th);
-    if counted.is_empty() {
-        spans.push(Span::styled("✎", Style::default().fg(th.dim)));
-    } else {
-        spans.extend(counted);
-    }
-    spans
 }
 
 /// Each setting gets a name, its current value, and a line saying what

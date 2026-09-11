@@ -5,14 +5,12 @@
 use super::*;
 
 /// The shared shape of the project and repository rows: the most urgent
-/// state anywhere beneath, the name, what the row holds, what it owes, and
-/// a badge counting the panes running under it.
+/// state anywhere beneath, the name, what the row holds, and a badge
+/// counting the panes running under it.
 pub(super) fn rollup_item<'a>(
     name: &str,
     contents: String,
     checkouts: impl Iterator<Item = &'a argus_protocol::CheckoutInfo>,
-    notes: NoteCounts,
-    has_note: bool,
     th: Theme,
     spin: Spin,
 ) -> Item<'static> {
@@ -26,8 +24,7 @@ pub(super) fn rollup_item<'a>(
             }
         }
     }
-    let mut detail = vec![Span::styled(contents, Style::default().fg(th.dim))];
-    detail.extend(note_detail(notes, has_note, th));
+    let detail = vec![Span::styled(contents, Style::default().fg(th.dim))];
     let item = Item::new(
         vec![
             status_dot(status, th, spin),
@@ -72,15 +69,10 @@ fn project_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
     app.tree
         .iter()
         .map(|p| {
-            // The rollup, not just this project's own note: from the
-            // leftmost column the question is whether anything in there is
-            // owed, not where it was written down.
             rollup_item(
                 &p.name,
                 plural(p.repositories.len(), "repository"),
                 p.repositories.iter().flat_map(|r| r.checkouts.iter()),
-                p.note_rollup(),
-                p.has_note,
                 th,
                 spin,
             )
@@ -99,8 +91,6 @@ fn repository_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
                         &r.name,
                         plural(r.checkouts.len(), "checkout"),
                         r.checkouts.iter(),
-                        r.note_rollup(),
-                        false,
                         th,
                         spin,
                     )

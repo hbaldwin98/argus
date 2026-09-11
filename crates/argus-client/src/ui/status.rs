@@ -60,10 +60,6 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             PickerKind::ReviewRecipient { .. } => {
                 &["j/k move   enter send   esc cancel", "enter send  esc"]
             }
-            PickerKind::NoteRecipient { .. } => &[
-                "j/k move   enter forward   esc cancel",
-                "enter forward  esc",
-            ],
             PickerKind::FeatureCheckout { .. } => &[
                 "type to filter   ↑/↓ move   enter transfer   esc cancel",
                 "enter transfer  esc",
@@ -133,19 +129,19 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             ][..],
             th.dim,
         )
-    } else if matches!(app.overlay, Some(Overlay::Notes)) {
+    } else if matches!(app.overlay, Some(Overlay::Brief)) {
         // The two modes have almost no keys in common, so the bar shows
         // the one you are actually in.
-        match app.notes.as_ref().map(|v| v.mode) {
-            Some(NoteMode::Insert) => (
+        match app.brief.as_ref().map(|v| v.mode) {
+            Some(BriefMode::Insert) => (
                 &["typing — esc to stop and save", "esc saves"][..],
                 th.accent,
             ),
             _ => (
                 &[
-                    "j/k move  space tick  f line  F note  i insert  o new line  q close",
-                    "j/k  space tick  f line  F note  i insert  q close",
-                    "f line  F note  i insert  q close",
+                    "j/k move  i insert  o new line  q close",
+                    "j/k  i insert  q close",
+                    "i insert  q close",
                 ][..],
                 th.dim,
             ),

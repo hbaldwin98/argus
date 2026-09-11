@@ -2,11 +2,11 @@
 //! the fixtures they all build an app from.
 
 mod branch_rows;
+mod brief_editing;
 mod columns;
 mod editors;
 mod mouse_input;
 mod navigation;
-mod note_editing;
 mod picking;
 mod preferences;
 mod prompts;
@@ -20,8 +20,8 @@ mod workspaces;
 
 use super::*;
 use argus_protocol::{
-    Cell, CellSpan, CheckoutId, GitStatus, NoteCounts, PaneKind, PaneStatus, ProjectId,
-    RepositoryId, RepositoryInfo, TodoState,
+    Cell, CellSpan, CheckoutId, GitStatus, PaneKind, PaneStatus, ProjectId, RepositoryId,
+    RepositoryInfo,
 };
 use argus_protocol::{DirEntry, DirListing};
 use crossterm::event::KeyModifiers;
@@ -59,8 +59,6 @@ fn tree() -> Vec<ProjectInfo> {
                     checkout(11, "feat", false, vec![]),
                 ],
             )],
-            notes: Default::default(),
-            has_note: false,
         },
         ProjectInfo {
             id: ProjectId(2),
@@ -70,8 +68,6 @@ fn tree() -> Vec<ProjectInfo> {
                 "other-repo",
                 vec![checkout(20, "main", true, vec![])],
             )],
-            notes: Default::default(),
-            has_note: false,
         },
     ]
 }
@@ -219,8 +215,6 @@ pub(super) fn checkout(id: u64, name: &str, primary: bool, panes: Vec<PaneInfo>)
         primary,
         git: None,
         panes,
-        notes: Default::default(),
-        has_note: false,
     }
 }
 
@@ -379,20 +373,23 @@ pub(super) fn on_alt_screen(h: &mut Harness, pane: PaneId) {
         .alternate_screen = true;
 }
 
-// --- notes ---------------------------------------------------------------
+// --- briefs --------------------------------------------------------------
 
-/// A harness with the note window open on the first checkout, holding
-/// `body`, with the opening traffic drained.
-pub(super) fn harness_with_a_note(body: &str) -> Harness {
+/// A harness with a feature's brief open over the first checkout, holding
+/// `body`, with any earlier traffic drained.
+pub(super) fn harness_with_a_brief(body: &str) -> Harness {
     let mut h = Harness::new();
-    h.keys("ll"); // into the checkouts column
-    h.key(KeyCode::Char('m'));
-    let target = h.app.notes.as_ref().expect("the note window is open").target;
-    h.app
-        .on_server_msg(ServerMsg::Note(Box::new(argus_protocol::Note::new(
-            target,
-            body.to_string(),
-        ))));
+    h.keys("ll"); // into the checkouts column, which a save is addressed from
+    h.app.brief = Some(BriefView::new(
+        BriefTarget::Feature {
+            project: ProjectId(1),
+            slug: "pty".to_string(),
+        },
+        "The pty".to_string(),
+        body,
+    ));
+    h.app.overlay = Some(Overlay::Brief);
+    h.app.focus = Focus::Overlay;
     h.sent();
     h
 }

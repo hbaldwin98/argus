@@ -79,14 +79,14 @@ impl App {
     }
 
     /// Whether a printable key would be typed into something rather than
-    /// read as a command. The same surfaces that take a paste, plus a note
+    /// read as a command. The same surfaces that take a paste, plus a brief
     /// being written.
     fn takes_text(&self) -> bool {
         self.accepts_paste()
             || self
-                .notes
+                .brief
                 .as_ref()
-                .is_some_and(|v| v.mode == NoteMode::Insert)
+                .is_some_and(|v| v.mode == BriefMode::Insert)
     }
 
     /// The keymap window's own keys: scrolling, and out.
@@ -371,8 +371,8 @@ impl App {
             self.on_key_history(key);
             return;
         }
-        if matches!(self.overlay, Some(Overlay::Notes)) {
-            self.on_key_notes(key);
+        if matches!(self.overlay, Some(Overlay::Brief)) {
+            self.on_key_brief(key);
             return;
         }
         if let Some(Overlay::Settings { sel }) = &mut self.overlay {
@@ -418,21 +418,21 @@ impl App {
         }
     }
 
-    /// Two keymaps, because a note is read far more often than it is
-    /// written. View mode navigates and ticks boxes with single keys; in
-    /// insert mode every key is a character, and `Esc` is the way back.
-    fn on_key_notes(&mut self, key: KeyEvent) {
-        let Some(view) = &mut self.notes else {
+    /// Two keymaps, because a brief is read far more often than it is
+    /// written. View mode navigates with single keys; in insert mode every
+    /// key is a character, and `Esc` is the way back.
+    fn on_key_brief(&mut self, key: KeyEvent) {
+        let Some(view) = &mut self.brief else {
             self.close_overlay();
             return;
         };
-        if view.mode == NoteMode::Insert {
+        if view.mode == BriefMode::Insert {
             match key.code {
                 KeyCode::Esc => {
                     view.view_mode();
                     // Leaving insert is the save point: it is the moment
                     // the user stops typing, and it costs no extra key.
-                    self.save_notes();
+                    self.save_brief();
                 }
                 KeyCode::Enter => view.newline(),
                 KeyCode::Backspace => view.backspace(),
@@ -459,8 +459,8 @@ impl App {
             KeyCode::Char('u') | KeyCode::PageUp => view.move_by(-10),
             KeyCode::Char('h') | KeyCode::Left => view.move_column(-1),
             KeyCode::Char('l') | KeyCode::Right => view.move_column(1),
-            KeyCode::Char('g') => view.top_of_note(),
-            KeyCode::Char('G') => view.bottom_of_note(),
+            KeyCode::Char('g') => view.top(),
+            KeyCode::Char('G') => view.bottom(),
             KeyCode::Char('0') | KeyCode::Home => view.start_of_line(),
             KeyCode::Char('$') | KeyCode::End => view.end_of_line(),
             KeyCode::Char('i') => view.insert_mode(),
@@ -469,43 +469,12 @@ impl App {
                 view.insert_mode();
             }
             KeyCode::Char('o') => view.open_below(),
-            KeyCode::Char('f') => self.forward_note(false),
-            KeyCode::Char('F') => self.forward_note(true),
-            // The tick goes to the daemon as a line and a state rather
-            // than as a new body: see `ClientMsg::SetTodo`.
-            KeyCode::Char(' ') | KeyCode::Enter => self.toggle_note_todo(),
             KeyCode::Esc | KeyCode::Char('q') => {
-                self.save_notes();
+                self.save_brief();
                 self.close_overlay();
             }
             _ => {}
         }
-    }
-
-    /// Ticks the box under the cursor, if there is one.
-    fn toggle_note_todo(&mut self) {
-        // An unsaved body means the line numbers the daemon holds are not
-        // the ones on screen, so the text goes first.
-        self.save_notes();
-        let Some(view) = &mut self.notes else {
-            return;
-        };
-        // A brief's target points at the project so nothing reading it
-        // has to branch; ticking would therefore write a checkbox into the
-        // project's note, which is not where the cursor is.
-        if view.brief.is_some() || view.task.is_some() {
-            return self.report("a brief has no checkboxes — its work is in the tasks");
-        }
-        let Some((line, state)) = view.toggle_here() else {
-            self.report("no checkbox on this line");
-            return;
-        };
-        let target = view.target;
-        let _ = self.out.send(ClientMsg::SetTodo {
-            target,
-            line,
-            state,
-        });
     }
 
     fn on_key_pane_content(&mut self, key: KeyEvent) {
@@ -581,7 +550,6 @@ impl App {
             KeyCode::Char('x') => self.kill_selected(),
             KeyCode::Char('p') => self.cycle_fold(),
             KeyCode::Char('v') => self.toggle_pane_view(),
-            KeyCode::Char('m') => self.open_notes(),
             KeyCode::Char('N') => self.jump_to_next_attention(),
             KeyCode::Char(c) if View::from_digit(c).is_some() => {
                 self.open_view(View::from_digit(c).unwrap())

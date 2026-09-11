@@ -37,12 +37,6 @@ pub enum PickerKind {
         anchor: ReviewAnchor,
         body: String,
     },
-    /// Forward prepared note text to one live agent in the note's scope.
-    NoteRecipient {
-        panes: Vec<PaneId>,
-        target: NoteTarget,
-        body: String,
-    },
     /// Transfer one feature's assignment to another checkout in the same
     /// repository. Ids stay parallel to rows so display names are not keys.
     FeatureCheckout {
@@ -199,18 +193,18 @@ pub enum Overlay {
     /// opening a commit replaces this with [`Overlay::Review`] without
     /// dropping the list, so going back is instant.
     History,
-    /// A project's or checkout's note. The text lives on `App::notes`;
-    /// this only says which window is up. Floating for the same reason
-    /// review is: writing down what a checkout still owes should not cost
-    /// you sight of the agent working in it.
-    Notes,
+    /// A feature's or task's brief. The text lives on `App::brief`; this
+    /// only says which window is up. Floating for the same reason review
+    /// is: correcting what a feature is for should not cost you sight of
+    /// the agent working on it.
+    Brief,
 }
 
 impl Overlay {
     pub(super) fn pane(&self) -> Option<PaneId> {
         match self {
             Overlay::Pane { pane, .. } => Some(*pane),
-            Overlay::Settings { .. } | Overlay::Review | Overlay::History | Overlay::Notes => {
+            Overlay::Settings { .. } | Overlay::Review | Overlay::History | Overlay::Brief => {
                 None
             }
         }

@@ -179,11 +179,6 @@ mod tests {
                 }),
                 body: "check this".to_string(),
             },
-            ClientMsg::ForwardNote {
-                target: crate::NoteTarget::Checkout(CheckoutId(2)),
-                recipient: PaneId(1),
-                body: "- [!] keep this exact".to_string(),
-            },
         ];
         for msg in &msgs {
             let back = roundtrip(msg).await;
@@ -228,12 +223,8 @@ mod tests {
                         template: None,
                         children: Vec::new(),
                     }],
-                    notes: Default::default(),
-                    has_note: false,
                 }],
             }],
-            notes: Default::default(),
-            has_note: false,
         }]);
         let ServerMsg::Tree(tree) = roundtrip(&sent).await else {
             panic!("variant changed across the wire");

@@ -1,6 +1,6 @@
 ---
 name: argus
-description: Keeps an Argus pane's status and shared work context current. Use when running inside Argus (ARGUS_PANE and ARGUS_HOOK are set), or when asked to use Argus features, tasks, decisions, notes, or review feedback.
+description: Keeps an Argus pane's status and shared work context current. Use when running inside Argus (ARGUS_PANE and ARGUS_HOOK are set), or when asked to use Argus features, tasks, decisions, or review feedback.
 ---
 
 <!-- argus:managed-skill -->
@@ -25,14 +25,12 @@ The examples below use POSIX syntax. Routing comes from the inherited environmen
 At the start of work, and when the task or checkout changes, read:
 
 ```sh
-"$ARGUS_HOOK" context
 "$ARGUS_HOOK" comments
 "$ARGUS_HOOK" feature
 "$ARGUS_HOOK" task
 ```
 
-`context` includes project and checkout notes. Lines marked `- [!]` are standing
-instructions. Review comments are durable feedback for this checkout. `feature`
+Review comments are durable feedback for this checkout. `feature`
 includes the current feature's brief and decision board; `task` shows its tasks.
 Use returned IDs, slugs, and line numbers for subsequent commands.
 
@@ -73,5 +71,5 @@ the old checkout's managed skill when its last agent leaves.
 
 When implementing a feature or updating the board, read
 [references/work.md](references/work.md) for feature selection, task updates,
-decisions, and note writes. Keep those records relevant to the requested work;
+and decisions. Keep those records relevant to the requested work;
 an informational question alone does not require creating a feature or tasks.

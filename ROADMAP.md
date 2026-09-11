@@ -15,7 +15,7 @@ runtime-created workspaces, and the workspace last open. `session.json`, `exclud
 `open-workspace` are imported once and retired; `projects.toml` is back to being configuration
 Argus only reads.
 
-- Give review state, notes metadata, and links their tables as those features land. The schema is
+- Give review state and links their tables as those features land. The schema is
   versioned on `user_version`, so each is a migration rather than a new file.
 
 ## P4: Agent State and Identity
@@ -46,24 +46,13 @@ the checkout. What remains is presentation work.
 Deliberately out of scope: staging, unstaging, and reverting hunks, and any base that compares a
 branch against a fork point or a remembered snapshot. Dedicated Git tools do those better.
 
-## P6: Notes and Context
+## P6: Notes and Context — removed
 
-Closes the loop: information currently flows only upward, from agents reporting to humans reading.
+Project and checkout Markdown notes, their checkbox rollups, note forwarding, and the
+`argus-hook context`/`todo` commands landed here and were later removed as unused. Feature briefs,
+tasks, and the decision board (P6.5) carry durable context instead.
 
-- Markdown notes and todo/pinned rollups have landed (DESIGN.md, "Notes"): projects and checkouts
-  hold plain Markdown, the checkbox line is the one construct read out of it, and its three states
-  roll up checkout to repository to project. Storage is schema v3, keyed by name and path so a note
-  outlives the ids it was written under.
-- Scoped context reads have landed (DESIGN.md, "Notes"): `argus-hook context` returns the project
-  and checkout notes of the pane that asked, and nothing else.
-- Policy-gated writes have landed (DESIGN.md, "Notes"): `argus-hook todo` adds and ticks off
-  checkboxes on the asking pane's checkout note, refused unless the project sets `agent_todos`,
-  never reaching the project note or a `- [!]` line, and recorded in schema v4's `note_audit`
-  alongside the change itself. The decision board was built on it: the write path, the agent scope,
-  and the attributed record are the parts it would otherwise have invented.
-- Explicit note forwarding has landed (DESIGN.md, "Notes"): `f` stages the current line and `F`
-  stages the whole visible note in a chosen in-scope agent's prompt without submitting it.
-- Add `argus ctx` and MCP adapters over the same implementation.
+- Add `argus ctx` and MCP adapters over the scoped agent reads that remain.
 
 ## P6.5: Agent Memory
 
@@ -80,8 +69,8 @@ up durable artifacts, and later agents receive the relevant subset without brows
 - Features and the decision board have landed (DESIGN.md, "Features and the decision board"):
   schema v5's `decision` table and v6's `feature`/`feature_scope`, `argus-hook feature` to read and
   move the scope, `argus-hook decisions` to read the current feature's tree and `argus-hook decide`
-  to append to it, and a view that draws the tree with superseded branches dimmed. Ungated, unlike
-  note writes — the board exists for agents to write and attributes every row. A decision is filed
+  to append to it, and a view that draws the tree with superseded branches dimmed. Ungated — the
+  board exists for agents to write and attributes every row. A decision is filed
   under the feature its checkout is on, and `decide` from a checkout on none is refused.
 - Feature, decision, and task boards now default to the checkout's repository and branch. Linked
   worktrees on that branch share a durable board; other branches and repositories do not. The TUI

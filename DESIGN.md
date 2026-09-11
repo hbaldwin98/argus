@@ -48,7 +48,7 @@ live in this crate and a contract written twice drifts in silence.
 | `tree` | what a client renders, and which pane state outranks which |
 | `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses |
 | `cell`, `framing`, `transport` | a screen cell, a frame, and the endpoint they travel over |
-| `review`, `notes`, `ids`, `paths` | the shapes review, note, identity and location data travel in |
+| `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
 
 `argusd` owns PTYs, Git, and everything that outlives a client. Its state is one `Daemon` type
 behind a small set of mutexes; the split below is which file a concern is *read* in, not a change
@@ -65,7 +65,6 @@ to the type or its locking.
 | `state/sync` | the polls and watchers that keep the tree level with the disk |
 | `state/panel` | the rows the user adds and removes by hand |
 | `state/workspaces` | which scope is open, daemon-wide |
-| `state/notes` | what is written down against a row |
 | `state/hook_server` | the loopback receiver agents report to |
 | `state/session` | what survives a daemon restart |
 | `state/tree` | finding your way around the tree |
@@ -93,7 +92,7 @@ result of a request; `ui` is a pure function of it.
 | `ui/columns`, `ui/rows`, `ui/text` | the spine, the vocabulary of a row, and fitting text to a width |
 | `ui/views` | the tab strip, and the feature view: its list, brief, tasks and decision tree |
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
-| `review`, `history`, `notes`, `dirpicker` | the view state behind each overlay |
+| `review`, `history`, `brief`, `dirpicker` | the view state behind each overlay |
 | `grid`, `selection`, `pty_input`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
 | `settings`, `theme`, `backend`, `herdr`, `profile` | preferences, palette, the ratatui backend, and what is reported outward |
 
@@ -198,7 +197,7 @@ column's in the columns. It opens *over* whatever raised the question rather tha
 so the review you asked about is still there when you close it, and any key that is not a scroll
 key closes it — having to hunt for the way out of a window you opened to be told something is the
 problem it exists to solve. `?` is only this where nothing is taking text; on a prompt, in a
-pane, or in a note being written it is a character, and the leader chord reaches the list from
+pane, or in a brief being written it is a character, and the leader chord reaches the list from
 inside a pane.
 
 A project takes its repositories from a root directory, from paths named one at a time, or from
@@ -269,9 +268,8 @@ Persistence is a store a daemon is given, not a flag it can be told to set: `Dae
 an in-memory one, and only `main` passes the store on disk. That is what keeps the test suite off
 the user's state.
 
-Schema v3 adds `note`, keyed on scope and key rather than on an id: a scope this version does not
-recognise is dropped when the table is read, not guessed at. Schema v4 adds `note_audit`, keyed the
-same way: one row per change an agent made to a note, kept even after the note itself is deleted.
+Schema v3 and v4 added `note` and `note_audit` for project and checkout notes. Notes have since
+been removed; the tables are still created on the way up from an older store, and nothing reads them.
 Schema v5 adds `decision`, keyed by project name: one row per recorded decision, with `parent` a
 self-reference rather than a foreign key, since a board is read whole and reassembled by a reader
 that already has to survive a parent it cannot see.
@@ -297,7 +295,6 @@ workspace = "work"
 worktree_root = "~/worktrees"
 setup = ["pnpm install"]
 exclusive = true
-agent_todos = true
 exclude = ["vendor"]
 include = ["target/scratch"]
 
@@ -513,8 +510,8 @@ next prompt replaces it. Children still cannot rename the parent row.
 
 Agent workflow guidance lives in the bundled `crates/argusd/skills/argus/SKILL.md` and its
 `references/work.md`, embedded into the daemon at build time. The skill explains titles,
-semantic status reports, checkout moves, and reading context and review feedback; its reference
-covers features, tasks, decisions, and note writes. Lifecycle hooks still capture session
+semantic status reports, checkout moves, and reading review feedback; its reference covers
+features, tasks, and decisions. Lifecycle hooks still capture session
 identity and report their existing events. A stopped turn is not proof of completed work.
 
 Before starting a built-in agent, Argus installs the package in `.claude/skills/argus` for
@@ -770,86 +767,6 @@ selected range still shows which side each line was on.
 Review is a viewer. There is no vetted state, no stage/unstage/revert action, and no
 comment-resolution lifecycle. Closing the review sends no daemon message.
 
-## Notes
-
-`m` opens a note on whatever the spine has selected: the project when focus is in the projects
-column, otherwise the checkout, falling back to the project on a branch row that has no directory
-of its own. Notes are plain Markdown the user owns; the daemon stores the text and reads exactly
-one construct out of it.
-
-That construct is the checkbox line — GitHub's task list grammar plus one state. Optional indent, a
-bullet (`-`, `*`, or `+`), a space, `[`, one state character, `]`, and then end of line or a space
-before the text:
-
-- `- [ ]` open: outstanding, and the only one of the three that is a claim on anybody.
-- `- [x]` done.
-- `- [!]` pinned: a standing instruction, meant to be read by an agent without being asked for.
-  Ticking a box never unpins one, since a pinned item was set deliberately.
-
-Counts are derived from the body on every read rather than stored beside it, and ride the tree: a
-checkout row shows its own note's counts, a repository row sums its checkouts, and a project row
-sums everything beneath it plus its own note. A row with a note but nothing to count still says so,
-because "nothing open" and "nothing written down" are different answers.
-
-The window is modal, because a note is read and ticked far more often than it is written. View mode
-navigates with `j`/`k`, `0`/`$`, and `g`/`G`, ticks the box under the cursor with `space`, and
-starts typing with `i`, `a`, or `o`. Insert mode is text, and `Esc` leaves it and saves. Closing
-with `q` saves too; nothing goes out mid-word.
-
-`f` forwards the current line and `F` forwards the whole visible note. A checkout note can reach
-only a live agent in that checkout; a project note can reach any live agent in that project. One
-eligible agent is chosen directly and several open a recipient picker. The client sends the
-visible text, including unsaved edits, and preserves its Markdown and whitespace. The daemon
-checks the scope and live-agent status again, then uses bracketed paste without Enter, so the text
-remains editable in the agent's prompt rather than silently commanding it.
-
-Ticking sends the line number and the new state rather than a body, because the counts a client is
-acting on arrived with the tree rather than from opening the note, and a whole-body write from a
-stale copy would discard whatever an agent wrote in the meantime. The client sends its own text
-first when it has unsaved edits, so the line number means what the daemon thinks it means. Every
-write is answered with the stored note, so the editor shows what the daemon holds rather than what
-it predicted; a note arriving while there are unsent edits is ignored in favour of them.
-
-Notes are stored in `runtime.db` under durable identity — a project by its name, a checkout by its
-path — because ids are handed out fresh on every start. Saving an empty body deletes the note;
-there is no separate delete. A note over 64 KiB is refused.
-
-A live agent reads those notes with `argus-hook context`, which posts to `/pane/<id>/context` on
-the same loopback pane API its status reports use. What comes back is its project's note and its
-checkout's note, in that order, each with its body and its parsed checkboxes; an unwritten or blank
-note is left out rather than sent as an empty document. Scope is the point. The pane the request
-arrives on decides which two notes exist for it, so there is no target to name and nothing else to
-reach, and the caller must be a live agent pane — the same rule review comments are read under, and
-for the same reason: pane ids are runtime-only, so anything durable keys off the checkout directory.
-
-The helper prints the pinned lines once above the bodies they came from. That repetition is
-deliberate: `- [!]` is Argus's spelling rather than Markdown's, and an agent reading a note cold has
-no reason to know it means "standing instruction".
-
-Writes are the same surface narrowed. `argus-hook todo add "<text>"` appends one open checkbox to
-the *checkout's* note, and `argus-hook todo done <line>` or `todo open <line>` moves an existing
-one, by the line number a person reads off the note. Three things gate it, cheapest first: the
-caller must be a live agent pane, the project must carry `agent_todos = true`, and the change must
-be one the note can take. The default is off, because a note is what the human wrote down.
-
-Neither write can reach the project note — there is no target to name — and neither can touch a
-`- [!]` line: ticking off a standing instruction would delete the instruction rather than complete
-a task, and pinning is a human's judgement about what an agent should read. An item's text is
-folded to a single line, so one claim cannot arrive as several checkboxes.
-
-The change and its record commit together. Each record holds the time, the harness session that
-asked, what it did (`add`, `done`, `reopen`), and the item's text; the twenty most recent travel
-with the note whenever a client reads one, and the note window's footer names the last of them. The
-records outlive the note, since a note being emptied is exactly when "who wrote that" is worth
-answering. A note already open in a client does not yet redraw when an agent writes to it — the
-counts on the tree do, and reopening the note shows the change — because a stored note is answered
-only to the client that asked for it. Unlike every other pane-API write, this one answers in prose — the agent has to be able
-to tell the user it was refused, and "this project does not allow it" is a different situation from
-"that line is not a checkbox".
-
-Not yet implemented: pinned-note injection into a template's prompt, `argus ctx`, and MCP adapters
-over the same scoped context read (TARGET.md, "Agent context and memory").
-
 ## Features and the decision board
 
 Work is scoped to a **feature**: a short document saying what is being built, with the decisions
@@ -880,12 +797,10 @@ has become the design document it was meant to point at.
 The two sides write it differently, and deliberately. An agent *appends* — `argus-hook feature note`
 adds a paragraph — because an agent adding to a brief mid-task should not be able to erase what it
 is working from. A human *replaces*: `e` on a feature, from either board, opens the brief in the
-note editor and `ClientMsg::SetFeatureBody` writes back whatever it says. It is the same editor a
-note gets because it is the same job, prose a person reads and corrects, and a second editor for a
-second kind of document would only be somewhere for the two to drift apart. What the editor will
-not do to a brief is tick a checkbox or forward it: a brief's `NoteTarget` points at the project so
-nothing reading it has to branch, so both are refused rather than quietly writing into the project's
-note — and the work a brief might have listed lives in its tasks now. The decision view draws the
+brief editor and `ClientMsg::SetFeatureBody` writes back whatever it says. It is the same editor a
+task's brief gets because it is the same job, prose a person reads and corrects. The editor is
+modal: `j`/`k`, `0`/`$` and `g`/`G` navigate, `i`, `a` or `o` start typing, and `Esc` leaves insert
+mode and saves; `q` saves and closes. The work a brief might have listed lives in its tasks. The decision view draws the
 brief above the tree, bounded to a third of the panel, which is the order `argus-hook feature`
 prints them in and the order they are read.
 
@@ -913,8 +828,7 @@ replaced it. The old node stays on the board and the view draws it dimmed, becau
 taken is most of what a reader came back for. Decisions recorded before features existed keep a
 NULL `feature` and are reported as unfiled rather than dragged under a feature nobody chose.
 
-There is no policy flag on these writes, unlike note writes. A note is the human's document and an
-agent writing to it needs permission; the board exists for agents to write, is append-only, and
+There is no policy flag on these writes: the board exists for agents to write, is append-only, and
 attributes every row, so there is nothing for a gate to protect.
 
 Clients read the selected checkout's repository board — every feature and every decision in
@@ -1028,10 +942,10 @@ carries a list of tasks, drawn as the middle panel of the feature view.
 A task is a row, not a checkbox line in the feature's document. Its title stays a compact line, and
 an optional multiline brief carries context, boundaries, acceptance criteria and verification when
 the title is not enough. The selected row expands to show that brief; Enter opens it in the same
-multiline editor used for feature briefs, while `e` keeps the fast title editor. The note checkbox
-already has three states and an agent write path, but it is addressed by line number, and a line number moves whenever
-the text around it is edited — which is the one thing a list cannot take, since a row has to stay
-the same row while a human rewrites the list. Schema v8's `task` holds the title, the state, the
+multiline editor used for feature briefs, while `e` keeps the fast title editor. A checkbox line in
+a document would be addressed by line number, and a line number moves whenever the text around it
+is edited — which is the one thing a list cannot take, since a row has to stay the same row while a
+human rewrites the list. Schema v8's `task` holds the title, the state, the
 claim, a `position` and an `external` key; schema v11 adds its optional body.
 
 The states are still todo, doing and done, and unlike the feature columns they sat beside they are

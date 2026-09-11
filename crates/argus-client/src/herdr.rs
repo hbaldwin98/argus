@@ -307,12 +307,8 @@ mod tests {
                         .collect(),
                     git: None,
                     primary: true,
-                    notes: Default::default(),
-                    has_note: false,
                 }],
             }],
-            notes: Default::default(),
-            has_note: false,
         }]
     }
 
@@ -397,8 +393,6 @@ mod tests {
                 }],
                 git: None,
                 primary: true,
-                notes: Default::default(),
-                has_note: false,
             }],
         });
         let mut sync = HerdrSync::default();

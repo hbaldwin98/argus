@@ -3,13 +3,12 @@
 //! Three binaries share no types unless they live here, so anything
 //! written on both sides of a boundary belongs in this crate: the two
 //! message enums and their framing, the tree a client renders, the pane
-//! API's URL grammar and environment, and the shapes review and note data
+//! API's URL grammar and environment, and the shapes review and board data
 //! travel in. Written twice they drift in silence; written once they
 //! cannot.
 
 pub mod artifacts;
 pub mod cell;
-pub mod context;
 pub mod decisions;
 pub mod features;
 pub mod framing;
@@ -17,7 +16,6 @@ pub mod hook;
 pub mod ids;
 pub mod memory;
 pub mod message;
-pub mod notes;
 pub mod paths;
 pub mod review;
 pub mod tasks;
@@ -30,7 +28,6 @@ pub use cell::{
     BLANK,
 };
 pub use compact_str::{CompactString, ToCompactString};
-pub use context::{AgentContext, ContextNote, ContextScope, TodoWrite};
 pub use decisions::{Decision, DecisionBoard, DecisionTreeRow, DecisionWrite, MAX_DECISION_BYTES};
 pub use features::{
     slugify, Actor, Feature, FeatureAction, FeatureBoard, FeatureEvent, FeatureMove, FeatureState,
@@ -51,10 +48,6 @@ pub use memory::{
     MAX_WORK_CONTEXT_TITLE_BYTES,
 };
 pub use message::{ClientMsg, DirEntry, DirListing, ServerMsg};
-pub use notes::{
-    append_todo, counts as note_counts, parse_todos, set_todo_state, Note, NoteCounts, NoteTarget,
-    Todo, TodoAudit, TodoState, MAX_NOTE_BYTES,
-};
 pub use paths::{config_dir, instance_name};
 pub use review::{
     ChangeKind, CommitFile, CommitInfo, DiffLine, FileDiff, HighlightKind, HighlightSpan, Hunk,

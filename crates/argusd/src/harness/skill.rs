@@ -64,7 +64,7 @@ impl Harness {
                 "If ARGUS_PANE and ARGUS_HOOK are set, you are running inside Argus. \
                  Load the argus skill at `{}` before starting work (read SKILL.md directly \
                  if your harness has no skill loader), then read your pane's context as it directs. \
-                 Its references describe features, tasks, decisions, and notes when needed. \
+                 Its references describe features, tasks, and decisions when needed. \
                  If the file is unavailable, continue the user's task without the Argus workflow.",
                 dir.join("SKILL.md").display()
             ),
@@ -103,8 +103,8 @@ fn check_directories(checkout: &Path, dir: &Path) -> anyhow::Result<()> {
 pub(super) fn fallback() -> &'static str {
     "Argus fallback (only when ARGUS_PANE and ARGUS_HOOK are set): invoke the executable \
      in ARGUS_HOOK using your shell's environment syntax (POSIX: \"$ARGUS_HOOK\"; \
-     PowerShell: & $env:ARGUS_HOOK). Run `context` and `comments` to read the human's \
-     notes and feedback; run `title <short task>` to name your pane. Report `status working` \
+     PowerShell: & $env:ARGUS_HOOK). Run `comments` to read the human's review \
+     feedback; run `title <short task>` to name your pane. Report `status working` \
      when starting or resuming, `status waiting <reason>` when you need a human, \
      `status failed <reason>` on an unrecoverable failure, `status needs-review` when ready \
      to inspect, and `status done` after review and completion. Shared checkouts must not \

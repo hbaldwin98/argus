@@ -13,7 +13,7 @@
 //! back.
 
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, ClientMsg, NoteTarget, PaneId, PaneInfo, PaneKind, PaneStatus,
+    CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, PaneKind, PaneStatus,
     ProjectId, ProjectInfo, RepositoryId, RepositoryInfo, ReviewAnchor, ServerMsg, WorkspaceId,
     WorkspaceInfo,
 };
@@ -21,12 +21,12 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::brief::{BriefMode, BriefTarget, BriefView};
 use crate::dirpicker::{DirAction, DirPicker, DirTarget};
 use crate::fuzzy::Fuzzy;
 use crate::grid::Grid;
 use crate::history::{Drill, HistoryView};
 use crate::pty_input::{encode_key, encode_mouse, is_leader};
-use crate::notes::{NoteMode, NoteView};
 use crate::review::ReviewView;
 use crate::selection::TerminalSelection;
 use crate::theme::Theme;
@@ -204,8 +204,8 @@ pub struct App {
     pending_overlay_new: bool,
     pub review: Option<ReviewView>,
     pub history: Option<HistoryView>,
-    /// The note being read or written, if one is open.
-    pub notes: Option<NoteView>,
+    /// The feature or task brief being read or written, if one is open.
+    pub brief: Option<BriefView>,
     /// The decision board of the project the board view is showing, and
     /// which row of it is selected. Held on the app rather than created
     /// with the view, because the daemon pushes a changed board whether or
@@ -372,7 +372,7 @@ impl App {
             pending_overlay_new: false,
             review: None,
             history: None,
-            notes: None,
+            brief: None,
             board: None,
             board_scoped: None,
             feature_sel: 0,

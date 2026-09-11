@@ -7,7 +7,7 @@
 //! pty for, `git_ops` for the writes to Git, `sync` for the polls and
 //! watchers that keep the tree level with the disk, `panel` for the rows
 //! the user adds and removes, `workspaces` for which scope is open,
-//! `notes` for what is written down against a row, `hook_server` for the
+//! `hook_server` for the
 //! loopback receiver, `session` for what survives a restart, and `tree`
 //! for finding your way around.
 //!
@@ -31,7 +31,6 @@ mod features;
 mod tasks;
 mod git_ops;
 mod hook_server;
-mod notes;
 mod panel;
 mod panes;
 mod session;
@@ -49,7 +48,6 @@ use tree::*;
 
 use crate::config::{self, AgentConfig, ConfigFile};
 use crate::paths::same_path;
-use crate::store::NoteKey;
 use crate::pty::{self, PaneRuntime};
 
 struct Pane {
@@ -189,9 +187,6 @@ struct Project {
     setup: Vec<String>,
     /// Whether a checkout here may hold only one agent at a time.
     exclusive: bool,
-    /// Whether an agent here may write to its checkout's note. See
-    /// `ProjectConfig::agent_todos`.
-    agent_todos: bool,
     /// What this project's root scan may and may not walk into.
     scan: crate::git::Scan,
 }
@@ -288,10 +283,6 @@ impl Daemon {
     /// their rollups show up in [`Daemon::workspaces`] so a working agent
     /// somewhere you are not looking is still visible.
     pub fn snapshot(&self) -> Vec<ProjectInfo> {
-        // Read before the tree lock: this touches the store, and holding
-        // the tree while doing so would put SQLite on the path of every
-        // pane update.
-        let notes = self.note_summaries();
         let inner = self.inner.lock().unwrap();
         let open = inner.open;
         inner
@@ -350,15 +341,11 @@ impl Daemon {
                                         .collect(),
                                     git,
                                     primary: c.primary,
-                                    notes: note_of(&notes, &NoteKey::checkout(&c.path)).0,
-                                    has_note: note_of(&notes, &NoteKey::checkout(&c.path)).1,
                                 }
                             })
                             .collect(),
                     })
                     .collect(),
-                notes: note_of(&notes, &NoteKey::Project(p.name.clone())).0,
-                has_note: note_of(&notes, &NoteKey::Project(p.name.clone())).1,
             })
             .collect()
     }
@@ -399,14 +386,6 @@ impl Daemon {
     fn broadcast_workspaces(&self) {
         let _ = self.workspaces_tx.send(self.workspaces());
     }
-}
-
-/// A row's note summary, or nothing on both counts when it has no note.
-fn note_of(
-    notes: &HashMap<NoteKey, notes::NoteSummary>,
-    key: &NoteKey,
-) -> notes::NoteSummary {
-    notes.get(key).copied().unwrap_or_default()
 }
 
 #[cfg(test)]

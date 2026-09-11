@@ -53,150 +53,40 @@ impl App {
             .map(|c| c.id)
     }
 
-    /// Works from any column that still implies a checkout. `R` on a commit
-    /// refreshes that commit; otherwise this is the uncommitted sides.
-    /// Opens the note for whatever the spine currently has selected: the
-    /// checkout when one is in hand, the project otherwise.
-    ///
-    /// The column you are in decides what the note is about, rather than a
-    /// second choice on top of the one you already made by navigating
-    /// here. A checkout row with no directory — a bare branch — has no
-    /// note, so the project's stands in.
-    pub(super) fn open_notes(&mut self) {
-        let target = match self.focus {
-            Focus::Projects => self
-                .current_project()
-                .map(|p| (NoteTarget::Project(p.id), p.name.clone())),
-            _ => self
-                .current_checkout()
-                .map(|c| (NoteTarget::Checkout(c.id), c.name.clone()))
-                .or_else(|| {
-                    self.current_project()
-                        .map(|p| (NoteTarget::Project(p.id), p.name.clone()))
-                }),
-        };
-        let Some((target, title)) = target else {
-            self.report("nothing to take notes on");
-            return;
-        };
-        // Opened empty and filled in when the daemon answers, so the
-        // window is up on the keypress rather than a round trip later.
-        let placeholder = argus_protocol::Note::new(target, String::new());
-        self.notes = Some(NoteView::new(&placeholder, title));
-        self.overlay = Some(Overlay::Notes);
-        let _ = self.out.send(ClientMsg::GetNote { target });
-    }
-
-    /// Sends the edited body if it has changed since the last write.
-    pub(super) fn save_notes(&mut self) {
+    /// Sends the edited brief if it has changed since the last write.
+    pub(super) fn save_brief(&mut self) {
         let checkout = self.current_checkout().map(|checkout| checkout.id);
-        let Some(view) = &mut self.notes else {
+        let Some(view) = &mut self.brief else {
             return;
         };
         if !view.dirty {
             return;
         }
-        let target = view.target;
-        let brief = view.brief.clone();
-        let task = view.task.clone();
         let body = view.body();
-        // Marked sent before the answer arrives: the daemon echoes every
-        // write back, and a view still flagged dirty would refuse its own
-        // echo forever.
         view.saved();
-        let _ = self.out.send(match (task, brief) {
-            (Some((project, feature, id)), _) => ClientMsg::SetTaskBody {
+        let _ = self.out.send(match view.target.clone() {
+            BriefTarget::Task {
+                project,
+                feature,
+                id,
+            } => ClientMsg::SetTaskBody {
                 project,
                 checkout: checkout.expect("a task brief belongs to the selected checkout"),
                 feature,
                 id,
                 body,
             },
-            (None, Some((project, slug))) => ClientMsg::SetFeatureBody {
+            BriefTarget::Feature { project, slug } => ClientMsg::SetFeatureBody {
                 project,
                 checkout: checkout.expect("a feature brief belongs to the selected checkout"),
                 slug,
                 body,
             },
-            (None, None) => ClientMsg::SetNote { target, body },
         });
     }
 
-    /// Chooses where explicit context goes. A checkout note stays in its
-    /// checkout; a project note may go to any agent in that project.
-    pub(super) fn forward_note(&mut self, whole: bool) {
-        let Some(view) = &self.notes else {
-            return;
-        };
-        if view.brief.is_some() || view.task.is_some() {
-            return self.report("a brief is context an agent already reads on its own");
-        }
-        let target = view.target;
-        let body = match view.forward_text(whole) {
-            Ok(body) => body,
-            Err(message) => return self.report(message),
-        };
-        let agents = self.note_agents(target);
-        match agents.as_slice() {
-            [] => self.report("no agent running in this note's scope"),
-            [(pane, _)] => self.send_note(target, *pane, body),
-            _ => {
-                self.picker = Some(Picker::new(
-                    PickerKind::NoteRecipient {
-                        panes: agents.iter().map(|(pane, _)| *pane).collect(),
-                        target,
-                        body,
-                    },
-                    "forward note to",
-                    agents.into_iter().map(|(_, label)| label).collect(),
-                    0,
-                ));
-            }
-        }
-    }
-
-    pub(super) fn send_note(&mut self, target: NoteTarget, recipient: PaneId, body: String) {
-        let _ = self.out.send(ClientMsg::ForwardNote {
-            target,
-            recipient,
-            body,
-        });
-        self.report("forwarding note…");
-    }
-
-    fn note_agents(&self, target: NoteTarget) -> Vec<(PaneId, String)> {
-        let panes: Vec<&PaneInfo> = match target {
-            NoteTarget::Project(project) => self
-                .tree
-                .iter()
-                .find(|p| p.id == project)
-                .into_iter()
-                .flat_map(|p| p.repositories.iter())
-                .flat_map(|r| r.checkouts.iter())
-                .flat_map(|c| c.panes.iter())
-                .collect(),
-            NoteTarget::Checkout(checkout) => checkouts_in(&self.tree)
-                .find(|c| c.id == checkout)
-                .into_iter()
-                .flat_map(|c| c.panes.iter())
-                .collect(),
-        };
-        panes
-            .into_iter()
-            .filter(|p| is_live_agent_pane(p))
-            .map(|p| {
-                let template = p.template.as_deref().unwrap_or("agent");
-                (p.id, format!("{}  {}  #{}", p.title, template, p.id.0))
-            })
-            .collect()
-    }
-
-    pub(super) fn is_agent_for_note(&self, target: NoteTarget, pane: PaneId) -> bool {
-        self.note_agents(target)
-            .iter()
-            .any(|(candidate, _)| *candidate == pane)
-    }
-
+    /// Works from any column that still implies a checkout. `R` on a commit
+    /// refreshes that commit; otherwise this is the uncommitted sides.
     pub(super) fn open_review(&mut self) {
         if let Some(oid) = self
             .review

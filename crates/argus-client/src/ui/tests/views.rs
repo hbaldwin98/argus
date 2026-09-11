@@ -795,13 +795,11 @@ fn enter_opens_a_task_brief_and_saving_replaces_it() {
     while rx.try_recv().is_ok() {}
 
     app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    let view = app.notes.as_ref().expect("the task brief is open");
-    assert_eq!(
-        view.task
-            .as_ref()
-            .map(|(_, feature, id)| (feature.as_str(), *id)),
-        Some(("notes", 7))
-    );
+    let view = app.brief.as_ref().expect("the task brief is open");
+    assert!(matches!(
+        &view.target,
+        crate::brief::BriefTarget::Task { feature, id: 7, .. } if feature == "notes"
+    ));
     assert_eq!(view.body(), "Accept multiline input.");
 
     app.on_key(KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE));
@@ -821,8 +819,7 @@ fn enter_opens_a_task_brief_and_saving_replaces_it() {
     assert!(
         !sent.iter().any(|message| matches!(
             message,
-            argus_protocol::ClientMsg::SetNote { .. }
-                | argus_protocol::ClientMsg::SetFeatureBody { .. }
+            argus_protocol::ClientMsg::SetFeatureBody { .. }
         )),
         "a task brief must not be saved as another document: {sent:?}"
     );
@@ -1078,11 +1075,11 @@ fn e_opens_the_brief_in_the_editor_and_saving_replaces_it() {
     while rx.try_recv().is_ok() {}
 
     app.on_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
-    let view = app.notes.as_ref().expect("the brief is open");
-    assert_eq!(
-        view.brief.as_ref().map(|(_, slug)| slug.as_str()),
-        Some("pty")
-    );
+    let view = app.brief.as_ref().expect("the brief is open");
+    assert!(matches!(
+        &view.target,
+        crate::brief::BriefTarget::Feature { slug, .. } if slug == "pty"
+    ));
     assert!(
         view.body().contains("The reader thread owns the handle"),
         "it opens on what is already written"
@@ -1102,31 +1099,6 @@ fn e_opens_the_brief_in_the_editor_and_saving_replaces_it() {
                 if slug == "pty" && body.contains("Not the writer.")
         )),
         "a brief is replaced whole rather than appended to: {sent:?}"
-    );
-    assert!(
-        !sent
-            .iter()
-            .any(|m| matches!(m, argus_protocol::ClientMsg::SetNote { .. })),
-        "and never as a note: {sent:?}"
-    );
-}
-
-#[test]
-fn a_brief_is_not_a_note_and_says_so() {
-    let (mut app, mut rx) = feature_view_watching(vec![argus_protocol::Feature {
-        body: "- [ ] not a checkbox here".into(),
-        ..carded("pty", "The pty", argus_protocol::FeatureState::Open)
-    }]);
-    while rx.try_recv().is_ok() {}
-    app.on_key(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE));
-
-    app.on_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
-    let sent: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
-    assert!(
-        !sent
-            .iter()
-            .any(|m| matches!(m, argus_protocol::ClientMsg::SetTodo { .. })),
-        "ticking a brief must not write into the project's note: {sent:?}"
     );
 }
 

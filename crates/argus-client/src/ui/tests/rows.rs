@@ -116,8 +116,6 @@ fn descendant_status_rolls_up_through_checkout_repository_and_project() {
         id: ProjectId(3),
         name: "project".to_string(),
         repositories: vec![repository],
-        notes: Default::default(),
-        has_note: false,
     };
 
     let checkout_status = worst_pane_status(&project.repositories[0].checkouts[0]);
@@ -393,42 +391,6 @@ fn a_failed_pane_is_still_running_so_it_is_not_an_exit_cross() {
 }
 
 #[test]
-fn a_note_line_reads_as_the_markdown_it_is() {
-    let th = Theme::mocha();
-    let bar = Style::default();
-
-    let heading = crate::ui::overlay::note_line("## what this is for", None, bar, th);
-    assert_eq!(heading[0].content, "##");
-    assert_eq!(heading[1].style.fg, Some(th.accent));
-
-    // An open item keeps its markup; the glyph is still the first thing.
-    let open = crate::ui::overlay::note_line(
-        "- [ ] call `resize` first",
-        Some(TodoState::Open),
-        bar,
-        th,
-    );
-    let text: String = open.iter().map(|s| s.content.as_ref()).collect();
-    assert_eq!(text, "- ☐ call `resize` first");
-    assert!(
-        open.iter().any(|s| s.style.fg == Some(th.syntax.string)),
-        "the code span is picked out: {open:?}"
-    );
-
-    // A finished one is struck through whole, markup and all.
-    let done = crate::ui::overlay::note_line(
-        "- [x] call `resize` first",
-        Some(TodoState::Done),
-        bar,
-        th,
-    );
-    let tail = done.last().expect("the text follows the glyph");
-    assert!(tail.style.add_modifier.contains(Modifier::CROSSED_OUT));
-    assert_eq!(tail.content, " call `resize` first");
-}
-
-
-#[test]
 fn a_badge_ends_inside_its_row_rather_than_against_the_edge() {
     let mut app = app_with_tree();
     app.focus = crate::app::Focus::Checkouts;
@@ -441,7 +403,7 @@ fn a_badge_ends_inside_its_row_rather_than_against_the_edge() {
     let row: String = (panel.inner.x..panel.inner.right())
         .map(|x| buf.cell((x, y)).unwrap().symbol())
         .collect();
-    assert!(row.contains('▣'), "the note count is drawn: {row:?}");
+    assert!(row.contains('▣'), "the pane count is drawn: {row:?}");
     assert!(
         row.ends_with(' '),
         "a badge flush to the edge reads as having escaped the row: {row:?}"

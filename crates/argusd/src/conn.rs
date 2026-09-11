@@ -198,8 +198,6 @@ fn handle_client_msg(
     }
 
     let result = dispatch_pane(msg, daemon, out_tx, subs, viewer)
-        .or_else(|msg| dispatch_note_forward(msg, daemon, out_tx))
-        .or_else(|msg| dispatch_notes(msg, daemon, out_tx))
         .or_else(|msg| dispatch_decisions(msg, daemon, out_tx))
         .or_else(|msg| dispatch_workspace(msg, daemon, out_tx))
         .or_else(|msg| dispatch_branch_or_editor(msg, daemon, out_tx))
@@ -375,64 +373,6 @@ fn dispatch_decisions(
         msg => return Err(msg),
     };
     Ok(result)
-}
-
-fn dispatch_notes(
-    msg: ClientMsg,
-    daemon: &Arc<Daemon>,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-) -> DispatchResult {
-    let result = match msg {
-        ClientMsg::GetNote { target } => daemon.note(target).map(|note| {
-            let _ = out_tx.send(ServerMsg::Note(Box::new(note)));
-        }),
-        ClientMsg::SetNote { target, body } => {
-            answer_note(out_tx, target, daemon.set_note(target, body))
-        }
-        ClientMsg::SetTodo {
-            target,
-            line,
-            state,
-        } => answer_note(out_tx, target, daemon.set_todo(target, line, state)),
-        msg => return Err(msg),
-    };
-    Ok(result)
-}
-
-fn dispatch_note_forward(
-    msg: ClientMsg,
-    daemon: &Arc<Daemon>,
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-) -> DispatchResult {
-    let result = match msg {
-        ClientMsg::ForwardNote {
-            target,
-            recipient,
-            body,
-        } => daemon.forward_note(target, recipient, body).map(|()| {
-            let _ = out_tx.send(ServerMsg::NoteForwarded { recipient });
-        }),
-        msg => return Err(msg),
-    };
-    Ok(result)
-}
-
-/// Never an `Err`: a refusal goes back as `NoteFailed`, which names the
-/// note it was about, rather than as a bare `Error`.
-fn answer_note(
-    out_tx: &mpsc::UnboundedSender<ServerMsg>,
-    target: argus_protocol::NoteTarget,
-    written: anyhow::Result<argus_protocol::Note>,
-) -> anyhow::Result<()> {
-    let msg = match written {
-        Ok(note) => ServerMsg::Note(Box::new(note)),
-        Err(e) => ServerMsg::NoteFailed {
-            target,
-            message: e.to_string(),
-        },
-    };
-    let _ = out_tx.send(msg);
-    Ok(())
 }
 
 /// Runs a daemon call on its own task, reporting a refusal to the client

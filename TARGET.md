@@ -62,7 +62,7 @@ shown as shared; optional project exclusivity can make that a hard block.
 
 ## Agent templates and state
 
-Templates may define command arguments, environment, prompt interpolation, pinned notes,
+Templates may define command arguments, environment, prompt interpolation,
 permissions, one-shot behavior, sandboxing, redaction, and harness-specific resume behavior.
 Template identity and display title are separate persisted fields. The daemon
 names a pane from the latest user prompt a harness reports; an agent may refine
@@ -105,13 +105,8 @@ numbers. Staging, unstaging, and reverting are deliberately not Argus's job.
 
 ## Agent context and memory
 
-Projects and checkouts can hold plain Markdown notes. Checkbox lines provide open, done, and
-pinned states whose counts roll up the tree. Forwarding to an agent is explicit except for a
-template's opt-in pinned-note injection. Notes remain human-owned documents; they are one source an
-operator can pull into an agent, not Argus's model of the work.
-
 The daemon exposes the same scoped context through MCP, HTTP, and `argus ctx`. A per-checkout token
-limits every agent to approved read and write calls. Write operations such as note changes,
+limits every agent to approved read and write calls. Write operations such as
 review requests, and worktree creation are audited and template-policy gated.
 
 Argus's durable context is written primarily by agents and corrected by humans. Its purpose is to

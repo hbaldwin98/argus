@@ -448,8 +448,6 @@ fn repository_rows_roll_up_checkout_counts_panes_and_status() {
                 template: None,
                 children: Vec::new(),
             }],
-            notes: Default::default(),
-            has_note: false,
         }],
     });
 

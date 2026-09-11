@@ -126,13 +126,6 @@ impl App {
                     self.report(format!("comment #{id} saved; agent unavailable"));
                 }
             }
-            ServerMsg::Note(note) => {
-                if let Some(view) = &mut self.notes {
-                    if view.brief.is_none() && view.task.is_none() && view.target == note.target {
-                        view.adopt(&note);
-                    }
-                }
-            }
             // Adopted only when it is the board on screen: every client
             // is told about every project's board, because the daemon does
             // not track which view anyone has open.
@@ -178,17 +171,6 @@ impl App {
                         None => self.clamp_task_selection(),
                     }
                 }
-            }
-            ServerMsg::NoteFailed { target, message } => {
-                if let Some(view) = &mut self.notes {
-                    if view.target == target {
-                        view.error = Some(message.clone());
-                    }
-                }
-                self.alert(format!("note: {message}"));
-            }
-            ServerMsg::NoteForwarded { recipient } => {
-                self.report(format!("note forwarded to agent #{}", recipient.0));
             }
             ServerMsg::Branches { checkout, branches } => {
                 if self.list_wanted != Some(checkout) {

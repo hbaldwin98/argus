@@ -59,18 +59,3 @@ Read the board before planning. Record a decision when you choose one real optio
 over another, with the reason and the parent decision that constrained it. Routine
 steps do not need decisions. Revisit an earlier decision when a new finding
 invalidates it; supersede it so the earlier reasoning remains visible.
-
-## Checkout notes
-
-```sh
-"$ARGUS_HOOK" context
-"$ARGUS_HOOK" todo add "verified reconnect"
-"$ARGUS_HOOK" todo done <line>
-"$ARGUS_HOOK" todo open <line>
-```
-
-Write notes only where the project allows it. These writes are attributed to you;
-the daemon refuses them when `agent_todos` is disabled. They change the checkout's
-note, not the feature task list. Read current line numbers before updating a note.
-Pinned standing instructions cannot be completed as todo items. Read refusal
-messages and continue within the available permissions.

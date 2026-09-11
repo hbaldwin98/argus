@@ -107,11 +107,6 @@ pub enum Endpoint {
     Checkout,
     Session,
     Comments,
-    Context,
-    /// The one write an agent has: a `TodoWrite` against its own checkout's
-    /// note. Separate from `Context` because reading is unconditional and
-    /// this is not — the daemon refuses it unless the project allows it.
-    Todo,
     /// The decision board of the feature this pane's checkout is on, read
     /// whole. A tree with its roots cut off explains nothing, so it is
     /// never trimmed inside a feature — but it is scoped to one, because a
@@ -142,8 +137,6 @@ impl Endpoint {
             Endpoint::Checkout => Cow::Borrowed("checkout"),
             Endpoint::Session => Cow::Borrowed("session"),
             Endpoint::Comments => Cow::Borrowed("comments"),
-            Endpoint::Context => Cow::Borrowed("context"),
-            Endpoint::Todo => Cow::Borrowed("todo"),
             Endpoint::Decisions => Cow::Borrowed("decisions"),
             Endpoint::Decide => Cow::Borrowed("decide"),
             Endpoint::Features => Cow::Borrowed("features"),
@@ -178,8 +171,6 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "checkout" => Endpoint::Checkout,
         "session" => Endpoint::Session,
         "comments" => Endpoint::Comments,
-        "context" => Endpoint::Context,
-        "todo" => Endpoint::Todo,
         "decisions" => Endpoint::Decisions,
         "decide" => Endpoint::Decide,
         "features" => Endpoint::Features,
@@ -203,8 +194,6 @@ mod tests {
             Endpoint::Checkout,
             Endpoint::Session,
             Endpoint::Comments,
-            Endpoint::Context,
-            Endpoint::Todo,
             Endpoint::Decisions,
             Endpoint::Decide,
             Endpoint::Features,
@@ -235,8 +224,6 @@ mod tests {
         assert_eq!(pane_path(PaneId(3), Endpoint::Checkout), "/pane/3/checkout");
         assert_eq!(pane_path(PaneId(3), Endpoint::Session), "/pane/3/session");
         assert_eq!(pane_path(PaneId(3), Endpoint::Comments), "/pane/3/comments");
-        assert_eq!(pane_path(PaneId(3), Endpoint::Context), "/pane/3/context");
-        assert_eq!(pane_path(PaneId(3), Endpoint::Todo), "/pane/3/todo");
         assert_eq!(
             pane_path(PaneId(3), Endpoint::Decisions),
             "/pane/3/decisions"

@@ -329,7 +329,7 @@ impl App {
     }
 
     /// Rewrites whatever has the keys. On the list that is the brief,
-    /// which is prose and opens in the note editor; on the tasks it is the
+    /// which is prose and opens in the brief editor; on the tasks it is the
     /// line under the cursor. The decision tree is append-only, so there
     /// is nothing here to rewrite — a decision that turned out wrong is
     /// superseded by a new one rather than edited.
@@ -548,15 +548,17 @@ impl App {
         let Some(task) = self.selected_task() else {
             return self.report("no task selected");
         };
-        let view = crate::notes::NoteView::task(
-            project,
-            &feature,
-            id,
+        let view = BriefView::new(
+            BriefTarget::Task {
+                project,
+                feature,
+                id,
+            },
             task.title.clone(),
             task.body.as_deref().unwrap_or_default(),
         );
-        self.notes = Some(view);
-        self.overlay = Some(Overlay::Notes);
+        self.brief = Some(view);
+        self.overlay = Some(Overlay::Brief);
         self.focus = Focus::Overlay;
     }
 
@@ -737,11 +739,8 @@ impl App {
         self.report(format!("{slug} → {state}"));
     }
 
-    /// Opens the selected feature's brief in the note editor.
-    ///
-    /// The same editor a note gets, because it is the same job: prose a
-    /// human reads and corrects. A second editor for a second kind of
-    /// document would only be a place for the two to drift apart.
+    /// Opens the selected feature's brief in the brief editor, the same one
+    /// a task's brief gets: both are prose a human reads and corrects.
     pub(super) fn open_feature_brief(&mut self) {
         let (Some(project), Some(feature)) = (
             self.board.as_ref().and_then(|b| b.project),
@@ -749,14 +748,16 @@ impl App {
         ) else {
             return self.report("no feature selected");
         };
-        let view = crate::notes::NoteView::brief(
-            project,
-            &feature.slug,
+        let view = BriefView::new(
+            BriefTarget::Feature {
+                project,
+                slug: feature.slug.clone(),
+            },
             feature.title.clone(),
             &feature.body,
         );
-        self.notes = Some(view);
-        self.overlay = Some(Overlay::Notes);
+        self.brief = Some(view);
+        self.overlay = Some(Overlay::Brief);
         self.focus = Focus::Overlay;
     }
 }

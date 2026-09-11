@@ -164,10 +164,6 @@ async fn handle_hook_request(
                 HookResponse::empty(200, "OK")
             }
             Some((pane, Endpoint::Comments)) => comments_response(&daemon, pane)?,
-            Some((pane, Endpoint::Context)) => context_response(&daemon, pane)?,
-            Some((pane, Endpoint::Todo)) => {
-                todo_response(&daemon, pane, reporter.as_deref(), &body)
-            }
             Some((pane, Endpoint::Decisions)) => decisions_response(&daemon, pane, artifact_scope)?,
             Some((pane, Endpoint::Decide)) => {
                 decide_response(&daemon, pane, reporter.as_deref(), &body, artifact_scope)
@@ -212,47 +208,6 @@ async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
         }
     }
     Ok((authorized, content_length, reporter))
-}
-
-fn context_response(daemon: &Arc<Daemon>, source: PaneId) -> anyhow::Result<HookResponse> {
-    Ok(match daemon.context_for_agent(source) {
-        Ok(context) => HookResponse {
-            code: 200,
-            reason: "OK",
-            body: serde_json::to_vec(&context)?,
-        },
-        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
-    })
-}
-
-/// The one endpoint that changes something a human owns, so it is the one
-/// endpoint that answers in prose.
-///
-/// Every other write here is fire-and-forget: a status report nobody reads
-/// the reply to. A refused note write has to come back as something the
-/// agent can put in front of the user — "this project does not allow it" is
-/// a different situation from "that line is not a checkbox", and both are
-/// different from having worked.
-fn todo_response(
-    daemon: &Arc<Daemon>,
-    source: PaneId,
-    session: Option<&str>,
-    body: &[u8],
-) -> HookResponse {
-    let write: argus_protocol::TodoWrite = match serde_json::from_slice(body) {
-        Ok(write) => write,
-        Err(_) => {
-            return HookResponse::text(400, "Bad Request", "not a note change".into());
-        }
-    };
-    match daemon.write_agent_todo(source, session, &write) {
-        Ok(counts) => HookResponse::text(
-            200,
-            "OK",
-            format!("{} open, {} done", counts.open, counts.done),
-        ),
-        Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
-    }
 }
 
 fn decisions_response(

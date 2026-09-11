@@ -2,13 +2,13 @@
 //! asserted on as text. One file per thing being drawn, over the
 //! fixtures they all build an app from.
 
+mod brief;
 mod browser;
 mod diff;
 mod frame;
 mod geometry;
 mod help;
 mod narrow;
-mod notes;
 mod panes;
 mod picker;
 mod rows;
@@ -78,8 +78,6 @@ pub(super) fn tree() -> Vec<ProjectInfo> {
                             children: Vec::new(),
                         },
                     ],
-                    notes: Default::default(),
-                    has_note: false,
                 },
                 CheckoutInfo {
                     id: CheckoutId(11),
@@ -88,13 +86,9 @@ pub(super) fn tree() -> Vec<ProjectInfo> {
                     primary: false,
                     git: None,
                     panes: vec![],
-                    notes: Default::default(),
-                    has_note: false,
                 },
             ],
         }],
-        notes: Default::default(),
-        has_note: false,
     }]
 }
 
@@ -168,8 +162,6 @@ pub(super) fn app_with_a_long_checkout_column() -> App {
             primary: i == 0,
             git: None,
             panes: Vec::new(),
-            notes: Default::default(),
-            has_note: false,
         })
         .collect();
     app.focus = Focus::Checkouts;
@@ -256,14 +248,19 @@ pub(super) fn app_scrolled_back(offset: u32, depth: u32, mark: char) -> App {
     app
 }
 
-// --- notes ---------------------------------------------------------------
+// --- briefs --------------------------------------------------------------
 
-pub(super) fn app_with_a_note(body: &str) -> App {
+pub(super) fn app_with_a_brief(body: &str) -> App {
     let mut app = app_with_tree();
-    let target = argus_protocol::NoteTarget::Checkout(CheckoutId(10));
-    let note = argus_protocol::Note::new(target, body.to_string());
-    app.notes = Some(crate::notes::NoteView::new(&note, "master".to_string()));
-    app.overlay = Some(Overlay::Notes);
+    app.brief = Some(crate::brief::BriefView::new(
+        crate::brief::BriefTarget::Feature {
+            project: ProjectId(1),
+            slug: "pty".to_string(),
+        },
+        "The pty".to_string(),
+        body,
+    ));
+    app.overlay = Some(Overlay::Brief);
     app
 }
 
@@ -496,8 +493,6 @@ pub(super) fn checkout_with(statuses: &[PaneStatus]) -> CheckoutInfo {
                 children: Vec::new(),
             })
             .collect(),
-        notes: Default::default(),
-        has_note: false,
     }
 }
 

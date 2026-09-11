@@ -340,3 +340,41 @@ fn the_tree_keymap_advertises_review() {
     let out = lines(&draw(&mut app)).join("\n");
     assert!(out.contains("R review"), "{out}");
 }
+
+#[test]
+#[ignore]
+fn dump_split_review() {
+    let mut app = app_with_diff(
+        true,
+        vec![
+            diff_line(
+                argus_protocol::LineKind::Context,
+                Some(9),
+                Some(9),
+                "fn f() {",
+            ),
+            diff_line(
+                argus_protocol::LineKind::Removed,
+                Some(10),
+                None,
+                "    let x = old();",
+            ),
+            diff_line(
+                argus_protocol::LineKind::Removed,
+                Some(11),
+                None,
+                "    drop(x);",
+            ),
+            diff_line(
+                argus_protocol::LineKind::Added,
+                None,
+                Some(10),
+                "    let x = new();",
+            ),
+            diff_line(argus_protocol::LineKind::Context, Some(12), Some(11), "}"),
+        ],
+    );
+    for line in lines(&draw_at(&mut app, 120, 20)) {
+        println!("|{line}");
+    }
+}
