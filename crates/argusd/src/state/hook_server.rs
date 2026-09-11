@@ -295,26 +295,10 @@ fn tasks_response(
     body: &[u8],
     scope: argus_protocol::ArtifactScope,
 ) -> HookResponse {
-    use argus_protocol::TaskAction;
-
-    let action: TaskAction = match decode(body, "task change") {
-        Ok(action) => action,
-        Err(refusal) => return refusal,
-    };
-    json_reply(match action {
-        TaskAction::List => daemon.tasks_for_agent(source, scope),
-        TaskAction::Add(write) => daemon.add_task_for_agent(source, session, write, scope),
-        TaskAction::Move { id, state } => {
-            daemon.move_task_for_agent(source, session, id, state, scope)
-        }
-        TaskAction::Retitle { id, title } => {
-            daemon.retitle_task_for_agent(source, id, &title, scope)
-        }
-        TaskAction::SetBody { id, body } => {
-            daemon.set_task_body_for_agent(source, id, body, scope)
-        }
-        TaskAction::Remove { id } => daemon.remove_task_for_agent(source, id, scope),
-    })
+    match decode(body, "task change") {
+        Ok(action) => json_reply(daemon.task_action_for_agent(source, session, action, scope)),
+        Err(refusal) => refusal,
+    }
 }
 
 /// A harness session id is opaque to Argus — it only has to be one

@@ -10,7 +10,7 @@ use crate::decisions::DecisionBoard;
 use crate::features::{FeatureState, FeatureWrite};
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
-use crate::tasks::{TaskList, TaskState, TaskWrite};
+use crate::tasks::{TaskAction, TaskList};
 use crate::tree::{ProjectInfo, WorkspaceInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -183,56 +183,16 @@ pub enum ClientMsg {
         slug: String,
         body: String,
     },
-    /// Read one feature's tasks. Scoped to the feature, unlike the
-    /// decision board: a task means nothing outside the feature it is
-    /// under, so there is no whole-project list to want.
-    GetTasks {
+    /// Read or change one feature's tasks, in the same words an agent
+    /// uses. Scoped to the feature, unlike the decision board: a task means
+    /// nothing outside the feature it is under, so there is no
+    /// whole-project list to want. A read is answered with
+    /// `ServerMsg::Tasks`; a change reaches every client as a push instead.
+    Task {
         project: ProjectId,
         checkout: CheckoutId,
         feature: String,
-    },
-    AddTask {
-        project: ProjectId,
-        checkout: CheckoutId,
-        feature: String,
-        write: TaskWrite,
-    },
-    MoveTask {
-        project: ProjectId,
-        checkout: CheckoutId,
-        feature: String,
-        id: i64,
-        state: TaskState,
-    },
-    RetitleTask {
-        project: ProjectId,
-        checkout: CheckoutId,
-        feature: String,
-        id: i64,
-        title: String,
-    },
-    SetTaskBody {
-        project: ProjectId,
-        checkout: CheckoutId,
-        feature: String,
-        id: i64,
-        body: String,
-    },
-    RemoveTask {
-        project: ProjectId,
-        checkout: CheckoutId,
-        feature: String,
-        id: i64,
-    },
-    /// Put a task at a place in its feature's list. The order is a human's
-    /// statement of what to do first, so it is theirs to set and there is
-    /// no agent-side equivalent.
-    ReorderTask {
-        project: ProjectId,
-        checkout: CheckoutId,
-        feature: String,
-        id: i64,
-        to: i64,
+        action: TaskAction,
     },
     /// Ask for what this checkout contains, for the fuzzy pickers.
     ListBranches {
@@ -400,7 +360,7 @@ pub enum ServerMsg {
         id: u64,
         delivered: bool,
     },
-    /// One feature's tasks: the answer to `ClientMsg::GetTasks`, and what
+    /// One feature's tasks: the answer to a `TaskAction::List`, and what
     /// every client receives whenever that list changes.
     Tasks(Box<TaskList>),
     /// The answer to `ClientMsg::GetDecisions`, and what every client

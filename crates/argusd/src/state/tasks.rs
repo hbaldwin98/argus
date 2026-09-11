@@ -7,142 +7,124 @@
 //! what it found on the way. There is no acceptance step and so no move
 //! either side is refused — that ceremony belongs to the feature the tasks
 //! are under, which is where a human accepts the work as a whole.
+//!
+//! So there is one way in, [`TaskAction`], and one place it is applied.
+//! The two callers differ only in how they name the feature: an agent is
+//! on whichever feature its checkout points at, and a client names it.
 
-use argus_protocol::{ArtifactScope, PaneId, ProjectId, Task, TaskList, TaskState, TaskWrite};
+use argus_protocol::{ArtifactScope, PaneId, ProjectId, Task, TaskAction, TaskList};
 
-use super::agents::AgentScope;
 use super::*;
 
+/// The one feature a task change lands in, however the caller named it.
+struct TaskTarget {
+    project_name: String,
+    key: String,
+    feature: String,
+}
+
 impl Daemon {
-    /// The tasks of the feature this checkout is on.
-    pub fn tasks_for_agent(
-        &self,
-        pane_id: PaneId,
-        artifact_scope: ArtifactScope,
-    ) -> anyhow::Result<TaskList> {
-        let scope = self.agent_scope(pane_id)?;
-        self.task_list(&scope, artifact_scope)
-    }
-
-    fn task_list(
-        &self,
-        scope: &AgentScope,
-        artifact_scope: ArtifactScope,
-    ) -> anyhow::Result<TaskList> {
-        let key = scope.artifact_key(artifact_scope);
-        let feature = self.feature_for_agent(scope, artifact_scope)?;
-        let tasks = match &feature {
-            Some(slug) => self.store.tasks(key, slug)?,
-            None => Vec::new(),
-        };
-        Ok(TaskList {
-            project_name: scope.project_name.clone(),
-            feature,
-            tasks,
-        })
-    }
-
-    /// Adds a task to the current feature.
+    /// A task change from an agent, applied to the feature its checkout is
+    /// on, answered with the list as it stands afterwards — an agent that
+    /// has just added three tasks needs the ids they were given before it
+    /// can take one up.
     ///
     /// Refused when the checkout is on no feature, for the same reason a
-    /// decision is: a task with nothing to be under is the pile all of
-    /// this exists to end.
-    pub fn add_task_for_agent(
+    /// decision is: a task with nothing to be under is the pile all of this
+    /// exists to end. A read there is an empty list rather than an error.
+    pub fn task_action_for_agent(
         &self,
         pane_id: PaneId,
         session: Option<&str>,
-        write: TaskWrite,
+        action: TaskAction,
         artifact_scope: ArtifactScope,
     ) -> anyhow::Result<TaskList> {
         let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(artifact_scope);
-        let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-        let Some(slug) = self.feature_for_agent(&scope, artifact_scope)? else {
-            anyhow::bail!(
-                "this checkout is not on a feature yet — open one with \
-                 `argus-hook feature open` before adding tasks to it"
-            );
+        let key = scope.artifact_key(artifact_scope).to_string();
+        let Some(feature) = self.feature_for_agent(&scope, artifact_scope)? else {
+            return match action {
+                TaskAction::List => Ok(TaskList {
+                    project_name: scope.project_name,
+                    feature: None,
+                    tasks: Vec::new(),
+                }),
+                TaskAction::Add(_) => anyhow::bail!(
+                    "this checkout is not on a feature yet — open one with \
+                     `argus-hook feature open` before adding tasks to it"
+                ),
+                _ => anyhow::bail!("this checkout is not on a feature yet"),
+            };
         };
-        let at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or_default();
-        self.store.add_task(key, &slug, &write, at, session)?;
-        let list = self.task_list(&scope, artifact_scope)?;
-        self.broadcast_tasks(&scope.project_name, key, &slug);
-        Ok(list)
+        match &action {
+            TaskAction::Reorder { .. } => {
+                anyhow::bail!("the order of a feature's tasks is the human's to set")
+            }
+            TaskAction::Move { id, .. }
+            | TaskAction::Retitle { id, .. }
+            | TaskAction::SetBody { id, .. }
+            | TaskAction::Remove { id } => self.guard_task(&key, &feature, *id)?,
+            TaskAction::List | TaskAction::Add(_) => {}
+        }
+        let target = TaskTarget {
+            project_name: scope.project_name,
+            key,
+            feature,
+        };
+        self.apply_task(&target, action, session)
     }
 
-    pub fn move_task_for_agent(
+    /// A task change from the feature view, which names its feature
+    /// outright rather than resolving one from a checkout.
+    pub fn task_action_for_client(
         &self,
-        pane_id: PaneId,
+        project: ProjectId,
+        checkout: CheckoutId,
+        feature: &str,
+        action: TaskAction,
+    ) -> anyhow::Result<TaskList> {
+        let (project_name, key) = self.client_artifact_scope(project, checkout)?;
+        let target = TaskTarget {
+            project_name,
+            key,
+            feature: feature.to_string(),
+        };
+        self.apply_task(&target, action, None)
+    }
+
+    /// Applies one change and answers with the list afterwards. Every
+    /// change is also pushed, so a client that did not ask still sees it.
+    fn apply_task(
+        &self,
+        target: &TaskTarget,
+        action: TaskAction,
         session: Option<&str>,
-        id: i64,
-        state: TaskState,
-        artifact_scope: ArtifactScope,
     ) -> anyhow::Result<TaskList> {
-        let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(artifact_scope);
-        self.guard_task(&scope, id, artifact_scope)?;
-        self.store.move_task(key, id, state, session)?;
-        let list = self.task_list(&scope, artifact_scope)?;
-        if let Some(feature) = &list.feature {
-            self.broadcast_tasks(&scope.project_name, key, feature);
+        let TaskTarget { key, feature, .. } = target;
+        let changes = !matches!(action, TaskAction::List);
+        match action {
+            TaskAction::List => {}
+            TaskAction::Add(write) => {
+                let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
+                let at = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or_default();
+                self.store.add_task(key, feature, &write, at, session)?;
+            }
+            TaskAction::Move { id, state } => self.store.move_task(key, id, state, session)?,
+            TaskAction::Retitle { id, title } => self.store.retitle_task(key, id, &title)?,
+            TaskAction::SetBody { id, body } => self.store.set_task_body(key, id, body)?,
+            TaskAction::Remove { id } => self.store.remove_task(key, id)?,
+            TaskAction::Reorder { id, to } => self.store.reorder_task(key, id, to)?,
         }
-        Ok(list)
-    }
-
-    pub fn retitle_task_for_agent(
-        &self,
-        pane_id: PaneId,
-        id: i64,
-        title: &str,
-        artifact_scope: ArtifactScope,
-    ) -> anyhow::Result<TaskList> {
-        let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(artifact_scope);
-        self.guard_task(&scope, id, artifact_scope)?;
-        self.store.retitle_task(key, id, title)?;
-        let list = self.task_list(&scope, artifact_scope)?;
-        if let Some(feature) = &list.feature {
-            self.broadcast_tasks(&scope.project_name, key, feature);
+        if changes {
+            self.broadcast_tasks(&target.project_name, key, feature);
         }
-        Ok(list)
-    }
-
-    pub fn set_task_body_for_agent(
-        &self,
-        pane_id: PaneId,
-        id: i64,
-        body: String,
-        artifact_scope: ArtifactScope,
-    ) -> anyhow::Result<TaskList> {
-        let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(artifact_scope);
-        self.guard_task(&scope, id, artifact_scope)?;
-        self.store.set_task_body(key, id, body)?;
-        let list = self.task_list(&scope, artifact_scope)?;
-        if let Some(feature) = &list.feature {
-            self.broadcast_tasks(&scope.project_name, key, feature);
-        }
-        Ok(list)
-    }
-
-    pub fn remove_task_for_agent(
-        &self,
-        pane_id: PaneId,
-        id: i64,
-        artifact_scope: ArtifactScope,
-    ) -> anyhow::Result<TaskList> {
-        let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(artifact_scope);
-        self.guard_task(&scope, id, artifact_scope)?;
-        self.store.remove_task(key, id)?;
-        let list = self.task_list(&scope, artifact_scope)?;
-        if let Some(feature) = &list.feature {
-            self.broadcast_tasks(&scope.project_name, key, feature);
-        }
-        Ok(list)
+        Ok(TaskList {
+            project_name: target.project_name.clone(),
+            feature: Some(feature.clone()),
+            tasks: self.store.tasks(key, feature)?,
+        })
     }
 
     /// Refuses a task that is not under the feature this checkout is on.
@@ -150,127 +132,15 @@ impl Daemon {
     /// Ids are database-wide and an agent numbers its tasks from what it
     /// last read, so a stale id would otherwise let one feature's agent
     /// tick off another's work by arithmetic.
-    fn guard_task(
-        &self,
-        scope: &AgentScope,
-        id: i64,
-        artifact_scope: ArtifactScope,
-    ) -> anyhow::Result<()> {
-        let key = scope.artifact_key(artifact_scope);
-        let Some(slug) = self.feature_for_agent(scope, artifact_scope)? else {
-            anyhow::bail!("this checkout is not on a feature yet");
-        };
+    fn guard_task(&self, key: &str, feature: &str, id: i64) -> anyhow::Result<()> {
         let mine = self
             .store
-            .tasks(key, &slug)?
-            .into_iter()
-            .any(|t: Task| t.id == id);
+            .tasks(key, feature)?
+            .iter()
+            .any(|t: &Task| t.id == id);
         if !mine {
             anyhow::bail!("task {id} is not under this checkout's feature");
         }
-        Ok(())
-    }
-
-    // ---- the client's side ---------------------------------------------
-
-    pub fn task_list_for_client(
-        &self,
-        project: ProjectId,
-        checkout: CheckoutId,
-        feature: &str,
-    ) -> anyhow::Result<TaskList> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        Ok(TaskList {
-            tasks: self.store.tasks(&key, feature)?,
-            project_name: name,
-            feature: Some(feature.to_string()),
-        })
-    }
-
-    pub fn add_task_for_client(
-        &self,
-        project: ProjectId,
-        checkout: CheckoutId,
-        feature: &str,
-        write: TaskWrite,
-    ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-        let at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or_default();
-        self.store.add_task(&key, feature, &write, at, None)?;
-        self.broadcast_tasks(&name, &key, feature);
-        Ok(())
-    }
-
-    pub fn move_task_for_client(
-        &self,
-        project: ProjectId,
-        checkout: CheckoutId,
-        feature: &str,
-        id: i64,
-        state: TaskState,
-    ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        self.store.move_task(&key, id, state, None)?;
-        self.broadcast_tasks(&name, &key, feature);
-        Ok(())
-    }
-
-    pub fn retitle_task_for_client(
-        &self,
-        project: ProjectId,
-        checkout: CheckoutId,
-        feature: &str,
-        id: i64,
-        title: &str,
-    ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        self.store.retitle_task(&key, id, title)?;
-        self.broadcast_tasks(&name, &key, feature);
-        Ok(())
-    }
-
-    pub fn set_task_body_for_client(
-        &self,
-        project: ProjectId,
-        checkout: CheckoutId,
-        feature: &str,
-        id: i64,
-        body: String,
-    ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        self.store.set_task_body(&key, id, body)?;
-        self.broadcast_tasks(&name, &key, feature);
-        Ok(())
-    }
-
-    pub fn remove_task_for_client(
-        &self,
-        project: ProjectId,
-        checkout: CheckoutId,
-        feature: &str,
-        id: i64,
-    ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        self.store.remove_task(&key, id)?;
-        self.broadcast_tasks(&name, &key, feature);
-        Ok(())
-    }
-
-    pub fn reorder_task_for_client(
-        &self,
-        project: ProjectId,
-        checkout: CheckoutId,
-        feature: &str,
-        id: i64,
-        to: i64,
-    ) -> anyhow::Result<()> {
-        let (name, key) = self.client_artifact_scope(project, checkout)?;
-        self.store.reorder_task(&key, id, to)?;
-        self.broadcast_tasks(&name, &key, feature);
         Ok(())
     }
 

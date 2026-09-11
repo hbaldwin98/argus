@@ -311,55 +311,23 @@ fn dispatch_decisions(
             slug,
             body,
         } => daemon.set_feature_body_for_client(project, checkout, &slug, body),
-        ClientMsg::GetTasks {
+        ClientMsg::Task {
             project,
             checkout,
             feature,
-        } => daemon
-            .task_list_for_client(project, checkout, &feature)
-            .map(|list| {
-                let _ = out_tx.send(ServerMsg::Tasks(Box::new(list)));
-            }),
-        ClientMsg::AddTask {
-            project,
-            checkout,
-            feature,
-            write,
-        } => daemon.add_task_for_client(project, checkout, &feature, write),
-        ClientMsg::MoveTask {
-            project,
-            checkout,
-            feature,
-            id,
-            state,
-        } => daemon.move_task_for_client(project, checkout, &feature, id, state),
-        ClientMsg::RetitleTask {
-            project,
-            checkout,
-            feature,
-            id,
-            title,
-        } => daemon.retitle_task_for_client(project, checkout, &feature, id, &title),
-        ClientMsg::SetTaskBody {
-            project,
-            checkout,
-            feature,
-            id,
-            body,
-        } => daemon.set_task_body_for_client(project, checkout, &feature, id, body),
-        ClientMsg::RemoveTask {
-            project,
-            checkout,
-            feature,
-            id,
-        } => daemon.remove_task_for_client(project, checkout, &feature, id),
-        ClientMsg::ReorderTask {
-            project,
-            checkout,
-            feature,
-            id,
-            to,
-        } => daemon.reorder_task_for_client(project, checkout, &feature, id, to),
+            action,
+        } => {
+            // A read is answered to the client that asked; a change reaches
+            // every client through the push instead.
+            let read = matches!(action, argus_protocol::TaskAction::List);
+            daemon
+                .task_action_for_client(project, checkout, &feature, action)
+                .map(|list| {
+                    if read {
+                        let _ = out_tx.send(ServerMsg::Tasks(Box::new(list)));
+                    }
+                })
+        }
         ClientMsg::MoveFeature {
             project,
             checkout,

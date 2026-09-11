@@ -414,10 +414,11 @@ impl App {
             self.tasks = None;
             return;
         };
-        let _ = self.out.send(ClientMsg::GetTasks {
+        let _ = self.out.send(ClientMsg::Task {
             project,
             checkout,
             feature,
+            action: argus_protocol::TaskAction::List,
         });
     }
 
@@ -469,12 +470,11 @@ impl App {
         let Some((project, checkout, feature, id)) = self.task_target() else {
             return;
         };
-        let _ = self.out.send(ClientMsg::MoveTask {
+        let _ = self.out.send(ClientMsg::Task {
             project,
             checkout,
             feature,
-            id,
-            state,
+            action: argus_protocol::TaskAction::Move { id, state },
         });
         // Applied here as well as sent, so the mark under the cursor
         // changes at once; the push is what makes it true.
@@ -491,11 +491,11 @@ impl App {
         let Some((project, checkout, feature, id)) = self.task_target() else {
             return;
         };
-        let _ = self.out.send(ClientMsg::RemoveTask {
+        let _ = self.out.send(ClientMsg::Task {
             project,
             checkout,
             feature,
-            id,
+            action: argus_protocol::TaskAction::Remove { id },
         });
     }
 
@@ -516,12 +516,11 @@ impl App {
         if to == position {
             return;
         }
-        let _ = self.out.send(ClientMsg::ReorderTask {
+        let _ = self.out.send(ClientMsg::Task {
             project,
             checkout,
             feature,
-            id,
-            to,
+            action: argus_protocol::TaskAction::Reorder { id, to },
         });
     }
 
@@ -670,21 +669,20 @@ impl App {
                 slug,
                 title,
             },
-            (LineEdit::Task(id), Some(feature)) => ClientMsg::RetitleTask {
+            (LineEdit::Task(id), Some(feature)) => ClientMsg::Task {
                 project,
                 checkout,
                 feature,
-                id,
-                title,
+                action: argus_protocol::TaskAction::Retitle { id, title },
             },
-            (LineEdit::NewTask, Some(feature)) => ClientMsg::AddTask {
+            (LineEdit::NewTask, Some(feature)) => ClientMsg::Task {
                 project,
                 checkout,
                 feature,
-                write: argus_protocol::TaskWrite {
+                action: argus_protocol::TaskAction::Add(argus_protocol::TaskWrite {
                     title,
                     external: None,
-                },
+                }),
             },
             // A task with no feature to be under: the view cannot have
             // been on one, so there is nothing to write.

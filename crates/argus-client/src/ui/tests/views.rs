@@ -596,7 +596,11 @@ fn the_brief_the_tasks_and_the_decisions_are_all_the_feature_you_selected() {
     app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
     let asked: Vec<String> = std::iter::from_fn(|| rx.try_recv().ok())
         .filter_map(|msg| match msg {
-            argus_protocol::ClientMsg::GetTasks { feature, .. } => Some(feature),
+            argus_protocol::ClientMsg::Task {
+                feature,
+                action: argus_protocol::TaskAction::List,
+                ..
+            } => Some(feature),
             _ => None,
         })
         .collect();
@@ -811,8 +815,11 @@ fn enter_opens_a_task_brief_and_saving_replaces_it() {
     assert!(
         sent.iter().any(|message| matches!(
             message,
-            argus_protocol::ClientMsg::SetTaskBody { feature, id: 7, body, .. }
-                if feature == "notes" && body.contains("Verify boundaries.")
+            argus_protocol::ClientMsg::Task {
+                feature,
+                action: argus_protocol::TaskAction::SetBody { id: 7, body },
+                ..
+            } if feature == "notes" && body.contains("Verify boundaries.")
         )),
         "the brief is replaced whole: {sent:?}"
     );
@@ -837,9 +844,11 @@ fn moving_a_task_asks_the_daemon_and_follows_it_there() {
     assert!(
         matches!(
             sent.as_slice(),
-            [argus_protocol::ClientMsg::MoveTask {
-                id: 1,
-                state: Doing,
+            [argus_protocol::ClientMsg::Task {
+                action: argus_protocol::TaskAction::Move {
+                    id: 1,
+                    state: Doing,
+                },
                 ..
             }]
         ),
@@ -867,7 +876,10 @@ fn a_task_can_be_pushed_up_the_list_and_dropped() {
     assert!(
         matches!(
             sent.as_slice(),
-            [argus_protocol::ClientMsg::ReorderTask { id: 2, to: 1, .. }]
+            [argus_protocol::ClientMsg::Task {
+                action: argus_protocol::TaskAction::Reorder { id: 2, to: 1 },
+                ..
+            }]
         ),
         "the human says what to do first: {sent:?}"
     );
@@ -877,7 +889,10 @@ fn a_task_can_be_pushed_up_the_list_and_dropped() {
     assert!(
         matches!(
             sent.as_slice(),
-            [argus_protocol::ClientMsg::RemoveTask { id: 2, .. }]
+            [argus_protocol::ClientMsg::Task {
+                action: argus_protocol::TaskAction::Remove { id: 2 },
+                ..
+            }]
         ),
         "{sent:?}"
     );
@@ -926,7 +941,10 @@ fn a_task_is_typed_in_on_a_line_of_its_own() {
     assert!(
         matches!(
             sent.as_slice(),
-            [argus_protocol::ClientMsg::AddTask { write, .. }] if write.title == "xq back"
+            [argus_protocol::ClientMsg::Task {
+                action: argus_protocol::TaskAction::Add(write),
+                ..
+            }] if write.title == "xq back"
         ),
         "{sent:?}"
     );
@@ -953,7 +971,10 @@ fn rewriting_a_task_starts_from_what_it_says() {
     assert!(
         matches!(
             sent.as_slice(),
-            [argus_protocol::ClientMsg::RetitleTask { id: 1, title, .. }]
+            [argus_protocol::ClientMsg::Task {
+                action: argus_protocol::TaskAction::Retitle { id: 1, title },
+                ..
+            }]
                 if title == "port the parser and its tests"
         ),
         "{sent:?}"

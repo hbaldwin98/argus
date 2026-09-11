@@ -155,7 +155,8 @@ pub fn checked_task_body(body: String) -> Result<Option<String>, &'static str> {
     Ok(Some(body))
 }
 
-/// What an agent asks the task endpoint to do.
+/// A change to a feature's tasks, or the read. Both sides speak it: an agent
+/// through the task endpoint, a client inside `ClientMsg::Task`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TaskAction {
     /// Reads the current feature's tasks and changes nothing.
@@ -180,6 +181,13 @@ pub enum TaskAction {
     },
     Remove {
         id: i64,
+    },
+    /// Puts a task at a place in its feature's list. The order is a human's
+    /// statement of what to do first, so the daemon refuses it from an
+    /// agent.
+    Reorder {
+        id: i64,
+        to: i64,
     },
 }
 

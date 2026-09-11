@@ -69,12 +69,11 @@ impl App {
                 project,
                 feature,
                 id,
-            } => ClientMsg::SetTaskBody {
+            } => ClientMsg::Task {
                 project,
                 checkout: checkout.expect("a task brief belongs to the selected checkout"),
                 feature,
-                id,
-                body,
+                action: argus_protocol::TaskAction::SetBody { id, body },
             },
             BriefTarget::Feature { project, slug } => ClientMsg::SetFeatureBody {
                 project,

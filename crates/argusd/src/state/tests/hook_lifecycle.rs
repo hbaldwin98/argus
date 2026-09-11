@@ -2,7 +2,7 @@
 //! running in it, and their removal when the last one leaves.
 
 use super::*;
-use argus_protocol::{ArtifactScope, DecisionWrite, TaskWrite};
+use argus_protocol::{ArtifactScope, DecisionWrite, TaskAction, TaskWrite};
 #[tokio::test]
 async fn sharing_a_checkout_is_allowed_unless_the_project_says_otherwise() {
     let dir = tempfile::tempdir().unwrap();
@@ -284,13 +284,13 @@ async fn artifacts_are_repository_scoped_unless_workspace_scope_is_requested() {
         ArtifactScope::Workspace,
     )
     .unwrap();
-    d.add_task_for_agent(
+    d.task_action_for_agent(
         first_agent,
         None,
-        TaskWrite {
+        TaskAction::Add(TaskWrite {
             title: "update both crates".into(),
             external: None,
-        },
+        }),
         ArtifactScope::Workspace,
     )
     .unwrap();
@@ -303,7 +303,7 @@ async fn artifacts_are_repository_scoped_unless_workspace_scope_is_requested() {
         "move both repositories together"
     );
     let tasks = d
-        .tasks_for_agent(second_agent, ArtifactScope::Workspace)
+        .task_action_for_agent(second_agent, None, TaskAction::List, ArtifactScope::Workspace)
         .unwrap();
     assert_eq!(tasks.tasks[0].title, "update both crates");
     close_all(&d);
@@ -742,13 +742,13 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
     let agent = d.spawn_agent(checkout, "claude").unwrap();
 
     let refused = d
-        .add_task_for_agent(
+        .task_action_for_agent(
             agent,
             None,
-            TaskWrite {
+            TaskAction::Add(TaskWrite {
                 title: "port the parser".into(),
                 external: None,
-            },
+            }),
             ArtifactScope::default(),
         )
         .unwrap_err()
@@ -757,13 +757,13 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
 
     let pty = open_feature(&d, agent, "streaming the pty");
     let list = d
-        .add_task_for_agent(
+        .task_action_for_agent(
             agent,
             Some("sess-1"),
-            TaskWrite {
+            TaskAction::Add(TaskWrite {
                 title: "backpressure on the reader".into(),
                 external: Some("ORION-412".into()),
-            },
+            }),
             ArtifactScope::default(),
         )
         .unwrap();
@@ -772,14 +772,25 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
     assert_eq!(list.tasks[0].external.as_deref(), Some("ORION-412"));
 
     let list = d
-        .move_task_for_agent(agent, Some("sess-1"), id, TaskState::Doing, ArtifactScope::default())
+        .task_action_for_agent(
+            agent,
+            Some("sess-1"),
+            TaskAction::Move {
+                id,
+                state: TaskState::Doing,
+            },
+            ArtifactScope::default(),
+        )
         .unwrap();
     assert_eq!(list.tasks[0].claimed_by.as_deref(), Some("sess-1"));
     let list = d
-        .set_task_body_for_agent(
+        .task_action_for_agent(
             agent,
-            id,
-            "Accept sustained output.\nVerify bounded buffering.".into(),
+            None,
+            TaskAction::SetBody {
+                id,
+                body: "Accept sustained output.\nVerify bounded buffering.".into(),
+            },
             ArtifactScope::RepositoryBranch,
         )
         .unwrap();
@@ -791,7 +802,9 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
     // Moving the checkout to another feature moves what it can see and
     // what it can touch, together.
     let notes = open_feature(&d, agent, "notes storage");
-    let list = d.tasks_for_agent(agent, ArtifactScope::default()).unwrap();
+    let list = d
+        .task_action_for_agent(agent, None, TaskAction::List, ArtifactScope::default())
+        .unwrap();
     assert_eq!(list.feature.as_deref(), Some(notes.as_str()));
     assert!(
         list.tasks.is_empty(),
@@ -799,7 +812,15 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
     );
 
     let refused = d
-        .move_task_for_agent(agent, Some("sess-1"), id, TaskState::Done, ArtifactScope::default())
+        .task_action_for_agent(
+            agent,
+            Some("sess-1"),
+            TaskAction::Move {
+                id,
+                state: TaskState::Done,
+            },
+            ArtifactScope::default(),
+        )
         .unwrap_err()
         .to_string();
     assert!(
@@ -807,10 +828,13 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
         "a stale id cannot tick off another feature's work: {refused}"
     );
     let refused = d
-        .set_task_body_for_agent(
+        .task_action_for_agent(
             agent,
-            id,
-            "rewrite the wrong task".into(),
+            None,
+            TaskAction::SetBody {
+                id,
+                body: "rewrite the wrong task".into(),
+            },
             ArtifactScope::RepositoryBranch,
         )
         .unwrap_err()
@@ -819,5 +843,17 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
         refused.contains("not under this checkout's feature"),
         "a stale id cannot rewrite another feature's brief: {refused}"
     );
+
+    // The order is the human's statement of what to do first.
+    let refused = d
+        .task_action_for_agent(
+            agent,
+            None,
+            TaskAction::Reorder { id, to: 0 },
+            ArtifactScope::default(),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("human's to set"), "{refused}");
     close_all(&d);
 }
