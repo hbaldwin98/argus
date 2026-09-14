@@ -51,6 +51,17 @@ impl Harness {
             return Ok(());
         };
         let path = checkout.join(&plugin.path);
+        check_directories(checkout, path.parent().unwrap())?;
+        match std::fs::symlink_metadata(&path) {
+            Ok(meta) => anyhow::ensure!(
+                meta.is_file()
+                    && std::fs::read_to_string(&path)?.contains(PLUGIN_MARKER),
+                "leaving user-owned plugin {} untouched",
+                path.display()
+            ),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -231,6 +242,26 @@ impl Harness {
         }
         Ok(())
     }
+}
+
+/// Refuses a write through a symlink or non-directory beneath the checkout.
+/// Managed files live beside user files, so a project-controlled link must
+/// never turn their fixed relative paths into writes somewhere else.
+pub(super) fn check_directories(checkout: &Path, dir: &Path) -> anyhow::Result<()> {
+    let mut path = checkout.to_path_buf();
+    for part in dir.strip_prefix(checkout)?.components() {
+        path.push(part);
+        match std::fs::symlink_metadata(&path) {
+            Ok(meta) => anyhow::ensure!(
+                meta.is_dir(),
+                "{} is not a plain directory",
+                path.display()
+            ),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Ok(())
 }
 
 /// Removes the directories a just-deleted file was the last thing in,

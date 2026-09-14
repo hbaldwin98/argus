@@ -2,7 +2,10 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use super::{install::prune_empty_dirs, Harness};
+use super::{
+    install::{check_directories, prune_empty_dirs},
+    Harness,
+};
 
 const MARKER: &str = "<!-- argus:managed-skill -->";
 const FILES: &[(&str, &str)] = &[
@@ -83,21 +86,6 @@ impl Harness {
         check_directories(checkout, &dir)?;
         Ok(Some(dir))
     }
-}
-
-// Skill roots are often symlinked to personal collections. Never write or
-// remove a file through such a link just because its name matches ours.
-fn check_directories(checkout: &Path, dir: &Path) -> anyhow::Result<()> {
-    let mut path = checkout.to_path_buf();
-    for part in dir.strip_prefix(checkout)?.components() {
-        path.push(part);
-        match std::fs::symlink_metadata(&path) {
-            Ok(meta) => anyhow::ensure!(meta.is_dir(), "{} is not a plain directory", path.display()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e.into()),
-        }
-    }
-    Ok(())
 }
 
 pub(super) fn fallback() -> &'static str {

@@ -59,6 +59,7 @@ fn the_built_in_harnesses_know_how_to_be_continued() {
     // refuses to start at all.
     assert_eq!(Harness::claude().resume, ["--continue"]);
     assert_eq!(Harness::opencode().resume, ["--continue"]);
+    assert_eq!(Harness::pi().resume, ["--continue"]);
     assert_eq!(Harness::agy().resume, ["--continue"]);
     assert_eq!(Harness::agent().resume, ["--continue"]);
     assert_eq!(
@@ -73,6 +74,7 @@ fn the_built_in_harnesses_know_how_to_be_continued() {
     assert_eq!(Harness::claude().resume_id, ["--resume", "{session_id}"]);
     assert_eq!(Harness::codex().resume_id, ["resume", "{session_id}"]);
     assert_eq!(Harness::opencode().resume_id, ["--session", "{session_id}"]);
+    assert_eq!(Harness::pi().resume_id, ["--session", "{session_id}"]);
     assert_eq!(Harness::agy().resume_id, ["--conversation", "{session_id}"]);
     assert_eq!(Harness::agent().resume_id, ["--resume", "{session_id}"]);
 }
@@ -661,6 +663,7 @@ fn a_plugin_the_user_wrote_themselves_is_left_alone() {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, "export const Mine = async () => ({})").unwrap();
 
+    assert!(h.install(dir.path(), PaneId(1), 1, "t").is_err());
     h.uninstall(dir.path()).unwrap();
     assert_eq!(
         std::fs::read_to_string(&path).unwrap(),
@@ -854,6 +857,114 @@ fn the_opencode_plugin_calls_the_same_pane_api_the_helper_does() {
         "the plugin never titles the pane"
     );
     assert!(source.contains("Bearer ${TOKEN}"), "wrong authorization");
+}
+
+#[test]
+fn pi_installs_its_project_extension_and_native_skill() {
+    let dir = tempfile::tempdir().unwrap();
+    let h = Harness::pi();
+    h.install(dir.path(), PaneId(5), 4242, "tok").unwrap();
+
+    let extension = dir.path().join(".pi/extensions/argus-status.ts");
+    let skill = dir.path().join(".pi/skills/argus/SKILL.md");
+    assert!(extension.is_file());
+    assert!(skill.is_file());
+
+    let source = std::fs::read_to_string(&extension).unwrap();
+    for event in [
+        "session_start",
+        "input",
+        "before_agent_start",
+        "agent_start",
+        "agent_settled",
+        "ui_prompt_start",
+        "ui_prompt_end",
+    ] {
+        assert!(source.contains(&format!("\"{event}\"")), "missing {event}");
+    }
+    assert!(source.contains("X-Argus-Session"));
+    assert!(source.contains("ARGUS_INSTRUCTIONS"));
+
+    h.uninstall(dir.path()).unwrap();
+    assert!(!extension.exists());
+    assert!(!skill.exists());
+    assert!(std::fs::read_dir(dir.path()).unwrap().next().is_none());
+}
+
+#[test]
+fn the_pi_extension_maps_its_lifecycle_to_the_pane_api() {
+    let dir = tempfile::tempdir().unwrap();
+    let extension = dir.path().join("argus-status.mjs");
+    let runner = dir.path().join("runner.mjs");
+    std::fs::write(&extension, Harness::pi().plugin.unwrap().source).unwrap();
+    std::fs::write(
+        &runner,
+        r#"
+import { pathToFileURL } from "node:url";
+
+const reports = [];
+globalThis.fetch = async (url, init) => {
+  reports.push({
+    url,
+    session: init.headers["X-Argus-Session"],
+    authorization: init.headers.authorization,
+    body: init.body,
+  });
+};
+
+const handlers = new Map();
+const pi = { on(name, handler) { handlers.set(name, handler); } };
+const { default: install } = await import(pathToFileURL(process.argv[2]));
+install(pi);
+const ctx = {
+  sessionManager: { getSessionId: () => "pi-session" },
+  isIdle: () => false,
+};
+await handlers.get("session_start")({}, ctx);
+await handlers.get("input")({ text: "repair the pump\nwith tests" }, ctx);
+const start = await handlers.get("before_agent_start")(
+  { systemPrompt: "base prompt" },
+  ctx,
+);
+await handlers.get("ui_prompt_start")({ title: "Approve command" }, ctx);
+await handlers.get("ui_prompt_end")({}, ctx);
+await handlers.get("agent_settled")({}, ctx);
+process.stdout.write(JSON.stringify({ reports, prompt: start.systemPrompt }));
+"#,
+    )
+    .unwrap();
+
+    let output = match std::process::Command::new("node")
+        .arg(&runner)
+        .arg(&extension)
+        .env("ARGUS_HOOK_URL", "http://127.0.0.1/pane/5")
+        .env("ARGUS_HOOK_TOKEN", "test-token")
+        .env("ARGUS_INSTRUCTIONS", "load the Argus skill")
+        .output()
+    {
+        Ok(output) => output,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+        Err(e) => panic!("could not run pi extension test: {e}"),
+    };
+    assert!(
+        output.status.success(),
+        "node failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(result["prompt"], "base prompt\n\nload the Argus skill");
+    assert_eq!(
+        result["reports"],
+        json!([
+            { "url": "http://127.0.0.1/pane/5/session", "session": "pi-session", "authorization": "Bearer test-token", "body": "pi-session" },
+            { "url": "http://127.0.0.1/pane/5/status/idle", "session": "pi-session", "authorization": "Bearer test-token", "body": "" },
+            { "url": "http://127.0.0.1/pane/5/status/working", "session": "pi-session", "authorization": "Bearer test-token", "body": "" },
+            { "url": "http://127.0.0.1/pane/5/title", "session": "pi-session", "authorization": "Bearer test-token", "body": "repair the pump" },
+            { "url": "http://127.0.0.1/pane/5/status/waiting", "session": "pi-session", "authorization": "Bearer test-token", "body": "Approve command" },
+            { "url": "http://127.0.0.1/pane/5/status/working", "session": "pi-session", "authorization": "Bearer test-token", "body": "" },
+            { "url": "http://127.0.0.1/pane/5/status/idle", "session": "pi-session", "authorization": "Bearer test-token", "body": "" },
+        ])
+    );
 }
 
 #[test]

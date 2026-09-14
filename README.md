@@ -17,7 +17,7 @@ The workspace builds three executables:
 - Organizes projects into workspaces, repositories, checkouts, and shell or agent panes.
 - Keeps panes running when the client closes.
 - Starts and discovers Git worktrees and switches branches from the TUI.
-- Runs Claude Code, Codex, OpenCode, Google Antigravity (AGY), Cursor Agent (`agent`), or custom command-line agent templates.
+- Runs Claude Code, Codex, OpenCode, pi, Google Antigravity (AGY), Cursor Agent (`agent`), or custom command-line agent templates.
 - Names each agent pane from the user's latest prompt, so a column of running agents is not a list of identical template names.
 - Shows Git status, changed-file counts, and ahead/behind state.
 - Reviews staged and unstaged work as two separate diffs, the way Git itself keeps them apart.
@@ -252,6 +252,7 @@ When no `[[agent]]` entries exist, Argus supplies these templates:
 - `claude`, running `claude`.
 - `codex`, running `codex`.
 - `opencode`, running `opencode`.
+- `pi`, running `pi`.
 - `agy`, running `agy`.
 - `agent`, running Cursor's `agent` CLI.
 
@@ -263,8 +264,9 @@ agent name and then falls back to the generic environment-only harness.
 
 Claude Code reports through hooks Argus writes into `.claude/settings.local.json`, Codex through a
 SessionStart adapter in `.codex/hooks.json`, OpenCode through a plugin module Argus writes to
-`.opencode/plugin/argus-status.js`, AGY through `.agents/hooks.json` under the `argus` hook key, and
-Cursor's `agent` CLI through `.cursor/hooks.json` plus an always-on rule at `.cursor/rules/argus.mdc`.
+`.opencode/plugin/argus-status.js`, and pi through a project extension at
+`.pi/extensions/argus-status.ts`. AGY uses `.agents/hooks.json` under the `argus` hook key, and
+Cursor's `agent` CLI uses `.cursor/hooks.json` plus an always-on rule at `.cursor/rules/argus.mdc`.
 All are removed when
 the last agent pane in the checkout closes and swept from every configured checkout at startup;
 adding them to a repository's `.gitignore` keeps them out of its status while an agent is running.
@@ -487,7 +489,7 @@ Argus records non-exited shell and agent panes, in worktrees as well as primary 
 daemon restart it launches fresh processes in the recorded checkouts; it does not reattach old PIDs.
 When a pane has a captured harness session ID, Argus appends the harness's exact `resume_id`
 arguments: `--resume <id>` for Claude Code, `resume <id>` for Codex, `--session <id>` for
-OpenCode, and `--conversation <id>` for AGY. Every identified pane resumes independently, including several of one harness in the same
+OpenCode and pi, and `--conversation <id>` for AGY. Every identified pane resumes independently, including several of one harness in the same
 checkout. Legacy records without an ID use the broad `resume` arguments (`--continue`,
 `resume --last`, or none). Because those mean "the last conversation in this directory", only one
 legacy pane per checkout and harness may claim broad resume; aliases of the same harness share that
@@ -529,7 +531,8 @@ Every agent pane receives `ARGUS_HOOK`, `ARGUS_HOOK_URL`, `ARGUS_HOOK_TOKEN`, `A
 ```
 
 Argus installs a small **argus skill** for built-in harnesses: `.claude/skills/argus` for
-Claude Code, and `.agents/skills/argus` for Codex, OpenCode, AGY, and Cursor. Startup context points
+Claude Code, `.pi/skills/argus` for pi, and `.agents/skills/argus` for Codex, OpenCode, AGY, and
+Cursor. Startup context points
 the agent to `SKILL.md`; detailed commands for the currently implemented feature, task, and decision
 stores live in its reference and are read when needed. Hooks keep reporting lifecycle
 events and session identity.
@@ -545,7 +548,8 @@ Managed skills are cleaned up with the hooks when the last agent leaves the chec
 To try this after rebuilding, restart the daemon when your running work is safely stopped, then
 start a fresh agent pane. It should load the Argus skill and read its context. In Codex, trust the
 new SessionStart context hook when prompted; its command stays stable across subsequent starts.
-Existing running agents keep the instructions they started with.
+Existing running agents keep the instructions they started with. Pi must trust the project before
+it loads project-local extensions and skills; approve its normal trust prompt on the first run.
 
 `argus-hook instructions` prints the inherited startup message without contacting the daemon.
 `argus-hook say "text"` writes text to stdout for harnesses that inject command output into the
@@ -556,14 +560,17 @@ Argus moves the existing pane under that checkout without restarting it. An expl
 `checkout`, but reporting the current directory is the normal form. `needs-review` marks work ready
 to inspect; `done` marks reviewed, completed work. A later `working` report resumes either state.
 
-Claude Code, Codex, OpenCode, AGY, Cursor Agent (`agent`), and the generic environment-only harness are built in. The Claude
+Claude Code, Codex, OpenCode, pi, AGY, Cursor Agent (`agent`), and the generic environment-only harness are built in. The Claude
 harness manages
 `UserPromptSubmit`, `Stop`, `Notification`, and `SessionStart` entries in
 `<checkout>/.claude/settings.local.json`; its SessionStart hook captures top-level `session_id`.
 Codex uses `<checkout>/.codex/hooks.json` with its required command-string handler shape. Its handler
 reads pane routing from the process environment, keeping its trust-sensitive content stable across
 pane starts and daemon restarts. OpenCode's
-plugin reports the root session ID and updates it when the process creates a new root. AGY manages
+plugin reports the root session ID and updates it when the process creates a new root. Pi's
+project extension captures its session ID, titles from raw input, reports active and settled agent
+runs, marks blocking extension prompts as waiting, and injects the skill bootstrap into the system
+prompt. Pi resumes an identified session with `--session <id>`. AGY manages
 `PreInvocation` and `Stop` hooks in `<checkout>/.agents/hooks.json` under the `argus` hook key and captures
 top-level `conversationId`. The `agent` (Cursor) harness manages `sessionStart`, `beforeSubmitPrompt`,
 `preToolUse`, `beforeShellExecution`, and `stop` hooks in

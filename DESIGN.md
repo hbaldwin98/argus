@@ -315,7 +315,7 @@ under.
 
 Projects without a workspace use `default`. A project may set `root`, `repos`, or both; a path
 reached both ways is one repository, and the two lists are joined with `repos` first. When no
-agents are configured, `claude`, `codex`, `opencode`, `agy`, and `agent` templates are supplied. Adding a project
+agents are configured, `claude`, `codex`, `opencode`, `pi`, `agy`, and `agent` templates are supplied. Adding a project
 at runtime records the directory given as its `root`, in the open workspace, so what it holds is
 discovered again on each start rather than frozen into the record.
 
@@ -438,12 +438,13 @@ a harness whose hooks live in JSON in the checkout can have Argus write and remo
 itself — `settings` says where the file is, `shape` says how an entry nests (`matcher` for Claude
 Code, `flat` otherwise), and `events` maps the harness's own event names onto the statuses Argus
 draws. Third, a harness that extends through code rather than through JSON can have Argus write a
-plugin module into the checkout and remove it on the same schedule. OpenCode is the built-in case:
-it has no hook table, so its module carries the event mapping itself and reads `ARGUS_HOOK_URL`
-and `ARGUS_HOOK_TOKEN` at run time rather than having a pane baked into it. A harness also carries
+plugin module into the checkout and remove it on the same schedule. OpenCode and pi are the built-in
+cases: OpenCode has no hook table, while pi exposes lifecycle events through project TypeScript
+extensions. Both modules read `ARGUS_HOOK_URL` and `ARGUS_HOOK_TOKEN` at run time rather than having
+a pane baked into them. A harness also carries
 `resume`, the legacy arguments that continue the last conversation, and `resume_id`, an exact argv
 template containing `{session_id}`. Both are used only when a recorded pane is restored. Claude
-Code, Codex, OpenCode, AGY, Cursor Agent (`agent`) and `generic` are built in. Codex uses a project-local `.codex/hooks.json`
+Code, Codex, OpenCode, pi, AGY, Cursor Agent (`agent`) and `generic` are built in. Codex uses a project-local `.codex/hooks.json`
 SessionStart adapter whose command reads routing from the pane environment, so its content hash stays
 stable after the user trusts it. Codex requires the user to trust project hooks before it runs. AGY uses
 `.agents/hooks.json` with flat `PreInvocation` and `Stop` hooks. Cursor's `agent` CLI uses `.cursor/hooks.json` with
@@ -479,7 +480,9 @@ the helper uses or rebases to a valid `ARGUS_HOOK_URL`, so each process still ro
 The helper reads hook stdin once and can extract both a note and a configured
 top-level session ID key. Claude captures `session_id` at SessionStart. OpenCode's plugin tags root
 and child reports with their session IDs; only a root claims `/session`, and a newly created root
-reports again when it replaces the previous root. AGY captures `conversationId` at PreInvocation.
+reports again when it replaces the previous root. Pi's extension claims
+`SessionManager.getSessionId()`, reports input and low-level agent starts as working, settled runs as
+idle, and blocking extension prompts as waiting. AGY captures `conversationId` at PreInvocation.
 Cursor's `agent` CLI captures `conversation_id` or `session_id` at `sessionStart` without moving the
 pane to idle.
 
@@ -502,7 +505,7 @@ session at all — `argus-hook status` run by hand — is the pane's own voice, 
 
 Agents name their own rows, and the daemon names them first. A prompt-submit
 event — Claude `UserPromptSubmit`, Cursor `beforeSubmitPrompt`, AGY
-`PreInvocation`, OpenCode `chat.message` — carries the user's text; the helper
+`PreInvocation`, OpenCode `chat.message`, or pi `input` — carries the user's text; the helper
 posts it to `/title` the same way an explicit `argus-hook title` does. Tool-start
 events are not titles: a working pane named "Shell" says less than the template
 already does. An agent can still refine the name once it knows the task; the
@@ -515,11 +518,12 @@ features, tasks, and decisions. Lifecycle hooks still capture session
 identity and report their existing events. A stopped turn is not proof of completed work.
 
 Before starting a built-in agent, Argus installs the package in `.claude/skills/argus` for
-Claude Code and `.agents/skills/argus` for Codex, OpenCode, AGY, and Cursor. The latter also gives
+Claude Code, `.pi/skills/argus` for pi, and `.agents/skills/argus` for Codex, OpenCode, AGY, and Cursor. The latter also gives
 harnesses without a native skill loader a file they can read directly. `ARGUS_INSTRUCTIONS`
 now holds a short bootstrap pointing at the installed `SKILL.md`. Claude's context event,
-Codex's additional SessionStart context hook (including compaction), OpenCode's system-prompt
-adapter, and AGY/Cursor's rules deliver that bootstrap through their existing context surfaces.
+Codex's additional SessionStart context hook (including compaction), OpenCode's and pi's system-prompt
+adapters, and AGY/Cursor's rules deliver that bootstrap through their existing context surfaces.
+Pi discovers both managed files only after its normal project-trust approval.
 The Codex context command runs `argus-hook instructions`, which prints the inherited message
 without contacting the daemon or interpreting it as shell code. Its command string is stable
 across panes, boots, and changes to skill content; its separate session-identity event keeps its
@@ -565,7 +569,7 @@ On daemon startup:
 - a missing or broken pane does not abort restoration;
 - `ARGUS_NO_RESTORE` starts without restoring panes.
 
-Exact templates are Claude `--resume {session_id}`, Codex `resume {session_id}`, OpenCode
+Exact templates are Claude `--resume {session_id}`, Codex `resume {session_id}`, OpenCode and pi
 `--session {session_id}`, and AGY `--conversation {session_id}`. Their legacy broad forms are `--continue`, `resume --last`, and
 `--continue`; `generic` has neither. A `[[harness]]` block sets `resume_id`, `resume`, and an
 event-level `session_id` stdin JSON key. Replacing a built-in gives up all of its defaults.

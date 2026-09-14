@@ -319,6 +319,33 @@ impl Harness {
         }
     }
 
+    /// Pi discovers project extensions and skills beneath `.pi`. Its extension
+    /// API exposes the lifecycle directly, including stable session identity,
+    /// prompt submission, retries, settling, and blocking UI prompts.
+    pub fn pi() -> Harness {
+        Harness {
+            name: "pi".to_string(),
+            settings: None,
+            hooks_key: "hooks".to_string(),
+            shape: Shape::Flat,
+            events: Vec::new(),
+            context_event: None,
+            plugin: Some(Plugin {
+                path: PathBuf::from(".pi")
+                    .join("extensions")
+                    .join("argus-status.ts"),
+                source: include_str!("pi-extension.ts"),
+            }),
+            resume: vec!["--continue".to_string()],
+            resume_id: vec!["--session".to_string(), "{session_id}".to_string()],
+            command_string: false,
+            bake_command: false,
+            rule_file: None,
+            skill_dir: Some(PathBuf::from(".pi/skills/argus")),
+            settings_version: None,
+        }
+    }
+
     /// Google Antigravity (AGY) discovers workspace hooks in `.agents/hooks.json`
     /// under the named hook object and rules in `.agents/rules/`. PreInvocation
     /// marks the pane working, supplies conversationId, and injects instructions;
@@ -451,6 +478,7 @@ impl Harness {
             Harness::claude(),
             Harness::codex(),
             Harness::opencode(),
+            Harness::pi(),
             Harness::agy(),
             Harness::agent(),
             Harness::generic(),

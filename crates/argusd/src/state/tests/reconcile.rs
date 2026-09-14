@@ -279,7 +279,7 @@ fn default_agent_templates_are_offered_when_config_has_none() {
     let d = daemon_with_primary("/repo");
     assert_eq!(
         d.template_names(),
-        vec!["claude", "codex", "opencode", "agy", "agent"]
+        vec!["claude", "codex", "opencode", "pi", "agy", "agent"]
     );
 }
 
