@@ -17,11 +17,12 @@ impl Harness {
         port: u16,
         token: &str,
     ) -> anyhow::Result<()> {
+        let ignore = crate::gitignore::ensure(checkout, self.managed_paths());
         let skill = self.install_skill(checkout);
         let settings = self.install_settings(checkout, pane, port, token);
         let plugin = self.install_plugin(checkout);
         let rule = self.install_rule(checkout);
-        skill.and(settings).and(plugin).and(rule)
+        ignore.and(skill).and(settings).and(plugin).and(rule)
     }
 
     fn install_rule(&self, checkout: &Path) -> anyhow::Result<()> {

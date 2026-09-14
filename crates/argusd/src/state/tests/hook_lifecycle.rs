@@ -158,6 +158,21 @@ fn startup_sweeps_hooks_left_by_a_previous_daemon() {
 }
 
 #[test]
+fn every_git_checkout_gets_local_excludes_for_argus_files() {
+    let dir = tempfile::tempdir().unwrap();
+    git2::Repository::init(dir.path()).unwrap();
+
+    let d = daemon_with_fake_claude(dir.path());
+    d.sweep_stale_hooks();
+
+    let excludes = std::fs::read_to_string(dir.path().join(".git/info/exclude")).unwrap();
+    assert!(excludes.contains("/.claude/settings.local.json"));
+    assert!(excludes.contains("/.agents/hooks.json"));
+    assert!(excludes.contains("/.pi/extensions/argus-status.ts"));
+    assert!(excludes.contains("/.claude/skills/argus/SKILL.md"));
+}
+
+#[test]
 fn sweeping_a_checkout_that_never_hosted_an_agent_is_harmless() {
     let dir = tempfile::tempdir().unwrap();
     let d = daemon_with_fake_claude(dir.path());

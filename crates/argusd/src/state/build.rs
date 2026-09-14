@@ -157,6 +157,29 @@ impl Daemon {
                 }
             }
         }
+        self.ensure_local_ignores();
+    }
+
+    /// Keeps every generated harness file out of Git status in each checkout
+    /// Argus currently knows. The exclude is local metadata, so this never
+    /// changes a repository's tracked files or its shared configuration.
+    pub(super) fn ensure_local_ignores(&self) {
+        let paths: Vec<PathBuf> = self
+            .harnesses
+            .iter()
+            .flat_map(|harness| harness.managed_paths())
+            .collect();
+        if paths.is_empty() {
+            return;
+        }
+        for checkout in self.checkout_paths() {
+            if let Err(error) = crate::gitignore::ensure(&checkout, paths.clone()) {
+                tracing::warn!(
+                    "failed to update local Argus ignores in {}: {error}",
+                    checkout.display()
+                );
+            }
+        }
     }
 
     pub(super) fn checkout_paths(&self) -> Vec<PathBuf> {

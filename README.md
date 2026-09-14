@@ -268,8 +268,9 @@ SessionStart adapter in `.codex/hooks.json`, OpenCode through a plugin module Ar
 `.pi/extensions/argus-status.ts`. AGY uses `.agents/hooks.json` under the `argus` hook key, and
 Cursor's `agent` CLI uses `.cursor/hooks.json` plus an always-on rule at `.cursor/rules/argus.mdc`.
 All are removed when
-the last agent pane in the checkout closes and swept from every configured checkout at startup;
-adding them to a repository's `.gitignore` keeps them out of its status while an agent is running.
+the last agent pane in the checkout closes and swept from every configured checkout at startup.
+Argus also adds the generated hook and skill paths to the repository-local `.git/info/exclude`
+when it discovers a checkout, so they stay out of status without changing the tracked `.gitignore`.
 Codex treats project hooks as untrusted until the user approves them. Argus writes the correct hook,
 but cannot approve that trust decision; exact Codex identity capture starts after approval.
 
@@ -543,7 +544,8 @@ their context mechanism.
 The skill is embedded in `argusd`, so no separate skill installation is needed. Argus preserves
 user-owned files at those paths and falls back to compact instructions if it cannot install the
 package. Generated files carry `argus:managed-skill`; remove that marker to preserve a replacement.
-Managed skills are cleaned up with the hooks when the last agent leaves the checkout.
+Managed skills are cleaned up with the hooks when the last agent leaves the checkout. Their
+paths are included in the repository-local `.git/info/exclude` alongside the hook files.
 
 To try this after rebuilding, restart the daemon when your running work is safely stopped, then
 start a fresh agent pane. It should load the Argus skill and read its context. In Codex, trust the

@@ -60,6 +60,7 @@ impl Daemon {
                 settings: ProjectSettings::default(),
             });
         }
+        self.ensure_local_ignores();
         self.broadcast_tree();
         // The rollup counts changed too.
         self.broadcast_workspaces();
@@ -121,6 +122,7 @@ impl Daemon {
             self.store.set_excluded_repos(&remaining)?;
         }
 
+        self.ensure_local_ignores();
         self.broadcast_tree();
         Ok(())
     }

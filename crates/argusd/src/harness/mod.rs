@@ -489,6 +489,27 @@ impl Harness {
         self.settings.as_ref().map(|rel| checkout.join(rel))
     }
 
+    /// Paths this harness may write into a checkout. The list is also used
+    /// for repository-local excludes, so generated files do not dirty the
+    /// repository that Argus is managing.
+    pub(crate) fn managed_paths(&self) -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+        if let Some(path) = &self.settings {
+            paths.push(path.clone());
+        }
+        if let Some(plugin) = &self.plugin {
+            paths.push(plugin.path.clone());
+        }
+        if let Some(path) = &self.rule_file {
+            paths.push(path.clone());
+        }
+        if let Some(dir) = &self.skill_dir {
+            paths.push(dir.join("SKILL.md"));
+            paths.push(dir.join("references/work.md"));
+        }
+        paths
+    }
+
     /// Every event name this harness has Argus write, context event
     /// included — the set [`uninstall`] has to consider.
     fn managed_events(&self) -> impl Iterator<Item = &str> {

@@ -74,6 +74,7 @@ to the type or its locking.
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
 | `git`, `diff`, `browse`, `highlight` | the read-only questions asked of a repository |
+| `gitignore` | the repository-local excludes for generated Argus files |
 | `config` | `projects.toml`, which is read and never written |
 | `editor`, `watch`, `command`, `logging`, `paths` | the small services the rest of the daemon uses |
 
@@ -475,7 +476,9 @@ blocks are generally per-boot: they name an ephemeral port and a per-boot token,
 configured checkout at startup and removed when the last agent pane in a checkout goes away, along
 with any directory Argus made only to hold them. Moving a pane performs the same cleanup in its old
 checkout and installs its harness in the new one. Codex is the exception: its trust-sensitive command
-contains only environment references and remains identical across boots. Hook files are checkout-wide;
+contains only environment references and remains identical across boots. Argus adds every generated
+harness and skill file to the repository's local `.git/info/exclude`; this changes no tracked file,
+never enters a commit, and is refreshed whenever a checkout is discovered. Hook files are checkout-wide;
 the helper uses or rebases to a valid `ARGUS_HOOK_URL`, so each process still routes to its own pane.
 The helper reads hook stdin once and can extract both a note and a configured
 top-level session ID key. Claude captures `session_id` at SessionStart. OpenCode's plugin tags root

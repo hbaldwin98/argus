@@ -420,6 +420,7 @@ impl Daemon {
     /// status poll (§4 Level 2, §11 worktree auto-discovery).
     pub(super) fn reconcile_worktrees(&self) {
         self.reconcile_worktrees_with(crate::git::list_worktrees);
+        self.ensure_local_ignores();
     }
 
     /// The reconciliation itself, with the worktree listing injected so
@@ -489,7 +490,9 @@ impl Daemon {
     /// daemon. `reconcile_worktrees` does the same job one level further
     /// down, for a repository's checkouts.
     pub(super) fn reconcile_repositories(&self) -> bool {
-        self.reconcile_repositories_with(crate::git::discover_repositories_within)
+        let changed = self.reconcile_repositories_with(crate::git::discover_repositories_within);
+        self.ensure_local_ignores();
+        changed
     }
 
     /// The reconciliation itself, with the scan injected so tests can state

@@ -8,6 +8,7 @@ mod conn;
 mod diff;
 mod editor;
 mod git;
+mod gitignore;
 mod harness;
 mod highlight;
 mod logging;
