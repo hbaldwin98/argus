@@ -388,7 +388,7 @@ fn codex_hook_content_stays_stable_across_panes_and_daemon_boots() {
     );
     assert_eq!(
         context["commandWindows"],
-        format!("\"%ARGUS_HOOK%\" {INSTRUCTIONS_COMMAND}")
+        format!("& $env:ARGUS_HOOK {INSTRUCTIONS_COMMAND}")
     );
     assert!(context.get("args").is_none());
     assert!(
@@ -402,7 +402,7 @@ fn codex_hook_content_stays_stable_across_panes_and_daemon_boots() {
     );
     assert_eq!(
         second["commandWindows"],
-        r#""%ARGUS_HOOK%" "%ARGUS_HOOK_URL%/status/idle" "%ARGUS_HOOK_TOKEN%" "--session-id-from-stdin" "session_id" "--owns-session""#
+        r#"& $env:ARGUS_HOOK "$env:ARGUS_HOOK_URL/status/idle" "$env:ARGUS_HOOK_TOKEN" "--session-id-from-stdin" "session_id" "--owns-session""#
     );
 }
 

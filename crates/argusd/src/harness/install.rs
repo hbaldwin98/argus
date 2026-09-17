@@ -137,7 +137,7 @@ impl Harness {
                 json!({
                     "type": "command",
                     "command": format!("\"$ARGUS_HOOK\" {INSTRUCTIONS_COMMAND}"),
-                    "commandWindows": format!("\"%ARGUS_HOOK%\" {INSTRUCTIONS_COMMAND}"),
+                    "commandWindows": powershell_context_command(),
                     "timeout": 5
                 })
             } else {
