@@ -271,7 +271,9 @@ pub(super) fn render_help(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let popup = centered_rect(width, height, area);
 
     f.render_widget(Clear, popup);
-    let block = panel_block("keys · esc to close", true, th, popup.width);
+    // On the terminal's own background, like the shell behind it.
+    let block =
+        panel_block("keys · esc to close", true, th, popup.width).style(Style::default().bg(th.bg));
     let inner = block.inner(popup);
     f.render_widget(block, popup);
     app.layout.help = Panel {
