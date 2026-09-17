@@ -73,6 +73,7 @@ const CHECKOUTS: Group = Group {
     title: "checkouts",
     keys: &[
         ("j / k  click", "row by row"),
+        ("/", "filter branches by name"),
         ("enter  l", "back to the workspace on this checkout"),
         ("B", "also list branches nothing is on"),
         ("a", "an agent here"),

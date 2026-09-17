@@ -19,9 +19,74 @@ impl App {
     }
 
     pub fn current_checkout(&self) -> Option<&CheckoutInfo> {
-        match self.checkout_rows().get(self.sel_checkout).copied()? {
+        match self.selected_checkout_row()? {
             CheckoutRow::Checkout(i) => self.current_repository()?.checkouts.get(i),
             CheckoutRow::Branch(_) | CheckoutRow::Remote(_) => None,
+        }
+    }
+
+    pub(crate) fn selected_checkout_row(&self) -> Option<CheckoutRow> {
+        self.checkout_rows().get(self.sel_checkout).copied()
+    }
+
+    /// Branch name (or remote ref) shown for one checkout-column row.
+    pub(crate) fn checkout_row_label(&self, row: CheckoutRow) -> Option<String> {
+        let r = self.current_repository()?;
+        Some(match row {
+            CheckoutRow::Checkout(i) => r.checkouts.get(i)?.name.clone(),
+            CheckoutRow::Branch(i) => r.branches.get(i)?.clone(),
+            CheckoutRow::Remote(i) => r.remote_branches.get(i)?.clone(),
+        })
+    }
+
+    fn checkout_row_matches_filter(&self, row: CheckoutRow) -> bool {
+        let Some(label) = self.checkout_row_label(row) else {
+            return false;
+        };
+        crate::fuzzy::Fuzzy::matches(&self.checkout_filter, &label)
+    }
+
+    /// Rows the legacy checkouts column draws, in navigation order.
+    pub(crate) fn checkout_column_row_indices(&self) -> Vec<usize> {
+        self.checkout_rows()
+            .into_iter()
+            .enumerate()
+            .filter(|(_, row)| self.checkout_row_matches_filter(*row))
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    /// Rows the command-center checkouts table draws.
+    pub(crate) fn checkout_table_row_indices(&self) -> Vec<usize> {
+        self.checkout_rows()
+            .into_iter()
+            .enumerate()
+            .filter(|(_, row)| {
+                self.show_branches || matches!(row, CheckoutRow::Checkout(_))
+            })
+            .filter(|(_, row)| self.checkout_row_matches_filter(*row))
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    /// Which checkout-row index list navigation and scrolling should use
+    /// right now.
+    pub(crate) fn active_checkout_row_indices(&self) -> Vec<usize> {
+        if self.command_center && self.view == View::Checkouts {
+            self.checkout_table_row_indices()
+        } else {
+            self.checkout_column_row_indices()
+        }
+    }
+
+    /// Keeps the cursor on a row the current filter still shows.
+    pub(super) fn sync_checkout_filter_selection(&mut self) {
+        let visible = self.active_checkout_row_indices();
+        if visible.is_empty() {
+            return;
+        }
+        if !visible.contains(&self.sel_checkout) {
+            self.sel_checkout = visible[0];
         }
     }
 
@@ -77,7 +142,7 @@ impl App {
     /// to notice that it comes from `origin/feature`.
     pub fn current_branch_row(&self) -> Option<&str> {
         let r = self.current_repository()?;
-        match self.checkout_rows().get(self.sel_checkout).copied()? {
+        match self.selected_checkout_row()? {
             CheckoutRow::Branch(i) => r.branches.get(i).map(String::as_str),
             CheckoutRow::Remote(i) => r.remote_branches.get(i).and_then(|b| local_name(b)),
             CheckoutRow::Checkout(_) => None,
@@ -87,7 +152,7 @@ impl App {
     /// The same row as `origin/feature`, for the places that have to care
     /// which side of the remote it is on.
     pub fn current_remote_row(&self) -> Option<&str> {
-        match self.checkout_rows().get(self.sel_checkout).copied()? {
+        match self.selected_checkout_row()? {
             CheckoutRow::Remote(i) => self
                 .current_repository()?
                 .remote_branches
@@ -118,7 +183,7 @@ impl App {
     /// The inverse: where the selected row sits in `checkouts`, for the
     /// places that compare a cursor against one.
     fn selected_checkout_index(&self) -> Option<usize> {
-        match self.checkout_rows().get(self.sel_checkout).copied()? {
+        match self.selected_checkout_row()? {
             CheckoutRow::Checkout(i) => Some(i),
             CheckoutRow::Branch(_) | CheckoutRow::Remote(_) => None,
         }
@@ -128,7 +193,7 @@ impl App {
     /// it belongs to. Taken before a new tree replaces the old one.
     pub(super) fn checkout_anchor(&self) -> Option<(RepositoryId, CheckoutAnchor)> {
         let r = self.current_repository()?;
-        let row = self.checkout_rows().get(self.sel_checkout).copied()?;
+        let row = self.selected_checkout_row()?;
         let anchor = match row {
             CheckoutRow::Checkout(i) => CheckoutAnchor::Checkout(r.checkouts.get(i)?.id),
             CheckoutRow::Branch(i) => CheckoutAnchor::Branch(r.branches.get(i)?.clone()),
@@ -336,6 +401,7 @@ impl App {
         } else if self.sel_checkout >= ncheck {
             self.sel_checkout = ncheck - 1;
         }
+        self.sync_checkout_filter_selection();
         let npane = self.visible_pane_count();
         if npane == 0 {
             self.sel_pane = 0;
@@ -462,6 +528,20 @@ impl App {
             let next = (here + delta).clamp(0, locations.len() as i32 - 1) as usize;
             self.select_pane_location(locations[next]);
             self.sync_subscription();
+            return;
+        }
+        if target == Focus::Checkouts {
+            let visible = self.active_checkout_row_indices();
+            if visible.is_empty() {
+                return;
+            }
+            let here = visible
+                .iter()
+                .position(|&index| index == self.sel_checkout)
+                .unwrap_or(0) as i32;
+            let next = (here + delta).clamp(0, visible.len() as i32 - 1) as usize;
+            self.sel_checkout = visible[next];
+            self.clamp();
             return;
         }
         let sel = match target {

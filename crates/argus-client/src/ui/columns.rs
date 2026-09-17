@@ -106,14 +106,19 @@ fn checkout_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
     let spin = Spin::at(app.frame_now(), app.epoch());
     app.current_repository()
         .map(|r| {
-            app.checkout_rows()
+            app.checkout_column_row_indices()
                 .into_iter()
-                .filter_map(|row| match row {
-                    CheckoutRow::Checkout(i) => {
-                        r.checkouts.get(i).map(|c| checkout_item(c, th, spin))
+                .filter_map(|index| {
+                    let row = app.checkout_rows().get(index).copied()?;
+                    match row {
+                        CheckoutRow::Checkout(i) => {
+                            r.checkouts.get(i).map(|c| checkout_item(c, th, spin))
+                        }
+                        CheckoutRow::Branch(i) => r.branches.get(i).map(|b| branch_item(b, th)),
+                        CheckoutRow::Remote(i) => {
+                            r.remote_branches.get(i).map(|b| remote_item(b, th))
+                        }
                     }
-                    CheckoutRow::Branch(i) => r.branches.get(i).map(|b| branch_item(b, th)),
-                    CheckoutRow::Remote(i) => r.remote_branches.get(i).map(|b| remote_item(b, th)),
                 })
                 .collect()
         })
@@ -275,14 +280,17 @@ pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option
         );
     }
 
-    let ncheck = app.checkout_row_count();
+    let checkout_indices = app.checkout_column_row_indices();
+    let selected = checkout_indices
+        .iter()
+        .position(|&index| index == app.sel_checkout);
     app.layout.checkouts = render_column(
         f,
         col(2),
         "checkouts",
         checkout_rows,
         app.focus_lit(Focus::Checkouts),
-        (ncheck > 0).then_some(app.sel_checkout),
+        selected,
         app.layout.checkouts.first,
         NO_CHECKOUTS,
         rows_high,

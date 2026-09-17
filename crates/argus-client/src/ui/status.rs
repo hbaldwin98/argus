@@ -96,6 +96,15 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             ][..],
             th.dim,
         )
+    } else if app.checkout_filtering {
+        (
+            &[
+                "type to filter branches   enter apply   esc clear",
+                "type to filter   enter apply   esc clear",
+                "enter apply  esc clear",
+            ][..],
+            th.dim,
+        )
     } else if app.leader_pending {
         let hints: &[&str] = if app.pane_fullscreen {
             &[
@@ -224,7 +233,11 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 th.dim,
             ),
             View::Checkouts => (
-                &["j/k move   enter open   m checkout   n worktree   q workspace", "j/k  enter open  q"][..],
+                &[
+                    "j/k move   / filter   enter open   m checkout   n worktree   q workspace",
+                    "j/k  / filter  enter open  q",
+                    "j/k  enter open  q",
+                ][..],
                 th.dim,
             ),
             View::Spine => unreachable!("the workspace is handled above"),
@@ -275,8 +288,8 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "l open  a agent",
             ],
             Focus::Checkouts => &[
-                "j/k  l open  b branch  F fetch  R review  H history",
-                "l open  R review  H history",
+                "j/k  / filter  l open  b branch  F fetch  R review  H history",
+                "j/k  / filter  l open  R review  H history",
                 "l open  R review",
             ],
             _ => &[

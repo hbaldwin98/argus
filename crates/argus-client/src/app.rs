@@ -200,6 +200,12 @@ pub struct App {
     /// sitting on. Off by default — the column is for what is running, and
     /// the main branch is pinned to the top of it either way.
     pub show_branches: bool,
+    /// Live filter on checkout branch names, started with `/` on a checkout
+    /// surface. Empty means every drawn row is shown.
+    pub checkout_filter: String,
+    /// While true, printable keys edit [`checkout_filter`] rather than
+    /// firing navigation bindings.
+    pub checkout_filtering: bool,
     /// Repositories whose compact rail subtree has been opened by the user.
     /// A selection alone does not expand a repository: the rail stays useful
     /// as an index until the operator asks for its branch and pane rows.
@@ -397,6 +403,8 @@ impl App {
             feature_panel_heights,
             fold: settings.fold(),
             show_branches: false,
+            checkout_filter: String::new(),
+            checkout_filtering: false,
             expanded_repositories: std::collections::HashSet::new(),
             show_all_panes: false,
             resizing_gutter: None,

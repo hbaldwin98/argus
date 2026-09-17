@@ -179,27 +179,15 @@ fn pane_card_rect(body: Rect, index: usize) -> Rect {
 /// Lines per row in the checkouts table.
 const CHECKOUT_ROW: u16 = 3;
 
-/// Navigation indices (`sel_checkout`) for rows the table draws, in order.
-///
-/// Branch-only rows share the rail's ordering but stay hidden until `B`
-/// expands the table the way it expands the checkouts column.
-fn table_row_indices(app: &App) -> Vec<usize> {
-    app.checkout_rows()
-        .into_iter()
-        .enumerate()
-        .filter(|(_, row)| app.show_branches || matches!(row, CheckoutRow::Checkout(_)))
-        .map(|(index, _)| index)
-        .collect()
-}
-
 /// The navigation row (`sel_checkout`) under a click in the table.
 pub(crate) fn checkout_at(app: &App, x: u16, y: u16) -> Option<usize> {
     let rows = app.layout.checkouts.inner;
     if !contains(rows, x, y) {
         return None;
     }
-    let index = usize::from((y - rows.y) / CHECKOUT_ROW);
-    table_row_indices(app).get(index).copied()
+    let drawn = usize::from((y - rows.y) / CHECKOUT_ROW);
+    let index = app.layout.checkouts.first + drawn;
+    app.checkout_table_row_indices().get(index).copied()
 }
 
 pub(crate) fn pane_at(app: &App, x: u16, y: u16) -> Option<PaneLocation> {
@@ -1808,24 +1796,46 @@ fn render_checkouts(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
             Rect { height: 1, ..body },
         );
     }
+    let table_body = Rect {
+        y: body.y + 1,
+        height: body.height.saturating_sub(1),
+        ..body
+    };
+    let indices = app.checkout_table_row_indices();
+    let visible = (table_body.height / CHECKOUT_ROW).max(1) as usize;
+    let selected_pos = indices
+        .iter()
+        .position(|&index| index == app.sel_checkout);
+    let first = scrolled_to_show(
+        app.layout.checkouts.first,
+        selected_pos,
+        visible,
+        indices.len(),
+    );
     app.layout.checkouts = Panel {
         outer: area,
-        inner: Rect {
-            y: body.y + 1,
-            height: body.height.saturating_sub(1),
-            ..body
-        },
-        first: 0,
+        inner: table_body,
+        first,
     };
+    render_overflow(
+        f,
+        table_body,
+        first,
+        visible,
+        indices.len(),
+        app.focus_lit(Focus::Checkouts),
+        th,
+    );
     let rows = app.checkout_rows();
     let Some(repo) = app.current_repository() else {
         return;
     };
-    for (drawn, sel) in table_row_indices(app)
+    for (drawn, sel) in indices
         .iter()
         .copied()
+        .skip(first)
+        .take(visible)
         .enumerate()
-        .take((body.height.saturating_sub(1) / CHECKOUT_ROW) as usize)
     {
         let selected = app.sel_checkout == sel;
         let (branch_label, state, state_color, pane_summary, path) = match rows.get(sel).copied() {

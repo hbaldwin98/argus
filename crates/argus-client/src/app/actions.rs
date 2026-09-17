@@ -12,6 +12,7 @@ impl App {
     /// keeps its row either way, so the toggle is about the rest of them.
     pub(super) fn toggle_branches(&mut self) {
         self.show_branches = !self.show_branches;
+        self.sync_checkout_filter_selection();
         self.clamp();
         self.report(if self.show_branches {
             "showing every branch"

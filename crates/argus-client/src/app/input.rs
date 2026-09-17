@@ -68,8 +68,10 @@ impl App {
             self.on_key_prompt(key);
         } else if self.dir_picker.is_some() {
             self.on_key_dir_picker(key);
-        } else if self.picker.is_some() {
+        } else         if self.picker.is_some() {
             self.on_key_picker(key);
+        } else if self.checkout_filtering {
+            self.on_key_checkout_filter(key);
         } else if self.overlay.is_some() {
             self.on_key_overlay(key);
         } else if self.focus == Focus::View {
@@ -530,8 +532,43 @@ impl App {
         }
     }
 
+    fn checkouts_filterable(&self) -> bool {
+        self.view == View::Checkouts
+            || (self.view == View::Spine && self.focus == Focus::Checkouts)
+    }
+
+    fn begin_checkout_filter(&mut self) {
+        self.checkout_filtering = true;
+        self.checkout_filter.clear();
+        self.sync_checkout_filter_selection();
+    }
+
+    fn on_key_checkout_filter(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.checkout_filter.clear();
+                self.checkout_filtering = false;
+                self.sync_checkout_filter_selection();
+            }
+            KeyCode::Enter => {
+                self.checkout_filtering = false;
+                self.sync_checkout_filter_selection();
+            }
+            KeyCode::Backspace => {
+                self.checkout_filter.pop();
+                self.sync_checkout_filter_selection();
+            }
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.checkout_filter.push(c);
+                self.sync_checkout_filter_selection();
+            }
+            _ => {}
+        }
+    }
+
     fn on_key_nav(&mut self, key: KeyEvent) {
         match key.code {
+            KeyCode::Char('/') if self.checkouts_filterable() => self.begin_checkout_filter(),
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Char('j') | KeyCode::Down => self.move_selection(1),
             KeyCode::Char('k') | KeyCode::Up => self.move_selection(-1),
@@ -608,6 +645,10 @@ impl App {
         }
         if self.view == View::Checkouts {
             match key.code {
+                KeyCode::Char('/') => {
+                    self.begin_checkout_filter();
+                    return;
+                }
                 KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Spine),
                 KeyCode::Char('j') | KeyCode::Down => self.adjust_selection(Focus::Checkouts, 1),
                 KeyCode::Char('k') | KeyCode::Up => self.adjust_selection(Focus::Checkouts, -1),

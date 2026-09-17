@@ -33,6 +33,20 @@ impl Fuzzy {
     /// query keeps everything in its original order — the list is usually
     /// already in a meaningful one, and reordering it on no input would be
     /// noise.
+    /// Whether one string matches a fuzzy query. Used outside pickers where
+    /// building a filtered index list would be heavier than a yes/no check.
+    pub fn matches(query: &str, item: &str) -> bool {
+        if query.trim().is_empty() {
+            return true;
+        }
+        let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
+        let mut buf = Vec::new();
+        let mut matcher = Matcher::new(Config::DEFAULT);
+        pattern
+            .score(Utf32Str::new(item, &mut buf), &mut matcher)
+            .is_some()
+    }
+
     pub fn filter(&mut self, query: &str, items: &[String]) -> Vec<usize> {
         if query.trim().is_empty() {
             return (0..items.len()).collect();
@@ -75,6 +89,12 @@ mod tests {
             .into_iter()
             .map(|i| list[i].clone())
             .collect()
+    }
+
+    #[test]
+    fn matches_reports_a_single_hit_without_building_an_index_list() {
+        assert!(Fuzzy::matches("log", "catalog"));
+        assert!(!Fuzzy::matches("log", "main"));
     }
 
     #[test]
