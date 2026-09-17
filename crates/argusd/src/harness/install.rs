@@ -55,8 +55,7 @@ impl Harness {
         check_directories(checkout, path.parent().unwrap())?;
         match std::fs::symlink_metadata(&path) {
             Ok(meta) => anyhow::ensure!(
-                meta.is_file()
-                    && std::fs::read_to_string(&path)?.contains(PLUGIN_MARKER),
+                meta.is_file() && std::fs::read_to_string(&path)?.contains(PLUGIN_MARKER),
                 "leaving user-owned plugin {} untouched",
                 path.display()
             ),
@@ -253,11 +252,9 @@ pub(super) fn check_directories(checkout: &Path, dir: &Path) -> anyhow::Result<(
     for part in dir.strip_prefix(checkout)?.components() {
         path.push(part);
         match std::fs::symlink_metadata(&path) {
-            Ok(meta) => anyhow::ensure!(
-                meta.is_dir(),
-                "{} is not a plain directory",
-                path.display()
-            ),
+            Ok(meta) => {
+                anyhow::ensure!(meta.is_dir(), "{} is not a plain directory", path.display())
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e.into()),
         }

@@ -48,8 +48,8 @@ mod hooks;
 mod install;
 mod skill;
 
-pub use hooks::{env, helper_path};
 use hooks::*;
+pub use hooks::{env, helper_path};
 use install::*;
 
 /// The statuses a harness can report, and the URL vocabulary they travel in.
@@ -504,8 +504,8 @@ impl Harness {
             paths.push(path.clone());
         }
         if let Some(dir) = &self.skill_dir {
-            paths.push(dir.join("SKILL.md"));
-            paths.push(dir.join("references/work.md"));
+            paths.extend(skill::FILES.iter().map(|(name, _)| dir.join(name)));
+            paths.extend(skill::RETIRED.iter().map(|name| dir.join(name)));
         }
         paths
     }

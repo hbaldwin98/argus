@@ -71,7 +71,13 @@ the old checkout's managed skill when its last agent leaves.
 
 ## Maintain shared work
 
-When implementing a feature or updating the board, read
-[references/work.md](references/work.md) for feature selection, task updates,
-and decisions. Keep those records relevant to the requested work;
-an informational question alone does not require creating a feature or tasks.
+Argus keeps a shared board per feature: a brief, tasks with subtasks, and
+decisions. When the request involves implementing or changing something, read
+[references/features.md](references/features.md) before starting, then read the
+reference for each part of the board you use:
+
+- [references/tasks.md](references/tasks.md): shaping tasks and subtasks, and moving them through `todo`, `doing`, and `done`.
+- [references/decisions.md](references/decisions.md): recording choices and superseding them.
+
+Keep those records relevant to the requested work. An informational question
+alone does not require creating a feature or tasks.

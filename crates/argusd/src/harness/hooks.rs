@@ -71,7 +71,13 @@ pub fn helper_path() -> String {
 /// Installed hook form for harnesses whose config is a single shell string
 /// but whose runner does not inherit the pane environment (Cursor). Same
 /// argv as Claude's command-plus-args shape, joined for the shell.
-pub(super) fn baked_command_line(helper: &str, pane: PaneId, port: u16, token: &str, event: &Event) -> String {
+pub(super) fn baked_command_line(
+    helper: &str,
+    pane: PaneId,
+    port: u16,
+    token: &str,
+    event: &Event,
+) -> String {
     let mut parts = vec![
         helper.to_string(),
         event_target_url(pane, port, event),

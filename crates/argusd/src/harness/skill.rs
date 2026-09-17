@@ -8,14 +8,29 @@ use super::{
 };
 
 const MARKER: &str = "<!-- argus:managed-skill -->";
-const FILES: &[(&str, &str)] = &[
+pub(super) const FILES: &[(&str, &str)] = &[
     ("SKILL.md", include_str!("../../skills/argus/SKILL.md")),
-    ("references/work.md", include_str!("../../skills/argus/references/work.md")),
+    (
+        "references/features.md",
+        include_str!("../../skills/argus/references/features.md"),
+    ),
+    (
+        "references/tasks.md",
+        include_str!("../../skills/argus/references/tasks.md"),
+    ),
+    (
+        "references/decisions.md",
+        include_str!("../../skills/argus/references/decisions.md"),
+    ),
 ];
+/// Files earlier versions installed, removed when still Argus-managed.
+pub(super) const RETIRED: &[&str] = &["references/work.md"];
 
 impl Harness {
     pub(super) fn install_skill(&self, checkout: &Path) -> anyhow::Result<()> {
-        let Some(dir) = self.skill_directory(checkout)? else { return Ok(()) };
+        let Some(dir) = self.skill_directory(checkout)? else {
+            return Ok(());
+        };
         // Preflight the whole package before changing any file. A user-owned
         // reference is as much a reason to leave it alone as a user-owned skill.
         for (name, _) in FILES {
@@ -24,7 +39,8 @@ impl Harness {
             match std::fs::symlink_metadata(&path) {
                 Ok(meta) => anyhow::ensure!(
                     meta.is_file() && std::fs::read_to_string(&path)?.contains(MARKER),
-                    "leaving user-owned skill file {} untouched", path.display()
+                    "leaving user-owned skill file {} untouched",
+                    path.display()
                 ),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                 Err(e) => return Err(e.into()),
@@ -35,22 +51,21 @@ impl Harness {
             std::fs::create_dir_all(path.parent().unwrap())?;
             std::fs::write(path, source)?;
         }
-        Ok(())
+        remove_managed(checkout, &dir, RETIRED.iter().copied())
     }
 
     pub(super) fn uninstall_skill(&self, checkout: &Path) -> anyhow::Result<()> {
-        let Some(dir) = self.skill_directory(checkout)? else { return Ok(()) };
-        for (name, _) in FILES {
-            let path = dir.join(name);
-            check_directories(checkout, path.parent().unwrap())?;
-            if std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file())
-                && std::fs::read_to_string(&path).is_ok_and(|s| s.contains(MARKER))
-            {
-                std::fs::remove_file(&path)?;
-                prune_empty_dirs(checkout, &path);
-            }
-        }
-        Ok(())
+        let Some(dir) = self.skill_directory(checkout)? else {
+            return Ok(());
+        };
+        remove_managed(
+            checkout,
+            &dir,
+            FILES
+                .iter()
+                .map(|(name, _)| *name)
+                .chain(RETIRED.iter().copied()),
+        )
     }
 
     pub fn instructions(&self, checkout: &Path) -> String {
@@ -76,16 +91,39 @@ impl Harness {
     }
 
     fn skill_directory(&self, checkout: &Path) -> anyhow::Result<Option<PathBuf>> {
-        let Some(relative) = &self.skill_dir else { return Ok(None) };
+        let Some(relative) = &self.skill_dir else {
+            return Ok(None);
+        };
         anyhow::ensure!(
             !relative.as_os_str().is_empty()
-                && relative.components().all(|c| matches!(c, Component::Normal(_))),
+                && relative
+                    .components()
+                    .all(|c| matches!(c, Component::Normal(_))),
             "skill_dir must be a directory relative to the checkout"
         );
         let dir = checkout.join(relative);
         check_directories(checkout, &dir)?;
         Ok(Some(dir))
     }
+}
+
+/// Removes the named skill files that still carry the managed marker.
+fn remove_managed<'a>(
+    checkout: &Path,
+    dir: &Path,
+    names: impl Iterator<Item = &'a str>,
+) -> anyhow::Result<()> {
+    for name in names {
+        let path = dir.join(name);
+        check_directories(checkout, path.parent().unwrap())?;
+        if std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file())
+            && std::fs::read_to_string(&path).is_ok_and(|s| s.contains(MARKER))
+        {
+            std::fs::remove_file(&path)?;
+            prune_empty_dirs(checkout, &path);
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn fallback() -> &'static str {

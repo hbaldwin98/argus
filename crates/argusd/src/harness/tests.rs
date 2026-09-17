@@ -133,8 +133,7 @@ fn no_builtin_event_titles_the_pane_from_the_prompt() {
 
     let hooks = settings_of(dir.path(), &h)["hooks"].clone();
     let prompt: Vec<String> =
-        serde_json::from_value(hooks["UserPromptSubmit"][0]["hooks"][0]["args"].clone())
-            .unwrap();
+        serde_json::from_value(hooks["UserPromptSubmit"][0]["hooks"][0]["args"].clone()).unwrap();
     assert!(
         !prompt.contains(&TITLE_FLAG.to_string()),
         "the agent names the pane, not the raw prompt: {prompt:?}"
@@ -195,8 +194,15 @@ fn the_context_hook_carries_the_instructions_and_calls_nothing() {
     // configured relative path, and SKILL.md goes on after it. On Windows
     // that puts a backslash before the file name, not a slash.
     let skill = dir.path().join(".claude/skills/argus").join("SKILL.md");
-    assert!(args[1].contains(&skill.display().to_string()), "{}", args[1]);
-    assert!(!args[1].contains("task add"), "workflow details belong in the skill");
+    assert!(
+        args[1].contains(&skill.display().to_string()),
+        "{}",
+        args[1]
+    );
+    assert!(
+        !args[1].contains("task add"),
+        "workflow details belong in the skill"
+    );
     assert!(
         !args[1].contains("http://"),
         "no network in the instruction hook"
@@ -309,7 +315,11 @@ fn codex_uses_its_project_hook_shape_and_cleans_up_only_its_handler() {
     let root = settings_of(dir.path(), &h);
     assert_eq!(root["description"], "mine");
     let groups = root["hooks"]["SessionStart"].as_array().unwrap();
-    assert_eq!(groups.len(), 3, "the user's hook survives beside status and context");
+    assert_eq!(
+        groups.len(),
+        3,
+        "the user's hook survives beside status and context"
+    );
     let ours = groups
         .iter()
         .find(|group| group["matcher"] == "startup|resume|clear")
@@ -355,10 +365,19 @@ fn codex_hook_content_stays_stable_across_panes_and_daemon_boots() {
         "reinstalling must not invalidate Codex trust"
     );
     let context = &second["hooks"]["SessionStart"][1]["hooks"][0];
-    assert_eq!(context["command"], format!("\"$ARGUS_HOOK\" {INSTRUCTIONS_COMMAND}"));
-    assert_eq!(context["commandWindows"], format!("\"%ARGUS_HOOK%\" {INSTRUCTIONS_COMMAND}"));
+    assert_eq!(
+        context["command"],
+        format!("\"$ARGUS_HOOK\" {INSTRUCTIONS_COMMAND}")
+    );
+    assert_eq!(
+        context["commandWindows"],
+        format!("\"%ARGUS_HOOK%\" {INSTRUCTIONS_COMMAND}")
+    );
     assert!(context.get("args").is_none());
-    assert!(second["hooks"]["SessionStart"][1].get("matcher").is_none(), "context also returns after compaction");
+    assert!(
+        second["hooks"]["SessionStart"][1].get("matcher").is_none(),
+        "context also returns after compaction"
+    );
     let second = &second["hooks"]["SessionStart"][0]["hooks"][0];
     assert_eq!(
         second["command"],
@@ -381,8 +400,7 @@ fn reinstalling_replaces_rather_than_appends() {
 
     let stop = settings_of(dir.path(), &h)["hooks"]["Stop"].clone();
     assert_eq!(stop.as_array().unwrap().len(), 1, "no duplicate matchers");
-    let args: Vec<String> =
-        serde_json::from_value(stop[0]["hooks"][0]["args"].clone()).unwrap();
+    let args: Vec<String> = serde_json::from_value(stop[0]["hooks"][0]["args"].clone()).unwrap();
     assert!(args[0].contains("/pane/2/"));
     assert!(args[0].contains("2222"));
 }
