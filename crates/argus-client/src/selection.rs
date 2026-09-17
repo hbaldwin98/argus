@@ -77,12 +77,7 @@ impl TerminalSelection {
     }
 }
 
-fn line_bounds(
-    row: usize,
-    len: usize,
-    start: CellPoint,
-    end: CellPoint,
-) -> (usize, usize) {
+fn line_bounds(row: usize, len: usize, start: CellPoint, end: CellPoint) -> (usize, usize) {
     let from = if row == start.row { start.col } else { 0 }.min(len);
     let to = if row == end.row {
         end.col.saturating_add(1)

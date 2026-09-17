@@ -24,8 +24,15 @@ pub enum BriefMode {
 /// Whose brief is open, which is what decides where a save goes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BriefTarget {
-    Feature { project: ProjectId, slug: String },
-    Task { project: ProjectId, feature: String, id: i64 },
+    Feature {
+        project: ProjectId,
+        slug: String,
+    },
+    Task {
+        project: ProjectId,
+        feature: String,
+        id: i64,
+    },
 }
 
 /// One brief, open.

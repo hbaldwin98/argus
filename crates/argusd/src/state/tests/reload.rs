@@ -42,9 +42,7 @@ async fn reloading_keeps_the_panes_and_ids_of_everything_still_configured() {
 
         std::fs::write(
             dir.join("projects.toml"),
-            format!(
-                "[[project]]\nname = \"one\"\nrepos = [\"{repo_path}\"]\nexclusive = true\n"
-            ),
+            format!("[[project]]\nname = \"one\"\nrepos = [\"{repo_path}\"]\nexclusive = true\n"),
         )
         .unwrap();
         d.reload_config().unwrap();
@@ -539,4 +537,20 @@ fn an_editor_pane_will_not_open_a_path_outside_the_checkout() {
             "{bad:?} should be refused"
         );
     }
+}
+
+#[test]
+fn adding_the_same_directory_twice_is_refused_rather_than_duplicated() {
+    let repo = tempfile::tempdir().unwrap();
+    with_temp_config(|_| {
+        let d = persistent(ConfigFile::default());
+        let path = repo.path().to_string_lossy();
+        d.add_project(&path).unwrap();
+        let before = d.snapshot().len();
+
+        let err = d.add_project(&path).unwrap_err();
+
+        assert!(err.to_string().contains("already a project"), "{err}");
+        assert_eq!(d.snapshot().len(), before);
+    });
 }

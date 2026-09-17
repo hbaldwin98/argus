@@ -236,7 +236,11 @@ mod tests {
         let at = |ms| spinner(start + Duration::from_millis(ms), start);
 
         assert_eq!(at(0), SPINNER_FRAMES[0]);
-        assert_eq!(at(79), SPINNER_FRAMES[0], "a frame holds for its whole span");
+        assert_eq!(
+            at(79),
+            SPINNER_FRAMES[0],
+            "a frame holds for its whole span"
+        );
         assert_eq!(at(80), SPINNER_FRAMES[1]);
         assert_eq!(
             at(80 * SPINNER_FRAMES.len() as u64),

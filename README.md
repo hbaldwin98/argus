@@ -126,6 +126,15 @@ Windows:
 The client starts `argusd` in the background when needed. Press `q` from the navigation columns to
 detach; existing panes continue running.
 
+To add a directory of repositories as a project without opening the TUI, run:
+
+```sh
+argus init ~/src      # or `argus init` for the current directory
+```
+
+It scans the directory into the open workspace, prints the repositories and checkouts it found,
+and refuses a directory that is already a project.
+
 To restart a running daemon without opening the TUI, run:
 
 ```sh

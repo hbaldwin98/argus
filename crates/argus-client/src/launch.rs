@@ -66,6 +66,73 @@ pub async fn restart_daemon() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `argus init [DIR]`: the first-run scan without the TUI. Adds the
+/// directory as a project in the open workspace, waits for the tree that
+/// holds it, and prints the repositories and checkouts it found.
+pub async fn init(dir: Option<String>) -> anyhow::Result<()> {
+    let dir = match dir {
+        Some(dir) => PathBuf::from(dir),
+        None => std::env::current_dir().context("no working directory")?,
+    };
+    let dir =
+        std::fs::canonicalize(&dir).with_context(|| format!("cannot scan {}", dir.display()))?;
+    let path = dir.to_string_lossy().into_owned();
+
+    let mut stream = ensure_daemon_and_connect().await?;
+    tokio::time::timeout(INIT_TIMEOUT, async {
+        // The daemon greets with the tree; the projects already in it are
+        // what the added one is told apart from.
+        let known = loop {
+            if let ServerMsg::Tree(tree) = read_msg::<_, ServerMsg>(&mut stream).await? {
+                break tree.into_iter().map(|p| p.id).collect::<Vec<_>>();
+            }
+        };
+        write_msg(&mut stream, &ClientMsg::AddProject { path: path.clone() })
+            .await
+            .context("could not ask argusd to add the project")?;
+        loop {
+            match read_msg::<_, ServerMsg>(&mut stream).await? {
+                ServerMsg::Tree(tree) => {
+                    if let Some(project) = tree.into_iter().find(|p| !known.contains(&p.id)) {
+                        print!("{}", init_summary(&project, &path));
+                        return Ok(());
+                    }
+                }
+                ServerMsg::Error { message } => anyhow::bail!("{message}"),
+                _ => {}
+            }
+        }
+    })
+    .await
+    .context("timed out waiting for argusd to scan the directory")?
+}
+
+const INIT_TIMEOUT: Duration = Duration::from_secs(60);
+
+pub(crate) fn init_summary(project: &argus_protocol::ProjectInfo, path: &str) -> String {
+    let checkouts: usize = project.repositories.iter().map(|r| r.checkouts.len()).sum();
+    let plural =
+        |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    let mut out = format!(
+        "added {} ({path}): {}, {}\n",
+        project.name,
+        plural(project.repositories.len(), "repository", "repositories"),
+        plural(checkouts, "checkout", "checkouts"),
+    );
+    for repository in &project.repositories {
+        out.push_str(&format!(
+            "  {}  {}\n",
+            repository.name,
+            plural(repository.checkouts.len(), "checkout", "checkouts")
+        ));
+    }
+    if project.repositories.is_empty() {
+        out.push_str("  no Git repositories found under it yet\n");
+    }
+    out.push_str("run `argus` to open it\n");
+    out
+}
+
 async fn wait_for_daemon_to_stop() -> anyhow::Result<()> {
     let deadline = std::time::Instant::now() + RESTART_STOP_TIMEOUT;
     while transport::is_daemon_listening() {

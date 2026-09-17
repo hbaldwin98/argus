@@ -139,7 +139,9 @@ impl HistoryView {
 
     pub fn file_at(&self, row: HistoryRow) -> Option<&CommitFile> {
         match row {
-            HistoryRow::File { commit, file } => self.commits.get(commit)?.files.as_ref()?.get(file),
+            HistoryRow::File { commit, file } => {
+                self.commits.get(commit)?.files.as_ref()?.get(file)
+            }
             HistoryRow::Commit { .. } => None,
         }
     }

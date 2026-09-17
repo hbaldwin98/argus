@@ -1571,7 +1571,7 @@ fn render_stage_heading(
 
 fn render_first_run(f: &mut Frame, area: Rect, th: Theme) {
     let width = 52.min(area.width);
-    let height = 10.min(area.height);
+    let height = 11.min(area.height);
     let box_area = centered_rect(width, height, area);
     f.render_widget(Paragraph::new(vec![
         Line::styled("■  NO WORKSPACE", Style::default().fg(th.dim)),
@@ -1581,6 +1581,7 @@ fn render_first_run(f: &mut Frame, area: Rect, th: Theme) {
         Line::styled("Argus will index checkouts and worktrees, then keep panes attached to the branch they belong to.", Style::default().fg(th.muted)),
         Line::raw(""),
         Line::from(vec![Span::styled("› ", Style::default().fg(th.accent)), Span::styled("n  choose a directory to scan", Style::default().fg(th.muted))]),
+        Line::from(vec![Span::styled("› ", Style::default().fg(th.accent)), Span::styled("or run  argus init <dir>", Style::default().fg(th.muted))]),
     ]).wrap(Wrap { trim: false }), box_area);
 }
 

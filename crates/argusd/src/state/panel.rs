@@ -25,6 +25,22 @@ impl Daemon {
         if !expanded.is_dir() {
             anyhow::bail!("not a directory: {}", expanded.display());
         }
+        // The overlay upserts by root, but the tree would gain a second
+        // project over the same directory, each scanning the same repos.
+        {
+            let inner = self.inner.lock().unwrap();
+            if let Some(existing) = inner
+                .projects
+                .iter()
+                .find(|p| p.root.as_deref() == Some(expanded.as_path()))
+            {
+                anyhow::bail!(
+                    "already a project: {} ({})",
+                    existing.name,
+                    expanded.display()
+                );
+            }
+        }
         let name = expanded
             .file_name()
             .map(|n| n.to_string_lossy().to_string())

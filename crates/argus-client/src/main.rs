@@ -8,8 +8,8 @@
 
 mod app;
 mod backend;
+mod brief;
 mod clipboard;
-mod selection;
 mod dirpicker;
 mod fuzzy;
 mod grid;
@@ -17,12 +17,12 @@ mod herdr;
 mod history;
 mod launch;
 mod motion;
-mod brief;
 mod paste;
 mod profile;
 mod pty_input;
 mod redraw;
 mod review;
+mod selection;
 mod settings;
 mod terminal;
 mod theme;
@@ -56,11 +56,10 @@ use wire::connection_channels;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    if matches!(
-        parse_command(&std::env::args().skip(1).collect::<Vec<_>>())?,
-        Command::ServerRestart
-    ) {
-        return launch::restart_daemon().await;
+    match parse_command(&std::env::args().skip(1).collect::<Vec<_>>())? {
+        Command::ServerRestart => return launch::restart_daemon().await,
+        Command::Init(dir) => return launch::init(dir).await,
+        Command::Tui => {}
     }
     let stream = launch::ensure_daemon_and_connect().await?;
     let connection = connection_channels(stream);
@@ -74,6 +73,9 @@ async fn main() -> anyhow::Result<()> {
 enum Command {
     Tui,
     ServerRestart,
+    /// Scan a directory (the working directory when none is given) into a
+    /// project in the open workspace, and report what was found.
+    Init(Option<String>),
 }
 
 fn parse_command(args: &[String]) -> anyhow::Result<Command> {
@@ -82,7 +84,11 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         [server, restart] if server == "server" && restart == "restart" => {
             Ok(Command::ServerRestart)
         }
-        _ => Err(anyhow::anyhow!("usage: argus [server restart]")),
+        [init] if init == "init" => Ok(Command::Init(None)),
+        [init, dir] if init == "init" => Ok(Command::Init(Some(dir.clone()))),
+        _ => Err(anyhow::anyhow!(
+            "usage: argus [init [DIR] | server restart]"
+        )),
     }
 }
 
@@ -441,10 +447,41 @@ mod tests {
     #[test]
     fn server_restart_is_the_daemon_control_command() {
         let args = ["server".to_string(), "restart".to_string()];
-        assert!(matches!(
-            parse_command(&args),
-            Ok(Command::ServerRestart)
-        ));
+        assert!(matches!(parse_command(&args), Ok(Command::ServerRestart)));
+    }
+
+    #[test]
+    fn init_scans_the_working_directory_or_the_one_named() {
+        assert_eq!(
+            parse_command(&["init".to_string()]).unwrap(),
+            Command::Init(None)
+        );
+        assert_eq!(
+            parse_command(&["init".to_string(), "~/src".to_string()]).unwrap(),
+            Command::Init(Some("~/src".to_string()))
+        );
+    }
+
+    #[test]
+    fn init_reports_what_the_scan_found() {
+        let project = crate::fixtures::project(
+            1,
+            "src",
+            vec![crate::fixtures::repository(
+                2,
+                "orion",
+                vec![
+                    crate::fixtures::checkout(10, "main", true, vec![]),
+                    crate::fixtures::checkout(11, "wt", false, vec![]),
+                ],
+            )],
+        );
+        let text = launch::init_summary(&project, "/home/me/src");
+        assert!(
+            text.starts_with("added src (/home/me/src): 1 repository, 2 checkouts\n"),
+            "{text}"
+        );
+        assert!(text.contains("  orion  2 checkouts\n"), "{text}");
     }
 
     #[test]
