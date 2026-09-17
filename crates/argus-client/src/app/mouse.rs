@@ -53,7 +53,7 @@ impl App {
         // it is the one row on screen that is not about whatever is open.
         if matches!(ev.kind, MouseEventKind::Down(_)) {
             if let Some(view) = crate::ui::tab_at(self.layout.views, ev.column, ev.row) {
-                self.open_view(view);
+                self.open_view_from_tab(view);
                 return;
             }
         }

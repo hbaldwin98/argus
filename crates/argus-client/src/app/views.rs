@@ -880,25 +880,57 @@ impl App {
     /// move between, and leaving focus in a pane would send every key to
     /// the child of a pane that is no longer on screen.
     pub fn open_view(&mut self, view: View) {
-        if self.view == view {
+        self.open_view_with_origin(view, false);
+    }
+
+    /// Opens a view from the tab strip. A tab is navigation chrome: it
+    /// must never leave keyboard focus in a live pane, including when the
+    /// workspace tab is pressed while the spine is already showing.
+    pub(crate) fn open_view_from_tab(&mut self, view: View) {
+        self.open_view_with_origin(view, true);
+    }
+
+    fn open_view_with_origin(&mut self, view: View, from_tab: bool) {
+        if self.view == view && !from_tab {
             return;
         }
-        if self.view == View::Spine {
+        if self.view == View::Spine && view != View::Spine {
             self.spine_focus = self.focus;
         }
-        self.view = view;
+        let changed = self.view != view;
+        if changed {
+            self.view = view;
+        }
         self.focus = match view {
-            View::Spine => self.spine_focus,
+            View::Spine => {
+                let mut focus = if from_tab
+                    && self.view == View::Spine
+                    && matches!(self.focus, Focus::PaneContent)
+                {
+                    Focus::Panes
+                } else {
+                    self.spine_focus
+                };
+                if from_tab && matches!(focus, Focus::PaneContent) {
+                    focus = Focus::Panes;
+                }
+                if from_tab {
+                    self.spine_focus = focus;
+                }
+                focus
+            }
             _ => Focus::View,
         };
         self.leader_pending = false;
         // A client that attached after the last write has never been
         // pushed a board, so opening the view is a fetch.
-        if view == View::Feature {
+        if changed && view == View::Feature {
             self.ask_for_decisions();
             self.ask_for_tasks();
         }
-        self.report(view.label());
+        if changed || from_tab {
+            self.report(view.label());
+        }
     }
 
     /// Asks for the board of the project the spine is on. Sent on opening

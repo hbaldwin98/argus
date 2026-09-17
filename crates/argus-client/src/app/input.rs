@@ -615,6 +615,7 @@ impl App {
                     self.open_view(View::Spine);
                     self.focus = Focus::Checkouts;
                 }
+                KeyCode::Char('B') => self.toggle_branches(),
                 KeyCode::Char('m') | KeyCode::Char('b') => self.open_branch_picker(),
                 KeyCode::Char('n') => self.new_prompt(),
                 _ => {}

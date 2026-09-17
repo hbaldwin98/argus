@@ -118,6 +118,32 @@ fn clicking_a_tab_opens_it() {
 }
 
 #[test]
+fn clicking_the_workspace_tab_withdraws_pane_focus() {
+    let mut app = app_with_tree();
+    app.focus = Focus::PaneContent;
+    draw_at(&mut app, 100, 30);
+    let views = app.layout.views;
+    let strip = views.outer;
+    let x = (0..strip.width)
+        .find(|x| crate::ui::tab_at(views, strip.x + x, strip.y) == Some(View::Spine))
+        .expect("the workspace tab is on screen");
+
+    app.on_mouse(crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        column: strip.x + x,
+        row: strip.y,
+        modifiers: KeyModifiers::NONE,
+    });
+
+    assert_eq!(app.view, View::Spine);
+    assert_eq!(
+        app.focus,
+        Focus::Panes,
+        "the workspace tab is chrome, not the live pane"
+    );
+}
+
+#[test]
 fn a_click_before_the_first_frame_lands_on_no_tab() {
     assert_eq!(crate::ui::tab_at(Panel::default(), 0, 0), None);
 }

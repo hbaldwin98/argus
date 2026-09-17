@@ -73,6 +73,26 @@ fn active_repositories_sort_before_inactive_repositories() {
 }
 
 #[test]
+fn b_lists_branch_only_rows_in_the_checkouts_table() {
+    let mut app = command_center();
+    app.tree[0].repositories[0].branches = vec!["spike".into()];
+    app.open_view(View::Checkouts);
+    let hidden = lines(&draw_at(&mut app, 120, 30)).join("\n");
+    assert!(
+        !hidden.contains("spike"),
+        "branch-only rows stay out until expanded:\n{hidden}"
+    );
+
+    app.on_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('B'),
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    let shown = lines(&draw_at(&mut app, 120, 30)).join("\n");
+    assert!(shown.contains("spike"), "{shown}");
+    assert!(shown.contains("no checkout"), "{shown}");
+}
+
+#[test]
 fn clicking_a_checkout_row_selects_the_row_under_the_pointer() {
     // A default branch with no directory gets a navigation row of its own
     // that the table does not draw; clicks used to land one row short.

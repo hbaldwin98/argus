@@ -74,6 +74,7 @@ const CHECKOUTS: Group = Group {
     keys: &[
         ("j / k  click", "row by row"),
         ("enter  l", "back to the workspace on this checkout"),
+        ("B", "also list branches nothing is on"),
         ("m  b", "switch branch"),
         ("n", "a new worktree"),
         ("esc  q", "back to the workspace"),

@@ -127,15 +127,16 @@ fn pane_card_rect(body: Rect, index: usize) -> Rect {
 /// Lines per row in the checkouts table.
 const CHECKOUT_ROW: u16 = 3;
 
-/// Checkouts in the order the table draws them, which is the keyboard's
-/// order: branch-only rows are left out, since the table lists directories.
-fn table_checkouts(app: &App) -> Vec<usize> {
+/// Navigation indices (`sel_checkout`) for rows the table draws, in order.
+///
+/// Branch-only rows share the rail's ordering but stay hidden until `B`
+/// expands the table the way it expands the checkouts column.
+fn table_row_indices(app: &App) -> Vec<usize> {
     app.checkout_rows()
         .into_iter()
-        .filter_map(|row| match row {
-            CheckoutRow::Checkout(i) => Some(i),
-            _ => None,
-        })
+        .enumerate()
+        .filter(|(_, row)| app.show_branches || matches!(row, CheckoutRow::Checkout(_)))
+        .map(|(index, _)| index)
         .collect()
 }
 
@@ -146,8 +147,7 @@ pub(crate) fn checkout_at(app: &App, x: u16, y: u16) -> Option<usize> {
         return None;
     }
     let index = usize::from((y - rows.y) / CHECKOUT_ROW);
-    let checkout = *table_checkouts(app).get(index)?;
-    app.checkout_row_of(checkout)
+    table_row_indices(app).get(index).copied()
 }
 
 pub(crate) fn pane_at(app: &App, x: u16, y: u16) -> Option<PaneLocation> {
@@ -1392,7 +1392,7 @@ fn render_checkouts(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         area,
         repo_name,
         "checkouts & worktrees",
-        "m CHECKOUT · n WORKTREE",
+        "B BRANCHES · m CHECKOUT · n WORKTREE",
         th,
     );
     let body = Rect {
@@ -1441,123 +1441,159 @@ fn render_checkouts(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         },
         first: 0,
     };
-    let order = table_checkouts(app);
-    if let Some(repo) = app.current_repository() {
-        for (index, checkout) in order
-            .iter()
-            .map(|i| &repo.checkouts[*i])
-            .enumerate()
-            .take((body.height.saturating_sub(1) / CHECKOUT_ROW) as usize)
-        {
-            let selected = app.current_checkout().is_some_and(|c| c.id == checkout.id);
-            let git = checkout.git.as_ref();
-            let state = git
-                .map(|g| {
-                    if g.dirty {
-                        format!("!{} modified", g.changed_files)
-                    } else if g.ahead > 0 {
-                        format!("↑{} clean", g.ahead)
-                    } else if g.behind > 0 {
-                        format!("↓{} behind", g.behind)
-                    } else {
-                        "clean".into()
-                    }
-                })
-                .unwrap_or_else(|| "not a repository".into());
-            let state_color = if git.is_some_and(|g| g.dirty) {
-                th.warn
-            } else {
-                th.ok
-            };
-            let panes: Vec<_> = checkout.listed_panes().collect();
-            let agents = panes
-                .iter()
-                .filter(|pane| pane.kind == PaneKind::Agent)
-                .count();
-            let pane_summary = if panes.is_empty() {
-                "—".to_string()
-            } else if agents == 0 {
-                format!("{} · shell", panes.len())
-            } else {
-                format!(
-                    "{} · {} agent{}",
-                    panes.len(),
-                    agents,
-                    if agents == 1 { "" } else { "s" }
-                )
-            };
-            let bg = if selected { th.surface } else { th.bg };
-            let style = Style::default().bg(bg);
-            let line = if wide {
-                Line::from(vec![
-                    Span::styled(
-                        if selected { "▌ " } else { "  " },
-                        style.fg(if selected { th.accent } else { bg }),
-                    ),
-                    Span::styled(
-                        format!(
-                            "{:<branch_width$}",
-                            ellipsize_text(&checkout.name, branch_width)
-                        ),
-                        style.fg(th.text).add_modifier(if selected {
-                            Modifier::BOLD
+    let rows = app.checkout_rows();
+    let Some(repo) = app.current_repository() else {
+        return;
+    };
+    for (drawn, sel) in table_row_indices(app)
+        .iter()
+        .copied()
+        .enumerate()
+        .take((body.height.saturating_sub(1) / CHECKOUT_ROW) as usize)
+    {
+        let selected = app.sel_checkout == sel;
+        let (branch_label, state, state_color, pane_summary, path) = match rows.get(sel).copied() {
+            Some(CheckoutRow::Checkout(i)) => {
+                let checkout = &repo.checkouts[i];
+                let git = checkout.git.as_ref();
+                let state = git
+                    .map(|g| {
+                        if g.dirty {
+                            format!("!{} modified", g.changed_files)
+                        } else if g.ahead > 0 {
+                            format!("↑{} clean", g.ahead)
+                        } else if g.behind > 0 {
+                            format!("↓{} behind", g.behind)
                         } else {
-                            Modifier::empty()
-                        }),
-                    ),
-                    Span::styled(
-                        format!("  {:<state_width$}", ellipsize_text(&state, state_width)),
-                        style.fg(state_color),
-                    ),
-                    Span::styled(
-                        format!(
-                            "  {:<panes_width$}",
-                            ellipsize_text(&pane_summary, panes_width)
-                        ),
-                        style.fg(th.muted),
-                    ),
-                    Span::styled(
-                        format!("  {:<path_width$}", elide_head(&checkout.path, path_width)),
-                        style.fg(th.dim),
-                    ),
-                ])
-            } else {
-                Line::from(vec![
-                    Span::styled(
-                        if selected { "▌ " } else { "  " },
-                        style.fg(if selected { th.accent } else { bg }),
-                    ),
-                    Span::styled(&checkout.name, style.fg(th.text)),
-                    Span::styled(format!("  {state} · {pane_summary}"), style.fg(state_color)),
-                ])
-            };
-            let top = body.y + 1 + index as u16 * CHECKOUT_ROW;
-            let row = Rect {
-                y: top,
-                height: CHECKOUT_ROW.min(body.bottom().saturating_sub(top)),
-                ..body
-            };
-            // The highlight fills the whole row, text on its middle line,
-            // and the accent bar runs its full height.
-            f.render_widget(Block::default().style(style), row);
-            if selected {
-                for y in row.y..row.bottom() {
-                    f.render_widget(
-                        Paragraph::new(Span::styled("▌", style.fg(th.accent))),
-                        Rect::new(row.x, y, 1, 1),
-                    );
-                }
+                            "clean".into()
+                        }
+                    })
+                    .unwrap_or_else(|| "not a repository".into());
+                let state_color = if git.is_some_and(|g| g.dirty) {
+                    th.warn
+                } else {
+                    th.ok
+                };
+                let panes: Vec<_> = checkout.listed_panes().collect();
+                let agents = panes
+                    .iter()
+                    .filter(|pane| pane.kind == PaneKind::Agent)
+                    .count();
+                let pane_summary = if panes.is_empty() {
+                    "—".to_string()
+                } else if agents == 0 {
+                    format!("{} · shell", panes.len())
+                } else {
+                    format!(
+                        "{} · {} agent{}",
+                        panes.len(),
+                        agents,
+                        if agents == 1 { "" } else { "s" }
+                    )
+                };
+                (
+                    checkout.name.clone(),
+                    state,
+                    state_color,
+                    pane_summary,
+                    elide_head(&checkout.path, path_width),
+                )
             }
-            if row.height >= 2 {
+            Some(CheckoutRow::Branch(i)) => (
+                repo.branches.get(i).cloned().unwrap_or_default(),
+                "no checkout".into(),
+                th.dim,
+                "—".into(),
+                "—".into(),
+            ),
+            Some(CheckoutRow::Remote(i)) => (
+                repo.remote_branches
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_default(),
+                "on the remote only".into(),
+                th.dim,
+                "—".into(),
+                "—".into(),
+            ),
+            None => continue,
+        };
+        let bg = if selected { th.surface } else { th.bg };
+        let style = Style::default().bg(bg);
+        let branch_style = if matches!(rows.get(sel), Some(CheckoutRow::Checkout(_))) {
+            style.fg(th.text).add_modifier(if selected {
+                Modifier::BOLD
+            } else {
+                Modifier::empty()
+            })
+        } else {
+            style.fg(th.muted)
+        };
+        let line = if wide {
+            Line::from(vec![
+                Span::styled(
+                    if selected { "▌ " } else { "  " },
+                    style.fg(if selected { th.accent } else { bg }),
+                ),
+                Span::styled(
+                    format!(
+                        "{:<branch_width$}",
+                        ellipsize_text(&branch_label, branch_width)
+                    ),
+                    branch_style,
+                ),
+                Span::styled(
+                    format!("  {:<state_width$}", ellipsize_text(&state, state_width)),
+                    style.fg(state_color),
+                ),
+                Span::styled(
+                    format!(
+                        "  {:<panes_width$}",
+                        ellipsize_text(&pane_summary, panes_width)
+                    ),
+                    style.fg(th.muted),
+                ),
+                Span::styled(
+                    format!("  {:<path_width$}", path),
+                    style.fg(th.dim),
+                ),
+            ])
+        } else {
+            Line::from(vec![
+                Span::styled(
+                    if selected { "▌ " } else { "  " },
+                    style.fg(if selected { th.accent } else { bg }),
+                ),
+                Span::styled(branch_label, branch_style),
+                Span::styled(format!("  {state} · {pane_summary}"), style.fg(state_color)),
+            ])
+        };
+        let top = body.y + 1 + drawn as u16 * CHECKOUT_ROW;
+        let row = Rect {
+            y: top,
+            height: CHECKOUT_ROW.min(body.bottom().saturating_sub(top)),
+            ..body
+        };
+        // The highlight fills the whole row, text on its middle line,
+        // and the accent bar runs its full height.
+        f.render_widget(Block::default().style(style), row);
+        if selected {
+            for y in row.y..row.bottom() {
                 f.render_widget(
-                    Paragraph::new(line).style(style),
-                    Rect {
-                        y: row.y + 1,
-                        height: 1,
-                        ..row
-                    },
+                    Paragraph::new(Span::styled("▌", style.fg(th.accent))),
+                    Rect::new(row.x, y, 1, 1),
                 );
             }
+        }
+        if row.height >= 2 {
+            f.render_widget(
+                Paragraph::new(line).style(style),
+                Rect {
+                    y: row.y + 1,
+                    height: 1,
+                    ..row
+                },
+            );
         }
     }
 }
