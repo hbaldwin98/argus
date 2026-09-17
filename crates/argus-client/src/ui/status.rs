@@ -344,7 +344,13 @@ fn draw_bar<S: AsRef<str>>(
     let beside = hints.iter().find(|h| left_len + len(h) + 3 <= width);
     let alone = || hints.iter().find(|h| len(h) + 2 <= width);
 
-    let mut spans = vec![Span::raw(" ")];
+    let (pad, tone) = if app.command_center {
+        (2, th.dim)
+    } else {
+        (1, tone)
+    };
+    let width = width.saturating_sub(pad - 1);
+    let mut spans = vec![Span::raw(" ".repeat(pad))];
     match (beside, alert) {
         (Some(hint), _) => {
             spans.extend(left);
@@ -417,6 +423,20 @@ fn fleet(app: &App, th: Theme) -> Vec<Span<'static>> {
         }
         // The same glyph the rows use, so the count and the column it is
         // counting are read as the same thing.
+        if app.command_center {
+            // The shell's palette: one color per state, glyph and count alike.
+            let color = status_color(status, th);
+            let glyph = match status {
+                PaneStatus::Working => crate::motion::spinner(app.frame_now(), app.epoch()),
+                PaneStatus::Done => "✓",
+                _ => "▲",
+            };
+            spans.push(Span::styled(
+                format!("{glyph} {n} {}", tally_word(status)),
+                Style::default().fg(color),
+            ));
+            continue;
+        }
         spans.push(status_dot(Some(status), th, spin));
         spans.push(Span::styled(
             format!("{n} {}", tally_word(status)),

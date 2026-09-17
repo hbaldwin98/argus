@@ -224,7 +224,6 @@ fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         width: area.width.saturating_sub(1),
         ..area
     };
-    let summary_height = 7.min(inner.height);
     let agents = app
         .current_project()
         .map(|p| {
@@ -249,36 +248,48 @@ fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         .unwrap_or(0);
     let project = app.current_project();
     let repo_count = project.map(|p| p.repositories.len()).unwrap_or(0);
+    let workspace = if app.open_workspace.is_empty() {
+        "default"
+    } else {
+        app.open_workspace.as_str()
+    };
+    let mut badges = vec![
+        Span::styled(format!(" {repo_count} repos "), badge(th.muted, th)),
+        Span::raw(" "),
+        Span::styled(format!(" {agents} agents "), badge(th.ok, th)),
+    ];
     let mut summary = vec![
         Line::styled("ACTIVE WORKSPACE", Style::default().fg(th.dim)),
         Line::from(vec![
             Span::styled("▌ ", Style::default().fg(th.accent)),
             Span::styled(
-                if app.open_workspace.is_empty() {
-                    "default"
-                } else {
-                    &app.open_workspace
-                },
+                project
+                    .map(|p| p.name.as_str())
+                    .unwrap_or("no project")
+                    .to_string(),
                 Style::default().fg(th.text).add_modifier(Modifier::BOLD),
             ),
         ]),
         Line::styled(
-            project.map(|p| p.name.as_str()).unwrap_or("no project"),
-            Style::default().fg(th.muted),
+            format!("  {workspace} workspace"),
+            Style::default().fg(th.dim),
         ),
         Line::raw(""),
-        Line::from(vec![
-            Span::styled(format!(" {repo_count} repos "), badge(th.muted, th)),
-            Span::raw(" "),
-            Span::styled(format!(" {agents} agents "), badge(th.ok, th)),
-        ]),
     ];
-    if needs > 0 {
-        summary.push(Line::styled(
-            format!(" {needs} needs you"),
-            Style::default().fg(th.warn),
-        ));
+    let needs_badge = Span::styled(format!(" {needs} needs you "), badge(th.warn, th));
+    let fits = badges.iter().map(Span::width).sum::<usize>() + 1 + needs_badge.width()
+        <= inner.width.saturating_sub(3) as usize;
+    if needs > 0 && fits {
+        badges.push(Span::raw(" "));
+        badges.push(needs_badge);
+        summary.push(Line::from(badges));
+    } else {
+        summary.push(Line::from(badges));
+        if needs > 0 {
+            summary.push(Line::from(needs_badge));
+        }
     }
+    let summary_height = (summary.len() as u16 + 2).min(inner.height);
     f.render_widget(
         Paragraph::new(summary).block(Block::default().padding(Padding::new(2, 1, 1, 0))),
         Rect {
@@ -386,14 +397,28 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                         .map(|p| &p.status),
                 );
                 let bg = if selected { th.surface } else { th.bg };
-                let name_width = rows_area.width.saturating_sub(11) as usize;
+                let checkouts = plural(repo.checkouts.len(), "checkout");
+                let width = rows_area.width as usize;
+                let name_len = repo.name.chars().count();
+                // The template's full meta when the name still fits beside
+                // it, and the more telling half when it does not.
+                let meta = [
+                    if panes > 0 {
+                        format!("{checkouts} · {}", plural(panes, "pane"))
+                    } else {
+                        checkouts.clone()
+                    },
+                    if panes > 0 {
+                        plural(panes, "pane")
+                    } else {
+                        checkouts
+                    },
+                ]
+                .into_iter()
+                .find(|meta| name_len + meta.chars().count() + 7 <= width)
+                .unwrap_or_default();
+                let name_width = width.saturating_sub(meta.chars().count() + 5);
                 Line::from(vec![
-                    Span::styled(
-                        if selected { "▌" } else { " " },
-                        Style::default()
-                            .fg(if selected { th.accent } else { bg })
-                            .bg(bg),
-                    ),
                     Span::styled(
                         match loudest {
                             Some(status) => format!(" {} ", status_glyph(app, status, "●")),
@@ -406,7 +431,13 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                     Span::styled(
                         format!("{:<name_width$}", ellipsize_text(&repo.name, name_width)),
                         Style::default()
-                            .fg(if selected { th.text } else { th.muted })
+                            .fg(if selected {
+                                th.text
+                            } else if loudest.is_some() {
+                                th.muted
+                            } else {
+                                th.dim
+                            })
                             .bg(bg)
                             .add_modifier(if selected {
                                 Modifier::BOLD
@@ -414,14 +445,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                                 Modifier::empty()
                             }),
                     ),
-                    Span::styled(
-                        if panes == 0 {
-                            String::new()
-                        } else {
-                            format!("{panes}p  ")
-                        },
-                        Style::default().fg(th.dim).bg(bg),
-                    ),
+                    Span::styled(format!(" {meta} "), Style::default().fg(th.dim).bg(bg)),
                 ])
             }
             RailTarget::Checkout(repository, checkout) => {
@@ -440,7 +464,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                     })
                     .unwrap_or_default();
                 Line::from(vec![
-                    Span::styled("     └ ", Style::default().fg(th.edge)),
+                    Span::styled("   └ ", Style::default().fg(th.edge)),
                     Span::styled(
                         ellipsize_text(branch, 12),
                         Style::default().fg(th.syntax.function),
@@ -466,7 +490,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                 let color = status_color(pane.status, th);
                 Line::from(vec![
                     Span::styled(
-                        if selected { "▌      " } else { "       " },
+                        if selected { "▌    " } else { "     " },
                         Style::default()
                             .fg(if selected { th.accent } else { th.edge })
                             .bg(bg),
@@ -490,7 +514,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                     Span::styled(
                         {
                             let width = (rows_area.width as usize)
-                                .saturating_sub(12 + short_status(pane.status).len());
+                                .saturating_sub(10 + short_status(pane.status).len());
                             format!("{:<width$}", ellipsize_text(&pane.title, width))
                         },
                         Style::default()
@@ -1483,7 +1507,7 @@ fn loudest_status<'a>(statuses: impl Iterator<Item = &'a PaneStatus>) -> Option<
     })
 }
 
-fn status_color(status: PaneStatus, th: Theme) -> Color {
+pub(super) fn status_color(status: PaneStatus, th: Theme) -> Color {
     match status {
         PaneStatus::Waiting | PaneStatus::NeedsReview | PaneStatus::Failed => th.warn,
         PaneStatus::Working => th.ok,
