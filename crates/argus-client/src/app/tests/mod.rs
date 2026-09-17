@@ -195,8 +195,7 @@ pub(super) fn open_editor_from_review(h: &mut Harness) {
 /// column expanded to show them, and the selection parked on the first.
 pub(super) fn harness_on_a_branch_row() -> Harness {
     let mut h = Harness::new();
-    h.app.tree[0].repositories[0].branches =
-        vec!["hotfix/tls".to_string(), "spike".to_string()];
+    h.app.tree[0].repositories[0].branches = vec!["hotfix/tls".to_string(), "spike".to_string()];
     h.keys("ll"); // into the checkouts column
     h.key(KeyCode::Char('B')); // and show the branches at all
     h.keys("jj"); // past both checkouts, onto the first branch
@@ -249,7 +248,9 @@ pub(super) fn settings_row(h: &mut Harness, want: crate::app::Setting) {
 /// A tree whose first checkout has a shell, an agent, and an editor.
 pub(super) fn tree_with_editor() -> Vec<ProjectInfo> {
     let mut t = tree();
-    t[0].repositories[0].checkouts[0].panes.push(editor(700, "a.rs"));
+    t[0].repositories[0].checkouts[0]
+        .panes
+        .push(editor(700, "a.rs"));
     t
 }
 
@@ -282,6 +283,7 @@ pub(super) fn laid_out(h: &mut Harness) {
         panes: panel(36, 12),
         content: panel(48, 20),
         features: Panel::default(),
+        feature_brief: Default::default(),
         feature_tasks: Default::default(),
         feature_decisions: Default::default(),
         overlay: Panel::default(),
@@ -477,7 +479,13 @@ pub(super) fn live_pane(h: &mut Harness) -> PaneId {
 /// Answer an outstanding Scrollback request the way the daemon would,
 /// with rows whose first cell carries `mark` so a test can tell which
 /// depth it is looking at.
-pub(super) fn answer_scrollback(h: &mut Harness, pane: PaneId, offset: u32, depth: u32, mark: char) {
+pub(super) fn answer_scrollback(
+    h: &mut Harness,
+    pane: PaneId,
+    offset: u32,
+    depth: u32,
+    mark: char,
+) {
     let mut row = vec![Cell::default(); 4];
     row[0].ch = mark.to_string().into();
     h.app.on_server_msg(ServerMsg::ScrollbackRows {

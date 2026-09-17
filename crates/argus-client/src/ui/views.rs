@@ -236,50 +236,68 @@ fn render_feature_column(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
 /// why it has the shape it does.
 ///
 /// That order because it is the order they are read, and the order
-/// `argus-hook feature` prints them in. The brief takes only what it needs
-/// and never more than a third — the rest of it is one `e` away, in the
-/// editor — because a long brief must not crowd out the work it
-/// introduces.
+/// `argus-hook feature` prints them in. The brief initially takes only what
+/// it needs and never more than a third — the rest of it is one `e` away in
+/// the editor — but the gutters let a reader give any card more room when
+/// the data warrants it.
 fn render_selected_feature(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let brief = brief_of(app);
-    let brief_rows = brief
+    let brief_candidate = brief
         .as_deref()
         .map(|brief| brief_height(brief, area))
         .unwrap_or(0);
-    if let (Some(brief), true) = (brief.as_deref(), brief_rows > 0) {
-        render_brief(
-            f,
-            app,
-            brief,
-            Rect {
-                height: brief_rows,
-                ..area
-            },
-            th,
-        );
+    // A brief is optional on the screen, but when it is shown it gets a real
+    // card and two adjustable separators. On a tiny terminal it yields to
+    // the task and decision cards rather than making all three unreadable.
+    let show_brief = brief_candidate > 0
+        && area.height
+            >= FEATURE_BRIEF_MIN_HEIGHT
+                + FEATURE_PANEL_MIN_HEIGHT.saturating_mul(2)
+                + FEATURE_GUTTER_ROWS.saturating_mul(2);
+    let [brief_rows, tasks_rows, decisions_rows] =
+        feature_panel_heights(app, area, show_brief, brief_candidate);
+
+    app.layout.feature_brief = Panel::default();
+    let mut y = area.y;
+    if show_brief {
+        if let Some(brief) = brief.as_deref() {
+            render_brief(
+                f,
+                app,
+                brief,
+                Rect {
+                    y,
+                    height: brief_rows,
+                    ..area
+                },
+                th,
+            );
+        }
+        y = y.saturating_add(brief_rows);
+        render_feature_gutter(f, area, y, th);
+        y = y.saturating_add(FEATURE_GUTTER_ROWS);
     }
-    let rest = Rect {
-        y: area.y + brief_rows,
-        height: area.height.saturating_sub(brief_rows),
-        ..area
-    };
-    let tasks_rows = tasks_height(app.feature_tasks().len(), rest.height);
+
     render_tasks(
         f,
         app,
         Rect {
+            y,
             height: tasks_rows,
-            ..rest
+            ..area
         },
         th,
     );
+    y = y.saturating_add(tasks_rows);
+    render_feature_gutter(f, area, y, th);
+    y = y.saturating_add(FEATURE_GUTTER_ROWS);
     render_decisions(
         f,
         app,
         Rect {
-            y: rest.y + tasks_rows,
-            height: rest.height.saturating_sub(tasks_rows),
-            ..rest
+            y,
+            height: decisions_rows,
+            ..area
         },
         th,
     );
@@ -292,24 +310,86 @@ fn render_selected_feature(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
 /// and one with none must still say so rather than being a border.
 fn tasks_height(tasks: usize, available: u16) -> u16 {
     const CHROME: u16 = 3;
-    const FLOOR: u16 = 5;
-    if available < FLOOR * 2 {
+    let wanted = tasks as u16 * ROW_HEIGHT + CHROME;
+    split_feature_panel(wanted, available)
+}
+
+/// A manually chosen split still keeps both cards useful. On a terminal too
+/// short for both floors, sharing what remains is less surprising than
+/// allowing one card to disappear altogether.
+fn split_feature_panel(wanted: u16, available: u16) -> u16 {
+    let floor = FEATURE_PANEL_MIN_HEIGHT;
+    if available < floor.saturating_mul(2) {
         return available / 2;
     }
-    let wanted = tasks as u16 * ROW_HEIGHT + CHROME;
-    wanted.clamp(FLOOR, available.saturating_sub(FLOOR))
+    wanted.clamp(floor, available.saturating_sub(floor))
+}
+
+/// The feature view's initial and remembered vertical split. Heights are
+/// outer card heights; gutter rows are taken out before the cards are sized.
+/// The decision card receives the remainder, so a terminal resize can give it
+/// new room without moving a user's chosen brief or task boundary.
+fn feature_panel_heights(
+    app: &App,
+    area: Rect,
+    show_brief: bool,
+    brief_candidate: u16,
+) -> [u16; 3] {
+    let gutters = if show_brief { 2 } else { 1 };
+    let available = area
+        .height
+        .saturating_sub(FEATURE_GUTTER_ROWS.saturating_mul(gutters));
+    let preferred = app
+        .feature_panel_heights
+        .as_deref()
+        .filter(|heights| heights.len() == 3);
+    let brief_rows = if show_brief {
+        let max = available.saturating_sub(FEATURE_PANEL_MIN_HEIGHT.saturating_mul(2));
+        let wanted = preferred
+            .and_then(|heights| heights.first().copied())
+            .filter(|height| *height > 0)
+            .unwrap_or(brief_candidate);
+        wanted.clamp(FEATURE_BRIEF_MIN_HEIGHT, max)
+    } else {
+        0
+    };
+    let rest = available.saturating_sub(brief_rows);
+    let wanted_tasks = preferred
+        .and_then(|heights| heights.get(1).copied())
+        .filter(|height| *height > 0)
+        .unwrap_or_else(|| tasks_height(app.feature_tasks().len(), rest));
+    let tasks_rows = split_feature_panel(wanted_tasks, rest);
+    [brief_rows, tasks_rows, rest.saturating_sub(tasks_rows)]
+}
+
+/// The one-row separator is deliberately empty like the spine's column
+/// gutters. Its background is still painted explicitly, so it remains a
+/// stable mouse target rather than inheriting the card beside it.
+fn render_feature_gutter(f: &mut Frame, area: Rect, y: u16, th: Theme) {
+    let height = FEATURE_GUTTER_ROWS.min(area.y.saturating_add(area.height).saturating_sub(y));
+    if area.width > 0 && height > 0 {
+        f.render_widget(
+            Block::default().style(Style::default().bg(th.bg)),
+            Rect { y, height, ..area },
+        );
+    }
 }
 
 /// What the feature is for. Never focused — it is prose rather than a
 /// list, and `e` from the feature column opens it in the note editor,
 /// which is where prose is corrected.
-fn render_brief(f: &mut Frame, app: &App, brief: &str, area: Rect, th: Theme) {
+fn render_brief(f: &mut Frame, app: &mut App, brief: &str, area: Rect, th: Theme) {
     let title = match app.current_feature_row() {
         Some(row) => format!("brief · {}", row.title),
         None => "brief".to_string(),
     };
     let block = panel_block(&title, false, th, area.width);
     let inner = block.inner(area);
+    app.layout.feature_brief = Panel {
+        outer: area,
+        inner,
+        first: 0,
+    };
     f.render_widget(block, area);
     // Marked up, but quieter than the work it introduces: the brief is
     // read once for context and then skimmed past, so its headings earn

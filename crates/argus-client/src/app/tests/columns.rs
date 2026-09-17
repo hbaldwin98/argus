@@ -21,16 +21,16 @@ fn p_cycles_through_the_fold_levels() {
 
     h.key(KeyCode::Char('p'));
     assert_eq!(h.app.fold, Fold::Repositories, "p folds repositories too");
-    assert_eq!(h.app.focus, Focus::Checkouts, "focus leaves that tab as well");
+    assert_eq!(
+        h.app.focus,
+        Focus::Checkouts,
+        "focus leaves that tab as well"
+    );
     assert_eq!(h.app.settings.folded_columns, 2);
 
     h.key(KeyCode::Char('p'));
     assert_eq!(h.app.fold, Fold::None, "and wraps back to none");
-    assert_eq!(
-        h.app.focus,
-        Focus::Checkouts,
-        "focus stays put on expand"
-    );
+    assert_eq!(h.app.focus, Focus::Checkouts, "focus stays put on expand");
     assert!(
         h.app.status.contains("expanded"),
         "reports expand: {}",
@@ -115,6 +115,7 @@ fn the_gutter_next_to_a_fold_tab_is_not_draggable() {
         panes: panel(28, 12),
         content: panel(41, 20),
         features: Panel::default(),
+        feature_brief: Default::default(),
         feature_tasks: Default::default(),
         feature_decisions: Default::default(),
         overlay: Panel::default(),

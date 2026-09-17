@@ -1147,6 +1147,112 @@ fn the_decision_view_reads_the_brief_above_the_reasoning() {
 }
 
 #[test]
+fn feature_gutters_resize_the_brief_tasks_and_decisions_panels() {
+    let (mut app, _rx) = feature_view_watching(vec![briefed(
+        "notes",
+        "Notes storage",
+        "The key has to outlive the ids.",
+    )]);
+    app.on_server_msg(argus_protocol::ServerMsg::Tasks(Box::new(
+        argus_protocol::TaskList {
+            project_name: "argus".into(),
+            feature: Some("notes".into()),
+            tasks: vec![
+                task(1, "write the parser", argus_protocol::TaskState::Todo),
+                task(2, "test the parser", argus_protocol::TaskState::Todo),
+            ],
+        },
+    )));
+
+    let _ = draw_at(&mut app, 100, 30);
+    let brief = app.layout.feature_brief.outer;
+    let tasks = app.layout.feature_tasks.outer;
+    let decisions = app.layout.feature_decisions.outer;
+    assert_eq!(
+        tasks.y,
+        brief.y + brief.height + crate::ui::FEATURE_GUTTER_ROWS,
+        "the brief/task gutter is a real row"
+    );
+    assert_eq!(
+        decisions.y,
+        tasks.y + tasks.height + crate::ui::FEATURE_GUTTER_ROWS,
+        "the task/decision gutter is a real row"
+    );
+
+    let original_brief = brief.height;
+    let original_tasks = tasks.height;
+    click(&mut app, tasks.x + 1, brief.y + brief.height);
+    app.on_mouse(crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left),
+        column: tasks.x + 1,
+        row: brief.y + brief.height + 1,
+        modifiers: KeyModifiers::NONE,
+    });
+    app.on_mouse(crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
+        column: tasks.x + 1,
+        row: brief.y + brief.height + 1,
+        modifiers: KeyModifiers::NONE,
+    });
+    let _ = draw_at(&mut app, 100, 30);
+    assert_eq!(
+        app.layout.feature_brief.outer.height,
+        original_brief + 1,
+        "dragging the first gutter gives space to the brief"
+    );
+    assert_eq!(
+        app.layout.feature_tasks.outer.height,
+        original_tasks - 1,
+        "the adjacent task panel gives up exactly that space"
+    );
+
+    let tasks = app.layout.feature_tasks.outer;
+    let decisions = app.layout.feature_decisions.outer;
+    let original_tasks = tasks.height;
+    let original_decisions = decisions.height;
+    click(&mut app, tasks.x + 1, tasks.y + tasks.height);
+    app.on_mouse(crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left),
+        column: tasks.x + 1,
+        row: tasks.y + tasks.height + 1,
+        modifiers: KeyModifiers::NONE,
+    });
+    app.on_mouse(crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
+        column: tasks.x + 1,
+        row: tasks.y + tasks.height + 1,
+        modifiers: KeyModifiers::NONE,
+    });
+    let _ = draw_at(&mut app, 100, 30);
+    assert_eq!(
+        app.layout.feature_tasks.outer.height,
+        original_tasks + 1,
+        "dragging the second gutter gives space to tasks"
+    );
+    assert_eq!(
+        app.layout.feature_decisions.outer.height,
+        original_decisions - 1,
+        "the decision panel gives up exactly that space"
+    );
+    assert_eq!(
+        app.settings.feature_panel_heights, app.feature_panel_heights,
+        "the chosen split is retained with the client settings"
+    );
+}
+
+#[test]
+fn a_feature_view_too_short_for_cards_still_renders_without_panicking() {
+    let (mut app, _rx) = feature_view_watching(vec![briefed(
+        "notes",
+        "Notes storage",
+        "The key has to outlive the ids.",
+    )]);
+    let _ = draw_at(&mut app, 80, 2);
+    assert!(app.layout.feature_tasks.outer.height <= 1);
+    assert!(app.layout.feature_decisions.outer.height <= 1);
+}
+
+#[test]
 fn e_opens_the_brief_in_the_editor_and_saving_replaces_it() {
     let (mut app, mut rx) = feature_view_watching(vec![argus_protocol::Feature {
         body: "The reader thread owns the handle.".into(),

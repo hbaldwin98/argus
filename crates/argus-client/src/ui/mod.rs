@@ -42,10 +42,10 @@ use ratatui::Frame;
 use crate::app::{
     App, CheckoutRow, Focus, Fold, Overlay, PaneLocation, Panel, PickerKind, Prompt, Setting, View,
 };
+use crate::brief::BriefMode;
 use crate::dirpicker::DirRow;
 use crate::grid::Grid;
 use crate::history::{HistoryRow, HistoryView};
-use crate::brief::BriefMode;
 use crate::review::{ReviewView, Row};
 use crate::theme::Theme;
 use argus_protocol::CursorShape;
@@ -77,8 +77,8 @@ use text::*;
 use views::*;
 
 pub use rows::pane_row_owners;
-pub use views::tab_at;
 pub use term::CursorPlacement;
+pub use views::tab_at;
 
 /// The text caret, drawn rather than using the terminal cursor: the
 /// cursor belongs to whichever pane is focused.
@@ -96,6 +96,19 @@ const SCROLL_THUMB: &str = "\u{2590}";
 /// Every list item is a name line plus a detail line. `app` hit-tests
 /// clicks against this, so it is shared rather than local.
 pub const ROW_HEIGHT: u16 = 2;
+
+/// Blank rows between the brief, tasks, and decisions cards in the feature
+/// view. The row is both visual breathing room and the mouse target for a
+/// vertical resize.
+pub const FEATURE_GUTTER_ROWS: u16 = 1;
+
+/// The smallest useful feature card when the right-hand panels are resized.
+/// A short terminal can still split below this floor, as the nav columns do.
+pub const FEATURE_PANEL_MIN_HEIGHT: u16 = 5;
+
+/// The brief has no row list, so one line of prose plus its chrome is enough
+/// for its minimum when a separator is dragged.
+pub const FEATURE_BRIEF_MIN_HEIGHT: u16 = 4;
 
 /// The same item on one line, name only. Two lines is what stops a wide
 /// column reading as cramped, but on a short terminal it is what makes it
@@ -338,6 +351,7 @@ pub fn render(f: &mut Frame, app: &mut App) {
 /// meant for a column.
 fn forget_feature_view(app: &mut App) {
     app.layout.features = Panel::default();
+    app.layout.feature_brief = Panel::default();
     app.layout.feature_tasks = Panel::default();
     app.layout.feature_decisions = Panel::default();
 }

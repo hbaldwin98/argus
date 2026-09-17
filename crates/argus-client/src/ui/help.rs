@@ -148,6 +148,7 @@ const FEATURE: Group = Group {
         ("H / L", "move this task along todo, doing, done"),
         ("J / K", "earlier or later among sibling tasks"),
         ("r", "re-ask the daemon for all of it"),
+        ("mouse", "drag the gutters to resize the panels"),
         ("esc  q", "back to the spine"),
     ],
 };

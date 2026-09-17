@@ -129,11 +129,12 @@ pub struct Layout {
     pub checkouts: Panel,
     pub panes: Panel,
     pub content: Panel,
-    /// The feature view's three panels: the list of features, the
-    /// selected feature's tasks, and its decision tree. All zero-sized
+    /// The feature view's four panels: the list of features, and the
+    /// selected feature's brief, tasks, and decision tree. All zero-sized
     /// while the spine is open, so a click cannot land on a panel that is
     /// not drawn.
     pub features: Panel,
+    pub feature_brief: Panel,
     pub feature_tasks: Panel,
     pub feature_decisions: Panel,
     /// The row of view tabs above everything else. Zero-sized on a

@@ -13,9 +13,8 @@
 //! back.
 
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, PaneKind, PaneStatus,
-    ProjectId, ProjectInfo, RepositoryId, RepositoryInfo, ReviewAnchor, ServerMsg, WorkspaceId,
-    WorkspaceInfo,
+    CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId,
+    ProjectInfo, RepositoryId, RepositoryInfo, ReviewAnchor, ServerMsg, WorkspaceId, WorkspaceInfo,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
@@ -31,12 +30,12 @@ use crate::review::ReviewView;
 use crate::selection::TerminalSelection;
 use crate::theme::Theme;
 
+use argus_protocol::ReviewBase;
+use layout::{in_rect, row_in};
 pub use layout::{Focus, Fold, Layout, Panel};
 pub use modal::{Help, Overlay, Picker, PickerKind, Prompt, RemoveTarget, Setting};
 pub use rows::{CheckoutAnchor, CheckoutRow, PaneLocation};
 pub use views::{FeaturePanel, View};
-use layout::{in_rect, row_in};
-use argus_protocol::ReviewBase;
 
 mod actions;
 mod input;
@@ -178,6 +177,10 @@ pub struct App {
     /// initial proportional layout; dragging a gutter captures concrete
     /// widths so the adjustment survives subsequent frames.
     pub column_widths: Option<Vec<u16>>,
+    /// Preferred outer heights for the feature view's brief, tasks, and
+    /// decisions panels. `None` lets their contents choose the initial
+    /// layout; dragging a feature gutter captures the current heights.
+    pub feature_panel_heights: Option<Vec<u16>>,
     /// True when the projects column is folded away to a left-edge tab.
     /// Stored both here (for the renderer) and on `settings` (so it persists).
     pub fold: Fold,
@@ -186,6 +189,7 @@ pub struct App {
     /// the main branch is pinned to the top of it either way.
     pub show_branches: bool,
     resizing_gutter: Option<usize>,
+    resizing_feature_gutter: Option<usize>,
     pub picker: Option<Picker>,
     /// The directory browser, up in place of a prompt when a project or a
     /// repository is being added.
@@ -324,6 +328,10 @@ impl App {
             .column_widths
             .clone()
             .filter(|widths| widths.len() == 5);
+        let feature_panel_heights = settings
+            .feature_panel_heights
+            .clone()
+            .filter(|heights| heights.len() == 3);
         let review_split = settings.review_split;
         let started = std::time::Instant::now();
         // Hoisted so the first frame is drawn already settled on it,
@@ -360,9 +368,11 @@ impl App {
             status_alert: false,
             layout: Layout::default(),
             column_widths,
+            feature_panel_heights,
             fold: settings.fold(),
             show_branches: false,
             resizing_gutter: None,
+            resizing_feature_gutter: None,
             picker: None,
             dir_picker: None,
             overlay: None,
@@ -407,7 +417,6 @@ impl App {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests;

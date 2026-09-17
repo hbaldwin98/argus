@@ -23,6 +23,7 @@ fn dragging_a_gutter_resizes_the_two_adjacent_columns() {
         panes: panel(63, 20),
         content: panel(84, 30),
         features: Panel::default(),
+        feature_brief: Default::default(),
         feature_tasks: Default::default(),
         feature_decisions: Default::default(),
         overlay: Panel::default(),
@@ -70,6 +71,19 @@ fn saved_five_column_widths_are_restored_at_startup() {
 }
 
 #[test]
+fn saved_feature_panel_heights_are_restored_at_startup() {
+    let (tx, _rx) = unbounded_channel();
+    let settings = crate::settings::Settings {
+        feature_panel_heights: Some(vec![8, 14, 18]),
+        ..crate::settings::Settings::default()
+    };
+
+    let app = App::build(tx, settings, false);
+
+    assert_eq!(app.feature_panel_heights, Some(vec![8, 14, 18]));
+}
+
+#[test]
 fn dragging_a_gutter_cannot_collapse_either_column() {
     let mut h = Harness::new();
     let panel = |x: u16, w: u16| Panel {
@@ -87,6 +101,7 @@ fn dragging_a_gutter_cannot_collapse_either_column() {
         panes: panel(63, 20),
         content: panel(84, 30),
         features: Panel::default(),
+        feature_brief: Default::default(),
         feature_tasks: Default::default(),
         feature_decisions: Default::default(),
         overlay: Panel::default(),

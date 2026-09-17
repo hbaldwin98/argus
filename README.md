@@ -403,12 +403,12 @@ The content area holds one view at a time. `1` is the spine — the navigation c
 pane — and `2` is the feature view. A one-row tab strip along the top names them and carries the
 digit that opens each; clicking a tab does the same. Switching views never stops a pane.
 
-The feature view is three panels: the selected repository's features down the left, and the
-selected one read whole on the right — its brief, the tasks left under it, and the decisions taken
-while building it. Tasks may be nested to any depth, so newly discovered work stays readable under
-what exposed it. Features belong to the repository rather than a branch, so they remain available
-after a feature worktree is removed. The active list stays focused on open work; `v` switches to
-accepted feature history without deleting it.
+The feature view is a feature list beside three cards: the selected repository's features down
+the left, and the selected one read whole on the right — its brief, the tasks left under it, and
+the decisions taken while building it. Tasks may be nested to any depth, so newly discovered work
+stays readable under what exposed it. Features belong to the repository rather than a branch, so
+they remain available after a feature worktree is removed. The active list stays focused on open
+work; `v` switches to accepted feature history without deleting it.
 Every panel is scoped to the same feature, and each feature's line says what is happening to it:
 the agents running in its checkouts, how its tasks stand, and how much has been decided.
 
@@ -434,6 +434,7 @@ inherited from whichever workspace the TUI currently shows.
 | `H` / `L` | Move the selected task along todo, doing, done |
 | `J` / `K` | Move the selected task earlier or later among its siblings |
 | `r` | Re-ask the daemon for all of it |
+| Mouse | Drag the gutters between the brief, tasks, and decisions to resize their heights |
 | Escape, `q` | Back to the spine |
 
 ### Terminal panes

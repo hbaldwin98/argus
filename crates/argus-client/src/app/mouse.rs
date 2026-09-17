@@ -16,7 +16,9 @@ impl App {
     /// milliseconds of drawing per second of moving the mouse. A drag in
     /// progress is a real change and is not idle.
     pub fn mouse_is_idle(&self, ev: &MouseEvent) -> bool {
-        matches!(ev.kind, MouseEventKind::Moved) && self.resizing_gutter.is_none()
+        matches!(ev.kind, MouseEventKind::Moved)
+            && self.resizing_gutter.is_none()
+            && self.resizing_feature_gutter.is_none()
     }
 
     pub fn on_mouse(&mut self, ev: MouseEvent) {
@@ -82,6 +84,15 @@ impl App {
             return;
         }
         if matches!(ev.kind, MouseEventKind::Up(MouseButton::Left))
+            && self.resizing_feature_gutter.take().is_some()
+        {
+            self.settings.feature_panel_heights = self.feature_panel_heights.clone();
+            if self.persist_settings {
+                crate::settings::save(&self.settings);
+            }
+            return;
+        }
+        if matches!(ev.kind, MouseEventKind::Up(MouseButton::Left))
             && self.resizing_gutter.take().is_some()
         {
             self.settings.column_widths = self.column_widths.clone();
@@ -91,12 +102,23 @@ impl App {
             return;
         }
         if let MouseEventKind::Drag(MouseButton::Left) = ev.kind {
+            if let Some(gutter) = self.resizing_feature_gutter {
+                self.resize_feature_at(gutter, ev.row);
+                return;
+            }
             if let Some(gutter) = self.resizing_gutter {
                 self.resize_columns_at(gutter, ev.column);
                 return;
             }
         }
         if let MouseEventKind::Down(MouseButton::Left) = ev.kind {
+            if self.view == View::Feature {
+                if let Some(gutter) = self.feature_gutter_at(ev.column, ev.row) {
+                    self.feature_panel_heights = Some(self.rendered_feature_panel_heights());
+                    self.resizing_feature_gutter = Some(gutter);
+                    return;
+                }
+            }
             if let Some(gutter) = self.gutter_at(ev.column, ev.row) {
                 self.column_widths = Some(self.rendered_column_widths());
                 self.resizing_gutter = Some(gutter);
@@ -245,7 +267,9 @@ impl App {
             // child at all. A shell prints and scrolls away; this is the
             // only way back to what it said.
             match ev.kind {
-                MouseEventKind::ScrollUp => self.scroll_pane(pane, super::scroll::wheel_lines(true)),
+                MouseEventKind::ScrollUp => {
+                    self.scroll_pane(pane, super::scroll::wheel_lines(true))
+                }
                 MouseEventKind::ScrollDown => {
                     self.scroll_pane(pane, super::scroll::wheel_lines(false))
                 }
@@ -320,6 +344,86 @@ impl App {
             .filter(|g| *g >= hidden)
     }
 
+    /// The feature panels share one right-hand column, so their gutters are
+    /// horizontal rather than part of the spine's column geometry.
+    fn feature_gutter_at(&self, x: u16, y: u16) -> Option<usize> {
+        let panels = [
+            self.layout.feature_brief,
+            self.layout.feature_tasks,
+            self.layout.feature_decisions,
+        ];
+        panels.windows(2).enumerate().find_map(|(index, pair)| {
+            let left = pair[0].outer;
+            let right = pair[1].outer;
+            if left.width == 0 || right.width == 0 {
+                return None;
+            }
+            let x_start = left.x.max(right.x);
+            let x_end = left
+                .x
+                .saturating_add(left.width)
+                .min(right.x.saturating_add(right.width));
+            let gutter_start = left.y.saturating_add(left.height);
+            let gutter_end = right.y;
+            (x >= x_start
+                && x < x_end
+                && y >= gutter_start
+                && y < gutter_end
+                && gutter_end.saturating_sub(gutter_start) == crate::ui::FEATURE_GUTTER_ROWS)
+                .then_some(index)
+        })
+    }
+
+    fn rendered_feature_panel_heights(&self) -> Vec<u16> {
+        vec![
+            self.layout.feature_brief.outer.height,
+            self.layout.feature_tasks.outer.height,
+            self.layout.feature_decisions.outer.height,
+        ]
+    }
+
+    /// Move one horizontal separator while keeping both cards on either side
+    /// above their floor. The gutter itself is not part of either height.
+    fn resize_feature_at(&mut self, gutter: usize, y: u16) {
+        let (left, right) = match gutter {
+            0 => (self.layout.feature_brief, self.layout.feature_tasks),
+            1 => (self.layout.feature_tasks, self.layout.feature_decisions),
+            _ => return,
+        };
+        let pair_height = left.outer.height.saturating_add(right.outer.height);
+        if pair_height < 2 {
+            return;
+        }
+        let left_floor = if gutter == 0 {
+            crate::ui::FEATURE_BRIEF_MIN_HEIGHT
+        } else {
+            crate::ui::FEATURE_PANEL_MIN_HEIGHT
+        };
+        let right_floor = crate::ui::FEATURE_PANEL_MIN_HEIGHT;
+        let (left_floor, right_floor) = if pair_height >= left_floor + right_floor {
+            (left_floor, right_floor)
+        } else {
+            let left_floor = (pair_height / 2).max(1);
+            (left_floor, pair_height.saturating_sub(left_floor).max(1))
+        };
+        let left_height = y
+            .saturating_sub(left.outer.y)
+            .clamp(left_floor, pair_height.saturating_sub(right_floor));
+        if self
+            .feature_panel_heights
+            .as_ref()
+            .is_none_or(|heights| heights.len() != 3)
+        {
+            self.feature_panel_heights = Some(self.rendered_feature_panel_heights());
+        }
+        let heights = self
+            .feature_panel_heights
+            .as_mut()
+            .expect("feature panel heights captured above");
+        heights[gutter] = left_height;
+        heights[gutter + 1] = pair_height - left_height;
+    }
+
     fn resize_columns_at(&mut self, gutter: usize, x: u16) {
         let panels = self.panels();
         let left = panels[gutter].outer;
@@ -346,9 +450,10 @@ impl App {
                 ((u32::from(n) * u32::from(pair_width)) / u32::from(room)).max(1) as u16
             }
         };
-        let left_width = x
-            .saturating_sub(left.x)
-            .clamp(scale(crate::ui::MIN_COLUMN_WIDTH), pair_width.saturating_sub(scale(right_floor)));
+        let left_width = x.saturating_sub(left.x).clamp(
+            scale(crate::ui::MIN_COLUMN_WIDTH),
+            pair_width.saturating_sub(scale(right_floor)),
+        );
         let rendered = self.rendered_column_widths();
         let widths = self.column_widths.get_or_insert(rendered);
         widths[gutter] = left_width;

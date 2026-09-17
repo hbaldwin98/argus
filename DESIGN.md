@@ -244,7 +244,7 @@ follows the pane when the pane list or terminal has focus; project and checkout 
 Configuration uses `ARGUS_CONFIG_DIR` when set and the platform config directory otherwise.
 
 - `projects.toml` declares workspaces, projects, and agent templates. Argus only reads it.
-- `client.toml` stores theme and editor settings.
+- `client.toml` stores theme, editor, and client layout settings.
 - `runtime.db` holds everything Argus writes: panes to relaunch, projects and repositories added
   from the TUI, projects and repositories removed from the panel, workspaces created at runtime,
   and the daemon-wide selected workspace.
@@ -880,12 +880,14 @@ the board is append-only and agents are what write it. Every panel draws its own
 or not it has the keys, the way the spine's columns do — the selections are how a reader traces
 where they are, and one that vanished when the keys left would make crossing back a hunt.
 
-The brief takes what its wrapped text needs and never more than a third of the right-hand side; the
-rest is one `e` away in the editor. Tasks take what they need, floored and ceilinged so that
-neither they nor the tree can squeeze the other out. Both the selected feature and the selected
-task grow to their full wrapped text, and the window they scroll in is sized after paying for that
-growth — rounding up there is what let an expanded row start on the last line and run off the
-bottom.
+The brief initially takes what its wrapped text needs and never more than a third of the
+right-hand side; the rest is one `e` away in the editor. One-row gutters separate the brief, tasks,
+and decisions cards. Dragging either gutter changes the heights of the adjacent cards, while a
+small floor keeps both sides readable; the chosen outer heights are remembered in the client
+settings. Tasks take what they need by default, floored and ceilinged so that neither they nor the
+tree can squeeze the other out. Both the selected feature and the selected task grow to their full
+wrapped text, and the window they scroll in is sized after paying for that growth — rounding up
+there is what let an expanded row start on the last line and run off the bottom.
 
 ### What a feature row says
 

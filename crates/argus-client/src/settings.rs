@@ -146,6 +146,9 @@ pub struct Settings {
     /// renderer discards lengths that do not match the current layout.
     /// Absent until the user first drags a column separator.
     pub column_widths: Option<Vec<u16>>,
+    /// Preferred outer heights for the feature view's brief, tasks, and
+    /// decisions panels. Absent until the user first drags a feature gutter.
+    pub feature_panel_heights: Option<Vec<u16>>,
     /// How many leading nav columns are folded away to left-edge tabs,
     /// ceding their width to the columns that remain. Remembered so the
     /// layout a user settled on survives a restart. Stored as a count
@@ -171,6 +174,7 @@ impl Default for Settings {
             editor_cmd: String::new(),
             theme: crate::theme::THEMES[0].to_string(),
             column_widths: None,
+            feature_panel_heights: None,
             folded_columns: 0,
             pane_view: PaneView::Checkout,
             review_split: false,
@@ -282,6 +286,7 @@ mod tests {
             editor_cmd: "code -w".to_string(),
             theme: "latte".to_string(),
             column_widths: Some(vec![12, 16, 18, 24, 46]),
+            feature_panel_heights: Some(vec![6, 12, 10]),
             folded_columns: 1,
             pane_view: PaneView::Flat,
             review_split: true,
@@ -298,6 +303,7 @@ mod tests {
         assert_eq!(s.theme, "frappe");
         assert_eq!(s.editor, Settings::default().editor);
         assert_eq!(s.column_widths, None);
+        assert_eq!(s.feature_panel_heights, None);
         assert!(!s.review_split);
         assert_eq!(s.notifications, NotificationMode::Off);
         assert_eq!(s.pane_view, PaneView::Checkout);
