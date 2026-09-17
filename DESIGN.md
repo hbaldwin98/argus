@@ -904,7 +904,7 @@ right-hand side; the rest is one `e` away in the editor. One-row gutters separat
 and decisions cards. Dragging either gutter changes the heights of the adjacent cards, while a
 small floor keeps both sides readable; the chosen outer heights are remembered in the client
 settings. Tasks take what they need by default, floored and ceilinged so that neither they nor the
-tree can squeeze the other out. Both the selected feature and the selected task grow to their full
+tree can squeeze the other out. The selected feature, task, and decision grow to their full
 wrapped text, and the window they scroll in is sized after paying for that growth — rounding up
 there is what let an expanded row start on the last line and run off the bottom.
 

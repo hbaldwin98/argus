@@ -243,13 +243,17 @@ impl App {
                         .into_iter()
                         .find(|(panel, _)| in_rect(panel.outer, ev.column, ev.row));
                     let Some((panel, which)) = hit else { return };
-                    // The command center draws features and tasks on one
-                    // line each; only decisions keep their reason line.
-                    let height = match (self.command_center, which) {
-                        (true, FeaturePanel::Features | FeaturePanel::Tasks) => 1,
-                        _ => crate::ui::ROW_HEIGHT,
+                    let row = if self.command_center {
+                        crate::ui::command_center_feature_row_at(
+                            self,
+                            which,
+                            ev.column,
+                            ev.row,
+                        )
+                    } else {
+                        let height = crate::ui::ROW_HEIGHT;
+                        row_in(panel.inner, height, ev.column, ev.row)
                     };
-                    let row = row_in(panel.inner, height, ev.column, ev.row);
                     // A click in a panel's empty space still moves the
                     // keys there: the gesture said which panel to be in
                     // even when it landed past the last row.

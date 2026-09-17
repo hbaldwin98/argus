@@ -925,6 +925,361 @@ fn section_thumb(f: &mut Frame, area: Rect, first: usize, visible: usize, len: u
     );
 }
 
+/// The rows in a command-center feature panel are compact until its cursor
+/// enters the panel. The selected row then owns as many lines as its title
+/// and prose need, while every other row remains one-line scan material.
+fn feature_row_start(
+    previous: usize,
+    selected: Option<usize>,
+    heights: &[u16],
+    available: u16,
+) -> usize {
+    if heights.is_empty() || available == 0 {
+        return 0;
+    }
+    let mut first = previous.min(heights.len() - 1);
+    let Some(selected) = selected else {
+        return first;
+    };
+    if selected < first {
+        first = selected;
+    }
+    while first < selected
+        && heights[first..=selected]
+            .iter()
+            .map(|height| usize::from(*height))
+            .sum::<usize>()
+            > usize::from(available)
+    {
+        first += 1;
+    }
+    first
+}
+
+fn wrapped_text_lines(text: &str, width: u16) -> Vec<String> {
+    if text.is_empty() {
+        return vec![String::new()];
+    }
+    text.split('\n')
+        .flat_map(|line| wrap(line, width))
+        .collect()
+}
+
+/// Places wrapped text after a prefix and hangs continuations under its
+/// readable text rather than under status or tree markers.
+fn hanging_text(
+    prefix: Vec<Span<'static>>,
+    hang: usize,
+    text: &str,
+    style: Style,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let used = prefix.iter().map(Span::width).sum::<usize>();
+    let room = usize::from(width).saturating_sub(used.max(hang)).max(1) as u16;
+    let mut wrapped = wrapped_text_lines(text, room).into_iter();
+    let first = wrapped.next().unwrap_or_default();
+    let mut lines = vec![Line::from(
+        prefix
+            .into_iter()
+            .chain(std::iter::once(Span::styled(first, style)))
+            .collect::<Vec<_>>(),
+    )];
+    for line in wrapped {
+        lines.push(Line::from(vec![
+            Span::raw(" ".repeat(hang)),
+            Span::styled(line, style),
+        ]));
+    }
+    lines
+}
+
+fn task_guide(row: &argus_protocol::TaskTreeRow<'_>) -> String {
+    let mut guide = String::new();
+    if row.depth > 0 {
+        for continues in row
+            .ancestor_continuations
+            .iter()
+            .take(row.depth.saturating_sub(1))
+        {
+            guide.push_str(if *continues { "│ " } else { "  " });
+        }
+        guide.push_str(if row.has_next_sibling { "├ " } else { "└ " });
+    }
+    guide
+}
+
+fn task_children(rows: &[argus_protocol::TaskTreeRow<'_>], index: usize) -> usize {
+    let row = &rows[index];
+    rows[index + 1..]
+        .iter()
+        .take_while(|child| child.depth > row.depth)
+        .filter(|child| child.depth == row.depth + 1)
+        .count()
+}
+
+fn task_metadata(task: &argus_protocol::Task, children: usize) -> String {
+    let mut parts = vec![format!("#{}", task.id)];
+    if children > 0 {
+        parts.push(plural(children, "subtask"));
+    }
+    if let Some(key) = &task.external {
+        parts.push(key.clone());
+    }
+    if let Some(session) = &task.claimed_by {
+        parts.push(session.clone());
+    }
+    parts.join(" · ")
+}
+
+fn task_lines(
+    row: &argus_protocol::TaskTreeRow<'_>,
+    children: usize,
+    selected: bool,
+    expanded: bool,
+    width: u16,
+    th: Theme,
+) -> Vec<Line<'static>> {
+    let task = row.task;
+    let guide = task_guide(row);
+    let (mark, mark_color) = match task.state {
+        TaskState::Todo => ("○", th.dim),
+        TaskState::Doing => ("●", th.accent),
+        TaskState::Done => ("✓", th.ok),
+    };
+    let bg = if expanded { th.surface } else { th.bg };
+    let base = Style::default().bg(bg);
+    let title_style = base.fg(if task.state == TaskState::Done {
+        th.dim
+    } else if selected {
+        th.text
+    } else {
+        th.muted
+    });
+    let marker = if selected { "▌ " } else { "  " };
+    let prefix = format!("{marker}{guide}{mark} ");
+    if !expanded {
+        let badge = if children > 0 {
+            format!(" {} ", plural(children, "subtask"))
+        } else {
+            String::new()
+        };
+        let fixed = prefix.chars().count() + badge.chars().count() + 2 + 6;
+        let title_width = usize::from(width).saturating_sub(fixed);
+        return vec![Line::from(vec![
+            Span::styled(prefix, base.fg(if selected { th.accent } else { th.edge })),
+            Span::styled(
+                format!("{:<title_width$}", ellipsize_text(&task.title, title_width)),
+                title_style,
+            ),
+            Span::styled(badge, base.fg(th.muted)),
+            Span::styled(format!("  #{:>5}", task.id), base.fg(th.dim)),
+        ])];
+    }
+
+    let title_prefix = vec![
+        Span::styled(marker, base.fg(th.accent)),
+        Span::styled(guide, base.fg(th.edge)),
+        Span::styled(mark, base.fg(mark_color)),
+        Span::raw(" "),
+    ];
+    let title_hang = title_prefix.iter().map(Span::width).sum::<usize>();
+    let mut lines = hanging_text(
+        title_prefix,
+        title_hang,
+        &task.title,
+        title_style.add_modifier(Modifier::BOLD),
+        width,
+    );
+    let detail_prefix = " ".repeat(title_hang);
+    lines.extend(hanging_text(
+        vec![Span::styled(detail_prefix.clone(), base.fg(th.dim))],
+        title_hang,
+        &task_metadata(task, children),
+        base.fg(th.dim),
+        width,
+    ));
+    if let Some(body) = task.body.as_deref().filter(|body| !body.trim().is_empty()) {
+        lines.extend(hanging_text(
+            vec![Span::styled(detail_prefix, base.fg(th.muted))],
+            title_hang,
+            body,
+            base.fg(th.muted),
+            width,
+        ));
+    }
+    lines
+}
+
+fn task_row_heights(
+    rows: &[argus_protocol::TaskTreeRow<'_>],
+    selected: usize,
+    focused: bool,
+    width: u16,
+    th: Theme,
+) -> Vec<u16> {
+    rows.iter()
+        .enumerate()
+        .map(|(index, row)| {
+            task_lines(
+                row,
+                task_children(rows, index),
+                index == selected,
+                focused && index == selected,
+                width,
+                th,
+            )
+            .len() as u16
+        })
+        .collect()
+}
+
+fn decision_detail(decision: &argus_protocol::Decision) -> String {
+    let mut parts = Vec::new();
+    if let Some(over) = &decision.over {
+        parts.push(format!("over {over}"));
+    }
+    if let Some(because) = &decision.because {
+        parts.push(format!("because {because}"));
+    }
+    if parts.is_empty() {
+        "no alternative or reason recorded".into()
+    } else {
+        parts.join(" · ")
+    }
+}
+
+fn decision_lines(
+    row: &argus_protocol::DecisionTreeRow<'_>,
+    selected: bool,
+    expanded: bool,
+    width: u16,
+    th: Theme,
+) -> Vec<Line<'static>> {
+    let decision = row.decision;
+    let bg = if expanded { th.surface } else { th.bg };
+    let base = Style::default().bg(bg);
+    let name_style = base.fg(if decision.superseded() {
+        th.dim
+    } else if selected {
+        th.text
+    } else {
+        th.muted
+    });
+    let bar = if selected { "▌ " } else { "│ " };
+    let detail = decision_detail(decision);
+    if !expanded {
+        let text_width = usize::from(width).saturating_sub(bar.chars().count());
+        return vec![Line::from(vec![
+            Span::styled(bar, base.fg(if selected { th.accent } else { th.edge })),
+            Span::styled(
+                ellipsize_text(
+                    &format!("#{} {}", decision.id, decision.chose),
+                    text_width,
+                ),
+                name_style,
+            ),
+        ])];
+    }
+
+    let title_prefix = vec![
+        Span::styled(bar, base.fg(th.accent)),
+        Span::styled(format!("#{} ", decision.id), base.fg(th.dim)),
+    ];
+    let title_hang = title_prefix.iter().map(Span::width).sum::<usize>();
+    let mut choice = decision.chose.clone();
+    if let Some(by) = decision.superseded_by {
+        choice.push_str(&format!("  superseded by #{by}"));
+    }
+    let mut lines = hanging_text(
+        title_prefix,
+        title_hang,
+        &choice,
+        name_style.add_modifier(Modifier::BOLD),
+        width,
+    );
+    lines.extend(hanging_text(
+        vec![Span::styled(" ".repeat(title_hang), base.fg(th.dim))],
+        title_hang,
+        &detail,
+        base.fg(th.dim),
+        width,
+    ));
+    lines
+}
+
+fn decision_row_heights(
+    rows: &[argus_protocol::DecisionTreeRow<'_>],
+    selected: usize,
+    focused: bool,
+    width: u16,
+    th: Theme,
+) -> Vec<u16> {
+    rows.iter()
+        .enumerate()
+        .map(|(index, row)| {
+            decision_lines(
+                row,
+                index == selected,
+                focused && index == selected,
+                width,
+                th,
+            )
+            .len() as u16
+        })
+        .collect()
+}
+
+/// Returns the feature row under the pointer using the same variable heights
+/// the command-center renderer used for the preceding frame.
+pub(crate) fn feature_row_at(
+    app: &App,
+    which: FeaturePanel,
+    x: u16,
+    y: u16,
+) -> Option<usize> {
+    let panel = match which {
+        FeaturePanel::Features => app.layout.features,
+        FeaturePanel::Tasks => app.layout.feature_tasks,
+        FeaturePanel::Decisions => app.layout.feature_decisions,
+    };
+    if !contains(panel.inner, x, y) {
+        return None;
+    }
+    let heights = match which {
+        FeaturePanel::Features => vec![1; app.feature_rows().len()],
+        FeaturePanel::Tasks => {
+            let rows = app.feature_task_rows();
+            task_row_heights(
+                &rows,
+                app.task_sel,
+                app.panel == FeaturePanel::Tasks,
+                panel.inner.width,
+                app.theme.drawn(),
+            )
+        }
+        FeaturePanel::Decisions => {
+            let rows = app.board_rows();
+            decision_row_heights(
+                &rows,
+                app.decision_sel,
+                app.panel == FeaturePanel::Decisions,
+                panel.inner.width,
+                app.theme.drawn(),
+            )
+        }
+    };
+    let offset = usize::from(y.saturating_sub(panel.inner.y));
+    let mut top = 0usize;
+    for (index, height) in heights.iter().enumerate().skip(panel.first) {
+        let bottom = top + usize::from(*height);
+        if offset < bottom {
+            return Some(index);
+        }
+        top = bottom;
+    }
+    None
+}
+
 fn render_feature_document(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     forget_feature_view(app);
     let features = app.feature_rows();
@@ -1129,16 +1484,46 @@ fn render_feature_document(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
     };
 
     // Tasks and decisions share what is left; each scrolls to its cursor.
+    // Unfocused rows cost one line. The row under the keys pays for all of
+    // its wrapped title and prose, which keeps the rest of the document
+    // scannable without hiding the text being read.
     let tasks_y = brief_area.bottom() + 1;
     if tasks_y + 1 >= bottom {
         return;
     }
     let rows = app.feature_task_rows();
+    let decisions = app.board_rows();
+    let focused_tasks = app.panel == FeaturePanel::Tasks;
+    let focused_decisions = app.panel == FeaturePanel::Decisions;
+    let task_heights = task_row_heights(
+        &rows,
+        app.task_sel,
+        focused_tasks,
+        body.width,
+        th,
+    );
+    let decision_heights = decision_row_heights(
+        &decisions,
+        app.decision_sel,
+        focused_decisions,
+        body.width,
+        th,
+    );
     let rest = bottom.saturating_sub(tasks_y);
-    let wants_tasks = rows.len().max(1) as u16 + 1;
-    // The gap row, the heading, and at least one two-line decision.
-    let wants_decisions = decided.max(1) as u16 * 2 + 2;
-    let task_block = if wants_tasks + wants_decisions <= rest {
+    let wants_tasks = task_heights.iter().sum::<u16>().max(1) + 1;
+    // The gap row, the heading, and at least one decision summary.
+    let wants_decisions = decision_heights.iter().sum::<u16>().max(1) + 2;
+    let task_block = if focused_tasks {
+        // Keep the decision section to its smallest useful shape so the row
+        // being read can receive all the height its wrapped prose asks for.
+        wants_tasks.min(rest.saturating_sub(3)).max(rest.min(2))
+    } else if focused_decisions {
+        // The same priority in reverse: one compact task row is enough while
+        // the selected decision gets the remaining document height.
+        wants_tasks
+            .min(rest.saturating_sub(wants_decisions.min(rest.saturating_sub(2))))
+            .max(rest.min(2))
+    } else if wants_tasks + wants_decisions <= rest {
         wants_tasks
     } else {
         wants_tasks
@@ -1157,12 +1542,11 @@ fn render_feature_document(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
         height: task_block.saturating_sub(1),
         ..body
     };
-    let focused_tasks = app.panel == FeaturePanel::Tasks;
-    let task_first = scrolled_to_show(
-        0,
+    let task_first = feature_row_start(
+        app.layout.feature_tasks.first,
         Some(app.task_sel),
-        tasks_area.height as usize,
-        rows.len(),
+        &task_heights,
+        tasks_area.height,
     );
     if rows.is_empty() && tasks_area.height > 0 {
         f.render_widget(
@@ -1174,89 +1558,47 @@ fn render_feature_document(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
             },
         );
     }
-    for (index, row) in rows
-        .iter()
-        .enumerate()
-        .skip(task_first)
-        .take(tasks_area.height as usize)
-    {
+    let mut task_used = 0u16;
+    let mut task_visible = 0usize;
+    for (index, row) in rows.iter().enumerate().skip(task_first) {
         let selected = index == app.task_sel;
-        let (mark, color) = match row.task.state {
-            TaskState::Todo => ("○", th.dim),
-            TaskState::Doing => ("●", th.accent),
-            TaskState::Done => ("✓", th.ok),
-        };
-        let bg = if selected && focused_tasks {
-            th.surface
-        } else {
-            th.bg
-        };
-        let style = Style::default().bg(bg);
-        let mut guide = String::new();
-        if row.depth > 0 {
-            for continues in row
-                .ancestor_continuations
-                .iter()
-                .take(row.depth.saturating_sub(1))
-            {
-                guide.push_str(if *continues { "│ " } else { "  " });
-            }
-            guide.push_str(if row.has_next_sibling { "├ " } else { "└ " });
+        let lines = task_lines(
+            row,
+            task_children(&rows, index),
+            selected,
+            focused_tasks && selected,
+            tasks_area.width,
+            th,
+        );
+        let height = lines.len() as u16;
+        let available = tasks_area.height.saturating_sub(task_used);
+        if available == 0 {
+            break;
         }
-        let children = rows[index + 1..]
-            .iter()
-            .take_while(|child| child.depth > row.depth)
-            .filter(|child| child.depth == row.depth + 1)
-            .count();
-        let badge = if children > 0 {
-            format!(" {} ", plural(children, "subtask"))
-        } else {
-            String::new()
-        };
-        let id = format!("#{}", row.task.id);
-        let fixed = 2 + guide.chars().count() + 2 + badge.chars().count() + 2 + 6;
-        let title_width = (tasks_area.width as usize).saturating_sub(fixed);
+        let drawn_height = height.min(available);
         f.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(if selected { "▌ " } else { "  " }, style.fg(th.accent)),
-                Span::styled(guide, style.fg(th.edge)),
-                Span::styled(format!("{mark} "), style.fg(color)),
-                Span::styled(
-                    format!(
-                        "{:<title_width$}",
-                        ellipsize_text(&row.task.title, title_width)
-                    ),
-                    style.fg(if row.task.state == TaskState::Done {
-                        th.dim
-                    } else {
-                        th.text
-                    }),
-                ),
-                Span::styled(badge, Style::default().fg(th.muted).bg(th.surface)),
-                Span::styled(format!("  {id:>6}"), style.fg(th.dim)),
-            ]))
-            .style(style),
+            Paragraph::new(lines),
             Rect {
-                y: tasks_area.y + (index - task_first) as u16,
-                height: 1,
+                y: tasks_area.y + task_used,
+                height: drawn_height,
                 ..tasks_area
             },
         );
+        task_used += drawn_height;
+        task_visible += 1;
+        if drawn_height < height {
+            break;
+        }
     }
     section_thumb(
         f,
         tasks_area,
         task_first,
-        tasks_area.height as usize,
+        task_visible,
         rows.len(),
         th,
     );
     drop(rows);
-    app.layout.feature_tasks = Panel {
-        outer: tasks_area,
-        inner: tasks_area,
-        first: task_first,
-    };
 
     let decisions_y = tasks_area.bottom() + 1;
     if decisions_y + 1 >= bottom {
@@ -1277,8 +1619,6 @@ fn render_feature_document(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
         height: bottom.saturating_sub(decisions_y + 1),
         ..body
     };
-    let focused_decisions = app.panel == FeaturePanel::Decisions;
-    let decisions = app.board_rows();
     if decisions.is_empty() && decisions_area.height > 0 {
         f.render_widget(
             Paragraph::new("nothing decided for this feature yet")
@@ -1289,79 +1629,57 @@ fn render_feature_document(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
             },
         );
     }
-    let decision_first = scrolled_to_show(
-        0,
+    let decision_first = feature_row_start(
+        app.layout.feature_decisions.first,
         Some(app.decision_sel),
-        (decisions_area.height / 2) as usize,
-        decisions.len(),
+        &decision_heights,
+        decisions_area.height,
     );
-    for (index, row) in decisions
-        .iter()
-        .enumerate()
-        .skip(decision_first)
-        .take((decisions_area.height / 2) as usize)
-    {
+    let mut decision_used = 0u16;
+    let mut decision_visible = 0usize;
+    for (index, row) in decisions.iter().enumerate().skip(decision_first) {
         let selected = index == app.decision_sel;
-        let decision = row.decision;
-        let reason = decision
-            .because
-            .as_deref()
-            .or(decision.over.as_deref())
-            .unwrap_or("No reasoning recorded");
-        let bg = if selected && focused_decisions {
-            th.surface
-        } else {
-            th.bg
-        };
-        let style = Style::default().bg(bg);
-        let bar = Span::styled(
-            if selected { "▌ " } else { "│ " },
-            style.fg(if selected { th.accent } else { th.edge }),
+        let lines = decision_lines(
+            row,
+            selected,
+            focused_decisions && selected,
+            decisions_area.width,
+            th,
         );
-        let text_width = (decisions_area.width as usize).saturating_sub(10);
-        let y = decisions_area.y + (index - decision_first) as u16 * 2;
+        let height = lines.len() as u16;
+        let available = decisions_area.height.saturating_sub(decision_used);
+        if available == 0 {
+            break;
+        }
+        let drawn_height = height.min(available);
         f.render_widget(
-            Paragraph::new(vec![
-                Line::from(vec![
-                    bar.clone(),
-                    Span::styled(
-                        format!("{:<6}", format!("#{}", decision.id)),
-                        style.fg(th.dim),
-                    ),
-                    Span::styled(
-                        ellipsize_text(&decision.chose, text_width),
-                        style.fg(if decision.superseded() {
-                            th.dim
-                        } else if selected {
-                            th.text
-                        } else {
-                            th.muted
-                        }),
-                    ),
-                ]),
-                Line::from(vec![
-                    bar,
-                    Span::styled("      ", style),
-                    Span::styled(ellipsize_text(reason, text_width), style.fg(th.dim)),
-                ]),
-            ])
-            .style(style),
+            Paragraph::new(lines),
             Rect {
-                y,
-                height: 2,
+                y: decisions_area.y + decision_used,
+                height: drawn_height,
                 ..decisions_area
             },
         );
+        decision_used += drawn_height;
+        decision_visible += 1;
+        if drawn_height < height {
+            break;
+        }
     }
     section_thumb(
         f,
         decisions_area,
         decision_first,
-        (decisions_area.height / 2) as usize,
+        decision_visible,
         decisions.len(),
         th,
     );
     drop(decisions);
+    app.layout.feature_tasks = Panel {
+        outer: tasks_area,
+        inner: tasks_area,
+        first: task_first,
+    };
     app.layout.feature_decisions = Panel {
         outer: decisions_area,
         inner: decisions_area,
