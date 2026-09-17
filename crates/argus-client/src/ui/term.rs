@@ -49,7 +49,11 @@ pub(super) fn render_term(
 /// at the pty's 24x80 default can be drawn into a much larger box. Placing
 /// the cursor at a coordinate the drawn rows don't reach puts it in empty
 /// space — better to skip a frame than to point at nothing.
-pub(super) fn term_cursor(grid: Option<&Grid>, area: Rect, focused: bool) -> Option<CursorPlacement> {
+pub(super) fn term_cursor(
+    grid: Option<&Grid>,
+    area: Rect,
+    focused: bool,
+) -> Option<CursorPlacement> {
     // A parked view is history: the child's cursor belongs to the live
     // screen, which is not the one being drawn.
     let grid = grid.filter(|grid| focused && grid.cursor.visible && !grid.is_scrolled())?;

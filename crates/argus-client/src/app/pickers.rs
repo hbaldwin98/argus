@@ -64,9 +64,7 @@ impl App {
         match self.fold {
             Fold::None => self.report("expanded every column"),
             Fold::Projects => self.report("folded the projects column — p for more"),
-            Fold::Repositories => {
-                self.report("folded projects and repositories — p to expand")
-            }
+            Fold::Repositories => self.report("folded projects and repositories — p to expand"),
         }
     }
 
@@ -456,7 +454,12 @@ impl App {
             return;
         }
         self.picker = Some(Picker::new(
-            PickerKind::FeatureCheckout { project, source, destinations, slug },
+            PickerKind::FeatureCheckout {
+                project,
+                source,
+                destinations,
+                slug,
+            },
             "move feature to checkout",
             items,
             0,

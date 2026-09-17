@@ -20,7 +20,12 @@ pub(super) fn render_history(f: &mut Frame, app: &mut App, area: Rect, th: Theme
     f.render_widget(Paragraph::new(lines), area);
 }
 
-pub(super) fn history_line<'a>(view: &'a HistoryView, row: HistoryRow, selected: bool, th: Theme) -> Line<'a> {
+pub(super) fn history_line<'a>(
+    view: &'a HistoryView,
+    row: HistoryRow,
+    selected: bool,
+    th: Theme,
+) -> Line<'a> {
     let commit = &view.commits[row.commit()];
     let spans = match row {
         HistoryRow::Commit { .. } => vec![

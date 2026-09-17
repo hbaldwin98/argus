@@ -16,7 +16,10 @@ fn the_brief_window_draws_its_text_as_prose() {
 fn an_empty_brief_says_how_to_start_one() {
     let mut app = app_with_a_brief("");
     let rendered = lines(&draw(&mut app)).join("\n");
-    assert!(rendered.contains("press i to write something"), "{rendered}");
+    assert!(
+        rendered.contains("press i to write something"),
+        "{rendered}"
+    );
 }
 
 #[test]

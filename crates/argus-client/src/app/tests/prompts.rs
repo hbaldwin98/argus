@@ -87,7 +87,11 @@ fn a_new_project_becomes_the_selected_one() {
     t.push(project(
         3,
         "new",
-        vec![repository(7, "new-repo", vec![checkout(30, "new", true, vec![])])],
+        vec![repository(
+            7,
+            "new-repo",
+            vec![checkout(30, "new", true, vec![])],
+        )],
     ));
     h.app.on_server_msg(ServerMsg::Tree(t));
     assert_eq!(h.app.current_project().unwrap().name, "new");

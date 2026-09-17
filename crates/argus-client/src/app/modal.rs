@@ -204,9 +204,7 @@ impl Overlay {
     pub(super) fn pane(&self) -> Option<PaneId> {
         match self {
             Overlay::Pane { pane, .. } => Some(*pane),
-            Overlay::Settings { .. } | Overlay::Review | Overlay::History | Overlay::Brief => {
-                None
-            }
+            Overlay::Settings { .. } | Overlay::Review | Overlay::History | Overlay::Brief => None,
         }
     }
 }

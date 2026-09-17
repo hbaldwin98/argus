@@ -109,7 +109,9 @@ fn checkout_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
             app.checkout_rows()
                 .into_iter()
                 .filter_map(|row| match row {
-                    CheckoutRow::Checkout(i) => r.checkouts.get(i).map(|c| checkout_item(c, th, spin)),
+                    CheckoutRow::Checkout(i) => {
+                        r.checkouts.get(i).map(|c| checkout_item(c, th, spin))
+                    }
                     CheckoutRow::Branch(i) => r.branches.get(i).map(|b| branch_item(b, th)),
                     CheckoutRow::Remote(i) => r.remote_branches.get(i).map(|b| remote_item(b, th)),
                 })
@@ -133,8 +135,9 @@ fn pane_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
             // own bar is patched over the flash in `render_row`, and an
             // unselected row is on `surface` whichever column has focus.
             let flash = match app.flash_strength(p.id) {
-                Some(strength) => Style::default()
-                    .bg(crate::motion::blend(th.surface, th.sel_bg_dim, strength)),
+                Some(strength) => {
+                    Style::default().bg(crate::motion::blend(th.surface, th.sel_bg_dim, strength))
+                }
                 None => Style::default(),
             };
             let mut state = status_dot(Some(p.status), th, spin);
@@ -232,10 +235,8 @@ pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option
 
     // Where each card was scrolled to last frame, read before the tabs
     // overwrite the panels a folded column leaves behind.
-    let (projects_first, repositories_first) = (
-        app.layout.projects.first,
-        app.layout.repositories.first,
-    );
+    let (projects_first, repositories_first) =
+        (app.layout.projects.first, app.layout.repositories.first);
     let tabs = render_fold_tabs(f, area, fold, th);
     app.layout.projects = tabs[0];
     app.layout.repositories = tabs[1];
@@ -365,7 +366,11 @@ pub(super) fn column_constraints(
 /// the floors. `preferred` is the full five-column preference the user has
 /// dragged, if any; its tail is taken when the leading columns are folded
 /// away, since those widths are absolute rather than fractions.
-fn spine_constraints(total_width: u16, preferred: Option<&[u16]>, wanted: &[u16]) -> Vec<Constraint> {
+fn spine_constraints(
+    total_width: u16,
+    preferred: Option<&[u16]>,
+    wanted: &[u16],
+) -> Vec<Constraint> {
     let columns = wanted.len();
     let gutters = GUTTER_COLS * (columns as u16 - 1);
     let available = total_width.saturating_sub(gutters);
@@ -391,9 +396,7 @@ pub(super) fn floors(available: u16, columns: u16) -> (u16, u16) {
     if available >= wanted || wanted == 0 {
         return (MIN_COLUMN_WIDTH, MIN_CONTENT_WIDTH);
     }
-    let scale = |n: u16| {
-        ((u32::from(n) * u32::from(available)) / u32::from(wanted)).max(1) as u16
-    };
+    let scale = |n: u16| ((u32::from(n) * u32::from(available)) / u32::from(wanted)).max(1) as u16;
     (scale(MIN_COLUMN_WIDTH), scale(MIN_CONTENT_WIDTH))
 }
 
@@ -628,11 +631,7 @@ pub(super) fn render_row<'a>(
     // brightens as focus arrives and dims as it leaves, so the selection
     // and the border are one movement rather than two.
     let bar = match selected {
-        true => Style::default().bg(crate::motion::blend(
-            th.sel_bg_dim,
-            th.sel_bg,
-            lit.value(),
-        )),
+        true => Style::default().bg(crate::motion::blend(th.sel_bg_dim, th.sel_bg, lit.value())),
         false => Style::default(),
     };
 

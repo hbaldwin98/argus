@@ -397,7 +397,10 @@ fn preferred_column_widths_are_used_and_keep_a_minimum() {
     assert_eq!(app.layout.repositories.outer.width, 18);
     assert_eq!(app.layout.checkouts.outer.width, 20);
     assert_eq!(app.layout.panes.outer.width, 20);
-    assert_eq!(app.layout.content.outer.width, 42, "the slack lands in the live view");
+    assert_eq!(
+        app.layout.content.outer.width, 42,
+        "the slack lands in the live view"
+    );
 }
 
 #[test]
@@ -436,7 +439,12 @@ fn repository_rows_roll_up_checkout_counts_panes_and_status() {
                 12,
                 "main",
                 true,
-                vec![pane_info(102, PaneKind::Agent, "waiting", PaneStatus::Waiting)],
+                vec![pane_info(
+                    102,
+                    PaneKind::Agent,
+                    "waiting",
+                    PaneStatus::Waiting,
+                )],
             )
         }],
     ));
@@ -774,7 +782,9 @@ fn the_box_never_overruns_the_screen_it_floats_over() {
     let buf = draw(&mut app);
     // `lines` trims the right edge, so an overrun shows up as a row
     // wider than the terminal or a panic in `draw`.
-    assert!(lines(&buf).iter().all(|l| l.chars().count() <= buf.area.width as usize));
+    assert!(lines(&buf)
+        .iter()
+        .all(|l| l.chars().count() <= buf.area.width as usize));
     assert!(
         lines(&buf).len() <= 20,
         "and it stays a modal rather than becoming the screen"
@@ -949,9 +959,7 @@ fn a_detail_line_starts_under_its_own_name() {
         let over = at(inner.y + row * ROW_HEIGHT);
         let under = at(inner.y + row * ROW_HEIGHT + 1);
         // In cells, not bytes: the glyphs in front of a name are wide.
-        let column = |line: &str, text: &str| {
-            line.find(text).map(|b| line[..b].chars().count())
-        };
+        let column = |line: &str, text: &str| line.find(text).map(|b| line[..b].chars().count());
         assert_eq!(
             column(&over, name),
             column(&under, detail),
@@ -961,4 +969,3 @@ fn a_detail_line_starts_under_its_own_name() {
         );
     }
 }
-

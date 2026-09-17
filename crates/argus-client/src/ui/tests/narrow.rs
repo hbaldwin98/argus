@@ -12,7 +12,10 @@ fn the_default_width_is_exactly_what_the_whole_spine_needs() {
     // The breakpoints are derived from the floors, so this is the one place
     // the two are checked against each other.
     assert_eq!(Fold::required(120), Fold::None);
-    assert_eq!(Fold::required(spine_min_width(5) + GUTTER_COLS * 2), Fold::None);
+    assert_eq!(
+        Fold::required(spine_min_width(5) + GUTTER_COLS * 2),
+        Fold::None
+    );
     assert_eq!(
         Fold::required(spine_min_width(5) + GUTTER_COLS * 2 - 1),
         Fold::Projects,
@@ -29,14 +32,23 @@ fn a_narrow_terminal_folds_columns_away_instead_of_crushing_them() {
 
     assert_eq!(app.fold, Fold::Repositories);
     let text = lines(&buf).join("\n");
-    assert!(!text.contains("repositories"), "no repositories card:\n{text}");
+    assert!(
+        !text.contains("repositories"),
+        "no repositories card:\n{text}"
+    );
     assert!(text.contains("checkouts"), "checkouts survives:\n{text}");
     assert!(text.contains("panes"), "panes survives:\n{text}");
 
     // Nothing became unreachable: the live view's title still names the
     // whole path, tabs mark what was folded, and focus is off them.
-    assert!(text.contains("argus \u{203a} orion"), "breadcrumb intact:\n{text}");
-    assert_eq!(app.layout.projects.outer.width, GUTTER_COLS, "a tab, not a card");
+    assert!(
+        text.contains("argus \u{203a} orion"),
+        "breadcrumb intact:\n{text}"
+    );
+    assert_eq!(
+        app.layout.projects.outer.width, GUTTER_COLS,
+        "a tab, not a card"
+    );
     assert_eq!(app.layout.repositories.outer.width, GUTTER_COLS);
     assert_eq!(app.focus, Focus::Checkouts);
 }
@@ -96,9 +108,15 @@ fn a_short_terminal_drops_the_detail_line_rather_than_the_items() {
     );
 
     let named = |buf: &ratatui::buffer::Buffer, n: &str| lines(buf).iter().any(|l| l.contains(n));
-    assert!(named(&tall, "primary"), "the detail line is there when it fits");
+    assert!(
+        named(&tall, "primary"),
+        "the detail line is there when it fits"
+    );
     assert!(!named(&short, "primary"), "and gone when it does not");
-    assert!(named(&short, "wt-0") && named(&short, "wt-4"), "items remain");
+    assert!(
+        named(&short, "wt-0") && named(&short, "wt-4"),
+        "items remain"
+    );
 }
 
 #[test]
@@ -159,7 +177,10 @@ fn a_narrow_bar_shortens_the_keymap_rather_than_cutting_it() {
     app.focus = Focus::Checkouts;
 
     let wide = bar(&draw_at(&mut app, 200, 24));
-    assert!(wide.contains("F fetch") && wide.contains("H history"), "{wide:?}");
+    assert!(
+        wide.contains("F fetch") && wide.contains("H history"),
+        "{wide:?}"
+    );
 
     for width in [60u16, 70, 80, 100, 120] {
         let bar = bar(&draw_at(&mut app, width, 24));

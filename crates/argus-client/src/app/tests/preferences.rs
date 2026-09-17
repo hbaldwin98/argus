@@ -102,7 +102,10 @@ fn an_actionable_transition_flashes_and_explains_the_pane() {
         .app
         .flash_strength(PaneId(101))
         .expect("the pane is still fading");
-    assert!(halfway < lit, "the flash dims as it goes: {halfway} vs {lit}");
+    assert!(
+        halfway < lit,
+        "the flash dims as it goes: {halfway} vs {lit}"
+    );
     assert!(halfway > 0.0);
 
     h.app.set_frame_now(deadline);

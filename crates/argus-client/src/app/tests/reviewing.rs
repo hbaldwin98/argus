@@ -354,8 +354,7 @@ fn n_cycles_through_panes_that_need_attention() {
     let mut h = Harness::new();
     let mut updated = tree();
     updated[0].repositories[0].checkouts[0].panes[1].status = PaneStatus::Waiting;
-    updated[0].repositories[0].checkouts[0].panes[1].note =
-        Some("needs a password".to_string());
+    updated[0].repositories[0].checkouts[0].panes[1].note = Some("needs a password".to_string());
     let mut review_pane = pane(102, "review agent");
     review_pane.status = PaneStatus::NeedsReview;
     updated[0].repositories[0].checkouts[1]

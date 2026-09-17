@@ -21,9 +21,15 @@ fn rows_stack_down_the_panel_and_stop_at_its_bottom() {
     // Two lines per item, and a half-drawn item is worse than none.
     let inner = Rect::new(1, 1, 10, 5);
     assert_eq!(row_rect_of(inner, 0, ROW_HEIGHT).unwrap().y, 1);
-    assert_eq!(row_rect_of(inner, 0, ROW_HEIGHT).unwrap().height, ROW_HEIGHT);
+    assert_eq!(
+        row_rect_of(inner, 0, ROW_HEIGHT).unwrap().height,
+        ROW_HEIGHT
+    );
     assert_eq!(row_rect_of(inner, 1, ROW_HEIGHT).unwrap().y, 3);
-    assert!(row_rect_of(inner, 2, ROW_HEIGHT).is_none(), "no room for both its lines");
+    assert!(
+        row_rect_of(inner, 2, ROW_HEIGHT).is_none(),
+        "no room for both its lines"
+    );
 }
 
 // --- overflow -----------------------------------------------------------
@@ -123,16 +129,26 @@ fn the_detail_line_and_the_title_are_measured_too() {
     assert!(by_detail > by_name);
 
     let by_title = natural_width(&[row("a", "b")], "projects · some-workspace", "");
-    assert!(by_title > by_name, "a title is not allowed to be ellipsized");
+    assert!(
+        by_title > by_name,
+        "a title is not allowed to be ellipsized"
+    );
 }
 
 #[test]
 fn an_empty_column_is_sized_by_what_it_says_instead() {
     // A first run whose only instruction is cut off has nowhere to go.
-    let hint = natural_width(&[], "projects", "no projects yet
+    let hint = natural_width(
+        &[],
+        "projects",
+        "no projects yet
 
-n  add one");
-    assert!(hint as usize >= "no projects yet".len() + CARD_CHROME, "{hint}");
+n  add one",
+    );
+    assert!(
+        hint as usize >= "no projects yet".len() + CARD_CHROME,
+        "{hint}"
+    );
 }
 
 #[test]
@@ -150,7 +166,10 @@ fn widths_move_in_steps_so_a_renamed_pane_does_not_shift_the_spine() {
 #[test]
 fn a_column_never_hoards_more_than_a_list_of_names_is_worth() {
     let huge = natural_width(&[row(&"x".repeat(200), "y")], "panes", "");
-    assert_eq!(huge, MAX_COLUMN_WIDTH, "the live view can always use it better");
+    assert_eq!(
+        huge, MAX_COLUMN_WIDTH,
+        "the live view can always use it better"
+    );
 }
 
 #[test]
@@ -172,4 +191,3 @@ fn the_live_view_gets_what_the_nav_columns_did_not_want() {
         app.layout.content.outer.width
     );
 }
-

@@ -147,7 +147,12 @@ fn every_status_has_a_shape_distinct_glyph() {
         PaneStatus::Exited { code: Some(0) },
         PaneStatus::Exited { code: Some(1) },
     ];
-    let glyphs = statuses.map(|status| status_dot(Some(status), th, Spin::STILL).content.trim().to_string());
+    let glyphs = statuses.map(|status| {
+        status_dot(Some(status), th, Spin::STILL)
+            .content
+            .trim()
+            .to_string()
+    });
 
     for (i, glyph) in glyphs.iter().enumerate() {
         assert!(
@@ -166,20 +171,32 @@ fn every_status_has_a_shape_distinct_glyph() {
 #[test]
 fn each_live_state_gets_its_own_color() {
     let th = Theme::default();
-    assert_eq!(status_dot(Some(PaneStatus::Idle), th, Spin::STILL).style.fg, Some(th.ok));
     assert_eq!(
-        status_dot(Some(PaneStatus::Working), th, Spin::STILL).style.fg,
+        status_dot(Some(PaneStatus::Idle), th, Spin::STILL).style.fg,
+        Some(th.ok)
+    );
+    assert_eq!(
+        status_dot(Some(PaneStatus::Working), th, Spin::STILL)
+            .style
+            .fg,
         Some(th.warn)
     );
     assert_eq!(
-        status_dot(Some(PaneStatus::Waiting), th, Spin::STILL).style.fg,
+        status_dot(Some(PaneStatus::Waiting), th, Spin::STILL)
+            .style
+            .fg,
         Some(th.err)
     );
     assert_eq!(
-        status_dot(Some(PaneStatus::NeedsReview), th, Spin::STILL).style.fg,
+        status_dot(Some(PaneStatus::NeedsReview), th, Spin::STILL)
+            .style
+            .fg,
         Some(th.err)
     );
-    assert_eq!(status_dot(Some(PaneStatus::Done), th, Spin::STILL).style.fg, Some(th.ok));
+    assert_eq!(
+        status_dot(Some(PaneStatus::Done), th, Spin::STILL).style.fg,
+        Some(th.ok)
+    );
 }
 
 #[test]

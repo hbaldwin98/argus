@@ -12,7 +12,12 @@ pub(super) const OVERLAY_FRACTION: (u16, u16) = (82, 78);
 /// overlay covers the content column, so `None` here means the cursor is
 /// not drawn at all this frame — the column underneath does not get to
 /// keep it (see [`render`]).
-pub(super) fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option<CursorPlacement> {
+pub(super) fn render_overlay(
+    f: &mut Frame,
+    app: &mut App,
+    area: Rect,
+    th: Theme,
+) -> Option<CursorPlacement> {
     let Some(overlay) = &app.overlay else {
         app.layout.overlay = Panel::default();
         return None;
@@ -101,7 +106,12 @@ pub(super) fn render_overlay(f: &mut Frame, app: &mut App, area: Rect, th: Theme
 /// Returns where the hardware cursor goes: shown while typing, hidden in
 /// view mode, where a block on a random character would read as a
 /// selection rather than as an insertion point.
-pub(super) fn render_brief(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option<CursorPlacement> {
+pub(super) fn render_brief(
+    f: &mut Frame,
+    app: &mut App,
+    area: Rect,
+    th: Theme,
+) -> Option<CursorPlacement> {
     let view = app.brief.as_mut()?;
     view.follow_cursor(area.height as usize);
     let view = app.brief.as_ref()?;

@@ -7,8 +7,7 @@ fn the_branches_stay_out_of_the_column_until_they_are_asked_for() {
     // The column is for what is running. Forty branches on top of two
     // checkouts is the checkouts buried, not the branches surfaced.
     let mut h = Harness::new();
-    h.app.tree[0].repositories[0].branches =
-        vec!["hotfix/tls".to_string(), "spike".to_string()];
+    h.app.tree[0].repositories[0].branches = vec!["hotfix/tls".to_string(), "spike".to_string()];
     h.keys("ll");
 
     assert_eq!(h.app.checkout_row_count(), 2, "the two checkouts, only");
