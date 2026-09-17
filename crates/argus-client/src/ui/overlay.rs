@@ -67,7 +67,9 @@ pub(super) fn render_overlay(
     };
 
     f.render_widget(Clear, popup);
-    let block = panel_block(&title, true, th, popup.width);
+    let block = panel_block(&title, true, th, popup.width)
+        // On the terminal's own background, like the keys window.
+        .style(Style::default().bg(th.bg));
     let inner = block.inner(popup);
     f.render_widget(block, popup);
     app.layout.overlay = Panel {

@@ -28,7 +28,9 @@ pub(super) fn render_picker(f: &mut Frame, app: &App, area: Rect, th: Theme) {
     let popup = centered_rect(width, height, area);
 
     f.render_widget(Clear, popup);
-    let block = panel_block(picker.title, true, th, popup.width);
+    let block = panel_block(picker.title, true, th, popup.width)
+        // On the terminal's own background, like the keys window.
+        .style(Style::default().bg(th.bg));
     let inner = block.inner(popup);
     f.render_widget(block, popup);
     if inner.height == 0 {
@@ -123,7 +125,9 @@ pub(super) fn render_dir_picker(f: &mut Frame, app: &App, area: Rect, th: Theme)
     let popup = centered_rect(width, height, area);
 
     f.render_widget(Clear, popup);
-    let block = panel_block(picker.title(), true, th, popup.width);
+    let block = panel_block(picker.title(), true, th, popup.width)
+        // On the terminal's own background, like the keys window.
+        .style(Style::default().bg(th.bg));
     let inner = block.inner(popup);
     f.render_widget(block, popup);
     if inner.height < 3 {
