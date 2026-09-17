@@ -1219,7 +1219,8 @@ fn render_panes(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(if selected { th.accent } else { th.edge }))
-            .style(Style::default().bg(if selected { th.surface } else { th.bg }));
+            // Cards sit on the page itself; selection is the accent border.
+            .style(Style::default().bg(th.bg));
         let inner = block.inner(rect);
         f.render_widget(block, rect);
         f.render_widget(
