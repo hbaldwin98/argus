@@ -114,3 +114,28 @@ fn a_keymap_taller_than_the_window_scrolls_rather_than_being_cut_off() {
         "the end of the list, not past it:\n{bottom}"
     );
 }
+
+#[test]
+fn each_command_center_view_lists_its_own_keys() {
+    let mut app = app_with_tree();
+    app.command_center = true;
+    press(&mut app, '?');
+    let rail = lines(&draw_at(&mut app, 200, 60)).join("\n");
+    assert!(rail.contains("x closes it"), "{rail}");
+    assert!(
+        rail.contains("checkouts — branches and worktrees"),
+        "{rail}"
+    );
+
+    for (view, says) in [
+        (View::Panes, "this repository, or the whole workspace"),
+        (View::Checkouts, "back to the workspace on this checkout"),
+        (View::Feature, "scroll the section under the pointer"),
+    ] {
+        app.help = None;
+        app.open_view(view);
+        press(&mut app, '?');
+        let out = lines(&draw_at(&mut app, 200, 60)).join("\n");
+        assert!(out.contains(says), "{view:?}:\n{out}");
+    }
+}

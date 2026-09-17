@@ -46,11 +46,46 @@ const SELECTION: Group = Group {
     ],
 };
 
+const RAIL: Group = Group {
+    title: "the rail",
+    keys: &[
+        ("click repo", "open it; the one open before folds away"),
+        ("click pane", "show it, keys stay here — x closes it"),
+        ("enter  click", "type into the pane shown"),
+        ("wheel", "move through repositories"),
+    ],
+};
+
+const PANES: Group = Group {
+    title: "panes",
+    keys: &[
+        ("j / k", "card by card"),
+        ("enter  l  click", "open it and type into it"),
+        ("A", "this repository, or the whole workspace"),
+        ("a", "an agent here"),
+        ("s", "a shell here"),
+        ("esc  q", "back to the workspace"),
+    ],
+};
+
+const CHECKOUTS: Group = Group {
+    title: "checkouts",
+    keys: &[
+        ("j / k  click", "row by row"),
+        ("enter  l", "back to the workspace on this checkout"),
+        ("m  b", "switch branch"),
+        ("n", "a new worktree"),
+        ("esc  q", "back to the workspace"),
+    ],
+};
+
 const VIEW: Group = Group {
     title: "the view",
     keys: &[
-        ("1", "the spine — projects through to the live pane"),
-        ("2", "the features, and what is happening to them"),
+        ("1", "workspace — the rail and the live pane"),
+        ("2", "feature — brief, tasks, and decisions"),
+        ("3", "panes — every pane as a card"),
+        ("4", "checkouts — branches and worktrees"),
         ("p", "fold a column away, and back"),
         ("v", "where panes are listed"),
         ("t", "theme"),
@@ -69,7 +104,7 @@ const PANE: Group = Group {
         ("ctrl-space tab", "review"),
         ("ctrl-space H", "history"),
         ("ctrl-space N", "next needing attention"),
-        ("ctrl-space 1 / 2", "another view"),
+        ("ctrl-space 1-4", "another view"),
         ("shift-pgup", "back through the scrollback"),
     ],
 };
@@ -148,7 +183,11 @@ const FEATURE: Group = Group {
         ("H / L", "move this task along todo, doing, done"),
         ("J / K", "earlier or later among sibling tasks"),
         ("r", "re-ask the daemon for all of it"),
-        ("mouse", "drag the gutters to resize the panels"),
+        (
+            "wheel",
+            "scroll the section under the pointer, brief included",
+        ),
+        ("click", "select a feature, task, or decision"),
         ("esc  q", "back to the spine"),
     ],
 };
@@ -176,12 +215,20 @@ pub(super) fn groups(app: &App) -> Vec<&'static Group> {
         vec![&BRIEF]
     } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
         vec![&SETTINGS]
+    } else if app.focus == Focus::View && app.view == View::Panes {
+        vec![&PANES, &VIEW]
+    } else if app.focus == Focus::View && app.view == View::Checkouts {
+        vec![&CHECKOUTS, &VIEW]
     } else if app.focus == Focus::View {
         vec![&FEATURE, &VIEW]
     } else if app.input_pane().is_some() || app.focus == Focus::PaneContent {
         vec![&PANE]
     } else {
-        vec![&MOVE, &SELECTION, &VIEW]
+        if app.command_center {
+            vec![&MOVE, &SELECTION, &RAIL, &VIEW]
+        } else {
+            vec![&MOVE, &SELECTION, &VIEW]
+        }
     };
     groups.push(&EVERYWHERE);
     groups
