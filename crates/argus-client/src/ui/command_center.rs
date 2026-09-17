@@ -732,8 +732,10 @@ fn render_workspace(
             format!("{} #{}", pane.title, pane.id.0),
             Style::default().fg(th.muted),
         ));
+        // Plain space before the chip, and one cell of padding inside it.
+        header.push_span(Span::raw("  "));
         header.push_span(Span::styled(
-            format!("   {} ", short_status(pane.status)),
+            format!(" {} ", short_status(pane.status)),
             badge(status_color(pane.status, th), th),
         ));
     }
