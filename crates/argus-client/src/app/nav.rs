@@ -109,7 +109,7 @@ impl App {
     /// checkout is sitting on it, and every checkout slides down past it.
     /// Anything that finds a checkout by walking `checkouts` has to come
     /// back through here before it can point the cursor at it.
-    pub(super) fn checkout_row_of(&self, index: usize) -> Option<usize> {
+    pub(crate) fn checkout_row_of(&self, index: usize) -> Option<usize> {
         self.checkout_rows()
             .iter()
             .position(|row| matches!(row, CheckoutRow::Checkout(i) if *i == index))

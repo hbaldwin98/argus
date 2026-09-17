@@ -124,13 +124,30 @@ fn pane_card_rect(body: Rect, index: usize) -> Rect {
     }
 }
 
+/// Lines per row in the checkouts table.
+const CHECKOUT_ROW: u16 = 3;
+
+/// Checkouts in the order the table draws them, which is the keyboard's
+/// order: branch-only rows are left out, since the table lists directories.
+fn table_checkouts(app: &App) -> Vec<usize> {
+    app.checkout_rows()
+        .into_iter()
+        .filter_map(|row| match row {
+            CheckoutRow::Checkout(i) => Some(i),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The navigation row (`sel_checkout`) under a click in the table.
 pub(crate) fn checkout_at(app: &App, x: u16, y: u16) -> Option<usize> {
     let rows = app.layout.checkouts.inner;
     if !contains(rows, x, y) {
         return None;
     }
-    let index = usize::from(y.saturating_sub(rows.y) / 2);
-    (index < app.current_repository()?.checkouts.len()).then_some(index)
+    let index = usize::from((y - rows.y) / CHECKOUT_ROW);
+    let checkout = *table_checkouts(app).get(index)?;
+    app.checkout_row_of(checkout)
 }
 
 pub(crate) fn pane_at(app: &App, x: u16, y: u16) -> Option<PaneLocation> {
@@ -1424,12 +1441,13 @@ fn render_checkouts(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         },
         first: 0,
     };
+    let order = table_checkouts(app);
     if let Some(repo) = app.current_repository() {
-        for (index, checkout) in repo
-            .checkouts
+        for (index, checkout) in order
             .iter()
+            .map(|i| &repo.checkouts[*i])
             .enumerate()
-            .take((body.height.saturating_sub(1) / 2) as usize)
+            .take((body.height.saturating_sub(1) / CHECKOUT_ROW) as usize)
         {
             let selected = app.current_checkout().is_some_and(|c| c.id == checkout.id);
             let git = checkout.git.as_ref();
@@ -1513,25 +1531,33 @@ fn render_checkouts(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                     Span::styled(format!("  {state} · {pane_summary}"), style.fg(state_color)),
                 ])
             };
+            let top = body.y + 1 + index as u16 * CHECKOUT_ROW;
             let row = Rect {
-                y: body.y + 1 + index as u16 * 2,
-                height: 2.min(body.bottom().saturating_sub(body.y + 1 + index as u16 * 2)),
+                y: top,
+                height: CHECKOUT_ROW.min(body.bottom().saturating_sub(top)),
                 ..body
             };
-            f.render_widget(
-                Block::default()
-                    .borders(Borders::TOP)
-                    .border_style(Style::default().fg(th.surface)),
-                row,
-            );
-            f.render_widget(
-                Paragraph::new(line).style(style),
-                Rect {
-                    y: row.y + 1,
-                    height: row.height.saturating_sub(1),
-                    ..row
-                },
-            );
+            // The highlight fills the whole row, text on its middle line,
+            // and the accent bar runs its full height.
+            f.render_widget(Block::default().style(style), row);
+            if selected {
+                for y in row.y..row.bottom() {
+                    f.render_widget(
+                        Paragraph::new(Span::styled("▌", style.fg(th.accent))),
+                        Rect::new(row.x, y, 1, 1),
+                    );
+                }
+            }
+            if row.height >= 2 {
+                f.render_widget(
+                    Paragraph::new(line).style(style),
+                    Rect {
+                        y: row.y + 1,
+                        height: 1,
+                        ..row
+                    },
+                );
+            }
         }
     }
 }

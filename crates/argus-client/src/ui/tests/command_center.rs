@@ -73,22 +73,31 @@ fn active_repositories_sort_before_inactive_repositories() {
 }
 
 #[test]
-fn clicking_a_checkout_row_uses_the_rendered_two_line_geometry() {
-    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-
+fn clicking_a_checkout_row_selects_the_row_under_the_pointer() {
+    // A default branch with no directory gets a navigation row of its own
+    // that the table does not draw; clicks used to land one row short.
     let mut app = command_center();
+    {
+        let repo = &mut app.tree[0].repositories[0];
+        repo.default_branch = Some("main".into());
+        repo.branches = vec!["main".into()];
+    }
     app.open_view(View::Checkouts);
-    draw_at(&mut app, 120, 30);
+    let text = lines(&draw_at(&mut app, 120, 30));
     let rows = app.layout.checkouts.inner;
-
-    app.on_mouse(MouseEvent {
-        kind: MouseEventKind::Down(MouseButton::Left),
-        column: rows.x + 2,
-        row: rows.y + 3,
-        modifiers: KeyModifiers::NONE,
-    });
-
-    assert_eq!(app.sel_checkout, 1);
+    for (index, name) in ["master", "feat"].iter().enumerate() {
+        let top = rows.y + index as u16 * 3;
+        // Every line of the row is part of it, and its text is on the middle one.
+        assert!(text[top as usize + 1].contains(name), "{}", text.join("\n"));
+        for y in top..top + 3 {
+            click(&mut app, rows.x + 4, y);
+            assert_eq!(
+                app.current_checkout().map(|c| c.name.as_str()),
+                Some(*name),
+                "click on line {y}"
+            );
+        }
+    }
 }
 
 #[test]
