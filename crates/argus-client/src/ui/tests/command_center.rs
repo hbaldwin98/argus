@@ -287,9 +287,9 @@ fn a_long_checkout_path_keeps_its_end() {
 }
 
 #[test]
-fn the_tabs_sit_on_the_top_edge_and_a_row_is_left_below_the_status_band() {
+fn the_shell_leaves_a_row_above_the_tabs_and_below_the_status_band() {
     let mut app = command_center();
     let rows = lines(&draw_at(&mut app, 120, 30));
-    assert!(rows[0].contains("ARGUS"), "{rows:?}");
+    assert!(rows[0].trim().is_empty(), "{rows:?}");
     assert!(rows[29].trim().is_empty(), "{rows:?}");
 }
