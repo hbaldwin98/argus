@@ -107,16 +107,25 @@ pub(super) fn env_command_line(event: &Event, windows: bool) -> String {
     quote_command_parts(parts)
 }
 
-fn powershell_env_command_line(event: &Event) -> String {
-    let url = if event.claim_only {
-        "$env:ARGUS_HOOK_URL/session".to_string()
+/// Target URL as a PowerShell expression, not a quoted `"$env:…/path"` string.
+///
+/// Codex may run `commandWindows` in Constrained Language mode. A token like
+/// `$env:ARGUS_HOOK_URL/status/idle` is then parsed as division, which tries
+/// to invoke methods on non-core types and fails with a language-mode error.
+fn powershell_env_url_expr(event: &Event) -> String {
+    let suffix = if event.claim_only {
+        "/session".to_string()
     } else {
-        format!("$env:ARGUS_HOOK_URL/status/{}", event.reports.as_str())
+        format!("/status/{}", event.reports.as_str())
     };
+    format!("($env:ARGUS_HOOK_URL + '{suffix}')")
+}
+
+fn powershell_env_command_line(event: &Event) -> String {
     let mut segments = vec![
         "& $env:ARGUS_HOOK".to_string(),
-        format!("\"{url}\""),
-        "\"$env:ARGUS_HOOK_TOKEN\"".to_string(),
+        powershell_env_url_expr(event),
+        "$env:ARGUS_HOOK_TOKEN".to_string(),
     ];
     if event.note_from_stdin {
         segments.push(format!("\"{NOTE_FLAG}\""));

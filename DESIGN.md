@@ -451,7 +451,7 @@ a pane baked into them. A harness also carries
 template containing `{session_id}`. Both are used only when a recorded pane is restored. Claude
 Code, Codex, OpenCode, pi, AGY, Cursor Agent (`agent`) and `generic` are built in. Codex uses a project-local `.codex/hooks.json`
 adapter (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SessionEnd`) whose command reads routing from the pane environment, so its content hash stays
-stable after the user trusts it. On Windows, Codex runs `commandWindows` through PowerShell, so those strings use `& $env:ARGUS_HOOK` rather than cmd-style `%VAR%` quoting. Codex requires the user to trust project hooks before it runs. AGY uses
+stable after the user trusts it. On Windows, Codex runs `commandWindows` through PowerShell, so those strings use `& $env:ARGUS_HOOK` rather than cmd-style `%VAR%` quoting, and build hook URLs with `($env:ARGUS_HOOK_URL + '/status/…')` so Constrained Language mode does not treat `/status` as division. Codex requires the user to trust project hooks before it runs. AGY uses
 `.agents/hooks.json` with flat `PreInvocation` and `Stop` hooks. Cursor's `agent` CLI uses `.cursor/hooks.json` with
 flat `sessionStart`, `beforeSubmitPrompt`, `preToolUse`, `postToolUse`, `beforeShellExecution`, and `stop` hooks
 (schema `version: 1`) plus `.cursor/rules/argus.mdc`. `sessionStart` claims the conversation
