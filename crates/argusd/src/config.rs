@@ -234,6 +234,7 @@ impl From<HarnessConfig> for crate::harness::Harness {
                 .into_iter()
                 .map(|(name, e)| e.into_event(name))
                 .collect(),
+            legacy_events: Vec::new(),
             context_event: c.context_event,
             // A plugin is a program, not a dialect, so it can only come
             // from a built-in. See `harness::Plugin`.

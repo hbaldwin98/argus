@@ -450,7 +450,7 @@ a pane baked into them. A harness also carries
 `resume`, the legacy arguments that continue the last conversation, and `resume_id`, an exact argv
 template containing `{session_id}`. Both are used only when a recorded pane is restored. Claude
 Code, Codex, OpenCode, pi, AGY, Cursor Agent (`agent`) and `generic` are built in. Codex uses a project-local `.codex/hooks.json`
-adapter (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`) whose command reads routing from the pane environment, so its content hash stays
+adapter (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SessionEnd`) whose command reads routing from the pane environment, so its content hash stays
 stable after the user trusts it. Codex requires the user to trust project hooks before it runs. AGY uses
 `.agents/hooks.json` with flat `PreInvocation` and `Stop` hooks. Cursor's `agent` CLI uses `.cursor/hooks.json` with
 flat `sessionStart`, `beforeSubmitPrompt`, `preToolUse`, `postToolUse`, `beforeShellExecution`, and `stop` hooks

@@ -40,6 +40,7 @@ fn flat_harness() -> Harness {
                 claim_only: false,
             },
         ],
+        legacy_events: Vec::new(),
         context_event: None,
         plugin: None,
         resume: Vec::new(),
@@ -306,7 +307,7 @@ fn codex_uses_its_project_hook_shape_and_cleans_up_only_its_handler() {
     std::fs::create_dir_all(&codex).unwrap();
     std::fs::write(
         codex.join("hooks.json"),
-        r#"{"description":"mine","hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"my-hook"}]}]}}"#,
+        r#"{"description":"mine","hooks":{"SessionStart":[{"matcher":"startup","hooks":[{"type":"command","command":"my-hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"\"$ARGUS_HOOK\" old"}]}]}}"#,
     )
     .unwrap();
 
@@ -314,6 +315,7 @@ fn codex_uses_its_project_hook_shape_and_cleans_up_only_its_handler() {
     h.install(dir.path(), PaneId(8), 4242, "tok").unwrap();
     let root = settings_of(dir.path(), &h);
     assert_eq!(root["description"], "mine");
+    assert!(root["hooks"].get("Stop").is_none());
     let groups = root["hooks"]["SessionStart"].as_array().unwrap();
     assert_eq!(
         groups.len(),
@@ -342,6 +344,21 @@ fn codex_uses_its_project_hook_shape_and_cleans_up_only_its_handler() {
     assert_eq!(
         root["hooks"]["SessionStart"][0]["hooks"][0]["command"],
         "my-hook"
+    );
+}
+
+#[test]
+fn codex_uses_session_end_for_completion() {
+    let dir = tempfile::tempdir().unwrap();
+    let h = Harness::codex();
+
+    h.install(dir.path(), PaneId(1), 4242, "tok").unwrap();
+
+    let root = settings_of(dir.path(), &h);
+    assert!(root["hooks"]["SessionEnd"].is_array());
+    assert!(
+        root["hooks"].get("Stop").is_none(),
+        "Stop is a Claude hook name, not a Codex lifecycle event"
     );
 }
 

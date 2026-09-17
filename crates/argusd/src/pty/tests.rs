@@ -21,6 +21,43 @@ fn nested_processes_do_not_inherit_the_outer_herdr_pane() {
     );
 }
 
+#[cfg(windows)]
+#[test]
+fn windows_default_shell_is_explicitly_selected() {
+    let (command, _) = Spawn::DefaultShell.into_command();
+
+    assert!(
+        !command.is_default_prog(),
+        "portable-pty's default Windows program is always cmd.exe"
+    );
+}
+
+#[test]
+fn a_dumb_parent_terminal_is_replaced_for_a_pty_child() {
+    let mut command = CommandBuilder::new("dummy");
+    command.env("TERM", "dumb");
+
+    set_pty_terminal(&mut command);
+
+    assert_eq!(
+        command.get_env("TERM"),
+        Some(std::ffi::OsStr::new("xterm-256color"))
+    );
+}
+
+#[test]
+fn an_existing_terminal_type_is_preserved_for_a_pty_child() {
+    let mut command = CommandBuilder::new("dummy");
+    command.env("TERM", "screen-256color");
+
+    set_pty_terminal(&mut command);
+
+    assert_eq!(
+        command.get_env("TERM"),
+        Some(std::ffi::OsStr::new("screen-256color"))
+    );
+}
+
 #[test]
 fn a_childs_mouse_request_is_carried_on_the_snapshot() {
     let mut parser = vt100::Parser::new(24, 80, 0);

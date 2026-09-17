@@ -2,6 +2,7 @@
 //! output into a `vt100` grid on a coalesced ~60Hz tick, and broadcasts the
 //! changed cell spans. See DESIGN.md §2 and §8.
 
+use std::ffi::OsStr;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -35,6 +36,7 @@ const MAX_CHUNKS_PER_FRAME: usize = 64;
 const EXIT_FLUSH_GRACE: Duration = Duration::from_millis(500);
 const PASTE_START: &[u8] = b"\x1b[200~";
 const PASTE_END: &[u8] = b"\x1b[201~";
+const PTY_TERM: &str = "xterm-256color";
 
 #[cfg(windows)]
 const AGENT_JOB_MEMORY_BYTES: usize = 8 * 1024 * 1024 * 1024;
@@ -135,6 +137,7 @@ impl PaneRuntime {
         })?;
 
         let (mut cmd, resource_policy) = spec.into_command();
+        set_pty_terminal(&mut cmd);
         // Argus owns the outer Herdr pane. Processes nested in its PTYs must
         // not compete with the client's aggregate lifecycle report for it.
         strip_herdr_context(&mut cmd, std::env::vars_os().map(|(key, _)| key));
@@ -461,6 +464,16 @@ impl PaneRuntime {
     /// no longer on the screen it came from.
     pub fn broadcast_snapshot(&self, pane: PaneId) {
         publish_snapshot(&self.parser, &self.shape, &self.damage_tx, pane);
+    }
+}
+
+fn set_pty_terminal(command: &mut CommandBuilder) {
+    let inherited = command.get_env("TERM").and_then(OsStr::to_str);
+    if inherited.is_none() || inherited == Some("dumb") {
+        // The daemon can be started without a terminal, but every pane still
+        // owns a real PTY and needs a terminal description for full-screen
+        // programs to select their normal capabilities.
+        command.env("TERM", PTY_TERM);
     }
 }
 

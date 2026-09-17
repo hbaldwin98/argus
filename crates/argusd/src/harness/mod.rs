@@ -135,6 +135,9 @@ pub struct Harness {
     pub hooks_key: String,
     pub shape: Shape,
     pub events: Vec<Event>,
+    /// Hook names retired by a newer harness definition. Managed entries
+    /// under these names are removed during install and uninstall.
+    pub legacy_events: Vec<String>,
     /// An event whose command's stdout the harness injects into the model's
     /// context. Where Argus tells an agent how to load its skill.
     pub context_event: Option<String>,
@@ -198,6 +201,7 @@ impl Harness {
             hooks_key: "hooks".to_string(),
             shape: Shape::Flat,
             events: Vec::new(),
+            legacy_events: Vec::new(),
             context_event: None,
             plugin: None,
             resume: Vec::new(),
@@ -263,6 +267,7 @@ impl Harness {
                 Event::tagged("PreToolUse", Report::Working, "session_id"),
                 Event::tagged("PostToolUse", Report::Working, "session_id"),
             ],
+            legacy_events: Vec::new(),
             context_event: Some("SessionStart".to_string()),
             plugin: None,
             // Picks up the most recent conversation in the checkout, which
@@ -300,8 +305,9 @@ impl Harness {
                 Event::tagged("UserPromptSubmit", Report::Working, "session_id"),
                 Event::tagged("PreToolUse", Report::Working, "session_id"),
                 Event::tagged("PostToolUse", Report::Working, "session_id"),
-                Event::tagged("Stop", Report::Idle, "session_id"),
+                Event::tagged("SessionEnd", Report::Idle, "session_id"),
             ],
+            legacy_events: vec!["Stop".to_string()],
             context_event: Some("SessionStart".to_string()),
             plugin: None,
             resume: vec!["resume".to_string(), "--last".to_string()],
@@ -330,6 +336,7 @@ impl Harness {
             hooks_key: "hooks".to_string(),
             shape: Shape::Flat,
             events: Vec::new(),
+            legacy_events: Vec::new(),
             context_event: None,
             plugin: Some(Plugin {
                 path: PathBuf::from(".opencode").join("plugin").join(PLUGIN_FILE),
@@ -355,6 +362,7 @@ impl Harness {
             hooks_key: "hooks".to_string(),
             shape: Shape::Flat,
             events: Vec::new(),
+            legacy_events: Vec::new(),
             context_event: None,
             plugin: Some(Plugin {
                 path: PathBuf::from(".pi")
@@ -404,6 +412,7 @@ impl Harness {
                     claim_only: false,
                 },
             ],
+            legacy_events: Vec::new(),
             context_event: None,
             plugin: None,
             resume: vec!["--continue".to_string()],
@@ -483,6 +492,7 @@ impl Harness {
                     claim_only: false,
                 },
             ],
+            legacy_events: Vec::new(),
             context_event: None,
             plugin: None,
             resume: vec!["--continue".to_string()],
@@ -544,6 +554,7 @@ impl Harness {
             .iter()
             .map(|e| e.name.as_str())
             .chain(self.context_event.as_deref())
+            .chain(self.legacy_events.iter().map(String::as_str))
     }
 }
 

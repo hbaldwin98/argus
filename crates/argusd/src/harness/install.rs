@@ -97,6 +97,15 @@ impl Harness {
         }
         let hooks_obj = hooks.as_object_mut().expect("just normalized to an object");
 
+        for event in &self.legacy_events {
+            if let Some(value) = hooks_obj.get_mut(event) {
+                remove_managed(value);
+                if value.as_array().is_some_and(Vec::is_empty) {
+                    hooks_obj.remove(event);
+                }
+            }
+        }
+
         let command = helper_path();
         for event in &self.events {
             let entry = status_entry(

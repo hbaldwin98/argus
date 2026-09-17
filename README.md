@@ -272,7 +272,7 @@ optional `harness` selects a matching built-in or configured harness; without it
 agent name and then falls back to the generic environment-only harness.
 
 Claude Code reports through hooks Argus writes into `.claude/settings.local.json`, Codex through
-session, prompt, tool, and stop hooks in `.codex/hooks.json`, OpenCode through a plugin module Argus writes to
+session, prompt, tool, and session-end hooks in `.codex/hooks.json`, OpenCode through a plugin module Argus writes to
 `.opencode/plugin/argus-status.js`, and pi through a project extension at
 `.pi/extensions/argus-status.ts`. AGY uses `.agents/hooks.json` under the `argus` hook key, and
 Cursor's `agent` CLI uses `.cursor/hooks.json` plus an always-on rule at `.cursor/rules/argus.mdc`.
