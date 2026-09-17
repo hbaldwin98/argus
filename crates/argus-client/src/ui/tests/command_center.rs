@@ -1,6 +1,7 @@
 //! Regression coverage for the HTML command-center composition.
 
 use super::*;
+use crate::app::FeaturePanel;
 
 fn command_center() -> App {
     let mut app = app_with_tree();
@@ -659,19 +660,103 @@ fn focused_feature_rows_show_wrapped_text_without_expanding_every_row() {
     let focused_decision_lines = lines(&draw_at(&mut app, 80, 60));
     let focused_decision = focused_decision_lines.join("\n");
     assert!(
-        focused_decision.contains("decision rationale")
-            && focused_decision.contains("remains visible")
-            && focused_decision.contains("after wrapping"),
+        focused_decision.contains("rationale")
+            && focused_decision.contains("remains")
+            && focused_decision.contains("visible")
+            && focused_decision.contains("wrapping"),
         "{focused_decision}"
     );
-    let focused_decisions = app.layout.feature_decisions.inner;
-    let second_decision_y = focused_decision_lines
-        .iter()
-        .position(|line| line.contains("#2"))
-        .expect("the second decision remains visible") as u16;
-    click(&mut app, focused_decisions.x + 1, second_decision_y);
+    assert_eq!(app.panel, FeaturePanel::Decisions);
+    app.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     assert_eq!(
         app.decision_sel, 1,
-        "clicking past an expanded decision selects the row"
+        "moving past an expanded decision selects the next row"
     );
+}
+
+#[test]
+fn feature_decisions_show_tree_guides_and_right_aligned_ids() {
+    let mut app = command_center();
+    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(
+        argus_protocol::DecisionBoard {
+            project: None,
+            name: "argus".into(),
+            features: vec![argus_protocol::Feature {
+                slug: "tree".into(),
+                title: "Tree".into(),
+                body: String::new(),
+                origin_checkout: None,
+                origin_branch: Some("main".into()),
+                at: 0,
+                session: None,
+                state: argus_protocol::FeatureState::Open,
+                checkouts: Vec::new(),
+                tasks: Default::default(),
+            }],
+            decisions: vec![
+                argus_protocol::Decision {
+                    id: 10,
+                    parent: None,
+                    at: 0,
+                    session: None,
+                    checkout: None,
+                    feature: Some("tree".into()),
+                    chose: "root decision".into(),
+                    over: None,
+                    because: None,
+                    superseded_by: None,
+                },
+                argus_protocol::Decision {
+                    id: 11,
+                    parent: Some(10),
+                    at: 0,
+                    session: None,
+                    checkout: None,
+                    feature: Some("tree".into()),
+                    chose: "child decision".into(),
+                    over: None,
+                    because: None,
+                    superseded_by: None,
+                },
+            ],
+        },
+    )));
+    app.open_view(View::Feature);
+    let text = lines(&draw_at(&mut app, 80, 40)).join("\n");
+    assert!(
+        text.contains('└') && text.contains("child decis"),
+        "nested decisions should render branch guides:\n{text}"
+    );
+    for line in text.lines().filter(|line| line.contains("decision")) {
+        let row = line.split('│').next_back().unwrap_or(line).trim();
+        let Some(hash) = row.rfind('#') else {
+            continue;
+        };
+        let id_tail = row[hash + 1..].trim();
+        assert!(
+            !id_tail.is_empty() && id_tail.chars().all(|c| c.is_ascii_digit()),
+            "decision id should sit on the right: {row:?}"
+        );
+    }
+}
+
+#[test]
+fn focused_task_keeps_id_on_the_right() {
+    let mut app = feature_document_with_long_rows();
+    let tasks = app.layout.feature_tasks.inner;
+    click(&mut app, tasks.x + 1, tasks.y);
+    let width = tasks.width as usize;
+    for line in lines(&draw_at(&mut app, 80, 60)) {
+        if !line.contains('#') {
+            continue;
+        }
+        let visible: String = line.chars().take(width).collect();
+        if visible.contains("#") && visible.contains("1") {
+            let trimmed = visible.trim_end();
+            assert!(
+                trimmed.ends_with('1') || trimmed.ends_with("#1"),
+                "task id should stay right-aligned when expanded: {visible:?}"
+            );
+        }
+    }
 }

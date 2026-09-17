@@ -981,6 +981,91 @@ fn hanging_text(
     lines
 }
 
+fn after_first_wrapped_line<'a>(text: &'a str, first_line: &str) -> &'a str {
+    if first_line.is_empty() {
+        return text;
+    }
+    if let Some(rest) = text.strip_prefix(first_line) {
+        return rest.trim_start();
+    }
+    if let Some(idx) = text.find(first_line) {
+        return text[idx + first_line.len()..].trim_start();
+    }
+    ""
+}
+
+/// Like [`hanging_text`], but reserves trailing space on the first line for a
+/// right-aligned label (typically `#id`) so focus expansion does not drift it.
+fn hanging_text_with_right_id_on_first(
+    prefix: Vec<Span<'static>>,
+    hang: usize,
+    text: &str,
+    style: Style,
+    width: u16,
+    id: i64,
+    id_style: Style,
+) -> Vec<Line<'static>> {
+    let id_label = format!("  #{:>5}", id);
+    let id_w = id_label.chars().count();
+    let prefix_w: usize = prefix.iter().map(Span::width).sum();
+    let hang = hang.max(prefix_w);
+    let rest_room = usize::from(width).saturating_sub(hang).max(1) as u16;
+    let first_room = usize::from(width).saturating_sub(hang + id_w).max(1) as u16;
+    if text.is_empty() {
+        let mut spans = prefix;
+        spans.push(Span::styled(id_label, id_style));
+        return vec![Line::from(spans)];
+    }
+    let first_lines = wrap(text, first_room);
+    let first = first_lines.first().cloned().unwrap_or_default();
+    let first_room_usize = usize::from(first_room);
+    let mut lines = vec![Line::from(
+        prefix
+            .into_iter()
+            .chain([
+                Span::styled(format!("{first:<first_room_usize$}"), style),
+                Span::styled(id_label, id_style),
+            ])
+            .collect::<Vec<_>>(),
+    )];
+    let remainder = after_first_wrapped_line(text, &first);
+    if !remainder.is_empty() {
+        for line in wrap(remainder, rest_room) {
+            lines.push(Line::from(vec![
+                Span::raw(" ".repeat(hang)),
+                Span::styled(line, style),
+            ]));
+        }
+    }
+    lines
+}
+
+fn line_with_right_label(
+    indent: &str,
+    hang: usize,
+    left: &str,
+    left_style: Style,
+    right: &str,
+    right_style: Style,
+    width: u16,
+) -> Line<'static> {
+    let hang = hang.max(indent.chars().count());
+    let right_len = right.chars().count();
+    let room = usize::from(width).saturating_sub(hang + right_len);
+    Line::from(vec![
+        Span::styled(indent.to_string(), left_style),
+        Span::styled(
+            format!("{:<room$}", ellipsize_text(left, room)),
+            left_style,
+        ),
+        Span::styled(right.to_string(), right_style),
+    ])
+}
+
+fn task_id_label(id: i64) -> String {
+    format!("  #{:>5}", id)
+}
+
 fn task_guide(row: &argus_protocol::TaskTreeRow<'_>) -> String {
     let mut guide = String::new();
     if row.depth > 0 {
@@ -1005,8 +1090,8 @@ fn task_children(rows: &[argus_protocol::TaskTreeRow<'_>], index: usize) -> usiz
         .count()
 }
 
-fn task_metadata(task: &argus_protocol::Task, children: usize) -> String {
-    let mut parts = vec![format!("#{}", task.id)];
+fn task_metadata_extra(task: &argus_protocol::Task, children: usize) -> String {
+    let mut parts = Vec::new();
     if children > 0 {
         parts.push(plural(children, "subtask"));
     }
@@ -1060,7 +1145,7 @@ fn task_lines(
                 title_style,
             ),
             Span::styled(badge, base.fg(th.muted)),
-            Span::styled(format!("  #{:>5}", task.id), base.fg(th.dim)),
+            Span::styled(task_id_label(task.id), base.fg(th.dim)),
         ])];
     }
 
@@ -1079,10 +1164,12 @@ fn task_lines(
         width,
     );
     let detail_prefix = " ".repeat(title_hang);
-    lines.extend(hanging_text(
-        vec![Span::styled(detail_prefix.clone(), base.fg(th.dim))],
+    lines.push(line_with_right_label(
+        &detail_prefix,
         title_hang,
-        &task_metadata(task, children),
+        &task_metadata_extra(task, children),
+        base.fg(th.dim),
+        &task_id_label(task.id),
         base.fg(th.dim),
         width,
     ));
@@ -1121,6 +1208,21 @@ fn task_row_heights(
         .collect()
 }
 
+fn decision_guide(row: &argus_protocol::DecisionTreeRow<'_>) -> String {
+    let mut guide = String::new();
+    if row.depth > 0 {
+        for continues in row
+            .ancestor_continuations
+            .iter()
+            .take(row.depth.saturating_sub(1))
+        {
+            guide.push_str(if *continues { "│ " } else { "  " });
+        }
+        guide.push_str(if row.has_next_sibling { "├ " } else { "└ " });
+    }
+    guide
+}
+
 fn decision_detail(decision: &argus_protocol::Decision) -> String {
     let mut parts = Vec::new();
     if let Some(over) = &decision.over {
@@ -1153,37 +1255,38 @@ fn decision_lines(
     } else {
         th.muted
     });
-    let bar = if selected { "▌ " } else { "│ " };
+    let guide = decision_guide(row);
+    let marker = if selected { "▌ " } else { "  " };
     let detail = decision_detail(decision);
     if !expanded {
-        let text_width = usize::from(width).saturating_sub(bar.chars().count());
+        let prefix = format!("{marker}{guide}");
+        let id_label = task_id_label(decision.id);
+        let fixed = prefix.chars().count() + id_label.chars().count();
+        let title_width = usize::from(width).saturating_sub(fixed);
         return vec![Line::from(vec![
-            Span::styled(bar, base.fg(if selected { th.accent } else { th.edge })),
-            Span::styled(
-                ellipsize_text(
-                    &format!("#{} {}", decision.id, decision.chose),
-                    text_width,
-                ),
-                name_style,
-            ),
+            Span::styled(prefix, base.fg(if selected { th.accent } else { th.edge })),
+            Span::styled(ellipsize_text(&decision.chose, title_width), name_style),
+            Span::styled(id_label, base.fg(th.dim)),
         ])];
     }
 
     let title_prefix = vec![
-        Span::styled(bar, base.fg(th.accent)),
-        Span::styled(format!("#{} ", decision.id), base.fg(th.dim)),
+        Span::styled(marker, base.fg(th.accent)),
+        Span::styled(guide, base.fg(th.edge)),
     ];
     let title_hang = title_prefix.iter().map(Span::width).sum::<usize>();
     let mut choice = decision.chose.clone();
     if let Some(by) = decision.superseded_by {
         choice.push_str(&format!("  superseded by #{by}"));
     }
-    let mut lines = hanging_text(
+    let mut lines = hanging_text_with_right_id_on_first(
         title_prefix,
         title_hang,
         &choice,
         name_style.add_modifier(Modifier::BOLD),
         width,
+        decision.id,
+        base.fg(th.dim),
     );
     lines.extend(hanging_text(
         vec![Span::styled(" ".repeat(title_hang), base.fg(th.dim))],
