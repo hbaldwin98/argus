@@ -16,13 +16,9 @@ fn the_strip_names_every_view_and_marks_the_open_one() {
 
     for view in View::ALL {
         assert!(
-            strip.contains(view.label()),
+            strip.contains(&view.label().to_ascii_uppercase()),
             "the strip must name {}: {strip:?}",
             view.label()
-        );
-        assert!(
-            strip.contains(view.digit()),
-            "and say which key opens it: {strip:?}"
         );
     }
 }
@@ -440,6 +436,7 @@ fn a_board_opened_before_the_tree_arrived_is_asked_for_when_it_does() {
 fn a_tree_that_moves_nothing_does_not_ask_for_the_board_again() {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let mut app = App::new(tx);
+    app.command_center = false;
     app.on_server_msg(argus_protocol::ServerMsg::Tree(super::tree()));
     app.open_view(View::Feature);
     let project = app.current_project().unwrap();
@@ -628,6 +625,7 @@ fn feature_view_watching(
 ) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let mut app = App::new(tx);
+    app.command_center = false;
     app.on_server_msg(argus_protocol::ServerMsg::Tree(super::tree()));
     let project = app.current_project().unwrap();
     let (id, name) = (project.id, project.name.clone());

@@ -836,19 +836,24 @@ pub enum View {
     /// its brief, what is left to do under it, and why it has the shape it
     /// does.
     Feature,
+    /// Every live pane in the workspace, arranged for scanning rather than
+    /// terminal input.
+    Panes,
+    /// The selected repository's checkouts and worktrees as an operational
+    /// table.
+    Checkouts,
 }
 
 impl View {
-    /// Every view, in the order the tab strip draws them. The spine is
-    /// first because it is the default and the one you return to.
-    pub const ALL: [View; 2] = [View::Spine, View::Feature];
+    /// Every top-level surface, in the order shown by the design document.
+    pub const ALL: [View; 4] = [View::Spine, View::Feature, View::Panes, View::Checkouts];
 
-    /// What the tab says. Short by intent: the strip is one row, and every
-    /// cell it spends is a cell the view underneath could have used.
     pub fn label(self) -> &'static str {
         match self {
-            View::Spine => "spine",
-            View::Feature => "features",
+            View::Spine => "workspace",
+            View::Feature => "feature",
+            View::Panes => "panes",
+            View::Checkouts => "checkouts",
         }
     }
 
@@ -862,8 +867,7 @@ impl View {
     }
 
     pub fn from_digit(c: char) -> Option<View> {
-        let index = c.to_digit(10)?.checked_sub(1)? as usize;
-        View::ALL.get(index).copied()
+        View::ALL.into_iter().find(|view| view.digit() == c)
     }
 }
 
@@ -948,7 +952,7 @@ mod tests {
     #[test]
     fn a_digit_no_view_sits_on_opens_nothing() {
         assert_eq!(View::from_digit('0'), None);
-        assert_eq!(View::from_digit('3'), None);
+        assert_eq!(View::from_digit('5'), None);
         assert_eq!(View::from_digit('x'), None);
     }
 

@@ -215,6 +215,16 @@ impl App {
     }
 
     /// Every listed pane in the open workspace, in tree order.
+    pub fn overview_pane_locations(&self) -> Vec<PaneLocation> {
+        self.flat_pane_locations()
+            .into_iter()
+            .filter(|location| {
+                location.project == self.sel_project
+                    && (self.show_all_panes || location.repository == self.sel_repository)
+            })
+            .collect()
+    }
+
     pub fn flat_pane_locations(&self) -> Vec<PaneLocation> {
         self.tree
             .iter()
@@ -286,6 +296,13 @@ impl App {
         }
         self.sel_project = location.project;
         self.sel_repository = location.repository;
+        if let Some(repository) = self
+            .tree
+            .get(location.project)
+            .and_then(|project| project.repositories.get(location.repository))
+        {
+            self.expanded_repositories.insert(repository.id);
+        }
         let Some(row) = self.checkout_row_of(location.checkout) else {
             return false;
         };

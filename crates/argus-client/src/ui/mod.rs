@@ -51,6 +51,7 @@ use crate::theme::Theme;
 use argus_protocol::CursorShape;
 
 mod columns;
+mod command_center;
 mod help;
 mod history;
 mod modals;
@@ -64,6 +65,7 @@ mod text;
 mod views;
 
 use columns::*;
+use command_center::*;
 use help::*;
 use history::*;
 use modals::*;
@@ -76,6 +78,11 @@ use term::*;
 use text::*;
 use views::*;
 
+pub(crate) use command_center::{
+    checkout_at as command_center_checkout_at, pane_at as command_center_pane_at,
+    rail_target_at as command_center_rail_target_at,
+    sidebar_contains as command_center_sidebar_contains, RailTarget as CommandCenterRailTarget,
+};
 pub use rows::pane_row_owners;
 pub use term::CursorPlacement;
 pub use views::tab_at;
@@ -249,30 +256,29 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // page and panel is what makes the panels read as cards.
     f.render_widget(Block::default().style(Style::default().bg(th.bg)), f.area());
 
-    let page = inset(f.area(), GUTTER_COLS, 1);
-    // Above everything, page frame included: which views exist is not a
-    // property of whichever one is open.
-    if let Some(strip) = strip_row(f.area(), page) {
-        render_view_tabs(f, app, strip, th);
+    let page = if app.command_center {
+        f.area()
     } else {
-        app.layout.views = Panel::default();
-    }
-    // A resize is noticed here rather than plumbed in as an event, because
-    // here is where the answer is used. Folding only ever tightens: a
-    // terminal that has grown wide enough for five columns is not a reason
-    // to undo a layout the user chose, and `p` is how they change it back.
-    if app.layout.width != f.area().width {
-        app.layout.width = f.area().width;
-        app.fold = app.fold.max(Fold::required(f.area().width));
-        if app.fold.hides(app.focus) {
-            app.focus = app.fold.first_focus();
+        inset(f.area(), GUTTER_COLS, 1)
+    };
+    if !app.command_center {
+        if let Some(strip) = strip_row(f.area(), page) {
+            render_view_tabs(f, app, strip, th);
+        } else {
+            app.layout.views = Panel::default();
+        }
+        if app.layout.width != f.area().width {
+            app.fold = app.fold.max(Fold::required(f.area().width));
+            if app.fold.hides(app.focus) {
+                app.focus = app.fold.first_focus();
+            }
         }
     }
-
-    // A blank row above the status bar keeps it off the panel borders.
+    app.layout.width = f.area().width;
+    let status_height = 2;
     let root = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(2)])
+        .constraints([Constraint::Min(1), Constraint::Length(status_height)])
         .split(page);
 
     // The hardware cursor is decided once, here, and applied last.
@@ -285,26 +291,30 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // Each layer replaces the decision outright, `None` included.
     let fullscreen =
         app.pane_fullscreen && app.focus == Focus::PaneContent && app.column_pane().is_some();
-    let mut cursor = match app.view {
-        // A view that is not the spine draws no columns, so the regions a
-        // click is resolved against have to be forgotten rather than left
-        // pointing at cards that are no longer there.
-        View::Feature => {
-            forget_spine(app);
-            // The live pane is not on screen, so its region must not stay
-            // where a click could still find it.
-            app.layout.content = Panel::default();
-            render_feature(f, app, root[0], th);
-            None
-        }
-        View::Spine if fullscreen => {
-            forget_spine(app);
-            forget_feature_view(app);
-            render_content(f, app, root[0], th)
-        }
-        View::Spine => {
-            forget_feature_view(app);
-            render_columns(f, app, root[0])
+    let mut cursor = if app.command_center && !fullscreen {
+        render_command_center(f, app, root[0], th)
+    } else {
+        match app.view {
+            View::Feature => {
+                forget_spine(app);
+                app.layout.content = Panel::default();
+                render_feature(f, app, root[0], th);
+                None
+            }
+            View::Spine if fullscreen => {
+                forget_spine(app);
+                forget_feature_view(app);
+                render_content(f, app, root[0], th)
+            }
+            View::Spine => {
+                forget_feature_view(app);
+                render_columns(f, app, root[0])
+            }
+            View::Panes | View::Checkouts => {
+                forget_spine(app);
+                forget_feature_view(app);
+                None
+            }
         }
     };
     render_status(f, app, root[1], th);

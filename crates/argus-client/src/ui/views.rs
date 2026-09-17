@@ -33,8 +33,13 @@ pub(super) fn strip_row(frame: Rect, page: Rect) -> Option<Rect> {
 /// One tab's text, including the padding that makes it a click target
 /// rather than a word.
 fn tab_text(view: View) -> String {
-    format!(" {} {} ", view.digit(), view.label())
+    format!("  {}  ", view.label().to_ascii_uppercase())
 }
+
+/// The product mark owns a cell-height divider, as it does in the reference
+/// shell. Keeping its width in the same constant used by hit-testing prevents
+/// the visible divider and click targets from drifting apart.
+const BRAND: &str = " ■  ARGUS  ";
 
 /// Which tab a point falls on. Shared with the renderer rather than
 /// re-derived, so a click lands on the tab that was actually drawn.
@@ -48,7 +53,7 @@ pub fn tab_at(strip: Rect, x: u16, y: u16) -> Option<View> {
     if y != strip.y || x < strip.x {
         return None;
     }
-    let mut cell = strip.x;
+    let mut cell = strip.x.saturating_add(BRAND.chars().count() as u16);
     for view in View::ALL {
         let width = tab_text(view).chars().count() as u16;
         if x >= cell && x < cell + width {
@@ -60,23 +65,72 @@ pub fn tab_at(strip: Rect, x: u16, y: u16) -> Option<View> {
 }
 
 pub(super) fn render_view_tabs(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
-    let mut spans = Vec::new();
+    let mut labels = vec![Span::styled(
+        BRAND,
+        Style::default().fg(th.accent).add_modifier(Modifier::BOLD),
+    )];
+    let mut rule = vec![Span::styled(
+        "─".repeat(BRAND.chars().count()),
+        Style::default().fg(th.edge),
+    )];
     for view in View::ALL {
         let open = view == app.view;
-        // The open tab is the only accented thing on the row, and it is
-        // the elevation that says which one it is — the same trick the
-        // cards use, one row tall.
-        let style = if open {
+        let text = tab_text(view);
+        labels.push(Span::styled(
+            text.clone(),
             Style::default()
-                .fg(th.accent)
-                .bg(th.surface_focus)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(th.dim).bg(th.bg)
-        };
-        spans.push(Span::styled(tab_text(view), style));
+                .fg(if open { th.text } else { th.dim })
+                .add_modifier(if open {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                }),
+        ));
+        rule.push(Span::styled(
+            if open {
+                "━".repeat(text.len())
+            } else {
+                "─".repeat(text.len())
+            },
+            Style::default().fg(if open { th.accent } else { th.edge }),
+        ));
     }
-    f.render_widget(Paragraph::new(Line::from(spans)), area);
+    f.render_widget(
+        Paragraph::new(Line::from(labels)),
+        Rect { height: 1, ..area },
+    );
+    if BRAND.chars().count() < area.width as usize {
+        f.render_widget(
+            Paragraph::new(Span::styled("│", Style::default().fg(th.edge))),
+            Rect {
+                x: area.x + BRAND.chars().count().saturating_sub(1) as u16,
+                y: area.y,
+                width: 1,
+                height: 1,
+            },
+        );
+    }
+    if area.height > 1 {
+        f.render_widget(
+            Paragraph::new(Line::from(rule)),
+            Rect {
+                y: area.y + 1,
+                height: 1,
+                ..area
+            },
+        );
+        if BRAND.chars().count() < area.width as usize {
+            f.render_widget(
+                Paragraph::new(Span::styled("┴", Style::default().fg(th.edge))),
+                Rect {
+                    x: area.x + BRAND.chars().count().saturating_sub(1) as u16,
+                    y: area.y + 1,
+                    width: 1,
+                    height: 1,
+                },
+            );
+        }
+    }
     app.layout.views = Panel {
         outer: area,
         inner: area,

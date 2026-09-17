@@ -90,8 +90,9 @@ result of a request; `ui` is a pure function of it.
 | `app/server` | what arrives back, and what it does to the selection |
 | `app/views` | which surface the content area holds, and the one feature selection everything on it is read at |
 | `ui` | the frame, and where the cursor goes on it |
-| `ui/columns`, `ui/rows`, `ui/text` | the spine, the vocabulary of a row, and fitting text to a width |
-| `ui/views` | the tab strip, and the feature view: its list, brief, tasks and decision tree |
+| `ui/command_center` | the HTML-specified shell, contextual rail, workspace stage, pane overview, checkout table, and first-run state |
+| `ui/columns`, `ui/rows`, `ui/text` | the compatibility spine, the vocabulary of a row, and fitting text to a width |
+| `ui/views` | the top navigation and the legacy feature renderer |
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
 | `review`, `history`, `brief`, `dirpicker` | the view state behind each overlay |
 | `grid`, `selection`, `pty_input`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
@@ -99,17 +100,20 @@ result of a request; `ui` is a pure function of it.
 
 ## Views
 
-The content area holds one *view* at a time. The spine — the five columns below — is the default
-view and the one every other view is left back to. A one-row tab strip along the top of the frame
-names the views that exist and marks the open one; each tab carries the digit that opens it, and a
-click on a tab does the same. From inside a pane the digits belong to the child, so a view is
-reached through the leader (`Ctrl-Space`, then the digit) the way review and history are. The strip
-is drawn in the blank row the page is already inset by, so it costs the view underneath nothing.
+The production client follows `Argus Command Center.dc.html`: a two-row product-and-navigation
+band, a stable 32-cell contextual rail, one dominant stage, and a one-row command band. Four tabs
+name the stage surfaces: Workspace, Feature, Panes, and Checkouts. Their digits still open them;
+from inside a pane the digits belong to the child, so a view is reached through the leader
+(`Ctrl-Space`, then the digit). The empty tree replaces the shell with the first-run surface rather
+than pretending first-run is a permanent view.
 
-While a view other than the spine is open, the content area is that view's: a click in it selects a
-row there and keeps the keyboard on the view, rather than resolving against the pane whose column
-used to occupy the same cells. The status bar follows: each view advertises its own keys, since a
-bar still offering the spine's columns is worse than one saying nothing.
+The rail is stable across all four surfaces. It summarizes the open workspace and selected project,
+lists that project's repositories, and rolls live agents up at the bottom. Selecting a repository
+changes the existing daemon-tree selection; the rail owns no parallel workspace model. Workspace
+holds the selected pane's real terminal beneath a flat breadcrumb header. Panes is a responsive
+card overview derived from the same pane locations, Checkouts is an operational table for the
+selected repository, and Feature reads the selected feature as a document of brief, tasks, and
+decisions. The command band follows the active surface.
 
 Switching views changes the screen and nothing else. Every pane keeps running, its subscription
 stands, and the spine is one keystroke back. Focus moves out of the columns while another view is
@@ -118,11 +122,10 @@ is a key nobody can see the effect of — and returns to the column it left. Whi
 this client's own state and is never sent to the daemon: two people attached to one daemon are not
 necessarily reading the same thing.
 
-There are two views: the spine, and the feature view (see "Features"). It was four — a decision
-board, a feature board and a task board beside the spine — and three of them were one object drawn
-three times, each with a selection of its own. Selections that can disagree do: opening the task
-board from the decision board showed whichever card the feature board happened to be sitting on,
-not the feature whose reasoning was on screen.
+There are four views: Workspace, Feature, Panes, and Checkouts. Review, history, settings, briefs,
+and editors remain overlays because they are temporary work over the current surface. The former
+five-column spine remains compiled behind a client-only compatibility switch for focused geometry
+regressions; it is not the production presentation.
 
 ## Navigation model
 
@@ -132,13 +135,13 @@ The runtime hierarchy is:
 Workspace scope -> Project -> Repository -> Checkout -> Pane
 ```
 
-A workspace is a daemon-wide scope, not a navigation column. Switching it changes every attached
-client. Panes in other workspaces continue to run. The TUI draws project, repository, checkout,
-and pane columns followed by the selected pane's terminal. Pressing `p` folds the leading
-columns away one at a time to disclosure tabs on the left edge, ceding their width to the rest,
-and wraps back to none; clicking a tab brings that column back. While typing in a pane,
-`Ctrl-Space`, `f` lets its terminal take the main content area; repeating the chord restores the
-columns. The status bar remains visible in both layouts.
+A workspace is daemon-wide scope, not a navigation column. Switching it changes every attached
+client. Panes in other workspaces continue to run. The production TUI projects the selected
+project's repositories and agents into the stable rail and gives the selected pane's terminal the
+remaining stage. Repository rows are ordered active-first and stay collapsed until clicked; an
+expanded row shows its active checkout branches and their panes, with the pane being viewed marked
+in place. Checkout and pane identity remain the same indices and IDs used by the daemon tree. While typing in a pane, `Ctrl-Space`, `f` lets its terminal take the main content area;
+repeating the chord restores the shell. The command band remains visible in both layouts.
 
 A nav column is as wide as what it holds. It asks for its widest row — name line or detail line,
 whichever is longer — and for its own title, floored, capped at what a list of names is worth, and

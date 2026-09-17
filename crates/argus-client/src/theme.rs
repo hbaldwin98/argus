@@ -142,20 +142,22 @@ impl Theme {
 
     pub fn mocha() -> Self {
         Theme {
-            bg: rgb(0x11111b),            // crust
-            surface: rgb(0x1e1e2e),       // base
-            surface_focus: rgb(0x313244), // surface0
-            accent: rgb(0xcba6f7),        // mauve
-            on_accent: rgb(0x11111b),
-            text: rgb(0xcdd6f4),
-            muted: rgb(0xa6adc8),  // subtext0
-            dim: rgb(0x6c7086),    // overlay0
-            ok: rgb(0xa6e3a1),     // green
-            warn: rgb(0xf9e2af),   // yellow
-            err: rgb(0xf38ba8),    // red
-            edge: rgb(0x45475a),   // surface1
-            sel_bg: rgb(0x585b70), // surface2
-            sel_bg_dim: rgb(0x45475a),
+            // The default flavor follows the command-center document
+            // exactly; the named Catppuccin accents remain its signal colors.
+            bg: rgb(0x0b0c10),
+            surface: rgb(0x171922),
+            surface_focus: rgb(0x242833),
+            accent: rgb(0xcba6f7),
+            on_accent: rgb(0x0b0c10),
+            text: rgb(0xc9cddb),
+            muted: rgb(0x9aa1b4),
+            dim: rgb(0x5b6172),
+            ok: rgb(0xa6e3a1),
+            warn: rgb(0xf9e2af),
+            err: rgb(0xf38ba8),
+            edge: rgb(0x1d2029),
+            sel_bg: rgb(0x45475a),
+            sel_bg_dim: rgb(0x343a4b),
             add_bg: rgb(0x2a4433),
             del_bg: rgb(0x4d2c3e),
             add_bg_sel: rgb(0x365c43),
@@ -379,7 +381,11 @@ mod tests {
         for t in all() {
             let on_focused = (luminance(t.sel_bg) - luminance(t.surface_focus)).abs();
             let on_unfocused = (luminance(t.sel_bg_dim) - luminance(t.surface)).abs();
-            assert!(on_focused >= ELEVATION_STEP, "{}: {on_focused:.1}", t.name());
+            assert!(
+                on_focused >= ELEVATION_STEP,
+                "{}: {on_focused:.1}",
+                t.name()
+            );
             assert!(
                 on_unfocused >= ELEVATION_STEP,
                 "{}: {on_unfocused:.1}",

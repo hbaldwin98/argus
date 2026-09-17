@@ -119,11 +119,56 @@ impl App {
                     return;
                 }
             }
-            if let Some(gutter) = self.gutter_at(ev.column, ev.row) {
-                self.column_widths = Some(self.rendered_column_widths());
-                self.resizing_gutter = Some(gutter);
-                return;
+            if !self.command_center {
+                if let Some(gutter) = self.gutter_at(ev.column, ev.row) {
+                    self.column_widths = Some(self.rendered_column_widths());
+                    self.resizing_gutter = Some(gutter);
+                    return;
+                }
             }
+        }
+        if self.command_center
+            && crate::ui::command_center_sidebar_contains(self, ev.column, ev.row)
+        {
+            match ev.kind {
+                MouseEventKind::Down(MouseButton::Left) => {
+                    if let Some(target) =
+                        crate::ui::command_center_rail_target_at(self, ev.column, ev.row)
+                    {
+                        match target {
+                            crate::ui::CommandCenterRailTarget::Repository(repository) => {
+                                self.sel_repository = repository;
+                                self.sel_checkout = 0;
+                                self.sel_pane = 0;
+                                self.focus = Focus::Repositories;
+                                if let Some(id) = self
+                                    .current_project()
+                                    .and_then(|project| project.repositories.get(repository))
+                                    .map(|repository| repository.id)
+                                {
+                                    self.expanded_repositories.insert(id);
+                                }
+                            }
+                            crate::ui::CommandCenterRailTarget::Checkout(repository, checkout) => {
+                                self.sel_repository = repository;
+                                self.sel_checkout = checkout;
+                                self.sel_pane = 0;
+                                self.focus = Focus::Checkouts;
+                            }
+                            crate::ui::CommandCenterRailTarget::Pane(location) => {
+                                self.select_pane_location(location);
+                                self.open_view(View::Spine);
+                                self.focus = Focus::PaneContent;
+                            }
+                        }
+                        self.clamp();
+                    }
+                }
+                MouseEventKind::ScrollUp => self.adjust_selection(Focus::Repositories, -1),
+                MouseEventKind::ScrollDown => self.adjust_selection(Focus::Repositories, 1),
+                _ => {}
+            }
+            return;
         }
         // A view that is not the spine owns the content area outright, and
         // the pane whose column used to be there is not on screen. Without
@@ -131,6 +176,34 @@ impl App {
         // lands in it and every later keypress goes to a child nobody can
         // see.
         if self.view != View::Spine {
+            if self.view == View::Panes {
+                if matches!(ev.kind, MouseEventKind::Down(MouseButton::Left)) {
+                    if let Some(location) =
+                        crate::ui::command_center_pane_at(self, ev.column, ev.row)
+                    {
+                        self.select_pane_location(location);
+                        self.open_view(View::Spine);
+                        self.focus = Focus::PaneContent;
+                    }
+                }
+                return;
+            }
+            if self.view == View::Checkouts {
+                if matches!(ev.kind, MouseEventKind::Down(MouseButton::Left)) {
+                    if let Some(checkout) =
+                        crate::ui::command_center_checkout_at(self, ev.column, ev.row)
+                    {
+                        self.sel_checkout = checkout;
+                        self.sel_pane = 0;
+                        self.focus = Focus::Checkouts;
+                        self.clamp();
+                    }
+                }
+                return;
+            }
+            if self.view != View::Feature {
+                return;
+            }
             match ev.kind {
                 MouseEventKind::Down(MouseButton::Left) => {
                     self.focus = Focus::View;

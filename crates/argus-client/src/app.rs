@@ -157,6 +157,10 @@ pub struct App {
     /// This is view state only; the renderer's existing live-pane sizing
     /// turns the larger area into a PTY resize.
     pub pane_fullscreen: bool,
+    /// Production uses the HTML-specified command center. Kept as a switch
+    /// so the legacy geometry remains directly regression-testable while
+    /// the replacement settles.
+    pub(crate) command_center: bool,
     /// How the clipboard is read. A field so a test can hand the app a
     /// clipboard without there being a desktop session to hold one.
     pub clipboard: fn() -> Option<String>,
@@ -188,6 +192,13 @@ pub struct App {
     /// sitting on. Off by default — the column is for what is running, and
     /// the main branch is pinned to the top of it either way.
     pub show_branches: bool,
+    /// Repositories whose compact rail subtree has been opened by the user.
+    /// A selection alone does not expand a repository: the rail stays useful
+    /// as an index until the operator asks for its branch and pane rows.
+    pub expanded_repositories: std::collections::HashSet<RepositoryId>,
+    /// Pane overview scope. It starts on the selected repository; `A`
+    /// temporarily broadens it to every repository in the workspace.
+    pub show_all_panes: bool,
     resizing_gutter: Option<usize>,
     resizing_feature_gutter: Option<usize>,
     pub picker: Option<Picker>,
@@ -358,6 +369,7 @@ impl App {
             grids: std::collections::HashMap::new(),
             leader_pending: false,
             pane_fullscreen: false,
+            command_center: true,
             clipboard: crate::clipboard::read,
             clipboard_write: crate::clipboard::write,
             selection: None,
@@ -371,6 +383,8 @@ impl App {
             feature_panel_heights,
             fold: settings.fold(),
             show_branches: false,
+            expanded_repositories: std::collections::HashSet::new(),
+            show_all_panes: false,
             resizing_gutter: None,
             resizing_feature_gutter: None,
             picker: None,

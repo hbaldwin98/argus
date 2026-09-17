@@ -160,12 +160,13 @@ fn an_empty_tree_renders_the_add_project_hint() {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     std::mem::forget(rx);
     let mut app = App::new(tx);
-    // The hint wraps across the narrow column, so assert on its words
-    // rather than on a contiguous phrase.
     let text = lines(&draw(&mut app)).join("\n");
     assert!(
-        text.contains("no projects"),
-        "a first run should say the tree is empty"
+        text.contains("NO WORKSPACE"),
+        "a first run should say the workspace is empty"
     );
-    assert!(text.contains("add"), "and how to start:\n{text}");
+    assert!(
+        text.contains("choose a directory"),
+        "and how to start:\n{text}"
+    );
 }

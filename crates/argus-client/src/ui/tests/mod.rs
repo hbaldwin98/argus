@@ -4,6 +4,7 @@
 
 mod brief;
 mod browser;
+mod command_center;
 mod diff;
 mod frame;
 mod geometry;
@@ -109,6 +110,7 @@ pub(super) fn app_with_tree() -> App {
     // Keep the receiver alive so sends don't fail during render setup.
     std::mem::forget(rx);
     let mut app = App::new(tx);
+    app.command_center = false;
     app.on_server_msg(argus_protocol::ServerMsg::Tree(tree()));
     app
 }

@@ -20,11 +20,32 @@ use crate::app::FeaturePanel;
 /// reported. `App::on_key` hands it back on the next keypress, so a report
 /// is read once and then gets out of the way.
 pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
-    // `area` includes the blank padding row; the bar is its last row.
-    let area = Rect {
-        y: area.y + area.height.saturating_sub(1),
-        height: area.height.min(1),
-        ..area
+    let area = if app.command_center {
+        let block = Block::default()
+            .borders(Borders::TOP)
+            .border_style(Style::default().fg(th.edge));
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        let rail = app.layout.projects.outer;
+        if rail.width > 0 {
+            f.render_widget(
+                Paragraph::new(Span::styled("┴", Style::default().fg(th.edge))),
+                Rect {
+                    x: rail.right().saturating_sub(1),
+                    y: area.y,
+                    width: 1,
+                    height: 1,
+                },
+            );
+        }
+        inner
+    } else {
+        // Legacy layout keeps one blank row above the command line.
+        Rect {
+            y: area.y + area.height.saturating_sub(1),
+            height: area.height.min(1),
+            ..area
+        }
     };
 
     let (hints, tone) = if app.help.is_some() {
@@ -197,7 +218,15 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                     th.dim,
                 ),
             },
-            View::Spine => unreachable!("the spine is not a view with its own keys"),
+            View::Panes => (
+                &["j/k move   enter open   A all   a agent   s shell   q workspace", "j/k  enter open  A all  q"][..],
+                th.dim,
+            ),
+            View::Checkouts => (
+                &["j/k move   enter open   m checkout   n worktree   q workspace", "j/k  enter open  q"][..],
+                th.dim,
+            ),
+            View::Spine => unreachable!("the workspace is handled above"),
         }
     } else if app.focus == Focus::PaneContent {
         // A parked pane is not taking input anywhere the operator can see,

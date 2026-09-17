@@ -564,11 +564,58 @@ impl App {
     /// whichever panel has them and `Tab` crosses between panels, so
     /// stepping from the feature list into its tasks does not change what
     /// the keys mean — only what they act on.
+    fn move_overview_pane(&mut self, delta: i32) {
+        let locations = self.overview_pane_locations();
+        if locations.is_empty() {
+            return;
+        }
+        let current = self
+            .pane_location()
+            .and_then(|selected| locations.iter().position(|location| *location == selected))
+            .unwrap_or(0) as i32;
+        let next = (current + delta).clamp(0, locations.len() as i32 - 1) as usize;
+        self.select_pane_location(locations[next]);
+    }
+
     fn on_key_view(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Char(c) if View::from_digit(c).is_some() => {
-                self.open_view(View::from_digit(c).unwrap())
+        if let KeyCode::Char(c) = key.code {
+            if let Some(view) = View::from_digit(c) {
+                self.open_view(view);
+                return;
             }
+        }
+        if self.view == View::Panes {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Spine),
+                KeyCode::Char('j') | KeyCode::Down => self.move_overview_pane(1),
+                KeyCode::Char('k') | KeyCode::Up => self.move_overview_pane(-1),
+                KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
+                    self.open_view(View::Spine);
+                    self.focus = Focus::PaneContent;
+                }
+                KeyCode::Char('A') => self.show_all_panes = !self.show_all_panes,
+                KeyCode::Char('a') => self.open_picker(),
+                KeyCode::Char('s') => self.spawn_shell(),
+                _ => {}
+            }
+            return;
+        }
+        if self.view == View::Checkouts {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Spine),
+                KeyCode::Char('j') | KeyCode::Down => self.adjust_selection(Focus::Checkouts, 1),
+                KeyCode::Char('k') | KeyCode::Up => self.adjust_selection(Focus::Checkouts, -1),
+                KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
+                    self.open_view(View::Spine);
+                    self.focus = Focus::Checkouts;
+                }
+                KeyCode::Char('m') | KeyCode::Char('b') => self.open_branch_picker(),
+                KeyCode::Char('n') => self.new_prompt(),
+                _ => {}
+            }
+            return;
+        }
+        match key.code {
             // The typed line takes every key, so a title with an `x` in it
             // does not delete the row behind it, and the first escape puts
             // the line away rather than the view.
