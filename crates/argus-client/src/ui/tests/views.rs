@@ -677,7 +677,10 @@ fn accepted_features_leave_active_work_but_can_be_reopened_from_history() {
             decisions: Vec::new(),
         },
     )));
-    assert!(app.feature_rows().is_empty(), "done work leaves the active list");
+    assert!(
+        app.feature_rows().is_empty(),
+        "done work leaves the active list"
+    );
 
     app.on_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::NONE));
     assert_eq!(app.selected_feature().map(|f| f.state), Some(Done));
@@ -713,6 +716,7 @@ fn task(id: i64, title: &str, state: argus_protocol::TaskState) -> argus_protoco
     argus_protocol::Task {
         id,
         feature: "notes".into(),
+        parent: None,
         title: title.to_string(),
         body: None,
         state,
@@ -776,6 +780,62 @@ fn a_task_is_one_row_with_its_state_marked_on_it() {
 }
 
 #[test]
+fn nested_tasks_are_drawn_as_a_tree_and_subtasks_keep_their_parent() {
+    use argus_protocol::TaskState::*;
+    let mut child = task(2, "bound the queue", Todo);
+    child.parent = Some(1);
+    child.position = 0;
+    let mut grandchild = task(3, "test sustained output", Todo);
+    grandchild.parent = Some(2);
+    grandchild.position = 0;
+    let mut child_sibling = task(4, "record retry behavior", Todo);
+    child_sibling.parent = Some(1);
+    child_sibling.position = 1;
+    let mut sibling = task(5, "document output", Todo);
+    sibling.position = 1;
+    let (mut app, mut rx) = tasks_watching(vec![
+        task(1, "stream output", Doing),
+        sibling,
+        child,
+        grandchild,
+        child_sibling,
+    ]);
+    while rx.try_recv().is_ok() {}
+
+    let out = lines(&draw_at(&mut app, 120, 30)).join("\n");
+    assert!(out.contains("├─ ○ bound the queue"), "{out}");
+    assert!(out.contains("│  └─ ○ test sustained output"), "{out}");
+    assert!(out.contains("└─ ○ record retry behavior"), "{out}");
+    assert!(out.contains("○ document output"), "{out}");
+
+    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    assert_eq!(app.selected_task().map(|task| task.id), Some(2));
+    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    assert_eq!(app.selected_task().map(|task| task.id), Some(3));
+    app.on_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
+    assert_eq!(app.selected_task().map(|task| task.id), Some(2));
+    app.on_key(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE));
+    assert_eq!(app.selected_task().map(|task| task.id), Some(1));
+
+    app.on_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
+    for c in "handle the burst".chars() {
+        app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let sent: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        sent.iter().any(|message| matches!(
+            message,
+            argus_protocol::ClientMsg::Task {
+                action: argus_protocol::TaskAction::Add(write),
+                ..
+            } if write.title == "handle the burst" && write.parent == Some(1)
+        )),
+        "a subtask names its parent on the wire: {sent:?}"
+    );
+}
+
+#[test]
 fn only_the_selected_tasks_brief_is_expanded() {
     use argus_protocol::TaskState::*;
     let mut first = task(1, "port the parser", Todo);
@@ -824,10 +884,9 @@ fn enter_opens_a_task_brief_and_saving_replaces_it() {
         "the brief is replaced whole: {sent:?}"
     );
     assert!(
-        !sent.iter().any(|message| matches!(
-            message,
-            argus_protocol::ClientMsg::SetFeatureBody { .. }
-        )),
+        !sent
+            .iter()
+            .any(|message| matches!(message, argus_protocol::ClientMsg::SetFeatureBody { .. })),
         "a task brief must not be saved as another document: {sent:?}"
     );
 }
@@ -877,7 +936,7 @@ fn a_task_can_be_pushed_up_the_list_and_dropped() {
         matches!(
             sent.as_slice(),
             [argus_protocol::ClientMsg::Task {
-                action: argus_protocol::TaskAction::Reorder { id: 2, to: 1 },
+                action: argus_protocol::TaskAction::Reorder { id: 2, to: 0 },
                 ..
             }]
         ),
@@ -899,13 +958,13 @@ fn a_task_can_be_pushed_up_the_list_and_dropped() {
 }
 
 #[test]
-fn another_features_task_list_is_dropped_rather_than_drawn() {
+fn another_projects_task_list_is_dropped_rather_than_drawn() {
     use argus_protocol::TaskState::*;
     let (mut app, _rx) = tasks_watching(vec![task(1, "port the parser", Todo)]);
     app.on_server_msg(argus_protocol::ServerMsg::Tasks(Box::new(
         argus_protocol::TaskList {
-            project_name: "argus".into(),
-            feature: Some("the-pty".into()),
+            project_name: "another-project".into(),
+            feature: Some("notes".into()),
             tasks: vec![task(9, "one reader thread", Todo)],
         },
     )));

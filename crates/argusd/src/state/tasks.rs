@@ -4,7 +4,8 @@
 //! Both sides write here, and for once they write the same things. A human
 //! populates a list by hand or asks an agent to read it out of whatever
 //! tracker the team uses; an agent takes a task up, finishes it, and adds
-//! what it found on the way. There is no acceptance step and so no move
+//! what it found on the way, under the task that exposed it. There is no
+//! acceptance step and so no move
 //! either side is refused — that ceremony belongs to the feature the tasks
 //! are under, which is where a human accepts the work as a whole.
 //!

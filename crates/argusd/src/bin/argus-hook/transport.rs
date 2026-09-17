@@ -122,7 +122,13 @@ pub(super) fn post_response(url: &str, token: &str, body: &str) -> Option<(u16, 
 /// cannot recognize is not an error it can report, only a report that
 /// quietly does nothing — a session header it misses files a child's work
 /// under its parent's row, and a Content-Length it misses drops the note.
-pub(super) fn request(path: &str, authority: &str, token: &str, session: Option<&str>, body: &str) -> String {
+pub(super) fn request(
+    path: &str,
+    authority: &str,
+    token: &str,
+    session: Option<&str>,
+    body: &str,
+) -> String {
     let session = match session.filter(|id| !id.is_empty()) {
         Some(id) => format!("{SESSION_HEADER}: {id}\r\n"),
         None => String::new(),

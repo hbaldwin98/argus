@@ -106,12 +106,14 @@ pub(super) fn task(rest: &[&str]) {
     let _ = out.flush();
 }
 
-/// `task`, `task add`, `task doing <id>`, `task done <id>`, `task todo
-/// <id>`, `task retitle <id> <text>`, `task brief <id> <text>`, `task drop <id>`.
+/// `task`, `task add`, `task add <title> --under <id>`, `task doing
+/// <id>`, `task done <id>`, `task todo <id>`, `task retitle <id> <text>`,
+/// `task brief <id> <text>`, `task drop <id>`.
 ///
 /// The columns are named as verbs rather than hidden behind a `move`, so
 /// what an agent types is what a reader of the transcript understands
-/// happened.
+/// happened. `--under` records newly discovered work beneath the task that
+/// exposed it.
 pub(super) fn task_message(rest: &[&str], base_url: &str, token: &str) -> String {
     let by_id =
         |verb: &str, state: TaskState| match rest.get(1).and_then(|id| id.parse::<i64>().ok()) {
@@ -121,25 +123,11 @@ pub(super) fn task_message(rest: &[&str], base_url: &str, token: &str) -> String
     match rest.first().copied() {
         None | Some("list") => write_task(TaskAction::List, base_url, token),
         Some("add") => {
-            // A trailing `--key ORION-412` is the tracker's own id, kept
-            // so an agent can reconcile later. Argus never reads it.
-            let words: Vec<&str> = rest[1..]
-                .iter()
-                .take_while(|a| **a != "--key")
-                .copied()
-                .collect();
-            let external = rest[1..]
-                .iter()
-                .position(|a| *a == "--key")
-                .map(|at| rest[2 + at..].join(" "));
-            write_task(
-                TaskAction::Add(TaskWrite {
-                    title: words.join(" "),
-                    external,
-                }),
-                base_url,
-                token,
-            )
+            let write = match parse_task_add_args(&rest[1..]) {
+                Ok(write) => write,
+                Err(message) => return format!("could not change task: {message}"),
+            };
+            write_task(TaskAction::Add(write), base_url, token)
         }
         Some("doing") => by_id("doing", TaskState::Doing),
         Some("done") => by_id("done", TaskState::Done),
@@ -174,6 +162,49 @@ pub(super) fn task_message(rest: &[&str], base_url: &str, token: &str) -> String
             "could not change task: `{other}` is not one of add, doing, done, todo, retitle, brief, drop"
         ),
     }
+}
+
+fn parse_task_add_args(args: &[&str]) -> Result<TaskWrite, String> {
+    let mut title = Vec::new();
+    let mut external = Vec::new();
+    let mut parent = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index] {
+            "--under" => {
+                let raw = args
+                    .get(index + 1)
+                    .ok_or_else(|| "--under needs something after it".to_string())?;
+                parent = Some(
+                    raw.parse::<i64>()
+                        .ok()
+                        .filter(|id| *id > 0)
+                        .ok_or_else(|| format!("--under wants a task number, not {raw:?}"))?,
+                );
+                index += 2;
+            }
+            "--key" => {
+                index += 1;
+                let start = index;
+                while index < args.len() && args[index] != "--under" && args[index] != "--key" {
+                    external.push(args[index]);
+                    index += 1;
+                }
+                if index == start {
+                    return Err("--key needs something after it".to_string());
+                }
+            }
+            word => {
+                title.push(word);
+                index += 1;
+            }
+        }
+    }
+    Ok(TaskWrite {
+        title: title.join(" "),
+        external: (!external.is_empty()).then(|| external.join(" ")),
+        parent,
+    })
 }
 
 pub(super) fn write_task(action: TaskAction, base_url: &str, token: &str) -> String {
@@ -213,7 +244,8 @@ pub(super) fn format_tasks(list: &TaskList) -> String {
         );
     }
     let mut lines = vec![format!("Tasks under {feature}:")];
-    for task in &list.tasks {
+    for row in list.tree_rows() {
+        let task = row.task;
         let key = match &task.external {
             Some(key) => format!(" [{key}]"),
             None => String::new(),
@@ -223,17 +255,66 @@ pub(super) fn format_tasks(list: &TaskList) -> String {
             _ => String::new(),
         };
         lines.push(format!(
-            "#{:<3} {:<5} {}{key}{who}",
-            task.id, task.state, task.title
+            "{}#{:<3} {:<5} {}{key}{who}",
+            task_branch(&row),
+            task.id,
+            task.state,
+            task.title
         ));
         if let Some(body) = &task.body {
-            lines.extend(body.lines().map(|line| format!("      {line}")));
+            let prefix = task_body_prefix(&row);
+            lines.extend(body.lines().map(|line| format!("{prefix}{line}")));
         }
     }
     lines.join("\n")
 }
 
-pub(super) fn read_feature_board(rest: &[&str], base_url: &str, token: &str) -> Result<FeatureBoard, String> {
+const MAX_TASK_INDENT: usize = 24;
+
+fn task_branch(row: &argus_protocol::TaskTreeRow<'_>) -> String {
+    if row.depth == 0 {
+        return String::new();
+    }
+    let mut branch = task_ancestor_guides(row, 1);
+    branch.push_str(if row.has_next_sibling {
+        "├─ "
+    } else {
+        "└─ "
+    });
+    branch
+}
+
+fn task_continuation(row: &argus_protocol::TaskTreeRow<'_>) -> String {
+    if row.depth == 0 {
+        return String::new();
+    }
+    let mut continuation = task_ancestor_guides(row, 1);
+    continuation.push_str(if row.has_next_sibling { "│  " } else { "   " });
+    continuation
+}
+
+fn task_ancestor_guides(row: &argus_protocol::TaskTreeRow<'_>, reserved_slots: usize) -> String {
+    let slots = (MAX_TASK_INDENT / 3).saturating_sub(reserved_slots);
+    let first = row.ancestor_continuations.len().saturating_sub(slots);
+    row.ancestor_continuations[first..]
+        .iter()
+        .map(|continues| if *continues { "│  " } else { "   " })
+        .collect()
+}
+
+fn task_body_prefix(row: &argus_protocol::TaskTreeRow<'_>) -> String {
+    if row.depth == 0 {
+        "      ".to_string()
+    } else {
+        format!("{}   ", task_continuation(row))
+    }
+}
+
+pub(super) fn read_feature_board(
+    rest: &[&str],
+    base_url: &str,
+    token: &str,
+) -> Result<FeatureBoard, String> {
     read_json("the feature", Endpoint::Features, rest, base_url, token)
 }
 
@@ -442,7 +523,10 @@ pub(super) fn format_decision_board(board: &DecisionBoard) -> String {
     lines.join("\n")
 }
 
-pub(super) fn push_decision_lines(lines: &mut Vec<String>, row: &argus_protocol::DecisionTreeRow<'_>) {
+pub(super) fn push_decision_lines(
+    lines: &mut Vec<String>,
+    row: &argus_protocol::DecisionTreeRow<'_>,
+) {
     let decision = row.decision;
     // The id leads because it is what the next decision is hung off,
     // and the branch is what says which one that would be under.
@@ -608,4 +692,32 @@ pub(super) fn read_json<T: serde::de::DeserializeOwned>(
     }
     serde_json::from_str(&body)
         .map_err(|_| format!("could not read {what}: invalid daemon response"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_add_arguments_keep_the_parent_and_tracker_key() {
+        let write = parse_task_add_args(&[
+            "bound",
+            "the",
+            "queue",
+            "--key",
+            "ORION-412",
+            "--under",
+            "7",
+        ])
+        .unwrap();
+        assert_eq!(write.title, "bound the queue");
+        assert_eq!(write.external.as_deref(), Some("ORION-412"));
+        assert_eq!(write.parent, Some(7));
+    }
+
+    #[test]
+    fn task_add_rejects_a_non_positive_parent_id() {
+        let error = parse_task_add_args(&["child", "--under", "0"]).unwrap_err();
+        assert!(error.contains("task number"), "{error}");
+    }
 }

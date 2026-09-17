@@ -33,7 +33,11 @@ pub(super) fn installed_hook(url: &str, rest: &[&str]) {
 /// The JSON a hook runner needs so it does not treat bookkeeping as a
 /// denied tool or a blocked prompt. Claude Code keys off `toolCall` and
 /// wants `decision`; Cursor keys off `tool_name` and wants `permission`.
-pub(super) fn hook_reply(raw: Option<&str>, inject_instructions: bool, instructions: &str) -> String {
+pub(super) fn hook_reply(
+    raw: Option<&str>,
+    inject_instructions: bool,
+    instructions: &str,
+) -> String {
     let raw = raw.unwrap_or("");
     if raw.contains("\"toolCall\"") {
         return r#"{"decision":"allow"}"#.to_string();

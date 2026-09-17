@@ -55,7 +55,7 @@ pub use review::{
     MAX_REVIEW_COMMENTS, MAX_REVIEW_COMMENT_BYTES,
 };
 pub use tasks::{
-    checked_task_body, Task, TaskAction, TaskCounts, TaskList, TaskState, TaskWrite,
+    checked_task_body, Task, TaskAction, TaskCounts, TaskList, TaskState, TaskTreeRow, TaskWrite,
     MAX_TASK_BODY_BYTES, MAX_TASK_TITLE_BYTES,
 };
 pub use tree::{

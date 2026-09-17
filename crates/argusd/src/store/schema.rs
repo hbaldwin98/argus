@@ -222,8 +222,8 @@ CREATE INDEX feature_event_feature ON feature_event (project, slug, id);
 /// spreadsheet is what puts tasks here, so the tracker stays the agent's
 /// problem and Argus works the same with any of them, or with none.
 ///
-/// `position` orders a column. Held rather than sorted by id so a human
-/// can say what to do first, which is most of what a list is for.
+/// `position` orders each sibling list. Held rather than sorted by id so a
+/// human can say what to do first, which is most of what a list is for.
 pub(super) const SCHEMA_V8: &str = r#"
 CREATE TABLE task (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -310,3 +310,12 @@ pub(super) const SCHEMA_V13: &str = "";
 /// relocates each such feature individually, using the repository its
 /// `origin_checkout` was in.
 pub(super) const SCHEMA_V14: &str = "";
+
+/// A task may contain more work discovered while doing it. The parent is
+/// deliberately not a foreign key: reads already tolerate an orphaned row,
+/// and the write path can validate same-feature parents without making a
+/// damaged store impossible to open.
+pub(super) const SCHEMA_V15: &str = r#"
+ALTER TABLE task ADD COLUMN parent INTEGER;
+CREATE INDEX task_parent ON task (project, feature, parent, position, id);
+"#;

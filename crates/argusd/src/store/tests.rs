@@ -9,6 +9,35 @@ fn store() -> Store {
     Store::in_memory().unwrap()
 }
 
+/// Builds an actual old-schema file instead of downgrading a current one.
+/// Once a migration adds a non-idempotent column, changing only
+/// `user_version` would make the fixture claim a shape it does not have.
+fn legacy_connection(path: &Path, version: usize) -> Connection {
+    let conn = Connection::open(path).unwrap();
+    let steps = [
+        schema::SCHEMA_V1,
+        schema::SCHEMA_V2,
+        schema::SCHEMA_V3,
+        schema::SCHEMA_V4,
+        schema::SCHEMA_V5,
+        schema::SCHEMA_V6,
+        schema::SCHEMA_V7,
+        schema::SCHEMA_V8,
+        schema::SCHEMA_V9,
+        schema::SCHEMA_V10,
+        schema::SCHEMA_V11,
+        schema::SCHEMA_V12,
+        schema::SCHEMA_V13,
+        schema::SCHEMA_V14,
+    ];
+    for step in steps.into_iter().take(version) {
+        conn.execute_batch(step).unwrap();
+    }
+    conn.pragma_update(None, "user_version", version as i64)
+        .unwrap();
+    conn
+}
+
 fn pane(path: &str, kind: PaneKind, title: &str) -> SessionPane {
     SessionPane {
         checkout_path: PathBuf::from(path),
@@ -410,6 +439,7 @@ fn migrating_a_v10_store_keeps_tasks_and_adds_empty_briefs() {
     assert_eq!(tasks[0].title, "preserve me");
     assert_eq!(tasks[0].state, TaskState::Doing);
     assert_eq!(tasks[0].body, None);
+    assert_eq!(tasks[0].parent, None, "old rows become root tasks");
 }
 
 #[test]
@@ -417,11 +447,15 @@ fn migrating_branch_boards_merges_collisions_and_preserves_references() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("runtime.db");
     {
-        let s = Store::open_at(&path).unwrap();
-        let conn = s.conn();
+        let conn = legacy_connection(&path, 11);
         for (project, title, checkout, at) in [
             ("repository\0/repo/.git\0main", "Main notes", "/repo", 1),
-            ("repository\0/repo/.git\0topic", "Topic notes", "/repo-topic", 2),
+            (
+                "repository\0/repo/.git\0topic",
+                "Topic notes",
+                "/repo-topic",
+                2,
+            ),
         ] {
             conn.execute(
                 "INSERT INTO feature (project, slug, title, body, at, state)
@@ -460,7 +494,10 @@ fn migrating_branch_boards_merges_collisions_and_preserves_references() {
     let key = "repository\0/repo/.git";
     let features = s.features(key).unwrap();
     assert_eq!(
-        features.iter().map(|feature| feature.slug.as_str()).collect::<Vec<_>>(),
+        features
+            .iter()
+            .map(|feature| feature.slug.as_str())
+            .collect::<Vec<_>>(),
         ["notes", "notes-2"]
     );
     assert_eq!(features[0].checkouts, ["/repo"]);
@@ -498,8 +535,7 @@ fn a_v12_board_keyed_by_a_worktree_private_git_dir_is_read_back_under_the_shared
 
     let old_key = format!("repository\0{}", worktree_dir.to_string_lossy());
     {
-        let s = Store::open_at(&path).unwrap();
-        let conn = s.conn();
+        let conn = legacy_connection(&path, 12);
         conn.execute(
             "INSERT INTO feature (project, slug, title, body, at, state)
              VALUES (?1, 'notes', 'Topic notes', 'brief', 1, 'open')",
@@ -545,8 +581,7 @@ fn a_pre_repository_scoping_feature_is_relocated_by_its_origin_checkout() {
 
     let legacy_key = "my-project";
     {
-        let s = Store::open_at(&path).unwrap();
-        let conn = s.conn();
+        let conn = legacy_connection(&path, 13);
         conn.execute(
             "INSERT INTO feature (project, slug, title, body, origin_checkout, at, state)
              VALUES (?1, 'notes', 'Legacy notes', 'brief', ?2, 1, 'open')",
@@ -571,10 +606,7 @@ fn a_pre_repository_scoping_feature_is_relocated_by_its_origin_checkout() {
             .collect::<Vec<_>>(),
         ["notes"]
     );
-    assert_eq!(
-        s.decisions(&key).unwrap()[0].chose,
-        "chose it"
-    );
+    assert_eq!(s.decisions(&key).unwrap()[0].chose, "chose it");
     assert!(s.features(legacy_key).unwrap().is_empty());
 }
 
@@ -919,8 +951,15 @@ fn a_checkout_remembers_a_feature_per_artifact_scope() {
 fn feature_checkouts_follow_transfers_and_removal_cleans_the_mapping() {
     let s = store();
     let repository = "repository\0/repo/.git";
-    s.add_feature(repository, &feature("local change"), Some("/origin"), None, 1, None)
-        .unwrap();
+    s.add_feature(
+        repository,
+        &feature("local change"),
+        Some("/origin"),
+        None,
+        1,
+        None,
+    )
+    .unwrap();
     s.set_artifact_feature_scope(Path::new("/source"), repository, "local-change")
         .unwrap();
 
@@ -1091,6 +1130,7 @@ fn task(title: &str) -> TaskWrite {
     TaskWrite {
         title: title.into(),
         external: None,
+        parent: None,
     }
 }
 
@@ -1165,6 +1205,154 @@ fn tasks_arrive_in_the_order_they_were_read_and_keep_their_ids() {
         "a task needs a feature to be under"
     );
     assert!(s.retitle_task("argus", ids[1], "gone").is_err());
+}
+
+#[test]
+fn nested_tasks_keep_their_parent_and_sibling_order() {
+    let s = store();
+    s.add_feature("argus", &feature("the pty"), None, None, 1, None)
+        .unwrap();
+    s.add_feature("argus", &feature("notes storage"), None, None, 2, None)
+        .unwrap();
+
+    let root = s
+        .add_task("argus", "the-pty", &task("stream output"), 1, None)
+        .unwrap();
+    let sibling = s
+        .add_task("argus", "the-pty", &task("document output"), 1, None)
+        .unwrap();
+    let child = s
+        .add_task(
+            "argus",
+            "the-pty",
+            &TaskWrite {
+                title: "bound the queue".into(),
+                external: None,
+                parent: Some(root.id),
+            },
+            1,
+            None,
+        )
+        .unwrap();
+    let grandchild = s
+        .add_task(
+            "argus",
+            "the-pty",
+            &TaskWrite {
+                title: "test sustained output".into(),
+                external: None,
+                parent: Some(child.id),
+            },
+            1,
+            None,
+        )
+        .unwrap();
+
+    let tasks = s.tasks("argus", "the-pty").unwrap();
+    assert_eq!(
+        tasks.iter().map(|task| task.id).collect::<Vec<_>>(),
+        [root.id, child.id, grandchild.id, sibling.id]
+    );
+    assert_eq!(tasks[1].parent, Some(root.id));
+    assert_eq!(tasks[2].parent, Some(child.id));
+
+    let other_feature_task = s
+        .add_task("argus", "notes-storage", &task("other"), 1, None)
+        .unwrap();
+    assert!(
+        s.add_task(
+            "argus",
+            "the-pty",
+            &TaskWrite {
+                title: "wrong feature".into(),
+                external: None,
+                parent: Some(other_feature_task.id),
+            },
+            1,
+            None,
+        )
+        .is_err(),
+        "a parent from another feature cannot become a hidden edge"
+    );
+}
+
+#[test]
+fn removing_a_parent_removes_its_subtree_and_compacts_siblings() {
+    let s = store();
+    s.add_feature("argus", &feature("the pty"), None, None, 1, None)
+        .unwrap();
+    let first = s
+        .add_task("argus", "the-pty", &task("first"), 1, None)
+        .unwrap();
+    let second = s
+        .add_task("argus", "the-pty", &task("second"), 1, None)
+        .unwrap();
+    s.add_task(
+        "argus",
+        "the-pty",
+        &TaskWrite {
+            title: "child".into(),
+            external: None,
+            parent: Some(first.id),
+        },
+        1,
+        None,
+    )
+    .unwrap();
+
+    s.remove_task("argus", first.id).unwrap();
+    let remaining = s.tasks("argus", "the-pty").unwrap();
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].id, second.id);
+    assert_eq!(remaining[0].position, 0);
+}
+
+#[test]
+fn task_reordering_stays_inside_the_selected_sibling_list() {
+    let s = store();
+    s.add_feature("argus", &feature("the pty"), None, None, 1, None)
+        .unwrap();
+    let root = s
+        .add_task("argus", "the-pty", &task("root"), 1, None)
+        .unwrap();
+    let other_root = s
+        .add_task("argus", "the-pty", &task("other root"), 1, None)
+        .unwrap();
+    let first = s
+        .add_task(
+            "argus",
+            "the-pty",
+            &TaskWrite {
+                title: "first child".into(),
+                external: None,
+                parent: Some(root.id),
+            },
+            1,
+            None,
+        )
+        .unwrap();
+    let second = s
+        .add_task(
+            "argus",
+            "the-pty",
+            &TaskWrite {
+                title: "second child".into(),
+                external: None,
+                parent: Some(root.id),
+            },
+            1,
+            None,
+        )
+        .unwrap();
+
+    s.reorder_task("argus", second.id, 0).unwrap();
+    let tasks = s.tasks("argus", "the-pty").unwrap();
+    assert_eq!(
+        tasks.iter().map(|task| task.id).collect::<Vec<_>>(),
+        [root.id, second.id, first.id, other_root.id]
+    );
+    assert_eq!(tasks[1].parent, Some(root.id));
+    assert_eq!(tasks[3].parent, None);
 }
 
 #[test]

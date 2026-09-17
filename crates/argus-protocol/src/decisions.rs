@@ -340,7 +340,10 @@ mod tests {
 
     #[test]
     fn a_child_whose_parent_is_under_another_feature_is_still_drawn() {
-        let mut decisions = vec![decision(1, None, "sqlite"), decision(2, Some(1), "wal mode")];
+        let mut decisions = vec![
+            decision(1, None, "sqlite"),
+            decision(2, Some(1), "wal mode"),
+        ];
         decisions[0].feature = Some("notes".into());
         decisions[1].feature = Some("pty".into());
         let scoped = board(decisions).scoped(Some("pty"));
@@ -369,7 +372,10 @@ mod tests {
         .unwrap();
         assert_eq!(write.chose, "sqlite");
         assert_eq!(write.over, None);
-        assert_eq!(write.because.as_deref(), Some("the schema needs migrations"));
+        assert_eq!(
+            write.because.as_deref(),
+            Some("the schema needs migrations")
+        );
     }
 
     #[test]

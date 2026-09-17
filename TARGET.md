@@ -71,7 +71,7 @@ that name with an explicit title command.
 The target state model is:
 
 | State | Meaning |
-|---|---|
+| --- | --- |
 | `idle` | Running without current work |
 | `working` | Producing or processing work |
 | `waiting` | Requires operator input |
@@ -127,7 +127,8 @@ is relevant.
 Agents write typed **artifacts** into a work context: decisions, tasks, findings, assumptions, open
 questions, and compact summaries. Each artifact carries its source, authoring session, checkout,
 and time. A task may retain an opaque Jira, Linear, or GitHub key, but Argus neither synchronizes
-nor replaces that tracker. Routine transcript and progress chatter are not durable artifacts.
+nor replaces that tracker. Tasks may nest newly discovered work beneath the artifact that
+exposed it, while routine transcript and progress chatter are not durable artifacts.
 
 Artifacts have correction semantics suited to their type. A decision records what was chosen, the
 real alternative, and the reason; a later decision supersedes it without erasing the old reasoning.

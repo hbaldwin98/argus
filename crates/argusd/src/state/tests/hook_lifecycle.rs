@@ -305,6 +305,7 @@ async fn artifacts_are_repository_scoped_unless_workspace_scope_is_requested() {
         TaskAction::Add(TaskWrite {
             title: "update both crates".into(),
             external: None,
+            parent: None,
         }),
         ArtifactScope::Workspace,
     )
@@ -318,7 +319,12 @@ async fn artifacts_are_repository_scoped_unless_workspace_scope_is_requested() {
         "move both repositories together"
     );
     let tasks = d
-        .task_action_for_agent(second_agent, None, TaskAction::List, ArtifactScope::Workspace)
+        .task_action_for_agent(
+            second_agent,
+            None,
+            TaskAction::List,
+            ArtifactScope::Workspace,
+        )
         .unwrap();
     assert_eq!(tasks.tasks[0].title, "update both crates");
     close_all(&d);
@@ -344,14 +350,20 @@ async fn repository_features_cross_branches_and_can_transfer_assignment() {
     let destination_agent = d.spawn_agent(destination_checkout, "claude").unwrap();
 
     let slug = open_feature(&d, source_agent, "shared work");
-    let destination_board = d.feature_board_for_agent(destination_agent, ArtifactScope::default()).unwrap();
+    let destination_board = d
+        .feature_board_for_agent(destination_agent, ArtifactScope::default())
+        .unwrap();
     assert_eq!(destination_board.features.len(), 1);
     assert_eq!(destination_board.current, None);
 
     d.transfer_feature_for_client(project, source_checkout, destination_checkout, &slug)
         .unwrap();
-    let source_board = d.feature_board_for_agent(source_agent, ArtifactScope::default()).unwrap();
-    let destination_board = d.feature_board_for_agent(destination_agent, ArtifactScope::default()).unwrap();
+    let source_board = d
+        .feature_board_for_agent(source_agent, ArtifactScope::default())
+        .unwrap();
+    let destination_board = d
+        .feature_board_for_agent(destination_agent, ArtifactScope::default())
+        .unwrap();
     assert_eq!(source_board.current, None);
     assert_eq!(destination_board.current.as_deref(), Some(slug.as_str()));
     assert_eq!(destination_board.features[0].checkouts.len(), 1);
@@ -436,7 +448,9 @@ async fn an_agent_reads_its_own_features_decisions_and_not_the_projects() {
     )
     .unwrap();
 
-    let board = d.decisions_for_agent(agent, ArtifactScope::default()).unwrap();
+    let board = d
+        .decisions_for_agent(agent, ArtifactScope::default())
+        .unwrap();
     assert_eq!(
         board
             .decisions
@@ -446,7 +460,9 @@ async fn an_agent_reads_its_own_features_decisions_and_not_the_projects() {
         ["one reader thread"],
         "the board an agent reads is the feature it is on, not the project"
     );
-    let features = d.feature_board_for_agent(agent, ArtifactScope::default()).unwrap();
+    let features = d
+        .feature_board_for_agent(agent, ArtifactScope::default())
+        .unwrap();
     assert_eq!(features.current.as_deref(), Some(second.as_str()));
     assert_eq!(features.features.len(), 2, "the others are still offered");
     // The project-wide board is what the client draws, and keeps both.
@@ -468,11 +484,17 @@ async fn a_feature_document_grows_and_a_checkout_can_go_back_to_it() {
     let agent = d.spawn_agent(checkout, "claude").unwrap();
 
     let first = open_feature(&d, agent, "notes storage");
-    d.append_to_feature_for_agent(agent, "the key has to outlive the ids", ArtifactScope::default())
-        .unwrap();
+    d.append_to_feature_for_agent(
+        agent,
+        "the key has to outlive the ids",
+        ArtifactScope::default(),
+    )
+    .unwrap();
     open_feature(&d, agent, "the pty deadlock");
 
-    let board = d.select_feature_for_agent(agent, &first, ArtifactScope::default()).unwrap();
+    let board = d
+        .select_feature_for_agent(agent, &first, ArtifactScope::default())
+        .unwrap();
     assert_eq!(board.current.as_deref(), Some(first.as_str()));
     let document = &board
         .features
@@ -595,11 +617,13 @@ async fn only_a_live_agent_may_record_a_decision() {
         ..Default::default()
     };
     assert!(
-        d.record_agent_decision(shell, None, write.clone(), ArtifactScope::default()).is_err(),
+        d.record_agent_decision(shell, None, write.clone(), ArtifactScope::default())
+            .is_err(),
         "a shell is not an agent"
     );
     assert!(
-        d.record_agent_decision(PaneId(9999), None, write, ArtifactScope::default()).is_err(),
+        d.record_agent_decision(PaneId(9999), None, write, ArtifactScope::default())
+            .is_err(),
         "nor is nobody"
     );
     assert!(d
@@ -763,6 +787,7 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
             TaskAction::Add(TaskWrite {
                 title: "port the parser".into(),
                 external: None,
+                parent: None,
             }),
             ArtifactScope::default(),
         )
@@ -778,6 +803,7 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
             TaskAction::Add(TaskWrite {
                 title: "backpressure on the reader".into(),
                 external: Some("ORION-412".into()),
+                parent: None,
             }),
             ArtifactScope::default(),
         )
@@ -785,6 +811,24 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
     assert_eq!(list.feature.as_deref(), Some(pty.as_str()));
     let id = list.tasks[0].id;
     assert_eq!(list.tasks[0].external.as_deref(), Some("ORION-412"));
+
+    let list = d
+        .task_action_for_agent(
+            agent,
+            Some("sess-1"),
+            TaskAction::Add(TaskWrite {
+                title: "bound the queue".into(),
+                external: None,
+                parent: Some(id),
+            }),
+            ArtifactScope::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        list.tasks.iter().map(|task| task.id).collect::<Vec<_>>(),
+        [id, list.tasks[1].id]
+    );
+    assert_eq!(list.tasks[1].parent, Some(id));
 
     let list = d
         .task_action_for_agent(

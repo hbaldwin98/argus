@@ -33,6 +33,7 @@ and its decision board as source material without writing the document itself.
 "$ARGUS_HOOK" task todo <id>
 "$ARGUS_HOOK" task add "restore the recorded conversation"
 "$ARGUS_HOOK" task add "test reconnect" --key PROJECT-412
+"$ARGUS_HOOK" task add "bound the queue" --under <parent-id>
 "$ARGUS_HOOK" task retitle <id> "test reconnect after daemon restart"
 "$ARGUS_HOOK" task brief <id> "acceptance criteria and verification"
 "$ARGUS_HOOK" task drop <id>

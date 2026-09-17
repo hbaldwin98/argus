@@ -186,7 +186,7 @@ configuration directory, typically:
 The directory may contain:
 
 | File | Purpose |
-|---|---|
+| --- | --- |
 | `projects.toml` | Workspaces, projects, repositories, agent templates, and harnesses. Yours to edit; Argus only reads it |
 | `client.toml` | Editor, theme, layout, pane-view, and notification preferences |
 | `runtime.db` | Everything Argus writes: panes to relaunch, projects and repositories added or removed from the TUI, workspaces created at runtime, and the last workspace open |
@@ -334,7 +334,7 @@ quoted arguments and executable paths containing spaces are not yet supported.
 ### Environment variables
 
 | Variable | Effect |
-|---|---|
+| --- | --- |
 | `ARGUS_CONFIG_DIR` | Overrides the configuration directory for client and daemon |
 | `ARGUS_INSTANCE` | Names this process's instance: scopes the pipe/socket and carves the config directory into `instances/<name>`, so a second Argus can run beside the first |
 | `ARGUS_NO_RESTORE` | Starts the daemon without relaunching recorded panes when present |
@@ -374,7 +374,7 @@ location. Typing filters the folders in the current directory.
 ### Navigation
 
 | Key | Action |
-|---|---|
+| --- | --- |
 | `j` / `k`, arrows | Move within the selected column |
 | `l`, Right, Enter | Open or descend; on a branch row, switch the primary checkout to it |
 | `h`, Left, Escape | Go back |
@@ -405,7 +405,8 @@ digit that opens each; clicking a tab does the same. Switching views never stops
 
 The feature view is three panels: the selected repository's features down the left, and the
 selected one read whole on the right — its brief, the tasks left under it, and the decisions taken
-while building it. Features belong to the repository rather than a branch, so they remain available
+while building it. Tasks may be nested to any depth, so newly discovered work stays readable under
+what exposed it. Features belong to the repository rather than a branch, so they remain available
 after a feature worktree is removed. The active list stays focused on open work; `v` switches to
 accepted feature history without deleting it.
 Every panel is scoped to the same feature, and each feature's line says what is happening to it:
@@ -417,11 +418,12 @@ crosses repositories or branches, set `ARGUS_ARTIFACT_SCOPE=workspace` for the `
 inherited from whichever workspace the TUI currently shows.
 
 | Key | Action |
-|---|---|
+| --- | --- |
 | `h` / `l`, arrows | Cross between the feature list and the feature being read |
 | Tab / Shift-Tab | Step through the brief, the tasks and the decisions |
 | `j` / `k` | Move in whichever panel has the keys; `d`/`u` ten at a time, `g`/`G` for the ends |
-| `a` | Write down a new feature, or a new task under one, depending on the panel |
+| `a` | Write down a new feature, or a new root task under one, depending on the panel |
+| `s` | Add a subtask under the selected task |
 | `e` | Open the feature's brief, or rewrite the selected task's title |
 | Enter | Open the selected feature or task brief in the multiline editor |
 | `R` | Rename the feature — the title only; its slug is frozen so nothing filed under it is orphaned |
@@ -430,7 +432,7 @@ inherited from whichever workspace the TUI currently shows.
 | `v` | Switch between active features and accepted history |
 | `m` | Transfer the selected feature from this checkout to another checkout in the repository |
 | `H` / `L` | Move the selected task along todo, doing, done |
-| `J` / `K` | Move the selected task earlier or later in the list |
+| `J` / `K` | Move the selected task earlier or later among its siblings |
 | `r` | Re-ask the daemon for all of it |
 | Escape, `q` | Back to the spine |
 
@@ -439,7 +441,7 @@ inherited from whichever workspace the TUI currently shows.
 `Ctrl-Space` is the leader key:
 
 | Chord | Action |
-|---|---|
+| --- | --- |
 | `Ctrl-Space`, Escape | Leave terminal input or close a floating pane |
 | `Ctrl-Space`, `f` | Toggle fullscreen for the selected pane |
 | `Ctrl-Space`, `x` | Kill the pane |
@@ -453,7 +455,7 @@ Other supported keys are forwarded to the child PTY.
 ### Review
 
 | Key | Action |
-|---|---|
+| --- | --- |
 | `j` / `k`, arrows | Move through changed lines |
 | `d` / `u`, Page Down / Page Up | Move ten lines |
 | `]` / `[` | Next or previous changed file |
@@ -536,7 +538,8 @@ Claude Code, `.pi/skills/argus` for pi, and `.agents/skills/argus` for Codex, Op
 Cursor. Startup context points
 the agent to `SKILL.md`; detailed commands for the currently implemented feature, task, and decision
 stores live in its reference and are read when needed. Hooks keep reporting lifecycle
-events and session identity.
+events and session identity. `argus-hook task add "<what to do>" --under <id>` records newly
+discovered work beneath an existing task, and `argus-hook task` prints the resulting tree.
 Generic harnesses receive compact fallback instructions instead. Custom `[[harness]]` blocks
 can opt in with `skill_dir = ".agents/skills/argus"` and deliver `ARGUS_INSTRUCTIONS` through
 their context mechanism.

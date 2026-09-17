@@ -15,7 +15,6 @@ use serde::Deserialize;
 use super::{SessionPane, Store};
 
 impl Store {
-
     /// Folds the files this store replaced into it, once, on the first run
     /// that finds them. Each is renamed rather than deleted: an import that
     /// gets something wrong should be recoverable by hand, and a rename is

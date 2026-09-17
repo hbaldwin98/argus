@@ -91,7 +91,9 @@ up durable artifacts, and later agents receive the relevant subset without brows
   disagree did: opening the tasks from the decisions showed whichever card the board was sitting
   on. One `feature_sel` scopes the brief, the tasks and the tree together, `Tab` and `h`/`l` cross
   the three panels, and tasks are one ordered list with their state marked on the row rather than
-  three columns spending the order to say what a glyph says.
+  three columns spending the order to say what a glyph says. Tasks can now be nested recursively:
+  the wire carries parent ids, the TUI and `argus-hook task` render a depth-first tree, and removing
+  a parent removes its discovered subtree.
 - Replace the feature-as-assignment contract with a work context. A checkout may suggest context,
   but selection must not silently assign unrelated work or make the sole feature authoritative.
 - Define the durable artifact contract around what later agents need: decisions, tasks, findings,

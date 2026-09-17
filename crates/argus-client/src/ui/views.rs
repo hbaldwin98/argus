@@ -153,7 +153,11 @@ fn feature_column_width(total: u16) -> u16 {
 /// is read at.
 fn render_feature_column(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let focused = app.panel == FeaturePanel::Features;
-    let mode = if app.show_archived_features { "archive" } else { "active" };
+    let mode = if app.show_archived_features {
+        "archive"
+    } else {
+        "active"
+    };
     let title = match app.board.as_ref().map(|b| b.name.clone()) {
         Some(name) => format!("features · {mode} · {name}"),
         None => format!("features · {mode}"),
@@ -332,27 +336,31 @@ fn render_brief(f: &mut Frame, app: &App, brief: &str, area: Rect, th: Theme) {
 /// which three columns of cards never left room for.
 fn render_tasks(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let focused = app.panel == FeaturePanel::Tasks;
-    let tasks: Vec<_> = app.feature_tasks().to_vec();
+    let feature = app.feature_slug();
+    let loaded = app
+        .tasks
+        .as_ref()
+        .is_some_and(|list| list.feature.as_ref() == feature.as_ref());
+    let fallback = app.selected_feature().map(|f| f.tasks).unwrap_or_default();
+    // The wire remains flat, but the view walks its borrowed rows into a
+    // tree. This keeps rendering to one task fetch and makes indentation a
+    // presentation detail rather than another protocol shape to maintain.
+    let task_rows = app.feature_task_rows();
     // Counted from the list on screen when it has arrived, and from the
     // feature row until then. Taking it only from the row would let the
     // heading say 3/7 over a list of four, which is the kind of
     // disagreement two sources of one number always end in.
-    let counts = match app
-        .tasks
-        .as_ref()
-        .map(|list| list.feature == app.feature_slug())
-    {
-        Some(true) => {
-            tasks
-                .iter()
-                .fold(argus_protocol::TaskCounts::default(), |mut counts, task| {
-                    counts.add(task.state);
-                    counts
-                })
-        }
-        _ => app.selected_feature().map(|f| f.tasks).unwrap_or_default(),
+    let counts = if loaded {
+        task_rows
+            .iter()
+            .fold(argus_protocol::TaskCounts::default(), |mut counts, row| {
+                counts.add(row.task.state);
+                counts
+            })
+    } else {
+        fallback
     };
-    let title = match (app.feature_slug().is_some(), counts.total()) {
+    let title = match (feature.is_some(), counts.total()) {
         (false, _) | (true, 0) => "tasks".to_string(),
         (true, total) => format!("tasks · {}/{}", counts.done, total),
     };
@@ -366,20 +374,22 @@ fn render_tasks(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     // leave it makes crossing back a hunt.
     let selected = Some(app.task_sel);
     let grown = selected
-        .and_then(|i| tasks.get(i))
-        .map(|task| task_grown_by(task, th, inner.width))
+        .and_then(|i| task_rows.get(i))
+        .map(|row| task_grown_by(row, th, inner.width))
         .unwrap_or(0);
     let visible = visible_rows(inner.height, grown);
-    let first = scrolled_to_show(0, selected, visible, tasks.len());
-    app.layout.feature_tasks = Panel {
-        outer: area,
-        inner,
-        first,
-    };
-    if tasks.is_empty() {
-        let empty = match app.feature_slug().is_some() {
-            true => "nothing to do here yet — a adds a task",
+    let first = scrolled_to_show(0, selected, visible, task_rows.len());
+    let task_sel = app.task_sel;
+    if task_rows.is_empty() {
+        let empty = match feature.is_some() {
+            true => "nothing to do here yet — a adds a task; s adds a subtask",
             false => "no feature selected",
+        };
+        drop(task_rows);
+        app.layout.feature_tasks = Panel {
+            outer: area,
+            inner,
+            first,
         };
         f.render_widget(
             Paragraph::new(Span::styled(empty, Style::default().fg(th.dim))),
@@ -389,12 +399,18 @@ fn render_tasks(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     }
 
     let mut lines = Vec::new();
-    for (row, task) in tasks.iter().enumerate().skip(first) {
+    for (row, task) in task_rows.iter().enumerate().skip(first) {
         if lines.len() >= inner.height as usize {
             break;
         }
-        push_task_row(&mut lines, task, row == app.task_sel, th, inner.width);
+        push_task_row(&mut lines, task, row == task_sel, th, inner.width);
     }
+    drop(task_rows);
+    app.layout.feature_tasks = Panel {
+        outer: area,
+        inner,
+        first,
+    };
     f.render_widget(Paragraph::new(lines), inner);
 }
 
@@ -412,17 +428,65 @@ fn task_mark(state: argus_protocol::TaskState) -> &'static str {
     }
 }
 
+const MAX_TASK_INDENT: usize = 24;
+
+fn task_branch(row: &argus_protocol::TaskTreeRow<'_>) -> String {
+    if row.depth == 0 {
+        return String::new();
+    }
+    let mut branch = task_ancestor_guides(row, 1);
+    branch.push_str(if row.has_next_sibling {
+        "├─ "
+    } else {
+        "└─ "
+    });
+    branch
+}
+
+fn task_continuation(row: &argus_protocol::TaskTreeRow<'_>) -> String {
+    if row.depth == 0 {
+        return String::new();
+    }
+    let mut continuation = task_ancestor_guides(row, 1);
+    continuation.push_str(if row.has_next_sibling { "│  " } else { "   " });
+    continuation
+}
+
+fn task_ancestor_guides(row: &argus_protocol::TaskTreeRow<'_>, reserved_slots: usize) -> String {
+    let slots = (MAX_TASK_INDENT / 3).saturating_sub(reserved_slots);
+    let first = row.ancestor_continuations.len().saturating_sub(slots);
+    row.ancestor_continuations[first..]
+        .iter()
+        .map(|continues| if *continues { "│  " } else { "   " })
+        .collect()
+}
+
+fn task_detail_prefix(row: &argus_protocol::TaskTreeRow<'_>) -> String {
+    // One cell for the selection gutter and two for the state mark, with the
+    // tree's continuation in between. It is the same width as the title
+    // prefix, so wrapped details line up under their task.
+    format!(" {}  ", task_continuation(row))
+}
+
 fn push_task_row(
     lines: &mut Vec<Line<'static>>,
-    task: &argus_protocol::Task,
+    row: &argus_protocol::TaskTreeRow<'_>,
     selected: bool,
     th: Theme,
     width: u16,
 ) {
     use argus_protocol::TaskState;
-    // The marker, the state glyph, and a space: what the wrapped title and
-    // the detail line both hang to.
-    const HANG: usize = 3;
+    let task = row.task;
+    let branch = task_branch(row);
+    // The marker, tree branch, state glyph, and a space: wrapped titles and
+    // details both hang under the text of this complete prefix.
+    let title_prefix = vec![
+        Span::styled(
+            if selected { MARKER } else { GUTTER },
+            Style::default().fg(th.accent),
+        ),
+        Span::raw(branch),
+    ];
     let mark_style = match task.state {
         TaskState::Todo => Style::default().fg(th.muted),
         TaskState::Doing => Style::default().fg(th.accent),
@@ -436,24 +500,23 @@ fn push_task_row(
         (true, _) => Style::default().fg(th.text).add_modifier(Modifier::BOLD),
         (false, _) => Style::default().fg(th.text),
     };
+    let mut title_prefix = title_prefix;
+    title_prefix.push(Span::styled(task_mark(task.state), mark_style));
+    title_prefix.push(Span::raw(" "));
+    let title_hang = title_prefix.iter().map(Span::width).sum();
     lines.extend(text_rows(
-        vec![
-            Span::styled(
-                if selected { MARKER } else { GUTTER },
-                Style::default().fg(th.accent),
-            ),
-            Span::styled(task_mark(task.state), mark_style),
-            Span::raw(" "),
-        ],
-        HANG,
+        title_prefix,
+        title_hang,
         task.title.clone(),
         title_style,
         width,
         selected,
     ));
+    let detail_prefix = task_detail_prefix(row);
+    let detail_hang = detail_prefix.chars().count();
     lines.extend(text_rows(
-        vec![Span::raw(" ".repeat(HANG))],
-        HANG,
+        vec![Span::raw(detail_prefix.clone())],
+        detail_hang,
         task_detail(task),
         Style::default().fg(th.dim),
         width,
@@ -462,8 +525,8 @@ fn push_task_row(
     if selected {
         if let Some(body) = task.body.as_deref().filter(|body| !body.trim().is_empty()) {
             lines.extend(text_rows(
-                vec![Span::raw(" ".repeat(HANG))],
-                HANG,
+                vec![Span::raw(detail_prefix)],
+                detail_hang,
                 body.to_string(),
                 Style::default().fg(th.muted),
                 width,
@@ -473,9 +536,9 @@ fn push_task_row(
     }
 }
 
-fn task_grown_by(task: &argus_protocol::Task, th: Theme, width: u16) -> usize {
+fn task_grown_by(row: &argus_protocol::TaskTreeRow<'_>, th: Theme, width: u16) -> usize {
     let mut lines = Vec::new();
-    push_task_row(&mut lines, task, true, th, width);
+    push_task_row(&mut lines, row, true, th, width);
     lines.len().saturating_sub(ROW_HEIGHT as usize)
 }
 

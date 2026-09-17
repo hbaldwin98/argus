@@ -479,13 +479,13 @@ checkout and installs its harness in the new one. Codex is the exception: its tr
 contains only environment references and remains identical across boots. Argus adds every generated
 harness and skill file to the repository's local `.git/info/exclude`; this changes no tracked file,
 never enters a commit, and is refreshed whenever a checkout is discovered. Hook files are checkout-wide;
-the helper uses or rebases to a valid `ARGUS_HOOK_URL`, so each process still routes to its own pane.
+the helper uses or rebases to a valid`ARGUS_HOOK_URL`, so each process still routes to its own pane.
 The helper reads hook stdin once and can extract both a note and a configured
-top-level session ID key. Claude captures `session_id` at SessionStart. OpenCode's plugin tags root
+top-level session ID key. Claude captures`session_id` at SessionStart. OpenCode's plugin tags root
 and child reports with their session IDs; only a root claims `/session`, and a newly created root
 reports again when it replaces the previous root. Pi's extension claims
 `SessionManager.getSessionId()`, reports input and low-level agent starts as working, settled runs as
-idle, and blocking extension prompts as waiting. AGY captures `conversationId` at PreInvocation.
+idle, and blocking extension prompts as waiting. AGY captures`conversationId` at PreInvocation.
 Cursor's `agent` CLI captures `conversation_id` or `session_id` at `sessionStart` without moving the
 pane to idle.
 
@@ -826,7 +826,9 @@ its brief, then its decision tree, as one answer, since a decision without what 
 explains half of itself. `argus-hook feature list`, `feature open "<title>"`, `feature use <slug>`
 and `feature note "<text>"` are the writes. `argus-hook decisions` reads the same tree alone, and
 `argus-hook decide "<chose>" [--over ...] [--because ...] [--under <id>] [--supersedes <id>]`
-appends to it, answering with the id the next decision hangs off.
+appends to it, answering with the id the next decision hangs off. `argus-hook task` reads the
+current task tree; `task add "<what to do>" [--key <tracker-key>] [--under <id>]` adds a task, and
+the other task verbs change its state, title, brief, or presence.
 
 The board itself is append-only. Nothing is ever edited, and there is no delete. A decision that a
 later finding invalidates is *superseded*: the replacement is a new row that takes the old one's
@@ -853,8 +855,9 @@ their own at the end of the feature list rather than being hidden.
 
 The one view that is not the spine draws the selected checkout's repository features down
 the left and whichever one is selected, whole, on the right: its brief, the tasks left under it,
-and the decision tree beneath them. That is the order they are read and the order `argus-hook
-feature` prints them in — a
+and the decision tree beneath them. Tasks can contain subtasks recursively, so newly discovered
+work remains under the task that exposed it instead of becoming an unrelated root. That is the
+order they are read and the order `argus-hook feature` prints them in — a
 decision without what the feature is for explains half of itself, and a task list without either
 says what to do and never why.
 
@@ -870,8 +873,9 @@ screen.
 The three panels take keys in turn rather than each having their own set. `h` and `l` cross between
 the list and the feature being read — `l` is a direction and stops at the last panel rather than
 wrapping — `Tab` steps through them in the order they are drawn, and `j`/`k` move in whichever has
-them. `a`, `e` and `x` act on what has the keys: a new feature or a new task, the brief or the
-task's text, remove the feature or drop the task. The decision panel refuses both in prose, because
+them. `a`, `s`, `e` and `x` act on what has the keys: a new feature or root task, a subtask under
+the selected task, the brief or the task's text, remove the feature or drop the task. The decision
+panel refuses both in prose, because
 the board is append-only and agents are what write it. Every panel draws its own selection whether
 or not it has the keys, the way the spine's columns do — the selections are how a reader traces
 where they are, and one that vanished when the keys left would make crossing back a hunt.
@@ -953,7 +957,9 @@ multiline editor used for feature briefs, while `e` keeps the fast title editor.
 a document would be addressed by line number, and a line number moves whenever the text around it
 is edited — which is the one thing a list cannot take, since a row has to stay the same row while a
 human rewrites the list. Schema v8's `task` holds the title, the state, the
-claim, a `position` and an `external` key; schema v11 adds its optional body.
+claim, a `position` and an `external` key; schema v11 adds its optional body and schema v15 adds
+its nullable `parent` task id. `position` is per sibling list, so moving a child never reorders its
+parent's other children or the feature's root tasks.
 
 The states are still todo, doing and done, and unlike the feature columns they sat beside they are
 maintained by whoever is doing the work: an agent takes a task up and finishes it as part of the
@@ -966,13 +972,16 @@ you can only see by telling two greys apart is a state half the readers cannot s
 `external` is whatever key the team's tracker uses. Argus stores it and knows nothing else about it:
 an agent with access to Jira, Linear, GitHub Issues or a spreadsheet is what puts tasks here, which
 is why Argus works the same with any of them and needs credentials for none. `argus-hook task add
-"<what to do>" --key ORION-412` is the whole of the integration.
+"<what to do>" --key ORION-412` is the whole of the integration. When work reveals more work,
+`argus-hook task add "<child>" --under <id>` keeps that discovery beneath the task whose id `task`
+printed.
 
 Both sides write, and here they write the same things — there is no acceptance step and so no move
 either side is refused. That ceremony belongs to the feature the tasks are under, which is where a
 human accepts the work as a whole. An agent reads with `argus-hook task` and writes with `task add`,
-`task doing <id>`, `task done <id>`, `task todo <id>`, `task retitle <id> <text>`, `task brief <id>
-<text>` and `task drop <id>`; the states are named as verbs rather than hidden behind a `move`, so what an agent types is
+optionally using `--under <id>`, `task doing <id>`, `task done <id>`, `task todo <id>`, `task retitle
+<id> <text>`, `task brief <id> <text>` and `task drop <id>`; the states are named as verbs rather than
+hidden behind a `move`, so what an agent types is
 what a reader of the transcript understands happened. Taking a task up is what claims it and
 finishing it is what releases it, so a row always says who is on it without anyone claiming by hand.
 
@@ -980,15 +989,19 @@ Ids are database-wide and an agent numbers its tasks from what it last read, so 
 change is refused when the task is not under the feature its checkout is on: a stale id would
 otherwise let one feature's agent tick off another's work by arithmetic.
 
-From the view, `H`/`L` move a task along todo → doing → done and `J`/`K` move it earlier or later in
-the list — the order is a human's statement of what to do first, so it is theirs to set and there is
-no agent-side equivalent. Both are refused unless the tasks have the keys, so a capital `H` on the
-feature list does not move a task the cursor is nowhere near. Lists are pushed whole on
-`ServerMsg::Tasks` whenever one changes, and the cursor is held by task id across the push rather
-than by row number: a card you have to go looking for reads as having been lost.
+From the view, `H`/`L` move a task along todo → doing → done and `J`/`K` move it earlier or later among
+its siblings — the order is a human's statement of what to do first, so it is theirs to set and there
+is no agent-side equivalent. `s` starts a line for a subtask under the selected task; `a` starts a
+root task. Both are refused unless the tasks have the keys, so a capital `H` on the feature list does
+not move a task the cursor is nowhere near. Lists are pushed whole on `ServerMsg::Tasks` whenever one
+changes, and the wire stays flat: every row carries its parent id while the client and hook project
+the rows into depth-first branches. The cursor is held by task id across the push rather than by row
+number: a card you have to go looking for reads as having been lost. Removing a task removes its
+descendants with it, so a discovered subtree cannot become orphaned work.
 
-Adding and rewriting type on one `LineInput`, shared with the feature list because adding a feature
-and adding a task are the same gesture on the same kind of surface and two of them would drift. It
+Adding and rewriting type on one `LineInput`, shared with the feature list because adding a feature,
+a root task, and a subtask are the same gesture on the same kind of surface and two of them would
+drift. It
 takes a row off the bottom of the view rather than floating over it, so what you are writing and
 what is already there stay readable together, and while it is up it swallows every key: a title with
 an `x` in it does not delete the row behind it, and the first `Esc` puts the line away rather than

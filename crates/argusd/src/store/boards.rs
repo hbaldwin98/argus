@@ -553,10 +553,10 @@ impl Store {
 
     // ---- tasks --------------------------------------------------------
 
-    /// Adds a task to the end of a feature's `todo` column.
-    ///
-    /// The end, because a list an agent is populating from a tracker has
-    /// to arrive in the order it was read; a human reorders afterwards.
+    /// Adds a task to the end of its parent's sibling list, or to the end
+    /// of the feature's root list when it has no parent. The end is useful
+    /// for a list an agent is populating from a tracker; a human can reorder
+    /// siblings afterwards without disturbing the rest of the tree.
     pub fn add_task(
         &self,
         project: &str,
@@ -575,17 +575,38 @@ impl Store {
         if !exists {
             anyhow::bail!("there is no feature {feature} on this project");
         }
+        let parent = write.parent;
+        if parent.is_some_and(|parent| parent <= 0) {
+            anyhow::bail!("a parent task id must be positive");
+        }
+        if let Some(parent) = parent {
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(
+                     SELECT 1 FROM task
+                     WHERE project = ?1 AND feature = ?2 AND id = ?3
+                 )",
+                rusqlite::params![project, feature, parent],
+                |r| r.get(0),
+            )?;
+            if !exists {
+                anyhow::bail!("there is no parent task {parent} under feature {feature}");
+            }
+        }
         let position: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(position), -1) + 1 FROM task WHERE project = ?1 AND feature = ?2",
-            rusqlite::params![project, feature],
+            "SELECT COALESCE(MAX(position), -1) + 1
+             FROM task
+             WHERE project = ?1 AND feature = ?2 AND parent IS ?3",
+            rusqlite::params![project, feature, parent],
             |r| r.get(0),
         )?;
         tx.execute(
-            "INSERT INTO task (project, feature, title, state, external, position, at, session)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO task
+                 (project, feature, parent, title, state, external, position, at, session)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![
                 project,
                 feature,
+                parent,
                 write.title,
                 TaskState::Todo.as_str(),
                 write.external,
@@ -599,6 +620,7 @@ impl Store {
         Ok(Task {
             id,
             feature: feature.to_string(),
+            parent,
             title: write.title.clone(),
             body: None,
             state: TaskState::Todo,
@@ -610,28 +632,37 @@ impl Store {
         })
     }
 
-    /// One feature's tasks, in the order a human put them in.
+    /// One feature's tasks, in depth-first order. The database query is one
+    /// read; the borrowed protocol projection then arranges each sibling
+    /// list by position without a query per node.
     pub fn tasks(&self, project: &str, feature: &str) -> Result<Vec<Task>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT id, feature, title, body, state, claimed_by, external, position, at, session
+            "SELECT id, feature, parent, title, body, state, claimed_by, external, position, at, session
              FROM task WHERE project = ?1 AND feature = ?2 ORDER BY position, id",
         )?;
         let rows = stmt.query_map(rusqlite::params![project, feature], |r| {
             Ok(Task {
                 id: r.get(0)?,
                 feature: r.get(1)?,
-                title: r.get(2)?,
-                body: r.get(3)?,
-                state: TaskState::parse(&r.get::<_, String>(4)?).unwrap_or_default(),
-                claimed_by: r.get(5)?,
-                external: r.get(6)?,
-                position: r.get(7)?,
-                at: r.get(8)?,
-                session: r.get(9)?,
+                parent: r.get(2)?,
+                title: r.get(3)?,
+                body: r.get(4)?,
+                state: TaskState::parse(&r.get::<_, String>(5)?).unwrap_or_default(),
+                claimed_by: r.get(6)?,
+                external: r.get(7)?,
+                position: r.get(8)?,
+                at: r.get(9)?,
+                session: r.get(10)?,
             })
         })?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        let tasks = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(argus_protocol::TaskList {
+            project_name: String::new(),
+            feature: Some(feature.to_string()),
+            tasks,
+        }
+        .tasks_in_tree_order())
     }
 
     /// Moves a task to another column.
@@ -683,56 +714,108 @@ impl Store {
         )
     }
 
-    /// Removes a task outright.
+    /// Removes a task and its descendants outright.
     ///
     /// Unlike a decision, which is superseded rather than deleted: a
     /// decision is a record of what was believed, and a task is a thing
-    /// somebody meant to do. One that was added by mistake should leave
-    /// no trace, or a board populated from a tracker fills with apologies.
+    /// somebody meant to do. A removed parent takes its newly discovered
+    /// work with it; leaving those children behind would create rows with no
+    /// context and make the tree harder to trust.
     pub fn remove_task(&self, project: &str, id: i64) -> Result<()> {
-        self.update_one(
-            "DELETE FROM task WHERE project = ?1 AND id = ?2",
-            rusqlite::params![project, id],
-            || format!("there is no task {id} on this project"),
-        )
-    }
-
-    /// Puts a task at a place in the list, shifting whatever is there
-    /// down. Ordering is over the whole feature rather than per column, so
-    /// a card keeps its place in the list when it changes column.
-    pub fn reorder_task(&self, project: &str, id: i64, to: i64) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        let from: i64 = tx
+        let (feature, parent): (String, Option<i64>) = tx
             .query_row(
-                "SELECT position FROM task WHERE project = ?1 AND id = ?2",
+                "SELECT feature, parent
+                 FROM task WHERE project = ?1 AND id = ?2",
                 rusqlite::params![project, id],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?
             .ok_or_else(|| anyhow::anyhow!("there is no task {id} on this project"))?;
+        tx.execute(
+            "WITH RECURSIVE descendants(id) AS (
+                 SELECT id FROM task
+                 WHERE project = ?1 AND feature = ?2 AND id = ?3
+                 UNION
+                 SELECT child.id FROM task child
+                 JOIN descendants parent ON child.parent = parent.id
+                 WHERE child.project = ?1 AND child.feature = ?2
+             )
+             DELETE FROM task
+             WHERE project = ?1 AND feature = ?2
+               AND id IN (SELECT id FROM descendants)",
+            rusqlite::params![project, feature, id],
+        )?;
+        // Keep the remaining sibling positions dense. The client sends a
+        // sibling index, not a database-specific position; normalizing the
+        // whole list also repairs gaps left by older stores.
+        let siblings = {
+            let mut stmt = tx.prepare(
+                "SELECT id FROM task
+                 WHERE project = ?1 AND feature = ?2 AND parent IS ?3
+                 ORDER BY position, id",
+            )?;
+            let rows = stmt.query_map(rusqlite::params![project, feature, parent], |row| {
+                row.get::<_, i64>(0)
+            })?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        for (position, sibling) in siblings.into_iter().enumerate() {
+            tx.execute(
+                "UPDATE task SET position = ?1 WHERE project = ?2 AND id = ?3",
+                rusqlite::params![position as i64, project, sibling],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Puts a task at a zero-based index among its siblings. Rewriting the
+    /// whole sibling list also repairs gaps left by older stores, while a
+    /// child keeps its parent and root tasks remain in their own list.
+    pub fn reorder_task(&self, project: &str, id: i64, to: i64) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let (feature, parent): (String, Option<i64>) = tx
+            .query_row(
+                "SELECT feature, parent FROM task WHERE project = ?1 AND id = ?2",
+                rusqlite::params![project, id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+            .ok_or_else(|| anyhow::anyhow!("there is no task {id} on this project"))?;
+        if to < 0 {
+            anyhow::bail!("task order cannot be negative");
+        }
+        let mut siblings = tx
+            .prepare(
+                "SELECT id FROM task
+                 WHERE project = ?1 AND feature = ?2 AND parent IS ?3
+                 ORDER BY position, id",
+            )?
+            .query_map(rusqlite::params![project, feature, parent], |row| {
+                row.get::<_, i64>(0)
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let Some(from) = siblings.iter().position(|sibling| *sibling == id) else {
+            anyhow::bail!("task {id} is not in its sibling list");
+        };
+        let to = usize::try_from(to).map_err(|_| anyhow::anyhow!("task order is too large"))?;
+        if to >= siblings.len() {
+            anyhow::bail!("task order {to} is outside the sibling list");
+        }
         if from == to {
             return Ok(());
         }
-        // Everything between the two places shifts one the other way,
-        // which is the whole of a move in a dense ordering.
-        if to < from {
+        let task = siblings.remove(from);
+        siblings.insert(to, task);
+        for (position, sibling) in siblings.into_iter().enumerate() {
             tx.execute(
-                "UPDATE task SET position = position + 1
-                 WHERE project = ?1 AND position >= ?2 AND position < ?3",
-                rusqlite::params![project, to, from],
-            )?;
-        } else {
-            tx.execute(
-                "UPDATE task SET position = position - 1
-                 WHERE project = ?1 AND position > ?2 AND position <= ?3",
-                rusqlite::params![project, from, to],
+                "UPDATE task SET position = ?1 WHERE project = ?2 AND id = ?3",
+                rusqlite::params![position as i64, project, sibling],
             )?;
         }
-        tx.execute(
-            "UPDATE task SET position = ?1 WHERE project = ?2 AND id = ?3",
-            rusqlite::params![to, project, id],
-        )?;
         tx.commit()?;
         Ok(())
     }

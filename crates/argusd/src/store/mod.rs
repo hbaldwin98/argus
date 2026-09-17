@@ -33,8 +33,8 @@ mod schema;
 mod session;
 
 use schema::{
-    SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V2, SCHEMA_V3,
-    SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
+    SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V2,
+    SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
 };
 
 /// One pane worth starting again, as it stood when the daemon stopped.
@@ -97,7 +97,7 @@ pub struct Overlays {
 pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 14;
+const SCHEMA_VERSION: i64 = 15;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -219,6 +219,9 @@ impl Store {
             tx.execute_batch(SCHEMA_V14)?;
             Self::migrate_legacy_project_features(&tx)?;
         }
+        if from < 15 {
+            tx.execute_batch(SCHEMA_V15)?;
+        }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;
         Ok(())
@@ -290,7 +293,8 @@ impl Store {
         if new_key == old_key {
             return Ok(());
         }
-        let mut stmt = tx.prepare("SELECT slug FROM feature WHERE project = ?1 ORDER BY at, slug")?;
+        let mut stmt =
+            tx.prepare("SELECT slug FROM feature WHERE project = ?1 ORDER BY at, slug")?;
         let slugs = stmt
             .query_map([old_key], |row| row.get::<_, String>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?;

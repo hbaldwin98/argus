@@ -589,6 +589,7 @@ impl App {
             KeyCode::Char('e') => self.edit_in_feature(),
             KeyCode::Enter => self.open_in_feature(),
             KeyCode::Char('a') => self.add_in_feature(),
+            KeyCode::Char('s') if self.panel == FeaturePanel::Tasks => self.begin_subtask(),
             KeyCode::Char('x') => self.drop_in_feature(),
             KeyCode::Char('R') => self.begin_feature_rename(),
             KeyCode::Char('v') if self.panel == FeaturePanel::Features => {

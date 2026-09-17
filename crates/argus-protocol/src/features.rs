@@ -15,8 +15,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::decisions::Decision;
-use crate::tasks::TaskCounts;
 use crate::ids::ProjectId;
+use crate::tasks::TaskCounts;
 
 /// Past this a feature document has stopped being a brief and started
 /// being a design document, which belongs in the checkout it describes.
@@ -136,14 +136,20 @@ pub struct FeatureWrite {
 impl FeatureWrite {
     pub fn checked(self) -> Result<FeatureWrite, &'static str> {
         let title = self.title.trim().to_string();
-        let body = self.body.map(|b| b.trim().to_string()).filter(|b| !b.is_empty());
+        let body = self
+            .body
+            .map(|b| b.trim().to_string())
+            .filter(|b| !b.is_empty());
         if title.is_empty() {
             return Err("a feature has to have a title");
         }
         if title.len() > MAX_FEATURE_TITLE_BYTES {
             return Err("a feature title is a short noun phrase, not a paragraph");
         }
-        if body.as_ref().is_some_and(|b| b.len() > MAX_FEATURE_BODY_BYTES) {
+        if body
+            .as_ref()
+            .is_some_and(|b| b.len() > MAX_FEATURE_BODY_BYTES)
+        {
             return Err("a feature document is a brief, not a design document");
         }
         Ok(FeatureWrite { title, body })
@@ -272,7 +278,10 @@ mod tests {
 
     #[test]
     fn a_title_becomes_a_key_a_human_can_read() {
-        assert_eq!(slugify("Scope decisions to a feature"), "scope-decisions-to-a-feature");
+        assert_eq!(
+            slugify("Scope decisions to a feature"),
+            "scope-decisions-to-a-feature"
+        );
         assert_eq!(slugify("  PTY deadlock (again!)  "), "pty-deadlock-again");
     }
 
@@ -288,14 +297,22 @@ mod tests {
 
     #[test]
     fn a_feature_has_to_have_a_title() {
-        assert!(FeatureWrite { title: "  ".into(), body: None }.checked().is_err());
+        assert!(FeatureWrite {
+            title: "  ".into(),
+            body: None
+        }
+        .checked()
+        .is_err());
     }
 
     #[test]
     fn an_empty_document_is_dropped_rather_than_stored_blank() {
-        let write = FeatureWrite { title: " decisions ".into(), body: Some("  ".into()) }
-            .checked()
-            .unwrap();
+        let write = FeatureWrite {
+            title: " decisions ".into(),
+            body: Some("  ".into()),
+        }
+        .checked()
+        .unwrap();
         assert_eq!(write.title, "decisions");
         assert_eq!(write.body, None);
     }

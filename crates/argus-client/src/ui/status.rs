@@ -168,8 +168,8 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 th.accent,
             ),
             // Named per panel, since which keys are live depends on
-            // which one has them: `a` adds a feature on the list and a
-            // task in the tasks, and a bar that said neither would be a
+            // which one has them: `a` adds a feature or root task and `s`
+            // adds a subtask in the tasks panel, and a bar that said neither would be a
             // bar saying nothing.
             View::Feature => match app.panel {
                 FeaturePanel::Features => (
@@ -182,9 +182,9 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 ),
                 FeaturePanel::Tasks => (
                     &[
-                        "h/l panels  j/k move  a add  e title  enter brief  H/L todo→doing→done  J/K order  x drop  q spine",
-                        "h/l panels  j/k move  a add  e title  enter brief  H/L move  J/K order  x drop  q",
-                        "j/k  a add  e title  enter brief  H/L move  q",
+                        "h/l panels  j/k move  a root  s subtask  e title  enter brief  H/L todo→doing→done  J/K order  x drop  q spine",
+                        "h/l panels  j/k move  a root  s subtask  e title  enter brief  H/L move  J/K order  x drop  q",
+                        "j/k  a root  s subtask  e title  enter brief  H/L move  q",
                     ][..],
                     th.dim,
                 ),

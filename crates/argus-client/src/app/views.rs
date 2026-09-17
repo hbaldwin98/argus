@@ -37,6 +37,7 @@ pub struct LineInput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LineEdit {
     NewTask,
+    NewSubtask(i64),
     Task(i64),
     NewFeature,
     Feature(String),
@@ -48,6 +49,7 @@ impl LineInput {
     pub fn label(&self) -> &'static str {
         match self.what {
             LineEdit::NewTask => "new task",
+            LineEdit::NewSubtask(_) => "new subtask",
             LineEdit::Task(_) => "rewrite",
             LineEdit::NewFeature => "new feature",
             LineEdit::Feature(_) => "rename",
@@ -101,9 +103,7 @@ impl App {
         let mut rows: Vec<FeatureRow> = board
             .features
             .iter()
-            .filter(|feature| {
-                (feature.state == FeatureState::Done) == self.show_archived_features
-            })
+            .filter(|feature| (feature.state == FeatureState::Done) == self.show_archived_features)
             .map(|f| {
                 let (detail, attention) = self.feature_detail(f, board.count_for(Some(&f.slug)));
                 FeatureRow {
@@ -388,7 +388,9 @@ impl App {
 
     // ---- tasks -------------------------------------------------------
 
-    /// The selected feature's tasks, in the order a person put them in.
+    /// The selected feature's tasks, depth-first and in each sibling list's
+    /// order. The wire list is still flat, which keeps selection and task ids
+    /// stable while the tree is projected only where a reader needs it.
     ///
     /// One list rather than three columns. A task's state is a mark on its
     /// row, so the order stays what it is for — what to do first — instead
@@ -398,6 +400,17 @@ impl App {
             .as_ref()
             .filter(|list| list.feature == self.feature_slug())
             .map(|list| list.tasks.as_slice())
+            .unwrap_or_default()
+    }
+
+    /// The selected feature's tasks with their parent/child topology ready
+    /// for a renderer. The flat task slice remains the selection source, so
+    /// task ids stay stable when another agent adds a sibling.
+    pub fn feature_task_rows(&self) -> Vec<argus_protocol::TaskTreeRow<'_>> {
+        self.tasks
+            .as_ref()
+            .filter(|list| list.feature == self.feature_slug())
+            .map(|list| list.tree_rows())
             .unwrap_or_default()
     }
 
@@ -505,13 +518,27 @@ impl App {
         if self.panel != FeaturePanel::Tasks {
             return;
         }
-        let Some(position) = self.selected_task().map(|t| t.position) else {
+        let Some(selected) = self.selected_task() else {
             return;
         };
-        let Some((project, checkout, feature, id)) = self.task_target() else {
+        let id = selected.id;
+        let parent = selected.parent;
+        let siblings: Vec<_> = self
+            .feature_tasks()
+            .iter()
+            .filter(|task| task.parent == parent)
+            .collect();
+        let Some(position) = siblings
+            .iter()
+            .position(|task| task.id == id)
+            .map(|position| position as i64)
+        else {
             return;
         };
-        let last = self.feature_tasks().len() as i64 - 1;
+        let Some((project, checkout, feature, _)) = self.task_target() else {
+            return;
+        };
+        let last = siblings.len() as i64 - 1;
         let to = (position + delta).clamp(0, last.max(0));
         if to == position {
             return;
@@ -524,10 +551,20 @@ impl App {
         });
     }
 
-    /// Starts a new task, typed into the line at the foot of the view.
+    /// Starts a new root task, typed into the line at the foot of the view.
     pub(super) fn begin_task(&mut self) {
         if self.feature_slug().is_some() {
             self.begin_line(LineEdit::NewTask, String::new());
+        }
+    }
+
+    /// Starts work under the selected task. A separate binding keeps `a`
+    /// useful for a new root task even when the cursor is on a deep row.
+    pub(super) fn begin_subtask(&mut self) {
+        if self.panel == FeaturePanel::Tasks {
+            if let Some(parent) = self.selected_task().map(|task| task.id) {
+                self.begin_line(LineEdit::NewSubtask(parent), String::new());
+            }
         }
     }
 
@@ -675,6 +712,16 @@ impl App {
                 feature,
                 action: argus_protocol::TaskAction::Retitle { id, title },
             },
+            (LineEdit::NewSubtask(parent), Some(feature)) => ClientMsg::Task {
+                project,
+                checkout,
+                feature,
+                action: argus_protocol::TaskAction::Add(argus_protocol::TaskWrite {
+                    title,
+                    external: None,
+                    parent: Some(parent),
+                }),
+            },
             (LineEdit::NewTask, Some(feature)) => ClientMsg::Task {
                 project,
                 checkout,
@@ -682,11 +729,12 @@ impl App {
                 action: argus_protocol::TaskAction::Add(argus_protocol::TaskWrite {
                     title,
                     external: None,
+                    parent: None,
                 }),
             },
             // A task with no feature to be under: the view cannot have
             // been on one, so there is nothing to write.
-            (LineEdit::Task(_) | LineEdit::NewTask, None) => return,
+            (LineEdit::Task(_) | LineEdit::NewTask | LineEdit::NewSubtask(_), None) => return,
         };
         let _ = self.out.send(msg);
     }

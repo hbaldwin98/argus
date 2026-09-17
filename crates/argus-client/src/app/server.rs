@@ -155,15 +155,21 @@ impl App {
             ServerMsg::Tasks(list) => {
                 // A push for a feature the view is not on is another
                 // client's business, exactly as a board for another
-                // project is.
-                let ours = self.feature_slug() == list.feature;
+                // project is. Feature slugs are only unique inside that
+                // project, so both scopes have to agree before installing it.
+                let ours = self
+                    .current_project()
+                    .is_some_and(|project| project.name == list.project_name)
+                    && self.feature_slug() == list.feature;
                 if ours {
                     // Held by id across the swap, so a task reordered or
                     // moved under the cursor is still the task under the
                     // cursor: a card you have to go looking for reads as
                     // having been lost.
                     let was = self.selected_task().map(|task| task.id);
-                    self.tasks = Some(*list);
+                    let mut list = *list;
+                    list.tasks = list.tasks_in_tree_order();
+                    self.tasks = Some(list);
                     match was
                         .and_then(|id| self.feature_tasks().iter().position(|task| task.id == id))
                     {
