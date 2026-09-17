@@ -250,7 +250,7 @@ impl<'a> Item<'a> {
 }
 
 pub fn render(f: &mut Frame, app: &mut App) {
-    let th = app.theme;
+    let th = app.theme.drawn();
     // The page owns its background; leaving it `Reset` would inherit
     // whatever the host terminal happens to be, and the elevation between
     // page and panel is what makes the panels read as cards.

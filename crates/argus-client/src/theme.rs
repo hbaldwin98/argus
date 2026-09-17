@@ -122,6 +122,16 @@ impl Theme {
         Theme::by_name(&name)
     }
 
+    /// The theme as drawn: the page takes the host terminal's own
+    /// background rather than the preset's, so Argus sits in the shell's
+    /// color scheme. Raised surfaces keep their preset fills.
+    pub fn drawn(self) -> Self {
+        Theme {
+            bg: Color::Reset,
+            ..self
+        }
+    }
+
     pub fn by_name(name: &str) -> Self {
         match name.trim().to_ascii_lowercase().as_str() {
             "macchiato" => Theme::macchiato(),

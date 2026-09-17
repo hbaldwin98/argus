@@ -507,7 +507,11 @@ fn the_three_elevations_show_up_on_screen() {
         "focused panel"
     );
     assert_eq!(blank(app.layout.checkouts), th.surface, "unfocused panel");
-    assert_eq!(buf.cell((0, 0)).unwrap().bg, th.bg, "the page behind them");
+    assert_eq!(
+        buf.cell((0, 0)).unwrap().bg,
+        ratatui::style::Color::Reset,
+        "the page behind them is the host terminal's own background"
+    );
 }
 
 #[test]

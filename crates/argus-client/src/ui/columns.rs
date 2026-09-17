@@ -184,7 +184,7 @@ fn pane_rows(app: &App, th: Theme) -> Vec<Item<'static>> {
 /// Draws the spine. Its leading columns may be folded away to tabs in the
 /// left gutter, in which case their width is ceded to the ones that remain.
 pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option<CursorPlacement> {
-    let th = app.theme;
+    let th = app.theme.drawn();
     let fold = app.fold;
     let hidden = fold.hidden();
 
