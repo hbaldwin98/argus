@@ -33,6 +33,53 @@ fn windows_default_shell_is_explicitly_selected() {
 }
 
 #[test]
+fn a_configured_shell_wins_over_windows_fallbacks() {
+    let chosen = select_shell(
+        Some(std::ffi::OsStr::new("my-shell")),
+        &["pwsh", "powershell", "cmd.exe"],
+        |candidate| candidate == std::ffi::OsStr::new("my-shell"),
+    );
+
+    assert_eq!(chosen, std::ffi::OsString::from("my-shell"));
+}
+
+#[test]
+fn windows_shell_fallbacks_prefer_pwsh_then_powershell() {
+    let chosen = select_shell(
+        None,
+        &["pwsh", "powershell", "cmd.exe"],
+        |candidate| {
+            candidate == std::ffi::OsStr::new("pwsh")
+                || candidate == std::ffi::OsStr::new("powershell")
+        },
+    );
+
+    assert_eq!(chosen, std::ffi::OsString::from("pwsh"));
+}
+
+#[test]
+fn windows_shell_fallbacks_use_powershell_after_pwsh() {
+    let chosen = select_shell(
+        None,
+        &["pwsh", "powershell", "cmd.exe"],
+        |candidate| candidate == std::ffi::OsStr::new("powershell"),
+    );
+
+    assert_eq!(chosen, std::ffi::OsString::from("powershell"));
+}
+
+#[test]
+fn windows_shell_selection_uses_cmd_when_no_preferred_shell_is_available() {
+    let chosen = select_shell(
+        Some(std::ffi::OsStr::new("missing-shell")),
+        &["pwsh", "powershell", "cmd.exe"],
+        |_| false,
+    );
+
+    assert_eq!(chosen, std::ffi::OsString::from("cmd.exe"));
+}
+
+#[test]
 fn a_dumb_parent_terminal_is_replaced_for_a_pty_child() {
     let mut command = CommandBuilder::new("dummy");
     command.env("TERM", "dumb");

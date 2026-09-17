@@ -579,7 +579,8 @@ On daemon startup:
   config and a pane in a worktree would otherwise look like a pane whose checkout is gone;
 - editors are skipped;
 - panes whose checkout no longer exists are skipped;
-- shells start as new default shells;
+- shells start as new default shells; on Windows Argus uses a runnable `SHELL`
+  first, then `pwsh`, `powershell`, and finally `cmd.exe`;
 - the saved display title, status, and note are reapplied after each pane starts;
 - an agent with an ID starts with its harness's `resume_id` argv template expanded to that exact ID;
 - every identified pane resumes independently;

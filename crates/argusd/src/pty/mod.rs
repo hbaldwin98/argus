@@ -8,6 +8,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
+#[cfg(any(windows, test))]
+use std::ffi::OsString;
 #[cfg(windows)]
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
 
@@ -37,6 +39,8 @@ const EXIT_FLUSH_GRACE: Duration = Duration::from_millis(500);
 const PASTE_START: &[u8] = b"\x1b[200~";
 const PASTE_END: &[u8] = b"\x1b[201~";
 const PTY_TERM: &str = "xterm-256color";
+#[cfg(windows)]
+const WINDOWS_SHELL_FALLBACKS: &[&str] = &["pwsh", "powershell", "cmd.exe"];
 
 #[cfg(windows)]
 const AGENT_JOB_MEMORY_BYTES: usize = 8 * 1024 * 1024 * 1024;
@@ -65,7 +69,7 @@ impl Spawn {
     fn into_command(self) -> (CommandBuilder, ResourcePolicy) {
         match self {
             Self::DefaultShell => (
-                CommandBuilder::new_default_prog(),
+                default_shell_command(),
                 ResourcePolicy::Unrestricted,
             ),
             Self::Program {
@@ -82,6 +86,105 @@ impl Spawn {
             }
         }
     }
+}
+
+fn default_shell_command() -> CommandBuilder {
+    #[cfg(windows)]
+    {
+        // portable-pty's default Windows program is always ComSpec, which is
+        // normally cmd.exe. Keep the builder's merged environment, but select
+        // an interactive shell explicitly so PowerShell installations win.
+        let mut command = CommandBuilder::new("cmd.exe");
+        let shell = select_shell(
+            command.get_env("SHELL"),
+            WINDOWS_SHELL_FALLBACKS,
+            |candidate| {
+                executable_on_path(
+                    candidate,
+                    command.get_env("PATH"),
+                    command.get_env("PATHEXT"),
+                )
+            },
+        );
+        command.get_argv_mut()[0] = shell;
+        command
+    }
+
+    #[cfg(not(windows))]
+    {
+        CommandBuilder::new_default_prog()
+    }
+}
+
+#[cfg(any(windows, test))]
+fn select_shell(
+    configured: Option<&OsStr>,
+    fallbacks: &[&str],
+    is_available: impl Fn(&OsStr) -> bool,
+) -> OsString {
+    if let Some(shell) = configured {
+        if !shell.is_empty() && is_available(shell) {
+            return shell.to_owned();
+        }
+    }
+
+    fallbacks
+        .iter()
+        .map(OsStr::new)
+        .find(|shell| is_available(shell))
+        .map(OsStr::to_owned)
+        // The final fallback is deliberately returned even if PATH is
+        // incomplete: Windows supplies cmd.exe, and the spawn error is more
+        // useful than refusing to create the pane here.
+        .unwrap_or_else(|| OsString::from(*fallbacks.last().expect("shell fallbacks")))
+}
+
+#[cfg(windows)]
+fn executable_on_path(
+    program: &OsStr,
+    path: Option<&OsStr>,
+    pathext: Option<&OsStr>,
+) -> bool {
+    let extensions: Vec<OsString> = pathext
+        .map(|value| value.to_string_lossy().split(';').map(OsString::from).collect())
+        .unwrap_or_else(|| {
+            [".EXE", ".CMD", ".BAT", ".COM"]
+                .into_iter()
+                .map(OsString::from)
+                .collect()
+        });
+
+    let has_path = Path::new(program).is_absolute()
+        || program.to_string_lossy().contains(['\\', '/']);
+    if has_path {
+        return executable_in_directory(Path::new("."), program, &extensions)
+            || Path::new(program).is_file();
+    }
+
+    if executable_in_directory(Path::new("."), program, &extensions) {
+        return true;
+    }
+
+    path.into_iter()
+        .flat_map(std::env::split_paths)
+        .any(|directory| executable_in_directory(&directory, program, &extensions))
+}
+
+#[cfg(windows)]
+fn executable_in_directory(directory: &Path, program: &OsStr, extensions: &[OsString]) -> bool {
+    let candidate = directory.join(program);
+    if candidate.is_file() {
+        return true;
+    }
+    if Path::new(program).extension().is_some() {
+        return false;
+    }
+
+    extensions.iter().any(|extension| {
+        let mut candidate = directory.join(program);
+        candidate.set_extension(extension.to_string_lossy().trim_start_matches('.'));
+        candidate.is_file()
+    })
 }
 
 pub struct PaneRuntime {
