@@ -51,6 +51,7 @@ pub(crate) fn project(id: u64, name: &str, repositories: Vec<RepositoryInfo>) ->
     ProjectInfo {
         id: ProjectId(id),
         name: name.to_string(),
+        root: None,
         repositories,
     }
 }

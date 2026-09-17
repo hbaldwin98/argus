@@ -36,6 +36,36 @@ fn tab_text(view: View) -> String {
     format!("  {}  ", view.label().to_ascii_uppercase())
 }
 
+/// How wide the WORKSPACE tab is drawn in the command-center shell.
+///
+/// The rail's right edge lines up with the end of the FEATURE tab, so a
+/// wider rail grows the WORKSPACE tab rather than leaving a gap in the strip.
+fn command_center_spine_tab_width(strip_width: u16) -> u16 {
+    let rail = crate::ui::command_center::rail_width(strip_width);
+    let brand = BRAND.chars().count() as u16;
+    let feature = tab_text(View::Feature).chars().count() as u16;
+    rail.saturating_sub(brand + feature)
+        .max(tab_text(View::Spine).chars().count() as u16)
+}
+
+fn drawn_tab_text(view: View, strip_width: u16, command_center: bool) -> String {
+    let base = tab_text(view);
+    if command_center && view == View::Spine {
+        let target = command_center_spine_tab_width(strip_width);
+        let current = base.chars().count() as u16;
+        if target > current {
+            return format!("{base}{}", " ".repeat((target - current) as usize));
+        }
+    }
+    base
+}
+
+fn drawn_tab_width(view: View, strip_width: u16, command_center: bool) -> u16 {
+    drawn_tab_text(view, strip_width, command_center)
+        .chars()
+        .count() as u16
+}
+
 /// The product mark owns a cell-height divider, as it does in the reference
 /// shell. Keeping its width in the same constant used by hit-testing prevents
 /// the visible divider and click targets from drifting apart.
@@ -43,7 +73,7 @@ const BRAND: &str = " ■  ARGUS  ";
 
 /// Which tab a point falls on. Shared with the renderer rather than
 /// re-derived, so a click lands on the tab that was actually drawn.
-pub fn tab_at(views: Panel, x: u16, y: u16) -> Option<View> {
+pub fn tab_at(views: Panel, x: u16, y: u16, command_center: bool) -> Option<View> {
     let strip = views.outer;
     // A zero-sized strip is one that was not drawn — on a short terminal,
     // or before the first frame — and its default rect sits on row 0,
@@ -56,7 +86,7 @@ pub fn tab_at(views: Panel, x: u16, y: u16) -> Option<View> {
     }
     let mut cell = strip.x.saturating_add(brand_cells(views));
     for view in View::ALL {
-        let width = tab_text(view).chars().count() as u16;
+        let width = drawn_tab_width(view, strip.width, command_center);
         if x >= cell && x < cell + width {
             return Some(view);
         }
@@ -88,7 +118,7 @@ pub(super) fn render_view_tabs(f: &mut Frame, app: &mut App, area: Rect, th: The
     )];
     for view in View::ALL {
         let open = view == app.view;
-        let text = tab_text(view);
+        let text = drawn_tab_text(view, area.width, app.command_center);
         labels.push(Span::styled(
             text.clone(),
             Style::default()

@@ -27,8 +27,55 @@ fn production_shell_matches_the_designs_four_regions() {
         "repositories expand only after a click:\n{text}"
     );
     assert_eq!(app.layout.projects.outer.x, 0);
-    assert_eq!(app.layout.projects.outer.width, 35);
-    assert!(app.layout.content.outer.x >= 35);
+    assert_eq!(
+        app.layout.projects.outer.width,
+        crate::ui::command_center::SIDEBAR_WIDTH
+    );
+    assert!(
+        app.layout.content.outer.x >= crate::ui::command_center::SIDEBAR_WIDTH
+    );
+}
+
+#[test]
+fn workspace_summary_badges_stay_on_one_row() {
+    let mut app = command_center();
+    app.tree[0].repositories[0].checkouts[0].panes[1].status = PaneStatus::Waiting;
+    app.tree[0].repositories.push(repository(
+        9,
+        "satellite",
+        vec![checkout(20, "main", true, vec![])],
+    ));
+    for width in [80, 120] {
+        let text = lines(&draw_at(&mut app, width, 30));
+        assert!(
+            text.iter().any(|line| {
+                line.contains("REPOS") && line.contains("AGENTS") && line.contains("NEED")
+            }),
+            "badges wrapped at width {width}:\n{}",
+            text.join("\n")
+        );
+    }
+}
+
+#[test]
+fn workspace_summary_badges_stay_on_one_row_with_two_digit_counts() {
+    let mut app = command_center();
+    app.tree[0].repositories[0].checkouts[0].panes[1].status = PaneStatus::Waiting;
+    for i in 0..12 {
+        let name = format!("repo-{i}");
+        app.tree[0].repositories.push(repository(
+            20 + i,
+            &name,
+            vec![checkout(30 + i, "main", false, vec![])],
+        ));
+    }
+    let text = lines(&draw_at(&mut app, 80, 30)).join("\n");
+    assert!(
+        text.lines().any(|line| {
+            line.contains("13 REPOS") && line.contains("AGENTS") && line.contains("NEED")
+        }),
+        "two-digit badge row wrapped:\n{text}"
+    );
 }
 
 #[test]
@@ -46,13 +93,14 @@ fn pane_overview_is_a_real_top_level_surface() {
 fn checkout_overview_uses_the_designs_operational_table() {
     let mut app = command_center();
     app.open_view(View::Checkouts);
-    let text = lines(&draw_at(&mut app, 120, 30)).join("\n");
+    // The wide table needs enough stage width once the rail is drawn.
+    let text = lines(&draw_at(&mut app, 140, 30)).join("\n");
 
     assert!(text.contains("checkouts & worktrees"), "{text}");
     for heading in ["BRANCH", "STATE", "PANES", "PATH"] {
         assert!(text.contains(heading), "missing {heading}:\n{text}");
     }
-    assert!(text.contains("m CHECKOUT · n WORKTREE"), "{text}");
+    assert!(text.contains("B BRANCHES · m CHECKOUT · n WORKTREE"), "{text}");
     assert!(text.contains("master"), "{text}");
 }
 

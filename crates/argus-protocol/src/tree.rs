@@ -264,6 +264,9 @@ pub struct RepositoryInfo {
 pub struct ProjectInfo {
     pub id: ProjectId,
     pub name: String,
+    /// The directory this project scans for repositories, when it has one.
+    #[serde(default)]
+    pub root: Option<String>,
     pub repositories: Vec<RepositoryInfo>,
 }
 

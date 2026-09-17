@@ -282,6 +282,7 @@ mod tests {
         vec![ProjectInfo {
             id: ProjectId(1),
             name: "project".into(),
+            root: None,
             repositories: vec![RepositoryInfo {
                 id: RepositoryId(2),
                 name: "repo".into(),

@@ -319,6 +319,7 @@ impl Daemon {
             .map(|p| ProjectInfo {
                 id: p.id,
                 name: p.name.clone(),
+                root: p.root.as_ref().map(|path| path.to_string_lossy().to_string()),
                 repositories: p
                     .repositories
                     .iter()

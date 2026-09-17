@@ -52,6 +52,22 @@ pub(super) fn inset(area: Rect, x: u16, y: u16) -> Rect {
 
 /// Truncates from the left, keeping the end. The opposite of
 /// [`ellipsize_text`], and the right choice for a path.
+/// A path for display: `$HOME` becomes `~`, with the rest unchanged.
+pub(super) fn display_path(path: &str) -> String {
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.is_empty() {
+            if path == home {
+                return "~".into();
+            }
+            let prefix = format!("{home}/");
+            if let Some(rest) = path.strip_prefix(&prefix) {
+                return format!("~/{rest}");
+            }
+        }
+    }
+    path.to_string()
+}
+
 pub(super) fn elide_head(text: &str, width: usize) -> String {
     let chars: Vec<char> = text.chars().collect();
     if chars.len() <= width || width == 0 {

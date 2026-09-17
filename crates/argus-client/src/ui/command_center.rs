@@ -10,7 +10,9 @@ use argus_protocol::{PaneKind, PaneStatus, TaskState};
 
 /// The mark, the WORKSPACE tab, and the FEATURE tab: the rail's border
 /// continues the FEATURE tab's right edge.
-pub const SIDEBAR_WIDTH: u16 = 11 + 13 + 11;
+/// Wide enough for the workspace summary badges (`repos`, `agents`, `needs
+/// you`) on one row at two-digit counts without wrapping.
+pub const SIDEBAR_WIDTH: u16 = 50;
 const HEADER_HEIGHT: u16 = 2;
 
 fn contains(area: Rect, x: u16, y: u16) -> bool {
@@ -101,7 +103,57 @@ pub(crate) fn sidebar_contains(app: &App, x: u16, y: u16) -> bool {
 /// the project picker, since the rail shows one project at a time.
 pub(crate) fn project_header_at(app: &App, x: u16, y: u16) -> bool {
     let outer = app.layout.projects.outer;
-    contains(outer, x, y) && (outer.y + 2..=outer.y + 3).contains(&y)
+    contains(outer, x, y) && (outer.y + 1..=outer.y + 2).contains(&y)
+}
+
+fn project_root_line(app: &App, width: u16) -> String {
+    let Some(project) = app.current_project() else {
+        return String::new();
+    };
+    let max = usize::from(width.saturating_sub(4));
+    if let Some(root) = project.root.as_deref() {
+        return ellipsize_text(&display_path(root), max);
+    }
+    project
+        .repositories
+        .iter()
+        .flat_map(|r| r.checkouts.iter())
+        .find(|c| c.primary)
+        .or_else(|| {
+            project
+                .repositories
+                .iter()
+                .flat_map(|r| r.checkouts.iter())
+                .next()
+        })
+        .map(|c| ellipsize_text(&display_path(&c.path), max))
+        .unwrap_or_default()
+}
+
+const BADGE_CHIP_HEIGHT: u16 = 1;
+
+fn summary_chip_label(count: usize, unit: &str) -> String {
+    format!("{count:>2} {}", unit.to_ascii_uppercase())
+}
+
+fn badge_chip_label(text: &str) -> String {
+    format!(" {} ", text.to_ascii_uppercase())
+}
+
+fn badge_chip_width(text: &str) -> u16 {
+    badge_chip_label(text).chars().count() as u16
+}
+
+fn render_badge_chip(f: &mut Frame, area: Rect, text: &str, fg: Color, th: Theme) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    f.render_widget(
+        Paragraph::new(badge_chip_label(text))
+            .style(filled_badge(fg, th))
+            .alignment(Alignment::Center),
+        area,
+    );
 }
 
 fn pane_card_rect(body: Rect, index: usize) -> Rect {
@@ -308,15 +360,11 @@ fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let name = project
         .map(|p| p.name.clone())
         .unwrap_or_else(|| "no project".into());
-    let workspace = if app.open_workspace.is_empty() {
-        "default".to_string()
-    } else {
-        app.open_workspace.clone()
-    };
 
-    // Header: label, the project under an accent bar, and where it is.
-    let x = inner.x + 2;
-    let width = inner.width.saturating_sub(3);
+    // Header: label, the project under an accent bar, and its root path.
+    let x = inner.x + 1;
+    let width = inner.width.saturating_sub(2);
+    let root_line = project_root_line(app, width);
     let put = |f: &mut Frame, y: u16, line: Line| {
         if y < inner.bottom() {
             f.render_widget(Paragraph::new(line), Rect::new(x, y, width, 1));
@@ -324,7 +372,7 @@ fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     };
     put(
         f,
-        inner.y + 1,
+        inner.y,
         Line::styled("ACTIVE WORKSPACE", Style::default().fg(th.dim)),
     );
     // With more than one project, the header says which of them this is
@@ -337,7 +385,7 @@ fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let name_width = (width as usize).saturating_sub(2 + position.chars().count());
     put(
         f,
-        inner.y + 2,
+        inner.y + 1,
         Line::from(vec![
             Span::styled("▌ ", Style::default().fg(th.accent)),
             Span::styled(
@@ -347,41 +395,51 @@ fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
             Span::styled(position, Style::default().fg(th.dim)),
         ]),
     );
-    put(
-        f,
-        inner.y + 3,
-        Line::styled(
-            format!("  {workspace} workspace"),
-            Style::default().fg(th.dim),
-        ),
-    );
+    if !root_line.is_empty() {
+        put(
+            f,
+            inner.y + 2,
+            Line::styled(
+                format!("  {root_line}"),
+                Style::default().fg(th.dim),
+            ),
+        );
+    }
 
-    // Badges: filled chips on one row, wrapping only when the rail is too
-    // narrow to hold them side by side.
+    // Badges: one-row chips on a raised surface fill when the rail is wide enough.
     let mut badges = vec![
-        (format!(" {repo_count} repos "), th.muted),
-        (format!(" {agents} agents "), th.ok),
+        (summary_chip_label(repo_count, "repos"), th.muted),
+        (summary_chip_label(agents, "agents"), th.ok),
     ];
     if needs > 0 {
-        badges.push((format!(" {needs} needs you "), th.warn));
+        badges.push((summary_chip_label(needs, "need"), th.warn));
     }
+    let gap = 1u16;
+    let badge_row_end = x.saturating_add(width);
+    let header_rows = 2 + u16::from(!root_line.is_empty());
     let mut bx = x;
-    let mut by = inner.y + 5;
+    let mut by = inner.y + header_rows;
     for (text, color) in badges {
-        let w = text.chars().count() as u16;
-        if bx > x && bx + w > x + width {
+        let chip_w = badge_chip_width(&text);
+        if bx > x && bx.saturating_add(chip_w) > badge_row_end {
             bx = x;
-            by += 1;
+            by = by.saturating_add(BADGE_CHIP_HEIGHT);
         }
-        if by < inner.bottom() {
-            f.render_widget(
-                Paragraph::new(Span::styled(text, badge(color, th))),
-                Rect::new(bx, by, w.min((x + width).saturating_sub(bx)), 1),
+        if by.saturating_add(BADGE_CHIP_HEIGHT) <= inner.bottom() {
+            let w = chip_w.min(badge_row_end.saturating_sub(bx));
+            render_badge_chip(
+                f,
+                Rect::new(bx, by, w, BADGE_CHIP_HEIGHT),
+                &text,
+                color,
+                th,
             );
         }
-        bx += w + 1;
+        bx = bx.saturating_add(chip_w + gap);
     }
-    let summary_height = (by + 2).saturating_sub(inner.y).min(inner.height);
+    let summary_height = (by + BADGE_CHIP_HEIGHT)
+        .saturating_sub(inner.y)
+        .min(inner.height);
 
     // Agents take what they list, up to a third of the rail.
     let agent_count = agent_rows(app).len() as u16;
@@ -412,7 +470,7 @@ fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     app.layout.projects.outer = area;
 }
 
-fn badge(fg: Color, th: Theme) -> Style {
+fn filled_badge(fg: Color, th: Theme) -> Style {
     Style::default().fg(fg).bg(th.surface)
 }
 
@@ -772,7 +830,7 @@ fn render_workspace(
         header.push_span(Span::raw("  "));
         header.push_span(Span::styled(
             format!(" {} ", short_status(pane.status)),
-            badge(status_color(pane.status, th), th),
+            filled_badge(status_color(pane.status, th), th),
         ));
     }
     let header_width = header.width();
@@ -1595,6 +1653,19 @@ fn render_checkouts(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                 },
             );
         }
+        if !wide && row.height >= 3 && path != "—" {
+            f.render_widget(
+                Paragraph::new(Line::styled(
+                    format!("  {path}"),
+                    style.fg(th.dim),
+                )),
+                Rect {
+                    y: row.y + 2,
+                    height: 1,
+                    ..row
+                },
+            );
+        }
     }
 }
 
@@ -1631,27 +1702,68 @@ fn render_stage_heading(
         x: header.x + 2,
         y: header.y + 1.min(header.height.saturating_sub(1)),
         width: header.width.saturating_sub(4),
-        height: 1.min(header.height),
+        height: 2.min(header.height.saturating_sub(1)),
     };
-    f.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(
-                title,
-                Style::default().fg(th.text).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(format!("  {detail}"), Style::default().fg(th.dim)),
-        ])),
-        line_area,
-    );
     let action_width = action.chars().count().min(line_area.width as usize) as u16;
-    f.render_widget(
-        Paragraph::new(action).style(Style::default().fg(th.muted)),
-        Rect {
-            x: line_area.right().saturating_sub(action_width),
-            width: action_width,
-            ..line_area
-        },
-    );
+    let title_width = title.chars().count() + 2;
+    let inline = title_width as u16 + 2 + detail.chars().count() as u16 + action_width
+        <= line_area.width;
+    let title_line = Line::from(vec![
+        Span::styled(
+            title,
+            Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("  {detail}"),
+            Style::default().fg(th.dim),
+        ),
+    ]);
+    if inline {
+        let detail_width = line_area
+            .width
+            .saturating_sub(action_width)
+            .saturating_sub(title_width as u16) as usize;
+        let detail = ellipsize_text(detail, detail_width);
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(
+                    title,
+                    Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(format!("  {detail}"), Style::default().fg(th.dim)),
+            ])),
+            Rect {
+                height: 1,
+                ..line_area
+            },
+        );
+        f.render_widget(
+            Paragraph::new(action).style(Style::default().fg(th.muted)),
+            Rect {
+                x: line_area.right().saturating_sub(action_width),
+                width: action_width,
+                height: 1,
+                y: line_area.y,
+            },
+        );
+    } else {
+        f.render_widget(
+            Paragraph::new(title_line),
+            Rect {
+                height: 1,
+                ..line_area
+            },
+        );
+        f.render_widget(
+            Paragraph::new(action).style(Style::default().fg(th.muted)),
+            Rect {
+                x: line_area.right().saturating_sub(action_width),
+                width: action_width,
+                height: 1,
+                y: line_area.y + 1,
+            },
+        );
+    }
 }
 
 fn render_first_run(f: &mut Frame, area: Rect, th: Theme) {

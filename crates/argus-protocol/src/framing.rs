@@ -196,6 +196,7 @@ mod tests {
         let sent = ServerMsg::Tree(vec![ProjectInfo {
             id: ProjectId(1),
             name: "argus".to_string(),
+            root: None,
             repositories: vec![RepositoryInfo {
                 id: RepositoryId(2),
                 name: "orion".to_string(),

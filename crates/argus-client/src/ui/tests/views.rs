@@ -99,7 +99,7 @@ fn clicking_a_tab_opens_it() {
     let strip = views.outer;
     // The second tab's first cell, found the way the renderer draws it.
     let x = (0..strip.width)
-        .find(|x| crate::ui::tab_at(views, strip.x + x, strip.y) == Some(View::Feature))
+        .find(|x| crate::ui::tab_at(views, strip.x + x, strip.y, false) == Some(View::Feature))
         .expect("the decisions tab is on screen");
 
     app.on_mouse(crossterm::event::MouseEvent {
@@ -125,7 +125,7 @@ fn clicking_the_workspace_tab_withdraws_pane_focus() {
     let views = app.layout.views;
     let strip = views.outer;
     let x = (0..strip.width)
-        .find(|x| crate::ui::tab_at(views, strip.x + x, strip.y) == Some(View::Spine))
+        .find(|x| crate::ui::tab_at(views, strip.x + x, strip.y, false) == Some(View::Spine))
         .expect("the workspace tab is on screen");
 
     app.on_mouse(crossterm::event::MouseEvent {
@@ -145,7 +145,7 @@ fn clicking_the_workspace_tab_withdraws_pane_focus() {
 
 #[test]
 fn a_click_before_the_first_frame_lands_on_no_tab() {
-    assert_eq!(crate::ui::tab_at(Panel::default(), 0, 0), None);
+    assert_eq!(crate::ui::tab_at(Panel::default(), 0, 0, false), None);
 }
 
 #[test]
