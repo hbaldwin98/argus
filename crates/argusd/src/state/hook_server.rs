@@ -200,6 +200,13 @@ async fn handle_hook_request(
             Some((pane, Endpoint::Feature)) => {
                 feature_response(&daemon, pane, reporter.as_deref(), &body, artifact_scope)
             }
+            Some((pane, Endpoint::Telemetry)) => match decode(&body, "telemetry report") {
+                Ok(report) => {
+                    daemon.report_pane_telemetry(pane, reporter.as_deref(), report);
+                    HookResponse::empty(200, "OK")
+                }
+                Err(refusal) => refusal,
+            },
             Some((pane, Endpoint::Tasks)) => {
                 tasks_response(&daemon, pane, reporter.as_deref(), &body, artifact_scope)
             }
@@ -271,15 +278,9 @@ fn feature_response(
         Err(refusal) => return refusal,
     };
     json_reply(match action {
-        FeatureAction::Open(write) => {
-            daemon.open_feature_for_agent(source, session, write, scope)
-        }
-        FeatureAction::Select { slug } => {
-            daemon.select_feature_for_agent(source, &slug, scope)
-        }
-        FeatureAction::Append { text } => {
-            daemon.append_to_feature_for_agent(source, &text, scope)
-        }
+        FeatureAction::Open(write) => daemon.open_feature_for_agent(source, session, write, scope),
+        FeatureAction::Select { slug } => daemon.select_feature_for_agent(source, &slug, scope),
+        FeatureAction::Append { text } => daemon.append_to_feature_for_agent(source, &text, scope),
     })
 }
 

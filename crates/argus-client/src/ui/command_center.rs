@@ -742,6 +742,9 @@ fn render_workspace(
             Style::default().fg(th.syntax.function),
         ),
     ]);
+    let telemetry = pane
+        .filter(|p| p.kind == PaneKind::Agent)
+        .map(|p| (p.telemetry.clone(), p.status));
     if let Some(pane) = pane {
         header.push_span(Span::styled(" / ", Style::default().fg(th.edge)));
         header.push_span(Span::styled(
@@ -755,6 +758,7 @@ fn render_workspace(
             badge(status_color(pane.status, th), th),
         ));
     }
+    let header_width = header.width();
     f.render_widget(
         Paragraph::new(header).block(
             Block::default()
@@ -764,6 +768,20 @@ fn render_workspace(
         ),
         split[0],
     );
+    // Telemetry sits at the right end of the breadcrumb, in whatever room
+    // the path leaves it.
+    if let (Some((telemetry, status)), true) = (telemetry, split[0].height >= 2) {
+        let path_width = header_width + 2;
+        let room = (split[0].width as usize).saturating_sub(path_width + 2);
+        let line = telemetry_line(&telemetry, status, room, th);
+        let width = line.width() as u16;
+        if width > 0 {
+            f.render_widget(
+                Paragraph::new(line),
+                Rect::new(split[0].right() - width - 2, split[0].y + 1, width, 1),
+            );
+        }
+    }
     if split[0].x > 0 && split[0].height > 0 {
         f.render_widget(
             Paragraph::new(Span::styled("├", Style::default().fg(th.edge))),
@@ -1331,10 +1349,15 @@ fn render_panes(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                     ellipsize_text(&pane.title, inner.width as usize),
                     Style::default().fg(th.text).add_modifier(Modifier::BOLD),
                 ),
-                Line::styled(
-                    pane.note.clone().unwrap_or_else(|| "running pane".into()),
-                    Style::default().fg(th.dim),
-                ),
+                match (&pane.note, pane.telemetry.is_empty()) {
+                    (None, false) => {
+                        telemetry_line(&pane.telemetry, pane.status, inner.width as usize, th)
+                    }
+                    (note, _) => Line::styled(
+                        note.clone().unwrap_or_else(|| "running pane".into()),
+                        Style::default().fg(th.dim),
+                    ),
+                },
                 Line::styled(path, Style::default().fg(th.muted)),
             ]),
             inner,
@@ -1614,6 +1637,88 @@ pub(super) fn status_color(status: PaneStatus, th: Theme) -> Color {
         PaneStatus::Done => th.ok,
         PaneStatus::Idle | PaneStatus::Exited { .. } => th.dim,
     }
+}
+
+/// A token count as a person reads it: `980`, `4.2k`, `41k`, `1.2M`.
+pub(super) fn compact_tokens(n: u64) -> String {
+    match n {
+        0..=999 => n.to_string(),
+        1_000..=9_999 => format!("{:.1}k", n as f64 / 1_000.0),
+        10_000..=999_999 => format!("{}k", n / 1_000),
+        _ => format!("{:.1}M", n as f64 / 1_000_000.0),
+    }
+}
+
+/// An agent's telemetry as short phrases, most useful first: the tool it is
+/// in, how full its context is, what it has cost, and its model. Only what
+/// the harness reported appears.
+pub(super) fn telemetry_parts(
+    telemetry: &argus_protocol::AgentTelemetry,
+    status: PaneStatus,
+    th: Theme,
+) -> Vec<Span<'static>> {
+    let mut parts = Vec::new();
+    if let (PaneStatus::Working, Some(tool)) = (status, telemetry.tool.as_deref()) {
+        parts.push(Span::styled(
+            format!("▸ {tool}"),
+            Style::default().fg(th.accent),
+        ));
+    }
+    if let Some(used) = telemetry.context_tokens {
+        let span = match telemetry.context_window.filter(|w| *w > 0) {
+            Some(window) => {
+                let percent = (used.saturating_mul(100) / window).min(100);
+                let color = if percent >= 80 { th.warn } else { th.muted };
+                Span::styled(
+                    format!(
+                        "ctx {}/{} {percent}%",
+                        compact_tokens(used),
+                        compact_tokens(window)
+                    ),
+                    Style::default().fg(color),
+                )
+            }
+            None => Span::styled(
+                format!("ctx {}", compact_tokens(used)),
+                Style::default().fg(th.muted),
+            ),
+        };
+        parts.push(span);
+    }
+    if let Some(cost) = telemetry.cost_usd {
+        parts.push(Span::styled(
+            format!("${cost:.2}"),
+            Style::default().fg(th.muted),
+        ));
+    }
+    if let Some(model) = &telemetry.model {
+        parts.push(Span::styled(model.clone(), Style::default().fg(th.dim)));
+    }
+    parts
+}
+
+/// As many telemetry parts as fit in `width` cells, joined by dots.
+pub(super) fn telemetry_line(
+    telemetry: &argus_protocol::AgentTelemetry,
+    status: PaneStatus,
+    width: usize,
+    th: Theme,
+) -> Line<'static> {
+    let mut spans = Vec::new();
+    let mut used = 0;
+    for part in telemetry_parts(telemetry, status, th) {
+        let sep = if spans.is_empty() { 0 } else { 3 };
+        let w = part.content.chars().count();
+        if used + sep + w > width {
+            break;
+        }
+        if sep > 0 {
+            spans.push(Span::styled(" · ", Style::default().fg(th.edge)));
+        }
+        used += sep + w;
+        spans.push(part);
+    }
+    Line::from(spans)
 }
 
 fn short_status(status: PaneStatus) -> &'static str {

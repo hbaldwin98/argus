@@ -22,6 +22,7 @@
 //! argus-hook decide "one row per note" --supersedes 7   # replaces decision 7
 //! argus-hook task                                    # reads the task tree
 //! argus-hook task add "bound the queue" --under 12  # adds a subtask
+//! argus-hook telemetry --model gpt-5 --context 42000 --window 272000 --cost 0.12 --tool shell
 //! argus-hook say "text"                          # prints, calls nobody
 //! argus-hook instructions                        # prints inherited startup context
 //! argus-hook <url> <token> [--note-from-stdin] [--title-from-stdin]  # the installed hook form
@@ -80,10 +81,12 @@ const ARTIFACT_SCOPE_VAR: &str = "ARGUS_ARTIFACT_SCOPE";
 
 mod board;
 mod installed;
+mod telemetry;
 mod transport;
 
 use board::*;
 use installed::*;
+use telemetry::*;
 use transport::*;
 
 fn main() {
@@ -111,6 +114,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("task", task),
     ("decisions", decisions),
     ("decide", decide),
+    ("telemetry", telemetry),
 ];
 
 fn dispatch(command: Option<&str>, rest: &[&str]) {
@@ -317,6 +321,82 @@ mod tests {
             r#"{"decision":"allow"}"#
         );
         assert_eq!(hook_reply(Some(r#"{"session_id":"c"}"#), false, ""), "{}");
+        // Claude Code's and Codex's tool events defer to the user's rules.
+        assert_eq!(
+            hook_reply(
+                Some(r#"{"hook_event_name":"PreToolUse","tool_name":"Bash","session_id":"s"}"#),
+                false,
+                ""
+            ),
+            "{}"
+        );
+    }
+
+    #[test]
+    fn telemetry_flags_become_a_partial_report() {
+        let report = parse_flags(&[
+            "--model",
+            "gpt-5",
+            "--context",
+            "42_000",
+            "--window",
+            "272000",
+            "--cost",
+            "$0.12",
+            "--tool",
+            "shell",
+        ]);
+        assert_eq!(report.model.as_deref(), Some("gpt-5"));
+        assert_eq!(report.context_tokens, Some(42_000));
+        assert_eq!(report.context_window, Some(272_000));
+        assert_eq!(report.cost_usd, Some(0.12));
+        assert_eq!(report.tool.as_deref(), Some("shell"));
+        assert_eq!(parse_flags(&["--tool-done"]).tool.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn a_tool_event_names_the_tool_and_its_end_clears_it() {
+        let start = from_hook(
+            r#"{"hook_event_name":"PreToolUse","tool_name":"Bash","model":"claude-opus-5"}"#,
+        );
+        assert_eq!(start.tool.as_deref(), Some("Bash"));
+        assert_eq!(start.model.as_deref(), Some("claude-opus-5"));
+        let end = from_hook(r#"{"hook_event_name":"PostToolUse","tool_name":"Bash"}"#);
+        assert_eq!(end.tool.as_deref(), Some(""));
+        let cursor = from_hook(
+            r#"{"hook_event_name":"beforeShellExecution","command":"ls","model":{"id":"gpt-5"}}"#,
+        );
+        assert_eq!(cursor.tool.as_deref(), Some("shell"));
+        assert_eq!(cursor.model.as_deref(), Some("gpt-5"));
+        assert!(from_hook(r#"{"session_id":"s"}"#).is_empty());
+    }
+
+    #[test]
+    fn claude_transcripts_give_the_model_and_the_latest_context() {
+        let lines = [
+            r#"{"type":"user","message":{"content":"hi"}}"#,
+            r#"{"type":"assistant","message":{"model":"claude-sonnet-5","usage":{"input_tokens":10,"output_tokens":5}}}"#,
+            r#"{"type":"assistant","message":{"model":"claude-opus-5","usage":{"input_tokens":3,"cache_creation_input_tokens":1000,"cache_read_input_tokens":40000,"output_tokens":200}}}"#,
+            "not json",
+        ];
+        let report = transcript_lines(lines.into_iter());
+        assert_eq!(report.model.as_deref(), Some("claude-opus-5"));
+        assert_eq!(report.context_tokens, Some(41_203));
+    }
+
+    #[test]
+    fn codex_transcripts_give_the_window_and_cumulative_tokens() {
+        let lines = [
+            r#"{"type":"turn_context","payload":{"model":"gpt-5-codex"}}"#,
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#,
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":90000,"output_tokens":4000},"last_token_usage":{"total_tokens":30500},"model_context_window":272000}}}"#,
+        ];
+        let report = transcript_lines(lines.into_iter());
+        assert_eq!(report.model.as_deref(), Some("gpt-5-codex"));
+        assert_eq!(report.context_tokens, Some(30_500));
+        assert_eq!(report.context_window, Some(272_000));
+        assert_eq!(report.input_tokens, Some(90_000));
+        assert_eq!(report.output_tokens, Some(4_000));
     }
 
     #[test]

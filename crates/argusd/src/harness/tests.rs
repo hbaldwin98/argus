@@ -485,7 +485,7 @@ fn uninstall_keeps_the_users_own_settings_and_hooks() {
     std::fs::write(
         claude.join("settings.local.json"),
         r#"{"permissions":{"allow":["Bash"]},
-            "hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"echo hi"}]}]}}"#,
+            "hooks":{"SubagentStop":[{"hooks":[{"type":"command","command":"echo hi"}]}]}}"#,
     )
     .unwrap();
 
@@ -496,7 +496,7 @@ fn uninstall_keeps_the_users_own_settings_and_hooks() {
     let root = settings_of(dir.path(), &h);
     assert_eq!(root["permissions"]["allow"][0], "Bash");
     assert!(
-        root["hooks"]["PreToolUse"].is_array(),
+        root["hooks"]["SubagentStop"].is_array(),
         "the user's hook survives"
     );
     for event in h.managed_events() {
@@ -633,7 +633,8 @@ fn opencode_reports_through_a_plugin_rather_than_a_hook_table() {
     // Per-pane facts stay in the environment the module reads at run
     // time, so one file is correct for every pane in the checkout.
     assert!(!body.contains("4242"), "a plugin must not bake in a port");
-    assert!(!body.contains("tok"), "nor a token");
+    // Quoted, since the module reads usage fields named `tokens`.
+    assert!(!body.contains("\"tok\""), "nor a token");
 }
 
 #[test]

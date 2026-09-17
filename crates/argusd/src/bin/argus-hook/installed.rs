@@ -16,6 +16,9 @@ pub(super) fn installed_hook(url: &str, rest: &[&str]) {
         post_session_id(&url, &token, session.as_deref());
     }
     post_title(&url, &token, &title, session.as_deref());
+    if let Some(report) = raw.as_deref().map(from_hook).filter(|r| !r.is_empty()) {
+        post_telemetry(&url, &token, &report, session.as_deref());
+    }
 
     let mut out = std::io::stdout();
     let _ = writeln!(
@@ -43,6 +46,15 @@ pub(super) fn hook_reply(
         return r#"{"decision":"allow"}"#.to_string();
     }
     if raw.contains("\"tool_name\"") {
+        // Claude Code and Codex name their events in PascalCase and take an
+        // empty reply as "carry on as you would have"; answering them with
+        // an allow would skip the user's own permission rules.
+        let pascal = json_value(raw)
+            .and_then(|v| v.get("hook_event_name")?.as_str()?.chars().next())
+            .is_some_and(char::is_uppercase);
+        if pascal {
+            return "{}".to_string();
+        }
         return r#"{"permission":"allow"}"#.to_string();
     }
     if (raw.contains("\"invocationNum\"") || inject_instructions) && !instructions.is_empty() {

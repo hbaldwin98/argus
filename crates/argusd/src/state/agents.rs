@@ -19,8 +19,8 @@ impl AgentScope {
 }
 
 pub(super) fn repository_artifact_key(_repository: &Repository, checkout: &Checkout) -> String {
-    let git_dir = crate::git::repository_common_dir(&checkout.path)
-        .unwrap_or_else(|| checkout.path.clone());
+    let git_dir =
+        crate::git::repository_common_dir(&checkout.path).unwrap_or_else(|| checkout.path.clone());
     format!("repository\0{}", git_dir.to_string_lossy())
 }
 
@@ -197,6 +197,31 @@ impl Daemon {
         match self.child_of(pane, reporter) {
             Some(session) => self.set_child_status(pane, &session, status, note),
             None => self.set_pane_hook_status(pane, status, note),
+        }
+    }
+
+    /// Merges a telemetry report into the pane's own. A nested agent's
+    /// numbers are not the pane's, so a report from a child is dropped.
+    pub(super) fn report_pane_telemetry(
+        &self,
+        pane: PaneId,
+        reporter: Option<&str>,
+        report: argus_protocol::AgentTelemetry,
+    ) {
+        if self.child_of(pane, reporter).is_some() || report.is_empty() {
+            return;
+        }
+        let changed = {
+            let mut inner = self.inner.lock().unwrap();
+            match find_pane(&mut inner.projects, pane) {
+                Some(p) if !matches!(p.status, PaneStatus::Exited { .. }) => {
+                    p.telemetry.merge(report)
+                }
+                _ => false,
+            }
+        };
+        if changed {
+            self.broadcast_tree();
         }
     }
 
@@ -445,6 +470,14 @@ impl Daemon {
                     if !matches!(p.status, PaneStatus::Exited { .. })
                         && p.harness_session_id.as_deref() != Some(&session_id) =>
                 {
+                    // A different conversation starts from an empty
+                    // context; the model usually carries over.
+                    if p.harness_session_id.is_some() {
+                        p.telemetry = argus_protocol::AgentTelemetry {
+                            model: p.telemetry.model.take(),
+                            ..Default::default()
+                        };
+                    }
                     p.harness_session_id = Some(session_id);
                     p.children.clear();
                     true

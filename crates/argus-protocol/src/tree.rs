@@ -104,6 +104,94 @@ pub struct PaneInfo {
     /// parent's to set.
     #[serde(default)]
     pub children: Vec<ChildAgentInfo>,
+    /// What the agent last said about its model, context, spend and the
+    /// tool it is running. Every field is optional because each harness
+    /// exposes a different subset of them.
+    #[serde(default)]
+    pub telemetry: AgentTelemetry,
+}
+
+/// Harness-neutral telemetry for one agent pane.
+///
+/// The same shape travels in both directions: an adapter POSTs a partial
+/// one to the pane API, where each field it sets replaces the last, and the
+/// daemon hands the merged result to clients. Claude Code and Codex are
+/// read from their hook payloads and transcripts, opencode and pi report
+/// from their plugins, and any other agent can send it with
+/// `argus-hook telemetry`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct AgentTelemetry {
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Tokens the conversation currently occupies in the model's context.
+    #[serde(default)]
+    pub context_tokens: Option<u64>,
+    /// The model's context size, when the harness knows it.
+    #[serde(default)]
+    pub context_window: Option<u64>,
+    /// Cumulative tokens across the session.
+    #[serde(default)]
+    pub input_tokens: Option<u64>,
+    #[serde(default)]
+    pub output_tokens: Option<u64>,
+    /// Cumulative spend in US dollars, for harnesses that price their calls.
+    #[serde(default)]
+    pub cost_usd: Option<f64>,
+    /// The tool running right now. In a report, an empty name says the
+    /// tool finished.
+    #[serde(default)]
+    pub tool: Option<String>,
+    /// Tool calls started in this session.
+    #[serde(default)]
+    pub tool_calls: Option<u64>,
+}
+
+impl AgentTelemetry {
+    pub fn is_empty(&self) -> bool {
+        *self == AgentTelemetry::default()
+    }
+
+    /// Applies a partial report. Returns whether anything changed.
+    ///
+    /// A tool start that does not carry its own count is counted here, so
+    /// adapters that only see individual tool events still get a total.
+    pub fn merge(&mut self, report: AgentTelemetry) -> bool {
+        let before = self.clone();
+        if report
+            .model
+            .as_deref()
+            .is_some_and(|m| !m.trim().is_empty())
+        {
+            self.model = report.model.map(|m| m.trim().to_string());
+        }
+        for (field, value) in [
+            (&mut self.context_tokens, report.context_tokens),
+            (&mut self.context_window, report.context_window),
+            (&mut self.input_tokens, report.input_tokens),
+            (&mut self.output_tokens, report.output_tokens),
+        ] {
+            if value.is_some() {
+                *field = value;
+            }
+        }
+        if report.cost_usd.is_some_and(|c| c.is_finite() && c >= 0.0) {
+            self.cost_usd = report.cost_usd;
+        }
+        match report.tool.as_deref().map(str::trim) {
+            Some("") => self.tool = None,
+            Some(name) => {
+                if report.tool_calls.is_none() {
+                    self.tool_calls = Some(self.tool_calls.unwrap_or(0) + 1);
+                }
+                self.tool = Some(name.to_string());
+            }
+            None => {}
+        }
+        if report.tool_calls.is_some() {
+            self.tool_calls = report.tool_calls;
+        }
+        *self != before
+    }
 }
 
 /// Read-only git status for a checkout, polled from the working directory

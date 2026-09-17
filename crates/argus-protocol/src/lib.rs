@@ -59,6 +59,6 @@ pub use tasks::{
     MAX_TASK_BODY_BYTES, MAX_TASK_TITLE_BYTES,
 };
 pub use tree::{
-    CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneStatus, ProjectInfo,
+    AgentTelemetry, CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneStatus, ProjectInfo,
     RepositoryInfo, WorkspaceInfo,
 };

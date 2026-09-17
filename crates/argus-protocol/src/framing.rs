@@ -222,6 +222,7 @@ mod tests {
                         note: None,
                         template: None,
                         children: Vec::new(),
+                        telemetry: Default::default(),
                     }],
                 }],
             }],

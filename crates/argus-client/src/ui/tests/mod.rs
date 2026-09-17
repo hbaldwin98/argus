@@ -465,6 +465,7 @@ pub(super) fn checkout_with(statuses: &[PaneStatus]) -> CheckoutInfo {
                 note: None,
                 template: None,
                 children: Vec::new(),
+                telemetry: Default::default(),
             })
             .collect(),
     }

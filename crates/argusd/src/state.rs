@@ -74,6 +74,9 @@ struct Pane {
     /// from inside the pane's own agent inherits the hook environment, so
     /// without this its every turn would rewrite its parent's row.
     children: Vec<ChildAgent>,
+    /// Live only: model, context, spend and tool, as the harness last
+    /// reported them. Not persisted; a restored agent reports afresh.
+    telemetry: argus_protocol::AgentTelemetry,
     /// A hook won the race with session restoration, so saved metadata must
     /// not overwrite what the newly started process already reported.
     restore_status_reported: bool,
@@ -360,6 +363,7 @@ impl Daemon {
                                                     note: c.note.clone(),
                                                 })
                                                 .collect(),
+                                            telemetry: pane.telemetry.clone(),
                                         })
                                         .collect(),
                                     git,

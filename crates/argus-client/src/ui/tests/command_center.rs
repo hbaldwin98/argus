@@ -356,3 +356,39 @@ fn the_rail_switches_projects_through_the_project_picker() {
         "{text}"
     );
 }
+
+#[test]
+fn the_workspace_header_and_pane_cards_show_agent_telemetry() {
+    let mut app = command_center();
+    {
+        let pane = &mut app.tree[0].repositories[0].checkouts[0].panes[0];
+        pane.telemetry = argus_protocol::AgentTelemetry {
+            model: Some("gpt-5-codex".into()),
+            context_tokens: Some(41_203),
+            context_window: Some(272_000),
+            cost_usd: Some(0.5),
+            tool: Some("Bash".into()),
+            tool_calls: Some(3),
+            ..Default::default()
+        };
+    }
+    app.select_pane_location(app.flat_pane_locations()[0]);
+    let text = lines(&draw_at(&mut app, 160, 30)).join("\n");
+    assert!(
+        text.contains("▸ Bash · ctx 41k/272k 15% · $0.50 · gpt-5-codex"),
+        "{text}"
+    );
+
+    app.open_view(View::Panes);
+    let text = lines(&draw_at(&mut app, 160, 30)).join("\n");
+    assert!(text.contains("▸ Bash · ctx 41k/272k"), "{text}");
+}
+
+#[test]
+fn token_counts_read_compactly() {
+    use crate::ui::command_center::compact_tokens;
+    assert_eq!(compact_tokens(980), "980");
+    assert_eq!(compact_tokens(4_250), "4.2k");
+    assert_eq!(compact_tokens(41_203), "41k");
+    assert_eq!(compact_tokens(1_200_000), "1.2M");
+}

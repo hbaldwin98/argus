@@ -59,6 +59,16 @@ Report meaningful transitions, not every command. Reporting failures should not
 prevent progress on the user's task. The helper always exits successfully, so
 read command output for refused writes rather than treating exit code 0 as proof.
 
+Argus reads model, context, and tool telemetry from most harnesses' own hooks.
+If the pane shows none and you know these figures, you may report them; send
+only what you actually know:
+
+```sh
+"$ARGUS_HOOK" telemetry --model gpt-5 --context 42000 --window 272000 --cost 0.12
+"$ARGUS_HOOK" telemetry --tool shell
+"$ARGUS_HOOK" telemetry --tool-done
+```
+
 ## Work in the right checkout
 
 Other agents may share the checkout. Avoid switching its branch in place;

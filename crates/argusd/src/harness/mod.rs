@@ -167,6 +167,24 @@ pub struct Harness {
     pub settings_version: Option<u64>,
 }
 
+impl Event {
+    /// A plain event: it reports a status and tags it with the session.
+    /// Tool events are this shape; they exist for telemetry, and because
+    /// a tool starting is proof the pane is working.
+    fn tagged(name: &str, reports: Report, session_id_key: &str) -> Event {
+        Event {
+            name: name.into(),
+            reports,
+            matcher: None,
+            note_from_stdin: false,
+            title_from_stdin: false,
+            session_id_key: Some(session_id_key.into()),
+            owns_session: false,
+            claim_only: false,
+        }
+    }
+}
+
 impl Harness {
     /// The harness for an agent template that names none, and for any
     /// template whose named harness has gone missing from the config. It
@@ -242,6 +260,8 @@ impl Harness {
                     owns_session: true,
                     claim_only: false,
                 },
+                Event::tagged("PreToolUse", Report::Working, "session_id"),
+                Event::tagged("PostToolUse", Report::Working, "session_id"),
             ],
             context_event: Some("SessionStart".to_string()),
             plugin: None,
@@ -266,16 +286,22 @@ impl Harness {
             settings: Some(PathBuf::from(".codex").join("hooks.json")),
             hooks_key: "hooks".to_string(),
             shape: Shape::Matcher,
-            events: vec![Event {
-                name: "SessionStart".into(),
-                reports: Report::Idle,
-                matcher: Some("startup|resume|clear".into()),
-                note_from_stdin: false,
-                title_from_stdin: false,
-                session_id_key: Some("session_id".into()),
-                owns_session: true,
-                claim_only: false,
-            }],
+            events: vec![
+                Event {
+                    name: "SessionStart".into(),
+                    reports: Report::Idle,
+                    matcher: Some("startup|resume|clear".into()),
+                    note_from_stdin: false,
+                    title_from_stdin: false,
+                    session_id_key: Some("session_id".into()),
+                    owns_session: true,
+                    claim_only: false,
+                },
+                Event::tagged("UserPromptSubmit", Report::Working, "session_id"),
+                Event::tagged("PreToolUse", Report::Working, "session_id"),
+                Event::tagged("PostToolUse", Report::Working, "session_id"),
+                Event::tagged("Stop", Report::Idle, "session_id"),
+            ],
             context_event: Some("SessionStart".to_string()),
             plugin: None,
             resume: vec!["resume".to_string(), "--last".to_string()],
@@ -445,6 +471,7 @@ impl Harness {
                     owns_session: false,
                     claim_only: false,
                 },
+                Event::tagged("postToolUse", Report::Working, "conversation_id"),
                 Event {
                     name: "stop".into(),
                     reports: Report::Idle,

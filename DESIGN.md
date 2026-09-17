@@ -450,10 +450,10 @@ a pane baked into them. A harness also carries
 `resume`, the legacy arguments that continue the last conversation, and `resume_id`, an exact argv
 template containing `{session_id}`. Both are used only when a recorded pane is restored. Claude
 Code, Codex, OpenCode, pi, AGY, Cursor Agent (`agent`) and `generic` are built in. Codex uses a project-local `.codex/hooks.json`
-SessionStart adapter whose command reads routing from the pane environment, so its content hash stays
+adapter (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`) whose command reads routing from the pane environment, so its content hash stays
 stable after the user trusts it. Codex requires the user to trust project hooks before it runs. AGY uses
 `.agents/hooks.json` with flat `PreInvocation` and `Stop` hooks. Cursor's `agent` CLI uses `.cursor/hooks.json` with
-flat `sessionStart`, `beforeSubmitPrompt`, `preToolUse`, `beforeShellExecution`, and `stop` hooks
+flat `sessionStart`, `beforeSubmitPrompt`, `preToolUse`, `postToolUse`, `beforeShellExecution`, and `stop` hooks
 (schema `version: 1`) plus `.cursor/rules/argus.mdc`. `sessionStart` claims the conversation
 (`conversation_id` or `session_id`) without posting `idle`, because that event is fire-and-forget
 and can arrive after a tool has already marked the pane working. Tool-start events mark `working`
@@ -465,6 +465,20 @@ does not inherit the pane environment, unlike the shell where `argus-hook title`
 block in `projects.toml` adds or replaces one, and an `[[agent]]` template selects one with
 `harness = "..."`, defaulting to a harness matching its own name. A block cannot supply a plugin,
 so replacing a built-in by name also gives up its module and its resume arguments.
+
+Telemetry rides the same mechanisms. `PaneInfo::telemetry` is one harness-neutral record — model,
+context tokens and window, cumulative input and output tokens, cost, the running tool, and a tool
+count — and every field is optional, because each harness exposes a different subset. Adapters POST
+partial reports to `/pane/<id>/telemetry` as JSON; the daemon merges each set field over the last,
+treats an empty `tool` as the tool finishing, counts tool starts that carry no count, drops reports
+from child sessions, and clears everything but the model when the pane's conversation changes.
+Telemetry is live state and is not persisted. The installed hook form derives a report from every
+event it reads: `tool_name` and `hook_event_name` (Claude Code, Codex, Cursor), `model` (Codex,
+Cursor), and the tail of `transcript_path` — Claude Code's assistant `usage` for context, Codex's
+`turn_context` and `token_count` records for model, window, and totals. The OpenCode plugin and pi
+extension report from their message and tool events. Claude Code tool hooks are answered with `{}`
+so the user's permission rules still apply. Clients show the report on the workspace breadcrumb and
+the pane cards.
 
 The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
 /pane/<id>/status/<working|idle|waiting|needs-review|done|failed>` with an optional body as the note,

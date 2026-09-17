@@ -61,6 +61,47 @@ async function report(ctx, status, note = "") {
   await post(`status/${status}`, note, id);
 }
 
+let lastTelemetry;
+
+async function reportTelemetry(ctx, fields) {
+  const id = await reportSession(ctx);
+  const body = JSON.stringify(fields);
+  if (body === lastTelemetry) return;
+  lastTelemetry = body;
+  await post("telemetry", body, id);
+}
+
+// The model, the context the latest request used, and the session's totals.
+// Every field is read defensively: pi's message and model shapes differ
+// between providers and releases, and a missing number is simply not sent.
+function messageTelemetry(ctx, message) {
+  const u = message?.usage ?? {};
+  const fields = {};
+  const model = message?.model ?? ctx.model?.id;
+  if (model) fields.model = String(model);
+  const context =
+    u.totalTokens ?? (u.input ?? 0) + (u.output ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0);
+  if (context > 0) fields.context_tokens = context;
+  const window = ctx.model?.contextWindow;
+  if (typeof window === "number" && window > 0) fields.context_window = window;
+
+  let input = 0, output = 0, cost = 0, priced = false;
+  for (const entry of ctx.sessionManager?.getBranch?.() ?? []) {
+    const m = entry?.message ?? entry;
+    if (m?.role !== "assistant" || !m.usage) continue;
+    input += (m.usage.input ?? 0) + (m.usage.cacheRead ?? 0) + (m.usage.cacheWrite ?? 0);
+    output += m.usage.output ?? 0;
+    if (typeof m.usage.cost?.total === "number") {
+      cost += m.usage.cost.total;
+      priced = true;
+    }
+  }
+  if (input > 0) fields.input_tokens = input;
+  if (output > 0) fields.output_tokens = output;
+  if (priced) fields.cost_usd = cost;
+  return fields;
+}
+
 export default function Argus(pi) {
   pi.on("session_start", async (_event, ctx) => {
     await enqueue(async () => {
@@ -93,6 +134,19 @@ export default function Argus(pi) {
     if (failure) {
       await enqueue(() => report(ctx, "failed", failure.errorMessage ?? "model request failed"));
     }
+  });
+
+  pi.on("message_end", async (event, ctx) => {
+    if (event?.message?.role !== "assistant") return;
+    await enqueue(() => reportTelemetry(ctx, messageTelemetry(ctx, event.message)));
+  });
+
+  pi.on("tool_execution_start", async (event, ctx) => {
+    await enqueue(() => reportTelemetry(ctx, { tool: String(event?.toolName ?? "tool") }));
+  });
+
+  pi.on("tool_execution_end", async (_event, ctx) => {
+    await enqueue(() => reportTelemetry(ctx, { tool: "" }));
   });
 
   pi.on("agent_settled", async (_event, ctx) => {

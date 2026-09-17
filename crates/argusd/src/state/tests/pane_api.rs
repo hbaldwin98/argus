@@ -225,7 +225,6 @@ async fn a_pane_the_last_client_stopped_showing_keeps_its_size() {
     let _ = d.close_pane(pane);
 }
 
-
 #[tokio::test]
 async fn a_pane_lists_only_so_many_children() {
     let dir = tempfile::tempdir().unwrap();
@@ -832,7 +831,10 @@ async fn moving_the_last_agent_moves_managed_hook_routing_too() {
     assert!(!settings_of(first.path()).exists());
     assert!(!first.path().join(".claude/skills/argus").exists());
     assert!(settings_of(second.path()).exists());
-    assert!(second.path().join(".claude/skills/argus/SKILL.md").is_file());
+    assert!(second
+        .path()
+        .join(".claude/skills/argus/SKILL.md")
+        .is_file());
     d.close_pane(pane).unwrap();
 }
 
@@ -850,5 +852,58 @@ async fn a_pane_cannot_move_to_an_unknown_directory() {
         d.snapshot()[0].repositories[0].checkouts[0].panes[0].id,
         pane
     );
+    d.close_pane(pane).unwrap();
+}
+
+#[tokio::test]
+async fn telemetry_reports_merge_into_the_pane_and_ignore_children() {
+    use argus_protocol::AgentTelemetry;
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = daemon_with_an_agent(dir.path()).await;
+    d.set_pane_session_id(pane, "parent-session");
+
+    d.report_pane_telemetry(
+        pane,
+        Some("parent-session"),
+        AgentTelemetry {
+            model: Some("gpt-5".into()),
+            context_tokens: Some(42_000),
+            context_window: Some(272_000),
+            tool: Some("shell".into()),
+            ..Default::default()
+        },
+    );
+    d.report_pane_telemetry(
+        pane,
+        Some("child-session"),
+        AgentTelemetry {
+            model: Some("other".into()),
+            ..Default::default()
+        },
+    );
+    d.report_pane_telemetry(
+        pane,
+        None,
+        AgentTelemetry {
+            cost_usd: Some(0.25),
+            tool: Some(String::new()),
+            ..Default::default()
+        },
+    );
+
+    let telemetry = pane_info(&d, pane).telemetry;
+    assert_eq!(telemetry.model.as_deref(), Some("gpt-5"));
+    assert_eq!(telemetry.context_tokens, Some(42_000));
+    assert_eq!(telemetry.context_window, Some(272_000));
+    assert_eq!(telemetry.cost_usd, Some(0.25));
+    assert_eq!(telemetry.tool, None, "an empty tool name ends the tool");
+    assert_eq!(telemetry.tool_calls, Some(1));
+
+    // A new conversation starts from an empty context.
+    d.set_pane_session_id(pane, "next-session");
+    let telemetry = pane_info(&d, pane).telemetry;
+    assert_eq!(telemetry.model.as_deref(), Some("gpt-5"));
+    assert_eq!(telemetry.context_tokens, None);
+
     d.close_pane(pane).unwrap();
 }

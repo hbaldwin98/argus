@@ -271,8 +271,8 @@ inherited `PATH`. Custom commands are argument arrays; the first item is the exe
 optional `harness` selects a matching built-in or configured harness; without it, Argus tries the
 agent name and then falls back to the generic environment-only harness.
 
-Claude Code reports through hooks Argus writes into `.claude/settings.local.json`, Codex through a
-SessionStart adapter in `.codex/hooks.json`, OpenCode through a plugin module Argus writes to
+Claude Code reports through hooks Argus writes into `.claude/settings.local.json`, Codex through
+session, prompt, tool, and stop hooks in `.codex/hooks.json`, OpenCode through a plugin module Argus writes to
 `.opencode/plugin/argus-status.js`, and pi through a project extension at
 `.pi/extensions/argus-status.ts`. AGY uses `.agents/hooks.json` under the `argus` hook key, and
 Cursor's `agent` CLI uses `.cursor/hooks.json` plus an always-on rule at `.cursor/rules/argus.mdc`.
@@ -282,6 +282,14 @@ Argus also adds the generated hook and skill paths to the repository-local `.git
 when it discovers a checkout, so they stay out of status without changing the tracked `.gitignore`.
 Codex treats project hooks as untrusted until the user approves them. Argus writes the correct hook,
 but cannot approve that trust decision; exact Codex identity capture starts after approval.
+
+Agent panes also show telemetry: the tool running now, context used against the model's window,
+cumulative cost, and the model. Each harness supplies what it can. Claude Code and Codex hooks
+read it from the hook payload and the transcript it names (Claude Code does not record its
+context window or cost there, and Codex prices nothing). The OpenCode plugin and pi extension
+report model, tokens, and cost from their message events, and Cursor and AGY hooks report the
+model and tool their payloads carry. Any other agent can run
+`argus-hook telemetry --model M --context N --window N --cost USD --tool NAME`.
 
 Custom JSON-hook harnesses use this schema:
 

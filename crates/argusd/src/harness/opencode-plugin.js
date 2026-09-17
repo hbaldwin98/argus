@@ -62,6 +62,60 @@ async function reportSession(sessionID) {
   }
 }
 
+// Telemetry is the pane's own conversation only, summed across its
+// assistant messages. Each message.updated repeats the whole message, so
+// usage is kept per message id and totalled, never added on each update.
+const usage = new Map();
+let lastTelemetry;
+
+async function reportTelemetry(fields, sessionID) {
+  if (!BASE || !TOKEN) return;
+  const body = JSON.stringify(fields);
+  if (body === lastTelemetry) return;
+  lastTelemetry = body;
+  try {
+    await fetch(`${BASE}/telemetry`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${TOKEN}`,
+        ...(sessionID ? { "X-Argus-Session": sessionID } : {}),
+      },
+      body,
+      signal: AbortSignal.timeout(2000),
+    });
+  } catch {
+    // Best-effort, like status.
+  }
+}
+
+async function messageTelemetry(info) {
+  if (info?.role !== "assistant" || !info.id) return;
+  const tokens = info.tokens ?? {};
+  const cache = tokens.cache ?? {};
+  usage.set(info.id, {
+    cost: Number(info.cost) || 0,
+    input: (tokens.input ?? 0) + (cache.read ?? 0) + (cache.write ?? 0),
+    output: (tokens.output ?? 0) + (tokens.reasoning ?? 0),
+  });
+  let cost = 0, input = 0, output = 0;
+  for (const u of usage.values()) {
+    cost += u.cost;
+    input += u.input;
+    output += u.output;
+  }
+  const context = usage.get(info.id).input + usage.get(info.id).output;
+  await reportTelemetry(
+    {
+      model: info.modelID ? String(info.modelID) : null,
+      context_tokens: context > 0 ? context : null,
+      input_tokens: input,
+      output_tokens: output,
+      cost_usd: cost,
+    },
+    info.sessionID,
+  );
+}
+
 // A session belongs to this pane unless we saw it created with a parent.
 // The first session we hear about is the pane's own.
 function ownedByPane(sessionID) {
@@ -106,6 +160,14 @@ export const ArgusStatus = async () => {
       if (INSTRUCTIONS) output.system.push(INSTRUCTIONS);
     },
 
+    "tool.execute.before": async ({ tool, sessionID }) => {
+      if (ownedByPane(sessionID)) await reportTelemetry({ tool: String(tool) }, sessionID);
+    },
+
+    "tool.execute.after": async ({ sessionID }) => {
+      if (ownedByPane(sessionID)) await reportTelemetry({ tool: "" }, sessionID);
+    },
+
     event: async ({ event }) => {
       const type = event?.type;
       const props = event?.properties ?? {};
@@ -120,8 +182,14 @@ export const ArgusStatus = async () => {
       // new conversation. A newly created root replaces the root this pane
       // is showing; otherwise every event from the new conversation would
       // be mistaken for another session and the previous status would stick.
+      if (type === "message.updated") {
+        if (ownedByPane(props.info?.sessionID)) await messageTelemetry(props.info);
+        return;
+      }
       if (type === "session.created" && props.info?.id && !props.info.parentID) {
         rootSession = props.info.id;
+        usage.clear();
+        lastTelemetry = undefined;
         await reportSession(rootSession);
         await report(rootSession, "idle");
         return;
