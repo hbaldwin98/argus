@@ -149,6 +149,10 @@ impl App {
                         self.clamp();
                         return;
                     }
+                    if crate::ui::command_center_project_header_at(self, ev.column, ev.row) {
+                        self.open_project_picker();
+                        return;
+                    }
                     if let Some(target) =
                         crate::ui::command_center_rail_target_at(self, ev.column, ev.row)
                     {

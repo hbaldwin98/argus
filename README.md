@@ -384,6 +384,7 @@ location. Typing filters the folders in the current directory.
 | `i` | In the repositories column, make a repository that does not exist yet: browse to where it should go, name it, and Argus creates the directory, runs `git init` in it, and adds it to the project. An empty name uses the chosen directory itself, which is how a folder that is already there gets initialized |
 | `D` | Remove what the column selects, after confirmation: a project or repository (out of the panel only — nothing on disk is touched), a linked worktree (deleted), or a branch row (the local branch, deleted; the remote is untouched). An unmerged branch is refused and asked about again, and confirming that second prompt force-deletes it |
 | `w` | Switch workspace |
+| `o` | Switch project (command center rail; also click the project name) |
 | `b` | Open the branch picker |
 | `B` | Show or hide the branches no checkout is sitting on, including the ones only a remote has; the main branch keeps its row either way |
 | `F` | Fetch every remote (`--prune`), which is what makes the remote's branches appear as rows |

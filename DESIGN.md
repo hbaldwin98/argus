@@ -108,7 +108,8 @@ from inside a pane the digits belong to the child, so a view is reached through 
 than pretending first-run is a permanent view.
 
 The rail is stable across all four surfaces. It summarizes the open workspace and selected project,
-lists that project's repositories, and rolls live agents up at the bottom. Selecting a repository
+lists that project's repositories, and rolls live agents up at the bottom. `o` or a click on the
+project name switches projects through a picker. Selecting a repository
 changes the existing daemon-tree selection; the rail owns no parallel workspace model. Workspace
 holds the selected pane's real terminal beneath a flat breadcrumb header. Panes is a responsive
 card overview derived from the same pane locations, Checkouts is an operational table for the

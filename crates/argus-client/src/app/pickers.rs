@@ -402,6 +402,39 @@ impl App {
         ));
     }
 
+    /// `o` switches the project the command-center rail shows. The rail
+    /// holds one project at a time, so this is how the others are reached.
+    pub(crate) fn open_project_picker(&mut self) {
+        if self.tree.is_empty() {
+            self.report("no projects yet");
+            return;
+        }
+        let items = self
+            .tree
+            .iter()
+            .map(|project| {
+                let panes: usize = project
+                    .repositories
+                    .iter()
+                    .flat_map(|r| r.checkouts.iter())
+                    .map(|c| c.listed_panes().count())
+                    .sum();
+                let panes = if panes > 0 {
+                    format!("  {panes}▣")
+                } else {
+                    String::new()
+                };
+                format!("{}  {}⑂{}", project.name, project.repositories.len(), panes)
+            })
+            .collect();
+        self.picker = Some(Picker::new(
+            PickerKind::Project,
+            "open project",
+            items,
+            self.sel_project,
+        ));
+    }
+
     /// `b` asks the daemon for this checkout's branches; the picker opens
     /// when they arrive, so it never shows a stale list.
     pub(super) fn open_branch_picker(&mut self) {
@@ -594,6 +627,30 @@ impl App {
                 // start at the top rather than keeping an index that meant
                 // something else.
                 self.reset_navigation();
+            }
+            PickerKind::Project => {
+                let Some(index) = picker.shown.get(picker.sel).copied() else {
+                    return;
+                };
+                if index != self.sel_project {
+                    self.sel_project = index;
+                    self.sel_repository = 0;
+                    self.sel_checkout = 0;
+                    self.sel_pane = 0;
+                    self.expanded_repositories.clear();
+                    if let Some(id) = self
+                        .current_project()
+                        .and_then(|p| p.repositories.first())
+                        .map(|r| r.id)
+                    {
+                        self.expanded_repositories.insert(id);
+                    }
+                }
+                if !matches!(self.focus, Focus::PaneContent) {
+                    self.focus = Focus::Repositories;
+                }
+                self.clamp();
+                self.sync_subscription();
             }
             PickerKind::Theme => {
                 let Some(name) = picker.selected() else {

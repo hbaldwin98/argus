@@ -318,3 +318,41 @@ fn the_rail_border_continues_the_feature_tabs_right_edge() {
     let border = app.layout.projects.outer.right() as usize - 1;
     assert_eq!(feature - 1, border, "{}\n{:?}", rows.join("\n"), tabs);
 }
+
+#[test]
+fn the_rail_switches_projects_through_the_project_picker() {
+    let mut app = command_center();
+    app.tree.push(project(
+        4,
+        "hermes",
+        vec![repository(
+            5,
+            "courier",
+            vec![checkout(
+                30,
+                "main",
+                true,
+                vec![pane_info(300, PaneKind::Shell, "zsh", PaneStatus::Idle)],
+            )],
+        )],
+    ));
+    let text = lines(&draw_at(&mut app, 120, 30)).join("\n");
+    assert!(text.contains("argus 1/2"), "{text}");
+
+    // Clicking the project name opens the picker on the current project.
+    let outer = app.layout.projects.outer;
+    click(&mut app, outer.x + 4, outer.y + 2);
+    assert!(app.picker.is_some());
+    app.picker = None;
+
+    app.on_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE));
+    app.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_eq!(app.sel_project, 1);
+    let text = lines(&draw_at(&mut app, 120, 30)).join("\n");
+    assert!(
+        text.contains("hermes 2/2") && text.contains("courier"),
+        "{text}"
+    );
+}

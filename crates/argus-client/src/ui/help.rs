@@ -49,6 +49,7 @@ const SELECTION: Group = Group {
 const RAIL: Group = Group {
     title: "the rail",
     keys: &[
+        ("o  click project", "switch to another project"),
         ("click repo", "open it; the one open before folds away"),
         ("click pane", "show it, keys stay here — x closes it"),
         ("enter  click", "type into the pane shown"),

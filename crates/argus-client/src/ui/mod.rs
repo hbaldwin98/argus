@@ -80,7 +80,8 @@ use views::*;
 
 pub(crate) use command_center::{
     agent_at as command_center_agent_at, checkout_at as command_center_checkout_at,
-    pane_at as command_center_pane_at, rail_target_at as command_center_rail_target_at,
+    pane_at as command_center_pane_at, project_header_at as command_center_project_header_at,
+    rail_target_at as command_center_rail_target_at,
     sidebar_contains as command_center_sidebar_contains, RailTarget as CommandCenterRailTarget,
 };
 pub use rows::pane_row_owners;

@@ -97,6 +97,13 @@ pub(crate) fn sidebar_contains(app: &App, x: u16, y: u16) -> bool {
     contains(app.layout.projects.outer, x, y)
 }
 
+/// The project name and the workspace line under it: clicking either opens
+/// the project picker, since the rail shows one project at a time.
+pub(crate) fn project_header_at(app: &App, x: u16, y: u16) -> bool {
+    let outer = app.layout.projects.outer;
+    contains(outer, x, y) && (outer.y + 2..=outer.y + 3).contains(&y)
+}
+
 fn pane_card_rect(body: Rect, index: usize) -> Rect {
     let columns = if body.width >= 90 {
         3
@@ -303,15 +310,24 @@ fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         inner.y + 1,
         Line::styled("ACTIVE WORKSPACE", Style::default().fg(th.dim)),
     );
+    // With more than one project, the header says which of them this is
+    // and that `o` reaches the rest.
+    let position = if app.tree.len() > 1 {
+        format!(" {}/{} ▾", app.sel_project + 1, app.tree.len())
+    } else {
+        String::new()
+    };
+    let name_width = (width as usize).saturating_sub(2 + position.chars().count());
     put(
         f,
         inner.y + 2,
         Line::from(vec![
             Span::styled("▌ ", Style::default().fg(th.accent)),
             Span::styled(
-                ellipsize_text(&name, width.saturating_sub(2) as usize),
+                ellipsize_text(&name, name_width),
                 Style::default().fg(th.text).add_modifier(Modifier::BOLD),
             ),
+            Span::styled(position, Style::default().fg(th.dim)),
         ]),
     );
     put(

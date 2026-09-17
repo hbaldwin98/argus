@@ -20,6 +20,8 @@ pub enum PickerKind {
         ids: Vec<WorkspaceId>,
         names: Vec<String>,
     },
+    /// Switch the rail to the chosen project in the open workspace.
+    Project,
     /// Switch the color theme.
     Theme,
     /// `git switch` the current checkout to the chosen branch. The last

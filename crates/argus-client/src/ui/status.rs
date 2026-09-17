@@ -66,6 +66,7 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "enter open  esc",
             ],
             PickerKind::Theme => &["j/k move   enter apply   esc cancel", "enter apply  esc"],
+            PickerKind::Project => &["j/k move   enter open   esc cancel", "enter open  esc"],
             PickerKind::Branch { .. } => &[
                 "type to filter   ↑/↓ move   enter switch   esc cancel",
                 "enter switch  esc",
