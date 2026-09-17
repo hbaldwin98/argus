@@ -126,7 +126,7 @@ fn each_event_reports_the_status_its_harness_assigned_it() {
 }
 
 #[test]
-fn a_prompt_submit_event_asks_the_helper_to_title_the_pane() {
+fn no_builtin_event_titles_the_pane_from_the_prompt() {
     let dir = tempfile::tempdir().unwrap();
     let h = Harness::claude();
     h.install(dir.path(), PaneId(3), 5555, "tok").unwrap();
@@ -136,14 +136,8 @@ fn a_prompt_submit_event_asks_the_helper_to_title_the_pane() {
         serde_json::from_value(hooks["UserPromptSubmit"][0]["hooks"][0]["args"].clone())
             .unwrap();
     assert!(
-        prompt.contains(&TITLE_FLAG.to_string()),
-        "UserPromptSubmit carries the user's prompt: {prompt:?}"
-    );
-    let stop: Vec<String> =
-        serde_json::from_value(hooks["Stop"][0]["hooks"][0]["args"].clone()).unwrap();
-    assert!(
-        !stop.contains(&TITLE_FLAG.to_string()),
-        "Stop is not a title: {stop:?}"
+        !prompt.contains(&TITLE_FLAG.to_string()),
+        "the agent names the pane, not the raw prompt: {prompt:?}"
     );
 }
 
@@ -788,7 +782,7 @@ process.stdout.write(JSON.stringify(reports));
 }
 
 #[test]
-fn the_opencode_plugin_titles_the_pane_from_the_user_prompt() {
+fn the_opencode_plugin_does_not_title_the_pane_from_the_user_prompt() {
     let dir = tempfile::tempdir().unwrap();
     let plugin = dir.path().join("argus-status.mjs");
     let runner = dir.path().join("runner.mjs");
@@ -837,7 +831,6 @@ process.stdout.write(JSON.stringify(reports));
         json!([
             { "url": "http://127.0.0.1/pane/1/session", "note": "s1" },
             { "url": "http://127.0.0.1/pane/1/status/working", "note": "" },
-            { "url": "http://127.0.0.1/pane/1/title", "note": "fixing the pty deadlock" },
         ])
     );
 }
@@ -852,10 +845,6 @@ fn the_opencode_plugin_calls_the_same_pane_api_the_helper_does() {
         assert!(source.contains(var), "the plugin never reads {var}");
     }
     assert!(source.contains("/status/${status}"), "wrong pane route");
-    assert!(
-        source.contains("${BASE}/title"),
-        "the plugin never titles the pane"
-    );
     assert!(source.contains("Bearer ${TOKEN}"), "wrong authorization");
 }
 
@@ -959,7 +948,6 @@ process.stdout.write(JSON.stringify({ reports, prompt: start.systemPrompt }));
             { "url": "http://127.0.0.1/pane/5/session", "session": "pi-session", "authorization": "Bearer test-token", "body": "pi-session" },
             { "url": "http://127.0.0.1/pane/5/status/idle", "session": "pi-session", "authorization": "Bearer test-token", "body": "" },
             { "url": "http://127.0.0.1/pane/5/status/working", "session": "pi-session", "authorization": "Bearer test-token", "body": "" },
-            { "url": "http://127.0.0.1/pane/5/title", "session": "pi-session", "authorization": "Bearer test-token", "body": "repair the pump" },
             { "url": "http://127.0.0.1/pane/5/status/waiting", "session": "pi-session", "authorization": "Bearer test-token", "body": "Approve command" },
             { "url": "http://127.0.0.1/pane/5/status/working", "session": "pi-session", "authorization": "Bearer test-token", "body": "" },
             { "url": "http://127.0.0.1/pane/5/status/idle", "session": "pi-session", "authorization": "Bearer test-token", "body": "" },
@@ -1023,9 +1011,8 @@ fn agy_installs_into_agents_hooks_json_and_cleans_up() {
     let pre_args: Vec<String> = serde_json::from_value(pre_entry["args"].clone()).unwrap();
     assert_eq!(pre_args[0], "http://127.0.0.1:4242/pane/5/status/working");
     assert_eq!(pre_args[1], "tok");
-    assert_eq!(pre_args[2], TITLE_FLAG);
-    assert_eq!(pre_args[3], SESSION_KEY_FLAG);
-    assert_eq!(pre_args[4], "conversationId");
+    assert_eq!(pre_args[2], SESSION_KEY_FLAG);
+    assert_eq!(pre_args[3], "conversationId");
 
     let stop = argus["Stop"].as_array().unwrap();
     assert_eq!(stop.len(), 1);
@@ -1095,8 +1082,8 @@ fn cursor_agent_installs_into_hooks_json_and_cleans_up() {
     let working_cmd = working[0]["command"].as_str().unwrap();
     assert!(working_cmd.contains("/status/working"));
     assert!(
-        working_cmd.contains(TITLE_FLAG),
-        "beforeSubmitPrompt carries the user's prompt:\n{working_cmd}"
+        !working_cmd.contains(TITLE_FLAG),
+        "the agent names the pane, not the raw prompt:\n{working_cmd}"
     );
 
     // Tool-start is the CLI-reliable working signal when lifecycle hooks

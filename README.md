@@ -574,7 +574,7 @@ Codex uses `<checkout>/.codex/hooks.json` with its required command-string handl
 reads pane routing from the process environment, keeping its trust-sensitive content stable across
 pane starts and daemon restarts. OpenCode's
 plugin reports the root session ID and updates it when the process creates a new root. Pi's
-project extension captures its session ID, titles from raw input, reports active and settled agent
+project extension captures its session ID, reports active and settled agent
 runs, marks blocking extension prompts as waiting, and injects the skill bootstrap into the system
 prompt. Pi resumes an identified session with `--session <id>`. AGY manages
 `PreInvocation` and `Stop` hooks in `<checkout>/.agents/hooks.json` under the `argus` hook key and captures

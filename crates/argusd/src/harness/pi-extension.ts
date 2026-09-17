@@ -61,13 +61,6 @@ async function report(ctx, status, note = "") {
   await post(`status/${status}`, note, id);
 }
 
-async function title(ctx, text) {
-  const firstLine = summary(text);
-  if (!firstLine) return;
-  const id = await reportSession(ctx);
-  if (id) await post("title", firstLine, id);
-}
-
 export default function Argus(pi) {
   pi.on("session_start", async (_event, ctx) => {
     await enqueue(async () => {
@@ -76,14 +69,8 @@ export default function Argus(pi) {
     });
   });
 
-  // `input` sees the user's text before skill and prompt-template expansion,
-  // which makes it a useful pane title instead of naming the row after the
-  // expanded instructions.
-  pi.on("input", async (event, ctx) => {
-    await enqueue(async () => {
-      await report(ctx, "working");
-      await title(ctx, event.text);
-    });
+  pi.on("input", async (_event, ctx) => {
+    await enqueue(() => report(ctx, "working"));
     return { action: "continue" };
   });
 

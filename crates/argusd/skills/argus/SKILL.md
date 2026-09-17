@@ -36,7 +36,9 @@ Use returned IDs, slugs, and line numbers for subsequent commands.
 
 ## Keep the pane informative
 
-Name the pane after the task once you understand it, and rename it when the task
+Argus does not title the pane from the user's prompt; naming it is your job.
+As soon as you understand the task, set a short title (a few words, like a
+commit subject) that says what you are doing, and rename it when the task
 changes. Report `working` when starting or resuming work; some harnesses have no
 turn-start event. Existing lifecycle hooks still report the events they support.
 
