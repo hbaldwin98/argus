@@ -8,8 +8,8 @@ use super::*;
 use crate::app::FeaturePanel;
 use argus_protocol::{PaneKind, PaneStatus, TaskState};
 
-/// The mark, the WORKSPACE tab, and the FEATURE tab: the rail's border
-/// continues the FEATURE tab's right edge.
+/// The mark and the WORKSPACE tab: the rail's border continues the FEATURE
+/// tab's left edge so the workspace highlight runs the full tab width.
 /// Wide enough for the workspace summary badges (`repos`, `agents`, `needs
 /// you`) on one row at two-digit counts without wrapping.
 pub const SIDEBAR_WIDTH: u16 = 50;
@@ -279,7 +279,7 @@ pub(super) fn render_command_center(
 }
 
 /// The rail's width for a frame this wide. The tab strip reads it too, so
-/// the rail's edge and the end of the first tab are one line.
+/// the rail's edge and the start of the FEATURE tab are one line.
 pub(super) fn rail_width(total: u16) -> u16 {
     SIDEBAR_WIDTH.min(total.saturating_sub(24).max(1))
 }

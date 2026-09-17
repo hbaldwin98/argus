@@ -38,13 +38,13 @@ fn tab_text(view: View) -> String {
 
 /// How wide the WORKSPACE tab is drawn in the command-center shell.
 ///
-/// The rail's right edge lines up with the end of the FEATURE tab, so a
-/// wider rail grows the WORKSPACE tab rather than leaving a gap in the strip.
+/// The rail's right edge lines up with the start of the FEATURE tab, so a
+/// wider rail grows the WORKSPACE tab and its highlight to that junction.
 fn command_center_spine_tab_width(strip_width: u16) -> u16 {
     let rail = crate::ui::command_center::rail_width(strip_width);
     let brand = BRAND.chars().count() as u16;
-    let feature = tab_text(View::Feature).chars().count() as u16;
-    rail.saturating_sub(brand + feature)
+    // The junction and sidebar border sit on the rail's last column.
+    rail.saturating_sub(brand + 1)
         .max(tab_text(View::Spine).chars().count() as u16)
 }
 
