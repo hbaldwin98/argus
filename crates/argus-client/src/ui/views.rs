@@ -43,7 +43,8 @@ const BRAND: &str = " ■  ARGUS  ";
 
 /// Which tab a point falls on. Shared with the renderer rather than
 /// re-derived, so a click lands on the tab that was actually drawn.
-pub fn tab_at(strip: Rect, x: u16, y: u16) -> Option<View> {
+pub fn tab_at(views: Panel, x: u16, y: u16) -> Option<View> {
+    let strip = views.outer;
     // A zero-sized strip is one that was not drawn — on a short terminal,
     // or before the first frame — and its default rect sits on row 0,
     // where a click would otherwise land on a tab that is not there.
@@ -53,7 +54,7 @@ pub fn tab_at(strip: Rect, x: u16, y: u16) -> Option<View> {
     if y != strip.y || x < strip.x {
         return None;
     }
-    let mut cell = strip.x.saturating_add(BRAND.chars().count() as u16);
+    let mut cell = strip.x.saturating_add(brand_cells(views));
     for view in View::ALL {
         let width = tab_text(view).chars().count() as u16;
         if x >= cell && x < cell + width {
@@ -64,13 +65,35 @@ pub fn tab_at(strip: Rect, x: u16, y: u16) -> Option<View> {
     None
 }
 
+/// How wide the product mark was drawn: recorded in the strip's panel so a
+/// click is resolved against the tabs actually on screen.
+fn brand_cells(views: Panel) -> u16 {
+    if views.first == 0 {
+        BRAND.chars().count() as u16
+    } else {
+        views.first as u16
+    }
+}
+
 pub(super) fn render_view_tabs(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    // In the command center the mark stretches so the first tab ends on the
+    // rail's edge, and the rail's border continues the tab's own boundary.
+    let natural = BRAND.chars().count() as u16;
+    let brand_width = if app.command_center && !app.tree.is_empty() {
+        let first_tab = tab_text(View::ALL[0]).chars().count() as u16;
+        command_center::rail_width(area.width)
+            .saturating_sub(first_tab)
+            .max(natural)
+    } else {
+        natural
+    };
+    let brand = format!("{BRAND:<width$}", width = brand_width as usize);
     let mut labels = vec![Span::styled(
-        BRAND,
+        brand.clone(),
         Style::default().fg(th.accent).add_modifier(Modifier::BOLD),
     )];
     let mut rule = vec![Span::styled(
-        "─".repeat(BRAND.chars().count()),
+        "─".repeat(brand_width as usize),
         Style::default().fg(th.edge),
     )];
     for view in View::ALL {
@@ -95,15 +118,23 @@ pub(super) fn render_view_tabs(f: &mut Frame, app: &mut App, area: Rect, th: The
             Style::default().fg(if open { th.accent } else { th.edge }),
         ));
     }
+    if app.command_center {
+        // The strip's rule runs the full width, as the template's bar does.
+        let drawn: usize = rule.iter().map(Span::width).sum();
+        rule.push(Span::styled(
+            "─".repeat((area.width as usize).saturating_sub(drawn)),
+            Style::default().fg(th.edge),
+        ));
+    }
     f.render_widget(
         Paragraph::new(Line::from(labels)),
         Rect { height: 1, ..area },
     );
-    if BRAND.chars().count() < area.width as usize {
+    if (brand_width as usize) < area.width as usize {
         f.render_widget(
             Paragraph::new(Span::styled("│", Style::default().fg(th.edge))),
             Rect {
-                x: area.x + BRAND.chars().count().saturating_sub(1) as u16,
+                x: area.x + brand_width.saturating_sub(1),
                 y: area.y,
                 width: 1,
                 height: 1,
@@ -119,11 +150,11 @@ pub(super) fn render_view_tabs(f: &mut Frame, app: &mut App, area: Rect, th: The
                 ..area
             },
         );
-        if BRAND.chars().count() < area.width as usize {
+        if (brand_width as usize) < area.width as usize {
             f.render_widget(
                 Paragraph::new(Span::styled("┴", Style::default().fg(th.edge))),
                 Rect {
-                    x: area.x + BRAND.chars().count().saturating_sub(1) as u16,
+                    x: area.x + brand_width.saturating_sub(1),
                     y: area.y + 1,
                     width: 1,
                     height: 1,
@@ -134,7 +165,7 @@ pub(super) fn render_view_tabs(f: &mut Frame, app: &mut App, area: Rect, th: The
     app.layout.views = Panel {
         outer: area,
         inner: area,
-        first: 0,
+        first: brand_width as usize,
     };
 }
 

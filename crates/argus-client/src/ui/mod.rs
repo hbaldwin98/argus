@@ -79,8 +79,8 @@ use text::*;
 use views::*;
 
 pub(crate) use command_center::{
-    checkout_at as command_center_checkout_at, pane_at as command_center_pane_at,
-    rail_target_at as command_center_rail_target_at,
+    agent_at as command_center_agent_at, checkout_at as command_center_checkout_at,
+    pane_at as command_center_pane_at, rail_target_at as command_center_rail_target_at,
     sidebar_contains as command_center_sidebar_contains, RailTarget as CommandCenterRailTarget,
 };
 pub use rows::pane_row_owners;

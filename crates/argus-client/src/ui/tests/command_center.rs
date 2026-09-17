@@ -27,8 +27,8 @@ fn production_shell_matches_the_designs_four_regions() {
         "repositories expand only after a click:\n{text}"
     );
     assert_eq!(app.layout.projects.outer.x, 0);
-    assert_eq!(app.layout.projects.outer.width, 32);
-    assert!(app.layout.content.outer.x >= 32);
+    assert_eq!(app.layout.projects.outer.width, 44);
+    assert!(app.layout.content.outer.x >= 44);
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn current_pane_is_highlighted_in_an_expanded_repository() {
 
     assert!(
         text.lines()
-            .any(|line| line.contains("▌    └ ") && line.contains("claude")),
+            .any(|line| line.contains("▌      └ ") && line.contains("claude")),
         "{text}"
     );
 }
@@ -292,4 +292,18 @@ fn the_shell_leaves_a_row_above_the_tabs_and_below_the_status_band() {
     let rows = lines(&draw_at(&mut app, 120, 30));
     assert!(rows[0].trim().is_empty(), "{rows:?}");
     assert!(rows[29].trim().is_empty(), "{rows:?}");
+}
+
+#[test]
+fn clicking_an_agent_in_the_agents_list_goes_straight_to_it() {
+    let mut app = command_center();
+    app.focus = Focus::PaneContent;
+    draw_at(&mut app, 140, 40);
+    let agents = app.layout.agents.inner;
+    app.focus = Focus::Repositories;
+    click(&mut app, agents.x + 2, agents.y);
+
+    assert_eq!(app.view, View::Spine);
+    assert_eq!(app.current_pane().map(|pane| pane.id), Some(PaneId(100)));
+    assert_eq!(app.focus, Focus::Panes);
 }

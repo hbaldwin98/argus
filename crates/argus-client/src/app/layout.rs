@@ -144,6 +144,8 @@ pub struct Layout {
     pub overlay: Panel,
     /// The keymap window, zero-sized when it is not up.
     pub help: Panel,
+    /// The command center's AGENTS list in the rail.
+    pub agents: Panel,
     /// Where the last frame put the hardware cursor, `None` when it hid it.
     /// Recorded as well as applied so the decision — which is one decision
     /// for the whole frame, made across several layers — can be asserted on.

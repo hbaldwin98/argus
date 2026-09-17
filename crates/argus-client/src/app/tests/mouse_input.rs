@@ -28,6 +28,7 @@ fn dragging_a_gutter_resizes_the_two_adjacent_columns() {
         feature_decisions: Default::default(),
         overlay: Panel::default(),
         help: Panel::default(),
+        agents: Panel::default(),
         cursor: None,
     };
 
@@ -106,6 +107,7 @@ fn dragging_a_gutter_cannot_collapse_either_column() {
         feature_decisions: Default::default(),
         overlay: Panel::default(),
         help: Panel::default(),
+        agents: Panel::default(),
         cursor: None,
     };
 

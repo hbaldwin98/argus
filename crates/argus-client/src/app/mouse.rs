@@ -52,7 +52,7 @@ impl App {
         // The tab strip is above every other surface, overlays included:
         // it is the one row on screen that is not about whatever is open.
         if matches!(ev.kind, MouseEventKind::Down(_)) {
-            if let Some(view) = crate::ui::tab_at(self.layout.views.outer, ev.column, ev.row) {
+            if let Some(view) = crate::ui::tab_at(self.layout.views, ev.column, ev.row) {
                 self.open_view(view);
                 return;
             }
@@ -138,10 +138,22 @@ impl App {
         {
             match ev.kind {
                 MouseEventKind::Down(MouseButton::Left) => {
+                    // An agent in the AGENTS list goes straight to it: its
+                    // repository opens in the rail and its pane takes the stage.
+                    if let Some(location) =
+                        crate::ui::command_center_agent_at(self, ev.column, ev.row)
+                    {
+                        self.select_pane_location(location);
+                        self.open_view(View::Spine);
+                        self.focus = Focus::Panes;
+                        self.clamp();
+                        return;
+                    }
                     if let Some(target) =
                         crate::ui::command_center_rail_target_at(self, ev.column, ev.row)
                     {
                         match target {
+                            crate::ui::CommandCenterRailTarget::Spacer => {}
                             crate::ui::CommandCenterRailTarget::Repository(repository) => {
                                 self.sel_repository = repository;
                                 self.sel_checkout = 0;

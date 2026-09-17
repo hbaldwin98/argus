@@ -95,10 +95,11 @@ fn a_view_does_not_stop_the_panes_running_behind_it() {
 fn clicking_a_tab_opens_it() {
     let mut app = app_with_tree();
     draw_at(&mut app, 100, 30);
-    let strip = app.layout.views.outer;
+    let views = app.layout.views;
+    let strip = views.outer;
     // The second tab's first cell, found the way the renderer draws it.
     let x = (0..strip.width)
-        .find(|x| crate::ui::tab_at(strip, strip.x + x, strip.y) == Some(View::Feature))
+        .find(|x| crate::ui::tab_at(views, strip.x + x, strip.y) == Some(View::Feature))
         .expect("the decisions tab is on screen");
 
     app.on_mouse(crossterm::event::MouseEvent {
@@ -118,7 +119,7 @@ fn clicking_a_tab_opens_it() {
 
 #[test]
 fn a_click_before_the_first_frame_lands_on_no_tab() {
-    assert_eq!(crate::ui::tab_at(Rect::default(), 0, 0), None);
+    assert_eq!(crate::ui::tab_at(Panel::default(), 0, 0), None);
 }
 
 #[test]

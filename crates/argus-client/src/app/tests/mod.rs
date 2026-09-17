@@ -289,6 +289,7 @@ pub(super) fn laid_out(h: &mut Harness) {
         feature_decisions: Default::default(),
         overlay: Panel::default(),
         help: Panel::default(),
+        agents: Panel::default(),
         cursor: None,
     };
 }

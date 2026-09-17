@@ -120,6 +120,7 @@ fn the_gutter_next_to_a_fold_tab_is_not_draggable() {
         feature_decisions: Default::default(),
         overlay: Panel::default(),
         help: Panel::default(),
+        agents: Panel::default(),
         cursor: None,
     };
     h.app.fold = Fold::Projects;
