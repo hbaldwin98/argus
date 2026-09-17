@@ -678,7 +678,8 @@ fn render_workspace(
             },
         );
     }
-    let terminal = inset(split[1], 2, 1);
+    // The terminal fills the stage edge to edge, right up to the header rule.
+    let terminal = split[1];
     let cursor = if let Some(id) = app.column_pane() {
         render_term(
             f,
