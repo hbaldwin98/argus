@@ -981,65 +981,6 @@ fn hanging_text(
     lines
 }
 
-fn after_first_wrapped_line<'a>(text: &'a str, first_line: &str) -> &'a str {
-    if first_line.is_empty() {
-        return text;
-    }
-    if let Some(rest) = text.strip_prefix(first_line) {
-        return rest.trim_start();
-    }
-    if let Some(idx) = text.find(first_line) {
-        return text[idx + first_line.len()..].trim_start();
-    }
-    ""
-}
-
-/// Like [`hanging_text`], but reserves trailing space on the first line for a
-/// right-aligned label (typically `#id`) so focus expansion does not drift it.
-fn hanging_text_with_right_id_on_first(
-    prefix: Vec<Span<'static>>,
-    hang: usize,
-    text: &str,
-    style: Style,
-    width: u16,
-    id: i64,
-    id_style: Style,
-) -> Vec<Line<'static>> {
-    let id_label = format!("  #{:>5}", id);
-    let id_w = id_label.chars().count();
-    let prefix_w: usize = prefix.iter().map(Span::width).sum();
-    let hang = hang.max(prefix_w);
-    let rest_room = usize::from(width).saturating_sub(hang).max(1) as u16;
-    let first_room = usize::from(width).saturating_sub(hang + id_w).max(1) as u16;
-    if text.is_empty() {
-        let mut spans = prefix;
-        spans.push(Span::styled(id_label, id_style));
-        return vec![Line::from(spans)];
-    }
-    let first_lines = wrap(text, first_room);
-    let first = first_lines.first().cloned().unwrap_or_default();
-    let first_room_usize = usize::from(first_room);
-    let mut lines = vec![Line::from(
-        prefix
-            .into_iter()
-            .chain([
-                Span::styled(format!("{first:<first_room_usize$}"), style),
-                Span::styled(id_label, id_style),
-            ])
-            .collect::<Vec<_>>(),
-    )];
-    let remainder = after_first_wrapped_line(text, &first);
-    if !remainder.is_empty() {
-        for line in wrap(remainder, rest_room) {
-            lines.push(Line::from(vec![
-                Span::raw(" ".repeat(hang)),
-                Span::styled(line, style),
-            ]));
-        }
-    }
-    lines
-}
-
 fn line_with_right_label(
     indent: &str,
     hang: usize,
@@ -1066,19 +1007,22 @@ fn task_id_label(id: i64) -> String {
     format!("  #{:>5}", id)
 }
 
-fn task_guide(row: &argus_protocol::TaskTreeRow<'_>) -> String {
+fn tree_guide(depth: usize, ancestor_continuations: &[bool], has_next_sibling: bool) -> String {
     let mut guide = String::new();
-    if row.depth > 0 {
-        for continues in row
-            .ancestor_continuations
+    if depth > 0 {
+        for continues in ancestor_continuations
             .iter()
-            .take(row.depth.saturating_sub(1))
+            .take(depth.saturating_sub(1))
         {
             guide.push_str(if *continues { "│ " } else { "  " });
         }
-        guide.push_str(if row.has_next_sibling { "├ " } else { "└ " });
+        guide.push_str(if has_next_sibling { "├ " } else { "└ " });
     }
     guide
+}
+
+fn task_guide(row: &argus_protocol::TaskTreeRow<'_>) -> String {
+    tree_guide(row.depth, &row.ancestor_continuations, row.has_next_sibling)
 }
 
 fn task_children(rows: &[argus_protocol::TaskTreeRow<'_>], index: usize) -> usize {
@@ -1209,19 +1153,11 @@ fn task_row_heights(
 }
 
 fn decision_guide(row: &argus_protocol::DecisionTreeRow<'_>) -> String {
-    let mut guide = String::new();
-    if row.depth > 0 {
-        for continues in row
-            .ancestor_continuations
-            .iter()
-            .take(row.depth.saturating_sub(1))
-        {
-            guide.push_str(if *continues { "│ " } else { "  " });
-        }
-        guide.push_str(if row.has_next_sibling { "├ " } else { "└ " });
-    }
-    guide
+    tree_guide(row.depth, &row.ancestor_continuations, row.has_next_sibling)
 }
+
+/// Decisions have no state glyph; two spaces keep their titles aligned with tasks.
+const DECISION_TITLE_PAD: &str = "  ";
 
 fn decision_detail(decision: &argus_protocol::Decision) -> String {
     let mut parts = Vec::new();
@@ -1258,14 +1194,17 @@ fn decision_lines(
     let guide = decision_guide(row);
     let marker = if selected { "▌ " } else { "  " };
     let detail = decision_detail(decision);
+    let prefix = format!("{marker}{guide}{DECISION_TITLE_PAD}");
     if !expanded {
-        let prefix = format!("{marker}{guide}");
         let id_label = task_id_label(decision.id);
         let fixed = prefix.chars().count() + id_label.chars().count();
         let title_width = usize::from(width).saturating_sub(fixed);
         return vec![Line::from(vec![
             Span::styled(prefix, base.fg(if selected { th.accent } else { th.edge })),
-            Span::styled(ellipsize_text(&decision.chose, title_width), name_style),
+            Span::styled(
+                format!("{:<title_width$}", ellipsize_text(&decision.chose, title_width)),
+                name_style,
+            ),
             Span::styled(id_label, base.fg(th.dim)),
         ])];
     }
@@ -1273,25 +1212,27 @@ fn decision_lines(
     let title_prefix = vec![
         Span::styled(marker, base.fg(th.accent)),
         Span::styled(guide, base.fg(th.edge)),
+        Span::raw(DECISION_TITLE_PAD),
     ];
     let title_hang = title_prefix.iter().map(Span::width).sum::<usize>();
     let mut choice = decision.chose.clone();
     if let Some(by) = decision.superseded_by {
         choice.push_str(&format!("  superseded by #{by}"));
     }
-    let mut lines = hanging_text_with_right_id_on_first(
+    let mut lines = hanging_text(
         title_prefix,
         title_hang,
         &choice,
         name_style.add_modifier(Modifier::BOLD),
         width,
-        decision.id,
-        base.fg(th.dim),
     );
-    lines.extend(hanging_text(
-        vec![Span::styled(" ".repeat(title_hang), base.fg(th.dim))],
+    let detail_prefix = " ".repeat(title_hang);
+    lines.push(line_with_right_label(
+        &detail_prefix,
         title_hang,
         &detail,
+        base.fg(th.dim),
+        &task_id_label(decision.id),
         base.fg(th.dim),
         width,
     ));

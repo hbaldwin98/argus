@@ -196,19 +196,22 @@ fn the_board_draws_a_decision_under_the_one_that_constrained_it() {
         },
         decision(2, Some(1), "wal mode"),
     ]);
+    app.decision_sel = 1;
     let buf = draw_at(&mut app, 100, 30);
     let out = lines(&buf);
     let top = app.layout.feature_decisions.inner.y as usize;
 
-    assert!(out[top].contains("#1 sqlite"), "{:?}", out[top]);
+    assert!(out[top].contains("sqlite"), "{:?}", out[top]);
     assert!(
-        out[top + 1].contains("over a file per feature")
-            && out[top + 1].contains("because both need migrations"),
+        out[top + 1].contains("#1")
+            && out[top + 1].contains("over a file per feature")
+            && out[top + 1].contains("because both need"),
         "{:?}",
         out[top + 1]
     );
     let child = out[top + 2].clone();
-    assert!(child.contains("└─ #2 wal mode"), "{child:?}");
+    assert!(child.contains("└─") && child.contains("wal mode"), "{child:?}");
+    assert!(out[top + 3].contains("#2"), "{:?}", out[top + 3]);
     assert!(
         out[top + 1].contains('│'),
         "the branch crosses the detail row"
@@ -228,17 +231,17 @@ fn sibling_and_nested_decisions_draw_a_connected_tree() {
     let top = app.layout.feature_decisions.inner.y as usize;
 
     assert!(
-        out[top + 2].contains("├─ #2 first child"),
+        out[top + 2].contains("├─") && out[top + 2].contains("first child"),
         "{:?}",
         out[top + 2]
     );
     assert!(
-        out[top + 4].contains("│  └─ #3 grandchild"),
+        out[top + 4].contains("│") && out[top + 4].contains("grandchild"),
         "{:?}",
         out[top + 4]
     );
     assert!(
-        out[top + 6].contains("└─ #4 last child"),
+        out[top + 6].contains("└─") && out[top + 6].contains("last child"),
         "{:?}",
         out[top + 6]
     );
@@ -272,7 +275,8 @@ fn a_superseded_decision_keeps_its_place_and_says_what_replaced_it() {
 ",
     );
 
-    assert!(out.contains("#1 key notes by id"), "{out}");
+    assert!(out.contains("key notes by id"), "{out}");
+    assert!(out.contains("#1"), "{out}");
     assert!(out.contains("superseded by #2"), "{out}");
 }
 

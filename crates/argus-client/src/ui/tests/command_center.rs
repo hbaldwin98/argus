@@ -724,7 +724,7 @@ fn feature_decisions_show_tree_guides_and_right_aligned_ids() {
     app.open_view(View::Feature);
     let text = lines(&draw_at(&mut app, 80, 40)).join("\n");
     assert!(
-        text.contains('└') && text.contains("child decis"),
+        text.contains('└') && text.contains("child dec"),
         "nested decisions should render branch guides:\n{text}"
     );
     for line in text.lines().filter(|line| line.contains("decision")) {
@@ -737,6 +737,27 @@ fn feature_decisions_show_tree_guides_and_right_aligned_ids() {
             !id_tail.is_empty() && id_tail.chars().all(|c| c.is_ascii_digit()),
             "decision id should sit on the right: {row:?}"
         );
+    }
+}
+
+#[test]
+fn focused_decision_keeps_id_on_the_right() {
+    let mut app = feature_document_with_long_rows();
+    let decisions = app.layout.feature_decisions.inner;
+    click(&mut app, decisions.x + 1, decisions.y);
+    let width = decisions.width as usize;
+    for line in lines(&draw_at(&mut app, 80, 60)) {
+        if !line.contains('#') {
+            continue;
+        }
+        let visible: String = line.chars().take(width).collect();
+        if visible.contains("no alternative") {
+            let trimmed = visible.trim_end();
+            assert!(
+                trimmed.ends_with('1') || trimmed.ends_with("#    1"),
+                "decision id should stay right-aligned on the detail row: {visible:?}"
+            );
+        }
     }
 }
 

@@ -862,10 +862,8 @@ fn push_board_row(
             if selected { MARKER } else { GUTTER },
             Style::default().fg(th.accent),
         ),
-        Span::styled(
-            format!("{branch}#{} ", decision.id),
-            Style::default().fg(th.dim),
-        ),
+        Span::raw(branch),
+        Span::raw("  "),
     ];
     // Wrapped text hangs under the choice rather than under the tree
     // guides, so a deep decision still reads as one paragraph.
@@ -927,14 +925,14 @@ fn board_ancestor_guides(
 /// Both are optional, and a decision with neither says so rather than
 /// leaving a blank row that reads as a rendering fault.
 fn board_detail(decision: &argus_protocol::Decision) -> String {
-    let mut parts = Vec::new();
+    let mut parts = vec![format!("#{}", decision.id)];
     if let Some(over) = &decision.over {
         parts.push(format!("over {over}"));
     }
     if let Some(because) = &decision.because {
         parts.push(format!("because {because}"));
     }
-    if parts.is_empty() {
+    if parts.len() == 1 {
         parts.push("no alternative or reason recorded".to_string());
     }
     parts.join(" · ")
