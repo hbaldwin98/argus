@@ -257,7 +257,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
     f.render_widget(Block::default().style(Style::default().bg(th.bg)), f.area());
 
     let page = if app.command_center {
-        f.area()
+        // A row of air above the tabs and below the status band, so the
+        // shell does not sit flush against the host terminal's edges.
+        inset(f.area(), 0, 1)
     } else {
         inset(f.area(), GUTTER_COLS, 1)
     };

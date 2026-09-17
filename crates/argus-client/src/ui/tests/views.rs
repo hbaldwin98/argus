@@ -1737,3 +1737,74 @@ fn dump_feature() {
         println!("|{line}");
     }
 }
+
+fn nested_task(id: i64, parent: Option<i64>, title: &str, position: i64) -> argus_protocol::Task {
+    argus_protocol::Task {
+        id,
+        feature: "f0".into(),
+        parent,
+        title: title.into(),
+        body: None,
+        state: argus_protocol::TaskState::Todo,
+        claimed_by: None,
+        external: None,
+        position,
+        at: 0,
+        session: None,
+    }
+}
+
+#[test]
+fn the_command_centers_feature_view_lists_every_feature_and_nests_subtasks() {
+    let features = (0..8)
+        .map(|i| {
+            let mut f = feature(&format!("f{i}"), &format!("Feature number {i}"));
+            f.body = (0..12)
+                .map(|n| format!("brief line {n}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            f
+        })
+        .collect();
+    let mut app = app_with_features(features, vec![decision(1, None, "a choice")]);
+    app.command_center = true;
+    let name = app.current_project().unwrap().name.clone();
+    app.on_server_msg(argus_protocol::ServerMsg::Tasks(Box::new(
+        argus_protocol::TaskList {
+            project_name: name,
+            feature: Some("f0".into()),
+            tasks: vec![
+                nested_task(10, None, "parent task", 0),
+                nested_task(11, Some(10), "child one", 0),
+                nested_task(12, Some(10), "child two", 1),
+                nested_task(13, None, "sibling", 1),
+            ],
+        },
+    )));
+    let out = lines(&draw_at(&mut app, 120, 40)).join("\n");
+    assert!(out.contains("Feature number 4"), "{out}");
+    assert!(out.contains("2 subtasks"), "{out}");
+    assert!(out.contains("└ ○ child two"), "{out}");
+    assert!(out.contains("brief line 0"), "{out}");
+
+    app.on_key(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE));
+    let out = lines(&draw_at(&mut app, 120, 40)).join("\n");
+    assert!(
+        out.contains("Feature number 7"),
+        "the list scrolls to the last: {out}"
+    );
+}
+
+#[test]
+fn moving_to_another_checkout_asks_for_that_checkouts_features() {
+    let (mut app, mut rx) = feature_view_watching(vec![feature("notes", "Notes")]);
+    while rx.try_recv().is_ok() {}
+    app.sel_checkout = 1;
+    let other = app.current_checkout().unwrap().id;
+    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+
+    let asked = std::iter::from_fn(|| rx.try_recv().ok()).any(|msg| {
+        matches!(msg, argus_protocol::ClientMsg::GetDecisions { checkout, .. } if checkout == other)
+    });
+    assert!(asked, "the feature list follows the selected checkout");
+}

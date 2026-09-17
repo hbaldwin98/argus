@@ -301,7 +301,10 @@ impl App {
             .get(location.project)
             .and_then(|project| project.repositories.get(location.repository))
         {
-            self.expanded_repositories.insert(repository.id);
+            if !self.expanded_repositories.contains(&repository.id) {
+                self.expanded_repositories.clear();
+                self.expanded_repositories.insert(repository.id);
+            }
         }
         let Some(row) = self.checkout_row_of(location.checkout) else {
             return false;

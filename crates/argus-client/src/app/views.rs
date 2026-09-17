@@ -282,6 +282,7 @@ impl App {
             .clamp(0, rows as i32 - 1);
         if next as usize != self.feature_sel {
             self.feature_sel = next as usize;
+            self.feature_brief_scroll = 0;
             self.decision_sel = 0;
             self.task_sel = 0;
             self.rescope_feature();
@@ -909,8 +910,10 @@ impl App {
             self.current_checkout().map(|checkout| checkout.id),
         ) else {
             self.board = None;
+            self.board_checkout = None;
             return;
         };
+        self.board_checkout = Some(checkout);
         let _ = self.out.send(ClientMsg::GetDecisions { project, checkout });
     }
 
@@ -931,7 +934,10 @@ impl App {
             self.board = None;
             return;
         };
-        if self.board.as_ref().map(|b| b.name.as_str()) != Some(name.as_str()) {
+        let checkout = self.current_checkout().map(|c| c.id);
+        if self.board.as_ref().map(|b| b.name.as_str()) != Some(name.as_str())
+            || checkout != self.board_checkout
+        {
             self.ask_for_decisions();
         }
     }

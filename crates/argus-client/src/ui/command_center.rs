@@ -48,10 +48,16 @@ fn rail_targets(app: &App) -> Vec<RailTarget> {
     for repository in ordered_repository_indices(app) {
         rows.push(RailTarget::Repository(repository));
         let repo = &project.repositories[repository];
-        let expanded = app.expanded_repositories.contains(&repo.id)
-            || (repository == app.sel_repository
-                && app.view == View::Spine
-                && app.focus == Focus::PaneContent);
+        // One repository is open at a time: the clicked one, or the one
+        // holding the pane the keys are on when that is somewhere else.
+        let in_pane =
+            app.view == View::Spine && matches!(app.focus, Focus::Panes | Focus::PaneContent);
+        let expanded = match app.current_repository() {
+            Some(current) if in_pane && !app.expanded_repositories.contains(&current.id) => {
+                repository == app.sel_repository
+            }
+            _ => app.expanded_repositories.contains(&repo.id),
+        };
         if !expanded {
             continue;
         }
@@ -160,7 +166,17 @@ pub(super) fn render_command_center(
         ..frame[1]
     };
     render_sidebar(f, app, sidebar, th);
-    if frame[0].height > 1 && rail_width > 0 {
+    // The junction only joins a plain rule; over the open tab's accent bar
+    // it would cut the bar in two.
+    let junction = (
+        sidebar.right().saturating_sub(1),
+        frame[0].bottom().saturating_sub(1),
+    );
+    let plain_rule = f
+        .buffer_mut()
+        .cell(junction)
+        .is_some_and(|cell| cell.symbol() == "─");
+    if frame[0].height > 1 && rail_width > 0 && plain_rule {
         f.render_widget(
             Paragraph::new(Span::styled("┬", Style::default().fg(th.edge))),
             Rect {
@@ -323,8 +339,15 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     };
     f.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled("  REPOSITORIES", Style::default().fg(th.dim)),
-            Span::styled("                 j/k", Style::default().fg(th.edge)),
+            Span::styled(
+                format!(
+                    "  {:<width$}",
+                    "REPOSITORIES",
+                    width = (area.width as usize).saturating_sub(7)
+                ),
+                Style::default().fg(th.dim),
+            ),
+            Span::styled("j/k", Style::default().fg(th.edge)),
         ])),
         heading,
     );
@@ -356,7 +379,12 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                     .iter()
                     .map(|c| c.listed_panes().count())
                     .sum::<usize>();
-                let active = panes > 0;
+                let loudest = loudest_status(
+                    repo.checkouts
+                        .iter()
+                        .flat_map(|c| c.listed_panes())
+                        .map(|p| &p.status),
+                );
                 let bg = if selected { th.surface } else { th.bg };
                 let name_width = rows_area.width.saturating_sub(11) as usize;
                 Line::from(vec![
@@ -367,9 +395,12 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                             .bg(bg),
                     ),
                     Span::styled(
-                        if active { " ● " } else { " · " },
+                        match loudest {
+                            Some(status) => format!(" {} ", status_glyph(app, status, "●")),
+                            None => " · ".to_string(),
+                        },
                         Style::default()
-                            .fg(if active { th.ok } else { th.dim })
+                            .fg(loudest.map(|s| status_color(s, th)).unwrap_or(th.dim))
                             .bg(bg),
                     ),
                     Span::styled(
@@ -430,25 +461,50 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                 };
                 let selected = app.pane_location() == Some(location)
                     && app.view == View::Spine
-                    && app.focus == Focus::PaneContent;
+                    && matches!(app.focus, Focus::Panes | Focus::PaneContent);
                 let bg = if selected { th.surface } else { th.bg };
                 let color = status_color(pane.status, th);
                 Line::from(vec![
                     Span::styled(
                         if selected { "▌      " } else { "       " },
-                        Style::default().fg(if selected { th.accent } else { th.edge }).bg(bg),
+                        Style::default()
+                            .fg(if selected { th.accent } else { th.edge })
+                            .bg(bg),
                     ),
                     Span::styled("└ ", Style::default().fg(th.edge).bg(bg)),
                     Span::styled(
-                        if pane.kind == PaneKind::Agent { "◆ " } else { "› " },
+                        format!(
+                            "{} ",
+                            status_glyph(
+                                app,
+                                pane.status,
+                                if pane.kind == PaneKind::Agent {
+                                    "◆"
+                                } else {
+                                    "›"
+                                }
+                            )
+                        ),
                         Style::default().fg(color).bg(bg),
                     ),
                     Span::styled(
-                        ellipsize_text(&pane.title, rows_area.width.saturating_sub(14) as usize),
+                        {
+                            let width = (rows_area.width as usize)
+                                .saturating_sub(12 + short_status(pane.status).len());
+                            format!("{:<width$}", ellipsize_text(&pane.title, width))
+                        },
                         Style::default()
                             .fg(if selected { th.text } else { th.muted })
                             .bg(bg)
-                            .add_modifier(if selected { Modifier::BOLD } else { Modifier::empty() }),
+                            .add_modifier(if selected {
+                                Modifier::BOLD
+                            } else {
+                                Modifier::empty()
+                            }),
+                    ),
+                    Span::styled(
+                        format!(" {}", short_status(pane.status)),
+                        Style::default().fg(color).bg(bg),
                     ),
                 ])
             }
@@ -481,9 +537,9 @@ fn render_agents(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         area,
     );
     let inner = Rect {
-        x: area.x + 1,
+        x: area.x + 2,
         y: area.y + 1,
-        width: area.width.saturating_sub(2),
+        width: area.width.saturating_sub(4),
         height: area.height.saturating_sub(2),
     };
     f.render_widget(
@@ -508,10 +564,13 @@ fn render_agents(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             let color = status_color(pane.status, th);
             let status = short_status(pane.status);
             let status_width = status.chars().count();
-            let name_width = inner.width.saturating_sub(status_width as u16 + 2) as usize;
+            let name_width = inner.width.saturating_sub(status_width as u16 + 3) as usize;
             f.render_widget(
                 Paragraph::new(Line::from(vec![
-                    Span::styled("▪ ", Style::default().fg(color)),
+                    Span::styled(
+                        format!("{} ", status_glyph(app, pane.status, "▪")),
+                        Style::default().fg(color),
+                    ),
                     Span::styled(
                         format!(
                             "{:<name_width$}",
@@ -522,7 +581,7 @@ fn render_agents(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                         ),
                         Style::default().fg(th.muted),
                     ),
-                    Span::styled(status, Style::default().fg(color)),
+                    Span::styled(format!(" {status}"), Style::default().fg(color)),
                 ])),
                 Rect {
                     y: inner.y + 1 + index as u16,
@@ -621,124 +680,336 @@ fn render_workspace(
     cursor
 }
 
+/// A section label with a dim hint beside it.
+fn section_heading(f: &mut Frame, area: Rect, label: &str, hint: &str, th: Theme) {
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(label.to_string(), Style::default().fg(th.dim)),
+            Span::styled(format!("   {hint}"), Style::default().fg(th.edge)),
+        ])),
+        Rect { height: 1, ..area },
+    );
+}
+
+/// The one-cell scroll thumb at a section's right edge, drawn only when the
+/// section holds more rows than it shows.
+fn section_thumb(f: &mut Frame, area: Rect, first: usize, visible: usize, len: usize, th: Theme) {
+    if len <= visible || area.height == 0 || area.width == 0 {
+        return;
+    }
+    let span = len - visible;
+    let offset = (first.min(span) * usize::from(area.height.saturating_sub(1)) / span) as u16;
+    f.render_widget(
+        Paragraph::new(Span::styled(SCROLL_THUMB, Style::default().fg(th.dim))),
+        Rect {
+            x: area.right() - 1,
+            y: area.y + offset,
+            width: 1,
+            height: 1,
+        },
+    );
+}
+
 fn render_feature_document(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     forget_feature_view(app);
+    let features = app.feature_rows();
+    let decided = app.board_rows().len();
     let (title, counts, brief_text) = app
         .selected_feature()
         .map(|feature| {
             (
                 feature.title.clone(),
-                format!("{}/{} TASKS", feature.tasks.done, feature.tasks.total()),
-                if feature.body.is_empty() {
-                    "No brief yet — e edits the feature brief.".to_string()
-                } else {
-                    feature.body.clone()
+                {
+                    // The loaded list when it has arrived, so the heading
+                    // cannot disagree with the rows beneath it.
+                    let rows = app.feature_task_rows();
+                    let (done, total) = if rows.is_empty() {
+                        (feature.tasks.done, feature.tasks.total())
+                    } else {
+                        (
+                            rows.iter()
+                                .filter(|r| r.task.state == TaskState::Done)
+                                .count(),
+                            rows.len(),
+                        )
+                    };
+                    format!("{done}/{total} TASKS · {decided} DECIDED")
                 },
+                feature.body.clone(),
             )
         })
         .unwrap_or_else(|| {
             (
                 "No feature selected".to_string(),
                 String::new(),
-                "No brief yet — e edits the feature brief.".to_string(),
+                String::new(),
             )
         });
     render_stage_heading(f, area, "features /", &title, &counts, th);
-    app.layout.features = Panel {
-        outer: Rect {
-            height: 3.min(area.height),
-            ..area
-        },
-        inner: Rect {
-            height: 3.min(area.height),
-            ..area
-        },
-        first: app.feature_sel,
-    };
 
     let body = Rect {
-        x: area.x.saturating_add(2),
+        x: area.x.saturating_add(3),
         y: area.y.saturating_add(4.min(area.height)),
-        width: area.width.saturating_sub(4),
+        width: area.width.saturating_sub(6),
         height: area.height.saturating_sub(5),
     };
-    if body.height == 0 {
+    if body.height < 2 || body.width < 8 {
         return;
     }
-    f.render_widget(
-        Paragraph::new(Line::styled("BRIEF", Style::default().fg(th.dim))),
-        Rect { height: 1, ..body },
-    );
-    let brief_height = 4.min(body.height.saturating_sub(1));
-    let brief_area = Rect {
+    let bottom = body.bottom();
+
+    // Features: a short list that scrolls, so every feature is reachable
+    // without the stage giving up the brief and tasks beneath it.
+    let focused_features = app.panel == FeaturePanel::Features;
+    section_heading(f, body, "FEATURES", "h list · tab panels · enter brief", th);
+    let feature_height = (features.len().max(1) as u16)
+        .min(5)
+        .min(bottom.saturating_sub(body.y + 1));
+    let features_area = Rect {
         y: body.y + 1,
+        height: feature_height,
+        ..body
+    };
+    let first = scrolled_to_show(
+        app.layout.features.first,
+        Some(app.feature_sel),
+        feature_height as usize,
+        features.len(),
+    );
+    if features.is_empty() {
+        f.render_widget(
+            Paragraph::new("no features yet — a starts one").style(Style::default().fg(th.dim)),
+            features_area,
+        );
+    }
+    for (index, row) in features
+        .iter()
+        .enumerate()
+        .skip(first)
+        .take(feature_height as usize)
+    {
+        let selected = index == app.feature_sel;
+        let bg = if selected && focused_features {
+            th.surface
+        } else {
+            th.bg
+        };
+        let style = Style::default().bg(bg);
+        let detail_width = (features_area.width as usize / 3).min(row.detail.chars().count());
+        let title_width = (features_area.width as usize).saturating_sub(detail_width + 6);
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(if selected { "▌ " } else { "  " }, style.fg(th.accent)),
+                Span::styled(
+                    format!("{:<title_width$}", ellipsize_text(&row.title, title_width)),
+                    style
+                        .fg(if row.attention.is_some() {
+                            th.warn
+                        } else if selected {
+                            th.text
+                        } else {
+                            th.muted
+                        })
+                        .add_modifier(if selected {
+                            Modifier::BOLD
+                        } else {
+                            Modifier::empty()
+                        }),
+                ),
+                Span::styled(
+                    format!("  {}", ellipsize_text(&row.detail, detail_width)),
+                    style.fg(th.dim),
+                ),
+            ]))
+            .style(style),
+            Rect {
+                y: features_area.y + (index - first) as u16,
+                height: 1,
+                ..features_area
+            },
+        );
+    }
+    section_thumb(
+        f,
+        features_area,
+        first,
+        feature_height as usize,
+        features.len(),
+        th,
+    );
+    app.layout.features = Panel {
+        outer: features_area,
+        inner: features_area,
+        first,
+    };
+
+    // Brief: wrapped in full and scrolled, never clipped to its first lines.
+    let brief_y = features_area.bottom() + 1;
+    if brief_y + 3 >= bottom {
+        return;
+    }
+    section_heading(
+        f,
+        Rect { y: brief_y, ..body },
+        "BRIEF",
+        "wheel scrolls · e edits",
+        th,
+    );
+    let text_width = body.width.saturating_sub(4);
+    let lines: Vec<String> = if brief_text.is_empty() {
+        vec!["No brief yet — e edits the feature brief.".to_string()]
+    } else {
+        brief_text
+            .lines()
+            .flat_map(|line| wrap(line, text_width))
+            .collect()
+    };
+    let remaining = bottom.saturating_sub(brief_y + 1);
+    let brief_height = (lines.len() as u16 + 2)
+        .min(8)
+        .min(remaining.saturating_sub(4).max(3));
+    let brief_area = Rect {
+        y: brief_y + 1,
         height: brief_height,
         ..body
     };
+    let visible = brief_height.saturating_sub(2) as usize;
+    let max_scroll = lines.len().saturating_sub(visible) as u16;
+    app.feature_brief_scroll = app.feature_brief_scroll.min(max_scroll);
+    let scroll = app.feature_brief_scroll;
     f.render_widget(
-        Paragraph::new(brief_text)
-            .style(Style::default().fg(th.muted))
-            .wrap(Wrap { trim: true })
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(th.edge))
-                    .padding(Padding::horizontal(1)),
-            ),
+        Paragraph::new(
+            lines
+                .iter()
+                .skip(scroll as usize)
+                .take(visible)
+                .map(|line| Line::raw(line.clone()))
+                .collect::<Vec<_>>(),
+        )
+        .style(Style::default().fg(th.muted))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(th.edge))
+                .padding(Padding::horizontal(1)),
+        ),
         brief_area,
+    );
+    section_thumb(
+        f,
+        Rect {
+            y: brief_area.y + 1,
+            height: brief_area.height.saturating_sub(2),
+            ..brief_area
+        },
+        scroll as usize,
+        visible,
+        lines.len(),
+        th,
     );
     app.layout.feature_brief = Panel {
         outer: brief_area,
         inner: inset(brief_area, 1, 1),
-        first: 0,
+        first: scroll as usize,
     };
 
-    let tasks_y = brief_area.bottom().saturating_add(1);
-    if tasks_y >= body.bottom() {
+    // Tasks and decisions share what is left; each scrolls to its cursor.
+    let tasks_y = brief_area.bottom() + 1;
+    if tasks_y + 1 >= bottom {
         return;
     }
-    f.render_widget(
-        Paragraph::new("TASKS    one level · enter opens brief").style(Style::default().fg(th.dim)),
-        Rect {
-            y: tasks_y,
-            height: 1,
-            ..body
-        },
-    );
     let rows = app.feature_task_rows();
-    let task_height = (rows.len() as u16)
-        .min(7)
-        .min(body.bottom().saturating_sub(tasks_y + 1));
+    let rest = bottom.saturating_sub(tasks_y);
+    let wants_tasks = rows.len().max(1) as u16 + 1;
+    // The gap row, the heading, and at least one two-line decision.
+    let wants_decisions = decided.max(1) as u16 * 2 + 2;
+    let task_block = if wants_tasks + wants_decisions <= rest {
+        wants_tasks
+    } else {
+        wants_tasks
+            .min(rest.saturating_sub((wants_decisions + 1).min(rest / 2)))
+            .max(rest.min(3))
+    };
+    section_heading(
+        f,
+        Rect { y: tasks_y, ..body },
+        "TASKS",
+        "a add · s subtask · x drop · ⏎ opens",
+        th,
+    );
     let tasks_area = Rect {
         y: tasks_y + 1,
-        height: task_height,
+        height: task_block.saturating_sub(1),
         ..body
     };
-    for (index, row) in rows.iter().take(task_height as usize).enumerate() {
-        let selected = index == app.task_sel && app.panel == FeaturePanel::Tasks;
-        let mark = match row.task.state {
-            TaskState::Todo => "○",
-            TaskState::Doing => "●",
-            TaskState::Done => "✓",
+    let focused_tasks = app.panel == FeaturePanel::Tasks;
+    let task_first = scrolled_to_show(
+        0,
+        Some(app.task_sel),
+        tasks_area.height as usize,
+        rows.len(),
+    );
+    if rows.is_empty() && tasks_area.height > 0 {
+        f.render_widget(
+            Paragraph::new("nothing to do here yet — a adds a task")
+                .style(Style::default().fg(th.dim)),
+            Rect {
+                height: 1,
+                ..tasks_area
+            },
+        );
+    }
+    for (index, row) in rows
+        .iter()
+        .enumerate()
+        .skip(task_first)
+        .take(tasks_area.height as usize)
+    {
+        let selected = index == app.task_sel;
+        let (mark, color) = match row.task.state {
+            TaskState::Todo => ("○", th.dim),
+            TaskState::Doing => ("●", th.accent),
+            TaskState::Done => ("✓", th.ok),
         };
-        let color = match row.task.state {
-            TaskState::Todo => th.dim,
-            TaskState::Doing => th.accent,
-            TaskState::Done => th.ok,
+        let bg = if selected && focused_tasks {
+            th.surface
+        } else {
+            th.bg
         };
-        let indent = "  ".repeat(row.depth.min(3));
-        let style = Style::default().bg(if selected { th.surface } else { th.bg });
+        let style = Style::default().bg(bg);
+        let mut guide = String::new();
+        if row.depth > 0 {
+            for continues in row
+                .ancestor_continuations
+                .iter()
+                .take(row.depth.saturating_sub(1))
+            {
+                guide.push_str(if *continues { "│ " } else { "  " });
+            }
+            guide.push_str(if row.has_next_sibling { "├ " } else { "└ " });
+        }
+        let children = rows[index + 1..]
+            .iter()
+            .take_while(|child| child.depth > row.depth)
+            .filter(|child| child.depth == row.depth + 1)
+            .count();
+        let badge = if children > 0 {
+            format!(" {} ", plural(children, "subtask"))
+        } else {
+            String::new()
+        };
+        let id = format!("#{}", row.task.id);
+        let fixed = 2 + guide.chars().count() + 2 + badge.chars().count() + 2 + 6;
+        let title_width = (tasks_area.width as usize).saturating_sub(fixed);
         f.render_widget(
             Paragraph::new(Line::from(vec![
+                Span::styled(if selected { "▌ " } else { "  " }, style.fg(th.accent)),
+                Span::styled(guide, style.fg(th.edge)),
+                Span::styled(format!("{mark} "), style.fg(color)),
                 Span::styled(
-                    if selected { "▌" } else { " " },
-                    style.fg(if selected { th.accent } else { th.bg }),
-                ),
-                Span::styled(format!(" {indent}{mark} "), style.fg(color)),
-                Span::styled(
-                    ellipsize_text(
-                        &row.task.title,
-                        tasks_area.width.saturating_sub(16) as usize,
+                    format!(
+                        "{:<title_width$}",
+                        ellipsize_text(&row.task.title, title_width)
                     ),
                     style.fg(if row.task.state == TaskState::Done {
                         th.dim
@@ -746,90 +1017,140 @@ fn render_feature_document(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
                         th.text
                     }),
                 ),
-                Span::styled(format!("  #{}", row.task.id), style.fg(th.dim)),
-            ])),
+                Span::styled(badge, Style::default().fg(th.muted).bg(th.surface)),
+                Span::styled(format!("  {id:>6}"), style.fg(th.dim)),
+            ]))
+            .style(style),
             Rect {
-                y: tasks_area.y + index as u16,
+                y: tasks_area.y + (index - task_first) as u16,
                 height: 1,
                 ..tasks_area
             },
         );
     }
+    section_thumb(
+        f,
+        tasks_area,
+        task_first,
+        tasks_area.height as usize,
+        rows.len(),
+        th,
+    );
+    drop(rows);
     app.layout.feature_tasks = Panel {
         outer: tasks_area,
         inner: tasks_area,
-        first: 0,
+        first: task_first,
     };
 
-    let decisions_y = tasks_area.bottom().saturating_add(1);
-    if decisions_y >= body.bottom() {
+    let decisions_y = tasks_area.bottom() + 1;
+    if decisions_y + 1 >= bottom {
         return;
     }
-    f.render_widget(
-        Paragraph::new("DECISIONS").style(Style::default().fg(th.dim)),
+    section_heading(
+        f,
         Rect {
             y: decisions_y,
-            height: 1,
             ..body
         },
+        "DECISIONS",
+        "",
+        th,
     );
     let decisions_area = Rect {
         y: decisions_y + 1,
-        height: body.bottom().saturating_sub(decisions_y + 1),
+        height: bottom.saturating_sub(decisions_y + 1),
         ..body
     };
-    let rows = app.board_rows();
-    let mut y = decisions_area.y;
-    for (index, row) in rows.iter().enumerate() {
-        if y >= decisions_area.bottom() {
-            break;
-        }
-        let selected = index == app.decision_sel && app.panel == FeaturePanel::Decisions;
+    let focused_decisions = app.panel == FeaturePanel::Decisions;
+    let decisions = app.board_rows();
+    if decisions.is_empty() && decisions_area.height > 0 {
+        f.render_widget(
+            Paragraph::new("nothing decided for this feature yet")
+                .style(Style::default().fg(th.dim)),
+            Rect {
+                height: 1,
+                ..decisions_area
+            },
+        );
+    }
+    let decision_first = scrolled_to_show(
+        0,
+        Some(app.decision_sel),
+        (decisions_area.height / 2) as usize,
+        decisions.len(),
+    );
+    for (index, row) in decisions
+        .iter()
+        .enumerate()
+        .skip(decision_first)
+        .take((decisions_area.height / 2) as usize)
+    {
+        let selected = index == app.decision_sel;
         let decision = row.decision;
         let reason = decision
             .because
             .as_deref()
             .or(decision.over.as_deref())
             .unwrap_or("No reasoning recorded");
-        let style = Style::default().bg(if selected { th.surface } else { th.bg });
+        let bg = if selected && focused_decisions {
+            th.surface
+        } else {
+            th.bg
+        };
+        let style = Style::default().bg(bg);
+        let bar = Span::styled(
+            if selected { "▌ " } else { "│ " },
+            style.fg(if selected { th.accent } else { th.edge }),
+        );
+        let text_width = (decisions_area.width as usize).saturating_sub(10);
+        let y = decisions_area.y + (index - decision_first) as u16 * 2;
         f.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(
-                    if selected { "▌" } else { "│" },
-                    style.fg(if selected { th.accent } else { th.edge }),
-                ),
-                Span::styled(
-                    format!(" #{}  {}", decision.id, decision.chose),
-                    style.fg(if decision.superseded() {
-                        th.dim
-                    } else {
-                        th.text
-                    }),
-                ),
-            ])),
+            Paragraph::new(vec![
+                Line::from(vec![
+                    bar.clone(),
+                    Span::styled(
+                        format!("{:<6}", format!("#{}", decision.id)),
+                        style.fg(th.dim),
+                    ),
+                    Span::styled(
+                        ellipsize_text(&decision.chose, text_width),
+                        style.fg(if decision.superseded() {
+                            th.dim
+                        } else if selected {
+                            th.text
+                        } else {
+                            th.muted
+                        }),
+                    ),
+                ]),
+                Line::from(vec![
+                    bar,
+                    Span::styled("      ", style),
+                    Span::styled(ellipsize_text(reason, text_width), style.fg(th.dim)),
+                ]),
+            ])
+            .style(style),
             Rect {
                 y,
-                height: 1,
+                height: 2,
                 ..decisions_area
             },
         );
-        y += 1;
-        if y < decisions_area.bottom() {
-            f.render_widget(
-                Paragraph::new(format!("     {reason}")).style(Style::default().fg(th.dim)),
-                Rect {
-                    y,
-                    height: 1,
-                    ..decisions_area
-                },
-            );
-            y += 1;
-        }
     }
+    section_thumb(
+        f,
+        decisions_area,
+        decision_first,
+        (decisions_area.height / 2) as usize,
+        decisions.len(),
+        th,
+    );
+    drop(decisions);
     app.layout.feature_decisions = Panel {
         outer: decisions_area,
         inner: decisions_area,
-        first: 0,
+        first: decision_first,
     };
 }
 
@@ -920,8 +1241,9 @@ fn render_checkouts(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let wide = body.width >= 70;
     let state_width = 16usize;
     let panes_width = 16usize;
-    let path_width = 18usize;
-    let gaps = 6usize;
+    let path_width = (body.width as usize / 3).max(18);
+    // The selection gutter plus the two-space gap before each other column.
+    let gaps = 8usize;
     let branch_width =
         (body.width as usize).saturating_sub(state_width + panes_width + path_width + gaps);
     if wide {
@@ -1031,10 +1353,7 @@ fn render_checkouts(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                         style.fg(th.muted),
                     ),
                     Span::styled(
-                        format!(
-                            "  {:<path_width$}",
-                            ellipsize_text(&checkout.path, path_width)
-                        ),
+                        format!("  {:<path_width$}", elide_head(&checkout.path, path_width)),
                         style.fg(th.dim),
                     ),
                 ])
@@ -1140,6 +1459,28 @@ fn render_first_run(f: &mut Frame, area: Rect, th: Theme) {
         Line::raw(""),
         Line::from(vec![Span::styled("› ", Style::default().fg(th.accent)), Span::styled("n  choose a directory to scan", Style::default().fg(th.muted))]),
     ]).wrap(Wrap { trim: false }), box_area);
+}
+
+/// A status's glyph: the shared spinner while it works, a still mark
+/// otherwise, so progress reads in the rail without opening the pane.
+fn status_glyph(app: &App, status: PaneStatus, still: &'static str) -> &'static str {
+    if status == PaneStatus::Working {
+        crate::motion::spinner(app.frame_now(), app.epoch())
+    } else {
+        still
+    }
+}
+
+/// The status most worth seeing among some panes: one asking for a person,
+/// then one working, then one finished.
+fn loudest_status<'a>(statuses: impl Iterator<Item = &'a PaneStatus>) -> Option<PaneStatus> {
+    statuses.copied().max_by_key(|status| match status {
+        PaneStatus::Waiting | PaneStatus::NeedsReview | PaneStatus::Failed => 4,
+        PaneStatus::Working => 3,
+        PaneStatus::Done => 2,
+        PaneStatus::Idle => 1,
+        PaneStatus::Exited { .. } => 0,
+    })
 }
 
 fn status_color(status: PaneStatus, th: Theme) -> Color {

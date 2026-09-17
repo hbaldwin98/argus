@@ -237,6 +237,10 @@ pub struct App {
     /// meant they could disagree about which feature you were reading —
     /// which is exactly what they did.
     pub feature_sel: usize,
+    /// The checkout the last board request was scoped to.
+    pub board_checkout: Option<CheckoutId>,
+    /// Lines of the command center's brief scrolled past.
+    pub feature_brief_scroll: u16,
     /// Accepted features are history, not active work. The feature view
     /// keeps them one key away without letting them crowd the working list.
     pub show_archived_features: bool,
@@ -400,6 +404,8 @@ impl App {
             board: None,
             board_scoped: None,
             feature_sel: 0,
+            board_checkout: None,
+            feature_brief_scroll: 0,
             show_archived_features: false,
             panel: Default::default(),
             task_sel: 0,

@@ -31,6 +31,11 @@ impl App {
     }
 
     pub fn on_key(&mut self, key: KeyEvent) {
+        self.handle_key(key);
+        self.refresh_board_if_stale();
+    }
+
+    fn handle_key(&mut self, key: KeyEvent) {
         // The left of the bar is the breadcrumb's seat and a message only
         // borrows it. Pressing anything is the acknowledgement that hands it
         // back; without that, the last error or exit hides where you are for

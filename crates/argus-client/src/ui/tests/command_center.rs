@@ -22,7 +22,10 @@ fn production_shell_matches_the_designs_four_regions() {
     ] {
         assert!(text.contains(landmark), "missing {landmark}:\n{text}");
     }
-    assert!(!text.contains("└ master"), "repositories expand only after a click:\n{text}");
+    assert!(
+        !text.contains("└ master"),
+        "repositories expand only after a click:\n{text}"
+    );
     assert_eq!(app.layout.projects.outer.x, 0);
     assert_eq!(app.layout.projects.outer.width, 32);
     assert!(app.layout.content.outer.x >= 32);
@@ -104,7 +107,12 @@ fn repository_rail_expands_active_branches_and_panes_after_click() {
     let text = lines(&draw_at(&mut app, 120, 30)).join("\n");
 
     assert!(text.contains("└ master"), "{text}");
-    assert!(text.contains("└ ◆ claude"), "{text}");
+    // A working agent shows the spinner in place of its still mark.
+    assert!(
+        text.lines()
+            .any(|line| line.contains("└ ") && line.contains("claude") && line.contains("RUNNING")),
+        "{text}"
+    );
     assert!(text.contains("└ › shell"), "{text}");
 }
 
@@ -114,7 +122,11 @@ fn current_pane_is_highlighted_in_an_expanded_repository() {
     app.focus = Focus::PaneContent;
     let text = lines(&draw_at(&mut app, 120, 30)).join("\n");
 
-    assert!(text.contains("▌      └ ◆ claude"), "{text}");
+    assert!(
+        text.lines()
+            .any(|line| line.contains("▌      └ ") && line.contains("claude")),
+        "{text}"
+    );
 }
 
 #[test]
@@ -176,4 +188,108 @@ fn first_run_replaces_the_shell_when_no_tree_exists() {
     assert!(text.contains("NO WORKSPACE"), "{text}");
     assert!(text.contains("Point Argus at a directory"), "{text}");
     assert_eq!(app.layout.projects.outer, Rect::default());
+}
+
+fn click(app: &mut App, column: u16, row: u16) {
+    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    app.on_mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    });
+}
+
+#[test]
+fn clicking_a_repository_collapses_the_one_open_before_it() {
+    let mut app = command_center();
+    app.tree[0].repositories.push(repository(
+        3,
+        "second",
+        vec![checkout(
+            12,
+            "trunk",
+            false,
+            vec![pane_info(102, PaneKind::Shell, "zsh", PaneStatus::Idle)],
+        )],
+    ));
+    draw_at(&mut app, 120, 30);
+    let x = app.layout.projects.inner.x + 2;
+    let y = app.layout.projects.inner.y;
+    click(&mut app, x, y);
+    let text = lines(&draw_at(&mut app, 120, 30)).join("\n");
+    assert!(
+        text.contains("└ master") && !text.contains("└ trunk"),
+        "{text}"
+    );
+
+    let second = text
+        .lines()
+        .position(|line| line.contains("second"))
+        .expect("second repository row") as u16;
+    click(&mut app, x, second);
+    let text = lines(&draw_at(&mut app, 120, 30)).join("\n");
+    assert!(
+        text.contains("└ trunk") && !text.contains("└ master"),
+        "{text}"
+    );
+}
+
+#[test]
+fn clicking_a_pane_in_the_rail_keeps_keys_on_the_rail_so_x_closes_it() {
+    let mut app = command_center();
+    draw_at(&mut app, 120, 30);
+    let x = app.layout.projects.inner.x + 2;
+    let y = app.layout.projects.inner.y;
+    click(&mut app, x, y);
+    let text = lines(&draw_at(&mut app, 120, 30)).join("\n");
+    let row = text
+        .lines()
+        .position(|line| line.contains("└ ") && line.contains("claude"))
+        .expect("pane row") as u16;
+    click(&mut app, x, row);
+
+    assert_eq!(app.current_pane().map(|pane| pane.id), Some(PaneId(100)));
+    assert_eq!(app.focus, Focus::Panes);
+}
+
+#[test]
+fn the_open_tabs_accent_bar_is_not_cut_by_the_rail_junction() {
+    let mut app = command_center();
+    app.open_view(View::Feature);
+    let rows = lines(&draw_at(&mut app, 120, 30));
+    let rule = rows
+        .iter()
+        .find(|line| line.contains('━'))
+        .expect("tab rule");
+    let bar: String = rule
+        .chars()
+        .skip_while(|c| *c != '━')
+        .take_while(|c| *c != '─')
+        .collect();
+    assert!(
+        !rule[rule.find('━').unwrap()..]
+            .trim_end_matches('─')
+            .contains('┬'),
+        "{rule}"
+    );
+    assert!(bar.chars().count() >= 7, "{rule}");
+}
+
+#[test]
+fn a_long_checkout_path_keeps_its_end() {
+    let mut app = command_center();
+    app.tree[0].repositories[0].checkouts[0].path =
+        "/very/long/prefix/that/will/not/fit/in/the/column/at/all/final-segment".into();
+    app.open_view(View::Checkouts);
+    let text = lines(&draw_at(&mut app, 120, 30)).join("\n");
+    assert!(text.contains("final-segment"), "{text}");
+}
+
+#[test]
+fn the_shell_leaves_a_row_above_the_tabs_and_below_the_status_band() {
+    let mut app = command_center();
+    let rows = lines(&draw_at(&mut app, 120, 30));
+    assert!(rows[0].trim().is_empty(), "{rows:?}");
+    assert!(rows[29].trim().is_empty(), "{rows:?}");
 }

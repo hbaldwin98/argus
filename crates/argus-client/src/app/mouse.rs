@@ -22,6 +22,12 @@ impl App {
     }
 
     pub fn on_mouse(&mut self, ev: MouseEvent) {
+        self.handle_mouse(ev);
+        // A click on the rail can move the checkout the feature view reads.
+        self.refresh_board_if_stale();
+    }
+
+    fn handle_mouse(&mut self, ev: MouseEvent) {
         if self.picker.is_some() || self.prompt.is_some() || self.dir_picker.is_some() {
             return;
         }
@@ -146,6 +152,7 @@ impl App {
                                     .and_then(|project| project.repositories.get(repository))
                                     .map(|repository| repository.id)
                                 {
+                                    self.expanded_repositories.clear();
                                     self.expanded_repositories.insert(id);
                                 }
                             }
@@ -155,10 +162,13 @@ impl App {
                                 self.sel_pane = 0;
                                 self.focus = Focus::Checkouts;
                             }
+                            // The rail selects; the terminal itself takes
+                            // typing. Keeping the keys here is what lets a
+                            // bare `x` close the pane just clicked.
                             crate::ui::CommandCenterRailTarget::Pane(location) => {
                                 self.select_pane_location(location);
                                 self.open_view(View::Spine);
-                                self.focus = Focus::PaneContent;
+                                self.focus = Focus::Panes;
                             }
                         }
                         self.clamp();
@@ -216,7 +226,13 @@ impl App {
                         .into_iter()
                         .find(|(panel, _)| in_rect(panel.outer, ev.column, ev.row));
                     let Some((panel, which)) = hit else { return };
-                    let row = row_in(panel.inner, crate::ui::ROW_HEIGHT, ev.column, ev.row);
+                    // The command center draws features and tasks on one
+                    // line each; only decisions keep their reason line.
+                    let height = match (self.command_center, which) {
+                        (true, FeaturePanel::Features | FeaturePanel::Tasks) => 1,
+                        _ => crate::ui::ROW_HEIGHT,
+                    };
+                    let row = row_in(panel.inner, height, ev.column, ev.row);
                     // A click in a panel's empty space still moves the
                     // keys there: the gesture said which panel to be in
                     // even when it landed past the last row.
@@ -231,8 +247,34 @@ impl App {
                         (which, None) => self.go_to_panel(which),
                     }
                 }
-                MouseEventKind::ScrollUp => self.move_in_feature(-1),
-                MouseEventKind::ScrollDown => self.move_in_feature(1),
+                MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                    let delta = if matches!(ev.kind, MouseEventKind::ScrollUp) {
+                        -1
+                    } else {
+                        1
+                    };
+                    if self.command_center {
+                        if in_rect(self.layout.feature_brief.outer, ev.column, ev.row) {
+                            self.feature_brief_scroll = self
+                                .feature_brief_scroll
+                                .saturating_add_signed(delta as i16);
+                            return;
+                        }
+                        // The wheel scrolls the section under it, not
+                        // whichever one last had the keys.
+                        if let Some((_, which)) = [
+                            (self.layout.features, FeaturePanel::Features),
+                            (self.layout.feature_tasks, FeaturePanel::Tasks),
+                            (self.layout.feature_decisions, FeaturePanel::Decisions),
+                        ]
+                        .into_iter()
+                        .find(|(panel, _)| in_rect(panel.outer, ev.column, ev.row))
+                        {
+                            self.go_to_panel(which);
+                        }
+                    }
+                    self.move_in_feature(delta);
+                }
                 _ => {}
             }
             return;
