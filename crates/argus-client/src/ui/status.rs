@@ -330,6 +330,17 @@ fn draw_bar<S: AsRef<str>>(
             app.status.clone(),
             Style::default().fg(if alert { th.err } else { th.text }),
         )]
+    } else if let Some(scope) = app.checkout_filter_scope() {
+        // The filter query lives only in app state until drawn; the bar is
+        // where the operator looks while typing.
+        vec![Span::styled(
+            scope,
+            Style::default().fg(if app.checkout_filtering {
+                th.accent
+            } else {
+                th.muted
+            }),
+        )]
     } else {
         let fleet = fleet(app, th);
         if fleet.is_empty() {

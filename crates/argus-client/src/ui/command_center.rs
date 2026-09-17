@@ -1156,9 +1156,6 @@ fn decision_guide(row: &argus_protocol::DecisionTreeRow<'_>) -> String {
     tree_guide(row.depth, &row.ancestor_continuations, row.has_next_sibling)
 }
 
-/// Decisions have no state glyph; two spaces keep their titles aligned with tasks.
-const DECISION_TITLE_PAD: &str = "  ";
-
 fn decision_detail(decision: &argus_protocol::Decision) -> String {
     let mut parts = Vec::new();
     if let Some(over) = &decision.over {
@@ -1194,26 +1191,45 @@ fn decision_lines(
     let guide = decision_guide(row);
     let marker = if selected { "▌ " } else { "  " };
     let detail = decision_detail(decision);
-    let prefix = format!("{marker}{guide}{DECISION_TITLE_PAD}");
+    let lead = format!("{marker}{guide}");
+    let mark_style = base.fg(if decision.superseded() {
+        th.dim
+    } else {
+        th.muted
+    });
     if !expanded {
         let id_label = task_id_label(decision.id);
-        let fixed = prefix.chars().count() + id_label.chars().count();
+        let pad = super::decision_title_pad(row.depth);
+        let fixed = lead.chars().count() + pad.chars().count() + id_label.chars().count();
         let title_width = usize::from(width).saturating_sub(fixed);
-        return vec![Line::from(vec![
-            Span::styled(prefix, base.fg(if selected { th.accent } else { th.edge })),
+        let edge = base.fg(if selected { th.accent } else { th.edge });
+        let mut spans = vec![Span::styled(lead, edge)];
+        if row.depth == 0 {
+            spans.push(Span::styled(super::DECISION_ROOT_MARK, mark_style));
+            spans.push(Span::raw(" "));
+        } else {
+            spans.push(Span::raw("  "));
+        }
+        spans.extend([
             Span::styled(
                 format!("{:<title_width$}", ellipsize_text(&decision.chose, title_width)),
                 name_style,
             ),
             Span::styled(id_label, base.fg(th.dim)),
-        ])];
+        ]);
+        return vec![Line::from(spans)];
     }
 
-    let title_prefix = vec![
+    let mut title_prefix = vec![
         Span::styled(marker, base.fg(th.accent)),
         Span::styled(guide, base.fg(th.edge)),
-        Span::raw(DECISION_TITLE_PAD),
     ];
+    if row.depth == 0 {
+        title_prefix.push(Span::styled(super::DECISION_ROOT_MARK, mark_style));
+        title_prefix.push(Span::raw(" "));
+    } else {
+        title_prefix.push(Span::raw("  "));
+    }
     let title_hang = title_prefix.iter().map(Span::width).sum::<usize>();
     let mut choice = decision.chose.clone();
     if let Some(by) = decision.superseded_by {
@@ -1795,11 +1811,19 @@ fn render_checkouts(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         .current_repository()
         .map(|r| r.name.as_str())
         .unwrap_or("checkouts");
+    let detail = if app.checkout_filter_active() {
+        format!(
+            "checkouts & worktrees · filter {}",
+            app.checkout_filter_query_label()
+        )
+    } else {
+        "checkouts & worktrees".to_string()
+    };
     render_stage_heading(
         f,
         area,
         repo_name,
-        "checkouts & worktrees",
+        &detail,
         "B BRANCHES · m CHECKOUT · n WORKTREE",
         th,
     );

@@ -98,6 +98,17 @@ const CARET: &str = "▏";
 const MARKER: &str = "▌";
 const GUTTER: &str = " ";
 
+/// Root decisions have no tree guide; this fills the column tasks use for state.
+pub(crate) const DECISION_ROOT_MARK: &str = "◇";
+
+pub(crate) fn decision_title_pad(depth: usize) -> &'static str {
+    if depth == 0 {
+        "◇ "
+    } else {
+        "  "
+    }
+}
+
 /// A column's scroll thumb, drawn in the padding cell beside the border so
 /// it reads as part of the card's edge rather than as a row of its own.
 const SCROLL_THUMB: &str = "\u{2590}";

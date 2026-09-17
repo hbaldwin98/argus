@@ -207,6 +207,29 @@ fn slash_filters_checkouts_by_branch_name() {
 }
 
 #[test]
+fn slash_filter_shows_where_you_are_searching() {
+    let mut app = command_center();
+    app.open_view(View::Checkouts);
+    app.on_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('/'),
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    app.on_key(crossterm::event::KeyEvent::new(
+        crossterm::event::KeyCode::Char('a'),
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    let text = lines(&draw_at(&mut app, 120, 30)).join("\n");
+    assert!(
+        text.contains("filter /a"),
+        "the checkouts stage should name the active query:\n{text}"
+    );
+    assert!(
+        text.contains("argus › orion · filter /a"),
+        "the status bar should name project, repository, and query:\n{text}"
+    );
+}
+
+#[test]
 fn clicking_a_checkout_row_selects_the_row_under_the_pointer() {
     // A default branch with no directory gets a navigation row of its own
     // that the table does not draw; clicks used to land one row short.
@@ -723,6 +746,10 @@ fn feature_decisions_show_tree_guides_and_right_aligned_ids() {
     )));
     app.open_view(View::Feature);
     let text = lines(&draw_at(&mut app, 80, 40)).join("\n");
+    assert!(
+        text.contains('◇') && text.contains("root dec"),
+        "root decisions should show the root mark:\n{text}"
+    );
     assert!(
         text.contains('└') && text.contains("child dec"),
         "nested decisions should render branch guides:\n{text}"

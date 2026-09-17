@@ -857,14 +857,24 @@ fn push_board_row(
         (false, false) => Style::default().fg(th.text),
     };
     let branch = board_branch(row);
-    let prefix = vec![
+    let mark_style = Style::default().fg(if decision.superseded() {
+        th.dim
+    } else {
+        th.muted
+    });
+    let mut prefix = vec![
         Span::styled(
             if selected { MARKER } else { GUTTER },
             Style::default().fg(th.accent),
         ),
         Span::raw(branch),
-        Span::raw("  "),
     ];
+    if row.depth == 0 {
+        prefix.push(Span::styled(super::DECISION_ROOT_MARK, mark_style));
+        prefix.push(Span::raw(" "));
+    } else {
+        prefix.push(Span::raw("  "));
+    }
     // Wrapped text hangs under the choice rather than under the tree
     // guides, so a deep decision still reads as one paragraph.
     let hang = prefix.iter().map(Span::width).sum();

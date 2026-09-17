@@ -206,6 +206,7 @@ pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option
     } else {
         "panes"
     };
+    let checkout_title = app.checkout_column_title();
     let project_rows = project_rows(app, th);
     let repository_rows = repository_rows(app, th);
     let checkout_rows = checkout_rows(app, th);
@@ -213,7 +214,7 @@ pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option
     let natural = [
         natural_width(&project_rows, &projects_title, NO_PROJECTS),
         natural_width(&repository_rows, "repositories", NO_REPOSITORIES),
-        natural_width(&checkout_rows, "checkouts", NO_CHECKOUTS),
+        natural_width(&checkout_rows, &checkout_title, NO_CHECKOUTS),
         natural_width(&pane_rows, panes_title, NOTHING_RUNNING),
     ];
 
@@ -287,7 +288,7 @@ pub(super) fn render_columns(f: &mut Frame, app: &mut App, area: Rect) -> Option
     app.layout.checkouts = render_column(
         f,
         col(2),
-        "checkouts",
+        &checkout_title,
         checkout_rows,
         app.focus_lit(Focus::Checkouts),
         selected,

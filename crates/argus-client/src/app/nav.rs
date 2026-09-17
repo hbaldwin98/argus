@@ -46,6 +46,49 @@ impl App {
         crate::fuzzy::Fuzzy::matches(&self.checkout_filter, &label)
     }
 
+    /// Whether branch-name filtering is in effect (typing or a query kept
+    /// after Enter).
+    pub(crate) fn checkout_filter_active(&self) -> bool {
+        self.checkout_filtering || !self.checkout_filter.is_empty()
+    }
+
+    /// The `/` filter's query as drawn in titles — `/` alone while waiting
+    /// for the first character.
+    pub(crate) fn checkout_filter_query_label(&self) -> String {
+        if self.checkout_filter.is_empty() {
+            "/".to_string()
+        } else {
+            format!("/{}", self.checkout_filter)
+        }
+    }
+
+    /// Where the branch filter applies: project, repository, and query.
+    pub(crate) fn checkout_filter_scope(&self) -> Option<String> {
+        if !self.checkout_filter_active() {
+            return None;
+        }
+        let project = self.current_project()?.name.clone();
+        let repo = self.current_repository()?.name.clone();
+        Some(format!(
+            "{project} › {repo} · filter {}",
+            self.checkout_filter_query_label()
+        ))
+    }
+
+    /// Title for the legacy checkouts column while a filter is active.
+    pub(crate) fn checkout_column_title(&self) -> String {
+        if !self.checkout_filter_active() {
+            return "checkouts".to_string();
+        }
+        let Some(repo) = self.current_repository().map(|r| r.name.clone()) else {
+            return "checkouts".to_string();
+        };
+        format!(
+            "checkouts · {repo} · {}",
+            self.checkout_filter_query_label()
+        )
+    }
+
     /// Rows the legacy checkouts column draws, in navigation order.
     pub(crate) fn checkout_column_row_indices(&self) -> Vec<usize> {
         self.checkout_rows()
