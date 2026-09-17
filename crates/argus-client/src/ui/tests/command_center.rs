@@ -27,8 +27,8 @@ fn production_shell_matches_the_designs_four_regions() {
         "repositories expand only after a click:\n{text}"
     );
     assert_eq!(app.layout.projects.outer.x, 0);
-    assert_eq!(app.layout.projects.outer.width, 44);
-    assert!(app.layout.content.outer.x >= 44);
+    assert_eq!(app.layout.projects.outer.width, 35);
+    assert!(app.layout.content.outer.x >= 35);
 }
 
 #[test]
@@ -306,4 +306,15 @@ fn clicking_an_agent_in_the_agents_list_goes_straight_to_it() {
     assert_eq!(app.view, View::Spine);
     assert_eq!(app.current_pane().map(|pane| pane.id), Some(PaneId(100)));
     assert_eq!(app.focus, Focus::Panes);
+}
+
+#[test]
+fn the_rail_border_continues_the_feature_tabs_right_edge() {
+    let mut app = command_center();
+    let rows = lines(&draw_at(&mut app, 140, 40));
+    let tabs: Vec<char> = rows[1].chars().collect();
+    let feature = rows[1].find("FEATURE").unwrap();
+    let feature = rows[1][..feature].chars().count() + "FEATURE".len() + 2;
+    let border = app.layout.projects.outer.right() as usize - 1;
+    assert_eq!(feature - 1, border, "{}\n{:?}", rows.join("\n"), tabs);
 }

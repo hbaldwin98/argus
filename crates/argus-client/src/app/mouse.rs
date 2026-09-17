@@ -153,7 +153,6 @@ impl App {
                         crate::ui::command_center_rail_target_at(self, ev.column, ev.row)
                     {
                         match target {
-                            crate::ui::CommandCenterRailTarget::Spacer => {}
                             crate::ui::CommandCenterRailTarget::Repository(repository) => {
                                 self.sel_repository = repository;
                                 self.sel_checkout = 0;

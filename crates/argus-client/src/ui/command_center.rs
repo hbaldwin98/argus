@@ -8,7 +8,9 @@ use super::*;
 use crate::app::FeaturePanel;
 use argus_protocol::{PaneKind, PaneStatus, TaskState};
 
-pub const SIDEBAR_WIDTH: u16 = 44;
+/// The mark, the WORKSPACE tab, and the FEATURE tab: the rail's border
+/// continues the FEATURE tab's right edge.
+pub const SIDEBAR_WIDTH: u16 = 11 + 13 + 11;
 const HEADER_HEIGHT: u16 = 2;
 
 fn contains(area: Rect, x: u16, y: u16) -> bool {
@@ -20,8 +22,6 @@ fn contains(area: Rect, x: u16, y: u16) -> bool {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum RailTarget {
-    /// The blank row between two repositories.
-    Spacer,
     Repository(usize),
     Checkout(usize, usize),
     Pane(PaneLocation),
@@ -48,9 +48,6 @@ fn rail_targets(app: &App) -> Vec<RailTarget> {
     };
     let mut rows = Vec::new();
     for repository in ordered_repository_indices(app) {
-        if !rows.is_empty() {
-            rows.push(RailTarget::Spacer);
-        }
         rows.push(RailTarget::Repository(repository));
         let repo = &project.repositories[repository];
         // One repository is open at a time: the clicked one, or the one
@@ -94,7 +91,6 @@ pub(crate) fn rail_target_at(app: &App, x: u16, y: u16) -> Option<RailTarget> {
                 .copied()
         })
         .flatten()
-        .filter(|target| *target != RailTarget::Spacer)
 }
 
 pub(crate) fn sidebar_contains(app: &App, x: u16, y: u16) -> bool {
@@ -309,7 +305,7 @@ fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     );
     put(
         f,
-        inner.y + 3,
+        inner.y + 2,
         Line::from(vec![
             Span::styled("▌ ", Style::default().fg(th.accent)),
             Span::styled(
@@ -320,44 +316,39 @@ fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     );
     put(
         f,
-        inner.y + 4,
+        inner.y + 3,
         Line::styled(
             format!("  {workspace} workspace"),
             Style::default().fg(th.dim),
         ),
     );
 
-    // Badges: outlined boxes, wrapped onto another row only when the rail
-    // is too narrow to hold them side by side.
+    // Badges: filled chips on one row, wrapping only when the rail is too
+    // narrow to hold them side by side.
     let mut badges = vec![
-        (format!("{repo_count} repos"), th.muted),
-        (format!("{agents} agents"), th.ok),
+        (format!(" {repo_count} repos "), th.muted),
+        (format!(" {agents} agents "), th.ok),
     ];
     if needs > 0 {
-        badges.push((format!("{needs} needs you"), th.warn));
+        badges.push((format!(" {needs} needs you "), th.warn));
     }
     let mut bx = x;
-    let mut by = inner.y + 6;
+    let mut by = inner.y + 5;
     for (text, color) in badges {
-        let w = text.chars().count() as u16 + 4;
+        let w = text.chars().count() as u16;
         if bx > x && bx + w > x + width {
             bx = x;
-            by += 3;
+            by += 1;
         }
-        if by + 3 <= inner.bottom() {
+        if by < inner.bottom() {
             f.render_widget(
-                Paragraph::new(Span::styled(text, Style::default().fg(color))).block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(th.sel_bg_dim))
-                        .padding(Padding::horizontal(1)),
-                ),
-                Rect::new(bx, by, w.min(x + width - bx), 3),
+                Paragraph::new(Span::styled(text, badge(color, th))),
+                Rect::new(bx, by, w.min((x + width).saturating_sub(bx)), 1),
             );
         }
         bx += w + 1;
     }
-    let summary_height = (by + 4).saturating_sub(inner.y).min(inner.height);
+    let summary_height = (by + 2).saturating_sub(inner.y).min(inner.height);
 
     // Agents take what they list, up to a third of the rail.
     let agent_count = agent_rows(app).len() as u16;
@@ -418,8 +409,8 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         Rect::new(area.x, area.y + 1, area.width, 1),
     );
     let rows_area = Rect {
-        y: area.y + 3,
-        height: area.height.saturating_sub(3),
+        y: area.y + 2,
+        height: area.height.saturating_sub(2),
         ..area
     };
     let targets = rail_targets(app);
@@ -437,8 +428,16 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         let Some(project) = app.current_project() else {
             break;
         };
+        // The selected repository and everything open under it read as one
+        // raised block; the selected pane is lifted one step further.
+        let in_selected = match *target {
+            RailTarget::Repository(index) | RailTarget::Checkout(index, _) => {
+                index == app.sel_repository
+            }
+            RailTarget::Pane(location) => location.repository == app.sel_repository,
+        };
+        let row_bg = if in_selected { th.surface } else { th.bg };
         let line = match *target {
-            RailTarget::Spacer => continue,
             RailTarget::Repository(index) => {
                 let repo = &project.repositories[index];
                 let selected = index == app.sel_repository;
@@ -546,7 +545,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                 let selected = app.pane_location() == Some(location)
                     && app.view == View::Spine
                     && matches!(app.focus, Focus::Panes | Focus::PaneContent);
-                let bg = if selected { th.surface } else { th.bg };
+                let bg = if selected { th.surface_focus } else { row_bg };
                 let color = status_color(pane.status, th);
                 let status = short_status(pane.status);
                 let title_width = width.saturating_sub(13 + status.len());
@@ -586,8 +585,16 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                 ])
             }
         };
+        let fill = if matches!(*target, RailTarget::Pane(l) if app.pane_location() == Some(l)
+            && app.view == View::Spine
+            && matches!(app.focus, Focus::Panes | Focus::PaneContent))
+        {
+            th.surface_focus
+        } else {
+            row_bg
+        };
         f.render_widget(
-            Paragraph::new(line),
+            Paragraph::new(line).style(Style::default().bg(fill)),
             Rect {
                 y,
                 height: 1,

@@ -76,17 +76,7 @@ fn brand_cells(views: Panel) -> u16 {
 }
 
 pub(super) fn render_view_tabs(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
-    // In the command center the mark stretches so the first tab ends on the
-    // rail's edge, and the rail's border continues the tab's own boundary.
-    let natural = BRAND.chars().count() as u16;
-    let brand_width = if app.command_center && !app.tree.is_empty() {
-        let first_tab = tab_text(View::ALL[0]).chars().count() as u16;
-        command_center::rail_width(area.width)
-            .saturating_sub(first_tab)
-            .max(natural)
-    } else {
-        natural
-    };
+    let brand_width = BRAND.chars().count() as u16;
     let brand = format!("{BRAND:<width$}", width = brand_width as usize);
     let mut labels = vec![Span::styled(
         brand.clone(),
