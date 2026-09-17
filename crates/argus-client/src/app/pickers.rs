@@ -351,7 +351,10 @@ impl App {
     }
 
     pub(super) fn open_picker(&mut self) {
-        if self.templates.is_empty() || self.current_checkout().is_none() {
+        if self.templates.is_empty() {
+            return;
+        }
+        if self.current_checkout().is_none() && self.current_branch_row().is_none() {
             return;
         }
         self.picker = Some(Picker::new(
@@ -616,6 +619,26 @@ impl App {
                         template: name.to_string(),
                     });
                     self.pending_focus_new = true;
+                } else if let Some(branch) = self.current_branch_row().map(str::to_string) {
+                    let Some(base) = self.primary_checkout().map(|c| c.id) else {
+                        self.report("no checkout to branch from");
+                        return;
+                    };
+                    let Some(repository) = self.current_repository().map(|r| r.id) else {
+                        return;
+                    };
+                    let _ = self.out.send(ClientMsg::CreateWorktree {
+                        checkout: base,
+                        branch: branch.clone(),
+                    });
+                    self.pending_spawn_agent = Some(PendingSpawnAgent {
+                        repository,
+                        branch,
+                        template: name.to_string(),
+                    });
+                    self.pending_focus_new_checkout = Some(repository);
+                    self.pending_focus_new = true;
+                    self.report("creating worktree…");
                 }
             }
             PickerKind::Workspace { ids, .. } => {

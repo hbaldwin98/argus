@@ -77,6 +77,7 @@ struct Pane {
     /// Live only: model, context, spend and tool, as the harness last
     /// reported them. Not persisted; a restored agent reports afresh.
     telemetry: argus_protocol::AgentTelemetry,
+    transcript: Vec<argus_protocol::AgentTranscriptEvent>,
     /// A hook won the race with session restoration, so saved metadata must
     /// not overwrite what the newly started process already reported.
     restore_status_reported: bool,
@@ -364,6 +365,7 @@ impl Daemon {
                                                 })
                                                 .collect(),
                                             telemetry: pane.telemetry.clone(),
+                                            transcript: pane.transcript.clone(),
                                         })
                                         .collect(),
                                     git,

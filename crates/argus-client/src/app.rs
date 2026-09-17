@@ -61,6 +61,14 @@ fn local_name(remote_branch: &str) -> Option<&str> {
 /// Whether this checkout is the one sitting on `branch`. Its git status is
 /// the truth; the row's name stands in only until the first poll has been
 /// round.
+/// After a worktree is created for a branch row, spawn this template there.
+#[derive(Clone)]
+pub(super) struct PendingSpawnAgent {
+    pub repository: RepositoryId,
+    pub branch: String,
+    pub template: String,
+}
+
 fn on_branch(c: &CheckoutInfo, branch: &str) -> bool {
     c.git
         .as_ref()
@@ -284,6 +292,8 @@ pub struct App {
     /// The project a just-added repository belongs to, so the new row is
     /// the selected one when the tree carrying it arrives.
     pending_focus_new_repository: Option<ProjectId>,
+    /// Agent spawn waiting on a worktree the daemon is creating.
+    pending_spawn_agent: Option<PendingSpawnAgent>,
     /// A short shape-preserving highlight after an effective parent or child
     /// state changes, fading out rather than snapping off. The client
     /// derives this from consecutive snapshots; the first snapshot on
@@ -427,6 +437,7 @@ impl App {
             pending_focus_new_checkout: None,
             pending_focus_new_project: false,
             pending_focus_new_repository: None,
+            pending_spawn_agent: None,
             state_flashes: std::collections::HashMap::new(),
             frame_now: started,
             epoch: started,

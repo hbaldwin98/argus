@@ -109,6 +109,10 @@ pub struct PaneInfo {
     /// exposes a different subset of them.
     #[serde(default)]
     pub telemetry: AgentTelemetry,
+    /// Structured turn events, oldest first. Filled by harness adapters
+    /// through the pane API; the client may render them later.
+    #[serde(default)]
+    pub transcript: Vec<crate::transcript::AgentTranscriptEvent>,
 }
 
 /// Harness-neutral telemetry for one agent pane.

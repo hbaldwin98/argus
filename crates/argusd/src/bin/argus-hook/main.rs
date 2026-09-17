@@ -23,6 +23,8 @@
 //! argus-hook task                                    # reads the task tree
 //! argus-hook task add "bound the queue" --under 12  # adds a subtask
 //! argus-hook telemetry --model gpt-5 --context 42000 --window 272000 --cost 0.12 --tool shell
+//! argus-hook event prompt "what the user asked"
+//! argus-hook event tool --name shell
 //! argus-hook say "text"                          # prints, calls nobody
 //! argus-hook instructions                        # prints inherited startup context
 //! argus-hook <url> <token> [--note-from-stdin] [--title-from-stdin]  # the installed hook form
@@ -80,6 +82,7 @@ const TIMEOUT: Duration = Duration::from_secs(2);
 const ARTIFACT_SCOPE_VAR: &str = "ARGUS_ARTIFACT_SCOPE";
 
 mod board;
+mod event;
 mod installed;
 mod telemetry;
 mod transport;
@@ -115,6 +118,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("decisions", decisions),
     ("decide", decide),
     ("telemetry", telemetry),
+    ("event", event::event),
 ];
 
 fn dispatch(command: Option<&str>, rest: &[&str]) {

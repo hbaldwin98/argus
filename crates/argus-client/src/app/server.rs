@@ -384,6 +384,27 @@ impl App {
                 self.clamp();
             }
         }
+        if let Some(pending) = self.pending_spawn_agent.take() {
+            let checkout = self
+                .tree
+                .iter()
+                .flat_map(|p| p.repositories.iter())
+                .find(|r| r.id == pending.repository)
+                .and_then(|r| {
+                    r.checkouts.iter().find(|c| {
+                        on_branch(c, &pending.branch) || c.name == pending.branch
+                    })
+                });
+            if let Some(checkout) = checkout {
+                let _ = self.out.send(ClientMsg::SpawnAgent {
+                    checkout: checkout.id,
+                    template: pending.template,
+                });
+                self.pending_focus_new = true;
+            } else {
+                self.pending_spawn_agent = Some(pending);
+            }
+        }
         // A pane killed from elsewhere leaves its window orphaned.
         if let Some(pane) = self.overlay.as_ref().and_then(Overlay::pane) {
             let alive = panes_in(&self.tree).any(|p| p.id == pane);

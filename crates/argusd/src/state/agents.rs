@@ -225,6 +225,38 @@ impl Daemon {
         }
     }
 
+    /// Appends one structured transcript event to the pane's own timeline.
+    pub(super) fn report_pane_transcript_event(
+        &self,
+        pane: PaneId,
+        reporter: Option<&str>,
+        event: argus_protocol::AgentTranscriptEvent,
+    ) {
+        if self.child_of(pane, reporter).is_some() {
+            return;
+        }
+        let changed = {
+            let mut inner = self.inner.lock().unwrap();
+            match find_pane(&mut inner.projects, pane) {
+                Some(p) if !matches!(p.status, PaneStatus::Exited { .. }) => {
+                    p.transcript.push(event);
+                    let excess = p
+                        .transcript
+                        .len()
+                        .saturating_sub(argus_protocol::MAX_TRANSCRIPT_EVENTS);
+                    if excess > 0 {
+                        p.transcript.drain(0..excess);
+                    }
+                    true
+                }
+                _ => false,
+            }
+        };
+        if changed {
+            self.broadcast_tree();
+        }
+    }
+
     pub(super) fn report_pane_title(&self, pane: PaneId, reporter: Option<&str>, title: &str) {
         match self.child_of(pane, reporter) {
             Some(session) => self.set_child_label(pane, &session, title),

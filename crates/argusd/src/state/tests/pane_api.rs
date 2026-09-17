@@ -907,3 +907,55 @@ async fn telemetry_reports_merge_into_the_pane_and_ignore_children() {
 
     d.close_pane(pane).unwrap();
 }
+
+#[tokio::test]
+async fn transcript_events_append_in_order_and_cap_the_timeline() {
+    use argus_protocol::{AgentTranscriptEvent, TranscriptKind, MAX_TRANSCRIPT_EVENTS};
+
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = daemon_with_an_agent(dir.path()).await;
+
+    d.report_pane_transcript_event(
+        pane,
+        None,
+        AgentTranscriptEvent {
+            kind: TranscriptKind::Prompt,
+            text: Some("fix the bug".into()),
+            tool: None,
+        },
+    );
+    d.report_pane_transcript_event(
+        pane,
+        None,
+        AgentTranscriptEvent {
+            kind: TranscriptKind::Tool,
+            text: None,
+            tool: Some("shell".into()),
+        },
+    );
+
+    let transcript = pane_info(&d, pane).transcript;
+    assert_eq!(transcript.len(), 2);
+    assert_eq!(transcript[0].kind, TranscriptKind::Prompt);
+    assert_eq!(transcript[1].tool.as_deref(), Some("shell"));
+
+    for i in 0..MAX_TRANSCRIPT_EVENTS + 5 {
+        d.report_pane_transcript_event(
+            pane,
+            None,
+            AgentTranscriptEvent {
+                kind: TranscriptKind::Output,
+                text: Some(format!("line {i}")),
+                tool: None,
+            },
+        );
+    }
+    assert_eq!(pane_info(&d, pane).transcript.len(), MAX_TRANSCRIPT_EVENTS);
+    assert_eq!(
+        pane_info(&d, pane).transcript[0].text.as_deref(),
+        Some("line 5"),
+        "the oldest events fall off the front"
+    );
+
+    d.close_pane(pane).unwrap();
+}

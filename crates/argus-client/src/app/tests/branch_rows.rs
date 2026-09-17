@@ -271,6 +271,34 @@ fn enter_on_a_branch_row_switches_the_primary_checkout_to_it() {
 }
 
 #[test]
+fn a_on_a_branch_row_creates_a_worktree_then_spawns_the_agent() {
+    let mut h = harness_on_a_branch_row();
+    h.key(KeyCode::Char('a'));
+    h.key(KeyCode::Enter);
+
+    assert!(matches!(
+        h.sent().as_slice(),
+        [ClientMsg::CreateWorktree { checkout: CheckoutId(10), branch }]
+            if branch == "hotfix/tls"
+    ));
+
+    let mut tree = tree();
+    tree[0].repositories[0].checkouts.push(checkout(
+        13,
+        "hotfix/tls",
+        false,
+        vec![],
+    ));
+    h.app.on_server_msg(ServerMsg::Tree(tree));
+
+    assert!(matches!(
+        h.sent().as_slice(),
+        [ClientMsg::SpawnAgent { checkout: CheckoutId(13), template }]
+            if template == "claude"
+    ));
+}
+
+#[test]
 fn n_on_a_branch_row_gives_that_branch_a_worktree_without_asking_for_a_name() {
     let mut h = harness_on_a_branch_row();
 
