@@ -262,8 +262,12 @@ fn kill_session(leader: libc::pid_t) {
     }
     #[cfg(not(target_os = "linux"))]
     {
+        // BSD `ps` treats `-e` as "show environment", not "every process"
+        // (that's the Linux/SysV meaning) — `-A` is the portable "every
+        // process" flag here, without which this only sees processes
+        // sharing the caller's own controlling terminal.
         if let Ok(output) = std::process::Command::new("ps")
-            .args(["-e", "-o", "pid=,sess="])
+            .args(["-A", "-o", "pid=,sess="])
             .output()
         {
             let mut any = false;
