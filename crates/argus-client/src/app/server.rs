@@ -126,9 +126,9 @@ impl App {
                     self.report(format!("comment #{id} saved; agent unavailable"));
                 }
             }
-            ServerMsg::Decisions(board) => self.receive_decisions(board),
-            ServerMsg::Tasks(list) => self.receive_tasks(list),
-            ServerMsg::SequenceDiagrams(list) => self.receive_diagrams(list),
+            ServerMsg::Decisions(board) => self.receive_decisions(*board),
+            ServerMsg::Tasks(list) => self.receive_tasks(*list),
+            ServerMsg::SequenceDiagrams(list) => self.receive_diagrams(*list),
             ServerMsg::Branches { checkout, branches } => {
                 if self.list_wanted != Some(checkout) {
                     return;
@@ -236,7 +236,7 @@ impl App {
     /// Adopted only when it is the board on screen: every client is told
     /// about every project's board, because the daemon does not track which
     /// view anyone has open.
-    fn receive_decisions(&mut self, board: Box<argus_protocol::DecisionBoard>) {
+    fn receive_decisions(&mut self, board: argus_protocol::DecisionBoard) {
         let ours = self
             .current_project()
             .map(|p| p.name == board.name)
@@ -247,7 +247,7 @@ impl App {
         // Held by slug across the swap: a board arriving while an agent
         // writes must not move the reader to another feature's tree.
         let was = self.current_feature_row().and_then(|row| row.slug);
-        self.board = Some(*board);
+        self.board = Some(board);
         if let Some(at) = was.and_then(|slug| {
             self.feature_rows()
                 .iter()
@@ -258,7 +258,7 @@ impl App {
         self.rescope_feature();
     }
 
-    fn receive_tasks(&mut self, list: Box<argus_protocol::TaskList>) {
+    fn receive_tasks(&mut self, list: argus_protocol::TaskList) {
         // A push for a feature the view is not on is another client's
         // business, exactly as a board for another project is. Feature
         // slugs are only unique inside that project, so both scopes have to
@@ -274,7 +274,7 @@ impl App {
         // the cursor is still the task under the cursor: a card you have
         // to go looking for reads as having been lost.
         let was = self.selected_task().map(|task| task.id);
-        let mut list = *list;
+        let mut list = list;
         list.tasks = list.tasks_in_tree_order();
         self.tasks = Some(list);
         match restore_position_by_id(self.feature_tasks(), |task| task.id, was) {
@@ -283,7 +283,7 @@ impl App {
         }
     }
 
-    fn receive_diagrams(&mut self, list: Box<argus_protocol::DiagramList>) {
+    fn receive_diagrams(&mut self, list: argus_protocol::DiagramList) {
         let ours = self
             .current_project()
             .is_some_and(|project| project.name == list.project_name)
@@ -292,7 +292,7 @@ impl App {
             return;
         }
         let was = self.selected_diagram().map(|d| d.id);
-        self.diagrams = Some(*list);
+        self.diagrams = Some(list);
         match restore_position_by_id(self.feature_diagrams(), |d| d.id, was) {
             Some(at) => self.diagram_sel = at,
             None => self.clamp_diagram_selection(),

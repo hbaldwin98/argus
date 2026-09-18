@@ -270,6 +270,11 @@ fn kill_session(leader: libc::pid_t) {
             .args(["-A", "-o", "pid=,sess="])
             .output()
         {
+            eprintln!(
+                "kill_session: leader={leader} ps.status={:?} ps.stdout={:?}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout)
+            );
             let mut any = false;
             for line in String::from_utf8_lossy(&output.stdout).lines() {
                 let mut fields = line.split_whitespace();
