@@ -5,6 +5,7 @@
 mod brief;
 mod browser;
 mod command_center;
+mod diagram;
 mod diff;
 mod frame;
 mod geometry;

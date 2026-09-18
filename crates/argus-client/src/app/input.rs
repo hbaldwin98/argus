@@ -735,6 +735,18 @@ impl App {
                     view.scroll_by(-1, visible);
                 }
             }
+            KeyCode::Char('h') | KeyCode::Left => {
+                if let Some(view) = &mut self.diagram {
+                    let visible = self.layout.overlay.inner.width.max(1) as usize;
+                    view.scroll_horizontal_by(-1, visible);
+                }
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                if let Some(view) = &mut self.diagram {
+                    let visible = self.layout.overlay.inner.width.max(1) as usize;
+                    view.scroll_horizontal_by(1, visible);
+                }
+            }
             _ => {}
         }
     }

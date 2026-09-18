@@ -95,6 +95,7 @@ result of a request; `ui` is a pure function of it.
 | `ui/views` | the top navigation and the legacy feature renderer |
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
 | `review`, `history`, `brief`, `dirpicker` | the view state behind each overlay |
+| `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
 | `grid`, `selection`, `pty_input`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
 | `settings`, `theme`, `backend`, `herdr`, `profile` | preferences, palette, the ratatui backend, and what is reported outward |
 
@@ -908,6 +909,15 @@ settings. Tasks take what they need by default, floored and ceilinged so that ne
 tree can squeeze the other out. The selected feature, task, and decision grow to their full
 wrapped text, and the window they scroll in is sized after paying for that growth — rounding up
 there is what let an expanded row start on the last line and run off the bottom.
+
+### Sequence diagrams
+
+Sequence diagrams are stored as Mermaid source on a feature and opened from its Diagrams panel in
+a floating overlay. The client removes the dependency renderer's decorative block-fill glyphs so
+`alt`, `opt`, and related frames retain their borders and arrows without filling the panel with
+visual noise. The rendered grid is recalculated against the overlay's current inner width after a
+resize; when the natural diagram is still wider than the panel, `h`/`l` or the left/right arrows
+pan it horizontally, while `j`/`k` scroll vertically. `q` and Escape close the overlay.
 
 ### What a feature row says
 

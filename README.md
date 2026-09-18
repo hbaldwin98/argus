@@ -455,6 +455,10 @@ inherited from whichever workspace the TUI currently shows.
 | Mouse | Drag the gutters between the brief, tasks, and decisions to resize their heights |
 | Escape, `q` | Back to the spine |
 
+When the Diagrams panel is focused, `Enter` opens the selected Mermaid sequence diagram. `j`/`k`
+scroll vertically and `h`/`l` (or the arrows) pan horizontally when the diagram is wider than the
+overlay; `q` or Escape closes it.
+
 ### Terminal panes
 
 `Ctrl-Space` is the leader key:

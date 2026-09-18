@@ -51,7 +51,10 @@ pub(super) fn render_overlay(
             None => "history".to_string(),
         },
         Overlay::SequenceDiagram => match app.diagram.as_ref() {
-            Some(v) => format!("sequence · {}  ·  j/k scroll · q close", v.title),
+            Some(v) => format!(
+                "sequence · {}  ·  j/k scroll · h/l pan · q close",
+                v.title
+            ),
             None => "sequence".to_string(),
         },
         Overlay::Brief => match app.brief.as_ref() {
@@ -115,14 +118,17 @@ pub(super) fn render_sequence_diagram(
     th: Theme,
 ) -> Option<CursorPlacement> {
     let view = app.diagram.as_mut()?;
+    let width = area.width.max(1) as usize;
+    view.resize(width);
     let visible = area.height.max(1) as usize;
     view.follow_cursor(visible);
+    view.follow_horizontal(width);
     let lines: Vec<Line> = view
         .lines
         .iter()
         .skip(view.scroll)
         .take(visible)
-        .map(|line| Line::raw(line.as_str()))
+        .map(|line| Line::raw(view.line_window(line, width)))
         .collect();
     f.render_widget(
         Paragraph::new(lines).style(Style::default().fg(th.text)),

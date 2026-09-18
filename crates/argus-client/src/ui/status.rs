@@ -162,7 +162,7 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         )
     } else if matches!(app.overlay, Some(Overlay::SequenceDiagram)) {
         (
-            &["j/k scroll  q close", "j/k  q", "q"][..],
+            &["j/k scroll  h/l pan  q close", "j/k  h/l  q", "h/l  q"][..],
             th.dim,
         )
     } else if matches!(app.overlay, Some(Overlay::Brief)) {
