@@ -226,13 +226,14 @@ impl PaneInput {
 /// process group. On Linux this walks `/proc` for processes whose session id
 /// (the field portable_pty sets to the pty child's own pid via `setsid`)
 /// matches `leader`, so a job a shell backgrounded into a fresh process
-/// group is still reached. Other Unixes have no `/proc`, and Darwin's `ps`
-/// accepts `-o sess` but always reports 0 for it (confirmed against our own
-/// leader, which is definitely its own session), so those instead walk
-/// `leader`'s descendant tree via `ps -o pid=,ppid=` — it won't catch a
-/// descendant that double-forked into a fresh session of its own, but that
-/// gap exists for the session-based approach too. If neither source is
-/// available, falls back to signaling just the leader's own group.
+/// group — or later reparented to init once its parent exits — is still
+/// reached; session id survives both, unlike parentage. Other Unixes have no
+/// `/proc`, and Darwin's `ps` accepts `-o sess` but always reports 0 for it
+/// (confirmed against our own leader, which is definitely its own session),
+/// so those ask the kernel directly via `getsid(2)` for each pid `ps` lists
+/// (only `ps`'s pid column is used; the broken sess column is not). If
+/// neither source is available, falls back to signaling just the leader's
+/// own process group, which misses a backgrounded or reparented descendant.
 #[cfg(unix)]
 fn kill_session(leader: libc::pid_t) {
     #[cfg(target_os = "linux")]
@@ -271,36 +272,22 @@ fn kill_session(leader: libc::pid_t) {
         // process" flag here, without which this only sees processes
         // sharing the caller's own controlling terminal.
         if let Ok(output) = std::process::Command::new("ps")
-            .args(["-A", "-o", "pid=,ppid="])
+            .args(["-A", "-o", "pid="])
             .output()
         {
-            let mut children: std::collections::HashMap<libc::pid_t, Vec<libc::pid_t>> =
-                std::collections::HashMap::new();
-            for line in String::from_utf8_lossy(&output.stdout).lines() {
-                let mut fields = line.split_whitespace();
-                let (Some(pid), Some(ppid)) = (
-                    fields.next().and_then(|s| s.parse::<libc::pid_t>().ok()),
-                    fields.next().and_then(|s| s.parse::<libc::pid_t>().ok()),
-                ) else {
-                    continue;
-                };
-                children.entry(ppid).or_default().push(pid);
-            }
-            if !children.is_empty() {
-                let mut stack = vec![leader];
-                unsafe {
-                    libc::kill(leader, libc::SIGKILL);
-                }
-                while let Some(pid) = stack.pop() {
-                    if let Some(kids) = children.get(&pid) {
-                        for &kid in kids {
-                            unsafe {
-                                libc::kill(kid, libc::SIGKILL);
-                            }
-                            stack.push(kid);
-                        }
+            let mut any = false;
+            for pid in String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .filter_map(|s| s.trim().parse::<libc::pid_t>().ok())
+            {
+                if unsafe { libc::getsid(pid) } == leader {
+                    any = true;
+                    unsafe {
+                        libc::kill(pid, libc::SIGKILL);
                     }
                 }
+            }
+            if any {
                 return;
             }
         }
