@@ -14,7 +14,10 @@ Argus has three binaries:
 
 The client starts the daemon lazily when it cannot connect. On Unix the daemon process calls
 `setsid`; on Windows it starts in a detached process group. Closing the client does not stop the
-daemon or its child processes.
+daemon or its child processes. Before restoring panes or starting its hook server, the daemon holds
+an OS-level instance lock and binds the endpoint without replacing a live socket. A second start
+exits without restoring panes; a Unix socket pathname is removed only after a bind failure proves
+that no daemon can connect to it.
 
 `argus server restart` is the explicit clean replacement path. The client sends a protocol control
 message, waits for the daemon to flush its acknowledgement and release the endpoint, then starts
@@ -76,7 +79,7 @@ to the type or its locking.
 | `git`, `diff`, `browse`, `highlight` | the read-only questions asked of a repository |
 | `gitignore` | the repository-local excludes for generated Argus files |
 | `config` | `projects.toml`, which is read and never written |
-| `editor`, `watch`, `command`, `logging`, `paths` | the small services the rest of the daemon uses |
+| `daemon_lock`, `editor`, `watch`, `command`, `logging`, `paths` | the one daemon allowed to own an instance, and the small services the rest of the daemon uses |
 
 `argus` is a replaceable renderer over one model. `app` holds the state and never predicts the
 result of a request; `ui` is a pure function of it.

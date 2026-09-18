@@ -5,6 +5,7 @@ mod browse;
 mod command;
 mod config;
 mod conn;
+mod daemon_lock;
 mod diff;
 mod editor;
 mod git;
@@ -25,6 +26,16 @@ async fn main() -> anyhow::Result<()> {
         "argusd starting; logging to {}",
         logging::log_path().display()
     );
+
+    let Some(_daemon_lock) = daemon_lock::DaemonLock::acquire()? else {
+        tracing::info!("another argusd already owns this instance; exiting");
+        return Ok(());
+    };
+
+    // Bind before loading or restoring panes. If a daemon from an older
+    // version still owns the endpoint, this process must exit before it can
+    // launch a duplicate copy of every recorded agent.
+    let mut listener = argus_protocol::transport::Listener::bind().await?;
 
     let cfg = config::load()?;
     // A store that will not open costs this run its memory, not its
@@ -47,7 +58,6 @@ async fn main() -> anyhow::Result<()> {
     // After the hook server, so a restored agent gets working hooks.
     daemon.restore_session();
 
-    let mut listener = argus_protocol::transport::Listener::bind().await?;
     tracing::info!("argusd listening");
 
     let (shutdown_tx, _) = tokio::sync::broadcast::channel(1);

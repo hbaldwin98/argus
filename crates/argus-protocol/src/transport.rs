@@ -16,6 +16,15 @@ pub fn runtime_dir() -> PathBuf {
     }
 }
 
+/// The file a daemon holds exclusively for the lifetime of an instance.
+pub fn lock_path() -> PathBuf {
+    let file = match crate::instance_name() {
+        Some(name) => format!("argus-{name}.lock"),
+        None => "argus.lock".to_string(),
+    };
+    runtime_dir().join(file)
+}
+
 #[cfg(unix)]
 mod imp {
     use super::*;
@@ -40,8 +49,22 @@ mod imp {
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            let _ = std::fs::remove_file(&path);
-            Ok(Listener(UnixListener::bind(&path)?))
+            match UnixListener::bind(&path) {
+                Ok(listener) => Ok(Listener(listener)),
+                Err(bind_error) if bind_error.kind() == io::ErrorKind::AddrInUse => {
+                    // A crashed daemon can leave its pathname behind, but a
+                    // live daemon must keep its endpoint. The daemon lock
+                    // serializes this cleanup between current binaries; the
+                    // connect check distinguishes a stale pathname from a
+                    // running peer without ever unlinking the latter.
+                    if is_daemon_listening() {
+                        return Err(bind_error);
+                    }
+                    std::fs::remove_file(&path)?;
+                    Ok(Listener(UnixListener::bind(&path)?))
+                }
+                Err(error) => Err(error),
+            }
         }
 
         pub async fn accept(&mut self) -> io::Result<UnixStream> {
@@ -147,6 +170,7 @@ pub use imp::{connect, is_daemon_listening, pipe_name, Listener};
 mod tests {
     use super::*;
     use crate::{read_msg, write_msg, ClientMsg, PaneId, ServerMsg};
+    static INSTANCE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     /// Binds a real endpoint, connects to it, and sends a frame each way.
     ///
@@ -156,6 +180,7 @@ mod tests {
     /// instance name so it never touches a daemon the developer has running.
     #[tokio::test]
     async fn a_client_and_a_daemon_meet_on_the_endpoint_and_talk_both_ways() {
+        let _instance_guard = INSTANCE_LOCK.lock().await;
         std::env::set_var("ARGUS_INSTANCE", format!("selftest-{}", std::process::id()));
 
         let mut listener = Listener::bind().await.expect("the endpoint should bind");
@@ -188,6 +213,44 @@ mod tests {
         server.await.unwrap();
 
         #[cfg(unix)]
+        let _ = std::fs::remove_file(socket_path());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_live_socket_cannot_be_replaced_by_a_second_listener() {
+        let _instance_guard = INSTANCE_LOCK.lock().await;
+        std::env::set_var(
+            "ARGUS_INSTANCE",
+            format!("transport-live-{}", std::process::id()),
+        );
+
+        let first = Listener::bind().await.expect("the first listener should bind");
+        assert!(Listener::bind().await.is_err());
+        assert!(is_daemon_listening(), "the first listener must remain live");
+        drop(first);
+
+        let _ = std::fs::remove_file(socket_path());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_stale_socket_is_reclaimed_after_the_listener_exits() {
+        let _instance_guard = INSTANCE_LOCK.lock().await;
+        std::env::set_var(
+            "ARGUS_INSTANCE",
+            format!("transport-stale-{}", std::process::id()),
+        );
+
+        let first = Listener::bind().await.expect("the first listener should bind");
+        drop(first);
+        assert!(!is_daemon_listening(), "the dropped listener must be gone");
+
+        let second = Listener::bind()
+            .await
+            .expect("a stale socket pathname should be reclaimed");
+        drop(second);
+
         let _ = std::fs::remove_file(socket_path());
     }
 }
