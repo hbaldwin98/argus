@@ -226,9 +226,13 @@ impl PaneInput {
 /// process group. On Linux this walks `/proc` for processes whose session id
 /// (the field portable_pty sets to the pty child's own pid via `setsid`)
 /// matches `leader`, so a job a shell backgrounded into a fresh process
-/// group is still reached. Other Unixes have no `/proc`, so `ps` is asked
-/// for the same `(pid, sess)` pairs instead. If neither source is available,
-/// falls back to signaling just the leader's own group.
+/// group is still reached. Other Unixes have no `/proc`, and Darwin's `ps`
+/// accepts `-o sess` but always reports 0 for it (confirmed against our own
+/// leader, which is definitely its own session), so those instead walk
+/// `leader`'s descendant tree via `ps -o pid=,ppid=` — it won't catch a
+/// descendant that double-forked into a fresh session of its own, but that
+/// gap exists for the session-based approach too. If neither source is
+/// available, falls back to signaling just the leader's own group.
 #[cfg(unix)]
 fn kill_session(leader: libc::pid_t) {
     #[cfg(target_os = "linux")]
@@ -267,31 +271,36 @@ fn kill_session(leader: libc::pid_t) {
         // process" flag here, without which this only sees processes
         // sharing the caller's own controlling terminal.
         if let Ok(output) = std::process::Command::new("ps")
-            .args(["-A", "-o", "pid=,sess="])
+            .args(["-A", "-o", "pid=,ppid="])
             .output()
         {
-            eprintln!(
-                "kill_session: leader={leader} ps.status={:?} ps.stdout={:?}",
-                output.status,
-                String::from_utf8_lossy(&output.stdout)
-            );
-            let mut any = false;
+            let mut children: std::collections::HashMap<libc::pid_t, Vec<libc::pid_t>> =
+                std::collections::HashMap::new();
             for line in String::from_utf8_lossy(&output.stdout).lines() {
                 let mut fields = line.split_whitespace();
-                let (Some(pid), Some(session)) = (
+                let (Some(pid), Some(ppid)) = (
                     fields.next().and_then(|s| s.parse::<libc::pid_t>().ok()),
                     fields.next().and_then(|s| s.parse::<libc::pid_t>().ok()),
                 ) else {
                     continue;
                 };
-                if session == leader {
-                    any = true;
-                    unsafe {
-                        libc::kill(pid, libc::SIGKILL);
+                children.entry(ppid).or_default().push(pid);
+            }
+            if !children.is_empty() {
+                let mut stack = vec![leader];
+                unsafe {
+                    libc::kill(leader, libc::SIGKILL);
+                }
+                while let Some(pid) = stack.pop() {
+                    if let Some(kids) = children.get(&pid) {
+                        for &kid in kids {
+                            unsafe {
+                                libc::kill(kid, libc::SIGKILL);
+                            }
+                            stack.push(kid);
+                        }
                     }
                 }
-            }
-            if any {
                 return;
             }
         }
