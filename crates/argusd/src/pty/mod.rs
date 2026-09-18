@@ -226,8 +226,9 @@ impl PaneInput {
 /// process group. On Linux this walks `/proc` for processes whose session id
 /// (the field portable_pty sets to the pty child's own pid via `setsid`)
 /// matches `leader`, so a job a shell backgrounded into a fresh process
-/// group is still reached. Elsewhere, falls back to signaling just the
-/// leader's own group.
+/// group is still reached. Other Unixes have no `/proc`, so `ps` is asked
+/// for the same `(pid, sess)` pairs instead. If neither source is available,
+/// falls back to signaling just the leader's own group.
 #[cfg(unix)]
 fn kill_session(leader: libc::pid_t) {
     #[cfg(target_os = "linux")]
@@ -257,6 +258,33 @@ fn kill_session(leader: libc::pid_t) {
                 }
             }
             return;
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        if let Ok(output) = std::process::Command::new("ps")
+            .args(["-e", "-o", "pid=,sess="])
+            .output()
+        {
+            let mut any = false;
+            for line in String::from_utf8_lossy(&output.stdout).lines() {
+                let mut fields = line.split_whitespace();
+                let (Some(pid), Some(session)) = (
+                    fields.next().and_then(|s| s.parse::<libc::pid_t>().ok()),
+                    fields.next().and_then(|s| s.parse::<libc::pid_t>().ok()),
+                ) else {
+                    continue;
+                };
+                if session == leader {
+                    any = true;
+                    unsafe {
+                        libc::kill(pid, libc::SIGKILL);
+                    }
+                }
+            }
+            if any {
+                return;
+            }
         }
     }
     unsafe {
