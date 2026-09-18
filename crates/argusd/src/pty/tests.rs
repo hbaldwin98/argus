@@ -674,6 +674,58 @@ async fn killing_a_pane_makes_it_exit() {
     .expect("kill should end the pane");
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn killing_a_pane_also_kills_a_detached_grandchild() {
+    // A shell backgrounding a job (e.g. an agent's own subprocess) leaves a
+    // grandchild that never setsid's away from the pane's session. Killing
+    // only the direct child must not leave it running.
+    let pid_file = std::env::temp_dir().join(format!("argus-grandchild-{}.pid", std::process::id()));
+    let _ = std::fs::remove_file(&pid_file);
+
+    let pane = PaneRuntime::spawn(
+        PaneId(5),
+        &std::env::temp_dir(),
+        Spawn::DefaultShell,
+        |_| {},
+    )
+    .unwrap();
+    let input = pane.input();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    input
+        .write(
+            format!(
+                "(sleep 30 & echo $! > {}) &\n",
+                pid_file.display()
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+
+    let grandchild_pid: i32 = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if let Ok(contents) = std::fs::read_to_string(&pid_file) {
+                if let Ok(pid) = contents.trim().parse() {
+                    return pid;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("grandchild should announce its pid");
+
+    pane.kill().unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let still_alive = unsafe { libc::kill(grandchild_pid, 0) == 0 };
+    let _ = std::fs::remove_file(&pid_file);
+    assert!(
+        !still_alive,
+        "grandchild pid {grandchild_pid} survived the pane kill"
+    );
+}
+
 #[tokio::test]
 async fn a_pane_starts_at_the_default_size_and_resize_changes_it() {
     let pane = PaneRuntime::spawn(

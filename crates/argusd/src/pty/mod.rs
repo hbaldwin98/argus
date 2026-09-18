@@ -222,6 +222,48 @@ impl PaneInput {
     }
 }
 
+/// Sends SIGKILL to every process in `leader`'s session, not just its own
+/// process group. On Linux this walks `/proc` for processes whose session id
+/// (the field portable_pty sets to the pty child's own pid via `setsid`)
+/// matches `leader`, so a job a shell backgrounded into a fresh process
+/// group is still reached. Elsewhere, falls back to signaling just the
+/// leader's own group.
+#[cfg(unix)]
+fn kill_session(leader: libc::pid_t) {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(entries) = std::fs::read_dir("/proc") {
+            for entry in entries.flatten() {
+                let Ok(pid) = entry.file_name().to_string_lossy().parse::<libc::pid_t>() else {
+                    continue;
+                };
+                let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
+                    continue;
+                };
+                // `comm` is user-controlled and may itself contain
+                // parentheses or spaces; the last ')' is always the real
+                // boundary, per proc(5).
+                let Some(after_comm) = stat.rfind(')').map(|i| &stat[i + 1..]) else {
+                    continue;
+                };
+                let session = after_comm
+                    .split_whitespace()
+                    .nth(3) // state, ppid, pgrp, session
+                    .and_then(|s| s.parse::<libc::pid_t>().ok());
+                if session == Some(leader) {
+                    unsafe {
+                        libc::kill(pid, libc::SIGKILL);
+                    }
+                }
+            }
+            return;
+        }
+    }
+    unsafe {
+        libc::kill(-leader, libc::SIGKILL);
+    }
+}
+
 impl PaneRuntime {
     /// Spawns the pane's process and its background reader/pump tasks.
     /// `on_exit` fires exactly once, off the pump task, when the child dies.
@@ -477,8 +519,27 @@ impl PaneRuntime {
         if let Some(job) = &self._job {
             return job.terminate();
         }
-        self.child.lock().unwrap().kill()?;
-        Ok(())
+        #[cfg(unix)]
+        {
+            let mut child = self.child.lock().unwrap();
+            // portable_pty spawns the child as its own session leader. Signal
+            // its session before touching just the direct child: a shell can
+            // background a job (e.g. an agent's own subprocess) into a *new*
+            // process group that still belongs to the same session, so a
+            // plain `child.kill()` — or even a single `killpg` on the
+            // leader's own group — leaves it running with no tracked pane
+            // left to reap it.
+            if let Some(pid) = child.process_id() {
+                kill_session(pid as libc::pid_t);
+            }
+            child.kill()?;
+            Ok(())
+        }
+        #[cfg(not(unix))]
+        {
+            self.child.lock().unwrap().kill()?;
+            Ok(())
+        }
     }
 
     #[cfg(test)]
