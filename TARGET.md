@@ -53,9 +53,9 @@ acme-api
   hotfix/tls-expiry no checkout
 ```
 
-Selecting a branch without a checkout offers to switch a clean primary checkout or create a
-worktree. Switching a dirty primary checkout is refused when it could obscure work, with worktree
-creation offered instead. Worktree roots and setup hooks are configurable.
+Selecting a branch without a checkout asks Git to switch the primary checkout or create a worktree.
+Git carries non-conflicting changes across the switch and refuses conflicting changes with its
+reason shown to the user. Worktree roots and setup hooks are configurable.
 
 One agent per checkout is the default, not a hidden assumption. Multiple agents are allowed but
 shown as shared; optional project exclusivity can make that a hard block.

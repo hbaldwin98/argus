@@ -48,33 +48,9 @@ impl Daemon {
 
     /// Moves this checkout onto an existing branch. `git` refuses when the
     /// switch would clobber uncommitted work, and that refusal is exactly
-    /// what should reach the user, so its stderr is passed through.
-    ///
-    /// Argus refuses one case git allows: switching a *dirty primary*
-    /// checkout (TARGET.md §Repository and checkout model). Git carries
-    /// uncommitted changes across a switch whenever they don't conflict,
-    /// which quietly moves work you were doing on one branch onto another —
-    /// and the primary checkout is the repo the user already had, not one
-    /// Argus made. A worktree gives the branch a directory of its own and
-    /// leaves that work where it was.
+    /// what should reach the user, so its stderr is passed through. When the
+    /// work does not conflict, Git carries it across the switch as usual.
     pub async fn switch_branch(&self, checkout: CheckoutId, branch: &str) -> anyhow::Result<()> {
-        let (primary, path) = {
-            let inner = self.inner.lock().unwrap();
-            let c = find_checkout_ref(&inner.projects, checkout)
-                .ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
-            (c.primary, c.path.clone())
-        };
-        if primary {
-            // Read live rather than trusting the cache: the poll is up to
-            // two seconds stale, and this is the check that decides whether
-            // uncommitted work is about to move.
-            let dirty = crate::git::status(&path).is_some_and(|s| s.dirty);
-            if dirty {
-                anyhow::bail!(
-                    "the primary checkout has uncommitted changes — commit them, or make a worktree for {branch} instead"
-                );
-            }
-        }
         self.git_switch(checkout, &["switch"], branch).await
     }
 

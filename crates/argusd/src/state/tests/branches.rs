@@ -648,7 +648,7 @@ async fn a_branch_that_already_exists_gets_a_worktree_rather_than_a_refusal() {
 }
 
 #[tokio::test]
-async fn a_dirty_primary_checkout_is_not_switched_out_from_under_its_work() {
+async fn a_dirty_primary_checkout_switches_when_git_can_carry_its_work() {
     let (dir, d) = daemon_on_a_repo();
     let checkout = only_checkout(&d);
     let on_it = head_of(dir.path());
@@ -656,14 +656,59 @@ async fn a_dirty_primary_checkout_is_not_switched_out_from_under_its_work() {
     d.switch_branch(checkout, &on_it).await.unwrap();
     std::fs::write(dir.path().join("a.txt"), "uncommitted\n").unwrap();
 
+    d.switch_branch(checkout, "elsewhere").await.unwrap();
+
+    assert_eq!(head_of(dir.path()), "elsewhere");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "uncommitted\n",
+        "git carries non-conflicting work across the switch"
+    );
+}
+
+#[tokio::test]
+async fn a_conflicting_dirty_switch_reports_gits_reason() {
+    let (dir, d) = daemon_on_a_repo();
+    let checkout = only_checkout(&d);
+    let on_it = head_of(dir.path());
+
+    {
+        let repo = git2::Repository::open(dir.path()).unwrap();
+        let head = repo.head().unwrap().peel_to_commit().unwrap();
+        let base_tree = head.tree().unwrap();
+        let blob = repo.blob(b"elsewhere\n").unwrap();
+        let mut tree = repo.treebuilder(Some(&base_tree)).unwrap();
+        tree.insert("a.txt", blob, 0o100644).unwrap();
+        let tree = repo.find_tree(tree.write().unwrap()).unwrap();
+        let sig = git2::Signature::now("t", "t@example.com").unwrap();
+        repo.commit(
+            Some("refs/heads/conflicting"),
+            &sig,
+            &sig,
+            "conflicting change",
+            &tree,
+            &[&head],
+        )
+        .unwrap();
+    }
+    std::fs::write(dir.path().join("a.txt"), "local change\n").unwrap();
+
     let err = d
-        .switch_branch(checkout, "elsewhere")
+        .switch_branch(checkout, "conflicting")
         .await
         .unwrap_err()
         .to_string();
 
-    assert!(err.contains("worktree"), "say what to do instead: {err:?}");
-    assert_eq!(head_of(dir.path()), on_it, "still where the work is");
+    assert!(
+        err.contains("would be overwritten"),
+        "show Git's mismatch reason: {err:?}"
+    );
+    assert_eq!(head_of(dir.path()), on_it, "a refused switch leaves HEAD alone");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+        "local change\n",
+        "a refused switch leaves the work alone"
+    );
 }
 
 #[tokio::test]

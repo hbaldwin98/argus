@@ -709,9 +709,10 @@ checkout's panes, because the panes have to die first for the directory to be de
 and a refusal afterwards would cost them for nothing. A registration whose directory is already
 gone is pruned instead.
 
-Switching a dirty primary checkout is refused, and the refusal names the worktree alternative: git
-carries uncommitted changes across a switch whenever they do not conflict, which moves work off the
-branch it was done on. Linked worktrees are Argus's own and switch under Git's rules alone.
+Switching a checkout follows Git's rules: uncommitted changes that do not conflict move across the
+switch, while a conflicting switch is refused and Git's reason is shown to the user. A worktree is
+still available when the user wants the work kept in its own directory. Linked worktrees are Argus's
+own and switch under the same Git rules.
 
 ## Review
 
