@@ -60,7 +60,7 @@ dependencies = [
 
 [[package]]
 name = "argus"
-version = "0.22.5"
+version = "0.22.6"
 dependencies = [
  "anyhow",
  "arboard",
@@ -82,7 +82,7 @@ dependencies = [
 
 [[package]]
 name = "argus-protocol"
-version = "0.22.5"
+version = "0.22.6"
 dependencies = [
  "compact_str 0.8.2",
  "directories",
@@ -94,7 +94,7 @@ dependencies = [
 
 [[package]]
 name = "argusd"
-version = "0.22.5"
+version = "0.22.6"
 dependencies = [
  "anyhow",
  "argus-protocol",
