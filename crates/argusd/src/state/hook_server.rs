@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use argus_protocol::{parse_pane_path, Endpoint, PaneId};
+use argus_protocol::{parse_pane_path, Endpoint, PaneId, MAX_DIAGRAM_BODY_BYTES};
 
 use super::Daemon;
 
@@ -57,6 +57,15 @@ impl Daemon {
 }
 
 const MAX_BODY: usize = 4096;
+/// Diagram adds carry Mermaid source in JSON; allow room for encoding overhead.
+const MAX_DIAGRAM_HOOK_BODY: usize = MAX_DIAGRAM_BODY_BYTES + 4096;
+
+fn max_hook_body(endpoint: Option<(PaneId, Endpoint)>) -> usize {
+    match endpoint {
+        Some((_, Endpoint::Diagrams)) => MAX_DIAGRAM_HOOK_BODY,
+        _ => MAX_BODY,
+    }
+}
 
 /// The shortest and longest a failed accept waits before trying again.
 const ACCEPT_BACKOFF_MIN: std::time::Duration = std::time::Duration::from_millis(50);
@@ -149,7 +158,8 @@ async fn handle_hook_request(
         argus_protocol::ArtifactScope::RepositoryBranch
     };
     // The server trusts nothing about a request beyond its bearer token.
-    let too_large = content_length > MAX_BODY;
+    let max_body = max_hook_body(endpoint);
+    let too_large = content_length > max_body;
     let mut body = vec![0u8; if too_large { 0 } else { content_length }];
     if !body.is_empty() {
         let _ = reader.read_exact(&mut body).await;
@@ -216,6 +226,9 @@ async fn handle_hook_request(
             },
             Some((pane, Endpoint::Tasks)) => {
                 tasks_response(&daemon, pane, reporter.as_deref(), &body, artifact_scope)
+            }
+            Some((pane, Endpoint::Diagrams)) => {
+                diagrams_response(&daemon, pane, reporter.as_deref(), &body, artifact_scope)
             }
             // A checkout move from an agent that does not own the pane is
             // dropped: the row follows the agent Argus started in it.
@@ -305,6 +318,19 @@ fn tasks_response(
 ) -> HookResponse {
     match decode(body, "task change") {
         Ok(action) => json_reply(daemon.task_action_for_agent(source, session, action, scope)),
+        Err(refusal) => refusal,
+    }
+}
+
+fn diagrams_response(
+    daemon: &Arc<Daemon>,
+    source: PaneId,
+    session: Option<&str>,
+    body: &[u8],
+    scope: argus_protocol::ArtifactScope,
+) -> HookResponse {
+    match decode(body, "diagram change") {
+        Ok(action) => json_reply(daemon.diagram_action_for_agent(source, session, action, scope)),
         Err(refusal) => refusal,
     }
 }

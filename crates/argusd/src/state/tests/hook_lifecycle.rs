@@ -916,3 +916,54 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
     assert!(refused.contains("human's to set"), "{refused}");
     close_all(&d);
 }
+
+#[tokio::test]
+async fn diagrams_belong_to_the_feature_the_checkout_is_on() {
+    use argus_protocol::{DiagramAction, DiagramWrite};
+
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let checkout = only_checkout(&d);
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+
+    let refused = d
+        .diagram_action_for_agent(
+            agent,
+            None,
+            DiagramAction::Add(DiagramWrite {
+                title: "hook path".into(),
+                body: "sequenceDiagram\n    A->>B: ping".into(),
+            }),
+            ArtifactScope::default(),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("not on a feature"), "{refused}");
+
+    let slug = open_feature(&d, agent, "diagram hooks");
+    let list = d
+        .diagram_action_for_agent(
+            agent,
+            Some("sess-1"),
+            DiagramAction::Add(DiagramWrite {
+                title: "list and add".into(),
+                body: "sequenceDiagram\n    Hook->>Daemon: POST /diagrams".into(),
+            }),
+            ArtifactScope::default(),
+        )
+        .unwrap();
+    assert_eq!(list.feature.as_deref(), Some(slug.as_str()));
+    let id = list.diagrams[0].id;
+    assert_eq!(list.diagrams[0].title, "list and add");
+
+    let list = d
+        .diagram_action_for_agent(
+            agent,
+            None,
+            DiagramAction::Remove { id },
+            ArtifactScope::default(),
+        )
+        .unwrap();
+    assert!(list.diagrams.is_empty(), "drop removes the row");
+    close_all(&d);
+}

@@ -200,13 +200,20 @@ pub enum Overlay {
     /// is: correcting what a feature is for should not cost you sight of
     /// the agent working on it.
     Brief,
+    /// A sequence diagram rendered from Mermaid source. The view lives on
+    /// `App::diagram`; closing the window leaves the one-line index.
+    SequenceDiagram,
 }
 
 impl Overlay {
     pub(super) fn pane(&self) -> Option<PaneId> {
         match self {
             Overlay::Pane { pane, .. } => Some(*pane),
-            Overlay::Settings { .. } | Overlay::Review | Overlay::History | Overlay::Brief => None,
+            Overlay::Settings { .. }
+            | Overlay::Review
+            | Overlay::History
+            | Overlay::Brief
+            | Overlay::SequenceDiagram => None,
         }
     }
 }

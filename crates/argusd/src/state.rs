@@ -28,6 +28,7 @@ mod agents;
 mod build;
 mod decisions;
 mod features;
+mod diagrams;
 mod tasks;
 mod git_ops;
 mod hook_server;
@@ -250,6 +251,7 @@ pub struct Daemon {
     decisions_tx: broadcast::Sender<argus_protocol::DecisionBoard>,
     /// One feature's task list, whole for the same reason.
     tasks_tx: broadcast::Sender<argus_protocol::TaskList>,
+    diagrams_tx: broadcast::Sender<argus_protocol::DiagramList>,
     /// Agent templates, replaceable: `reload_config` swaps them, and every
     /// start looks its template up by name at the time it runs.
     templates: StdMutex<Vec<AgentConfig>>,
@@ -394,6 +396,10 @@ impl Daemon {
 
     pub fn subscribe_tasks(&self) -> broadcast::Receiver<argus_protocol::TaskList> {
         self.tasks_tx.subscribe()
+    }
+
+    pub fn subscribe_diagrams(&self) -> broadcast::Receiver<argus_protocol::DiagramList> {
+        self.diagrams_tx.subscribe()
     }
 
     fn broadcast_tree(&self) {

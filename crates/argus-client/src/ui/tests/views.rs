@@ -282,14 +282,16 @@ fn a_superseded_decision_keeps_its_place_and_says_what_replaced_it() {
 
 #[test]
 fn the_board_scrolls_to_keep_the_selection_on_screen() {
-    let many = (1..=40).map(|id| decision(id, None, "a choice")).collect();
+    use crate::app::FeaturePanel;
+    let many = (1..=12).map(|id| decision(id, None, "a choice")).collect();
     let mut app = app_with_a_board(many);
     draw_at(&mut app, 100, 30);
 
-    // The keys start on the feature column; `l` crosses into the tasks
-    // and then into the tree.
-    app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
-    app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
+    // The keys start on the feature column; `l` crosses tasks, diagrams,
+    // and then the decision tree.
+    for _ in 0..4 {
+        app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
+    }
     app.on_key(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE));
     let buf = draw_at(&mut app, 100, 30);
     let out = lines(&buf).join(
@@ -297,8 +299,10 @@ fn the_board_scrolls_to_keep_the_selection_on_screen() {
 ",
     );
 
-    assert_eq!(app.decision_sel, 39);
-    assert!(out.contains("#40"), "the last row is drawn: {out}");
+    assert_eq!(app.board_rows().len(), 12);
+    assert_eq!(app.decision_sel, 11);
+    assert_eq!(app.panel, FeaturePanel::Decisions);
+    assert!(out.contains('▌'), "the last row stays selected on screen: {out}");
 }
 
 fn feature(slug: &str, title: &str) -> argus_protocol::Feature {
@@ -577,13 +581,15 @@ fn a_feature_says_which_of_its_agents_has_stopped_for_somebody() {
 }
 
 #[test]
-fn tab_crosses_the_three_panels_and_h_comes_back_to_the_list() {
+fn tab_crosses_the_feature_panels_and_h_comes_back_to_the_list() {
     use crate::app::FeaturePanel;
     let mut app = app_with_features(vec![feature("notes", "Notes storage")], Vec::new());
     assert_eq!(app.panel, FeaturePanel::Features);
 
     app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     assert_eq!(app.panel, FeaturePanel::Tasks);
+    app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    assert_eq!(app.panel, FeaturePanel::Diagrams);
     app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     assert_eq!(app.panel, FeaturePanel::Decisions);
     app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
@@ -1117,10 +1123,14 @@ fn each_panel_advertises_its_own_keys_rather_than_the_spines() {
     assert!(tasks.contains("drop"), "{tasks}");
 
     app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    let diagrams = bar(&draw_at(&mut app, 130, 20));
+    assert!(diagrams.contains("enter open"), "{diagrams}");
+
+    app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
     let decisions = bar(&draw_at(&mut app, 130, 20));
     assert!(decisions.contains("agents write this"), "{decisions}");
 
-    for advertised in [&features, &tasks, &decisions] {
+    for advertised in [&features, &tasks, &diagrams, &decisions] {
         assert!(
             !advertised.contains("n add"),
             "and none of them offers the spine's: {advertised}"

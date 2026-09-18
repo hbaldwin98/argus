@@ -50,6 +50,10 @@ pub(super) fn render_overlay(
             Some(h) => format!("history · {} commits", h.commits.len()),
             None => "history".to_string(),
         },
+        Overlay::SequenceDiagram => match app.diagram.as_ref() {
+            Some(v) => format!("sequence · {}  ·  j/k scroll · q close", v.title),
+            None => "sequence".to_string(),
+        },
         Overlay::Brief => match app.brief.as_ref() {
             // The mode is in the title because it changes what every key
             // does, and a modal surface that does not say which mode it is
@@ -100,7 +104,31 @@ pub(super) fn render_overlay(
             None
         }
         Overlay::Brief => render_brief(f, app, inner, th),
+        Overlay::SequenceDiagram => render_sequence_diagram(f, app, inner, th),
     }
+}
+
+pub(super) fn render_sequence_diagram(
+    f: &mut Frame,
+    app: &mut App,
+    area: Rect,
+    th: Theme,
+) -> Option<CursorPlacement> {
+    let view = app.diagram.as_mut()?;
+    let visible = area.height.max(1) as usize;
+    view.follow_cursor(visible);
+    let lines: Vec<Line> = view
+        .lines
+        .iter()
+        .skip(view.scroll)
+        .take(visible)
+        .map(|line| Line::raw(line.as_str()))
+        .collect();
+    f.render_widget(
+        Paragraph::new(lines).style(Style::default().fg(th.text)),
+        area,
+    );
+    None
 }
 
 /// The brief, one line per line, as marked-up prose.

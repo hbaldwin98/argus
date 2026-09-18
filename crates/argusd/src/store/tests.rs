@@ -1,7 +1,7 @@
 //! Round trips through a store built in memory, so no test can reach
 //! the real `runtime.db`.
 
-use argus_protocol::{Actor, TaskState, TaskWrite};
+use argus_protocol::{Actor, DiagramWrite, TaskState, TaskWrite};
 
 use super::*;
 
@@ -1538,4 +1538,22 @@ fn a_rename_leaves_the_slug_the_work_points_at() {
     assert_eq!(f.slug, "the-pty", "the slug is what the work points at");
     assert!(s.rename_feature("argus", "the-pty", "   ").is_err());
     assert!(s.rename_feature("argus", "nothing", "x").is_err());
+}
+
+#[test]
+fn sequence_diagrams_are_stored_per_feature_and_removed_with_the_row() {
+    let s = store();
+    s.add_feature("argus", &feature("the pty"), None, None, 1, None)
+        .unwrap();
+    let write = DiagramWrite {
+        title: "resize".into(),
+        body: "sequenceDiagram\n    Client->>Daemon: resize\n    Daemon-->>Client: ok".into(),
+    };
+    let id = s
+        .add_sequence_diagram("argus", "the-pty", &write, 1, None)
+        .unwrap()
+        .id;
+    assert_eq!(s.sequence_diagrams("argus", "the-pty").unwrap().len(), 1);
+    s.remove_sequence_diagram("argus", "the-pty", id).unwrap();
+    assert!(s.sequence_diagrams("argus", "the-pty").unwrap().is_empty());
 }

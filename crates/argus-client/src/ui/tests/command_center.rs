@@ -654,14 +654,14 @@ fn feature_document_with_long_rows() -> App {
 #[test]
 fn focused_feature_rows_show_wrapped_text_without_expanding_every_row() {
     let mut app = feature_document_with_long_rows();
-    let compact = lines(&draw_at(&mut app, 80, 60)).join("\n");
+    let compact = lines(&draw_at(&mut app, 80, 96)).join("\n");
     assert!(!compact.contains("full task description"), "{compact}");
     assert!(!compact.contains("full decision reasoning"), "{compact}");
     assert!(!compact.contains("permanently verbose"), "{compact}");
 
     let tasks = app.layout.feature_tasks.inner;
     click(&mut app, tasks.x + 1, tasks.y);
-    let focused_task_lines = lines(&draw_at(&mut app, 80, 60));
+    let focused_task_lines = lines(&draw_at(&mut app, 80, 96));
     let focused_task = focused_task_lines.join("\n");
     assert!(focused_task.contains("boundary"), "{focused_task}");
     assert!(
@@ -678,9 +678,11 @@ fn focused_feature_rows_show_wrapped_text_without_expanding_every_row() {
     click(&mut app, tasks.x + 1, second_task_y);
     assert_eq!(app.task_sel, 1, "clicking past an expanded task selects the row");
 
-    let decisions = app.layout.feature_decisions.inner;
-    click(&mut app, decisions.x + 1, decisions.y);
-    let focused_decision_lines = lines(&draw_at(&mut app, 80, 60));
+    draw_at(&mut app, 80, 96);
+    app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
+    app.decision_sel = 0;
+    let focused_decision_lines = lines(&draw_at(&mut app, 80, 96));
     let focused_decision = focused_decision_lines.join("\n");
     assert!(
         focused_decision.contains("rationale")

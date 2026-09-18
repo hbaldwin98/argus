@@ -9,6 +9,7 @@
 mod app;
 mod backend;
 mod brief;
+mod diagram;
 mod clipboard;
 mod dirpicker;
 mod fuzzy;

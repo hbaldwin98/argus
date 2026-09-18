@@ -152,6 +152,21 @@ fn dispatch_boards(
                     }
                 })
         }
+        ClientMsg::SequenceDiagram {
+            project,
+            checkout,
+            feature,
+            action,
+        } => {
+            let read = matches!(action, argus_protocol::DiagramAction::List);
+            daemon
+                .diagram_action_for_client(project, checkout, &feature, action)
+                .map(|list| {
+                    if read {
+                        let _ = out_tx.send(ServerMsg::SequenceDiagrams(Box::new(list)));
+                    }
+                })
+        }
         ClientMsg::MoveFeature {
             project,
             checkout,

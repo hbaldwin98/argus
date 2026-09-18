@@ -237,6 +237,7 @@ impl App {
                     let panels = [
                         (self.layout.features, FeaturePanel::Features),
                         (self.layout.feature_tasks, FeaturePanel::Tasks),
+                        (self.layout.feature_diagrams, FeaturePanel::Diagrams),
                         (self.layout.feature_decisions, FeaturePanel::Decisions),
                     ];
                     let hit = panels
@@ -262,6 +263,9 @@ impl App {
                             self.select_feature_row(row + panel.first)
                         }
                         (FeaturePanel::Tasks, Some(row)) => self.select_task(row + panel.first),
+                        (FeaturePanel::Diagrams, Some(row)) => {
+                            self.select_diagram(row + panel.first)
+                        }
                         (FeaturePanel::Decisions, Some(row)) => {
                             self.select_decision_row(row + panel.first)
                         }
@@ -286,6 +290,7 @@ impl App {
                         if let Some((_, which)) = [
                             (self.layout.features, FeaturePanel::Features),
                             (self.layout.feature_tasks, FeaturePanel::Tasks),
+                            (self.layout.feature_diagrams, FeaturePanel::Diagrams),
                             (self.layout.feature_decisions, FeaturePanel::Decisions),
                         ]
                         .into_iter()

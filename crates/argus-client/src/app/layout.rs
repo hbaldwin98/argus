@@ -136,6 +136,7 @@ pub struct Layout {
     pub features: Panel,
     pub feature_brief: Panel,
     pub feature_tasks: Panel,
+    pub feature_diagrams: Panel,
     pub feature_decisions: Panel,
     /// The row of view tabs above everything else. Zero-sized on a
     /// terminal too short to spend a row on it.

@@ -107,6 +107,7 @@ impl Daemon {
         let (workspaces_tx, _) = broadcast::channel(32);
         let (decisions_tx, _) = broadcast::channel(32);
         let (tasks_tx, _) = broadcast::channel(32);
+        let (diagrams_tx, _) = broadcast::channel(32);
         let daemon = Arc::new(Daemon {
             inner: StdMutex::new(Inner {
                 workspaces,
@@ -120,6 +121,7 @@ impl Daemon {
             tree_tx,
             decisions_tx,
             tasks_tx,
+            diagrams_tx,
             templates: StdMutex::new(templates),
             harnesses,
             hook_port: std::sync::atomic::AtomicU16::new(0),

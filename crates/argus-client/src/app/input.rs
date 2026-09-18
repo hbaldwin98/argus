@@ -382,6 +382,10 @@ impl App {
             self.on_key_brief(key);
             return;
         }
+        if matches!(self.overlay, Some(Overlay::SequenceDiagram)) {
+            self.on_key_sequence_diagram(key);
+            return;
+        }
         if let Some(Overlay::Settings { sel }) = &mut self.overlay {
             let sel = *sel;
             match key.code {
@@ -712,6 +716,25 @@ impl App {
             KeyCode::Enter => self.commit_line(),
             KeyCode::Backspace => self.backspace_line(),
             KeyCode::Char(c) => self.type_into_line(c),
+            _ => {}
+        }
+    }
+
+    fn on_key_sequence_diagram(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => self.close_overlay(),
+            KeyCode::Char('j') | KeyCode::Down | KeyCode::Char('d') | KeyCode::PageDown => {
+                if let Some(view) = &mut self.diagram {
+                    let visible = self.layout.overlay.inner.height.max(1) as usize;
+                    view.scroll_by(1, visible);
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up | KeyCode::Char('u') | KeyCode::PageUp => {
+                if let Some(view) = &mut self.diagram {
+                    let visible = self.layout.overlay.inner.height.max(1) as usize;
+                    view.scroll_by(-1, visible);
+                }
+            }
             _ => {}
         }
     }

@@ -266,6 +266,10 @@ pub struct App {
     /// The task list of the selected feature. `None` until one arrives,
     /// which is not the same as a feature with no tasks.
     pub tasks: Option<argus_protocol::TaskList>,
+    pub diagrams: Option<argus_protocol::DiagramList>,
+    pub diagram_sel: usize,
+    /// The sequence diagram open in the overlay, if any.
+    pub diagram: Option<crate::diagram::DiagramView>,
     /// The line being typed in the feature view, when one is. `Some` is
     /// what makes the view swallow keys — a view whose `x` deletes a row
     /// while you are typing a title with an x in it is not usable.
@@ -429,6 +433,9 @@ impl App {
             task_sel: 0,
             decision_sel: 0,
             tasks: None,
+            diagrams: None,
+            diagram_sel: 0,
+            diagram: None,
             line: None,
             review_wanted: None,
             next_review_request: 1,

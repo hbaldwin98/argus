@@ -1,6 +1,6 @@
 ---
 name: argus
-description: Keeps an Argus pane's status and shared work context current. Use when running inside Argus (ARGUS_PANE and ARGUS_HOOK are set), or when asked to use Argus features, tasks, decisions, or review feedback.
+description: Keeps an Argus pane's status and shared work context current. Use when running inside Argus (ARGUS_PANE and ARGUS_HOOK are set), or when asked to use Argus features, tasks, decisions, sequence diagrams, or review feedback.
 ---
 
 <!-- argus:managed-skill -->
@@ -81,13 +81,14 @@ the old checkout's managed skill when its last agent leaves.
 
 ## Maintain shared work
 
-Argus keeps a shared board per feature: a brief, tasks with subtasks, and
-decisions. When the request involves implementing or changing something, read
-[references/features.md](references/features.md) before starting, then read the
-reference for each part of the board you use:
+Argus keeps a shared board per feature: a brief, tasks with subtasks,
+decisions, and optional sequence diagrams. When the request involves
+implementing or changing something, read [references/features.md](references/features.md)
+before starting, then read the reference for each part of the board you use:
 
 - [references/tasks.md](references/tasks.md): shaping tasks and subtasks, and moving them through `todo`, `doing`, and `done`.
 - [references/decisions.md](references/decisions.md): recording choices and superseding them.
+- [references/diagrams.md](references/diagrams.md): when to record an interaction flow, how to write Mermaid source, and how humans open diagrams in the TUI.
 
 Keep those records relevant to the requested work. An informational question
 alone does not require creating a feature or tasks.

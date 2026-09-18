@@ -178,6 +178,24 @@ impl App {
                     }
                 }
             }
+            ServerMsg::SequenceDiagrams(list) => {
+                let ours = self
+                    .current_project()
+                    .is_some_and(|project| project.name == list.project_name)
+                    && self.feature_slug() == list.feature;
+                if ours {
+                    let was = self.selected_diagram().map(|d| d.id);
+                    self.diagrams = Some(*list);
+                    match was.and_then(|id| {
+                        self.feature_diagrams()
+                            .iter()
+                            .position(|d| d.id == id)
+                    }) {
+                        Some(at) => self.diagram_sel = at,
+                        None => self.clamp_diagram_selection(),
+                    }
+                }
+            }
             ServerMsg::Branches { checkout, branches } => {
                 if self.list_wanted != Some(checkout) {
                     return;

@@ -69,14 +69,17 @@ pub enum FeaturePanel {
     Features,
     /// What is left to do under the selected feature.
     Tasks,
+    /// Interaction flows recorded as Mermaid sequence diagrams.
+    Diagrams,
     /// Why it has the shape it does.
     Decisions,
 }
 
 impl FeaturePanel {
-    pub const ALL: [FeaturePanel; 3] = [
+    pub const ALL: [FeaturePanel; 4] = [
         FeaturePanel::Features,
         FeaturePanel::Tasks,
+        FeaturePanel::Diagrams,
         FeaturePanel::Decisions,
     ];
 
@@ -256,7 +259,9 @@ impl App {
             self.decision_sel = count.saturating_sub(1);
         }
         self.ask_for_tasks();
+        self.ask_for_diagrams();
         self.clamp_task_selection();
+        self.clamp_diagram_selection();
     }
 
     /// Selects the feature a click landed on, and moves the keys with it —
@@ -267,6 +272,7 @@ impl App {
             self.feature_sel = row;
             self.decision_sel = 0;
             self.task_sel = 0;
+            self.diagram_sel = 0;
             self.panel = FeaturePanel::Features;
             self.rescope_feature();
         }
@@ -285,6 +291,7 @@ impl App {
             self.feature_brief_scroll = 0;
             self.decision_sel = 0;
             self.task_sel = 0;
+            self.diagram_sel = 0;
             self.rescope_feature();
         }
     }
@@ -304,6 +311,7 @@ impl App {
             .unwrap_or(0);
         self.decision_sel = 0;
         self.task_sel = 0;
+        self.diagram_sel = 0;
         self.rescope_feature();
     }
 
@@ -329,6 +337,8 @@ impl App {
         }
     }
 
+    const DEFAULT_DIAGRAM_SOURCE: &'static str = "sequenceDiagram\n    participant Client\n    participant Daemon\n    Client->>Daemon: request\n    Daemon-->>Client: response";
+
     /// Rewrites whatever has the keys. On the list that is the brief,
     /// which is prose and opens in the brief editor; on the tasks it is the
     /// line under the cursor. The decision tree is append-only, so there
@@ -338,6 +348,7 @@ impl App {
         match self.panel {
             FeaturePanel::Features => self.open_feature_brief(),
             FeaturePanel::Tasks => self.begin_task_edit(),
+            FeaturePanel::Diagrams => {}
             FeaturePanel::Decisions => {}
         }
     }
@@ -348,6 +359,7 @@ impl App {
         match self.panel {
             FeaturePanel::Features => self.open_feature_brief(),
             FeaturePanel::Tasks => self.open_task_brief(),
+            FeaturePanel::Diagrams => self.open_selected_diagram(),
             FeaturePanel::Decisions => {}
         }
     }
@@ -356,6 +368,7 @@ impl App {
         match self.panel {
             FeaturePanel::Features => self.begin_feature(),
             FeaturePanel::Tasks => self.begin_task(),
+            FeaturePanel::Diagrams => self.add_diagram(),
             FeaturePanel::Decisions => self.report("decisions are recorded by agents"),
         }
     }
@@ -364,6 +377,7 @@ impl App {
         match self.panel {
             FeaturePanel::Features => self.drop_selected_feature(),
             FeaturePanel::Tasks => self.drop_selected_task(),
+            FeaturePanel::Diagrams => self.drop_selected_diagram(),
             // Nothing is ever removed from the board. A decision a later
             // finding invalidates is superseded, because the road not
             // taken is most of what a reader came back for.
@@ -376,6 +390,7 @@ impl App {
     pub(super) fn refresh_feature(&mut self) {
         self.ask_for_decisions();
         self.ask_for_tasks();
+        self.ask_for_diagrams();
     }
 
     /// Moves the cursor in whichever panel has the keys.
@@ -383,6 +398,7 @@ impl App {
         match self.panel {
             FeaturePanel::Features => self.move_feature_selection(delta),
             FeaturePanel::Tasks => self.move_task_selection(delta),
+            FeaturePanel::Diagrams => self.move_diagram_selection(delta),
             FeaturePanel::Decisions => self.move_decision_selection(delta),
         }
     }
@@ -434,6 +450,111 @@ impl App {
             feature,
             action: argus_protocol::TaskAction::List,
         });
+    }
+
+    pub fn feature_diagrams(&self) -> &[argus_protocol::SequenceDiagram] {
+        self.diagrams
+            .as_ref()
+            .filter(|list| list.feature == self.feature_slug())
+            .map(|list| list.diagrams.as_slice())
+            .unwrap_or_default()
+    }
+
+    pub fn selected_diagram(&self) -> Option<&argus_protocol::SequenceDiagram> {
+        self.feature_diagrams().get(self.diagram_sel)
+    }
+
+    pub(super) fn ask_for_diagrams(&mut self) {
+        let (Some(project), Some(checkout), Some(feature)) = (
+            self.board.as_ref().and_then(|b| b.project),
+            self.current_checkout().map(|checkout| checkout.id),
+            self.feature_slug(),
+        ) else {
+            self.diagrams = None;
+            return;
+        };
+        let _ = self.out.send(ClientMsg::SequenceDiagram {
+            project,
+            checkout,
+            feature,
+            action: argus_protocol::DiagramAction::List,
+        });
+    }
+
+    pub(super) fn clamp_diagram_selection(&mut self) {
+        self.diagram_sel = self
+            .diagram_sel
+            .min(self.feature_diagrams().len().saturating_sub(1));
+    }
+
+    pub(super) fn move_diagram_selection(&mut self, delta: i32) {
+        let count = self.feature_diagrams().len();
+        if count == 0 {
+            self.diagram_sel = 0;
+            return;
+        }
+        self.diagram_sel = (self.diagram_sel as i32)
+            .saturating_add(delta)
+            .clamp(0, count as i32 - 1) as usize;
+    }
+
+    pub(super) fn select_diagram(&mut self, row: usize) {
+        let count = self.feature_diagrams().len();
+        if count > 0 {
+            self.diagram_sel = row.min(count - 1);
+            self.panel = FeaturePanel::Diagrams;
+        }
+    }
+
+    pub(super) fn open_selected_diagram(&mut self) {
+        let Some(diagram) = self.selected_diagram().cloned() else {
+            return;
+        };
+        let width = self.layout.content.inner.width.max(40) as usize;
+        self.diagram = Some(crate::diagram::DiagramView::open(&diagram, width));
+        self.overlay = Some(Overlay::SequenceDiagram);
+        self.focus = Focus::Overlay;
+    }
+
+    pub(super) fn add_diagram(&mut self) {
+        let Some((project, checkout, feature)) = self.diagram_target() else {
+            return;
+        };
+        let n = self.feature_diagrams().len() + 1;
+        let _ = self.out.send(ClientMsg::SequenceDiagram {
+            project,
+            checkout,
+            feature,
+            action: argus_protocol::DiagramAction::Add(argus_protocol::DiagramWrite {
+                title: format!("flow {n}"),
+                body: Self::DEFAULT_DIAGRAM_SOURCE.to_string(),
+            }),
+        });
+    }
+
+    pub(super) fn drop_selected_diagram(&mut self) {
+        let Some((project, checkout, feature, id)) = self.diagram_target_id() else {
+            return;
+        };
+        let _ = self.out.send(ClientMsg::SequenceDiagram {
+            project,
+            checkout,
+            feature,
+            action: argus_protocol::DiagramAction::Remove { id },
+        });
+    }
+
+    fn diagram_target(&self) -> Option<(ProjectId, CheckoutId, String)> {
+        let project = self.board.as_ref()?.project?;
+        let checkout = self.current_checkout()?.id;
+        let feature = self.feature_slug()?;
+        Some((project, checkout, feature))
+    }
+
+    fn diagram_target_id(&self) -> Option<(ProjectId, CheckoutId, String, i64)> {
+        let (project, checkout, feature) = self.diagram_target()?;
+        let id = self.selected_diagram()?.id;
+        Some((project, checkout, feature, id))
     }
 
     pub(super) fn clamp_task_selection(&mut self) {
@@ -997,7 +1118,8 @@ mod tests {
     #[test]
     fn tab_steps_through_the_panels_and_wraps() {
         assert_eq!(FeaturePanel::Features.step(1), FeaturePanel::Tasks);
-        assert_eq!(FeaturePanel::Tasks.step(1), FeaturePanel::Decisions);
+        assert_eq!(FeaturePanel::Tasks.step(1), FeaturePanel::Diagrams);
+        assert_eq!(FeaturePanel::Diagrams.step(1), FeaturePanel::Decisions);
         assert_eq!(FeaturePanel::Decisions.step(1), FeaturePanel::Features);
         assert_eq!(FeaturePanel::Features.step(-1), FeaturePanel::Decisions);
     }

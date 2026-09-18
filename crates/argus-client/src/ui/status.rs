@@ -160,6 +160,11 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             ][..],
             th.dim,
         )
+    } else if matches!(app.overlay, Some(Overlay::SequenceDiagram)) {
+        (
+            &["j/k scroll  q close", "j/k  q", "q"][..],
+            th.dim,
+        )
     } else if matches!(app.overlay, Some(Overlay::Brief)) {
         // The two modes have almost no keys in common, so the bar shows
         // the one you are actually in.
@@ -216,6 +221,14 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                         "h/l panels  j/k move  a root  s subtask  e title  enter brief  H/L todo→doing→done  J/K order  x drop  q spine",
                         "h/l panels  j/k move  a root  s subtask  e title  enter brief  H/L move  J/K order  x drop  q",
                         "j/k  a root  s subtask  e title  enter brief  H/L move  q",
+                    ][..],
+                    th.dim,
+                ),
+                FeaturePanel::Diagrams => (
+                    &[
+                        "h/l panels  j/k move  a new  enter open  x drop  q spine",
+                        "h/l panels  j/k move  a new  enter open  x drop  q",
+                        "j/k  enter open  a new  q",
                     ][..],
                     th.dim,
                 ),

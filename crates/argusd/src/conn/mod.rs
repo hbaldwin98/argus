@@ -54,6 +54,7 @@ where
     let mut workspaces_rx = daemon.subscribe_workspaces();
     let mut decisions_rx = daemon.subscribe_decisions();
     let mut tasks_rx = daemon.subscribe_tasks();
+    let mut diagrams_rx = daemon.subscribe_diagrams();
     let mut subs = Subscriptions::default();
     let mut review_task = None;
 
@@ -99,6 +100,9 @@ where
             // client holding another feature's list open drops it.
             Ok(list) = tasks_rx.recv() => {
                 let _ = out_tx.send(ServerMsg::Tasks(Box::new(list)));
+            }
+            Ok(list) = diagrams_rx.recv() => {
+                let _ = out_tx.send(ServerMsg::SequenceDiagrams(Box::new(list)));
             }
         }
     }

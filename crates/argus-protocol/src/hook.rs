@@ -121,6 +121,8 @@ pub enum Endpoint {
     Feature,
     /// The current feature's tasks, and every change to them.
     Tasks,
+    /// The current feature's sequence diagrams, and every change to them.
+    Diagrams,
     /// A partial [`crate::AgentTelemetry`] report, as JSON.
     Telemetry,
     /// One [`crate::AgentTranscriptEvent`], as JSON.
@@ -146,6 +148,7 @@ impl Endpoint {
             Endpoint::Features => Cow::Borrowed("features"),
             Endpoint::Feature => Cow::Borrowed("feature"),
             Endpoint::Tasks => Cow::Borrowed("tasks"),
+            Endpoint::Diagrams => Cow::Borrowed("diagrams"),
             Endpoint::Telemetry => Cow::Borrowed("telemetry"),
             Endpoint::Event => Cow::Borrowed("event"),
         }
@@ -182,6 +185,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "features" => Endpoint::Features,
         "feature" => Endpoint::Feature,
         "tasks" => Endpoint::Tasks,
+        "diagrams" => Endpoint::Diagrams,
         "telemetry" => Endpoint::Telemetry,
         "event" => Endpoint::Event,
         _ => return None,
@@ -207,6 +211,7 @@ mod tests {
             Endpoint::Features,
             Endpoint::Feature,
             Endpoint::Tasks,
+            Endpoint::Diagrams,
             Endpoint::Telemetry,
             Endpoint::Event,
         ];

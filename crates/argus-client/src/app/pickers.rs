@@ -212,6 +212,7 @@ impl App {
         self.history = None;
         self.history_wanted = None;
         self.pending_history_file = None;
+        self.diagram = None;
         self.overlay = None;
         self.leader_pending = false;
         self.pane_fullscreen = false;

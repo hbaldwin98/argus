@@ -22,6 +22,10 @@ pub(super) const FILES: &[(&str, &str)] = &[
         "references/decisions.md",
         include_str!("../../skills/argus/references/decisions.md"),
     ),
+    (
+        "references/diagrams.md",
+        include_str!("../../skills/argus/references/diagrams.md"),
+    ),
 ];
 /// Files earlier versions installed, removed when still Argus-managed.
 pub(super) const RETIRED: &[&str] = &["references/work.md"];
@@ -82,7 +86,7 @@ impl Harness {
                 "If ARGUS_PANE and ARGUS_HOOK are set, you are running inside Argus. \
                  Load the argus skill at `{}` before starting work (read SKILL.md directly \
                  if your harness has no skill loader), then read your pane's context as it directs. \
-                 Its references describe features, tasks, and decisions when needed. \
+                 Its references describe features, tasks, decisions, and sequence diagrams when needed. \
                  If the file is unavailable, continue the user's task without the Argus workflow.",
                 dir.join("SKILL.md").display()
             ),

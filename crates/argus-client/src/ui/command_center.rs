@@ -1243,12 +1243,11 @@ fn decision_lines(
         width,
     );
     let detail_prefix = " ".repeat(title_hang);
-    lines.push(line_with_right_label(
-        &detail_prefix,
+    let detail_body = format!("{}  {}", detail, task_id_label(decision.id).trim());
+    lines.extend(hanging_text(
+        vec![Span::raw(detail_prefix)],
         title_hang,
-        &detail,
-        base.fg(th.dim),
-        &task_id_label(decision.id),
+        &detail_body,
         base.fg(th.dim),
         width,
     ));
@@ -1288,6 +1287,7 @@ pub(crate) fn feature_row_at(
     let panel = match which {
         FeaturePanel::Features => app.layout.features,
         FeaturePanel::Tasks => app.layout.feature_tasks,
+        FeaturePanel::Diagrams => app.layout.feature_diagrams,
         FeaturePanel::Decisions => app.layout.feature_decisions,
     };
     if !contains(panel.inner, x, y) {
@@ -1305,6 +1305,7 @@ pub(crate) fn feature_row_at(
                 app.theme.drawn(),
             )
         }
+        FeaturePanel::Diagrams => vec![1; app.feature_diagrams().len()],
         FeaturePanel::Decisions => {
             let rows = app.board_rows();
             decision_row_heights(
@@ -1557,6 +1558,7 @@ fn render_feature_document(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
         body.width,
         th,
     );
+    drop(decisions);
     let rest = bottom.saturating_sub(tasks_y);
     let wants_tasks = task_heights.iter().sum::<u16>().max(1) + 1;
     // The gap row, the heading, and at least one decision summary.
@@ -1648,7 +1650,90 @@ fn render_feature_document(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
     );
     drop(rows);
 
-    let decisions_y = tasks_area.bottom() + 1;
+    let diagrams = app.feature_diagrams();
+    let diagrams_y = tasks_area.bottom() + 1;
+    if diagrams_y + 1 >= bottom {
+        return;
+    }
+    let focused_diagrams = app.panel == FeaturePanel::Diagrams;
+    section_heading(
+        f,
+        Rect { y: diagrams_y, ..body },
+        "SEQUENCE",
+        "a add · enter open",
+        th,
+    );
+    let diagram_height = if diagrams.is_empty() {
+        1u16
+    } else {
+        (diagrams.len() as u16).min(3)
+    }
+    .min(bottom.saturating_sub(diagrams_y + 2));
+    let diagrams_area = Rect {
+        y: diagrams_y + 1,
+        height: diagram_height,
+        ..body
+    };
+    let diagram_first = scrolled_to_show(
+        app.layout.feature_diagrams.first,
+        Some(app.diagram_sel),
+        diagram_height as usize,
+        diagrams.len(),
+    );
+    if diagrams.is_empty() && diagrams_area.height > 0 {
+        f.render_widget(
+            Paragraph::new("no flows yet — a adds a sequence diagram")
+                .style(Style::default().fg(th.dim)),
+            Rect {
+                height: 1,
+                ..diagrams_area
+            },
+        );
+    }
+    for (index, diagram) in diagrams
+        .iter()
+        .enumerate()
+        .skip(diagram_first)
+        .take(diagram_height as usize)
+    {
+        let selected = index == app.diagram_sel;
+        let bg = if selected && focused_diagrams {
+            th.surface
+        } else {
+            th.bg
+        };
+        let style = Style::default().bg(bg);
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(if selected { "▌ " } else { "  " }, style.fg(th.accent)),
+                Span::styled(
+                    ellipsize_text(&diagram.title, diagrams_area.width as usize),
+                    style.fg(if selected { th.text } else { th.muted }).add_modifier(
+                        if selected {
+                            Modifier::BOLD
+                        } else {
+                            Modifier::empty()
+                        },
+                    ),
+                ),
+            ]))
+            .style(style),
+            Rect {
+                y: diagrams_area.y + (index - diagram_first) as u16,
+                height: 1,
+                ..diagrams_area
+            },
+        );
+    }
+    section_thumb(
+        f,
+        diagrams_area,
+        diagram_first,
+        diagram_height as usize,
+        diagrams.len(),
+        th,
+    );
+    let decisions_y = diagrams_area.bottom() + 1;
     if decisions_y + 1 >= bottom {
         return;
     }
@@ -1667,6 +1752,7 @@ fn render_feature_document(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
         height: bottom.saturating_sub(decisions_y + 1),
         ..body
     };
+    let decisions = app.board_rows();
     if decisions.is_empty() && decisions_area.height > 0 {
         f.render_widget(
             Paragraph::new("nothing decided for this feature yet")
@@ -1727,6 +1813,11 @@ fn render_feature_document(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
         outer: tasks_area,
         inner: tasks_area,
         first: task_first,
+    };
+    app.layout.feature_diagrams = Panel {
+        outer: diagrams_area,
+        inner: diagrams_area,
+        first: diagram_first,
     };
     app.layout.feature_decisions = Panel {
         outer: decisions_area,

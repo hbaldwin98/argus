@@ -319,3 +319,17 @@ pub(super) const SCHEMA_V15: &str = r#"
 ALTER TABLE task ADD COLUMN parent INTEGER;
 CREATE INDEX task_parent ON task (project, feature, parent, position, id);
 "#;
+
+/// Mermaid sequence-diagram source, one row per diagram under a feature.
+pub(super) const SCHEMA_V16: &str = r#"
+CREATE TABLE sequence_diagram (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    project    TEXT    NOT NULL,
+    feature    TEXT    NOT NULL,
+    title      TEXT    NOT NULL,
+    body       TEXT    NOT NULL,
+    at         INTEGER NOT NULL,
+    session    TEXT
+);
+CREATE INDEX sequence_diagram_feature ON sequence_diagram (project, feature, id);
+"#;

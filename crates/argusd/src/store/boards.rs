@@ -302,6 +302,10 @@ impl Store {
             rusqlite::params![project, slug],
         )?;
         tx.execute(
+            "DELETE FROM sequence_diagram WHERE project = ?1 AND feature = ?2",
+            rusqlite::params![project, slug],
+        )?;
+        tx.execute(
             "DELETE FROM feature_event WHERE project = ?1 AND slug = ?2",
             rusqlite::params![project, slug],
         )?;
@@ -817,6 +821,86 @@ impl Store {
             )?;
         }
         tx.commit()?;
+        Ok(())
+    }
+
+    // ---- sequence diagrams -------------------------------------------
+
+    pub fn add_sequence_diagram(
+        &self,
+        project: &str,
+        feature: &str,
+        write: &argus_protocol::DiagramWrite,
+        at: i64,
+        session: Option<&str>,
+    ) -> Result<argus_protocol::SequenceDiagram> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
+            rusqlite::params![project, feature],
+            |r| r.get(0),
+        )?;
+        if !exists {
+            anyhow::bail!("there is no feature {feature} on this project");
+        }
+        tx.execute(
+            "INSERT INTO sequence_diagram (project, feature, title, body, at, session)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                project,
+                feature,
+                write.title,
+                write.body,
+                at,
+                session
+            ],
+        )?;
+        let id = tx.last_insert_rowid();
+        tx.commit()?;
+        Ok(argus_protocol::SequenceDiagram {
+            id,
+            feature: feature.to_string(),
+            title: write.title.clone(),
+            body: write.body.clone(),
+            at,
+            session: session.map(str::to_string),
+        })
+    }
+
+    pub fn sequence_diagrams(
+        &self,
+        project: &str,
+        feature: &str,
+    ) -> Result<Vec<argus_protocol::SequenceDiagram>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, feature, title, body, at, session
+             FROM sequence_diagram
+             WHERE project = ?1 AND feature = ?2
+             ORDER BY id",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![project, feature], |r| {
+            Ok(argus_protocol::SequenceDiagram {
+                id: r.get(0)?,
+                feature: r.get(1)?,
+                title: r.get(2)?,
+                body: r.get(3)?,
+                at: r.get(4)?,
+                session: r.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    pub fn remove_sequence_diagram(&self, project: &str, feature: &str, id: i64) -> Result<()> {
+        let changed = self.conn().execute(
+            "DELETE FROM sequence_diagram WHERE project = ?1 AND feature = ?2 AND id = ?3",
+            rusqlite::params![project, feature, id],
+        )?;
+        if changed == 0 {
+            anyhow::bail!("there is no diagram {id} under feature {feature}");
+        }
         Ok(())
     }
 }

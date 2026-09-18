@@ -10,6 +10,7 @@
 pub mod artifacts;
 pub mod cell;
 pub mod decisions;
+pub mod diagrams;
 pub mod features;
 pub mod framing;
 pub mod hook;
@@ -30,6 +31,10 @@ pub use cell::{
 };
 pub use compact_str::{CompactString, ToCompactString};
 pub use decisions::{Decision, DecisionBoard, DecisionTreeRow, DecisionWrite, MAX_DECISION_BYTES};
+pub use diagrams::{
+    DiagramAction, DiagramList, DiagramWrite, SequenceDiagram, MAX_DIAGRAM_BODY_BYTES,
+    MAX_DIAGRAM_TITLE_BYTES,
+};
 pub use features::{
     slugify, Actor, Feature, FeatureAction, FeatureBoard, FeatureEvent, FeatureMove, FeatureState,
     FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES,

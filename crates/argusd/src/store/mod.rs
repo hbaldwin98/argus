@@ -33,7 +33,8 @@ mod schema;
 mod session;
 
 use schema::{
-    SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V2,
+    SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16,
+    SCHEMA_V2,
     SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
 };
 
@@ -97,7 +98,7 @@ pub struct Overlays {
 pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 15;
+const SCHEMA_VERSION: i64 = 16;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -221,6 +222,9 @@ impl Store {
         }
         if from < 15 {
             tx.execute_batch(SCHEMA_V15)?;
+        }
+        if from < 16 {
+            tx.execute_batch(SCHEMA_V16)?;
         }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;

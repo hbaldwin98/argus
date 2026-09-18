@@ -286,6 +286,7 @@ pub(super) fn laid_out(h: &mut Harness) {
         features: Panel::default(),
         feature_brief: Default::default(),
         feature_tasks: Default::default(),
+        feature_diagrams: Default::default(),
         feature_decisions: Default::default(),
         overlay: Panel::default(),
         help: Panel::default(),

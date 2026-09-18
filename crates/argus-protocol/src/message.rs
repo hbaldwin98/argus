@@ -10,6 +10,7 @@ use crate::decisions::DecisionBoard;
 use crate::features::{FeatureState, FeatureWrite};
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
+use crate::diagrams::{DiagramAction, DiagramList};
 use crate::tasks::{TaskAction, TaskList};
 use crate::tree::{ProjectInfo, WorkspaceInfo};
 
@@ -194,6 +195,14 @@ pub enum ClientMsg {
         feature: String,
         action: TaskAction,
     },
+    /// Read or change one feature's sequence diagrams. A read is answered
+    /// with [`ServerMsg::SequenceDiagrams`]; a write is pushed like tasks.
+    SequenceDiagram {
+        project: ProjectId,
+        checkout: CheckoutId,
+        feature: String,
+        action: DiagramAction,
+    },
     /// Ask for what this checkout contains, for the fuzzy pickers.
     ListBranches {
         checkout: CheckoutId,
@@ -363,6 +372,9 @@ pub enum ServerMsg {
     /// One feature's tasks: the answer to a `TaskAction::List`, and what
     /// every client receives whenever that list changes.
     Tasks(Box<TaskList>),
+    /// One feature's sequence diagrams: the answer to a list, and what
+    /// every client receives when that list changes.
+    SequenceDiagrams(Box<DiagramList>),
     /// The answer to `ClientMsg::GetDecisions`, and what every client
     /// receives when a board changes — a decision tree is meant to be
     /// watched being built, not polled.

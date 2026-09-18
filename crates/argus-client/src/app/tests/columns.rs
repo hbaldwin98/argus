@@ -117,6 +117,7 @@ fn the_gutter_next_to_a_fold_tab_is_not_draggable() {
         features: Panel::default(),
         feature_brief: Default::default(),
         feature_tasks: Default::default(),
+        feature_diagrams: Default::default(),
         feature_decisions: Default::default(),
         overlay: Panel::default(),
         help: Panel::default(),

@@ -22,6 +22,9 @@
 //! argus-hook decide "one row per note" --supersedes 7   # replaces decision 7
 //! argus-hook task                                    # reads the task tree
 //! argus-hook task add "bound the queue" --under 12  # adds a subtask
+//! argus-hook diagram                                 # sequence diagrams on this feature
+//! argus-hook diagram add "open overlay" --stdin      # Mermaid source on stdin
+//! argus-hook diagram drop 3                          # removes diagram #3
 //! argus-hook telemetry --model gpt-5 --context 42000 --window 272000 --cost 0.12 --tool shell
 //! argus-hook event prompt "what the user asked"
 //! argus-hook event tool --name shell
@@ -49,7 +52,7 @@
 //! human-readable message. Some agent CLIs inject a hook's stdout into the
 //! model's context, so staying silent keeps Argus's bookkeeping out of the
 //! conversation. The deliberate `say`, `instructions`, `comments`, `feature`,
-//! `task`, `decisions`, and `decide` commands do return useful output.
+//! `task`, `diagram`, `decisions`, and `decide` commands do return useful output.
 //!
 //! On Windows it is a GUI-subsystem binary. Not because it has a UI — it
 //! has none — but because the agent CLI that runs it decides how it is
@@ -72,10 +75,10 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use argus_protocol::{
-    Decision, DecisionBoard, DecisionWrite, Endpoint, FeatureAction, FeatureBoard, FeatureWrite,
-    Report, ReviewComment, TaskAction, TaskList, TaskState, TaskWrite, INSTRUCTIONS_COMMAND,
-    INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG, SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG,
-    TOKEN_VAR, URL_VAR,
+    Decision, DecisionBoard, DecisionWrite, DiagramAction, DiagramList, DiagramWrite, Endpoint,
+    FeatureAction, FeatureBoard, FeatureWrite, Report, ReviewComment, TaskAction, TaskList,
+    TaskState, TaskWrite, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
+    SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(2);
@@ -115,6 +118,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("comments", comments),
     ("feature", feature),
     ("task", task),
+    ("diagram", diagram),
     ("decisions", decisions),
     ("decide", decide),
     ("telemetry", telemetry),
