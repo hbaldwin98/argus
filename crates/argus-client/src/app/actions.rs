@@ -106,14 +106,12 @@ impl App {
             return;
         };
         self.history = None;
-        self.history_wanted = None;
+        self.history_request.clear();
         self.request_uncommitted(id);
     }
 
     pub(super) fn request_uncommitted(&mut self, id: CheckoutId) {
-        let request_id = self.next_review_request;
-        self.next_review_request = self.next_review_request.wrapping_add(1).max(1);
-        self.review_wanted = Some((id, request_id));
+        let request_id = self.review_request.request(id);
         self.report("loading diff…");
         let _ = self.out.send(ClientMsg::Review {
             request_id,
@@ -135,9 +133,7 @@ impl App {
             self.report("nothing to show history for");
             return;
         };
-        let request_id = self.next_history_request;
-        self.next_history_request = self.next_history_request.wrapping_add(1).max(1);
-        self.history_wanted = Some((id, request_id));
+        let request_id = self.history_request.request(id);
         self.report("loading history…");
         let _ = self.out.send(ClientMsg::ListCommits {
             request_id,
@@ -185,9 +181,7 @@ impl App {
         else {
             return;
         };
-        let request_id = self.next_review_request;
-        self.next_review_request = self.next_review_request.wrapping_add(1).max(1);
-        self.review_wanted = Some((id, request_id));
+        let request_id = self.review_request.request(id);
         self.pending_history_file = file;
         self.report("loading commit…");
         let _ = self.out.send(ClientMsg::Review {
@@ -207,7 +201,7 @@ impl App {
             .is_some_and(|v| v.review.commit.is_some())
             && self.history.is_some();
         self.review = None;
-        self.review_wanted = None;
+        self.review_request.clear();
         self.pending_history_file = None;
         if from_history {
             self.overlay = Some(Overlay::History);
@@ -215,7 +209,7 @@ impl App {
             return;
         }
         self.history = None;
-        self.history_wanted = None;
+        self.history_request.clear();
         self.overlay = None;
         self.pane_fullscreen = false;
         self.focus = Focus::Checkouts;

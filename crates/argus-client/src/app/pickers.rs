@@ -33,7 +33,7 @@ impl App {
     /// column selection by navigating to it.
     #[cfg(test)]
     pub fn review_for_test(&mut self, checkout: CheckoutId) {
-        self.review_wanted = Some((checkout, 1));
+        self.review_request.want_for_test(checkout, 1);
     }
 
     pub fn open_settings(&mut self) {
@@ -208,9 +208,9 @@ impl App {
             let _ = self.out.send(ClientMsg::Kill { pane });
         }
         self.review = None;
-        self.review_wanted = None;
+        self.review_request.clear();
         self.history = None;
-        self.history_wanted = None;
+        self.history_request.clear();
         self.pending_history_file = None;
         self.diagram = None;
         self.overlay = None;

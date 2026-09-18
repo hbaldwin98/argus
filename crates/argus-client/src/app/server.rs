@@ -198,8 +198,7 @@ impl App {
             } => {
                 // A list we have already navigated away from must not
                 // raise an alert for a view that is no longer open.
-                if self.history_wanted == Some((checkout, request_id)) {
-                    self.history_wanted = None;
+                if self.history_request.take_if_wanted(checkout, request_id) {
                     self.alert(format!("history: {message}"));
                 }
             }
@@ -626,10 +625,12 @@ impl App {
     }
 
     fn receive_review(&mut self, review: argus_protocol::Review) {
-        if self.review_wanted != Some((review.checkout, review.request_id)) {
+        if !self
+            .review_request
+            .take_if_wanted(review.checkout, review.request_id)
+        {
             return;
         }
-        self.review_wanted = None;
         let files = review.files.len();
         let label = match &review.commit {
             Some(c) => format!("{} {}", c.short, c.summary),
@@ -679,10 +680,9 @@ impl App {
         checkout: CheckoutId,
         commits: Vec<argus_protocol::CommitInfo>,
     ) {
-        if self.history_wanted != Some((checkout, request_id)) {
+        if !self.history_request.take_if_wanted(checkout, request_id) {
             return;
         }
-        self.history_wanted = None;
         if commits.is_empty() {
             self.history = None;
             self.report("no commits yet");
@@ -698,8 +698,7 @@ impl App {
     }
 
     fn receive_review_failure(&mut self, request_id: u64, checkout: CheckoutId, message: String) {
-        if self.review_wanted == Some((checkout, request_id)) {
-            self.review_wanted = None;
+        if self.review_request.take_if_wanted(checkout, request_id) {
             self.alert(format!("error: {message}"));
         }
     }

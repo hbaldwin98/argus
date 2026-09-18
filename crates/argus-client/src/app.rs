@@ -135,6 +135,54 @@ fn attention_of(pane: &PaneInfo) -> Option<(String, Option<String>)> {
         .then(|| (effective_label(pane, label), note.map(str::to_string)))
 }
 
+/// A monotonically increasing, never-zero request id for one kind of
+/// request, plus which (key, id) pair is still awaited. A reply carrying
+/// any other id is for a request this app has since moved on from — a
+/// slower diff overtaken by a faster one, say — and is dropped rather than
+/// applied.
+struct Outstanding<K> {
+    wanted: Option<(K, u64)>,
+    next: u64,
+}
+
+impl<K: PartialEq + Copy> Outstanding<K> {
+    fn new() -> Self {
+        Self { wanted: None, next: 1 }
+    }
+
+    /// Hands out the next id and remembers it as the one awaited for `key`.
+    fn request(&mut self, key: K) -> u64 {
+        let id = self.next;
+        self.next = self.next.wrapping_add(1).max(1);
+        self.wanted = Some((key, id));
+        id
+    }
+
+    fn is_wanted(&self, key: K, id: u64) -> bool {
+        self.wanted == Some((key, id))
+    }
+
+    fn clear(&mut self) {
+        self.wanted = None;
+    }
+
+    /// Clears and reports whether `(key, id)` was in fact the one awaited.
+    fn take_if_wanted(&mut self, key: K, id: u64) -> bool {
+        let wanted = self.is_wanted(key, id);
+        if wanted {
+            self.wanted = None;
+        }
+        wanted
+    }
+
+    /// Puts a review up directly for a fixture that hands back a fixed id,
+    /// without disturbing the counter a real request would advance.
+    #[cfg(test)]
+    fn want_for_test(&mut self, key: K, id: u64) {
+        self.wanted = Some((key, id));
+    }
+}
+
 pub struct App {
     pub tree: Vec<ProjectInfo>,
     pub templates: Vec<String>,
@@ -276,10 +324,8 @@ pub struct App {
     pub line: Option<crate::app::views::LineInput>,
     /// What the outstanding request was for; a diff for anything else is
     /// stale and dropped.
-    review_wanted: Option<(CheckoutId, u64)>,
-    next_review_request: u64,
-    history_wanted: Option<(CheckoutId, u64)>,
-    next_history_request: u64,
+    review_request: Outstanding<CheckoutId>,
+    history_request: Outstanding<CheckoutId>,
     /// Jump here once a commit review lands, when Enter was on a file row.
     pending_history_file: Option<String>,
     /// Same, for a branch or file list.
@@ -437,10 +483,8 @@ impl App {
             diagram_sel: 0,
             diagram: None,
             line: None,
-            review_wanted: None,
-            next_review_request: 1,
-            history_wanted: None,
-            next_history_request: 1,
+            review_request: Outstanding::new(),
+            history_request: Outstanding::new(),
             pending_history_file: None,
             list_wanted: None,
             next_browse_request: 1,
