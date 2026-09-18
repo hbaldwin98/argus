@@ -1136,20 +1136,9 @@ fn task_row_heights(
     width: u16,
     th: Theme,
 ) -> Vec<u16> {
-    rows.iter()
-        .enumerate()
-        .map(|(index, row)| {
-            task_lines(
-                row,
-                task_children(rows, index),
-                index == selected,
-                focused && index == selected,
-                width,
-                th,
-            )
-            .len() as u16
-        })
-        .collect()
+    row_heights(rows.len(), selected, focused, |index, sel, exp| {
+        task_lines(&rows[index], task_children(rows, index), sel, exp, width, th).len()
+    })
 }
 
 fn decision_guide(row: &argus_protocol::DecisionTreeRow<'_>) -> String {
@@ -1261,18 +1250,25 @@ fn decision_row_heights(
     width: u16,
     th: Theme,
 ) -> Vec<u16> {
-    rows.iter()
-        .enumerate()
-        .map(|(index, row)| {
-            decision_lines(
-                row,
-                index == selected,
-                focused && index == selected,
-                width,
-                th,
-            )
-            .len() as u16
-        })
+    row_heights(rows.len(), selected, focused, |index, sel, exp| {
+        decision_lines(&rows[index], sel, exp, width, th).len()
+    })
+}
+
+/// How many lines each of `count` rows draws to, given which is selected and
+/// whether the panel holding them is focused — the one piece of
+/// `task_row_heights` and `decision_row_heights` that was byte-for-byte
+/// identical; the rendering itself stays in `task_lines`/`decision_lines`,
+/// which diverge enough (subtask badges vs. superseded/root marks) that
+/// merging them would cost more clarity than the duplication does.
+fn row_heights(
+    count: usize,
+    selected: usize,
+    focused: bool,
+    mut lines_for: impl FnMut(usize, bool, bool) -> usize,
+) -> Vec<u16> {
+    (0..count)
+        .map(|index| lines_for(index, index == selected, focused && index == selected) as u16)
         .collect()
 }
 
