@@ -171,20 +171,53 @@ pub struct Harness {
 }
 
 impl Event {
-    /// A plain event: it reports a status and tags it with the session.
-    /// Tool events are this shape; they exist for telemetry, and because
-    /// a tool starting is proof the pane is working.
-    fn tagged(name: &str, reports: Report, session_id_key: &str) -> Event {
+    /// An event with no matcher, note, title, or session claim — every
+    /// other field takes it from here with a chained setter, so a harness
+    /// constructor reads as what is different about the event rather than
+    /// restating all seven fields.
+    fn new(name: &str, reports: Report) -> Event {
         Event {
             name: name.into(),
             reports,
             matcher: None,
             note_from_stdin: false,
             title_from_stdin: false,
-            session_id_key: Some(session_id_key.into()),
+            session_id_key: None,
             owns_session: false,
             claim_only: false,
         }
+    }
+
+    fn matcher(mut self, matcher: &str) -> Event {
+        self.matcher = Some(matcher.into());
+        self
+    }
+
+    fn session_id_key(mut self, key: &str) -> Event {
+        self.session_id_key = Some(key.into());
+        self
+    }
+
+    fn note_from_stdin(mut self) -> Event {
+        self.note_from_stdin = true;
+        self
+    }
+
+    fn owns_session(mut self) -> Event {
+        self.owns_session = true;
+        self
+    }
+
+    fn claim_only(mut self) -> Event {
+        self.claim_only = true;
+        self
+    }
+
+    /// A plain event: it reports a status and tags it with the session.
+    /// Tool events are this shape; they exist for telemetry, and because
+    /// a tool starting is proof the pane is working.
+    fn tagged(name: &str, reports: Report, session_id_key: &str) -> Event {
+        Event::new(name, reports).session_id_key(session_id_key)
     }
 }
 
@@ -221,49 +254,18 @@ impl Harness {
             hooks_key: "hooks".to_string(),
             shape: Shape::Matcher,
             events: vec![
-                Event {
-                    name: "UserPromptSubmit".into(),
-                    reports: Report::Working,
-                    matcher: None,
-                    note_from_stdin: false,
-                    title_from_stdin: false,
-                    session_id_key: Some("session_id".into()),
-                    owns_session: false,
-                    claim_only: false,
-                },
-                Event {
-                    name: "Stop".into(),
-                    reports: Report::Idle,
-                    matcher: None,
-                    note_from_stdin: false,
-                    title_from_stdin: false,
-                    session_id_key: Some("session_id".into()),
-                    owns_session: false,
-                    claim_only: false,
-                },
-                Event {
-                    name: "Notification".into(),
-                    reports: Report::Waiting,
-                    matcher: None,
-                    // Carries the text of what it is asking for.
-                    note_from_stdin: true,
-                    title_from_stdin: false,
-                    session_id_key: Some("session_id".into()),
-                    owns_session: false,
-                    claim_only: false,
-                },
-                Event {
-                    name: "SessionStart".into(),
-                    reports: Report::Idle,
-                    // Compaction starts a fresh context while the same turn
-                    // is still running, so it must not make the pane idle.
-                    matcher: Some("startup|resume|clear|fork".into()),
-                    note_from_stdin: false,
-                    title_from_stdin: false,
-                    session_id_key: Some("session_id".into()),
-                    owns_session: true,
-                    claim_only: false,
-                },
+                Event::new("UserPromptSubmit", Report::Working).session_id_key("session_id"),
+                Event::new("Stop", Report::Idle).session_id_key("session_id"),
+                // Carries the text of what it is asking for.
+                Event::new("Notification", Report::Waiting)
+                    .note_from_stdin()
+                    .session_id_key("session_id"),
+                // Compaction starts a fresh context while the same turn is
+                // still running, so it must not make the pane idle.
+                Event::new("SessionStart", Report::Idle)
+                    .matcher("startup|resume|clear|fork")
+                    .session_id_key("session_id")
+                    .owns_session(),
                 Event::tagged("PreToolUse", Report::Working, "session_id"),
                 Event::tagged("PostToolUse", Report::Working, "session_id"),
             ],
@@ -292,16 +294,10 @@ impl Harness {
             hooks_key: "hooks".to_string(),
             shape: Shape::Matcher,
             events: vec![
-                Event {
-                    name: "SessionStart".into(),
-                    reports: Report::Idle,
-                    matcher: Some("startup|resume|clear".into()),
-                    note_from_stdin: false,
-                    title_from_stdin: false,
-                    session_id_key: Some("session_id".into()),
-                    owns_session: true,
-                    claim_only: false,
-                },
+                Event::new("SessionStart", Report::Idle)
+                    .matcher("startup|resume|clear")
+                    .session_id_key("session_id")
+                    .owns_session(),
                 Event::tagged("UserPromptSubmit", Report::Working, "session_id"),
                 Event::tagged("PreToolUse", Report::Working, "session_id"),
                 Event::tagged("PostToolUse", Report::Working, "session_id"),
@@ -391,26 +387,10 @@ impl Harness {
             hooks_key: "argus".to_string(),
             shape: Shape::Flat,
             events: vec![
-                Event {
-                    name: "PreInvocation".into(),
-                    reports: Report::Working,
-                    matcher: None,
-                    note_from_stdin: false,
-                    title_from_stdin: false,
-                    session_id_key: Some("conversationId".into()),
-                    owns_session: true,
-                    claim_only: false,
-                },
-                Event {
-                    name: "Stop".into(),
-                    reports: Report::Idle,
-                    matcher: None,
-                    note_from_stdin: false,
-                    title_from_stdin: false,
-                    session_id_key: Some("conversationId".into()),
-                    owns_session: false,
-                    claim_only: false,
-                },
+                Event::new("PreInvocation", Report::Working)
+                    .session_id_key("conversationId")
+                    .owns_session(),
+                Event::new("Stop", Report::Idle).session_id_key("conversationId"),
             ],
             legacy_events: Vec::new(),
             context_event: None,
@@ -440,57 +420,16 @@ impl Harness {
             hooks_key: "hooks".to_string(),
             shape: Shape::Flat,
             events: vec![
-                Event {
-                    name: "sessionStart".into(),
-                    reports: Report::Idle,
-                    matcher: None,
-                    note_from_stdin: false,
-                    title_from_stdin: false,
-                    session_id_key: Some("conversation_id".into()),
-                    owns_session: true,
-                    claim_only: true,
-                },
-                Event {
-                    name: "beforeSubmitPrompt".into(),
-                    reports: Report::Working,
-                    matcher: None,
-                    note_from_stdin: false,
-                    title_from_stdin: false,
-                    session_id_key: Some("conversation_id".into()),
-                    owns_session: false,
-                    claim_only: false,
-                },
-                Event {
-                    name: "preToolUse".into(),
-                    reports: Report::Working,
-                    matcher: None,
-                    note_from_stdin: false,
-                    title_from_stdin: false,
-                    session_id_key: Some("conversation_id".into()),
-                    owns_session: false,
-                    claim_only: false,
-                },
-                Event {
-                    name: "beforeShellExecution".into(),
-                    reports: Report::Working,
-                    matcher: None,
-                    note_from_stdin: false,
-                    title_from_stdin: false,
-                    session_id_key: Some("conversation_id".into()),
-                    owns_session: false,
-                    claim_only: false,
-                },
+                Event::new("sessionStart", Report::Idle)
+                    .session_id_key("conversation_id")
+                    .owns_session()
+                    .claim_only(),
+                Event::new("beforeSubmitPrompt", Report::Working).session_id_key("conversation_id"),
+                Event::new("preToolUse", Report::Working).session_id_key("conversation_id"),
+                Event::new("beforeShellExecution", Report::Working)
+                    .session_id_key("conversation_id"),
                 Event::tagged("postToolUse", Report::Working, "conversation_id"),
-                Event {
-                    name: "stop".into(),
-                    reports: Report::Idle,
-                    matcher: None,
-                    note_from_stdin: false,
-                    title_from_stdin: false,
-                    session_id_key: Some("conversation_id".into()),
-                    owns_session: false,
-                    claim_only: false,
-                },
+                Event::new("stop", Report::Idle).session_id_key("conversation_id"),
             ],
             legacy_events: Vec::new(),
             context_event: None,
