@@ -126,76 +126,9 @@ impl App {
                     self.report(format!("comment #{id} saved; agent unavailable"));
                 }
             }
-            // Adopted only when it is the board on screen: every client
-            // is told about every project's board, because the daemon does
-            // not track which view anyone has open.
-            ServerMsg::Decisions(board) => {
-                let ours = self
-                    .current_project()
-                    .map(|p| p.name == board.name)
-                    .unwrap_or(false);
-                if ours {
-                    // Held by slug across the swap: a board arriving while
-                    // an agent writes must not move the reader to another
-                    // feature's tree.
-                    let was = self.current_feature_row().and_then(|row| row.slug);
-                    self.board = Some(*board);
-                    if let Some(slug) = was {
-                        if let Some(at) = self
-                            .feature_rows()
-                            .iter()
-                            .position(|row| row.slug.as_deref() == Some(slug.as_str()))
-                        {
-                            self.feature_sel = at;
-                        }
-                    }
-                    self.rescope_feature();
-                }
-            }
-            ServerMsg::Tasks(list) => {
-                // A push for a feature the view is not on is another
-                // client's business, exactly as a board for another
-                // project is. Feature slugs are only unique inside that
-                // project, so both scopes have to agree before installing it.
-                let ours = self
-                    .current_project()
-                    .is_some_and(|project| project.name == list.project_name)
-                    && self.feature_slug() == list.feature;
-                if ours {
-                    // Held by id across the swap, so a task reordered or
-                    // moved under the cursor is still the task under the
-                    // cursor: a card you have to go looking for reads as
-                    // having been lost.
-                    let was = self.selected_task().map(|task| task.id);
-                    let mut list = *list;
-                    list.tasks = list.tasks_in_tree_order();
-                    self.tasks = Some(list);
-                    match was
-                        .and_then(|id| self.feature_tasks().iter().position(|task| task.id == id))
-                    {
-                        Some(at) => self.task_sel = at,
-                        None => self.clamp_task_selection(),
-                    }
-                }
-            }
-            ServerMsg::SequenceDiagrams(list) => {
-                let ours = self
-                    .current_project()
-                    .is_some_and(|project| project.name == list.project_name)
-                    && self.feature_slug() == list.feature;
-                if ours {
-                    let was = self.selected_diagram().map(|d| d.id);
-                    self.diagrams = Some(*list);
-                    match was.and_then(|id| {
-                        self.feature_diagrams()
-                            .iter()
-                            .position(|d| d.id == id)
-                    }) {
-                        Some(at) => self.diagram_sel = at,
-                        None => self.clamp_diagram_selection(),
-                    }
-                }
-            }
+            ServerMsg::Decisions(board) => self.receive_decisions(board),
+            ServerMsg::Tasks(list) => self.receive_tasks(list),
+            ServerMsg::SequenceDiagrams(list) => self.receive_diagrams(list),
             ServerMsg::Branches { checkout, branches } => {
                 if self.list_wanted != Some(checkout) {
                     return;
@@ -298,6 +231,72 @@ impl App {
                 self.alert(format!("error: {message}"));
             }
             ServerMsg::Restarting => {}
+        }
+    }
+
+    /// Adopted only when it is the board on screen: every client is told
+    /// about every project's board, because the daemon does not track which
+    /// view anyone has open.
+    fn receive_decisions(&mut self, board: Box<argus_protocol::DecisionBoard>) {
+        let ours = self
+            .current_project()
+            .map(|p| p.name == board.name)
+            .unwrap_or(false);
+        if !ours {
+            return;
+        }
+        // Held by slug across the swap: a board arriving while an agent
+        // writes must not move the reader to another feature's tree.
+        let was = self.current_feature_row().and_then(|row| row.slug);
+        self.board = Some(*board);
+        if let Some(at) = was.and_then(|slug| {
+            self.feature_rows()
+                .iter()
+                .position(|row| row.slug.as_deref() == Some(slug.as_str()))
+        }) {
+            self.feature_sel = at;
+        }
+        self.rescope_feature();
+    }
+
+    fn receive_tasks(&mut self, list: Box<argus_protocol::TaskList>) {
+        // A push for a feature the view is not on is another client's
+        // business, exactly as a board for another project is. Feature
+        // slugs are only unique inside that project, so both scopes have to
+        // agree before installing it.
+        let ours = self
+            .current_project()
+            .is_some_and(|project| project.name == list.project_name)
+            && self.feature_slug() == list.feature;
+        if !ours {
+            return;
+        }
+        // Held by id across the swap, so a task reordered or moved under
+        // the cursor is still the task under the cursor: a card you have
+        // to go looking for reads as having been lost.
+        let was = self.selected_task().map(|task| task.id);
+        let mut list = *list;
+        list.tasks = list.tasks_in_tree_order();
+        self.tasks = Some(list);
+        match restore_position_by_id(self.feature_tasks(), |task| task.id, was) {
+            Some(at) => self.task_sel = at,
+            None => self.clamp_task_selection(),
+        }
+    }
+
+    fn receive_diagrams(&mut self, list: Box<argus_protocol::DiagramList>) {
+        let ours = self
+            .current_project()
+            .is_some_and(|project| project.name == list.project_name)
+            && self.feature_slug() == list.feature;
+        if !ours {
+            return;
+        }
+        let was = self.selected_diagram().map(|d| d.id);
+        self.diagrams = Some(*list);
+        match restore_position_by_id(self.feature_diagrams(), |d| d.id, was) {
+            Some(at) => self.diagram_sel = at,
+            None => self.clamp_diagram_selection(),
         }
     }
 
@@ -724,4 +723,12 @@ impl App {
         self.status.clear();
         self.status_alert = false;
     }
+}
+
+/// Finds the row a previously selected id now occupies in a freshly
+/// installed list, so a reordered or moved row does not cost the reader
+/// their place. `None` means the id is gone (or there was none to begin
+/// with) and the caller should fall back to clamping the old index.
+fn restore_position_by_id<T>(items: &[T], id: impl Fn(&T) -> i64, was: Option<i64>) -> Option<usize> {
+    was.and_then(|id_val| items.iter().position(|item| id(item) == id_val))
 }
