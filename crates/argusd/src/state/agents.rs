@@ -53,6 +53,138 @@ pub(super) fn is_stale_report(current: PaneStatus, reported: PaneStatus) -> bool
             )
 }
 
+/// A pane, live in the tree or still in the pre-spawn mailbox. Resolving a
+/// pane id to whichever of the two currently holds it, then editing it, is
+/// one operation with two backing stores; this is where that dispatch lives
+/// so callers state only what changed and what "changed" means for them.
+enum PaneOrPending<'a> {
+    Live(&'a mut Pane),
+    Pending(&'a mut PendingStart),
+}
+
+impl<'a> PaneOrPending<'a> {
+    /// `None` when the pane is in neither store, or has already exited —
+    /// nothing said after exit should resurrect a row.
+    fn find(
+        projects: &'a mut [Project],
+        starting: &'a mut HashMap<PaneId, PendingStart>,
+        pane: PaneId,
+    ) -> Option<Self> {
+        match find_pane(projects, pane) {
+            Some(p) if matches!(p.status, PaneStatus::Exited { .. }) => None,
+            Some(p) => Some(Self::Live(p)),
+            None => starting.get_mut(&pane).map(Self::Pending),
+        }
+    }
+
+    fn status(&self) -> PaneStatus {
+        match self {
+            Self::Live(p) => p.status,
+            Self::Pending(p) => p.status.as_ref().map_or(PaneStatus::Idle, |(status, _)| *status),
+        }
+    }
+
+    fn harness_session_id(&self) -> Option<&str> {
+        match self {
+            Self::Live(p) => p.harness_session_id.as_deref(),
+            Self::Pending(p) => p.harness_session_id.as_deref(),
+        }
+    }
+
+    /// The turn that spawned any children is over once a pane goes idle, so
+    /// anything still listed under it has finished without saying so. A
+    /// background agent outliving the turn is not lost by this: its next
+    /// report lists it again.
+    fn clear_children_on_idle(&mut self, status: PaneStatus) -> bool {
+        let children = match self {
+            Self::Live(p) => &mut p.children,
+            Self::Pending(p) => &mut p.children,
+        };
+        if status == PaneStatus::Idle && !children.is_empty() {
+            children.clear();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn set_status(&mut self, status: PaneStatus, note: Option<String>) -> bool {
+        let changed = match self {
+            Self::Live(p) => {
+                let changed = p.status != status || p.note != note;
+                p.status = status;
+                p.note = note;
+                changed
+            }
+            Self::Pending(p) => {
+                let changed = p.status.as_ref() != Some(&(status, note.clone()));
+                p.status = Some((status, note));
+                changed
+            }
+        };
+        changed | self.clear_children_on_idle(status)
+    }
+
+    fn set_title(&mut self, title: String) -> bool {
+        match self {
+            Self::Live(p) => {
+                if p.title != title {
+                    p.title = title;
+                    true
+                } else {
+                    false
+                }
+            }
+            Self::Pending(p) => {
+                if p.title.as_deref() != Some(title.as_str()) {
+                    p.title = Some(title);
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    /// Claims a conversation. Only `Live` carries telemetry, which is reset
+    /// (keeping the model, which usually carries over) because a different
+    /// conversation starts from an empty context.
+    fn set_session_id(&mut self, session_id: String) -> bool {
+        if self.harness_session_id() == Some(session_id.as_str()) {
+            return false;
+        }
+        match self {
+            Self::Live(p) => {
+                if p.harness_session_id.is_some() {
+                    p.telemetry = argus_protocol::AgentTelemetry {
+                        model: p.telemetry.model.take(),
+                        ..Default::default()
+                    };
+                }
+                p.harness_session_id = Some(session_id);
+                p.children.clear();
+            }
+            Self::Pending(p) => {
+                p.harness_session_id = Some(session_id);
+                p.children.clear();
+            }
+        }
+        true
+    }
+
+    fn restore_status_reported(&mut self) {
+        if let Self::Live(p) = self {
+            p.restore_status_reported = true;
+        }
+    }
+
+    fn restore_title_reported(&mut self) {
+        if let Self::Live(p) = self {
+            p.restore_title_reported = true;
+        }
+    }
+}
+
 /// A title has to survive being drawn in a one-line row, and arrives from
 /// a model, so it is flattened to one line and cut to a column's width.
 pub(super) fn clean_title(raw: &str) -> String {
@@ -374,50 +506,18 @@ impl Daemon {
         let changed = {
             let mut starting = self.starting_agents.lock().unwrap();
             let mut inner = self.inner.lock().unwrap();
-            match find_pane(&mut inner.projects, pane) {
-                Some(p) if !is_stale_report(p.status, status) => {
+            match PaneOrPending::find(&mut inner.projects, &mut starting, pane) {
+                Some(mut p) if !is_stale_report(p.status(), status) => {
                     if self.restoring.load(std::sync::atomic::Ordering::Relaxed) {
-                        p.restore_status_reported = true;
+                        p.restore_status_reported();
                     }
                     // A note explains one state; the report that leaves that
                     // state takes it away with it, so a stale "waiting for
                     // the db password" can't sit under a working row.
                     let note = note.map(|n| clean_title(&n)).filter(|n| !n.is_empty());
-                    let mut changed = p.status != status || p.note != note;
-                    p.status = status;
-                    p.note = note;
-                    // The turn that spawned them is over, so anything still
-                    // listed under this row has finished without saying so.
-                    // A background agent outliving the turn is not lost by
-                    // this: its next report lists it again.
-                    if status == PaneStatus::Idle && !p.children.is_empty() {
-                        p.children.clear();
-                        changed = true;
-                    }
-                    changed
+                    p.set_status(status, note)
                 }
-                Some(_) => false,
-                None => match starting.get_mut(&pane) {
-                    Some(pending)
-                        if !is_stale_report(
-                            pending
-                                .status
-                                .as_ref()
-                                .map_or(PaneStatus::Idle, |(status, _)| *status),
-                            status,
-                        ) =>
-                    {
-                        let note = note.map(|n| clean_title(&n)).filter(|n| !n.is_empty());
-                        let mut changed = pending.status.as_ref() != Some(&(status, note.clone()));
-                        pending.status = Some((status, note));
-                        if status == PaneStatus::Idle && !pending.children.is_empty() {
-                            pending.children.clear();
-                            changed = true;
-                        }
-                        changed
-                    }
-                    _ => false,
-                },
+                _ => false,
             }
         };
         if changed {
@@ -437,26 +537,14 @@ impl Daemon {
         let changed = {
             let mut starting = self.starting_agents.lock().unwrap();
             let mut inner = self.inner.lock().unwrap();
-            match find_pane(&mut inner.projects, pane) {
-                Some(p) if !matches!(p.status, PaneStatus::Exited { .. }) => {
+            match PaneOrPending::find(&mut inner.projects, &mut starting, pane) {
+                Some(mut p) => {
                     if self.restoring.load(std::sync::atomic::Ordering::Relaxed) {
-                        p.restore_title_reported = true;
+                        p.restore_title_reported();
                     }
-                    if p.title != title {
-                        p.title = title;
-                        true
-                    } else {
-                        false
-                    }
+                    p.set_title(title)
                 }
-                Some(_) => false,
-                None => match starting.get_mut(&pane) {
-                    Some(pending) if pending.title.as_deref() != Some(&title) => {
-                        pending.title = Some(title);
-                        true
-                    }
-                    _ => false,
-                },
+                None => false,
             }
         };
         if changed {
@@ -478,15 +566,10 @@ impl Daemon {
         };
         if self.child_of(pane, Some(&session_id)).is_some() {
             let working = {
-                let starting = self.starting_agents.lock().unwrap();
-                let inner = self.inner.lock().unwrap();
-                find_pane_ref(&inner.projects, pane)
-                    .map(|p| p.status)
-                    .or_else(|| {
-                        starting
-                            .get(&pane)
-                            .and_then(|pending| pending.status.as_ref().map(|(status, _)| *status))
-                    })
+                let mut starting = self.starting_agents.lock().unwrap();
+                let mut inner = self.inner.lock().unwrap();
+                PaneOrPending::find(&mut inner.projects, &mut starting, pane)
+                    .map(|p| p.status())
                     == Some(PaneStatus::Working)
             };
             if working {
@@ -497,32 +580,9 @@ impl Daemon {
         let changed = {
             let mut starting = self.starting_agents.lock().unwrap();
             let mut inner = self.inner.lock().unwrap();
-            match find_pane(&mut inner.projects, pane) {
-                Some(p)
-                    if !matches!(p.status, PaneStatus::Exited { .. })
-                        && p.harness_session_id.as_deref() != Some(&session_id) =>
-                {
-                    // A different conversation starts from an empty
-                    // context; the model usually carries over.
-                    if p.harness_session_id.is_some() {
-                        p.telemetry = argus_protocol::AgentTelemetry {
-                            model: p.telemetry.model.take(),
-                            ..Default::default()
-                        };
-                    }
-                    p.harness_session_id = Some(session_id);
-                    p.children.clear();
-                    true
-                }
-                Some(_) => false,
-                None => match starting.get_mut(&pane) {
-                    Some(pending) if pending.harness_session_id.as_deref() != Some(&session_id) => {
-                        pending.harness_session_id = Some(session_id);
-                        pending.children.clear();
-                        true
-                    }
-                    _ => false,
-                },
+            match PaneOrPending::find(&mut inner.projects, &mut starting, pane) {
+                Some(mut p) => p.set_session_id(session_id),
+                None => false,
             }
         };
         if changed {
