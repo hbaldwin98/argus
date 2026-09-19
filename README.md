@@ -260,7 +260,7 @@ When no `[[agent]]` entries exist, Argus supplies these templates:
 
 - `claude`, running `claude`.
 - `codex`, running `codex`.
-- `opencode`, running `opencode`.
+- `opencode`, running `opencode --auto` (auto-approving permissions that are not explicitly denied).
 - `pi`, running `pi`.
 - `agy`, running `agy`.
 - `agent`, running Cursor's `agent` CLI.

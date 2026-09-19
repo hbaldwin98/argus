@@ -271,7 +271,11 @@ pub fn default_agents() -> Vec<AgentConfig> {
         .into_iter()
         .map(|name| AgentConfig {
             name: name.to_string(),
-            cmd: vec![name.to_string()],
+            cmd: if name == "opencode" {
+                vec![name.to_string(), "--auto".to_string()]
+            } else {
+                vec![name.to_string()]
+            },
             env: Default::default(),
             harness: None,
             restart: Restart::Never,
@@ -427,6 +431,16 @@ mod tests {
 
     fn parse(raw: &str) -> ConfigFile {
         toml::from_str(raw).expect("the test config should parse")
+    }
+
+    #[test]
+    fn the_built_in_opencode_agent_starts_in_auto_mode() {
+        let opencode = default_agents()
+            .into_iter()
+            .find(|agent| agent.name == "opencode")
+            .expect("the built-in opencode agent should exist");
+
+        assert_eq!(opencode.cmd, ["opencode", "--auto"]);
     }
 
     #[test]
