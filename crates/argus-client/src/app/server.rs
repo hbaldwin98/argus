@@ -246,12 +246,12 @@ impl App {
         }
         // Held by slug across the swap: a board arriving while an agent
         // writes must not move the reader to another feature's tree.
-        let was = self.current_feature_row().and_then(|row| row.slug);
+        let was = self.current_feature_row().map(|row| row.slug);
         self.board = Some(board);
         if let Some(at) = was.and_then(|slug| {
             self.feature_rows()
                 .iter()
-                .position(|row| row.slug.as_deref() == Some(slug.as_str()))
+                .position(|row| row.slug == slug)
         }) {
             self.feature_sel = at;
         }

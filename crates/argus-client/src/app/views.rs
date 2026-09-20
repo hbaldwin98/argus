@@ -96,39 +96,28 @@ impl FeaturePanel {
 impl App {
     // ---- the feature the whole view is about -------------------------
 
-    /// The features the left column offers. Decisions from before features
-    /// existed get a row of their own at the end rather than being hidden:
-    /// a record that is silently dropped is worse than an awkward row.
+    /// The features the left column offers, one row per feature. Unfiled
+    /// decisions are not a feature and get no row: the list is where a
+    /// person picks work, and a row that is not work has no key to act on.
     pub fn feature_rows(&self) -> Vec<FeatureRow> {
         let Some(board) = self.board.as_ref() else {
             return Vec::new();
         };
-        let mut rows: Vec<FeatureRow> = board
+        board
             .features
             .iter()
             .filter(|feature| (feature.state == FeatureState::Done) == self.show_archived_features)
             .map(|f| {
                 let (detail, attention) = self.feature_detail(f, board.count_for(Some(&f.slug)));
                 FeatureRow {
-                    slug: Some(f.slug.clone()),
+                    slug: f.slug.clone(),
                     title: f.title.clone(),
                     detail,
                     attention,
                     done: f.state == FeatureState::Done,
                 }
             })
-            .collect();
-        let unfiled = board.count_for(None);
-        if unfiled > 0 && !self.show_archived_features {
-            rows.push(FeatureRow {
-                slug: None,
-                title: "before features".to_string(),
-                detail: format!("{unfiled} decided"),
-                attention: None,
-                done: false,
-            });
-        }
-        rows
+            .collect()
     }
 
     /// What a feature row says about itself, and whether it is asking for
@@ -229,7 +218,7 @@ impl App {
     /// decisions it draws, and the brief above them. One answer, so the
     /// three panels cannot disagree about which feature you are reading.
     pub fn feature_slug(&self) -> Option<String> {
-        self.current_feature_row().and_then(|row| row.slug)
+        self.current_feature_row().map(|row| row.slug)
     }
 
     pub fn selected_feature(&self) -> Option<&argus_protocol::Feature> {
@@ -249,7 +238,7 @@ impl App {
         if self.feature_sel >= rows.len() {
             self.feature_sel = rows.len().saturating_sub(1);
         }
-        let slug = rows.get(self.feature_sel).and_then(|row| row.slug.clone());
+        let slug = rows.get(self.feature_sel).map(|row| row.slug.clone());
         self.board_scoped = self
             .board
             .as_ref()
@@ -306,7 +295,7 @@ impl App {
             .and_then(|slug| {
                 self.feature_rows()
                     .iter()
-                    .position(|row| row.slug.as_deref() == Some(&slug))
+                    .position(|row| row.slug == slug)
             })
             .unwrap_or(0);
         self.decision_sel = 0;
@@ -937,9 +926,9 @@ impl App {
 /// the feature: what a row is worth reading is what is happening to it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureRow {
-    /// `None` for the unfiled row, which is not a feature and cannot be
-    /// worked on — only read.
-    pub slug: Option<String>,
+    /// The slug of the feature this row names. Every row is a feature, so
+    /// it is always set.
+    pub slug: String,
     pub title: String,
     pub detail: String,
     /// Set when an agent on this feature has stopped for a person. Drawn

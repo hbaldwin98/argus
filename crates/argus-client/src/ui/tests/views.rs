@@ -369,7 +369,7 @@ fn the_board_draws_one_features_decisions_and_offers_the_others() {
 }
 
 #[test]
-fn decisions_from_before_features_are_kept_on_a_row_of_their_own() {
+fn unfiled_decisions_are_not_a_feature_row() {
     let mut filed = decision(1, None, "one row per note");
     filed.feature = Some("notes".into());
     let mut app = app_with_features(
@@ -379,12 +379,13 @@ fn decisions_from_before_features_are_kept_on_a_row_of_their_own() {
 
     let out = lines(&draw_at(&mut app, 100, 30)).join("\n");
     assert!(
-        out.contains("before features"),
-        "nothing is silently lost: {out}"
+        !out.contains("before features"),
+        "the list offers features only: {out}"
     );
-    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
-    let out = lines(&draw_at(&mut app, 100, 30)).join("\n");
-    assert!(out.contains("sqlite"), "{out}");
+    assert!(
+        !out.contains("sqlite"),
+        "an unfiled decision is not a feature to select: {out}"
+    );
 }
 
 #[test]

@@ -872,8 +872,8 @@ watched being built and the daemon deliberately does not track which view a clie
 client with another project open drops it by name. `DecisionBoard::scoped` is what narrows that to
 one feature in the client, so switching scope costs no round trip. The tree is drawn two lines per
 decision with branch rails and elbows connecting every child to its parent, and `argus-hook
-decisions` draws the same topology for agents. Decisions from before features existed get a row of
-their own at the end of the feature list rather than being hidden.
+decisions` draws the same topology for agents. Decisions from before features existed are reported
+as unfiled by the daemon, but the feature list offers features only.
 
 ### The feature view
 
@@ -976,8 +976,9 @@ changes the title and freezes the slug: every decision row, task row and `featur
 points at the slug, so re-deriving it from the new title would orphan exactly the work the feature
 is about. Removing one takes its tasks, events and checkout scope with it and **unfiles its
 decisions** rather than destroying them — the board is append-only because it records what was
-believed at the time, and that outlives the feature it was believed about, so those decisions
-reappear on the "before features" row.
+believed at the time, and that outlives the feature it was believed about. The torn-off decisions
+survive as unfiled and stay readable through `argus-hook decisions`, but they are not a feature and
+the feature pane draws no row for them.
 
 ### Tasks
 

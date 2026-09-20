@@ -305,10 +305,10 @@ fn render_feature_column(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
             break;
         }
         let selected = index == app.feature_sel;
-        // An accepted feature and the unfiled row both recede: neither is
-        // work anybody is going to pick up, and a list where everything
-        // reads at one weight is a list nothing stands out of.
-        let title_style = match (selected, row.slug.is_some() && !row.done) {
+        // An accepted feature recedes: it is not work anybody is going to
+        // pick up, and a list where everything reads at one weight is a
+        // list nothing stands out of.
+        let title_style = match (selected, !row.done) {
             (_, false) => Style::default().fg(th.dim),
             (true, _) => Style::default().fg(th.text).add_modifier(Modifier::BOLD),
             (false, _) => Style::default().fg(th.text),
