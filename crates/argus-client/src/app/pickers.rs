@@ -659,7 +659,7 @@ impl App {
                 if index != self.sel_project {
                     self.sel_project = index;
                     self.sel_repository = 0;
-                    self.sel_checkout = 0;
+                    self.sel_checkout = self.home_checkout_row();
                     self.sel_pane = 0;
                     self.expanded_repositories.clear();
                     if let Some(id) = self

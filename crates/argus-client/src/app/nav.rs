@@ -232,6 +232,18 @@ impl App {
         }
     }
 
+    /// Where the cursor lands when it arrives in the column rather than
+    /// moving within it: the first checkout, not the row above it. The
+    /// main branch leads the column even when nothing sits on it, and a
+    /// cursor parked on that offer turns `a` or `s` into a new worktree of
+    /// main when the user meant the checkout they already have.
+    pub(super) fn home_checkout_row(&self) -> usize {
+        self.checkout_rows()
+            .iter()
+            .position(|row| matches!(row, CheckoutRow::Checkout(_)))
+            .unwrap_or(0)
+    }
+
     /// The selected checkout row as an identity, paired with the repository
     /// it belongs to. Taken before a new tree replaces the old one.
     pub(super) fn checkout_anchor(&self) -> Option<(RepositoryId, CheckoutAnchor)> {
@@ -599,6 +611,10 @@ impl App {
             *sel = new as usize;
         }
         self.clamp();
+        // Another repository's column: the old row index means nothing there.
+        if matches!(target, Focus::Projects | Focus::Repositories) {
+            self.sel_checkout = self.home_checkout_row();
+        }
     }
 
     pub(super) fn descend(&mut self) {
@@ -611,7 +627,7 @@ impl App {
             }
             Focus::Repositories => {
                 if self.current_repository().is_some() {
-                    self.sel_checkout = 0;
+                    self.sel_checkout = self.home_checkout_row();
                     self.focus = Focus::Checkouts;
                 }
             }
@@ -679,7 +695,7 @@ impl App {
     pub(super) fn reset_navigation(&mut self) {
         self.sel_project = 0;
         self.sel_repository = 0;
-        self.sel_checkout = 0;
+        self.sel_checkout = self.home_checkout_row();
         self.sel_pane = 0;
         self.focus = self.fold.first_focus();
     }

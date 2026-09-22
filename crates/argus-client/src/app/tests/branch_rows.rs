@@ -35,6 +35,7 @@ fn the_main_branch_leads_the_column_even_with_nothing_sitting_on_it() {
         3,
         "the main branch plus the two checkouts — and not `spike`"
     );
+    h.key(KeyCode::Char('k'));
     assert_eq!(h.app.current_branch_row(), Some("trunk"), "at the top");
     h.key(KeyCode::Char('j'));
     assert_eq!(
@@ -42,6 +43,27 @@ fn the_main_branch_leads_the_column_even_with_nothing_sitting_on_it() {
         Some(CheckoutId(10)),
         "the checkouts follow it in their own order"
     );
+}
+
+#[test]
+fn arriving_in_the_column_lands_on_a_checkout_rather_than_the_main_branch_offer() {
+    // The primary checkout is on a feature branch, so main leads the
+    // column as a row with no directory. Spawning from where the cursor
+    // arrives must go into the checkout that exists, not make a worktree
+    // of main.
+    let mut h = Harness::new();
+    let r = &mut h.app.tree[0].repositories[0];
+    r.branches = vec!["trunk".to_string()];
+    r.default_branch = Some("trunk".to_string());
+    h.keys("ll");
+
+    assert_eq!(h.app.current_checkout().map(|c| c.id), Some(CheckoutId(10)));
+    h.key(KeyCode::Char('a'));
+    h.key(KeyCode::Enter);
+    assert!(matches!(
+        h.sent().as_slice(),
+        [ClientMsg::SpawnAgent { checkout: CheckoutId(10), .. }]
+    ));
 }
 
 #[test]

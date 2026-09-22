@@ -161,7 +161,7 @@ impl App {
                         match target {
                             crate::ui::CommandCenterRailTarget::Repository(repository) => {
                                 self.sel_repository = repository;
-                                self.sel_checkout = 0;
+                                self.sel_checkout = self.home_checkout_row();
                                 self.sel_pane = 0;
                                 self.focus = Focus::Repositories;
                                 if let Some(id) = self

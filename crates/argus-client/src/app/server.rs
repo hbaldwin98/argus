@@ -349,8 +349,9 @@ impl App {
         // Following a pane already moved the cursor deliberately; the
         // anchor is only for the columns nothing else re-aimed.
         if !followed_pane {
-            if let Some((repository, anchor)) = &checkout_anchor {
-                self.restore_checkout_anchor(*repository, anchor);
+            match &checkout_anchor {
+                Some((repository, anchor)) => self.restore_checkout_anchor(*repository, anchor),
+                None => self.sel_checkout = self.home_checkout_row(),
             }
         }
         self.clamp();
