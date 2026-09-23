@@ -107,7 +107,9 @@ result of a request; `ui` is a pure function of it.
 | `app/server` | what arrives back, and what it does to the selection |
 | `app/views` | which surface the content area holds, and the one feature selection everything on it is read at |
 | `ui` | the frame, and where the cursor goes on it |
-| `ui/command_center` | the HTML-specified shell, contextual rail, workspace stage, pane overview, checkout table, and first-run state |
+| `ui/command_center` | the HTML-specified shell: where the rail and stage go, the stage heading, the first-run state, and the status vocabulary they share |
+| `ui/command_center/rail` | the contextual rail: repositories, checkouts and live agents, and which row a click lands on |
+| `ui/command_center/workspace`, `ui/command_center/feature`, `ui/command_center/panes`, `ui/command_center/checkouts` | one stage each, with the hit-test that shares its layout |
 | `ui/columns`, `ui/rows`, `ui/text` | the compatibility spine, the vocabulary of a row, and fitting text to a width |
 | `ui/help`, `ui/prose` | the keymap window, and markdown styled where it stands |
 | `ui/views` | the top navigation and the legacy feature renderer |
