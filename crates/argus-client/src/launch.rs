@@ -10,9 +10,9 @@ use argus_protocol::{read_msg, transport, write_msg, ClientMsg, ServerMsg};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::sleep;
 
-const RESTART_ACK_TIMEOUT: Duration = Duration::from_secs(5);
-const RESTART_STOP_TIMEOUT: Duration = Duration::from_secs(10);
-const RESTART_POLL_INTERVAL: Duration = Duration::from_millis(25);
+const CONTROL_ACK_TIMEOUT: Duration = Duration::from_secs(5);
+const DAEMON_EXIT_TIMEOUT: Duration = Duration::from_secs(10);
+const DAEMON_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 pub async fn ensure_daemon_and_connect(
 ) -> anyhow::Result<impl AsyncRead + AsyncWrite + Unpin + Send + 'static> {
@@ -47,7 +47,7 @@ pub async fn restart_daemon() -> anyhow::Result<()> {
         .await
         .context("could not ask argusd to restart")?;
 
-    tokio::time::timeout(RESTART_ACK_TIMEOUT, async {
+    tokio::time::timeout(CONTROL_ACK_TIMEOUT, async {
         loop {
             match read_msg::<_, ServerMsg>(&mut stream).await? {
                 ServerMsg::Restarting => return Ok(()),
@@ -61,9 +61,38 @@ pub async fn restart_daemon() -> anyhow::Result<()> {
     .await
     .context("timed out waiting for argusd to acknowledge restart")??;
 
-    wait_for_daemon_to_stop().await?;
+    wait_for_daemon_to_stop("restart").await?;
     let _replacement = ensure_daemon_and_connect().await?;
     Ok(())
+}
+
+pub async fn stop_daemon() -> anyhow::Result<()> {
+    if !transport::is_daemon_listening() {
+        anyhow::bail!("argusd is not running");
+    }
+
+    let mut stream = transport::connect()
+        .await
+        .context("could not connect to argusd for stop")?;
+    write_msg(&mut stream, &ClientMsg::Stop)
+        .await
+        .context("could not ask argusd to stop")?;
+
+    tokio::time::timeout(CONTROL_ACK_TIMEOUT, async {
+        loop {
+            match read_msg::<_, ServerMsg>(&mut stream).await? {
+                ServerMsg::Stopping => return Ok(()),
+                ServerMsg::Error { message } => {
+                    anyhow::bail!("argusd refused to stop: {message}");
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .context("timed out waiting for argusd to acknowledge stop")??;
+
+    wait_for_daemon_to_stop("stop").await
 }
 
 /// `argus init [DIR]`: the first-run scan without the TUI. Adds the
@@ -133,13 +162,13 @@ pub(crate) fn init_summary(project: &argus_protocol::ProjectInfo, path: &str) ->
     out
 }
 
-async fn wait_for_daemon_to_stop() -> anyhow::Result<()> {
-    let deadline = std::time::Instant::now() + RESTART_STOP_TIMEOUT;
+async fn wait_for_daemon_to_stop(operation: &str) -> anyhow::Result<()> {
+    let deadline = std::time::Instant::now() + DAEMON_EXIT_TIMEOUT;
     while transport::is_daemon_listening() {
         if std::time::Instant::now() >= deadline {
-            anyhow::bail!("argusd did not stop after acknowledging restart");
+            anyhow::bail!("argusd did not stop after acknowledging {operation}");
         }
-        sleep(RESTART_POLL_INTERVAL).await;
+        sleep(DAEMON_POLL_INTERVAL).await;
     }
     Ok(())
 }

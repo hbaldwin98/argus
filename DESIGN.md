@@ -24,6 +24,11 @@ message, waits for the daemon to flush its acknowledgement and release the endpo
 the replacement through the same lazy-start path. The daemon removes managed hooks before exit;
 the replacement restores non-exited panes from the runtime session store.
 
+`argus server stop` uses a separate control message. The daemon acknowledges the request, tells
+every connected client to exit so their reconnect loops cannot launch a replacement, removes
+managed hooks, and releases the endpoint. The next ordinary `argus` launch starts the daemon and
+restores non-exited panes from the runtime session store.
+
 The daemon is started with its stderr on the null device, since it shares no console with the
 client and anything it printed would either land in the middle of the TUI or open a console window
 of its own. So it logs to a file beside its config as well, keeping the previous run's log — a

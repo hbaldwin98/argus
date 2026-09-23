@@ -94,13 +94,25 @@ const ACCEPT_BACKOFF_MAX: std::time::Duration = std::time::Duration::from_secs(2
 async fn serve(
     listener: &mut argus_protocol::transport::Listener,
     daemon: &std::sync::Arc<state::Daemon>,
-    shutdown: tokio::sync::broadcast::Sender<()>,
+    shutdown: tokio::sync::broadcast::Sender<conn::ShutdownReason>,
 ) {
     let mut shutdown_rx = shutdown.subscribe();
+    let mut connections = tokio::task::JoinSet::new();
     let mut backoff = ACCEPT_BACKOFF_MIN;
     loop {
+        // Subscribe before accepting so a stop arriving between `accept`
+        // and spawning its handler cannot strand a connection outside the
+        // shutdown broadcast.
+        let connection_shutdown = shutdown.subscribe();
         let accepted = tokio::select! {
-            _ = shutdown_rx.recv() => return,
+            biased;
+            _ = shutdown_rx.recv() => break,
+            result = connections.join_next(), if !connections.is_empty() => {
+                if let Some(Err(error)) = result {
+                    tracing::warn!("client connection task failed: {error}");
+                }
+                continue;
+            }
             result = listener.accept() => result,
         };
         match accepted {
@@ -108,18 +120,24 @@ async fn serve(
                 backoff = ACCEPT_BACKOFF_MIN;
                 let daemon = daemon.clone();
                 let shutdown = shutdown.clone();
-                tokio::spawn(async move {
-                    conn::handle(stream, daemon, shutdown).await;
+                connections.spawn(async move {
+                    conn::handle(stream, daemon, shutdown, connection_shutdown).await;
                 });
             }
             Err(e) => {
                 tracing::warn!("could not accept a client: {e}; retrying in {backoff:?}");
                 tokio::select! {
-                    _ = shutdown_rx.recv() => return,
+                    _ = shutdown_rx.recv() => break,
                     _ = tokio::time::sleep(backoff) => {}
                 }
                 backoff = (backoff * 2).min(ACCEPT_BACKOFF_MAX);
             }
+        }
+    }
+
+    while let Some(result) = connections.join_next().await {
+        if let Err(error) = result {
+            tracing::warn!("client connection task failed during shutdown: {error}");
         }
     }
 }

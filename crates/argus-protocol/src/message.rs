@@ -305,6 +305,8 @@ pub enum ClientMsg {
     /// Ask the daemon to flush this connection, stop accepting clients, and
     /// exit so a fresh daemon can restore the persisted session.
     Restart,
+    /// Ask the daemon to stop cleanly without starting a replacement.
+    Stop,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -439,6 +441,9 @@ pub enum ServerMsg {
     /// The daemon accepted a restart request and will exit after this frame
     /// reaches the client.
     Restarting,
+    /// The daemon accepted a stop request and will exit after this frame
+    /// reaches the client.
+    Stopping,
 }
 
 /// One directory's subdirectories, as the browser needs to draw them.

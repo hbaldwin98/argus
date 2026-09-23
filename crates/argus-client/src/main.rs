@@ -59,6 +59,7 @@ use wire::connection_channels;
 async fn main() -> anyhow::Result<()> {
     match parse_command(&std::env::args().skip(1).collect::<Vec<_>>())? {
         Command::ServerRestart => return launch::restart_daemon().await,
+        Command::ServerStop => return launch::stop_daemon().await,
         Command::Init(dir) => return launch::init(dir).await,
         Command::Tui => {}
     }
@@ -74,6 +75,7 @@ async fn main() -> anyhow::Result<()> {
 enum Command {
     Tui,
     ServerRestart,
+    ServerStop,
     /// Scan a directory (the working directory when none is given) into a
     /// project in the open workspace, and report what was found.
     Init(Option<String>),
@@ -85,10 +87,11 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         [server, restart] if server == "server" && restart == "restart" => {
             Ok(Command::ServerRestart)
         }
+        [server, stop] if server == "server" && stop == "stop" => Ok(Command::ServerStop),
         [init] if init == "init" => Ok(Command::Init(None)),
         [init, dir] if init == "init" => Ok(Command::Init(Some(dir.clone()))),
         _ => Err(anyhow::anyhow!(
-            "usage: argus [init [DIR] | server restart]"
+            "usage: argus [init [DIR] | server (restart | stop)]"
         )),
     }
 }
@@ -449,6 +452,12 @@ mod tests {
     fn server_restart_is_the_daemon_control_command() {
         let args = ["server".to_string(), "restart".to_string()];
         assert!(matches!(parse_command(&args), Ok(Command::ServerRestart)));
+    }
+
+    #[test]
+    fn server_stop_is_the_daemon_stop_command() {
+        let args = ["server".to_string(), "stop".to_string()];
+        assert!(matches!(parse_command(&args), Ok(Command::ServerStop)));
     }
 
     #[test]

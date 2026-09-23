@@ -19,15 +19,28 @@ mod dispatch;
 
 static REVIEW_PERMIT: Semaphore = Semaphore::const_new(1);
 
-pub async fn handle<S>(stream: S, daemon: Arc<Daemon>, shutdown: broadcast::Sender<()>)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ShutdownReason {
+    Restart,
+    Stop,
+}
+
+const STOP_NOTICE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+pub async fn handle<S>(
+    stream: S,
+    daemon: Arc<Daemon>,
+    shutdown: broadcast::Sender<ShutdownReason>,
+    mut shutdown_rx: broadcast::Receiver<ShutdownReason>,
+)
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let (mut rd, wr) = split(stream);
     let (out_tx, out_rx) = mpsc::unbounded_channel::<ServerMsg>();
-    let (restart_flushed, mut restart_flushed_rx) = broadcast::channel(1);
+    let (control_flushed, mut control_flushed_rx) = broadcast::channel(1);
 
-    tokio::spawn(writer_task(wr, out_rx, restart_flushed));
+    tokio::spawn(writer_task(wr, out_rx, control_flushed));
 
     if out_tx.send(ServerMsg::Tree(daemon.snapshot())).is_err() {
         return;
@@ -60,10 +73,23 @@ where
 
     loop {
         tokio::select! {
+            reason = shutdown_rx.recv() => {
+                let stop_notice_queued = match reason {
+                    Ok(ShutdownReason::Stop) => out_tx.send(ServerMsg::Stopping).is_ok(),
+                    _ => false,
+                };
+                if stop_notice_queued {
+                    let _ = tokio::time::timeout(
+                        STOP_NOTICE_TIMEOUT,
+                        control_flushed_rx.recv(),
+                    ).await;
+                }
+                break;
+            }
             msg = read_msg::<_, ClientMsg>(&mut rd) => {
                 match msg {
                     Ok(cmsg) => {
-                        let restart = handle_client_msg(
+                        let shutdown_reason = handle_client_msg(
                             cmsg,
                             &daemon,
                             &out_tx,
@@ -71,12 +97,12 @@ where
                             &mut review_task,
                             viewer,
                         );
-                        if restart {
+                        if let Some(reason) = shutdown_reason {
                             // The writer owns the other end of this signal and
                             // sends it only after the acknowledgement frame is
                             // flushed to the client.
-                            let _ = restart_flushed_rx.recv().await;
-                            let _ = shutdown.send(());
+                            let _ = control_flushed_rx.recv().await;
+                            let _ = shutdown.send(reason);
                             break;
                         }
                     }
@@ -197,19 +223,26 @@ fn handle_client_msg(
     subs: &mut Subscriptions,
     review_task: &mut Option<tokio::task::JoinHandle<()>>,
     viewer: ViewerId,
-) -> bool {
-    if matches!(&msg, ClientMsg::Restart) {
-        let _ = out_tx.send(ServerMsg::Restarting);
-        return true;
+) -> Option<ShutdownReason> {
+    match msg {
+        ClientMsg::Restart => {
+            let _ = out_tx.send(ServerMsg::Restarting);
+            return Some(ShutdownReason::Restart);
+        }
+        ClientMsg::Stop => {
+            let _ = out_tx.send(ServerMsg::Stopping);
+            return Some(ShutdownReason::Stop);
+        }
+        msg => {
+            let result = dispatch::dispatch(msg, daemon, out_tx, subs, review_task, viewer);
+            if let Err(e) = result {
+                let _ = out_tx.send(ServerMsg::Error {
+                    message: e.to_string(),
+                });
+            }
+        }
     }
-
-    let result = dispatch::dispatch(msg, daemon, out_tx, subs, review_task, viewer);
-    if let Err(e) = result {
-        let _ = out_tx.send(ServerMsg::Error {
-            message: e.to_string(),
-        });
-    }
-    false
+    None
 }
 
 /// Writes what the connection has queued, in batches.
@@ -228,13 +261,13 @@ fn handle_client_msg(
 async fn writer_task<W>(
     wr: W,
     mut rx: mpsc::UnboundedReceiver<ServerMsg>,
-    restart_flushed: broadcast::Sender<()>,
+    control_flushed: broadcast::Sender<()>,
 ) where
     W: AsyncWrite + Unpin,
 {
     let mut wr = tokio::io::BufWriter::new(wr);
     while let Some(msg) = rx.recv().await {
-        let mut contains_restart = matches!(&msg, ServerMsg::Restarting);
+        let mut contains_control = is_shutdown_ack(&msg);
         if write_frame(&mut wr, &msg).await.is_err() {
             break;
         }
@@ -242,7 +275,7 @@ async fn writer_task<W>(
         let mut batched = 0;
         while batched < MAX_BATCHED_MESSAGES {
             let Ok(msg) = rx.try_recv() else { break };
-            contains_restart |= matches!(&msg, ServerMsg::Restarting);
+            contains_control |= is_shutdown_ack(&msg);
             if write_frame(&mut wr, &msg).await.is_err() {
                 return;
             }
@@ -251,10 +284,14 @@ async fn writer_task<W>(
         if tokio::io::AsyncWriteExt::flush(&mut wr).await.is_err() {
             break;
         }
-        if contains_restart {
-            let _ = restart_flushed.send(());
+        if contains_control {
+            let _ = control_flushed.send(());
         }
     }
+}
+
+fn is_shutdown_ack(msg: &ServerMsg) -> bool {
+    matches!(msg, ServerMsg::Restarting | ServerMsg::Stopping)
 }
 
 /// How much of the queue one flush may carry. A cap rather than the whole
@@ -284,8 +321,8 @@ mod tests {
         }
         drop(tx);
 
-        let (restart_flushed, _) = broadcast::channel(1);
-        tokio::spawn(writer_task(client, rx, restart_flushed));
+        let (control_flushed, _) = broadcast::channel(1);
+        tokio::spawn(writer_task(client, rx, control_flushed));
 
         for i in 0..MAX_BATCHED_MESSAGES * 2 {
             let msg: ServerMsg = read_msg(&mut daemon).await.expect("a framed message");
@@ -297,16 +334,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_restart_ack_is_signaled_after_its_frame_is_flushed() {
+    async fn a_stop_ack_is_signaled_after_its_frame_is_flushed() {
         let (client, mut daemon) = tokio::io::duplex(1024 * 1024);
         let (tx, rx) = mpsc::unbounded_channel();
-        let (restart_flushed, mut flushed_rx) = broadcast::channel(1);
-        tokio::spawn(writer_task(client, rx, restart_flushed));
+        let (control_flushed, mut flushed_rx) = broadcast::channel(1);
+        tokio::spawn(writer_task(client, rx, control_flushed));
 
-        tx.send(ServerMsg::Restarting).unwrap();
+        tx.send(ServerMsg::Stopping).unwrap();
         assert!(matches!(
             read_msg::<_, ServerMsg>(&mut daemon).await.unwrap(),
-            ServerMsg::Restarting
+            ServerMsg::Stopping
         ));
         tokio::time::timeout(std::time::Duration::from_secs(1), flushed_rx.recv())
             .await
@@ -320,7 +357,12 @@ mod tests {
         let daemon = Harness::new(dir.path()).daemon;
         let (client, server) = tokio::io::duplex(1024 * 1024);
         let (shutdown, mut shutdown_rx) = broadcast::channel(1);
-        let handler = tokio::spawn(handle(server, daemon, shutdown));
+        let handler = tokio::spawn(handle(
+            server,
+            daemon,
+            shutdown.clone(),
+            shutdown.subscribe(),
+        ));
         let mut client = client;
 
         for _ in 0..3 {
@@ -339,11 +381,70 @@ mod tests {
             .unwrap(),
             ServerMsg::Restarting
         ));
-        tokio::time::timeout(std::time::Duration::from_secs(1), shutdown_rx.recv())
+        assert_eq!(
+            tokio::time::timeout(std::time::Duration::from_secs(1), shutdown_rx.recv())
             .await
             .expect("the daemon should signal shutdown after the acknowledgement")
-            .expect("the shutdown sender should remain available");
+                .expect("the shutdown sender should remain available"),
+            ShutdownReason::Restart
+        );
         handler.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_stop_request_notifies_connected_clients_before_shutdown() {
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = Harness::new(dir.path()).daemon;
+        let (request_client, request_server) = tokio::io::duplex(1024 * 1024);
+        let (other_client, other_server) = tokio::io::duplex(1024 * 1024);
+        let (shutdown, mut shutdown_rx) = broadcast::channel(4);
+        let request_handler = tokio::spawn(handle(
+            request_server,
+            daemon.clone(),
+            shutdown.clone(),
+            shutdown.subscribe(),
+        ));
+        let other_handler = tokio::spawn(handle(
+            other_server,
+            daemon,
+            shutdown.clone(),
+            shutdown.subscribe(),
+        ));
+        let mut request_client = request_client;
+        let mut other_client = other_client;
+
+        for _ in 0..3 {
+            let _: ServerMsg = read_msg(&mut request_client).await.unwrap();
+            let _: ServerMsg = read_msg(&mut other_client).await.unwrap();
+        }
+        argus_protocol::write_msg(&mut request_client, &ClientMsg::Stop)
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                read_msg::<_, ServerMsg>(&mut request_client),
+            )
+            .await
+            .unwrap()
+            .unwrap(),
+            ServerMsg::Stopping
+        ));
+        assert_eq!(shutdown_rx.recv().await.unwrap(), ShutdownReason::Stop);
+        assert!(matches!(
+            tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                read_msg::<_, ServerMsg>(&mut other_client),
+            )
+            .await
+            .unwrap()
+            .unwrap(),
+            ServerMsg::Stopping
+        ));
+
+        request_handler.await.unwrap();
+        other_handler.await.unwrap();
     }
 
     struct Harness {
@@ -394,6 +495,7 @@ mod tests {
                 &mut self.review_task,
                 self.viewer,
             )
+            .is_some()
         }
 
         fn replies(&mut self) -> Vec<ServerMsg> {
@@ -435,6 +537,15 @@ mod tests {
 
         assert!(h.send(ClientMsg::Restart));
         assert!(matches!(h.replies().as_slice(), [ServerMsg::Restarting]));
+    }
+
+    #[test]
+    fn a_stop_message_is_acknowledged_without_dispatching_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+
+        assert!(h.send(ClientMsg::Stop));
+        assert!(matches!(h.replies().as_slice(), [ServerMsg::Stopping]));
     }
 
     #[tokio::test]

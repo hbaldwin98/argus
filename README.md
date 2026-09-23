@@ -144,6 +144,15 @@ argus server restart
 The command waits for the replacement daemon to be ready. Non-exited panes are restored from the
 runtime session store.
 
+To stop the daemon without starting a replacement, run:
+
+```sh
+argus server stop
+```
+
+The command waits for the endpoint to be released. Connected Argus clients exit, and the next
+`argus` launch restores non-exited panes from the runtime session store.
+
 ## Install on `PATH`
 
 ### Release archive

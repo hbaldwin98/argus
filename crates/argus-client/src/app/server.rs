@@ -230,6 +230,7 @@ impl App {
                 self.alert(format!("error: {message}"));
             }
             ServerMsg::Restarting => {}
+            ServerMsg::Stopping => self.should_quit = true,
         }
     }
 
@@ -731,4 +732,19 @@ impl App {
 /// with) and the caller should fall back to clamping the old index.
 fn restore_position_by_id<T>(items: &[T], id: impl Fn(&T) -> i64, was: Option<i64>) -> Option<usize> {
     was.and_then(|id_val| items.iter().position(|item| id(item) == id_val))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_intentional_server_stop_quits_the_connected_client() {
+        let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let mut app = App::new(tx);
+
+        app.on_server_msg(ServerMsg::Stopping);
+
+        assert!(app.should_quit);
+    }
 }
