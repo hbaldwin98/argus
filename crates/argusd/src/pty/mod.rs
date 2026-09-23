@@ -271,7 +271,8 @@ fn kill_session(leader: libc::pid_t) {
         // (that's the Linux/SysV meaning) — `-A` is the portable "every
         // process" flag here, without which this only sees processes
         // sharing the caller's own controlling terminal.
-        if let Ok(output) = std::process::Command::new("ps")
+        if let Ok(output) = crate::command::quiet("ps")
+            .into_std()
             .args(["-A", "-o", "pid="])
             .output()
         {
