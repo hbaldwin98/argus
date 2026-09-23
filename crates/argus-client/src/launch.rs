@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
-use argus_protocol::{read_msg, transport, write_msg, ClientMsg, ServerMsg};
+use argus_protocol::{read_msg, transport, write_msg, ClientMsg, FramingError, ServerMsg};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::sleep;
 
@@ -49,7 +49,10 @@ pub async fn restart_daemon() -> anyhow::Result<()> {
 
     tokio::time::timeout(CONTROL_ACK_TIMEOUT, async {
         loop {
-            match read_msg::<_, ServerMsg>(&mut stream).await? {
+            let reply = read_msg::<_, ServerMsg>(&mut stream)
+                .await
+                .map_err(|error| control_read_error(error, "restart"))?;
+            match reply {
                 ServerMsg::Restarting => return Ok(()),
                 ServerMsg::Error { message } => {
                     anyhow::bail!("argusd refused to restart: {message}");
@@ -80,7 +83,10 @@ pub async fn stop_daemon() -> anyhow::Result<()> {
 
     tokio::time::timeout(CONTROL_ACK_TIMEOUT, async {
         loop {
-            match read_msg::<_, ServerMsg>(&mut stream).await? {
+            let reply = read_msg::<_, ServerMsg>(&mut stream)
+                .await
+                .map_err(|error| control_read_error(error, "stop"))?;
+            match reply {
                 ServerMsg::Stopping => return Ok(()),
                 ServerMsg::Error { message } => {
                     anyhow::bail!("argusd refused to stop: {message}");
@@ -93,6 +99,29 @@ pub async fn stop_daemon() -> anyhow::Result<()> {
     .context("timed out waiting for argusd to acknowledge stop")??;
 
     wait_for_daemon_to_stop("stop").await
+}
+
+/// Why a control request got no acknowledgement. A daemon older than the
+/// client cannot decode a request it has never heard of, and its only answer
+/// is to drop the connection — which reads as a bare EOF unless named.
+fn control_read_error(error: FramingError, action: &str) -> anyhow::Error {
+    let closed = matches!(
+        &error,
+        FramingError::Io(io) if matches!(
+            io.kind(),
+            std::io::ErrorKind::UnexpectedEof
+                | std::io::ErrorKind::BrokenPipe
+                | std::io::ErrorKind::ConnectionReset
+        )
+    );
+    if !closed {
+        return anyhow::Error::new(error).context(format!("argusd did not acknowledge {action}"));
+    }
+    anyhow::anyhow!(
+        "argusd closed the connection instead of acknowledging {action}; it may be older \
+         than this client and not know the request. Stop the argusd process (`pkill argusd`, or \
+         Task Manager on Windows), then start argus again."
+    )
 }
 
 /// `argus init [DIR]`: the first-run scan without the TUI. Adds the
@@ -222,4 +251,20 @@ fn daemon_exe_path() -> PathBuf {
         }
     }
     PathBuf::from(name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_daemon_that_hangs_up_is_named_as_possibly_older_than_the_client() {
+        let eof = std::io::Error::from(std::io::ErrorKind::UnexpectedEof);
+        let message = control_read_error(FramingError::Io(eof), "stop").to_string();
+        assert!(message.contains("may be older than this client"), "{message}");
+
+        let other = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        let message = format!("{:#}", control_read_error(FramingError::Io(other), "stop"));
+        assert!(!message.contains("older"), "{message}");
+    }
 }
