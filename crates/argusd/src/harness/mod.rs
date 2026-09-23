@@ -40,7 +40,7 @@
 
 use std::path::{Path, PathBuf};
 
-use argus_protocol::{PaneId, INSTRUCTIONS_COMMAND};
+use argus_protocol::{PaneId, CONTEXT_COMMAND, INSTRUCTIONS_COMMAND};
 use serde::Deserialize;
 use serde_json::{json, Value};
 

@@ -24,6 +24,7 @@ fn outside_argus_has_no_instructions() {
     let output = Command::new(env!("CARGO_BIN_EXE_argus-hook"))
         .arg(INSTRUCTIONS_COMMAND)
         .env_remove(INSTRUCTIONS_VAR)
+        .env_remove(argus_protocol::URL_VAR)
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -41,6 +42,7 @@ fn the_shell_hook_handles_executable_paths_with_spaces_and_literal_context() {
         .args(["-c", &format!("\"$ARGUS_HOOK\" {INSTRUCTIONS_COMMAND}")])
         .env(argus_protocol::HELPER_VAR, helper)
         .env(INSTRUCTIONS_VAR, text)
+        .env_remove(argus_protocol::URL_VAR)
         .output()
         .unwrap();
     assert!(output.status.success());

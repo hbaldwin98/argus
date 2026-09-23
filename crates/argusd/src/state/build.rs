@@ -165,15 +165,18 @@ impl Daemon {
     /// Keeps every generated harness file out of Git status in each checkout
     /// Argus currently knows. The exclude is local metadata, so this never
     /// changes a repository's tracked files or its shared configuration.
+    ///
+    /// `.argus` is included because the default worktree root lives there
+    /// (`tree::worktree_context`); left visible, every linked worktree shows
+    /// up as an untracked directory in the primary checkout.
     pub(super) fn ensure_local_ignores(&self) {
-        let paths: Vec<PathBuf> = self
-            .harnesses
-            .iter()
-            .flat_map(|harness| harness.managed_paths())
+        let paths: Vec<PathBuf> = std::iter::once(PathBuf::from(".argus"))
+            .chain(
+                self.harnesses
+                    .iter()
+                    .flat_map(|harness| harness.managed_paths()),
+            )
             .collect();
-        if paths.is_empty() {
-            return;
-        }
         for checkout in self.checkout_paths() {
             if let Err(error) = crate::gitignore::ensure(&checkout, paths.clone()) {
                 tracing::warn!(

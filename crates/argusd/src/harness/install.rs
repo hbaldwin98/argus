@@ -141,7 +141,7 @@ impl Harness {
                     "timeout": 5
                 })
             } else {
-                say_entry(&command, &self.instructions(checkout))
+                context_entry(&command, &self.instructions(checkout))
             };
             match hooks_obj.get_mut(name) {
                 Some(existing) => {
@@ -359,13 +359,15 @@ pub(super) const PLUGIN_FILE: &str = "argus-status.js";
 /// replaces it with their own keeps it through an uninstall.
 pub(super) const PLUGIN_MARKER: &str = "argus:managed-plugin";
 
-/// A hook that only prints. `say` needs no daemon and no network, so the
-/// context an agent starts with doesn't depend on the status port being up.
-pub(super) fn say_entry(command: &str, text: &str) -> Value {
+/// A hook whose stdout the harness puts in front of the model: the
+/// instructions, then the pane's live context. An agent starts with its
+/// comments, brief and open tasks already read, instead of spending a tool
+/// call on each. The instructions still print when the daemon is down.
+pub(super) fn context_entry(command: &str, text: &str) -> Value {
     json!({
         "type": "command",
         "command": command,
-        "args": ["say", text],
+        "args": [CONTEXT_COMMAND, text],
         "timeout": 5
     })
 }

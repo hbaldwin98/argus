@@ -168,9 +168,10 @@ fn the_url_carries_the_pane_and_the_token_follows() {
 }
 
 #[test]
-fn the_context_hook_carries_the_instructions_and_calls_nothing() {
-    // An agent's starting context must not depend on the status port
-    // being up, so this hook only prints.
+fn the_context_hook_carries_the_instructions_and_reads_the_pane_context() {
+    // The instructions travel as an argument, so they still print when the
+    // status port is down; the pane's context is read through the inherited
+    // environment rather than a baked-in URL.
     let dir = tempfile::tempdir().unwrap();
     let h = Harness::claude();
     h.install(dir.path(), PaneId(1), 5555, "tok").unwrap();
@@ -185,12 +186,12 @@ fn the_context_hook_carries_the_instructions_and_calls_nothing() {
             matcher["hooks"]
                 .as_array()?
                 .iter()
-                .find(|hook| hook["args"][0] == "say")
+                .find(|hook| hook["args"][0] == CONTEXT_COMMAND)
         })
         .unwrap()
         .clone();
     let args: Vec<String> = serde_json::from_value(entry["args"].clone()).unwrap();
-    assert_eq!(args[0], "say");
+    assert_eq!(args[0], CONTEXT_COMMAND);
     // Joined the way the harness joins it: the skill directory is one
     // configured relative path, and SKILL.md goes on after it. On Windows
     // that puts a backslash before the file name, not a slash.
@@ -241,7 +242,7 @@ fn a_new_claude_conversation_clears_stale_status_without_idling_on_compaction() 
     );
     let context = starts
         .iter()
-        .find(|matcher| matcher["hooks"][0]["args"][0] == "say")
+        .find(|matcher| matcher["hooks"][0]["args"][0] == CONTEXT_COMMAND)
         .expect("the context hook must survive sharing SessionStart with status");
     assert!(
         context.get("matcher").is_none(),

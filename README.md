@@ -287,8 +287,8 @@ session, prompt, tool, and session-end hooks in `.codex/hooks.json`, OpenCode th
 Cursor's `agent` CLI uses `.cursor/hooks.json` plus an always-on rule at `.cursor/rules/argus.mdc`.
 All are removed when
 the last agent pane in the checkout closes and swept from every configured checkout at startup.
-Argus also adds the generated hook and skill paths to the repository-local `.git/info/exclude`
-when it discovers a checkout, so they stay out of status without changing the tracked `.gitignore`.
+Argus also adds the generated hook and skill paths, and `.argus` (where linked worktrees live by
+default), to the repository-local `.git/info/exclude` when it discovers a checkout, so they stay out of status without changing the tracked `.gitignore`.
 Codex treats project hooks as untrusted until the user approves them. Argus writes the correct hook,
 but cannot approve that trust decision; exact Codex identity capture starts after approval.
 
@@ -567,9 +567,11 @@ Every agent pane receives `ARGUS_HOOK`, `ARGUS_HOOK_URL`, `ARGUS_HOOK_TOKEN`, `A
 
 Argus installs a small **argus skill** for built-in harnesses: `.claude/skills/argus` for
 Claude Code, `.pi/skills/argus` for pi, and `.agents/skills/argus` for Codex, OpenCode, AGY, and
-Cursor. Startup context points
-the agent to `SKILL.md`; detailed commands for the currently implemented feature, task, and decision
-stores live in its reference and are read when needed. Hooks keep reporting lifecycle
+Cursor. Where the harness has a context hook (Claude Code, Codex), the agent starts with the
+pane's context already printed by `argus-hook context`: review comments, the checkout's feature
+brief, and its open tasks. Elsewhere the startup instructions ask it to run that command once. The
+agent loads `SKILL.md` only when it reports status or changes the board, and each reference only
+when it writes to that part of it. Hooks keep reporting lifecycle
 events and session identity. `argus-hook task add "<what to do>" --under <id>` records newly
 discovered work beneath an existing task, and `argus-hook task` prints the resulting tree.
 Generic harnesses receive compact fallback instructions instead. Custom `[[harness]]` blocks
@@ -583,7 +585,7 @@ Managed skills are cleaned up with the hooks when the last agent leaves the chec
 paths are included in the repository-local `.git/info/exclude` alongside the hook files.
 
 To try this after rebuilding, restart the daemon when your running work is safely stopped, then
-start a fresh agent pane. It should load the Argus skill and read its context. In Codex, trust the
+start a fresh agent pane. It should start with its pane context and name its pane. In Codex, trust the
 new SessionStart context hook when prompted; its command stays stable across subsequent starts.
 Existing running agents keep the instructions they started with. Pi must trust the project before
 it loads project-local extensions and skills; approve its normal trust prompt on the first run.

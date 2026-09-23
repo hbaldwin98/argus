@@ -28,8 +28,10 @@
 //! argus-hook telemetry --model gpt-5 --context 42000 --window 272000 --cost 0.12 --tool shell
 //! argus-hook event prompt "what the user asked"
 //! argus-hook event tool --name shell
+//! argus-hook context                           # comments, feature brief, open tasks
+//! argus-hook context "preface"                  # the preface, then the same
 //! argus-hook say "text"                          # prints, calls nobody
-//! argus-hook instructions                        # prints inherited startup context
+//! argus-hook instructions                        # inherited instructions, then context
 //! argus-hook <url> <token> [--note-from-stdin] [--title-from-stdin]  # the installed hook form
 //! ```
 //!
@@ -51,7 +53,7 @@
 //! continue — Cursor wants `permission`, Claude wants `decision` — never a
 //! human-readable message. Some agent CLIs inject a hook's stdout into the
 //! model's context, so staying silent keeps Argus's bookkeeping out of the
-//! conversation. The deliberate `say`, `instructions`, `comments`, `feature`,
+//! conversation. The deliberate `say`, `instructions`, `context`, `comments`, `feature`,
 //! `task`, `diagram`, `decisions`, and `decide` commands do return useful output.
 //!
 //! On Windows it is a GUI-subsystem binary. Not because it has a UI — it
@@ -77,7 +79,7 @@ use std::time::Duration;
 use argus_protocol::{
     Decision, DecisionBoard, DecisionWrite, DiagramAction, DiagramList, DiagramWrite, Endpoint,
     FeatureAction, FeatureBoard, FeatureWrite, Report, ReviewComment, TaskAction, TaskList,
-    TaskState, TaskWrite, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
+    TaskState, TaskWrite, CONTEXT_COMMAND, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
     SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };
 
@@ -85,6 +87,7 @@ const TIMEOUT: Duration = Duration::from_secs(2);
 const ARTIFACT_SCOPE_VAR: &str = "ARGUS_ARTIFACT_SCOPE";
 
 mod board;
+mod context;
 mod event;
 mod installed;
 mod telemetry;
@@ -111,6 +114,7 @@ type NamedHandler = fn(&[&str]);
 const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("say", say),
     (INSTRUCTIONS_COMMAND, instructions),
+    (CONTEXT_COMMAND, context::context),
     ("title", title),
     ("status", status),
     ("checkout", checkout),
@@ -149,7 +153,7 @@ fn say(rest: &[&str]) {
 fn instructions(_: &[&str]) {
     // Read in the helper, not in a shell command string: multiline context
     // and paths with shell metacharacters must remain data, never shell code.
-    say(&[&env_instructions()]);
+    context::context(&[&env_instructions()]);
 }
 
 fn title(rest: &[&str]) {

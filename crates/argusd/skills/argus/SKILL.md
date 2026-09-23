@@ -1,94 +1,72 @@
 ---
 name: argus
-description: Keeps an Argus pane's status and shared work context current. Use when running inside Argus (ARGUS_PANE and ARGUS_HOOK are set), or when asked to use Argus features, tasks, decisions, sequence diagrams, or review feedback.
+description: Keeps an Argus pane's status and shared work context current. Use when running inside Argus (ARGUS_PANE and ARGUS_HOOK are set) and you need to report status, or when asked to use Argus features, tasks, decisions, sequence diagrams, or review feedback.
 ---
 
 <!-- argus:managed-skill -->
 
 # Argus
 
-Argus shows this conversation as a pane alongside other agents. Use its helper
-to report what the work means and read the context the human has left for you.
-User instructions take precedence over this skill; it does not authorize work
-beyond the user's request.
+Argus shows this conversation as a pane alongside other agents. User
+instructions take precedence over this skill; it does not authorize work beyond
+the user's request. If `ARGUS_PANE` and `ARGUS_HOOK` are not set, continue
+without Argus; never guess a pane ID or use another pane's credentials.
 
-## Establish context
+Invoke the executable in `ARGUS_HOOK`, which may not be on `PATH`: `"$ARGUS_HOOK"`
+in a POSIX shell, `& $env:ARGUS_HOOK` in PowerShell. It always exits 0, so read
+its output to tell a refused write from a successful one.
 
-Check that `ARGUS_PANE` and `ARGUS_HOOK` are set before calling the helper.
-If they are absent, continue the user's task without Argus reporting. Do not
-guess a pane ID, use another pane's credentials, or start a daemon to report.
+## Context
 
-Use the executable in `ARGUS_HOOK`, which may not be on `PATH`. In a POSIX shell,
-invoke it as `"$ARGUS_HOOK"`; in PowerShell, use `& $env:ARGUS_HOOK`.
-The examples below use POSIX syntax. Routing comes from the inherited environment.
-
-At the start of work, and when the task or checkout changes, read:
+Your harness usually shows the pane's context at session start: review comments,
+the checkout's feature brief, and its open tasks. If it did not, or the checkout
+changed, or you are about to write to the board, run it once:
 
 ```sh
-"$ARGUS_HOOK" comments
-"$ARGUS_HOOK" feature
-"$ARGUS_HOOK" task
+"$ARGUS_HOOK" context
 ```
 
-Review comments are durable feedback for this checkout. `feature`
-includes the current feature's brief and decision board; `task` shows its tasks.
-Use returned IDs, slugs, and line numbers for subsequent commands.
+`feature` and `task` show the full brief, decisions, and every task with its brief
+when the summary is not enough.
 
-## Keep the pane informative
+## Title and status
 
-Argus does not title the pane from the user's prompt; naming it is your job.
-As soon as you understand the task, set a short title (a few words, like a
-commit subject) that says what you are doing, and rename it when the task
-changes. Report `working` when starting or resuming work; some harnesses have no
-turn-start event. Existing lifecycle hooks still report the events they support.
+Set a short title (a few words, like a commit subject) once you understand the
+task, and rename it when the task changes. Report only what hooks cannot know:
 
 ```sh
 "$ARGUS_HOOK" title "repairing session restore"
-"$ARGUS_HOOK" status working
 "$ARGUS_HOOK" status waiting "needs database access"
 "$ARGUS_HOOK" status failed "blocked by an unavailable dependency"
 "$ARGUS_HOOK" status needs-review "ready for review"
 "$ARGUS_HOOK" status done "reviewed and complete"
 ```
 
-Use `waiting` when you need a human, with a brief reason that contains no secrets.
-Use `failed` for work you cannot complete because of a failure. Use `needs-review`
-when changes are ready to inspect, and `done` only after review and completion.
-A turn stopping or a process exiting does not establish that the task is done.
-Report meaningful transitions, not every command. Reporting failures should not
-prevent progress on the user's task. The helper always exits successfully, so
-read command output for refused writes rather than treating exit code 0 as proof.
+Hooks already report `working` and `idle` as turns start and stop, and read model
+and context telemetry. Only if the pane never turns working on its own, report
+`status working` yourself when starting or resuming.
 
-Argus reads model, context, and tool telemetry from most harnesses' own hooks.
-If the pane shows none and you know these figures, you may report them; send
-only what you actually know:
+Use `waiting` when you need a human, with a brief reason that contains no secrets;
+`failed` for work you cannot complete; `needs-review` when changes are ready to
+inspect; `done` only after review and completion. A turn stopping does not make a
+task done. Reporting failures must not block the user's task.
 
-```sh
-"$ARGUS_HOOK" telemetry --model gpt-5 --context 42000 --window 272000 --cost 0.12
-"$ARGUS_HOOK" telemetry --tool shell
-"$ARGUS_HOOK" telemetry --tool-done
-```
+## Checkout
 
-## Work in the right checkout
+Other agents may share the checkout, so do not switch its branch in place. For
+another branch, create a linked worktree, continue there, and run
+`"$ARGUS_HOOK" checkout` from the new directory. Resolve this skill from the new
+checkout afterwards.
 
-Other agents may share the checkout. Avoid switching its branch in place;
-when another branch is needed, create a linked worktree and continue there.
-After moving, run `"$ARGUS_HOOK" checkout` from the new directory so Argus can
-move this pane under a known checkout in the same project. This reports a move;
-it does not create a worktree or change your working directory. Resolve this
-skill and its references from the new checkout after moving; Argus may remove
-the old checkout's managed skill when its last agent leaves.
+## Shared work
 
-## Maintain shared work
+Each feature has a brief, tasks with subtasks, decisions, and optional sequence
+diagrams. Only when you are about to change one of them, read its reference:
 
-Argus keeps a shared board per feature: a brief, tasks with subtasks,
-decisions, and optional sequence diagrams. When the request involves
-implementing or changing something, read [references/features.md](references/features.md)
-before starting, then read the reference for each part of the board you use:
-
-- [references/tasks.md](references/tasks.md): shaping tasks and subtasks, and moving them through `todo`, `doing`, and `done`.
+- [references/features.md](references/features.md): choosing, opening, and noting on a feature.
+- [references/tasks.md](references/tasks.md): shaping tasks and moving them through `todo`, `doing`, `done`.
 - [references/decisions.md](references/decisions.md): recording choices and superseding them.
-- [references/diagrams.md](references/diagrams.md): when to record an interaction flow, how to write Mermaid source, and how humans open diagrams in the TUI.
+- [references/diagrams.md](references/diagrams.md): recording an interaction flow as Mermaid.
 
-Keep those records relevant to the requested work. An informational question
-alone does not require creating a feature or tasks.
+Keep those records relevant to the requested work. Answering a question does not
+require creating a feature or tasks.

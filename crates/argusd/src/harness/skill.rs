@@ -82,12 +82,19 @@ impl Harness {
             })
         });
         match skill {
+            // Loading the skill is deferred to when it is needed: every tool
+            // call re-reads the conversation, so a bootstrap that sends each
+            // session to read files first costs more than the work it guides.
             Some(dir) => format!(
-                "If ARGUS_PANE and ARGUS_HOOK are set, you are running inside Argus. \
-                 Load the argus skill at `{}` before starting work (read SKILL.md directly \
-                 if your harness has no skill loader), then read your pane's context as it directs. \
-                 Its references describe features, tasks, decisions, and sequence diagrams when needed. \
-                 If the file is unavailable, continue the user's task without the Argus workflow.",
+                "You are running inside Argus (ARGUS_PANE and ARGUS_HOOK are set). \
+                 Your pane's context (review comments, the checkout's feature and its open tasks) \
+                 follows when your harness shows hook output; otherwise run \
+                 `\"$ARGUS_HOOK\" context` once. Name the pane with \
+                 `\"$ARGUS_HOOK\" title \"<a few words>\"` once you understand the task. \
+                 Before reporting status or changing features, tasks, decisions, or diagrams, \
+                 load the argus skill at `{}` (read SKILL.md directly if your harness has no \
+                 skill loader); answering a question does not need it. \
+                 If ARGUS_HOOK is unavailable, continue the user's task without Argus.",
                 dir.join("SKILL.md").display()
             ),
             None => fallback().to_string(),
@@ -133,14 +140,15 @@ fn remove_managed<'a>(
 pub(super) fn fallback() -> &'static str {
     "Argus fallback (only when ARGUS_PANE and ARGUS_HOOK are set): invoke the executable \
      in ARGUS_HOOK using your shell's environment syntax (POSIX: \"$ARGUS_HOOK\"; \
-     PowerShell: & $env:ARGUS_HOOK). Run `comments` to read the human's review \
-     feedback; run `title <short task>` to name your pane. Report `status working` \
-     when starting or resuming, `status waiting <reason>` when you need a human, \
-     `status failed <reason>` on an unrecoverable failure, `status needs-review` when ready \
-     to inspect, and `status done` after review and completion. Shared checkouts must not \
-     have their branch switched in place; use a linked worktree for another branch and \
-     run `checkout` from it after moving. Follow the user's task and scope. If reporting \
-     is unavailable, continue the task without it."
+     PowerShell: & $env:ARGUS_HOOK). Run `context` once to read review feedback, the \
+     checkout's feature and its open tasks; run `title <short task>` to name your pane. \
+     Report `status working` when starting or resuming if your harness has no hooks that \
+     do it, `status waiting <reason>` when you need a human, `status failed <reason>` on \
+     an unrecoverable failure, `status needs-review` when ready to inspect, and \
+     `status done` after review and completion. Shared checkouts must not have their \
+     branch switched in place; use a linked worktree for another branch and run \
+     `checkout` from it after moving. Follow the user's task and scope. If reporting is \
+     unavailable, continue the task without it."
 }
 
 #[cfg(test)]

@@ -41,7 +41,7 @@ pub use features::{
 };
 pub use framing::{read_msg, write_frame, write_msg, FramingError};
 pub use hook::{
-    pane_path, parse_pane_path, Endpoint, Report, HELPER_VAR, INSTRUCTIONS_COMMAND,
+    pane_path, parse_pane_path, Endpoint, Report, CONTEXT_COMMAND, HELPER_VAR, INSTRUCTIONS_COMMAND,
     INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG, PANE_VAR, SESSION_HEADER, SESSION_KEY_FLAG,
     TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };

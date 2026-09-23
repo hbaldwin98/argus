@@ -518,7 +518,7 @@ configured checkout at startup and removed when the last agent pane in a checkou
 with any directory Argus made only to hold them. Moving a pane performs the same cleanup in its old
 checkout and installs its harness in the new one. Codex is the exception: its trust-sensitive command
 contains only environment references and remains identical across boots. Argus adds every generated
-harness and skill file to the repository's local `.git/info/exclude`; this changes no tracked file,
+harness and skill file, and `.argus` (the default worktree root), to the repository's local `.git/info/exclude`; this changes no tracked file,
 never enters a commit, and is refreshed whenever a checkout is discovered. Hook files are checkout-wide;
 the helper uses or rebases to a valid`ARGUS_HOOK_URL`, so each process still routes to its own pane.
 The helper reads hook stdin once and can extract both a note and a configured
@@ -556,9 +556,16 @@ already does. An agent can still refine the name once it knows the task; the
 next prompt replaces it. Children still cannot rename the parent row.
 
 Agent workflow guidance lives in the bundled `crates/argusd/skills/argus/SKILL.md` and its
-`references/work.md`, embedded into the daemon at build time. The skill explains titles,
-semantic status reports, checkout moves, and reading review feedback; its reference covers
-features, tasks, and decisions. Lifecycle hooks still capture session
+`references/`, embedded into the daemon at build time. The skill explains titles, the statuses
+hooks cannot infer, and checkout moves; its references cover features, tasks, decisions, and
+diagrams, each read only before writing to that part of the board.
+
+Every tool call re-reads the conversation, so startup is designed to cost none. `argus-hook
+context` prints review comments, the feature brief (decisions counted, not listed) and the open
+tasks (titles only) in one answer. Claude's context hook runs `context <instructions>`, and Codex's
+`instructions` prints the inherited message followed by the same context, so both agents begin
+with it in front of them. The bootstrap tells an agent to load the skill only before reporting
+status or changing the board, not to answer a question. Lifecycle hooks still capture session
 identity and report their existing events. A stopped turn is not proof of completed work.
 
 Before starting a built-in agent, Argus installs the package in `.claude/skills/argus` for
@@ -569,7 +576,8 @@ Codex's additional SessionStart context hook (including compaction), OpenCode's 
 adapters, and AGY/Cursor's rules deliver that bootstrap through their existing context surfaces.
 Pi discovers both managed files only after its normal project-trust approval.
 The Codex context command runs `argus-hook instructions`, which prints the inherited message
-without contacting the daemon or interpreting it as shell code. Its command string is stable
+without interpreting it as shell code, then the pane's context; the message still prints when the
+daemon is unreachable. Its command string is stable
 across panes, boots, and changes to skill content; its separate session-identity event keeps its
 existing matcher, so compaction does not reset pane status.
 

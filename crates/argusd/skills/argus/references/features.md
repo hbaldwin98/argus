@@ -17,8 +17,8 @@ checkout shares the selection, so inspect it before changing it.
 
 ## Choosing a feature
 
-For implementation work, run `feature`. If the selected feature matches the
-request, keep it. Otherwise check `feature list` and `use` a matching one. Only
+For implementation work, start from the feature in your pane's context (or
+`context`). If the selected feature matches the request, keep it. Otherwise check `feature list` and `use` a matching one. Only
 `open` a new feature when none fits; `open` also selects it for this checkout.
 Do not switch features just to answer a question.
 

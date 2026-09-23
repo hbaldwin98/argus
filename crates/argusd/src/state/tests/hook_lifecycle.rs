@@ -173,6 +173,26 @@ fn every_git_checkout_gets_local_excludes_for_argus_files() {
 }
 
 #[test]
+fn default_worktree_root_is_excluded_from_the_primary_checkout() {
+    let dir = tempfile::tempdir().unwrap();
+    git2::Repository::init(dir.path()).unwrap();
+    std::fs::create_dir_all(dir.path().join(".argus/worktrees/feature")).unwrap();
+    std::fs::write(dir.path().join(".argus/worktrees/feature/file"), "x").unwrap();
+
+    let d = daemon_with_fake_claude(dir.path());
+    d.sweep_stale_hooks();
+
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let mut options = git2::StatusOptions::new();
+    options.include_untracked(true);
+    let statuses = repo.statuses(Some(&mut options)).unwrap();
+    assert!(
+        statuses.iter().all(|s| !s.path().unwrap().starts_with(".argus")),
+        "linked worktrees must not show as untracked files"
+    );
+}
+
+#[test]
 fn sweeping_a_checkout_that_never_hosted_an_agent_is_harmless() {
     let dir = tempfile::tempdir().unwrap();
     let d = daemon_with_fake_claude(dir.path());
