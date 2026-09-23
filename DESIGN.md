@@ -57,6 +57,9 @@ live in this crate and a contract written twice drifts in silence.
 | `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses |
 | `cell`, `framing`, `transport` | a screen cell, a frame, and the endpoint they travel over |
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
+| `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
+| `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
+| `transcript` | the harness-neutral events of an agent turn |
 
 `argusd` owns PTYs, Git, and everything that outlives a client. Its state is one `Daemon` type
 behind a small set of mutexes; the split below is which file a concern is *read* in, not a change
@@ -64,6 +67,7 @@ to the type or its locking.
 
 | module | answers |
 | --- | --- |
+| `main` | daemon startup, and running until asked to stop |
 | `state` | what the tree is, and what a client is shown of it |
 | `state/build` | turning what the config declares into the tree the daemon runs on |
 | `state/panes` | a pane's lifecycle: spawned, restarted, closed, written to |
@@ -76,11 +80,15 @@ to the type or its locking.
 | `state/hook_server` | the loopback receiver agents report to |
 | `state/session` | what survives a daemon restart |
 | `state/tree` | finding your way around the tree |
+| `state/features`, `state/tasks`, `state/decisions`, `state/diagrams` | a checkout's feature board, translated between client ids and store keys |
 | `conn` | one client connection, and which task each message runs on |
+| `conn/dispatch` | what each client message does |
 | `pty`, `pty/job`, `pty/vt` | a pane's child process, its resource bounds, and the vt100 translation |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
+| `store/boards`, `store/reviews` | the feature boards and the review comments, as stored |
+| `store/panel`, `store/session` | runtime changes to the panel, and the panes to bring back after a restart |
 | `git`, `diff`, `browse`, `highlight` | the read-only questions asked of a repository |
 | `gitignore` | the repository-local excludes for generated Argus files |
 | `config` | `projects.toml`, which is read and never written |
@@ -93,6 +101,7 @@ result of a request; `ui` is a pure function of it.
 | --- | --- |
 | `main`, `redraw`, `terminal`, `wire`, `launch` | the event loop, the screen and socket it runs over, and the daemon lifecycle command |
 | `app` | the model: the tree, the selection, and which modal is up |
+| `app/rows`, `app/layout`, `app/modal` | naming a row independently of its index, where the last frame put things, and the layers that float over it |
 | `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |
 | `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
 | `app/server` | what arrives back, and what it does to the selection |
@@ -100,12 +109,15 @@ result of a request; `ui` is a pure function of it.
 | `ui` | the frame, and where the cursor goes on it |
 | `ui/command_center` | the HTML-specified shell, contextual rail, workspace stage, pane overview, checkout table, and first-run state |
 | `ui/columns`, `ui/rows`, `ui/text` | the compatibility spine, the vocabulary of a row, and fitting text to a width |
+| `ui/help`, `ui/prose` | the keymap window, and markdown styled where it stands |
 | `ui/views` | the top navigation and the legacy feature renderer |
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
 | `review`, `history`, `brief`, `dirpicker` | the view state behind each overlay |
 | `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
-| `grid`, `selection`, `pty_input`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
+| `grid`, `selection`, `pty_input`, `pty_input/keys`, `pty_input/mouse`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
+| `motion` | animation arithmetic: how far along a transition is at a given instant |
 | `settings`, `theme`, `backend`, `herdr`, `profile` | preferences, palette, the ratatui backend, and what is reported outward |
+| `fixtures` | the tree builders every test module shares |
 
 ## Views
 
