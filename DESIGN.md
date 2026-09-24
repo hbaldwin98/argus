@@ -427,6 +427,13 @@ for mouse reporting is sent as a cursor key (xterm alternate-scroll); a child th
 mouse reporting still gets the mouse sequence. Keyboard, paste, mouse, and daemon updates all share
 the client's 16 ms redraw tick, so input bursts cannot trigger an unbounded number of full UI renders.
 
+A selection dragged in a pane is copied two ways at once: to the desktop clipboard, and to the
+host terminal as OSC 52, which is the only route out over SSH or through a multiplexer (herdr
+forwards it; tmux needs `set-clipboard on`). Ctrl-V reads the desktop clipboard; where there is
+none, as over SSH, the terminal's own paste key arrives as a bracketed paste instead. Argus never
+asks the terminal to read its clipboard over OSC 52: most terminals refuse, and the reply would
+reach the key parser as typed text.
+
 The current pane states are `Idle`, `Working`, `Waiting`, `NeedsReview`, `Done`, `Failed`, and
 `Exited { code }`. `NeedsReview` means work is ready for the operator to inspect; `Done` means it
 has been reviewed and completed. `Failed` means the agent said something went wrong while still

@@ -65,6 +65,7 @@ dependencies = [
  "anyhow",
  "arboard",
  "argus-protocol",
+ "base64",
  "crossterm",
  "directories",
  "futures",

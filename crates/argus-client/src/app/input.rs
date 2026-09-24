@@ -140,9 +140,13 @@ impl App {
 
     /// Pastes what is actually on the clipboard, rather than what the
     /// timing of a run of keystrokes suggested was one.
+    ///
+    /// Over SSH there is no desktop clipboard to read, but the terminal's
+    /// own paste still arrives as a bracketed paste, so the alert names
+    /// that route instead of leaving the user with no way in.
     fn paste_clipboard(&mut self) {
         let Some(text) = (self.clipboard)() else {
-            self.alert("could not read the clipboard");
+            self.alert("no clipboard here; paste with your terminal's paste key");
             return;
         };
         if text.is_empty() {

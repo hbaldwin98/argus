@@ -1,4 +1,4 @@
-//! Text crossing between Argus and the desktop clipboard.
+//! Text crossing between Argus and the clipboard.
 //!
 //! Windows gives a terminal application no way to tell a paste from fast
 //! typing: the console delivers pasted text as ordinary key records, with
@@ -6,6 +6,14 @@
 //! which infers it from timing). Reading the clipboard ourselves sidesteps
 //! the guess entirely — an explicit paste key is never wrong about what it
 //! is.
+//!
+//! A desktop clipboard only exists where Argus runs on the desk. Over SSH,
+//! or inside a multiplexer on a remote host, the one clipboard the user
+//! means is the terminal's, and only OSC 52 reaches it.
+
+use std::io::{self, Write};
+
+use base64::Engine;
 
 /// The clipboard's text, or `None` when there is no clipboard to read or
 /// nothing text-shaped on it.
@@ -13,11 +21,35 @@ pub fn read() -> Option<String> {
     arboard::Clipboard::new().ok()?.get_text().ok()
 }
 
-/// Put text on the desktop clipboard, reporting whether it arrived there.
+/// Put text on the clipboard, reporting whether it could have arrived.
+///
+/// Both routes are always taken, since neither knows whether it is the one
+/// that matters. The desktop clipboard can fail loudly but is out of reach
+/// over SSH; OSC 52 reaches the user's terminal through SSH and herdr
+/// (tmux forwards it with `set-clipboard on`), but nothing answers it, so
+/// once written it counts as delivered.
 pub fn write(text: &str) -> bool {
-    arboard::Clipboard::new()
+    let desktop = arboard::Clipboard::new()
         .and_then(|mut clipboard| clipboard.set_text(text))
-        .is_ok()
+        .is_ok();
+    let terminal = write_to_terminal(text).is_ok();
+    desktop || terminal
+}
+
+/// Goes straight to stdout, not through the frame buffer: text is only
+/// copied while handling input, between frames, when that buffer has
+/// already been flushed, so the sequence cannot land inside a frame.
+fn write_to_terminal(text: &str) -> io::Result<()> {
+    let mut stdout = io::stdout().lock();
+    stdout.write_all(osc52(text).as_bytes())?;
+    stdout.flush()
+}
+
+/// BEL rather than ST as the terminator: every terminal that implements
+/// OSC 52 accepts BEL, and some older ones accept nothing else.
+fn osc52(text: &str) -> String {
+    let encoded = base64::engine::general_purpose::STANDARD.encode(text);
+    format!("\x1b]52;c;{encoded}\x07")
 }
 
 /// Line endings as a pty wants them.
@@ -40,6 +72,11 @@ mod tests {
             normalize("one\r\ntwo\rthree\nfour"),
             "one\ntwo\nthree\nfour"
         );
+    }
+
+    #[test]
+    fn copied_text_reaches_the_terminal_as_base64_osc_52() {
+        assert_eq!(osc52("hi\n"), "\x1b]52;c;aGkK\x07");
     }
 
     #[test]
