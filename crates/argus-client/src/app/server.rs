@@ -98,6 +98,13 @@ impl App {
                     grid.alternate_screen = alternate_screen;
                 }
             }
+            ServerMsg::Clipboard { text, .. } => {
+                if (self.clipboard_write)(&text) {
+                    self.report("a pane copied to the clipboard");
+                } else {
+                    self.alert("could not write to the clipboard");
+                }
+            }
             ServerMsg::ScrollbackRows {
                 pane,
                 offset,

@@ -347,6 +347,13 @@ pub enum ServerMsg {
         #[serde(default)]
         alternate_screen: bool,
     },
+    /// Text a pane's child asked to put on the clipboard with OSC 52. The
+    /// pane's terminal is the daemon's, so the request has to be carried to
+    /// the client, whose terminal and desktop are the user's.
+    Clipboard {
+        pane: PaneId,
+        text: String,
+    },
     /// The answer to `ClientMsg::Scrollback`. `offset` is what the daemon
     /// could actually reach after clamping and `depth` how far back the
     /// buffer goes, so the client can stop at the top rather than asking

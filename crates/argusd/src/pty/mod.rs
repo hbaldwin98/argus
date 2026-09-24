@@ -190,7 +190,7 @@ fn executable_in_directory(directory: &Path, program: &OsStr, extensions: &[OsSt
 pub struct PaneRuntime {
     master: Box<dyn MasterPty + Send>,
     input: PaneInput,
-    parser: Arc<StdMutex<vt100::Parser>>,
+    parser: Arc<StdMutex<Vt>>,
     /// Shared with the pump: the cursor shape lives outside `vt100`, but a
     /// snapshot taken from any thread still has to report it.
     shape: Arc<StdMutex<CursorShapeScanner>>,
@@ -203,7 +203,7 @@ pub struct PaneRuntime {
 #[derive(Clone)]
 pub struct PaneInput {
     writer: Arc<StdMutex<Box<dyn Write + Send>>>,
-    parser: Arc<StdMutex<vt100::Parser>>,
+    parser: Arc<StdMutex<Vt>>,
 }
 
 impl PaneInput {
@@ -336,7 +336,7 @@ impl PaneRuntime {
         assign_to_job(job.as_ref(), &mut child)?;
         drop(pair.slave);
 
-        let parser = Arc::new(StdMutex::new(vt100::Parser::new(
+        let parser = Arc::new(StdMutex::new(new_vt(
             DEFAULT_ROWS,
             DEFAULT_COLS,
             SCROLLBACK_LINES,
@@ -409,6 +409,13 @@ impl PaneRuntime {
                         shape.lock().unwrap().feed(&chunk);
                         parser.lock().unwrap().process(&chunk);
                         dirty = true;
+                    }
+                    // Sent whether or not anyone is watching the grid: a
+                    // copy is a one-off, and there is no later frame that
+                    // could carry it instead.
+                    let copied = parser.lock().unwrap().callbacks_mut().take();
+                    for text in copied {
+                        let _ = damage_tx.send(ServerMsg::Clipboard { pane: id, text });
                     }
                     if dirty && damage_tx.receiver_count() == 0 {
                         // Nobody is watching this pane. The parser is fed
@@ -680,7 +687,7 @@ fn set_pty_terminal(command: &mut CommandBuilder) {
 /// `Sync`, and so cannot be handed to a thread that wants to prove the lock
 /// is held for the whole of it.
 fn publish_snapshot(
-    parser: &Arc<StdMutex<vt100::Parser>>,
+    parser: &Arc<StdMutex<Vt>>,
     shape: &Arc<StdMutex<CursorShapeScanner>>,
     damage_tx: &broadcast::Sender<ServerMsg>,
     pane: PaneId,

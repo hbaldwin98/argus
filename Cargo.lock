@@ -99,6 +99,7 @@ version = "0.22.10"
 dependencies = [
  "anyhow",
  "argus-protocol",
+ "base64",
  "directories",
  "git2",
  "ignore",

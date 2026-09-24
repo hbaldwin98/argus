@@ -23,7 +23,7 @@ crossterm = { workspace = true, features = ["event-stream"] }
 futures = "0.3"
 nucleo-matcher = "0.3"
 arboard = { version = "3", default-features = false }
-base64 = "0.22"
+base64 = { workspace = true }
 mermaid-text = "0.57.0"
 unicode-width = "0.2"
 

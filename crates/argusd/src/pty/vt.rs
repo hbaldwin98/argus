@@ -5,11 +5,48 @@
 //! kept apart from the pane runtime so that what a cell, a cursor, or a
 //! mouse mode *is* on the wire can be read in one place.
 
+use base64::Engine;
+
 use super::*;
+
+/// A pane's terminal emulator, with the clipboard hook installed.
+pub(super) type Vt = vt100::Parser<ClipboardRequests>;
+
+pub(super) fn new_vt(rows: u16, cols: u16, scrollback: usize) -> Vt {
+    vt100::Parser::new_with_callbacks(rows, cols, scrollback, ClipboardRequests::default())
+}
+
+/// What a child asked to put on the clipboard with OSC 52, held until the
+/// pump sends it on.
+///
+/// The pane's terminal is not the user's: without this, `vt100` parses the
+/// request and drops it, so an agent's own copy command reports success
+/// while nothing reaches the clipboard. Reads (`OSC 52 ; ?`) stay
+/// unanswered, since answering would hand the user's clipboard to whatever
+/// runs in a pane.
+#[derive(Default)]
+pub(super) struct ClipboardRequests {
+    copied: Vec<String>,
+}
+
+impl ClipboardRequests {
+    pub(super) fn take(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.copied)
+    }
+}
+
+impl vt100::Callbacks for ClipboardRequests {
+    fn copy_to_clipboard(&mut self, _: &mut vt100::Screen, _selection: &[u8], data: &[u8]) {
+        let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data) else {
+            return;
+        };
+        self.copied.push(String::from_utf8_lossy(&bytes).into_owned());
+    }
+}
 
 /// Split out from [`PaneRuntime::scrollback`] so the offset arithmetic can
 /// be driven by a parser a test fed directly, with no child to spawn.
-pub(super) fn read_scrollback(parser: &mut vt100::Parser, offset: usize) -> (Vec<Vec<Cell>>, usize, usize) {
+pub(super) fn read_scrollback(parser: &mut Vt, offset: usize) -> (Vec<Vec<Cell>>, usize, usize) {
     // vt100 clamps to what it actually retained and exposes no count of its
     // own — `scrollback_len` is the configured cap, not the fill level.
     // Asking for more than exists and reading back what stuck is the only
@@ -23,7 +60,7 @@ pub(super) fn read_scrollback(parser: &mut vt100::Parser, offset: usize) -> (Vec
     (cells, offset, depth)
 }
 
-pub(super) fn snapshot_grid(parser: &vt100::Parser) -> Vec<Vec<Cell>> {
+pub(super) fn snapshot_grid(parser: &Vt) -> Vec<Vec<Cell>> {
     let screen = parser.screen();
     let (rows, cols) = screen.size();
     let mut grid = Vec::with_capacity(rows as usize);
@@ -37,7 +74,7 @@ pub(super) fn snapshot_grid(parser: &vt100::Parser) -> Vec<Vec<Cell>> {
     grid
 }
 
-pub(super) fn snapshot_cursor(parser: &vt100::Parser, shape: CursorShape) -> Cursor {
+pub(super) fn snapshot_cursor(parser: &Vt, shape: CursorShape) -> Cursor {
     let screen = parser.screen();
     let (row, col) = screen.cursor_position();
     Cursor {
@@ -48,7 +85,7 @@ pub(super) fn snapshot_cursor(parser: &vt100::Parser, shape: CursorShape) -> Cur
     }
 }
 
-pub(super) fn snapshot_mouse(parser: &vt100::Parser) -> MouseTracking {
+pub(super) fn snapshot_mouse(parser: &Vt) -> MouseTracking {
     let screen = parser.screen();
     MouseTracking {
         mode: match screen.mouse_protocol_mode() {

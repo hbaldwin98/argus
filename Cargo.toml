@@ -30,6 +30,7 @@ vt100 = "0.16"
 git2 = { version = "0.19", features = ["vendored-openssl"] }
 ratatui = "0.30"
 crossterm = "0.29"
+base64 = "0.22"
 tempfile = "3"
 notify = { version = "6", default-features = false, features = ["macos_fsevent"] }
 rusqlite = { version = "0.40", features = ["bundled"] }

@@ -1,4 +1,5 @@
-//! Keys and pastes on their way into a pane.
+//! Keys and pastes on their way into a pane, and a child's copies on
+//! their way out of one.
 
 use super::*;
 // --- typing into a pane ------------------------------------------------
@@ -215,4 +216,27 @@ fn an_unbound_leader_chord_is_swallowed_not_typed() {
     h.key(KeyCode::Char('Q'));
     assert!(h.sent().is_empty());
     assert!(!h.app.leader_pending, "chord consumed");
+}
+
+thread_local! {
+    static COPIED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn record_copy(text: &str) -> bool {
+    COPIED.with(|copied| copied.borrow_mut().push(text.to_string()));
+    true
+}
+
+#[test]
+fn a_childs_copy_reaches_the_clipboard() {
+    let mut h = Harness::new();
+    h.app.clipboard_write = record_copy;
+
+    h.app.on_server_msg(ServerMsg::Clipboard {
+        pane: PaneId(100),
+        text: "from the agent".into(),
+    });
+
+    COPIED.with(|copied| assert_eq!(*copied.borrow(), vec!["from the agent".to_string()]));
+    assert!(!h.app.status_alert);
 }

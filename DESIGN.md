@@ -429,7 +429,9 @@ the client's 16 ms redraw tick, so input bursts cannot trigger an unbounded numb
 
 A selection dragged in a pane is copied two ways at once: to the desktop clipboard, and to the
 host terminal as OSC 52, which is the only route out over SSH or through a multiplexer (herdr
-forwards it; tmux needs `set-clipboard on`). Ctrl-V reads the desktop clipboard; where there is
+forwards it; tmux needs `set-clipboard on`). A child's own OSC 52 copy (Claude Code's `/copy`, a
+shell's `osc52` helper) is caught by the pane's parser and sent to the client as
+`ServerMsg::Clipboard`, which puts it on the clipboard the same two ways. Ctrl-V reads the desktop clipboard; where there is
 none, as over SSH, the terminal's own paste key arrives as a bracketed paste instead. Argus never
 asks the terminal to read its clipboard over OSC 52: most terminals refuse, and the reply would
 reach the key parser as typed text.

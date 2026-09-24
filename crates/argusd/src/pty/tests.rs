@@ -107,7 +107,7 @@ fn an_existing_terminal_type_is_preserved_for_a_pty_child() {
 
 #[test]
 fn a_childs_mouse_request_is_carried_on_the_snapshot() {
-    let mut parser = vt100::Parser::new(24, 80, 0);
+    let mut parser = new_vt(24, 80, 0);
     assert_eq!(snapshot_mouse(&parser), MouseTracking::default());
 
     parser.process(b"[?1002h[?1006h");
@@ -123,10 +123,29 @@ fn a_childs_mouse_request_is_carried_on_the_snapshot() {
     assert_eq!(snapshot_mouse(&parser).mode, MouseMode::None);
 }
 
+#[test]
+fn a_childs_osc_52_copy_is_held_for_the_client() {
+    let mut parser = new_vt(24, 80, 0);
+
+    parser.process(b"\x1b]52;c;aGVsbG8=\x07");
+
+    assert_eq!(parser.callbacks_mut().take(), vec!["hello".to_string()]);
+    assert!(parser.callbacks_mut().take().is_empty(), "sent once");
+}
+
+#[test]
+fn a_childs_osc_52_read_is_not_answered() {
+    let mut parser = new_vt(24, 80, 0);
+
+    parser.process(b"\x1b]52;c;?\x07");
+
+    assert!(parser.callbacks_mut().take().is_empty());
+}
+
 /// A parser holding `lines` numbered lines on a 4-row screen, so the
 /// live screen is the last four and everything before it is scrollback.
-fn scrolled(lines: usize) -> vt100::Parser {
-    let mut parser = vt100::Parser::new(4, 20, SCROLLBACK_LINES);
+fn scrolled(lines: usize) -> Vt {
+    let mut parser = new_vt(4, 20, SCROLLBACK_LINES);
     for i in 1..=lines {
         parser.process(format!("line {i}\r\n").as_bytes());
     }
@@ -185,7 +204,7 @@ fn the_alternate_screen_reports_no_scrollback_of_its_own() {
 
 #[test]
 fn an_alternate_screen_request_is_visible_on_the_snapshot() {
-    let mut parser = vt100::Parser::new(24, 80, 0);
+    let mut parser = new_vt(24, 80, 0);
     assert!(!parser.screen().alternate_screen());
     parser.process(b"[?1049h");
     assert!(parser.screen().alternate_screen());
@@ -198,7 +217,7 @@ fn alternate_scroll_alone_does_not_enable_mouse_reporting() {
     // Codex (and similar TUIs) send DECSET 1007 so a wheel becomes
     // cursor keys. That is not mouse tracking; treating it as such
     // would type `ESC [ < 65 ...` into the prompt.
-    let mut parser = vt100::Parser::new(24, 80, 0);
+    let mut parser = new_vt(24, 80, 0);
     parser.process(b"[?1007h[?1049h");
     assert_eq!(snapshot_mouse(&parser), MouseTracking::default());
     assert!(parser.screen().alternate_screen());
@@ -813,7 +832,7 @@ fn a_resize_snapshot_is_never_older_than_the_damage_ahead_of_it() {
     // No pty here. These are the three handles the publish works over, and
     // driving them directly is what makes a trial cheap enough to repeat
     // until the interleaving that used to break shows up.
-    let parser = Arc::new(StdMutex::new(vt100::Parser::new(24, 80, 0)));
+    let parser = Arc::new(StdMutex::new(new_vt(24, 80, 0)));
     let shape = Arc::new(StdMutex::new(CursorShapeScanner::default()));
     let (tx, _keep) = broadcast::channel(64);
 
@@ -955,7 +974,7 @@ fn colors_convert_across_all_three_forms() {
 
 #[test]
 fn a_parsed_screen_snapshots_to_a_full_rectangular_grid() {
-    let mut parser = vt100::Parser::new(4, 10, 0);
+    let mut parser = new_vt(4, 10, 0);
     parser.process(b"hi");
     let grid = snapshot_grid(&parser);
     assert_eq!(grid.len(), 4);
@@ -978,7 +997,7 @@ fn a_cell_with_no_contents_keeps_the_colours_it_was_cleared_to() {
     // colour. The snapshot skips `contents()` for exactly these cells,
     // so it must still read their attributes — reading them as default
     // cells would knock the colour out of every bar on screen.
-    let mut parser = vt100::Parser::new(2, 4, 0);
+    let mut parser = new_vt(2, 4, 0);
     parser.process(b"\x1b[41m\x1b[K");
     let grid = snapshot_grid(&parser);
     assert_eq!(grid[0][0].ch, " ", "still drawn as a blank");
@@ -999,7 +1018,7 @@ fn a_grapheme_wider_than_one_char_survives_the_snapshot() {
     // A cell holds a character plus any combining marks, so the
     // snapshot has to carry more than one `char` — and more than one
     // byte — through to the client.
-    let mut parser = vt100::Parser::new(1, 4, 0);
+    let mut parser = new_vt(1, 4, 0);
     parser.process("e\u{301}x".as_bytes());
     let grid = snapshot_grid(&parser);
     assert_eq!(grid[0][0].ch, "e\u{301}");
@@ -1008,7 +1027,7 @@ fn a_grapheme_wider_than_one_char_survives_the_snapshot() {
 
 #[test]
 fn sgr_attributes_survive_the_snapshot() {
-    let mut parser = vt100::Parser::new(1, 10, 0);
+    let mut parser = new_vt(1, 10, 0);
     parser.process(b"\x1b[1;3;4;7;31mX\x1b[0m");
     let grid = snapshot_grid(&parser);
     let c = &grid[0][0];
@@ -1019,14 +1038,14 @@ fn sgr_attributes_survive_the_snapshot() {
 
 #[test]
 fn cursor_movement_and_erase_are_honored_not_appended() {
-    let mut parser = vt100::Parser::new(2, 10, 0);
+    let mut parser = new_vt(2, 10, 0);
     parser.process(b"abcdef\x1b[H\x1b[Kxy");
     assert_eq!(rows_of(&snapshot_grid(&parser))[0], "xy");
 }
 
 #[test]
 fn cursor_position_and_visibility_survive_vt_parsing() {
-    let mut parser = vt100::Parser::new(4, 10, 0);
+    let mut parser = new_vt(4, 10, 0);
     parser.process(b"\x1b[3;5H\x1b[?25l");
     assert_eq!(
         snapshot_cursor(&parser, CursorShape::SteadyBar),
