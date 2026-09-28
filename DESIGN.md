@@ -827,7 +827,8 @@ repository with forty branches would bury the two checkouts that are the point o
 branch that has no row is what the `b` picker is for. Expanding also shows the branches that exist
 on a remote and nowhere here, as `origin/feature`: what the last fetch turned up.
 
-On any branch row, Enter switches the primary checkout to it, `n` gives it a worktree, and `D`
+On any branch row, `a` and `s` give it a worktree and start the agent or shell there once the
+daemon says which checkout it made, Enter switches the primary checkout to it, `n` gives it a worktree, and `D`
 deletes it — `git branch -d` in the primary checkout, so the deletion is local, never pushed, and
 refused while the branch holds commits nothing else does. That refusal is the one the user has an
 answer to, so it comes back as a second confirmation rather than an alert: an unmerged branch is

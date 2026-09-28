@@ -329,6 +329,35 @@ fn a_on_a_branch_row_creates_a_worktree_then_spawns_the_agent() {
 }
 
 #[test]
+fn s_on_a_branch_row_creates_a_worktree_then_starts_a_shell_in_it() {
+    let mut h = harness_on_a_branch_row();
+    h.key(KeyCode::Char('s'));
+
+    let request = h.sent().remove(0);
+    assert!(matches!(
+        &request,
+        ClientMsg::CreateWorktree { checkout: CheckoutId(10), branch, .. }
+            if branch == "hotfix/tls"
+    ));
+
+    let mut tree = tree();
+    tree[0].repositories[0].checkouts.push(checkout(
+        13,
+        "hotfix/tls",
+        false,
+        vec![],
+    ));
+    h.app.on_server_msg(ServerMsg::Tree(tree));
+    assert!(h.sent().is_empty(), "nothing is started until the daemon says what it made");
+    h.answer(&request, argus_protocol::Created::Checkout(CheckoutId(13)));
+
+    assert!(matches!(
+        h.sent().as_slice(),
+        [ClientMsg::SpawnShell { checkout: CheckoutId(13), .. }]
+    ));
+}
+
+#[test]
 fn n_on_a_branch_row_gives_that_branch_a_worktree_without_asking_for_a_name() {
     let mut h = harness_on_a_branch_row();
 

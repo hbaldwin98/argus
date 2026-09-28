@@ -22,6 +22,8 @@ pub(super) enum Then {
     SelectCheckout,
     /// Start this agent in the new checkout, then take the keys to it.
     SpawnAgent { template: String },
+    /// Start a shell in the new checkout, then take the keys to it.
+    SpawnShell,
     SelectProject,
     SelectRepository,
 }
@@ -89,6 +91,17 @@ impl App {
                 let _ = self.out.send(ClientMsg::SpawnAgent {
                     checkout: id,
                     template: template.clone(),
+                    request_id,
+                });
+                true
+            }
+            (Created::Checkout(id), Then::SpawnShell) => {
+                if !self.select_checkout_id(id) {
+                    return false;
+                }
+                let request_id = self.awaited.ask(Then::FocusPane { floating: false });
+                let _ = self.out.send(ClientMsg::SpawnShell {
+                    checkout: id,
                     request_id,
                 });
                 true

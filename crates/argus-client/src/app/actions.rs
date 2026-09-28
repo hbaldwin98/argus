@@ -329,6 +329,10 @@ impl App {
         let _ = self.out.send(ClientMsg::SwitchBranch { checkout, branch });
     }
 
+    /// Starts a shell in the selected checkout. On a branch row, which has
+    /// no directory of its own, the branch is given a worktree first and
+    /// the shell starts there once the daemon says which checkout it made —
+    /// as `a` does for an agent.
     pub(super) fn spawn_shell(&mut self) {
         if let Some(checkout) = self.current_checkout().map(|c| c.id) {
             let request_id = self.awaited.ask(Then::FocusPane { floating: false });
@@ -336,7 +340,22 @@ impl App {
                 checkout,
                 request_id,
             });
+            return;
         }
+        let Some(branch) = self.current_branch_row().map(str::to_string) else {
+            return;
+        };
+        let Some(base) = self.primary_checkout().map(|c| c.id) else {
+            self.report("no checkout to branch from");
+            return;
+        };
+        let request_id = self.awaited.ask(Then::SpawnShell);
+        let _ = self.out.send(ClientMsg::CreateWorktree {
+            checkout: base,
+            branch,
+            request_id,
+        });
+        self.report("creating worktree…");
     }
 
     pub(super) fn kill_selected(&mut self) {

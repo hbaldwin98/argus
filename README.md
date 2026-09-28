@@ -410,8 +410,8 @@ location. Typing filters the folders in the current directory.
 | `j` / `k`, arrows | Move along the rail — the project, its repositories, and the open repository's checkouts and panes — in the order it is drawn |
 | `l`, Right, Enter | Open the repository and move into it, go to the checkout's first pane, or type into the pane |
 | `h`, Left, Escape | Up to the row this one hangs under |
-| `s` | Start a shell |
-| `a` | Choose and start an agent |
+| `s` | Start a shell — on a branch row, in a new worktree for that branch |
+| `a` | Choose and start an agent — on a branch row, in a new worktree for that branch |
 | `n` | Add a project on the project heading, a repository on a repository row, or a worktree on a checkout — or, in the Checkouts stage, give a branch row a worktree |
 | `i` | On a repository row, make a repository that does not exist yet: browse to where it should go, name it, and Argus creates the directory, runs `git init` in it, and adds it to the project. An empty name uses the chosen directory itself, which is how a folder that is already there gets initialized |
 | `D` | Remove what the row is, after confirmation: a project or repository (out of the panel only — nothing on disk is touched), a linked worktree (deleted), or a branch row (the local branch, deleted; the remote is untouched). An unmerged branch is refused and asked about again, and confirming that second prompt force-deletes it |
