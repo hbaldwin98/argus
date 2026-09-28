@@ -38,9 +38,10 @@ where
 {
     let (mut rd, wr) = split(stream);
     let (out_tx, out_rx) = mpsc::unbounded_channel::<ServerMsg>();
+    let (frames_tx, frames_rx) = mpsc::channel::<ServerMsg>(FRAME_QUEUE);
     let (control_flushed, mut control_flushed_rx) = broadcast::channel(1);
 
-    tokio::spawn(writer_task(wr, out_rx, control_flushed));
+    tokio::spawn(writer_task(wr, out_rx, frames_rx, control_flushed));
 
     if out_tx.send(ServerMsg::Tree(daemon.snapshot())).is_err() {
         return;
@@ -68,7 +69,7 @@ where
     let mut decisions_rx = daemon.subscribe_decisions();
     let mut tasks_rx = daemon.subscribe_tasks();
     let mut diagrams_rx = daemon.subscribe_diagrams();
-    let mut subs = Subscriptions::default();
+    let mut subs = Subscriptions::new(frames_tx);
     let mut review_task = None;
 
     loop {
@@ -138,71 +139,63 @@ where
     }
 }
 
-/// The panes this connection is streaming, one forwarding task each.
+/// How many pane frames may wait for a client that is slow to read.
+///
+/// A frame that finds the queue full is dropped rather than queued behind
+/// it: the pane falls behind and catches up with one fresh snapshot once
+/// there is room, so a client that cannot keep up sees the latest screen
+/// late rather than every screen later and later. Deep enough to ride out
+/// a burst for a client that is keeping up — about half a second of one
+/// pane at full rate — without paying for a snapshot.
+const FRAME_QUEUE: usize = 32;
+
+/// The panes this connection is streaming, one forwarding task each, and
+/// the bounded queue they share on the way to the writer.
 ///
 /// More than one at a time because the client draws more than one at a
 /// time: an editor in a floating window must not cost you sight of the
 /// agent running behind it.
-#[derive(Default)]
-struct Subscriptions(std::collections::HashMap<PaneId, tokio::task::JoinHandle<()>>);
+struct Subscriptions {
+    tasks: std::collections::HashMap<PaneId, tokio::task::JoinHandle<()>>,
+    /// Everything a pane sends travels this one queue — its snapshots, its
+    /// damage, its copies and its exit — because the client applies them
+    /// in order: damage ahead of its snapshot lands on no grid, and an exit
+    /// ahead of the last frame removes the grid that frame was for.
+    frames: mpsc::Sender<ServerMsg>,
+}
 
 impl Subscriptions {
+    fn new(frames: mpsc::Sender<ServerMsg>) -> Self {
+        Subscriptions {
+            tasks: std::collections::HashMap::new(),
+            frames,
+        }
+    }
+
+    /// Streams `pane` from `snapshot`, which `rx` continues.
+    ///
+    /// The snapshot is queued here, before the forwarder exists, so no
+    /// frame can overtake the grid it applies to. A full queue queues
+    /// nothing, and the forwarder starts out behind.
     fn add(
         &mut self,
         pane: PaneId,
-        mut rx: broadcast::Receiver<ServerMsg>,
-        out_tx: mpsc::UnboundedSender<ServerMsg>,
+        snapshot: ServerMsg,
+        rx: broadcast::Receiver<ServerMsg>,
         daemon: Arc<Daemon>,
     ) {
         self.remove(pane);
-        self.0.insert(
-            pane,
-            tokio::spawn(async move {
-                loop {
-                    match rx.recv().await {
-                        Ok(msg) => {
-                            if out_tx.send(msg).is_err() {
-                                break;
-                            }
-                        }
-                        Err(broadcast::error::RecvError::Lagged(_)) => {
-                            let Ok((
-                                rows,
-                                cols,
-                                cells,
-                                cursor,
-                                mouse,
-                                alternate_screen,
-                                replacement,
-                            )) = daemon.subscribe_pane(pane)
-                            else {
-                                break;
-                            };
-                            if out_tx
-                                .send(ServerMsg::PaneSnapshot {
-                                    pane,
-                                    rows,
-                                    cols,
-                                    cells,
-                                    cursor,
-                                    mouse,
-                                    alternate_screen,
-                                })
-                                .is_err()
-                            {
-                                break;
-                            }
-                            rx = replacement;
-                        }
-                        Err(broadcast::error::RecvError::Closed) => break,
-                    }
-                }
-            }),
-        );
+        let behind = match self.frames.try_send(snapshot) {
+            Ok(()) => false,
+            Err(mpsc::error::TrySendError::Full(_)) => true,
+            Err(mpsc::error::TrySendError::Closed(_)) => return,
+        };
+        let forwarder = forward_pane(pane, rx, self.frames.clone(), daemon, behind);
+        self.tasks.insert(pane, tokio::spawn(forwarder));
     }
 
     fn remove(&mut self, pane: PaneId) {
-        if let Some(task) = self.0.remove(&pane) {
+        if let Some(task) = self.tasks.remove(&pane) {
             task.abort();
         }
     }
@@ -210,8 +203,75 @@ impl Subscriptions {
 
 impl Drop for Subscriptions {
     fn drop(&mut self) {
-        for task in self.0.values() {
+        for task in self.tasks.values() {
             task.abort();
+        }
+    }
+}
+
+/// A pane's whole grid as the message that carries it, and the damage
+/// stream that continues it.
+fn subscribe(
+    daemon: &Daemon,
+    pane: PaneId,
+) -> anyhow::Result<(ServerMsg, broadcast::Receiver<ServerMsg>)> {
+    let (rows, cols, cells, cursor, mouse, alternate_screen, rx) = daemon.subscribe_pane(pane)?;
+    let snapshot = ServerMsg::PaneSnapshot {
+        pane,
+        rows,
+        cols,
+        cells,
+        cursor,
+        mouse,
+        alternate_screen,
+    };
+    Ok((snapshot, rx))
+}
+
+/// Carries one pane's broadcast to the connection's frame queue.
+///
+/// Frames are latest-wins. One that finds the queue full is dropped and
+/// the pane falls behind: its frames are skipped until a slot frees, and
+/// that slot carries a fresh snapshot with the stream that continues it.
+/// Falling behind the broadcast itself recovers the same way. A copy and
+/// an exit are one-offs no later frame can stand in for, so they wait for
+/// room instead, behind or not.
+async fn forward_pane(
+    pane: PaneId,
+    mut rx: broadcast::Receiver<ServerMsg>,
+    frames: mpsc::Sender<ServerMsg>,
+    daemon: Arc<Daemon>,
+    mut behind: bool,
+) {
+    loop {
+        tokio::select! {
+            biased;
+            permit = frames.reserve(), if behind => {
+                let Ok(permit) = permit else { return };
+                let Ok((snapshot, replacement)) = subscribe(&daemon, pane) else { return };
+                permit.send(snapshot);
+                rx = replacement;
+                behind = false;
+            }
+            msg = rx.recv() => match msg {
+                Ok(frame @ (ServerMsg::Damage { .. } | ServerMsg::PaneSnapshot { .. })) => {
+                    if behind {
+                        continue;
+                    }
+                    match frames.try_send(frame) {
+                        Ok(()) => {}
+                        Err(mpsc::error::TrySendError::Full(_)) => behind = true,
+                        Err(mpsc::error::TrySendError::Closed(_)) => return,
+                    }
+                }
+                Ok(one_off) => {
+                    if frames.send(one_off).await.is_err() {
+                        return;
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => behind = true,
+                Err(broadcast::error::RecvError::Closed) => return,
+            },
         }
     }
 }
@@ -256,17 +316,28 @@ fn handle_client_msg(
 /// burst into a single write, which is what keeps the queue from being the
 /// thing that makes the next frame late.
 ///
-/// Ordering is exactly what it was: the batch is written in the order it
-/// was queued, and the flush is the only thing that moved.
+/// There are two queues. Pane frames wait in a bounded one (see
+/// [`FRAME_QUEUE`]); everything else — trees, replies, errors, acks — in
+/// an unbounded one, and goes first, so a screen the client is slow to
+/// take never holds up the answer to something it asked. Each queue is
+/// written in the order it was filled: a pane's frames stay in order, as
+/// do replies.
 async fn writer_task<W>(
     wr: W,
     mut rx: mpsc::UnboundedReceiver<ServerMsg>,
+    mut frames: mpsc::Receiver<ServerMsg>,
     control_flushed: broadcast::Sender<()>,
 ) where
     W: AsyncWrite + Unpin,
 {
     let mut wr = tokio::io::BufWriter::new(wr);
-    while let Some(msg) = rx.recv().await {
+    loop {
+        let msg = tokio::select! {
+            biased;
+            Some(msg) = rx.recv() => msg,
+            Some(frame) = frames.recv() => frame,
+            else => break,
+        };
         let mut contains_control = is_shutdown_ack(&msg);
         if write_frame(&mut wr, &msg).await.is_err() {
             break;
@@ -274,7 +345,9 @@ async fn writer_task<W>(
         // Whatever else is already waiting rides along on this flush.
         let mut batched = 0;
         while batched < MAX_BATCHED_MESSAGES {
-            let Ok(msg) = rx.try_recv() else { break };
+            let Ok(msg) = rx.try_recv().or_else(|_| frames.try_recv()) else {
+                break;
+            };
             contains_control |= is_shutdown_ack(&msg);
             if write_frame(&mut wr, &msg).await.is_err() {
                 return;
@@ -321,8 +394,9 @@ mod tests {
         }
         drop(tx);
 
+        let (_frames_tx, frames_rx) = mpsc::channel(1);
         let (control_flushed, _) = broadcast::channel(1);
-        tokio::spawn(writer_task(client, rx, control_flushed));
+        tokio::spawn(writer_task(client, rx, frames_rx, control_flushed));
 
         for i in 0..MAX_BATCHED_MESSAGES * 2 {
             let msg: ServerMsg = read_msg(&mut daemon).await.expect("a framed message");
@@ -337,8 +411,9 @@ mod tests {
     async fn a_stop_ack_is_signaled_after_its_frame_is_flushed() {
         let (client, mut daemon) = tokio::io::duplex(1024 * 1024);
         let (tx, rx) = mpsc::unbounded_channel();
+        let (_frames_tx, frames_rx) = mpsc::channel(1);
         let (control_flushed, mut flushed_rx) = broadcast::channel(1);
-        tokio::spawn(writer_task(client, rx, control_flushed));
+        tokio::spawn(writer_task(client, rx, frames_rx, control_flushed));
 
         tx.send(ServerMsg::Stopping).unwrap();
         assert!(matches!(
@@ -451,6 +526,7 @@ mod tests {
         daemon: Arc<Daemon>,
         tx: mpsc::UnboundedSender<ServerMsg>,
         rx: mpsc::UnboundedReceiver<ServerMsg>,
+        frames: mpsc::Receiver<ServerMsg>,
         subs: Subscriptions,
         review_task: Option<tokio::task::JoinHandle<()>>,
         viewer: ViewerId,
@@ -471,13 +547,15 @@ mod tests {
                 harnesses: Vec::new(),
             });
             let (tx, rx) = mpsc::unbounded_channel();
+            let (frames_tx, frames) = mpsc::channel(FRAME_QUEUE);
             let viewer = daemon.new_viewer();
             Harness {
                 viewer,
                 daemon,
                 tx,
                 rx,
-                subs: Subscriptions::default(),
+                frames,
+                subs: Subscriptions::new(frames_tx),
                 review_task: None,
             }
         }
@@ -498,9 +576,13 @@ mod tests {
             .is_some()
         }
 
+        /// Everything queued for the client: replies, then pane frames.
         fn replies(&mut self) -> Vec<ServerMsg> {
             let mut out = Vec::new();
             while let Ok(m) = self.rx.try_recv() {
+                out.push(m);
+            }
+            while let Ok(m) = self.frames.try_recv() {
                 out.push(m);
             }
             out
@@ -688,12 +770,12 @@ mod tests {
             Some(ServerMsg::PaneSnapshot { .. })
         ));
         assert!(
-            h.subs.0.contains_key(&pane),
+            h.subs.tasks.contains_key(&pane),
             "damage must flow after a subscribe"
         );
 
         h.send(ClientMsg::Unsubscribe { pane });
-        assert!(!h.subs.0.contains_key(&pane));
+        assert!(!h.subs.tasks.contains_key(&pane));
 
         let _ = h.daemon.close_pane(pane);
     }
@@ -704,7 +786,7 @@ mod tests {
         let mut h = Harness::new(dir.path());
         h.send(ClientMsg::Subscribe { pane: PaneId(9999) });
         assert!(!h.error().await.is_empty());
-        assert!(h.subs.0.is_empty());
+        assert!(h.subs.tasks.is_empty());
     }
 
     #[tokio::test]
@@ -714,26 +796,144 @@ mod tests {
         let checkout = h.checkout();
         let pane = h.daemon.spawn_shell(checkout).unwrap();
         let (damage_tx, rx) = broadcast::channel(1);
-        let (out_tx, mut out_rx) = mpsc::unbounded_channel();
+        let (frames_tx, mut frames) = mpsc::channel(FRAME_QUEUE);
 
-        for message in ["one", "two"] {
-            damage_tx
-                .send(ServerMsg::Error {
-                    message: message.to_string(),
-                })
-                .unwrap();
+        for i in 0..2 {
+            damage_tx.send(damage(pane, i)).unwrap();
         }
 
-        let mut subs = Subscriptions::default();
-        subs.add(pane, rx, out_tx, h.daemon.clone());
+        let mut subs = Subscriptions::new(frames_tx);
+        subs.add(pane, snapshot_marker(pane), rx, h.daemon.clone());
 
-        let recovered = tokio::time::timeout(std::time::Duration::from_secs(5), out_rx.recv())
+        assert!(is_snapshot_marker(&frames.recv().await.unwrap()));
+        let recovered = tokio::time::timeout(std::time::Duration::from_secs(5), frames.recv())
             .await
             .expect("lag recovery should answer")
-            .expect("output channel should remain open");
+            .expect("frame queue should remain open");
         assert!(matches!(recovered, ServerMsg::PaneSnapshot { pane: id, .. } if id == pane));
 
         let _ = h.daemon.close_pane(pane);
+    }
+
+    /// A frame the test can tell apart from the others by its cursor row.
+    fn damage(pane: PaneId, row: u16) -> ServerMsg {
+        ServerMsg::Damage {
+            pane,
+            spans: Vec::new(),
+            cursor: argus_protocol::Cursor {
+                row,
+                ..Default::default()
+            },
+            mouse: Default::default(),
+            alternate_screen: false,
+        }
+    }
+
+    /// A snapshot no pane could have sent, so a real one is recognisable.
+    fn snapshot_marker(pane: PaneId) -> ServerMsg {
+        ServerMsg::PaneSnapshot {
+            pane,
+            rows: 0,
+            cols: 0,
+            cells: Vec::new(),
+            cursor: Default::default(),
+            mouse: Default::default(),
+            alternate_screen: false,
+        }
+    }
+
+    fn is_snapshot_marker(msg: &ServerMsg) -> bool {
+        matches!(msg, ServerMsg::PaneSnapshot { rows: 0, .. })
+    }
+
+    #[tokio::test]
+    async fn a_pane_that_falls_behind_a_full_queue_catches_up_with_one_fresh_snapshot() {
+        // A client too slow to read has to end up on the latest screen,
+        // not behind an ever-longer queue of old ones. A frame that finds
+        // the queue full is dropped, a copy is not, and the first free
+        // slot carries a fresh grid.
+        let dir = tempfile::tempdir().unwrap();
+        let h = Harness::new(dir.path());
+        let pane = h.daemon.spawn_shell(h.checkout()).unwrap();
+        let (damage_tx, rx) = broadcast::channel(16);
+        let (frames_tx, mut frames) = mpsc::channel(2);
+
+        let mut subs = Subscriptions::new(frames_tx);
+        subs.add(pane, snapshot_marker(pane), rx, h.daemon.clone());
+        damage_tx.send(damage(pane, 1)).unwrap(); // fills the queue
+        damage_tx.send(damage(pane, 2)).unwrap(); // finds it full
+        damage_tx.send(damage(pane, 3)).unwrap(); // skipped while behind
+        damage_tx
+            .send(ServerMsg::Clipboard {
+                pane,
+                text: "copied".into(),
+            })
+            .unwrap();
+        // The forwarder takes all four before the client reads a thing.
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !damage_tx.is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the forwarder should drain the broadcast");
+
+        let mut read = Vec::new();
+        for _ in 0..4 {
+            let next = tokio::time::timeout(std::time::Duration::from_secs(5), frames.recv())
+                .await
+                .expect("a frame should arrive")
+                .expect("the frame queue should stay open");
+            read.push(next);
+        }
+
+        assert!(is_snapshot_marker(&read[0]), "{:?}", read[0]);
+        assert!(
+            matches!(read[1], ServerMsg::Damage { cursor, .. } if cursor.row == 1),
+            "{:?}",
+            read[1]
+        );
+        assert!(
+            matches!(&read[2], ServerMsg::Clipboard { text, .. } if text == "copied"),
+            "{:?}",
+            read[2]
+        );
+        assert!(
+            matches!(&read[3], ServerMsg::PaneSnapshot { rows, .. } if *rows > 0),
+            "the pane's real grid, not frames 2 and 3: {:?}",
+            read[3]
+        );
+
+        let _ = h.daemon.close_pane(pane);
+    }
+
+    #[tokio::test]
+    async fn a_reply_is_written_ahead_of_queued_frames() {
+        // A screen the client is slow to take must not hold up the answer
+        // to something it asked.
+        let (writer_end, mut reader_end) = tokio::io::duplex(1024 * 1024);
+        let (tx, rx) = mpsc::unbounded_channel();
+        let (frames_tx, frames_rx) = mpsc::channel(4);
+        for row in [1, 2] {
+            frames_tx.send(damage(PaneId(1), row)).await.unwrap();
+        }
+        tx.send(ServerMsg::Error {
+            message: "reply".into(),
+        })
+        .unwrap();
+
+        let (control_flushed, _) = broadcast::channel(1);
+        tokio::spawn(writer_task(writer_end, rx, frames_rx, control_flushed));
+
+        let first: ServerMsg = read_msg(&mut reader_end).await.unwrap();
+        assert!(matches!(first, ServerMsg::Error { .. }), "{first:?}");
+        for row in [1, 2] {
+            let frame: ServerMsg = read_msg(&mut reader_end).await.unwrap();
+            assert!(
+                matches!(frame, ServerMsg::Damage { cursor, .. } if cursor.row == row),
+                "frames keep their order: {frame:?}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -870,7 +1070,7 @@ mod tests {
 
         h.send(ClientMsg::Subscribe { pane: a });
         h.send(ClientMsg::Subscribe { pane: b });
-        assert_eq!(h.subs.0.len(), 2);
+        assert_eq!(h.subs.tasks.len(), 2);
 
         // Both snapshots arrive, and neither subscription displaced the
         // other.
@@ -885,8 +1085,8 @@ mod tests {
         assert!(panes.contains(&a) && panes.contains(&b), "{panes:?}");
 
         h.send(ClientMsg::Unsubscribe { pane: a });
-        assert_eq!(h.subs.0.len(), 1, "only the one named is dropped");
-        assert!(h.subs.0.contains_key(&b));
+        assert_eq!(h.subs.tasks.len(), 1, "only the one named is dropped");
+        assert!(h.subs.tasks.contains_key(&b));
 
         let _ = h.daemon.close_pane(a);
         let _ = h.daemon.close_pane(b);
@@ -901,7 +1101,7 @@ mod tests {
 
         h.send(ClientMsg::Subscribe { pane });
         h.send(ClientMsg::Subscribe { pane });
-        assert_eq!(h.subs.0.len(), 1);
+        assert_eq!(h.subs.tasks.len(), 1);
 
         let _ = h.daemon.close_pane(pane);
     }

@@ -33,20 +33,8 @@ fn dispatch_pane(
     viewer: ViewerId,
 ) -> DispatchResult {
     let result = match msg {
-        ClientMsg::Subscribe { pane } => daemon.subscribe_pane(pane).map(
-            |(rows, cols, cells, cursor, mouse, alternate_screen, rx)| {
-                subs.add(pane, rx, out_tx.clone(), daemon.clone());
-                let _ = out_tx.send(ServerMsg::PaneSnapshot {
-                    pane,
-                    rows,
-                    cols,
-                    cells,
-                    cursor,
-                    mouse,
-                    alternate_screen,
-                });
-            },
-        ),
+        ClientMsg::Subscribe { pane } => super::subscribe(daemon, pane)
+            .map(|(snapshot, rx)| subs.add(pane, snapshot, rx, daemon.clone())),
         ClientMsg::Unsubscribe { pane } => {
             subs.remove(pane);
             daemon.release_pane_size(viewer, pane);

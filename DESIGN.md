@@ -407,6 +407,18 @@ Clients receive a full grid when they subscribe, then incremental damage. The gr
 stream are taken under one hold of the parser lock, so no frame can be published between them and
 be missed by both. Resize changes both the PTY and parser and emits another full grid.
 
+A connection holds two queues to its socket. Everything a pane sends — its grids, its damage, its
+copies and its exit — waits in one bounded queue of 32 frames, in order, since damage ahead of its
+grid lands on nothing and an exit ahead of the last frame removes the grid that frame was for. The
+subscription's first grid is queued before its stream starts forwarding, so no frame can overtake it.
+Everything else — trees, replies, errors, acknowledgements — waits in an unbounded queue that is
+written first, so a slow screen never holds up the answer to a request. A frame that finds the pane
+queue full is dropped rather than waited for: the pane falls behind, its frames are skipped, and the
+first free slot carries a fresh grid with the stream that continues it. A client too slow to keep up
+therefore sees the latest screen late, not every screen later and later, and the daemon holds no
+more than 32 frames for it. A copy or an exit is never dropped; it waits for room. Falling behind
+the pane's own broadcast recovers the same way.
+
 Each client's requested size for each pane it is showing is recorded against its connection, and a
 pane's PTY is sized to the smallest request in each dimension, so no client is ever sent more rows
 or columns than it has room to draw. A client with a larger window pads; sizing to the largest
