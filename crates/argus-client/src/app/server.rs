@@ -175,7 +175,7 @@ impl App {
                 depth,
                 cells,
             } => {
-                self.receive_scrollback(pane, offset, depth, cells);
+                self.receive_scrollback(pane, offset, depth, None, cells);
             }
             ServerMsg::ScrollbackRuns {
                 pane,
@@ -184,9 +184,10 @@ impl App {
                 rows,
                 cols,
                 runs,
+                top,
             } => {
                 let cells = argus_protocol::grid_from_runs(rows, cols, &runs);
-                self.receive_scrollback(pane, offset, depth, cells);
+                self.receive_scrollback(pane, offset, depth, top, cells);
             }
             ServerMsg::PaneClosed { pane, code } => {
                 self.receive_pane_closed(pane, code);
@@ -398,10 +399,10 @@ impl App {
         // A snapshot is how a resize reaches the client, so a parked view
         // has to be re-read: its rows are the old width and nothing else
         // will replace them.
-        let parked = previous.scrollback.as_ref().map(|sb| sb.offset);
+        let parked = previous.scrollback.as_ref().map(|sb| (sb.offset, sb.top));
         self.grids.insert(pane, grid);
-        if let Some(offset) = parked {
-            self.park_pane(pane, offset);
+        if let Some((offset, top)) = parked {
+            self.park_pane(pane, offset, top);
         }
     }
 

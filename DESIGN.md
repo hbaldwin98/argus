@@ -479,10 +479,16 @@ showing the shell's history underneath it.
 Damage keeps landing on the live grid the whole time a pane is parked, so returning to the bottom is
 immediate and never needs a fresh subscription. The parked rows are deliberately not re-read as that
 damage arrives: they are what the operator scrolled up to read, and a pane still producing output
-would otherwise shift the text out from under them. The consequence is that an offset is relative to
-the live screen at the moment it is requested, so on a pane that is actively printing, scrolling
-again lands lower than the arithmetic suggests. Anchoring an offset to a line rather than to the
-screen needs the daemon to count what it evicts, which the parser does not report.
+would otherwise shift the text out from under them. Scrolling further is asked by line rather than
+by offset: the daemon numbers every line that goes up past the live screen, evicted ones included,
+answers a read with the number of its first row, and takes that number back, so a view on a pane
+still printing moves from the text on screen rather than from wherever the live screen has got to.
+The emulator counts none of this, so the daemon reads it off the history growing: the history may
+run past its cap by two reads' worth — a read is at most 8 KiB and a byte scrolls at most one line —
+and is trimmed back after each. Lines scrolled on the normal screen by a read that then switches to
+the alternate one go uncounted, and a change of width rewraps lines under their numbers; a line
+evicted since its number was handed out reads as the oldest one kept. A daemon that numbers no
+lines answers without one, and the client asks by offset as before.
 
 A wheel over a pane on the normal screen moves that view rather than reaching the child, since that
 is the screen with history behind it. Shift-PageUp and Shift-PageDown page by a screen less a line,

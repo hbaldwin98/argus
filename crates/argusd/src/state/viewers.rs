@@ -144,17 +144,17 @@ impl Daemon {
         Ok(())
     }
 
-    /// Reads `offset` lines up this pane's scrollback. Returns the rows,
-    /// the offset actually reached, and how far back the buffer goes.
+    /// Reads this pane's scrollback `offset` lines up, or from line `top`.
     pub fn pane_scrollback(
         &self,
         pane: PaneId,
         offset: usize,
-    ) -> anyhow::Result<(Vec<Vec<Cell>>, usize, usize)> {
+        top: Option<u64>,
+    ) -> anyhow::Result<pty::Scrolled> {
         let inner = self.inner.lock().unwrap();
         let p =
             find_pane_ref(&inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
-        Ok(p.runtime.scrollback(offset))
+        Ok(p.runtime.scrollback(offset, top))
     }
 
     pub fn subscribe_pane(&self, pane: PaneId) -> anyhow::Result<PaneSubscription> {

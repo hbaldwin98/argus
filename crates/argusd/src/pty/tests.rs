@@ -185,21 +185,21 @@ fn an_offset_reads_the_lines_that_scrolled_off_the_top() {
 
     // 10 lines written, 4 rows visible, and the cursor sits on the row
     // after the last one: rows 8..11 are live, so 7 lines are behind.
-    let (live, offset, depth) = vt.scrollback(0);
-    assert_eq!((offset, depth), (0, 7));
-    assert_eq!(first_row(&live), "line 8");
+    let live = vt.scrollback(0, None);
+    assert_eq!((live.offset, live.depth), (0, 7));
+    assert_eq!(first_row(&live.cells), "line 8");
 
-    let (back, offset, _) = vt.scrollback(3);
-    assert_eq!(offset, 3);
-    assert_eq!(first_row(&back), "line 5");
+    let back = vt.scrollback(3, None);
+    assert_eq!(back.offset, 3);
+    assert_eq!(first_row(&back.cells), "line 5");
 }
 
 #[test]
 fn an_offset_past_the_top_stops_at_the_oldest_line_it_has() {
     let vt = scrolled(10);
-    let (cells, offset, depth) = vt.scrollback(999);
-    assert_eq!(offset, depth, "clamped to the top rather than refused");
-    assert_eq!(first_row(&cells), "line 1");
+    let top = vt.scrollback(999, None);
+    assert_eq!(top.offset, top.depth, "clamped to the top rather than refused");
+    assert_eq!(first_row(&top.cells), "line 1");
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn reading_scrollback_leaves_the_live_screen_where_it_was() {
     // Moved, the pump would diff scrolled-back rows against live ones and
     // broadcast the difference to every other subscriber as damage.
     let vt = scrolled(10);
-    vt.scrollback(5);
+    vt.scrollback(5, None);
     assert_eq!(first_row(&vt.grid()), "line 8");
 }
 
@@ -217,8 +217,64 @@ fn the_alternate_screen_reports_no_scrollback_of_its_own() {
     // must not show through underneath it.
     let mut vt = scrolled(10);
     vt.process(b"[?1049h");
-    let (_, offset, depth) = vt.scrollback(5);
-    assert_eq!((offset, depth), (0, 0));
+    let read = vt.scrollback(5, None);
+    assert_eq!((read.offset, read.depth), (0, 0));
+}
+
+#[test]
+fn a_line_keeps_its_number_as_more_output_pushes_it_back() {
+    let mut vt = scrolled(10);
+    let parked = vt.scrollback(3, None);
+    assert_eq!(first_row(&parked.cells), "line 5");
+    assert_eq!(parked.top, 4, "four lines above it: 1 to 4");
+
+    for i in 11..=30 {
+        vt.process(format!("line {i}\r\n").as_bytes());
+    }
+    let again = vt.scrollback(0, Some(parked.top));
+    assert_eq!(first_row(&again.cells), "line 5", "still the line it was");
+    assert_eq!(again.offset, 23, "now twenty more lines back");
+    assert_eq!(again.top, parked.top);
+}
+
+#[test]
+fn lines_are_counted_past_the_cap_and_an_evicted_one_reads_as_the_oldest() {
+    // A history of five: the count has to go on past what is kept, or a
+    // pane that has been printing for a while numbers nothing reliably.
+    let mut vt = Vt::new(4, 20, 5);
+    let mut all = String::new();
+    for i in 1..=100 {
+        all.push_str(&format!("line {i}\r\n"));
+    }
+    vt.process(all.as_bytes());
+    let top = vt.scrollback(999, None);
+    assert_eq!(top.depth, 5, "trimmed back to its cap");
+    assert_eq!(first_row(&top.cells), "line 93");
+    assert_eq!(top.top, 92, "every line that went up, not just the kept ones");
+
+    let gone = vt.scrollback(0, Some(10));
+    assert_eq!(first_row(&gone.cells), "line 93", "the oldest it still has");
+}
+
+#[test]
+fn the_alternate_screen_leaves_the_count_where_it_was() {
+    let mut vt = scrolled(10);
+    let before = vt.scrollback(0, None).top;
+    vt.process(b"\x1b[?1049h");
+    for i in 0..40 {
+        vt.process(format!("full-screen {i}\r\n").as_bytes());
+    }
+    vt.process(b"\x1b[?1049l");
+    assert_eq!(vt.scrollback(0, None).top, before);
+}
+
+#[test]
+fn rows_lost_to_a_resize_move_the_screen_top_and_keep_the_lines_numbered() {
+    let mut vt = scrolled(10);
+    let parked = vt.scrollback(2, None);
+    vt.resize(2, 20);
+    let again = vt.scrollback(0, Some(parked.top));
+    assert_eq!(first_row(&again.cells), first_row(&parked.cells));
 }
 
 #[test]
@@ -512,21 +568,21 @@ async fn a_childs_earlier_output_is_still_readable_after_it_scrolls_off() {
         PaneRuntime::spawn(PaneId(40), &std::env::temp_dir(), counter(60), |_| {}).unwrap();
     wait_for(&pane, |g| grid_contains(g, "line60")).await;
 
-    let (live, offset, depth) = pane.scrollback(0);
-    assert_eq!(offset, 0);
-    assert!(depth > 0, "60 lines do not fit in 24 rows");
+    let live = pane.scrollback(0, None);
+    assert_eq!(live.offset, 0);
+    assert!(live.depth > 0, "60 lines do not fit in 24 rows");
     assert!(
-        !rows_of(&live).iter().any(|r| r == "line1"),
+        !rows_of(&live.cells).iter().any(|r| r == "line1"),
         "the first line is off the live screen: {:?}",
-        rows_of(&live)
+        rows_of(&live.cells)
     );
 
-    let (back, offset, _) = pane.scrollback(depth);
-    assert_eq!(offset, depth, "clamped to the oldest line it kept");
+    let back = pane.scrollback(live.depth, None);
+    assert_eq!(back.offset, live.depth, "clamped to the oldest line it kept");
     assert!(
-        rows_of(&back).iter().any(|r| r == "line1"),
+        rows_of(&back.cells).iter().any(|r| r == "line1"),
         "the first line is recoverable: {:?}",
-        rows_of(&back)
+        rows_of(&back.cells)
     );
 }
 

@@ -206,6 +206,7 @@ pub(super) fn app_scrolled_back(offset: u32, depth: u32, mark: char) -> App {
     grid.scrollback = Some(crate::grid::Scrollback {
         offset,
         depth,
+        top: None,
         cells: live(mark),
     });
     app.grids.insert(pane, grid);

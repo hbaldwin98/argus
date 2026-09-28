@@ -43,10 +43,11 @@ fn dispatch_pane(
         ClientMsg::Input { pane, bytes } => daemon.write_pane(pane, &bytes),
         ClientMsg::Paste { pane, text } => daemon.paste_pane(pane, &text),
         ClientMsg::Resize { pane, rows, cols } => daemon.resize_pane(viewer, pane, rows, cols),
-        ClientMsg::Scrollback { pane, offset } => daemon
-            .pane_scrollback(pane, offset as usize)
-            .map(|(cells, offset, depth)| {
-                let (offset, depth) = (offset as u32, depth as u32);
+        ClientMsg::Scrollback { pane, offset, top } => daemon
+            .pane_scrollback(pane, offset as usize, top)
+            .map(|scrolled| {
+                let cells = scrolled.cells;
+                let (offset, depth) = (scrolled.offset as u32, scrolled.depth as u32);
                 let answer = if subs.runs {
                     ServerMsg::ScrollbackRuns {
                         pane,
@@ -55,6 +56,7 @@ fn dispatch_pane(
                         rows: cells.len() as u16,
                         cols: cells.first().map_or(0, |row| row.len() as u16),
                         runs: argus_protocol::grid_runs(&cells),
+                        top: Some(scrolled.top),
                     }
                 } else {
                     ServerMsg::ScrollbackRows {

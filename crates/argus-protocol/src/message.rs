@@ -41,9 +41,17 @@ pub enum ClientMsg {
     /// Ask for the rows sitting `offset` lines above a pane's live screen.
     /// `0` is the live screen itself, which is how the client says it has
     /// scrolled back to the bottom.
+    ///
+    /// `top` asks by line instead: the number a `ScrollbackRuns` gave the
+    /// first row of a view, which a line keeps while more output pushes it
+    /// back, so a parked view scrolled further moves from where it was
+    /// rather than from wherever the live screen has got to. A daemon that
+    /// numbers no lines reads the offset.
     Scrollback {
         pane: PaneId,
         offset: u32,
+        #[serde(default)]
+        top: Option<u64>,
     },
     /// The client's view of a pane has been resized.
     Resize {
@@ -462,6 +470,11 @@ pub enum ServerMsg {
         rows: u16,
         cols: u16,
         runs: Vec<CellRun>,
+        /// The number of the first row, counting every line that has ever
+        /// gone up past the live screen: what `ClientMsg::Scrollback` takes
+        /// as `top`. Absent from a daemon that numbers no lines.
+        #[serde(default)]
+        top: Option<u64>,
     },
     /// The answer to `ClientMsg::Review`.
     Review(Review),
@@ -612,10 +625,46 @@ mod tests {
         rmp_serde::to_vec_named(msg).unwrap()
     }
 
-    /// `SpawnShell` as a client built before requests were named sent it.
+    /// `SpawnShell` as a client built before requests were named sent it,
+    /// and `Scrollback` as one built before lines were numbered.
     #[derive(Serialize, Deserialize)]
     enum OlderClientMsg {
         SpawnShell { checkout: CheckoutId },
+        Scrollback { pane: PaneId, offset: u32 },
+    }
+
+    #[test]
+    fn a_scrollback_request_by_offset_alone_still_reads() {
+        let older = wire(&OlderClientMsg::Scrollback {
+            pane: PaneId(3),
+            offset: 12,
+        });
+        let read: ClientMsg = rmp_serde::from_slice(&older).unwrap();
+        assert!(matches!(
+            read,
+            ClientMsg::Scrollback {
+                pane: PaneId(3),
+                offset: 12,
+                top: None
+            }
+        ));
+    }
+
+    #[test]
+    fn an_older_daemon_reads_a_request_by_line_as_one_by_offset() {
+        let newer = wire(&ClientMsg::Scrollback {
+            pane: PaneId(3),
+            offset: 12,
+            top: Some(4000),
+        });
+        let read: OlderClientMsg = rmp_serde::from_slice(&newer).unwrap();
+        assert!(matches!(
+            read,
+            OlderClientMsg::Scrollback {
+                pane: PaneId(3),
+                offset: 12
+            }
+        ));
     }
 
     #[test]

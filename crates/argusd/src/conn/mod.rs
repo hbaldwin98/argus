@@ -1146,18 +1146,26 @@ mod tests {
         let mut h = Harness::new(dir.path());
         let pane = h.daemon.spawn_shell(h.checkout()).unwrap();
 
-        h.send(ClientMsg::Scrollback { pane, offset: 1 });
+        h.send(ClientMsg::Scrollback {
+            pane,
+            offset: 1,
+            top: None,
+        });
         assert!(matches!(
             h.replies().first(),
             Some(ServerMsg::ScrollbackRows { .. })
         ));
 
         h.subs.runs = true;
-        h.send(ClientMsg::Scrollback { pane, offset: 1 });
+        h.send(ClientMsg::Scrollback {
+            pane,
+            offset: 1,
+            top: None,
+        });
         assert!(matches!(
             h.replies().first(),
-            Some(ServerMsg::ScrollbackRuns { rows, .. }) if *rows > 0
-        ));
+            Some(ServerMsg::ScrollbackRuns { rows, top: Some(_), .. }) if *rows > 0
+        ), "and numbers its first row, for the next request to ask by");
 
         let _ = h.daemon.close_pane(pane);
     }

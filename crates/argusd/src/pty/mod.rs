@@ -24,6 +24,7 @@ mod job;
 mod vt;
 
 use job::*;
+pub use vt::Scrolled;
 use vt::*;
 
 const DEFAULT_ROWS: u16 = 24;
@@ -32,6 +33,8 @@ const SCROLLBACK_LINES: usize = 4000;
 const FRAME_INTERVAL: Duration = Duration::from_millis(16);
 const OUTPUT_QUEUE_CHUNKS: usize = 256;
 const MAX_CHUNKS_PER_FRAME: usize = 64;
+/// The most a read from the pty hands the pump at once.
+const READ_CHUNK: usize = 8192;
 /// How long the output pump keeps draining a dead child's remaining output
 /// before announcing the exit. Short-lived commands routinely exit before
 /// any of their output has been drained.
@@ -526,10 +529,10 @@ impl PaneRuntime {
         )
     }
 
-    /// Rows sitting `offset` lines above the live screen, with the offset
-    /// actually reached and how deep the buffer goes ([`Vt::scrollback`]).
-    pub fn scrollback(&self, offset: usize) -> (Vec<Vec<Cell>>, usize, usize) {
-        self.vt.lock().unwrap().scrollback(offset)
+    /// Rows sitting `offset` lines above the live screen, or from line
+    /// `top` ([`Vt::scrollback`]).
+    pub fn scrollback(&self, offset: usize, top: Option<u64>) -> Scrolled {
+        self.vt.lock().unwrap().scrollback(offset, top)
     }
 
     /// Pushes a fresh full-grid snapshot to whoever is currently subscribed.

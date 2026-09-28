@@ -303,7 +303,7 @@ pub(super) fn spawn_output_reader(
     byte_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
 ) {
     std::thread::spawn(move || {
-        let mut buf = [0u8; 8192];
+        let mut buf = [0u8; READ_CHUNK];
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => break,

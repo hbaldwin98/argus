@@ -113,10 +113,9 @@ up durable artifacts, and later agents receive the relevant subset without brows
 
 ## P7: Terminal and Performance
 
-- Anchor a parked scrollback view to a line rather than to the live screen, so a pane still printing
-  does not shift the rows out from under a reader. Navigation itself has landed (DESIGN.md, "Panes
-  and terminal state"): the daemon answers an offset with the rows there, and the wheel,
-  Shift-PageUp/PageDown, and typing move between history and live.
+- Scrollback navigation and line-anchored parked views have landed (DESIGN.md, "Panes and terminal
+  state"): the daemon numbers the lines that go up past the live screen, and a parked view scrolls
+  from its own line however much output arrives.
 - Add child-negotiated mouse behavior, bracketed paste, focus events, OSC 52, and extended keys.
 - Idle pane wakeups are gone (DESIGN.md, "Panes and terminal state"): a thread waits on each child's
   exit, so a quiet pane's task sleeps until its child speaks or exits.

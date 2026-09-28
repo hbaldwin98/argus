@@ -271,8 +271,45 @@ fn history_sent_as_runs_draws_the_same_as_history_sent_as_cells() {
         rows: 3,
         cols: 4,
         runs: argus_protocol::grid_runs(&vec![row; 3]),
+        top: None,
     });
 
     assert_eq!(drawn_mark(&h, pane), "H");
     assert!(h.app.grids[&pane].is_scrolled());
+}
+
+#[test]
+fn scrolling_a_numbered_view_further_asks_from_its_line() {
+    // Output kept coming while the view was parked, so an offset from the
+    // live screen would land somewhere else; the line number does not.
+    let mut h = Harness::new();
+    let pane = live_pane(&mut h);
+    h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+    h.app.on_server_msg(ServerMsg::ScrollbackRuns {
+        pane,
+        offset: 3,
+        depth: 500,
+        rows: 3,
+        cols: 4,
+        runs: Vec::new(),
+        top: Some(120),
+    });
+    h.sent();
+
+    h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+    h.app.on_mouse(wheel(MouseEventKind::ScrollDown));
+    h.app.on_mouse(wheel(MouseEventKind::ScrollDown));
+    let asked: Vec<(u32, Option<u64>)> = h
+        .sent()
+        .iter()
+        .filter_map(|m| match m {
+            ClientMsg::Scrollback { offset, top, .. } => Some((*offset, *top)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        asked,
+        [(6, Some(117)), (3, Some(120))],
+        "three lines older, back again, then the live screen asks for nothing"
+    );
 }

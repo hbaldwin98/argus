@@ -10,6 +10,10 @@
 //! are what the operator scrolled up to read, and a pane still producing
 //! output would otherwise shift the text out from under them on every
 //! frame. Dropping back to the bottom shows the live screen, current.
+//!
+//! Scrolling further is asked by line — the number the daemon gave the
+//! view's first row — so it moves from the text on screen, however much
+//! output has pushed that text back meanwhile.
 
 use super::*;
 use argus_protocol::Cell;
@@ -39,7 +43,12 @@ impl App {
         if want == i64::from(current) {
             return;
         }
-        self.park_pane(pane, want as u32);
+        let top = grid
+            .scrollback
+            .as_ref()
+            .and_then(|sb| sb.top)
+            .map(|top| top.saturating_add_signed(i64::from(current) - want));
+        self.park_pane(pane, want as u32, top);
     }
 
     /// Moves `pane`'s view by whole screens, which is what Page Up/Down and
@@ -60,10 +69,11 @@ impl App {
         }
     }
 
-    /// Parks `pane` at `offset` and asks the daemon for the rows there.
-    /// An offset of zero is the live screen, which needs no request: the
-    /// grid underneath has been kept current the whole time.
-    pub(super) fn park_pane(&mut self, pane: PaneId, offset: u32) {
+    /// Parks `pane` at `offset` — or at line `top`, when the daemon has
+    /// numbered the view — and asks the daemon for the rows there. An
+    /// offset of zero is the live screen, which needs no request: the grid
+    /// underneath has been kept current the whole time.
+    pub(super) fn park_pane(&mut self, pane: PaneId, offset: u32, top: Option<u64>) {
         let Some(grid) = self.grids.get_mut(&pane) else {
             return;
         };
@@ -72,18 +82,22 @@ impl App {
             return;
         }
         match &mut grid.scrollback {
-            Some(sb) => sb.offset = offset,
+            Some(sb) => {
+                sb.offset = offset;
+                sb.top = top;
+            }
             // Seeded from the live rows so the pane keeps drawing text for
             // the frame before the answer lands.
             None => {
                 grid.scrollback = Some(crate::grid::Scrollback {
                     offset,
                     depth: 0,
+                    top,
                     cells: grid.cells.clone(),
                 })
             }
         }
-        let _ = self.out.send(ClientMsg::Scrollback { pane, offset });
+        let _ = self.out.send(ClientMsg::Scrollback { pane, offset, top });
     }
 
     /// The rows the daemon read, applied only if the pane is still parked.
@@ -94,6 +108,7 @@ impl App {
         pane: PaneId,
         offset: u32,
         depth: u32,
+        top: Option<u64>,
         cells: Vec<Vec<Cell>>,
     ) {
         let Some(grid) = self.grids.get_mut(&pane) else {
@@ -108,6 +123,7 @@ impl App {
         // one connection, so the newest is always the current one.
         sb.depth = depth;
         sb.offset = offset;
+        sb.top = top;
         sb.cells = cells;
         // Nothing behind the live screen — an empty buffer, or a
         // full-screen child that keeps no history. There is no parked view

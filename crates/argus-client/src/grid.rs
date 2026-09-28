@@ -15,6 +15,12 @@ pub struct Scrollback {
     /// How far back the daemon says the buffer goes, so the client can stop
     /// at the top instead of asking for rows that do not exist.
     pub depth: u32,
+    /// The number the daemon gave the first row, which that line keeps as
+    /// more output pushes it back: what the next move is measured from, so
+    /// scrolling further moves from the text on screen rather than from
+    /// wherever the live screen has got to meanwhile. `None` until an
+    /// answer carries one, and from a daemon that numbers no lines.
+    pub top: Option<u64>,
     /// The rows the daemon last read at `offset`. Seeded from the live grid
     /// so the first scroll draws something rather than blanking the pane
     /// for the frame it takes the answer to arrive.

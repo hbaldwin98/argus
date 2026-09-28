@@ -27,12 +27,26 @@ const UNSET_SHAPE: CursorStyle = CursorStyle {
     blinking: false,
 };
 
+/// How far past its cap the history may grow within one change before it
+/// is trimmed back, so that the growth can be measured. A read hands the
+/// pump at most `READ_CHUNK` bytes, and a byte scrolls at most one line;
+/// the rest is room for a synchronized update let go all at once.
+const COUNTING_HEADROOM: usize = 2 * READ_CHUNK;
+
 /// A pane's terminal: the emulator, its parser, and what the child asked
 /// of it that the pump has not yet carried out.
 pub(super) struct Vt {
     term: Term<Requests>,
     parser: Processor<StdSyncHandler>,
     requests: Requests,
+    /// The history's cap, which it is trimmed back to after each change.
+    scrollback: usize,
+    /// How many lines have gone up past the live screen's top row since the
+    /// pane started, evicted ones included: the number of that row, which a
+    /// line keeps as more output pushes it back. The emulator counts
+    /// nothing of the kind, so it is read off the history growing — which
+    /// the cap would hide, hence the headroom.
+    screen_top: u64,
 }
 
 /// What a child asked of its terminal beyond drawing, held until the pump
@@ -88,7 +102,7 @@ impl Dimensions for Size {
 impl Vt {
     pub(super) fn new(rows: u16, cols: u16, scrollback: usize) -> Vt {
         let config = Config {
-            scrolling_history: scrollback,
+            scrolling_history: scrollback + COUNTING_HEADROOM,
             default_cursor_style: UNSET_SHAPE,
             osc52: Osc52::OnlyCopy,
             ..Config::default()
@@ -98,12 +112,41 @@ impl Vt {
             term: Term::new(config, &Size { rows, cols }, requests.clone()),
             parser: Processor::new(),
             requests,
+            scrollback,
+            screen_top: 0,
         }
     }
 
     pub(super) fn process(&mut self, bytes: &[u8]) {
         self.end_overdue_sync();
-        self.parser.advance(&mut self.term, bytes);
+        // A byte scrolls at most one line, so no slice of this size can
+        // outgrow the headroom the count relies on.
+        for bytes in bytes.chunks(READ_CHUNK) {
+            self.counting(|vt| vt.parser.advance(&mut vt.term, bytes));
+        }
+    }
+
+    /// Makes `change`, adds whatever it pushed into the history to
+    /// `screen_top`, and trims the history back to its cap.
+    ///
+    /// Only the normal screen's history counts, and only when the change
+    /// began and ended on it: the emulator shows one screen's history at a
+    /// time, so lines scrolled on the normal screen by a read that then
+    /// switched to the alternate one go uncounted.
+    fn counting(&mut self, change: impl FnOnce(&mut Vt)) {
+        let normal = !self.alternate_screen();
+        let before = self.term.grid().history_size();
+        change(self);
+        if !normal || self.alternate_screen() {
+            return;
+        }
+        let after = self.term.grid().history_size();
+        self.screen_top += after.saturating_sub(before) as u64;
+        if after > self.scrollback {
+            let grid = self.term.grid_mut();
+            grid.update_history(self.scrollback);
+            grid.update_history(self.scrollback + COUNTING_HEADROOM);
+        }
     }
 
     /// When a synchronized update (`CSI ? 2026 h`) the child began and has
@@ -120,7 +163,7 @@ impl Vt {
     pub(super) fn end_overdue_sync(&mut self) -> bool {
         match self.sync_deadline() {
             Some(deadline) if deadline <= Instant::now() => {
-                self.parser.stop_sync(&mut self.term);
+                self.counting(|vt| vt.parser.stop_sync(&mut vt.term));
                 true
             }
             _ => false,
@@ -131,7 +174,7 @@ impl Vt {
     /// for a child that has exited, whose update will never end.
     pub(super) fn end_sync_now(&mut self) {
         if self.sync_deadline().is_some() {
-            self.parser.stop_sync(&mut self.term);
+            self.counting(|vt| vt.parser.stop_sync(&mut vt.term));
         }
     }
 
@@ -151,8 +194,17 @@ impl Vt {
         )
     }
 
+    /// Resizes the screen. Rows lost at the bottom push lines up into the
+    /// history and rows gained pull them back, which moves the live
+    /// screen's top row by as many; a change of width rewraps lines, after
+    /// which the numbers are only as good as the rewrap left them.
     pub(super) fn resize(&mut self, rows: u16, cols: u16) {
+        let before = self.term.grid().history_size() as u64;
         self.term.resize(Size { rows, cols });
+        if !self.alternate_screen() {
+            let after = self.term.grid().history_size() as u64;
+            self.screen_top = (self.screen_top + after).saturating_sub(before);
+        }
     }
 
     /// The whole live screen.
@@ -249,19 +301,40 @@ impl Vt {
     }
 
     /// The screen's worth of rows sitting `offset` lines above the live
-    /// screen, with the offset actually reached and how deep the history
-    /// goes. Read by line, so the live screen every other watcher is
-    /// diffed against never moves. The alternate screen keeps no history,
-    /// so a full-screen child answers with a depth of zero rather than
-    /// letting the shell's history show through underneath it.
-    pub(super) fn scrollback(&self, offset: usize) -> (Vec<Vec<Cell>>, usize, usize) {
+    /// screen — or, given `top`, starting at the line of that number — with
+    /// the offset actually reached, how deep the history goes, and the
+    /// number of the first row. Read by line, so the live screen every
+    /// other watcher is diffed against never moves. The alternate screen
+    /// keeps no history, so a full-screen child answers with a depth of
+    /// zero rather than letting the shell's history show through
+    /// underneath it.
+    pub(super) fn scrollback(&self, offset: usize, top: Option<u64>) -> Scrolled {
         let depth = self.term.grid().history_size();
+        let offset = match top {
+            Some(top) => self.screen_top.saturating_sub(top) as usize,
+            None => offset,
+        };
         let offset = offset.min(depth);
         let (rows, _) = self.size();
-        let top = -(offset as i32);
-        let cells = (0..rows as i32).map(|r| self.row(top + r)).collect();
-        (cells, offset, depth)
+        let first = -(offset as i32);
+        Scrolled {
+            cells: (0..rows as i32).map(|r| self.row(first + r)).collect(),
+            offset,
+            depth,
+            top: self.screen_top - offset as u64,
+        }
     }
+}
+
+/// Rows read from a pane's history, and where they sit in it.
+pub struct Scrolled {
+    pub cells: Vec<Vec<Cell>>,
+    /// Lines above the live screen, after clamping to what is held.
+    pub offset: usize,
+    /// How many lines of history are held.
+    pub depth: usize,
+    /// The first row's number ([`Vt::scrollback`]).
+    pub top: u64,
 }
 
 pub(super) fn convert_cell(c: &TermCell) -> Cell {
