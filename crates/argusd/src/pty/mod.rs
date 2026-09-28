@@ -298,6 +298,7 @@ impl PaneRuntime {
             let parser = parser.clone();
             let shape = shape.clone();
             let damage_tx = damage_tx.clone();
+            let replier = input.writer.clone();
             #[cfg(test)]
             let pump_wakes = pump_wakes.clone();
             tokio::spawn(async move {
@@ -357,9 +358,17 @@ impl PaneRuntime {
                     // Sent whether or not anyone is watching the grid: a
                     // copy is a one-off, and there is no later frame that
                     // could carry it instead.
-                    let copied = parser.lock().unwrap().callbacks_mut().take();
+                    let (copied, replies) = {
+                        let mut parser = parser.lock().unwrap();
+                        let requests = parser.callbacks_mut();
+                        (requests.take_copies(), requests.take_replies())
+                    };
                     for text in copied {
                         let _ = damage_tx.send(ServerMsg::Clipboard { pane: id, text });
+                    }
+                    if !replies.is_empty() {
+                        // A child gone since it asked is not listening.
+                        let _ = replier.lock().unwrap().write_all(&replies);
                     }
                     if dirty && damage_tx.receiver_count() == 0 {
                         // Nobody is watching this pane. The parser is fed

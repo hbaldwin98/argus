@@ -128,8 +128,8 @@ fn a_childs_osc_52_copy_is_held_for_the_client() {
 
     parser.process(b"\x1b]52;c;aGVsbG8=\x07");
 
-    assert_eq!(parser.callbacks_mut().take(), vec!["hello".to_string()]);
-    assert!(parser.callbacks_mut().take().is_empty(), "sent once");
+    assert_eq!(parser.callbacks_mut().take_copies(), vec!["hello".to_string()]);
+    assert!(parser.callbacks_mut().take_copies().is_empty(), "sent once");
 }
 
 #[test]
@@ -138,7 +138,28 @@ fn a_childs_osc_52_read_is_not_answered() {
 
     parser.process(b"\x1b]52;c;?\x07");
 
-    assert!(parser.callbacks_mut().take().is_empty());
+    assert!(parser.callbacks_mut().take_copies().is_empty());
+    assert!(parser.callbacks_mut().take_replies().is_empty());
+}
+
+#[test]
+fn a_cursor_position_request_is_answered_with_where_the_cursor_was_when_asked() {
+    let mut parser = new_vt(24, 80, 0);
+
+    // Two requests in one read, the cursor moving between and after them.
+    parser.process(b"\x1b[3;5H\x1b[6nabc\x1b[6n\x1b[10;1H");
+
+    assert_eq!(parser.callbacks_mut().take_replies(), b"\x1b[3;5R\x1b[3;8R");
+    assert!(parser.callbacks_mut().take_replies().is_empty(), "answered once");
+}
+
+#[test]
+fn other_status_requests_are_not_answered_as_a_cursor_position() {
+    let mut parser = new_vt(24, 80, 0);
+
+    parser.process(b"\x1b[5n\x1b[?6n\x1b[6;1n\x1b[n\x1b[6m");
+
+    assert!(parser.callbacks_mut().take_replies().is_empty());
 }
 
 /// A parser holding `lines` numbered lines on a 4-row screen, so the
@@ -727,6 +748,33 @@ async fn a_silent_child_leaves_its_pump_asleep() {
     })
     .await
     .expect("the exit should reach the pump");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_child_that_asks_where_its_cursor_is_hears_back() {
+    // The reply comes back as input, so the child reads it raw — a line
+    // discipline would hold it for a newline it never gets — and prints it
+    // in a form the grid can show.
+    let pane = PaneRuntime::spawn(
+        PaneId(6),
+        &std::env::temp_dir(),
+        Spawn::Program {
+            program: "sh".to_string(),
+            args: vec![
+                "-c".to_string(),
+                "stty raw -echo; printf '\\033[3;5H\\033[6n'; \
+                 reply=$(dd bs=1 count=6 2>/dev/null); stty sane; \
+                 printf '\\033[1;1Hreply=%s' \"$(printf '%s' \"$reply\" | tr -d '\\033')\""
+                    .to_string(),
+            ],
+            env: Vec::new(),
+            resource_policy: ResourcePolicy::Unrestricted,
+        },
+        |_| {},
+    )
+    .unwrap();
+    wait_for(&pane, |g| grid_contains(g, "reply=[3;5R")).await;
 }
 
 #[cfg(unix)]

@@ -9,38 +9,68 @@ use base64::Engine;
 
 use super::*;
 
-/// A pane's terminal emulator, with the clipboard hook installed.
-pub(super) type Vt = vt100::Parser<ClipboardRequests>;
+/// A pane's terminal emulator, with the hooks for what a child asks of it.
+pub(super) type Vt = vt100::Parser<ChildRequests>;
 
 pub(super) fn new_vt(rows: u16, cols: u16, scrollback: usize) -> Vt {
-    vt100::Parser::new_with_callbacks(rows, cols, scrollback, ClipboardRequests::default())
+    vt100::Parser::new_with_callbacks(rows, cols, scrollback, ChildRequests::default())
 }
 
-/// What a child asked to put on the clipboard with OSC 52, held until the
-/// pump sends it on.
+/// What a child asked of its terminal beyond drawing, held until the pump
+/// carries it out: text to copy, and the answers owed to its queries.
 ///
-/// The pane's terminal is not the user's: without this, `vt100` parses the
-/// request and drops it, so an agent's own copy command reports success
-/// while nothing reaches the clipboard. Reads (`OSC 52 ; ?`) stay
+/// The pane's terminal is not the user's, and `vt100` parses both and drops
+/// them. Without the copies an agent's own copy command reports success
+/// while nothing reaches the clipboard. Clipboard reads (`OSC 52 ; ?`) stay
 /// unanswered, since answering would hand the user's clipboard to whatever
 /// runs in a pane.
 #[derive(Default)]
-pub(super) struct ClipboardRequests {
+pub(super) struct ChildRequests {
     copied: Vec<String>,
+    replies: Vec<u8>,
 }
 
-impl ClipboardRequests {
-    pub(super) fn take(&mut self) -> Vec<String> {
+impl ChildRequests {
+    pub(super) fn take_copies(&mut self) -> Vec<String> {
         std::mem::take(&mut self.copied)
+    }
+
+    /// Bytes to write back to the child, in the order it asked.
+    pub(super) fn take_replies(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.replies)
     }
 }
 
-impl vt100::Callbacks for ClipboardRequests {
+impl vt100::Callbacks for ChildRequests {
     fn copy_to_clipboard(&mut self, _: &mut vt100::Screen, _selection: &[u8], data: &[u8]) {
         let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(data) else {
             return;
         };
         self.copied.push(String::from_utf8_lossy(&bytes).into_owned());
+    }
+
+    /// Answers a cursor position request (`CSI 6 n`) with where the cursor
+    /// is as it is asked — the parser calls this mid-stream, before the
+    /// rest of the read that carried it moves the cursor on.
+    ///
+    /// A child that asks waits for the answer. ConPTY opened to inherit the
+    /// cursor, as portable-pty 0.9 opens it, starts no child until it has
+    /// one, and a line editor that asks at every prompt otherwise stalls
+    /// there until its own timeout.
+    fn unhandled_csi(
+        &mut self,
+        screen: &mut vt100::Screen,
+        i1: Option<u8>,
+        i2: Option<u8>,
+        params: &[&[u16]],
+        c: char,
+    ) {
+        if c != 'n' || i1.is_some() || i2.is_some() || params != [&[6][..]] {
+            return;
+        }
+        let (row, col) = screen.cursor_position();
+        let reply = format!("\x1b[{};{}R", row + 1, col + 1);
+        self.replies.extend_from_slice(reply.as_bytes());
     }
 }
 

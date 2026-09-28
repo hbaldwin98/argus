@@ -25,7 +25,7 @@ toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 argus-protocol = { path = "crates/argus-protocol" }
-portable-pty = "0.8"
+portable-pty = "0.9"
 vt100 = "0.16"
 git2 = { version = "0.19", features = ["vendored-openssl"] }
 ratatui = "0.30"

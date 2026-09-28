@@ -523,6 +523,13 @@ none, as over SSH, the terminal's own paste key arrives as a bracketed paste ins
 asks the terminal to read its clipboard over OSC 52: most terminals refuse, and the reply would
 reach the key parser as typed text.
 
+The daemon is the pane's terminal, so it answers what a child asks one. A cursor position request
+(`CSI 6 n`) is answered, through the pane's own input, with where the cursor was when the parser
+reached it rather than where it is after the rest of the read — the parser hands the request to a
+callback mid-stream. A child that asks waits for the answer: ConPTY opened to inherit the cursor, as
+portable-pty 0.9 opens it, starts no child until it has one, and a line editor that asks at every
+prompt otherwise stalls there until its own timeout.
+
 The current pane states are `Idle`, `Working`, `Waiting`, `NeedsReview`, `Done`, `Failed`, and
 `Exited { code }`. `NeedsReview` means work is ready for the operator to inspect; `Done` means it
 has been reviewed and completed. `Failed` means the agent said something went wrong while still

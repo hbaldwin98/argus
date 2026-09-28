@@ -147,7 +147,7 @@ pub(super) fn end_process_tree(job: Option<&ProcessJob>, killer: &Killer) -> any
     if let Some(job) = job {
         return job.terminate();
     }
-    // portable-pty 0.8's WinChildKiller::kill reports an error exactly when
+    // portable-pty's WinChildKiller::kill (0.8 and 0.9) reports an error when
     // TerminateProcess succeeds — its check is inverted — and the child's
     // own kill hides the same bug by discarding the result. So this is
     // best effort, as it always was: the exit itself reaches the pump
