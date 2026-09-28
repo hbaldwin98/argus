@@ -174,10 +174,14 @@ fn the_escape_hatch_starts_clean() {
     with_temp_config(|_| {
         record(&[(PaneKind::Shell, "shell")], dir.path());
 
+        let env = crate::store::NO_RESTORE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         std::env::set_var(crate::store::NO_RESTORE, "1");
         let d = daemon_for_restore(dir.path());
         d.restore_session();
         std::env::remove_var(crate::store::NO_RESTORE);
+        drop(env);
 
         assert!(d.snapshot()[0].repositories[0].checkouts[0]
             .panes

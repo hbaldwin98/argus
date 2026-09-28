@@ -97,6 +97,12 @@ pub struct Overlays {
 /// restore is the problem — a template that now fails on launch, say.
 pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 
+/// Held by every test that sets or clears [`NO_RESTORE`]: the environment
+/// is the process's, and one test clearing it mid-way through another's
+/// restore let that restore spawn panes it was told not to.
+#[cfg(test)]
+pub(crate) static NO_RESTORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// The current schema version. Bump it and add an arm to [`migrate`].
 const SCHEMA_VERSION: i64 = 18;
 

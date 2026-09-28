@@ -160,6 +160,7 @@ fn the_escape_hatch_reads_nothing_back() {
     let s = store();
     s.save_panes(&[pane("/repo", PaneKind::Shell, "shell")])
         .unwrap();
+    let _env = NO_RESTORE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var(NO_RESTORE, "1");
     let out = s.panes();
     std::env::remove_var(NO_RESTORE);
