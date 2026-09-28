@@ -308,20 +308,27 @@ fn take_server_msg(
     msg: ServerMsg,
     now: std::time::Instant,
 ) -> anyhow::Result<bool> {
-    let awaited = match &msg {
-        ServerMsg::Damage { pane, .. } => {
-            let pane = *pane;
-            profile.record(|c| c.damage(pane, now));
-            app.input_pane() == Some(pane)
-        }
-        _ => false,
-    };
+    let damaged = damaged_pane(&msg);
+    if let Some(pane) = damaged {
+        profile.record(|c| c.damage(pane, now));
+    }
+    // The pane being typed into redrawing is a keystroke's echo, which is
+    // presented at once rather than on the next tick.
+    let awaited = damaged.is_some() && damaged == app.input_pane();
     profile.record(profile::Counters::server_msg);
     app.on_server_msg(msg);
     if app.take_bell() {
         ring_bell(terminal)?;
     }
     Ok(awaited)
+}
+
+/// The pane a message redraws part of, in either form damage comes in.
+fn damaged_pane(msg: &ServerMsg) -> Option<PaneId> {
+    match msg {
+        ServerMsg::Damage { pane, .. } | ServerMsg::RowDamage { pane, .. } => Some(*pane),
+        _ => None,
+    }
 }
 
 /// arm is guarded, but the future still needs a type either way.
@@ -485,6 +492,30 @@ mod tests {
     fn server_stop_is_the_daemon_stop_command() {
         let args = ["server".to_string(), "stop".to_string()];
         assert!(matches!(parse_command(&args), Ok(Command::ServerStop)));
+    }
+
+    #[test]
+    fn damage_in_either_form_names_the_pane_it_redraws() {
+        // Missing the newer form meant a keystroke's echo waited for the
+        // next tick instead of being presented at once.
+        let per_cell = ServerMsg::Damage {
+            pane: PaneId(3),
+            spans: Vec::new(),
+            cursor: Default::default(),
+            mouse: Default::default(),
+            alternate_screen: false,
+        };
+        let runs = ServerMsg::RowDamage {
+            pane: PaneId(4),
+            scroll: None,
+            runs: Vec::new(),
+            cursor: Default::default(),
+            mouse: Default::default(),
+            alternate_screen: false,
+        };
+        assert_eq!(damaged_pane(&per_cell), Some(PaneId(3)));
+        assert_eq!(damaged_pane(&runs), Some(PaneId(4)));
+        assert_eq!(damaged_pane(&ServerMsg::Tree(Vec::new())), None);
     }
 
     #[test]
