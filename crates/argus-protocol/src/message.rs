@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
+use crate::damage::{CellRun, Scroll};
 use crate::decisions::DecisionBoard;
 use crate::features::{FeatureState, FeatureWrite};
 use crate::hello::Hello;
@@ -398,6 +399,27 @@ pub enum ServerMsg {
         #[serde(default)]
         mouse: MouseTracking,
         #[serde(default)]
+        alternate_screen: bool,
+    },
+    /// `PaneSnapshot` for a client that greeted with `CELL_RUNS`: the grid
+    /// as runs, every cell not in one a default blank.
+    PaneRows {
+        pane: PaneId,
+        rows: u16,
+        cols: u16,
+        runs: Vec<CellRun>,
+        cursor: Cursor,
+        mouse: MouseTracking,
+        alternate_screen: bool,
+    },
+    /// `Damage` for a client that greeted with `CELL_RUNS`: the region that
+    /// scrolled, applied first, then the runs that changed after it.
+    RowDamage {
+        pane: PaneId,
+        scroll: Option<Scroll>,
+        runs: Vec<CellRun>,
+        cursor: Cursor,
+        mouse: MouseTracking,
         alternate_screen: bool,
     },
     /// Text a pane's child asked to put on the clipboard with OSC 52. The

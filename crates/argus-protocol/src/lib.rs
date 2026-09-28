@@ -9,6 +9,7 @@
 
 pub mod artifacts;
 pub mod cell;
+pub mod damage;
 pub mod decisions;
 pub mod diagrams;
 pub mod features;
@@ -27,10 +28,11 @@ pub mod tree;
 
 pub use artifacts::ArtifactScope;
 pub use cell::{
-    diff_grid, Cell, CellSpan, Color, Cursor, CursorShape, MouseEncoding, MouseMode, MouseTracking,
+    Cell, CellSpan, Color, Cursor, CursorShape, MouseEncoding, MouseMode, MouseTracking,
     BLANK,
 };
 pub use compact_str::{CompactString, ToCompactString};
+pub use damage::{damage, grid_from_runs, grid_runs, CellRun, Scroll, Style};
 pub use decisions::{Decision, DecisionBoard, DecisionTreeRow, DecisionWrite, MAX_DECISION_BYTES};
 pub use diagrams::{
     DiagramAction, DiagramList, DiagramWrite, SequenceDiagram, MAX_DIAGRAM_BODY_BYTES,
@@ -41,7 +43,7 @@ pub use features::{
     FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES,
 };
 pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
-pub use hello::{Hello, CAPABILITIES, PANE_TELEMETRY, PROTOCOL};
+pub use hello::{Hello, CAPABILITIES, CELL_RUNS, PANE_TELEMETRY, PROTOCOL};
 pub use hook::{
     endpoint_url, pane_path, pane_url, parse_pane_path, parse_pane_url, parse_request_target,
     requested_scope, Endpoint, PaneUrl, Report, ARTIFACT_SCOPE_VAR, CONTEXT_COMMAND, HELPER_VAR,

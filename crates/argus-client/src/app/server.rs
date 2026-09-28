@@ -100,18 +100,23 @@ impl App {
                 alternate_screen,
                 ..
             } => {
-                if let Some(previous) = self.grids.get(&pane) {
-                    // A snapshot is how a resize reaches the client, so a
-                    // parked view has to be re-read: its rows are the old
-                    // width and nothing else will replace them.
-                    let parked = previous.scrollback.as_ref().map(|sb| sb.offset);
-                    let mut grid = Grid::with_cursor(cells, cursor, mouse);
-                    grid.alternate_screen = alternate_screen;
-                    self.grids.insert(pane, grid);
-                    if let Some(offset) = parked {
-                        self.park_pane(pane, offset);
-                    }
-                }
+                let mut grid = Grid::with_cursor(cells, cursor, mouse);
+                grid.alternate_screen = alternate_screen;
+                self.receive_grid(pane, grid);
+            }
+            ServerMsg::PaneRows {
+                pane,
+                rows,
+                cols,
+                runs,
+                cursor,
+                mouse,
+                alternate_screen,
+            } => {
+                let cells = argus_protocol::grid_from_runs(rows, cols, &runs);
+                let mut grid = Grid::with_cursor(cells, cursor, mouse);
+                grid.alternate_screen = alternate_screen;
+                self.receive_grid(pane, grid);
             }
             ServerMsg::Damage {
                 pane,
@@ -122,6 +127,21 @@ impl App {
             } => {
                 if let Some(grid) = self.grids.get_mut(&pane) {
                     grid.apply(&spans);
+                    grid.move_cursor(cursor);
+                    grid.mouse = mouse;
+                    grid.alternate_screen = alternate_screen;
+                }
+            }
+            ServerMsg::RowDamage {
+                pane,
+                scroll,
+                runs,
+                cursor,
+                mouse,
+                alternate_screen,
+            } => {
+                if let Some(grid) = self.grids.get_mut(&pane) {
+                    grid.apply_rows(scroll, &runs);
                     grid.move_cursor(cursor);
                     grid.mouse = mouse;
                     grid.alternate_screen = alternate_screen;
@@ -340,6 +360,22 @@ impl App {
         match restore_position_by_id(self.feature_diagrams(), |d| d.id, was) {
             Some(at) => self.diagram_sel = at,
             None => self.clamp_diagram_selection(),
+        }
+    }
+
+    /// A pane's whole grid, in whichever form it came. Only for a pane this
+    /// client is holding a grid for: one it let go of meanwhile stays gone.
+    fn receive_grid(&mut self, pane: PaneId, grid: Grid) {
+        let Some(previous) = self.grids.get(&pane) else {
+            return;
+        };
+        // A snapshot is how a resize reaches the client, so a parked view
+        // has to be re-read: its rows are the old width and nothing else
+        // will replace them.
+        let parked = previous.scrollback.as_ref().map(|sb| sb.offset);
+        self.grids.insert(pane, grid);
+        if let Some(offset) = parked {
+            self.park_pane(pane, offset);
         }
     }
 

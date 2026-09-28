@@ -88,6 +88,7 @@ live in this crate and a contract written twice drifts in silence.
 | `tree` | what a client renders, which pane state outranks which, and what a row standing for several shows |
 | `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses |
 | `cell`, `framing`, `transport` | a screen cell, a frame, and the endpoint they travel over |
+| `damage` | what changed on a pane's screen, as runs of cells and regions that scrolled |
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
 | `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
 | `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
@@ -383,8 +384,8 @@ and a 64-process limit. Closing the pane or dropping its runtime terminates the 
 than only the template's immediate process. Shell and editor panes are not subject to these limits.
 
 Each PTY starts at 24 by 80 cells. A blocking reader thread sends output through a bounded queue to
-a Tokio task, which feeds a `vt100` parser and broadcasts changed horizontal cell spans plus the
-child cursor's position and visibility. The task wakes on the first byte, takes whatever else is
+a Tokio task, which feeds a `vt100` parser and broadcasts what changed plus the child cursor's
+position and visibility. The task wakes on the first byte, takes whatever else is
 queued up to a bounded batch, and after a frame waits 16 ms before the next, so a stream is
 coalesced while a lone keystroke's echo goes out at once. A second thread owns the child and blocks
 until it exits, so an idle pane wakes for nothing: the task used to tick every 16 ms for the life of
@@ -396,9 +397,21 @@ is read as a blank without asking the parser to build one. Both exist because a 
 diffed, shipped and applied sixty times a second per pane, and an allocation per cell at each of
 those steps was most of what that cost — the second one especially, since most of a screen is blank
 and `vt100` allocates for a blank cell as readily as for a full one. A blank still carries the
-attributes it was cleared to, so a TUI's coloured bars survive. The encoding is unchanged: a cell is
-a plain string on the wire. The
-client also bounds incoming daemon messages and coalesces redraws to the same interval. Cursor-only
+attributes it was cleared to, so a TUI's coloured bars survive.
+
+What changed travels compactly (`damage`). Each frame is diffed against the grid the client holds
+into runs of cells — a run's graphemes as one string, its looks as counted styles of three small
+integers, and a count of default blanks at its end — with an unchanged gap of a few cells riding
+inside a run rather than starting another. A region that moved is sent as a move: rows are compared
+by hash, and the scroll that saves the most rows is taken, a region rather than the whole screen
+because an agent's output scrolls above an input box that stays put. The frame is then diffed
+against the grid after that scroll, so a wrong guess costs bytes and never a wrong screen. A 200 by
+50 screen of text is a few kilobytes rather than the 620 KB it was as per-cell records, and a one
+line scroll of it under 200 bytes rather than 413 KB. A client that did not greet with `cell-runs`
+is sent the per-cell form, built by its connection from the runs; a scroll, which that form cannot
+say, puts it behind, and it catches up with a fresh grid as a scroll always cost it.
+
+The client also bounds incoming daemon messages and coalesces redraws to the same interval. Cursor-only
 changes are broadcast even when no cell changed. The client places its hardware cursor there only
 while that pane has typing focus. The parser retains 4,000 scrollback lines. An exiting process gets a 500 ms output-flush grace period.
 

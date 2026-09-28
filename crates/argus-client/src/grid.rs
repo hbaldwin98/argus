@@ -1,7 +1,7 @@
 //! A pane's screen as the client holds it: the live grid the daemon's
 //! damage lands on, and the parked view above it when scrolled back.
 
-use argus_protocol::{Cell, CellSpan, Cursor, MouseTracking};
+use argus_protocol::{Cell, CellRun, CellSpan, Cursor, MouseTracking, Scroll};
 
 /// A pane's view parked above its live screen.
 ///
@@ -70,6 +70,17 @@ impl Grid {
         }
     }
 
+    /// Damage in runs: the scroll first, since the runs were diffed against
+    /// the grid after it.
+    pub fn apply_rows(&mut self, scroll: Option<Scroll>, runs: &[CellRun]) {
+        if let Some(scroll) = scroll {
+            scroll.apply(&mut self.cells);
+        }
+        for run in runs {
+            run.apply(&mut self.cells);
+        }
+    }
+
     pub fn move_cursor(&mut self, cursor: Cursor) {
         self.cursor = cursor;
     }
@@ -108,6 +119,23 @@ mod tests {
             .iter()
             .map(|r| r.iter().map(|c| c.ch.as_str()).collect())
             .collect()
+    }
+
+    #[test]
+    fn a_scroll_moves_the_rows_before_the_runs_land() {
+        // The runs were diffed against the grid after the scroll, so a run
+        // for the opened bottom row lands on the blank the scroll left.
+        let mut g = grid(&["one", "two", "tre"]);
+        let new_line = argus_protocol::CellRun::encode(2, 0, &[cell('f'), cell('o'), cell('r')]);
+        g.apply_rows(
+            Some(argus_protocol::Scroll {
+                top: 0,
+                bottom: 3,
+                up: 1,
+            }),
+            &[new_line],
+        );
+        assert_eq!(render(&g), vec!["two", "tre", "for"]);
     }
 
     #[test]

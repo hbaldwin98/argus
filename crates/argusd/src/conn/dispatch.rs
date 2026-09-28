@@ -33,7 +33,7 @@ fn dispatch_pane(
     viewer: ViewerId,
 ) -> DispatchResult {
     let result = match msg {
-        ClientMsg::Subscribe { pane } => super::subscribe(daemon, pane)
+        ClientMsg::Subscribe { pane } => super::subscribe(daemon, pane, subs.runs)
             .map(|(snapshot, rx)| subs.add(pane, snapshot, rx, daemon.clone())),
         ClientMsg::Unsubscribe { pane } => {
             subs.remove(pane);

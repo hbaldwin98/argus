@@ -2,7 +2,6 @@
 //! translation driven against a parser fed directly.
 
 use super::*;
-use argus_protocol::CellSpan;
 
 #[test]
 fn nested_processes_do_not_inherit_the_outer_herdr_pane() {
@@ -537,9 +536,9 @@ async fn output_is_broadcast_as_damage_to_subscribers() {
             .unwrap_or_else(|_| panic!("no damage carrying the marker; saw {seen:?}"))
             .unwrap();
         match msg {
-            ServerMsg::Damage { pane, spans, .. } => {
+            ServerMsg::RowDamage { pane, runs, .. } => {
                 assert_eq!(pane, PaneId(7), "damage must be tagged with its own pane");
-                seen.push_str(&span_text(&spans));
+                seen.push_str(&run_text(&runs));
                 if seen.contains("damage-marker") {
                     return;
                 }
@@ -552,11 +551,8 @@ async fn output_is_broadcast_as_damage_to_subscribers() {
     }
 }
 
-fn span_text(spans: &[CellSpan]) -> String {
-    spans
-        .iter()
-        .flat_map(|s| s.cells.iter().map(|c| c.ch.as_str()))
-        .collect()
+fn run_text(runs: &[argus_protocol::CellRun]) -> String {
+    runs.iter().map(|r| r.text.as_str()).collect()
 }
 
 #[tokio::test]
@@ -628,8 +624,8 @@ async fn damage_picks_back_up_after_a_stretch_with_nobody_watching() {
     let seen = tokio::time::timeout(Duration::from_secs(20), async {
         let mut text = String::new();
         loop {
-            if let Ok(ServerMsg::Damage { spans, .. }) = rx.recv().await {
-                text.push_str(&span_text(&spans));
+            if let Ok(ServerMsg::RowDamage { runs, .. }) = rx.recv().await {
+                text.push_str(&run_text(&runs));
                 if text.contains("late-marker") {
                     return text;
                 }
@@ -829,7 +825,7 @@ async fn resize_pushes_a_full_snapshot_so_new_area_is_not_left_blank() {
     let msg = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             match rx.recv().await.unwrap() {
-                m @ ServerMsg::PaneSnapshot { .. } => return m,
+                m @ ServerMsg::PaneRows { .. } => return m,
                 _ => continue,
             }
         }
@@ -837,11 +833,11 @@ async fn resize_pushes_a_full_snapshot_so_new_area_is_not_left_blank() {
     .await
     .expect("a snapshot should follow a resize");
 
-    let ServerMsg::PaneSnapshot {
+    let ServerMsg::PaneRows {
         pane: id,
         rows,
         cols,
-        cells,
+        runs,
         ..
     } = msg
     else {
@@ -849,7 +845,7 @@ async fn resize_pushes_a_full_snapshot_so_new_area_is_not_left_blank() {
     };
     assert_eq!(id, PaneId(6));
     assert_eq!((rows, cols), (40, 120));
-    assert_eq!(cells.len(), 40);
+    assert_eq!(argus_protocol::grid_from_runs(rows, cols, &runs).len(), 40);
     let _ = pane.kill();
 }
 
@@ -893,9 +889,10 @@ fn a_resize_snapshot_is_never_older_than_the_damage_ahead_of_it() {
                 scope.spawn(move || {
                     let mut parser = parser.lock().unwrap();
                     parser.process(b"ZZZ");
-                    let _ = tx.send(ServerMsg::Damage {
+                    let _ = tx.send(ServerMsg::RowDamage {
                         pane: PaneId(61),
-                        spans: Vec::new(),
+                        scroll: None,
+                        runs: Vec::new(),
                         cursor: snapshot_cursor(&parser, CursorShape::Default),
                         mouse: snapshot_mouse(&parser),
                         alternate_screen: false,
@@ -911,12 +908,14 @@ fn a_resize_snapshot_is_never_older_than_the_damage_ahead_of_it() {
         let sent: Vec<ServerMsg> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
         let damage_at = sent
             .iter()
-            .position(|m| matches!(m, ServerMsg::Damage { .. }));
+            .position(|m| matches!(m, ServerMsg::RowDamage { .. }));
         let snapshot = sent
             .iter()
             .enumerate()
             .find_map(|(i, m)| match m {
-                ServerMsg::PaneSnapshot { cells, .. } => Some((i, cells)),
+                ServerMsg::PaneRows {
+                    rows, cols, runs, ..
+                } => Some((i, argus_protocol::grid_from_runs(*rows, *cols, runs))),
                 _ => None,
             })
             .expect("the snapshot should be published");

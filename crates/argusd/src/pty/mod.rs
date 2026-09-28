@@ -14,7 +14,7 @@ use std::ffi::OsString;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
 
 use argus_protocol::{
-    diff_grid, Cell, Color, CompactString, Cursor, CursorShape, MouseEncoding, MouseMode,
+    damage, grid_runs, Cell, Color, CompactString, Cursor, CursorShape, MouseEncoding, MouseMode,
     MouseTracking, PaneId, ServerMsg, BLANK,
 };
 use portable_pty::{native_pty_system, Child, ChildKiller, CommandBuilder, MasterPty, PtySize};
@@ -383,15 +383,17 @@ impl PaneRuntime {
                         let cursor = snapshot_cursor(&parser, shape);
                         let mouse = snapshot_mouse(&parser);
                         let alternate_screen = parser.screen().alternate_screen();
-                        let spans = diff_grid(prev.as_ref(), &cur);
-                        if !spans.is_empty()
+                        let (scroll, runs) = damage(prev.as_mut(), &cur);
+                        if scroll.is_some()
+                            || !runs.is_empty()
                             || prev_cursor != Some(cursor)
                             || prev_mouse != Some(mouse)
                             || prev_alt != Some(alternate_screen)
                         {
-                            let _ = damage_tx.send(ServerMsg::Damage {
+                            let _ = damage_tx.send(ServerMsg::RowDamage {
                                 pane: id,
-                                spans,
+                                scroll,
+                                runs,
                                 cursor,
                                 mouse,
                                 alternate_screen,
@@ -437,15 +439,17 @@ impl PaneRuntime {
                             let cursor = snapshot_cursor(&parser, shape);
                             let mouse = snapshot_mouse(&parser);
                             let alternate_screen = parser.screen().alternate_screen();
-                            let spans = diff_grid(prev.as_ref(), &cur);
-                            if !spans.is_empty()
+                            let (scroll, runs) = damage(prev.as_mut(), &cur);
+                            if scroll.is_some()
+                                || !runs.is_empty()
                                 || prev_cursor != Some(cursor)
                                 || prev_mouse != Some(mouse)
                                 || prev_alt != Some(alternate_screen)
                             {
-                                let _ = damage_tx.send(ServerMsg::Damage {
+                                let _ = damage_tx.send(ServerMsg::RowDamage {
                                     pane: id,
-                                    spans,
+                                    scroll,
+                                    runs,
                                     cursor,
                                     mouse,
                                     alternate_screen,
@@ -624,11 +628,11 @@ fn publish_snapshot(
     let shape = shape.lock().unwrap().shape();
     let parser = parser.lock().unwrap();
     let (rows, cols) = parser.screen().size();
-    let _ = damage_tx.send(ServerMsg::PaneSnapshot {
+    let _ = damage_tx.send(ServerMsg::PaneRows {
         pane,
         rows,
         cols,
-        cells: snapshot_grid(&parser),
+        runs: grid_runs(&snapshot_grid(&parser)),
         cursor: snapshot_cursor(&parser, shape),
         mouse: snapshot_mouse(&parser),
         alternate_screen: parser.screen().alternate_screen(),

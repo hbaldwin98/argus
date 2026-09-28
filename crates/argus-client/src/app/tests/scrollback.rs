@@ -232,3 +232,26 @@ fn every_pane_on_screen_is_sized_from_its_own_area() {
     assert_eq!(live[0].1, h.app.layout.terminal.inner);
     assert_eq!(live[1].1, h.app.layout.overlay.inner);
 }
+
+#[test]
+fn a_grid_sent_as_runs_is_the_grid_the_pane_draws() {
+    let mut h = Harness::new();
+    h.keys("llll");
+    let pane = h.app.column_pane().unwrap();
+    h.sent();
+    assert!(h.app.grids.contains_key(&pane), "the pane is being shown");
+
+    let mut cells = vec![vec![Cell::default(); 8]; 3];
+    cells[1][2].ch = "x".into();
+    h.app.on_server_msg(ServerMsg::PaneRows {
+        pane,
+        rows: 3,
+        cols: 8,
+        runs: argus_protocol::grid_runs(&cells),
+        cursor: argus_protocol::Cursor::default(),
+        mouse: Default::default(),
+        alternate_screen: false,
+    });
+
+    assert_eq!(h.app.grids[&pane].cells, cells);
+}

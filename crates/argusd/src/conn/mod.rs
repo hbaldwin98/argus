@@ -10,7 +10,8 @@
 use std::sync::Arc;
 
 use argus_protocol::{
-    read_known_msg, write_frame, ClientMsg, Hello, PaneId, ServerMsg, PANE_TELEMETRY,
+    grid_from_runs, read_known_msg, write_frame, CellRun, ClientMsg, Hello, PaneId, ServerMsg,
+    CELL_RUNS, PANE_TELEMETRY,
 };
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc, Semaphore};
@@ -100,6 +101,7 @@ where
             msg = client_rx.recv() => {
                 let Some(cmsg) = msg else { break };
                 if let ClientMsg::Hello(hello) = &cmsg {
+                    subs.runs = hello.can(CELL_RUNS);
                     peer = Some(hello.clone());
                 }
                 let shutdown_reason = handle_client_msg(
@@ -209,6 +211,10 @@ const FRAME_QUEUE: usize = 32;
 /// agent running behind it.
 struct Subscriptions {
     tasks: std::collections::HashMap<PaneId, tokio::task::JoinHandle<()>>,
+    /// Whether the client reads a pane's screen as runs (`CELL_RUNS`).
+    /// Panes are sent in the form it reads; one that does not is sent the
+    /// per-cell form, which the forwarder builds from the runs.
+    runs: bool,
     /// Everything a pane sends travels this one queue — its snapshots, its
     /// damage, its copies and its exit — because the client applies them
     /// in order: damage ahead of its snapshot lands on no grid, and an exit
@@ -220,6 +226,7 @@ impl Subscriptions {
     fn new(frames: mpsc::Sender<ServerMsg>) -> Self {
         Subscriptions {
             tasks: std::collections::HashMap::new(),
+            runs: false,
             frames,
         }
     }
@@ -242,7 +249,7 @@ impl Subscriptions {
             Err(mpsc::error::TrySendError::Full(_)) => true,
             Err(mpsc::error::TrySendError::Closed(_)) => return,
         };
-        let forwarder = forward_pane(pane, rx, self.frames.clone(), daemon, behind);
+        let forwarder = forward_pane(pane, rx, self.frames.clone(), daemon, behind, self.runs);
         self.tasks.insert(pane, tokio::spawn(forwarder));
     }
 
@@ -261,23 +268,80 @@ impl Drop for Subscriptions {
     }
 }
 
-/// A pane's whole grid as the message that carries it, and the damage
-/// stream that continues it.
+/// A pane's whole grid as the message that carries it, in runs when the
+/// client reads them, and the damage stream that continues it.
 fn subscribe(
     daemon: &Daemon,
     pane: PaneId,
+    runs: bool,
 ) -> anyhow::Result<(ServerMsg, broadcast::Receiver<ServerMsg>)> {
     let (rows, cols, cells, cursor, mouse, alternate_screen, rx) = daemon.subscribe_pane(pane)?;
-    let snapshot = ServerMsg::PaneSnapshot {
-        pane,
-        rows,
-        cols,
-        cells,
-        cursor,
-        mouse,
-        alternate_screen,
+    let snapshot = if runs {
+        ServerMsg::PaneRows {
+            pane,
+            rows,
+            cols,
+            runs: argus_protocol::grid_runs(&cells),
+            cursor,
+            mouse,
+            alternate_screen,
+        }
+    } else {
+        ServerMsg::PaneSnapshot {
+            pane,
+            rows,
+            cols,
+            cells,
+            cursor,
+            mouse,
+            alternate_screen,
+        }
     };
     Ok((snapshot, rx))
+}
+
+/// A pane frame in the per-cell form, for a client that does not read
+/// runs. `None` for a scroll, which that form cannot say: the client falls
+/// behind and catches up with a fresh grid, which is what a scroll cost it
+/// before runs anyway.
+fn per_cell(frame: ServerMsg) -> Option<ServerMsg> {
+    match frame {
+        ServerMsg::PaneRows {
+            pane,
+            rows,
+            cols,
+            runs,
+            cursor,
+            mouse,
+            alternate_screen,
+        } => Some(ServerMsg::PaneSnapshot {
+            pane,
+            rows,
+            cols,
+            cells: grid_from_runs(rows, cols, &runs),
+            cursor,
+            mouse,
+            alternate_screen,
+        }),
+        ServerMsg::RowDamage {
+            scroll: Some(_), ..
+        } => None,
+        ServerMsg::RowDamage {
+            pane,
+            scroll: None,
+            runs,
+            cursor,
+            mouse,
+            alternate_screen,
+        } => Some(ServerMsg::Damage {
+            pane,
+            spans: runs.iter().map(CellRun::span).collect(),
+            cursor,
+            mouse,
+            alternate_screen,
+        }),
+        other => Some(other),
+    }
 }
 
 /// Carries one pane's broadcast to the connection's frame queue.
@@ -287,29 +351,36 @@ fn subscribe(
 /// that slot carries a fresh snapshot with the stream that continues it.
 /// Falling behind the broadcast itself recovers the same way. A copy and
 /// an exit are one-offs no later frame can stand in for, so they wait for
-/// room instead, behind or not.
+/// room instead, behind or not. Frames go out in the form the client reads
+/// (`runs`).
 async fn forward_pane(
     pane: PaneId,
     mut rx: broadcast::Receiver<ServerMsg>,
     frames: mpsc::Sender<ServerMsg>,
     daemon: Arc<Daemon>,
     mut behind: bool,
+    runs: bool,
 ) {
     loop {
         tokio::select! {
             biased;
             permit = frames.reserve(), if behind => {
                 let Ok(permit) = permit else { return };
-                let Ok((snapshot, replacement)) = subscribe(&daemon, pane) else { return };
+                let Ok((snapshot, replacement)) = subscribe(&daemon, pane, runs) else { return };
                 permit.send(snapshot);
                 rx = replacement;
                 behind = false;
             }
             msg = rx.recv() => match msg {
-                Ok(frame @ (ServerMsg::Damage { .. } | ServerMsg::PaneSnapshot { .. })) => {
+                Ok(frame @ (ServerMsg::RowDamage { .. } | ServerMsg::PaneRows { .. })) => {
                     if behind {
                         continue;
                     }
+                    let frame = if runs { Some(frame) } else { per_cell(frame) };
+                    let Some(frame) = frame else {
+                        behind = true;
+                        continue;
+                    };
                     match frames.try_send(frame) {
                         Ok(()) => {}
                         Err(mpsc::error::TrySendError::Full(_)) => behind = true,
@@ -1104,15 +1175,32 @@ mod tests {
         let _ = h.daemon.close_pane(pane);
     }
 
-    /// A frame the test can tell apart from the others by its cursor row.
+    /// A frame as the pump sends it, told apart from the others by its
+    /// cursor row.
     fn damage(pane: PaneId, row: u16) -> ServerMsg {
-        ServerMsg::Damage {
+        ServerMsg::RowDamage {
             pane,
-            spans: Vec::new(),
+            scroll: None,
+            runs: Vec::new(),
             cursor: argus_protocol::Cursor {
                 row,
                 ..Default::default()
             },
+            mouse: Default::default(),
+            alternate_screen: false,
+        }
+    }
+
+    fn scrolled(pane: PaneId) -> ServerMsg {
+        ServerMsg::RowDamage {
+            pane,
+            scroll: Some(argus_protocol::Scroll {
+                top: 0,
+                bottom: 24,
+                up: 1,
+            }),
+            runs: Vec::new(),
+            cursor: Default::default(),
             mouse: Default::default(),
             alternate_screen: false,
         }
@@ -1177,6 +1265,8 @@ mod tests {
         }
 
         assert!(is_snapshot_marker(&read[0]), "{:?}", read[0]);
+        // A client that did not greet reads cells, so the runs arrive as
+        // spans.
         assert!(
             matches!(read[1], ServerMsg::Damage { cursor, .. } if cursor.row == 1),
             "{:?}",
@@ -1219,10 +1309,68 @@ mod tests {
         for row in [1, 2] {
             let frame: ServerMsg = read_msg(&mut reader_end).await.unwrap();
             assert!(
-                matches!(frame, ServerMsg::Damage { cursor, .. } if cursor.row == row),
+                matches!(frame, ServerMsg::RowDamage { cursor, .. } if cursor.row == row),
                 "frames keep their order: {frame:?}"
             );
         }
+    }
+
+    /// The first `count` frames a subscription forwards.
+    async fn forwarded(frames: &mut mpsc::Receiver<ServerMsg>, count: usize) -> Vec<ServerMsg> {
+        let mut read = Vec::new();
+        for _ in 0..count {
+            let next = tokio::time::timeout(std::time::Duration::from_secs(5), frames.recv())
+                .await
+                .expect("a frame should arrive")
+                .expect("the frame queue should stay open");
+            read.push(next);
+        }
+        read
+    }
+
+    #[tokio::test]
+    async fn a_client_that_reads_runs_is_sent_them_as_they_are() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = Harness::new(dir.path());
+        let pane = h.daemon.spawn_shell(h.checkout()).unwrap();
+        let (damage_tx, rx) = broadcast::channel(16);
+        let (frames_tx, mut frames) = mpsc::channel(FRAME_QUEUE);
+
+        let mut subs = Subscriptions::new(frames_tx);
+        subs.runs = true;
+        subs.add(pane, snapshot_marker(pane), rx, h.daemon.clone());
+        damage_tx.send(scrolled(pane)).unwrap();
+
+        let read = forwarded(&mut frames, 2).await;
+        assert!(
+            matches!(read[1], ServerMsg::RowDamage { scroll: Some(_), .. }),
+            "{:?}",
+            read[1]
+        );
+        let _ = h.daemon.close_pane(pane);
+    }
+
+    #[tokio::test]
+    async fn a_client_that_reads_cells_catches_up_on_a_scroll_with_a_fresh_grid() {
+        // The per-cell form cannot say a scroll, so the client is sent the
+        // grid the scroll left, which is what a scroll cost it before runs.
+        let dir = tempfile::tempdir().unwrap();
+        let h = Harness::new(dir.path());
+        let pane = h.daemon.spawn_shell(h.checkout()).unwrap();
+        let (damage_tx, rx) = broadcast::channel(16);
+        let (frames_tx, mut frames) = mpsc::channel(FRAME_QUEUE);
+
+        let mut subs = Subscriptions::new(frames_tx);
+        subs.add(pane, snapshot_marker(pane), rx, h.daemon.clone());
+        damage_tx.send(scrolled(pane)).unwrap();
+
+        let read = forwarded(&mut frames, 2).await;
+        assert!(
+            matches!(&read[1], ServerMsg::PaneSnapshot { rows, .. } if *rows > 0),
+            "{:?}",
+            read[1]
+        );
+        let _ = h.daemon.close_pane(pane);
     }
 
     #[tokio::test]
