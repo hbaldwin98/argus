@@ -222,82 +222,6 @@ impl PaneInput {
     }
 }
 
-/// Sends SIGKILL to every process in `leader`'s session, not just its own
-/// process group. On Linux this walks `/proc` for processes whose session id
-/// (the field portable_pty sets to the pty child's own pid via `setsid`)
-/// matches `leader`, so a job a shell backgrounded into a fresh process
-/// group — or later reparented to init once its parent exits — is still
-/// reached; session id survives both, unlike parentage. Other Unixes have no
-/// `/proc`, and Darwin's `ps` accepts `-o sess` but always reports 0 for it
-/// (confirmed against our own leader, which is definitely its own session),
-/// so those ask the kernel directly via `getsid(2)` for each pid `ps` lists
-/// (only `ps`'s pid column is used; the broken sess column is not). If
-/// neither source is available, falls back to signaling just the leader's
-/// own process group, which misses a backgrounded or reparented descendant.
-#[cfg(unix)]
-fn kill_session(leader: libc::pid_t) {
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(entries) = std::fs::read_dir("/proc") {
-            for entry in entries.flatten() {
-                let Ok(pid) = entry.file_name().to_string_lossy().parse::<libc::pid_t>() else {
-                    continue;
-                };
-                let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
-                    continue;
-                };
-                // `comm` is user-controlled and may itself contain
-                // parentheses or spaces; the last ')' is always the real
-                // boundary, per proc(5).
-                let Some(after_comm) = stat.rfind(')').map(|i| &stat[i + 1..]) else {
-                    continue;
-                };
-                let session = after_comm
-                    .split_whitespace()
-                    .nth(3) // state, ppid, pgrp, session
-                    .and_then(|s| s.parse::<libc::pid_t>().ok());
-                if session == Some(leader) {
-                    unsafe {
-                        libc::kill(pid, libc::SIGKILL);
-                    }
-                }
-            }
-            return;
-        }
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        // BSD `ps` treats `-e` as "show environment", not "every process"
-        // (that's the Linux/SysV meaning) — `-A` is the portable "every
-        // process" flag here, without which this only sees processes
-        // sharing the caller's own controlling terminal.
-        if let Ok(output) = crate::command::quiet("ps")
-            .into_std()
-            .args(["-A", "-o", "pid="])
-            .output()
-        {
-            let mut any = false;
-            for pid in String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .filter_map(|s| s.trim().parse::<libc::pid_t>().ok())
-            {
-                if unsafe { libc::getsid(pid) } == leader {
-                    any = true;
-                    unsafe {
-                        libc::kill(pid, libc::SIGKILL);
-                    }
-                }
-            }
-            if any {
-                return;
-            }
-        }
-    }
-    unsafe {
-        libc::kill(-leader, libc::SIGKILL);
-    }
-}
-
 impl PaneRuntime {
     /// Spawns the pane's process and its background reader/pump tasks.
     /// `on_exit` fires exactly once, off the pump task, when the child dies.
@@ -557,29 +481,12 @@ impl PaneRuntime {
 
     pub fn kill(&self) -> anyhow::Result<()> {
         #[cfg(windows)]
-        if let Some(job) = &self._job {
-            return job.terminate();
+        {
+            end_process_tree(self._job.as_ref(), &self.child)
         }
         #[cfg(unix)]
         {
-            let mut child = self.child.lock().unwrap();
-            // portable_pty spawns the child as its own session leader. Signal
-            // its session before touching just the direct child: a shell can
-            // background a job (e.g. an agent's own subprocess) into a *new*
-            // process group that still belongs to the same session, so a
-            // plain `child.kill()` — or even a single `killpg` on the
-            // leader's own group — leaves it running with no tracked pane
-            // left to reap it.
-            if let Some(pid) = child.process_id() {
-                kill_session(pid as libc::pid_t);
-            }
-            child.kill()?;
-            Ok(())
-        }
-        #[cfg(not(unix))]
-        {
-            self.child.lock().unwrap().kill()?;
-            Ok(())
+            end_process_tree(&self.child)
         }
     }
 

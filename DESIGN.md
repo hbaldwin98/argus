@@ -84,7 +84,7 @@ to the type or its locking.
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
 | `conn` | one client connection, and which task each message runs on |
 | `conn/dispatch` | what each client message does |
-| `pty`, `pty/job`, `pty/vt` | a pane's child process, its resource bounds, and the vt100 translation |
+| `pty`, `pty/job`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; and the vt100 translation |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
