@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::state::FeaturePart;
+use argus_protocol::Created;
 
 pub(super) fn dispatch(
     msg: ClientMsg,
@@ -64,14 +65,21 @@ fn dispatch_pane(
                     cells,
                 });
             }),
-        ClientMsg::SpawnShell { checkout } => {
+        ClientMsg::SpawnShell {
+            checkout,
+            request_id,
+        } => {
             let daemon = daemon.clone();
-            spawn_pane(out_tx, move || daemon.spawn_shell(checkout).map(|_| ()))
+            spawn_pane(out_tx, request_id, move || daemon.spawn_shell(checkout))
         }
-        ClientMsg::SpawnAgent { checkout, template } => {
+        ClientMsg::SpawnAgent {
+            checkout,
+            template,
+            request_id,
+        } => {
             let daemon = daemon.clone();
-            spawn_pane(out_tx, move || {
-                daemon.spawn_agent(checkout, &template).map(|_| ())
+            spawn_pane(out_tx, request_id, move || {
+                daemon.spawn_agent(checkout, &template)
             })
         }
         ClientMsg::Kill { pane } => daemon.close_pane(pane),
@@ -81,12 +89,11 @@ fn dispatch_pane(
             line,
             external,
             command,
+            request_id,
         } => {
             let daemon = daemon.clone();
-            spawn_pane(out_tx, move || {
-                daemon
-                    .spawn_editor(checkout, &path, line, external, command.as_deref())
-                    .map(|_| ())
+            spawn_pane(out_tx, request_id, move || {
+                daemon.spawn_editor(checkout, &path, line, external, command.as_deref())
             })
         }
         msg => return Err(msg),
@@ -188,8 +195,20 @@ fn dispatch_panel(
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
 ) -> DispatchResult {
     let result = match msg {
-        ClientMsg::AddProject { path } => daemon.add_project(&path),
-        ClientMsg::AddRepository { project, path } => daemon.add_repository(project, &path),
+        ClientMsg::AddProject { path, request_id } => answered(
+            out_tx,
+            request_id,
+            daemon.add_project(&path).map(Created::Project),
+        ),
+        ClientMsg::AddRepository {
+            project,
+            path,
+            request_id,
+        } => answered(
+            out_tx,
+            request_id,
+            daemon.add_repository(project, &path).map(Created::Repository),
+        ),
         // Removal only rewrites config and the tree — no subprocess, no
         // directory walk — so it stays on the message loop like AddProject.
         ClientMsg::RemoveProject { project } => daemon.remove_project(project),
@@ -225,9 +244,19 @@ fn dispatch_git(
         // run on their own task instead of blocking this connection's
         // message loop — a slow worktree op must not stall keystrokes going
         // to some other pane. Each reports its own error asynchronously.
-        ClientMsg::CreateWorktree { checkout, branch } => {
+        ClientMsg::CreateWorktree {
+            checkout,
+            branch,
+            request_id,
+        } => {
+            let answer = out_tx.clone();
             spawn_reporting(daemon, out_tx, move |d| async move {
-                d.create_worktree(checkout, branch).await
+                // Answered before setup runs: the worktree is there, and
+                // setup can take as long as an install does.
+                let made = d.create_worktree(checkout, branch).await;
+                let created = made.as_ref().ok().map(|id| Created::Checkout(*id));
+                answer_created(&answer, request_id, created);
+                d.setup_worktree(made?).await
             })
         }
         ClientMsg::RemoveCheckout { checkout } => {
@@ -237,9 +266,15 @@ fn dispatch_git(
         }
         // Same reasoning: `git init` is a subprocess, and the directory it
         // lands in may not exist yet.
-        ClientMsg::InitRepository { project, path } => {
+        ClientMsg::InitRepository {
+            project,
+            path,
+            request_id,
+        } => {
+            let answer = out_tx.clone();
             spawn_reporting(daemon, out_tx, move |d| async move {
-                d.init_repository(project, &path).await
+                let made = d.init_repository(project, &path).await;
+                answered(&answer, request_id, made.map(Created::Repository))
             })
         }
         ClientMsg::SwitchBranch { checkout, branch } => {
@@ -461,17 +496,46 @@ where
 
 pub(super) fn spawn_pane(
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
-    spawn: impl FnOnce() -> anyhow::Result<()> + Send + 'static,
+    request_id: u64,
+    spawn: impl FnOnce() -> anyhow::Result<PaneId> + Send + 'static,
 ) -> anyhow::Result<()> {
     let out_tx = out_tx.clone();
     tokio::task::spawn_blocking(move || {
-        if let Err(error) = spawn() {
+        let made = spawn().map(Created::Pane);
+        if let Err(error) = answered(&out_tx, request_id, made) {
             let _ = out_tx.send(ServerMsg::Error {
                 message: error.to_string(),
             });
         }
     });
     Ok(())
+}
+
+/// Tells the client that named its request what the request made, or that
+/// it made nothing. A client that predates the answer names no requests —
+/// its id is zero — and so is never sent a message it cannot read.
+fn answer_created(
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    request_id: u64,
+    created: Option<Created>,
+) {
+    if request_id != 0 {
+        let _ = out_tx.send(ServerMsg::Created {
+            request_id,
+            created,
+        });
+    }
+}
+
+/// Answers a named request with what it made, and hands a refusal on to be
+/// reported the way it always was.
+fn answered(
+    out_tx: &mpsc::UnboundedSender<ServerMsg>,
+    request_id: u64,
+    made: anyhow::Result<Created>,
+) -> anyhow::Result<()> {
+    answer_created(out_tx, request_id, made.as_ref().ok().copied());
+    made.map(|_| ())
 }
 
 /// Resolves a checkout to its path, then answers on a blocking thread.

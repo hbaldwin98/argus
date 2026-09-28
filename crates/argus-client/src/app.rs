@@ -41,6 +41,8 @@ pub use rows::{CheckoutAnchor, CheckoutRow, PaneLocation};
 pub use views::{FeaturePanel, View};
 
 mod actions;
+mod awaited;
+use awaited::Then;
 mod input;
 mod layout;
 mod modal;
@@ -64,14 +66,6 @@ fn local_name(remote_branch: &str) -> Option<&str> {
 /// Whether this checkout is the one sitting on `branch`. Its git status is
 /// the truth; the row's name stands in only until the first poll has been
 /// round.
-/// After a worktree is created for a branch row, spawn this template there.
-#[derive(Clone)]
-pub(super) struct PendingSpawnAgent {
-    pub repository: RepositoryId,
-    pub branch: String,
-    pub template: String,
-}
-
 fn on_branch(c: &CheckoutInfo, branch: &str) -> bool {
     c.git
         .as_ref()
@@ -253,9 +247,6 @@ pub struct App {
     /// False for an app that must not write to the user's config — every
     /// test, and anything constructed with [`App::new`].
     persist_settings: bool,
-    /// The next pane the daemon tells us about should open in an overlay.
-    /// Set when an editor is spawned for one.
-    pending_overlay_new: bool,
     pub review: Option<ReviewView>,
     pub history: Option<HistoryView>,
     /// The feature or task brief being read or written, if one is open.
@@ -319,14 +310,9 @@ pub struct App {
     /// Active color theme. Every color the UI draws comes from here, so a
     /// preset swap is one assignment rather than a sweep of call sites.
     pub theme: Theme,
-    pending_focus_new: bool,
-    pending_focus_new_checkout: Option<RepositoryId>,
-    pending_focus_new_project: bool,
-    /// The project a just-added repository belongs to, so the new row is
-    /// the selected one when the tree carrying it arrives.
-    pending_focus_new_repository: Option<ProjectId>,
-    /// Agent spawn waiting on a worktree the daemon is creating.
-    pending_spawn_agent: Option<PendingSpawnAgent>,
+    /// Requests waiting on something the daemon is making, matched by the
+    /// id it answers with.
+    awaited: awaited::Awaited,
     /// The instant the frame being drawn is for, and the epoch every
     /// repeating animation is phased off.
     ///
@@ -419,7 +405,6 @@ impl App {
             help: None,
             settings,
             persist_settings: persist,
-            pending_overlay_new: false,
             review: None,
             history: None,
             brief: None,
@@ -446,11 +431,7 @@ impl App {
             review_split,
             prompt: None,
             theme,
-            pending_focus_new: false,
-            pending_focus_new_checkout: None,
-            pending_focus_new_project: false,
-            pending_focus_new_repository: None,
-            pending_spawn_agent: None,
+            awaited: awaited::Awaited::default(),
             frame_now: started,
             epoch: started,
             focus_shown: focus,

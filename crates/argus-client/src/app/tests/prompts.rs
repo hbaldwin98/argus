@@ -25,7 +25,7 @@ fn n_in_the_projects_column_opens_the_directory_browser() {
     h.browse("/some/dir", Some("/some"), &[]);
     h.key(KeyCode::Enter);
     match &h.sent()[0] {
-        ClientMsg::AddProject { path } => assert_eq!(path, "/some/dir"),
+        ClientMsg::AddProject { path, .. } => assert_eq!(path, "/some/dir"),
         other => panic!("unexpected {other:?}"),
     }
     assert!(h.app.dir_picker.is_none());
@@ -48,7 +48,7 @@ fn enter_walks_into_a_directory_and_enter_again_adds_where_you_land() {
     h.browse("/home/u", Some("/home"), &[("code", true)]);
     h.key(KeyCode::Enter);
     match &h.sent()[0] {
-        ClientMsg::AddProject { path } => {
+        ClientMsg::AddProject { path, .. } => {
             assert_eq!(path, "/home/u", "the first row is the directory you are in");
         }
         other => panic!("unexpected {other:?}"),
@@ -81,7 +81,7 @@ fn a_new_project_becomes_the_selected_one() {
     h.key(KeyCode::Char('n'));
     h.browse("/d", Some("/"), &[]);
     h.key(KeyCode::Enter);
-    h.sent();
+    let request = h.sent().pop().expect("the request");
 
     let mut t = tree();
     t.push(project(
@@ -94,6 +94,7 @@ fn a_new_project_becomes_the_selected_one() {
         )],
     ));
     h.app.on_server_msg(ServerMsg::Tree(t));
+    h.answer(&request, argus_protocol::Created::Project(ProjectId(3)));
     assert_eq!(h.app.current_project().unwrap().name, "new");
 }
 
@@ -118,7 +119,7 @@ fn n_in_the_repositories_column_adds_a_repository_to_that_project() {
     h.browse("/some/repo", Some("/some"), &[]);
     h.key(KeyCode::Enter);
     match &h.sent()[0] {
-        ClientMsg::AddRepository { project, path } => {
+        ClientMsg::AddRepository { project, path, .. } => {
             assert_eq!(*project, ProjectId(1), "the project in view");
             assert_eq!(path, "/some/repo");
         }
@@ -134,7 +135,7 @@ fn a_new_repository_becomes_the_selected_one() {
     h.key(KeyCode::Char('n'));
     h.browse("/r", Some("/"), &[]);
     h.key(KeyCode::Enter);
-    h.sent();
+    let request = h.sent().pop().expect("the request");
 
     let mut t = tree();
     t[0].repositories.push(repository(
@@ -143,6 +144,7 @@ fn a_new_repository_becomes_the_selected_one() {
         vec![checkout(30, "main", true, vec![])],
     ));
     h.app.on_server_msg(ServerMsg::Tree(t));
+    h.answer(&request, argus_protocol::Created::Repository(RepositoryId(7)));
     assert_eq!(h.app.current_repository().unwrap().name, "added");
 }
 
@@ -178,7 +180,7 @@ fn i_in_the_repositories_column_makes_a_repository_that_is_not_there_yet() {
     h.keys("thing");
     h.key(KeyCode::Enter);
     match &h.sent()[0] {
-        ClientMsg::InitRepository { project, path } => {
+        ClientMsg::InitRepository { project, path, .. } => {
             assert_eq!(*project, ProjectId(1), "the project in view");
             assert_eq!(path, "/src/thing");
         }
@@ -246,7 +248,7 @@ fn a_repository_just_made_becomes_the_selected_one() {
     h.key(KeyCode::Enter);
     h.keys("thing");
     h.key(KeyCode::Enter);
-    h.sent();
+    let request = h.sent().pop().expect("the request");
 
     let mut t = tree();
     t[0].repositories.push(repository(
@@ -255,6 +257,7 @@ fn a_repository_just_made_becomes_the_selected_one() {
         vec![checkout(30, "main", true, vec![])],
     ));
     h.app.on_server_msg(ServerMsg::Tree(t));
+    h.answer(&request, argus_protocol::Created::Repository(RepositoryId(7)));
     assert_eq!(h.app.current_repository().unwrap().name, "thing");
 }
 
@@ -269,7 +272,7 @@ fn n_in_the_checkouts_column_prompts_for_a_branch() {
     h.keys("feat/x");
     h.key(KeyCode::Enter);
     match &h.sent()[0] {
-        ClientMsg::CreateWorktree { checkout, branch } => {
+        ClientMsg::CreateWorktree { checkout, branch, .. } => {
             assert_eq!(
                 *checkout,
                 CheckoutId(10),
@@ -305,13 +308,14 @@ fn a_new_worktree_becomes_the_selected_checkout() {
     h.keys("lln");
     h.keys("x");
     h.key(KeyCode::Enter);
-    h.sent();
+    let request = h.sent().pop().expect("the request");
 
     let mut t = tree();
     t[0].repositories[0]
         .checkouts
         .push(checkout(12, "x", false, vec![]));
     h.app.on_server_msg(ServerMsg::Tree(t));
+    h.answer(&request, argus_protocol::Created::Checkout(CheckoutId(12)));
     assert_eq!(h.app.current_checkout().unwrap().name, "x");
 }
 
@@ -321,13 +325,17 @@ fn a_pending_new_worktree_restores_the_columns_before_moving_selection() {
     h.keys("llll");
     h.leader();
     h.key(KeyCode::Char('f'));
-    h.app.pending_focus_new_checkout = Some(RepositoryId(5));
+    let request_id = h.app.awaited.ask(Then::SelectCheckout);
     let mut t = tree();
     t[0].repositories[0]
         .checkouts
         .push(checkout(12, "x", false, vec![]));
 
     h.app.on_server_msg(ServerMsg::Tree(t));
+    h.app.on_server_msg(ServerMsg::Created {
+        request_id,
+        created: Some(argus_protocol::Created::Checkout(CheckoutId(12))),
+    });
 
     assert_eq!(h.app.current_checkout().unwrap().name, "x");
     assert_eq!(h.app.focus, Focus::Panes);
@@ -340,7 +348,7 @@ fn a_new_worktree_selects_its_repository_even_if_navigation_moved() {
     h.keys("lln");
     h.keys("x");
     h.key(KeyCode::Enter);
-    h.sent();
+    let request = h.sent().pop().expect("the request");
 
     let mut t = tree();
     t[0].repositories.push(repository(
@@ -353,6 +361,7 @@ fn a_new_worktree_selects_its_repository_even_if_navigation_moved() {
         .push(checkout(12, "x", false, vec![]));
     h.app.sel_repository = 1;
     h.app.on_server_msg(ServerMsg::Tree(t));
+    h.answer(&request, argus_protocol::Created::Checkout(CheckoutId(12)));
 
     assert_eq!(h.app.current_repository().unwrap().id, RepositoryId(5));
     assert_eq!(h.app.current_checkout().unwrap().name, "x");
@@ -370,7 +379,8 @@ fn checkout_commands_use_the_repository_selections_current_checkout() {
     assert!(matches!(
         h.sent().as_slice(),
         [ClientMsg::SpawnShell {
-            checkout: CheckoutId(10)
+            checkout: CheckoutId(10),
+            ..
         }]
     ));
 }

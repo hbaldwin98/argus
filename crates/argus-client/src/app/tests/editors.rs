@@ -9,13 +9,16 @@ fn an_editor_opens_in_a_floating_window_by_default() {
 }
 
 #[test]
-fn the_column_setting_keeps_the_editor_in_the_column() {
+fn the_column_setting_still_gives_the_editor_the_keys() {
+    // An editor is not a listed pane, so the workspace cannot hold it; it
+    // floats instead. The keys going to whichever pane was listed last —
+    // a running agent — is what this replaced.
     let mut h = Harness::new();
     h.app.settings.editor = crate::settings::EditorMode::Column;
     open_editor_from_review(&mut h);
 
-    assert!(h.app.overlay.is_none());
-    assert_eq!(h.app.focus, Focus::PaneContent);
+    assert_eq!(h.app.overlay_pane(), Some(PaneId(700)));
+    assert_ne!(h.app.focus, Focus::PaneContent, "not typing into the agent");
 }
 
 #[test]

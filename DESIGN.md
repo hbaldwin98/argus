@@ -40,6 +40,16 @@ records framed by a four-byte big-endian length. Frames larger than 64 MiB are r
 Several clients may connect at once and each connection may subscribe to several pane screens.
 There is no protocol negotiation or transport authentication.
 
+A request that makes something — a shell, an agent, an editor, a worktree, a project, a
+repository — may name itself with a `request_id`, and the daemon answers that client alone with
+`Created`: the id of what it made, or nothing when it refused (the reason still arrives as an
+`Error`). The client matches what was made by that id, never by where a new row turns up in the
+next tree, since the tree is broadcast for everything and the first to arrive need not carry the
+row; it acts once it holds both the answer and a tree containing the id, in either order. An
+unnamed request (id zero, what a client from before this sends) is never answered, so an older
+client never receives a message it cannot read, and an older daemon ignores the name — a newer
+client talking to it simply does not move to what it made.
+
 ## Where each responsibility lives
 
 One rule decides which file a thing goes in: a module is named after the question it answers, and
@@ -107,6 +117,7 @@ result of a request; `ui` is a pure function of it.
 | `app/rail` | what the rail lists, in what order, which repository is open, and what choosing a row does |
 | `app/mode` | which mode has the keys — the one answer key dispatch, the status bar and `?` all match on |
 | `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
+| `app/awaited` | requests waiting on something the daemon is making, and what to do with it once the tree holds it |
 | `app/server` | what arrives back, and what it does to the selection |
 | `app/views` | which surface the content area holds, and the one feature selection everything on it is read at |
 | `ui` | the frame, and where the cursor goes on it |
@@ -1092,7 +1103,8 @@ checkout is on.
 Files open in one of three modes:
 
 - a floating PTY overlay, the default;
-- the Workspace stage's terminal;
+- as a pane in the checkout — though an editor is never a listed pane, so the workspace cannot
+  hold it and it floats as the first mode does;
 - an external detached process with no PTY.
 
 Known GUI editors always launch externally. Editor lookup uses `$VISUAL`, then `$EDITOR`, then an

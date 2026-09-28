@@ -118,15 +118,18 @@ mod tests {
             },
             ClientMsg::SpawnShell {
                 checkout: CheckoutId(2),
+                request_id: 1,
             },
             ClientMsg::SpawnAgent {
                 checkout: CheckoutId(2),
                 template: "claude".to_string(),
+                request_id: 2,
             },
             ClientMsg::Kill { pane: PaneId(1) },
             ClientMsg::CreateWorktree {
                 checkout: CheckoutId(2),
                 branch: "feat/x".to_string(),
+                request_id: 3,
             },
             ClientMsg::RemoveCheckout {
                 checkout: CheckoutId(2),
@@ -139,14 +142,17 @@ mod tests {
             },
             ClientMsg::AddProject {
                 path: r"C:\src\thing".to_string(),
+                request_id: 4,
             },
             ClientMsg::AddRepository {
                 project: ProjectId(1),
                 path: r"C:\src\thing\repo".to_string(),
+                request_id: 5,
             },
             ClientMsg::InitRepository {
                 project: ProjectId(1),
                 path: r"C:\src\thing\fresh".to_string(),
+                request_id: 6,
             },
             ClientMsg::Restart,
             ClientMsg::ListCommits {

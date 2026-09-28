@@ -194,11 +194,12 @@ impl App {
                     let base = *base;
                     self.prompt = None;
                     if !branch.is_empty() {
+                        let request_id = self.awaited.ask(Then::SelectCheckout);
                         let _ = self.out.send(ClientMsg::CreateWorktree {
                             checkout: base,
                             branch,
+                            request_id,
                         });
-                        self.pending_focus_new_checkout = self.current_repository().map(|r| r.id);
                     }
                 }
                 KeyCode::Esc => self.prompt = None,
@@ -251,8 +252,12 @@ impl App {
                         crate::dirpicker::join(parent, name)
                     };
                     self.prompt = None;
-                    let _ = self.out.send(ClientMsg::InitRepository { project, path });
-                    self.pending_focus_new_repository = Some(project);
+                    let request_id = self.awaited.ask(Then::SelectRepository);
+                    let _ = self.out.send(ClientMsg::InitRepository {
+                        project,
+                        path,
+                        request_id,
+                    });
                 }
                 KeyCode::Esc => self.prompt = None,
                 KeyCode::Backspace => {
@@ -301,12 +306,16 @@ impl App {
                 self.dir_picker = None;
                 match target {
                     DirTarget::Project => {
-                        let _ = self.out.send(ClientMsg::AddProject { path });
-                        self.pending_focus_new_project = true;
+                        let request_id = self.awaited.ask(Then::SelectProject);
+                        let _ = self.out.send(ClientMsg::AddProject { path, request_id });
                     }
                     DirTarget::Repository(project) => {
-                        let _ = self.out.send(ClientMsg::AddRepository { project, path });
-                        self.pending_focus_new_repository = Some(project);
+                        let request_id = self.awaited.ask(Then::SelectRepository);
+                        let _ = self.out.send(ClientMsg::AddRepository {
+                            project,
+                            path,
+                            request_id,
+                        });
                     }
                     // Nothing is created yet: the directory just chosen is
                     // where the repository goes, and it still needs a name.
@@ -780,14 +789,15 @@ impl App {
                 let checkout = v.review.checkout;
                 if let Some(a) = v.anchor() {
                     let line = a.preferred_start();
+                    let request_id = self.editor_request();
                     let _ = self.out.send(ClientMsg::OpenInEditor {
                         checkout,
                         path: a.path,
                         line,
                         external: self.settings.editor.is_external(),
                         command: self.editor_command(),
+                        request_id,
                     });
-                    self.want_editor();
                     self.close_overlay();
                 }
             }

@@ -559,9 +559,11 @@ async fn setup_commands_run_in_the_worktree_that_was_just_made() {
     // it leaves something a test can read back.
     let (_dir, d) = daemon_on_a_repo_with(None, &["git tag setup-ran"]);
 
-    d.create_worktree(only_checkout(&d), "with-setup".to_string())
+    let checkout = d
+        .create_worktree(only_checkout(&d), "with-setup".to_string())
         .await
         .unwrap();
+    d.setup_worktree(checkout).await.unwrap();
 
     let made = PathBuf::from(&d.snapshot()[0].repositories[0].checkouts[1].path);
     let repo = git2::Repository::open(&made).unwrap();
@@ -577,11 +579,11 @@ async fn setup_commands_run_in_the_worktree_that_was_just_made() {
 async fn a_setup_command_that_fails_is_reported_without_taking_the_worktree_with_it() {
     let (_dir, d) = daemon_on_a_repo_with(None, &["git not-a-git-command"]);
 
-    let err = d
+    let checkout = d
         .create_worktree(only_checkout(&d), "half-set-up".to_string())
         .await
-        .unwrap_err()
-        .to_string();
+        .expect("the worktree is made before setup is tried");
+    let err = d.setup_worktree(checkout).await.unwrap_err().to_string();
 
     assert!(err.contains("not-a-git-command"), "got {err:?}");
     let snapshot = d.snapshot();

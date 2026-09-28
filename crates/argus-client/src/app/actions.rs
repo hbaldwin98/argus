@@ -283,15 +283,17 @@ impl App {
         (!cmd.is_empty()).then(|| cmd.to_string())
     }
 
-    /// Where the editor about to be spawned should land. Nothing at all
-    /// for an external one: it has no pane to focus.
-    pub(super) fn want_editor(&mut self) {
+    /// Names an editor request, and says where the editor it spawns should
+    /// land. Zero — no answer wanted — for an external one: it has no pane
+    /// to take the keys to.
+    pub(super) fn editor_request(&mut self) -> u64 {
         match self.settings.editor {
-            crate::settings::EditorMode::External => {}
-            crate::settings::EditorMode::Column => self.pending_focus_new = true,
+            crate::settings::EditorMode::External => 0,
+            crate::settings::EditorMode::Column => {
+                self.awaited.ask(Then::FocusPane { floating: false })
+            }
             crate::settings::EditorMode::Overlay => {
-                self.pending_focus_new = true;
-                self.pending_overlay_new = true;
+                self.awaited.ask(Then::FocusPane { floating: true })
             }
         }
     }
@@ -311,11 +313,12 @@ impl App {
     }
 
     pub(super) fn spawn_shell(&mut self) {
-        if let Some(checkout) = self.current_checkout() {
+        if let Some(checkout) = self.current_checkout().map(|c| c.id) {
+            let request_id = self.awaited.ask(Then::FocusPane { floating: false });
             let _ = self.out.send(ClientMsg::SpawnShell {
-                checkout: checkout.id,
+                checkout,
+                request_id,
             });
-            self.pending_focus_new = true;
         }
     }
 

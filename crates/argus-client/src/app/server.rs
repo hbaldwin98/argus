@@ -236,6 +236,13 @@ impl App {
             ServerMsg::Error { message } => {
                 self.alert(format!("error: {message}"));
             }
+            ServerMsg::Created {
+                request_id,
+                created,
+            } => {
+                self.awaited.answer(request_id, created);
+                self.settle_awaited();
+            }
             ServerMsg::Restarting => {}
             ServerMsg::Stopping => self.should_quit = true,
         }
@@ -363,73 +370,6 @@ impl App {
             }
         }
         self.clamp();
-        if self.pending_focus_new_project {
-            self.pending_focus_new_project = false;
-            let n = self.tree.len();
-            if n > 0 {
-                self.sel_project = n - 1;
-                self.clamp();
-            }
-        }
-        if let Some(project_id) = self.pending_focus_new_repository.take() {
-            if let Some((index, project)) = self
-                .tree
-                .iter()
-                .enumerate()
-                .find(|(_, p)| p.id == project_id)
-            {
-                if !project.repositories.is_empty() {
-                    self.sel_project = index;
-                    self.sel_repository = project.repositories.len() - 1;
-                    self.clamp();
-                }
-            }
-        }
-        if let Some(repository_id) = self.pending_focus_new_checkout.take() {
-            if let Some((project, repository)) =
-                self.tree
-                    .iter()
-                    .enumerate()
-                    .find_map(|(project_index, project)| {
-                        project.repositories.iter().enumerate().find_map(
-                            |(repository_index, repository)| {
-                                (repository.id == repository_id)
-                                    .then_some((project_index, repository_index))
-                            },
-                        )
-                    })
-            {
-                self.sel_project = project;
-                self.sel_repository = repository;
-                let newest = self
-                    .current_repository()
-                    .map(|r| r.checkouts.len().saturating_sub(1))
-                    .unwrap_or(0);
-                self.sel_checkout = self.checkout_row_of(newest).unwrap_or(0);
-                self.clamp();
-            }
-        }
-        if let Some(pending) = self.pending_spawn_agent.take() {
-            let checkout = self
-                .tree
-                .iter()
-                .flat_map(|p| p.repositories.iter())
-                .find(|r| r.id == pending.repository)
-                .and_then(|r| {
-                    r.checkouts.iter().find(|c| {
-                        on_branch(c, &pending.branch) || c.name == pending.branch
-                    })
-                });
-            if let Some(checkout) = checkout {
-                let _ = self.out.send(ClientMsg::SpawnAgent {
-                    checkout: checkout.id,
-                    template: pending.template,
-                });
-                self.pending_focus_new = true;
-            } else {
-                self.pending_spawn_agent = Some(pending);
-            }
-        }
         // A pane killed from elsewhere leaves its window orphaned.
         if let Some(pane) = self.overlay.as_ref().and_then(Overlay::pane) {
             let alive = panes_in(&self.tree).any(|p| p.id == pane);
@@ -437,28 +377,8 @@ impl App {
                 self.close_overlay();
             }
         }
-        if self.pending_focus_new {
-            self.pending_focus_new = false;
-            let newest = self
-                .current_checkout()
-                .and_then(|c| c.panes.last())
-                .map(|p| (p.id, p.title.clone()));
-            if let Some((id, title)) = newest {
-                if std::mem::take(&mut self.pending_overlay_new) {
-                    // Deliberately leaves `sel_pane` alone: the columns keep
-                    // showing whatever you were watching, and closing the
-                    // window puts you back there rather than on the editor.
-                    self.open_overlay_pane(id, title, true);
-                } else {
-                    self.sel_pane = self.visible_pane_count().saturating_sub(1);
-                    self.sync_subscription();
-                    // Spawned from a stage with no terminal on it, the keys
-                    // would otherwise go to a pane nobody can see.
-                    self.open_view(View::Workspace);
-                    self.focus = Focus::PaneContent;
-                }
-            }
-        }
+        // What a request of ours made may be in this tree.
+        self.settle_awaited();
         if self.pane_fullscreen
             && (self.focus != Focus::PaneContent
                 || selected_pane.is_none()

@@ -54,7 +54,7 @@ pub use memory::{
     DEFAULT_PACKET_MAX_ITEMS, MAX_ARTIFACT_TEXT_BYTES, MAX_WORK_CONTEXT_BRIEF_BYTES,
     MAX_WORK_CONTEXT_TITLE_BYTES,
 };
-pub use message::{ClientMsg, DirEntry, DirListing, ServerMsg};
+pub use message::{ClientMsg, Created, DirEntry, DirListing, ServerMsg};
 pub use paths::{config_dir, instance_name};
 pub use review::{
     ChangeKind, CommitFile, CommitInfo, DiffLine, FileDiff, HighlightKind, HighlightSpan, Hunk,

@@ -163,11 +163,16 @@ impl Daemon {
     /// tree's point of view — a row for a branch that has no directory yet —
     /// and refusing the first because the name is taken would only mean
     /// telling the user to say it a different way.
+    ///
+    /// The project's setup commands are not run here: the worktree exists
+    /// once this returns, whatever setup then makes of it, and the caller
+    /// is told which checkout it is before setup starts
+    /// ([`Self::setup_worktree`]).
     pub async fn create_worktree(
         self: &Arc<Self>,
         base: CheckoutId,
         branch: String,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<CheckoutId> {
         let branch = checked_branch_name(&branch)?;
 
         let context = {
@@ -219,15 +224,28 @@ impl Daemon {
                 id
             })
         };
-        if let Some(id) = added {
-            self.refresh_checkout_git(id);
-        }
+        let id = added.ok_or_else(|| anyhow::anyhow!("the repository went away"))?;
+        self.refresh_checkout_git(id);
         self.refresh_branches();
         // Broadcast before the setup commands run: they can take as long as
         // an install takes, and the row is what the user asked for.
         self.broadcast_tree();
+        Ok(id)
+    }
 
-        run_setup(&context.setup, &dest).await
+    /// Runs the project's setup commands in a worktree `create_worktree`
+    /// just made.
+    pub async fn setup_worktree(&self, checkout: CheckoutId) -> anyhow::Result<()> {
+        let (setup, dest) = {
+            let inner = self.inner.lock().unwrap();
+            let context = worktree_context(&inner.projects, checkout)
+                .ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
+            let dest = find_checkout_ref(&inner.projects, checkout)
+                .map(|c| c.path.clone())
+                .ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
+            (context.setup, dest)
+        };
+        run_setup(&setup, &dest).await
     }
 
     /// The only way into the panel that makes a repository rather than
@@ -239,7 +257,11 @@ impl Daemon {
     /// A directory that is already a repository is added without being
     /// re-inited — rewriting its hooks is not what "make me a new one"
     /// asked for.
-    pub async fn init_repository(&self, project: ProjectId, path: &str) -> anyhow::Result<()> {
+    pub async fn init_repository(
+        &self,
+        project: ProjectId,
+        path: &str,
+    ) -> anyhow::Result<RepositoryId> {
         let expanded = config::expand_home(path);
         if !expanded.is_absolute() {
             anyhow::bail!("repository path must be absolute: {}", expanded.display());

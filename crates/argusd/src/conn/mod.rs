@@ -525,7 +525,71 @@ mod tests {
         let mut h = Harness::new(dir.path());
         h.send(ClientMsg::SpawnShell {
             checkout: CheckoutId(9999),
+            request_id: 0,
         });
+        let error = h.error().await;
+        assert!(error.contains("no such checkout"), "{error}");
+    }
+
+    #[test]
+    fn a_named_request_is_answered_with_what_it_made() {
+        let dir = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+        h.send(ClientMsg::AddProject {
+            path: other.path().to_string_lossy().to_string(),
+            request_id: 3,
+        });
+
+        let made = h.replies().into_iter().find_map(|reply| match reply {
+            ServerMsg::Created {
+                request_id: 3,
+                created: Some(argus_protocol::Created::Project(id)),
+            } => Some(id),
+            _ => None,
+        });
+        let made = made.expect("the named request is answered");
+        assert!(h.daemon.snapshot().iter().any(|p| p.id == made));
+    }
+
+    #[test]
+    fn an_unnamed_request_is_not_answered() {
+        // What a client from before named requests sends: it could not
+        // read the answer, so it is never sent one.
+        let dir = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+        h.send(ClientMsg::AddProject {
+            path: other.path().to_string_lossy().to_string(),
+            request_id: 0,
+        });
+        assert!(!h
+            .replies()
+            .iter()
+            .any(|reply| matches!(reply, ServerMsg::Created { .. })));
+    }
+
+    #[tokio::test]
+    async fn a_refused_named_request_is_answered_with_nothing_and_still_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+        h.send(ClientMsg::SpawnShell {
+            checkout: CheckoutId(9999),
+            request_id: 8,
+        });
+        let answer = tokio::time::timeout(std::time::Duration::from_secs(5), h.rx.recv())
+            .await
+            .expect("an answer should arrive");
+        assert!(
+            matches!(
+                answer,
+                Some(ServerMsg::Created {
+                    request_id: 8,
+                    created: None
+                })
+            ),
+            "{answer:?}"
+        );
         let error = h.error().await;
         assert!(error.contains("no such checkout"), "{error}");
     }
@@ -577,6 +641,7 @@ mod tests {
             ClientMsg::CreateWorktree {
                 checkout: gone,
                 branch: branch(),
+                request_id: 0,
             },
             ClientMsg::RemoveCheckout { checkout: gone },
         ];
@@ -596,9 +661,9 @@ mod tests {
         let (tx, _rx) = mpsc::unbounded_channel();
         let started = std::time::Instant::now();
 
-        dispatch::spawn_pane(&tx, || {
+        dispatch::spawn_pane(&tx, 0, || {
             std::thread::sleep(std::time::Duration::from_millis(200));
-            Ok(())
+            Ok(PaneId(1))
         })
         .unwrap();
 
@@ -778,6 +843,7 @@ mod tests {
             line: None,
             external: false,
             command: None,
+            request_id: 0,
         });
         let error = h.error().await;
         assert!(error.contains("inside the checkout"), "{error}");

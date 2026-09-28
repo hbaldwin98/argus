@@ -52,11 +52,21 @@ pub enum ClientMsg {
     /// Spawn a shell pane cwd'd into a checkout.
     SpawnShell {
         checkout: CheckoutId,
+        /// Names the request, so the daemon can answer with what it made
+        /// ([`ServerMsg::Created`]). Zero, the default, asks for no answer:
+        /// what a client that predates it sends.
+        #[serde(default)]
+        request_id: u64,
     },
     /// Spawn an agent pane from a named template, cwd'd into a checkout.
     SpawnAgent {
         checkout: CheckoutId,
         template: String,
+        /// Names the request, so the daemon can answer with what it made
+        /// ([`ServerMsg::Created`]). Zero, the default, asks for no answer:
+        /// what a client that predates it sends.
+        #[serde(default)]
+        request_id: u64,
     },
     /// Kill a pane's process and remove it.
     Kill {
@@ -67,6 +77,11 @@ pub enum ClientMsg {
     CreateWorktree {
         checkout: CheckoutId,
         branch: String,
+        /// Names the request, so the daemon can answer with what it made
+        /// ([`ServerMsg::Created`]). Zero, the default, asks for no answer:
+        /// what a client that predates it sends.
+        #[serde(default)]
+        request_id: u64,
     },
     /// Kill every pane in a (non-primary) checkout, `git worktree remove`
     /// it, delete its branch, and drop it from the tree.
@@ -254,6 +269,11 @@ pub enum ClientMsg {
         /// The editor to run, flags included. `None` leaves the daemon to
         /// work it out from the environment.
         command: Option<String>,
+        /// Names the request, so the daemon can answer with what it made
+        /// ([`ServerMsg::Created`]). Zero, the default, asks for no answer:
+        /// what a client that predates it sends.
+        #[serde(default)]
+        request_id: u64,
     },
     /// Drop a project from the panel and from `projects.toml`. Nothing on
     /// disk is touched — the directories stay exactly where they are, and
@@ -273,6 +293,11 @@ pub enum ClientMsg {
     /// Persisted to config so it survives a daemon restart.
     AddProject {
         path: String,
+        /// Names the request, so the daemon can answer with what it made
+        /// ([`ServerMsg::Created`]). Zero, the default, asks for no answer:
+        /// what a client that predates it sends.
+        #[serde(default)]
+        request_id: u64,
     },
     /// List the subdirectories of `path`, for the directory browser
     /// behind "add project" and "add repository". An empty path means
@@ -291,6 +316,11 @@ pub enum ClientMsg {
     AddRepository {
         project: ProjectId,
         path: String,
+        /// Names the request, so the daemon can answer with what it made
+        /// ([`ServerMsg::Created`]). Zero, the default, asks for no answer:
+        /// what a client that predates it sends.
+        #[serde(default)]
+        request_id: u64,
     },
     /// Make a repository that does not exist yet: create `path` if it is
     /// not there, `git init` it, and add it to `project` the way
@@ -301,6 +331,11 @@ pub enum ClientMsg {
     InitRepository {
         project: ProjectId,
         path: String,
+        /// Names the request, so the daemon can answer with what it made
+        /// ([`ServerMsg::Created`]). Zero, the default, asks for no answer:
+        /// what a client that predates it sends.
+        #[serde(default)]
+        request_id: u64,
     },
     /// Ask the daemon to flush this connection, stop accepting clients, and
     /// exit so a fresh daemon can restore the persisted session.
@@ -445,12 +480,35 @@ pub enum ServerMsg {
     Error {
         message: String,
     },
+    /// What a request that named itself made: a pane, a checkout, a
+    /// project or a repository — or `None` when it was refused, whose
+    /// reason arrives as an [`ServerMsg::Error`] as it always has.
+    ///
+    /// Answered only to the client that asked, and only when it gave a
+    /// non-zero `request_id`, so a client that predates this never receives
+    /// a message it cannot read. A client matches what was made by this id
+    /// rather than by where a new row appears in the next tree: the tree is
+    /// broadcast for everything, and the first to arrive need not be the
+    /// one carrying the row.
+    Created {
+        request_id: u64,
+        created: Option<Created>,
+    },
     /// The daemon accepted a restart request and will exit after this frame
     /// reaches the client.
     Restarting,
     /// The daemon accepted a stop request and will exit after this frame
     /// reaches the client.
     Stopping,
+}
+
+/// What a creating request made.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Created {
+    Pane(PaneId),
+    Checkout(CheckoutId),
+    Project(ProjectId),
+    Repository(RepositoryId),
 }
 
 /// One directory's subdirectories, as the browser needs to draw them.
@@ -480,4 +538,70 @@ pub struct DirEntry {
     /// hunting for, and the difference between a project root and a
     /// repository inside one.
     pub is_repo: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wire<T: Serialize>(msg: &T) -> Vec<u8> {
+        rmp_serde::to_vec_named(msg).unwrap()
+    }
+
+    /// `SpawnShell` as a client built before requests were named sent it.
+    #[derive(Serialize, Deserialize)]
+    enum OlderClientMsg {
+        SpawnShell { checkout: CheckoutId },
+    }
+
+    #[test]
+    fn a_request_from_an_older_client_asks_for_no_answer() {
+        let older = wire(&OlderClientMsg::SpawnShell {
+            checkout: CheckoutId(4),
+        });
+        let read: ClientMsg = rmp_serde::from_slice(&older).unwrap();
+        assert!(matches!(
+            read,
+            ClientMsg::SpawnShell {
+                checkout: CheckoutId(4),
+                request_id: 0
+            }
+        ));
+    }
+
+    #[test]
+    fn an_older_daemon_reads_a_named_request_and_ignores_the_name() {
+        let newer = wire(&ClientMsg::SpawnShell {
+            checkout: CheckoutId(4),
+            request_id: 9,
+        });
+        let read: OlderClientMsg = rmp_serde::from_slice(&newer).unwrap();
+        assert!(matches!(
+            read,
+            OlderClientMsg::SpawnShell {
+                checkout: CheckoutId(4)
+            }
+        ));
+    }
+
+    #[test]
+    fn what_was_made_survives_the_wire() {
+        for created in [
+            Some(Created::Pane(PaneId(1))),
+            Some(Created::Checkout(CheckoutId(2))),
+            Some(Created::Project(ProjectId(3))),
+            Some(Created::Repository(RepositoryId(4))),
+            None,
+        ] {
+            let bytes = wire(&ServerMsg::Created {
+                request_id: 7,
+                created,
+            });
+            let read: ServerMsg = rmp_serde::from_slice(&bytes).unwrap();
+            assert!(
+                matches!(read, ServerMsg::Created { request_id: 7, created: c } if c == created),
+                "{created:?}"
+            );
+        }
+    }
 }

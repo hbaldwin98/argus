@@ -200,7 +200,7 @@ fn n_on_a_remote_branch_gives_it_a_worktree_under_its_local_name() {
 
     assert!(matches!(
         h.sent().as_slice(),
-        [ClientMsg::CreateWorktree { checkout: CheckoutId(10), branch }]
+        [ClientMsg::CreateWorktree { checkout: CheckoutId(10), branch, .. }]
             if branch == "from-elsewhere"
     ));
 }
@@ -303,9 +303,10 @@ fn a_on_a_branch_row_creates_a_worktree_then_spawns_the_agent() {
     h.key(KeyCode::Char('a'));
     h.key(KeyCode::Enter);
 
+    let request = h.sent().remove(0);
     assert!(matches!(
-        h.sent().as_slice(),
-        [ClientMsg::CreateWorktree { checkout: CheckoutId(10), branch }]
+        &request,
+        ClientMsg::CreateWorktree { checkout: CheckoutId(10), branch, .. }
             if branch == "hotfix/tls"
     ));
 
@@ -317,10 +318,12 @@ fn a_on_a_branch_row_creates_a_worktree_then_spawns_the_agent() {
         vec![],
     ));
     h.app.on_server_msg(ServerMsg::Tree(tree));
+    assert!(h.sent().is_empty(), "nothing is started until the daemon says what it made");
+    h.answer(&request, argus_protocol::Created::Checkout(CheckoutId(13)));
 
     assert!(matches!(
         h.sent().as_slice(),
-        [ClientMsg::SpawnAgent { checkout: CheckoutId(13), template }]
+        [ClientMsg::SpawnAgent { checkout: CheckoutId(13), template, .. }]
             if template == "claude"
     ));
 }
@@ -334,7 +337,7 @@ fn n_on_a_branch_row_gives_that_branch_a_worktree_without_asking_for_a_name() {
     assert!(h.app.prompt.is_none(), "the branch is already named");
     assert!(matches!(
         h.sent().as_slice(),
-        [ClientMsg::CreateWorktree { checkout: CheckoutId(10), branch }] if branch == "hotfix/tls"
+        [ClientMsg::CreateWorktree { checkout: CheckoutId(10), branch, .. }] if branch == "hotfix/tls"
     ));
 }
 

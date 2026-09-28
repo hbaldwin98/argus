@@ -199,6 +199,7 @@ impl App {
                     let _ = self.out.send(ClientMsg::CreateWorktree {
                         checkout: base,
                         branch,
+                        request_id: 0,
                     });
                 }
             }
@@ -488,14 +489,17 @@ impl App {
                 let Some(path) = picker.selected() else {
                     return;
                 };
+                let checkout = *checkout;
+                let path = path.to_string();
+                let request_id = self.editor_request();
                 let _ = self.out.send(ClientMsg::OpenInEditor {
-                    checkout: *checkout,
-                    path: path.to_string(),
+                    checkout,
+                    path,
                     line: None,
                     external: self.settings.editor.is_external(),
                     command: self.editor_command(),
+                    request_id,
                 });
-                self.want_editor();
             }
             PickerKind::Change => {
                 let Some(idx) = picker.shown.get(picker.sel).copied() else {
@@ -544,31 +548,28 @@ impl App {
                 let Some(name) = picker.selected() else {
                     return;
                 };
-                if let Some(checkout) = self.current_checkout() {
+                if let Some(checkout) = self.current_checkout().map(|c| c.id) {
+                    let template = name.to_string();
+                    let request_id = self.awaited.ask(Then::FocusPane { floating: false });
                     let _ = self.out.send(ClientMsg::SpawnAgent {
-                        checkout: checkout.id,
-                        template: name.to_string(),
+                        checkout,
+                        template,
+                        request_id,
                     });
-                    self.pending_focus_new = true;
                 } else if let Some(branch) = self.current_branch_row().map(str::to_string) {
                     let Some(base) = self.primary_checkout().map(|c| c.id) else {
                         self.report("no checkout to branch from");
                         return;
                     };
-                    let Some(repository) = self.current_repository().map(|r| r.id) else {
-                        return;
-                    };
+                    // The worktree first, then the agent in it once the
+                    // daemon says which checkout it made.
+                    let template = name.to_string();
+                    let request_id = self.awaited.ask(Then::SpawnAgent { template });
                     let _ = self.out.send(ClientMsg::CreateWorktree {
                         checkout: base,
-                        branch: branch.clone(),
-                    });
-                    self.pending_spawn_agent = Some(PendingSpawnAgent {
-                        repository,
                         branch,
-                        template: name.to_string(),
+                        request_id,
                     });
-                    self.pending_focus_new_checkout = Some(repository);
-                    self.pending_focus_new = true;
                     self.report("creating worktree…");
                 }
             }

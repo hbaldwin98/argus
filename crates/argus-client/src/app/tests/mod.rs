@@ -83,6 +83,34 @@ impl Harness {
         h
     }
 
+    /// Plays the daemon's part for a request just sent: answers it with
+    /// what it made.
+    pub(super) fn answer(&mut self, request: &ClientMsg, created: argus_protocol::Created) {
+        let request_id = match request {
+            ClientMsg::SpawnShell { request_id, .. }
+            | ClientMsg::SpawnAgent { request_id, .. }
+            | ClientMsg::CreateWorktree { request_id, .. }
+            | ClientMsg::OpenInEditor { request_id, .. }
+            | ClientMsg::AddProject { request_id, .. }
+            | ClientMsg::AddRepository { request_id, .. }
+            | ClientMsg::InitRepository { request_id, .. } => *request_id,
+            other => panic!("{other:?} makes nothing"),
+        };
+        assert_ne!(request_id, 0, "a request whose result is wanted names itself");
+        self.app.on_server_msg(ServerMsg::Created {
+            request_id,
+            created: Some(created),
+        });
+    }
+
+    /// [`Self::answer`], for a request that may not have asked for one —
+    /// an external editor makes no pane, and names no request.
+    pub(super) fn answer_if_named(&mut self, request: &ClientMsg, created: argus_protocol::Created) {
+        if !matches!(request, ClientMsg::OpenInEditor { request_id: 0, .. }) {
+            self.answer(request, created);
+        }
+    }
+
     /// Opens the Checkouts stage, whose table draws every checkout and
     /// branch row and whose `j`/`k` walk them.
     pub(super) fn checkouts_stage(&mut self) {
@@ -190,9 +218,10 @@ pub(super) fn open_editor_from_review(h: &mut Harness) {
     let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
     open_review(h, diff_of(checkout));
     h.key(KeyCode::Char('e'));
-    h.sent();
+    let request = h.sent().pop().expect("the editor request");
     // The daemon answers with a tree carrying the new editor pane.
     h.app.on_server_msg(ServerMsg::Tree(tree_with_editor()));
+    h.answer_if_named(&request, argus_protocol::Created::Pane(PaneId(700)));
 }
 
 // --- branches without a checkout ----------------------------------------
@@ -231,8 +260,9 @@ pub(super) fn editor_arrives(h: &mut Harness) {
     h.app.review_for_test(checkout);
     h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
     h.key(KeyCode::Char('e'));
-    h.sent();
+    let request = h.sent().pop().expect("the editor request");
     h.app.on_server_msg(ServerMsg::Tree(tree_with_editor()));
+    h.answer_if_named(&request, argus_protocol::Created::Pane(PaneId(700)));
 }
 
 // --- choosing the editor ------------------------------------------------

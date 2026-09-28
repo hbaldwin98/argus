@@ -247,8 +247,12 @@ fn a_new_worktree_is_selected_by_its_row_not_its_index() {
     r.default_branch = Some("dev".to_string());
     r.branches = vec!["dev".to_string()];
     r.checkouts.push(checkout(12, "spike", false, vec![]));
-    h.app.pending_focus_new_checkout = Some(RepositoryId(5));
+    let request_id = h.app.awaited.ask(Then::SelectCheckout);
     h.app.on_server_msg(ServerMsg::Tree(t));
+    h.app.on_server_msg(ServerMsg::Created {
+        request_id,
+        created: Some(argus_protocol::Created::Checkout(CheckoutId(12))),
+    });
 
     assert_eq!(
         h.app.current_checkout().map(|c| c.id),

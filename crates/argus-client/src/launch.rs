@@ -145,7 +145,13 @@ pub async fn init(dir: Option<String>) -> anyhow::Result<()> {
                 break tree.into_iter().map(|p| p.id).collect::<Vec<_>>();
             }
         };
-        write_msg(&mut stream, &ClientMsg::AddProject { path: path.clone() })
+        // Told apart by id from the projects already known, so no answer
+        // is asked for.
+        let add = ClientMsg::AddProject {
+            path: path.clone(),
+            request_id: 0,
+        };
+        write_msg(&mut stream, &add)
             .await
             .context("could not ask argusd to add the project")?;
         loop {

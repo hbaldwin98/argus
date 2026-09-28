@@ -20,7 +20,7 @@ impl Daemon {
     /// meant; pointing at the directory a dozen of them live in adds the
     /// dozen. A root with none of them yet is a project all the same — the
     /// scan runs again, and the first clone into it arrives on its own.
-    pub fn add_project(&self, path: &str) -> anyhow::Result<()> {
+    pub fn add_project(&self, path: &str) -> anyhow::Result<ProjectId> {
         let expanded = config::expand_home(path);
         if !expanded.is_dir() {
             anyhow::bail!("not a directory: {}", expanded.display());
@@ -59,13 +59,14 @@ impl Daemon {
             workspace: workspace_name,
         })?;
 
-        {
+        let id = {
             let mut inner = self.inner.lock().unwrap();
             let Inner { projects, ids, .. } = &mut *inner;
             let mut repositories = Vec::new();
             install_discovered(ids, &mut repositories, &found);
+            let id = ProjectId(ids.alloc());
             projects.push(Project {
-                id: ProjectId(ids.alloc()),
+                id,
                 workspace,
                 name,
                 root: Some(expanded),
@@ -75,12 +76,13 @@ impl Daemon {
                 // the user adds to the file by hand.
                 settings: ProjectSettings::default(),
             });
-        }
+            id
+        };
         self.ensure_local_ignores();
         self.broadcast_tree();
         // The rollup counts changed too.
         self.broadcast_workspaces();
-        Ok(())
+        Ok(id)
     }
 
     /// Adds one repository to a project that is already in the panel, by
@@ -93,7 +95,7 @@ impl Daemon {
     /// that is not a Git repository still becomes a row, which is how a
     /// plain directory gets panes. A path the user had previously removed
     /// stops being excluded — asking for it back is the undo for that.
-    pub fn add_repository(&self, project: ProjectId, path: &str) -> anyhow::Result<()> {
+    pub fn add_repository(&self, project: ProjectId, path: &str) -> anyhow::Result<RepositoryId> {
         let expanded = config::expand_home(path);
         if !expanded.is_dir() {
             anyhow::bail!("not a directory: {}", expanded.display());
@@ -121,18 +123,19 @@ impl Daemon {
         // restart.
         self.store.add_repo(&name, &expanded)?;
 
-        let unexcluded = {
+        let (id, unexcluded) = {
             let mut inner = self.inner.lock().unwrap();
             let was_excluded = is_excluded(&inner.excluded, &expanded);
             inner.excluded.retain(|e| !same_path(e, &expanded));
             let Inner { projects, ids, .. } = &mut *inner;
             let repository = new_repository(ids, expanded.clone(), false);
+            let id = repository.id;
             let p = projects
                 .iter_mut()
                 .find(|p| p.id == project)
                 .ok_or_else(|| anyhow::anyhow!("no such project"))?;
             p.repositories.push(repository);
-            was_excluded.then(|| inner.excluded.clone())
+            (id, was_excluded.then(|| inner.excluded.clone()))
         };
         if let Some(remaining) = unexcluded {
             self.store.set_excluded_repos(&remaining)?;
@@ -140,7 +143,7 @@ impl Daemon {
 
         self.ensure_local_ignores();
         self.broadcast_tree();
-        Ok(())
+        Ok(id)
     }
 
     /// Takes a project out of the panel. Nothing on disk is touched — this
