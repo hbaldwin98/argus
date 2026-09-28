@@ -7,6 +7,8 @@ mod config;
 mod conn;
 mod daemon_lock;
 mod diff;
+#[cfg(windows)]
+mod dll_search;
 mod editor;
 mod git;
 mod gitignore;
@@ -26,6 +28,11 @@ async fn main() -> anyhow::Result<()> {
         "argusd starting; logging to {}",
         logging::log_path().display()
     );
+    // Before any pane can load ConPTY by name.
+    #[cfg(windows)]
+    if let Err(e) = dll_search::restrict() {
+        tracing::error!("could not keep library loads out of the working directory: {e}");
+    }
 
     let Some(_daemon_lock) = daemon_lock::DaemonLock::acquire()? else {
         tracing::info!("another argusd already owns this instance; exiting");

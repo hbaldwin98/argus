@@ -169,6 +169,13 @@ each archive.
 Linux and macOS binaries are not code-signed. macOS may require approval in Privacy & Security after
 the first launch. Windows binaries are not Authenticode-signed and may show a SmartScreen warning.
 
+On Windows, panes use the ConPTY built into Windows. To run them on a newer one — the console host
+Windows Terminal ships, which re-draws less and passes more escape sequences through, most
+noticeably on Windows 10 — put `conpty.dll` and `OpenConsole.exe` from Microsoft's
+`Microsoft.Windows.Console.ConPTY` package beside `argusd.exe` and restart the daemon. Argus does
+not ship them. The daemon loads libraries only from its own directory and System32, so a
+`conpty.dll` anywhere else, such as a repository Argus was started in, is never picked up.
+
 ### Build from source
 
 Install both packages so all three executables share Cargo's binary directory:

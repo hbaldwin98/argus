@@ -159,6 +159,7 @@ to the type or its locking.
 | `gitignore` | the repository-local excludes for generated Argus files |
 | `config` | `projects.toml`, which is read and never written |
 | `daemon_lock`, `editor`, `watch`, `command`, `logging`, `paths` | the one daemon allowed to own an instance, and the small services the rest of the daemon uses |
+| `dll_search` | where the daemon loads libraries from on Windows: its own directory and System32, never the directory it was started in |
 
 `argus` is a replaceable renderer over one model. `app` holds the state and never predicts the
 result of a request; `ui` is a pure function of it.
@@ -418,6 +419,13 @@ leaves the exited row, which is what says what happened.
 On Windows, each agent process tree runs in its own Job Object with an 8 GiB committed-memory limit
 and a 64-process limit. Closing the pane or dropping its runtime terminates the whole job rather
 than only the template's immediate process. Shell and editor panes are not subject to these limits.
+
+Windows panes run on the ConPTY built into Windows unless `conpty.dll` and `OpenConsole.exe` sit
+beside `argusd.exe`, which portable-pty prefers. Argus does not ship them: nothing works worse
+without them, and shipping them means a third-party executable per pane and binaries to keep
+current. portable-pty loads that library by bare name, and Windows' default search would go on to
+the current directory — the daemon inherits the one `argus` was run from, often a repository — so
+the daemon's first act is to confine loads by name to its own directory and System32 (`dll_search`).
 
 Each PTY starts at 24 by 80 cells. A blocking reader thread sends output through a bounded queue to
 a Tokio task, which feeds the pane's terminal emulator (`alacritty_terminal`) and broadcasts what
