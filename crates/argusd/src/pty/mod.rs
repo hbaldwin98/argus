@@ -204,8 +204,10 @@ pub struct PaneRuntime {
     #[cfg(windows)]
     _job: Option<ProcessJob>,
     /// How many times the pump has woken, so a test can tell an idle pane
-    /// from one ticking on a timer.
+    /// from one ticking on a timer. Only a Unix test reads it: a ConPTY
+    /// child is never silent from the start.
     #[cfg(test)]
+    #[cfg_attr(windows, allow(dead_code))]
     pump_wakes: Arc<std::sync::atomic::AtomicUsize>,
 }
 
