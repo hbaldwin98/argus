@@ -22,3 +22,12 @@ constrained this one. Routine steps and forced choices do not need decisions.
 When a new finding invalidates a decision, record the replacement with
 `--supersedes` so the earlier reasoning stays visible. If the change reverses
 something the human decided, confirm with them first.
+
+A decision recorded in error — wrong feature, wrong wording, never really
+decided — is withdrawn instead, with the number `decisions` prints. It stays in
+the history for people and stops guiding agents; `restore` takes that back.
+
+```sh
+"$ARGUS_HOOK" decisions withdraw <id>
+"$ARGUS_HOOK" decisions restore <id>
+```

@@ -648,6 +648,9 @@ pub(super) fn decisions(rest: &[&str]) {
 }
 
 pub(super) fn decisions_message(rest: &[&str], base_url: &str, token: &str) -> String {
+    if let Some(verb @ ("withdraw" | "restore")) = rest.first().copied() {
+        return change_decision(verb, rest.get(1..).unwrap_or_default(), base_url, token);
+    }
     let board: DecisionBoard =
         match read_json("decisions", Endpoint::Decisions, rest, base_url, token) {
             Ok(board) => board,
@@ -657,6 +660,39 @@ pub(super) fn decisions_message(rest: &[&str], base_url: &str, token: &str) -> S
         return "nothing decided under this feature yet".to_string();
     }
     format_decision_board(&board)
+}
+
+/// `decisions withdraw <id>` and `decisions restore <id>`: takes a decision
+/// recorded in error back, keeping it in the history, and undoes that.
+fn change_decision(verb: &str, args: &[&str], base_url: &str, token: &str) -> String {
+    let id = match args {
+        [id] => id.trim_start_matches('#').parse::<i64>().ok(),
+        _ => None,
+    };
+    let Some(id) = id else {
+        return format!("could not change decision: {verb} wants the number `decisions` prints");
+    };
+    let (change, done) = if verb == "withdraw" {
+        (argus_protocol::DecisionChange::Withdraw { id }, "withdrawn")
+    } else {
+        (argus_protocol::DecisionChange::Restore { id }, "restored")
+    };
+    let Ok(body) = serde_json::to_string(&change) else {
+        return "could not change decision: unencodable".to_string();
+    };
+    let url = endpoint_url(base_url, Endpoint::DecisionChange);
+    let Some((status, response)) = post_response(&url, token, &body) else {
+        return "could not change decision: daemon unavailable".to_string();
+    };
+    let response = response.trim();
+    if status != 200 {
+        return if response.is_empty() {
+            "could not change decision: daemon refused the request".to_string()
+        } else {
+            format!("could not change decision: {response}")
+        };
+    }
+    format!("decision {id} {done}")
 }
 
 pub(super) fn format_decision_board(board: &DecisionBoard) -> String {
@@ -851,6 +887,15 @@ pub(super) fn read_json<T: serde::de::DeserializeOwned>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn withdrawing_a_decision_wants_its_number() {
+        let base = "http://127.0.0.1:1/pane/1";
+        for args in [&["withdraw"][..], &["withdraw", "first"], &["restore", "1", "2"]] {
+            let message = decisions_message(args, base, "t");
+            assert!(message.contains("wants the number"), "{args:?}: {message}");
+        }
+    }
 
     #[test]
     fn changing_a_feature_wants_its_slug_and_its_text() {

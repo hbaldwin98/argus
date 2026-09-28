@@ -36,6 +36,7 @@ fn feature_document_with_long_rows() -> App {
                             + "decision rationale remains visible after wrapping.",
                     ),
                     superseded_by: None,
+                    withdrawn_at: None,
                 },
                 argus_protocol::Decision {
                     id: 2,
@@ -48,6 +49,7 @@ fn feature_document_with_long_rows() -> App {
                     over: None,
                     because: None,
                     superseded_by: None,
+                    withdrawn_at: None,
                 },
             ],
         },
@@ -173,6 +175,7 @@ fn feature_decisions_show_tree_guides_and_right_aligned_ids() {
                     over: None,
                     because: None,
                     superseded_by: None,
+                    withdrawn_at: None,
                 },
                 argus_protocol::Decision {
                     id: 11,
@@ -185,6 +188,7 @@ fn feature_decisions_show_tree_guides_and_right_aligned_ids() {
                     over: None,
                     because: None,
                     superseded_by: None,
+                    withdrawn_at: None,
                 },
             ],
         },

@@ -33,7 +33,9 @@ pub use cell::{
 };
 pub use compact_str::{CompactString, ToCompactString};
 pub use damage::{damage, grid_from_runs, grid_runs, CellRun, Scroll, Style};
-pub use decisions::{Decision, DecisionBoard, DecisionTreeRow, DecisionWrite, MAX_DECISION_BYTES};
+pub use decisions::{
+    Decision, DecisionBoard, DecisionChange, DecisionTreeRow, DecisionWrite, MAX_DECISION_BYTES,
+};
 pub use diagrams::{
     DiagramAction, DiagramList, DiagramWrite, SequenceDiagram, MAX_DIAGRAM_BODY_BYTES,
     MAX_DIAGRAM_TITLE_BYTES,

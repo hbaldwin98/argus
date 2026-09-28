@@ -152,6 +152,7 @@ fn decision(id: i64, parent: Option<i64>, chose: &str) -> argus_protocol::Decisi
         over: None,
         because: None,
         superseded_by: None,
+        withdrawn_at: None,
     }
 }
 
@@ -183,6 +184,7 @@ fn a_superseded_decision_keeps_its_place_and_says_what_replaced_it() {
     let mut app = app_with_a_board(vec![
         argus_protocol::Decision {
             superseded_by: Some(2),
+            withdrawn_at: None,
             ..decision(1, None, "key notes by id")
         },
         decision(2, None, "key notes by path"),

@@ -202,6 +202,10 @@ async fn handle_hook_request(
             Some((pane, Endpoint::Decide)) => {
                 decide_response(&daemon, pane, reporter.as_deref(), &body, filing)
             }
+            Some((pane, Endpoint::DecisionChange)) => match decode(&body, "decision change") {
+                Ok(change) => json_reply(daemon.change_decision_for_agent(pane, change, filing)),
+                Err(refusal) => refusal,
+            },
             Some((pane, Endpoint::Features)) => {
                 json_reply(daemon.feature_board_for_agent(pane, filing))
             }

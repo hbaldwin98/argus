@@ -281,6 +281,13 @@ fn decision_detail(decision: &argus_protocol::Decision) -> String {
     }
 }
 
+/// Whether a decision no longer stands — replaced by a later one, or taken
+/// back as a mistake. Drawn receded either way: still there to be read,
+/// no longer what the work is built on.
+fn set_aside(decision: &argus_protocol::Decision) -> bool {
+    decision.superseded() || decision.withdrawn()
+}
+
 fn decision_lines(
     row: &argus_protocol::DecisionTreeRow<'_>,
     selected: bool,
@@ -291,7 +298,7 @@ fn decision_lines(
     let decision = row.decision;
     let bg = if expanded { th.surface } else { th.bg };
     let base = Style::default().bg(bg);
-    let name_style = base.fg(if decision.superseded() {
+    let name_style = base.fg(if set_aside(decision) {
         th.dim
     } else if selected {
         th.text
@@ -302,7 +309,7 @@ fn decision_lines(
     let marker = if selected { "▌ " } else { "  " };
     let detail = decision_detail(decision);
     let lead = format!("{marker}{guide}");
-    let mark_style = base.fg(if decision.superseded() {
+    let mark_style = base.fg(if set_aside(decision) {
         th.dim
     } else {
         th.muted
@@ -344,6 +351,9 @@ fn decision_lines(
     let mut choice = decision.chose.clone();
     if let Some(by) = decision.superseded_by {
         choice.push_str(&format!("  superseded by #{by}"));
+    }
+    if decision.withdrawn() {
+        choice.push_str("  withdrawn");
     }
     let mut lines = hanging_text(
         title_prefix,

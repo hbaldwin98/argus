@@ -275,6 +275,72 @@ fn open_feature(d: &Daemon, agent: PaneId, title: &str) -> String {
 }
 
 #[tokio::test]
+async fn a_withdrawn_decision_leaves_what_agents_read_and_stays_in_the_history() {
+    use argus_protocol::DecisionChange;
+
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    let checkout = only_checkout(&d);
+    let project = d.snapshot()[0].id;
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+    open_feature(&d, agent, "elsewhere");
+    let elsewhere = d
+        .record_agent_decision(
+            agent,
+            None,
+            DecisionWrite {
+                chose: "filed under another feature".into(),
+                ..Default::default()
+            },
+            ArtifactScope::default(),
+        )
+        .unwrap()
+        .id;
+    open_feature(&d, agent, "here");
+    let mistaken = d
+        .record_agent_decision(
+            agent,
+            None,
+            DecisionWrite {
+                chose: "a mistake".into(),
+                ..Default::default()
+            },
+            ArtifactScope::default(),
+        )
+        .unwrap()
+        .id;
+    let read = |d: &Daemon| {
+        d.decisions_for_agent(agent, ArtifactScope::default())
+            .unwrap()
+            .decisions
+            .len()
+    };
+    assert_eq!(read(&d), 1);
+
+    d.change_decision_for_agent(agent, DecisionChange::Withdraw { id: mistaken }, ArtifactScope::default())
+        .unwrap();
+    assert_eq!(read(&d), 0, "agents read what still stands");
+    let history = d.decision_board(project, checkout).unwrap();
+    let kept = history.decisions.iter().find(|x| x.id == mistaken).unwrap();
+    assert!(kept.withdrawn(), "and the view keeps it, marked");
+
+    d.change_decision_for_agent(agent, DecisionChange::Restore { id: mistaken }, ArtifactScope::default())
+        .unwrap();
+    assert_eq!(read(&d), 1, "restoring undoes it");
+
+    let refused = d
+        .change_decision_for_agent(
+            agent,
+            DecisionChange::Withdraw { id: elsewhere },
+            ArtifactScope::default(),
+        )
+        .unwrap_err();
+    assert!(refused.to_string().contains("not under this feature"), "{refused}");
+
+    d.close_pane(agent).unwrap();
+}
+
+#[tokio::test]
 async fn an_agent_corrects_a_feature_it_opened_and_drops_it_once_empty() {
     let dir = tempfile::tempdir().unwrap();
     let d = daemon_with_claude_aliases(dir.path(), &["claude"]);

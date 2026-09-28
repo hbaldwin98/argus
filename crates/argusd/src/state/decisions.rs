@@ -50,11 +50,13 @@ impl Daemon {
         let scope = self.agent_scope(pane_id)?;
         let key = scope.artifact_key(filing.scope);
         let feature = self.feature_for_agent(&scope, &filing)?;
+        // A withdrawn decision stays on the board for people reading its
+        // history; an agent reads the ones that still stand.
         let decisions = self
             .store
             .decisions(key)?
             .into_iter()
-            .filter(|d| d.feature == feature)
+            .filter(|d| d.feature == feature && !d.withdrawn())
             .collect();
         Ok(DecisionBoard {
             project: self.project_id_named(&scope.project_name),
@@ -62,6 +64,47 @@ impl Daemon {
             name: scope.project_name,
             decisions,
         })
+    }
+
+    /// Withdraws a decision, or restores one withdrawn, for an agent, and
+    /// answers with the board as the agent now reads it.
+    ///
+    /// The decision has to be under the feature the request is about, as
+    /// every write naming a row does: an id from a list that has since
+    /// moved on must not reach into some other feature's history.
+    pub fn change_decision_for_agent(
+        &self,
+        pane_id: PaneId,
+        change: argus_protocol::DecisionChange,
+        filing: impl Into<super::features::Filing>,
+    ) -> anyhow::Result<DecisionBoard> {
+        use argus_protocol::DecisionChange;
+
+        let filing = filing.into();
+        let scope = self.agent_scope(pane_id)?;
+        let key = scope.artifact_key(filing.scope);
+        let feature = self.feature_for_agent(&scope, &filing)?;
+        let (id, at) = match change {
+            DecisionChange::Withdraw { id } => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or_default();
+                (id, Some(now))
+            }
+            DecisionChange::Restore { id } => (id, None),
+        };
+        let under = self
+            .store
+            .decisions(key)?
+            .into_iter()
+            .any(|d| d.id == id && d.feature.is_some() && d.feature == feature);
+        if !under {
+            anyhow::bail!("decision {id} is not under this feature");
+        }
+        self.store.set_decision_withdrawn(key, id, at)?;
+        self.broadcast_decisions(&scope.project_name, key, self.store.decisions(key)?);
+        self.decisions_for_agent(pane_id, filing)
     }
 
     /// Appends one decision, and returns it as the board now holds it.

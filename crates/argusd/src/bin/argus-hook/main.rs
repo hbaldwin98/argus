@@ -915,6 +915,7 @@ mod tests {
                 over: Some("polling the handle".into()),
                 because: Some("a poll cannot see a burst".into()),
                 superseded_by: None,
+                withdrawn_at: None,
             }],
             unfiled: 0,
         }

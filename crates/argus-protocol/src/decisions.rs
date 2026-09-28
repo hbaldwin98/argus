@@ -52,12 +52,30 @@ pub struct Decision {
     /// one supersedes it, so a reader walking down the tree sees that this
     /// branch was abandoned without having to hunt for the reversal.
     pub superseded_by: Option<i64>,
+    /// When the decision was withdrawn, if it has been: taken back as a
+    /// mistake rather than replaced by a better one. Kept, not deleted, so
+    /// the history still says it was once decided; agents are not shown it.
+    #[serde(default)]
+    pub withdrawn_at: Option<i64>,
 }
 
 impl Decision {
     pub fn superseded(&self) -> bool {
         self.superseded_by.is_some()
     }
+
+    pub fn withdrawn(&self) -> bool {
+        self.withdrawn_at.is_some()
+    }
+}
+
+/// A change to one decision already on the board. A decision is otherwise
+/// append-only; this is how one recorded in error is taken back, and how
+/// that is undone in turn.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DecisionChange {
+    Withdraw { id: i64 },
+    Restore { id: i64 },
 }
 
 /// A decision as it is asked for, before the store gives it an identity.
@@ -251,6 +269,7 @@ mod tests {
             over: None,
             because: None,
             superseded_by: None,
+            withdrawn_at: None,
         }
     }
 

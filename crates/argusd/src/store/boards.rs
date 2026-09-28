@@ -82,7 +82,7 @@ impl Store {
         let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, parent, at, session, checkout, feature, chose, over_, because,
-                    superseded_by
+                    superseded_by, withdrawn_at
              FROM decision WHERE project = ?1 ORDER BY id",
         )?;
         let rows = stmt.query_map(rusqlite::params![project], |r| {
@@ -97,9 +97,22 @@ impl Store {
                 over: r.get(7)?,
                 because: r.get(8)?,
                 superseded_by: r.get(9)?,
+                withdrawn_at: r.get(10)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Marks a decision withdrawn at `at`, or restores it with `None`.
+    pub fn set_decision_withdrawn(&self, project: &str, id: i64, at: Option<i64>) -> Result<()> {
+        let changed = self.conn().execute(
+            "UPDATE decision SET withdrawn_at = ?3 WHERE project = ?1 AND id = ?2",
+            rusqlite::params![project, id, at],
+        )?;
+        if changed == 0 {
+            anyhow::bail!("there is no decision {id} on this board");
+        }
+        Ok(())
     }
 
     // ---- features ----------------------------------------------------

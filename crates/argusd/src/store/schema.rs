@@ -320,6 +320,12 @@ ALTER TABLE task ADD COLUMN parent INTEGER;
 CREATE INDEX task_parent ON task (project, feature, parent, position, id);
 "#;
 
+/// When a decision was withdrawn: taken back as recorded in error, and kept
+/// for the history rather than deleted.
+pub(super) const SCHEMA_V17: &str = r#"
+ALTER TABLE decision ADD COLUMN withdrawn_at INTEGER;
+"#;
+
 /// Mermaid sequence-diagram source, one row per diagram under a feature.
 pub(super) const SCHEMA_V16: &str = r#"
 CREATE TABLE sequence_diagram (

@@ -142,6 +142,8 @@ pub enum Endpoint {
     Decisions,
     /// One decision appended to that board.
     Decide,
+    /// A [`crate::DecisionChange`] to one decision already on it.
+    DecisionChange,
     /// The artifact scope's features, and which one this checkout is on.
     Features,
     /// A change to that: opening a feature, pointing this checkout at one,
@@ -173,6 +175,7 @@ impl Endpoint {
             Endpoint::Comments => Cow::Borrowed("comments"),
             Endpoint::Decisions => Cow::Borrowed("decisions"),
             Endpoint::Decide => Cow::Borrowed("decide"),
+            Endpoint::DecisionChange => Cow::Borrowed("decision"),
             Endpoint::Features => Cow::Borrowed("features"),
             Endpoint::Feature => Cow::Borrowed("feature"),
             Endpoint::Tasks => Cow::Borrowed("tasks"),
@@ -210,6 +213,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "comments" => Endpoint::Comments,
         "decisions" => Endpoint::Decisions,
         "decide" => Endpoint::Decide,
+        "decision" => Endpoint::DecisionChange,
         "features" => Endpoint::Features,
         "feature" => Endpoint::Feature,
         "tasks" => Endpoint::Tasks,
@@ -329,6 +333,7 @@ mod tests {
             Endpoint::Comments,
             Endpoint::Decisions,
             Endpoint::Decide,
+            Endpoint::DecisionChange,
             Endpoint::Features,
             Endpoint::Feature,
             Endpoint::Tasks,

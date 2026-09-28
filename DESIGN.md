@@ -1002,11 +1002,15 @@ named request reads or writes that feature and leaves the pointer where it was. 
 helper, and one the board does not have is refused by name rather than read as naming none. A
 board read by name is about that feature: its decisions, and `current` naming it.
 
-The board itself is append-only. Nothing is ever edited, and there is no delete. A decision that a
+The decision board is append-only. Nothing is ever edited, and there is no delete. A decision that a
 later finding invalidates is *superseded*: the replacement is a new row that takes the old one's
 place in the tree — its parent, not its children — and the old row's `superseded_by` records what
 replaced it. The old node stays on the board and the view draws it dimmed, because the road not
-taken is most of what a reader came back for. Decisions recorded before features existed keep a
+taken is most of what a reader came back for. A decision recorded in error rather than overtaken is
+*withdrawn*: `argus-hook decisions withdraw <id>` sets its `withdrawn_at` (schema v17), agents stop
+reading it, and the view keeps it, dimmed and marked, so the history still says it was once decided.
+`decisions restore <id>` undoes that. Either is refused for a decision not under the feature the
+request is about. Decisions recorded before features existed keep a
 NULL `feature` and are reported as unfiled rather than dragged under a feature nobody chose.
 
 There is no policy flag on these writes: the board exists for agents to write, is append-only, and

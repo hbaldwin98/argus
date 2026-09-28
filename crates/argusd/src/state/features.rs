@@ -70,10 +70,12 @@ impl Daemon {
         let current = self.board_feature(scope, artifact_scope, &features, named)?;
         let decisions = self.store.decisions(key)?;
         let unfiled = decisions.iter().filter(|d| d.feature.is_none()).count();
+        // An agent reads the decisions that still stand; a withdrawn one is
+        // kept for people reading the history in the view.
         let scoped: Vec<Decision> = match &current {
             Some(slug) => decisions
                 .into_iter()
-                .filter(|d| d.feature.as_deref() == Some(slug.as_str()))
+                .filter(|d| d.feature.as_deref() == Some(slug.as_str()) && !d.withdrawn())
                 .collect(),
             None => Vec::new(),
         };
