@@ -540,9 +540,10 @@ impl App {
         }
     }
 
+    /// Only the table draws every checkout row, so only there does a
+    /// filter have anything on screen to narrow.
     fn checkouts_filterable(&self) -> bool {
         self.view == View::Checkouts
-            || (self.view == View::Workspace && self.focus == Focus::Checkouts)
     }
 
     fn begin_checkout_filter(&mut self) {
@@ -578,9 +579,9 @@ impl App {
         match key.code {
             KeyCode::Char('/') if self.checkouts_filterable() => self.begin_checkout_filter(),
             KeyCode::Char('q') => self.should_quit = true,
-            KeyCode::Char('j') | KeyCode::Down => self.move_selection(1),
-            KeyCode::Char('k') | KeyCode::Up => self.move_selection(-1),
-            KeyCode::Char('l') | KeyCode::Enter | KeyCode::Right => self.descend(),
+            KeyCode::Char('j') | KeyCode::Down => self.step_rail(1),
+            KeyCode::Char('k') | KeyCode::Up => self.step_rail(-1),
+            KeyCode::Char('l') | KeyCode::Enter | KeyCode::Right => self.enter_rail_row(),
             KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc => self.ascend(),
             KeyCode::Char('s') => self.spawn_shell(),
             KeyCode::Char('a') => self.open_picker(),
@@ -599,7 +600,6 @@ impl App {
             KeyCode::Char('R') | KeyCode::Tab => self.open_review(),
             KeyCode::Char('H') => self.open_history(),
             KeyCode::Char('x') => self.kill_selected(),
-            KeyCode::Char('v') => self.toggle_pane_view(),
             KeyCode::Char('N') => self.jump_to_next_attention(),
             KeyCode::Char(c) if View::from_digit(c).is_some() => {
                 self.open_view(View::from_digit(c).unwrap())
@@ -657,16 +657,17 @@ impl App {
                     return;
                 }
                 KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Workspace),
-                KeyCode::Char('j') | KeyCode::Down => self.adjust_selection(Focus::Checkouts, 1),
-                KeyCode::Char('k') | KeyCode::Up => self.adjust_selection(Focus::Checkouts, -1),
-                KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
-                    self.open_view(View::Workspace);
-                    self.focus = Focus::Checkouts;
-                }
+                KeyCode::Char('j') | KeyCode::Down => self.step_checkout_table(1),
+                KeyCode::Char('k') | KeyCode::Up => self.step_checkout_table(-1),
+                KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.enter_checkout_row(),
                 KeyCode::Char('B') => self.toggle_branches(),
                 KeyCode::Char('a') => self.open_picker(),
+                KeyCode::Char('s') => self.spawn_shell(),
                 KeyCode::Char('m') | KeyCode::Char('b') => self.open_branch_picker(),
                 KeyCode::Char('n') => self.new_prompt(),
+                KeyCode::Char('D') => self.remove_prompt(),
+                KeyCode::Char('F') => self.fetch(),
+                KeyCode::Char('P') => self.pull(),
                 _ => {}
             }
             return;

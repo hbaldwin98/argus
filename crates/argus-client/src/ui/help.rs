@@ -20,9 +20,9 @@ pub(super) struct Group {
 const MOVE: Group = Group {
     title: "moving",
     keys: &[
-        ("j / k", "up and down this column"),
-        ("l  enter", "into the thing under the cursor"),
-        ("h  esc", "back out one column"),
+        ("j / k", "up and down the rail, in the order it is drawn"),
+        ("l  enter", "into the row under the cursor"),
+        ("h  esc", "up to the row it hangs under"),
         ("N", "jump to whatever needs attention"),
     ],
 };
@@ -53,7 +53,7 @@ const RAIL: Group = Group {
         ("click repo", "open it; the one open before folds away"),
         ("click pane", "show it, keys stay here — x closes it"),
         ("enter  click", "type into the pane shown"),
-        ("wheel", "move through repositories"),
+        ("wheel", "move along the rail"),
     ],
 };
 
@@ -74,11 +74,14 @@ const CHECKOUTS: Group = Group {
     keys: &[
         ("j / k  click", "row by row"),
         ("/", "filter branches by name"),
-        ("enter  l", "back to the workspace on this checkout"),
+        ("enter  l", "open this checkout, or switch to this branch"),
         ("B", "also list branches nothing is on"),
         ("a", "an agent here"),
+        ("s", "a shell here"),
         ("m  b", "switch branch"),
         ("n", "a new worktree"),
+        ("D", "remove it"),
+        ("F  P", "fetch, pull"),
         ("esc  q", "back to the workspace"),
     ],
 };
@@ -90,7 +93,6 @@ const VIEW: Group = Group {
         ("2", "feature — brief, tasks, and decisions"),
         ("3", "panes — every pane as a card"),
         ("4", "checkouts — branches and worktrees"),
-        ("v", "where panes are listed"),
         ("t", "theme"),
         ("w", "workspace"),
         ("S", "settings"),

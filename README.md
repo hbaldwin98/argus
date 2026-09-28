@@ -401,24 +401,23 @@ location. Typing filters the folders in the current directory.
 
 | Key | Action |
 | --- | --- |
-| `j` / `k`, arrows | Move within the selected column |
-| `l`, Right, Enter | Open or descend; on a branch row, switch the primary checkout to it |
-| `h`, Left, Escape | Go back |
+| `j` / `k`, arrows | Move along the rail — the project, its repositories, and the open repository's checkouts and panes — in the order it is drawn |
+| `l`, Right, Enter | Open the repository and move into it, go to the checkout's first pane, or type into the pane |
+| `h`, Left, Escape | Up to the row this one hangs under |
 | `s` | Start a shell |
 | `a` | Choose and start an agent |
-| `n` | Add a project, add a repository to one, create a worktree, or give a branch row a worktree, depending on the column |
-| `i` | In the repositories column, make a repository that does not exist yet: browse to where it should go, name it, and Argus creates the directory, runs `git init` in it, and adds it to the project. An empty name uses the chosen directory itself, which is how a folder that is already there gets initialized |
-| `D` | Remove what the column selects, after confirmation: a project or repository (out of the panel only — nothing on disk is touched), a linked worktree (deleted), or a branch row (the local branch, deleted; the remote is untouched). An unmerged branch is refused and asked about again, and confirming that second prompt force-deletes it |
+| `n` | Add a project on the project heading, a repository on a repository row, or a worktree on a checkout — or, in the Checkouts stage, give a branch row a worktree |
+| `i` | On a repository row, make a repository that does not exist yet: browse to where it should go, name it, and Argus creates the directory, runs `git init` in it, and adds it to the project. An empty name uses the chosen directory itself, which is how a folder that is already there gets initialized |
+| `D` | Remove what the row is, after confirmation: a project or repository (out of the panel only — nothing on disk is touched), a linked worktree (deleted), or a branch row (the local branch, deleted; the remote is untouched). An unmerged branch is refused and asked about again, and confirming that second prompt force-deletes it |
 | `w` | Switch workspace |
 | `o` | Switch project (command center rail; also click the project name) |
 | `b` | Open the branch picker |
-| `B` | Show or hide the branches no checkout is sitting on, including the ones only a remote has; the main branch keeps its row either way |
+| `B` | In the Checkouts stage, show or hide the branches no checkout is sitting on — the main branch's offer first, and the ones only a remote has last |
 | `F` | Fetch every remote (`--prune`), which is what makes the remote's branches appear as rows |
 | `P` | Pull the selected checkout, fast-forward only |
 | `f` | Open the file picker |
 | `R` / Tab | Open review |
 | `N` | Jump to the next pane, or parent of a child, waiting, failed, or ready for review |
-| `v` | Toggle the panes column between the selected checkout and one list across every checkout; flat rows show their project, repository, and checkout |
 | `S` | Open settings |
 | `t` | Choose a theme for this client process |
 | `x` | Kill the selected pane |

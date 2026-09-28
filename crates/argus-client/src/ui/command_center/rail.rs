@@ -4,77 +4,25 @@
 
 use super::*;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum RailTarget {
-    Repository(usize),
-    Checkout(usize, usize),
-    Pane(PaneLocation),
-}
-
-fn ordered_repository_indices(app: &App) -> Vec<usize> {
-    let Some(project) = app.current_project() else {
-        return Vec::new();
-    };
-    let mut indices: Vec<_> = (0..project.repositories.len()).collect();
-    indices.sort_by_key(|index| {
-        let active = project.repositories[*index]
-            .checkouts
-            .iter()
-            .any(|checkout| checkout.listed_panes().next().is_some());
-        (!active, *index)
-    });
-    indices
-}
-
-fn rail_targets(app: &App) -> Vec<RailTarget> {
-    let Some(project) = app.current_project() else {
-        return Vec::new();
-    };
-    let mut rows = Vec::new();
-    for repository in ordered_repository_indices(app) {
-        rows.push(RailTarget::Repository(repository));
-        let repo = &project.repositories[repository];
-        // One repository is open at a time: the clicked one, or the one
-        // holding the pane the keys are on when that is somewhere else.
-        let in_pane =
-            app.view == View::Workspace && matches!(app.focus, Focus::Panes | Focus::PaneContent);
-        let expanded = match app.current_repository() {
-            Some(current) if in_pane && !app.expanded_repositories.contains(&current.id) => {
-                repository == app.sel_repository
-            }
-            _ => app.expanded_repositories.contains(&repo.id),
-        };
-        if !expanded {
-            continue;
-        }
-        for (checkout, item) in repo.checkouts.iter().enumerate() {
-            let panes: Vec<_> = item.listed_panes().collect();
-            if panes.is_empty() {
-                continue;
-            }
-            rows.push(RailTarget::Checkout(repository, checkout));
-            rows.extend(panes.into_iter().enumerate().map(|(pane, _)| {
-                RailTarget::Pane(PaneLocation {
-                    project: app.sel_project,
-                    repository,
-                    checkout,
-                    pane,
-                })
-            }));
-        }
-    }
-    rows
-}
-
-pub(crate) fn rail_target_at(app: &App, x: u16, y: u16) -> Option<RailTarget> {
+/// The rail row a click landed on. The project heading is drawn above the
+/// list and hit-tested on its own ([`project_header_at`]).
+pub(crate) fn rail_target_at(app: &App, x: u16, y: u16) -> Option<RailRow> {
     let panel = app.layout.rail;
     contains(panel.inner, x, y)
         .then(|| {
-            rail_targets(app)
+            list_rows(app)
                 .get(panel.first + usize::from(y - panel.inner.y))
                 .copied()
         })
         .flatten()
+}
+
+/// The rows drawn in the scrolling list: everything but the heading.
+fn list_rows(app: &App) -> Vec<RailRow> {
+    app.rail_rows()
+        .into_iter()
+        .filter(|row| *row != RailRow::Project)
+        .collect()
 }
 
 pub(crate) fn sidebar_contains(app: &App, x: u16, y: u16) -> bool {
@@ -226,16 +174,26 @@ pub(super) fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme
         String::new()
     };
     let name_width = (width as usize).saturating_sub(2 + position.chars().count());
+    // The heading is the rail's first stop: `n` adds a project and `D`
+    // removes this one from there, so the cursor has to be seen on it.
+    let heading_bg = if app.focus == Focus::Projects {
+        th.surface_focus
+    } else {
+        th.bg
+    };
     put(
         f,
         inner.y + 1,
         Line::from(vec![
-            Span::styled("▌ ", Style::default().fg(th.accent)),
+            Span::styled("▌ ", Style::default().fg(th.accent).bg(heading_bg)),
             Span::styled(
                 ellipsize_text(&name, name_width),
-                Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(th.text)
+                    .bg(heading_bg)
+                    .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(position, Style::default().fg(th.dim)),
+            Span::styled(position, Style::default().fg(th.dim).bg(heading_bg)),
         ]),
     );
     if !root_line.is_empty() {
@@ -343,14 +301,18 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         height: area.height.saturating_sub(2),
         ..area
     };
-    let targets = rail_targets(app);
-    let first = app
-        .layout
-        .rail
-        .first
-        .min(targets.len().saturating_sub(1));
+    let rows = list_rows(app);
+    // The least scroll that keeps the cursor on screen, so the keys never
+    // walk off the end of what is drawn.
+    let cursor = app.rail_cursor();
+    let first = scrolled_to_show(
+        app.layout.rail.first,
+        cursor.and_then(|cursor| rows.iter().position(|row| *row == cursor)),
+        rows_area.height as usize,
+        rows.len(),
+    );
     let width = rows_area.width as usize;
-    for (screen, target) in targets.iter().skip(first).enumerate() {
+    for (screen, row) in rows.iter().skip(first).enumerate() {
         if screen as u16 >= rows_area.height {
             break;
         }
@@ -358,17 +320,21 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         let Some(project) = app.current_project() else {
             break;
         };
+        let on_cursor = cursor == Some(*row);
         // The selected repository and everything open under it read as one
-        // raised block; the selected pane is lifted one step further.
-        let in_selected = match *target {
-            RailTarget::Repository(index) | RailTarget::Checkout(index, _) => {
+        // raised block; the cursor and the pane being viewed are lifted one
+        // step further.
+        let in_selected = match *row {
+            RailRow::Repository(index) | RailRow::Checkout(index, _) => {
                 index == app.sel_repository
             }
-            RailTarget::Pane(location) => location.repository == app.sel_repository,
+            RailRow::Pane(location) => location.repository == app.sel_repository,
+            RailRow::Project => false,
         };
         let row_bg = if in_selected { th.surface } else { th.bg };
-        let line = match *target {
-            RailTarget::Repository(index) => {
+        let line = match *row {
+            RailRow::Project => continue,
+            RailRow::Repository(index) => {
                 let repo = &project.repositories[index];
                 let selected = index == app.sel_repository;
                 let panes = repo
@@ -378,7 +344,13 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                     .sum::<usize>();
                 let loudest =
                     PaneStatus::loudest(repo.checkouts.iter().flat_map(|c| c.statuses()));
-                let bg = if selected { th.surface } else { th.bg };
+                let bg = if on_cursor {
+                    th.surface_focus
+                } else if selected {
+                    th.surface
+                } else {
+                    th.bg
+                };
                 let checkouts = plural(repo.checkouts.len(), "checkout");
                 let name_len = repo.name.chars().count();
                 // The template's full meta when the name still fits beside
@@ -433,7 +405,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                     Span::styled(format!("{meta:>}  "), Style::default().fg(th.dim).bg(bg)),
                 ])
             }
-            RailTarget::Checkout(repository, checkout) => {
+            RailRow::Checkout(repository, checkout) => {
                 let item = &project.repositories[repository].checkouts[checkout];
                 let git = item.git.as_ref();
                 let branch = git.and_then(|g| g.branch.as_deref()).unwrap_or(&item.name);
@@ -449,7 +421,8 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                     })
                     .unwrap_or_default();
                 Line::from(vec![
-                    Span::styled("     └ ", Style::default().fg(th.edge)),
+                    Span::styled(if on_cursor { "▌ " } else { "  " }, Style::default().fg(th.accent)),
+                    Span::styled("   └ ", Style::default().fg(th.edge)),
                     Span::styled(
                         ellipsize_text(branch, width.saturating_sub(18)),
                         Style::default().fg(th.syntax.function),
@@ -464,7 +437,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                     ),
                 ])
             }
-            RailTarget::Pane(location) => {
+            RailRow::Pane(location) => {
                 let Some(pane) = app.pane_at(location) else {
                     continue;
                 };
@@ -511,10 +484,10 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                 ])
             }
         };
-        let fill = if matches!(*target, RailTarget::Pane(l) if app.pane_location() == Some(l)
+        let viewed_pane = matches!(*row, RailRow::Pane(l) if app.pane_location() == Some(l)
             && app.view == View::Workspace
-            && matches!(app.focus, Focus::Panes | Focus::PaneContent))
-        {
+            && matches!(app.focus, Focus::Panes | Focus::PaneContent));
+        let fill = if on_cursor || viewed_pane {
             th.surface_focus
         } else {
             row_bg

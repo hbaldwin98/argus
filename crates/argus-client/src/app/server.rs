@@ -452,6 +452,9 @@ impl App {
                 } else {
                     self.sel_pane = self.visible_pane_count().saturating_sub(1);
                     self.sync_subscription();
+                    // Spawned from a stage with no terminal on it, the keys
+                    // would otherwise go to a pane nobody can see.
+                    self.open_view(View::Workspace);
                     self.focus = Focus::PaneContent;
                 }
             }

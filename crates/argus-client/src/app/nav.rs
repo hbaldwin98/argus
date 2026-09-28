@@ -75,8 +75,8 @@ impl App {
         ))
     }
 
-    /// Rows the legacy checkouts column draws, in navigation order.
-    pub(crate) fn checkout_column_row_indices(&self) -> Vec<usize> {
+    /// Every checkout row the filter keeps, in navigation order.
+    pub(crate) fn filtered_checkout_row_indices(&self) -> Vec<usize> {
         self.checkout_rows()
             .into_iter()
             .enumerate()
@@ -104,7 +104,7 @@ impl App {
         if self.view == View::Checkouts {
             self.checkout_table_row_indices()
         } else {
-            self.checkout_column_row_indices()
+            self.filtered_checkout_row_indices()
         }
     }
 
@@ -211,7 +211,7 @@ impl App {
 
     /// The inverse: where the selected row sits in `checkouts`, for the
     /// places that compare a cursor against one.
-    fn selected_checkout_index(&self) -> Option<usize> {
+    pub(super) fn selected_checkout_index(&self) -> Option<usize> {
         match self.selected_checkout_row()? {
             CheckoutRow::Checkout(i) => Some(i),
             CheckoutRow::Branch(_) | CheckoutRow::Remote(_) => None,
@@ -383,16 +383,11 @@ impl App {
         }
         self.sel_project = location.project;
         self.sel_repository = location.repository;
-        if let Some(repository) = self
+        self.opened_repository = self
             .tree
             .get(location.project)
             .and_then(|project| project.repositories.get(location.repository))
-        {
-            if !self.expanded_repositories.contains(&repository.id) {
-                self.expanded_repositories.clear();
-                self.expanded_repositories.insert(repository.id);
-            }
-        }
+            .map(|repository| repository.id);
         let Some(row) = self.checkout_row_of(location.checkout) else {
             return false;
         };
@@ -515,114 +510,62 @@ impl App {
         self.sync_subscription();
     }
 
-    pub(super) fn move_selection(&mut self, delta: i32) {
-        self.adjust_selection(self.focus, delta);
-    }
-
-    pub(super) fn adjust_selection(&mut self, target: Focus, delta: i32) {
-        if target == Focus::Panes && self.settings.pane_view == crate::settings::PaneView::Flat {
-            let locations = self.flat_pane_locations();
-            if locations.is_empty() {
-                return;
-            }
-            let here = self
-                .pane_location()
-                .and_then(|current| locations.iter().position(|location| *location == current))
-                .unwrap_or(0) as i32;
-            let next = (here + delta).clamp(0, locations.len() as i32 - 1) as usize;
-            self.select_pane_location(locations[next]);
-            self.sync_subscription();
+    /// `j`/`k` in the Checkouts stage: one row along the table, which may
+    /// be filtered or hide the branches nothing is on.
+    pub(super) fn step_checkout_table(&mut self, delta: i32) {
+        let visible = self.active_checkout_row_indices();
+        if visible.is_empty() {
             return;
         }
-        if target == Focus::Checkouts {
-            let visible = self.active_checkout_row_indices();
-            if visible.is_empty() {
-                return;
-            }
-            let here = visible
-                .iter()
-                .position(|&index| index == self.sel_checkout)
-                .unwrap_or(0) as i32;
-            let next = (here + delta).clamp(0, visible.len() as i32 - 1) as usize;
-            self.sel_checkout = visible[next];
-            self.clamp();
-            return;
-        }
-        let sel = match target {
-            Focus::Projects => &mut self.sel_project,
-            Focus::Repositories => &mut self.sel_repository,
-            Focus::Checkouts => &mut self.sel_checkout,
-            Focus::Panes => &mut self.sel_pane,
-            Focus::PaneContent | Focus::Review | Focus::Overlay | Focus::View => return,
-        };
-        let new = *sel as i32 + delta;
-        if new >= 0 {
-            *sel = new as usize;
-        }
+        let here = visible
+            .iter()
+            .position(|&index| index == self.sel_checkout)
+            .unwrap_or(0) as i32;
+        let next = (here + delta).clamp(0, visible.len() as i32 - 1) as usize;
+        self.sel_checkout = visible[next];
         self.clamp();
-        // Another repository's column: the old row index means nothing there.
-        if matches!(target, Focus::Projects | Focus::Repositories) {
-            self.sel_checkout = self.home_checkout_row();
+    }
+
+    /// Enter on a Checkouts-stage row: a checkout opens in the workspace, and
+    /// a branch with no directory is switched to, since somewhere to be is
+    /// what it offers.
+    pub(super) fn enter_checkout_row(&mut self) {
+        if self.current_branch_row().is_some() {
+            self.switch_primary_to_selected_branch();
+            return;
+        }
+        self.open_view(View::Workspace);
+        self.focus = Focus::Checkouts;
+    }
+
+    /// The depth `n`, `i` and `D` act at: the rail cursor's, or a checkout
+    /// row while the Checkouts stage has the keys — its table is where
+    /// every checkout and branch row is drawn.
+    pub(super) fn acting_focus(&self) -> Focus {
+        match (self.focus, self.view) {
+            (Focus::View, View::Checkouts) => Focus::Checkouts,
+            (focus, _) => focus,
         }
     }
 
-    pub(super) fn descend(&mut self) {
-        match self.focus {
-            Focus::Projects => {
-                if self.current_project().is_some() {
-                    self.sel_repository = 0;
-                    self.focus = Focus::Repositories;
-                }
-            }
-            Focus::Repositories => {
-                if self.current_repository().is_some() {
-                    self.sel_checkout = self.home_checkout_row();
-                    self.focus = Focus::Checkouts;
-                }
-            }
-            Focus::Checkouts => {
-                if self.current_checkout().is_some() {
-                    self.sel_pane = 0;
-                    if self.settings.pane_view == crate::settings::PaneView::Flat
-                        && self.current_pane().is_none()
-                    {
-                        if let Some(first) = self.flat_pane_locations().first().copied() {
-                            self.select_pane_location(first);
-                        }
-                    }
-                    self.focus = Focus::Panes;
-                } else if self.current_branch_row().is_some() {
-                    // A branch with no directory has no panes to descend
-                    // into; what it offers instead is somewhere to be.
-                    self.switch_primary_to_selected_branch();
-                }
-            }
-            Focus::Panes => {
-                if self.current_pane().is_some() {
-                    self.focus = Focus::PaneContent;
-                }
-            }
-            Focus::PaneContent | Focus::Review | Focus::Overlay | Focus::View => {}
-        }
-    }
-
+    /// Out of whatever has the keys: typing into a pane gives them back to
+    /// its row on the rail, and the rail climbs a row.
     pub(super) fn ascend(&mut self) {
         match self.focus {
             Focus::PaneContent => {
-                // Deliberately does not unsubscribe: the live view keeps
-                // showing this pane in the rightmost column while browsing.
+                // Deliberately does not unsubscribe: the workspace keeps
+                // showing this pane while the rail is browsed.
                 self.leader_pending = false;
                 self.pane_fullscreen = false;
                 self.focus = Focus::Panes;
             }
-            Focus::Panes => self.focus = Focus::Checkouts,
-            Focus::Checkouts => self.focus = Focus::Repositories,
-            Focus::Repositories => self.focus = Focus::Projects,
-            Focus::Projects => {}
             Focus::Review | Focus::Overlay => self.focus = Focus::Checkouts,
             // A view is left by opening another one, not by backing out
-            // of it: there is no column above it to land on.
+            // of it: there is no row above it to land on.
             Focus::View => {}
+            Focus::Projects | Focus::Repositories | Focus::Checkouts | Focus::Panes => {
+                self.leave_rail_row()
+            }
         }
     }
 

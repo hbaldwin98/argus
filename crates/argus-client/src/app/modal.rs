@@ -223,7 +223,6 @@ impl Overlay {
 pub enum Setting {
     Editor,
     EditorCmd,
-    PaneView,
     Theme,
     Notifications,
 }
@@ -232,7 +231,6 @@ impl Setting {
     pub const ALL: &'static [Setting] = &[
         Setting::Editor,
         Setting::EditorCmd,
-        Setting::PaneView,
         Setting::Theme,
         Setting::Notifications,
     ];
@@ -241,7 +239,6 @@ impl Setting {
         match self {
             Setting::Editor => "editor opens",
             Setting::EditorCmd => "editor command",
-            Setting::PaneView => "pane view",
             Setting::Theme => "theme",
             Setting::Notifications => "notifications",
         }

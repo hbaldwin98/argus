@@ -90,54 +90,18 @@ impl App {
                     if let Some(location) =
                         crate::ui::command_center_agent_at(self, ev.column, ev.row)
                     {
-                        self.select_pane_location(location);
-                        self.open_view(View::Workspace);
-                        self.focus = Focus::Panes;
-                        self.clamp();
-                        return;
-                    }
-                    if crate::ui::command_center_project_header_at(self, ev.column, ev.row) {
-                        self.open_project_picker();
-                        return;
-                    }
-                    if let Some(target) =
+                        self.choose_rail_row(RailRow::Pane(location));
+                    } else if crate::ui::command_center_project_header_at(self, ev.column, ev.row)
+                    {
+                        self.choose_rail_row(RailRow::Project);
+                    } else if let Some(row) =
                         crate::ui::command_center_rail_target_at(self, ev.column, ev.row)
                     {
-                        match target {
-                            crate::ui::CommandCenterRailTarget::Repository(repository) => {
-                                self.sel_repository = repository;
-                                self.sel_checkout = self.home_checkout_row();
-                                self.sel_pane = 0;
-                                self.focus = Focus::Repositories;
-                                if let Some(id) = self
-                                    .current_project()
-                                    .and_then(|project| project.repositories.get(repository))
-                                    .map(|repository| repository.id)
-                                {
-                                    self.expanded_repositories.clear();
-                                    self.expanded_repositories.insert(id);
-                                }
-                            }
-                            crate::ui::CommandCenterRailTarget::Checkout(repository, checkout) => {
-                                self.sel_repository = repository;
-                                self.sel_checkout = checkout;
-                                self.sel_pane = 0;
-                                self.focus = Focus::Checkouts;
-                            }
-                            // The rail selects; the terminal itself takes
-                            // typing. Keeping the keys here is what lets a
-                            // bare `x` close the pane just clicked.
-                            crate::ui::CommandCenterRailTarget::Pane(location) => {
-                                self.select_pane_location(location);
-                                self.open_view(View::Workspace);
-                                self.focus = Focus::Panes;
-                            }
-                        }
-                        self.clamp();
+                        self.choose_rail_row(row);
                     }
                 }
-                MouseEventKind::ScrollUp => self.adjust_selection(Focus::Repositories, -1),
-                MouseEventKind::ScrollDown => self.adjust_selection(Focus::Repositories, 1),
+                MouseEventKind::ScrollUp => self.step_rail(-1),
+                MouseEventKind::ScrollDown => self.step_rail(1),
                 _ => {}
             }
             return;

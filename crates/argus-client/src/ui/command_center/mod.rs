@@ -22,7 +22,7 @@ pub(crate) use feature::feature_row_at;
 use feature::render_feature_document;
 pub(crate) use panes::pane_at;
 use panes::render_panes;
-pub(crate) use rail::{agent_at, project_header_at, rail_target_at, sidebar_contains, RailTarget};
+pub(crate) use rail::{agent_at, project_header_at, rail_target_at, sidebar_contains};
 use rail::render_sidebar;
 use workspace::render_workspace;
 

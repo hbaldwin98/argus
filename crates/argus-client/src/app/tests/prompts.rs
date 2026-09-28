@@ -455,7 +455,8 @@ fn the_primary_checkout_cannot_be_removed() {
 #[test]
 fn removing_a_linked_worktree_asks_first_then_sends() {
     let mut h = Harness::new();
-    h.keys("llj");
+    h.checkouts_stage();
+    h.key(KeyCode::Char('j'));
     h.sent();
     h.key(KeyCode::Char('D'));
     match &h.app.prompt {

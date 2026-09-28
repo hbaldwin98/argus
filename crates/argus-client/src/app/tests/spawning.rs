@@ -6,7 +6,8 @@ use super::*;
 #[test]
 fn s_spawns_a_shell_in_the_selected_checkout_and_focuses_it() {
     let mut h = Harness::new();
-    h.keys("llj"); // the linked worktree, which has no panes
+    h.checkouts_stage();
+    h.key(KeyCode::Char('j')); // the linked worktree, which has no panes
     h.sent();
     h.key(KeyCode::Char('s'));
     assert!(
@@ -27,9 +28,9 @@ fn s_spawns_a_shell_in_the_selected_checkout_and_focuses_it() {
     h.app.on_server_msg(ServerMsg::Tree(t));
     assert_eq!(h.app.sel_pane, 0);
     assert_eq!(
-        h.app.focus,
-        Focus::PaneContent,
-        "drops you straight into it"
+        (h.app.view, h.app.focus),
+        (View::Workspace, Focus::PaneContent),
+        "drops you straight into it, on the stage that shows it"
     );
     assert_eq!(h.app.column_pane(), Some(PaneId(102)));
 }

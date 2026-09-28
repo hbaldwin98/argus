@@ -1252,7 +1252,7 @@ fn typing_a_feature_name_does_not_work_the_board_underneath() {
 #[test]
 fn a_working_pane_turns_and_a_settled_one_does_not() {
     let mut app = app_with_tree();
-    app.expanded_repositories.insert(argus_protocol::RepositoryId(2));
+    app.choose_rail_row(crate::app::RailRow::Repository(0));
     let epoch = app.epoch();
     // A pane's own row in the rail, never the workspace heading beside it,
     // which names the same pane and carries no glyph that turns.

@@ -30,39 +30,6 @@ pub enum NotificationMode {
     Bell,
 }
 
-/// Which panes the panes column lists.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum PaneView {
-    /// Only panes in the selected checkout.
-    Checkout,
-    /// Every pane in the open workspace, with its checkout shown on the row.
-    Flat,
-}
-
-impl PaneView {
-    pub fn label(self) -> &'static str {
-        match self {
-            PaneView::Checkout => "by checkout",
-            PaneView::Flat => "all panes",
-        }
-    }
-
-    pub fn detail(self) -> &'static str {
-        match self {
-            PaneView::Checkout => "the panes column follows the selected checkout",
-            PaneView::Flat => "one list across every checkout in the open workspace",
-        }
-    }
-
-    pub fn toggle(self) -> Self {
-        match self {
-            PaneView::Checkout => PaneView::Flat,
-            PaneView::Flat => PaneView::Checkout,
-        }
-    }
-}
-
 impl NotificationMode {
     pub const ALL: &'static [NotificationMode] = &[NotificationMode::Off, NotificationMode::Bell];
 
@@ -141,9 +108,6 @@ pub struct Settings {
     pub editor_cmd: String,
     /// A preset name from `theme::THEMES`.
     pub theme: String,
-    /// Whether panes are grouped by the selected checkout or listed across
-    /// the whole workspace.
-    pub pane_view: PaneView,
     /// Whether review pairs the two sides of a change side by side instead
     /// of stacking them. Unified by default: it is the shape git itself
     /// prints, and it reads at any width.
@@ -159,7 +123,6 @@ impl Default for Settings {
             editor: EditorMode::Overlay,
             editor_cmd: String::new(),
             theme: crate::theme::THEMES[0].to_string(),
-            pane_view: PaneView::Checkout,
             review_split: false,
             notifications: NotificationMode::Off,
         }
@@ -259,7 +222,6 @@ mod tests {
             editor: EditorMode::External,
             editor_cmd: "code -w".to_string(),
             theme: "latte".to_string(),
-            pane_view: PaneView::Flat,
             review_split: true,
             notifications: NotificationMode::Bell,
         };
@@ -275,17 +237,16 @@ mod tests {
         assert_eq!(s.editor, Settings::default().editor);
         assert!(!s.review_split);
         assert_eq!(s.notifications, NotificationMode::Off);
-        assert_eq!(s.pane_view, PaneView::Checkout);
     }
 
     #[test]
     fn a_file_from_the_column_layout_still_loads() {
-        // Column widths, folds and dragged feature panels were the
-        // five-column spine's; a file that remembers them is read for
-        // everything else it says.
+        // Column widths, folds, dragged feature panels and the pane
+        // column's grouping were the five-column spine's; a file that
+        // remembers them is read for everything else it says.
         let s: Settings = toml::from_str(
             "theme = \"latte\"\ncolumn_widths = [12, 16, 18, 24, 46]\nfolded_columns = 1\n\
-             feature_panel_heights = [6, 12, 10]",
+             feature_panel_heights = [6, 12, 10]\npane_view = \"flat\"",
         )
         .unwrap();
         assert_eq!(s.theme, "latte");

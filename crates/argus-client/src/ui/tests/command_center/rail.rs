@@ -88,7 +88,7 @@ fn an_editor_never_appears_among_the_rails_panes() {
     app.tree[0].repositories[0].checkouts[0]
         .panes
         .push(editor(700, "zzz-editor.rs"));
-    app.expanded_repositories.insert(argus_protocol::RepositoryId(2));
+    app.choose_rail_row(crate::app::RailRow::Repository(0));
     let out = lines(&draw_at(&mut app, 120, 30)).join("\n");
 
     assert!(!out.contains("zzz-editor"), "editors are not panes:\n{out}");

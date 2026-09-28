@@ -1,8 +1,21 @@
-//! Moving between the columns, and what the selection drags along
-//! with it.
+//! Walking the rail and the Checkouts table, and what the selection drags
+//! along with it.
 
 use super::*;
-// --- Miller-column navigation -----------------------------------------
+
+/// The fixture with a second, quiet repository listed first in the tree,
+/// so the rail's active-first order and the tree's order differ.
+fn quiet_repository_first() -> Harness {
+    let mut h = Harness::new();
+    let mut t = tree();
+    t[0].repositories
+        .insert(0, repository(7, "atlas", vec![checkout(30, "main", true, vec![])]));
+    h.app.on_server_msg(ServerMsg::Tree(t));
+    h.sent();
+    h
+}
+
+// --- the rail -----------------------------------------------------------
 
 #[test]
 fn starts_focused_on_projects() {
@@ -42,31 +55,96 @@ fn ascending_past_projects_is_a_no_op() {
 }
 
 #[test]
-fn cannot_descend_into_a_checkout_with_no_panes() {
+fn a_checkout_with_nothing_running_is_not_a_stop_on_the_rail() {
+    // `feat` has no panes: the rail has nothing to say about it, and the
+    // Checkouts stage is where every checkout is listed.
     let mut h = Harness::new();
-    h.keys("llj"); // checkouts column, select the linked worktree
-    assert_eq!(h.app.current_checkout().unwrap().name, "feat");
-    h.keys("lll");
-    assert_eq!(h.app.focus, Focus::Panes, "no pane to descend into");
+    h.keys("ll"); // the repository, opened, onto its first checkout
+    assert_eq!(
+        h.app.rail_rows(),
+        [
+            RailRow::Project,
+            RailRow::Repository(0),
+            RailRow::Checkout(0, 0),
+            RailRow::Pane(PaneLocation { project: 0, repository: 0, checkout: 0, pane: 0 }),
+            RailRow::Pane(PaneLocation { project: 0, repository: 0, checkout: 0, pane: 1 }),
+        ]
+    );
+    h.keys("jjj");
+    assert_eq!(h.app.current_pane().map(|p| p.id), Some(PaneId(101)), "the last row");
 }
 
 #[test]
-fn j_and_k_move_within_the_focused_column_only() {
-    let mut h = Harness::new();
+fn j_and_k_walk_the_rows_in_the_order_the_rail_draws_them() {
+    // `orion` has panes running, so it is drawn above `atlas` even though
+    // the tree lists `atlas` first; the keys go the way the eye does.
+    let mut h = quiet_repository_first();
+    assert_eq!(h.app.rail_rows()[1..3], [RailRow::Repository(1), RailRow::Repository(0)]);
+
     h.key(KeyCode::Char('j'));
-    assert_eq!(h.app.sel_project, 1);
-    assert_eq!(h.app.sel_checkout, 0, "other columns untouched");
+    assert_eq!(h.app.current_repository().map(|r| r.name.as_str()), Some("orion"));
+    h.key(KeyCode::Char('j'));
+    assert_eq!(h.app.current_repository().map(|r| r.name.as_str()), Some("atlas"));
     h.key(KeyCode::Char('k'));
-    assert_eq!(h.app.sel_project, 0);
+    h.key(KeyCode::Char('k'));
+    assert_eq!(h.app.focus, Focus::Projects, "the heading is the first stop");
 }
 
 #[test]
-fn selection_does_not_run_off_either_end() {
+fn the_rail_cursor_does_not_run_off_either_end() {
     let mut h = Harness::new();
     h.keys("kkk");
-    assert_eq!(h.app.sel_project, 0);
-    h.keys("jjjjj");
-    assert_eq!(h.app.sel_project, 1, "clamped to the last project");
+    assert_eq!(h.app.rail_cursor(), Some(RailRow::Project));
+    h.keys("jjjjjjj");
+    assert_eq!(h.app.rail_cursor(), Some(RailRow::Repository(0)), "the last row drawn");
+}
+
+#[test]
+fn stepping_past_a_repository_does_not_open_it() {
+    let mut h = quiet_repository_first();
+    h.keys("jj");
+    assert_eq!(h.app.rail_cursor(), Some(RailRow::Repository(0)));
+    assert_eq!(h.app.open_repository(), None, "only choosing a row opens it");
+}
+
+#[test]
+fn one_repository_is_open_at_a_time() {
+    let mut h = quiet_repository_first();
+    h.keys("jl"); // `orion`, opened
+    assert_eq!(h.app.open_repository(), Some(RepositoryId(5)));
+    // Up to `orion`, down past its checkout and two panes to `atlas`, and
+    // open that.
+    h.keys("hjjjjl");
+    assert_eq!(h.app.current_repository().map(|r| r.id), Some(RepositoryId(7)));
+    assert_eq!(h.app.open_repository(), Some(RepositoryId(7)));
+    assert!(
+        !h.app.rail_rows().iter().any(|row| matches!(row, RailRow::Pane(_))),
+        "`orion` closed as `atlas` opened"
+    );
+}
+
+#[test]
+fn switching_projects_opens_the_repository_the_rail_lists_first() {
+    let mut h = Harness::new();
+    let mut t = tree();
+    t[1].repositories.push(repository(
+        8,
+        "busy",
+        vec![checkout(40, "main", true, vec![pane(400, "claude")])],
+    ));
+    h.app.on_server_msg(ServerMsg::Tree(t));
+
+    h.key(KeyCode::Char('o'));
+    h.key(KeyCode::Down);
+    h.key(KeyCode::Enter);
+
+    assert_eq!(h.app.current_project().map(|p| p.id), Some(ProjectId(2)));
+    assert_eq!(
+        h.app.open_repository(),
+        Some(RepositoryId(8)),
+        "the busy repository, drawn on top, not the tree's first"
+    );
+    assert_eq!(h.app.current_repository().map(|r| r.id), Some(RepositoryId(8)));
 }
 
 #[test]
@@ -80,44 +158,10 @@ fn descending_resets_the_child_columns_selection() {
 }
 
 #[test]
-fn flat_view_moves_through_panes_across_checkout_and_project_boundaries() {
-    let mut h = Harness::new();
-    h.app.tree[0].repositories[0].checkouts[1]
-        .panes
-        .push(pane(102, "feature agent"));
-    h.app.tree[1].repositories[0].checkouts[0]
-        .panes
-        .push(pane(200, "other agent"));
-    h.keys("lllv");
-
-    assert_eq!(h.app.settings.pane_view, crate::settings::PaneView::Flat);
-    assert_eq!(h.app.column_pane(), Some(PaneId(100)));
-
-    h.keys("jj");
-    assert_eq!(h.app.column_pane(), Some(PaneId(102)));
-    assert_eq!(
-        h.app.current_checkout().map(|checkout| checkout.id),
-        Some(CheckoutId(11))
-    );
-
-    h.key(KeyCode::Char('j'));
-    assert_eq!(h.app.column_pane(), Some(PaneId(200)));
-    assert_eq!(
-        h.app.current_project().map(|project| project.id),
-        Some(ProjectId(2))
-    );
-
-    h.key(KeyCode::Char('v'));
-    assert_eq!(
-        h.app.settings.pane_view,
-        crate::settings::PaneView::Checkout
-    );
-}
-
-#[test]
 fn moving_to_a_project_with_fewer_checkouts_clamps_the_selection() {
     let mut h = Harness::new();
-    h.keys("llj"); // checkouts, index 1
+    h.checkouts_stage();
+    h.key(KeyCode::Char('j'));
     assert_eq!(h.app.sel_checkout, 1);
     h.app.sel_project = 1; // "other" has only one checkout
     h.key(KeyCode::Char('j'));
@@ -132,7 +176,8 @@ fn moving_to_a_project_with_fewer_checkouts_clamps_the_selection() {
 #[test]
 fn a_branch_row_appearing_above_the_selection_does_not_drag_it_off_the_worktree() {
     let mut h = Harness::new();
-    h.keys("llj"); // checkouts column, the "feat" worktree
+    h.checkouts_stage();
+    h.key(KeyCode::Char('j')); // the "feat" worktree
     assert_eq!(h.app.current_checkout().map(|c| c.id), Some(CheckoutId(11)));
 
     let mut t = tree();
@@ -215,7 +260,8 @@ fn a_new_worktree_is_selected_by_its_row_not_its_index() {
 #[test]
 fn the_checkout_selection_survives_a_checkout_added_above_it() {
     let mut h = Harness::new();
-    h.keys("llj");
+    h.checkouts_stage();
+    h.key(KeyCode::Char('j'));
     assert_eq!(h.app.current_checkout().map(|c| c.id), Some(CheckoutId(11)));
 
     let mut t = tree();
@@ -303,7 +349,8 @@ fn changing_pane_selection_unsubscribes_the_old_and_subscribes_the_new() {
 #[test]
 fn selecting_a_paneless_checkout_unsubscribes_and_clears_the_grid() {
     let mut h = Harness::new();
-    h.keys("llj");
+    h.checkouts_stage();
+    h.key(KeyCode::Char('j'));
     assert_eq!(h.app.column_pane(), None);
     assert!(h.app.grids.is_empty(), "stale content must not linger");
     assert!(matches!(h.sent()[0], ClientMsg::Unsubscribe { .. }));

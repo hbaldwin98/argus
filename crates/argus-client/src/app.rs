@@ -35,6 +35,7 @@ use argus_protocol::ReviewBase;
 use layout::in_rect;
 pub use layout::{Focus, Layout, Panel};
 pub use modal::{Help, Overlay, Picker, PickerKind, Prompt, RemoveTarget, Setting};
+pub use rail::RailRow;
 pub use rows::{CheckoutAnchor, CheckoutRow, PaneLocation};
 pub use views::{FeaturePanel, View};
 
@@ -45,6 +46,7 @@ mod modal;
 mod mouse;
 mod nav;
 mod pickers;
+mod rail;
 mod rows;
 mod scroll;
 mod server;
@@ -228,10 +230,11 @@ pub struct App {
     /// While true, printable keys edit [`checkout_filter`] rather than
     /// firing navigation bindings.
     pub checkout_filtering: bool,
-    /// Repositories whose compact rail subtree has been opened by the user.
-    /// A selection alone does not expand a repository: the rail stays useful
-    /// as an index until the operator asks for its branch and pane rows.
-    pub expanded_repositories: std::collections::HashSet<RepositoryId>,
+    /// The repository whose checkouts and panes the rail shows, as the
+    /// operator last opened one. A selection alone does not open a
+    /// repository: the rail stays useful as an index until asked for more.
+    /// Read through [`App::open_repository`].
+    opened_repository: Option<RepositoryId>,
     /// Pane overview scope. It starts on the selected repository; `A`
     /// temporarily broadens it to every repository in the workspace.
     pub show_all_panes: bool,
@@ -406,7 +409,7 @@ impl App {
             show_branches: false,
             checkout_filter: String::new(),
             checkout_filtering: false,
-            expanded_repositories: std::collections::HashSet::new(),
+            opened_repository: None,
             show_all_panes: false,
             picker: None,
             dir_picker: None,

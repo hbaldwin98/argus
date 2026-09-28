@@ -104,13 +104,14 @@ result of a request; `ui` is a pure function of it.
 | `app` | the model: the tree, the selection, and which modal is up |
 | `app/rows`, `app/layout`, `app/modal` | naming a row independently of its index, where the last frame put things, and the layers that float over it |
 | `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |
+| `app/rail` | what the rail lists, in what order, which repository is open, and what choosing a row does |
 | `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
 | `app/server` | what arrives back, and what it does to the selection |
 | `app/views` | which surface the content area holds, and the one feature selection everything on it is read at |
 | `ui` | the frame, and where the cursor goes on it |
 | `ui/card` | a card and the rows in it: its frame, one row, and how a list longer than the card scrolls |
 | `ui/command_center` | the HTML-specified shell: where the rail and stage go, the stage heading, the first-run state, and the status vocabulary they share |
-| `ui/command_center/rail` | the contextual rail: repositories, checkouts and live agents, and which row a click lands on |
+| `ui/command_center/rail` | drawing the rail — its summary, the rows `app/rail` lists, and the live agents — and which row a click lands on |
 | `ui/command_center/workspace`, `ui/command_center/feature`, `ui/command_center/panes`, `ui/command_center/checkouts` | one stage each, with the hit-test that shares its layout |
 | `ui/text` | fitting text to a width |
 | `ui/help`, `ui/prose` | the keymap window, and markdown styled where it stands |
@@ -165,10 +166,23 @@ Workspace scope -> Project -> Repository -> Checkout -> Pane
 A workspace is daemon-wide scope, not a navigation column. Switching it changes every attached
 client. Panes in other workspaces continue to run. The production TUI projects the selected
 project's repositories and agents into the stable rail and gives the selected pane's terminal the
-remaining stage. Repository rows are ordered active-first and stay collapsed until clicked; an
-expanded row shows its active checkout branches and their panes, with the pane being viewed marked
-in place. Checkout and pane identity remain the same indices and IDs used by the daemon tree. While typing in a pane, `Ctrl-Space`, `f` lets its terminal take the main content area;
+remaining stage. Repository rows are ordered active-first and stay collapsed until chosen; the one
+open repository shows its checkouts with panes running and those panes, with the pane being viewed
+marked in place. Checkout and pane identity remain the same indices and IDs used by the daemon
+tree. While typing in a pane, `Ctrl-Space`, `f` lets its terminal take the main content area;
 repeating the chord restores the shell. The command band remains visible in both layouts.
+
+The keys walk the rows the rail draws, in the order it draws them, so anything a click reaches the
+keys reach too. `j`/`k` and the wheel step through the project heading, the repositories, and the
+open repository's checkouts and panes; `l`/Enter opens a repository and moves into it, goes to a
+checkout's first pane, or types into a pane; `h`/Escape climbs to the row above. Stepping past a
+repository does not open it — walking the list would otherwise unfold every row it crossed — and
+opening one closes the last. On the project heading `n` adds a project and `D` removes this one.
+The rail's cursor is not stored: it is the selection read at the depth focus names, so a new tree
+cannot leave the two disagreeing. Checkouts with nothing running, and branches no checkout is on,
+are not rail rows; the Checkouts stage draws every one, and there `n`, `D`, `s`, `a`, `F`, `P` and
+Enter act on the row its table has selected — Enter opens a checkout in the workspace, or switches
+the primary checkout to a branch.
 
 The status bar's keymaps are written as tiers and the widest that fits is drawn, so a narrow bar
 shows fewer keys rather than one cut mid-word. A card or table holding more rows than it can show

@@ -27,7 +27,8 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Wi
 use ratatui::Frame;
 
 use crate::app::{
-    App, CheckoutRow, Focus, Overlay, PaneLocation, Panel, PickerKind, Prompt, Setting, View,
+    App, CheckoutRow, Focus, Overlay, PaneLocation, Panel, PickerKind, Prompt, RailRow, Setting,
+    View,
 };
 use crate::brief::BriefMode;
 use crate::dirpicker::DirRow;
@@ -68,7 +69,7 @@ pub(crate) use command_center::{
     feature_row_at as command_center_feature_row_at,
     pane_at as command_center_pane_at, project_header_at as command_center_project_header_at,
     rail_target_at as command_center_rail_target_at,
-    sidebar_contains as command_center_sidebar_contains, RailTarget as CommandCenterRailTarget,
+    sidebar_contains as command_center_sidebar_contains,
 };
 pub use term::CursorPlacement;
 pub use views::tab_at;

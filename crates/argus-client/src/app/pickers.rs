@@ -41,28 +41,6 @@ impl App {
         self.focus = Focus::Overlay;
     }
 
-    pub fn toggle_pane_view(&mut self) {
-        let view = self.settings.pane_view.toggle();
-        self.set_pane_view(view);
-        if self.persist_settings {
-            crate::settings::save(&self.settings);
-        }
-        self.report(match view {
-            crate::settings::PaneView::Checkout => "showing panes by checkout",
-            crate::settings::PaneView::Flat => "showing all panes — v to group by checkout",
-        });
-    }
-
-    fn set_pane_view(&mut self, view: crate::settings::PaneView) {
-        self.settings.pane_view = view;
-        if view == crate::settings::PaneView::Flat && self.current_pane().is_none() {
-            if let Some(first) = self.flat_pane_locations().first().copied() {
-                self.select_pane_location(first);
-            }
-        }
-        self.clamp();
-    }
-
     /// Reflattens the open review the other way. The preference outlives
     /// the view so the next review opens the way this one was left, and is
     /// written through to disk like the other layout choices.
@@ -105,9 +83,6 @@ impl App {
                 } else {
                     self.settings.editor.prev()
                 };
-            }
-            Some(Setting::PaneView) => {
-                self.set_pane_view(self.settings.pane_view.toggle());
             }
             Some(Setting::Theme) => {
                 let themes = crate::theme::THEMES;
@@ -202,7 +177,7 @@ impl App {
     /// checkout" to branch from once you're inside the panes/content
     /// columns.
     pub(super) fn new_prompt(&mut self) {
-        match self.focus {
+        match self.acting_focus() {
             Focus::Projects => self.browse_for(DirTarget::Project),
             Focus::Repositories => {
                 if let Some(p) = self.current_project() {
@@ -237,7 +212,7 @@ impl App {
     /// repositories column, whose project is the one the new repository
     /// joins.
     pub(super) fn new_repository_prompt(&mut self) {
-        if self.focus != Focus::Repositories {
+        if self.acting_focus() != Focus::Repositories {
             return;
         }
         if let Some(p) = self.current_project() {
@@ -255,7 +230,7 @@ impl App {
     /// round-trip just to be told no (the daemon refuses it too, as defense
     /// in depth).
     pub(super) fn remove_prompt(&mut self) {
-        let (target, label) = match self.focus {
+        let (target, label) = match self.acting_focus() {
             Focus::Projects => {
                 let Some(p) = self.current_project() else {
                     return;
@@ -613,17 +588,7 @@ impl App {
                 };
                 if index != self.sel_project {
                     self.sel_project = index;
-                    self.sel_repository = 0;
-                    self.sel_checkout = self.home_checkout_row();
-                    self.sel_pane = 0;
-                    self.expanded_repositories.clear();
-                    if let Some(id) = self
-                        .current_project()
-                        .and_then(|p| p.repositories.first())
-                        .map(|r| r.id)
-                    {
-                        self.expanded_repositories.insert(id);
-                    }
+                    self.start_on_first_rail_repository();
                 }
                 if !matches!(self.focus, Focus::PaneContent) {
                     self.focus = Focus::Repositories;

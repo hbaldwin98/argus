@@ -223,10 +223,6 @@ pub(super) fn render_settings(f: &mut Frame, app: &App, area: Rect, sel: usize, 
                     "the command to run, flags and all — enter to change".to_string(),
                 )
             }
-            Setting::PaneView => (
-                app.settings.pane_view.label().to_string(),
-                app.settings.pane_view.detail().to_string(),
-            ),
             Setting::Theme => (
                 app.settings.theme.clone(),
                 "colours for the whole client".to_string(),

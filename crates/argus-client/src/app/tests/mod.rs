@@ -82,6 +82,12 @@ impl Harness {
         h
     }
 
+    /// Opens the Checkouts stage, whose table draws every checkout and
+    /// branch row and whose `j`/`k` walk them.
+    pub(super) fn checkouts_stage(&mut self) {
+        self.key(KeyCode::Char('4'));
+    }
+
     pub(super) fn key(&mut self, code: KeyCode) {
         self.app.on_key(KeyEvent::new(code, KeyModifiers::NONE));
     }
@@ -195,7 +201,7 @@ pub(super) fn open_editor_from_review(h: &mut Harness) {
 pub(super) fn harness_on_a_branch_row() -> Harness {
     let mut h = Harness::new();
     h.app.tree[0].repositories[0].branches = vec!["hotfix/tls".to_string(), "spike".to_string()];
-    h.keys("ll"); // into the checkouts column
+    h.checkouts_stage();
     h.key(KeyCode::Char('B')); // and show the branches at all
     h.keys("jj"); // past both checkouts, onto the first branch
     h.sent();
@@ -207,7 +213,7 @@ pub(super) fn harness_on_a_branch_row() -> Harness {
 pub(super) fn harness_on_a_remote_branch_row() -> Harness {
     let mut h = Harness::new();
     h.app.tree[0].repositories[0].remote_branches = vec!["origin/from-elsewhere".to_string()];
-    h.keys("ll");
+    h.checkouts_stage();
     h.key(KeyCode::Char('B'));
     h.keys("jj"); // past both checkouts
     h.sent();

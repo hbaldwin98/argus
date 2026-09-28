@@ -1,5 +1,5 @@
-//! The checkouts column when it also lists branches that have no
-//! directory of their own.
+//! The checkout rows when they also list branches that have no directory
+//! of their own, walked in the Checkouts stage's table.
 
 use super::*;
 #[test]
@@ -8,7 +8,7 @@ fn the_branches_stay_out_of_the_column_until_they_are_asked_for() {
     // checkouts is the checkouts buried, not the branches surfaced.
     let mut h = Harness::new();
     h.app.tree[0].repositories[0].branches = vec!["hotfix/tls".to_string(), "spike".to_string()];
-    h.keys("ll");
+    h.checkouts_stage();
 
     assert_eq!(h.app.checkout_row_count(), 2, "the two checkouts, only");
     assert_eq!(h.app.current_branch_row(), None);
@@ -28,13 +28,15 @@ fn the_main_branch_leads_the_column_even_with_nothing_sitting_on_it() {
     let r = &mut h.app.tree[0].repositories[0];
     r.branches = vec!["spike".to_string(), "trunk".to_string()];
     r.default_branch = Some("trunk".to_string());
-    h.keys("ll");
+    h.checkouts_stage();
 
     assert_eq!(
         h.app.checkout_row_count(),
         3,
         "the main branch plus the two checkouts — and not `spike`"
     );
+    // The table draws the main branch's offer once branches are asked for.
+    h.key(KeyCode::Char('B'));
     h.key(KeyCode::Char('k'));
     assert_eq!(h.app.current_branch_row(), Some("trunk"), "at the top");
     h.key(KeyCode::Char('j'));
@@ -55,15 +57,17 @@ fn arriving_in_the_column_lands_on_a_checkout_rather_than_the_main_branch_offer(
     let r = &mut h.app.tree[0].repositories[0];
     r.branches = vec!["trunk".to_string()];
     r.default_branch = Some("trunk".to_string());
-    h.keys("ll");
+    h.keys("ll"); // onto the repository, and into it
 
     assert_eq!(h.app.current_checkout().map(|c| c.id), Some(CheckoutId(10)));
+    h.sent();
     h.key(KeyCode::Char('a'));
     h.key(KeyCode::Enter);
+    let sent = h.sent();
     assert!(matches!(
-        h.sent().as_slice(),
+        sent.as_slice(),
         [ClientMsg::SpawnAgent { checkout: CheckoutId(10), .. }]
-    ));
+    ), "{sent:?}");
 }
 
 #[test]
@@ -72,7 +76,7 @@ fn the_checkout_sitting_on_the_main_branch_leads_the_column() {
     // the tree, but it is where main lives, so it is the first row.
     let mut h = Harness::new();
     h.app.tree[0].repositories[0].default_branch = Some("feat".to_string());
-    h.keys("ll");
+    h.checkouts_stage();
 
     assert_eq!(h.app.checkout_row_count(), 2, "no branch row is invented");
     assert_eq!(h.app.current_checkout().map(|c| c.id), Some(CheckoutId(11)));
@@ -215,7 +219,8 @@ fn d_on_a_remote_branch_is_refused_rather_than_becoming_a_push() {
 #[test]
 fn fetch_and_pull_run_in_the_selected_checkout() {
     let mut h = Harness::new();
-    h.keys("llj"); // the linked worktree
+    h.checkouts_stage();
+    h.key(KeyCode::Char('j')); // the linked worktree
     h.sent();
 
     h.key(KeyCode::Char('F'));
@@ -286,9 +291,9 @@ fn enter_on_a_branch_row_switches_the_primary_checkout_to_it() {
         "the primary checkout is where a branch with no directory goes"
     );
     assert_eq!(
-        h.app.focus,
-        Focus::Checkouts,
-        "there is nothing to descend into"
+        (h.app.view, h.app.focus),
+        (View::Checkouts, Focus::View),
+        "there is nothing to open, so the table keeps the keys"
     );
 }
 

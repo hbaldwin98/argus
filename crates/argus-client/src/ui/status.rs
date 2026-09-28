@@ -193,7 +193,7 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             },
             View::Panes => &["j/k move   enter open   A all   a agent   s shell   q workspace", "j/k  enter open  A all  q"][..],
             View::Checkouts => &[
-                "j/k move   / filter   enter open   m checkout   n worktree   q workspace",
+                "j/k move   / filter   enter open   m checkout   n worktree   D remove   q workspace",
                 "j/k  / filter  enter open  q",
                 "j/k  enter open  q",
             ][..],
@@ -236,8 +236,8 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "l open  a agent",
             ],
             Focus::Checkouts => &[
-                "j/k  / filter  l open  b branch  F fetch  R review  H history",
-                "j/k  / filter  l open  R review  H history",
+                "j/k  l open  b branch  F fetch  R review  H history",
+                "j/k  l open  R review  H history",
                 "l open  R review",
             ],
             _ => &[
