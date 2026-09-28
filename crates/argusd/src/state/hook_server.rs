@@ -310,8 +310,8 @@ fn tasks_response(
     body: &[u8],
     scope: argus_protocol::ArtifactScope,
 ) -> HookResponse {
-    match decode(body, "task change") {
-        Ok(action) => json_reply(daemon.task_action_for_agent(source, session, action, scope)),
+    match decode::<argus_protocol::TaskAction>(body, "task change") {
+        Ok(action) => json_reply(daemon.part_action_for_agent(source, session, action, scope)),
         Err(refusal) => refusal,
     }
 }
@@ -323,8 +323,8 @@ fn diagrams_response(
     body: &[u8],
     scope: argus_protocol::ArtifactScope,
 ) -> HookResponse {
-    match decode(body, "diagram change") {
-        Ok(action) => json_reply(daemon.diagram_action_for_agent(source, session, action, scope)),
+    match decode::<argus_protocol::DiagramAction>(body, "diagram change") {
+        Ok(action) => json_reply(daemon.part_action_for_agent(source, session, action, scope)),
         Err(refusal) => refusal,
     }
 }

@@ -81,6 +81,7 @@ to the type or its locking.
 | `state/session` | what survives a daemon restart |
 | `state/tree` | finding your way around the tree |
 | `state/features`, `state/tasks`, `state/decisions`, `state/diagrams` | a checkout's feature board, translated between client ids and store keys |
+| `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
 | `conn` | one client connection, and which task each message runs on |
 | `conn/dispatch` | what each client message does |
 | `pty`, `pty/job`, `pty/vt` | a pane's child process, its resource bounds, and the vt100 translation |
@@ -1060,9 +1061,11 @@ hidden behind a `move`, so what an agent types is
 what a reader of the transcript understands happened. Taking a task up is what claims it and
 finishing it is what releases it, so a row always says who is on it without anyone claiming by hand.
 
-Ids are database-wide and an agent numbers its tasks from what it last read, so every agent-side
-change is refused when the task is not under the feature its checkout is on: a stale id would
-otherwise let one feature's agent tick off another's work by arithmetic.
+Ids are database-wide and an agent numbers its tasks from what it last read, so every change naming
+a task or a diagram is refused when the row is not under the feature the request lands in — the one
+the agent's checkout is on, or the one the client names: a stale id would otherwise let one
+feature's agent tick off another's work by arithmetic. Both sides and both parts take that one path
+(`state/board_parts`), so the guard cannot differ by who asked.
 
 From the view, `H`/`L` move a task along todo → doing → done and `J`/`K` move it earlier or later among
 its siblings — the order is a human's statement of what to do first, so it is theirs to set and there

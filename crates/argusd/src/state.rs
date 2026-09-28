@@ -25,6 +25,7 @@ use argus_protocol::{
 use tokio::sync::broadcast;
 
 mod agents;
+mod board_parts;
 mod build;
 mod decisions;
 mod features;
@@ -40,6 +41,7 @@ mod tree;
 mod viewers;
 mod workspaces;
 
+pub use board_parts::FeaturePart;
 pub use git_ops::BranchDeletion;
 pub use viewers::ViewerId;
 use viewers::Viewers;

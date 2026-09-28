@@ -3,6 +3,7 @@
 //! turn.
 
 use super::*;
+use crate::state::FeaturePart;
 
 pub(super) fn dispatch(
     msg: ClientMsg,
@@ -143,9 +144,9 @@ fn dispatch_boards(
         } => {
             // A read is answered to the client that asked; a change reaches
             // every client through the push instead.
-            let read = matches!(action, argus_protocol::TaskAction::List);
+            let read = action.is_read();
             daemon
-                .task_action_for_client(project, checkout, &feature, action)
+                .part_action_for_client(project, checkout, &feature, action)
                 .map(|list| {
                     if read {
                         let _ = out_tx.send(ServerMsg::Tasks(Box::new(list)));
@@ -158,9 +159,9 @@ fn dispatch_boards(
             feature,
             action,
         } => {
-            let read = matches!(action, argus_protocol::DiagramAction::List);
+            let read = action.is_read();
             daemon
-                .diagram_action_for_client(project, checkout, &feature, action)
+                .part_action_for_client(project, checkout, &feature, action)
                 .map(|list| {
                     if read {
                         let _ = out_tx.send(ServerMsg::SequenceDiagrams(Box::new(list)));

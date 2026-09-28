@@ -319,7 +319,7 @@ async fn artifacts_are_repository_scoped_unless_workspace_scope_is_requested() {
         ArtifactScope::Workspace,
     )
     .unwrap();
-    d.task_action_for_agent(
+    d.part_action_for_agent(
         first_agent,
         None,
         TaskAction::Add(TaskWrite {
@@ -339,7 +339,7 @@ async fn artifacts_are_repository_scoped_unless_workspace_scope_is_requested() {
         "move both repositories together"
     );
     let tasks = d
-        .task_action_for_agent(
+        .part_action_for_agent(
             second_agent,
             None,
             TaskAction::List,
@@ -801,7 +801,7 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
     let agent = d.spawn_agent(checkout, "claude").unwrap();
 
     let refused = d
-        .task_action_for_agent(
+        .part_action_for_agent(
             agent,
             None,
             TaskAction::Add(TaskWrite {
@@ -817,7 +817,7 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
 
     let pty = open_feature(&d, agent, "streaming the pty");
     let list = d
-        .task_action_for_agent(
+        .part_action_for_agent(
             agent,
             Some("sess-1"),
             TaskAction::Add(TaskWrite {
@@ -833,7 +833,7 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
     assert_eq!(list.tasks[0].external.as_deref(), Some("ORION-412"));
 
     let list = d
-        .task_action_for_agent(
+        .part_action_for_agent(
             agent,
             Some("sess-1"),
             TaskAction::Add(TaskWrite {
@@ -851,7 +851,7 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
     assert_eq!(list.tasks[1].parent, Some(id));
 
     let list = d
-        .task_action_for_agent(
+        .part_action_for_agent(
             agent,
             Some("sess-1"),
             TaskAction::Move {
@@ -863,7 +863,7 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
         .unwrap();
     assert_eq!(list.tasks[0].claimed_by.as_deref(), Some("sess-1"));
     let list = d
-        .task_action_for_agent(
+        .part_action_for_agent(
             agent,
             None,
             TaskAction::SetBody {
@@ -882,7 +882,7 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
     // what it can touch, together.
     let notes = open_feature(&d, agent, "notes storage");
     let list = d
-        .task_action_for_agent(agent, None, TaskAction::List, ArtifactScope::default())
+        .part_action_for_agent(agent, None, TaskAction::List, ArtifactScope::default())
         .unwrap();
     assert_eq!(list.feature.as_deref(), Some(notes.as_str()));
     assert!(
@@ -891,7 +891,7 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
     );
 
     let refused = d
-        .task_action_for_agent(
+        .part_action_for_agent(
             agent,
             Some("sess-1"),
             TaskAction::Move {
@@ -903,11 +903,11 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
         .unwrap_err()
         .to_string();
     assert!(
-        refused.contains("not under this checkout's feature"),
+        refused.contains("task") && refused.contains("not under this feature"),
         "a stale id cannot tick off another feature's work: {refused}"
     );
     let refused = d
-        .task_action_for_agent(
+        .part_action_for_agent(
             agent,
             None,
             TaskAction::SetBody {
@@ -919,13 +919,13 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
         .unwrap_err()
         .to_string();
     assert!(
-        refused.contains("not under this checkout's feature"),
+        refused.contains("task") && refused.contains("not under this feature"),
         "a stale id cannot rewrite another feature's brief: {refused}"
     );
 
     // The order is the human's statement of what to do first.
     let refused = d
-        .task_action_for_agent(
+        .part_action_for_agent(
             agent,
             None,
             TaskAction::Reorder { id, to: 0 },
@@ -934,6 +934,82 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
         .unwrap_err()
         .to_string();
     assert!(refused.contains("human's to set"), "{refused}");
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn a_client_cannot_touch_a_row_under_a_feature_it_did_not_name() {
+    use argus_protocol::{DiagramAction, DiagramWrite, TaskState, TaskWrite};
+
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let checkout = only_checkout(&d);
+    let project = d.snapshot()[0].id;
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+    let pty = open_feature(&d, agent, "streaming the pty");
+    let task = d
+        .part_action_for_agent(
+            agent,
+            None,
+            TaskAction::Add(TaskWrite {
+                title: "backpressure on the reader".into(),
+                external: None,
+                parent: None,
+            }),
+            ArtifactScope::default(),
+        )
+        .unwrap()
+        .tasks[0]
+        .id;
+    let diagram = d
+        .part_action_for_agent(
+            agent,
+            None,
+            DiagramAction::Add(DiagramWrite {
+                title: "reader".into(),
+                body: "sequenceDiagram\n    A->>B: bytes".into(),
+            }),
+            ArtifactScope::default(),
+        )
+        .unwrap()
+        .diagrams[0]
+        .id;
+    let notes = open_feature(&d, agent, "notes storage");
+
+    // A client holding the other feature's view names ids from a list it
+    // is no longer showing; the same guard an agent meets refuses it.
+    let refused = d
+        .part_action_for_client(
+            project,
+            checkout,
+            &notes,
+            TaskAction::Move {
+                id: task,
+                state: TaskState::Done,
+            },
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("task") && refused.contains("not under this feature"), "{refused}");
+    let refused = d
+        .part_action_for_client(project, checkout, &notes, DiagramAction::Remove { id: diagram })
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("diagram") && refused.contains("not under this feature"), "{refused}");
+
+    // Named under its own feature, the same change goes through.
+    let list = d
+        .part_action_for_client(
+            project,
+            checkout,
+            &pty,
+            TaskAction::Move {
+                id: task,
+                state: TaskState::Done,
+            },
+        )
+        .unwrap();
+    assert_eq!(list.tasks[0].state, TaskState::Done);
     close_all(&d);
 }
 
@@ -947,7 +1023,7 @@ async fn diagrams_belong_to_the_feature_the_checkout_is_on() {
     let agent = d.spawn_agent(checkout, "claude").unwrap();
 
     let refused = d
-        .diagram_action_for_agent(
+        .part_action_for_agent(
             agent,
             None,
             DiagramAction::Add(DiagramWrite {
@@ -962,7 +1038,7 @@ async fn diagrams_belong_to_the_feature_the_checkout_is_on() {
 
     let slug = open_feature(&d, agent, "diagram hooks");
     let list = d
-        .diagram_action_for_agent(
+        .part_action_for_agent(
             agent,
             Some("sess-1"),
             DiagramAction::Add(DiagramWrite {
@@ -977,7 +1053,7 @@ async fn diagrams_belong_to_the_feature_the_checkout_is_on() {
     assert_eq!(list.diagrams[0].title, "list and add");
 
     let list = d
-        .diagram_action_for_agent(
+        .part_action_for_agent(
             agent,
             None,
             DiagramAction::Remove { id },
