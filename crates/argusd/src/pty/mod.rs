@@ -17,7 +17,7 @@ use argus_protocol::{
     diff_grid, Cell, Color, CompactString, Cursor, CursorShape, MouseEncoding, MouseMode,
     MouseTracking, PaneId, ServerMsg, BLANK,
 };
-use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{native_pty_system, Child, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::broadcast;
 
 mod job;
@@ -194,10 +194,19 @@ pub struct PaneRuntime {
     /// Shared with the pump: the cursor shape lives outside `vt100`, but a
     /// snapshot taken from any thread still has to report it.
     shape: Arc<StdMutex<CursorShapeScanner>>,
-    child: Arc<StdMutex<Box<dyn Child + Send + Sync>>>,
+    /// The child itself belongs to its exit waiter, so ending it goes
+    /// through a killer cloned off it before it was handed over.
+    killer: Killer,
+    /// The session the child leads, for the Unix sweep.
+    #[cfg(unix)]
+    pid: Option<u32>,
     damage_tx: broadcast::Sender<ServerMsg>,
     #[cfg(windows)]
     _job: Option<ProcessJob>,
+    /// How many times the pump has woken, so a test can tell an idle pane
+    /// from one ticking on a timer.
+    #[cfg(test)]
+    pump_wakes: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 #[derive(Clone)]
@@ -270,18 +279,25 @@ impl PaneRuntime {
             writer: Arc::new(StdMutex::new(pair.master.take_writer()?)),
             parser: parser.clone(),
         };
-        let child = Arc::new(StdMutex::new(child));
+        let killer = StdMutex::new(child.clone_killer());
+        #[cfg(unix)]
+        let pid = child.process_id();
         let shape = Arc::new(StdMutex::new(CursorShapeScanner::default()));
         let (damage_tx, _) = broadcast::channel::<ServerMsg>(64);
+        #[cfg(test)]
+        let pump_wakes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
         let (byte_tx, mut byte_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(OUTPUT_QUEUE_CHUNKS);
         spawn_output_reader(reader, byte_tx);
+        let (exit_tx, mut exit_rx) = tokio::sync::oneshot::channel::<Option<i32>>();
+        spawn_exit_waiter(child, exit_tx);
 
         {
             let parser = parser.clone();
             let shape = shape.clone();
-            let child = child.clone();
             let damage_tx = damage_tx.clone();
+            #[cfg(test)]
+            let pump_wakes = pump_wakes.clone();
             tokio::spawn(async move {
                 let mut prev: Option<Vec<Vec<Cell>>> = None;
                 let mut prev_cursor = None;
@@ -301,22 +317,24 @@ impl PaneRuntime {
                     // client draws on, so the two waits stack. The rate cap
                     // is at the bottom of the loop instead: it belongs after
                     // a frame has been presented, not before one is begun.
-                    let first = if eof {
-                        // Nothing more can arrive, but the exit poll below
-                        // still has to run.
-                        tokio::time::sleep(FRAME_INTERVAL).await;
-                        None
-                    } else {
-                        tokio::select! {
-                            chunk = byte_rx.recv() => {
-                                eof = chunk.is_none();
-                                chunk
-                            }
-                            // A pane that produces nothing still has to be
-                            // watched for its child exiting.
-                            _ = tokio::time::sleep(FRAME_INTERVAL) => None,
+                    //
+                    // Nothing else wakes it: an idle pane sleeps here until
+                    // its child speaks or exits.
+                    let mut exited = None;
+                    let first = tokio::select! {
+                        chunk = byte_rx.recv(), if !eof => {
+                            eof = chunk.is_none();
+                            chunk
+                        }
+                        code = &mut exit_rx => {
+                            // A waiter that vanished without a word cannot
+                            // say how the child ended.
+                            exited = Some(code.unwrap_or(None));
+                            None
                         }
                     };
+                    #[cfg(test)]
+                    pump_wakes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
                     let mut dirty = false;
                     let mut budget = MAX_CHUNKS_PER_FRAME;
@@ -383,8 +401,7 @@ impl PaneRuntime {
                         prev_alt = Some(alternate_screen);
                     }
 
-                    let exited = child.lock().unwrap().try_wait().ok().flatten();
-                    if let Some(status) = exited {
+                    if let Some(code) = exited {
                         // The child is gone, but its final output may still
                         // be in flight between the reader thread and this
                         // pump — a short-lived command can exit before a
@@ -434,7 +451,6 @@ impl PaneRuntime {
                             }
                         }
 
-                        let code = Some(status.exit_code() as i32);
                         let _ = damage_tx.send(ServerMsg::PaneClosed { pane: id, code });
                         if let Some(cb) = on_exit.take() {
                             cb(code);
@@ -457,10 +473,14 @@ impl PaneRuntime {
             input,
             parser,
             shape,
-            child,
+            killer,
+            #[cfg(unix)]
+            pid,
             damage_tx,
             #[cfg(windows)]
             _job: job,
+            #[cfg(test)]
+            pump_wakes,
         })
     }
 
@@ -482,11 +502,11 @@ impl PaneRuntime {
     pub fn kill(&self) -> anyhow::Result<()> {
         #[cfg(windows)]
         {
-            end_process_tree(self._job.as_ref(), &self.child)
+            end_process_tree(self._job.as_ref(), &self.killer)
         }
         #[cfg(unix)]
         {
-            end_process_tree(&self.child)
+            end_process_tree(self.pid, &self.killer)
         }
     }
 

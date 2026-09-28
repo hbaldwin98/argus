@@ -118,7 +118,8 @@ up durable artifacts, and later agents receive the relevant subset without brows
   and terminal state"): the daemon answers an offset with the rows there, and the wheel,
   Shift-PageUp/PageDown, and typing move between history and live.
 - Add child-negotiated mouse behavior, bracketed paste, focus events, OSC 52, and extended keys.
-- Replace idle 16 ms pane wakeups with event-driven work where possible.
+- Idle pane wakeups are gone (DESIGN.md, "Panes and terminal state"): a thread waits on each child's
+  exit, so a quiet pane's task sleeps until its child speaks or exits.
 - Implement packed, byte-bounded scrollback, then cold eviction, spill, and redaction.
 - Benchmark frame time, startup, RSS, pane scaling, high-output children, and slow clients.
 - Add protocol deltas only where measurements show they help.

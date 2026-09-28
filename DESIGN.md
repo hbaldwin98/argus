@@ -361,8 +361,13 @@ and a 64-process limit. Closing the pane or dropping its runtime terminates the 
 than only the template's immediate process. Shell and editor panes are not subject to these limits.
 
 Each PTY starts at 24 by 80 cells. A blocking reader thread sends output through a bounded queue to
-a Tokio task, which processes a bounded batch on a 16 ms interval, feeds a `vt100` parser, and
-broadcasts changed horizontal cell spans plus the child cursor's position and visibility.
+a Tokio task, which feeds a `vt100` parser and broadcasts changed horizontal cell spans plus the
+child cursor's position and visibility. The task wakes on the first byte, takes whatever else is
+queued up to a bounded batch, and after a frame waits 16 ms before the next, so a stream is
+coalesced while a lone keystroke's echo goes out at once. A second thread owns the child and blocks
+until it exits, so an idle pane wakes for nothing: the task used to tick every 16 ms for the life of
+the pane only to ask whether its child had gone. The reader cannot stand in for that thread, since
+it need not reach EOF while the pane holds the pty master open.
 
 A cell's grapheme is stored inline rather than on the heap, and a cell the parser holds nothing in
 is read as a blank without asking the parser to build one. Both exist because a grid is rebuilt,

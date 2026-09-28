@@ -143,14 +143,11 @@ pub(super) fn assign_to_job(
 /// Ends a pane's child and every process it started: the job, when the
 /// pane has one, and otherwise just the child.
 #[cfg(windows)]
-pub(super) fn end_process_tree(
-    job: Option<&ProcessJob>,
-    child: &StdMutex<Box<dyn Child + Send + Sync>>,
-) -> anyhow::Result<()> {
+pub(super) fn end_process_tree(job: Option<&ProcessJob>, killer: &Killer) -> anyhow::Result<()> {
     if let Some(job) = job {
         return job.terminate();
     }
-    child.lock().unwrap().kill()?;
+    killer.lock().unwrap().kill()?;
     Ok(())
 }
 
@@ -163,15 +160,16 @@ pub(super) fn end_process_tree(
 /// single `killpg` on the leader's own group — leaves it running with no
 /// tracked pane left to reap it.
 #[cfg(unix)]
-pub(super) fn end_process_tree(
-    child: &StdMutex<Box<dyn Child + Send + Sync>>,
-) -> anyhow::Result<()> {
-    let mut child = child.lock().unwrap();
-    if let Some(pid) = child.process_id() {
+pub(super) fn end_process_tree(pid: Option<u32>, killer: &Killer) -> anyhow::Result<()> {
+    if let Some(pid) = pid {
         kill_session(pid as libc::pid_t);
     }
-    child.kill()?;
-    Ok(())
+    match killer.lock().unwrap().kill() {
+        // The sweep's SIGKILL reached the leader, and the exit waiter
+        // reaped it before this signal could: gone is what was asked for.
+        Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),
+        result => Ok(result?),
+    }
 }
 
 /// Sends SIGKILL to every process in `leader`'s session, not just its own
@@ -272,6 +270,27 @@ pub(super) fn strip_herdr_context(
             command.env_remove(key);
         }
     }
+}
+
+/// What ends a pane's child once the exit waiter owns the child itself.
+pub(super) type Killer = StdMutex<Box<dyn ChildKiller + Send + Sync>>;
+
+/// Hands the child to a thread that blocks until it exits and reports its
+/// code, `None` when it could not be waited on.
+///
+/// A thread rather than a poll: the pump used to wake every frame for the
+/// whole life of a pane only to ask `try_wait`, which is most of what an
+/// idle pane cost. The reader cannot stand in for this — it need not reach
+/// EOF when the child exits, since the pane still holds the pty master and
+/// a backgrounded grandchild may hold the other side.
+pub(super) fn spawn_exit_waiter(
+    mut child: Box<dyn Child + Send + Sync>,
+    exited: tokio::sync::oneshot::Sender<Option<i32>>,
+) {
+    std::thread::spawn(move || {
+        let code = child.wait().ok().map(|status| status.exit_code() as i32);
+        let _ = exited.send(code);
+    });
 }
 
 pub(super) fn spawn_output_reader(

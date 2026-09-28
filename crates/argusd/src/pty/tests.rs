@@ -695,6 +695,46 @@ async fn killing_a_pane_makes_it_exit() {
 
 #[cfg(unix)]
 #[tokio::test]
+async fn a_silent_child_leaves_its_pump_asleep() {
+    // The pump used to wake every frame for the life of the pane just to
+    // ask whether the child had exited; twelve idle panes cost the daemon
+    // hundreds of wakeups a second doing nothing. A child that says
+    // nothing should now cost nothing until it exits.
+    let pane = PaneRuntime::spawn(
+        PaneId(5),
+        &std::env::temp_dir(),
+        Spawn::Program {
+            program: "sleep".to_string(),
+            args: vec!["30".to_string()],
+            env: Vec::new(),
+            resource_policy: ResourcePolicy::Unrestricted,
+        },
+        |_| {},
+    )
+    .unwrap();
+    let mut rx = pane.subscribe();
+
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let settled = pane.pump_wakes.load(std::sync::atomic::Ordering::Relaxed);
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let later = pane.pump_wakes.load(std::sync::atomic::Ordering::Relaxed);
+    assert_eq!(later, settled, "an idle pump woke {} times", later - settled);
+
+    // And the exit still arrives without anything polling for it.
+    pane.kill().unwrap();
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            if let Ok(ServerMsg::PaneClosed { .. }) = rx.recv().await {
+                return;
+            }
+        }
+    })
+    .await
+    .expect("the exit should reach the pump");
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn killing_a_pane_also_kills_a_detached_grandchild() {
     // A shell backgrounding a job (e.g. an agent's own subprocess) leaves a
     // grandchild that never setsid's away from the pane's session. Killing
