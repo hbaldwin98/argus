@@ -170,6 +170,15 @@ impl<K: PartialEq + Copy> Outstanding<K> {
     }
 }
 
+/// A host this client is attached to, as the host picker shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttachedHost {
+    /// `None` for this machine.
+    pub host: Option<String>,
+    /// False while its daemon is gone and the client is trying again.
+    pub connected: bool,
+}
+
 /// A change of host the picker asked for. Hosts belong to the run loop,
 /// not to any one app, so the app records the ask and the loop carries it
 /// out.
@@ -189,9 +198,9 @@ pub struct App {
     /// no pane subscriptions: nothing draws its grids, and a remote host
     /// would be streaming them over ssh for nobody.
     pub on_screen: bool,
-    /// Every host this client is attached to, `None` for this machine, so
-    /// the host picker can say which are connected.
-    pub attached_hosts: Vec<Option<String>>,
+    /// Every host this client is attached to, so the host picker can say
+    /// which are connected.
+    pub attached_hosts: Vec<AttachedHost>,
     /// What the host picker asked for, until the run loop takes it.
     pub host_request: Option<HostRequest>,
     pub tree: Vec<ProjectInfo>,
@@ -394,7 +403,10 @@ impl App {
         App {
             host: None,
             on_screen: true,
-            attached_hosts: vec![None],
+            attached_hosts: vec![AttachedHost {
+                host: None,
+                connected: true,
+            }],
             host_request: None,
             tree: Vec::new(),
             templates: Vec::new(),

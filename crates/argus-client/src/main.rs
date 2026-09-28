@@ -208,6 +208,7 @@ async fn run(
                         host.last_sizes.clear();
                         host.app.report(format!("reconnected to {}", daemon_name(&host.app)));
                         take_opening(&mut host.app, terminal, &mut profile, daemon, opening)?;
+                        hosts.share();
                         redraw.changed();
                         redraw.due();
                     }
@@ -247,6 +248,7 @@ async fn run(
                     host.connected = false;
                     host.pending_reconnect = Some(start_reconnecting(host.app.host.clone()));
                     host.app.alert(format!("lost {}; reconnecting…", daemon_name(&host.app)));
+                    hosts.share();
                     redraw.changed();
                     redraw.due();
                 }

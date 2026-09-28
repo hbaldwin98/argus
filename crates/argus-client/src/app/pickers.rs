@@ -346,8 +346,7 @@ impl App {
         let known = self
             .attached_hosts
             .iter()
-            .flatten()
-            .cloned()
+            .filter_map(|attached| attached.host.clone())
             .chain(crate::settings::load().hosts)
             .chain(crate::ssh_hosts::hosts());
         for name in known {
@@ -364,12 +363,12 @@ impl App {
             .iter()
             .zip(&names)
             .map(|(host, name)| {
-                if *host == self.host {
-                    format!("{name}  · here")
-                } else if self.attached_hosts.contains(host) {
-                    format!("{name}  · connected")
-                } else {
-                    name.clone()
+                let attached = self.attached_hosts.iter().find(|a| a.host == *host);
+                match attached {
+                    _ if *host == self.host => format!("{name}  · here"),
+                    Some(a) if a.connected => format!("{name}  · connected"),
+                    Some(_) => format!("{name}  · reconnecting"),
+                    None => name.clone(),
                 }
             })
             .collect();
@@ -628,10 +627,9 @@ impl App {
                 if *host == self.host {
                     return;
                 }
+                let attached = self.attached_hosts.iter().any(|a| a.host == *host);
                 self.host_request = match host {
-                    Some(name) if !self.attached_hosts.contains(host) => {
-                        Some(HostRequest::Connect(name.clone()))
-                    }
+                    Some(name) if !attached => Some(HostRequest::Connect(name.clone())),
                     _ => Some(HostRequest::Show(host.clone())),
                 };
             }

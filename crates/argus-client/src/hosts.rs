@@ -12,7 +12,7 @@ use std::pin::Pin;
 use argus_protocol::{PaneId, ServerMsg};
 use tokio::sync::mpsc;
 
-use crate::app::App;
+use crate::app::{App, AttachedHost};
 use crate::launch::Connected;
 
 /// One daemon, and everything this client holds for it.
@@ -62,7 +62,7 @@ impl Hosts {
             list: vec![first],
             current: 0,
         };
-        hosts.share_names();
+        hosts.share();
         hosts
     }
 
@@ -70,7 +70,7 @@ impl Hosts {
     pub fn push(&mut self, mut host: Host) -> usize {
         host.app.set_on_screen(false);
         self.list.push(host);
-        self.share_names();
+        self.share();
         self.list.len() - 1
     }
 
@@ -92,11 +92,19 @@ impl Hosts {
         self.list.iter().position(|host| host.app.host == *place)
     }
 
-    /// Tells every app which hosts are attached, for the host picker.
-    fn share_names(&mut self) {
-        let names: Vec<Option<String>> = self.list.iter().map(|h| h.app.host.clone()).collect();
+    /// Tells every app which hosts are attached and which of them are
+    /// connected, for the host picker. Called again whenever either changes.
+    pub fn share(&mut self) {
+        let attached: Vec<AttachedHost> = self
+            .list
+            .iter()
+            .map(|h| AttachedHost {
+                host: h.app.host.clone(),
+                connected: h.connected,
+            })
+            .collect();
         for host in &mut self.list {
-            host.app.attached_hosts = names.clone();
+            host.app.attached_hosts = attached.clone();
         }
     }
 
@@ -175,10 +183,14 @@ mod tests {
         assert!(!hosts.get(index).app.on_screen, "a new host arrives off screen");
         assert_eq!(hosts.find(&Some("devbox".into())), Some(index));
         for i in [0, index] {
-            assert_eq!(
-                hosts.get(i).app.attached_hosts,
-                vec![None, Some("devbox".to_string())]
-            );
+            let attached: Vec<_> = hosts
+                .get(i)
+                .app
+                .attached_hosts
+                .iter()
+                .map(|a| a.host.clone())
+                .collect();
+            assert_eq!(attached, vec![None, Some("devbox".to_string())]);
         }
 
         hosts.show(index);

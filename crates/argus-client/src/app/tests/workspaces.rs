@@ -218,6 +218,28 @@ fn the_agent_picker_still_spawns_after_the_picker_grew_a_second_use() {
 
 // --- hosts --------------------------------------------------------------
 
+fn attached(hosts: &[(Option<&str>, bool)]) -> Vec<crate::app::AttachedHost> {
+    hosts
+        .iter()
+        .map(|(host, connected)| crate::app::AttachedHost {
+            host: host.map(str::to_string),
+            connected: *connected,
+        })
+        .collect()
+}
+
+#[test]
+fn a_host_that_lost_its_daemon_is_marked_reconnecting() {
+    let mut h = Harness::new();
+    h.app.attached_hosts = attached(&[(None, true), (Some("devbox"), false)]);
+    h.key(KeyCode::Char('W'));
+    assert!(
+        host_rows(&h).contains(&"devbox  · reconnecting".to_string()),
+        "{:?}",
+        host_rows(&h)
+    );
+}
+
 fn host_rows(h: &Harness) -> Vec<String> {
     h.app.picker.as_ref().expect("the host picker is open").items.clone()
 }
@@ -225,7 +247,7 @@ fn host_rows(h: &Harness) -> Vec<String> {
 #[test]
 fn the_host_picker_lists_this_machine_first_and_marks_the_attached() {
     let mut h = Harness::new();
-    h.app.attached_hosts = vec![None, Some("devbox".into())];
+    h.app.attached_hosts = attached(&[(None, true), (Some("devbox"), true)]);
     h.key(KeyCode::Char('W'));
 
     let rows = host_rows(&h);
@@ -236,7 +258,7 @@ fn the_host_picker_lists_this_machine_first_and_marks_the_attached() {
 #[test]
 fn choosing_an_attached_host_asks_to_show_it() {
     let mut h = Harness::new();
-    h.app.attached_hosts = vec![None, Some("devbox".into())];
+    h.app.attached_hosts = attached(&[(None, true), (Some("devbox"), true)]);
     h.key(KeyCode::Char('W'));
     h.key(KeyCode::Down);
     h.key(KeyCode::Enter);
