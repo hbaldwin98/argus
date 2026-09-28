@@ -49,3 +49,14 @@ output, or anything already recorded as a task or decision.
 
 When the human asks for the reasoning as a document, `export` prints the feature
 and its decision board as source material; write the document from it.
+
+## Accepting a feature
+
+```sh
+"$ARGUS_HOOK" feature done <slug>
+"$ARGUS_HOOK" feature reopen <slug>
+```
+
+`done` archives a feature as accepted. Accepting work is the human's call: run
+it only when the human tells you to, never because your tasks are finished. It
+is recorded as your move. `reopen` takes it back.

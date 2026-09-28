@@ -275,6 +275,52 @@ fn open_feature(d: &Daemon, agent: PaneId, title: &str) -> String {
 }
 
 #[tokio::test]
+async fn an_agent_told_to_accept_a_feature_is_recorded_as_the_one_who_did() {
+    // Acceptance is a person's call; an agent carrying it out must not
+    // make the history say the person moved it themselves.
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    let agent = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+    let slug = open_feature(&d, agent, "finished work");
+    let state_of = |d: &Daemon| {
+        d.feature_board_for_agent(agent, ArtifactScope::default())
+            .unwrap()
+            .features
+            .into_iter()
+            .find(|f| f.slug == slug)
+            .unwrap()
+            .state
+    };
+
+    d.move_feature_for_agent(
+        agent,
+        Some("session-1"),
+        &slug,
+        argus_protocol::FeatureState::Done,
+        ArtifactScope::default(),
+    )
+    .unwrap();
+    assert_eq!(state_of(&d), argus_protocol::FeatureState::Done);
+    let key = d.agent_scope(agent).unwrap();
+    let key = key.artifact_key(ArtifactScope::default());
+    let accepted = d.store.feature_events(key, &slug).unwrap();
+    let last = accepted.last().unwrap();
+    assert_eq!((last.actor.as_str(), last.session.as_deref()), ("agent", Some("session-1")));
+
+    d.move_feature_for_agent(
+        agent,
+        None,
+        &slug,
+        argus_protocol::FeatureState::Open,
+        ArtifactScope::default(),
+    )
+    .unwrap();
+    assert_eq!(state_of(&d), argus_protocol::FeatureState::Open, "reopen undoes it");
+
+    d.close_pane(agent).unwrap();
+}
+
+#[tokio::test]
 async fn an_agent_reads_and_writes_a_feature_by_name_without_moving_its_checkout() {
     // Several features sharing one checkout: reaching one by moving the
     // checkout's pointer would move every other agent's with it.
@@ -828,7 +874,7 @@ async fn the_board_reaches_an_agent_whole_and_a_bad_decision_is_refused() {
 }
 
 #[tokio::test]
-async fn accepting_a_feature_is_the_human_write_and_the_only_one() {
+async fn a_person_accepts_a_feature_and_can_take_it_back() {
     use argus_protocol::FeatureState;
 
     let dir = tempfile::tempdir().unwrap();

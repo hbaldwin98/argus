@@ -95,8 +95,24 @@ pub(super) fn feature_message(rest: &[&str], base_url: &str, token: &str) -> Str
             Ok(board) => format_export(&board),
             Err(message) => message,
         },
+        Some(verb @ ("done" | "reopen")) => {
+            let Some(slug) = rest.get(1) else {
+                return format!("could not change feature: {verb} wants the slug of a feature");
+            };
+            let (action, said) = if verb == "done" {
+                (FeatureAction::Done { slug: slug.to_string() }, "accepted as done")
+            } else {
+                (FeatureAction::Reopen { slug: slug.to_string() }, "open again")
+            };
+            let answer = write_feature(action, base_url, token);
+            if answer.starts_with("could not") {
+                answer
+            } else {
+                format!("{slug} is {said}")
+            }
+        }
         Some(other) => format!(
-            "{other} is not one of list, open, use, note, export — \
+            "{other} is not one of list, open, use, note, export, done, reopen — \
              `argus-hook feature use {other}` works on an existing feature"
         ),
     }
@@ -802,6 +818,12 @@ pub(super) fn read_json<T: serde::de::DeserializeOwned>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accepting_a_feature_wants_its_slug() {
+        let message = feature_message(&["done"], "http://127.0.0.1:1/pane/1", "t");
+        assert!(message.contains("wants the slug"), "{message}");
+    }
 
     #[test]
     fn a_board_command_names_its_feature_anywhere_in_its_arguments() {

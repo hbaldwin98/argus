@@ -169,11 +169,13 @@ pub enum FeatureAction {
     Select { slug: String },
     /// Appends a paragraph to the current feature's document.
     Append { text: String },
+    /// Accepts a feature as done. Acceptance is a person's call; an agent
+    /// makes this move only when told to, and it is recorded as the
+    /// agent's, so the history says who carried the word out.
+    Done { slug: String },
+    /// Takes a feature back from done, the undoing of `Done`.
+    Reopen { slug: String },
 }
-
-// There is no agent-side move. The only state left is `Done`, which is
-// acceptance, and the agent that did the work is the one party that
-// cannot accept it — so the whole action would be a refusal.
 
 /// One state change, in the order they happened.
 ///

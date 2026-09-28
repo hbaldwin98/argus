@@ -303,6 +303,20 @@ fn feature_response(
             daemon.select_feature_for_agent(source, &slug, filing.scope)
         }
         FeatureAction::Append { text } => daemon.append_to_feature_for_agent(source, &text, filing),
+        FeatureAction::Done { slug } => daemon.move_feature_for_agent(
+            source,
+            session,
+            &slug,
+            argus_protocol::FeatureState::Done,
+            filing.scope,
+        ),
+        FeatureAction::Reopen { slug } => daemon.move_feature_for_agent(
+            source,
+            session,
+            &slug,
+            argus_protocol::FeatureState::Open,
+            filing.scope,
+        ),
     })
 }
 

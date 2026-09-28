@@ -58,7 +58,7 @@ pub(super) fn name_feature(slug: &str) {
 
 /// What a feature command's own words are, so `feature <slug>` can be told
 /// from one of them.
-const FEATURE_SUBCOMMANDS: &[&str] = &["list", "open", "use", "note", "export"];
+const FEATURE_SUBCOMMANDS: &[&str] = &["list", "open", "use", "note", "export", "done", "reopen"];
 
 /// The feature a board command names, and its arguments without the name.
 ///

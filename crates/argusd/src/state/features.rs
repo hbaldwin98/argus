@@ -216,13 +216,13 @@ impl Daemon {
 
     /// Accepts a feature, or reopens one, from the feature view.
     ///
-    /// There is no agent-side counterpart. `done` means a person has
-    /// looked at the work and taken it, and the agent that did the work is
-    /// the one party that cannot make that call — so the state a feature
-    /// is in has exactly one writer. It names the feature outright rather
-    /// than resolving one from a checkout: a person is looking at the
-    /// selected repository's features, and whichever checkout they have
-    /// selected has nothing to do with the row under the cursor.
+    /// `done` means a person has looked at the work and taken it. An agent
+    /// can make the move too, but only on a person's word, and it is
+    /// recorded as the agent's ([`Self::move_feature_for_agent`]). It names
+    /// the feature outright rather than resolving one from a checkout: a
+    /// person is looking at the selected repository's features, and
+    /// whichever checkout they have selected has nothing to do with the
+    /// row under the cursor.
     pub fn move_feature_for_client(
         &self,
         project: ProjectId,
@@ -249,6 +249,40 @@ impl Daemon {
         )?;
         self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
         Ok(())
+    }
+
+    /// Accepts or reopens a feature for an agent carrying out a person's
+    /// instruction. The move is logged as the agent's, with its session, so
+    /// the history says who carried the word out rather than claiming the
+    /// person made it themselves.
+    pub fn move_feature_for_agent(
+        &self,
+        pane_id: PaneId,
+        session: Option<&str>,
+        slug: &str,
+        state: FeatureState,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<FeatureBoard> {
+        let scope = self.agent_scope(pane_id)?;
+        let key = scope.artifact_key(artifact_scope);
+        let at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or_default();
+        self.store.move_feature(
+            key,
+            slug,
+            &FeatureMove {
+                state,
+                detail: None,
+                actor: Actor::Agent,
+                session: session.map(str::to_string),
+                at,
+            },
+        )?;
+        let board = self.feature_board(&scope, artifact_scope, None)?;
+        self.broadcast_decisions(&scope.project_name, key, self.store.decisions(key)?);
+        Ok(board)
     }
 
     /// Opens a feature from the board, with no checkout to its name.

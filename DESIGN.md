@@ -1097,13 +1097,14 @@ reason it is a table — so `FeatureState::parse` still reads `submitted` and an
 `claimed_by`, `claimed_at`, `blocker` and `evidence` columns are cleared and left in place; nothing
 writes them, and the claim they held is what the panes now say directly.
 
-`done` stays stored and stays the human's. The normal list shows open features; `v` replaces it with
-accepted history so completed work remains available without crowding current work. `.` accepts the
-selected feature and reopens one already accepted over `ClientMsg::MoveFeature`; the pushed board is
-the only state change the client trusts. There is no agent-side move:
-the only state left is acceptance, and the agent that did the work is the one party that cannot
-accept it, so the whole action would have been a refusal. `feature_event` still records who moved
-it and what they said.
+`done` stays stored and stays the human's decision. The normal list shows open features; `v`
+replaces it with accepted history so completed work remains available without crowding current
+work. `.` accepts the selected feature and reopens one already accepted over
+`ClientMsg::MoveFeature`; the pushed board is the only state change the client trusts. An agent can
+carry the decision out — `argus-hook feature done <slug>`, and `feature reopen <slug>` to take it
+back — and the bundled skill says to only on a person's word, never because its own tasks are
+finished. `feature_event` records every move with who made it, so one an agent made is logged as the
+agent's, with its session, rather than claiming the person moved it themselves.
 
 `m` transfers the selected feature's active checkout association to another checkout in the same
 repository over `ClientMsg::TransferFeature`. The daemon validates both runtime ids, removes the
