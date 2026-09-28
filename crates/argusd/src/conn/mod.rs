@@ -36,7 +36,8 @@ pub async fn handle<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
-    let (mut rd, wr) = split(stream);
+    let (rd, wr) = split(stream);
+    let (mut client_rx, reader) = spawn_client_reader(rd);
     let (out_tx, out_rx) = mpsc::unbounded_channel::<ServerMsg>();
     let (frames_tx, frames_rx) = mpsc::channel::<ServerMsg>(FRAME_QUEUE);
     let (control_flushed, mut control_flushed_rx) = broadcast::channel(1);
@@ -87,27 +88,23 @@ where
                 }
                 break;
             }
-            msg = read_msg::<_, ClientMsg>(&mut rd) => {
-                match msg {
-                    Ok(cmsg) => {
-                        let shutdown_reason = handle_client_msg(
-                            cmsg,
-                            &daemon,
-                            &out_tx,
-                            &mut subs,
-                            &mut review_task,
-                            viewer,
-                        );
-                        if let Some(reason) = shutdown_reason {
-                            // The writer owns the other end of this signal and
-                            // sends it only after the acknowledgement frame is
-                            // flushed to the client.
-                            let _ = control_flushed_rx.recv().await;
-                            let _ = shutdown.send(reason);
-                            break;
-                        }
-                    }
-                    Err(_) => break,
+            msg = client_rx.recv() => {
+                let Some(cmsg) = msg else { break };
+                let shutdown_reason = handle_client_msg(
+                    cmsg,
+                    &daemon,
+                    &out_tx,
+                    &mut subs,
+                    &mut review_task,
+                    viewer,
+                );
+                if let Some(reason) = shutdown_reason {
+                    // The writer owns the other end of this signal and
+                    // sends it only after the acknowledgement frame is
+                    // flushed to the client.
+                    let _ = control_flushed_rx.recv().await;
+                    let _ = shutdown.send(reason);
+                    break;
                 }
             }
             Ok(tree) = tree_rx.recv() => {
@@ -134,9 +131,40 @@ where
         }
     }
     daemon.release_viewer(viewer);
+    reader.abort();
     if let Some(task) = review_task {
         task.abort();
     }
+}
+
+/// How many client messages may wait for the message loop before the
+/// reader stops taking more off the socket.
+const CLIENT_QUEUE: usize = 64;
+
+/// Reads the client's frames on a task of their own, for the message loop
+/// to take from a channel.
+///
+/// `read_msg` is not cancellation-safe: dropped partway through a frame, it
+/// loses the bytes it had read and leaves the stream misaligned. Called in
+/// the message loop's `select!`, it was dropped whenever a tree or a board
+/// arrived first — harmless while frames arrive whole, as small ones do on
+/// a local socket, and a broken connection for a large paste or for any
+/// frame on a slow link.
+fn spawn_client_reader<R>(
+    mut rd: R,
+) -> (mpsc::Receiver<ClientMsg>, tokio::task::JoinHandle<()>)
+where
+    R: AsyncRead + Unpin + Send + 'static,
+{
+    let (tx, rx) = mpsc::channel(CLIENT_QUEUE);
+    let reader = tokio::spawn(async move {
+        while let Ok(msg) = read_msg::<_, ClientMsg>(&mut rd).await {
+            if tx.send(msg).await.is_err() {
+                break;
+            }
+        }
+    });
+    (rx, reader)
 }
 
 /// How many pane frames may wait for a client that is slow to read.
@@ -464,6 +492,59 @@ mod tests {
             ShutdownReason::Restart
         );
         handler.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_frame_split_around_a_broadcast_still_arrives_whole() {
+        // The message loop used to read frames inside its select, so a tree
+        // landing while half a frame was in lost that half and misaligned
+        // the stream. Over a slow link, half a frame is the usual case.
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = Harness::new(dir.path()).daemon;
+        let checkout = daemon.snapshot()[0].repositories[0].checkouts[0].id;
+        let (mut client, server) = tokio::io::duplex(1024 * 1024);
+        let (shutdown, _) = broadcast::channel(1);
+        tokio::spawn(handle(
+            server,
+            daemon.clone(),
+            shutdown.clone(),
+            shutdown.subscribe(),
+        ));
+        for _ in 0..3 {
+            let _: ServerMsg = read_msg(&mut client).await.unwrap();
+        }
+
+        let mut frame = Vec::new();
+        write_frame(
+            &mut frame,
+            &ClientMsg::Input {
+                pane: PaneId(9999),
+                bytes: vec![b'x'; 4096],
+            },
+        )
+        .await
+        .unwrap();
+        let (first, rest) = frame.split_at(frame.len() / 2);
+        tokio::io::AsyncWriteExt::write_all(&mut client, first).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let shell = daemon.spawn_shell(checkout).unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tokio::io::AsyncWriteExt::write_all(&mut client, rest).await.unwrap();
+
+        let answer = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                match read_msg::<_, ServerMsg>(&mut client).await {
+                    Ok(ServerMsg::Error { message }) => return message,
+                    Ok(_) => continue,
+                    Err(error) => panic!("the connection broke: {error}"),
+                }
+            }
+        })
+        .await
+        .expect("the input should be answered");
+        assert!(answer.contains("pane"), "{answer}");
+
+        let _ = daemon.close_pane(shell);
     }
 
     #[tokio::test]
