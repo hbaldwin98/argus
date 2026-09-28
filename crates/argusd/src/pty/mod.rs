@@ -46,7 +46,7 @@ const PTY_TERM: &str = "xterm-256color";
 const WINDOWS_SHELL_FALLBACKS: &[&str] = &["pwsh", "powershell", "cmd.exe"];
 
 #[cfg(windows)]
-const AGENT_JOB_MEMORY_BYTES: usize = 8 * 1024 * 1024 * 1024;
+const AGENT_JOB_MEMORY_BYTES: usize = 32 * 1024 * 1024 * 1024;
 #[cfg(windows)]
 const AGENT_JOB_PROCESS_LIMIT: u32 = 64;
 
