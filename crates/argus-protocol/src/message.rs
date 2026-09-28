@@ -13,7 +13,7 @@ use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
 use crate::diagrams::{DiagramAction, DiagramList};
 use crate::tasks::{TaskAction, TaskList};
-use crate::tree::{ProjectInfo, WorkspaceInfo};
+use crate::tree::{AgentTelemetry, ProjectInfo, WorkspaceInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientMsg {
@@ -359,6 +359,13 @@ pub enum ServerMsg {
     Hello(Hello),
     /// Full project/checkout/pane tree, sent on connect and after any change.
     Tree(Vec<ProjectInfo>),
+    /// One agent's telemetry, whole, after it reported. Only to a client
+    /// that listed `PANE_TELEMETRY`; any other is sent the whole tree,
+    /// which carries the same record.
+    PaneTelemetry {
+        pane: PaneId,
+        telemetry: AgentTelemetry,
+    },
     /// Names of the configured agent templates, sent once on connect.
     Templates(Vec<String>),
     /// Every workspace, with which one is open. Sent on connect and after

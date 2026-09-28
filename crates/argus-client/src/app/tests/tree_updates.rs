@@ -240,3 +240,45 @@ fn a_greeting_answered_late_still_reports_the_daemons_build() {
     }));
     assert!(h.app.status.contains("0.1.0"), "{}", h.app.status);
 }
+
+fn telemetry_of(h: &Harness, pane: PaneId) -> Option<argus_protocol::AgentTelemetry> {
+    h.app
+        .tree
+        .iter()
+        .flat_map(|p| &p.repositories)
+        .flat_map(|r| &r.checkouts)
+        .flat_map(|c| &c.panes)
+        .find(|p| p.id == pane)
+        .map(|p| p.telemetry.clone())
+}
+
+#[test]
+fn one_agents_telemetry_lands_on_its_pane_without_a_tree() {
+    let mut h = Harness::new();
+    h.app.on_server_msg(ServerMsg::PaneTelemetry {
+        pane: PaneId(100),
+        telemetry: argus_protocol::AgentTelemetry {
+            model: Some("opus".into()),
+            ..Default::default()
+        },
+    });
+    assert_eq!(
+        telemetry_of(&h, PaneId(100)).and_then(|t| t.model).as_deref(),
+        Some("opus")
+    );
+}
+
+#[test]
+fn telemetry_for_a_pane_not_yet_in_the_tree_changes_nothing() {
+    // The tree that brings the pane carries the same record.
+    let mut h = Harness::new();
+    let before = format!("{:?}", h.app.tree);
+    h.app.on_server_msg(ServerMsg::PaneTelemetry {
+        pane: PaneId(9999),
+        telemetry: argus_protocol::AgentTelemetry {
+            model: Some("opus".into()),
+            ..Default::default()
+        },
+    });
+    assert_eq!(format!("{:?}", h.app.tree), before);
+}

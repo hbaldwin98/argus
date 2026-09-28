@@ -78,6 +78,9 @@ impl App {
             // A greeting answered after the client stopped waiting for it.
             ServerMsg::Hello(hello) => self.greeted(Some(&hello)),
             ServerMsg::Tree(tree) => self.receive_tree(tree),
+            ServerMsg::PaneTelemetry { pane, telemetry } => {
+                self.receive_telemetry(pane, telemetry);
+            }
             ServerMsg::Templates(names) => {
                 self.templates = names;
             }
@@ -337,6 +340,22 @@ impl App {
         match restore_position_by_id(self.feature_diagrams(), |d| d.id, was) {
             Some(at) => self.diagram_sel = at,
             None => self.clamp_diagram_selection(),
+        }
+    }
+
+    /// One agent's telemetry, in place of a whole tree. A pane this client
+    /// has not been told of yet is skipped: the tree that brings it carries
+    /// the same record.
+    fn receive_telemetry(&mut self, pane: PaneId, telemetry: argus_protocol::AgentTelemetry) {
+        let info = self
+            .tree
+            .iter_mut()
+            .flat_map(|project| project.repositories.iter_mut())
+            .flat_map(|repository| repository.checkouts.iter_mut())
+            .flat_map(|checkout| checkout.panes.iter_mut())
+            .find(|info| info.id == pane);
+        if let Some(info) = info {
+            info.telemetry = telemetry;
         }
     }
 

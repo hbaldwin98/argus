@@ -247,6 +247,10 @@ pub struct Daemon {
     /// inserted into `inner`. Keep their latest bounded state until insertion.
     starting_agents: StdMutex<HashMap<PaneId, PendingStart>>,
     tree_tx: broadcast::Sender<Vec<ProjectInfo>>,
+    /// An agent's merged telemetry after each report. Apart from the tree
+    /// because it changes on every tool call, and a client that can take
+    /// one pane's record should not be sent every pane's.
+    telemetry_tx: broadcast::Sender<(PaneId, argus_protocol::AgentTelemetry)>,
     workspaces_tx: broadcast::Sender<Vec<WorkspaceInfo>>,
     /// Whole boards rather than one decision each: a client watching a
     /// tree being built needs the tree, and a board is small enough that
@@ -392,6 +396,12 @@ impl Daemon {
 
     pub fn subscribe_tree(&self) -> broadcast::Receiver<Vec<ProjectInfo>> {
         self.tree_tx.subscribe()
+    }
+
+    pub fn subscribe_telemetry(
+        &self,
+    ) -> broadcast::Receiver<(PaneId, argus_protocol::AgentTelemetry)> {
+        self.telemetry_tx.subscribe()
     }
 
     pub fn subscribe_workspaces(&self) -> broadcast::Receiver<Vec<WorkspaceInfo>> {

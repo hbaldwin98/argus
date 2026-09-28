@@ -552,6 +552,13 @@ extension report from their message and tool events. Claude Code tool hooks are 
 so the user's permission rules still apply. Clients show the report on the workspace breadcrumb and
 the pane cards.
 
+A report arrives with every tool call, so it does not travel in a tree. The daemon publishes the
+pane's merged record on a channel of its own, and each connection sends it as its client can take
+it: `ServerMsg::PaneTelemetry`, the one pane's record, to a client that greeted with
+`pane-telemetry`, and the whole tree to any other. A connection handles trees before telemetry, so a
+tree taken before a report cannot land after it and wind the numbers back, and one that falls behind
+the records is sent the tree, which holds them all.
+
 Transcript events — `argus-hook event`, which posts to `/pane/<id>/event` — are kept per pane, the
 newest 200, and are live state like telemetry. They are not in the tree: every tree used to carry
 every pane's events to every client, and no client read them. Recording one broadcasts nothing.

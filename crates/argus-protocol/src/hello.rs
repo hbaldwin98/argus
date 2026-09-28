@@ -20,7 +20,11 @@ pub const PROTOCOL: u32 = 1;
 /// The optional messages and encodings this build can take. A side sends
 /// one only when the other listed it, so each addition is safe against a
 /// peer of any age.
-pub const CAPABILITIES: &[&str] = &[];
+pub const CAPABILITIES: &[&str] = &[PANE_TELEMETRY];
+
+/// `ServerMsg::PaneTelemetry` in place of a whole tree when an agent
+/// reports its model, context or spend.
+pub const PANE_TELEMETRY: &str = "pane-telemetry";
 
 /// One side's greeting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

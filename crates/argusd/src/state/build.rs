@@ -104,6 +104,7 @@ impl Daemon {
             .unwrap_or(default_ws);
 
         let (tree_tx, _) = broadcast::channel(32);
+        let (telemetry_tx, _) = broadcast::channel(64);
         let (workspaces_tx, _) = broadcast::channel(32);
         let (decisions_tx, _) = broadcast::channel(32);
         let (tasks_tx, _) = broadcast::channel(32);
@@ -119,6 +120,7 @@ impl Daemon {
             starting_agents: StdMutex::new(HashMap::new()),
             workspaces_tx,
             tree_tx,
+            telemetry_tx,
             decisions_tx,
             tasks_tx,
             diagrams_tx,

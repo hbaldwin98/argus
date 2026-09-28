@@ -9,7 +9,9 @@
 
 use std::sync::Arc;
 
-use argus_protocol::{read_known_msg, write_frame, ClientMsg, Hello, PaneId, ServerMsg};
+use argus_protocol::{
+    read_known_msg, write_frame, ClientMsg, Hello, PaneId, ServerMsg, PANE_TELEMETRY,
+};
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc, Semaphore};
 
@@ -66,15 +68,22 @@ where
     let viewer = daemon.new_viewer();
 
     let mut tree_rx = daemon.subscribe_tree();
+    let mut telemetry_rx = daemon.subscribe_telemetry();
     let mut workspaces_rx = daemon.subscribe_workspaces();
     let mut decisions_rx = daemon.subscribe_decisions();
     let mut tasks_rx = daemon.subscribe_tasks();
     let mut diagrams_rx = daemon.subscribe_diagrams();
     let mut subs = Subscriptions::new(frames_tx);
     let mut review_task = None;
+    // What the client said it can take: nothing until it greets, and
+    // nothing for good from a client that never does.
+    let mut peer: Option<Hello> = None;
 
     loop {
         tokio::select! {
+            // In order, so a tree taken before a telemetry report cannot
+            // land after it and wind that pane's numbers back.
+            biased;
             reason = shutdown_rx.recv() => {
                 let stop_notice_queued = match reason {
                     Ok(ShutdownReason::Stop) => out_tx.send(ServerMsg::Stopping).is_ok(),
@@ -90,6 +99,9 @@ where
             }
             msg = client_rx.recv() => {
                 let Some(cmsg) = msg else { break };
+                if let ClientMsg::Hello(hello) = &cmsg {
+                    peer = Some(hello.clone());
+                }
                 let shutdown_reason = handle_client_msg(
                     cmsg,
                     &daemon,
@@ -110,6 +122,18 @@ where
             Ok(tree) = tree_rx.recv() => {
                 let _ = out_tx.send(ServerMsg::Tree(tree));
             }
+            report = telemetry_rx.recv() => match report {
+                Ok((pane, telemetry)) if peer.as_ref().is_some_and(|p| p.can(PANE_TELEMETRY)) => {
+                    let _ = out_tx.send(ServerMsg::PaneTelemetry { pane, telemetry });
+                }
+                // A client that cannot take one pane's record, or one that
+                // fell behind the records, is sent them all in a tree.
+                Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {
+                    let _ = out_tx.send(ServerMsg::Tree(daemon.snapshot()));
+                }
+                // The daemon holds the sender for as long as it runs.
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
             Ok(ws) = workspaces_rx.recv() => {
                 let _ = out_tx.send(ServerMsg::Workspaces(ws));
             }
@@ -507,7 +531,11 @@ mod tests {
 
     /// A connection to a fresh daemon, past its three opening messages.
     async fn connected(dir: &std::path::Path) -> tokio::io::DuplexStream {
-        let daemon = Harness::new(dir).daemon;
+        connect_to(Harness::new(dir).daemon).await
+    }
+
+    /// A connection to `daemon`, past its three opening messages.
+    async fn connect_to(daemon: Arc<Daemon>) -> tokio::io::DuplexStream {
         let (mut client, server) = tokio::io::duplex(1024 * 1024);
         let (shutdown, _) = broadcast::channel(1);
         tokio::spawn(handle(server, daemon, shutdown.clone(), shutdown.subscribe()));
@@ -537,6 +565,69 @@ mod tests {
             ServerMsg::Hello(hello) => assert_eq!(hello, Hello::this_build()),
             other => panic!("expected a greeting, got {other:?}"),
         }
+    }
+
+    /// A daemon with one shell pane, started before any client connects so
+    /// the opening tree already holds it and no later tree is on its way.
+    fn daemon_with_a_pane(dir: &std::path::Path) -> (Arc<Daemon>, PaneId) {
+        let daemon = Harness::new(dir).daemon;
+        let checkout = daemon.snapshot()[0].repositories[0].checkouts[0].id;
+        let pane = daemon.spawn_shell(checkout).unwrap();
+        (daemon, pane)
+    }
+
+    fn opus() -> argus_protocol::AgentTelemetry {
+        argus_protocol::AgentTelemetry {
+            model: Some("opus".into()),
+            ..Default::default()
+        }
+    }
+
+    async fn next(client: &mut tokio::io::DuplexStream) -> ServerMsg {
+        tokio::time::timeout(std::time::Duration::from_secs(5), read_msg(client))
+            .await
+            .expect("a message should arrive")
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_client_that_can_take_one_panes_telemetry_is_sent_just_that() {
+        let dir = tempfile::tempdir().unwrap();
+        let (daemon, pane) = daemon_with_a_pane(dir.path());
+        let mut client = connect_to(daemon.clone()).await;
+        argus_protocol::write_msg(&mut client, &ClientMsg::Hello(Hello::this_build()))
+            .await
+            .unwrap();
+        assert!(matches!(next(&mut client).await, ServerMsg::Hello(_)));
+
+        daemon.report_pane_telemetry(pane, None, opus());
+
+        match next(&mut client).await {
+            ServerMsg::PaneTelemetry { pane: id, telemetry } => {
+                assert_eq!(id, pane);
+                assert_eq!(telemetry.model.as_deref(), Some("opus"));
+            }
+            other => panic!("expected the one record, got {other:?}"),
+        }
+        let _ = daemon.close_pane(pane);
+    }
+
+    #[tokio::test]
+    async fn a_client_that_cannot_is_sent_the_whole_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let (daemon, pane) = daemon_with_a_pane(dir.path());
+        let mut client = connect_to(daemon.clone()).await;
+
+        daemon.report_pane_telemetry(pane, None, opus());
+
+        match next(&mut client).await {
+            ServerMsg::Tree(tree) => {
+                let info = &tree[0].repositories[0].checkouts[0].panes[0];
+                assert_eq!(info.telemetry.model.as_deref(), Some("opus"));
+            }
+            other => panic!("expected a tree, got {other:?}"),
+        }
+        let _ = daemon.close_pane(pane);
     }
 
     #[tokio::test]

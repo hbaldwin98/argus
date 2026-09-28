@@ -41,7 +41,7 @@ pub use features::{
     FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES,
 };
 pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
-pub use hello::{Hello, CAPABILITIES, PROTOCOL};
+pub use hello::{Hello, CAPABILITIES, PANE_TELEMETRY, PROTOCOL};
 pub use hook::{
     endpoint_url, pane_path, pane_url, parse_pane_path, parse_pane_url, parse_request_target,
     requested_scope, Endpoint, PaneUrl, Report, ARTIFACT_SCOPE_VAR, CONTEXT_COMMAND, HELPER_VAR,

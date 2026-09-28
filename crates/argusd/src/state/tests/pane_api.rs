@@ -1019,3 +1019,32 @@ async fn a_report_that_changes_nothing_persisted_does_not_rewrite_the_session() 
 
     d.close_pane(pane).unwrap();
 }
+
+#[tokio::test]
+async fn a_telemetry_report_sends_that_panes_record_and_no_tree() {
+    // Telemetry comes with every tool call. It used to cost every client
+    // the whole tree; a client that can take one pane's record gets that.
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = daemon_with_an_agent(dir.path()).await;
+    let mut trees = d.subscribe_tree();
+    let mut records = d.subscribe_telemetry();
+    let report = argus_protocol::AgentTelemetry {
+        model: Some("opus".into()),
+        ..Default::default()
+    };
+
+    d.report_pane_telemetry(pane, None, report.clone());
+
+    let (id, record) = records.try_recv().expect("the merged record goes out");
+    assert_eq!(id, pane);
+    assert_eq!(record.model.as_deref(), Some("opus"));
+    assert!(trees.try_recv().is_err(), "and no tree");
+
+    d.report_pane_telemetry(pane, None, report);
+    assert!(
+        records.try_recv().is_err(),
+        "a report that changes nothing sends nothing"
+    );
+
+    d.close_pane(pane).unwrap();
+}
