@@ -5,8 +5,9 @@
 use super::*;
 
 use argus_protocol::{
-    HELPER_VAR, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG, PANE_VAR,
-    SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
+    endpoint_url, pane_url, ArtifactScope, Endpoint, HELPER_VAR, INSTRUCTIONS_COMMAND,
+    INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG, PANE_VAR, SESSION_KEY_FLAG, TITLE_FLAG,
+    TOKEN_VAR, URL_VAR,
 };
 
 /// Environment handed to every agent pane, whatever its harness.
@@ -16,7 +17,7 @@ use argus_protocol::{
 /// its own pane from inside a turn.
 pub fn env(pane: PaneId, port: u16, token: &str) -> Vec<(String, String)> {
     vec![
-        (URL_VAR.into(), pane_url(pane, port)),
+        (URL_VAR.into(), pane_url(port, pane)),
         (TOKEN_VAR.into(), token.to_string()),
         (PANE_VAR.into(), pane.0.to_string()),
         (HELPER_VAR.into(), helper_path()),
@@ -24,27 +25,30 @@ pub fn env(pane: PaneId, port: u16, token: &str) -> Vec<(String, String)> {
     ]
 }
 
-/// The base every endpoint for this pane hangs off.
-pub(super) fn pane_url(pane: PaneId, port: u16) -> String {
-    format!("http://127.0.0.1:{port}/pane/{}", pane.0)
+/// What an event posts to: the pane's resume identity when it only claims
+/// one, the status it reports otherwise.
+fn event_endpoint(event: &Event) -> Endpoint {
+    if event.claim_only {
+        Endpoint::Session
+    } else {
+        Endpoint::Status(event.reports)
+    }
 }
 
 pub(super) fn event_target_url(pane: PaneId, port: u16, event: &Event) -> String {
-    let base = pane_url(pane, port);
-    if event.claim_only {
-        format!("{base}/session")
-    } else {
-        format!("{base}/status/{}", event.reports.as_str())
-    }
+    endpoint_url(
+        &pane_url(port, pane),
+        event_endpoint(event),
+        ArtifactScope::RepositoryBranch,
+    )
 }
 
 pub(super) fn event_env_url(event: &Event) -> String {
-    let base = "$ARGUS_HOOK_URL";
-    if event.claim_only {
-        format!("{base}/session")
-    } else {
-        format!("{base}/status/{}", event.reports.as_str())
-    }
+    endpoint_url(
+        &format!("${URL_VAR}"),
+        event_endpoint(event),
+        ArtifactScope::RepositoryBranch,
+    )
 }
 
 /// Codex runs `commandWindows` through PowerShell, not cmd.exe. `%VAR%` and
@@ -113,12 +117,7 @@ pub(super) fn env_command_line(event: &Event, windows: bool) -> String {
 /// `$env:ARGUS_HOOK_URL/status/idle` is then parsed as division, which tries
 /// to invoke methods on non-core types and fails with a language-mode error.
 fn powershell_env_url_expr(event: &Event) -> String {
-    let suffix = if event.claim_only {
-        "/session".to_string()
-    } else {
-        format!("/status/{}", event.reports.as_str())
-    };
-    format!("($env:ARGUS_HOOK_URL + '{suffix}')")
+    format!("($env:{URL_VAR} + '/{}')", event_endpoint(event).suffix())
 }
 
 fn powershell_env_command_line(event: &Event) -> String {

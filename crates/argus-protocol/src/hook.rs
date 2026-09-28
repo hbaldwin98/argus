@@ -1,14 +1,17 @@
-//! The pane API's URL grammar.
+//! The pane API's URL grammar: the loopback base an agent is handed, the
+//! path of each endpoint under it, and the board a request is filed on.
 //!
-//! The daemon parses these paths and `argus-hook` builds them, in separate
-//! binaries that never share a type unless it lives here. Written twice they
-//! drift silently: a new endpoint on one side compiles perfectly and fails
-//! at runtime against the other. Written once they cannot.
+//! The daemon and its installer build these URLs, `argus-hook` rebases and
+//! extends them, and the daemon parses them back — in separate binaries
+//! that never share a type unless it lives here. Written twice they drift
+//! silently: a new endpoint on one side compiles perfectly and fails at
+//! runtime against the other. Written once they cannot.
 
 use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};
 
+use crate::artifacts::ArtifactScope;
 use crate::ids::PaneId;
 use crate::tree::PaneStatus;
 
@@ -20,6 +23,22 @@ pub const TOKEN_VAR: &str = "ARGUS_HOOK_TOKEN";
 pub const HELPER_VAR: &str = "ARGUS_HOOK";
 pub const PANE_VAR: &str = "ARGUS_PANE";
 pub const INSTRUCTIONS_VAR: &str = "ARGUS_INSTRUCTIONS";
+
+/// Set by a person, never by the daemon: files an agent's board requests on
+/// the workspace board instead of its checkout's repository. Crossing
+/// repositories is opted into per command rather than inherited from
+/// whichever workspace the TUI has open.
+pub const ARTIFACT_SCOPE_VAR: &str = "ARGUS_ARTIFACT_SCOPE";
+
+/// The only host a pane URL may name. The listener binds loopback, and a
+/// helper handed a URL anywhere else would be posting its token off the
+/// machine.
+const LOOPBACK: &str = "127.0.0.1";
+
+/// The query that files a request on the workspace board. Absent means the
+/// repository board, so a helper that predates the scope still lands where
+/// it always did.
+const WORKSPACE_QUERY: &str = "scope=workspace";
 
 /// The context-only helper command used by stable, environment-based hooks.
 pub const INSTRUCTIONS_COMMAND: &str = "instructions";
@@ -201,6 +220,80 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
     Some((pane, endpoint))
 }
 
+/// `http://127.0.0.1:<port>/pane/<id>` — what `ARGUS_HOOK_URL` holds, and
+/// the base every endpoint for the pane hangs off.
+pub fn pane_url(port: u16, pane: PaneId) -> String {
+    format!("http://{LOOPBACK}:{port}{}", pane_prefix(pane))
+}
+
+/// A pane URL read back: the listener it names, the pane, and whatever
+/// follows the pane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PaneUrl<'a> {
+    pub port: u16,
+    pub pane: PaneId,
+    /// Everything after `/pane/<id>`, endpoint and query included; empty
+    /// for a bare base.
+    pub rest: &'a str,
+}
+
+impl PaneUrl<'_> {
+    /// The URL with everything after the pane dropped.
+    pub fn base(&self) -> String {
+        pane_url(self.port, self.pane)
+    }
+}
+
+/// The inverse of [`pane_url`], and of [`endpoint_url`] with the endpoint
+/// left in `rest`. `None` for anything not on the loopback listener.
+pub fn parse_pane_url(url: &str) -> Option<PaneUrl<'_>> {
+    let rest = url.strip_prefix("http://")?;
+    let (authority, path) = rest.split_once('/')?;
+    let (host, port) = authority.rsplit_once(':')?;
+    if host != LOOPBACK {
+        return None;
+    }
+    let port = port.parse().ok()?;
+    let path = path.strip_prefix("pane/")?;
+    let (id, rest) = path.find('/').map_or((path, ""), |i| path.split_at(i));
+    let pane = PaneId(id.parse().ok()?);
+    Some(PaneUrl { port, pane, rest })
+}
+
+/// A pane URL plus the endpoint asked for, filed on `scope`'s board.
+///
+/// `base` is usually [`pane_url`]'s, but may be a shell expression that
+/// expands to one — a hook installed checkout-wide cannot name a pane.
+pub fn endpoint_url(base: &str, endpoint: Endpoint, scope: ArtifactScope) -> String {
+    let url = format!("{}/{}", base.trim_end_matches('/'), endpoint.suffix());
+    match scope {
+        ArtifactScope::Workspace => format!("{url}?{WORKSPACE_QUERY}"),
+        ArtifactScope::RepositoryBranch => url,
+    }
+}
+
+/// The pane, endpoint and board a request target names: the path half of
+/// [`endpoint_url`], as it arrives on the request line.
+pub fn parse_request_target(target: &str) -> (Option<(PaneId, Endpoint)>, ArtifactScope) {
+    let (route, query) = target.split_once('?').unwrap_or((target, ""));
+    let scope = if query.split('&').any(|part| part == WORKSPACE_QUERY) {
+        ArtifactScope::Workspace
+    } else {
+        ArtifactScope::RepositoryBranch
+    };
+    (parse_pane_path(route), scope)
+}
+
+/// The board [`ARTIFACT_SCOPE_VAR`] asks for, given its value. Only the
+/// exact word crosses repositories; anything else is the repository board.
+pub fn requested_scope(var: Option<&str>) -> ArtifactScope {
+    if var == Some("workspace") {
+        ArtifactScope::Workspace
+    } else {
+        ArtifactScope::RepositoryBranch
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,6 +365,105 @@ mod tests {
             "",
         ] {
             assert_eq!(parse_pane_path(path), None, "{path}");
+        }
+    }
+
+    #[test]
+    fn every_endpoint_on_either_board_survives_the_trip_to_the_listener() {
+        // What the installer and the helper build is what the hook server
+        // reads off the request line, board included.
+        let base = pane_url(4242, PaneId(7));
+        for endpoint in every_endpoint() {
+            for scope in [ArtifactScope::RepositoryBranch, ArtifactScope::Workspace] {
+                let url = endpoint_url(&base, endpoint, scope);
+                let parsed = parse_pane_url(&url).unwrap();
+                assert_eq!((parsed.port, parsed.pane), (4242, PaneId(7)), "{url}");
+                assert_eq!(parsed.base(), base, "{url}");
+                let target = url.strip_prefix("http://127.0.0.1:4242").unwrap();
+                assert_eq!(
+                    parse_request_target(target),
+                    (Some((PaneId(7), endpoint)), scope),
+                    "{url}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_built_urls_are_the_documented_ones() {
+        assert_eq!(pane_url(4242, PaneId(9)), "http://127.0.0.1:4242/pane/9");
+        assert_eq!(
+            endpoint_url(
+                "http://127.0.0.1:4242/pane/9",
+                Endpoint::Status(Report::Idle),
+                ArtifactScope::RepositoryBranch
+            ),
+            "http://127.0.0.1:4242/pane/9/status/idle"
+        );
+        assert_eq!(
+            endpoint_url(
+                "http://127.0.0.1:4242/pane/9/",
+                Endpoint::Tasks,
+                ArtifactScope::Workspace
+            ),
+            "http://127.0.0.1:4242/pane/9/tasks?scope=workspace"
+        );
+        assert_eq!(
+            endpoint_url(
+                "$ARGUS_HOOK_URL",
+                Endpoint::Session,
+                ArtifactScope::RepositoryBranch
+            ),
+            "$ARGUS_HOOK_URL/session"
+        );
+    }
+
+    #[test]
+    fn a_pane_url_keeps_whatever_follows_the_pane() {
+        let parsed = parse_pane_url("http://127.0.0.1:4242/pane/1/status/idle").unwrap();
+        assert_eq!(parsed.rest, "/status/idle");
+        assert_eq!(parse_pane_url("http://127.0.0.1:4242/pane/1").unwrap().rest, "");
+    }
+
+    #[test]
+    fn a_url_off_the_loopback_listener_is_not_a_pane_url() {
+        for url in [
+            "http://10.0.0.1:4242/pane/1",
+            "http://localhost:4242/pane/1",
+            "http://127.0.0.1/pane/1",
+            "http://127.0.0.1:99999/pane/1",
+            "https://127.0.0.1:4242/pane/1",
+            "http://127.0.0.1:4242/panes/1",
+            "http://127.0.0.1:4242/pane/one",
+            "http://127.0.0.1:4242/pane/",
+            "http://127.0.0.1:4242",
+            "",
+        ] {
+            assert_eq!(parse_pane_url(url), None, "{url}");
+        }
+    }
+
+    #[test]
+    fn a_request_target_without_the_scope_query_is_on_the_repository_board() {
+        assert_eq!(
+            parse_request_target("/pane/7/tasks"),
+            (Some((PaneId(7), Endpoint::Tasks)), ArtifactScope::RepositoryBranch)
+        );
+        assert_eq!(
+            parse_request_target("/pane/7/tasks?scope=repository&x=1"),
+            (Some((PaneId(7), Endpoint::Tasks)), ArtifactScope::RepositoryBranch)
+        );
+        assert_eq!(
+            parse_request_target("/pane/7/tasks?x=1&scope=workspace"),
+            (Some((PaneId(7), Endpoint::Tasks)), ArtifactScope::Workspace)
+        );
+    }
+
+    #[test]
+    fn only_the_exact_word_opts_into_the_workspace_board() {
+        assert_eq!(requested_scope(Some("workspace")), ArtifactScope::Workspace);
+        for var in [None, Some(""), Some("Workspace"), Some("repository")] {
+            assert_eq!(requested_scope(var), ArtifactScope::RepositoryBranch, "{var:?}");
         }
     }
 

@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use argus_protocol::{parse_pane_path, Endpoint, PaneId, MAX_DIAGRAM_BODY_BYTES};
+use argus_protocol::{parse_request_target, Endpoint, PaneId, MAX_DIAGRAM_BODY_BYTES};
 
 use super::Daemon;
 
@@ -150,13 +150,7 @@ async fn handle_hook_request(
 
     let (authorized, content_length, reporter) =
         read_hook_headers(&mut reader, &daemon.hook_token).await?;
-    let (route, query) = path.split_once('?').unwrap_or((&path, ""));
-    let endpoint = parse_pane_path(route);
-    let artifact_scope = if query.split('&').any(|part| part == "scope=workspace") {
-        argus_protocol::ArtifactScope::Workspace
-    } else {
-        argus_protocol::ArtifactScope::RepositoryBranch
-    };
+    let (endpoint, artifact_scope) = parse_request_target(&path);
     // The server trusts nothing about a request beyond its bearer token.
     let max_body = max_hook_body(endpoint);
     let too_large = content_length > max_body;

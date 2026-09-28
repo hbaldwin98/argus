@@ -14,13 +14,12 @@ pub(super) fn env_token() -> String {
 /// Repoint a checkout-wide managed hook at the pane-specific URL inherited
 /// by this process. Both URLs must name panes on the same loopback listener.
 pub(super) fn rebase_hook_url(configured: &str, inherited: &str) -> Option<String> {
-    let configured_base = pane_base(configured)?;
-    let inherited_base = pane_base(inherited)?;
-    if authority(&configured_base)? != authority(&inherited_base)? {
+    let configured = parse_pane_url(configured)?;
+    let inherited = parse_pane_url(inherited)?;
+    if configured.port != inherited.port || configured.rest.is_empty() {
         return None;
     }
-    let suffix = configured.strip_prefix(&configured_base)?;
-    (!suffix.is_empty()).then(|| format!("{inherited_base}{suffix}"))
+    Some(format!("{}{}", inherited.base(), configured.rest))
 }
 
 pub(super) fn routed_hook(
@@ -38,38 +37,17 @@ pub(super) fn routed_hook(
     }
 }
 
-pub(super) fn authority(url: &str) -> Option<&str> {
-    url.strip_prefix("http://")?.split('/').next()
-}
-
-/// A pane base (`http://host:port/pane/<id>`) plus the endpoint being asked
-/// for. The suffix comes from `argus-protocol` so the daemon parses exactly
-/// what is built here.
+/// A pane base plus the endpoint being asked for, on the board this
+/// process's environment asks for.
 pub(super) fn endpoint_url(base: &str, endpoint: Endpoint) -> String {
-    let url = format!("{}/{}", base.trim_end_matches('/'), endpoint.suffix());
-    if std::env::var(ARTIFACT_SCOPE_VAR).as_deref() == Ok("workspace") {
-        format!("{url}?scope=workspace")
-    } else {
-        url
-    }
+    let scope = requested_scope(std::env::var(ARTIFACT_SCOPE_VAR).ok().as_deref());
+    argus_protocol::endpoint_url(base, endpoint, scope)
 }
 
+/// The pane base a URL names, or `None` for one not on the loopback
+/// listener.
 pub(super) fn pane_base(url: &str) -> Option<String> {
-    let rest = url.strip_prefix("http://")?;
-    let (authority, path) = rest.split_once('/')?;
-    let mut parts = path.split('/');
-    if parts.next()? != "pane" {
-        return None;
-    }
-    parts.next()?.parse::<u64>().ok()?;
-    let host = authority.split(':').next()?;
-    if host != "127.0.0.1" || authority.rsplit_once(':')?.1.parse::<u16>().is_err() {
-        return None;
-    }
-    Some(format!(
-        "http://{authority}/pane/{}",
-        path.split('/').nth(1)?
-    ))
+    parse_pane_url(url).map(|url| url.base())
 }
 
 /// Best-effort POST. Every error is discarded by the caller; the return type
