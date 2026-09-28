@@ -80,6 +80,8 @@ struct Pane {
     /// Live only: model, context, spend and tool, as the harness last
     /// reported them. Not persisted; a restored agent reports afresh.
     telemetry: argus_protocol::AgentTelemetry,
+    /// Live only, like telemetry, and kept out of the tree: every client
+    /// was sent it and none read it.
     transcript: Vec<argus_protocol::AgentTranscriptEvent>,
     /// A hook won the race with session restoration, so saved metadata must
     /// not overwrite what the newly started process already reported.
@@ -272,6 +274,11 @@ pub struct Daemon {
     /// True while `restore_session` is spawning, so the panes it makes
     /// don't each rewrite the file it is reading from.
     restoring: std::sync::atomic::AtomicBool,
+    /// The panes the store was last given, so a broadcast that changed
+    /// nothing it keeps — telemetry, a child's status — writes nothing.
+    /// Held across computing and saving, which also keeps two recordings
+    /// from landing in the opposite order to the states they read.
+    recorded: StdMutex<Option<Vec<crate::store::SessionPane>>>,
     /// Runtime state that outlives this run. Which store a daemon holds is
     /// what decides whether it persists at all: `new` gives it one that
     /// lives and dies with the process, so a daemon built in a test cannot
@@ -370,7 +377,6 @@ impl Daemon {
                                                 })
                                                 .collect(),
                                             telemetry: pane.telemetry.clone(),
-                                            transcript: pane.transcript.clone(),
                                         })
                                         .collect(),
                                     git,

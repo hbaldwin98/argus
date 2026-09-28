@@ -934,7 +934,7 @@ async fn transcript_events_append_in_order_and_cap_the_timeline() {
         },
     );
 
-    let transcript = pane_info(&d, pane).transcript;
+    let transcript = d.pane_transcript(pane).unwrap();
     assert_eq!(transcript.len(), 2);
     assert_eq!(transcript[0].kind, TranscriptKind::Prompt);
     assert_eq!(transcript[1].tool.as_deref(), Some("shell"));
@@ -950,11 +950,71 @@ async fn transcript_events_append_in_order_and_cap_the_timeline() {
             },
         );
     }
-    assert_eq!(pane_info(&d, pane).transcript.len(), MAX_TRANSCRIPT_EVENTS);
+    let transcript = d.pane_transcript(pane).unwrap();
+    assert_eq!(transcript.len(), MAX_TRANSCRIPT_EVENTS);
     assert_eq!(
-        pane_info(&d, pane).transcript[0].text.as_deref(),
+        transcript[0].text.as_deref(),
         Some("line 5"),
         "the oldest events fall off the front"
+    );
+
+    d.close_pane(pane).unwrap();
+}
+
+#[tokio::test]
+async fn a_transcript_event_sends_no_tree() {
+    // The tree does not carry transcripts, so an event changes nothing a
+    // client is drawing and must not cost every client a whole tree.
+    use argus_protocol::{AgentTranscriptEvent, TranscriptKind};
+
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = daemon_with_an_agent(dir.path()).await;
+    let mut trees = d.subscribe_tree();
+
+    d.report_pane_transcript_event(
+        pane,
+        None,
+        AgentTranscriptEvent {
+            kind: TranscriptKind::Tool,
+            text: None,
+            tool: Some("shell".into()),
+        },
+    );
+
+    assert!(trees.try_recv().is_err(), "no tree for a transcript event");
+    assert_eq!(d.pane_transcript(pane).unwrap().len(), 1);
+
+    d.close_pane(pane).unwrap();
+}
+
+#[tokio::test]
+async fn a_report_that_changes_nothing_persisted_does_not_rewrite_the_session() {
+    // Telemetry arrives on every tool call and is not persisted, so the
+    // tree it broadcasts must not rewrite the session table each time.
+    // The table is emptied behind the daemon's back to see whether the
+    // report writes it again.
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = daemon_with_an_agent(dir.path()).await;
+    d.store.save_panes(&[]).unwrap();
+
+    d.report_pane_telemetry(
+        pane,
+        None,
+        argus_protocol::AgentTelemetry {
+            model: Some("opus".into()),
+            ..Default::default()
+        },
+    );
+    assert!(
+        d.store.panes().unwrap().is_empty(),
+        "telemetry changed nothing the session keeps"
+    );
+
+    d.report_pane_status(pane, None, PaneStatus::Working, None);
+    assert_eq!(
+        d.store.panes().unwrap().len(),
+        1,
+        "a status is kept, so it is written"
     );
 
     d.close_pane(pane).unwrap();

@@ -513,6 +513,11 @@ extension report from their message and tool events. Claude Code tool hooks are 
 so the user's permission rules still apply. Clients show the report on the workspace breadcrumb and
 the pane cards.
 
+Transcript events — `argus-hook event`, which posts to `/pane/<id>/event` — are kept per pane, the
+newest 200, and are live state like telemetry. They are not in the tree: every tree used to carry
+every pane's events to every client, and no client read them. Recording one broadcasts nothing.
+Nothing reads them back yet, and no built-in adapter sends them.
+
 The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
 /pane/<id>/status/<working|idle|waiting|needs-review|done|failed>` with an optional body as the note,
 `POST /pane/<id>/title`, `POST /pane/<id>/session` with a validated harness session ID, and `POST
@@ -608,8 +613,9 @@ since switching a shared checkout in place changes files and HEAD for every pane
 ## Session restore
 
 The store records each pane's checkout path, kind, title, status, note, and optional harness
-session ID and harness name when the daemon
-broadcasts a structural tree change. The harness is the one the pane actually ran under rather than
+session ID and harness name whenever a tree broadcast changes one of them. The daemon remembers the
+rows it last wrote, so a broadcast that changes none of them — telemetry, a child agent's status —
+writes nothing. The harness is the one the pane actually ran under rather than
 whatever its template names now, since that is who wrote the conversation a restore claims; a record
 without it falls back to the template. Recording is suppressed while a restore is in flight, so the
 panes it is starting do not rewrite the rows it is reading.

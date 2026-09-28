@@ -127,6 +127,7 @@ impl Daemon {
             hook_port: std::sync::atomic::AtomicU16::new(0),
             hook_token: gen_token(),
             restoring: std::sync::atomic::AtomicBool::new(false),
+            recorded: StdMutex::new(None),
             store,
             restart_attempts: StdMutex::new(HashMap::new()),
             viewers: StdMutex::new(Viewers::default()),

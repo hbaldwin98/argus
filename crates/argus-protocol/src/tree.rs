@@ -170,10 +170,10 @@ pub struct PaneInfo {
     /// exposes a different subset of them.
     #[serde(default)]
     pub telemetry: AgentTelemetry,
-    /// Structured turn events, oldest first. Filled by harness adapters
-    /// through the pane API; the client may render them later.
-    #[serde(default)]
-    pub transcript: Vec<crate::transcript::AgentTranscriptEvent>,
+    // No transcript. It rode here once, up to 200 events a pane in every
+    // tree every client was sent, and no client read it; the daemon keeps
+    // it to itself now. A daemon from before still sends the field, and
+    // the derive ignores a field it does not know.
 }
 
 /// Harness-neutral telemetry for one agent pane.
@@ -382,7 +382,6 @@ mod tests {
                 })
                 .collect(),
             telemetry: AgentTelemetry::default(),
-            transcript: Vec::new(),
         }
     }
 
@@ -469,5 +468,31 @@ mod tests {
         );
         assert_eq!(PaneStatus::loudest(c.statuses()), Some(PaneStatus::Waiting));
         assert_eq!(PaneStatus::loudest(checkout(Vec::new()).statuses()), None);
+    }
+
+    #[test]
+    fn a_pane_from_a_daemon_that_still_sends_its_transcript_reads() {
+        // An older daemon puts the transcript in every pane. Dropping the
+        // field here must not cost a newer client the tree.
+        #[derive(Serialize)]
+        struct OlderPaneInfo {
+            #[serde(flatten)]
+            pane: PaneInfo,
+            transcript: Vec<crate::transcript::AgentTranscriptEvent>,
+        }
+        let older = OlderPaneInfo {
+            pane: pane(PaneStatus::Working, &[]),
+            transcript: vec![crate::transcript::AgentTranscriptEvent {
+                kind: crate::transcript::TranscriptKind::Prompt,
+                text: Some("fix the bug".into()),
+                tool: None,
+            }],
+        };
+
+        let bytes = rmp_serde::to_vec_named(&older).unwrap();
+        let read: PaneInfo = rmp_serde::from_slice(&bytes).unwrap();
+
+        assert_eq!(read.status, PaneStatus::Working);
+        assert_eq!(read.title, "claude");
     }
 }

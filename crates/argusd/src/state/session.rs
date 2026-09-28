@@ -104,8 +104,15 @@ impl Daemon {
         if self.restoring.load(std::sync::atomic::Ordering::Relaxed) {
             return;
         }
-        if let Err(e) = self.store.save_panes(&self.session_panes()) {
-            tracing::warn!("could not record the session: {e}");
+        let mut recorded = self.recorded.lock().unwrap();
+        let panes = self.session_panes();
+        if recorded.as_ref() == Some(&panes) {
+            return;
+        }
+        match self.store.save_panes(&panes) {
+            Ok(()) => *recorded = Some(panes),
+            // Left as it was, so the next broadcast tries again.
+            Err(e) => tracing::warn!("could not record the session: {e}"),
         }
     }
 
