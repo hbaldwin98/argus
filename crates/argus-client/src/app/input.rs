@@ -795,7 +795,7 @@ impl App {
                         checkout,
                         path: a.path,
                         line,
-                        external: self.settings.editor.is_external(),
+                        external: self.editor_mode().is_external(),
                         command: self.editor_command(),
                         request_id,
                     });

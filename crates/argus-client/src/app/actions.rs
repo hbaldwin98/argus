@@ -277,8 +277,25 @@ impl App {
         panes_in(&self.tree).any(|p| p.id == pane && is_live_agent_pane(p))
     }
 
-    /// The configured editor command, or `None` to leave it to the daemon.
+    /// Where an editor opens for this app's host. An external editor is
+    /// one the daemon launches on its own machine, so for a host elsewhere
+    /// it would open where nobody is looking; there it comes up in a
+    /// floating pane instead, running on that machine and drawn here.
+    pub(super) fn editor_mode(&self) -> crate::settings::EditorMode {
+        use crate::settings::EditorMode;
+        match (self.settings.editor, &self.host) {
+            (EditorMode::External, Some(_)) => EditorMode::Overlay,
+            (mode, _) => mode,
+        }
+    }
+
+    /// The configured editor command, or `None` to leave it to the daemon —
+    /// always on another machine, where this one's editor may not exist and
+    /// the daemon there knows its own.
     pub(super) fn editor_command(&self) -> Option<String> {
+        if self.host.is_some() {
+            return None;
+        }
         let cmd = self.settings.editor_cmd.trim();
         (!cmd.is_empty()).then(|| cmd.to_string())
     }
@@ -287,7 +304,7 @@ impl App {
     /// land. Zero — no answer wanted — for an external one: it has no pane
     /// to take the keys to.
     pub(super) fn editor_request(&mut self) -> u64 {
-        match self.settings.editor {
+        match self.editor_mode() {
             crate::settings::EditorMode::External => 0,
             crate::settings::EditorMode::Column => {
                 self.awaited.ask(Then::FocusPane { floating: false })

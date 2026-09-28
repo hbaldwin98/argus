@@ -36,6 +36,33 @@ fn an_external_editor_asks_the_daemon_not_to_make_a_pane() {
 }
 
 #[test]
+fn on_another_machine_an_editor_opens_in_a_pane_the_daemon_there_chooses() {
+    // An external editor would open on that machine, where nobody is
+    // looking, and this machine's editor command may not exist there.
+    let mut h = Harness::new();
+    h.app.host = Some("devbox".into());
+    h.app.settings.editor = crate::settings::EditorMode::External;
+    h.app.settings.editor_cmd = "code -w".into();
+    let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
+    open_review(&mut h, diff_of(checkout));
+    h.key(KeyCode::Char('e'));
+
+    match &h.sent()[0] {
+        ClientMsg::OpenInEditor {
+            external,
+            command,
+            request_id,
+            ..
+        } => {
+            assert!(!*external);
+            assert_eq!(*command, None);
+            assert_ne!(*request_id, 0, "a pane is coming, and takes the keys");
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
 fn an_external_editor_does_not_steal_focus_when_the_tree_changes() {
     // It has no pane to focus, and grabbing the newest one would land
     // the user somewhere arbitrary.

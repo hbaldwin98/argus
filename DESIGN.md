@@ -86,7 +86,9 @@ the status bar. The product mark names the host on screen when it is not this ma
 screen holds no pane subscriptions — nothing draws its grids, and a remote one would stream them
 for nobody — and takes them back, sizes and all, when it returns. `client.toml`'s list of hosts is
 written only when a host is remembered: each host's app holds a copy of the settings, and saving a
-theme from one keeps the list on disk rather than its own.
+theme from one keeps the list on disk rather than its own. On a host elsewhere an editor always opens in a floating
+pane: an external editor would be launched on that machine, where nobody is looking, and this
+machine's editor command is left out so the daemon there picks its own.
 
 A request that makes something — a shell, an agent, an editor, a worktree, a project, a
 repository — may name itself with a `request_id`, and the daemon answers that client alone with
