@@ -111,9 +111,42 @@ pub(super) fn feature_message(rest: &[&str], base_url: &str, token: &str) -> Str
                 format!("{slug} is {said}")
             }
         }
+        Some(verb @ ("retitle" | "brief")) => {
+            let (Some(slug), text) = (rest.get(1), rest.get(2..).unwrap_or_default().join(" "))
+            else {
+                return format!("could not change feature: {verb} wants a slug, then the text");
+            };
+            if text.trim().is_empty() {
+                return format!("could not change feature: {verb} wants the text after the slug");
+            }
+            let slug = slug.to_string();
+            let action = if verb == "retitle" {
+                FeatureAction::Retitle { slug, title: text }
+            } else {
+                FeatureAction::Rewrite { slug, body: text }
+            };
+            write_feature(action, base_url, token)
+        }
+        Some("drop") => {
+            let Some(slug) = rest.get(1) else {
+                return "could not change feature: drop wants the slug of a feature".to_string();
+            };
+            let answer = write_feature(
+                FeatureAction::Drop {
+                    slug: slug.to_string(),
+                },
+                base_url,
+                token,
+            );
+            if answer.starts_with("could not") {
+                answer
+            } else {
+                format!("{slug} is gone")
+            }
+        }
         Some(other) => format!(
-            "{other} is not one of list, open, use, note, export, done, reopen — \
-             `argus-hook feature use {other}` works on an existing feature"
+            "{other} is not one of list, open, use, note, export, done, reopen, retitle, brief, \
+             drop — `argus-hook feature use {other}` works on an existing feature"
         ),
     }
 }
@@ -818,6 +851,17 @@ pub(super) fn read_json<T: serde::de::DeserializeOwned>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn changing_a_feature_wants_its_slug_and_its_text() {
+        let base = "http://127.0.0.1:1/pane/1";
+        for args in [&["retitle"][..], &["retitle", "a-slug"], &["brief", "a-slug", " "]] {
+            let message = feature_message(args, base, "t");
+            assert!(message.starts_with("could not change feature"), "{args:?}: {message}");
+        }
+        let message = feature_message(&["drop"], base, "t");
+        assert!(message.contains("wants the slug"), "{message}");
+    }
 
     #[test]
     fn accepting_a_feature_wants_its_slug() {

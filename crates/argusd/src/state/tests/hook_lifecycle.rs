@@ -275,6 +275,59 @@ fn open_feature(d: &Daemon, agent: PaneId, title: &str) -> String {
 }
 
 #[tokio::test]
+async fn an_agent_corrects_a_feature_it_opened_and_drops_it_once_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    let agent = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+    let slug = open_feature(&d, agent, "mistaken work");
+    let feature_of = |d: &Daemon| {
+        d.feature_board_for_agent(agent, ArtifactScope::default())
+            .unwrap()
+            .features
+            .into_iter()
+            .find(|f| f.slug == slug)
+    };
+
+    d.retitle_feature_for_agent(agent, &slug, "corrected work", ArtifactScope::default())
+        .unwrap();
+    d.rewrite_feature_for_agent(agent, &slug, "what it is for", ArtifactScope::default())
+        .unwrap();
+    let feature = feature_of(&d).expect("still there, same slug");
+    assert_eq!(feature.title, "corrected work");
+    assert_eq!(feature.body, "what it is for");
+
+    d.part_action_for_agent(
+        agent,
+        None,
+        TaskAction::Add(TaskWrite {
+            title: "someone's task".into(),
+            external: None,
+            parent: None,
+        }),
+        ArtifactScope::default(),
+    )
+    .unwrap();
+    let refused = d
+        .drop_feature_for_agent(agent, &slug, ArtifactScope::default())
+        .unwrap_err();
+    assert!(refused.to_string().contains("1 task"), "{refused}");
+    assert!(feature_of(&d).is_some(), "work under it is not an agent's to delete whole");
+
+    let task = d
+        .part_action_for_agent(agent, None, TaskAction::List, ArtifactScope::default())
+        .unwrap()
+        .tasks[0]
+        .id;
+    d.part_action_for_agent(agent, None, TaskAction::Remove { id: task }, ArtifactScope::default())
+        .unwrap();
+    d.drop_feature_for_agent(agent, &slug, ArtifactScope::default())
+        .unwrap();
+    assert!(feature_of(&d).is_none(), "empty, it goes");
+
+    d.close_pane(agent).unwrap();
+}
+
+#[tokio::test]
 async fn an_agent_told_to_accept_a_feature_is_recorded_as_the_one_who_did() {
     // Acceptance is a person's call; an agent carrying it out must not
     // make the history say the person moved it themselves.

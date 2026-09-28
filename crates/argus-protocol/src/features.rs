@@ -175,6 +175,13 @@ pub enum FeatureAction {
     Done { slug: String },
     /// Takes a feature back from done, the undoing of `Done`.
     Reopen { slug: String },
+    /// Renames a feature, its slug staying what it was.
+    Retitle { slug: String, title: String },
+    /// Replaces a feature's brief outright: how what an agent appended is
+    /// taken back.
+    Rewrite { slug: String, body: String },
+    /// Removes a feature with nothing under it: the undoing of `Open`.
+    Drop { slug: String },
 }
 
 /// One state change, in the order they happened.

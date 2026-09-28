@@ -317,6 +317,13 @@ fn feature_response(
             argus_protocol::FeatureState::Open,
             filing.scope,
         ),
+        FeatureAction::Retitle { slug, title } => {
+            daemon.retitle_feature_for_agent(source, &slug, &title, filing.scope)
+        }
+        FeatureAction::Rewrite { slug, body } => {
+            daemon.rewrite_feature_for_agent(source, &slug, &body, filing.scope)
+        }
+        FeatureAction::Drop { slug } => daemon.drop_feature_for_agent(source, &slug, filing.scope),
     })
 }
 

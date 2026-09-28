@@ -47,6 +47,18 @@ rediscover: a non-obvious cause, a gotcha, where the real entry point lives, or
 a change of scope the human agreed to. Do not append progress logs, command
 output, or anything already recorded as a task or decision.
 
+## Correcting a feature
+
+```sh
+"$ARGUS_HOOK" feature brief <slug> "<the whole brief>"   # replaces it
+"$ARGUS_HOOK" feature retitle <slug> "<title>"           # keeps the slug
+"$ARGUS_HOOK" feature drop <slug>                        # only with nothing under it
+```
+
+`brief` replaces the brief outright, which is how a paragraph appended in error
+is taken back; read it with `feature <slug>` first and write it back whole.
+`drop` removes a feature opened by mistake, or one whose tasks you have dropped.
+
 When the human asks for the reasoning as a document, `export` prints the feature
 and its decision board as source material; write the document from it.
 

@@ -961,10 +961,14 @@ document is the one part that is edited rather than appended to as
 a tree: it is prose both sides write, bounded at 8 KiB, because a brief that has outgrown a screen
 has become the design document it was meant to point at.
 
-The two sides write it differently, and deliberately. An agent *appends* — `argus-hook feature note`
-adds a paragraph — because an agent adding to a brief mid-task should not be able to erase what it
-is working from. A human *replaces*: `e` on a feature, from either board, opens the brief in the
-brief editor and `ClientMsg::SetFeatureBody` writes back whatever it says. It is the same editor a
+An agent adds to a brief a paragraph at a time — `argus-hook feature note` — and replaces one only on
+purpose, with `feature brief <slug> "<text>"`, which is how a paragraph it appended in error is taken
+back: an agent can undo any change to the board it can make. `feature retitle` renames a feature,
+keeping its slug, and `feature drop` removes one with nothing under it — the undoing of `open`. A
+feature with tasks, decisions or diagrams under it is refused, since those may be other agents'
+work; an agent empties it a task at a time, each of which it can undo, and a person removes a whole
+one from the view. A human replaces a brief in the view: `e` on a feature, from either board, opens
+the brief in the brief editor and `ClientMsg::SetFeatureBody` writes back whatever it says. It is the same editor a
 task's brief gets because it is the same job, prose a person reads and corrects. The editor is
 modal: `j`/`k`, `0`/`$` and `g`/`G` navigate, `i`, `a` or `o` start typing, and `Esc` leaves insert
 mode and saves; `q` saves and closes. The work a brief might have listed lives in its tasks. The decision view draws the

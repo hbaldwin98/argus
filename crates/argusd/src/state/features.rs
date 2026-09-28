@@ -285,6 +285,82 @@ impl Daemon {
         Ok(board)
     }
 
+    /// Renames a feature for an agent. The slug stays, since every row
+    /// under the feature is keyed on it.
+    pub fn retitle_feature_for_agent(
+        &self,
+        pane_id: PaneId,
+        slug: &str,
+        title: &str,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<FeatureBoard> {
+        let scope = self.agent_scope(pane_id)?;
+        let key = scope.artifact_key(artifact_scope);
+        self.store.rename_feature(key, slug, title)?;
+        self.feature_changed_for_agent(&scope, artifact_scope)
+    }
+
+    /// Replaces a feature's brief for an agent: how a paragraph it appended
+    /// is taken back, and how a brief that has drifted is put right.
+    pub fn rewrite_feature_for_agent(
+        &self,
+        pane_id: PaneId,
+        slug: &str,
+        body: &str,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<FeatureBoard> {
+        let scope = self.agent_scope(pane_id)?;
+        let key = scope.artifact_key(artifact_scope);
+        self.store.set_feature_body(key, slug, body)?;
+        self.feature_changed_for_agent(&scope, artifact_scope)
+    }
+
+    /// Removes a feature for an agent, only when nothing is filed under it.
+    ///
+    /// The undoing of opening one — a feature opened by mistake, or one
+    /// emptied on purpose. Removing a feature takes its tasks and diagrams
+    /// with it and leaves its decisions unfiled, and work other agents
+    /// filed there is not an agent's to take back in one move: it can
+    /// empty the feature a task at a time, each of which it can undo, and a
+    /// person can remove a whole one from the feature view.
+    pub fn drop_feature_for_agent(
+        &self,
+        pane_id: PaneId,
+        slug: &str,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<FeatureBoard> {
+        let scope = self.agent_scope(pane_id)?;
+        let key = scope.artifact_key(artifact_scope);
+        let tasks = self.store.tasks(key, slug)?.len();
+        let diagrams = self.store.sequence_diagrams(key, slug)?.len();
+        let decisions = self
+            .store
+            .decisions(key)?
+            .iter()
+            .filter(|d| d.feature.as_deref() == Some(slug))
+            .count();
+        if tasks + diagrams + decisions > 0 {
+            anyhow::bail!(
+                "{slug} has {tasks} task(s), {decisions} decision(s) and {diagrams} diagram(s) \
+                 under it; drop its tasks first, or a person can remove it from the feature view"
+            );
+        }
+        self.store.remove_feature(key, slug)?;
+        self.feature_changed_for_agent(&scope, artifact_scope)
+    }
+
+    /// The board after an agent changed a feature, pushed to every client.
+    fn feature_changed_for_agent(
+        &self,
+        scope: &AgentScope,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<FeatureBoard> {
+        let key = scope.artifact_key(artifact_scope);
+        let board = self.feature_board(scope, artifact_scope, None)?;
+        self.broadcast_decisions(&scope.project_name, key, self.store.decisions(key)?);
+        Ok(board)
+    }
+
     /// Opens a feature from the board, with no checkout to its name.
     ///
     /// A feature written down by a person is work that has not started
