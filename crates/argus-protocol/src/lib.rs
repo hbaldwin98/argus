@@ -42,7 +42,7 @@ pub use diagrams::{
 };
 pub use features::{
     is_slug, slugify, Actor, Feature, FeatureAction, FeatureBoard, FeatureEvent, FeatureMove, FeatureState,
-    FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES,
+    FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES, MAX_HOLD_BYTES,
 };
 pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
 pub use hello::{Hello, CAPABILITIES, CELL_RUNS, PANE_TELEMETRY, PROTOCOL};

@@ -22,6 +22,8 @@ use crate::tasks::TaskCounts;
 /// being a design document, which belongs in the checkout it describes.
 pub const MAX_FEATURE_BODY_BYTES: usize = 8192;
 pub const MAX_FEATURE_TITLE_BYTES: usize = 200;
+/// A hold says why in a line; the brief is where the rest goes.
+pub const MAX_HOLD_BYTES: usize = 300;
 
 /// Whether a feature is still being worked on, or accepted.
 ///
@@ -124,6 +126,35 @@ pub struct Feature {
     /// trip per row is not a list.
     #[serde(default)]
     pub tasks: TaskCounts,
+    /// Why nobody should pick it up yet, when somebody has said so. The one
+    /// thing a row says that is maintained rather than observed: "until the
+    /// user answers" shows on no pane and in no task. So it carries its
+    /// reason, which is what lets a later reader see it no longer stands.
+    #[serde(default)]
+    pub held: Option<String>,
+    /// The features this one comes after, stored whole. What it still waits
+    /// on is [`Feature::waiting_on`], read off their states, so accepting a
+    /// prerequisite releases it without anyone remembering to.
+    #[serde(default)]
+    pub waits_on: Vec<String>,
+}
+
+impl Feature {
+    /// The features this one comes after that are on the board and not yet
+    /// done.
+    pub fn waiting_on<'a>(&'a self, features: &'a [Feature]) -> impl Iterator<Item = &'a str> {
+        self.waits_on.iter().map(String::as_str).filter(|slug| {
+            features
+                .iter()
+                .any(|f| f.slug == *slug && f.state != FeatureState::Done)
+        })
+    }
+
+    /// Whether it is to be left alone for now: held, or after a feature
+    /// still open.
+    pub fn parked(&self, features: &[Feature]) -> bool {
+        self.held.is_some() || self.waiting_on(features).next().is_some()
+    }
 }
 
 /// A feature as it is asked for, before the store gives it a slug.
@@ -182,6 +213,15 @@ pub enum FeatureAction {
     Rewrite { slug: String, body: String },
     /// Removes a feature with nothing under it: the undoing of `Open`.
     Drop { slug: String },
+    /// Holds a feature, saying why, so nobody picks it up while the reason
+    /// stands.
+    Hold { slug: String, reason: String },
+    /// Lifts a hold, the undoing of `Hold`.
+    Unhold { slug: String },
+    /// Records that `slug` comes after `on`.
+    Wait { slug: String, on: String },
+    /// Takes back a `Wait`.
+    Unwait { slug: String, on: String },
 }
 
 /// One state change, in the order they happened.
@@ -334,6 +374,84 @@ mod tests {
         .unwrap();
         assert_eq!(write.title, "decisions");
         assert_eq!(write.body, None);
+    }
+}
+
+#[cfg(test)]
+mod parked_tests {
+    use super::*;
+
+    fn feature(slug: &str, state: FeatureState, waits_on: &[&str]) -> Feature {
+        Feature {
+            slug: slug.to_string(),
+            title: slug.to_string(),
+            body: String::new(),
+            origin_checkout: None,
+            origin_branch: None,
+            at: 0,
+            session: None,
+            state,
+            checkouts: Vec::new(),
+            tasks: TaskCounts::default(),
+            held: None,
+            waits_on: waits_on.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn a_feature_waits_only_on_prerequisites_still_open() {
+        let board = [
+            feature("handshake", FeatureState::Done, &[]),
+            feature("traffic", FeatureState::Open, &[]),
+            feature("remote", FeatureState::Open, &["handshake", "traffic", "gone"]),
+        ];
+        let waiting: Vec<&str> = board[2].waiting_on(&board).collect();
+        assert_eq!(waiting, ["traffic"]);
+        assert!(board[2].parked(&board));
+        assert!(!board[1].parked(&board));
+    }
+
+    #[test]
+    fn accepting_the_last_prerequisite_releases_the_feature() {
+        let board = [
+            feature("handshake", FeatureState::Done, &[]),
+            feature("remote", FeatureState::Open, &["handshake"]),
+        ];
+        assert!(!board[1].parked(&board));
+    }
+
+    #[test]
+    fn a_held_feature_is_parked_whatever_it_waits_on() {
+        let mut held = feature("remote", FeatureState::Open, &[]);
+        held.held = Some("until the user answers".to_string());
+        assert!(held.parked(std::slice::from_ref(&held)));
+    }
+
+    /// A daemon from before holds sends neither field.
+    #[test]
+    fn a_feature_from_before_holds_arrives_unheld() {
+        #[derive(Serialize)]
+        struct Older {
+            slug: String,
+            title: String,
+            body: String,
+            origin_checkout: Option<String>,
+            origin_branch: Option<String>,
+            at: i64,
+            session: Option<String>,
+        }
+        let bytes = rmp_serde::to_vec_named(&Older {
+            slug: "a".into(),
+            title: "A".into(),
+            body: String::new(),
+            origin_checkout: None,
+            origin_branch: None,
+            at: 0,
+            session: None,
+        })
+        .unwrap();
+        let feature: Feature = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!((feature.held, feature.waits_on), (None, Vec::new()));
     }
 }
 

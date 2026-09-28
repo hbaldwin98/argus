@@ -1085,6 +1085,8 @@ A feature's line is read off what Argus already observes rather than maintained 
   stopped, since a list of features is a list of places work might be stuck;
 - how its tasks stand, as `3/7 tasks`;
 - how many decisions are filed under it;
+- `after <slug>` for each feature it comes after that is not yet done;
+- `held` when someone has held it;
 - and, only when there is nothing else to say, the branch it was cut on.
 
 `Feature` carries `checkouts` and `tasks` for this. The checkouts are every path `feature_scope`
@@ -1116,6 +1118,22 @@ carry the decision out — `argus-hook feature done <slug>`, and `feature reopen
 back — and the bundled skill says to only on a person's word, never because its own tasks are
 finished. `feature_event` records every move with who made it, so one an agent made is logged as the
 agent's, with its session, rather than claiming the person moved it themselves.
+
+A feature can be held, and can come after other features (schema v18). A hold is the one thing a
+row says that is maintained rather than observed — "until the user answers" shows on no pane and in
+no task — so it is never bare: `feature.held` is the reason, NULL meaning not held, and a reader
+who sees the reason no longer stands can lift it. That is the difference from the `blocked` column,
+which said only that somebody once dragged a card there. What a feature comes after is a
+`feature_wait` row per prerequisite, and whether it still waits is read off the prerequisite's
+state, so accepting one releases what came after it without anyone remembering to. A wait that
+would close a loop is refused, since two features each waiting for the other to be accepted never
+will be, and removing a feature clears its waits both ways. A held or waiting feature's title is
+drawn dim, and its hold and open prerequisites lead its brief. In the view, `p` asks why and holds
+the selected feature, or lifts its hold, and `w` picks a feature it comes after — open features,
+and any it already waits on — where confirming one it waits on takes the wait back. An agent uses
+`feature hold <slug> "<why>"`, `feature unhold <slug>`, `feature wait <slug> <on>` and `feature
+unwait <slug> <on>`; `feature list` prints a hold and the open prerequisites under the row, and
+`feature` and the pane context lead with them.
 
 `m` transfers the selected feature's active checkout association to another checkout in the same
 repository over `ClientMsg::TransferFeature`. The daemon validates both runtime ids, removes the

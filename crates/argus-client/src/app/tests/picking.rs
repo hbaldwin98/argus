@@ -14,6 +14,8 @@ fn feature(slug: &str) -> argus_protocol::Feature {
         state: argus_protocol::FeatureState::Open,
         checkouts: vec!["/tmp/argus".to_string()],
         tasks: Default::default(),
+        held: None,
+        waits_on: Vec::new(),
     }
 }
 

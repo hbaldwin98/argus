@@ -54,6 +54,16 @@ pub enum PickerKind {
         destinations: Vec<CheckoutId>,
         slug: String,
     },
+    /// Record, or take back, that a feature comes after the chosen one.
+    /// `others` is parallel to the rows, and `waited` says which of them it
+    /// already waits on, so confirming one of those takes the wait back.
+    FeatureWait {
+        project: ProjectId,
+        checkout: CheckoutId,
+        slug: String,
+        others: Vec<String>,
+        waited: Vec<bool>,
+    },
 }
 
 impl PickerKind {
@@ -68,6 +78,7 @@ impl PickerKind {
                 | PickerKind::Workspace { .. }
                 | PickerKind::Host { .. }
                 | PickerKind::FeatureCheckout { .. }
+                | PickerKind::FeatureWait { .. }
         )
     }
 

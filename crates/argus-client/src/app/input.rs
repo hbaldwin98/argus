@@ -683,6 +683,12 @@ impl App {
             KeyCode::Char('m') if self.panel == FeaturePanel::Features => {
                 self.open_feature_checkout_picker()
             }
+            KeyCode::Char('p') if self.panel == FeaturePanel::Features => {
+                self.toggle_selected_feature_hold()
+            }
+            KeyCode::Char('w') if self.panel == FeaturePanel::Features => {
+                self.open_feature_wait_picker()
+            }
             // Acceptance, and the only state left for anyone to set.
             KeyCode::Char('.') => self.toggle_selected_feature_done(),
             KeyCode::Char('H') => self.move_selected_task(-1),

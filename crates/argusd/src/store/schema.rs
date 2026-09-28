@@ -326,6 +326,24 @@ pub(super) const SCHEMA_V17: &str = r#"
 ALTER TABLE decision ADD COLUMN withdrawn_at INTEGER;
 "#;
 
+/// A feature held with a reason, and which features wait on which.
+///
+/// `held` is the reason, and NULL is not held: a hold without one is the
+/// `blocked` column again, which said only that somebody once dragged it
+/// there. The waits are a table rather than a column because a feature can
+/// come after several; neither side is a foreign key, for the reason
+/// `task.parent` is not one, and removing a feature clears both sides.
+pub(super) const SCHEMA_V18: &str = r#"
+ALTER TABLE feature ADD COLUMN held TEXT;
+
+CREATE TABLE feature_wait (
+    project  TEXT NOT NULL,
+    slug     TEXT NOT NULL,
+    waits_on TEXT NOT NULL,
+    PRIMARY KEY (project, slug, waits_on)
+) WITHOUT ROWID;
+"#;
+
 /// Mermaid sequence-diagram source, one row per diagram under a feature.
 pub(super) const SCHEMA_V16: &str = r#"
 CREATE TABLE sequence_diagram (

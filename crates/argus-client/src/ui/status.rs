@@ -95,6 +95,10 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                         "type to filter   ↑/↓ move   enter transfer   esc cancel",
                         "enter transfer  esc",
                     ],
+                    PickerKind::FeatureWait { .. } => &[
+                        "type to filter   ↑/↓ move   enter waits on it, or no longer   esc cancel",
+                        "enter toggle  esc",
+                    ],
                 }
             }
             Mode::CheckoutFilter => &[
@@ -180,9 +184,9 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             // be a bar saying nothing.
             Mode::Stage(View::Feature) => match app.panel {
                 FeaturePanel::Features => &[
-                    "h/l panels  j/k move  a new  e brief  R rename  m checkout  v archive  x drop  . accept  r refresh  q workspace",
-                    "l tasks  j/k move  a new  e brief  m move  v archive  x drop  . accept  q workspace",
-                    "j/k  a new  m move  v archive  . accept  q",
+                    "h/l panels  j/k move  a new  e brief  R rename  m checkout  p hold  w after  v archive  x drop  . accept  r refresh  q workspace",
+                    "l tasks  j/k move  a new  e brief  m move  p hold  w after  v archive  x drop  . accept  q workspace",
+                    "j/k  a new  m move  p hold  w after  v archive  . accept  q",
                 ][..],
                 FeaturePanel::Tasks => &[
                     "h/l panels  j/k move  a root  s subtask  e title  enter brief  H/L todo→doing→done  J/K order  x drop  q workspace",

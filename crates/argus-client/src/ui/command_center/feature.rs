@@ -484,10 +484,32 @@ pub(super) fn render_feature_document(f: &mut Frame, app: &mut App, area: Rect, 
     f.render_widget(Paragraph::new(line), row);
 }
 
+/// Why a feature is to be left alone: its hold, and each feature it comes
+/// after that is not done yet.
+fn parked_lines(
+    feature: &argus_protocol::Feature,
+    features: &[argus_protocol::Feature],
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(reason) = &feature.held {
+        lines.push(format!("Held: {reason}"));
+    }
+    let waiting: Vec<&str> = feature.waiting_on(features).collect();
+    if !waiting.is_empty() {
+        lines.push(format!("After {}", waiting.join(", ")));
+    }
+    lines
+}
+
 fn render_feature_sections(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     forget_feature_view(app);
     let features = app.feature_rows();
     let decided = app.board_rows().len();
+    let parked = app
+        .selected_feature()
+        .zip(app.board.as_ref())
+        .map(|(feature, board)| parked_lines(feature, &board.features))
+        .unwrap_or_default();
     let (title, counts, brief_text) = app
         .selected_feature()
         .map(|feature| {
@@ -581,6 +603,8 @@ fn render_feature_sections(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
                             th.warn
                         } else if selected {
                             th.text
+                        } else if row.parked {
+                            th.dim
                         } else {
                             th.muted
                         })
@@ -630,7 +654,13 @@ fn render_feature_sections(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
         th,
     );
     let text_width = body.width.saturating_sub(4);
-    let lines: Vec<String> = if brief_text.is_empty() {
+    // What holds the feature leads the brief, in the warning colour: it is
+    // the first thing to know before picking the work up.
+    let parked: Vec<String> = parked
+        .iter()
+        .flat_map(|line| wrap(line, text_width))
+        .collect();
+    let brief: Vec<String> = if brief_text.is_empty() {
         vec!["No brief yet — e edits the feature brief.".to_string()]
     } else {
         brief_text
@@ -638,6 +668,8 @@ fn render_feature_sections(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
             .flat_map(|line| wrap(line, text_width))
             .collect()
     };
+    let held_lines = parked.len();
+    let lines: Vec<String> = parked.into_iter().chain(brief).collect();
     let remaining = bottom.saturating_sub(brief_y + 1);
     let brief_height = (lines.len() as u16 + 2)
         .min(8)
@@ -655,9 +687,13 @@ fn render_feature_sections(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
         Paragraph::new(
             lines
                 .iter()
+                .enumerate()
                 .skip(scroll as usize)
                 .take(visible)
-                .map(|line| Line::raw(line.clone()))
+                .map(|(index, line)| match index < held_lines {
+                    true => Line::styled(line.clone(), Style::default().fg(th.warn)),
+                    false => Line::raw(line.clone()),
+                })
                 .collect::<Vec<_>>(),
         )
         .style(Style::default().fg(th.muted))

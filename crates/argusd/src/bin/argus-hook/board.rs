@@ -144,10 +144,65 @@ pub(super) fn feature_message(rest: &[&str], base_url: &str, token: &str) -> Str
                 format!("{slug} is gone")
             }
         }
+        Some("hold") => {
+            let (Some(slug), reason) = (rest.get(1), rest.get(2..).unwrap_or_default().join(" "))
+            else {
+                return "could not change feature: hold wants a slug, then why".to_string();
+            };
+            if reason.trim().is_empty() {
+                return "could not change feature: hold wants why after the slug".to_string();
+            }
+            let action = FeatureAction::Hold {
+                slug: slug.to_string(),
+                reason: reason.clone(),
+            };
+            confirmed(write_feature(action, base_url, token), || {
+                format!("{slug} is held: {}", reason.trim())
+            })
+        }
+        Some("unhold") => {
+            let Some(slug) = rest.get(1) else {
+                return "could not change feature: unhold wants the slug of a feature".to_string();
+            };
+            let action = FeatureAction::Unhold {
+                slug: slug.to_string(),
+            };
+            confirmed(write_feature(action, base_url, token), || {
+                format!("{slug} is no longer held")
+            })
+        }
+        Some(verb @ ("wait" | "unwait")) => {
+            let (Some(slug), Some(on)) = (rest.get(1), rest.get(2)) else {
+                return format!(
+                    "could not change feature: {verb} wants the waiting feature's slug, then the \
+                     one it waits on"
+                );
+            };
+            let (slug, on) = (slug.to_string(), on.to_string());
+            let (action, said) = if verb == "wait" {
+                let said = format!("{slug} waits on {on} until it is done");
+                (FeatureAction::Wait { slug, on }, said)
+            } else {
+                let said = format!("{slug} no longer waits on {on}");
+                (FeatureAction::Unwait { slug, on }, said)
+            };
+            confirmed(write_feature(action, base_url, token), || said)
+        }
         Some(other) => format!(
             "{other} is not one of list, open, use, note, export, done, reopen, retitle, brief, \
-             drop — `argus-hook feature use {other}` works on an existing feature"
+             drop, hold, unhold, wait, unwait — `argus-hook feature use {other}` works on an \
+             existing feature"
         ),
+    }
+}
+
+/// The daemon's answer when it refused, or else what the change did in a
+/// line: the whole board again says nothing about the one row that moved.
+fn confirmed(answer: String, said: impl FnOnce() -> String) -> String {
+    if answer.starts_with("could not") {
+        answer
+    } else {
+        said()
     }
 }
 
@@ -510,6 +565,7 @@ pub(super) fn format_feature(board: &FeatureBoard) -> String {
     if let Some(branch) = &current.origin_branch {
         lines.push(format!("Started on {branch}."));
     }
+    lines.extend(parked_lines(current, &board.features));
     if !current.body.trim().is_empty() {
         lines.push(String::new());
         lines.push(current.body.trim().to_string());
@@ -599,8 +655,46 @@ pub(super) fn format_feature_list(board: &FeatureBoard) -> String {
             "  {} — {}{branch}{about}{here}",
             feature.slug, feature.title
         ));
+        // Beneath rather than in the parentheses, since a reason is a
+        // sentence and runs as long as it needs to.
+        if feature.state != argus_protocol::FeatureState::Done {
+            if let Some(reason) = &feature.held {
+                lines.push(format!("      held: {reason}"));
+            }
+            let waiting: Vec<&str> = feature.waiting_on(&board.features).collect();
+            if !waiting.is_empty() {
+                lines.push(format!("      after {}", waiting.join(", ")));
+            }
+        }
     }
     lines.join("\n")
+}
+
+/// Why a feature is to be left alone, for the agent about to work on it:
+/// its hold, and every feature it comes after with whether that one is
+/// done, so a wait already met can still be found and taken back.
+pub(super) fn parked_lines(
+    feature: &argus_protocol::Feature,
+    features: &[argus_protocol::Feature],
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(reason) = &feature.held {
+        lines.push(format!("Held: {reason}"));
+    }
+    if !feature.waits_on.is_empty() {
+        let after: Vec<String> = feature
+            .waits_on
+            .iter()
+            .map(|slug| {
+                let done = features
+                    .iter()
+                    .any(|f| &f.slug == slug && f.state == argus_protocol::FeatureState::Done);
+                format!("{slug} ({})", if done { "done" } else { "open" })
+            })
+            .collect();
+        lines.push(format!("Comes after: {}", after.join(", ")));
+    }
+    lines
 }
 
 /// The whole feature handed to the agent as something to write up.
@@ -906,6 +1000,62 @@ mod tests {
         }
         let message = feature_message(&["drop"], base, "t");
         assert!(message.contains("wants the slug"), "{message}");
+    }
+
+    #[test]
+    fn holding_or_ordering_a_feature_wants_its_slugs_and_why() {
+        let base = "http://127.0.0.1:1/pane/1";
+        for args in [
+            &["hold"][..],
+            &["hold", "remote", " "],
+            &["unhold"],
+            &["wait", "remote"],
+            &["unwait"],
+        ] {
+            let message = feature_message(args, base, "t");
+            assert!(message.starts_with("could not change feature"), "{args:?}: {message}");
+        }
+    }
+
+    /// Three features: one accepted, one open, and one held that comes
+    /// after both.
+    fn parked_board() -> FeatureBoard {
+        serde_json::from_str(
+            r#"{"project":null,"project_name":"argus","current":"remote","unfiled":0,
+                "decisions":[],"features":[
+                {"slug":"handshake","title":"Handshake","body":"","origin_checkout":null,
+                 "origin_branch":null,"at":1,"session":null,"state":"done"},
+                {"slug":"traffic","title":"Traffic","body":"","origin_checkout":null,
+                 "origin_branch":null,"at":2,"session":null},
+                {"slug":"remote","title":"Remote","body":"","origin_checkout":null,
+                 "origin_branch":null,"at":3,"session":null,
+                 "held":"until the user answers","waits_on":["handshake","traffic"]}]}"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn the_list_says_what_holds_a_feature_and_what_it_still_waits_on() {
+        let list = format_feature_list(&parked_board());
+        assert!(
+            list.contains(
+                "  remote — Remote (this checkout)\n      held: until the user answers\n      \
+                 after traffic"
+            ),
+            "{list}"
+        );
+        assert!(!list.contains("after handshake"), "an accepted prerequisite is met: {list}");
+    }
+
+    #[test]
+    fn reading_a_feature_names_every_prerequisite_and_whether_it_is_met() {
+        let text = format_feature(&parked_board());
+        assert!(
+            text.contains(
+                "Held: until the user answers\nComes after: handshake (done), traffic (open)"
+            ),
+            "{text}"
+        );
     }
 
     #[test]

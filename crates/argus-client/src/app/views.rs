@@ -41,6 +41,8 @@ pub enum LineEdit {
     Task(i64),
     NewFeature,
     Feature(String),
+    /// Why the feature with this slug is held.
+    Hold(String),
 }
 
 impl LineInput {
@@ -53,6 +55,7 @@ impl LineInput {
             LineEdit::Task(_) => "rewrite",
             LineEdit::NewFeature => "new feature",
             LineEdit::Feature(_) => "rename",
+            LineEdit::Hold(_) => "hold because",
         }
     }
 }
@@ -115,6 +118,7 @@ impl App {
                     detail,
                     attention,
                     done: f.state == FeatureState::Done,
+                    parked: f.state != FeatureState::Done && f.parked(&board.features),
                 }
             })
             .collect()
@@ -123,12 +127,15 @@ impl App {
     /// What a feature row says about itself, and whether it is asking for
     /// somebody.
     ///
-    /// Every part of it is observed rather than maintained. The agents are
+    /// Nearly all of it is observed rather than maintained. The agents are
     /// the ones actually running on the checkouts this feature is worked
-    /// in, the counts are its own tasks, and the branch is what the row
-    /// falls back to when nothing is happening yet. The five board columns
-    /// this replaced said only what somebody last dragged, which is why
-    /// they were always a little bit wrong.
+    /// in, the counts are its own tasks, what it waits on is read off the
+    /// other features' states, and the branch is what the row falls back to
+    /// when nothing is happening yet. The five board columns this replaced
+    /// said only what somebody last dragged, which is why they were always
+    /// a little bit wrong. A hold is the exception, and it carries its
+    /// reason — shown with the brief — so a reader can tell when it has
+    /// stopped being true.
     fn feature_detail(
         &self,
         feature: &argus_protocol::Feature,
@@ -137,6 +144,15 @@ impl App {
         let mut parts = Vec::new();
         if feature.state == FeatureState::Done {
             parts.push("done".to_string());
+        } else {
+            let features = self.board.as_ref().map(|b| b.features.as_slice()).unwrap_or_default();
+            if feature.held.is_some() {
+                parts.push("held".to_string());
+            }
+            let waiting: Vec<&str> = feature.waiting_on(features).collect();
+            if !waiting.is_empty() {
+                parts.push(format!("after {}", waiting.join(", ")));
+            }
         }
         let (live, attention) = self.agents_on(feature);
         if let Some(live) = live {
@@ -814,6 +830,12 @@ impl App {
                 slug,
                 title,
             },
+            (LineEdit::Hold(slug), _) => ClientMsg::HoldFeature {
+                project,
+                checkout,
+                slug,
+                reason: Some(title),
+            },
             (LineEdit::Task(id), Some(feature)) => ClientMsg::Task {
                 project,
                 checkout,
@@ -893,6 +915,28 @@ impl App {
         self.report(format!("{slug} → {state}"));
     }
 
+    /// Lifts the selected feature's hold, or asks why it should be held.
+    pub(super) fn toggle_selected_feature_hold(&mut self) {
+        let (Some(project), Some(checkout), Some(feature)) = (
+            self.board.as_ref().and_then(|b| b.project),
+            self.current_checkout().map(|checkout| checkout.id),
+            self.selected_feature(),
+        ) else {
+            return;
+        };
+        let slug = feature.slug.clone();
+        if feature.held.is_none() {
+            return self.begin_line(LineEdit::Hold(slug), String::new());
+        }
+        let _ = self.out.send(ClientMsg::HoldFeature {
+            project,
+            checkout,
+            slug: slug.clone(),
+            reason: None,
+        });
+        self.report(format!("{slug} is no longer held"));
+    }
+
     /// Opens the selected feature's brief in the brief editor, the same one
     /// a task's brief gets: both are prose a human reads and corrects.
     pub(super) fn open_feature_brief(&mut self) {
@@ -933,6 +977,9 @@ pub struct FeatureRow {
     /// places work might be stuck.
     pub attention: Option<PaneStatus>,
     pub done: bool,
+    /// Held, or after a feature still open: not work to pick up yet, so
+    /// drawn quieter than the rest.
+    pub parked: bool,
 }
 
 /// Which top-level surface the content area is showing.

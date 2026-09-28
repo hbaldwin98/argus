@@ -898,6 +898,8 @@ mod tests {
             state: Default::default(),
             checkouts: Vec::new(),
             tasks: Default::default(),
+            held: None,
+            waits_on: Vec::new(),
         };
         FeatureBoard {
             project: None,

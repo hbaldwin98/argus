@@ -478,6 +478,56 @@ impl App {
         ));
     }
 
+    /// Offers the features the selected one could come after: every other
+    /// open feature on the board, and any it already waits on, done or not,
+    /// so a wait can be taken back from the same list.
+    pub(super) fn open_feature_wait_picker(&mut self) {
+        let (Some(project), Some(checkout), Some(feature), Some(board)) = (
+            self.board.as_ref().and_then(|board| board.project),
+            self.current_checkout().map(|checkout| checkout.id),
+            self.selected_feature(),
+            self.board.as_ref(),
+        ) else {
+            self.report("no feature selected");
+            return;
+        };
+        let mut others = Vec::new();
+        let mut waited = Vec::new();
+        let mut items = Vec::new();
+        for other in &board.features {
+            let waits = feature.waits_on.contains(&other.slug);
+            let open = other.state != argus_protocol::FeatureState::Done;
+            if other.slug == feature.slug || !(open || waits) {
+                continue;
+            }
+            let mark = match (waits, open) {
+                (true, true) => "  · waited on",
+                (true, false) => "  · waited on, done",
+                _ => "",
+            };
+            items.push(format!("{}{mark}", other.title));
+            others.push(other.slug.clone());
+            waited.push(waits);
+        }
+        if items.is_empty() {
+            self.report("no other feature for this one to come after");
+            return;
+        }
+        let slug = feature.slug.clone();
+        self.picker = Some(Picker::new(
+            PickerKind::FeatureWait {
+                project,
+                checkout,
+                slug,
+                others,
+                waited,
+            },
+            "comes after",
+            items,
+            0,
+        ));
+    }
+
     /// The changed files of the review that is already open — no round
     /// trip, since the diff is in hand.
     pub(super) fn open_change_picker(&mut self) {
@@ -589,6 +639,27 @@ impl App {
                     source: *source,
                     destination: *destination,
                     slug: slug.clone(),
+                });
+            }
+            PickerKind::FeatureWait {
+                project,
+                checkout,
+                slug,
+                others,
+                waited,
+            } => {
+                let Some(index) = picker.shown.get(picker.sel).copied() else {
+                    return;
+                };
+                let (Some(on), Some(waits)) = (others.get(index), waited.get(index)) else {
+                    return;
+                };
+                let _ = self.out.send(ClientMsg::WaitFeature {
+                    project: *project,
+                    checkout: *checkout,
+                    slug: slug.clone(),
+                    on: on.clone(),
+                    waits: !waits,
                 });
             }
             PickerKind::Agent => {

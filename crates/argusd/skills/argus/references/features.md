@@ -62,6 +62,23 @@ is taken back; read it with `feature <slug>` first and write it back whole.
 When the human asks for the reasoning as a document, `export` prints the feature
 and its decision board as source material; write the document from it.
 
+## Holding a feature, and ordering it after another
+
+```sh
+"$ARGUS_HOOK" feature hold <slug> "<why>"      # e.g. "until the user answers the install questions"
+"$ARGUS_HOOK" feature unhold <slug>
+"$ARGUS_HOOK" feature wait <slug> <other-slug> # <slug> comes after <other-slug>
+"$ARGUS_HOOK" feature unwait <slug> <other-slug>
+```
+
+`feature list` shows a held feature's reason and the features it still waits
+on; `feature` and your pane's context lead with them. Do not start work on a
+held or waiting feature unless the human asks you to. Hold a feature when work
+on it has to stop for a reason no task shows, and say the reason so a later
+reader can tell when it no longer stands. Use `wait` rather than a hold when
+the reason is another feature: the wait ends by itself once that feature is
+accepted. Lift a hold when its reason has gone.
+
 ## Accepting a feature
 
 ```sh

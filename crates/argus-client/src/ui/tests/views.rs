@@ -234,6 +234,8 @@ fn feature(slug: &str, title: &str) -> argus_protocol::Feature {
         state: argus_protocol::FeatureState::Open,
         checkouts: Vec::new(),
         tasks: Default::default(),
+        held: None,
+        waits_on: Vec::new(),
     }
 }
 
@@ -1221,6 +1223,112 @@ fn a_feature_can_be_removed_from_the_board() {
             [argus_protocol::ClientMsg::RemoveFeature { slug, .. }] if slug == "notes"
         ),
         "{sent:?}"
+    );
+}
+
+#[test]
+fn p_asks_why_a_feature_is_held_and_lifts_a_hold_already_there() {
+    let (mut app, mut rx) = feature_view_watching(vec![
+        carded("notes", "Notes storage", argus_protocol::FeatureState::Open),
+        argus_protocol::Feature {
+            held: Some("until the user answers".into()),
+            ..carded("pty", "The pty", argus_protocol::FeatureState::Open)
+        },
+    ]);
+    while rx.try_recv().is_ok() {}
+
+    app.on_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE));
+    let out = lines(&draw_at(&mut app, 140, 20)).join("\n");
+    assert!(out.contains("hold because"), "{out}");
+    for c in "after the spike".chars() {
+        app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    }
+    app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    app.on_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE));
+    let sent: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    let holds: Vec<_> = sent
+        .iter()
+        .filter_map(|m| match m {
+            argus_protocol::ClientMsg::HoldFeature { slug, reason, .. } => {
+                Some((slug.as_str(), reason.as_deref()))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        holds,
+        [("notes", Some("after the spike")), ("pty", None)],
+        "a hold is asked for with its reason, and lifted with none"
+    );
+}
+
+#[test]
+fn a_parked_feature_says_what_holds_it_in_its_row_and_above_its_brief() {
+    let (mut app, _rx) = feature_view_watching(vec![
+        carded("handshake", "Handshake", argus_protocol::FeatureState::Done),
+        carded("traffic", "Lean traffic", argus_protocol::FeatureState::Open),
+        argus_protocol::Feature {
+            held: Some("until the user answers".into()),
+            waits_on: vec!["handshake".into(), "traffic".into()],
+            body: "Reach other machines.".into(),
+            ..carded("remote", "Remote hosts", argus_protocol::FeatureState::Open)
+        },
+    ]);
+    let rows = app.feature_rows();
+    let remote = rows.iter().find(|row| row.slug == "remote").unwrap();
+    assert!(remote.parked);
+    assert!(
+        remote.detail.starts_with("held · after traffic"),
+        "an accepted prerequisite is met: {}",
+        remote.detail
+    );
+    assert!(!rows.iter().find(|row| row.slug == "traffic").unwrap().parked);
+
+    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    let drawn = lines(&draw_at(&mut app, 120, 30));
+    let row = |needle: &str| drawn.iter().position(|l| l.contains(needle));
+    let (held, after, brief) = (
+        row("Held: until the user answers"),
+        row("After traffic"),
+        row("Reach other machines."),
+    );
+    assert!(held.is_some() && after.is_some(), "{}", drawn.join("\n"));
+    assert!(held < after && after < brief, "{}", drawn.join("\n"));
+}
+
+#[test]
+fn w_offers_the_features_to_come_after_and_takes_a_wait_back() {
+    let (mut app, mut rx) = feature_view_watching(vec![
+        carded("handshake", "Handshake", argus_protocol::FeatureState::Done),
+        carded("traffic", "Lean traffic", argus_protocol::FeatureState::Open),
+        carded("gone", "Long accepted", argus_protocol::FeatureState::Done),
+        argus_protocol::Feature {
+            waits_on: vec!["handshake".into()],
+            ..carded("remote", "Remote hosts", argus_protocol::FeatureState::Open)
+        },
+    ]);
+    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    assert_eq!(app.feature_slug().as_deref(), Some("remote"));
+    while rx.try_recv().is_ok() {}
+
+    app.on_key(KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE));
+    let picker = app.picker.as_ref().expect("the picker is open");
+    assert_eq!(
+        picker.items,
+        ["Handshake  · waited on, done", "Lean traffic"],
+        "open features, and done ones only when already waited on"
+    );
+    app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let sent: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        matches!(
+            sent.as_slice(),
+            [argus_protocol::ClientMsg::WaitFeature { slug, on, waits: false, .. }]
+                if slug == "remote" && on == "handshake"
+        ),
+        "confirming a wait already there takes it back: {sent:?}"
     );
 }
 

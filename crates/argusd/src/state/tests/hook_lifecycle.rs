@@ -394,6 +394,49 @@ async fn an_agent_corrects_a_feature_it_opened_and_drops_it_once_empty() {
 }
 
 #[tokio::test]
+async fn an_agent_holds_a_feature_and_orders_it_after_another_and_takes_both_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    let agent = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+    let first = open_feature(&d, agent, "the handshake");
+    let later = open_feature(&d, agent, "remote hosts");
+    let feature_of = |d: &Daemon, slug: &str| {
+        d.feature_board_for_agent(agent, ArtifactScope::default())
+            .unwrap()
+            .features
+            .into_iter()
+            .find(|f| f.slug == slug)
+            .unwrap()
+    };
+
+    d.hold_feature_for_agent(
+        agent,
+        &later,
+        Some("until the user answers"),
+        ArtifactScope::default(),
+    )
+    .unwrap();
+    d.wait_feature_for_agent(agent, &later, &first, true, ArtifactScope::default())
+        .unwrap();
+    let held = feature_of(&d, &later);
+    assert_eq!(held.held.as_deref(), Some("until the user answers"));
+    assert_eq!(held.waits_on, [first.as_str()]);
+
+    d.hold_feature_for_agent(agent, &later, None, ArtifactScope::default())
+        .unwrap();
+    d.wait_feature_for_agent(agent, &later, &first, false, ArtifactScope::default())
+        .unwrap();
+    let released = feature_of(&d, &later);
+    assert_eq!((released.held, released.waits_on), (None, Vec::<String>::new()));
+    assert!(
+        d.wait_feature_for_agent(agent, &later, &later, true, ArtifactScope::default())
+            .is_err()
+    );
+
+    d.close_pane(agent).unwrap();
+}
+
+#[tokio::test]
 async fn an_agent_told_to_accept_a_feature_is_recorded_as_the_one_who_did() {
     // Acceptance is a person's call; an agent carrying it out must not
     // make the history say the person moved it themselves.

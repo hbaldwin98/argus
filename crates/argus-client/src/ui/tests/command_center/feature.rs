@@ -19,6 +19,8 @@ fn feature_document_with_long_rows() -> App {
                 state: argus_protocol::FeatureState::Open,
                 checkouts: Vec::new(),
                 tasks: Default::default(),
+                held: None,
+                waits_on: Vec::new(),
             }],
             decisions: vec![
                 argus_protocol::Decision {
@@ -162,6 +164,8 @@ fn feature_decisions_show_tree_guides_and_right_aligned_ids() {
                 state: argus_protocol::FeatureState::Open,
                 checkouts: Vec::new(),
                 tasks: Default::default(),
+                held: None,
+                waits_on: Vec::new(),
             }],
             decisions: vec![
                 argus_protocol::Decision {

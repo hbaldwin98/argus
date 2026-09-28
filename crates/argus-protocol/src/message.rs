@@ -142,18 +142,32 @@ pub enum ClientMsg {
     },
     /// Accept a feature, or reopen one that was accepted.
     ///
-    /// The only state a person still sets by hand, and the only one there
-    /// is: everything the old columns claimed is now read off the panes on
-    /// the feature's checkouts and the state of its tasks. There is no
-    /// agent-side equivalent, because the agent that did the work is the
-    /// one party that cannot accept it. The answer is the pushed board
-    /// every client already receives.
+    /// The only state there is: everything the old columns claimed is now
+    /// read off the panes on the feature's checkouts and the state of its
+    /// tasks. An agent makes the same move only on a person's word
+    /// (`FeatureAction::Done`). The answer is the pushed board every client
+    /// already receives.
     MoveFeature {
         project: ProjectId,
         checkout: CheckoutId,
         slug: String,
         state: FeatureState,
         detail: Option<String>,
+    },
+    /// Hold a feature with a reason, or lift its hold with `None`.
+    HoldFeature {
+        project: ProjectId,
+        checkout: CheckoutId,
+        slug: String,
+        reason: Option<String>,
+    },
+    /// Record that a feature comes after another, or take that back.
+    WaitFeature {
+        project: ProjectId,
+        checkout: CheckoutId,
+        slug: String,
+        on: String,
+        waits: bool,
     },
     /// Open a feature from the board.
     ///

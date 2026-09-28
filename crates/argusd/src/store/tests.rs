@@ -29,6 +29,9 @@ fn legacy_connection(path: &Path, version: usize) -> Connection {
         schema::SCHEMA_V12,
         schema::SCHEMA_V13,
         schema::SCHEMA_V14,
+        schema::SCHEMA_V15,
+        schema::SCHEMA_V16,
+        schema::SCHEMA_V17,
     ];
     for step in steps.into_iter().take(version) {
         conn.execute_batch(step).unwrap();
@@ -1524,6 +1527,104 @@ fn removing_a_feature_keeps_what_was_decided_under_it() {
         "and is unfiled rather than destroyed"
     );
     assert!(s.remove_feature("argus", "the-pty").is_err());
+}
+
+#[test]
+fn a_hold_carries_its_reason_and_lifts() {
+    let s = store();
+    s.add_feature("argus", &feature("remote"), None, None, 1, None)
+        .unwrap();
+    s.hold_feature("argus", "remote", Some(" until the user answers "))
+        .unwrap();
+    assert_eq!(
+        s.features("argus").unwrap()[0].held.as_deref(),
+        Some("until the user answers")
+    );
+    assert!(s.hold_feature("argus", "remote", Some("  ")).is_err(), "a hold says why");
+    assert!(s.hold_feature("argus", "gone", Some("why")).is_err());
+
+    s.hold_feature("argus", "remote", None).unwrap();
+    assert_eq!(s.features("argus").unwrap()[0].held, None);
+}
+
+#[test]
+fn a_feature_waits_on_others_on_its_board_and_never_in_a_loop() {
+    let s = store();
+    for title in ["handshake", "traffic", "remote"] {
+        s.add_feature("argus", &feature(title), None, None, 1, None)
+            .unwrap();
+    }
+    s.add_feature("other", &feature("elsewhere"), None, None, 1, None)
+        .unwrap();
+    s.add_feature_wait("argus", "remote", "handshake").unwrap();
+    s.add_feature_wait("argus", "remote", "traffic").unwrap();
+    s.add_feature_wait("argus", "remote", "traffic").unwrap();
+    s.add_feature_wait("argus", "traffic", "handshake").unwrap();
+    let waits = |slug: &str| {
+        s.features("argus")
+            .unwrap()
+            .into_iter()
+            .find(|f| f.slug == slug)
+            .unwrap()
+            .waits_on
+    };
+    assert_eq!(waits("remote"), ["handshake", "traffic"], "once each");
+
+    let refused = s.add_feature_wait("argus", "handshake", "remote").unwrap_err();
+    assert!(refused.to_string().contains("already comes after"), "{refused}");
+    assert!(s.add_feature_wait("argus", "remote", "remote").is_err());
+    assert!(
+        s.add_feature_wait("argus", "remote", "elsewhere").is_err(),
+        "another board's feature is not one this board can wait on"
+    );
+
+    s.remove_feature_wait("argus", "remote", "traffic").unwrap();
+    assert_eq!(waits("remote"), ["handshake"]);
+    assert!(s.remove_feature_wait("argus", "remote", "traffic").is_err());
+}
+
+#[test]
+fn removing_a_feature_clears_its_waits_both_ways() {
+    let s = store();
+    for title in ["handshake", "traffic", "remote"] {
+        s.add_feature("argus", &feature(title), None, None, 1, None)
+            .unwrap();
+    }
+    s.add_feature_wait("argus", "remote", "traffic").unwrap();
+    s.add_feature_wait("argus", "traffic", "handshake").unwrap();
+    s.remove_feature("argus", "traffic").unwrap();
+    assert!(s
+        .features("argus")
+        .unwrap()
+        .iter()
+        .all(|f| f.waits_on.is_empty()));
+
+    // A feature opened later under the same name starts with no waits.
+    s.add_feature("argus", &feature("traffic"), None, None, 2, None)
+        .unwrap();
+    s.add_feature_wait("argus", "handshake", "traffic").unwrap();
+}
+
+#[test]
+fn migrating_a_v17_store_leaves_every_feature_unheld() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("runtime.db");
+    {
+        let conn = legacy_connection(&path, 17);
+        conn.execute(
+            "INSERT INTO feature (project, slug, title, body, at, state)
+             VALUES ('argus', 'remote', 'Remote', '', 1, 'open')",
+            [],
+        )
+        .unwrap();
+    }
+    let s = Store::open_at(&path).unwrap();
+    let features = s.features("argus").unwrap();
+    assert_eq!(
+        (features[0].held.clone(), features[0].waits_on.clone()),
+        (None, Vec::new())
+    );
+    s.hold_feature("argus", "remote", Some("until later")).unwrap();
 }
 
 #[test]

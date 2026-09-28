@@ -158,6 +158,8 @@ impl Store {
             state: FeatureState::default(),
             checkouts: Vec::new(),
             tasks: TaskCounts::default(),
+            held: None,
+            waits_on: Vec::new(),
         };
         tx.execute(
             "INSERT INTO feature
@@ -182,7 +184,7 @@ impl Store {
     pub fn features(&self, project: &str) -> Result<Vec<Feature>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT slug, title, body, origin_checkout, origin_branch, at, session, state
+            "SELECT slug, title, body, origin_checkout, origin_branch, at, session, state, held
              FROM feature WHERE project = ?1 ORDER BY at, slug",
         )?;
         let rows = stmt.query_map(rusqlite::params![project], |r| {
@@ -200,10 +202,27 @@ impl Store {
                 checkouts: Vec::new(),
                 origin_checkout,
                 tasks: TaskCounts::default(),
+                held: r.get(8)?,
+                waits_on: Vec::new(),
             })
         })?;
         let mut features = rows.collect::<rusqlite::Result<Vec<_>>>()?;
         drop(stmt);
+
+        let mut stmt = conn.prepare(
+            "SELECT slug, waits_on FROM feature_wait WHERE project = ?1 ORDER BY slug, waits_on",
+        )?;
+        let waits = stmt
+            .query_map(rusqlite::params![project], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(stmt);
+        for (slug, on) in waits {
+            if let Some(feature) = features.iter_mut().find(|f| f.slug == slug) {
+                feature.waits_on.push(on);
+            }
+        }
 
         // Two grouped reads rather than a join per row. Both are what makes
         // a feature list say anything without being opened: the checkouts
@@ -323,6 +342,10 @@ impl Store {
             rusqlite::params![project, slug],
         )?;
         tx.execute(
+            "DELETE FROM feature_wait WHERE project = ?1 AND (slug = ?2 OR waits_on = ?2)",
+            rusqlite::params![project, slug],
+        )?;
+        tx.execute(
             "DELETE FROM feature_scope WHERE project = ?1 AND slug = ?2",
             rusqlite::params![project, slug],
         )?;
@@ -359,11 +382,8 @@ impl Store {
         )
     }
 
-    /// Replaces a feature's document outright.
-    ///
-    /// The append path above is what an agent has, because an agent adding
-    /// to a brief mid-task should not be able to erase what it is working
-    /// from. A human reading the same document needs to be able to fix it.
+    /// Replaces a feature's document outright: how a person fixes a brief,
+    /// and how an agent takes back a paragraph it appended.
     pub fn set_feature_body(&self, project: &str, slug: &str, body: &str) -> Result<()> {
         if body.len() > argus_protocol::MAX_FEATURE_BODY_BYTES {
             anyhow::bail!("this feature's document is full; what is left belongs in the checkout");
@@ -372,6 +392,81 @@ impl Store {
             "UPDATE feature SET body = ?1 WHERE project = ?2 AND slug = ?3",
             rusqlite::params![body.trim_end(), project, slug],
             || format!("there is no feature {slug} on this project"),
+        )
+    }
+
+    /// Holds a feature with `reason`, or lifts its hold with `None`.
+    pub fn hold_feature(&self, project: &str, slug: &str, reason: Option<&str>) -> Result<()> {
+        let reason = reason.map(str::trim);
+        if reason.is_some_and(str::is_empty) {
+            anyhow::bail!("a hold has to say why");
+        }
+        if reason.is_some_and(|r| r.len() > argus_protocol::MAX_HOLD_BYTES) {
+            anyhow::bail!("a hold says why in a line; the rest belongs in the brief");
+        }
+        self.update_one(
+            "UPDATE feature SET held = ?1 WHERE project = ?2 AND slug = ?3",
+            rusqlite::params![reason, project, slug],
+            || format!("there is no feature {slug} on this project"),
+        )
+    }
+
+    /// Records that `slug` comes after `on`, both on this board.
+    ///
+    /// Refused when `on` already comes after `slug`, however far round: a
+    /// loop is two features each waiting for the other to be accepted,
+    /// which neither ever will be.
+    pub fn add_feature_wait(&self, project: &str, slug: &str, on: &str) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        for name in [slug, on] {
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
+                rusqlite::params![project, name],
+                |r| r.get(0),
+            )?;
+            if !exists {
+                anyhow::bail!("there is no feature {name} on this project");
+            }
+        }
+        if slug == on {
+            anyhow::bail!("a feature cannot wait on itself");
+        }
+        let mut stmt = tx.prepare("SELECT slug, waits_on FROM feature_wait WHERE project = ?1")?;
+        let waits = stmt
+            .query_map(rusqlite::params![project], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(stmt);
+        let mut reached = vec![on.to_string()];
+        let mut seen = 0;
+        while seen < reached.len() {
+            let next: Vec<String> = waits
+                .iter()
+                .filter(|(from, to)| *from == reached[seen] && !reached.contains(to))
+                .map(|(_, to)| to.clone())
+                .collect();
+            if next.iter().any(|to| to == slug) {
+                anyhow::bail!("{on} already comes after {slug}, so {slug} cannot wait on it");
+            }
+            reached.extend(next);
+            seen += 1;
+        }
+        tx.execute(
+            "INSERT OR IGNORE INTO feature_wait (project, slug, waits_on) VALUES (?1, ?2, ?3)",
+            rusqlite::params![project, slug, on],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Takes back that `slug` comes after `on`.
+    pub fn remove_feature_wait(&self, project: &str, slug: &str, on: &str) -> Result<()> {
+        self.update_one(
+            "DELETE FROM feature_wait WHERE project = ?1 AND slug = ?2 AND waits_on = ?3",
+            rusqlite::params![project, slug, on],
+            || format!("{slug} does not wait on {on}"),
         )
     }
 

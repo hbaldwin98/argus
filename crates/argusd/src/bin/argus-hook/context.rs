@@ -83,6 +83,7 @@ pub(super) fn format_context(
     };
 
     let mut feature = vec![format!("Feature: {} ({})", current.title, current.slug)];
+    feature.extend(super::board::parked_lines(current, &board.features));
     if !current.body.trim().is_empty() {
         feature.push(current.body.trim().to_string());
     }
@@ -190,6 +191,17 @@ mod tests {
              #3 todo other"
         );
         assert!(!text.contains("long brief"), "task briefs stay out");
+    }
+
+    #[test]
+    fn context_says_what_holds_the_feature_before_its_brief() {
+        let mut board = board(Some("notes"));
+        board.features[0].held = Some("until the user answers".to_string());
+        let text = format_context("no review comments", Ok(board), Ok(tasks()));
+        assert!(
+            text.contains("Feature: Notes (notes)\nHeld: until the user answers\nkeys outlive ids"),
+            "{text}"
+        );
     }
 
     #[test]

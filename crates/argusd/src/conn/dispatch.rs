@@ -183,6 +183,19 @@ fn dispatch_boards(
             state,
             detail,
         } => daemon.move_feature_for_client(project, checkout, &slug, state, detail),
+        ClientMsg::HoldFeature {
+            project,
+            checkout,
+            slug,
+            reason,
+        } => daemon.hold_feature_for_client(project, checkout, &slug, reason.as_deref()),
+        ClientMsg::WaitFeature {
+            project,
+            checkout,
+            slug,
+            on,
+            waits,
+        } => daemon.wait_feature_for_client(project, checkout, &slug, &on, waits),
         msg => return Err(msg),
     };
     Ok(result)

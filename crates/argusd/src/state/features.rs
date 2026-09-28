@@ -351,6 +351,40 @@ impl Daemon {
         self.feature_changed_for_agent(&scope, artifact_scope)
     }
 
+    /// Holds a feature with a reason, or lifts its hold, for an agent.
+    pub fn hold_feature_for_agent(
+        &self,
+        pane_id: PaneId,
+        slug: &str,
+        reason: Option<&str>,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<FeatureBoard> {
+        let scope = self.agent_scope(pane_id)?;
+        self.store
+            .hold_feature(scope.artifact_key(artifact_scope), slug, reason)?;
+        self.feature_changed_for_agent(&scope, artifact_scope)
+    }
+
+    /// Records, or takes back, that a feature comes after another, for an
+    /// agent.
+    pub fn wait_feature_for_agent(
+        &self,
+        pane_id: PaneId,
+        slug: &str,
+        on: &str,
+        waits: bool,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<FeatureBoard> {
+        let scope = self.agent_scope(pane_id)?;
+        let key = scope.artifact_key(artifact_scope);
+        if waits {
+            self.store.add_feature_wait(key, slug, on)?;
+        } else {
+            self.store.remove_feature_wait(key, slug, on)?;
+        }
+        self.feature_changed_for_agent(&scope, artifact_scope)
+    }
+
     /// The board after an agent changed a feature, pushed to every client.
     fn feature_changed_for_agent(
         &self,
@@ -457,6 +491,40 @@ impl Daemon {
     ) -> anyhow::Result<()> {
         let (name, key) = self.client_artifact_scope(project, checkout)?;
         self.store.rename_feature(&key, slug, title)?;
+        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
+        Ok(())
+    }
+
+    /// Holds a feature, or lifts its hold, from the view.
+    pub fn hold_feature_for_client(
+        &self,
+        project: ProjectId,
+        checkout: CheckoutId,
+        slug: &str,
+        reason: Option<&str>,
+    ) -> anyhow::Result<()> {
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
+        self.store.hold_feature(&key, slug, reason)?;
+        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
+        Ok(())
+    }
+
+    /// Records, or takes back, that a feature comes after another, from the
+    /// view.
+    pub fn wait_feature_for_client(
+        &self,
+        project: ProjectId,
+        checkout: CheckoutId,
+        slug: &str,
+        on: &str,
+        waits: bool,
+    ) -> anyhow::Result<()> {
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
+        if waits {
+            self.store.add_feature_wait(&key, slug, on)?;
+        } else {
+            self.store.remove_feature_wait(&key, slug, on)?;
+        }
         self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
         Ok(())
     }

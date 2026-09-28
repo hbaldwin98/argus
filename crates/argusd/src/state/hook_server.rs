@@ -328,6 +328,18 @@ fn feature_response(
             daemon.rewrite_feature_for_agent(source, &slug, &body, filing.scope)
         }
         FeatureAction::Drop { slug } => daemon.drop_feature_for_agent(source, &slug, filing.scope),
+        FeatureAction::Hold { slug, reason } => {
+            daemon.hold_feature_for_agent(source, &slug, Some(&reason), filing.scope)
+        }
+        FeatureAction::Unhold { slug } => {
+            daemon.hold_feature_for_agent(source, &slug, None, filing.scope)
+        }
+        FeatureAction::Wait { slug, on } => {
+            daemon.wait_feature_for_agent(source, &slug, &on, true, filing.scope)
+        }
+        FeatureAction::Unwait { slug, on } => {
+            daemon.wait_feature_for_agent(source, &slug, &on, false, filing.scope)
+        }
     })
 }
 
