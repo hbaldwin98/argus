@@ -67,6 +67,6 @@ pub use tasks::{
 };
 pub use transcript::{AgentTranscriptEvent, TranscriptKind, MAX_TRANSCRIPT_EVENTS};
 pub use tree::{
-    AgentTelemetry, CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneStatus, ProjectInfo,
-    RepositoryInfo, WorkspaceInfo,
+    AgentTelemetry, CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneState, PaneStatus,
+    ProjectInfo, RepositoryInfo, WorkspaceInfo,
 };

@@ -46,6 +46,41 @@ fn workspace_summary_badges_stay_on_one_row_with_two_digit_counts() {
 }
 
 #[test]
+fn a_waiting_child_counts_in_the_need_badge_and_the_repository_dot() {
+    // The command band counts a child stopped on a question; the rail
+    // standing for the same agents has to say the same.
+    let mut app = command_center();
+    app.tree[0].repositories[0].checkouts[0].panes[0]
+        .children
+        .push(argus_protocol::ChildAgentInfo {
+            label: "reviewer".into(),
+            status: PaneStatus::Waiting,
+            note: None,
+        });
+    let th = app.theme;
+    let buf = draw_at(&mut app, 120, 30);
+    let text = lines(&buf).join("\n");
+
+    assert!(text.contains(" 1 NEED"), "{text}");
+    assert_eq!(fg_of(&buf, "●  orion"), Some(th.warn), "{text}");
+}
+
+#[test]
+fn a_failed_exit_outranks_a_working_agent_on_the_repository_dot() {
+    let mut app = command_center();
+    app.tree[0].repositories[0].checkouts[0].panes[1].status = PaneStatus::Exited { code: Some(1) };
+    let th = app.theme;
+    let buf = draw_at(&mut app, 120, 30);
+
+    assert_eq!(
+        fg_of(&buf, "●  orion"),
+        Some(th.warn),
+        "{}",
+        lines(&buf).join("\n")
+    );
+}
+
+#[test]
 fn active_repositories_sort_before_inactive_repositories() {
     let mut app = command_center();
     app.tree[0].repositories.insert(

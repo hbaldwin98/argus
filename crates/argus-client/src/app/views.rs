@@ -183,23 +183,21 @@ impl App {
                     .filter(|p| !matches!(p.status, PaneStatus::Exited { .. })),
             );
         }
-        let Some(worst) = live.iter().max_by_key(|p| p.status.urgency()) else {
+        // Each agent speaks with its loudest state, so a child stopped on a
+        // question stops the feature too.
+        let states: Vec<_> = live.iter().map(|p| p.loudest_state()).collect();
+        let Some(worst) = argus_protocol::PaneState::loudest(states.iter().copied()) else {
             return (None, None);
         };
-        let note = |pane: &argus_protocol::PaneInfo| {
-            pane.note
-                .as_ref()
-                .map(|n| format!(": {n}"))
-                .unwrap_or_default()
-        };
+        let note = worst.note.map(|n| format!(": {n}")).unwrap_or_default();
         let line = match worst.status {
-            PaneStatus::Waiting => format!("waiting{}", note(worst)),
-            PaneStatus::Failed => format!("failed{}", note(worst)),
+            PaneStatus::Waiting => format!("waiting{note}"),
+            PaneStatus::Failed => format!("failed{note}"),
             PaneStatus::NeedsReview => "needs review".to_string(),
             _ => {
-                let working = live
+                let working = states
                     .iter()
-                    .filter(|p| p.status == PaneStatus::Working)
+                    .filter(|s| s.status == PaneStatus::Working)
                     .count();
                 match working {
                     0 => format!("{} idle", live.len()),

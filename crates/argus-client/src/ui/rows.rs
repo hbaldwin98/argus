@@ -38,7 +38,7 @@ pub(super) fn checkout_item(
     }
     Item::new(
         vec![
-            status_dot(worst_pane_status(c), th, spin),
+            status_dot(PaneStatus::loudest(c.statuses()), th, spin),
             Span::styled(
                 format!("{} ", if c.primary { "⌂" } else { "⧉" }),
                 Style::default().fg(if c.primary { th.muted } else { th.dim }),
@@ -248,12 +248,6 @@ pub(super) fn exit_note(status: PaneStatus) -> String {
         PaneStatus::Exited { code: None } => "  killed".to_string(),
         _ => String::new(),
     }
-}
-
-pub(super) fn worst_pane_status(c: &argus_protocol::CheckoutInfo) -> Option<PaneStatus> {
-    c.listed_panes()
-        .flat_map(|p| std::iter::once(p.status).chain(p.children.iter().map(|child| child.status)))
-        .max_by_key(|s| s.urgency())
 }
 
 /// The turning glyph for this frame, threaded beside the theme.

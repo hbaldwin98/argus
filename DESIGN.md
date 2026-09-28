@@ -53,7 +53,7 @@ live in this crate and a contract written twice drifts in silence.
 | module | answers |
 | --- | --- |
 | `message` | what a client asks for, and what the daemon sends back |
-| `tree` | what a client renders, and which pane state outranks which |
+| `tree` | what a client renders, which pane state outranks which, and what a row standing for several shows |
 | `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses |
 | `cell`, `framing`, `transport` | a screen cell, a frame, and the endpoint they travel over |
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
@@ -450,6 +450,9 @@ Automatic `Idle` events do not erase `Waiting`, `NeedsReview`, `Done`, or `Faile
 Each client compares consecutive tree snapshots by pane ID. The first snapshot after attaching is a
 quiet baseline; a later effective-state change flashes the owning pane for 900 ms. Effective state
 includes child agents because their parent pane is the selectable place the operator can open.
+Every row that stands for several panes — a checkout, a repository and its rail dot, the rail's need
+badge, the command band's tally — rolls up each listed pane and each child the same way, through
+`tree`'s one ranking: a failed exit outranks a working agent, and only a clean exit is calm.
 Transitions into `Waiting`, `NeedsReview`, or `Failed` also put the pane or child note in the status
 bar. A client can optionally ring its terminal bell for those transitions when the pane is not the
 active input pane; notifications default to off and are saved in `client.toml`.

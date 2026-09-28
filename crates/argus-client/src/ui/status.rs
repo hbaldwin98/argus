@@ -430,10 +430,7 @@ fn fleet(app: &App, th: Theme) -> Vec<Span<'static>> {
         .iter()
         .flat_map(|p| p.repositories.iter())
         .flat_map(|r| r.checkouts.iter())
-        .flat_map(|c| c.listed_panes())
-        // Children count as their own agents here, the same way they do in
-        // the panes column: one of them waiting is a person being waited on.
-        .flat_map(|p| std::iter::once(p.status).chain(p.children.iter().map(|c| c.status)));
+        .flat_map(|c| c.statuses());
     for status in states {
         // Idle and exited are not news. Counting them gives the bar a
         // number that is the same whether anything is happening or not.

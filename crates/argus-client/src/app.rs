@@ -13,8 +13,9 @@
 //! back.
 
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId,
-    ProjectInfo, RepositoryId, RepositoryInfo, ReviewAnchor, ServerMsg, WorkspaceId, WorkspaceInfo,
+    CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, PaneKind, PaneState, PaneStatus,
+    ProjectId, ProjectInfo, RepositoryId, RepositoryInfo, ReviewAnchor, ServerMsg, WorkspaceId,
+    WorkspaceInfo,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
@@ -108,31 +109,21 @@ fn state_word(status: PaneStatus) -> &'static str {
     }
 }
 
-/// The pane's effective state includes nested agents, because their parent
-/// row is the only selectable destination the client can flash or open.
-fn effective_state(pane: &PaneInfo) -> (PaneStatus, &str, Option<&str>) {
-    let mut effective = (pane.status, pane.title.as_str(), pane.note.as_deref());
-    for child in &pane.children {
-        if child.status.urgency() > effective.0.urgency() {
-            effective = (child.status, child.label.as_str(), child.note.as_deref());
-        }
-    }
-    effective
-}
-
-fn effective_label(pane: &PaneInfo, label: &str) -> String {
-    if label == pane.title {
-        label.to_string()
-    } else {
-        format!("{} / {label}", pane.title)
+fn effective_label(pane: &PaneInfo, state: PaneState) -> String {
+    match state.child {
+        Some(child) => format!("{} / {child}", pane.title),
+        None => pane.title.clone(),
     }
 }
 
+/// Includes nested agents, because their parent row is the only
+/// selectable destination the client can flash or open.
 fn attention_of(pane: &PaneInfo) -> Option<(String, Option<String>)> {
-    let (status, label, note) = effective_state(pane);
-    status
+    let state = pane.loudest_state();
+    state
+        .status
         .needs_you()
-        .then(|| (effective_label(pane, label), note.map(str::to_string)))
+        .then(|| (effective_label(pane, state), state.note.map(str::to_string)))
 }
 
 /// A monotonically increasing, never-zero request id for one kind of

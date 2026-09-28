@@ -184,19 +184,20 @@ pub(super) fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme
         width: area.width.saturating_sub(1),
         ..area
     };
-    let listed: Vec<_> = app
-        .current_project()
-        .map(|p| {
-            p.repositories
-                .iter()
-                .flat_map(|r| r.checkouts.iter())
-                .flat_map(|c| c.listed_panes())
-                .map(|p| (p.kind, p.status))
-                .collect()
-        })
-        .unwrap_or_default();
-    let agents = listed.iter().filter(|(k, _)| *k == PaneKind::Agent).count();
-    let needs = listed.iter().filter(|(_, s)| s.needs_you()).count();
+    let checkouts = || {
+        app.current_project()
+            .into_iter()
+            .flat_map(|p| p.repositories.iter())
+            .flat_map(|r| r.checkouts.iter())
+    };
+    let agents = checkouts()
+        .flat_map(|c| c.listed_panes())
+        .filter(|p| p.kind == PaneKind::Agent)
+        .count();
+    let needs = checkouts()
+        .flat_map(|c| c.statuses())
+        .filter(|s| s.needs_you())
+        .count();
     let project = app.current_project();
     let repo_count = project.map(|p| p.repositories.len()).unwrap_or(0);
     let name = project
@@ -375,12 +376,8 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                     .iter()
                     .map(|c| c.listed_panes().count())
                     .sum::<usize>();
-                let loudest = loudest_status(
-                    repo.checkouts
-                        .iter()
-                        .flat_map(|c| c.listed_panes())
-                        .map(|p| &p.status),
-                );
+                let loudest =
+                    PaneStatus::loudest(repo.checkouts.iter().flat_map(|c| c.statuses()));
                 let bg = if selected { th.surface } else { th.bg };
                 let checkouts = plural(repo.checkouts.len(), "checkout");
                 let name_len = repo.name.chars().count();

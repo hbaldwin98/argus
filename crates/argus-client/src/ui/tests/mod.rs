@@ -19,7 +19,7 @@ mod views;
 use super::*;
 use crate::fixtures::*;
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, ProjectId, ProjectInfo,
+    CheckoutId, CheckoutInfo, PaneId, PaneKind, ProjectId, ProjectInfo,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::backend::TestBackend;
@@ -445,31 +445,6 @@ pub(super) fn git(
         changed_files: changed,
         ahead,
         behind,
-    }
-}
-
-pub(super) fn checkout_with(statuses: &[PaneStatus]) -> CheckoutInfo {
-    CheckoutInfo {
-        id: CheckoutId(1),
-        name: "c".to_string(),
-        path: "/c".to_string(),
-        primary: true,
-        git: None,
-        panes: statuses
-            .iter()
-            .enumerate()
-            .map(|(i, s)| PaneInfo {
-                id: PaneId(i as u64),
-                kind: PaneKind::Agent,
-                title: "t".to_string(),
-                status: *s,
-                note: None,
-                template: None,
-                children: Vec::new(),
-                telemetry: Default::default(),
-                transcript: Vec::new(),
-            })
-            .collect(),
     }
 }
 

@@ -15,15 +15,12 @@ pub(super) fn rollup_item<'a>(
     spin: Spin,
 ) -> Item<'static> {
     let mut panes = 0usize;
-    let mut status: Option<PaneStatus> = None;
+    let mut statuses = Vec::new();
     for c in checkouts {
         panes += c.listed_panes().count();
-        if let Some(here) = worst_pane_status(c) {
-            if status.is_none_or(|s| here.urgency() > s.urgency()) {
-                status = Some(here);
-            }
-        }
+        statuses.extend(c.statuses());
     }
+    let status = PaneStatus::loudest(statuses);
     let detail = vec![Span::styled(contents, Style::default().fg(th.dim))];
     let item = Item::new(
         vec![

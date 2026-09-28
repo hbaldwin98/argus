@@ -251,24 +251,16 @@ fn status_glyph(app: &App, status: PaneStatus, still: &'static str) -> &'static 
     }
 }
 
-/// The status most worth seeing among some panes: one asking for a person,
-/// then one working, then one finished.
-fn loudest_status<'a>(statuses: impl Iterator<Item = &'a PaneStatus>) -> Option<PaneStatus> {
-    statuses.copied().max_by_key(|status| match status {
-        PaneStatus::Waiting | PaneStatus::NeedsReview | PaneStatus::Failed => 4,
-        PaneStatus::Working => 3,
-        PaneStatus::Done => 2,
-        PaneStatus::Idle => 1,
-        PaneStatus::Exited { .. } => 0,
-    })
-}
-
+/// A failed exit is drawn as loudly as the states asking for a person,
+/// since it outranks a working agent wherever panes are rolled up; only a
+/// clean exit is calm.
 pub(super) fn status_color(status: PaneStatus, th: Theme) -> Color {
     match status {
         PaneStatus::Waiting | PaneStatus::NeedsReview | PaneStatus::Failed => th.warn,
         PaneStatus::Working => th.ok,
         PaneStatus::Done => th.ok,
-        PaneStatus::Idle | PaneStatus::Exited { .. } => th.dim,
+        PaneStatus::Idle | PaneStatus::Exited { code: Some(0) } => th.dim,
+        PaneStatus::Exited { .. } => th.warn,
     }
 }
 

@@ -482,15 +482,15 @@ impl App {
             let Some(previous) = panes_in(&self.tree).find(|old| old.id == pane.id) else {
                 continue;
             };
-            let before = effective_state(previous);
-            let after = effective_state(pane);
-            if before.0 != after.0 {
+            let before = previous.loudest_state();
+            let after = pane.loudest_state();
+            if before.status != after.status {
                 transitions.push((
                     pane.id,
-                    before.0,
-                    after.0,
-                    effective_label(pane, after.1),
-                    after.2.map(str::to_string),
+                    before.status,
+                    after.status,
+                    effective_label(pane, after),
+                    after.note.map(str::to_string),
                 ));
             }
         }

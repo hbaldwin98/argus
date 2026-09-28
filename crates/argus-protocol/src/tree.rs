@@ -66,6 +66,67 @@ impl PaneStatus {
             PaneStatus::Waiting => 7,
         }
     }
+
+    /// What a row standing for several states shows: the most urgent of
+    /// them, the first on a tie. `None` when there are none.
+    pub fn loudest(statuses: impl IntoIterator<Item = PaneStatus>) -> Option<PaneStatus> {
+        loudest_by(statuses, |status| *status)
+    }
+}
+
+fn loudest_by<T>(items: impl IntoIterator<Item = T>, status: impl Fn(&T) -> PaneStatus) -> Option<T> {
+    items.into_iter().reduce(|loudest, next| {
+        if status(&next).urgency() > status(&loudest).urgency() {
+            next
+        } else {
+            loudest
+        }
+    })
+}
+
+/// One state a pane row stands for: the pane's own, or a child agent's
+/// reported through it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PaneState<'a> {
+    pub status: PaneStatus,
+    /// The child's label, or `None` for the pane itself.
+    pub child: Option<&'a str>,
+    pub note: Option<&'a str>,
+}
+
+impl PaneState<'_> {
+    /// [`PaneStatus::loudest`], keeping which agent it came from.
+    pub fn loudest<'a>(states: impl IntoIterator<Item = PaneState<'a>>) -> Option<PaneState<'a>> {
+        loudest_by(states, |state| state.status)
+    }
+}
+
+impl PaneInfo {
+    /// Every state this row stands for: the pane's own, then each child's
+    /// in the order they first reported. A child is an agent in its own
+    /// right — one of them waiting is a person being waited on — but the
+    /// parent's row is the only place it can be gone to.
+    pub fn states(&self) -> impl Iterator<Item = PaneState<'_>> {
+        std::iter::once(self.own_state()).chain(self.children.iter().map(|child| PaneState {
+            status: child.status,
+            child: Some(child.label.as_str()),
+            note: child.note.as_deref(),
+        }))
+    }
+
+    /// The state the row speaks with: the most urgent of [`Self::states`],
+    /// the pane's own on a tie.
+    pub fn loudest_state(&self) -> PaneState<'_> {
+        PaneState::loudest(self.states()).unwrap_or_else(|| self.own_state())
+    }
+
+    fn own_state(&self) -> PaneState<'_> {
+        PaneState {
+            status: self.status,
+            child: None,
+            note: self.note.as_deref(),
+        }
+    }
 }
 
 /// Another agent reporting through a pane it does not own — a CLI spawned
@@ -220,6 +281,13 @@ impl CheckoutInfo {
     pub fn listed_panes(&self) -> impl Iterator<Item = &PaneInfo> {
         self.panes.iter().filter(|p| p.kind != PaneKind::Editor)
     }
+
+    /// Every state the checkout's rows stand for, children included: what
+    /// a checkout, a repository or a whole fleet rolls up.
+    pub fn statuses(&self) -> impl Iterator<Item = PaneStatus> + '_ {
+        self.listed_panes()
+            .flat_map(|pane| pane.states().map(|state| state.status))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -290,4 +358,116 @@ pub struct WorkspaceInfo {
     /// are not currently looking.
     pub panes: usize,
     pub open: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pane(status: PaneStatus, children: &[PaneStatus]) -> PaneInfo {
+        PaneInfo {
+            id: PaneId(1),
+            kind: PaneKind::Agent,
+            title: "claude".into(),
+            status,
+            note: None,
+            template: None,
+            children: children
+                .iter()
+                .enumerate()
+                .map(|(i, &status)| ChildAgentInfo {
+                    label: format!("child {i}"),
+                    status,
+                    note: None,
+                })
+                .collect(),
+            telemetry: AgentTelemetry::default(),
+            transcript: Vec::new(),
+        }
+    }
+
+    fn checkout(panes: Vec<PaneInfo>) -> CheckoutInfo {
+        CheckoutInfo {
+            id: CheckoutId(1),
+            name: "main".into(),
+            path: "/repo".into(),
+            panes,
+            git: None,
+            primary: true,
+        }
+    }
+
+    #[test]
+    fn the_loudest_of_several_states_is_the_most_urgent() {
+        use PaneStatus::*;
+        let cases: &[(&[PaneStatus], Option<PaneStatus>)] = &[
+            (&[], None),
+            (&[Idle], Some(Idle)),
+            (&[Working, Idle, Done], Some(Working)),
+            // A failed exit is news; a working agent beside it is not.
+            (&[Working, Exited { code: Some(1) }], Some(Exited { code: Some(1) })),
+            // A kill has no exit code, and is no calmer for it.
+            (&[Working, Exited { code: None }], Some(Exited { code: None })),
+            // Failed is still running, so it is worth going to; an exit is not.
+            (&[Exited { code: Some(1) }, Failed], Some(Failed)),
+            (&[Working, Failed], Some(Failed)),
+            (&[Exited { code: Some(0) }, Idle], Some(Idle)),
+            (&[NeedsReview, Failed, Waiting], Some(Waiting)),
+            (&[NeedsReview, Failed], Some(Failed)),
+            (&[Working, NeedsReview], Some(NeedsReview)),
+        ];
+        for (statuses, loudest) in cases {
+            assert_eq!(
+                PaneStatus::loudest(statuses.iter().copied()),
+                *loudest,
+                "{statuses:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_tie_keeps_the_first_state() {
+        let failed = PaneStatus::Exited { code: Some(1) };
+        let killed = PaneStatus::Exited { code: None };
+        assert_eq!(PaneStatus::loudest([failed, killed]), Some(failed));
+        assert_eq!(PaneStatus::loudest([killed, failed]), Some(killed));
+    }
+
+    #[test]
+    fn a_waiting_child_speaks_for_its_working_parent() {
+        let mut p = pane(PaneStatus::Working, &[PaneStatus::Idle, PaneStatus::Waiting]);
+        p.children[1].note = Some("approve rm".into());
+        assert_eq!(
+            p.loudest_state(),
+            PaneState {
+                status: PaneStatus::Waiting,
+                child: Some("child 1"),
+                note: Some("approve rm"),
+            }
+        );
+    }
+
+    #[test]
+    fn a_child_as_loud_as_its_parent_does_not_take_the_row() {
+        let p = pane(PaneStatus::Waiting, &[PaneStatus::Waiting]);
+        assert_eq!(p.loudest_state().child, None);
+    }
+
+    #[test]
+    fn a_checkout_rolls_up_every_pane_and_child_it_lists() {
+        let mut editor = pane(PaneStatus::Waiting, &[]);
+        editor.kind = PaneKind::Editor;
+        let c = checkout(vec![
+            pane(PaneStatus::Working, &[PaneStatus::Waiting]),
+            pane(PaneStatus::Idle, &[]),
+            editor,
+        ]);
+        assert_eq!(
+            c.statuses().collect::<Vec<_>>(),
+            [PaneStatus::Working, PaneStatus::Waiting, PaneStatus::Idle],
+            "the editor is not listed, so it is not rolled up"
+        );
+        assert_eq!(PaneStatus::loudest(c.statuses()), Some(PaneStatus::Waiting));
+        assert_eq!(PaneStatus::loudest(checkout(Vec::new()).statuses()), None);
+    }
 }

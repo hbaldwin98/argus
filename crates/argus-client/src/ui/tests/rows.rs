@@ -64,74 +64,6 @@ fn dirty_and_behind_share_the_warn_role_while_ahead_reads_as_ok() {
     assert_eq!(color_of("change"), Some(th.warn));
 }
 
-// --- rolled-up status ---------------------------------------------------
-
-#[test]
-fn a_parent_with_no_panes_has_no_status() {
-    assert_eq!(worst_pane_status(&checkout_with(&[])), None);
-}
-
-#[test]
-fn waiting_outranks_everything_because_it_is_blocked_on_you() {
-    let c = checkout_with(&[
-        PaneStatus::Working,
-        PaneStatus::Waiting,
-        PaneStatus::Exited { code: Some(1) },
-    ]);
-    assert_eq!(worst_pane_status(&c), Some(PaneStatus::Waiting));
-}
-
-#[test]
-fn a_failed_exit_outranks_the_calm_states() {
-    let c = checkout_with(&[PaneStatus::Idle, PaneStatus::Exited { code: Some(1) }]);
-    assert_eq!(
-        worst_pane_status(&c),
-        Some(PaneStatus::Exited { code: Some(1) })
-    );
-}
-
-#[test]
-fn a_clean_exit_ranks_below_a_live_pane() {
-    let c = checkout_with(&[PaneStatus::Exited { code: Some(0) }, PaneStatus::Idle]);
-    assert_eq!(worst_pane_status(&c), Some(PaneStatus::Idle));
-}
-
-#[test]
-fn descendant_status_rolls_up_through_checkout_repository_and_project() {
-    let mut c = checkout_with(&[PaneStatus::Idle]);
-    c.panes[0].children.push(ChildAgentInfo {
-        label: "blocked child".to_string(),
-        status: PaneStatus::Waiting,
-        note: None,
-    });
-    let project = project(3, "project", vec![repository(2, "repo", vec![c])]);
-
-    let checkout_status = worst_pane_status(&project.repositories[0].checkouts[0]);
-    let repository_status = project.repositories[0]
-        .checkouts
-        .iter()
-        .filter_map(worst_pane_status)
-        .max_by_key(|s| s.urgency());
-    let project_status = project
-        .repositories
-        .iter()
-        .flat_map(|repository| repository.checkouts.iter())
-        .filter_map(worst_pane_status)
-        .max_by_key(|s| s.urgency());
-
-    assert_eq!(checkout_status, Some(PaneStatus::Waiting));
-    assert_eq!(repository_status, Some(PaneStatus::Waiting));
-    assert_eq!(project_status, Some(PaneStatus::Waiting));
-}
-
-#[test]
-fn a_kill_with_no_exit_code_counts_as_a_failure() {
-    assert_eq!(
-        PaneStatus::Exited { code: None }.urgency(),
-        PaneStatus::Exited { code: Some(1) }.urgency()
-    );
-}
-
 // --- the status glyph ---------------------------------------------------
 
 #[test]
@@ -374,16 +306,6 @@ fn an_empty_note_is_not_an_empty_line() {
         text_of(&pane_detail(&pane(PaneStatus::Idle, Some("")), th)),
         "idle"
     );
-}
-
-#[test]
-fn a_failed_pane_outranks_the_calm_ones_but_not_a_waiting_one() {
-    // Parents show the worst child; both want you, and the one you can
-    // still answer wants you most.
-    assert!(PaneStatus::Failed.urgency() > PaneStatus::Working.urgency());
-    assert!(PaneStatus::Failed.urgency() > PaneStatus::Exited { code: Some(1) }.urgency());
-    assert!(PaneStatus::NeedsReview.urgency() > PaneStatus::Exited { code: Some(1) }.urgency());
-    assert!(PaneStatus::Waiting.urgency() > PaneStatus::Failed.urgency());
 }
 
 #[test]
