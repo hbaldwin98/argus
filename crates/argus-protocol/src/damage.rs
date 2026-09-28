@@ -245,13 +245,22 @@ pub fn damage(
     cur: &[Vec<Cell>],
 ) -> (Option<Scroll>, Vec<CellRun>) {
     let Some(prev) = prev else {
-        return (None, changed_runs(None, cur));
+        return (None, changed_runs(None, cur, None));
     };
-    let scroll = detect_scroll(prev, cur);
-    if let Some(scroll) = scroll {
-        scroll.apply(prev);
+    // A scroll saves only rows that changed, so with one changed row or
+    // none it has nothing to save — and looking for one hashes every row of
+    // both grids, which was most of what echoing a keystroke cost.
+    let same: Vec<bool> = (0..cur.len()).map(|r| prev.get(r) == Some(&cur[r])).collect();
+    let changed = same.iter().filter(|same| !**same).count();
+    let scroll = (changed > 1).then(|| detect_scroll(prev, cur)).flatten();
+    match scroll {
+        // The scroll moved rows, so which ones match has to be asked again.
+        Some(scroll) => {
+            scroll.apply(prev);
+            (Some(scroll), changed_runs(Some(prev), cur, None))
+        }
+        None => (None, changed_runs(Some(prev), cur, Some(&same))),
     }
-    (scroll, changed_runs(Some(prev), cur))
 }
 
 /// A whole grid as runs, for a client starting from nothing: every cell
@@ -261,7 +270,7 @@ pub fn grid_runs(cur: &[Vec<Cell>]) -> Vec<CellRun> {
         .iter()
         .map(|row| vec![Cell::default(); row.len()])
         .collect();
-    changed_runs(Some(&blank), cur)
+    changed_runs(Some(&blank), cur, None)
 }
 
 /// The grid a client starting from nothing gets from `runs`.
@@ -275,10 +284,18 @@ pub fn grid_from_runs(rows: u16, cols: u16, runs: &[CellRun]) -> Vec<Vec<Cell>> 
 
 /// Runs of the cells in `cur` that differ from `prev`, a short unchanged
 /// gap riding along inside a run rather than splitting it. A row `prev`
-/// does not have, or has at another width, is sent whole.
-fn changed_runs(prev: Option<&[Vec<Cell>]>, cur: &[Vec<Cell>]) -> Vec<CellRun> {
+/// does not have, or has at another width, is sent whole. `same` marks rows
+/// already known to match, which are not compared again.
+fn changed_runs(
+    prev: Option<&[Vec<Cell>]>,
+    cur: &[Vec<Cell>],
+    same: Option<&[bool]>,
+) -> Vec<CellRun> {
     let mut runs = Vec::new();
     for (r, row) in cur.iter().enumerate() {
+        if same.is_some_and(|same| same[r]) {
+            continue;
+        }
         let before = prev.and_then(|p| p.get(r)).filter(|p| p.len() == row.len());
         let changed = |c: usize| before.is_none_or(|b| b[c] != row[c]);
 
@@ -359,9 +376,59 @@ fn detect_scroll(prev: &[Vec<Cell>], cur: &[Vec<Cell>]) -> Option<Scroll> {
 }
 
 fn row_hash(row: &[Cell]) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut hasher = RowHasher::default();
     row.hash(&mut hasher);
     hasher.finish()
+}
+
+/// A multiply-rotate hash (rustc's FxHash) rather than the standard
+/// library's SipHash, which made hashing two grids a frame's biggest cost.
+/// Nothing hashed here is adversarial, and a collision costs bytes, never
+/// correctness: the runs are diffed cell by cell against the grid as the
+/// scroll left it.
+#[derive(Default)]
+struct RowHasher(u64);
+
+impl RowHasher {
+    fn add(&mut self, word: u64) {
+        self.0 = (self.0.rotate_left(5) ^ word).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+}
+
+impl Hasher for RowHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        let mut chunks = bytes.chunks_exact(8);
+        for chunk in &mut chunks {
+            self.add(u64::from_le_bytes(chunk.try_into().unwrap()));
+        }
+        for &byte in chunks.remainder() {
+            self.add(u64::from(byte));
+        }
+    }
+
+    fn write_u8(&mut self, n: u8) {
+        self.add(u64::from(n));
+    }
+
+    fn write_u16(&mut self, n: u16) {
+        self.add(u64::from(n));
+    }
+
+    fn write_u32(&mut self, n: u32) {
+        self.add(u64::from(n));
+    }
+
+    fn write_u64(&mut self, n: u64) {
+        self.add(n);
+    }
+
+    fn write_usize(&mut self, n: usize) {
+        self.add(n as u64);
+    }
+
+    fn finish(&self) -> u64 {
+        self.0
+    }
 }
 
 #[cfg(test)]
@@ -512,6 +579,33 @@ mod tests {
             })
         );
         assert!(runs.iter().all(|r| (37..40).contains(&r.row)), "{runs:?}");
+        assert_eq!(applied(&prev, &cur), cur);
+    }
+
+    #[test]
+    fn one_changed_row_is_sent_as_itself_and_never_as_a_scroll() {
+        // Clearing the top row matches a one-line scroll into a blank row,
+        // which saves nothing a run of that row does not.
+        let prev = grid(&["$ ls", ""], 20);
+        let cur = grid(&["", ""], 20);
+        let mut daemon = prev.clone();
+
+        let (scroll, runs) = damage(Some(&mut daemon), &cur);
+
+        assert_eq!(scroll, None);
+        assert_eq!(runs.iter().map(|r| r.row).collect::<Vec<_>>(), [0]);
+        assert_eq!(applied(&prev, &cur), cur);
+    }
+
+    #[test]
+    fn a_scroll_with_rows_rewritten_inside_it_still_lands_whole() {
+        // The runs are diffed against the grid as the scroll left it, which
+        // is also what keeps a scroll chosen on a row-hash collision from
+        // leaving a wrong screen.
+        let prev = numbered(0, 20, 30);
+        let mut cur = numbered(1, 20, 30);
+        cur[5] = prev[9].clone();
+        cur[6][3].bold = true;
         assert_eq!(applied(&prev, &cur), cur);
     }
 

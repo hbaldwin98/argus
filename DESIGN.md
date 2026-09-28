@@ -440,8 +440,11 @@ into runs of cells — a run's graphemes as one string, its looks as counted sty
 integers, and a count of default blanks at its end — with an unchanged gap of a few cells riding
 inside a run rather than starting another. A region that moved is sent as a move: rows are compared
 by hash, and the scroll that saves the most rows is taken, a region rather than the whole screen
-because an agent's output scrolls above an input box that stays put. The frame is then diffed
-against the grid after that scroll, so a wrong guess costs bytes and never a wrong screen. A 200 by
+because an agent's output scrolls above an input box that stays put. A scroll is looked for only
+when more than one row changed, since it saves only changed rows, and the row hash is FxHash rather
+than SipHash; together they took the diff for an echoed keystroke on a 200 by 50 screen from about
+570 µs to under 60. The frame is then diffed against the grid after that scroll, so a wrong guess —
+a hash collision included — costs bytes and never a wrong screen. A 200 by
 50 screen of text is a few kilobytes rather than the 620 KB it was as per-cell records, and a one
 line scroll of it under 200 bytes rather than 413 KB. A client that did not greet with `cell-runs`
 is sent the per-cell form, built by its connection from the runs; a scroll, which that form cannot
