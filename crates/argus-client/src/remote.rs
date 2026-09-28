@@ -137,7 +137,9 @@ fn ssh_failure(host: &str, stderr: &str, code: Option<i32>) -> String {
     if said.contains("could not resolve hostname") {
         return format!("ssh cannot find {host}");
     }
-    // The remote shell's code for a command it could not find.
+    // The remote shell's code for a command it could not find. Saying so is
+    // the whole answer: connecting never installs argus there (DESIGN.md,
+    // "Process model").
     if code == Some(127) || said.contains("command not found") || said.contains("argus: not found")
     {
         return format!("argus is not installed on {host}, or not on the PATH ssh sessions get");

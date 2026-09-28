@@ -131,7 +131,8 @@ up durable artifacts, and later agents receive the relevant subset without brows
 - Qualify Windows ConPTY resize and performance behavior.
 - Define clean daemon service and shutdown management.
 - Add protocol versioning and authentication before remote hosts.
-- Explore a self-installing SSH transport only after the local protocol is stable.
+- SSH remote hosts landed (DESIGN.md, "Process model"). The client never installs argus on a
+  remote machine; a missing or older argus there is reported with what to install.
 
 ## Open Decisions
 

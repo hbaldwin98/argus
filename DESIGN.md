@@ -67,8 +67,11 @@ daemon — started there the way any client starts one — on ssh's stdin and st
 daemon does stays beside the agents it runs: git, hook installs and the loopback hook server need
 nothing new. ssh is in batch mode, keys or an agent only, because the terminal is the client's and
 ssh has nowhere to ask; when it fails, what it printed becomes what to do — a key to add, a host
-key to accept with `ssh <host>` in a terminal, argus to install there. The `--` keeps a host name
-from passing for an ssh option, and keepalives notice a link that died quietly within a minute.
+key to accept with `ssh <host>` in a terminal, argus to install there. Connecting never installs
+argus on the other machine, as VS Code Server does: a client that drops binaries on another host
+looks like malware to antivirus, and installing software is the user's act, so a missing or older
+argus there is an error that says so. The `--` keeps a host name from passing for an ssh option,
+and keepalives notice a link that died quietly within a minute.
 
 Each daemon is a host with an app of its own — its tree, grids, selections and connection — rather
 than one app with every id qualified by the daemon it came from, since hosts sit a level above
