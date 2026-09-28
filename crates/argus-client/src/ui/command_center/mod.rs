@@ -56,7 +56,7 @@ pub(super) fn render_command_center(
     render_view_tabs(f, app, frame[0], th);
 
     if app.tree.is_empty() {
-        forget_spine(app);
+        forget_rail_and_stages(app);
         render_first_run(f, frame[1], th);
         return None;
     }
@@ -94,13 +94,12 @@ pub(super) fn render_command_center(
         );
     }
 
-    app.layout.repositories = Panel::default();
     app.layout.checkouts = Panel::default();
     app.layout.panes = Panel::default();
-    app.layout.content = Panel::default();
+    app.layout.terminal = Panel::default();
 
     match app.view {
-        View::Spine => render_workspace(f, app, stage, th),
+        View::Workspace => render_workspace(f, app, stage, th),
         View::Feature => {
             render_feature_document(f, app, stage, th);
             None

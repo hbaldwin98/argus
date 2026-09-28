@@ -10,29 +10,21 @@ mod diff;
 mod frame;
 mod geometry;
 mod help;
-mod narrow;
 mod panes;
 mod picker;
-mod rows;
+mod status;
 mod views;
 
 use super::*;
 use crate::fixtures::*;
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, PaneId, PaneKind, ProjectId, ProjectInfo,
+    CheckoutId, CheckoutInfo, GitStatus, PaneId, PaneKind, ProjectId, ProjectInfo,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 
 // --- what a pane row says -----------------------------------------------
-
-pub(super) fn pane(status: PaneStatus, note: Option<&str>) -> argus_protocol::PaneInfo {
-    argus_protocol::PaneInfo {
-        note: note.map(str::to_string),
-        ..pane_info(1, PaneKind::Agent, "claude", status)
-    }
-}
 
 // --- rendering the whole frame -----------------------------------------
 
@@ -69,10 +61,6 @@ pub(super) fn tree() -> Vec<ProjectInfo> {
 /// Renders a real frame through ratatui's test backend and hands back
 /// the buffer, so the UI can be asserted on without a terminal.
 pub(super) fn draw(app: &mut App) -> ratatui::buffer::Buffer {
-    // Wide enough for the whole spine: five cards at their floors plus a
-    // live view at its own is exactly what `spine_min_width` says, and a
-    // narrower default would fold a column away under every test that was
-    // not about folding.
     draw_at(app, 120, 20)
 }
 
@@ -111,7 +99,6 @@ pub(super) fn app_with_tree() -> App {
     // Keep the receiver alive so sends don't fail during render setup.
     std::mem::forget(rx);
     let mut app = App::new(tx);
-    app.command_center = false;
     app.on_server_msg(argus_protocol::ServerMsg::Tree(tree()));
     app
 }
@@ -123,10 +110,11 @@ pub(super) fn cell(ch: char) -> argus_protocol::Cell {
     }
 }
 
-// --- a column taller than its card ---------------------------------------
+// --- a table taller than its stage ---------------------------------------
 
-/// Eight checkouts in one repository, so a short column has to scroll.
-pub(super) fn app_with_a_long_checkout_column() -> App {
+/// The Checkouts stage over eight checkouts in one repository, so a short
+/// terminal has to scroll the table.
+pub(super) fn app_with_a_long_checkout_table() -> App {
     let mut app = app_with_tree();
     let r = &mut app.tree[0].repositories[0];
     r.checkouts = (0..8)
@@ -139,17 +127,18 @@ pub(super) fn app_with_a_long_checkout_column() -> App {
             panes: Vec::new(),
         })
         .collect();
-    app.focus = Focus::Checkouts;
+    app.view = View::Checkouts;
+    app.focus = Focus::View;
     app
 }
 
-/// The row of the checkouts column that a given screen row sits on.
+/// Clicks the checkouts table's `drawn_row`th row.
 pub(super) fn click_checkout(app: &mut App, drawn_row: u16) {
     let inner = app.layout.checkouts.inner;
     app.on_mouse(crossterm::event::MouseEvent {
         kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
         column: inner.x + 1,
-        row: inner.y + drawn_row * app.layout.row_height,
+        row: inner.y + drawn_row * 3,
         modifiers: KeyModifiers::NONE,
     });
 }
@@ -448,6 +437,3 @@ pub(super) fn git(
     }
 }
 
-pub(super) fn text_of(spans: &[Span]) -> String {
-    spans.iter().map(|s| s.content.as_ref()).collect()
-}

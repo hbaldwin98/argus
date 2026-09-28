@@ -3,7 +3,6 @@
 
 mod branch_rows;
 mod brief_editing;
-mod columns;
 mod editors;
 mod mouse_input;
 mod navigation;
@@ -76,7 +75,6 @@ impl Harness {
     pub(super) fn new() -> Self {
         let (tx, rx) = unbounded_channel();
         let mut app = App::new(tx);
-        app.command_center = false;
         app.on_server_msg(ServerMsg::Tree(tree()));
         app.templates = vec!["claude".to_string(), "codex".to_string()];
         let mut h = Harness { app, rx };
@@ -266,8 +264,9 @@ pub(super) fn click(x: u16, y: u16) -> MouseEvent {
     }
 }
 
-/// Five cards side by side, each with a one-cell frame around its rows,
-/// so tests can click both a row and the chrome around it.
+/// The rail down the left and the workspace terminal beside it, each with
+/// a one-cell frame, so tests can click both the terminal and the chrome
+/// around it.
 pub(super) fn laid_out(h: &mut Harness) {
     let panel = |x: u16, w: u16| Panel {
         outer: Rect::new(x, 0, w, 8),
@@ -275,14 +274,16 @@ pub(super) fn laid_out(h: &mut Harness) {
         first: 0,
     };
     h.app.layout = Layout {
-        width: 100,
-        row_height: crate::ui::ROW_HEIGHT,
         views: Panel::default(),
-        projects: panel(0, 12),
-        repositories: panel(12, 12),
-        checkouts: panel(24, 12),
-        panes: panel(36, 12),
-        content: panel(48, 20),
+        // The rail's rows start under its project header, as drawn.
+        rail: Panel {
+            outer: Rect::new(0, 0, 32, 8),
+            inner: Rect::new(1, 4, 30, 4),
+            first: 0,
+        },
+        checkouts: Panel::default(),
+        panes: Panel::default(),
+        terminal: panel(48, 20),
         features: Panel::default(),
         feature_brief: Default::default(),
         feature_tasks: Default::default(),

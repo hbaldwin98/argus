@@ -130,7 +130,7 @@ fn closing_a_floating_pane_puts_the_live_view_back_on_the_column() {
 fn a_floating_pane_and_the_column_are_sized_separately() {
     let mut h = Harness::new();
     laid_out(&mut h);
-    assert_eq!(h.app.live_panes()[0].1, h.app.layout.content.inner);
+    assert_eq!(h.app.live_panes()[0].1, h.app.layout.terminal.inner);
 
     h.app
         .open_overlay_pane(PaneId(700), "vim".to_string(), false);

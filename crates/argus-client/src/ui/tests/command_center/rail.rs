@@ -81,6 +81,21 @@ fn a_failed_exit_outranks_a_working_agent_on_the_repository_dot() {
 }
 
 #[test]
+fn an_editor_never_appears_among_the_rails_panes() {
+    // An editor is a way of looking at a file, not something running in
+    // the checkout that you might come back to.
+    let mut app = command_center();
+    app.tree[0].repositories[0].checkouts[0]
+        .panes
+        .push(editor(700, "zzz-editor.rs"));
+    app.expanded_repositories.insert(argus_protocol::RepositoryId(2));
+    let out = lines(&draw_at(&mut app, 120, 30)).join("\n");
+
+    assert!(!out.contains("zzz-editor"), "editors are not panes:\n{out}");
+    assert!(out.contains("claude"), "the agent still is:\n{out}");
+}
+
+#[test]
 fn active_repositories_sort_before_inactive_repositories() {
     let mut app = command_center();
     app.tree[0].repositories.insert(
@@ -102,10 +117,10 @@ fn repository_rail_expands_active_branches_and_panes_after_click() {
 
     let mut app = command_center();
     draw_at(&mut app, 120, 30);
-    let row = app.layout.projects.inner.y;
+    let row = app.layout.rail.inner.y;
     app.on_mouse(MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
-        column: app.layout.projects.inner.x + 2,
+        column: app.layout.rail.inner.x + 2,
         row,
         modifiers: KeyModifiers::NONE,
     });
@@ -148,8 +163,8 @@ fn clicking_a_repository_collapses_the_one_open_before_it() {
         )],
     ));
     draw_at(&mut app, 120, 30);
-    let x = app.layout.projects.inner.x + 2;
-    let y = app.layout.projects.inner.y;
+    let x = app.layout.rail.inner.x + 2;
+    let y = app.layout.rail.inner.y;
     click(&mut app, x, y);
     let text = lines(&draw_at(&mut app, 120, 30)).join("\n");
     assert!(
@@ -173,8 +188,8 @@ fn clicking_a_repository_collapses_the_one_open_before_it() {
 fn clicking_a_pane_in_the_rail_keeps_keys_on_the_rail_so_x_closes_it() {
     let mut app = command_center();
     draw_at(&mut app, 120, 30);
-    let x = app.layout.projects.inner.x + 2;
-    let y = app.layout.projects.inner.y;
+    let x = app.layout.rail.inner.x + 2;
+    let y = app.layout.rail.inner.y;
     click(&mut app, x, y);
     let text = lines(&draw_at(&mut app, 120, 30)).join("\n");
     let row = text
@@ -196,7 +211,7 @@ fn clicking_an_agent_in_the_agents_list_goes_straight_to_it() {
     app.focus = Focus::Repositories;
     click(&mut app, agents.x + 2, agents.y);
 
-    assert_eq!(app.view, View::Spine);
+    assert_eq!(app.view, View::Workspace);
     assert_eq!(app.current_pane().map(|pane| pane.id), Some(PaneId(100)));
     assert_eq!(app.focus, Focus::Panes);
 }
@@ -208,7 +223,7 @@ fn the_rail_border_continues_the_feature_tabs_left_edge() {
     let tabs: Vec<char> = rows[1].chars().collect();
     let feature = rows[1].find("FEATURE").unwrap();
     let feature_left = rows[1][..feature].chars().count() - 2;
-    let border = app.layout.projects.outer.right() as usize - 1;
+    let border = app.layout.rail.outer.right() as usize - 1;
     assert_eq!(feature_left, border, "{}\n{:?}", rows.join("\n"), tabs);
 }
 
@@ -233,7 +248,7 @@ fn the_rail_switches_projects_through_the_project_picker() {
     assert!(text.contains("argus 1/2"), "{text}");
 
     // Clicking the project name opens the picker on the current project.
-    let outer = app.layout.projects.outer;
+    let outer = app.layout.rail.outer;
     click(&mut app, outer.x + 4, outer.y + 2);
     assert!(app.picker.is_some());
     app.picker = None;

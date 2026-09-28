@@ -446,7 +446,35 @@ pub(crate) fn feature_row_at(
     None
 }
 
+/// The Feature stage, with the line being typed on the stage's last row.
+///
+/// A row taken off the bottom rather than a window floating over the
+/// sections: what you are writing and what is already there have to be
+/// readable at the same time.
 pub(super) fn render_feature_document(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
+    let Some(input) = app.line.as_ref() else {
+        return render_feature_sections(f, app, area, th);
+    };
+    let line = Line::from(vec![
+        Span::styled(format!(" {} ", input.label()), Style::default().fg(th.accent)),
+        Span::styled(input.text.clone(), Style::default().fg(th.text)),
+        Span::styled("_", Style::default().fg(th.accent)),
+    ]);
+    let row = Rect {
+        x: area.x.saturating_add(3),
+        y: area.bottom().saturating_sub(1),
+        width: area.width.saturating_sub(6),
+        height: 1.min(area.height),
+    };
+    let sections = Rect {
+        height: area.height.saturating_sub(1),
+        ..area
+    };
+    render_feature_sections(f, app, sections, th);
+    f.render_widget(Paragraph::new(line), row);
+}
+
+fn render_feature_sections(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     forget_feature_view(app);
     let features = app.feature_rows();
     let decided = app.board_rows().len();

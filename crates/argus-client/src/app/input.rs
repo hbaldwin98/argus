@@ -542,7 +542,7 @@ impl App {
 
     fn checkouts_filterable(&self) -> bool {
         self.view == View::Checkouts
-            || (self.view == View::Spine && self.focus == Focus::Checkouts)
+            || (self.view == View::Workspace && self.focus == Focus::Checkouts)
     }
 
     fn begin_checkout_filter(&mut self) {
@@ -599,7 +599,6 @@ impl App {
             KeyCode::Char('R') | KeyCode::Tab => self.open_review(),
             KeyCode::Char('H') => self.open_history(),
             KeyCode::Char('x') => self.kill_selected(),
-            KeyCode::Char('p') => self.cycle_fold(),
             KeyCode::Char('v') => self.toggle_pane_view(),
             KeyCode::Char('N') => self.jump_to_next_attention(),
             KeyCode::Char(c) if View::from_digit(c).is_some() => {
@@ -609,7 +608,7 @@ impl App {
         }
     }
 
-    /// A view that is not the spine, which is the feature view.
+    /// A view that is not the workspace, which is the feature view.
     ///
     /// The keys are one set rather than a set per panel: `j`/`k` moves in
     /// whichever panel has them and `Tab` crosses between panels, so
@@ -637,11 +636,11 @@ impl App {
         }
         if self.view == View::Panes {
             match key.code {
-                KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Spine),
+                KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Workspace),
                 KeyCode::Char('j') | KeyCode::Down => self.move_overview_pane(1),
                 KeyCode::Char('k') | KeyCode::Up => self.move_overview_pane(-1),
                 KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
-                    self.open_view(View::Spine);
+                    self.open_view(View::Workspace);
                     self.focus = Focus::PaneContent;
                 }
                 KeyCode::Char('A') => self.show_all_panes = !self.show_all_panes,
@@ -657,11 +656,11 @@ impl App {
                     self.begin_checkout_filter();
                     return;
                 }
-                KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Spine),
+                KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Workspace),
                 KeyCode::Char('j') | KeyCode::Down => self.adjust_selection(Focus::Checkouts, 1),
                 KeyCode::Char('k') | KeyCode::Up => self.adjust_selection(Focus::Checkouts, -1),
                 KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
-                    self.open_view(View::Spine);
+                    self.open_view(View::Workspace);
                     self.focus = Focus::Checkouts;
                 }
                 KeyCode::Char('B') => self.toggle_branches(),
@@ -677,7 +676,7 @@ impl App {
             // does not delete the row behind it, and the first escape puts
             // the line away rather than the view.
             _ if self.line.is_some() => self.on_key_line(key),
-            KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Spine),
+            KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Workspace),
 
             KeyCode::Char('h') | KeyCode::Left => self.go_to_panel(FeaturePanel::Features),
             KeyCode::Char('l') | KeyCode::Right => self.enter_feature(),

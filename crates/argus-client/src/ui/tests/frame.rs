@@ -3,13 +3,18 @@
 use super::*;
 
 #[test]
-fn a_click_in_a_scrolled_column_selects_the_row_it_landed_on() {
-    let mut app = app_with_a_long_checkout_column();
+fn a_click_in_a_scrolled_table_selects_the_row_it_landed_on() {
+    let mut app = app_with_a_long_checkout_table();
     app.sel_checkout = 7;
     // Tall enough for a few rows, far short of eight.
-    let buf = draw_at(&mut app, 100, 10);
-    let top = app.layout.checkouts.inner.y;
-    let first_drawn = lines(&buf)[top as usize].clone();
+    let buf = draw_at(&mut app, 100, 20);
+    let table = app.layout.checkouts.inner;
+    // A table row is three lines, and the name is not on the first.
+    let first_drawn = (table.y..table.y + 3)
+        .map(|y| row_text(&buf, y, table))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(app.layout.checkouts.first > 0, "the table is scrolled");
 
     click_checkout(&mut app, 0);
 
@@ -24,22 +29,22 @@ fn a_click_in_a_scrolled_column_selects_the_row_it_landed_on() {
 }
 
 #[test]
-fn a_scrolled_column_does_not_slide_when_the_selection_moves_back_up() {
-    let mut app = app_with_a_long_checkout_column();
+fn a_scrolled_table_does_not_slide_when_the_selection_moves_back_up() {
+    let mut app = app_with_a_long_checkout_table();
     app.sel_checkout = 7;
-    let buf = draw_at(&mut app, 100, 10);
-    let top = app.layout.checkouts.inner.y as usize;
-    // Which row that is depends on how many the card can hold, so it is
+    let buf = draw_at(&mut app, 100, 20);
+    let table = app.layout.checkouts.inner;
+    // Which row that is depends on how many the table can hold, so it is
     // read off the frame rather than named: what matters is that it does
     // not change.
-    let was = lines(&buf)[top].clone();
-    assert!(app.layout.checkouts.first > 0, "the column is scrolled");
+    let was = row_text(&buf, table.y, table);
+    assert!(app.layout.checkouts.first > 0, "the table is scrolled");
 
     app.on_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
-    let buf = draw_at(&mut app, 100, 10);
+    let buf = draw_at(&mut app, 100, 20);
 
     assert_eq!(
-        lines(&buf)[top],
+        row_text(&buf, table.y, table),
         was,
         "the selection is still on screen, so the list must not move under it"
     );
@@ -62,149 +67,33 @@ fn a_column_scrolls_the_least_it_can_to_keep_the_selection_visible() {
 }
 
 #[test]
-fn a_checkout_two_agents_are_working_in_says_it_is_shared() {
-    let mut app = app_with_tree();
-    let panes = &mut app.tree[0].repositories[0].checkouts[0].panes;
-    for p in panes.iter_mut() {
-        p.kind = argus_protocol::PaneKind::Agent;
-    }
-
-    let buf = draw_at(&mut app, 200, 20);
-    let rendered = lines(&buf);
-    let at = rendered
-        .iter()
-        .position(|l| l.contains("⌂ master"))
-        .expect("the primary checkout has a row");
-
-    assert!(
-        rendered[at].contains('⚠'),
-        "the glyph is what survives a narrow column: {:?}",
-        rendered[at]
-    );
-    assert!(
-        rendered[at + 1].contains("shared by 2"),
-        "sharing a checkout is allowed, but not something to find out later: {:?}",
-        rendered[at + 1]
-    );
-}
-
-#[test]
-fn one_agent_and_a_shell_is_not_sharing() {
-    let mut app = app_with_tree();
-
-    let buf = draw_at(&mut app, 120, 20);
-    let rendered = lines(&buf);
-
-    assert!(
-        !rendered.iter().any(|l| l.contains("shared")),
-        "the fixture has one agent and one shell in that checkout"
-    );
-}
-
-#[test]
-fn the_main_branch_gets_a_row_of_its_own_and_the_rest_do_not() {
-    let mut app = app_with_tree();
-    let r = &mut app.tree[0].repositories[0];
-    r.branches = vec!["hotfix".to_string(), "trunk".to_string()];
-    r.default_branch = Some("trunk".to_string());
-
-    let buf = draw_at(&mut app, 120, 20);
-    let rendered = lines(&buf);
-    assert!(
-        !rendered.iter().any(|l| l.contains("hotfix")),
-        "an ordinary branch stays out of the column: {rendered:?}"
-    );
-    let at = rendered
-        .iter()
-        .position(|l| l.contains("trunk"))
-        .expect("the main branch keeps its row whether or not it has a directory");
-
-    // A row is two lines: the name, then what it is.
-    assert!(
-        rendered[at + 1].contains("no checkout"),
-        "a branch row has to say what it is: {:?}",
-        rendered[at + 1]
-    );
-}
-
-#[test]
-fn a_remote_only_branch_says_that_is_where_it_is() {
-    let mut app = app_with_tree();
-    app.tree[0].repositories[0].remote_branches = vec!["origin/spike".to_string()];
-    app.show_branches = true;
-
-    // Wide, so the column has room for the row's own words.
-    let rendered = lines(&draw_at(&mut app, 200, 20));
-    let at = rendered
-        .iter()
-        .position(|l| l.contains("origin/spike"))
-        .expect("a branch the remote has should be reachable");
-    assert!(
-        rendered[at + 1].contains("on the remote only"),
-        "{:?}",
-        rendered[at + 1]
-    );
-}
-
-#[test]
-fn the_other_branches_appear_once_the_column_is_expanded() {
-    let mut app = app_with_tree();
-    app.tree[0].repositories[0].branches = vec!["hotfix".to_string()];
-    app.show_branches = true;
-
-    let rendered = lines(&draw_at(&mut app, 120, 20));
-    let at = rendered
-        .iter()
-        .position(|l| l.contains("hotfix"))
-        .expect("expanded, the branch should have a row of its own");
-    assert!(
-        rendered[at + 1].contains("no checkout"),
-        "{:?}",
-        rendered[at + 1]
-    );
-}
-
-#[test]
-fn all_five_columns_are_drawn_in_the_normal_pane_view() {
-    let mut app = app_with_tree();
-    app.focus = Focus::PaneContent;
-    let text = lines(&draw(&mut app)).join("\n");
-    for title in ["projects", "repositories", "checkouts", "panes"] {
-        assert!(
-            text.contains(title),
-            "{title} column missing while inside a pane"
-        );
-    }
-}
-
-#[test]
 fn fullscreen_gives_the_main_area_to_the_selected_pane() {
     let mut app = app_with_tree();
     app.focus = Focus::PaneContent;
     draw(&mut app);
-    let column_width = app.layout.content.outer.width;
+    let stage_width = app.layout.terminal.outer.width;
 
     app.pane_fullscreen = true;
     let text = lines(&draw(&mut app)).join("\n");
 
-    assert!(app.layout.content.outer.width > column_width);
+    assert!(app.layout.terminal.outer.width > stage_width);
+    // Tabs included: the terminal's top row is where the strip was, and a
+    // stale strip there turned a click on the terminal into a view switch.
     for panel in [
-        app.layout.projects,
-        app.layout.repositories,
+        app.layout.views,
+        app.layout.rail,
+        app.layout.agents,
         app.layout.checkouts,
         app.layout.panes,
     ] {
         assert_eq!(
             panel.outer,
             Rect::default(),
-            "hidden columns must not remain clickable"
+            "nothing hidden may remain clickable"
         );
     }
-    for title in ["projects", "repositories", "checkouts", "panes"] {
-        assert!(
-            !text.contains(title),
-            "{title} column remained visible in fullscreen"
-        );
+    for label in ["REPOSITORIES", "WORKSPACE", "FEATURE"] {
+        assert!(!text.contains(label), "{label} stayed visible in fullscreen");
     }
     assert!(text.contains("argus › orion › master › claude"));
     assert!(text.contains("f restore"));
@@ -232,8 +121,8 @@ fn a_focused_terminal_places_the_hardware_cursor_at_the_child_cursor() {
     terminal.draw(|f| render(f, &mut app)).unwrap();
 
     terminal.backend_mut().assert_cursor_position((
-        app.layout.content.inner.x + 2,
-        app.layout.content.inner.y + 1,
+        app.layout.terminal.inner.x + 2,
+        app.layout.terminal.inner.y + 1,
     ));
 }
 
@@ -388,190 +277,12 @@ fn an_unfocused_or_hidden_cursor_is_not_drawn() {
 }
 
 #[test]
-fn preferred_column_widths_are_used_and_keep_a_minimum() {
-    let mut app = app_with_tree();
-    app.column_widths = Some(vec![2, 18, 20, 20, 40]);
-    draw(&mut app);
-
-    assert_eq!(app.layout.projects.outer.width, MIN_COLUMN_WIDTH);
-    assert_eq!(app.layout.repositories.outer.width, 18);
-    assert_eq!(app.layout.checkouts.outer.width, 20);
-    assert_eq!(app.layout.panes.outer.width, 20);
-    assert_eq!(
-        app.layout.content.outer.width, 42,
-        "the slack lands in the live view"
-    );
-}
-
-#[test]
-fn narrow_row_text_ends_in_an_ellipsis() {
-    let mut app = app_with_tree();
-    app.tree[0].name = "a-project-with-a-very-long-name".to_string();
-    app.column_widths = Some(vec![MIN_COLUMN_WIDTH, 18, 18, 18, 34]);
-    let text = lines(&draw(&mut app)).join("\n");
-
-    // The pane is working, so its glyph is the spinner's first frame: a
-    // test app's clock never advances past the epoch it was built at.
-    assert!(
-        text.contains("⠋ a-proj…"),
-        "a name past the column's width should end in an ellipsis:\n{text}"
-    );
-}
-
-#[test]
 fn the_tree_contents_actually_reach_the_screen() {
     let mut app = app_with_tree();
     let text = lines(&draw(&mut app)).join("\n");
     assert!(text.contains("argus"), "project name");
     assert!(text.contains("master"), "checkout name");
     assert!(text.contains("claude"), "pane title");
-}
-
-#[test]
-fn repository_rows_roll_up_checkout_counts_panes_and_status() {
-    let mut app = app_with_tree();
-    app.tree[0].repositories.push(repository(
-        3,
-        "satellite",
-        vec![CheckoutInfo {
-            path: "/satellite".to_string(),
-            ..checkout(
-                12,
-                "main",
-                true,
-                vec![pane_info(
-                    102,
-                    PaneKind::Agent,
-                    "waiting",
-                    PaneStatus::Waiting,
-                )],
-            )
-        }],
-    ));
-
-    let buf = draw_at(&mut app, 140, 20);
-    let text = lines(&buf).join("\n");
-    assert!(
-        text.contains("satellite"),
-        "repository row missing:\n{text}"
-    );
-    assert!(
-        text.contains("2 repositories"),
-        "project rollup missing:\n{text}"
-    );
-    assert!(
-        text.contains("1 ▣"),
-        "repository pane rollup missing:\n{text}"
-    );
-
-    let status = buf
-        .cell((
-            app.layout.repositories.inner.x + 1,
-            app.layout.repositories.inner.y + ROW_HEIGHT,
-        ))
-        .unwrap();
-    assert_eq!(status.symbol(), "▲");
-    assert_eq!(status.fg, app.theme.err);
-}
-
-#[test]
-fn the_focused_column_alone_gets_the_accent_border() {
-    let th = Theme::default();
-    let mut app = app_with_tree();
-    app.focus = Focus::Checkouts;
-    let buf = draw(&mut app);
-
-    let corner = |p: Panel| buf.cell((p.outer.x, p.outer.y)).unwrap().fg;
-    assert_eq!(corner(app.layout.checkouts), th.accent, "focused column");
-    assert_eq!(corner(app.layout.projects), th.edge, "unfocused column");
-}
-
-#[test]
-fn the_three_elevations_show_up_on_screen() {
-    // Page behind unfocused panel behind focused panel. This is what
-    // makes the panels read as cards rather than boxes.
-    let th = Theme::default();
-    let mut app = app_with_tree();
-    app.focus = Focus::Projects;
-    let buf = draw(&mut app);
-
-    // A blank cell inside each panel, below the last row.
-    let blank = |p: Panel| {
-        buf.cell((p.inner.x, p.inner.y + p.inner.height - 1))
-            .unwrap()
-            .bg
-    };
-    assert_eq!(
-        blank(app.layout.projects),
-        th.surface_focus,
-        "focused panel"
-    );
-    assert_eq!(blank(app.layout.checkouts), th.surface, "unfocused panel");
-    assert_eq!(
-        buf.cell((0, 0)).unwrap().bg,
-        ratatui::style::Color::Reset,
-        "the page behind them is the host terminal's own background"
-    );
-}
-
-#[test]
-fn the_selected_row_is_marked_and_raised_never_reversed() {
-    let th = Theme::default();
-    let mut app = app_with_tree();
-    app.focus = Focus::Checkouts;
-    app.sel_checkout = 1;
-    let buf = draw(&mut app);
-
-    let inner = app.layout.checkouts.inner;
-    let marker = buf.cell((inner.x, inner.y + ROW_HEIGHT)).unwrap();
-    assert_eq!(
-        marker.symbol(),
-        MARKER,
-        "selection marker on the selected row"
-    );
-    assert_eq!(marker.fg, th.accent);
-    assert_eq!(marker.bg, th.sel_bg);
-
-    let unselected = buf.cell((inner.x, inner.y)).unwrap();
-    assert_eq!(
-        unselected.symbol(),
-        GUTTER,
-        "other rows keep an aligned gutter"
-    );
-    assert!(
-        !unselected.modifier.contains(Modifier::REVERSED),
-        "reverse video would fight the status colors"
-    );
-}
-
-#[test]
-fn an_unfocused_columns_selection_is_still_visible_but_quieter() {
-    let th = Theme::default();
-    let mut app = app_with_tree();
-    app.focus = Focus::Projects;
-    app.sel_checkout = 0;
-    let buf = draw(&mut app);
-
-    let inner = app.layout.checkouts.inner;
-    let cell = buf.cell((inner.x + 1, inner.y)).unwrap();
-    assert_eq!(
-        cell.bg, th.sel_bg_dim,
-        "you should still see where you were"
-    );
-}
-
-#[test]
-fn an_empty_column_explains_itself_instead_of_going_blank() {
-    let mut app = app_with_tree();
-    app.sel_checkout = 1; // the worktree with no panes
-    app.focus = Focus::Panes;
-    let text = lines(&draw(&mut app)).join("\n");
-    assert!(text.contains("nothing running"), "{text}");
-    assert!(
-        text.contains("shell"),
-        "an empty panes column says what to press:
-{text}"
-    );
 }
 
 #[test]
@@ -887,62 +598,6 @@ fn dump_review() {
     for line in lines(&draw_at(&mut app, 100, 20)) {
         println!("|{line}");
     }
-}
-
-// --- weight -------------------------------------------------------------
-
-/// The style of the first letter of a row's name, which is where the
-/// column's weight is decided.
-fn name_style(buf: &ratatui::buffer::Buffer, p: Panel, row: usize, lead: u16) -> (Color, bool) {
-    // Past the selection gutter, the status glyph, and whatever else the
-    // row carries in front of its name.
-    let x = p.inner.x + 1 + STATUS_WIDTH as u16 + lead;
-    let cell = buf
-        .cell((x, p.inner.y + row as u16 * ROW_HEIGHT))
-        .expect("the row is on screen");
-    (cell.fg, cell.modifier.contains(Modifier::BOLD))
-}
-
-#[test]
-fn a_column_nobody_is_in_recedes_behind_the_one_they_are() {
-    let mut app = app_with_tree();
-    let th = app.theme;
-
-    app.focus = Focus::Projects;
-    let buf = draw(&mut app);
-    assert_eq!(
-        name_style(&buf, app.layout.projects, 0, 0),
-        (th.text, true),
-        "the column with focus keeps full weight"
-    );
-
-    app.focus = Focus::Panes;
-    let buf = draw(&mut app);
-    assert_eq!(
-        name_style(&buf, app.layout.panes, 0, 0),
-        (th.text, true),
-        "and the weight follows the focus"
-    );
-    // The projects row is still the selected one, so it stays legible as
-    // the path you are on; it is the rest of that column that recedes.
-    assert_eq!(name_style(&buf, app.layout.projects, 0, 0), (th.text, true));
-}
-
-#[test]
-fn an_unselected_row_in_an_unfocused_column_is_the_part_that_recedes() {
-    let mut app = app_with_tree();
-    let th = app.theme;
-    app.focus = Focus::Panes;
-    let buf = draw(&mut app);
-    let panes = app.layout.panes;
-
-    assert_eq!(name_style(&buf, panes, 0, 0), (th.text, true), "selected");
-    assert_eq!(
-        // A checkout's name sits behind a kind mark as well.
-        name_style(&buf, app.layout.checkouts, 1, 2),
-        (th.muted, false),
-        "an unselected row in a column without focus is background"
-    );
 }
 
 // --- alignment ----------------------------------------------------------

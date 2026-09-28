@@ -593,18 +593,18 @@ fn clicking_an_empty_content_column_does_not_trap_focus_there() {
 }
 
 #[test]
-fn clicking_a_column_leaves_the_live_pane_subscribed() {
+fn clicking_the_rail_leaves_the_live_pane_subscribed() {
     // "Move over there" must not tear down the session you were on.
     let mut h = Harness::new();
     laid_out(&mut h);
-    h.keys("lll"); // down into the panes column, subscribing
+    h.keys("lll"); // down to the pane, subscribing
     h.sent();
     let watching = h.app.column_pane();
     assert!(watching.is_some(), "precondition: something is being shown");
 
-    h.app.on_mouse(click(0, 0)); // all the way back to projects
+    h.app.on_mouse(click(2, 4)); // the rail's repository row
 
-    assert_eq!(h.app.focus, Focus::Projects);
+    assert_eq!(h.app.focus, Focus::Repositories);
     assert_eq!(h.app.column_pane(), watching, "still showing the same pane");
 }
 

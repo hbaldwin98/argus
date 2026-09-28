@@ -476,7 +476,6 @@ impl App {
         if self.tree.is_empty() {
             return;
         }
-        let now = std::time::Instant::now();
         let mut transitions = Vec::new();
         for pane in panes_in(next) {
             let Some(previous) = panes_in(&self.tree).find(|old| old.id == pane.id) else {
@@ -495,8 +494,6 @@ impl App {
             }
         }
         for (pane, before, after, label, note) in transitions {
-            self.state_flashes
-                .insert(pane, crate::motion::Animation::starting(now, STATE_FLASH));
             if after.needs_you() && (!before.needs_you() || before != after) {
                 let message = note
                     .filter(|note| !note.is_empty())
@@ -512,27 +509,10 @@ impl App {
         }
     }
 
-    /// How much of the pane's state flash is left to draw, `1.0` at its
-    /// brightest and falling to nothing. `None` once it is over.
-    ///
-    /// Eased, so the highlight leaves the way a thing settles rather than
-    /// at a constant rate — and inverted from raw progress, because what
-    /// the renderer wants is how much wash to mix in, not how much of the
-    /// animation has gone by.
-    pub fn flash_strength(&self, pane: PaneId) -> Option<f32> {
-        let progress = self.state_flashes.get(&pane)?.progress(self.frame_now)?;
-        Some(1.0 - crate::motion::ease_out(progress))
-    }
-
-    /// When the next frame is owed to something moving: a flash still
-    /// fading, or a spinner about to change glyph. `None` when the screen
-    /// is settled and the loop can sleep until something happens.
+    /// When the next frame is owed to something moving: a spinner about to
+    /// change glyph, or focus still travelling. `None` when the screen is
+    /// settled and the loop can sleep until something happens.
     pub fn next_motion_deadline(&self) -> Option<std::time::Instant> {
-        let fading = self
-            .state_flashes
-            .values()
-            .map(|anim| anim.deadline())
-            .min();
         let spinning = self
             .any_pane_working()
             .then(|| crate::motion::spinner_deadline(self.frame_now, self.epoch));
@@ -540,18 +520,13 @@ impl App {
             .focus_from
             .filter(|(_, anim)| anim.progress(self.frame_now).is_some())
             .map(|(_, anim)| anim.deadline());
-        [fading, spinning, travelling].into_iter().flatten().min()
+        [spinning, travelling].into_iter().flatten().min()
     }
 
     /// Whether anything on screen is mid-turn, and so whether the spinner
     /// is asking for frames at all.
     fn any_pane_working(&self) -> bool {
         crate::app::panes_in(&self.tree).any(|p| p.status == PaneStatus::Working)
-    }
-
-    pub fn expire_state_flashes(&mut self, now: std::time::Instant) {
-        self.state_flashes
-            .retain(|_, anim| anim.progress(now).is_some());
     }
 
     /// The clock the frame about to be drawn reads. Set once per frame so
@@ -578,8 +553,8 @@ impl App {
     ///
     /// Focus used to snap, and a card that is simply *replaced* by another
     /// tells you where focus ended up but not that it moved — which is the
-    /// half that makes a spine of five cards read as one place you are
-    /// moving through rather than five that take turns lighting up.
+    /// half that makes several cards read as one place you are moving
+    /// through rather than several that take turns lighting up.
     pub fn focus_lit(&self, panel: Focus) -> crate::motion::Lit {
         let moving = self
             .focus_from

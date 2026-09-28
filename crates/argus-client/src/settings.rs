@@ -141,20 +141,6 @@ pub struct Settings {
     pub editor_cmd: String,
     /// A preset name from `theme::THEMES`.
     pub theme: String,
-    /// Preferred outer widths for projects, repositories, checkouts, panes,
-    /// and content. A vector lets older four-column files deserialize; the
-    /// renderer discards lengths that do not match the current layout.
-    /// Absent until the user first drags a column separator.
-    pub column_widths: Option<Vec<u16>>,
-    /// Preferred outer heights for the feature view's brief, tasks, and
-    /// decisions panels. Absent until the user first drags a feature gutter.
-    pub feature_panel_heights: Option<Vec<u16>>,
-    /// How many leading nav columns are folded away to left-edge tabs,
-    /// ceding their width to the columns that remain. Remembered so the
-    /// layout a user settled on survives a restart. Stored as a count
-    /// rather than as [`crate::app::Fold`] so a file written by a version
-    /// that knows more fold levels still loads.
-    pub folded_columns: u8,
     /// Whether panes are grouped by the selected checkout or listed across
     /// the whole workspace.
     pub pane_view: PaneView,
@@ -173,22 +159,10 @@ impl Default for Settings {
             editor: EditorMode::Overlay,
             editor_cmd: String::new(),
             theme: crate::theme::THEMES[0].to_string(),
-            column_widths: None,
-            feature_panel_heights: None,
-            folded_columns: 0,
             pane_view: PaneView::Checkout,
             review_split: false,
             notifications: NotificationMode::Off,
         }
-    }
-}
-
-impl Settings {
-    pub fn fold(&self) -> crate::app::Fold {
-        crate::app::Fold::ALL
-            .get(self.folded_columns as usize)
-            .copied()
-            .unwrap_or(crate::app::Fold::Repositories)
     }
 }
 
@@ -285,9 +259,6 @@ mod tests {
             editor: EditorMode::External,
             editor_cmd: "code -w".to_string(),
             theme: "latte".to_string(),
-            column_widths: Some(vec![12, 16, 18, 24, 46]),
-            feature_panel_heights: Some(vec![6, 12, 10]),
-            folded_columns: 1,
             pane_view: PaneView::Flat,
             review_split: true,
             notifications: NotificationMode::Bell,
@@ -302,17 +273,22 @@ mod tests {
         let s: Settings = toml::from_str(r#"theme = "frappe""#).unwrap();
         assert_eq!(s.theme, "frappe");
         assert_eq!(s.editor, Settings::default().editor);
-        assert_eq!(s.column_widths, None);
-        assert_eq!(s.feature_panel_heights, None);
         assert!(!s.review_split);
         assert_eq!(s.notifications, NotificationMode::Off);
         assert_eq!(s.pane_view, PaneView::Checkout);
     }
 
     #[test]
-    fn old_four_column_widths_deserialize_for_safe_runtime_migration() {
-        let s: Settings = toml::from_str("column_widths = [12, 18, 24, 46]").unwrap();
-        assert_eq!(s.column_widths, Some(vec![12, 18, 24, 46]));
+    fn a_file_from_the_column_layout_still_loads() {
+        // Column widths, folds and dragged feature panels were the
+        // five-column spine's; a file that remembers them is read for
+        // everything else it says.
+        let s: Settings = toml::from_str(
+            "theme = \"latte\"\ncolumn_widths = [12, 16, 18, 24, 46]\nfolded_columns = 1\n\
+             feature_panel_heights = [6, 12, 10]",
+        )
+        .unwrap();
+        assert_eq!(s.theme, "latte");
     }
 
     #[test]

@@ -20,13 +20,13 @@ use crate::app::FeaturePanel;
 /// reported. `App::on_key` hands it back on the next keypress, so a report
 /// is read once and then gets out of the way.
 pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
-    let area = if app.command_center {
+    let area = {
         let block = Block::default()
             .borders(Borders::TOP)
             .border_style(Style::default().fg(th.edge));
         let inner = block.inner(area);
         f.render_widget(block, area);
-        let rail = app.layout.projects.outer;
+        let rail = app.layout.rail.outer;
         if rail.width > 0 {
             f.render_widget(
                 Paragraph::new(Span::styled("┴", Style::default().fg(th.edge))),
@@ -39,22 +39,12 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             );
         }
         inner
-    } else {
-        // Legacy layout keeps one blank row above the command line.
-        Rect {
-            y: area.y + area.height.saturating_sub(1),
-            height: area.height.min(1),
-            ..area
-        }
     };
 
-    let (hints, tone) = if app.help.is_some() {
+    let hints: &[&str] = if app.help.is_some() {
         // The keymap window is up, so the bar stops advertising keys and
         // says how to work the window instead.
-        (
-            &["j/k scroll   any other key closes", "any key closes"][..],
-            th.dim,
-        )
+        &["j/k scroll   any other key closes", "any key closes"][..]
     } else if let Some(p) = &app.picker {
         // What Enter does differs per picker, and "spawn" on the theme list
         // would be a small lie.
@@ -87,26 +77,20 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "enter transfer  esc",
             ],
         };
-        (hints, th.dim)
+        hints
     } else if app.prompt.is_some() {
-        (
-            &[
-                "type to edit   enter confirm   esc cancel",
-                "enter confirm  esc",
-            ][..],
-            th.dim,
-        )
+        &[
+            "type to edit   enter confirm   esc cancel",
+            "enter confirm  esc",
+        ][..]
     } else if app.checkout_filtering {
-        (
-            &[
-                "type to filter branches   enter apply   esc clear",
-                "type to filter   enter apply   esc clear",
-                "enter apply  esc clear",
-            ][..],
-            th.dim,
-        )
+        &[
+            "type to filter branches   enter apply   esc clear",
+            "type to filter   enter apply   esc clear",
+            "enter apply  esc clear",
+        ][..]
     } else if app.leader_pending {
-        let hints: &[&str] = if app.pane_fullscreen {
+        if app.pane_fullscreen {
             &[
                 "leader…   esc back   f restore   N attention   x close",
                 "leader…  esc  f restore  N  x close",
@@ -116,13 +100,9 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "leader…   esc back   f fullscreen   N attention   x close",
                 "leader…  esc  f full  N  x close",
             ]
-        };
-        (hints, th.accent)
+        }
     } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
-        (
-            &["j/k move   h/l change   esc close", "h/l change  esc"][..],
-            th.dim,
-        )
+        &["j/k move   h/l change   esc close", "h/l change  esc"][..]
     } else if matches!(app.overlay, Some(Overlay::Review)) {
         // A commit reached from the history overlay goes back to it rather
         // than flipping a side that means nothing there. `s` names where it
@@ -150,149 +130,104 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             format!("j/k  ]/[ file  c comment  {split}  {base}  esc"),
             format!("]/[ file  c comment  {split}  esc"),
         ];
-        return draw_bar(f, app, area, &hints, th.dim, th);
+        return draw_bar(f, app, area, &hints, th);
     } else if matches!(app.overlay, Some(Overlay::History)) {
-        (
-            &[
-                "j/k  ]/[ commit  l files/open  h fold  r refresh  R review  esc close",
-                "]/[ commit  l open  h fold  R review  esc",
-                "]/[ commit  R review  esc",
-            ][..],
-            th.dim,
-        )
+        &[
+            "j/k  ]/[ commit  l files/open  h fold  r refresh  R review  esc close",
+            "]/[ commit  l open  h fold  R review  esc",
+            "]/[ commit  R review  esc",
+        ][..]
     } else if matches!(app.overlay, Some(Overlay::SequenceDiagram)) {
-        (
-            &["j/k scroll  h/l pan  q close", "j/k  h/l  q", "h/l  q"][..],
-            th.dim,
-        )
+        &["j/k scroll  h/l pan  q close", "j/k  h/l  q", "h/l  q"][..]
     } else if matches!(app.overlay, Some(Overlay::Brief)) {
         // The two modes have almost no keys in common, so the bar shows
         // the one you are actually in.
         match app.brief.as_ref().map(|v| v.mode) {
-            Some(BriefMode::Insert) => (
-                &["typing — esc to stop and save", "esc saves"][..],
-                th.accent,
-            ),
-            _ => (
-                &[
-                    "j/k move  i insert  o new line  q close",
-                    "j/k  i insert  q close",
-                    "i insert  q close",
-                ][..],
-                th.dim,
-            ),
+            Some(BriefMode::Insert) => &["typing — esc to stop and save", "esc saves"][..],
+            _ => &[
+                "j/k move  i insert  o new line  q close",
+                "j/k  i insert  q close",
+                "i insert  q close",
+            ][..],
         }
     } else if app.overlay.is_some() {
-        (
-            &[
-                "floating — ctrl-space then esc to close, x to kill   ctrl-v paste",
-                "floating — ctrl-space then esc, x to kill",
-                "ctrl-space esc",
-            ][..],
-            th.dim,
-        )
-    } else if app.view != View::Spine {
-        // A view owns the whole content area and has its own keys. Without
-        // this the bar falls through to the spine's columns and advertises
-        // keys that do nothing here, which is worse than saying nothing.
+        &[
+            "floating — ctrl-space then esc to close, x to kill   ctrl-v paste",
+            "floating — ctrl-space then esc, x to kill",
+            "ctrl-space esc",
+        ][..]
+    } else if app.view != View::Workspace {
+        // A view owns the whole stage and has its own keys. Without this the
+        // bar falls through to the workspace's and advertises keys that do
+        // nothing here, which is worse than saying nothing.
         match app.view {
-            _ if app.line.is_some() => (
-                &[
-                    "typing — enter saves it, esc throws it away",
-                    "enter saves  esc drops",
-                ][..],
-                th.accent,
-            ),
+            _ if app.line.is_some() => &[
+                "typing — enter saves it, esc throws it away",
+                "enter saves  esc drops",
+            ][..],
             // Named per panel, since which keys are live depends on
             // which one has them: `a` adds a feature or root task and `s`
             // adds a subtask in the tasks panel, and a bar that said neither would be a
             // bar saying nothing.
             View::Feature => match app.panel {
-                FeaturePanel::Features => (
-                    &[
-                        "h/l panels  j/k move  a new  e brief  R rename  m checkout  v archive  x drop  . accept  r refresh  q spine",
-                        "l tasks  j/k move  a new  e brief  m move  v archive  x drop  . accept  q spine",
-                        "j/k  a new  m move  v archive  . accept  q",
-                    ][..],
-                    th.dim,
-                ),
-                FeaturePanel::Tasks => (
-                    &[
-                        "h/l panels  j/k move  a root  s subtask  e title  enter brief  H/L todo→doing→done  J/K order  x drop  q spine",
-                        "h/l panels  j/k move  a root  s subtask  e title  enter brief  H/L move  J/K order  x drop  q",
-                        "j/k  a root  s subtask  e title  enter brief  H/L move  q",
-                    ][..],
-                    th.dim,
-                ),
-                FeaturePanel::Diagrams => (
-                    &[
-                        "h/l panels  j/k move  a new  enter open  x drop  q spine",
-                        "h/l panels  j/k move  a new  enter open  x drop  q",
-                        "j/k  enter open  a new  q",
-                    ][..],
-                    th.dim,
-                ),
-                FeaturePanel::Decisions => (
-                    &[
-                        "h/l panels  j/k move  d/u ten  g/G ends  r refresh  q spine — agents write this",
-                        "h/l panels  j/k move  r refresh  q spine",
-                        "h/l  j/k  q spine",
-                    ][..],
-                    th.dim,
-                ),
-            },
-            View::Panes => (
-                &["j/k move   enter open   A all   a agent   s shell   q workspace", "j/k  enter open  A all  q"][..],
-                th.dim,
-            ),
-            View::Checkouts => (
-                &[
-                    "j/k move   / filter   enter open   m checkout   n worktree   q workspace",
-                    "j/k  / filter  enter open  q",
-                    "j/k  enter open  q",
+                FeaturePanel::Features => &[
+                    "h/l panels  j/k move  a new  e brief  R rename  m checkout  v archive  x drop  . accept  r refresh  q workspace",
+                    "l tasks  j/k move  a new  e brief  m move  v archive  x drop  . accept  q workspace",
+                    "j/k  a new  m move  v archive  . accept  q",
                 ][..],
-                th.dim,
-            ),
-            View::Spine => unreachable!("the workspace is handled above"),
+                FeaturePanel::Tasks => &[
+                    "h/l panels  j/k move  a root  s subtask  e title  enter brief  H/L todo→doing→done  J/K order  x drop  q workspace",
+                    "h/l panels  j/k move  a root  s subtask  e title  enter brief  H/L move  J/K order  x drop  q",
+                    "j/k  a root  s subtask  e title  enter brief  H/L move  q",
+                ][..],
+                FeaturePanel::Diagrams => &[
+                    "h/l panels  j/k move  a new  enter open  x drop  q workspace",
+                    "h/l panels  j/k move  a new  enter open  x drop  q",
+                    "j/k  enter open  a new  q",
+                ][..],
+                FeaturePanel::Decisions => &[
+                    "h/l panels  j/k move  d/u ten  g/G ends  r refresh  q workspace — agents write this",
+                    "h/l panels  j/k move  r refresh  q workspace",
+                    "h/l  j/k  q workspace",
+                ][..],
+            },
+            View::Panes => &["j/k move   enter open   A all   a agent   s shell   q workspace", "j/k  enter open  A all  q"][..],
+            View::Checkouts => &[
+                "j/k move   / filter   enter open   m checkout   n worktree   q workspace",
+                "j/k  / filter  enter open  q",
+                "j/k  enter open  q",
+            ][..],
+            View::Workspace => unreachable!("the workspace is handled above"),
         }
     } else if app.focus == Focus::PaneContent {
         // A parked pane is not taking input anywhere the operator can see,
         // so the way back to the live screen outranks the usual keymap.
         if app.scroll_indicator().is_some() {
-            (
-                &[
-                    "scrolled back   shift-pgup/pgdn move   type or scroll down to return",
-                    "scrolled back   type or scroll down to return",
-                    "scrolled back — type to return",
-                ][..],
-                th.accent,
-            )
+            &[
+                "scrolled back   shift-pgup/pgdn move   type or scroll down to return",
+                "scrolled back   type or scroll down to return",
+                "scrolled back — type to return",
+            ][..]
         } else if app.pane_fullscreen {
-            (
-                &[
-                    "typing   ctrl-space: esc leave  f restore  x close   shift-pgup scroll",
-                    "typing   ctrl-space: esc leave  f restore  x close",
-                    "typing   ctrl-space esc",
-                ][..],
-                th.dim,
-            )
+            &[
+                "typing   ctrl-space: esc leave  f restore  x close   shift-pgup scroll",
+                "typing   ctrl-space: esc leave  f restore  x close",
+                "typing   ctrl-space esc",
+            ][..]
         } else {
-            (
-                &[
-                    "typing   ctrl-space: esc leave  f fullscreen  x close   shift-pgup scroll",
-                    "typing   ctrl-space: esc leave  f full  x close",
-                    "typing   ctrl-space esc",
-                ][..],
-                th.dim,
-            )
+            &[
+                "typing   ctrl-space: esc leave  f fullscreen  x close   shift-pgup scroll",
+                "typing   ctrl-space: esc leave  f full  x close",
+                "typing   ctrl-space esc",
+            ][..]
         }
     } else {
         // Per column rather than one list of everything: the bar cannot
         // hold every key at once, and most of them only apply somewhere.
         let keys: &[&str] = match app.focus {
             Focus::Projects => &[
-                "j/k  l open  n add  D rm  w wksp  p fold",
-                "l open  n add  p fold",
+                "j/k  l open  n add  D rm  w wksp",
+                "l open  n add",
                 "l open  n add",
             ],
             Focus::Repositories => &[
@@ -311,10 +246,10 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "l open  R review",
             ],
         };
-        (keys, th.dim)
+        keys
     };
 
-    draw_bar(f, app, area, hints, tone, th);
+    draw_bar(f, app, area, hints, th);
 }
 
 /// Lays the chosen tiers out against the space there is.
@@ -330,7 +265,6 @@ fn draw_bar<S: AsRef<str>>(
     app: &App,
     area: Rect,
     hints: &[S],
-    tone: Color,
     th: Theme,
 ) {
     // An alert is the one thing on this bar the user *must* read, so it
@@ -382,11 +316,7 @@ fn draw_bar<S: AsRef<str>>(
     let beside = hints.iter().find(|h| left_len + len(h) + 3 <= width);
     let alone = || hints.iter().find(|h| len(h) + 2 <= width);
 
-    let (pad, tone) = if app.command_center {
-        (2, th.dim)
-    } else {
-        (1, tone)
-    };
+    let (pad, tone) = (2, th.dim);
     let width = width.saturating_sub(pad - 1);
     let mut spans = vec![Span::raw(" ".repeat(pad))];
     match (beside, alert) {
@@ -423,7 +353,6 @@ fn draw_bar<S: AsRef<str>>(
 /// happening, and the breadcrumb comes back: a bar reading `0 working` is a
 /// row spent saying no.
 fn fleet(app: &App, th: Theme) -> Vec<Span<'static>> {
-    let spin = Spin::at(app.frame_now(), app.epoch());
     let mut tally: Vec<(PaneStatus, usize)> = Vec::new();
     let states = app
         .tree
@@ -456,26 +385,16 @@ fn fleet(app: &App, th: Theme) -> Vec<Span<'static>> {
         if !spans.is_empty() {
             spans.push(Span::raw("   "));
         }
-        // The same glyph the rows use, so the count and the column it is
-        // counting are read as the same thing.
-        if app.command_center {
-            // The shell's palette: one color per state, glyph and count alike.
-            let color = status_color(status, th);
-            let glyph = match status {
-                PaneStatus::Working => crate::motion::spinner(app.frame_now(), app.epoch()),
-                PaneStatus::Done => "✓",
-                _ => "▲",
-            };
-            spans.push(Span::styled(
-                format!("{glyph} {n} {}", tally_word(status)),
-                Style::default().fg(color),
-            ));
-            continue;
-        }
-        spans.push(status_dot(Some(status), th, spin));
+        // The shell's palette: one color per state, glyph and count alike.
+        let color = status_color(status, th);
+        let glyph = match status {
+            PaneStatus::Working => crate::motion::spinner(app.frame_now(), app.epoch()),
+            PaneStatus::Done => "✓",
+            _ => "▲",
+        };
         spans.push(Span::styled(
-            format!("{n} {}", tally_word(status)),
-            Style::default().fg(if status.needs_you() { th.err } else { th.muted }),
+            format!("{glyph} {n} {}", tally_word(status)),
+            Style::default().fg(color),
         ));
     }
     spans

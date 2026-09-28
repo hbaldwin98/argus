@@ -118,7 +118,6 @@ fn a_keymap_taller_than_the_window_scrolls_rather_than_being_cut_off() {
 #[test]
 fn each_command_center_view_lists_its_own_keys() {
     let mut app = app_with_tree();
-    app.command_center = true;
     press(&mut app, '?');
     let rail = lines(&draw_at(&mut app, 200, 60)).join("\n");
     assert!(rail.contains("x closes it"), "{rail}");

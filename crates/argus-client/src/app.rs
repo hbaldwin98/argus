@@ -32,8 +32,8 @@ use crate::selection::TerminalSelection;
 use crate::theme::Theme;
 
 use argus_protocol::ReviewBase;
-use layout::{in_rect, row_in};
-pub use layout::{Focus, Fold, Layout, Panel};
+use layout::in_rect;
+pub use layout::{Focus, Layout, Panel};
 pub use modal::{Help, Overlay, Picker, PickerKind, Prompt, RemoveTarget, Setting};
 pub use rows::{CheckoutAnchor, CheckoutRow, PaneLocation};
 pub use views::{FeaturePanel, View};
@@ -49,8 +49,6 @@ mod rows;
 mod scroll;
 mod server;
 mod views;
-
-const STATE_FLASH: std::time::Duration = std::time::Duration::from_millis(900);
 
 /// The branch a remote-tracking name would become locally:
 /// `origin/feature/x` → `feature/x`. Remote names have no slash in them,
@@ -188,9 +186,9 @@ pub struct App {
     /// Which top-level surface is open. Client-only state: see
     /// [`views`].
     pub view: View,
-    /// Where focus was on the spine when another view took the screen, so
-    /// coming back lands on the column you left rather than at the root.
-    spine_focus: Focus,
+    /// Where focus was in the workspace when another view took the stage,
+    /// so coming back lands where you left rather than at the root.
+    workspace_focus: Focus,
     pub sel_project: usize,
     pub sel_repository: usize,
     pub sel_checkout: usize,
@@ -204,10 +202,6 @@ pub struct App {
     /// This is view state only; the renderer's existing live-pane sizing
     /// turns the larger area into a PTY resize.
     pub pane_fullscreen: bool,
-    /// Production uses the HTML-specified command center. Kept as a switch
-    /// so the legacy geometry remains directly regression-testable while
-    /// the replacement settles.
-    pub(crate) command_center: bool,
     /// How the clipboard is read. A field so a test can hand the app a
     /// clipboard without there being a desktop session to hold one.
     pub clipboard: fn() -> Option<String>,
@@ -224,17 +218,6 @@ pub struct App {
     pub status: String,
     pub status_alert: bool,
     pub layout: Layout,
-    /// Preferred outer widths for the five main columns. `None` uses the
-    /// initial proportional layout; dragging a gutter captures concrete
-    /// widths so the adjustment survives subsequent frames.
-    pub column_widths: Option<Vec<u16>>,
-    /// Preferred outer heights for the feature view's brief, tasks, and
-    /// decisions panels. `None` lets their contents choose the initial
-    /// layout; dragging a feature gutter captures the current heights.
-    pub feature_panel_heights: Option<Vec<u16>>,
-    /// True when the projects column is folded away to a left-edge tab.
-    /// Stored both here (for the renderer) and on `settings` (so it persists).
-    pub fold: Fold,
     /// True while the checkouts column also lists the branches nothing is
     /// sitting on. Off by default — the column is for what is running, and
     /// the main branch is pinned to the top of it either way.
@@ -252,8 +235,6 @@ pub struct App {
     /// Pane overview scope. It starts on the selected repository; `A`
     /// temporarily broadens it to every repository in the workspace.
     pub show_all_panes: bool,
-    resizing_gutter: Option<usize>,
-    resizing_feature_gutter: Option<usize>,
     pub picker: Option<Picker>,
     /// The directory browser, up in place of a prompt when a project or a
     /// repository is being added.
@@ -341,11 +322,6 @@ pub struct App {
     pending_focus_new_repository: Option<ProjectId>,
     /// Agent spawn waiting on a worktree the daemon is creating.
     pending_spawn_agent: Option<PendingSpawnAgent>,
-    /// A short shape-preserving highlight after an effective parent or child
-    /// state changes, fading out rather than snapping off. The client
-    /// derives this from consecutive snapshots; the first snapshot on
-    /// attach is only a baseline.
-    state_flashes: std::collections::HashMap<PaneId, crate::motion::Animation>,
     /// The instant the frame being drawn is for, and the epoch every
     /// repeating animation is phased off.
     ///
@@ -396,23 +372,11 @@ impl App {
             Ok(_) => Theme::from_env(),
             Err(_) => Theme::by_name(&settings.theme),
         };
-        let column_widths = settings
-            .column_widths
-            .clone()
-            .filter(|widths| widths.len() == 5);
-        let feature_panel_heights = settings
-            .feature_panel_heights
-            .clone()
-            .filter(|heights| heights.len() == 3);
         let review_split = settings.review_split;
         let started = std::time::Instant::now();
         // Hoisted so the first frame is drawn already settled on it,
         // rather than fading in from wherever the default sat.
-        let focus = if settings.fold().hides(Focus::Projects) {
-            Focus::Repositories
-        } else {
-            Focus::Projects
-        };
+        let focus = Focus::Projects;
         App {
             tree: Vec::new(),
             templates: Vec::new(),
@@ -422,7 +386,7 @@ impl App {
             // restart from that state lands a column further in.
             focus,
             view: View::default(),
-            spine_focus: Focus::Panes,
+            workspace_focus: Focus::Panes,
             sel_project: 0,
             sel_repository: 0,
             sel_checkout: 0,
@@ -430,7 +394,6 @@ impl App {
             grids: std::collections::HashMap::new(),
             leader_pending: false,
             pane_fullscreen: false,
-            command_center: true,
             clipboard: crate::clipboard::read,
             clipboard_write: crate::clipboard::write,
             selection: None,
@@ -440,16 +403,11 @@ impl App {
             status: String::new(),
             status_alert: false,
             layout: Layout::default(),
-            column_widths,
-            feature_panel_heights,
-            fold: settings.fold(),
             show_branches: false,
             checkout_filter: String::new(),
             checkout_filtering: false,
             expanded_repositories: std::collections::HashSet::new(),
             show_all_panes: false,
-            resizing_gutter: None,
-            resizing_feature_gutter: None,
             picker: None,
             dir_picker: None,
             overlay: None,
@@ -488,7 +446,6 @@ impl App {
             pending_focus_new_project: false,
             pending_focus_new_repository: None,
             pending_spawn_agent: None,
-            state_flashes: std::collections::HashMap::new(),
             frame_now: started,
             epoch: started,
             focus_shown: focus,

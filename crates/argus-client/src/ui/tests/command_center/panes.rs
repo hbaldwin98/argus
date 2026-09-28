@@ -29,7 +29,7 @@ fn clicking_a_pane_card_opens_that_exact_pane() {
         modifiers: KeyModifiers::NONE,
     });
 
-    assert_eq!(app.view, View::Spine);
+    assert_eq!(app.view, View::Workspace);
     assert_eq!(app.current_pane().map(|pane| pane.id), Some(PaneId(100)));
     assert_eq!(app.focus, Focus::PaneContent);
 }

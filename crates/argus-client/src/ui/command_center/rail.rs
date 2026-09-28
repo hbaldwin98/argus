@@ -37,7 +37,7 @@ fn rail_targets(app: &App) -> Vec<RailTarget> {
         // One repository is open at a time: the clicked one, or the one
         // holding the pane the keys are on when that is somewhere else.
         let in_pane =
-            app.view == View::Spine && matches!(app.focus, Focus::Panes | Focus::PaneContent);
+            app.view == View::Workspace && matches!(app.focus, Focus::Panes | Focus::PaneContent);
         let expanded = match app.current_repository() {
             Some(current) if in_pane && !app.expanded_repositories.contains(&current.id) => {
                 repository == app.sel_repository
@@ -67,7 +67,7 @@ fn rail_targets(app: &App) -> Vec<RailTarget> {
 }
 
 pub(crate) fn rail_target_at(app: &App, x: u16, y: u16) -> Option<RailTarget> {
-    let panel = app.layout.projects;
+    let panel = app.layout.rail;
     contains(panel.inner, x, y)
         .then(|| {
             rail_targets(app)
@@ -78,13 +78,13 @@ pub(crate) fn rail_target_at(app: &App, x: u16, y: u16) -> Option<RailTarget> {
 }
 
 pub(crate) fn sidebar_contains(app: &App, x: u16, y: u16) -> bool {
-    contains(app.layout.projects.outer, x, y)
+    contains(app.layout.rail.outer, x, y)
 }
 
 /// The project name and the workspace line under it: clicking either opens
 /// the project picker, since the rail shows one project at a time.
 pub(crate) fn project_header_at(app: &App, x: u16, y: u16) -> bool {
-    let outer = app.layout.projects.outer;
+    let outer = app.layout.rail.outer;
     contains(outer, x, y) && (outer.y + 1..=outer.y + 2).contains(&y)
 }
 
@@ -310,12 +310,12 @@ pub(super) fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme
     }
     // Repository rows are the rail's interactive interior, while the whole
     // rail remains its hit target and geometry landmark.
-    app.layout.projects.outer = area;
+    app.layout.rail.outer = area;
 }
 
 fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     if area.height < 3 {
-        app.layout.projects = Panel::default();
+        app.layout.rail = Panel::default();
         return;
     }
     f.render_widget(
@@ -346,7 +346,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let targets = rail_targets(app);
     let first = app
         .layout
-        .projects
+        .rail
         .first
         .min(targets.len().saturating_sub(1));
     let width = rows_area.width as usize;
@@ -469,7 +469,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                     continue;
                 };
                 let selected = app.pane_location() == Some(location)
-                    && app.view == View::Spine
+                    && app.view == View::Workspace
                     && matches!(app.focus, Focus::Panes | Focus::PaneContent);
                 let bg = if selected { th.surface_focus } else { row_bg };
                 let color = status_color(pane.status, th);
@@ -512,7 +512,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
             }
         };
         let fill = if matches!(*target, RailTarget::Pane(l) if app.pane_location() == Some(l)
-            && app.view == View::Spine
+            && app.view == View::Workspace
             && matches!(app.focus, Focus::Panes | Focus::PaneContent))
         {
             th.surface_focus
@@ -528,12 +528,11 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
             },
         );
     }
-    app.layout.projects = Panel {
+    app.layout.rail = Panel {
         outer: area,
         inner: rows_area,
         first,
     };
-    app.layout.row_height = 1;
 }
 
 fn render_agents(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {

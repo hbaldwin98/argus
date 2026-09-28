@@ -90,7 +90,6 @@ const VIEW: Group = Group {
         ("2", "feature — brief, tasks, and decisions"),
         ("3", "panes — every pane as a card"),
         ("4", "checkouts — branches and worktrees"),
-        ("p", "fold a column away, and back"),
         ("v", "where panes are listed"),
         ("t", "theme"),
         ("w", "workspace"),
@@ -192,7 +191,7 @@ const FEATURE: Group = Group {
             "scroll the section under the pointer, brief included",
         ),
         ("click", "select a feature, task, or decision"),
-        ("esc  q", "back to the spine"),
+        ("esc  q", "back to the workspace"),
     ],
 };
 
@@ -228,11 +227,7 @@ pub(super) fn groups(app: &App) -> Vec<&'static Group> {
     } else if app.input_pane().is_some() || app.focus == Focus::PaneContent {
         vec![&PANE]
     } else {
-        if app.command_center {
-            vec![&MOVE, &SELECTION, &RAIL, &VIEW]
-        } else {
-            vec![&MOVE, &SELECTION, &VIEW]
-        }
+        vec![&MOVE, &SELECTION, &RAIL, &VIEW]
     };
     groups.push(&EVERYWHERE);
     groups

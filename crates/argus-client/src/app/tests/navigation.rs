@@ -112,7 +112,6 @@ fn flat_view_moves_through_panes_across_checkout_and_project_boundaries() {
         h.app.settings.pane_view,
         crate::settings::PaneView::Checkout
     );
-    assert_eq!(h.app.pane_column_locations().len(), 1);
 }
 
 #[test]

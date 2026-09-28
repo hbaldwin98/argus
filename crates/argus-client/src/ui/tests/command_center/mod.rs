@@ -9,9 +9,7 @@ use super::*;
 use crate::app::FeaturePanel;
 
 fn command_center() -> App {
-    let mut app = app_with_tree();
-    app.command_center = true;
-    app
+    app_with_tree()
 }
 
 #[test]
@@ -32,13 +30,13 @@ fn production_shell_matches_the_designs_four_regions() {
         !text.contains("└ master"),
         "repositories expand only after a click:\n{text}"
     );
-    assert_eq!(app.layout.projects.outer.x, 0);
+    assert_eq!(app.layout.rail.outer.x, 0);
     assert_eq!(
-        app.layout.projects.outer.width,
+        app.layout.rail.outer.width,
         crate::ui::command_center::SIDEBAR_WIDTH
     );
     assert!(
-        app.layout.content.outer.x >= crate::ui::command_center::SIDEBAR_WIDTH
+        app.layout.terminal.outer.x >= crate::ui::command_center::SIDEBAR_WIDTH
     );
 }
 
@@ -51,7 +49,7 @@ fn first_run_replaces_the_shell_when_no_tree_exists() {
 
     assert!(text.contains("NO WORKSPACE"), "{text}");
     assert!(text.contains("Point Argus at a directory"), "{text}");
-    assert_eq!(app.layout.projects.outer, Rect::default());
+    assert_eq!(app.layout.rail.outer, Rect::default());
 }
 
 fn click(app: &mut App, column: u16, row: u16) {

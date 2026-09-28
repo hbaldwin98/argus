@@ -229,6 +229,6 @@ fn every_pane_on_screen_is_sized_from_its_own_area() {
 
     let live = h.app.live_panes();
     assert_eq!(live.len(), 2, "the column's pane and the floating one");
-    assert_eq!(live[0].1, h.app.layout.content.inner);
+    assert_eq!(live[0].1, h.app.layout.terminal.inner);
     assert_eq!(live[1].1, h.app.layout.overlay.inner);
 }

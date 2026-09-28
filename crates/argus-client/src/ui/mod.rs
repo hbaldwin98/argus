@@ -1,36 +1,23 @@
-//! The renderer. Its default view is the spine: five columns — projects,
-//! repositories, checkouts, open panes, and the selected pane's live view.
-//! A pane can temporarily take the main content area while its terminal
-//! has focus, and another view can take it outright (see [`views`]); the
-//! tab strip along the top says which views there are and which is open.
+//! The renderer: the command center — the tab strip naming the four
+//! stages, the contextual rail, the open stage, and the command band (see
+//! [`command_center`]). A pane's terminal can take the whole content area
+//! while it has focus, and overlays and modals float over everything.
 //!
 //! Every color goes through [`crate::theme::Theme`] rather than being named
 //! here, and the visual language is deliberately narrow:
 //!
 //! - **Elevation** carries structure: the page sits at `bg`, an unfocused
-//!   panel at `surface`, the focused one at `surface_focus`. Panels are
-//!   padded and separated by a gutter, so they read as cards rather than
-//!   as boxes drawn in a terminal.
+//!   card at `surface`, the focused one at `surface_focus`.
 //! - **Focus** is that elevation plus an accent border and title.
 //! - **Selection** is a raised bar with an accent `▌` marker, never reverse
 //!   video — reverse fights with the per-row status colors.
 //! - **State** is a shape-distinct glyph in the row's status color (§8b),
-//!   rolled up to parents by the worst descendant.
-//! - **Weight** recedes with focus: names in the column being used are
-//!   `text` and bold, and elsewhere they drop to `muted` — except the
-//!   selected row, which is the path you are on and stays legible.
-//! - **Overflow** is a thumb in the card's right padding cell, so a column
-//!   never scrolls without admitting there is more of it.
-//! - **Width follows content**: a nav column asks for what its widest row
-//!   needs and the live view takes the rest, rather than every column
-//!   taking a fixed share of the screen whatever it holds.
-//! - **Rows are two lines**: what the thing is, then a dimmer line of what
-//!   is true about it. Packing both onto one line is what made the old
-//!   layout feel cramped.
+//!   rolled up to parents by the most urgent state beneath.
+//! - **Overflow** is a thumb beside the rows, so a list never scrolls
+//!   without admitting there is more of it.
 
 use argus_protocol::{
-    ChildAgentInfo, Color as PColor, FileDiff, GitStatus, HighlightKind, HighlightSpan, LineKind,
-    PaneStatus,
+    Color as PColor, FileDiff, HighlightKind, HighlightSpan, LineKind, PaneStatus,
 };
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Position, Rect};
@@ -40,7 +27,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Wi
 use ratatui::Frame;
 
 use crate::app::{
-    App, CheckoutRow, Focus, Fold, Overlay, PaneLocation, Panel, PickerKind, Prompt, Setting, View,
+    App, CheckoutRow, Focus, Overlay, PaneLocation, Panel, PickerKind, Prompt, Setting, View,
 };
 use crate::brief::BriefMode;
 use crate::dirpicker::DirRow;
@@ -50,7 +37,7 @@ use crate::review::{ReviewView, Row};
 use crate::theme::Theme;
 use argus_protocol::CursorShape;
 
-mod columns;
+mod card;
 mod command_center;
 mod help;
 mod history;
@@ -58,13 +45,12 @@ mod modals;
 mod overlay;
 pub(super) mod prose;
 mod review;
-mod rows;
 mod status;
 mod term;
 mod text;
 mod views;
 
-use columns::*;
+use card::*;
 use command_center::*;
 use help::*;
 use history::*;
@@ -72,7 +58,6 @@ use modals::*;
 use overlay::*;
 
 use review::*;
-use rows::*;
 use status::*;
 use term::*;
 use text::*;
@@ -85,7 +70,6 @@ pub(crate) use command_center::{
     rail_target_at as command_center_rail_target_at,
     sidebar_contains as command_center_sidebar_contains, RailTarget as CommandCenterRailTarget,
 };
-pub use rows::pane_row_owners;
 pub use term::CursorPlacement;
 pub use views::tab_at;
 
@@ -116,86 +100,6 @@ const SCROLL_THUMB: &str = "\u{2590}";
 /// Every list item is a name line plus a detail line. `app` hit-tests
 /// clicks against this, so it is shared rather than local.
 pub const ROW_HEIGHT: u16 = 2;
-
-/// Blank rows between the brief, tasks, and decisions cards in the feature
-/// view. The row is both visual breathing room and the mouse target for a
-/// vertical resize.
-pub const FEATURE_GUTTER_ROWS: u16 = 1;
-
-/// The smallest useful feature card when the right-hand panels are resized.
-/// A short terminal can still split below this floor, as the nav columns do.
-pub const FEATURE_PANEL_MIN_HEIGHT: u16 = 5;
-
-/// The brief has no row list, so one line of prose plus its chrome is enough
-/// for its minimum when a separator is dragged.
-pub const FEATURE_BRIEF_MIN_HEIGHT: u16 = 4;
-
-/// The same item on one line, name only. Two lines is what stops a wide
-/// column reading as cramped, but on a short terminal it is what makes it
-/// cramped: a card with room for five items has to spend that room on
-/// which items exist, not on what is true about each.
-pub const COMPACT_ROW_HEIGHT: u16 = 1;
-
-/// The card height below which detail lines cost more than they pay for —
-/// six two-line items. Measured on the padded inside of a card, so the
-/// borders and the top gutter are already out of it.
-const COMFORTABLE_MIN_HEIGHT: u16 = 12;
-
-/// How tall a row in the nav columns is, for a card of this inner height.
-/// The renderer records the answer in [`crate::app::Layout`] so hit-testing
-/// resolves a click against the rows that were actually drawn.
-pub fn row_height(inner_height: u16) -> u16 {
-    if inner_height < COMFORTABLE_MIN_HEIGHT {
-        COMPACT_ROW_HEIGHT
-    } else {
-        ROW_HEIGHT
-    }
-}
-
-/// Blank columns between panels, and between the panels and the screen
-/// edge. Without it the cards touch and stop reading as separate surfaces.
-pub const GUTTER_COLS: u16 = 1;
-
-/// The narrowest a spine of `columns` cards can be drawn without any of
-/// them going under its floor. What the fold breakpoints are derived from,
-/// so the two cannot drift: the layout folds exactly when the widths it
-/// would otherwise have to hand out stop being honest.
-pub fn spine_min_width(columns: usize) -> u16 {
-    let columns = columns as u16;
-    columns.saturating_sub(1) * MIN_COLUMN_WIDTH
-        + MIN_CONTENT_WIDTH
-        + GUTTER_COLS * columns.saturating_sub(1)
-}
-
-/// The borders and the side padding: what a card spends before a row gets
-/// a cell.
-pub const CARD_CHROME: usize = 4;
-
-/// Content-sized column widths are rounded up to this, so a column does not
-/// twitch every time a row grows by a letter.
-pub const WIDTH_STEP: usize = 4;
-
-/// The widest a nav column will ask to be. Past this a list of names is
-/// hoarding width the live view can always use better, and a very long
-/// name is better ellipsized than paid for by every other column.
-pub const MAX_COLUMN_WIDTH: u16 = 34;
-
-/// A dragged column cannot be collapsed beyond this outer width. Below it
-/// a card has no room to say anything: two cells go to the border and two
-/// to the inner gutter, so eight cells of column were four cells of text —
-/// a status glyph, a letter, and an ellipsis. The renderer scales the floor
-/// down only when the terminal itself is too narrow to fit the spine.
-pub const MIN_COLUMN_WIDTH: u16 = 14;
-
-/// The live view's own floor, which is much larger because what it holds is
-/// not a list but somebody's terminal. Width is reclaimed from the nav
-/// columns before this is touched: a squeezed column is still readable, and
-/// a forty-column pty is already the point at which most programs give up.
-pub const MIN_CONTENT_WIDTH: u16 = 40;
-
-/// Folded-away projects: a disclosure mark in the left page gutter, not a
-/// full-height rail. The rest of that gutter is the click target.
-const COLLAPSED_TAB: &str = "▸";
 
 /// How much of a row has to be left for the name before a badge is worth
 /// keeping. Below it the badge is winning space from the only part of the
@@ -232,32 +136,8 @@ impl<'a> Item<'a> {
         }
     }
 
-    /// The inner width this row would like: its selection gutter, then
-    /// whichever of its two lines is longer. What a column is measured
-    /// from, so it is asked of the row rather than guessed from the model.
-    fn wanted_width(&self) -> usize {
-        let w = |spans: &[Span]| spans.iter().map(Span::width).sum::<usize>();
-        // A space in front of the badge, and one behind it: the badge is
-        // laid out flush right, and a count that ends on the last cell of
-        // the row reads as having escaped the selection fill. Asking for
-        // the cell here is what keeps it from being taken off a name.
-        let badge = if self.badge.is_empty() {
-            0
-        } else {
-            w(&self.badge) + 2
-        };
-        1 + (w(&self.name) + badge).max(self.indent + w(&self.detail))
-    }
-
     fn badged(mut self, badge: Vec<Span<'a>>) -> Self {
         self.badge = badge;
-        self
-    }
-
-    /// For a row whose name carries more in front of it than the status
-    /// glyph — a kind mark, a child's elbow.
-    fn indented(mut self, indent: usize) -> Self {
-        self.indent = indent;
         self
     }
 }
@@ -269,27 +149,9 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // page and panel is what makes the panels read as cards.
     f.render_widget(Block::default().style(Style::default().bg(th.bg)), f.area());
 
-    let page = if app.command_center {
-        // A row of air above the tabs and below the status band, so the
-        // shell does not sit flush against the host terminal's edges.
-        inset(f.area(), 0, 1)
-    } else {
-        inset(f.area(), GUTTER_COLS, 1)
-    };
-    if !app.command_center {
-        if let Some(strip) = strip_row(f.area(), page) {
-            render_view_tabs(f, app, strip, th);
-        } else {
-            app.layout.views = Panel::default();
-        }
-        if app.layout.width != f.area().width {
-            app.fold = app.fold.max(Fold::required(f.area().width));
-            if app.fold.hides(app.focus) {
-                app.focus = app.fold.first_focus();
-            }
-        }
-    }
-    app.layout.width = f.area().width;
+    // A row of air above the tabs and below the status band, so the shell
+    // does not sit flush against the host terminal's edges.
+    let page = inset(f.area(), 0, 1);
     let status_height = 2;
     let root = Layout::default()
         .direction(Direction::Vertical)
@@ -306,31 +168,16 @@ pub fn render(f: &mut Frame, app: &mut App) {
     // Each layer replaces the decision outright, `None` included.
     let fullscreen =
         app.pane_fullscreen && app.focus == Focus::PaneContent && app.column_pane().is_some();
-    let mut cursor = if app.command_center && !fullscreen {
-        render_command_center(f, app, root[0], th)
+    let mut cursor = if fullscreen {
+        // Nothing of the shell is drawn under a fullscreen terminal, tabs
+        // included, and a stale rect is a click that lands on something
+        // nobody can see.
+        app.layout.views = Panel::default();
+        forget_rail_and_stages(app);
+        forget_feature_view(app);
+        render_terminal(f, app, root[0], th)
     } else {
-        match app.view {
-            View::Feature => {
-                forget_spine(app);
-                app.layout.content = Panel::default();
-                render_feature(f, app, root[0], th);
-                None
-            }
-            View::Spine if fullscreen => {
-                forget_spine(app);
-                forget_feature_view(app);
-                render_content(f, app, root[0], th)
-            }
-            View::Spine => {
-                forget_feature_view(app);
-                render_columns(f, app, root[0])
-            }
-            View::Panes | View::Checkouts => {
-                forget_spine(app);
-                forget_feature_view(app);
-                None
-            }
-        }
+        render_command_center(f, app, root[0], th)
     };
     render_status(f, app, root[1], th);
 
@@ -371,9 +218,8 @@ pub fn render(f: &mut Frame, app: &mut App) {
     }
 }
 
-/// The same, the other way round: the feature view's panels are not on
-/// screen while the spine is, and a stale rect there would swallow a click
-/// meant for a column.
+/// The feature stage's panels, for the frames that do not draw it: a stale
+/// rect there would swallow a click meant for whatever is on screen.
 fn forget_feature_view(app: &mut App) {
     app.layout.features = Panel::default();
     app.layout.feature_brief = Panel::default();
@@ -381,20 +227,19 @@ fn forget_feature_view(app: &mut App) {
     app.layout.feature_decisions = Panel::default();
 }
 
-/// Zeroes the nav columns' recorded regions, for the frames that draw none
-/// of them: a stale rect is a click that selects a row nobody can see.
-fn forget_spine(app: &mut App) {
-    app.layout.projects = Panel::default();
-    app.layout.repositories = Panel::default();
+/// Zeroes the rail's and the stages' recorded regions, for the frames that
+/// draw none of them: a stale rect is a click that selects a row nobody
+/// can see.
+fn forget_rail_and_stages(app: &mut App) {
+    app.layout.rail = Panel::default();
+    app.layout.agents = Panel::default();
     app.layout.checkouts = Panel::default();
     app.layout.panes = Panel::default();
-    app.layout.row_height = ROW_HEIGHT;
 }
 
-/// The selected pane's live terminal. It normally occupies the rightmost
-/// column, but fullscreen gives it the whole main content area. Which pane
-/// it shows follows the panes column's selection.
-fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option<CursorPlacement> {
+/// The selected pane's terminal given the whole content area, while it is
+/// fullscreen.
+fn render_terminal(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option<CursorPlacement> {
     // Typing focus is what the accent border promises here, so only
     // PaneContent lights it up — merely selecting a pane does not.
     let lit = app.focus_lit(Focus::PaneContent);
@@ -426,7 +271,7 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
         let grid = pane.and_then(|id| app.grids.get(&id));
         render_term(f, grid, inner, focused, pane, app.selection.as_ref())
     };
-    app.layout.content = Panel {
+    app.layout.terminal = Panel {
         outer: area,
         inner,
         first: 0,
@@ -434,8 +279,8 @@ fn render_content(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -> Option
     cursor
 }
 
-/// `project / checkout / pane` for the live view's title, which doubles as
-/// the breadcrumb telling you where in the tree the content came from.
+/// `project / checkout / pane` for the fullscreen terminal's title, which
+/// doubles as the breadcrumb telling you where in the tree it came from.
 fn content_title(app: &App) -> String {
     match (
         app.current_project(),

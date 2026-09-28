@@ -108,12 +108,13 @@ result of a request; `ui` is a pure function of it.
 | `app/server` | what arrives back, and what it does to the selection |
 | `app/views` | which surface the content area holds, and the one feature selection everything on it is read at |
 | `ui` | the frame, and where the cursor goes on it |
+| `ui/card` | a card and the rows in it: its frame, one row, and how a list longer than the card scrolls |
 | `ui/command_center` | the HTML-specified shell: where the rail and stage go, the stage heading, the first-run state, and the status vocabulary they share |
 | `ui/command_center/rail` | the contextual rail: repositories, checkouts and live agents, and which row a click lands on |
 | `ui/command_center/workspace`, `ui/command_center/feature`, `ui/command_center/panes`, `ui/command_center/checkouts` | one stage each, with the hit-test that shares its layout |
-| `ui/columns`, `ui/rows`, `ui/text` | the compatibility spine, the vocabulary of a row, and fitting text to a width |
+| `ui/text` | fitting text to a width |
 | `ui/help`, `ui/prose` | the keymap window, and markdown styled where it stands |
-| `ui/views` | the top navigation and the legacy feature renderer |
+| `ui/views` | the tab strip naming the four stages, and which tab a click lands on |
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
 | `review`, `history`, `brief`, `dirpicker` | the view state behind each overlay |
 | `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
@@ -140,17 +141,18 @@ card overview derived from the same pane locations, Checkouts is an operational 
 selected repository, and Feature reads the selected feature as a document of brief, tasks, and
 decisions. The command band follows the active surface.
 
-Switching views changes the screen and nothing else. Every pane keeps running, its subscription
-stands, and the spine is one keystroke back. Focus moves out of the columns while another view is
-open — a view has no columns to move between, and a key left reaching a pane that is not on screen
-is a key nobody can see the effect of — and returns to the column it left. Which view is open is
-this client's own state and is never sent to the daemon: two people attached to one daemon are not
-necessarily reading the same thing.
+Switching views changes the stage and nothing else. Every pane keeps running, its subscription
+stands, and the Workspace stage is one keystroke back. Focus moves to the stage while another view
+is open — a key left reaching a pane that is not on screen is a key nobody can see the effect of —
+and returns to where it was when Workspace comes back. Which view is open is this client's own
+state and is never sent to the daemon: two people attached to one daemon are not necessarily
+reading the same thing.
 
 There are four views: Workspace, Feature, Panes, and Checkouts. Review, history, settings, briefs,
-and editors remain overlays because they are temporary work over the current surface. The former
-five-column spine remains compiled behind a client-only compatibility switch for focused geometry
-regressions; it is not the production presentation.
+and editors remain overlays because they are temporary work over the current surface. The command
+center is the only presentation, and the one the client's tests draw: the five-column spine it
+replaced, with its folding columns and draggable gutters, is gone rather than kept compiled beside
+it, since a second presentation nobody sees was the one every test was running against.
 
 ## Navigation model
 
@@ -168,50 +170,16 @@ expanded row shows its active checkout branches and their panes, with the pane b
 in place. Checkout and pane identity remain the same indices and IDs used by the daemon tree. While typing in a pane, `Ctrl-Space`, `f` lets its terminal take the main content area;
 repeating the chord restores the shell. The command band remains visible in both layouts.
 
-A nav column is as wide as what it holds. It asks for its widest row — name line or detail line,
-whichever is longer — and for its own title, floored, capped at what a list of names is worth, and
-rounded up to a step so that renaming a pane or changing a note does not drag the whole spine
-sideways. Everything left over goes to the live view. Fixed percentage shares were the reason the
-same screen managed to look empty and truncated at once: they gave a column holding one project
-more room than it could use and a column holding twelve panes less than it needed, and no width of
-terminal changed the ratio. A dragged gutter still wins over all of this — it is an absolute
-preference, not a share.
-
-The layout answers a small terminal by folding rather than by squeezing. Every nav column has a
-floor, the live view has its own and much larger one, and the width at which a column folds away
-is derived from those floors rather than picked separately, so the two cannot drift: the spine
-folds exactly when the widths it would otherwise hand out stop being honest. Shortfall is
-reclaimed from the nav columns before the live view, since a squeezed list is still a list where
-a squeezed terminal is a program that has stopped drawing. A resize only ever folds further —
-widening does not undo a layout the user chose — and `p` overrides in either direction at any
-width, so a folded column is never unreachable. Nothing is lost while folded: the live view's
-title is the full breadcrumb.
-
-Short terminals are answered the same way, in the other axis. A row is normally two lines, a name
-and a dimmer line of what is true about it, but on a card too short to afford both the detail line
-is dropped and the items are kept. Where a row carries a count badge, the badge is reserved before
-the name is fitted — a count survives truncation better than the tail of a name does — unless
-doing so would leave too little room to identify the row at all, in which case the badge is what
-goes. The status bar's keymaps are written as tiers and the widest that fits is drawn, so a narrow
-bar shows fewer keys rather than one cut mid-word. A card holding more rows than it can show puts
-a thumb in the blank cell between its rows and its border, sized and placed like a scrollbar's:
-without it a column scrolls silently, and twenty checkouts in a card that fits six look exactly
+The status bar's keymaps are written as tiers and the widest that fits is drawn, so a narrow bar
+shows fewer keys rather than one cut mid-word. A card or table holding more rows than it can show
+puts a thumb in the blank cell between its rows and its edge, sized and placed like a scrollbar's:
+without it a list scrolls silently, and twenty checkouts in a table that fits six look exactly
 like six.
-
-Weight recedes with focus. Five cards drawn in one weight read as five of the same thing rather
-than as a path with a working end, so a column nobody is in drops its names from `text` to `muted`
-and loses its bold; the selected row keeps full weight in every column, since the selections are
-how the path is traced. A row's detail line is indented to start under its own name rather than by
-a fixed amount, because a checkout carries a kind mark in front of its name and the other columns
-do not — but only while the indent is free: a detail that would be ellipsized to pay for a tidy
-left edge has traded something read for something merely noticed, and `no checkout` beats
-`no checko…`. A nav card is padded on all four sides; the modals keep a tighter bottom, since
-their height is chosen for the rows they hold.
 
 The left of the bar counts the fleet — how many agents are working, how many are done, how many
 are waiting on a person — ordered so the count you have to act on is the one nearest the corner.
-It held a breadcrumb before, which said either the word already written on the card above it or
-the path already spelled out across the live view's title. What is *not* written anywhere else on
+It held a breadcrumb before, which said the path already spelled out across the workspace
+heading. What is *not* written anywhere else on
 screen is the state of the agents you are not currently looking at, which is the reason the
 program has a pane list at all. Idle and exited panes are left out: a tally that counts them
 reads the same whether anything is happening or not, and when nothing is happening the breadcrumb
@@ -222,7 +190,7 @@ front of you and ends, at every width and in every mode, with the one key that l
 appended after the tiers are chosen, so it is never the thing a narrow bar drops. `?` opens that
 list as a window sized to its own content, grouped by what the keys act on rather than by
 character, and answering for the mode you are actually in: the diff's keys in a diff, the
-column's in the columns. It opens *over* whatever raised the question rather than instead of it,
+rail's on the rail. It opens *over* whatever raised the question rather than instead of it,
 so the review you asked about is still there when you close it, and any key that is not a scroll
 key closes it — having to hunt for the way out of a window you opened to be told something is the
 problem it exists to solve. `?` is only this where nothing is taking text; on a prompt, in a
@@ -449,8 +417,8 @@ Automatic `Idle` events do not erase `Waiting`, `NeedsReview`, `Done`, or `Faile
 `Working` when it resumes.
 
 Each client compares consecutive tree snapshots by pane ID. The first snapshot after attaching is a
-quiet baseline; a later effective-state change flashes the owning pane for 900 ms. Effective state
-includes child agents because their parent pane is the selectable place the operator can open.
+quiet baseline; a later effective-state change into `Waiting`, `NeedsReview`, or `Failed` is announced. Effective
+state includes child agents because their parent pane is the selectable place the operator can open.
 Every row that stands for several panes — a checkout, a repository and its rail dot, the rail's need
 badge, the command band's tally — rolls up each listed pane and each child the same way, through
 `tree`'s one ranking: a failed exit outranks a working agent, and only a clean exit is calm.
@@ -917,9 +885,9 @@ as unfiled by the daemon, but the feature list offers features only.
 
 ### The feature view
 
-The one view that is not the spine draws the selected checkout's repository features down
-the left and whichever one is selected, whole, on the right: its brief, the tasks left under it,
-and the decision tree beneath them. Tasks can contain subtasks recursively, so newly discovered
+The Feature stage draws the selected checkout's repository features at the top and whichever one
+is selected, whole, beneath them: its brief, the tasks left under it, its sequence diagrams, and
+the decision tree. Tasks can contain subtasks recursively, so newly discovered
 work remains under the task that exposed it instead of becoming an unrelated root. That is the
 order they are read and the order `argus-hook feature` prints them in — a
 decision without what the feature is for explains half of itself, and a task list without either
@@ -941,17 +909,16 @@ them. `a`, `s`, `e` and `x` act on what has the keys: a new feature or root task
 the selected task, the brief or the task's text, remove the feature or drop the task. The decision
 panel refuses both in prose, because
 the board is append-only and agents are what write it. Every panel draws its own selection whether
-or not it has the keys, the way the spine's columns do — the selections are how a reader traces
-where they are, and one that vanished when the keys left would make crossing back a hunt.
+or not it has the keys, the way the rail does — the selections are how a reader traces where they
+are, and one that vanished when the keys left would make crossing back a hunt. A line being typed —
+a new feature, task or subtask, or a rewrite — takes the stage's last row, so what is being written
+and what is already there are readable at once.
 
-The brief initially takes what its wrapped text needs and never more than a third of the
-right-hand side; the rest is one `e` away in the editor. One-row gutters separate the brief, tasks,
-and decisions cards. Dragging either gutter changes the heights of the adjacent cards, while a
-small floor keeps both sides readable; the chosen outer heights are remembered in the client
-settings. Tasks take what they need by default, floored and ceilinged so that neither they nor the
-tree can squeeze the other out. The selected feature, task, and decision grow to their full
-wrapped text, and the window they scroll in is sized after paying for that growth — rounding up
-there is what let an expanded row start on the last line and run off the bottom.
+The brief takes what its wrapped text needs, and the wheel scrolls what does not fit; the rest is
+one `e` away in the editor. In the panel that has the keys, the selected feature, task, and
+decision grow to their full wrapped text, and the window they scroll in is sized after paying for
+that growth — rounding up there is what let an expanded row start on the last line and run off the
+bottom.
 
 ### Sequence diagrams
 
@@ -1107,7 +1074,7 @@ checkout is on.
 Files open in one of three modes:
 
 - a floating PTY overlay, the default;
-- the rightmost terminal column;
+- the Workspace stage's terminal;
 - an external detached process with no PTY.
 
 Known GUI editors always launch externally. Editor lookup uses `$VISUAL`, then `$EDITOR`, then an

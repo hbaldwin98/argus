@@ -41,51 +41,6 @@ impl App {
         self.focus = Focus::Overlay;
     }
 
-    /// Folds one more leading nav column away to a tab on the left edge,
-    /// wrapping back to none once all of them are. The remaining columns
-    /// absorb the reclaimed width, so folding is a way to give the tree and
-    /// live view room rather than a way to lose where you are — the live
-    /// view's title still names the whole path. A resize folds on its own
-    /// when the spine stops fitting; this is how the user overrides that in
-    /// either direction, at any width. Stored on `settings` so the choice
-    /// survives a restart.
-    pub fn cycle_fold(&mut self) {
-        self.fold = self.fold.cycle();
-        self.settings.folded_columns = self.fold.hidden() as u8;
-        if self.persist_settings {
-            crate::settings::save(&self.settings);
-        }
-        if self.fold.hides(self.focus) {
-            // A folded-away tab is not a focus target, so the cursor has to
-            // land somewhere the keys still mean something.
-            self.focus = self.fold.first_focus();
-            self.clamp();
-        }
-        match self.fold {
-            Fold::None => self.report("expanded every column"),
-            Fold::Projects => self.report("folded the projects column — p for more"),
-            Fold::Repositories => self.report("folded projects and repositories — p to expand"),
-        }
-    }
-
-    /// Brings one folded-away column back, which is what clicking a tab
-    /// means. Unlike `p` it never wraps: a click on a disclosure mark that
-    /// folded everything away instead would be a trap.
-    pub fn unfold_one(&mut self) {
-        let fold = match self.fold {
-            Fold::Repositories => Fold::Projects,
-            _ => Fold::None,
-        };
-        if fold == self.fold {
-            return;
-        }
-        self.fold = fold;
-        self.settings.folded_columns = fold.hidden() as u8;
-        if self.persist_settings {
-            crate::settings::save(&self.settings);
-        }
-    }
-
     pub fn toggle_pane_view(&mut self) {
         let view = self.settings.pane_view.toggle();
         self.set_pane_view(view);

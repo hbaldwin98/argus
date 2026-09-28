@@ -426,13 +426,13 @@ location. Typing filters the folders in the current directory.
 
 ### Views
 
-The content area holds one view at a time. `1` is the spine — the navigation columns and the live
-pane — and `2` is the feature view. A one-row tab strip along the top names them and carries the
+The stage beside the rail holds one view at a time: `1` Workspace (the selected pane's terminal),
+`2` Feature, `3` Panes, and `4` Checkouts. The tab strip along the top names them and carries the
 digit that opens each; clicking a tab does the same. Switching views never stops a pane.
 
-The feature view is a feature list beside three cards: the selected repository's features down
-the left, and the selected one read whole on the right — its brief, the tasks left under it, and
-the decisions taken while building it. Tasks may be nested to any depth, so newly discovered work
+The Feature view reads the selected repository's features as a document: the feature list, then
+the selected one whole — its brief, the tasks left under it, its sequence diagrams, and the
+decisions taken while building it. Tasks may be nested to any depth, so newly discovered work
 stays readable under what exposed it. Features belong to the repository rather than a branch, so
 they remain available after a feature worktree is removed. The active list stays focused on open
 work; `v` switches to accepted feature history without deleting it.
@@ -461,8 +461,7 @@ inherited from whichever workspace the TUI currently shows.
 | `H` / `L` | Move the selected task along todo, doing, done |
 | `J` / `K` | Move the selected task earlier or later among its siblings |
 | `r` | Re-ask the daemon for all of it |
-| Mouse | Drag the gutters between the brief, tasks, and decisions to resize their heights |
-| Escape, `q` | Back to the spine |
+| Escape, `q` | Back to the workspace |
 
 When the Diagrams panel is focused, `Enter` opens the selected Mermaid sequence diagram. `j`/`k`
 scroll vertically and `h`/`l` (or the arrows) pan horizontally when the diagram is wider than the

@@ -167,9 +167,9 @@ pub struct Help {
     pub scroll: usize,
 }
 
-/// A window floating above the columns, for things the five-column spine
-/// has no room for. Unlike a picker it can be large and can hold a live
-/// pane: a terminal editor in a 38%-wide column is unusable, and the whole
+/// A window floating above the stage, for things the stage has no room
+/// for. Unlike a picker it can be large and can hold a live pane: a
+/// terminal editor squeezed beside the rail is unusable, and the whole
 /// point of `$EDITOR` support is that it be usable.
 ///
 /// It floats rather than replacing the columns — the tree stays visible

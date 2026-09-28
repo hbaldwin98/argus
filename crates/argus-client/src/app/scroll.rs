@@ -47,7 +47,7 @@ impl App {
     pub(super) fn page_pane(&mut self, pane: PaneId, pages: i32) {
         // One line of overlap, so paging keeps a line of context rather
         // than jumping a clean screen and leaving nothing to line up on.
-        let height = i32::from(self.layout.content.inner.height).max(2) - 1;
+        let height = i32::from(self.layout.terminal.inner.height).max(2) - 1;
         self.scroll_pane(pane, pages.saturating_mul(height));
     }
 

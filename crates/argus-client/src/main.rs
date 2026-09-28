@@ -166,11 +166,10 @@ async fn run(terminal: &mut Term, connection: Connection) -> anyhow::Result<()> 
             }
             // The client has no free-running frame clock, so anything
             // animating has to ask for its own next frame. This is that
-            // ask: a flash still fading, or a spinner whose glyph is due
-            // to turn. When nothing moves there is no deadline and the
+            // ask: a spinner whose glyph is due to turn, or focus still
+            // travelling. When nothing moves there is no deadline and the
             // loop goes back to sleeping on events.
             _ = sleep_until(motion_due), if motion_due.is_some() => {
-                app.expire_state_flashes(std::time::Instant::now());
                 redraw.changed();
                 redraw.due();
             }

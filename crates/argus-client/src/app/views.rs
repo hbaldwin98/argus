@@ -1,9 +1,9 @@
 //! The client's top-level views.
 //!
-//! The spine — five columns and a live pane — was for a long time the only
-//! thing the content area could hold. A feature is read at project scope,
-//! all at once, and says nothing useful in a thirty-column strip beside a
-//! pane, so it wants the screen rather than a column (TARGET.md, "Product
+//! The Workspace stage — the selected pane's terminal — was for a long time
+//! the only thing the content area could hold. A feature is read at project
+//! scope, all at once, and says nothing useful in a strip beside a pane, so
+//! it wants the stage rather than a corner of it (TARGET.md, "Product
 //! boundary").
 //!
 //! There is one feature view and not three. A brief, the tasks left under
@@ -14,8 +14,8 @@
 //! whichever card the board happened to be sitting on.
 //!
 //! What a view replaces is the screen, never the running work: every pane
-//! keeps running while another view is up, and the spine is one keystroke
-//! back. Which view is open is this client's business and is not sent to
+//! keeps running while another view is up, and the Workspace stage is one
+//! keystroke back. Which view is open is this client's business and is not sent to
 //! the daemon — two people attached to one daemon are not necessarily
 //! reading the same thing.
 
@@ -44,7 +44,7 @@ pub enum LineEdit {
 }
 
 impl LineInput {
-    /// What the prompt calls itself, which is the whole of the affordance:
+    /// What the line calls itself, which is the whole of the affordance:
     /// there is no other cue that the keys have changed meaning.
     pub fn label(&self) -> &'static str {
         match self.what {
@@ -59,9 +59,9 @@ impl LineInput {
 
 /// Which panel of the feature view the keys are in.
 ///
-/// Three panels, one cursor. `h` and `l` cross between the feature list
-/// and the feature being read, the same gesture the spine's columns take,
-/// and `Tab` steps through the panels in the order they are drawn.
+/// Four panels, one cursor. `h` and `l` cross between the feature list
+/// and the feature being read, and `Tab` steps through the panels in the
+/// order they are drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FeaturePanel {
     /// The features of the project, down the left.
@@ -305,8 +305,7 @@ impl App {
     // ---- panels ------------------------------------------------------
 
     /// Crosses to another panel. `Tab` steps forward through them and
-    /// `h`/`l` cross between the list and what is being read, which is the
-    /// gesture the spine already teaches.
+    /// `h`/`l` cross between the list and what is being read.
     pub(super) fn step_panel(&mut self, delta: i32) {
         self.panel = self.panel.step(delta);
     }
@@ -497,7 +496,7 @@ impl App {
         let Some(diagram) = self.selected_diagram().cloned() else {
             return;
         };
-        let width = self.layout.content.inner.width.max(40) as usize;
+        let width = self.layout.terminal.inner.width.max(40) as usize;
         self.diagram = Some(crate::diagram::DiagramView::open(&diagram, width));
         self.overlay = Some(Overlay::SequenceDiagram);
         self.focus = Focus::Overlay;
@@ -940,7 +939,7 @@ pub struct FeatureRow {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum View {
     #[default]
-    Spine,
+    Workspace,
     /// The selected repository branch's features, and whichever one is selected read whole:
     /// its brief, what is left to do under it, and why it has the shape it
     /// does.
@@ -955,11 +954,11 @@ pub enum View {
 
 impl View {
     /// Every top-level surface, in the order shown by the design document.
-    pub const ALL: [View; 4] = [View::Spine, View::Feature, View::Panes, View::Checkouts];
+    pub const ALL: [View; 4] = [View::Workspace, View::Feature, View::Panes, View::Checkouts];
 
     pub fn label(self) -> &'static str {
         match self {
-            View::Spine => "workspace",
+            View::Workspace => "workspace",
             View::Feature => "feature",
             View::Panes => "panes",
             View::Checkouts => "checkouts",
@@ -981,19 +980,18 @@ impl View {
 }
 
 impl App {
-    /// Opens a view, remembering where focus was on the spine so coming
+    /// Opens a view, remembering where focus was in the workspace so coming
     /// back does not cost you your place.
     ///
-    /// Focus has to move: a view that is not the spine has no columns to
-    /// move between, and leaving focus in a pane would send every key to
-    /// the child of a pane that is no longer on screen.
+    /// Focus has to move: leaving it in a pane would send every key to the
+    /// child of a pane that is no longer on screen.
     pub fn open_view(&mut self, view: View) {
         self.open_view_with_origin(view, false);
     }
 
     /// Opens a view from the tab strip. A tab is navigation chrome: it
     /// must never leave keyboard focus in a live pane, including when the
-    /// workspace tab is pressed while the spine is already showing.
+    /// workspace tab is pressed while the workspace is already showing.
     pub(crate) fn open_view_from_tab(&mut self, view: View) {
         self.open_view_with_origin(view, true);
     }
@@ -1002,28 +1000,28 @@ impl App {
         if self.view == view && !from_tab {
             return;
         }
-        if self.view == View::Spine && view != View::Spine {
-            self.spine_focus = self.focus;
+        if self.view == View::Workspace && view != View::Workspace {
+            self.workspace_focus = self.focus;
         }
         let changed = self.view != view;
         if changed {
             self.view = view;
         }
         self.focus = match view {
-            View::Spine => {
+            View::Workspace => {
                 let mut focus = if from_tab
-                    && self.view == View::Spine
+                    && self.view == View::Workspace
                     && matches!(self.focus, Focus::PaneContent)
                 {
                     Focus::Panes
                 } else {
-                    self.spine_focus
+                    self.workspace_focus
                 };
                 if from_tab && matches!(focus, Focus::PaneContent) {
                     focus = Focus::Panes;
                 }
                 if from_tab {
-                    self.spine_focus = focus;
+                    self.workspace_focus = focus;
                 }
                 focus
             }
@@ -1041,7 +1039,7 @@ impl App {
         }
     }
 
-    /// Asks for the board of the project the spine is on. Sent on opening
+    /// Asks for the board of the project the rail is on. Sent on opening
     /// the view and on `r`, because a client that attached after the last
     /// write has never been pushed one.
     pub(super) fn ask_for_decisions(&mut self) {
@@ -1092,7 +1090,7 @@ mod tests {
         for view in View::ALL {
             assert_eq!(View::from_digit(view.digit()), Some(view));
         }
-        assert_eq!(View::from_digit('1'), Some(View::Spine));
+        assert_eq!(View::from_digit('1'), Some(View::Workspace));
     }
 
     #[test]

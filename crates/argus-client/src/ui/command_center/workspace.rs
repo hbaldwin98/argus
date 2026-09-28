@@ -48,6 +48,13 @@ pub(super) fn render_workspace(
             format!(" {} ", short_status(pane.status)),
             filled_badge(status_color(pane.status, th), th),
         ));
+        // A parked pane looks exactly like a quiet one, so the heading has
+        // to say that the rows under it are history rather than the
+        // current output.
+        if let Some(where_) = app.scroll_indicator() {
+            header.push_span(Span::raw("  "));
+            header.push_span(Span::styled(where_, Style::default().fg(th.accent)));
+        }
     }
     let header_width = header.width();
     f.render_widget(
@@ -103,7 +110,7 @@ pub(super) fn render_workspace(
         );
         None
     };
-    app.layout.content = Panel {
+    app.layout.terminal = Panel {
         outer: area,
         inner: terminal,
         first: 0,

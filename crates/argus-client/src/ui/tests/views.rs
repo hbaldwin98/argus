@@ -2,7 +2,7 @@
 
 use super::*;
 
-use crate::app::View;
+use crate::app::{FeaturePanel, View};
 
 fn press(app: &mut App, c: char) {
     app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
@@ -27,29 +27,21 @@ fn the_strip_names_every_view_and_marks_the_open_one() {
 fn a_digit_opens_its_view_over_the_whole_content_area() {
     let mut app = app_with_tree();
     draw_at(&mut app, 100, 30);
-    assert!(app.layout.checkouts.outer.width > 0, "the spine is drawn");
+    assert!(app.layout.terminal.outer.width > 0, "the workspace is drawn");
 
     press(&mut app, View::Feature.digit());
-    let buf = draw_at(&mut app, 100, 30);
-    let out = lines(&buf).join(
-        "
-",
-    );
+    let out = lines(&draw_at(&mut app, 100, 30)).join("\n");
 
     assert_eq!(app.view, View::Feature);
     assert!(
-        out.contains("nothing decided under this feature yet"),
-        "a tab somebody pressed must say what it is for:
-{out}"
+        out.contains("no features yet"),
+        "a tab somebody pressed must say what it is for:\n{out}"
     );
     assert_eq!(
-        app.layout.checkouts.outer.width, 0,
-        "no column is drawn, so no click may resolve against one"
+        app.layout.terminal.outer.width, 0,
+        "no terminal is drawn, so no click may resolve against one"
     );
-    assert!(
-        app.layout.features.outer.width + app.layout.feature_decisions.outer.width > 80,
-        "the view has the content area rather than a column of it"
-    );
+    assert!(app.layout.features.outer.width > 40, "the view has the stage");
 }
 
 #[test]
@@ -63,8 +55,8 @@ fn coming_back_lands_on_the_column_you_left() {
     press(&mut app, 'j');
     assert_eq!(app.sel_checkout, 0);
 
-    press(&mut app, View::Spine.digit());
-    assert_eq!(app.view, View::Spine);
+    press(&mut app, View::Workspace.digit());
+    assert_eq!(app.view, View::Workspace);
     assert_eq!(app.focus, Focus::Checkouts);
 }
 
@@ -99,7 +91,7 @@ fn clicking_a_tab_opens_it() {
     let strip = views.outer;
     // The second tab's first cell, found the way the renderer draws it.
     let x = (0..strip.width)
-        .find(|x| crate::ui::tab_at(views, strip.x + x, strip.y, false) == Some(View::Feature))
+        .find(|x| crate::ui::tab_at(views, strip.x + x, strip.y) == Some(View::Feature))
         .expect("the decisions tab is on screen");
 
     app.on_mouse(crossterm::event::MouseEvent {
@@ -125,7 +117,7 @@ fn clicking_the_workspace_tab_withdraws_pane_focus() {
     let views = app.layout.views;
     let strip = views.outer;
     let x = (0..strip.width)
-        .find(|x| crate::ui::tab_at(views, strip.x + x, strip.y, false) == Some(View::Spine))
+        .find(|x| crate::ui::tab_at(views, strip.x + x, strip.y) == Some(View::Workspace))
         .expect("the workspace tab is on screen");
 
     app.on_mouse(crossterm::event::MouseEvent {
@@ -135,7 +127,7 @@ fn clicking_the_workspace_tab_withdraws_pane_focus() {
         modifiers: KeyModifiers::NONE,
     });
 
-    assert_eq!(app.view, View::Spine);
+    assert_eq!(app.view, View::Workspace);
     assert_eq!(
         app.focus,
         Focus::Panes,
@@ -145,15 +137,7 @@ fn clicking_the_workspace_tab_withdraws_pane_focus() {
 
 #[test]
 fn a_click_before_the_first_frame_lands_on_no_tab() {
-    assert_eq!(crate::ui::tab_at(Panel::default(), 0, 0, false), None);
-}
-
-#[test]
-fn a_terminal_too_short_for_a_strip_still_draws_the_spine() {
-    let mut app = app_with_tree();
-    draw_at(&mut app, 100, 2);
-    assert_eq!(app.layout.views.outer.height, 0);
-    assert!(app.layout.checkouts.outer.width > 0);
+    assert_eq!(crate::ui::tab_at(Panel::default(), 0, 0), None);
 }
 
 fn decision(id: i64, parent: Option<i64>, chose: &str) -> argus_protocol::Decision {
@@ -187,77 +171,11 @@ fn app_with_a_board(decisions: Vec<argus_protocol::Decision>) -> App {
 }
 
 #[test]
-fn the_board_draws_a_decision_under_the_one_that_constrained_it() {
-    let mut app = app_with_a_board(vec![
-        argus_protocol::Decision {
-            over: Some("a file per feature".into()),
-            because: Some("both need migrations".into()),
-            ..decision(1, None, "sqlite")
-        },
-        decision(2, Some(1), "wal mode"),
-    ]);
-    app.decision_sel = 1;
-    let buf = draw_at(&mut app, 100, 30);
-    let out = lines(&buf);
-    let top = app.layout.feature_decisions.inner.y as usize;
-
-    assert!(out[top].contains("sqlite"), "{:?}", out[top]);
-    assert!(
-        out[top + 1].contains("#1")
-            && out[top + 1].contains("over a file per feature")
-            && out[top + 1].contains("because both need"),
-        "{:?}",
-        out[top + 1]
-    );
-    let child = out[top + 2].clone();
-    assert!(child.contains("└─") && child.contains("wal mode"), "{child:?}");
-    assert!(out[top + 3].contains("#2"), "{:?}", out[top + 3]);
-    assert!(
-        out[top + 1].contains('│'),
-        "the branch crosses the detail row"
-    );
-}
-
-#[test]
-fn sibling_and_nested_decisions_draw_a_connected_tree() {
-    let mut app = app_with_a_board(vec![
-        decision(1, None, "root"),
-        decision(2, Some(1), "first child"),
-        decision(3, Some(2), "grandchild"),
-        decision(4, Some(1), "last child"),
-    ]);
-    let buf = draw_at(&mut app, 100, 30);
-    let out = lines(&buf);
-    let top = app.layout.feature_decisions.inner.y as usize;
-
-    assert!(
-        out[top + 2].contains("├─") && out[top + 2].contains("first child"),
-        "{:?}",
-        out[top + 2]
-    );
-    assert!(
-        out[top + 4].contains("│") && out[top + 4].contains("grandchild"),
-        "{:?}",
-        out[top + 4]
-    );
-    assert!(
-        out[top + 6].contains("└─") && out[top + 6].contains("last child"),
-        "{:?}",
-        out[top + 6]
-    );
-}
-
-#[test]
 fn a_decision_with_neither_an_alternative_nor_a_reason_says_so() {
     let mut app = app_with_a_board(vec![decision(1, None, "sqlite")]);
-    let buf = draw_at(&mut app, 100, 30);
-    let out = lines(&buf);
-    let top = app.layout.feature_decisions.inner.y as usize;
-    assert!(
-        out[top + 1].contains("no alternative or reason recorded"),
-        "{:?}",
-        out[top + 1]
-    );
+    app.panel = FeaturePanel::Decisions;
+    let out = lines(&draw_at(&mut app, 100, 40)).join("\n");
+    assert!(out.contains("no alternative or reason recorded"), "{out}");
 }
 
 #[test]
@@ -269,14 +187,11 @@ fn a_superseded_decision_keeps_its_place_and_says_what_replaced_it() {
         },
         decision(2, None, "key notes by path"),
     ]);
-    let buf = draw_at(&mut app, 100, 30);
-    let out = lines(&buf).join(
-        "
-",
-    );
+    app.panel = FeaturePanel::Decisions;
+    let out = lines(&draw_at(&mut app, 100, 40)).join("\n");
 
     assert!(out.contains("key notes by id"), "{out}");
-    assert!(out.contains("#1"), "{out}");
+    assert!(out.contains("key notes by path"), "{out}");
     assert!(out.contains("superseded by #2"), "{out}");
 }
 
@@ -407,10 +322,7 @@ fn a_board_for_another_project_is_dropped_rather_than_drawn() {
     );
 
     assert!(!out.contains("not ours"), "{out}");
-    assert!(
-        out.contains("nothing decided under this feature yet"),
-        "{out}"
-    );
+    assert!(out.contains("nothing decided for this feature yet"), "{out}");
 }
 
 #[test]
@@ -421,15 +333,18 @@ fn a_click_on_the_board_stays_in_the_view_and_picks_the_row() {
         decision(3, Some(1), "key notes by path"),
     ]);
     app.open_view(View::Feature);
-    draw_at(&mut app, 100, 30);
-    let inner = app.layout.feature_decisions.inner;
+    let buf = draw_at(&mut app, 100, 40);
+    let panel = app.layout.feature_decisions.inner;
+    let y = (panel.y..panel.bottom())
+        .find(|&y| row_text(&buf, y, panel).contains("key notes by path"))
+        .expect("the third decision is drawn");
 
-    click(&mut app, inner.x + 2, inner.y + 2 * crate::ui::ROW_HEIGHT);
+    click(&mut app, panel.x + 2, y);
 
     assert_eq!(
         app.focus,
         Focus::View,
-        "the board is not the pane whose column used to be there"
+        "the board is not the pane whose terminal used to be there"
     );
     assert_eq!(
         app.decision_sel, 2,
@@ -472,7 +387,6 @@ fn a_board_opened_before_the_tree_arrived_is_asked_for_when_it_does() {
 fn a_tree_that_moves_nothing_does_not_ask_for_the_board_again() {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let mut app = App::new(tx);
-    app.command_center = false;
     app.on_server_msg(argus_protocol::ServerMsg::Tree(super::tree()));
     app.open_view(View::Feature);
     let project = app.current_project().unwrap();
@@ -663,7 +577,6 @@ fn feature_view_watching(
 ) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     let mut app = App::new(tx);
-    app.command_center = false;
     app.on_server_msg(argus_protocol::ServerMsg::Tree(super::tree()));
     let project = app.current_project().unwrap();
     let (id, name) = (project.id, project.name.clone());
@@ -812,7 +725,7 @@ fn a_task_is_one_row_with_its_state_marked_on_it() {
         row("port the parser") < row("backpressure"),
         "the order a person put them in survives, which is what it is for"
     );
-    assert!(out.contains("tasks · 1/3"), "how far along they are: {out}");
+    assert!(out.contains("1/3 TASKS"), "how far along they are: {out}");
 }
 
 #[test]
@@ -839,9 +752,9 @@ fn nested_tasks_are_drawn_as_a_tree_and_subtasks_keep_their_parent() {
     while rx.try_recv().is_ok() {}
 
     let out = lines(&draw_at(&mut app, 120, 30)).join("\n");
-    assert!(out.contains("├─ ○ bound the queue"), "{out}");
-    assert!(out.contains("│  └─ ○ test sustained output"), "{out}");
-    assert!(out.contains("└─ ○ record retry behavior"), "{out}");
+    assert!(out.contains("├ ○ bound the queue"), "{out}");
+    assert!(out.contains("│ └ ○ test sustained output"), "{out}");
+    assert!(out.contains("└ ○ record retry behavior"), "{out}");
     assert!(out.contains("○ document output"), "{out}");
 
     app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
@@ -1004,7 +917,7 @@ fn another_projects_task_list_is_dropped_rather_than_drawn() {
             tasks: vec![task(9, "one reader thread", Todo)],
         },
     )));
-    let out = lines(&draw_at(&mut app, 120, 20)).join("\n");
+    let out = lines(&draw_at(&mut app, 120, 30)).join("\n");
     assert!(out.contains("port the parser"), "{out}");
     assert!(!out.contains("one reader thread"), "{out}");
 }
@@ -1019,7 +932,7 @@ fn a_task_is_typed_in_on_a_line_of_its_own() {
     for c in "xq back".chars() {
         app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
     }
-    let out = lines(&draw_at(&mut app, 120, 20)).join("\n");
+    let out = lines(&draw_at(&mut app, 120, 30)).join("\n");
     assert!(out.contains("new task"), "{out}");
     assert!(out.contains("xq back"), "{out}");
     assert!(
@@ -1094,11 +1007,11 @@ fn escape_abandons_the_line_rather_than_the_view() {
     assert!(rx.try_recv().is_err(), "an abandoned line writes nothing");
 
     app.on_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-    assert_eq!(app.view, View::Spine);
+    assert_eq!(app.view, View::Workspace);
 }
 
 #[test]
-fn each_panel_advertises_its_own_keys_rather_than_the_spines() {
+fn each_panel_advertises_its_own_keys_rather_than_the_workspaces() {
     let mut app = app_with_features(
         vec![carded(
             "notes",
@@ -1107,12 +1020,12 @@ fn each_panel_advertises_its_own_keys_rather_than_the_spines() {
         )],
         Vec::new(),
     );
-    // The spine's own bar, for something to be different from.
+    // The workspace's own bar, for something to be different from.
     press(&mut app, '1');
-    let spine = bar(&draw_at(&mut app, 130, 20));
+    let workspace = bar(&draw_at(&mut app, 130, 20));
     assert!(
-        spine.contains("n add"),
-        "the spine offers its own keys: {spine}"
+        workspace.contains("n add"),
+        "the workspace offers its own keys: {workspace}"
     );
 
     press(&mut app, View::Feature.digit());
@@ -1134,7 +1047,7 @@ fn each_panel_advertises_its_own_keys_rather_than_the_spines() {
     for advertised in [&features, &tasks, &diagrams, &decisions] {
         assert!(
             !advertised.contains("n add"),
-            "and none of them offers the spine's: {advertised}"
+            "and none of them offers the workspace's: {advertised}"
         );
     }
 }
@@ -1183,100 +1096,6 @@ fn the_decision_view_reads_the_brief_above_the_reasoning() {
     assert!(
         row("The key has to outlive") < row("one row per note"),
         "the brief comes first: a decision without it explains half of itself"
-    );
-}
-
-#[test]
-fn feature_gutters_resize_the_brief_tasks_and_decisions_panels() {
-    let (mut app, _rx) = feature_view_watching(vec![briefed(
-        "notes",
-        "Notes storage",
-        "The key has to outlive the ids.",
-    )]);
-    app.on_server_msg(argus_protocol::ServerMsg::Tasks(Box::new(
-        argus_protocol::TaskList {
-            project_name: "argus".into(),
-            feature: Some("notes".into()),
-            tasks: vec![
-                task(1, "write the parser", argus_protocol::TaskState::Todo),
-                task(2, "test the parser", argus_protocol::TaskState::Todo),
-            ],
-        },
-    )));
-
-    let _ = draw_at(&mut app, 100, 30);
-    let brief = app.layout.feature_brief.outer;
-    let tasks = app.layout.feature_tasks.outer;
-    let decisions = app.layout.feature_decisions.outer;
-    assert_eq!(
-        tasks.y,
-        brief.y + brief.height + crate::ui::FEATURE_GUTTER_ROWS,
-        "the brief/task gutter is a real row"
-    );
-    assert_eq!(
-        decisions.y,
-        tasks.y + tasks.height + crate::ui::FEATURE_GUTTER_ROWS,
-        "the task/decision gutter is a real row"
-    );
-
-    let original_brief = brief.height;
-    let original_tasks = tasks.height;
-    click(&mut app, tasks.x + 1, brief.y + brief.height);
-    app.on_mouse(crossterm::event::MouseEvent {
-        kind: crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left),
-        column: tasks.x + 1,
-        row: brief.y + brief.height + 1,
-        modifiers: KeyModifiers::NONE,
-    });
-    app.on_mouse(crossterm::event::MouseEvent {
-        kind: crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
-        column: tasks.x + 1,
-        row: brief.y + brief.height + 1,
-        modifiers: KeyModifiers::NONE,
-    });
-    let _ = draw_at(&mut app, 100, 30);
-    assert_eq!(
-        app.layout.feature_brief.outer.height,
-        original_brief + 1,
-        "dragging the first gutter gives space to the brief"
-    );
-    assert_eq!(
-        app.layout.feature_tasks.outer.height,
-        original_tasks - 1,
-        "the adjacent task panel gives up exactly that space"
-    );
-
-    let tasks = app.layout.feature_tasks.outer;
-    let decisions = app.layout.feature_decisions.outer;
-    let original_tasks = tasks.height;
-    let original_decisions = decisions.height;
-    click(&mut app, tasks.x + 1, tasks.y + tasks.height);
-    app.on_mouse(crossterm::event::MouseEvent {
-        kind: crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left),
-        column: tasks.x + 1,
-        row: tasks.y + tasks.height + 1,
-        modifiers: KeyModifiers::NONE,
-    });
-    app.on_mouse(crossterm::event::MouseEvent {
-        kind: crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left),
-        column: tasks.x + 1,
-        row: tasks.y + tasks.height + 1,
-        modifiers: KeyModifiers::NONE,
-    });
-    let _ = draw_at(&mut app, 100, 30);
-    assert_eq!(
-        app.layout.feature_tasks.outer.height,
-        original_tasks + 1,
-        "dragging the second gutter gives space to tasks"
-    );
-    assert_eq!(
-        app.layout.feature_decisions.outer.height,
-        original_decisions - 1,
-        "the decision panel gives up exactly that space"
-    );
-    assert_eq!(
-        app.settings.feature_panel_heights, app.feature_panel_heights,
-        "the chosen split is retained with the client settings"
     );
 }
 
@@ -1433,26 +1252,29 @@ fn typing_a_feature_name_does_not_work_the_board_underneath() {
 #[test]
 fn a_working_pane_turns_and_a_settled_one_does_not() {
     let mut app = app_with_tree();
+    app.expanded_repositories.insert(argus_protocol::RepositoryId(2));
     let epoch = app.epoch();
+    // A pane's own row in the rail, never the workspace heading beside it,
+    // which names the same pane and carries no glyph that turns.
+    let rail_row = |app: &mut App, frame: u32, name: &str| {
+        app.set_frame_now(epoch + crate::motion::SPINNER_FRAME * frame);
+        let buf = draw_at(app, 120, 30);
+        let rail = app.layout.rail.outer;
+        (rail.y..rail.bottom())
+            .map(|y| row_text(&buf, y, rail))
+            .find(|row| row.contains(name))
+            .expect("the pane has a row in the rail")
+    };
 
-    let glyphs: Vec<String> = (0..4)
+    let glyphs: Vec<char> = (0..4)
         .map(|frame| {
-            app.set_frame_now(epoch + crate::motion::SPINNER_FRAME * frame);
-            let text = lines(&draw(&mut app)).join("\n");
-            // The pane's own row, reduced to its status cell. Not the live
-            // view's title, which spells the same name out across the
-            // breadcrumb and carries no glyph of its own.
-            text.lines()
-                .find(|l| l.contains("claude") && !l.contains('\u{203a}'))
-                .expect("the working pane has a row")
+            rail_row(&mut app, frame, "claude")
                 .chars()
-                .find(|c| "⠋⠙⠹⠸⠼⠴⠦⠧●○".contains(*c))
-                .expect("the row carries a status glyph")
-                .to_string()
+                .find(|c| "⠋⠙⠹⠸⠼⠴⠦⠧".contains(*c))
+                .expect("the working row carries a spinner")
         })
         .collect();
-
-    let distinct: std::collections::HashSet<&String> = glyphs.iter().collect();
+    let distinct: std::collections::HashSet<&char> = glyphs.iter().collect();
     assert_eq!(
         distinct.len(),
         4,
@@ -1461,16 +1283,7 @@ fn a_working_pane_turns_and_a_settled_one_does_not() {
 
     // The idle pane beside it is unmoved by any of that: motion marks the
     // one state that is ongoing, and would say nothing if everything had it.
-    let idle: Vec<String> = (0..4)
-        .map(|frame| {
-            app.set_frame_now(epoch + crate::motion::SPINNER_FRAME * frame);
-            let text = lines(&draw(&mut app)).join("\n");
-            text.lines()
-                .find(|l| l.contains("shell"))
-                .expect("the idle pane has a row")
-                .to_string()
-        })
-        .collect();
+    let idle: Vec<String> = (0..4).map(|frame| rail_row(&mut app, frame, "shell")).collect();
     assert!(
         idle.windows(2).all(|w| w[0] == w[1]),
         "an idle row should be identical frame to frame: {idle:?}"
@@ -1576,7 +1389,8 @@ fn a_long_decision(id: i64) -> argus_protocol::Decision {
 #[test]
 fn the_decision_you_are_on_shows_all_of_itself() {
     let mut app = app_with_a_board(vec![a_long_decision(1), decision(2, None, "short")]);
-    let out = lines(&draw_at(&mut app, 100, 30));
+    app.panel = FeaturePanel::Decisions;
+    let out = lines(&draw_at(&mut app, 100, 40));
     let body = out.join("\n");
 
     // Nothing is clipped away: the tail of the reasoning is on screen.
@@ -1596,10 +1410,11 @@ fn the_decisions_you_are_not_on_stay_one_row_each() {
     // Two long decisions, the cursor on the first. The second keeps its
     // two lines, or the list stops being something you can scan.
     let mut app = app_with_a_board(vec![a_long_decision(1), a_long_decision(2)]);
-    let out = lines(&draw_at(&mut app, 100, 30));
+    app.panel = FeaturePanel::Decisions;
+    let out = lines(&draw_at(&mut app, 100, 40));
     let second = out
         .iter()
-        .position(|l| l.contains("#2"))
+        .position(|l| l.contains("#    2"))
         .expect("the second decision is drawn");
 
     assert!(
@@ -1620,11 +1435,12 @@ fn the_decisions_you_are_not_on_stay_one_row_each() {
 #[test]
 fn moving_the_cursor_moves_which_decision_is_expanded() {
     let mut app = app_with_a_board(vec![a_long_decision(1), a_long_decision(2)]);
-    let before = lines(&draw_at(&mut app, 100, 30));
+    app.panel = FeaturePanel::Decisions;
+    let before = lines(&draw_at(&mut app, 100, 40));
     let expanded_before = before.iter().filter(|l| l.contains("cannot take")).count();
 
     press(&mut app, 'j');
-    let after = lines(&draw_at(&mut app, 100, 30));
+    let after = lines(&draw_at(&mut app, 100, 40));
     let expanded_after = after.iter().filter(|l| l.contains("cannot take")).count();
 
     assert_eq!(expanded_before, 1, "exactly one row is expanded at a time");
@@ -1639,20 +1455,15 @@ fn an_expanded_row_does_not_push_itself_off_the_bottom() {
     let mut many: Vec<_> = (1..=20).map(|id| decision(id, None, "a choice")).collect();
     many.push(a_long_decision(21));
     let mut app = app_with_a_board(many);
-    // The view opens on the features column beside the tree; `l` is what
-    // moves onto the decisions themselves.
-    press(&mut app, 'l');
-    // Into the tasks, then into the tree, which is what `j` then walks.
-    press(&mut app, 'l');
-    press(&mut app, 'l');
+    app.panel = FeaturePanel::Decisions;
     for _ in 0..20 {
         press(&mut app, 'j');
     }
-    let out = lines(&draw_at(&mut app, 100, 30));
+    let out = lines(&draw_at(&mut app, 100, 40));
     let body = out.join("\n");
 
     assert!(
-        body.contains("#21"),
+        body.contains("#   21"),
         "the selected row is on screen:\n{body}"
     );
     assert!(
@@ -1667,10 +1478,11 @@ const LONG_TITLE: &str = "rewrite the checkout picker so it remembers the direct
 fn the_task_you_are_on_shows_its_whole_title() {
     use argus_protocol::TaskState::*;
     let (mut app, _rx) = tasks_watching(vec![task(1, LONG_TITLE, Todo), task(2, LONG_TITLE, Todo)]);
+    app.panel = FeaturePanel::Tasks;
 
     // Narrow enough that the title has to wrap; at a width where it fits
     // on one row there is nothing for expansion to do.
-    let out = lines(&draw_at(&mut app, 80, 24));
+    let out = lines(&draw_at(&mut app, 100, 40));
     let body = out.join("\n");
 
     assert!(
@@ -1683,31 +1495,11 @@ fn the_task_you_are_on_shows_its_whole_title() {
         "and only the selected one:\n{body}"
     );
     assert!(
-        out.iter().all(|l| l.chars().count() <= 80),
+        out.iter().all(|l| l.chars().count() <= 100),
         "nothing runs past the terminal"
     );
 }
 
-#[test]
-fn the_card_you_are_on_shows_its_whole_title() {
-    let (mut app, _rx) = feature_view_watching(vec![carded(
-        "notes",
-        LONG_TITLE,
-        argus_protocol::FeatureState::Open,
-    )]);
-
-    let out = lines(&draw_at(&mut app, 120, 20));
-    let body = out.join("\n");
-
-    assert!(
-        body.contains("came from"),
-        "the selected card should show all of its title:\n{body}"
-    );
-    assert!(out.iter().all(|l| l.chars().count() <= 120));
-}
-
-/// Not an assertion — a way to look at the feature view while working on
-/// it: `cargo test -p argus dump_feature -- --ignored --nocapture`.
 #[test]
 #[ignore = "prints a frame for eyeballing; asserts nothing"]
 fn dump_feature() {
@@ -1809,7 +1601,6 @@ fn the_command_centers_feature_view_lists_every_feature_and_nests_subtasks() {
         })
         .collect();
     let mut app = app_with_features(features, vec![decision(1, None, "a choice")]);
-    app.command_center = true;
     let name = app.current_project().unwrap().name.clone();
     app.on_server_msg(argus_protocol::ServerMsg::Tasks(Box::new(
         argus_protocol::TaskList {

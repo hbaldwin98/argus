@@ -75,20 +75,6 @@ impl App {
         ))
     }
 
-    /// Title for the legacy checkouts column while a filter is active.
-    pub(crate) fn checkout_column_title(&self) -> String {
-        if !self.checkout_filter_active() {
-            return "checkouts".to_string();
-        }
-        let Some(repo) = self.current_repository().map(|r| r.name.clone()) else {
-            return "checkouts".to_string();
-        };
-        format!(
-            "checkouts · {repo} · {}",
-            self.checkout_filter_query_label()
-        )
-    }
-
     /// Rows the legacy checkouts column draws, in navigation order.
     pub(crate) fn checkout_column_row_indices(&self) -> Vec<usize> {
         self.checkout_rows()
@@ -115,7 +101,7 @@ impl App {
     /// Which checkout-row index list navigation and scrolling should use
     /// right now.
     pub(crate) fn active_checkout_row_indices(&self) -> Vec<usize> {
-        if self.command_center && self.view == View::Checkouts {
+        if self.view == View::Checkouts {
             self.checkout_table_row_indices()
         } else {
             self.checkout_column_row_indices()
@@ -372,25 +358,6 @@ impl App {
             .collect()
     }
 
-    pub fn pane_column_locations(&self) -> Vec<PaneLocation> {
-        if self.settings.pane_view == crate::settings::PaneView::Flat {
-            return self.flat_pane_locations();
-        }
-        let (Some(checkout), Some(checkout_index)) =
-            (self.current_checkout(), self.selected_checkout_index())
-        else {
-            return Vec::new();
-        };
-        (0..checkout.listed_panes().count())
-            .map(|pane| PaneLocation {
-                project: self.sel_project,
-                repository: self.sel_repository,
-                checkout: checkout_index,
-                pane,
-            })
-            .collect()
-    }
-
     pub fn pane_at(&self, location: PaneLocation) -> Option<&PaneInfo> {
         self.tree
             .get(location.project)?
@@ -548,24 +515,6 @@ impl App {
         self.sync_subscription();
     }
 
-    pub(super) fn selection_in(&self, target: Focus) -> usize {
-        match target {
-            Focus::Projects => self.sel_project,
-            Focus::Repositories => self.sel_repository,
-            Focus::Checkouts => self.sel_checkout,
-            _ => self.sel_pane,
-        }
-    }
-
-    pub(super) fn selection_mut(&mut self, target: Focus) -> &mut usize {
-        match target {
-            Focus::Projects => &mut self.sel_project,
-            Focus::Repositories => &mut self.sel_repository,
-            Focus::Checkouts => &mut self.sel_checkout,
-            _ => &mut self.sel_pane,
-        }
-    }
-
     pub(super) fn move_selection(&mut self, delta: i32) {
         self.adjust_selection(self.focus, delta);
     }
@@ -667,18 +616,8 @@ impl App {
                 self.focus = Focus::Panes;
             }
             Focus::Panes => self.focus = Focus::Checkouts,
-            // Ascending into a folded-away column would park the cursor on a
-            // tab with no rows, so focus stays put instead.
-            Focus::Checkouts => {
-                if !self.fold.hides(Focus::Repositories) {
-                    self.focus = Focus::Repositories;
-                }
-            }
-            Focus::Repositories => {
-                if !self.fold.hides(Focus::Projects) {
-                    self.focus = Focus::Projects;
-                }
-            }
+            Focus::Checkouts => self.focus = Focus::Repositories,
+            Focus::Repositories => self.focus = Focus::Projects,
             Focus::Projects => {}
             Focus::Review | Focus::Overlay => self.focus = Focus::Checkouts,
             // A view is left by opening another one, not by backing out
@@ -688,15 +627,13 @@ impl App {
     }
 
     /// Back to the top of the tree. Anything that swaps the whole project
-    /// column out from under the columns needs it: the old indices refer
-    /// to rows that are no longer there. A folded-away column has nothing
-    /// for it to park the cursor on, so it lands on the leftmost column
-    /// still drawn — the same place a folded startup does.
+    /// list out from under the rail needs it: the old indices refer to rows
+    /// that are no longer there.
     pub(super) fn reset_navigation(&mut self) {
         self.sel_project = 0;
         self.sel_repository = 0;
         self.sel_checkout = self.home_checkout_row();
         self.sel_pane = 0;
-        self.focus = self.fold.first_focus();
+        self.focus = Focus::Projects;
     }
 }

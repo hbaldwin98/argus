@@ -14,7 +14,7 @@ fn a_parked_pane_draws_its_history_rather_than_the_live_screen() {
 }
 
 #[test]
-fn a_parked_pane_shows_how_far_back_it_is_in_its_title() {
+fn a_parked_pane_shows_how_far_back_it_is_in_its_heading() {
     // A pane parked in history looks exactly like a quiet one. Without
     // this the operator has no way to tell that what is on screen is
     // not what the child is doing now.
