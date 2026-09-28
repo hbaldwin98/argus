@@ -990,6 +990,14 @@ appends to it, answering with the id the next decision hangs off. `argus-hook ta
 current task tree; `task add "<what to do>" [--key <tracker-key>] [--under <id>]` adds a task, and
 the other task verbs change its state, title, brief, or presence.
 
+Every one of those — `feature`, `task`, `decisions`, `decide`, `diagram` — can name the feature it
+is about with `--feature <slug>`, and `feature <slug>` alone reads one. The checkout's pointer is
+shared by every pane in it, so an agent reaching another feature by moving it moves everyone's; a
+named request reads or writes that feature and leaves the pointer where it was. The name travels as
+`feature=<slug>` beside the scope in the request, a name that is not a slug never leaves the
+helper, and one the board does not have is refused by name rather than read as naming none. A
+board read by name is about that feature: its decisions, and `current` naming it.
+
 The board itself is append-only. Nothing is ever edited, and there is no delete. A decision that a
 later finding invalidates is *superseded*: the replacement is a new row that takes the old one's
 place in the tree — its parent, not its children — and the old row's `superseded_by` records what

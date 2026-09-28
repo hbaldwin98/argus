@@ -12,7 +12,7 @@
 //! write, is append-only, and attributes every row, so there is nothing for
 //! a policy to protect.
 
-use argus_protocol::{ArtifactScope, Decision, DecisionBoard, DecisionWrite};
+use argus_protocol::{Decision, DecisionBoard, DecisionWrite};
 
 use super::*;
 
@@ -44,11 +44,12 @@ impl Daemon {
     pub fn decisions_for_agent(
         &self,
         pane_id: PaneId,
-        artifact_scope: ArtifactScope,
+        filing: impl Into<super::features::Filing>,
     ) -> anyhow::Result<DecisionBoard> {
+        let filing = filing.into();
         let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(artifact_scope);
-        let feature = self.feature_for_agent(&scope, artifact_scope)?;
+        let key = scope.artifact_key(filing.scope);
+        let feature = self.feature_for_agent(&scope, &filing)?;
         let decisions = self
             .store
             .decisions(key)?
@@ -75,15 +76,16 @@ impl Daemon {
         pane_id: PaneId,
         session: Option<&str>,
         write: DecisionWrite,
-        artifact_scope: ArtifactScope,
+        filing: impl Into<super::features::Filing>,
     ) -> anyhow::Result<Decision> {
+        let filing = filing.into();
         let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(artifact_scope);
+        let key = scope.artifact_key(filing.scope);
         let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
         // Refused rather than filed loose: a decision nobody can find
         // again is the pile this scoping exists to end.
         let feature = self
-            .feature_for_agent(&scope, artifact_scope)?
+            .feature_for_agent(&scope, &filing)?
             .ok_or_else(|| {
                 anyhow::anyhow!(
                     "this checkout is not on a feature yet — open one with \

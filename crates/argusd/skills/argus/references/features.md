@@ -8,6 +8,7 @@ checkout shares the selection, so inspect it before changing it.
 
 ```sh
 "$ARGUS_HOOK" feature                      # the selected feature, brief, and decisions
+"$ARGUS_HOOK" feature <slug>               # another feature, without selecting it
 "$ARGUS_HOOK" feature list
 "$ARGUS_HOOK" feature use <returned-slug>
 "$ARGUS_HOOK" feature open "session restore" --body "<brief>"
@@ -21,6 +22,11 @@ For implementation work, start from the feature in your pane's context (or
 `context`). If the selected feature matches the request, keep it. Otherwise check `feature list` and `use` a matching one. Only
 `open` a new feature when none fits; `open` also selects it for this checkout.
 Do not switch features just to answer a question.
+
+To read or write a feature other than the selected one — another agent in this
+checkout is working on the selected one — add `--feature <slug>` to any
+`feature`, `task`, `decisions`, `decide` or `diagram` command instead of `use`.
+It leaves the checkout's selection alone.
 
 ## Writing the brief
 

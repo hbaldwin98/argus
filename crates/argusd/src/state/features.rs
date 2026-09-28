@@ -10,9 +10,10 @@
 //!
 //! Resolution is deliberately not a flag. A checkout points at a feature
 //! and the pointer is durable, so an agent that never mentions features
-//! still files its decisions in the right place; the flag exists only for
-//! the case the checkout cannot answer, which is several features sharing
-//! one checkout.
+//! still files its decisions in the right place; the flag — a request
+//! naming a feature, `--feature` to the helper — exists only for the case
+//! the checkout cannot answer, which is several features sharing one
+//! checkout, where moving its pointer would move every other agent's.
 
 use argus_protocol::{
     Actor, ArtifactScope, Decision, Feature, FeatureBoard, FeatureMove, FeatureState, FeatureWrite,
@@ -22,27 +23,51 @@ use argus_protocol::{
 use super::agents::AgentScope;
 use super::*;
 
+/// Where an agent's request is filed: on which board, and on it, a feature
+/// named outright or else the one the agent's checkout is on. A bare
+/// `ArtifactScope` is a filing that names none, which is what every
+/// request did before a request could name one.
+#[derive(Debug, Clone, Default)]
+pub struct Filing {
+    pub scope: ArtifactScope,
+    pub feature: Option<String>,
+}
+
+impl From<ArtifactScope> for Filing {
+    fn from(scope: ArtifactScope) -> Self {
+        Filing {
+            scope,
+            feature: None,
+        }
+    }
+}
+
 impl Daemon {
     /// Everything an agent needs to know about where it is: the project's
     /// features, which one this checkout is on, and that feature's
     /// decisions.
+    ///
+    /// Asked about a feature by name, the board is about that one: its
+    /// decisions, and `current` naming it.
     pub fn feature_board_for_agent(
         &self,
         pane_id: PaneId,
-        artifact_scope: ArtifactScope,
+        filing: impl Into<Filing>,
     ) -> anyhow::Result<FeatureBoard> {
+        let filing = filing.into();
         let scope = self.agent_scope(pane_id)?;
-        self.feature_board(&scope, artifact_scope)
+        self.feature_board(&scope, filing.scope, filing.feature.as_deref())
     }
 
     fn feature_board(
         &self,
         scope: &AgentScope,
         artifact_scope: ArtifactScope,
+        named: Option<&str>,
     ) -> anyhow::Result<FeatureBoard> {
         let key = scope.artifact_key(artifact_scope);
         let features = self.store.features(key)?;
-        let current = self.current_feature(scope, artifact_scope, &features)?;
+        let current = self.board_feature(scope, artifact_scope, &features, named)?;
         let decisions = self.store.decisions(key)?;
         let unfiled = decisions.iter().filter(|d| d.feature.is_none()).count();
         let scoped: Vec<Decision> = match &current {
@@ -60,6 +85,24 @@ impl Daemon {
             decisions: scoped,
             unfiled,
         })
+    }
+
+    /// The feature a request is about: the one it names, which has to be on
+    /// this board, or else the one this checkout is on.
+    fn board_feature(
+        &self,
+        scope: &AgentScope,
+        artifact_scope: ArtifactScope,
+        features: &[Feature],
+        named: Option<&str>,
+    ) -> anyhow::Result<Option<String>> {
+        match named {
+            Some(slug) if features.iter().any(|f| f.slug == slug) => Ok(Some(slug.to_string())),
+            Some(slug) => {
+                anyhow::bail!("no feature `{slug}` on this board; `feature list` names them")
+            }
+            None => self.current_feature(scope, artifact_scope, features),
+        }
     }
 
     /// The feature this checkout is explicitly assigned within the selected
@@ -109,7 +152,7 @@ impl Daemon {
         )?;
         self.store
             .set_artifact_feature_scope(&scope.checkout_path, key, &feature.slug)?;
-        let board = self.feature_board(&scope, artifact_scope)?;
+        let board = self.feature_board(&scope, artifact_scope, None)?;
         self.broadcast_decisions(&scope.project_name, key, self.store.decisions(key)?);
         Ok(board)
     }
@@ -131,7 +174,7 @@ impl Daemon {
             scope.artifact_key(artifact_scope),
             slug,
         )?;
-        let board = self.feature_board(&scope, artifact_scope)?;
+        let board = self.feature_board(&scope, artifact_scope, None)?;
         let key = scope.artifact_key(artifact_scope);
         self.broadcast_decisions(&scope.project_name, key, self.store.decisions(key)?);
         Ok(board)
@@ -146,19 +189,24 @@ impl Daemon {
         &self,
         pane_id: PaneId,
         text: &str,
-        artifact_scope: ArtifactScope,
+        filing: impl Into<Filing>,
     ) -> anyhow::Result<FeatureBoard> {
+        let Filing {
+            scope: artifact_scope,
+            feature: named,
+        } = filing.into();
         let scope = self.agent_scope(pane_id)?;
         let key = scope.artifact_key(artifact_scope);
         let features = self.store.features(key)?;
-        let Some(slug) = self.current_feature(&scope, artifact_scope, &features)? else {
+        let Some(slug) = self.board_feature(&scope, artifact_scope, &features, named.as_deref())?
+        else {
             anyhow::bail!("this checkout is not on a feature yet");
         };
         if text.trim().is_empty() {
             anyhow::bail!("there is nothing to add");
         }
         self.store.append_to_feature(key, &slug, text)?;
-        let board = self.feature_board(&scope, artifact_scope)?;
+        let board = self.feature_board(&scope, artifact_scope, Some(&slug))?;
         // The brief is drawn beside the decisions, so a paragraph added
         // mid-task shows up where it is being read rather than at whatever
         // point the reader next changes something else.
@@ -319,10 +367,10 @@ impl Daemon {
     pub(super) fn feature_for_agent(
         &self,
         scope: &AgentScope,
-        artifact_scope: ArtifactScope,
+        filing: &Filing,
     ) -> anyhow::Result<Option<String>> {
-        let features = self.store.features(scope.artifact_key(artifact_scope))?;
-        self.current_feature(scope, artifact_scope, &features)
+        let features = self.store.features(scope.artifact_key(filing.scope))?;
+        self.board_feature(scope, filing.scope, &features, filing.feature.as_deref())
     }
 
     /// The branch a checkout is on, as the last git poll saw it.

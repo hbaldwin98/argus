@@ -804,6 +804,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_board_command_names_its_feature_anywhere_in_its_arguments() {
+        let (named, rest) =
+            named_feature("task", &["add", "bound", "it", "--feature", "lean-wire", "--under", "4"])
+                .unwrap();
+        assert_eq!(named, Some("lean-wire"));
+        assert_eq!(rest, ["add", "bound", "it", "--under", "4"]);
+
+        let (named, rest) = named_feature("decisions", &[]).unwrap();
+        assert_eq!((named, rest.len()), (None, 0));
+    }
+
+    #[test]
+    fn a_feature_on_its_own_is_read_by_name() {
+        let (named, rest) = named_feature("feature", &["protocol-handshake"]).unwrap();
+        assert_eq!(named, Some("protocol-handshake"));
+        assert!(rest.is_empty());
+        let (named, rest) = named_feature("feature", &["list"]).unwrap();
+        assert_eq!((named, rest), (None, vec!["list"]), "a subcommand stays one");
+    }
+
+    #[test]
+    fn a_name_that_is_not_a_slug_never_travels() {
+        assert!(named_feature("task", &["--feature"]).is_err());
+        assert!(named_feature("task", &["--feature", "Two Words"]).is_err());
+        assert!(named_feature("task", &["--feature", "../../etc"]).is_err());
+    }
+
+    #[test]
     fn task_add_arguments_keep_the_parent_and_tracker_key() {
         let write = parse_task_add_args(&[
             "bound",

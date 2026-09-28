@@ -151,6 +151,10 @@ async fn handle_hook_request(
     let (authorized, content_length, reporter) =
         read_hook_headers(&mut reader, &daemon.hook_token).await?;
     let (endpoint, artifact_scope) = parse_request_target(&path);
+    let filing = super::features::Filing {
+        scope: artifact_scope,
+        feature: argus_protocol::requested_feature(&path),
+    };
     // The server trusts nothing about a request beyond its bearer token.
     let max_body = max_hook_body(endpoint);
     let too_large = content_length > max_body;
@@ -193,16 +197,16 @@ async fn handle_hook_request(
             }
             Some((pane, Endpoint::Comments)) => json_reply(daemon.review_comments_for_agent(pane)),
             Some((pane, Endpoint::Decisions)) => {
-                json_reply(daemon.decisions_for_agent(pane, artifact_scope))
+                json_reply(daemon.decisions_for_agent(pane, filing))
             }
             Some((pane, Endpoint::Decide)) => {
-                decide_response(&daemon, pane, reporter.as_deref(), &body, artifact_scope)
+                decide_response(&daemon, pane, reporter.as_deref(), &body, filing)
             }
             Some((pane, Endpoint::Features)) => {
-                json_reply(daemon.feature_board_for_agent(pane, artifact_scope))
+                json_reply(daemon.feature_board_for_agent(pane, filing))
             }
             Some((pane, Endpoint::Feature)) => {
-                feature_response(&daemon, pane, reporter.as_deref(), &body, artifact_scope)
+                feature_response(&daemon, pane, reporter.as_deref(), &body, filing)
             }
             Some((pane, Endpoint::Telemetry)) => match decode(&body, "telemetry report") {
                 Ok(report) => {
@@ -219,10 +223,10 @@ async fn handle_hook_request(
                 Err(refusal) => refusal,
             },
             Some((pane, Endpoint::Tasks)) => {
-                tasks_response(&daemon, pane, reporter.as_deref(), &body, artifact_scope)
+                tasks_response(&daemon, pane, reporter.as_deref(), &body, filing)
             }
             Some((pane, Endpoint::Diagrams)) => {
-                diagrams_response(&daemon, pane, reporter.as_deref(), &body, artifact_scope)
+                diagrams_response(&daemon, pane, reporter.as_deref(), &body, filing)
             }
             // A checkout move from an agent that does not own the pane is
             // dropped: the row follows the agent Argus started in it.
@@ -267,10 +271,10 @@ fn decide_response(
     source: PaneId,
     session: Option<&str>,
     body: &[u8],
-    scope: argus_protocol::ArtifactScope,
+    filing: super::features::Filing,
 ) -> HookResponse {
     match decode(body, "decision") {
-        Ok(write) => json_reply(daemon.record_agent_decision(source, session, write, scope)),
+        Ok(write) => json_reply(daemon.record_agent_decision(source, session, write, filing)),
         Err(refusal) => refusal,
     }
 }
@@ -283,7 +287,7 @@ fn feature_response(
     source: PaneId,
     session: Option<&str>,
     body: &[u8],
-    scope: argus_protocol::ArtifactScope,
+    filing: super::features::Filing,
 ) -> HookResponse {
     use argus_protocol::FeatureAction;
 
@@ -292,9 +296,13 @@ fn feature_response(
         Err(refusal) => return refusal,
     };
     json_reply(match action {
-        FeatureAction::Open(write) => daemon.open_feature_for_agent(source, session, write, scope),
-        FeatureAction::Select { slug } => daemon.select_feature_for_agent(source, &slug, scope),
-        FeatureAction::Append { text } => daemon.append_to_feature_for_agent(source, &text, scope),
+        FeatureAction::Open(write) => {
+            daemon.open_feature_for_agent(source, session, write, filing.scope)
+        }
+        FeatureAction::Select { slug } => {
+            daemon.select_feature_for_agent(source, &slug, filing.scope)
+        }
+        FeatureAction::Append { text } => daemon.append_to_feature_for_agent(source, &text, filing),
     })
 }
 
@@ -308,10 +316,10 @@ fn tasks_response(
     source: PaneId,
     session: Option<&str>,
     body: &[u8],
-    scope: argus_protocol::ArtifactScope,
+    filing: super::features::Filing,
 ) -> HookResponse {
     match decode::<argus_protocol::TaskAction>(body, "task change") {
-        Ok(action) => json_reply(daemon.part_action_for_agent(source, session, action, scope)),
+        Ok(action) => json_reply(daemon.part_action_for_agent(source, session, action, filing)),
         Err(refusal) => refusal,
     }
 }
@@ -321,10 +329,10 @@ fn diagrams_response(
     source: PaneId,
     session: Option<&str>,
     body: &[u8],
-    scope: argus_protocol::ArtifactScope,
+    filing: super::features::Filing,
 ) -> HookResponse {
     match decode::<argus_protocol::DiagramAction>(body, "diagram change") {
-        Ok(action) => json_reply(daemon.part_action_for_agent(source, session, action, scope)),
+        Ok(action) => json_reply(daemon.part_action_for_agent(source, session, action, filing)),
         Err(refusal) => refusal,
     }
 }

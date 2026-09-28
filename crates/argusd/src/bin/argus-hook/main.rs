@@ -77,7 +77,7 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use argus_protocol::{
-    parse_pane_url, requested_scope, Decision, DecisionBoard, DecisionWrite, DiagramAction,
+    is_slug, parse_pane_url, requested_scope, Decision, DecisionBoard, DecisionWrite, DiagramAction,
     DiagramList, DiagramWrite, Endpoint, FeatureAction, FeatureBoard, FeatureWrite, Report,
     ReviewComment, TaskAction, TaskList, TaskState, TaskWrite, ARTIFACT_SCOPE_VAR, CONTEXT_COMMAND,
     INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG, SESSION_HEADER,
@@ -100,14 +100,34 @@ use transport::*;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let command = args.first().map(String::as_str);
     let rest = args
         .get(1..)
         .unwrap_or_default()
         .iter()
         .map(String::as_str)
         .collect::<Vec<_>>();
-    dispatch(args.first().map(String::as_str), &rest);
+    let rest = match command {
+        Some(board) if BOARD_COMMANDS.contains(&board) => match named_feature(board, &rest) {
+            Ok((named, rest)) => {
+                if let Some(slug) = named {
+                    name_feature(slug);
+                }
+                rest
+            }
+            Err(message) => {
+                println!("{message}");
+                return;
+            }
+        },
+        _ => rest,
+    };
+    dispatch(command, &rest);
 }
+
+/// The commands that read or write a feature board, which may name the
+/// feature they are about rather than take the one the checkout is on.
+const BOARD_COMMANDS: &[&str] = &["feature", "task", "diagram", "decisions", "decide"];
 
 type NamedHandler = fn(&[&str]);
 

@@ -7,7 +7,7 @@
 //! and the push cannot differ by who asked or by which part was asked for;
 //! a part says only how its rows are stored.
 
-use argus_protocol::{ArtifactScope, PaneId, ProjectId};
+use argus_protocol::{PaneId, ProjectId};
 
 use super::*;
 use crate::store::Store;
@@ -69,11 +69,12 @@ impl Daemon {
         pane_id: PaneId,
         session: Option<&str>,
         action: P,
-        artifact_scope: ArtifactScope,
+        filing: impl Into<super::features::Filing>,
     ) -> anyhow::Result<P::List> {
+        let filing = filing.into();
         let scope = self.agent_scope(pane_id)?;
-        let key = scope.artifact_key(artifact_scope).to_string();
-        let Some(feature) = self.feature_for_agent(&scope, artifact_scope)? else {
+        let key = scope.artifact_key(filing.scope).to_string();
+        let Some(feature) = self.feature_for_agent(&scope, &filing)? else {
             if action.is_read() {
                 return Ok(P::empty(scope.project_name));
             }

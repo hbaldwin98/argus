@@ -272,6 +272,16 @@ pub fn slugify(title: &str) -> String {
 
 pub const MAX_SLUG_BYTES: usize = 48;
 
+/// Whether `text` could be a slug [`slugify`] made: what the helper checks
+/// before a feature name it was given travels.
+pub fn is_slug(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= MAX_SLUG_BYTES
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -275,6 +275,76 @@ fn open_feature(d: &Daemon, agent: PaneId, title: &str) -> String {
 }
 
 #[tokio::test]
+async fn an_agent_reads_and_writes_a_feature_by_name_without_moving_its_checkout() {
+    // Several features sharing one checkout: reaching one by moving the
+    // checkout's pointer would move every other agent's with it.
+    use crate::state::features::Filing;
+
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    let agent = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+    let other = open_feature(&d, agent, "other work");
+    let mine = open_feature(&d, agent, "my work");
+    let named = Filing {
+        scope: ArtifactScope::default(),
+        feature: Some(other.clone()),
+    };
+
+    let board = d.feature_board_for_agent(agent, named.clone()).unwrap();
+    assert_eq!(board.current.as_deref(), Some(other.as_str()), "a read of it by name");
+
+    d.part_action_for_agent(
+        agent,
+        None,
+        TaskAction::Add(TaskWrite {
+            title: "for the other feature".into(),
+            external: None,
+            parent: None,
+        }),
+        named.clone(),
+    )
+    .unwrap();
+    let theirs = d
+        .part_action_for_agent(agent, None, TaskAction::List, named.clone())
+        .unwrap();
+    assert_eq!(theirs.tasks.len(), 1, "a write to it by name");
+    let own = d
+        .part_action_for_agent(agent, None, TaskAction::List, ArtifactScope::default())
+        .unwrap();
+    assert!(own.tasks.is_empty(), "and not to the checkout's");
+
+    d.record_agent_decision(
+        agent,
+        None,
+        DecisionWrite {
+            chose: "keep them apart".into(),
+            ..Default::default()
+        },
+        named.clone(),
+    )
+    .unwrap();
+    assert_eq!(d.decisions_for_agent(agent, named).unwrap().decisions.len(), 1);
+
+    assert_eq!(
+        d.feature_board_for_agent(agent, ArtifactScope::default())
+            .unwrap()
+            .current
+            .as_deref(),
+        Some(mine.as_str()),
+        "the checkout stays on its own feature"
+    );
+
+    let unknown = Filing {
+        scope: ArtifactScope::default(),
+        feature: Some("no-such-feature".into()),
+    };
+    let refused = d.feature_board_for_agent(agent, unknown).unwrap_err();
+    assert!(refused.to_string().contains("no-such-feature"), "{refused}");
+
+    d.close_pane(agent).unwrap();
+}
+
+#[tokio::test]
 async fn artifacts_are_repository_scoped_unless_workspace_scope_is_requested() {
     let first = tempfile::tempdir().unwrap();
     let second = tempfile::tempdir().unwrap();

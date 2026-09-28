@@ -41,7 +41,53 @@ pub(super) fn routed_hook(
 /// process's environment asks for.
 pub(super) fn endpoint_url(base: &str, endpoint: Endpoint) -> String {
     let scope = requested_scope(std::env::var(ARTIFACT_SCOPE_VAR).ok().as_deref());
-    argus_protocol::endpoint_url(base, endpoint, scope)
+    let url = argus_protocol::endpoint_url(base, endpoint, scope);
+    match NAMED_FEATURE.get() {
+        Some(slug) => argus_protocol::feature_url(&url, slug),
+        None => url,
+    }
+}
+
+/// The feature this run's board command names, set once by `main`. One per
+/// process, as the scope is: the helper runs one command and exits.
+static NAMED_FEATURE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+pub(super) fn name_feature(slug: &str) {
+    let _ = NAMED_FEATURE.set(slug.to_string());
+}
+
+/// What a feature command's own words are, so `feature <slug>` can be told
+/// from one of them.
+const FEATURE_SUBCOMMANDS: &[&str] = &["list", "open", "use", "note", "export"];
+
+/// The feature a board command names, and its arguments without the name.
+///
+/// `--feature <slug>`, anywhere in any board command, or `feature <slug>`
+/// on its own. A name that is not a slug is refused here, before it
+/// travels.
+pub(super) fn named_feature<'a>(
+    command: &str,
+    rest: &[&'a str],
+) -> Result<(Option<&'a str>, Vec<&'a str>), String> {
+    if let [only] = rest {
+        if command == "feature" && !FEATURE_SUBCOMMANDS.contains(only) && is_slug(only) {
+            return Ok((Some(only), Vec::new()));
+        }
+    }
+    let Some(at) = rest.iter().position(|arg| *arg == "--feature") else {
+        return Ok((None, rest.to_vec()));
+    };
+    let Some(slug) = rest.get(at + 1) else {
+        return Err("--feature wants a feature's slug; `feature list` names them".to_string());
+    };
+    if !is_slug(slug) {
+        return Err(format!(
+            "`{slug}` is not a feature slug; `feature list` names them"
+        ));
+    }
+    let mut left = rest.to_vec();
+    left.drain(at..=at + 1);
+    Ok((Some(slug), left))
 }
 
 /// The pane base a URL names, or `None` for one not on the loopback

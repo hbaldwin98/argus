@@ -40,6 +40,10 @@ const LOOPBACK: &str = "127.0.0.1";
 /// it always did.
 const WORKSPACE_QUERY: &str = "scope=workspace";
 
+/// The query that names a feature for a board request, ahead of its slug.
+/// Absent means the feature the pane's checkout is on.
+const FEATURE_QUERY: &str = "feature=";
+
 /// The context-only helper command used by stable, environment-based hooks.
 pub const INSTRUCTIONS_COMMAND: &str = "instructions";
 
@@ -284,6 +288,25 @@ pub fn parse_request_target(target: &str) -> (Option<(PaneId, Endpoint)>, Artifa
     (parse_pane_path(route), scope)
 }
 
+/// `url` asking about the feature `slug` rather than the one the pane's
+/// checkout is on.
+pub fn feature_url(url: &str, slug: &str) -> String {
+    let joiner = if url.contains('?') { '&' } else { '?' };
+    format!("{url}{joiner}{FEATURE_QUERY}{slug}")
+}
+
+/// The feature a request target names, if it names one. Not checked here:
+/// one this board does not have is the daemon's to refuse, by name, rather
+/// than quietly read as naming none.
+pub fn requested_feature(target: &str) -> Option<String> {
+    let (_, query) = target.split_once('?')?;
+    query
+        .split('&')
+        .find_map(|part| part.strip_prefix(FEATURE_QUERY))
+        .filter(|slug| !slug.is_empty())
+        .map(str::to_string)
+}
+
 /// The board [`ARTIFACT_SCOPE_VAR`] asks for, given its value. Only the
 /// exact word crosses repositories; anything else is the repository board.
 pub fn requested_scope(var: Option<&str>) -> ArtifactScope {
@@ -457,6 +480,24 @@ mod tests {
             parse_request_target("/pane/7/tasks?x=1&scope=workspace"),
             (Some((PaneId(7), Endpoint::Tasks)), ArtifactScope::Workspace)
         );
+    }
+
+    #[test]
+    fn a_feature_named_in_the_url_is_read_back_beside_the_scope() {
+        let url = endpoint_url(
+            "http://127.0.0.1:4242/pane/9",
+            Endpoint::Tasks,
+            ArtifactScope::Workspace,
+        );
+        let named = feature_url(&url, "protocol-handshake");
+        let target = named.trim_start_matches("http://127.0.0.1:4242");
+        assert_eq!(requested_feature(target).as_deref(), Some("protocol-handshake"));
+        assert_eq!(parse_request_target(target).1, ArtifactScope::Workspace);
+
+        let bare = feature_url("http://127.0.0.1:4242/pane/9/tasks", "x");
+        assert!(bare.ends_with("/tasks?feature=x"), "{bare}");
+        assert_eq!(requested_feature("/pane/9/tasks?scope=workspace"), None);
+        assert_eq!(requested_feature("/pane/9/tasks?feature="), None);
     }
 
     #[test]
