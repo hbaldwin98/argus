@@ -409,7 +409,8 @@ against the grid after that scroll, so a wrong guess costs bytes and never a wro
 50 screen of text is a few kilobytes rather than the 620 KB it was as per-cell records, and a one
 line scroll of it under 200 bytes rather than 413 KB. A client that did not greet with `cell-runs`
 is sent the per-cell form, built by its connection from the runs; a scroll, which that form cannot
-say, puts it behind, and it catches up with a fresh grid as a scroll always cost it.
+say, puts it behind, and it catches up with a fresh grid as a scroll always cost it. Rows read from
+a pane's history come back as runs to a client that reads them, and as cells to one that does not.
 
 The client also bounds incoming daemon messages and coalesces redraws to the same interval. Cursor-only
 changes are broadcast even when no cell changed. The client places its hardware cursor there only

@@ -1141,6 +1141,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn history_is_answered_in_the_form_the_client_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+        let pane = h.daemon.spawn_shell(h.checkout()).unwrap();
+
+        h.send(ClientMsg::Scrollback { pane, offset: 1 });
+        assert!(matches!(
+            h.replies().first(),
+            Some(ServerMsg::ScrollbackRows { .. })
+        ));
+
+        h.subs.runs = true;
+        h.send(ClientMsg::Scrollback { pane, offset: 1 });
+        assert!(matches!(
+            h.replies().first(),
+            Some(ServerMsg::ScrollbackRuns { rows, .. }) if *rows > 0
+        ));
+
+        let _ = h.daemon.close_pane(pane);
+    }
+
+    #[tokio::test]
     async fn subscribing_to_a_pane_that_is_gone_is_an_error_not_a_panic() {
         let dir = tempfile::tempdir().unwrap();
         let mut h = Harness::new(dir.path());

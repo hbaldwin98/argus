@@ -255,3 +255,24 @@ fn a_grid_sent_as_runs_is_the_grid_the_pane_draws() {
 
     assert_eq!(h.app.grids[&pane].cells, cells);
 }
+
+#[test]
+fn history_sent_as_runs_draws_the_same_as_history_sent_as_cells() {
+    let mut h = Harness::new();
+    let pane = live_pane(&mut h);
+    h.app.on_mouse(wheel(MouseEventKind::ScrollUp));
+
+    let mut row = vec![Cell::default(); 4];
+    row[0].ch = "H".into();
+    h.app.on_server_msg(ServerMsg::ScrollbackRuns {
+        pane,
+        offset: 3,
+        depth: 500,
+        rows: 3,
+        cols: 4,
+        runs: argus_protocol::grid_runs(&vec![row; 3]),
+    });
+
+    assert_eq!(drawn_mark(&h, pane), "H");
+    assert!(h.app.grids[&pane].is_scrolled());
+}

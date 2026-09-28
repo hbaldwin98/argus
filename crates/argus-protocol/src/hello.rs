@@ -26,8 +26,9 @@ pub const CAPABILITIES: &[&str] = &[PANE_TELEMETRY, CELL_RUNS];
 /// reports its model, context or spend.
 pub const PANE_TELEMETRY: &str = "pane-telemetry";
 
-/// `ServerMsg::PaneRows` and `ServerMsg::RowDamage` in place of their
-/// per-cell forms: a pane's screen as runs of cells, and scrolls as moves.
+/// `ServerMsg::PaneRows`, `ServerMsg::RowDamage` and
+/// `ServerMsg::ScrollbackRuns` in place of their per-cell forms: a pane's
+/// screen and its history as runs of cells, and scrolls as moves.
 pub const CELL_RUNS: &str = "cell-runs";
 
 /// One side's greeting.

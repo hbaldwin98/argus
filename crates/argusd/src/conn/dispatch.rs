@@ -46,12 +46,25 @@ fn dispatch_pane(
         ClientMsg::Scrollback { pane, offset } => daemon
             .pane_scrollback(pane, offset as usize)
             .map(|(cells, offset, depth)| {
-                let _ = out_tx.send(ServerMsg::ScrollbackRows {
-                    pane,
-                    offset: offset as u32,
-                    depth: depth as u32,
-                    cells,
-                });
+                let (offset, depth) = (offset as u32, depth as u32);
+                let answer = if subs.runs {
+                    ServerMsg::ScrollbackRuns {
+                        pane,
+                        offset,
+                        depth,
+                        rows: cells.len() as u16,
+                        cols: cells.first().map_or(0, |row| row.len() as u16),
+                        runs: argus_protocol::grid_runs(&cells),
+                    }
+                } else {
+                    ServerMsg::ScrollbackRows {
+                        pane,
+                        offset,
+                        depth,
+                        cells,
+                    }
+                };
+                let _ = out_tx.send(answer);
             }),
         ClientMsg::SpawnShell {
             checkout,

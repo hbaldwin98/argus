@@ -439,6 +439,16 @@ pub enum ServerMsg {
         depth: u32,
         cells: Vec<Vec<Cell>>,
     },
+    /// `ScrollbackRows` for a client that greeted with `CELL_RUNS`: the
+    /// rows as runs, every cell not in one a default blank.
+    ScrollbackRuns {
+        pane: PaneId,
+        offset: u32,
+        depth: u32,
+        rows: u16,
+        cols: u16,
+        runs: Vec<CellRun>,
+    },
     /// The answer to `ClientMsg::Review`.
     Review(Review),
     /// A failed review capture/diff, correlated so stale failures are dropped.

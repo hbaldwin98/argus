@@ -162,6 +162,17 @@ impl App {
             } => {
                 self.receive_scrollback(pane, offset, depth, cells);
             }
+            ServerMsg::ScrollbackRuns {
+                pane,
+                offset,
+                depth,
+                rows,
+                cols,
+                runs,
+            } => {
+                let cells = argus_protocol::grid_from_runs(rows, cols, &runs);
+                self.receive_scrollback(pane, offset, depth, cells);
+            }
             ServerMsg::PaneClosed { pane, code } => {
                 self.receive_pane_closed(pane, code);
             }
