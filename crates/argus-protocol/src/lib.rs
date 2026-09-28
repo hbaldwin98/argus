@@ -39,7 +39,7 @@ pub use features::{
     slugify, Actor, Feature, FeatureAction, FeatureBoard, FeatureEvent, FeatureMove, FeatureState,
     FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES,
 };
-pub use framing::{read_msg, write_frame, write_msg, FramingError};
+pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
 pub use hook::{
     endpoint_url, pane_path, pane_url, parse_pane_path, parse_pane_url, parse_request_target,
     requested_scope, Endpoint, PaneUrl, Report, ARTIFACT_SCOPE_VAR, CONTEXT_COMMAND, HELPER_VAR,

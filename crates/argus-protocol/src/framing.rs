@@ -64,6 +64,27 @@ where
     Ok(rmp_serde::from_slice(&buf)?)
 }
 
+/// The next message this build can read, skipping any it cannot.
+///
+/// A newer peer can send a message this build has never heard of. The
+/// whole frame was read before it failed to decode, so the stream is still
+/// aligned and the connection can carry on past it; ending it would cost
+/// this side its connection for the other side's addition. Only a decode
+/// failure is skipped. A frame too large to read leaves the stream
+/// mid-frame, and an I/O error means there is no stream left.
+pub async fn read_known_msg<R, T>(r: &mut R) -> Result<T, FramingError>
+where
+    R: AsyncRead + Unpin,
+    T: DeserializeOwned,
+{
+    loop {
+        match read_msg(r).await {
+            Err(FramingError::Decode(_)) => continue,
+            other => return other,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -363,6 +384,49 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err, FramingError::Io(_)), "got {err:?}");
+    }
+
+    #[tokio::test]
+    async fn a_message_this_build_does_not_know_is_skipped() {
+        // What a newer peer sends: a variant no ClientMsg has.
+        #[derive(serde::Serialize)]
+        enum FromTheFuture {
+            Teleport { to: u32 },
+        }
+        let mut buf: Vec<u8> = Vec::new();
+        write_msg(&mut buf, &ClientMsg::Subscribe { pane: PaneId(1) })
+            .await
+            .unwrap();
+        write_msg(&mut buf, &FromTheFuture::Teleport { to: 7 })
+            .await
+            .unwrap();
+        write_msg(&mut buf, &ClientMsg::Subscribe { pane: PaneId(2) })
+            .await
+            .unwrap();
+
+        let mut r = buf.as_slice();
+        for want in [PaneId(1), PaneId(2)] {
+            let msg: ClientMsg = read_known_msg(&mut r).await.unwrap();
+            assert!(matches!(msg, ClientMsg::Subscribe { pane } if pane == want));
+        }
+        assert!(
+            matches!(
+                read_known_msg::<_, ClientMsg>(&mut r).await,
+                Err(FramingError::Io(_))
+            ),
+            "the end of the stream still ends it"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_oversized_frame_is_not_skipped() {
+        // Its body was never read, so there is no next frame to find.
+        let mut buf = (MAX_FRAME + 1).to_be_bytes().to_vec();
+        buf.extend_from_slice(b"whatever");
+        let err = read_known_msg::<_, ClientMsg>(&mut buf.as_slice())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, FramingError::TooLarge(_)), "got {err:?}");
     }
 
     #[tokio::test]

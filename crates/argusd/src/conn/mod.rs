@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use argus_protocol::{read_msg, write_frame, ClientMsg, PaneId, ServerMsg};
+use argus_protocol::{read_known_msg, write_frame, ClientMsg, PaneId, ServerMsg};
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc, Semaphore};
 
@@ -158,7 +158,7 @@ where
 {
     let (tx, rx) = mpsc::channel(CLIENT_QUEUE);
     let reader = tokio::spawn(async move {
-        while let Ok(msg) = read_msg::<_, ClientMsg>(&mut rd).await {
+        while let Ok(msg) = read_known_msg::<_, ClientMsg>(&mut rd).await {
             if tx.send(msg).await.is_err() {
                 break;
             }
@@ -404,7 +404,7 @@ const MAX_BATCHED_MESSAGES: usize = 256;
 mod tests {
     use super::*;
     use crate::config::{ConfigFile, ProjectConfig};
-    use argus_protocol::{CheckoutId, PaneId, ReviewBase};
+    use argus_protocol::{read_msg, CheckoutId, PaneId, ReviewBase};
 
     #[tokio::test]
     async fn a_burst_is_written_in_order_and_flushed_once() {
@@ -492,6 +492,51 @@ mod tests {
             ShutdownReason::Restart
         );
         handler.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_message_from_a_newer_client_is_skipped_not_fatal() {
+        // A client newer than this daemon can send a request it has never
+        // heard of. Dropping the connection for it cost the client
+        // everything else it was doing.
+        #[derive(serde::Serialize)]
+        enum FromTheFuture {
+            Teleport { to: u32 },
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = Harness::new(dir.path()).daemon;
+        let (mut client, server) = tokio::io::duplex(1024 * 1024);
+        let (shutdown, _) = broadcast::channel(1);
+        tokio::spawn(handle(server, daemon, shutdown.clone(), shutdown.subscribe()));
+        for _ in 0..3 {
+            let _: ServerMsg = read_msg(&mut client).await.unwrap();
+        }
+
+        argus_protocol::write_msg(&mut client, &FromTheFuture::Teleport { to: 7 })
+            .await
+            .unwrap();
+        argus_protocol::write_msg(
+            &mut client,
+            &ClientMsg::Input {
+                pane: PaneId(9999),
+                bytes: b"x".to_vec(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let answer = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                match read_msg::<_, ServerMsg>(&mut client).await {
+                    Ok(ServerMsg::Error { message }) => return message,
+                    Ok(_) => continue,
+                    Err(error) => panic!("the connection broke: {error}"),
+                }
+            }
+        })
+        .await
+        .expect("the request after the unknown one should be answered");
+        assert!(answer.contains("pane"), "{answer}");
     }
 
     #[tokio::test]

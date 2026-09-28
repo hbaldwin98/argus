@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
-use argus_protocol::{read_msg, transport, write_msg, ClientMsg, FramingError, ServerMsg};
+use argus_protocol::{read_known_msg, transport, write_msg, ClientMsg, FramingError, ServerMsg};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::sleep;
 
@@ -49,7 +49,7 @@ pub async fn restart_daemon() -> anyhow::Result<()> {
 
     tokio::time::timeout(CONTROL_ACK_TIMEOUT, async {
         loop {
-            let reply = read_msg::<_, ServerMsg>(&mut stream)
+            let reply = read_known_msg::<_, ServerMsg>(&mut stream)
                 .await
                 .map_err(|error| control_read_error(error, "restart"))?;
             match reply {
@@ -83,7 +83,7 @@ pub async fn stop_daemon() -> anyhow::Result<()> {
 
     tokio::time::timeout(CONTROL_ACK_TIMEOUT, async {
         loop {
-            let reply = read_msg::<_, ServerMsg>(&mut stream)
+            let reply = read_known_msg::<_, ServerMsg>(&mut stream)
                 .await
                 .map_err(|error| control_read_error(error, "stop"))?;
             match reply {
@@ -141,7 +141,7 @@ pub async fn init(dir: Option<String>) -> anyhow::Result<()> {
         // The daemon greets with the tree; the projects already in it are
         // what the added one is told apart from.
         let known = loop {
-            if let ServerMsg::Tree(tree) = read_msg::<_, ServerMsg>(&mut stream).await? {
+            if let ServerMsg::Tree(tree) = read_known_msg::<_, ServerMsg>(&mut stream).await? {
                 break tree.into_iter().map(|p| p.id).collect::<Vec<_>>();
             }
         };
@@ -155,7 +155,7 @@ pub async fn init(dir: Option<String>) -> anyhow::Result<()> {
             .await
             .context("could not ask argusd to add the project")?;
         loop {
-            match read_msg::<_, ServerMsg>(&mut stream).await? {
+            match read_known_msg::<_, ServerMsg>(&mut stream).await? {
                 ServerMsg::Tree(tree) => {
                     if let Some(project) = tree.into_iter().find(|p| !known.contains(&p.id)) {
                         print!("{}", init_summary(&project, &path));

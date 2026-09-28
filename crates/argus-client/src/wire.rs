@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 
-use argus_protocol::{read_msg, write_msg, ClientMsg, PaneId, ServerMsg};
+use argus_protocol::{read_known_msg, write_msg, ClientMsg, PaneId, ServerMsg};
 use tokio::io::split;
 use tokio::sync::mpsc;
 
@@ -26,7 +26,7 @@ where
 
     tokio::spawn(client_writer(wr, in_rx));
     tokio::spawn(async move {
-        while let Ok(msg) = read_msg::<_, ServerMsg>(&mut rd).await {
+        while let Ok(msg) = read_known_msg::<_, ServerMsg>(&mut rd).await {
             if out_tx.send(msg).await.is_err() {
                 break;
             }
@@ -101,7 +101,42 @@ fn compact_subscriptions(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use argus_protocol::{read_msg, write_msg};
     use tokio::time::{timeout, Duration};
+
+    #[tokio::test]
+    async fn a_message_from_a_newer_daemon_is_skipped_not_fatal() {
+        // A daemon newer than this client can send something it has never
+        // heard of. The client used to end the connection on it and fall
+        // into its reconnect loop, over and over.
+        #[derive(serde::Serialize)]
+        enum FromTheFuture {
+            Weather { sunny: bool },
+        }
+        let (client, mut daemon) = tokio::io::duplex(1024 * 1024);
+        let (_tx, mut server_rx) = connection_channels(client);
+
+        write_msg(&mut daemon, &FromTheFuture::Weather { sunny: true })
+            .await
+            .unwrap();
+        write_msg(
+            &mut daemon,
+            &ServerMsg::Error {
+                message: "still here".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let next = timeout(Duration::from_secs(5), server_rx.recv())
+            .await
+            .expect("the known message should arrive")
+            .expect("the connection should still be open");
+        assert!(
+            matches!(&next, ServerMsg::Error { message } if message == "still here"),
+            "{next:?}"
+        );
+    }
 
     #[tokio::test]
     async fn rapid_pane_swaps_cost_one_message_however_many_panes_were_crossed() {

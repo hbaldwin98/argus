@@ -40,6 +40,12 @@ records framed by a four-byte big-endian length. Frames larger than 64 MiB are r
 Several clients may connect at once and each connection may subscribe to several pane screens.
 There is no protocol negotiation or transport authentication.
 
+A message a side cannot decode — one a newer peer added — is skipped, and the connection carries
+on. The whole frame is read before it is decoded, so the stream is still aligned; only a frame over
+the size cap, which is never read, or an I/O error ends a connection. Every reader goes through
+`read_known_msg`. Peers from before this skip unknown messages by hanging up, so nothing new may be
+sent to one.
+
 A request that makes something — a shell, an agent, an editor, a worktree, a project, a
 repository — may name itself with a `request_id`, and the daemon answers that client alone with
 `Created`: the id of what it made, or nothing when it refused (the reason still arrives as an
