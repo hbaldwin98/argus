@@ -4,6 +4,7 @@
 mod branch_rows;
 mod brief_editing;
 mod editors;
+mod modes;
 mod mouse_input;
 mod navigation;
 mod picking;

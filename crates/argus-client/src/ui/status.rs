@@ -45,131 +45,135 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
         // The keymap window is up, so the bar stops advertising keys and
         // says how to work the window instead.
         &["j/k scroll   any other key closes", "any key closes"][..]
-    } else if let Some(p) = &app.picker {
-        // What Enter does differs per picker, and "spawn" on the theme list
-        // would be a small lie.
-        let hints: &[&str] = match p.kind {
-            PickerKind::Agent => &["j/k move   enter spawn   esc cancel", "enter spawn  esc"],
-            PickerKind::Workspace { .. } => &[
-                "type to filter or name a new one   ↑/↓ move   enter open   esc cancel",
-                "type to filter   ↑/↓ move   enter open   esc cancel",
-                "enter open  esc",
-            ],
-            PickerKind::Theme => &["j/k move   enter apply   esc cancel", "enter apply  esc"],
-            PickerKind::Project => &["j/k move   enter open   esc cancel", "enter open  esc"],
-            PickerKind::Branch { .. } => &[
-                "type to filter   ↑/↓ move   enter switch   esc cancel",
-                "enter switch  esc",
-            ],
-            PickerKind::File { .. } => &[
-                "type to filter   ↑/↓ move   enter open   esc cancel",
-                "enter open  esc",
-            ],
-            PickerKind::Change => &[
-                "type to filter   ↑/↓ move   enter jump   esc cancel",
-                "enter jump  esc",
-            ],
-            PickerKind::ReviewRecipient { .. } => {
-                &["j/k move   enter send   esc cancel", "enter send  esc"]
-            }
-            PickerKind::FeatureCheckout { .. } => &[
-                "type to filter   ↑/↓ move   enter transfer   esc cancel",
-                "enter transfer  esc",
-            ],
-        };
-        hints
-    } else if app.prompt.is_some() {
-        &[
-            "type to edit   enter confirm   esc cancel",
-            "enter confirm  esc",
-        ][..]
-    } else if app.checkout_filtering {
-        &[
-            "type to filter branches   enter apply   esc clear",
-            "type to filter   enter apply   esc clear",
-            "enter apply  esc clear",
-        ][..]
-    } else if app.leader_pending {
-        if app.pane_fullscreen {
-            &[
-                "leader…   esc back   f restore   N attention   x close",
-                "leader…  esc  f restore  N  x close",
-            ]
-        } else {
-            &[
-                "leader…   esc back   f fullscreen   N attention   x close",
-                "leader…  esc  f full  N  x close",
-            ]
-        }
-    } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
-        &["j/k move   h/l change   esc close", "h/l change  esc"][..]
-    } else if matches!(app.overlay, Some(Overlay::Review)) {
-        // A commit reached from the history overlay goes back to it rather
-        // than flipping a side that means nothing there. `s` names where it
-        // would take you, not where you are.
-        let from_history = app
-            .review
-            .as_ref()
-            .is_some_and(|v| v.review.commit.is_some())
-            && app.history.is_some();
-        let split = if app.review_split {
-            "s unified"
-        } else {
-            "s split"
-        };
-        let base = if from_history {
-            "h history"
-        } else {
-            "b staged/unstaged"
-        };
-        // Built rather than matched out: the two switches are independent,
-        // and four spelled-out combinations times three tiers is twelve
-        // strings nobody could keep in step.
-        let hints: [String; 3] = [
-            format!("j/k  ]/[ file  f jump  c comment  e edit  {split}  {base}  esc close"),
-            format!("j/k  ]/[ file  c comment  {split}  {base}  esc"),
-            format!("]/[ file  c comment  {split}  esc"),
-        ];
-        return draw_bar(f, app, area, &hints, th);
-    } else if matches!(app.overlay, Some(Overlay::History)) {
-        &[
-            "j/k  ]/[ commit  l files/open  h fold  r refresh  R review  esc close",
-            "]/[ commit  l open  h fold  R review  esc",
-            "]/[ commit  R review  esc",
-        ][..]
-    } else if matches!(app.overlay, Some(Overlay::SequenceDiagram)) {
-        &["j/k scroll  h/l pan  q close", "j/k  h/l  q", "h/l  q"][..]
-    } else if matches!(app.overlay, Some(Overlay::Brief)) {
-        // The two modes have almost no keys in common, so the bar shows
-        // the one you are actually in.
-        match app.brief.as_ref().map(|v| v.mode) {
-            Some(BriefMode::Insert) => &["typing — esc to stop and save", "esc saves"][..],
-            _ => &[
-                "j/k move  i insert  o new line  q close",
-                "j/k  i insert  q close",
-                "i insert  q close",
+    } else {
+        match app.mode() {
+            Mode::Prompt => &[
+                "type to edit   enter confirm   esc cancel",
+                "enter confirm  esc",
             ][..],
-        }
-    } else if app.overlay.is_some() {
-        &[
-            "floating — ctrl-space then esc to close, x to kill   ctrl-v paste",
-            "floating — ctrl-space then esc, x to kill",
-            "ctrl-space esc",
-        ][..]
-    } else if app.view != View::Workspace {
-        // A view owns the whole stage and has its own keys. Without this the
-        // bar falls through to the workspace's and advertises keys that do
-        // nothing here, which is worse than saying nothing.
-        match app.view {
-            _ if app.line.is_some() => &[
+            Mode::DirPicker => &[
+                "type to filter   ↑/↓ move   → into   ← up   enter choose   esc cancel",
+                "↑/↓ move  → into  ← up  enter choose  esc",
+                "enter choose  esc",
+            ][..],
+            Mode::Picker => {
+                let Some(p) = &app.picker else {
+                    return;
+                };
+                // What Enter does differs per picker, and "spawn" on the theme list
+                // would be a small lie.
+                match p.kind {
+                    PickerKind::Agent => &["j/k move   enter spawn   esc cancel", "enter spawn  esc"],
+                    PickerKind::Workspace { .. } => &[
+                        "type to filter or name a new one   ↑/↓ move   enter open   esc cancel",
+                        "type to filter   ↑/↓ move   enter open   esc cancel",
+                        "enter open  esc",
+                    ],
+                    PickerKind::Theme => &["j/k move   enter apply   esc cancel", "enter apply  esc"],
+                    PickerKind::Project => &["j/k move   enter open   esc cancel", "enter open  esc"],
+                    PickerKind::Branch { .. } => &[
+                        "type to filter   ↑/↓ move   enter switch   esc cancel",
+                        "enter switch  esc",
+                    ],
+                    PickerKind::File { .. } => &[
+                        "type to filter   ↑/↓ move   enter open   esc cancel",
+                        "enter open  esc",
+                    ],
+                    PickerKind::Change => &[
+                        "type to filter   ↑/↓ move   enter jump   esc cancel",
+                        "enter jump  esc",
+                    ],
+                    PickerKind::ReviewRecipient { .. } => {
+                        &["j/k move   enter send   esc cancel", "enter send  esc"]
+                    }
+                    PickerKind::FeatureCheckout { .. } => &[
+                        "type to filter   ↑/↓ move   enter transfer   esc cancel",
+                        "enter transfer  esc",
+                    ],
+                }
+            }
+            Mode::CheckoutFilter => &[
+                "type to filter branches   enter apply   esc clear",
+                "type to filter   enter apply   esc clear",
+                "enter apply  esc clear",
+            ][..],
+            Mode::Pane | Mode::Overlay(OverlayMode::Pane) if app.leader_pending => {
+                if app.pane_fullscreen {
+                    &[
+                        "leader…   esc back   f restore   N attention   x close",
+                        "leader…  esc  f restore  N  x close",
+                    ]
+                } else {
+                    &[
+                        "leader…   esc back   f fullscreen   N attention   x close",
+                        "leader…  esc  f full  N  x close",
+                    ]
+                }
+            }
+            Mode::Overlay(OverlayMode::Settings) => {
+                &["j/k move   h/l change   esc close", "h/l change  esc"][..]
+            }
+            Mode::Overlay(OverlayMode::Review) => {
+                // A commit reached from the history overlay goes back to it rather
+                // than flipping a side that means nothing there. `s` names where it
+                // would take you, not where you are.
+                let from_history = app
+                    .review
+                    .as_ref()
+                    .is_some_and(|v| v.review.commit.is_some())
+                    && app.history.is_some();
+                let split = if app.review_split {
+                    "s unified"
+                } else {
+                    "s split"
+                };
+                let base = if from_history {
+                    "h history"
+                } else {
+                    "b staged/unstaged"
+                };
+                // Built rather than matched out: the two switches are independent,
+                // and four spelled-out combinations times three tiers is twelve
+                // strings nobody could keep in step.
+                let hints: [String; 3] = [
+                    format!("j/k  ]/[ file  f jump  c comment  e edit  {split}  {base}  esc close"),
+                    format!("j/k  ]/[ file  c comment  {split}  {base}  esc"),
+                    format!("]/[ file  c comment  {split}  esc"),
+                ];
+                return draw_bar(f, app, area, &hints, th);
+            }
+            Mode::Overlay(OverlayMode::History) => &[
+                "j/k  ]/[ commit  l files/open  h fold  r refresh  R review  esc close",
+                "]/[ commit  l open  h fold  R review  esc",
+                "]/[ commit  R review  esc",
+            ][..],
+            Mode::Overlay(OverlayMode::SequenceDiagram) => {
+                &["j/k scroll  h/l pan  q close", "j/k  h/l  q", "h/l  q"][..]
+            }
+            // The two modes have almost no keys in common, so the bar shows
+            // the one you are actually in.
+            Mode::Overlay(OverlayMode::Brief) => match app.brief.as_ref().map(|v| v.mode) {
+                Some(BriefMode::Insert) => &["typing — esc to stop and save", "esc saves"][..],
+                _ => &[
+                    "j/k move  i insert  o new line  q close",
+                    "j/k  i insert  q close",
+                    "i insert  q close",
+                ][..],
+            },
+            Mode::Overlay(OverlayMode::Pane) => &[
+                "floating — ctrl-space then esc to close, x to kill   ctrl-v paste",
+                "floating — ctrl-space then esc, x to kill",
+                "ctrl-space esc",
+            ][..],
+            Mode::Stage(View::Feature) if app.line.is_some() => &[
                 "typing — enter saves it, esc throws it away",
                 "enter saves  esc drops",
             ][..],
-            // Named per panel, since which keys are live depends on
-            // which one has them: `a` adds a feature or root task and `s`
-            // adds a subtask in the tasks panel, and a bar that said neither would be a
-            // bar saying nothing.
-            View::Feature => match app.panel {
+            // Named per panel, since which keys are live depends on which
+            // one has them: `a` adds a feature or root task and `s` adds a
+            // subtask in the tasks panel, and a bar that said neither would
+            // be a bar saying nothing.
+            Mode::Stage(View::Feature) => match app.panel {
                 FeaturePanel::Features => &[
                     "h/l panels  j/k move  a new  e brief  R rename  m checkout  v archive  x drop  . accept  r refresh  q workspace",
                     "l tasks  j/k move  a new  e brief  m move  v archive  x drop  . accept  q workspace",
@@ -191,62 +195,58 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                     "h/l  j/k  q workspace",
                 ][..],
             },
-            View::Panes => &["j/k move   enter open   A all   a agent   s shell   q workspace", "j/k  enter open  A all  q"][..],
-            View::Checkouts => &[
+            Mode::Stage(View::Panes) => &[
+                "j/k move   enter open   A all   a agent   s shell   q workspace",
+                "j/k  enter open  A all  q",
+            ][..],
+            Mode::Stage(View::Checkouts) => &[
                 "j/k move   / filter   enter open   m checkout   n worktree   D remove   q workspace",
                 "j/k  / filter  enter open  q",
                 "j/k  enter open  q",
             ][..],
-            View::Workspace => unreachable!("the workspace is handled above"),
-        }
-    } else if app.focus == Focus::PaneContent {
-        // A parked pane is not taking input anywhere the operator can see,
-        // so the way back to the live screen outranks the usual keymap.
-        if app.scroll_indicator().is_some() {
-            &[
+            // A parked pane is not taking input anywhere the operator can
+            // see, so the way back to the live screen outranks the usual
+            // keymap.
+            Mode::Pane if app.scroll_indicator().is_some() => &[
                 "scrolled back   shift-pgup/pgdn move   type or scroll down to return",
                 "scrolled back   type or scroll down to return",
                 "scrolled back — type to return",
-            ][..]
-        } else if app.pane_fullscreen {
-            &[
+            ][..],
+            Mode::Pane if app.pane_fullscreen => &[
                 "typing   ctrl-space: esc leave  f restore  x close   shift-pgup scroll",
                 "typing   ctrl-space: esc leave  f restore  x close",
                 "typing   ctrl-space esc",
-            ][..]
-        } else {
-            &[
+            ][..],
+            Mode::Pane => &[
                 "typing   ctrl-space: esc leave  f fullscreen  x close   shift-pgup scroll",
                 "typing   ctrl-space: esc leave  f full  x close",
                 "typing   ctrl-space esc",
-            ][..]
+            ][..],
+            // Per row rather than one list of everything: the bar cannot
+            // hold every key at once, and most of them only apply somewhere.
+            Mode::Stage(View::Workspace) | Mode::Rail => match app.focus {
+                Focus::Projects => &[
+                    "j/k  l open  n add  D rm  o switch  w wksp",
+                    "l open  n add  o switch",
+                    "l open  n add",
+                ][..],
+                Focus::Repositories => &[
+                    "j/k  l open  s shell  a agent  b branch  n add",
+                    "l open  s shell  a agent",
+                    "l open  a agent",
+                ][..],
+                Focus::Checkouts => &[
+                    "j/k  l open  b branch  F fetch  R review  H history",
+                    "j/k  l open  R review  H history",
+                    "l open  R review",
+                ][..],
+                _ => &[
+                    "j/k  l open  s shell  a agent  R review  x close",
+                    "l open  a agent  R review  x close",
+                    "l open  R review",
+                ][..],
+            },
         }
-    } else {
-        // Per column rather than one list of everything: the bar cannot
-        // hold every key at once, and most of them only apply somewhere.
-        let keys: &[&str] = match app.focus {
-            Focus::Projects => &[
-                "j/k  l open  n add  D rm  w wksp",
-                "l open  n add",
-                "l open  n add",
-            ],
-            Focus::Repositories => &[
-                "j/k  l open  s shell  a agent  b branch  n add",
-                "l open  s shell  a agent",
-                "l open  a agent",
-            ],
-            Focus::Checkouts => &[
-                "j/k  l open  b branch  F fetch  R review  H history",
-                "j/k  l open  R review  H history",
-                "l open  R review",
-            ],
-            _ => &[
-                "j/k  l open  s shell  a agent  R review  x close",
-                "l open  a agent  R review  x close",
-                "l open  R review",
-            ],
-        };
-        keys
     };
 
     draw_bar(f, app, area, hints, th);

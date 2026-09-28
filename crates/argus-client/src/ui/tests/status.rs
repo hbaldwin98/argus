@@ -29,3 +29,15 @@ fn a_narrow_bar_shortens_the_keymap_rather_than_cutting_it() {
         );
     }
 }
+
+#[test]
+fn the_directory_browser_gets_its_own_keys_on_the_bar() {
+    // It used to fall through to the rail's, advertising keys that did
+    // nothing while the browser had them.
+    let mut app = app_with_tree();
+    app.on_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
+    assert!(app.dir_picker.is_some());
+    let bar = bar(&draw_at(&mut app, 160, 30));
+    assert!(bar.contains("enter choose"), "{bar}");
+    assert!(!bar.contains("n add"), "{bar}");
+}

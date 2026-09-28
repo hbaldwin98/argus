@@ -64,36 +64,21 @@ impl App {
             self.help = Some(Help::default());
             return;
         }
-        if self.prompt.is_some() {
-            self.on_key_prompt(key);
-        } else if self.dir_picker.is_some() {
-            self.on_key_dir_picker(key);
-        } else         if self.picker.is_some() {
-            self.on_key_picker(key);
-        } else if self.checkout_filtering {
-            self.on_key_checkout_filter(key);
-        } else if self.overlay.is_some() {
-            self.on_key_overlay(key);
-        } else if self.focus == Focus::View {
-            self.on_key_view(key);
-        } else if self.focus == Focus::Review {
-            self.on_key_review(key);
-        } else if self.focus == Focus::PaneContent {
-            self.on_key_pane_content(key);
-        } else {
-            self.on_key_nav(key);
+        match self.mode() {
+            Mode::Prompt => self.on_key_prompt(key),
+            Mode::DirPicker => self.on_key_dir_picker(key),
+            Mode::Picker => self.on_key_picker(key),
+            Mode::CheckoutFilter => self.on_key_checkout_filter(key),
+            Mode::Overlay(OverlayMode::Review) => self.on_key_review(key),
+            Mode::Overlay(OverlayMode::History) => self.on_key_history(key),
+            Mode::Overlay(OverlayMode::Brief) => self.on_key_brief(key),
+            Mode::Overlay(OverlayMode::SequenceDiagram) => self.on_key_sequence_diagram(key),
+            Mode::Overlay(OverlayMode::Settings) => self.on_key_settings(key),
+            Mode::Overlay(OverlayMode::Pane) => self.on_key_floating_pane(key),
+            Mode::Stage(_) => self.on_key_view(key),
+            Mode::Pane => self.on_key_pane_content(key),
+            Mode::Rail => self.on_key_nav(key),
         }
-    }
-
-    /// Whether a printable key would be typed into something rather than
-    /// read as a command. The same surfaces that take a paste, plus a brief
-    /// being written.
-    fn takes_text(&self) -> bool {
-        self.accepts_paste()
-            || self
-                .brief
-                .as_ref()
-                .is_some_and(|v| v.mode == BriefMode::Insert)
     }
 
     /// The keymap window's own keys: scrolling, and out.
@@ -371,37 +356,23 @@ impl App {
         }
     }
 
-    /// An overlay holding a pane is a typing surface like the content
-    /// column, so the same leader gets you out of it.
-    fn on_key_overlay(&mut self, key: KeyEvent) {
-        if matches!(self.overlay, Some(Overlay::Review)) {
-            self.on_key_review(key);
+    fn on_key_settings(&mut self, key: KeyEvent) {
+        let Some(Overlay::Settings { sel }) = self.overlay else {
             return;
+        };
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => self.move_setting(1),
+            KeyCode::Char('k') | KeyCode::Up => self.move_setting(-1),
+            KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => self.cycle_setting(sel, 1),
+            KeyCode::Char('h') | KeyCode::Left => self.cycle_setting(sel, -1),
+            KeyCode::Esc | KeyCode::Char('q') => self.close_overlay(),
+            _ => {}
         }
-        if matches!(self.overlay, Some(Overlay::History)) {
-            self.on_key_history(key);
-            return;
-        }
-        if matches!(self.overlay, Some(Overlay::Brief)) {
-            self.on_key_brief(key);
-            return;
-        }
-        if matches!(self.overlay, Some(Overlay::SequenceDiagram)) {
-            self.on_key_sequence_diagram(key);
-            return;
-        }
-        if let Some(Overlay::Settings { sel }) = &mut self.overlay {
-            let sel = *sel;
-            match key.code {
-                KeyCode::Char('j') | KeyCode::Down => self.move_setting(1),
-                KeyCode::Char('k') | KeyCode::Up => self.move_setting(-1),
-                KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => self.cycle_setting(sel, 1),
-                KeyCode::Char('h') | KeyCode::Left => self.cycle_setting(sel, -1),
-                KeyCode::Esc | KeyCode::Char('q') => self.close_overlay(),
-                _ => {}
-            }
-            return;
-        }
+    }
+
+    /// A pane floating over the stage is a typing surface like the
+    /// workspace terminal, so the same leader gets you out of it.
+    fn on_key_floating_pane(&mut self, key: KeyEvent) {
         if self.leader_pending && is_leader(&key) {
             return;
         }

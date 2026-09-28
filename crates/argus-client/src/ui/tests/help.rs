@@ -138,3 +138,13 @@ fn each_command_center_view_lists_its_own_keys() {
         assert!(out.contains(says), "{view:?}:\n{out}");
     }
 }
+
+#[test]
+fn over_a_sequence_diagram_it_lists_the_diagrams_keys() {
+    let mut app = app_with_tree();
+    app.overlay = Some(Overlay::SequenceDiagram);
+    press(&mut app, '?');
+    let out = lines(&draw_at(&mut app, 120, 40)).join("\n");
+    assert!(out.contains("pan across a diagram"), "{out}");
+    assert!(!out.contains("a shell here"), "not the rail's:\n{out}");
+}

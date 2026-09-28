@@ -27,8 +27,8 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Wi
 use ratatui::Frame;
 
 use crate::app::{
-    App, CheckoutRow, Focus, Overlay, PaneLocation, Panel, PickerKind, Prompt, RailRow, Setting,
-    View,
+    App, CheckoutRow, Focus, Mode, Overlay, OverlayMode, PaneLocation, Panel, PickerKind, Prompt,
+    RailRow, Setting, View,
 };
 use crate::brief::BriefMode;
 use crate::dirpicker::DirRow;

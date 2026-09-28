@@ -78,7 +78,7 @@ const CHECKOUTS: Group = Group {
         ("B", "also list branches nothing is on"),
         ("a", "an agent here"),
         ("s", "a shell here"),
-        ("m  b", "switch branch"),
+        ("m  b", "checkout: put it on another branch"),
         ("n", "a new worktree"),
         ("D", "remove it"),
         ("F  P", "fetch, pull"),
@@ -172,7 +172,7 @@ const FEATURE: Group = Group {
     title: "a feature",
     keys: &[
         ("h / l", "the features, and the feature under the cursor"),
-        ("tab", "brief, tasks, decisions"),
+        ("tab", "features, tasks, diagrams, decisions in turn"),
         ("j / k", "row by row, in whichever panel has the keys"),
         ("d / u", "ten at a time"),
         ("g / G", "top and bottom"),
@@ -197,6 +197,51 @@ const FEATURE: Group = Group {
     ],
 };
 
+const DIAGRAM: Group = Group {
+    title: "a sequence diagram",
+    keys: &[
+        ("j / k", "scroll"),
+        ("h / l", "pan across a diagram wider than the window"),
+        ("q  esc", "close it"),
+    ],
+};
+
+const CONFIRM: Group = Group {
+    title: "a question",
+    keys: &[("y  enter", "yes"), ("n  esc", "no")],
+};
+
+const LIST: Group = Group {
+    title: "a list to choose from",
+    keys: &[
+        ("j / k  ↑ / ↓", "move"),
+        ("type", "narrow it, where it takes text"),
+        ("enter", "choose"),
+        ("esc", "cancel"),
+    ],
+};
+
+const DIRECTORIES: Group = Group {
+    title: "finding a directory",
+    keys: &[
+        ("type", "narrow this directory's entries"),
+        ("↑ / ↓", "move"),
+        ("→  tab", "into the directory under the cursor"),
+        ("←", "up a directory"),
+        ("enter", "choose it"),
+        ("esc", "cancel"),
+    ],
+};
+
+const FILTER: Group = Group {
+    title: "filtering branches",
+    keys: &[
+        ("type", "narrow the rows to matching names"),
+        ("enter", "keep the filter"),
+        ("esc", "clear it"),
+    ],
+};
+
 /// True everywhere, so it is worth saying once rather than per mode.
 const EVERYWHERE: Group = Group {
     title: "everywhere",
@@ -212,24 +257,21 @@ const EVERYWHERE: Group = Group {
 /// than fixed, because `?` in a diff and `?` in the columns are different
 /// questions, and answering both with one wall of text answers neither.
 pub(super) fn groups(app: &App) -> Vec<&'static Group> {
-    let mut groups = if matches!(app.overlay, Some(Overlay::Review)) || app.focus == Focus::Review {
-        vec![&REVIEW]
-    } else if matches!(app.overlay, Some(Overlay::History)) {
-        vec![&HISTORY]
-    } else if matches!(app.overlay, Some(Overlay::Brief)) {
-        vec![&BRIEF]
-    } else if matches!(app.overlay, Some(Overlay::Settings { .. })) {
-        vec![&SETTINGS]
-    } else if app.focus == Focus::View && app.view == View::Panes {
-        vec![&PANES, &VIEW]
-    } else if app.focus == Focus::View && app.view == View::Checkouts {
-        vec![&CHECKOUTS, &VIEW]
-    } else if app.focus == Focus::View {
-        vec![&FEATURE, &VIEW]
-    } else if app.input_pane().is_some() || app.focus == Focus::PaneContent {
-        vec![&PANE]
-    } else {
-        vec![&MOVE, &SELECTION, &RAIL, &VIEW]
+    let mut groups = match app.mode() {
+        Mode::Prompt => vec![&CONFIRM],
+        Mode::DirPicker => vec![&DIRECTORIES],
+        Mode::Picker => vec![&LIST],
+        Mode::CheckoutFilter => vec![&FILTER],
+        Mode::Overlay(OverlayMode::Review) => vec![&REVIEW],
+        Mode::Overlay(OverlayMode::History) => vec![&HISTORY],
+        Mode::Overlay(OverlayMode::Brief) => vec![&BRIEF],
+        Mode::Overlay(OverlayMode::Settings) => vec![&SETTINGS],
+        Mode::Overlay(OverlayMode::SequenceDiagram) => vec![&DIAGRAM],
+        Mode::Overlay(OverlayMode::Pane) | Mode::Pane => vec![&PANE],
+        Mode::Stage(View::Panes) => vec![&PANES, &VIEW],
+        Mode::Stage(View::Checkouts) => vec![&CHECKOUTS, &VIEW],
+        Mode::Stage(View::Feature) => vec![&FEATURE, &VIEW],
+        Mode::Stage(View::Workspace) | Mode::Rail => vec![&MOVE, &SELECTION, &RAIL, &VIEW],
     };
     groups.push(&EVERYWHERE);
     groups

@@ -105,6 +105,7 @@ result of a request; `ui` is a pure function of it.
 | `app/rows`, `app/layout`, `app/modal` | naming a row independently of its index, where the last frame put things, and the layers that float over it |
 | `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |
 | `app/rail` | what the rail lists, in what order, which repository is open, and what choosing a row does |
+| `app/mode` | which mode has the keys — the one answer key dispatch, the status bar and `?` all match on |
 | `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
 | `app/server` | what arrives back, and what it does to the selection |
 | `app/views` | which surface the content area holds, and the one feature selection everything on it is read at |
@@ -208,8 +209,11 @@ rail's on the rail. It opens *over* whatever raised the question rather than ins
 so the review you asked about is still there when you close it, and any key that is not a scroll
 key closes it — having to hunt for the way out of a window you opened to be told something is the
 problem it exists to solve. `?` is only this where nothing is taking text; on a prompt, in a
-pane, or in a brief being written it is a character, and the leader chord reaches the list from
-inside a pane.
+pane, in a filter or a feature line, or in a brief being written it is a character, and the leader
+chord reaches the list from inside a pane. Which mode has the keys is decided once (`app/mode`)
+and key dispatch, the bar and `?` each match on that answer exhaustively, so a mode one of them
+forgets does not compile — the three used to work it out separately, in different orders, and
+disagreed.
 
 A project takes its repositories from a root directory, from paths named one at a time, or from
 both. Each becomes a repository with its own primary checkout and linked worktrees. Repository
