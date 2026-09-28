@@ -17,6 +17,7 @@ mod fuzzy;
 mod grid;
 mod herdr;
 mod history;
+mod hosts;
 mod launch;
 mod motion;
 mod paste;
@@ -52,6 +53,7 @@ const RECONNECT_ROUND_GAP: std::time::Duration = std::time::Duration::from_secs(
 type Connection = (mpsc::UnboundedSender<ClientMsg>, mpsc::Receiver<ServerMsg>);
 
 use app::App;
+use hosts::{Host, HostEvent, Hosts};
 use launch::Connected;
 use redraw::RedrawScheduler;
 use terminal::{draw_frame, enter_terminal, leave_terminal, ring_bell, Term};
@@ -123,28 +125,14 @@ fn start_reconnecting() -> mpsc::Receiver<Connected> {
     rx
 }
 
-/// The next connection a reconnect task produces, or never when none is
-/// running. Guarded at the call site, but the future still needs a type
-/// either way.
-async fn next_connection(pending: &mut Option<mpsc::Receiver<Connected>>) -> Option<Connected> {
-    match pending {
-        Some(rx) => rx.recv().await,
-        None => std::future::pending().await,
-    }
-}
-
 async fn run(terminal: &mut Term, connection: Connected) -> anyhow::Result<()> {
     let Connected {
-        channels: (in_tx, mut out_rx),
+        channels: (in_tx, out_rx),
         daemon,
         opening,
     } = connection;
-    let mut app = App::with_settings(in_tx, settings::load());
-    // False from the moment the daemon's messages stop, which is what
-    // disables that arm of the select: a closed receiver is ready
-    // immediately and forever, and polling it would spin the loop.
-    let mut connected = true;
-    let mut pending_reconnect: Option<mpsc::Receiver<Connected>> = None;
+    let local = Host::new(App::with_settings(in_tx, settings::load()), out_rx);
+    let mut hosts = Hosts::new(local);
     let mut events = EventStream::new();
     let mut herdr = herdr::HerdrReporter::from_env();
     let mut frames = tokio::time::interval(FRAME_INTERVAL);
@@ -152,26 +140,22 @@ async fn run(terminal: &mut Term, connection: Connected) -> anyhow::Result<()> {
     let mut redraw = RedrawScheduler::default();
     let mut burst = PasteBurst::default();
     let mut profile = Profile::from_env();
-    // Keyed by pane id, not just dimensions — switching to a different pane
-    // at the same on-screen size still needs its own Resize, since each
-    // pane's pty starts at a hardcoded default until told otherwise.
-    let mut last_sizes: std::collections::HashMap<PaneId, (u16, u16)> =
-        std::collections::HashMap::new();
 
-    take_opening(&mut app, terminal, &mut profile, daemon, opening)?;
-    draw_frame(terminal, &mut app)?;
+    take_opening(&mut hosts.on_screen().app, terminal, &mut profile, daemon, opening)?;
+    draw_frame(terminal, &mut hosts.on_screen().app)?;
 
     loop {
         let burst_due = burst.deadline();
-        let motion_due = app.next_motion_deadline();
+        let motion_due = hosts.on_screen().app.next_motion_deadline();
         tokio::select! {
             maybe_event = events.next() => {
-                if !take_event(&mut app, &mut burst, &mut redraw, &mut profile, maybe_event) {
+                let app = &mut hosts.on_screen().app;
+                if !take_event(app, &mut burst, &mut redraw, &mut profile, maybe_event) {
                     break;
                 }
             }
             _ = sleep_until(burst_due), if burst_due.is_some() => {
-                flush_burst(&mut app, &mut burst);
+                flush_burst(&mut hosts.on_screen().app, &mut burst);
                 redraw.input(std::time::Instant::now());
             }
             // The client has no free-running frame clock, so anything
@@ -183,90 +167,84 @@ async fn run(terminal: &mut Term, connection: Connected) -> anyhow::Result<()> {
                 redraw.changed();
                 redraw.due();
             }
-            conn = next_connection(&mut pending_reconnect), if pending_reconnect.is_some() => {
-                pending_reconnect = None;
-                if let Some(Connected { channels: (in_tx, rx), daemon, opening }) = conn {
-                    out_rx = rx;
-                    connected = true;
-                    app.reconnect(in_tx);
-                    // Every pane is about to be drawn against a grid it has
-                    // not been sized for; forgetting the old sizes is what
-                    // makes the next frame claim them again.
-                    last_sizes.clear();
-                    app.report("reconnected to argusd");
-                    take_opening(&mut app, terminal, &mut profile, daemon, opening)?;
-                    redraw.changed();
-                    redraw.due();
-                }
-            }
-            // `None` is the daemon going away, and it is matched rather
-            // than pattern-bound on purpose. A `Some(..) =` arm over a
-            // closed receiver is simply disabled, which is how a dead
-            // connection used to leave the client drawing a photograph of
-            // the tree and posting keystrokes into nothing, with no way
-            // back but a restart. `connected` then keeps the arm off, since
-            // a closed receiver is ready forever and would spin the loop.
-            msg = out_rx.recv(), if connected => {
-                match msg {
-                    Some(msg) => {
-                        let now = std::time::Instant::now();
-                        let mut awaited = false;
-                        // Everything the daemon has already queued is
-                        // applied before the frame that will show it. One
-                        // message per turn of the loop meant a burst from
-                        // several agents was drained a message per select,
-                        // each one re-arming five futures, and the frame in
-                        // between showed a screen that was already stale.
-                        // The model is cheap to update; the frame is not.
-                        let mut batch = Some(msg);
-                        let mut drained = 0;
-                        while let Some(msg) = batch.take() {
-                            awaited |= take_server_msg(
-                                &mut app, terminal, &mut profile, msg, now,
-                            )?;
-                            drained += 1;
-                            if drained < MAX_DRAINED_MESSAGES {
-                                batch = out_rx.try_recv().ok();
-                            }
-                        }
-                        if awaited {
-                            redraw.input(now);
-                        } else {
-                            redraw.changed();
-                        }
-                    }
-                    // Everything on screen is now a photograph, so say so
-                    // and start looking for another daemon rather than
-                    // pretending the keys still go anywhere.
-                    None => {
-                        connected = false;
-                        pending_reconnect = Some(start_reconnecting());
-                        app.alert("lost argusd; reconnecting…");
+            event = hosts.next() => match event {
+                HostEvent::Reconnected(index, connection) => {
+                    let host = hosts.get(index);
+                    host.pending_reconnect = None;
+                    if let Some(Connected { channels: (in_tx, rx), daemon, opening }) = connection {
+                        host.out_rx = rx;
+                        host.connected = true;
+                        host.app.reconnect(in_tx);
+                        // Every pane is about to be drawn against a grid it
+                        // has not been sized for; forgetting the old sizes is
+                        // what makes the next frame claim them again.
+                        host.last_sizes.clear();
+                        host.app.report("reconnected to argusd");
+                        take_opening(&mut host.app, terminal, &mut profile, daemon, opening)?;
                         redraw.changed();
                         redraw.due();
                     }
                 }
-            }
+                HostEvent::Message(index, Some(msg)) => {
+                    let on_screen = hosts.is_on_screen(index);
+                    let host = hosts.get(index);
+                    let now = std::time::Instant::now();
+                    let mut awaited = false;
+                    // Everything the daemon has already queued is applied
+                    // before the frame that will show it. One message per
+                    // turn of the loop meant a burst from several agents was
+                    // drained a message per select, each one re-arming five
+                    // futures, and the frame in between showed a screen that
+                    // was already stale. The model is cheap to update; the
+                    // frame is not.
+                    let mut batch = Some(msg);
+                    let mut drained = 0;
+                    while let Some(msg) = batch.take() {
+                        awaited |= take_server_msg(&mut host.app, terminal, &mut profile, msg, now)?;
+                        drained += 1;
+                        if drained < MAX_DRAINED_MESSAGES {
+                            batch = host.out_rx.try_recv().ok();
+                        }
+                    }
+                    if awaited && on_screen {
+                        redraw.input(now);
+                    } else {
+                        redraw.changed();
+                    }
+                }
+                // Everything that host shows is now a photograph, so say so
+                // and start looking for its daemon again rather than
+                // pretending the keys still go anywhere.
+                HostEvent::Message(index, None) => {
+                    let host = hosts.get(index);
+                    host.connected = false;
+                    host.pending_reconnect = Some(start_reconnecting());
+                    host.app.alert("lost argusd; reconnecting…");
+                    redraw.changed();
+                    redraw.due();
+                }
+            },
             _ = frames.tick(), if redraw.pending() => {
                 redraw.due();
             }
         }
 
-        if app.should_quit {
+        let host = hosts.on_screen();
+        if host.app.should_quit {
             break;
         }
 
         profile.flush_due();
 
         if redraw.take_frame(std::time::Instant::now()) {
-            update_herdr(&mut herdr, &app);
+            update_herdr(&mut herdr, &host.app);
             let began = std::time::Instant::now();
             // Every animation in the frame reads this one instant, so two
             // spinners cannot land on different glyphs in the same frame.
-            app.set_frame_now(began);
-            let ui = draw_frame(terminal, &mut app)?;
+            host.app.set_frame_now(began);
+            let ui = draw_frame(terminal, &mut host.app)?;
             profile.record(|c| c.draw(began.elapsed(), ui));
-            resize_live_panes(&mut app, &mut last_sizes);
+            resize_live_panes(&mut host.app, &mut host.last_sizes);
         }
     }
 
@@ -280,10 +258,6 @@ async fn run(terminal: &mut Term, connection: Connected) -> anyhow::Result<()> {
 /// backlog cannot hold off a keystroke indefinitely.
 const MAX_DRAINED_MESSAGES: usize = 512;
 
-/// Applies one message to the model. `true` when it was the echo of a
-/// keystroke — damage from the pane being typed into, which somebody is
-/// waiting on. Everything else the daemon sends is background and can wait
-/// for the tick.
 /// Hands the app what the daemon sent ahead of answering the greeting, and
 /// then the answer itself.
 fn take_opening(
@@ -301,6 +275,10 @@ fn take_opening(
     Ok(())
 }
 
+/// Applies one message to the model. `true` when it was the echo of a
+/// keystroke — damage from the pane being typed into, which somebody is
+/// waiting on. Everything else the daemon sends is background and can wait
+/// for the tick.
 fn take_server_msg(
     app: &mut App,
     terminal: &mut Term,
