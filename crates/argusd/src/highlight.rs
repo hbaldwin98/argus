@@ -215,7 +215,7 @@ pub fn line_spans(path: &str, source: &str) -> Option<Vec<Vec<HighlightSpan>>> {
 
     let mut spans: Vec<Vec<HighlightSpan>> = vec![Vec::new(); starts.len()];
     let mut highlighter = Highlighter::new();
-    let events = highlighter.highlight(config, bytes, None, |_| None).ok()?;
+    let events = highlighter.highlight(config, bytes, None, None, |_| None).ok()?;
 
     let mut stack: Vec<HighlightKind> = Vec::new();
     for event in events {

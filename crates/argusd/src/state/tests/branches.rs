@@ -569,7 +569,7 @@ async fn setup_commands_run_in_the_worktree_that_was_just_made() {
     let repo = git2::Repository::open(&made).unwrap();
     let tags = repo.tag_names(None).unwrap();
     assert!(
-        tags.iter().flatten().any(|t| t == "setup-ran"),
+        tags.iter().flatten().flatten().any(|t| t == "setup-ran"),
         "the setup command should have run in {}",
         made.display()
     );

@@ -129,7 +129,7 @@ fn commit_info(commit: &git2::Commit<'_>) -> CommitInfo {
     CommitInfo {
         short: oid.chars().take(7).collect(),
         oid,
-        summary: commit.summary().unwrap_or("").to_string(),
+        summary: commit.summary().ok().flatten().unwrap_or("").to_string(),
         author: commit.author().name().unwrap_or("").to_string(),
         time: commit.time().seconds(),
     }
@@ -283,7 +283,7 @@ fn new_entry(path: &str, _full: &Path) -> git2::IndexEntry {
         uid: 0,
         gid: 0,
         file_size: 0,
-        id: git2::Oid::zero(),
+        id: git2::Oid::ZERO_SHA1,
         flags: 0,
         flags_extended: 0,
         path: path.as_bytes().to_vec(),

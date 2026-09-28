@@ -25,7 +25,7 @@ pub fn branches(path: &Path) -> Vec<String> {
     let current = repo
         .head()
         .ok()
-        .and_then(|h| h.shorthand().map(str::to_string))
+        .and_then(|h| h.shorthand().ok().map(str::to_string))
         .filter(|s| s != "HEAD");
 
     let Ok(iter) = repo.branches(Some(git2::BranchType::Local)) else {

@@ -49,7 +49,6 @@ Install:
   recommended installer and includes Cargo.
 - Git on `PATH`.
 - A native C/C++ build toolchain.
-- Perl, used to compile the vendored OpenSSL dependency.
 - A full-screen terminal with true-color support.
 
 Common platform setup:
@@ -58,7 +57,7 @@ Common platform setup:
 
 ```sh
 sudo apt update
-sudo apt install build-essential pkg-config git curl perl
+sudo apt install build-essential pkg-config git curl
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
@@ -66,7 +65,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 ```sh
 xcode-select --install
-brew install git pkg-config perl
+brew install git pkg-config
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
@@ -74,11 +73,11 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 1. Install Git for Windows.
 2. Install Visual Studio 2022 Build Tools with **Desktop development with C++**.
-3. Install Strawberry Perl and ensure `perl` is on `PATH`.
-4. Install Rust from [rustup.rs](https://rustup.rs/) using the default MSVC toolchain.
-5. Run the following commands from PowerShell or Windows Terminal.
+3. Install Rust from [rustup.rs](https://rustup.rs/) using the default MSVC toolchain.
+4. Run the following commands from PowerShell or Windows Terminal.
 
-OpenSSL is built from vendored source, so a separate OpenSSL installation is not required.
+libgit2 is built from vendored source, and Argus reads repositories only locally — fetching and
+pulling go through the `git` on `PATH` — so neither OpenSSL nor a system libgit2 is required.
 
 This repository does not pin a minimum Rust version. Use the current stable toolchain:
 

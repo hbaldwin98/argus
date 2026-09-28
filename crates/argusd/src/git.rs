@@ -84,7 +84,7 @@ fn head_of(repo: &git2::Repository) -> Option<(Option<git2::Reference<'_>>, Opti
     };
     let branch = head
         .as_ref()
-        .and_then(|h| h.shorthand())
+        .and_then(|h| h.shorthand().ok())
         .filter(|s| *s != "HEAD") // detached HEAD shorthand is literally "HEAD"
         .map(str::to_string);
     Some((head, branch))
@@ -114,7 +114,7 @@ pub fn list_worktrees(path: &Path) -> Vec<PathBuf> {
     let mut out: Vec<PathBuf> = repo.workdir().map(Path::to_path_buf).into_iter().collect();
 
     if let Ok(names) = repo.worktrees() {
-        for name in names.iter().flatten() {
+        for name in names.iter().flatten().flatten() {
             // A worktree whose directory was deleted by hand is still
             // registered until `git worktree prune` runs; skip those rather
             // than resurrecting a checkout row for a directory that's gone.
@@ -154,6 +154,7 @@ pub fn removal(primary: &Path, worktree: &Path) -> Removal {
     let registered = repo.worktrees().ok().and_then(|names| {
         names
             .iter()
+            .flatten()
             .flatten()
             .filter_map(|name| repo.find_worktree(name).ok())
             .find(|wt| same_path(wt.path(), worktree))
@@ -282,7 +283,7 @@ pub fn default_branch(path: &Path) -> Option<String> {
 
 fn remote_head(repo: &git2::Repository) -> Option<String> {
     let remotes = repo.remotes().ok()?;
-    let names: Vec<&str> = remotes.iter().flatten().collect();
+    let names: Vec<&str> = remotes.iter().flatten().flatten().collect();
     // `origin` when there is one, otherwise the only remote there is:
     // picking between several would be a guess dressed up as an answer.
     let remote = if names.contains(&"origin") {
@@ -295,7 +296,9 @@ fn remote_head(repo: &git2::Repository) -> Option<String> {
     let head = repo
         .find_reference(&format!("refs/remotes/{remote}/HEAD"))
         .ok()?;
-    head.symbolic_target()?
+    head.symbolic_target()
+        .ok()
+        .flatten()?
         .strip_prefix(&format!("refs/remotes/{remote}/"))
         .map(str::to_string)
 }
@@ -470,7 +473,7 @@ fn is_git_dir(dir: &Path) -> bool {
 fn ahead_behind(repo: &git2::Repository, head: Option<&git2::Reference>) -> Option<(usize, usize)> {
     let head = head?;
     let local_oid = head.target()?;
-    let branch_name = head.shorthand()?;
+    let branch_name = head.shorthand().ok()?;
     let branch = repo
         .find_branch(branch_name, git2::BranchType::Local)
         .ok()?;
