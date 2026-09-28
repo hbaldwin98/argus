@@ -1776,3 +1776,61 @@ fn sequence_diagrams_are_stored_per_feature_and_removed_with_the_row() {
     s.remove_sequence_diagram("argus", "the-pty", id).unwrap();
     assert!(s.sequence_diagrams("argus", "the-pty").unwrap().is_empty());
 }
+
+fn decide(s: &Store, feature: &str, chose: &str, supersedes: Option<i64>) -> Result<i64> {
+    s.add_decision(
+        "argus",
+        &DecisionWrite {
+            chose: chose.into(),
+            supersedes,
+            ..Default::default()
+        },
+        Some(feature),
+        1,
+        None,
+        None,
+    )
+}
+
+#[test]
+fn a_decision_replaces_or_hangs_under_one_on_its_own_feature_only() {
+    let s = store();
+    for title in ["the pty", "the wire"] {
+        s.add_feature("argus", &feature(title), None, None, 1, None)
+            .unwrap();
+    }
+    let pty = decide(&s, "the-pty", "number the lines", None).unwrap();
+    let refused = decide(&s, "the-wire", "drop transcripts", Some(pty)).unwrap_err();
+    assert!(refused.to_string().contains("another feature"), "{refused}");
+    let under = s.add_decision(
+        "argus",
+        &DecisionWrite {
+            chose: "hang it here".into(),
+            under: Some(pty),
+            ..Default::default()
+        },
+        Some("the-wire"),
+        1,
+        None,
+        None,
+    );
+    assert!(under.is_err());
+    assert_eq!(s.decisions("argus").unwrap()[0].superseded_by, None);
+}
+
+#[test]
+fn withdrawing_a_replacement_lets_what_it_replaced_stand_again() {
+    let s = store();
+    s.add_feature("argus", &feature("the pty"), None, None, 1, None)
+        .unwrap();
+    let first = decide(&s, "the-pty", "one reader", None).unwrap();
+    let second = decide(&s, "the-pty", "two readers", Some(first)).unwrap();
+    let superseded = |s: &Store| s.decisions("argus").unwrap()[0].superseded_by;
+    assert_eq!(superseded(&s), Some(second));
+
+    s.set_decision_withdrawn("argus", second, Some(2)).unwrap();
+    assert_eq!(superseded(&s), None, "recorded in error, it replaced nothing");
+
+    s.set_decision_withdrawn("argus", second, None).unwrap();
+    assert_eq!(superseded(&s), Some(second), "restored, it replaces it again");
+}

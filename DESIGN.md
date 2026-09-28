@@ -1037,7 +1037,9 @@ taken is most of what a reader came back for. A decision recorded in error rathe
 *withdrawn*: `argus-hook decisions withdraw <id>` sets its `withdrawn_at` (schema v17), agents stop
 reading it, and the view keeps it, dimmed and marked, so the history still says it was once decided.
 `decisions restore <id>` undoes that. Either is refused for a decision not under the feature the
-request is about. Decisions recorded before features existed keep a
+request is about. A withdrawn replacement replaces nothing — what it superseded reads as standing
+again until it is restored — and `--supersedes` and `--under` name only a decision on the same
+feature, since a number from another feature's board is a mistyped one. Decisions recorded before features existed keep a
 NULL `feature` and are reported as unfiled rather than dragged under a feature nobody chose.
 
 There is no policy flag on these writes: the board exists for agents to write, is append-only, and

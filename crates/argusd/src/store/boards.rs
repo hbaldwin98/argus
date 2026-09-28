@@ -27,26 +27,29 @@ impl Store {
     ) -> Result<i64> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        let parent = match write.supersedes {
-            Some(old) => tx
+        // A decision replaces or hangs under one on its own feature: a
+        // number from another feature's board is a mistyped number, and
+        // taking it would mark that feature's reasoning replaced.
+        let named = |id: i64| -> Result<Option<i64>> {
+            let (parent, on): (Option<i64>, Option<String>) = tx
                 .query_row(
-                    "SELECT parent FROM decision WHERE id = ?1 AND project = ?2",
-                    rusqlite::params![old, project],
-                    |r| r.get::<_, Option<i64>>(0),
+                    "SELECT parent, feature FROM decision WHERE id = ?1 AND project = ?2",
+                    rusqlite::params![id, project],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
                 )
                 .optional()?
-                .ok_or_else(|| anyhow::anyhow!("there is no decision {old} on this board"))?,
+                .ok_or_else(|| anyhow::anyhow!("there is no decision {id} on this board"))?;
+            if feature.is_some() && on.as_deref() != feature {
+                anyhow::bail!("decision {id} is under another feature");
+            }
+            Ok(parent)
+        };
+        let parent = match write.supersedes {
+            Some(old) => named(old)?,
             None => write.under,
         };
         if let Some(under) = write.under {
-            let exists: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM decision WHERE id = ?1 AND project = ?2)",
-                rusqlite::params![under, project],
-                |r| r.get(0),
-            )?;
-            if !exists {
-                anyhow::bail!("there is no decision {under} on this board");
-            }
+            named(under)?;
         }
         tx.execute(
             "INSERT INTO decision
@@ -100,7 +103,20 @@ impl Store {
                 withdrawn_at: r.get(10)?,
             })
         })?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        let mut decisions = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        // A replacement withdrawn as recorded in error replaces nothing, so
+        // what it named stands again; restoring it brings the link back.
+        let withdrawn: Vec<i64> = decisions
+            .iter()
+            .filter(|d| d.withdrawn())
+            .map(|d| d.id)
+            .collect();
+        for decision in &mut decisions {
+            if decision.superseded_by.is_some_and(|by| withdrawn.contains(&by)) {
+                decision.superseded_by = None;
+            }
+        }
+        Ok(decisions)
     }
 
     /// Marks a decision withdrawn at `at`, or restores it with `None`.
