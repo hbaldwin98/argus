@@ -282,3 +282,16 @@ fn telemetry_for_a_pane_not_yet_in_the_tree_changes_nothing() {
     });
     assert_eq!(format!("{:?}", h.app.tree), before);
 }
+
+#[test]
+fn a_remote_daemon_from_another_build_names_the_host_to_update() {
+    // `server restart` would restart this machine's daemon, not that one.
+    let mut h = Harness::new();
+    h.app.host = Some("devbox".into());
+    h.app.greeted(Some(&argus_protocol::Hello {
+        version: "0.1.0".into(),
+        ..argus_protocol::Hello::this_build()
+    }));
+    assert!(h.app.status.contains("update argus on devbox"), "{}", h.app.status);
+    assert!(!h.app.status.contains("server restart"), "{}", h.app.status);
+}

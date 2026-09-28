@@ -64,6 +64,18 @@ impl Hosts {
         }
     }
 
+    /// Adds a host, off screen, and says where it went.
+    pub fn push(&mut self, host: Host) -> usize {
+        self.list.push(host);
+        self.list.len() - 1
+    }
+
+    pub fn show(&mut self, index: usize) {
+        if index < self.list.len() {
+            self.current = index;
+        }
+    }
+
     pub fn on_screen(&mut self) -> &mut Host {
         &mut self.list[self.current]
     }

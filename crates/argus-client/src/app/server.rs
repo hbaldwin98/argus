@@ -52,22 +52,26 @@ impl App {
 
     /// Says so when the daemon this client reached is not from its own
     /// build. `None` is a daemon that gave no greeting: one from before the
-    /// handshake. The fix is the same either way, since `server restart`
-    /// starts the daemon installed beside this client.
+    /// handshake. Here, `server restart` starts the daemon installed beside
+    /// this client; on another machine, argus there has to be updated.
     pub fn greeted(&mut self, daemon: Option<&Hello>) {
         let ours = Hello::this_build();
+        let (argusd, fix) = match &self.host {
+            None => ("argusd".to_string(), "`argus server restart`".to_string()),
+            Some(host) => (format!("argusd on {host}"), format!("update argus on {host}")),
+        };
         let Some(daemon) = daemon else {
-            self.report("argusd predates this client; `argus server restart` to update it");
+            self.report(format!("{argusd} predates this client; {fix} to update it"));
             return;
         };
         if daemon.protocol != ours.protocol {
             self.alert(format!(
-                "argusd {} cannot fully talk to this client {}; `argus server restart` to match",
+                "{argusd} {} cannot fully talk to this client {}; {fix} to match",
                 daemon.version, ours.version
             ));
         } else if daemon.version != ours.version {
             self.report(format!(
-                "argusd is {}, this client {}; `argus server restart` to match",
+                "{argusd} is {}, this client {}; {fix} to match",
                 daemon.version, ours.version
             ));
         }

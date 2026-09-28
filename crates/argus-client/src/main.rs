@@ -24,6 +24,7 @@ mod paste;
 mod profile;
 mod pty_input;
 mod redraw;
+mod remote;
 mod review;
 mod selection;
 mod settings;
@@ -60,16 +61,26 @@ use terminal::{draw_frame, enter_terminal, leave_terminal, ring_bell, Term};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    match parse_command(&std::env::args().skip(1).collect::<Vec<_>>())? {
+    let host = match parse_command(&std::env::args().skip(1).collect::<Vec<_>>())? {
         Command::ServerRestart => return launch::restart_daemon().await,
         Command::ServerStop => return launch::stop_daemon().await,
         Command::Init(dir) => return launch::init(dir).await,
         Command::Bridge => return bridge::run().await,
-        Command::Tui => {}
-    }
-    let connection = launch::connect().await?;
+        Command::Tui => None,
+        Command::Host(host) => Some(host),
+    };
+    let local = launch::connect().await?;
+    // Before the terminal is taken, so a host ssh cannot reach is explained
+    // on a plain line rather than behind a screen that is about to close.
+    let remote = match host {
+        Some(host) => {
+            let connected = remote::connect(&host).await?;
+            Some((host, connected))
+        }
+        None => None,
+    };
     let mut terminal = enter_terminal()?;
-    let result = run(&mut terminal, connection).await;
+    let result = run(&mut terminal, local, remote).await;
     leave_terminal(&mut terminal)?;
     result
 }
@@ -85,6 +96,9 @@ enum Command {
     /// Carry this machine's daemon on stdin and stdout, for a client on
     /// another machine reaching it over ssh.
     Bridge,
+    /// The client, with the daemon on this ssh host connected beside this
+    /// machine's and on screen.
+    Host(String),
 }
 
 fn parse_command(args: &[String]) -> anyhow::Result<Command> {
@@ -97,8 +111,9 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         [init] if init == "init" => Ok(Command::Init(None)),
         [init, dir] if init == "init" => Ok(Command::Init(Some(dir.clone()))),
         [bridge] if bridge == "bridge" => Ok(Command::Bridge),
+        [flag, host] if flag == "--host" && !host.is_empty() => Ok(Command::Host(host.clone())),
         _ => Err(anyhow::anyhow!(
-            "usage: argus [init [DIR] | server (restart | stop) | bridge]"
+            "usage: argus [--host HOST | init [DIR] | server (restart | stop) | bridge]"
         )),
     }
 }
@@ -111,11 +126,15 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
 /// quittable the whole time. It never gives up on its own — the person
 /// watching an agent run has no better option than waiting, and quitting is
 /// always still theirs.
-fn start_reconnecting() -> mpsc::Receiver<Connected> {
+fn start_reconnecting(host: Option<String>) -> mpsc::Receiver<Connected> {
     let (tx, rx) = mpsc::channel(1);
     tokio::spawn(async move {
         loop {
-            if let Ok(connected) = launch::connect().await {
+            let connected = match &host {
+                None => launch::connect().await,
+                Some(host) => remote::connect(host).await,
+            };
+            if let Ok(connected) = connected {
                 let _ = tx.send(connected).await;
                 return;
             }
@@ -125,14 +144,11 @@ fn start_reconnecting() -> mpsc::Receiver<Connected> {
     rx
 }
 
-async fn run(terminal: &mut Term, connection: Connected) -> anyhow::Result<()> {
-    let Connected {
-        channels: (in_tx, out_rx),
-        daemon,
-        opening,
-    } = connection;
-    let local = Host::new(App::with_settings(in_tx, settings::load()), out_rx);
-    let mut hosts = Hosts::new(local);
+async fn run(
+    terminal: &mut Term,
+    local: Connected,
+    remote: Option<(String, Connected)>,
+) -> anyhow::Result<()> {
     let mut events = EventStream::new();
     let mut herdr = herdr::HerdrReporter::from_env();
     let mut frames = tokio::time::interval(FRAME_INTERVAL);
@@ -141,7 +157,12 @@ async fn run(terminal: &mut Term, connection: Connected) -> anyhow::Result<()> {
     let mut burst = PasteBurst::default();
     let mut profile = Profile::from_env();
 
-    take_opening(&mut hosts.on_screen().app, terminal, &mut profile, daemon, opening)?;
+    let mut hosts = Hosts::new(attach(None, local, terminal, &mut profile)?);
+    if let Some((name, connected)) = remote {
+        let remote = attach(Some(name), connected, terminal, &mut profile)?;
+        let index = hosts.push(remote);
+        hosts.show(index);
+    }
     draw_frame(terminal, &mut hosts.on_screen().app)?;
 
     loop {
@@ -179,7 +200,7 @@ async fn run(terminal: &mut Term, connection: Connected) -> anyhow::Result<()> {
                         // has not been sized for; forgetting the old sizes is
                         // what makes the next frame claim them again.
                         host.last_sizes.clear();
-                        host.app.report("reconnected to argusd");
+                        host.app.report(format!("reconnected to {}", daemon_name(&host.app)));
                         take_opening(&mut host.app, terminal, &mut profile, daemon, opening)?;
                         redraw.changed();
                         redraw.due();
@@ -218,8 +239,8 @@ async fn run(terminal: &mut Term, connection: Connected) -> anyhow::Result<()> {
                 HostEvent::Message(index, None) => {
                     let host = hosts.get(index);
                     host.connected = false;
-                    host.pending_reconnect = Some(start_reconnecting());
-                    host.app.alert("lost argusd; reconnecting…");
+                    host.pending_reconnect = Some(start_reconnecting(host.app.host.clone()));
+                    host.app.alert(format!("lost {}; reconnecting…", daemon_name(&host.app)));
                     redraw.changed();
                     redraw.due();
                 }
@@ -257,6 +278,33 @@ async fn run(terminal: &mut Term, connection: Connected) -> anyhow::Result<()> {
 /// it goes back to the select. A cap rather than the whole queue, so a
 /// backlog cannot hold off a keystroke indefinitely.
 const MAX_DRAINED_MESSAGES: usize = 512;
+
+/// A host for a daemon just connected to: an app of its own, given what
+/// the daemon sent ahead of answering the greeting, and then the answer.
+fn attach(
+    host: Option<String>,
+    connected: Connected,
+    terminal: &mut Term,
+    profile: &mut Option<Profile>,
+) -> anyhow::Result<Host> {
+    let Connected {
+        channels: (in_tx, out_rx),
+        daemon,
+        opening,
+    } = connected;
+    let mut app = App::with_settings(in_tx, settings::load());
+    app.host = host;
+    take_opening(&mut app, terminal, profile, daemon, opening)?;
+    Ok(Host::new(app, out_rx))
+}
+
+/// How the status bar names an app's daemon.
+fn daemon_name(app: &App) -> String {
+    match &app.host {
+        None => "argusd".to_string(),
+        Some(host) => host.clone(),
+    }
+}
 
 /// Hands the app what the daemon sent ahead of answering the greeting, and
 /// then the answer itself.
@@ -494,6 +542,16 @@ mod tests {
         assert_eq!(damaged_pane(&per_cell), Some(PaneId(3)));
         assert_eq!(damaged_pane(&runs), Some(PaneId(4)));
         assert_eq!(damaged_pane(&ServerMsg::Tree(Vec::new())), None);
+    }
+
+    #[test]
+    fn a_host_is_named_after_the_flag() {
+        assert_eq!(
+            parse_command(&["--host".to_string(), "devbox".to_string()]).unwrap(),
+            Command::Host("devbox".to_string())
+        );
+        assert!(parse_command(&["--host".to_string()]).is_err());
+        assert!(parse_command(&["--host".to_string(), String::new()]).is_err());
     }
 
     #[test]

@@ -171,6 +171,9 @@ impl<K: PartialEq + Copy> Outstanding<K> {
 }
 
 pub struct App {
+    /// The machine this app's daemon runs on, as ssh names it; `None` for
+    /// this one.
+    pub host: Option<String>,
     pub tree: Vec<ProjectInfo>,
     pub templates: Vec<String>,
     /// Every workspace, not just the open one — the picker lists them all,
@@ -369,6 +372,7 @@ impl App {
         // rather than fading in from wherever the default sat.
         let focus = Focus::Projects;
         App {
+            host: None,
             tree: Vec::new(),
             templates: Vec::new(),
             workspaces: Vec::new(),

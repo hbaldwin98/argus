@@ -40,7 +40,7 @@ pub async fn ensure_daemon_and_connect(
 /// How long a greeting waits for its answer. A daemon that greets answers
 /// the moment it reads the greeting, right behind its opening messages, so
 /// this only runs out on one that took the greeting and said nothing.
-const GREETING_WAIT: Duration = Duration::from_secs(3);
+pub(crate) const GREETING_WAIT: Duration = Duration::from_secs(3);
 
 /// A connection to the daemon, and what greeting it found out.
 pub struct Connected {
@@ -52,7 +52,7 @@ pub struct Connected {
 }
 
 /// How a greeting went.
-enum Greeting {
+pub(crate) enum Greeting {
     /// The connection is up, whether or not the daemon greeted back.
     Up(Connected),
     /// Closed after the daemon's opening messages: a daemon from before the
@@ -83,7 +83,7 @@ pub async fn connect() -> anyhow::Result<Connected> {
 
 /// Greets the daemon on `channels` and reads until it answers, keeping what
 /// comes first.
-async fn greet(channels: crate::Connection, wait: Duration) -> Greeting {
+pub(crate) async fn greet(channels: crate::Connection, wait: Duration) -> Greeting {
     let (in_tx, mut out_rx) = channels;
     let _ = in_tx.send(ClientMsg::Hello(Hello::this_build()));
 

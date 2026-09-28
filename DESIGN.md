@@ -61,6 +61,21 @@ A client told of a daemon from another build says so on the status bar, with bot
 `argus server restart`, which starts the daemon installed beside the client. A daemon on another
 protocol number is an alarm rather than a note.
 
+A client can attach to the daemon on another machine as well as its own. `argus --host <host>`
+runs `ssh -T -o BatchMode=yes -- <host> argus bridge`, and the bridge on that machine carries its
+daemon — started there the way any client starts one — on ssh's stdin and stdout. Everything the
+daemon does stays beside the agents it runs: git, hook installs and the loopback hook server need
+nothing new. ssh is in batch mode, keys or an agent only, because the terminal is the client's and
+ssh has nowhere to ask; when it fails, what it printed becomes what to do — a key to add, a host
+key to accept with `ssh <host>` in a terminal, argus to install there. The `--` keeps a host name
+from passing for an ssh option, and keepalives notice a link that died quietly within a minute.
+
+Each daemon is a host with an app of its own — its tree, grids, selections and connection — rather
+than one app with every id qualified by the daemon it came from, since hosts sit a level above
+workspaces and one is on screen at a time. The host on screen is drawn and takes input; the others
+keep their connections. A host that loses its daemon reconnects the way it first connected, and a
+remote daemon from another build is named along with the host to update.
+
 A request that makes something — a shell, an agent, an editor, a worktree, a project, a
 repository — may name itself with a `request_id`, and the daemon answers that client alone with
 `Created`: the id of what it made, or nothing when it refused (the reason still arrives as an
@@ -136,6 +151,7 @@ result of a request; `ui` is a pure function of it.
 | `main`, `redraw`, `terminal`, `wire`, `launch` | the event loop, the screen and socket it runs over, and the daemon lifecycle command |
 | `bridge` | this machine's daemon on stdin and stdout, for a client on another machine to reach over ssh |
 | `hosts` | the daemons this client is attached to, each with an app of its own, and which one is on screen |
+| `remote` | reaching a daemon on another machine through ssh and its bridge, and saying why when ssh cannot |
 | `app` | the model: the tree, the selection, and which modal is up |
 | `app/rows`, `app/layout`, `app/modal` | naming a row independently of its index, where the last frame put things, and the layers that float over it |
 | `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |
