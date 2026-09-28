@@ -149,7 +149,7 @@ to the type or its locking.
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
 | `conn` | one client connection, and which task each message runs on |
 | `conn/dispatch` | what each client message does |
-| `pty`, `pty/job`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; and the vt100 translation |
+| `pty`, `pty/job`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; and its terminal emulator with the translation of its screen |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
@@ -420,20 +420,33 @@ and a 64-process limit. Closing the pane or dropping its runtime terminates the 
 than only the template's immediate process. Shell and editor panes are not subject to these limits.
 
 Each PTY starts at 24 by 80 cells. A blocking reader thread sends output through a bounded queue to
-a Tokio task, which feeds a `vt100` parser and broadcasts what changed plus the child cursor's
-position and visibility. The task wakes on the first byte, takes whatever else is
+a Tokio task, which feeds the pane's terminal emulator (`alacritty_terminal`) and broadcasts what
+changed plus the child cursor's position, visibility and shape. The task wakes on the first byte, takes whatever else is
 queued up to a bounded batch, and after a frame waits 16 ms before the next, so a stream is
 coalesced while a lone keystroke's echo goes out at once. A second thread owns the child and blocks
 until it exits, so an idle pane wakes for nothing: the task used to tick every 16 ms for the life of
 the pane only to ask whether its child had gone. The reader cannot stand in for that thread, since
 it need not reach EOF while the pane holds the pty master open.
 
-A cell's grapheme is stored inline rather than on the heap, and a cell the parser holds nothing in
-is read as a blank without asking the parser to build one. Both exist because a grid is rebuilt,
-diffed, shipped and applied sixty times a second per pane, and an allocation per cell at each of
-those steps was most of what that cost — the second one especially, since most of a screen is blank
-and `vt100` allocates for a blank cell as readily as for a full one. A blank still carries the
-attributes it was cleared to, so a TUI's coloured bars survive.
+The task keeps its own copy of the screen as protocol cells and converts only the lines the
+emulator reports damaged since the last frame: a keystroke's echo converts a cell or two rather than
+every cell on the screen. That is why the emulator is `alacritty_terminal` and no longer `vt100`,
+which tracks no damage, so every frame rebuilt the whole grid. Measured at 200 by 50, a frame cost
+310 µs for an echo, 341 for an Ink redraw, 416 for a full-screen app and 655 for forty scrolled
+lines under `vt100`; 63, 182, 63 and 517 under alacritty, which damages the whole screen on any
+scroll. What the watchers hold is tracked the way they track it — the last frame's scroll and runs
+laid over the grid before — so the next frame is diffed against exactly what they have. A cell's
+grapheme is stored inline rather than on the heap, and a blank still carries the attributes it was
+cleared to, so a TUI's coloured bars survive.
+
+The daemon is the pane's terminal, so it answers what a terminal is asked — cursor position,
+device status and attributes — as the emulator reaches each question mid-stream, and the pump
+writes the answer back through the pane's input. A child that asks waits for the answer: ConPTY
+opened to inherit the cursor, as portable-pty 0.9 opens it, starts no child until it has one, and a
+line editor that asks at every prompt otherwise stalls there until its own timeout. It honours synchronized updates (`CSI ?
+2026 h`), holding a frame back until the child ends it, and the pump wakes at the update's deadline
+so a child that never ends one cannot freeze its pane. The cursor's shape (DECSCUSR) is the
+emulator's; a shape it reports only when nothing asked for one stands for the host's own.
 
 What changed travels compactly (`damage`). Each frame is diffed against the grid the client holds
 into runs of cells — a run's graphemes as one string, its looks as counted styles of three small
@@ -458,9 +471,8 @@ while that pane has typing focus. The parser retains 4,000 scrollback lines. An 
 A client can park a pane's view above its live screen. It asks for an offset in lines and the
 daemon answers with the rows there, the offset it could actually reach, and how far back the buffer
 goes; the parked rows are drawn in place of the live grid until the view returns to the bottom. The
-read moves the parser's scrollback offset and puts it straight back under one hold of the lock,
-because that offset is parser-global: left set, it would drag every other subscriber's frames back
-with one client's view, and the pump would broadcast the difference as damage. The alternate screen
+rows are read from the emulator's history by line, so the live screen every other watcher is diffed
+against never moves. The alternate screen
 keeps no scrollback of its own, so a full-screen child answers with a depth of zero rather than
 showing the shell's history underneath it.
 
@@ -525,13 +537,6 @@ shell's `osc52` helper) is caught by the pane's parser and sent to the client as
 none, as over SSH, the terminal's own paste key arrives as a bracketed paste instead. Argus never
 asks the terminal to read its clipboard over OSC 52: most terminals refuse, and the reply would
 reach the key parser as typed text.
-
-The daemon is the pane's terminal, so it answers what a child asks one. A cursor position request
-(`CSI 6 n`) is answered, through the pane's own input, with where the cursor was when the parser
-reached it rather than where it is after the rest of the read — the parser hands the request to a
-callback mid-stream. A child that asks waits for the answer: ConPTY opened to inherit the cursor, as
-portable-pty 0.9 opens it, starts no child until it has one, and a line editor that asks at every
-prompt otherwise stalls there until its own timeout.
 
 The current pane states are `Idle`, `Working`, `Waiting`, `NeedsReview`, `Done`, `Failed`, and
 `Exited { code }`. `NeedsReview` means work is ready for the operator to inspect; `Done` means it

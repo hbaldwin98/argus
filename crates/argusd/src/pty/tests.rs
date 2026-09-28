@@ -1,5 +1,5 @@
-//! Panes driven against real child processes, and the vt100
-//! translation driven against a parser fed directly.
+//! Panes driven against real child processes, and the emulator's
+//! translation driven against an emulator fed directly.
 
 use super::*;
 
@@ -106,70 +106,71 @@ fn an_existing_terminal_type_is_preserved_for_a_pty_child() {
 
 #[test]
 fn a_childs_mouse_request_is_carried_on_the_snapshot() {
-    let mut parser = new_vt(24, 80, 0);
-    assert_eq!(snapshot_mouse(&parser), MouseTracking::default());
+    let mut vt = Vt::new(24, 80, 0);
+    assert_eq!(vt.mouse(), MouseTracking::default());
 
-    parser.process(b"[?1002h[?1006h");
+    vt.process(b"[?1002h[?1006h");
     assert_eq!(
-        snapshot_mouse(&parser),
+        vt.mouse(),
         MouseTracking {
             mode: MouseMode::ButtonMotion,
             encoding: MouseEncoding::Sgr,
         }
     );
 
-    parser.process(b"[?1002l");
-    assert_eq!(snapshot_mouse(&parser).mode, MouseMode::None);
+    vt.process(b"[?1002l");
+    assert_eq!(vt.mouse().mode, MouseMode::None);
 }
 
 #[test]
 fn a_childs_osc_52_copy_is_held_for_the_client() {
-    let mut parser = new_vt(24, 80, 0);
+    let mut vt = Vt::new(24, 80, 0);
 
-    parser.process(b"\x1b]52;c;aGVsbG8=\x07");
+    vt.process(b"\x1b]52;c;aGVsbG8=\x07");
 
-    assert_eq!(parser.callbacks_mut().take_copies(), vec!["hello".to_string()]);
-    assert!(parser.callbacks_mut().take_copies().is_empty(), "sent once");
+    assert_eq!(vt.take_copies(), vec!["hello".to_string()]);
+    assert!(vt.take_copies().is_empty(), "sent once");
 }
 
 #[test]
 fn a_childs_osc_52_read_is_not_answered() {
-    let mut parser = new_vt(24, 80, 0);
+    let mut vt = Vt::new(24, 80, 0);
 
-    parser.process(b"\x1b]52;c;?\x07");
+    vt.process(b"\x1b]52;c;?\x07");
 
-    assert!(parser.callbacks_mut().take_copies().is_empty());
-    assert!(parser.callbacks_mut().take_replies().is_empty());
+    assert!(vt.take_copies().is_empty());
+    assert!(vt.take_replies().is_empty());
 }
 
 #[test]
 fn a_cursor_position_request_is_answered_with_where_the_cursor_was_when_asked() {
-    let mut parser = new_vt(24, 80, 0);
+    let mut vt = Vt::new(24, 80, 0);
 
     // Two requests in one read, the cursor moving between and after them.
-    parser.process(b"\x1b[3;5H\x1b[6nabc\x1b[6n\x1b[10;1H");
+    vt.process(b"\x1b[3;5H\x1b[6nabc\x1b[6n\x1b[10;1H");
 
-    assert_eq!(parser.callbacks_mut().take_replies(), b"\x1b[3;5R\x1b[3;8R");
-    assert!(parser.callbacks_mut().take_replies().is_empty(), "answered once");
+    assert_eq!(vt.take_replies(), b"\x1b[3;5R\x1b[3;8R");
+    assert!(vt.take_replies().is_empty(), "answered once");
 }
 
 #[test]
-fn other_status_requests_are_not_answered_as_a_cursor_position() {
-    let mut parser = new_vt(24, 80, 0);
+fn a_status_request_is_answered_as_itself_not_as_a_cursor_position() {
+    let mut vt = Vt::new(24, 80, 0);
 
-    parser.process(b"\x1b[5n\x1b[?6n\x1b[6;1n\x1b[n\x1b[6m");
+    // Device status, then an attribute that only looks like a query.
+    vt.process(b"\x1b[5n\x1b[6m");
 
-    assert!(parser.callbacks_mut().take_replies().is_empty());
+    assert_eq!(vt.take_replies(), b"\x1b[0n");
 }
 
-/// A parser holding `lines` numbered lines on a 4-row screen, so the
+/// An emulator holding `lines` numbered lines on a 4-row screen, so the
 /// live screen is the last four and everything before it is scrollback.
 fn scrolled(lines: usize) -> Vt {
-    let mut parser = new_vt(4, 20, SCROLLBACK_LINES);
+    let mut vt = Vt::new(4, 20, SCROLLBACK_LINES);
     for i in 1..=lines {
-        parser.process(format!("line {i}\r\n").as_bytes());
+        vt.process(format!("line {i}\r\n").as_bytes());
     }
-    parser
+    vt
 }
 
 fn first_row(cells: &[Vec<Cell>]) -> String {
@@ -180,56 +181,54 @@ fn first_row(cells: &[Vec<Cell>]) -> String {
 
 #[test]
 fn an_offset_reads_the_lines_that_scrolled_off_the_top() {
-    let mut parser = scrolled(10);
+    let vt = scrolled(10);
 
     // 10 lines written, 4 rows visible, and the cursor sits on the row
     // after the last one: rows 8..11 are live, so 7 lines are behind.
-    let (live, offset, depth) = read_scrollback(&mut parser, 0);
+    let (live, offset, depth) = vt.scrollback(0);
     assert_eq!((offset, depth), (0, 7));
     assert_eq!(first_row(&live), "line 8");
 
-    let (back, offset, _) = read_scrollback(&mut parser, 3);
+    let (back, offset, _) = vt.scrollback(3);
     assert_eq!(offset, 3);
     assert_eq!(first_row(&back), "line 5");
 }
 
 #[test]
 fn an_offset_past_the_top_stops_at_the_oldest_line_it_has() {
-    let mut parser = scrolled(10);
-    let (cells, offset, depth) = read_scrollback(&mut parser, 999);
+    let vt = scrolled(10);
+    let (cells, offset, depth) = vt.scrollback(999);
     assert_eq!(offset, depth, "clamped to the top rather than refused");
     assert_eq!(first_row(&cells), "line 1");
 }
 
 #[test]
-fn reading_scrollback_leaves_the_parser_on_the_live_screen() {
-    // The offset is parser-global. Left set, the pump would diff
-    // scrolled-back rows against live ones and broadcast the difference
-    // to every other subscriber as damage.
-    let mut parser = scrolled(10);
-    read_scrollback(&mut parser, 5);
-    assert_eq!(parser.screen().scrollback(), 0);
-    assert_eq!(first_row(&snapshot_grid(&parser)), "line 8");
+fn reading_scrollback_leaves_the_live_screen_where_it_was() {
+    // Moved, the pump would diff scrolled-back rows against live ones and
+    // broadcast the difference to every other subscriber as damage.
+    let vt = scrolled(10);
+    vt.scrollback(5);
+    assert_eq!(first_row(&vt.grid()), "line 8");
 }
 
 #[test]
 fn the_alternate_screen_reports_no_scrollback_of_its_own() {
     // A full-screen child manages its own history, and the shell's
     // must not show through underneath it.
-    let mut parser = scrolled(10);
-    parser.process(b"[?1049h");
-    let (_, offset, depth) = read_scrollback(&mut parser, 5);
+    let mut vt = scrolled(10);
+    vt.process(b"[?1049h");
+    let (_, offset, depth) = vt.scrollback(5);
     assert_eq!((offset, depth), (0, 0));
 }
 
 #[test]
 fn an_alternate_screen_request_is_visible_on_the_snapshot() {
-    let mut parser = new_vt(24, 80, 0);
-    assert!(!parser.screen().alternate_screen());
-    parser.process(b"[?1049h");
-    assert!(parser.screen().alternate_screen());
-    parser.process(b"[?1049l");
-    assert!(!parser.screen().alternate_screen());
+    let mut vt = Vt::new(24, 80, 0);
+    assert!(!vt.alternate_screen());
+    vt.process(b"[?1049h");
+    assert!(vt.alternate_screen());
+    vt.process(b"[?1049l");
+    assert!(!vt.alternate_screen());
 }
 
 #[test]
@@ -237,63 +236,57 @@ fn alternate_scroll_alone_does_not_enable_mouse_reporting() {
     // Codex (and similar TUIs) send DECSET 1007 so a wheel becomes
     // cursor keys. That is not mouse tracking; treating it as such
     // would type `ESC [ < 65 ...` into the prompt.
-    let mut parser = new_vt(24, 80, 0);
-    parser.process(b"[?1007h[?1049h");
-    assert_eq!(snapshot_mouse(&parser), MouseTracking::default());
-    assert!(parser.screen().alternate_screen());
+    let mut vt = Vt::new(24, 80, 0);
+    vt.process(b"[?1007h[?1049h");
+    assert_eq!(vt.mouse(), MouseTracking::default());
+    assert!(vt.alternate_screen());
+}
+
+/// The cursor shape `bytes` leave behind.
+fn shape_after(chunks: &[&[u8]]) -> CursorShape {
+    let mut vt = Vt::new(4, 20, 0);
+    for chunk in chunks {
+        vt.process(chunk);
+    }
+    vt.cursor().shape
 }
 
 #[test]
 fn a_bar_cursor_request_is_picked_out_of_the_stream() {
-    let mut scan = CursorShapeScanner::default();
-    scan.feed(b"hello[6 qworld");
-    assert_eq!(scan.shape(), CursorShape::SteadyBar);
+    assert_eq!(shape_after(&[b"hello\x1b[6 qworld"]), CursorShape::SteadyBar);
 }
 
 #[test]
 fn a_request_split_across_reads_still_lands() {
     // A read boundary falls wherever the kernel put it, so the halves
     // of a five-byte sequence routinely arrive in different chunks.
-    let mut scan = CursorShapeScanner::default();
-    for chunk in [&b""[..], b"[", b"5", b" ", b"q"] {
-        scan.feed(chunk);
-    }
-    assert_eq!(scan.shape(), CursorShape::BlinkingBar);
+    let chunks: [&[u8]; 5] = [b"\x1b", b"[", b"5", b" ", b"q"];
+    assert_eq!(shape_after(&chunks), CursorShape::BlinkingBar);
 }
 
 #[test]
 fn a_zero_or_bare_parameter_hands_the_shape_back_to_the_host() {
-    let mut scan = CursorShapeScanner::default();
-    scan.feed(b"[2 q");
-    assert_eq!(scan.shape(), CursorShape::SteadyBlock);
-
-    scan.feed(b"[0 q");
-    assert_eq!(scan.shape(), CursorShape::Default);
-
-    scan.feed(b"[4 q");
-    scan.feed(b"[ q");
-    assert_eq!(scan.shape(), CursorShape::Default);
+    assert_eq!(shape_after(&[b"\x1b[2 q"]), CursorShape::SteadyBlock);
+    assert_eq!(shape_after(&[b"\x1b[2 q\x1b[0 q"]), CursorShape::Default);
+    assert_eq!(shape_after(&[b"\x1b[4 q\x1b[ q"]), CursorShape::Default);
+    assert_eq!(shape_after(&[]), CursorShape::Default, "nothing asked, nothing imposed");
 }
 
 #[test]
 fn other_escape_sequences_leave_the_shape_alone() {
-    let mut scan = CursorShapeScanner::default();
-    scan.feed(b"[3 q");
-    assert_eq!(scan.shape(), CursorShape::BlinkingUnderline);
-
     // Colours, cursor moves, private modes, and a `q` that is not the
     // final byte of a DECSCUSR: all common, none of them shape changes.
-    scan.feed(b"[31m[2;5H[?25l[?1049hq[10q");
-    assert_eq!(scan.shape(), CursorShape::BlinkingUnderline);
+    assert_eq!(
+        shape_after(&[b"\x1b[3 q", b"\x1b[31m\x1b[2;5H\x1b[?25l\x1b[?1049hq\x1b[10q"]),
+        CursorShape::BlinkingUnderline
+    );
 }
 
 #[test]
 fn a_truncated_sequence_does_not_swallow_the_one_behind_it() {
-    // An ESC always restarts the machine, so an abandoned sequence
-    // cannot eat the next request.
-    let mut scan = CursorShapeScanner::default();
-    scan.feed(b"[2[6 q");
-    assert_eq!(scan.shape(), CursorShape::SteadyBar);
+    // An ESC always starts over, so an abandoned sequence cannot eat the
+    // next request.
+    assert_eq!(shape_after(&[b"\x1b[2\x1b[6 q"]), CursorShape::SteadyBar);
 }
 
 /// Flattens a grid to one string per row, trailing blanks trimmed.
@@ -779,6 +772,51 @@ async fn a_child_that_asks_where_its_cursor_is_hears_back() {
 
 #[cfg(unix)]
 #[tokio::test]
+async fn a_watcher_rebuilt_from_damage_alone_ends_on_the_screen() {
+    // What the pump sends is diffed against what it believes the watcher
+    // holds; if the two ever drift, a pane draws text that has left its
+    // screen. Coloured lines scrolling in bursts exercise the emulator's
+    // damage, the scroll detection and the runs together.
+    let script = "for i in $(seq 1 600); do \
+                  printf '\\033[3%dmline %d of the stream\\033[0m\\n' $((i % 7)) $i; \
+                  [ $((i % 40)) -eq 0 ] && sleep 0.02; done; echo stream-done; sleep 5";
+    let pane = PaneRuntime::spawn(
+        PaneId(7),
+        &std::env::temp_dir(),
+        Spawn::Program {
+            program: "sh".to_string(),
+            args: vec!["-c".to_string(), script.to_string()],
+            env: Vec::new(),
+            resource_policy: ResourcePolicy::Unrestricted,
+        },
+        |_| {},
+    )
+    .unwrap();
+    let (_, _, mut watcher, _, _, _, mut rx) = pane.snapshot_and_subscribe();
+    let mut frames = 0;
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while !grid_contains(&watcher, "stream-done") {
+            if let Ok(ServerMsg::RowDamage { scroll, runs, .. }) = rx.recv().await {
+                if let Some(scroll) = scroll {
+                    scroll.apply(&mut watcher);
+                }
+                for run in &runs {
+                    run.apply(&mut watcher);
+                }
+                frames += 1;
+            }
+        }
+    })
+    .await
+    .expect("the stream should reach the watcher");
+    let (_, _, screen, _, _, _) = pane.full_snapshot();
+    assert!(frames > 1, "one frame proves nothing about the ones after it");
+    assert_eq!(watcher, screen);
+    let _ = pane.kill();
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn killing_a_pane_also_kills_a_detached_grandchild() {
     // A shell backgrounding a job (e.g. an agent's own subprocess) leaves a
     // grandchild that never setsid's away from the pane's session. Killing
@@ -916,33 +954,32 @@ fn a_resize_snapshot_is_never_older_than_the_damage_ahead_of_it() {
     // No pty here. These are the three handles the publish works over, and
     // driving them directly is what makes a trial cheap enough to repeat
     // until the interleaving that used to break shows up.
-    let parser = Arc::new(StdMutex::new(new_vt(24, 80, 0)));
-    let shape = Arc::new(StdMutex::new(CursorShapeScanner::default()));
+    let vt = Arc::new(StdMutex::new(Vt::new(24, 80, 0)));
     let (tx, _keep) = broadcast::channel(64);
 
     for trial in 0..1_000 {
-        parser.lock().unwrap().process(b"[2J[H");
+        vt.lock().unwrap().process(b"[2J[H");
         let mut rx = tx.subscribe();
 
-        let held = parser.lock().unwrap();
+        let held = vt.lock().unwrap();
         std::thread::scope(|scope| {
             let publisher = {
-                let (parser, shape, tx) = (parser.clone(), shape.clone(), tx.clone());
-                scope.spawn(move || publish_snapshot(&parser, &shape, &tx, PaneId(61)))
+                let (vt, tx) = (vt.clone(), tx.clone());
+                scope.spawn(move || publish_snapshot(&vt, &tx, PaneId(61)))
             };
             // The pump, as far as this matters: it changes the screen and
-            // announces the change without ever letting go of the parser.
+            // announces the change without ever letting go of the emulator.
             let pump = {
-                let (parser, tx) = (parser.clone(), tx.clone());
+                let (vt, tx) = (vt.clone(), tx.clone());
                 scope.spawn(move || {
-                    let mut parser = parser.lock().unwrap();
-                    parser.process(b"ZZZ");
+                    let mut vt = vt.lock().unwrap();
+                    vt.process(b"ZZZ");
                     let _ = tx.send(ServerMsg::RowDamage {
                         pane: PaneId(61),
                         scroll: None,
                         runs: Vec::new(),
-                        cursor: snapshot_cursor(&parser, CursorShape::Default),
-                        mouse: snapshot_mouse(&parser),
+                        cursor: vt.cursor(),
+                        mouse: vt.mouse(),
                         alternate_screen: false,
                     });
                 })
@@ -1040,30 +1077,94 @@ async fn a_nonexistent_program_does_not_take_the_daemon_down() {
     }
 }
 
-// --- pure vt100 conversion ---------------------------------------------
+// --- the emulator's screen, as the protocol's ---------------------------
 
 #[test]
-fn an_absent_vt100_cell_becomes_a_blank() {
-    let c = cell_from_vt100(None);
+fn an_untouched_cell_becomes_a_blank() {
+    let c = convert_cell(&Default::default());
     assert_eq!(c.ch, " ");
     assert_eq!(c.fg, Color::Default);
+    assert_eq!(c.bg, Color::Default);
 }
 
 #[test]
-fn colors_convert_across_all_three_forms() {
-    assert_eq!(convert_color(vt100::Color::Default), Color::Default);
-    assert_eq!(convert_color(vt100::Color::Idx(9)), Color::Idx(9));
+fn colors_convert_across_every_form() {
+    use alacritty_terminal::vte::ansi::{Color as TermColor, NamedColor, Rgb};
+
+    assert_eq!(convert_color(TermColor::Named(NamedColor::Foreground)), Color::Default);
+    assert_eq!(convert_color(TermColor::Named(NamedColor::Background)), Color::Default);
+    assert_eq!(convert_color(TermColor::Named(NamedColor::Red)), Color::Idx(1));
+    assert_eq!(convert_color(TermColor::Named(NamedColor::BrightBlue)), Color::Idx(12));
+    assert_eq!(convert_color(TermColor::Named(NamedColor::DimRed)), Color::Idx(1));
+    assert_eq!(convert_color(TermColor::Indexed(200)), Color::Idx(200));
     assert_eq!(
-        convert_color(vt100::Color::Rgb(1, 2, 3)),
+        convert_color(TermColor::Spec(Rgb { r: 1, g: 2, b: 3 })),
         Color::Rgb(1, 2, 3)
     );
 }
 
 #[test]
+fn a_wide_character_is_one_cell_and_a_blank_behind_it() {
+    let mut vt = Vt::new(1, 4, 0);
+    vt.process("世x".as_bytes());
+    let grid = vt.grid();
+    assert_eq!(grid[0][0].ch, "世");
+    assert_eq!(grid[0][1].ch, " ");
+    assert_eq!(grid[0][2].ch, "x");
+}
+
+#[test]
+fn only_the_lines_that_changed_are_read_again() {
+    let mut vt = Vt::new(4, 10, 0);
+    let mut live = Vec::new();
+    vt.process(b"one\r\ntwo");
+    vt.refresh(&mut live);
+    assert_eq!(rows_of(&live)[..2], ["one", "two"]);
+
+    // Stale the copy by hand: a line refresh skips must keep what it had.
+    live[0][0].ch = "Z".into();
+    vt.process(b"\x1b[2;1HTWO");
+    vt.refresh(&mut live);
+    assert_eq!(rows_of(&live)[..2], ["Zne", "TWO"]);
+    assert_eq!(rows_of(&vt.grid())[0], "one", "the screen itself was never touched");
+}
+
+#[test]
+fn a_refreshed_copy_of_another_size_is_rebuilt_whole() {
+    let mut vt = Vt::new(4, 10, 0);
+    let mut live = Vec::new();
+    vt.process(b"hi");
+    vt.refresh(&mut live);
+    vt.resize(6, 12);
+    vt.refresh(&mut live);
+    assert_eq!((live.len(), live[0].len()), (6, 12));
+    assert_eq!(live, vt.grid());
+}
+
+#[test]
+fn a_synchronized_update_is_drawn_whole_or_once_it_is_overdue() {
+    let mut vt = Vt::new(2, 10, 0);
+    vt.process(b"\x1b[?2026hhalf");
+    assert_eq!(rows_of(&vt.grid())[0], "", "held back until the update ends");
+    assert!(vt.sync_deadline().is_some());
+    vt.process(b"way\x1b[?2026l");
+    assert_eq!(rows_of(&vt.grid())[0], "halfway");
+    assert!(vt.sync_deadline().is_none());
+
+    // One the child never ends is drawn when its deadline passes.
+    vt.process(b"\x1b[?2026h\r\nstuck");
+    let deadline = vt.sync_deadline().expect("an update is open");
+    assert!(!vt.end_overdue_sync(), "not due yet");
+    std::thread::sleep(deadline.saturating_duration_since(std::time::Instant::now()));
+    assert!(vt.end_overdue_sync());
+    assert_eq!(rows_of(&vt.grid())[1], "stuck");
+}
+
+#[test]
 fn a_parsed_screen_snapshots_to_a_full_rectangular_grid() {
-    let mut parser = new_vt(4, 10, 0);
-    parser.process(b"hi");
-    let grid = snapshot_grid(&parser);
+    let mut vt = Vt::new(4, 10, 0);
+    vt.process(b"hi");
+    let grid = vt.grid();
     assert_eq!(grid.len(), 4);
     assert!(
         grid.iter().all(|r| r.len() == 10),
@@ -1084,9 +1185,9 @@ fn a_cell_with_no_contents_keeps_the_colours_it_was_cleared_to() {
     // colour. The snapshot skips `contents()` for exactly these cells,
     // so it must still read their attributes — reading them as default
     // cells would knock the colour out of every bar on screen.
-    let mut parser = new_vt(2, 4, 0);
-    parser.process(b"\x1b[41m\x1b[K");
-    let grid = snapshot_grid(&parser);
+    let mut vt = Vt::new(2, 4, 0);
+    vt.process(b"\x1b[41m\x1b[K");
+    let grid = vt.grid();
     assert_eq!(grid[0][0].ch, " ", "still drawn as a blank");
     assert_eq!(
         grid[0][3].bg,
@@ -1105,18 +1206,18 @@ fn a_grapheme_wider_than_one_char_survives_the_snapshot() {
     // A cell holds a character plus any combining marks, so the
     // snapshot has to carry more than one `char` — and more than one
     // byte — through to the client.
-    let mut parser = new_vt(1, 4, 0);
-    parser.process("e\u{301}x".as_bytes());
-    let grid = snapshot_grid(&parser);
+    let mut vt = Vt::new(1, 4, 0);
+    vt.process("e\u{301}x".as_bytes());
+    let grid = vt.grid();
     assert_eq!(grid[0][0].ch, "e\u{301}");
     assert_eq!(grid[0][1].ch, "x");
 }
 
 #[test]
 fn sgr_attributes_survive_the_snapshot() {
-    let mut parser = new_vt(1, 10, 0);
-    parser.process(b"\x1b[1;3;4;7;31mX\x1b[0m");
-    let grid = snapshot_grid(&parser);
+    let mut vt = Vt::new(1, 10, 0);
+    vt.process(b"\x1b[1;3;4;7;31mX\x1b[0m");
+    let grid = vt.grid();
     let c = &grid[0][0];
     assert_eq!(c.ch, "X");
     assert!(c.bold && c.italic && c.underline && c.reverse, "{c:?}");
@@ -1125,17 +1226,17 @@ fn sgr_attributes_survive_the_snapshot() {
 
 #[test]
 fn cursor_movement_and_erase_are_honored_not_appended() {
-    let mut parser = new_vt(2, 10, 0);
-    parser.process(b"abcdef\x1b[H\x1b[Kxy");
-    assert_eq!(rows_of(&snapshot_grid(&parser))[0], "xy");
+    let mut vt = Vt::new(2, 10, 0);
+    vt.process(b"abcdef\x1b[H\x1b[Kxy");
+    assert_eq!(rows_of(&vt.grid())[0], "xy");
 }
 
 #[test]
 fn cursor_position_and_visibility_survive_vt_parsing() {
-    let mut parser = new_vt(4, 10, 0);
-    parser.process(b"\x1b[3;5H\x1b[?25l");
+    let mut vt = Vt::new(4, 10, 0);
+    vt.process(b"\x1b[3;5H\x1b[?25l\x1b[6 q");
     assert_eq!(
-        snapshot_cursor(&parser, CursorShape::SteadyBar),
+        vt.cursor(),
         Cursor {
             row: 2,
             col: 4,

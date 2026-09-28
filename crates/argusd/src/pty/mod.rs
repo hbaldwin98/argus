@@ -1,6 +1,6 @@
 //! One PTY-backed pane: spawns a child process attached to a pty, mirrors its
-//! output into a `vt100` grid on a coalesced ~60Hz tick, and broadcasts the
-//! changed cell spans. See DESIGN.md §2 and §8.
+//! output into a terminal emulator on a coalesced ~60Hz tick, and broadcasts
+//! the changed cell runs. See DESIGN.md §2 and §8.
 
 use std::ffi::OsStr;
 use std::io::{Read, Write};
@@ -190,10 +190,7 @@ fn executable_in_directory(directory: &Path, program: &OsStr, extensions: &[OsSt
 pub struct PaneRuntime {
     master: Box<dyn MasterPty + Send>,
     input: PaneInput,
-    parser: Arc<StdMutex<Vt>>,
-    /// Shared with the pump: the cursor shape lives outside `vt100`, but a
-    /// snapshot taken from any thread still has to report it.
-    shape: Arc<StdMutex<CursorShapeScanner>>,
+    vt: Arc<StdMutex<Vt>>,
     /// The child itself belongs to its exit waiter, so ending it goes
     /// through a killer cloned off it before it was handed over.
     killer: Killer,
@@ -214,7 +211,7 @@ pub struct PaneRuntime {
 #[derive(Clone)]
 pub struct PaneInput {
     writer: Arc<StdMutex<Box<dyn Write + Send>>>,
-    parser: Arc<StdMutex<Vt>>,
+    vt: Arc<StdMutex<Vt>>,
 }
 
 impl PaneInput {
@@ -224,7 +221,7 @@ impl PaneInput {
     }
 
     pub fn paste(&self, bytes: &[u8]) -> anyhow::Result<()> {
-        let bracketed = self.parser.lock().unwrap().screen().bracketed_paste();
+        let bracketed = self.vt.lock().unwrap().bracketed_paste();
         self.writer
             .lock()
             .unwrap()
@@ -271,7 +268,7 @@ impl PaneRuntime {
         assign_to_job(job.as_ref(), &mut child)?;
         drop(pair.slave);
 
-        let parser = Arc::new(StdMutex::new(new_vt(
+        let vt = Arc::new(StdMutex::new(Vt::new(
             DEFAULT_ROWS,
             DEFAULT_COLS,
             SCROLLBACK_LINES,
@@ -279,12 +276,11 @@ impl PaneRuntime {
         let reader = pair.master.try_clone_reader()?;
         let input = PaneInput {
             writer: Arc::new(StdMutex::new(pair.master.take_writer()?)),
-            parser: parser.clone(),
+            vt: vt.clone(),
         };
         let killer = StdMutex::new(child.clone_killer());
         #[cfg(unix)]
         let pid = child.process_id();
-        let shape = Arc::new(StdMutex::new(CursorShapeScanner::default()));
         let (damage_tx, _) = broadcast::channel::<ServerMsg>(64);
         #[cfg(test)]
         let pump_wakes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -295,21 +291,16 @@ impl PaneRuntime {
         spawn_exit_waiter(child, exit_tx);
 
         {
-            let parser = parser.clone();
-            let shape = shape.clone();
+            let vt = vt.clone();
             let damage_tx = damage_tx.clone();
             let replier = input.writer.clone();
             #[cfg(test)]
             let pump_wakes = pump_wakes.clone();
             tokio::spawn(async move {
-                let mut prev: Option<Vec<Vec<Cell>>> = None;
-                let mut prev_cursor = None;
-                // Tracked alongside the grid because a child can turn mouse
-                // reporting on or off without changing a single cell, and a
-                // client that misses the change forwards mouse bytes to a
-                // child that will print them.
-                let mut prev_mouse = None;
-                let mut prev_alt = None;
+                // The pump's own copy of the screen, kept current from the
+                // emulator's damage rather than rebuilt every frame.
+                let mut live: Vec<Vec<Cell>> = Vec::new();
+                let mut sent = Sent::default();
                 let mut on_exit = Some(on_exit);
                 let mut eof = false;
                 loop {
@@ -321,8 +312,11 @@ impl PaneRuntime {
                     // is at the bottom of the loop instead: it belongs after
                     // a frame has been presented, not before one is begun.
                     //
-                    // Nothing else wakes it: an idle pane sleeps here until
-                    // its child speaks or exits.
+                    // Nothing else wakes it but a synchronized update the
+                    // child began and has not ended, which is drawn anyway
+                    // once overdue: an idle pane sleeps here until its child
+                    // speaks or exits.
+                    let deadline = vt.lock().unwrap().sync_deadline();
                     let mut exited = None;
                     let first = tokio::select! {
                         chunk = byte_rx.recv(), if !eof => {
@@ -335,15 +329,17 @@ impl PaneRuntime {
                             exited = Some(code.unwrap_or(None));
                             None
                         }
+                        _ = tokio::time::sleep_until(
+                            deadline.unwrap_or_else(std::time::Instant::now).into(),
+                        ), if deadline.is_some() => None,
                     };
                     #[cfg(test)]
                     pump_wakes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-                    let mut dirty = false;
+                    let mut dirty = vt.lock().unwrap().end_overdue_sync();
                     let mut budget = MAX_CHUNKS_PER_FRAME;
                     if let Some(chunk) = first {
-                        shape.lock().unwrap().feed(&chunk);
-                        parser.lock().unwrap().process(&chunk);
+                        vt.lock().unwrap().process(&chunk);
                         dirty = true;
                         budget -= 1;
                     }
@@ -351,17 +347,15 @@ impl PaneRuntime {
                     // frame rather than costing one of its own.
                     for _ in 0..budget {
                         let Ok(chunk) = byte_rx.try_recv() else { break };
-                        shape.lock().unwrap().feed(&chunk);
-                        parser.lock().unwrap().process(&chunk);
+                        vt.lock().unwrap().process(&chunk);
                         dirty = true;
                     }
                     // Sent whether or not anyone is watching the grid: a
                     // copy is a one-off, and there is no later frame that
                     // could carry it instead.
                     let (copied, replies) = {
-                        let mut parser = parser.lock().unwrap();
-                        let requests = parser.callbacks_mut();
-                        (requests.take_copies(), requests.take_replies())
+                        let mut vt = vt.lock().unwrap();
+                        (vt.take_copies(), vt.take_replies())
                     };
                     for text in copied {
                         let _ = damage_tx.send(ServerMsg::Clipboard { pane: id, text });
@@ -371,47 +365,18 @@ impl PaneRuntime {
                         let _ = replier.lock().unwrap().write_all(&replies);
                     }
                     if dirty && damage_tx.receiver_count() == 0 {
-                        // Nobody is watching this pane. The parser is fed
+                        // Nobody is watching this pane. The emulator is fed
                         // either way above, so its screen stays current, but
-                        // snapshotting and diffing a whole grid for an
-                        // audience of none is what a background agent's
-                        // output charges the pane you are actually typing
-                        // into — these tasks share the runtime with the
-                        // connection carrying your keystrokes. Dropping
-                        // `prev` makes the next watched frame a full
-                        // repaint, which is the only correct diff against a
-                        // grid we stopped tracking.
-                        prev = None;
-                        prev_cursor = None;
-                        prev_mouse = None;
-                        prev_alt = None;
+                        // bringing a grid up to date for an audience of none
+                        // is what a background agent's output charges the
+                        // pane you are actually typing into — these tasks
+                        // share the runtime with the connection carrying
+                        // your keystrokes. The damage keeps until someone
+                        // watches, and forgetting what was sent makes their
+                        // first frame a full one.
+                        sent = Sent::default();
                     } else if dirty {
-                        let shape = shape.lock().unwrap().shape();
-                        let parser = parser.lock().unwrap();
-                        let cur = snapshot_grid(&parser);
-                        let cursor = snapshot_cursor(&parser, shape);
-                        let mouse = snapshot_mouse(&parser);
-                        let alternate_screen = parser.screen().alternate_screen();
-                        let (scroll, runs) = damage(prev.as_mut(), &cur);
-                        if scroll.is_some()
-                            || !runs.is_empty()
-                            || prev_cursor != Some(cursor)
-                            || prev_mouse != Some(mouse)
-                            || prev_alt != Some(alternate_screen)
-                        {
-                            let _ = damage_tx.send(ServerMsg::RowDamage {
-                                pane: id,
-                                scroll,
-                                runs,
-                                cursor,
-                                mouse,
-                                alternate_screen,
-                            });
-                        }
-                        prev = Some(cur);
-                        prev_cursor = Some(cursor);
-                        prev_mouse = Some(mouse);
-                        prev_alt = Some(alternate_screen);
+                        send_frame(&mut vt.lock().unwrap(), &mut live, &mut sent, &damage_tx, id);
                     }
 
                     if let Some(code) = exited {
@@ -429,8 +394,7 @@ impl PaneRuntime {
                         while tokio::time::Instant::now() < grace {
                             match tokio::time::timeout(FRAME_INTERVAL, byte_rx.recv()).await {
                                 Ok(Some(chunk)) => {
-                                    shape.lock().unwrap().feed(&chunk);
-                                    parser.lock().unwrap().process(&chunk);
+                                    vt.lock().unwrap().process(&chunk);
                                     flushed = true;
                                 }
                                 // EOF: the reader is done, nothing more can arrive.
@@ -442,28 +406,11 @@ impl PaneRuntime {
                             }
                         }
                         if flushed {
-                            let shape = shape.lock().unwrap().shape();
-                            let parser = parser.lock().unwrap();
-                            let cur = snapshot_grid(&parser);
-                            let cursor = snapshot_cursor(&parser, shape);
-                            let mouse = snapshot_mouse(&parser);
-                            let alternate_screen = parser.screen().alternate_screen();
-                            let (scroll, runs) = damage(prev.as_mut(), &cur);
-                            if scroll.is_some()
-                                || !runs.is_empty()
-                                || prev_cursor != Some(cursor)
-                                || prev_mouse != Some(mouse)
-                                || prev_alt != Some(alternate_screen)
-                            {
-                                let _ = damage_tx.send(ServerMsg::RowDamage {
-                                    pane: id,
-                                    scroll,
-                                    runs,
-                                    cursor,
-                                    mouse,
-                                    alternate_screen,
-                                });
-                            }
+                            let mut vt = vt.lock().unwrap();
+                            // Whatever it held back for an update it never
+                            // got to end is the last thing it drew.
+                            vt.end_sync_now();
+                            send_frame(&mut vt, &mut live, &mut sent, &damage_tx, id);
                         }
 
                         let _ = damage_tx.send(ServerMsg::PaneClosed { pane: id, code });
@@ -486,8 +433,7 @@ impl PaneRuntime {
         Ok(PaneRuntime {
             master: pair.master,
             input,
-            parser,
-            shape,
+            vt,
             killer,
             #[cfg(unix)]
             pid,
@@ -510,7 +456,7 @@ impl PaneRuntime {
             pixel_width: 0,
             pixel_height: 0,
         })?;
-        self.parser.lock().unwrap().screen_mut().set_size(rows, cols);
+        self.vt.lock().unwrap().resize(rows, cols);
         Ok(())
     }
 
@@ -527,16 +473,15 @@ impl PaneRuntime {
 
     #[cfg(test)]
     pub fn full_snapshot(&self) -> (u16, u16, Vec<Vec<Cell>>, Cursor, MouseTracking, bool) {
-        let shape = self.shape.lock().unwrap().shape();
-        let parser = self.parser.lock().unwrap();
-        let (rows, cols) = parser.screen().size();
+        let vt = self.vt.lock().unwrap();
+        let (rows, cols) = vt.size();
         (
             rows,
             cols,
-            snapshot_grid(&parser),
-            snapshot_cursor(&parser, shape),
-            snapshot_mouse(&parser),
-            parser.screen().alternate_screen(),
+            vt.grid(),
+            vt.cursor(),
+            vt.mouse(),
+            vt.alternate_screen(),
         )
     }
 
@@ -550,7 +495,7 @@ impl PaneRuntime {
 
     /// A full grid and the damage stream that continues it, taken together.
     ///
-    /// Atomic on purpose: the pump needs the parser lock to produce a frame,
+    /// Atomic on purpose: the pump needs the emulator's lock to produce a frame,
     /// so holding it across both halves means no frame can be published
     /// between them. Taken separately, a frame landing in that gap belongs
     /// to neither — it is newer than the snapshot and older than the
@@ -567,31 +512,24 @@ impl PaneRuntime {
         bool,
         broadcast::Receiver<ServerMsg>,
     ) {
-        let shape = self.shape.lock().unwrap().shape();
-        let parser = self.parser.lock().unwrap();
-        let (rows, cols) = parser.screen().size();
+        let vt = self.vt.lock().unwrap();
+        let (rows, cols) = vt.size();
         let rx = self.damage_tx.subscribe();
         (
             rows,
             cols,
-            snapshot_grid(&parser),
-            snapshot_cursor(&parser, shape),
-            snapshot_mouse(&parser),
-            parser.screen().alternate_screen(),
+            vt.grid(),
+            vt.cursor(),
+            vt.mouse(),
+            vt.alternate_screen(),
             rx,
         )
     }
 
     /// Rows sitting `offset` lines above the live screen, with the offset
-    /// actually reached and how deep the buffer goes.
-    ///
-    /// The parser's offset is moved and put straight back under one hold
-    /// of the lock, because it is parser-global: left set, it would drag
-    /// every other subscriber's frames back with this client's view. The
-    /// alternate screen answers with a depth of zero rather than letting
-    /// the shell's history show through underneath a full-screen child.
+    /// actually reached and how deep the buffer goes ([`Vt::scrollback`]).
     pub fn scrollback(&self, offset: usize) -> (Vec<Vec<Cell>>, usize, usize) {
-        read_scrollback(&mut self.parser.lock().unwrap(), offset)
+        self.vt.lock().unwrap().scrollback(offset)
     }
 
     /// Pushes a fresh full-grid snapshot to whoever is currently subscribed.
@@ -599,7 +537,7 @@ impl PaneRuntime {
     /// grown or shrunk by replacing it wholesale — incremental Damage spans
     /// referencing indices outside its current size are meaningless to it.
     ///
-    /// Captured and sent under one hold of the parser lock, for the same
+    /// Captured and sent under one hold of the emulator's lock, for the same
     /// reason [`PaneRuntime::snapshot_and_subscribe`] is atomic. The pump
     /// holds that lock across producing a frame *and* publishing it, so a
     /// snapshot taken with the lock released could be overtaken by a Damage
@@ -610,7 +548,7 @@ impl PaneRuntime {
     /// cells are never sent again and the pane keeps drawing text that is
     /// no longer on the screen it came from.
     pub fn broadcast_snapshot(&self, pane: PaneId) {
-        publish_snapshot(&self.parser, &self.shape, &self.damage_tx, pane);
+        publish_snapshot(&self.vt, &self.damage_tx, pane);
     }
 }
 
@@ -629,22 +567,84 @@ fn set_pty_terminal(command: &mut CommandBuilder) {
 /// `Sync`, and so cannot be handed to a thread that wants to prove the lock
 /// is held for the whole of it.
 fn publish_snapshot(
-    parser: &Arc<StdMutex<Vt>>,
-    shape: &Arc<StdMutex<CursorShapeScanner>>,
+    vt: &Arc<StdMutex<Vt>>,
     damage_tx: &broadcast::Sender<ServerMsg>,
     pane: PaneId,
 ) {
-    let shape = shape.lock().unwrap().shape();
-    let parser = parser.lock().unwrap();
-    let (rows, cols) = parser.screen().size();
+    let vt = vt.lock().unwrap();
+    let (rows, cols) = vt.size();
     let _ = damage_tx.send(ServerMsg::PaneRows {
         pane,
         rows,
         cols,
-        runs: grid_runs(&snapshot_grid(&parser)),
-        cursor: snapshot_cursor(&parser, shape),
-        mouse: snapshot_mouse(&parser),
-        alternate_screen: parser.screen().alternate_screen(),
+        runs: grid_runs(&vt.grid()),
+        cursor: vt.cursor(),
+        mouse: vt.mouse(),
+        alternate_screen: vt.alternate_screen(),
+    });
+}
+
+/// What the pump last sent its watchers, so the next frame carries only
+/// the difference.
+#[derive(Default)]
+struct Sent {
+    /// The grid the watchers hold, moved along by each frame's scroll and
+    /// runs exactly as a watcher moves its own.
+    grid: Option<Vec<Vec<Cell>>>,
+    cursor: Option<Cursor>,
+    /// Tracked alongside the grid because a child can turn mouse
+    /// reporting on or off without changing a single cell, and a client
+    /// that misses the change forwards mouse bytes to a child that will
+    /// print them.
+    mouse: Option<MouseTracking>,
+    alternate_screen: Option<bool>,
+}
+
+/// Brings `live` up to the emulator's screen and sends the watchers what
+/// they lack of it, when they lack anything.
+fn send_frame(
+    vt: &mut Vt,
+    live: &mut Vec<Vec<Cell>>,
+    sent: &mut Sent,
+    damage_tx: &broadcast::Sender<ServerMsg>,
+    pane: PaneId,
+) {
+    vt.refresh(live);
+    let cursor = vt.cursor();
+    let mouse = vt.mouse();
+    let alternate_screen = vt.alternate_screen();
+    let (scroll, runs) = damage(sent.grid.as_mut(), live);
+    let unchanged = scroll.is_none()
+        && runs.is_empty()
+        && sent.cursor == Some(cursor)
+        && sent.mouse == Some(mouse)
+        && sent.alternate_screen == Some(alternate_screen);
+    if unchanged {
+        return;
+    }
+    // After a resize the watchers' grid is replaced by a snapshot anyway;
+    // runs laid over one of another shape would not rebuild this one.
+    let same_shape = |grid: &Vec<Vec<Cell>>| {
+        grid.len() == live.len() && grid.iter().zip(live.iter()).all(|(a, b)| a.len() == b.len())
+    };
+    match sent.grid.as_mut() {
+        Some(grid) if same_shape(grid) => {
+            for run in &runs {
+                run.apply(grid);
+            }
+        }
+        _ => sent.grid = Some(live.clone()),
+    }
+    sent.cursor = Some(cursor);
+    sent.mouse = Some(mouse);
+    sent.alternate_screen = Some(alternate_screen);
+    let _ = damage_tx.send(ServerMsg::RowDamage {
+        pane,
+        scroll,
+        runs,
+        cursor,
+        mouse,
+        alternate_screen,
     });
 }
 

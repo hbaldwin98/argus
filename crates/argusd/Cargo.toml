@@ -27,8 +27,7 @@ toml = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 portable-pty = { workspace = true }
-vt100 = { workspace = true }
-base64 = { workspace = true }
+alacritty_terminal = { workspace = true }
 git2 = { workspace = true }
 ignore = "0.4"
 notify = { workspace = true }
