@@ -9,6 +9,7 @@
 mod app;
 mod backend;
 mod brief;
+mod bridge;
 mod diagram;
 mod clipboard;
 mod dirpicker;
@@ -61,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
         Command::ServerRestart => return launch::restart_daemon().await,
         Command::ServerStop => return launch::stop_daemon().await,
         Command::Init(dir) => return launch::init(dir).await,
+        Command::Bridge => return bridge::run().await,
         Command::Tui => {}
     }
     let connection = launch::connect().await?;
@@ -78,6 +80,9 @@ enum Command {
     /// Scan a directory (the working directory when none is given) into a
     /// project in the open workspace, and report what was found.
     Init(Option<String>),
+    /// Carry this machine's daemon on stdin and stdout, for a client on
+    /// another machine reaching it over ssh.
+    Bridge,
 }
 
 fn parse_command(args: &[String]) -> anyhow::Result<Command> {
@@ -89,8 +94,9 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         [server, stop] if server == "server" && stop == "stop" => Ok(Command::ServerStop),
         [init] if init == "init" => Ok(Command::Init(None)),
         [init, dir] if init == "init" => Ok(Command::Init(Some(dir.clone()))),
+        [bridge] if bridge == "bridge" => Ok(Command::Bridge),
         _ => Err(anyhow::anyhow!(
-            "usage: argus [init [DIR] | server (restart | stop)]"
+            "usage: argus [init [DIR] | server (restart | stop) | bridge]"
         )),
     }
 }
@@ -479,6 +485,14 @@ mod tests {
     fn server_stop_is_the_daemon_stop_command() {
         let args = ["server".to_string(), "stop".to_string()];
         assert!(matches!(parse_command(&args), Ok(Command::ServerStop)));
+    }
+
+    #[test]
+    fn bridge_is_the_command_ssh_runs_on_the_far_side() {
+        assert_eq!(
+            parse_command(&["bridge".to_string()]).unwrap(),
+            Command::Bridge
+        );
     }
 
     #[test]
