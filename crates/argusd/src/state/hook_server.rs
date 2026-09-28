@@ -219,13 +219,6 @@ async fn handle_hook_request(
                 }
                 Err(refusal) => refusal,
             },
-            Some((pane, Endpoint::Event)) => match decode(&body, "transcript event") {
-                Ok(event) => {
-                    daemon.report_pane_transcript_event(pane, reporter.as_deref(), event);
-                    HookResponse::empty(200, "OK")
-                }
-                Err(refusal) => refusal,
-            },
             Some((pane, Endpoint::Tasks)) => {
                 tasks_response(&daemon, pane, reporter.as_deref(), &body, filing)
             }

@@ -26,8 +26,6 @@
 //! argus-hook diagram add "open overlay" --stdin      # Mermaid source on stdin
 //! argus-hook diagram drop 3                          # removes diagram #3
 //! argus-hook telemetry --model gpt-5 --context 42000 --window 272000 --cost 0.12 --tool shell
-//! argus-hook event prompt "what the user asked"
-//! argus-hook event tool --name shell
 //! argus-hook context                           # comments, feature brief, open tasks
 //! argus-hook context "preface"                  # the preface, then the same
 //! argus-hook say "text"                          # prints, calls nobody
@@ -88,7 +86,6 @@ const TIMEOUT: Duration = Duration::from_secs(2);
 
 mod board;
 mod context;
-mod event;
 mod installed;
 mod telemetry;
 mod transport;
@@ -146,7 +143,6 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("decisions", decisions),
     ("decide", decide),
     ("telemetry", telemetry),
-    ("event", event::event),
 ];
 
 fn dispatch(command: Option<&str>, rest: &[&str]) {

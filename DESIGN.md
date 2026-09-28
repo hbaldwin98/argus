@@ -124,7 +124,6 @@ live in this crate and a contract written twice drifts in silence.
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
 | `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
 | `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
-| `transcript` | the harness-neutral events of an agent turn |
 
 `argusd` owns PTYs, Git, and everything that outlives a client. Its state is one `Daemon` type
 behind a small set of mutexes; the split below is which file a concern is *read* in, not a change
@@ -637,11 +636,6 @@ it: `ServerMsg::PaneTelemetry`, the one pane's record, to a client that greeted 
 `pane-telemetry`, and the whole tree to any other. A connection handles trees before telemetry, so a
 tree taken before a report cannot land after it and wind the numbers back, and one that falls behind
 the records is sent the tree, which holds them all.
-
-Transcript events — `argus-hook event`, which posts to `/pane/<id>/event` — are kept per pane, the
-newest 200, and are live state like telemetry. They are not in the tree: every tree used to carry
-every pane's events to every client, and no client read them. Recording one broadcasts nothing.
-Nothing reads them back yet, and no built-in adapter sends them.
 
 The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
 /pane/<id>/status/<working|idle|waiting|needs-review|done|failed>` with an optional body as the note,

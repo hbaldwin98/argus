@@ -171,9 +171,9 @@ pub struct PaneInfo {
     #[serde(default)]
     pub telemetry: AgentTelemetry,
     // No transcript. It rode here once, up to 200 events a pane in every
-    // tree every client was sent, and no client read it; the daemon keeps
-    // it to itself now. A daemon from before still sends the field, and
-    // the derive ignores a field it does not know.
+    // tree every client was sent, and no client read it. A daemon from
+    // before still sends the field, and the derive ignores a field it does
+    // not know.
 }
 
 /// Harness-neutral telemetry for one agent pane.
@@ -475,15 +475,21 @@ mod tests {
         // An older daemon puts the transcript in every pane. Dropping the
         // field here must not cost a newer client the tree.
         #[derive(Serialize)]
+        struct OlderEvent {
+            kind: &'static str,
+            text: Option<String>,
+            tool: Option<String>,
+        }
+        #[derive(Serialize)]
         struct OlderPaneInfo {
             #[serde(flatten)]
             pane: PaneInfo,
-            transcript: Vec<crate::transcript::AgentTranscriptEvent>,
+            transcript: Vec<OlderEvent>,
         }
         let older = OlderPaneInfo {
             pane: pane(PaneStatus::Working, &[]),
-            transcript: vec![crate::transcript::AgentTranscriptEvent {
-                kind: crate::transcript::TranscriptKind::Prompt,
+            transcript: vec![OlderEvent {
+                kind: "prompt",
                 text: Some("fix the bug".into()),
                 tool: None,
             }],

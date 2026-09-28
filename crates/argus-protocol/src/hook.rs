@@ -155,8 +155,6 @@ pub enum Endpoint {
     Diagrams,
     /// A partial [`crate::AgentTelemetry`] report, as JSON.
     Telemetry,
-    /// One [`crate::AgentTranscriptEvent`], as JSON.
-    Event,
 }
 
 impl Endpoint {
@@ -181,7 +179,6 @@ impl Endpoint {
             Endpoint::Tasks => Cow::Borrowed("tasks"),
             Endpoint::Diagrams => Cow::Borrowed("diagrams"),
             Endpoint::Telemetry => Cow::Borrowed("telemetry"),
-            Endpoint::Event => Cow::Borrowed("event"),
         }
     }
 }
@@ -219,7 +216,6 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "tasks" => Endpoint::Tasks,
         "diagrams" => Endpoint::Diagrams,
         "telemetry" => Endpoint::Telemetry,
-        "event" => Endpoint::Event,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -339,7 +335,6 @@ mod tests {
             Endpoint::Tasks,
             Endpoint::Diagrams,
             Endpoint::Telemetry,
-            Endpoint::Event,
         ];
         all.extend(Report::ALL.into_iter().map(Endpoint::Status));
         all

@@ -22,7 +22,6 @@ pub mod message;
 pub mod paths;
 pub mod review;
 pub mod tasks;
-pub mod transcript;
 pub mod transport;
 pub mod tree;
 
@@ -71,7 +70,6 @@ pub use tasks::{
     checked_task_body, Task, TaskAction, TaskCounts, TaskList, TaskPlace, TaskState, TaskTreeRow,
     TaskWrite, MAX_TASK_BODY_BYTES, MAX_TASK_TITLE_BYTES,
 };
-pub use transcript::{AgentTranscriptEvent, TranscriptKind, MAX_TRANSCRIPT_EVENTS};
 pub use tree::{
     AgentTelemetry, CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneState, PaneStatus,
     ProjectInfo, RepositoryInfo, WorkspaceInfo,

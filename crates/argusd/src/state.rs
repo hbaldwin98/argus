@@ -80,9 +80,6 @@ struct Pane {
     /// Live only: model, context, spend and tool, as the harness last
     /// reported them. Not persisted; a restored agent reports afresh.
     telemetry: argus_protocol::AgentTelemetry,
-    /// Live only, like telemetry, and kept out of the tree: every client
-    /// was sent it and none read it.
-    transcript: Vec<argus_protocol::AgentTranscriptEvent>,
     /// A hook won the race with session restoration, so saved metadata must
     /// not overwrite what the newly started process already reported.
     restore_status_reported: bool,
