@@ -874,6 +874,88 @@ fn moving_a_task_asks_the_daemon_and_follows_it_there() {
 }
 
 #[test]
+fn angle_brackets_nest_a_task_under_the_one_above_and_lift_it_back_out() {
+    use argus_protocol::TaskPlace;
+    use argus_protocol::TaskState::*;
+    let child = argus_protocol::Task {
+        parent: Some(1),
+        ..task(3, "a subtask", Todo)
+    };
+    let (mut app, mut rx) = tasks_watching(vec![
+        task(1, "port the parser", Todo),
+        child,
+        task(2, "backpressure", Todo),
+    ]);
+    while rx.try_recv().is_ok() {}
+    let places = |rx: &mut tokio::sync::mpsc::UnboundedReceiver<argus_protocol::ClientMsg>| {
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|msg| match msg {
+                argus_protocol::ClientMsg::Task {
+                    action: argus_protocol::TaskAction::Place { id, place },
+                    ..
+                } => Some((id, place)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+
+    app.on_key(KeyEvent::new(KeyCode::Char('>'), KeyModifiers::SHIFT));
+    assert_eq!(places(&mut rx), [], "the first task has nothing above it to go under");
+
+    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    assert_eq!(app.selected_task().map(|t| t.id), Some(3));
+    app.on_key(KeyEvent::new(KeyCode::Char('<'), KeyModifiers::SHIFT));
+    assert_eq!(places(&mut rx), [(3, TaskPlace::After(1))]);
+
+    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    app.on_key(KeyEvent::new(KeyCode::Char('>'), KeyModifiers::SHIFT));
+    assert_eq!(
+        places(&mut rx),
+        [(2, TaskPlace::Under(1))],
+        "the task above among its siblings, not the subtask drawn above it"
+    );
+}
+
+#[test]
+fn m_in_the_tasks_moves_a_task_to_another_open_feature() {
+    use argus_protocol::TaskState::*;
+    let (mut app, mut rx) = feature_view_watching(vec![
+        carded("notes", "Notes storage", argus_protocol::FeatureState::Open),
+        carded("wire", "The wire", argus_protocol::FeatureState::Open),
+        carded("old", "Accepted", argus_protocol::FeatureState::Done),
+    ]);
+    app.on_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
+    app.on_server_msg(argus_protocol::ServerMsg::Tasks(Box::new(
+        argus_protocol::TaskList {
+            project_name: "argus".into(),
+            feature: Some("notes".into()),
+            tasks: vec![task(1, "filed in the wrong place", Todo)],
+        },
+    )));
+    while rx.try_recv().is_ok() {}
+
+    app.on_key(KeyEvent::new(KeyCode::Char('m'), KeyModifiers::NONE));
+    let picker = app.picker.as_ref().expect("the picker is open");
+    assert_eq!(picker.items, ["The wire"], "open features other than its own");
+    app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+    let sent: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        matches!(
+            sent.as_slice(),
+            [argus_protocol::ClientMsg::Task {
+                feature,
+                action: argus_protocol::TaskAction::Place {
+                    id: 1,
+                    place: argus_protocol::TaskPlace::Feature(to),
+                },
+                ..
+            }] if feature == "notes" && to == "wire"
+        ),
+        "{sent:?}"
+    );
+}
+
+#[test]
 fn a_task_can_be_pushed_up_the_list_and_dropped() {
     use argus_protocol::TaskState::*;
     let (mut app, mut rx) = tasks_watching(vec![

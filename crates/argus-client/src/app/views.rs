@@ -722,6 +722,54 @@ impl App {
         self.focus = Focus::Overlay;
     }
 
+    /// Makes the selected task a subtask of the one above it among its
+    /// siblings (`deeper`), or lifts it out to sit after its parent.
+    pub(super) fn indent_selected_task(&mut self, deeper: bool) {
+        if self.panel != FeaturePanel::Tasks {
+            return;
+        }
+        let Some(selected) = self.selected_task() else {
+            return;
+        };
+        let (id, parent) = (selected.id, selected.parent);
+        let place = if deeper {
+            let siblings: Vec<i64> = self
+                .feature_tasks()
+                .iter()
+                .filter(|task| task.parent == parent)
+                .map(|task| task.id)
+                .collect();
+            let above = siblings
+                .iter()
+                .position(|sibling| *sibling == id)
+                .and_then(|at| at.checked_sub(1))
+                .map(|at| siblings[at]);
+            match above {
+                Some(above) => argus_protocol::TaskPlace::Under(above),
+                None => return self.report("no task above it to go under"),
+            }
+        } else {
+            match parent {
+                Some(parent) => argus_protocol::TaskPlace::After(parent),
+                None => return self.report("already a top-level task"),
+            }
+        };
+        self.place_selected_task(place);
+    }
+
+    /// Sends the selected task, with its subtasks, to `place`.
+    pub(super) fn place_selected_task(&mut self, place: argus_protocol::TaskPlace) {
+        let Some((project, checkout, feature, id)) = self.task_target() else {
+            return;
+        };
+        let _ = self.out.send(ClientMsg::Task {
+            project,
+            checkout,
+            feature,
+            action: argus_protocol::TaskAction::Place { id, place },
+        });
+    }
+
     fn task_target(
         &self,
     ) -> Option<(

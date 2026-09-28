@@ -1190,9 +1190,17 @@ either side is refused. That ceremony belongs to the feature the tasks are under
 human accepts the work as a whole. An agent reads with `argus-hook task` and writes with `task add`,
 optionally using `--under <id>`, `task doing <id>`, `task done <id>`, `task todo <id>`, `task retitle
 <id> <text>`, `task brief <id> <text>` and `task drop <id>`; the states are named as verbs rather than
-hidden behind a `move`, so what an agent types is
-what a reader of the transcript understands happened. Taking a task up is what claims it and
-finishing it is what releases it, so a row always says who is on it without anyone claiming by hand.
+hidden behind a state argument, so what an agent types is what a reader of the transcript understands
+happened. Taking a task up is what claims it and finishing it is what releases it, so a row always
+says who is on it without anyone claiming by hand.
+
+`task move <id>` changes where a task sits, never its state: `--under <id>`, `--top`, `--before
+<id>` or `--after <id>` within its feature, or `--to <feature>` onto another feature on the same
+board, where it arrives at the top level. `TaskAction::Place` names the place against another task
+rather than as an index, so the daemon, which holds the tree, works out the numbers. The subtasks go
+with it, a task placed beside another takes that one's parent, and a place inside its own subtree is
+refused. Both sibling lists it touches are renumbered dense, and a move to another feature pushes
+that feature's list as well as the one it left.
 
 Ids are database-wide and an agent numbers its tasks from what it last read, so every change naming
 a task or a diagram is refused when the row is not under the feature the request lands in — the one
@@ -1201,8 +1209,11 @@ feature's agent tick off another's work by arithmetic. Both sides and both parts
 (`state/board_parts`), so the guard cannot differ by who asked.
 
 From the view, `H`/`L` move a task along todo → doing → done and `J`/`K` move it earlier or later among
-its siblings — the order is a human's statement of what to do first, so it is theirs to set and there
-is no agent-side equivalent. `s` starts a line for a subtask under the selected task; `a` starts a
+its siblings. The order is usually a human's statement of what to do first, and the skill tells
+agents to leave one a person arranged; they can still set it, so a task an agent put in the wrong
+place is one it can put back. `>` puts the selected task under the sibling above it and `<` lifts it
+out to sit after its parent, and `m` in the tasks moves it, with its subtasks, to another open
+feature. `s` starts a line for a subtask under the selected task; `a` starts a
 root task. Both are refused unless the tasks have the keys, so a capital `H` on the feature list does
 not move a task the cursor is nowhere near. Lists are pushed whole on `ServerMsg::Tasks` whenever one
 changes, and the wire stays flat: every row carries its parent id while the client and hook project

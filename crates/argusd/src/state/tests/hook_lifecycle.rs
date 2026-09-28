@@ -1201,18 +1201,109 @@ async fn tasks_belong_to_the_feature_the_checkout_is_on() {
         "a stale id cannot rewrite another feature's brief: {refused}"
     );
 
-    // The order is the human's statement of what to do first.
     let refused = d
         .part_action_for_agent(
             agent,
             None,
-            TaskAction::Reorder { id, to: 0 },
+            TaskAction::Place {
+                id,
+                place: argus_protocol::TaskPlace::Feature(notes.clone()),
+            },
             ArtifactScope::default(),
         )
         .unwrap_err()
         .to_string();
-    assert!(refused.contains("human's to set"), "{refused}");
+    assert!(
+        refused.contains("not under this feature"),
+        "a stale id cannot carry another feature's task off: {refused}"
+    );
     close_all(&d);
+}
+
+#[tokio::test]
+async fn an_agent_moves_a_task_to_another_feature_and_back_and_both_lists_are_pushed() {
+    use crate::state::features::Filing;
+    use argus_protocol::{TaskPlace, TaskWrite};
+
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    let agent = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+    let pty = open_feature(&d, agent, "the pty");
+    let add = |title: &str| {
+        d.part_action_for_agent(
+            agent,
+            None,
+            TaskAction::Add(TaskWrite {
+                title: title.into(),
+                external: None,
+                parent: None,
+            }),
+            ArtifactScope::default(),
+        )
+        .unwrap()
+        .tasks
+        .last()
+        .unwrap()
+        .id
+    };
+    let (first, filed_here) = (add("stays"), add("filed in the wrong place"));
+    let wire = open_feature(&d, agent, "the wire");
+    let on = |feature: &str| Filing {
+        scope: ArtifactScope::default(),
+        feature: Some(feature.to_string()),
+    };
+
+    let mut pushed = d.tasks_tx.subscribe();
+    let left = d
+        .part_action_for_agent(
+            agent,
+            None,
+            TaskAction::Place {
+                id: filed_here,
+                place: TaskPlace::Feature(wire.clone()),
+            },
+            on(&pty),
+        )
+        .unwrap();
+    assert_eq!(left.tasks.iter().map(|t| t.id).collect::<Vec<_>>(), [first]);
+    let lists: Vec<_> = std::iter::from_fn(|| pushed.try_recv().ok())
+        .map(|list| (list.feature.unwrap(), list.tasks.len()))
+        .collect();
+    assert_eq!(
+        lists,
+        [(pty.clone(), 1), (wire.clone(), 1)],
+        "a client watching either list sees the move"
+    );
+
+    // Undone the same way: moved back, and put where it was.
+    d.part_action_for_agent(
+        agent,
+        None,
+        TaskAction::Place {
+            id: filed_here,
+            place: TaskPlace::Feature(pty.clone()),
+        },
+        on(&wire),
+    )
+    .unwrap();
+    let back = d
+        .part_action_for_agent(
+            agent,
+            None,
+            TaskAction::Reorder {
+                id: filed_here,
+                to: 1,
+            },
+            on(&pty),
+        )
+        .unwrap();
+    assert_eq!(
+        back.tasks.iter().map(|t| t.id).collect::<Vec<_>>(),
+        [first, filed_here],
+        "an agent may set the order too"
+    );
+
+    d.close_pane(agent).unwrap();
 }
 
 #[tokio::test]

@@ -932,6 +932,121 @@ impl Store {
         Ok(())
     }
 
+    /// Moves a task, with every subtask under it, to `place`, and answers
+    /// with the feature it is now under.
+    ///
+    /// A task placed beside another takes that one's parent, so one move
+    /// both re-parents and orders. Moved to another feature it arrives at
+    /// the top level, since no task there is its parent yet. Both sibling
+    /// lists it touches are renumbered dense, as a reorder leaves them.
+    pub fn place_task(&self, project: &str, id: i64, place: &TaskPlace) -> Result<String> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let (feature, parent): (String, Option<i64>) = tx
+            .query_row(
+                "SELECT feature, parent FROM task WHERE project = ?1 AND id = ?2",
+                rusqlite::params![project, id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+            .ok_or_else(|| anyhow::anyhow!("there is no task {id} on this project"))?;
+        let subtree: Vec<i64> = tx
+            .prepare(
+                "WITH RECURSIVE descendants(id) AS (
+                     SELECT id FROM task WHERE project = ?1 AND id = ?2
+                     UNION
+                     SELECT child.id FROM task child
+                     JOIN descendants parent ON child.parent = parent.id
+                     WHERE child.project = ?1 AND child.feature = ?3
+                 )
+                 SELECT id FROM descendants",
+            )?
+            .query_map(rusqlite::params![project, id, feature], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        // The task a place is named against: under this feature, and not the
+        // moving task or one of its own subtasks, which would hang the
+        // subtree from itself.
+        let anchor = |other: i64| -> Result<Option<i64>> {
+            let found: Option<Option<i64>> = tx
+                .query_row(
+                    "SELECT parent FROM task WHERE project = ?1 AND feature = ?2 AND id = ?3",
+                    rusqlite::params![project, feature, other],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            let Some(anchor_parent) = found else {
+                anyhow::bail!("there is no task {other} under feature {feature}");
+            };
+            if subtree.contains(&other) {
+                anyhow::bail!("task {id} cannot go under or beside itself or its own subtasks");
+            }
+            Ok(anchor_parent)
+        };
+        let (to_feature, to_parent, beside) = match place {
+            TaskPlace::Under(other) => {
+                anchor(*other)?;
+                (feature.clone(), Some(*other), None)
+            }
+            TaskPlace::Top => (feature.clone(), None, None),
+            TaskPlace::Before(other) => (feature.clone(), anchor(*other)?, Some((*other, 0))),
+            TaskPlace::After(other) => (feature.clone(), anchor(*other)?, Some((*other, 1))),
+            TaskPlace::Feature(slug) => {
+                let exists: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
+                    rusqlite::params![project, slug],
+                    |r| r.get(0),
+                )?;
+                if !exists {
+                    anyhow::bail!("there is no feature {slug} on this project");
+                }
+                (slug.clone(), None, None)
+            }
+        };
+
+        let siblings = |feature: &str, parent: Option<i64>| -> Result<Vec<i64>> {
+            Ok(tx
+                .prepare(
+                    "SELECT id FROM task
+                     WHERE project = ?1 AND feature = ?2 AND parent IS ?3 AND id <> ?4
+                     ORDER BY position, id",
+                )?
+                .query_map(rusqlite::params![project, feature, parent, id], |r| {
+                    r.get::<_, i64>(0)
+                })?
+                .collect::<rusqlite::Result<_>>()?)
+        };
+        let left = siblings(&feature, parent)?;
+        let mut joined = siblings(&to_feature, to_parent)?;
+        let at = match beside {
+            Some((other, after)) => {
+                joined.iter().position(|sibling| *sibling == other).unwrap_or(joined.len()) + after
+            }
+            None => joined.len(),
+        };
+        joined.insert(at, id);
+
+        for task in &subtree {
+            tx.execute(
+                "UPDATE task SET feature = ?1 WHERE project = ?2 AND id = ?3",
+                rusqlite::params![to_feature, project, task],
+            )?;
+        }
+        tx.execute(
+            "UPDATE task SET parent = ?1 WHERE project = ?2 AND id = ?3",
+            rusqlite::params![to_parent, project, id],
+        )?;
+        for list in [left, joined] {
+            for (position, sibling) in list.into_iter().enumerate() {
+                tx.execute(
+                    "UPDATE task SET position = ?1 WHERE project = ?2 AND id = ?3",
+                    rusqlite::params![position as i64, project, sibling],
+                )?;
+            }
+        }
+        tx.commit()?;
+        Ok(to_feature)
+    }
+
     // ---- sequence diagrams -------------------------------------------
 
     pub fn add_sequence_diagram(

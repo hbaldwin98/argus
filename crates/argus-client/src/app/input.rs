@@ -683,6 +683,11 @@ impl App {
             KeyCode::Char('m') if self.panel == FeaturePanel::Features => {
                 self.open_feature_checkout_picker()
             }
+            KeyCode::Char('m') if self.panel == FeaturePanel::Tasks => {
+                self.open_task_feature_picker()
+            }
+            KeyCode::Char('>') => self.indent_selected_task(true),
+            KeyCode::Char('<') => self.indent_selected_task(false),
             KeyCode::Char('p') if self.panel == FeaturePanel::Features => {
                 self.toggle_selected_feature_hold()
             }

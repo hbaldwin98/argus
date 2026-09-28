@@ -95,6 +95,10 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                         "type to filter   ↑/↓ move   enter transfer   esc cancel",
                         "enter transfer  esc",
                     ],
+                    PickerKind::TaskFeature { .. } => &[
+                        "type to filter   ↑/↓ move   enter move the task there   esc cancel",
+                        "enter move  esc",
+                    ],
                     PickerKind::FeatureWait { .. } => &[
                         "type to filter   ↑/↓ move   enter waits on it, or no longer   esc cancel",
                         "enter toggle  esc",
@@ -185,11 +189,11 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             Mode::Stage(View::Feature) => match app.panel {
                 FeaturePanel::Features => &[
                     "h/l panels  j/k move  a new  e brief  R rename  m checkout  p hold  w after  v archive  x drop  . accept  r refresh  q workspace",
-                    "l tasks  j/k move  a new  e brief  m move  p hold  w after  v archive  x drop  . accept  q workspace",
+                    "l tasks  j/k move  a new  e brief  m move  v archive  x drop  . accept  q workspace",
                     "j/k  a new  m move  p hold  w after  v archive  . accept  q",
                 ][..],
                 FeaturePanel::Tasks => &[
-                    "h/l panels  j/k move  a root  s subtask  e title  enter brief  H/L todo→doing→done  J/K order  x drop  q workspace",
+                    "h/l panels  j/k move  a root  s subtask  e title  enter brief  H/L todo→doing→done  J/K order  >/< nest  m feature  x drop  q workspace",
                     "h/l panels  j/k move  a root  s subtask  e title  enter brief  H/L move  J/K order  x drop  q",
                     "j/k  a root  s subtask  e title  enter brief  H/L move  q",
                 ][..],

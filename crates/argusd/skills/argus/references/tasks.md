@@ -15,6 +15,8 @@ Tasks belong to the selected feature (see [features.md](features.md)).
 "$ARGUS_HOOK" task brief <id> "outcome, boundaries, and verification"
 "$ARGUS_HOOK" task retitle <id> "test reconnect after daemon restart"
 "$ARGUS_HOOK" task drop <id>
+"$ARGUS_HOOK" task move <id> --under <id>            # or --top, --before <id>, --after <id>
+"$ARGUS_HOOK" task move <id> --to <feature-slug>     # with its subtasks
 ```
 
 ## Shaping the board
@@ -47,5 +49,9 @@ rarely needed.
 
 Use `brief` when the title cannot carry context, boundaries, or verification;
 running it without text clears the brief. Retitle a task when its outcome was
-misdescribed, and drop it when the work is no longer wanted. Do not reshape tasks
-the requested work does not touch.
+misdescribed, and drop it when the work is no longer wanted. `move` puts a task
+filed in the wrong place where it belongs — under another task, beside one, or
+on another feature — and moves its subtasks with it; moving it back undoes it.
+A task moved to another feature arrives at the top level there. Do not reshape
+tasks the requested work does not touch, and leave the order of a list a human
+arranged unless they ask.

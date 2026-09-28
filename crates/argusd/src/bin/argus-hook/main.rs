@@ -79,9 +79,9 @@ use std::time::Duration;
 use argus_protocol::{
     is_slug, parse_pane_url, requested_scope, Decision, DecisionBoard, DecisionWrite, DiagramAction,
     DiagramList, DiagramWrite, Endpoint, FeatureAction, FeatureBoard, FeatureWrite, Report,
-    ReviewComment, TaskAction, TaskList, TaskState, TaskWrite, ARTIFACT_SCOPE_VAR, CONTEXT_COMMAND,
-    INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG, SESSION_HEADER,
-    SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
+    ReviewComment, TaskAction, TaskList, TaskPlace, TaskState, TaskWrite, ARTIFACT_SCOPE_VAR,
+    CONTEXT_COMMAND, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
+    SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(2);

@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 use argus_protocol::{
     checked_task_body, slugify, Decision, DecisionWrite, Feature, FeatureEvent, FeatureMove,
     FeatureState, FeatureWrite, PaneKind, PaneStatus, ReviewAnchor, ReviewComment, Task,
-    TaskCounts, TaskState, TaskWrite, MAX_REVIEW_COMMENTS,
+    TaskCounts, TaskPlace, TaskState, TaskWrite, MAX_REVIEW_COMMENTS,
 };
 use rusqlite::{Connection, OptionalExtension};
 

@@ -205,13 +205,34 @@ pub enum TaskAction {
     Remove {
         id: i64,
     },
-    /// Puts a task at a place in its sibling list. The order is a human's
-    /// statement of what to do first, so the daemon refuses it from an
-    /// agent.
+    /// Puts a task at a zero-based index in its sibling list.
     Reorder {
         id: i64,
         to: i64,
     },
+    /// Moves a task, and the subtasks under it, somewhere else in the tree
+    /// or to another feature on the same board.
+    Place {
+        id: i64,
+        place: TaskPlace,
+    },
+}
+
+/// Where [`TaskAction::Place`] puts a task. Named against another task
+/// rather than as an index, so an agent says what it means and the daemon,
+/// which holds the tree, works out the numbers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskPlace {
+    /// Last among this task's subtasks.
+    Under(i64),
+    /// Last among the feature's top-level tasks.
+    Top,
+    /// Just before this task, beside it under its parent.
+    Before(i64),
+    /// Just after this task, beside it under its parent.
+    After(i64),
+    /// Last among another feature's top-level tasks.
+    Feature(String),
 }
 
 /// A feature's tasks, which is how both sides read them.

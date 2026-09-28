@@ -28,8 +28,9 @@ pub trait FeaturePart: Sized {
     fn is_add(&self) -> bool;
     /// The existing row this touches, when it touches one.
     fn id(&self) -> Option<i64>;
-    /// Why no agent may make this change, when none may.
-    fn refused_to_agents(&self) -> Option<&'static str> {
+    /// Another feature on the board whose rows this changes too: where a
+    /// row it moves lands.
+    fn also_changes(&self) -> Option<&str> {
         None
     }
 
@@ -49,6 +50,7 @@ pub trait FeaturePart: Sized {
 }
 
 /// The one feature a part request lands in, however the caller named it.
+#[derive(Clone)]
 pub struct BoardTarget {
     pub project_name: String,
     pub key: String,
@@ -87,9 +89,6 @@ impl Daemon {
             }
             anyhow::bail!("this checkout is not on a feature yet");
         };
-        if let Some(reason) = action.refused_to_agents() {
-            anyhow::bail!("{reason}");
-        }
         let target = BoardTarget {
             project_name: scope.project_name,
             key,
@@ -132,8 +131,17 @@ impl Daemon {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or_default();
+            // A client watching the feature a row moved into is owed the
+            // push as much as one watching the feature it left.
+            let landed = action.also_changes().map(|feature| BoardTarget {
+                feature: feature.to_string(),
+                ..target.clone()
+            });
             action.apply(&self.store, &target.key, &target.feature, at, session)?;
             P::broadcast(self, target);
+            if let Some(landed) = landed.filter(|landed| landed.feature != target.feature) {
+                P::broadcast(self, &landed);
+            }
         }
         P::list(&self.store, target)
     }

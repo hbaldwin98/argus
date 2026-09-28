@@ -54,6 +54,9 @@ pub enum PickerKind {
         destinations: Vec<CheckoutId>,
         slug: String,
     },
+    /// Move the selected task, with its subtasks, to the chosen feature.
+    /// `features` is parallel to the rows.
+    TaskFeature { features: Vec<String> },
     /// Record, or take back, that a feature comes after the chosen one.
     /// `others` is parallel to the rows, and `waited` says which of them it
     /// already waits on, so confirming one of those takes the wait back.
@@ -79,6 +82,7 @@ impl PickerKind {
                 | PickerKind::Host { .. }
                 | PickerKind::FeatureCheckout { .. }
                 | PickerKind::FeatureWait { .. }
+                | PickerKind::TaskFeature { .. }
         )
     }
 

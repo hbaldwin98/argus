@@ -528,6 +528,35 @@ impl App {
         ));
     }
 
+    /// Offers the other open features on the board as somewhere to move
+    /// the selected task.
+    pub(super) fn open_task_feature_picker(&mut self) {
+        let (Some(_), Some(here), Some(board)) = (
+            self.selected_task(),
+            self.feature_slug(),
+            self.board.as_ref(),
+        ) else {
+            self.report("no task selected");
+            return;
+        };
+        let (features, items): (Vec<String>, Vec<String>) = board
+            .features
+            .iter()
+            .filter(|f| f.slug != here && f.state != argus_protocol::FeatureState::Done)
+            .map(|f| (f.slug.clone(), f.title.clone()))
+            .unzip();
+        if items.is_empty() {
+            self.report("no other open feature to move it to");
+            return;
+        }
+        self.picker = Some(Picker::new(
+            PickerKind::TaskFeature { features },
+            "move task to feature",
+            items,
+            0,
+        ));
+    }
+
     /// The changed files of the review that is already open — no round
     /// trip, since the diff is in hand.
     pub(super) fn open_change_picker(&mut self) {
@@ -640,6 +669,17 @@ impl App {
                     destination: *destination,
                     slug: slug.clone(),
                 });
+            }
+            PickerKind::TaskFeature { features } => {
+                let Some(feature) = picker
+                    .shown
+                    .get(picker.sel)
+                    .and_then(|index| features.get(*index))
+                else {
+                    return;
+                };
+                let place = argus_protocol::TaskPlace::Feature(feature.clone());
+                self.place_selected_task(place);
             }
             PickerKind::FeatureWait {
                 project,

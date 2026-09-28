@@ -214,12 +214,15 @@ pub(super) fn task(rest: &[&str]) {
 
 /// `task`, `task add`, `task add <title> --under <id>`, `task doing
 /// <id>`, `task done <id>`, `task todo <id>`, `task retitle <id> <text>`,
-/// `task brief <id> <text>`, `task drop <id>`.
+/// `task brief <id> <text>`, `task drop <id>`, and `task move <id>` with one
+/// of `--under <id>`, `--top`, `--before <id>`, `--after <id>` or `--to
+/// <feature>`.
 ///
-/// The columns are named as verbs rather than hidden behind a `move`, so
-/// what an agent types is what a reader of the transcript understands
-/// happened. `--under` records newly discovered work beneath the task that
-/// exposed it.
+/// The columns are named as verbs rather than hidden behind a state
+/// argument, so what an agent types is what a reader of the transcript
+/// understands happened; `move` is where a task sits, never its state.
+/// `--under` records newly discovered work beneath the task that exposed
+/// it.
 pub(super) fn task_message(rest: &[&str], base_url: &str, token: &str) -> String {
     let by_id =
         |verb: &str, state: TaskState| match rest.get(1).and_then(|id| id.parse::<i64>().ok()) {
@@ -264,10 +267,40 @@ pub(super) fn task_message(rest: &[&str], base_url: &str, token: &str) -> String
             Some(id) => write_task(TaskAction::Remove { id }, base_url, token),
             None => "could not change task: drop wants the number `task` prints".to_string(),
         },
+        Some("move") => match parse_task_move_args(&rest[1..]) {
+            Ok((id, place)) => write_task(TaskAction::Place { id, place }, base_url, token),
+            Err(message) => format!("could not change task: {message}"),
+        },
         Some(other) => format!(
-            "could not change task: `{other}` is not one of add, doing, done, todo, retitle, brief, drop"
+            "could not change task: `{other}` is not one of add, doing, done, todo, retitle, \
+             brief, drop, move"
         ),
     }
+}
+
+/// `<id>` and then exactly one place: `--under <id>`, `--top`, `--before
+/// <id>`, `--after <id>` or `--to <feature>`.
+fn parse_task_move_args(args: &[&str]) -> Result<(i64, TaskPlace), String> {
+    const USAGE: &str =
+        "move wants the task's number, then --under <id>, --top, --before <id>, --after <id> \
+         or --to <feature>";
+    let Some(id) = args.first().and_then(|id| id.parse::<i64>().ok()) else {
+        return Err(USAGE.to_string());
+    };
+    let task = |raw: Option<&&str>| {
+        raw.and_then(|raw| raw.parse::<i64>().ok())
+            .filter(|id| *id > 0)
+            .ok_or_else(|| USAGE.to_string())
+    };
+    let place = match args.get(1..).unwrap_or_default() {
+        ["--under", other] => TaskPlace::Under(task(Some(other))?),
+        ["--top"] => TaskPlace::Top,
+        ["--before", other] => TaskPlace::Before(task(Some(other))?),
+        ["--after", other] => TaskPlace::After(task(Some(other))?),
+        ["--to", feature] if is_slug(feature) => TaskPlace::Feature(feature.to_string()),
+        _ => return Err(USAGE.to_string()),
+    };
+    Ok((id, place))
 }
 
 fn parse_task_add_args(args: &[&str]) -> Result<TaskWrite, String> {
@@ -1056,6 +1089,30 @@ mod tests {
             ),
             "{text}"
         );
+    }
+
+    #[test]
+    fn a_task_moves_to_exactly_one_place() {
+        let parse = |args: &[&str]| parse_task_move_args(args);
+        assert_eq!(parse(&["4", "--under", "2"]), Ok((4, TaskPlace::Under(2))));
+        assert_eq!(parse(&["4", "--top"]), Ok((4, TaskPlace::Top)));
+        assert_eq!(parse(&["4", "--before", "7"]), Ok((4, TaskPlace::Before(7))));
+        assert_eq!(parse(&["4", "--after", "7"]), Ok((4, TaskPlace::After(7))));
+        assert_eq!(
+            parse(&["4", "--to", "lean-wire"]),
+            Ok((4, TaskPlace::Feature("lean-wire".into())))
+        );
+        for bad in [
+            &[][..],
+            &["four", "--top"],
+            &["4"],
+            &["4", "--under"],
+            &["4", "--under", "x"],
+            &["4", "--top", "--under", "2"],
+            &["4", "--to", "Not A Slug"],
+        ] {
+            assert!(parse(bad).is_err(), "{bad:?}");
+        }
     }
 
     #[test]

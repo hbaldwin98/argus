@@ -1,7 +1,7 @@
 //! Round trips through a store built in memory, so no test can reach
 //! the real `runtime.db`.
 
-use argus_protocol::{Actor, DiagramWrite, TaskState, TaskWrite};
+use argus_protocol::{Actor, DiagramWrite, TaskPlace, TaskState, TaskWrite};
 
 use super::*;
 
@@ -1308,6 +1308,123 @@ fn removing_a_parent_removes_its_subtree_and_compacts_siblings() {
     assert_eq!(remaining.len(), 1);
     assert_eq!(remaining[0].id, second.id);
     assert_eq!(remaining[0].position, 0);
+}
+
+/// A feature's tasks as (id, parent, position), in tree order.
+fn tree(s: &Store, feature: &str) -> Vec<(i64, Option<i64>, i64)> {
+    s.tasks("argus", feature)
+        .unwrap()
+        .iter()
+        .map(|task| (task.id, task.parent, task.position))
+        .collect()
+}
+
+fn add_under(s: &Store, feature: &str, title: &str, parent: Option<i64>) -> i64 {
+    s.add_task(
+        "argus",
+        feature,
+        &TaskWrite {
+            title: title.into(),
+            external: None,
+            parent,
+        },
+        1,
+        None,
+    )
+    .unwrap()
+    .id
+}
+
+#[test]
+fn a_placed_task_takes_its_subtasks_and_leaves_both_lists_dense() {
+    let s = store();
+    s.add_feature("argus", &feature("the pty"), None, None, 1, None)
+        .unwrap();
+    let a = add_under(&s, "the-pty", "a", None);
+    let b = add_under(&s, "the-pty", "b", None);
+    let c = add_under(&s, "the-pty", "c", None);
+    let b1 = add_under(&s, "the-pty", "b1", Some(b));
+
+    s.place_task("argus", b, &TaskPlace::Under(a)).unwrap();
+    assert_eq!(
+        tree(&s, "the-pty"),
+        [(a, None, 0), (b, Some(a), 0), (b1, Some(b), 0), (c, None, 1)],
+        "b goes under a with b1 still under it, and c closes the gap"
+    );
+
+    s.place_task("argus", c, &TaskPlace::Before(b)).unwrap();
+    assert_eq!(
+        tree(&s, "the-pty"),
+        [(a, None, 0), (c, Some(a), 0), (b, Some(a), 1), (b1, Some(b), 0)],
+        "beside a task is under its parent"
+    );
+
+    s.place_task("argus", c, &TaskPlace::After(a)).unwrap();
+    s.place_task("argus", b, &TaskPlace::Top).unwrap();
+    assert_eq!(
+        tree(&s, "the-pty"),
+        [(a, None, 0), (c, None, 1), (b, None, 2), (b1, Some(b), 0)]
+    );
+}
+
+#[test]
+fn a_task_never_hangs_from_itself_or_another_features_task() {
+    let s = store();
+    for title in ["the pty", "the wire"] {
+        s.add_feature("argus", &feature(title), None, None, 1, None)
+            .unwrap();
+    }
+    let a = add_under(&s, "the-pty", "a", None);
+    let a1 = add_under(&s, "the-pty", "a1", Some(a));
+    let elsewhere = add_under(&s, "the-wire", "elsewhere", None);
+    let before = tree(&s, "the-pty");
+
+    for place in [
+        TaskPlace::Under(a),
+        TaskPlace::Under(a1),
+        TaskPlace::After(a1),
+        TaskPlace::Under(elsewhere),
+        TaskPlace::Before(elsewhere),
+        TaskPlace::Feature("no-such-feature".into()),
+    ] {
+        assert!(s.place_task("argus", a, &place).is_err(), "{place:?}");
+    }
+    assert_eq!(tree(&s, "the-pty"), before, "a refused move changes nothing");
+}
+
+#[test]
+fn a_task_moved_to_another_feature_arrives_on_top_with_its_subtasks() {
+    let s = store();
+    for title in ["the pty", "the wire"] {
+        s.add_feature("argus", &feature(title), None, None, 1, None)
+            .unwrap();
+    }
+    let a = add_under(&s, "the-pty", "a", None);
+    let b = add_under(&s, "the-pty", "b", None);
+    let b1 = add_under(&s, "the-pty", "b1", Some(b));
+    let w = add_under(&s, "the-wire", "w", None);
+    let w1 = add_under(&s, "the-wire", "w1", Some(w));
+
+    let landed = s
+        .place_task("argus", b, &TaskPlace::Under(a))
+        .and_then(|_| s.place_task("argus", b, &TaskPlace::Feature("the-wire".into())))
+        .unwrap();
+    assert_eq!(landed, "the-wire");
+    assert_eq!(tree(&s, "the-pty"), [(a, None, 0)]);
+    assert_eq!(
+        tree(&s, "the-wire"),
+        [(w, None, 0), (w1, Some(w), 0), (b, None, 1), (b1, Some(b), 0)]
+    );
+
+    // And back again, which is how an agent undoes it.
+    s.place_task("argus", b, &TaskPlace::Feature("the-pty".into()))
+        .unwrap();
+    s.place_task("argus", b, &TaskPlace::Under(a)).unwrap();
+    assert_eq!(
+        tree(&s, "the-pty"),
+        [(a, None, 0), (b, Some(a), 0), (b1, Some(b), 0)]
+    );
+    assert_eq!(tree(&s, "the-wire"), [(w, None, 0), (w1, Some(w), 0)]);
 }
 
 #[test]

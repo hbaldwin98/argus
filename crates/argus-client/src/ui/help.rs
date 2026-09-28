@@ -190,6 +190,8 @@ const FEATURE: Group = Group {
         ("w", "choose a feature this one comes after, or take one back"),
         ("H / L", "move this task along todo, doing, done"),
         ("J / K", "earlier or later among sibling tasks"),
+        ("> / <", "under the task above it, or out beside its parent"),
+        ("m", "in tasks: move this task and its subtasks to another feature"),
         ("r", "re-ask the daemon for all of it"),
         (
             "wheel",

@@ -3,17 +3,16 @@
 //!
 //! Both sides write here, and for once they write the same things. A human
 //! populates a list by hand or asks an agent to read it out of whatever
-//! tracker the team uses; an agent takes a task up, finishes it, and adds
-//! what it found on the way, under the task that exposed it. There is no
-//! acceptance step and so no move
+//! tracker the team uses; an agent takes a task up, finishes it, adds what
+//! it found on the way under the task that exposed it, and moves a task it
+//! filed in the wrong place. There is no acceptance step and so no move
 //! either side is refused — that ceremony belongs to the feature the tasks
 //! are under, which is where a human accepts the work as a whole.
 //!
 //! So there is one way in, [`TaskAction`], routed like every other part of
-//! a feature (`board_parts`); this says only how a task is stored, and the
-//! one change an agent may not make.
+//! a feature (`board_parts`); this says only how a task is stored.
 
-use argus_protocol::{TaskAction, TaskList};
+use argus_protocol::{TaskAction, TaskList, TaskPlace};
 
 use super::board_parts::{BoardTarget, FeaturePart};
 use super::*;
@@ -38,13 +37,19 @@ impl FeaturePart for TaskAction {
             | TaskAction::Retitle { id, .. }
             | TaskAction::SetBody { id, .. }
             | TaskAction::Remove { id }
-            | TaskAction::Reorder { id, .. } => Some(*id),
+            | TaskAction::Reorder { id, .. }
+            | TaskAction::Place { id, .. } => Some(*id),
         }
     }
 
-    fn refused_to_agents(&self) -> Option<&'static str> {
-        matches!(self, TaskAction::Reorder { .. })
-            .then_some("the order of a feature's tasks is the human's to set")
+    fn also_changes(&self) -> Option<&str> {
+        match self {
+            TaskAction::Place {
+                place: TaskPlace::Feature(slug),
+                ..
+            } => Some(slug),
+            _ => None,
+        }
     }
 
     fn ids(store: &Store, key: &str, feature: &str) -> anyhow::Result<Vec<i64>> {
@@ -70,6 +75,9 @@ impl FeaturePart for TaskAction {
             TaskAction::SetBody { id, body } => store.set_task_body(key, id, body)?,
             TaskAction::Remove { id } => store.remove_task(key, id)?,
             TaskAction::Reorder { id, to } => store.reorder_task(key, id, to)?,
+            TaskAction::Place { id, place } => {
+                store.place_task(key, id, &place)?;
+            }
         }
         Ok(())
     }
