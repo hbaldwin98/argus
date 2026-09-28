@@ -134,6 +134,7 @@ result of a request; `ui` is a pure function of it.
 | module | answers |
 | --- | --- |
 | `main`, `redraw`, `terminal`, `wire`, `launch` | the event loop, the screen and socket it runs over, and the daemon lifecycle command |
+| `bridge` | this machine's daemon on stdin and stdout, for a client on another machine to reach over ssh |
 | `app` | the model: the tree, the selection, and which modal is up |
 | `app/rows`, `app/layout`, `app/modal` | naming a row independently of its index, where the last frame put things, and the layers that float over it |
 | `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |
