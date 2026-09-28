@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use argus_protocol::{read_known_msg, write_frame, ClientMsg, PaneId, ServerMsg};
+use argus_protocol::{read_known_msg, write_frame, ClientMsg, Hello, PaneId, ServerMsg};
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc, Semaphore};
 
@@ -321,6 +321,17 @@ fn handle_client_msg(
             let _ = out_tx.send(ServerMsg::Stopping);
             return Some(ShutdownReason::Stop);
         }
+        // Answered whenever it comes. A client that greets reads on until
+        // the answer, keeping the tree and the rest that went out first;
+        // one that never greets is never sent a message it cannot read.
+        ClientMsg::Hello(hello) => {
+            tracing::info!(
+                version = %hello.version,
+                protocol = hello.protocol,
+                "client greeted"
+            );
+            let _ = out_tx.send(ServerMsg::Hello(Hello::this_build()));
+        }
         msg => {
             let result = dispatch::dispatch(msg, daemon, out_tx, subs, review_task, viewer);
             if let Err(e) = result {
@@ -492,6 +503,67 @@ mod tests {
             ShutdownReason::Restart
         );
         handler.await.unwrap();
+    }
+
+    /// A connection to a fresh daemon, past its three opening messages.
+    async fn connected(dir: &std::path::Path) -> tokio::io::DuplexStream {
+        let daemon = Harness::new(dir).daemon;
+        let (mut client, server) = tokio::io::duplex(1024 * 1024);
+        let (shutdown, _) = broadcast::channel(1);
+        tokio::spawn(handle(server, daemon, shutdown.clone(), shutdown.subscribe()));
+        for _ in 0..3 {
+            let _: ServerMsg = read_msg(&mut client).await.unwrap();
+        }
+        client
+    }
+
+    #[tokio::test]
+    async fn a_greeting_is_answered_with_this_builds_own() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut client = connected(dir.path()).await;
+
+        argus_protocol::write_msg(&mut client, &ClientMsg::Hello(Hello::this_build()))
+            .await
+            .unwrap();
+
+        let answer: ServerMsg = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            read_msg(&mut client),
+        )
+        .await
+        .expect("the greeting should be answered")
+        .unwrap();
+        match answer {
+            ServerMsg::Hello(hello) => assert_eq!(hello, Hello::this_build()),
+            other => panic!("expected a greeting, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_client_that_never_greets_is_never_sent_one() {
+        // A client from before the handshake hangs up on a message it does
+        // not know, so the answer goes only to a client that asked.
+        let dir = tempfile::tempdir().unwrap();
+        let mut client = connected(dir.path()).await;
+
+        argus_protocol::write_msg(
+            &mut client,
+            &ClientMsg::Input {
+                pane: PaneId(9999),
+                bytes: b"x".to_vec(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let next: ServerMsg = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            read_msg(&mut client),
+        )
+        .await
+        .expect("the input should be answered")
+        .unwrap();
+        assert!(matches!(next, ServerMsg::Error { .. }), "{next:?}");
     }
 
     #[tokio::test]

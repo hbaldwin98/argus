@@ -33,7 +33,7 @@ mod wire;
 #[cfg(test)]
 mod fixtures;
 
-use argus_protocol::{ClientMsg, PaneId, ServerMsg};
+use argus_protocol::{ClientMsg, Hello, PaneId, ServerMsg};
 use crossterm::event::{Event, EventStream, KeyEventKind};
 use futures::StreamExt;
 use paste::{Flush, PasteBurst, Step};
@@ -51,9 +51,9 @@ const RECONNECT_ROUND_GAP: std::time::Duration = std::time::Duration::from_secs(
 type Connection = (mpsc::UnboundedSender<ClientMsg>, mpsc::Receiver<ServerMsg>);
 
 use app::App;
+use launch::Connected;
 use redraw::RedrawScheduler;
 use terminal::{draw_frame, enter_terminal, leave_terminal, ring_bell, Term};
-use wire::connection_channels;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -63,8 +63,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Init(dir) => return launch::init(dir).await,
         Command::Tui => {}
     }
-    let stream = launch::ensure_daemon_and_connect().await?;
-    let connection = connection_channels(stream);
+    let connection = launch::connect().await?;
     let mut terminal = enter_terminal()?;
     let result = run(&mut terminal, connection).await;
     leave_terminal(&mut terminal)?;
@@ -104,12 +103,12 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
 /// quittable the whole time. It never gives up on its own — the person
 /// watching an agent run has no better option than waiting, and quitting is
 /// always still theirs.
-fn start_reconnecting() -> mpsc::Receiver<Connection> {
+fn start_reconnecting() -> mpsc::Receiver<Connected> {
     let (tx, rx) = mpsc::channel(1);
     tokio::spawn(async move {
         loop {
-            if let Ok(stream) = launch::ensure_daemon_and_connect().await {
-                let _ = tx.send(connection_channels(stream)).await;
+            if let Ok(connected) = launch::connect().await {
+                let _ = tx.send(connected).await;
                 return;
             }
             tokio::time::sleep(RECONNECT_ROUND_GAP).await;
@@ -121,21 +120,25 @@ fn start_reconnecting() -> mpsc::Receiver<Connection> {
 /// The next connection a reconnect task produces, or never when none is
 /// running. Guarded at the call site, but the future still needs a type
 /// either way.
-async fn next_connection(pending: &mut Option<mpsc::Receiver<Connection>>) -> Option<Connection> {
+async fn next_connection(pending: &mut Option<mpsc::Receiver<Connected>>) -> Option<Connected> {
     match pending {
         Some(rx) => rx.recv().await,
         None => std::future::pending().await,
     }
 }
 
-async fn run(terminal: &mut Term, connection: Connection) -> anyhow::Result<()> {
-    let (in_tx, mut out_rx) = connection;
+async fn run(terminal: &mut Term, connection: Connected) -> anyhow::Result<()> {
+    let Connected {
+        channels: (in_tx, mut out_rx),
+        daemon,
+        opening,
+    } = connection;
     let mut app = App::with_settings(in_tx, settings::load());
     // False from the moment the daemon's messages stop, which is what
     // disables that arm of the select: a closed receiver is ready
     // immediately and forever, and polling it would spin the loop.
     let mut connected = true;
-    let mut pending_reconnect: Option<mpsc::Receiver<Connection>> = None;
+    let mut pending_reconnect: Option<mpsc::Receiver<Connected>> = None;
     let mut events = EventStream::new();
     let mut herdr = herdr::HerdrReporter::from_env();
     let mut frames = tokio::time::interval(FRAME_INTERVAL);
@@ -149,6 +152,7 @@ async fn run(terminal: &mut Term, connection: Connection) -> anyhow::Result<()> 
     let mut last_sizes: std::collections::HashMap<PaneId, (u16, u16)> =
         std::collections::HashMap::new();
 
+    take_opening(&mut app, terminal, &mut profile, daemon, opening)?;
     draw_frame(terminal, &mut app)?;
 
     loop {
@@ -175,7 +179,7 @@ async fn run(terminal: &mut Term, connection: Connection) -> anyhow::Result<()> 
             }
             conn = next_connection(&mut pending_reconnect), if pending_reconnect.is_some() => {
                 pending_reconnect = None;
-                if let Some((in_tx, rx)) = conn {
+                if let Some(Connected { channels: (in_tx, rx), daemon, opening }) = conn {
                     out_rx = rx;
                     connected = true;
                     app.reconnect(in_tx);
@@ -184,6 +188,7 @@ async fn run(terminal: &mut Term, connection: Connection) -> anyhow::Result<()> 
                     // makes the next frame claim them again.
                     last_sizes.clear();
                     app.report("reconnected to argusd");
+                    take_opening(&mut app, terminal, &mut profile, daemon, opening)?;
                     redraw.changed();
                     redraw.due();
                 }
@@ -273,6 +278,23 @@ const MAX_DRAINED_MESSAGES: usize = 512;
 /// keystroke — damage from the pane being typed into, which somebody is
 /// waiting on. Everything else the daemon sends is background and can wait
 /// for the tick.
+/// Hands the app what the daemon sent ahead of answering the greeting, and
+/// then the answer itself.
+fn take_opening(
+    app: &mut App,
+    terminal: &mut Term,
+    profile: &mut Option<Profile>,
+    daemon: Option<Hello>,
+    opening: Vec<ServerMsg>,
+) -> anyhow::Result<()> {
+    let now = std::time::Instant::now();
+    for msg in opening {
+        take_server_msg(app, terminal, profile, msg, now)?;
+    }
+    app.greeted(daemon.as_ref());
+    Ok(())
+}
+
 fn take_server_msg(
     app: &mut App,
     terminal: &mut Term,

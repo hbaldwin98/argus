@@ -182,3 +182,61 @@ fn q_detaches_from_the_nav_columns() {
     h.key(KeyCode::Char('q'));
     assert!(h.app.should_quit);
 }
+
+#[test]
+fn a_daemon_from_this_build_goes_unremarked() {
+    let mut h = Harness::new();
+    h.app.greeted(Some(&argus_protocol::Hello::this_build()));
+    assert!(h.app.status.is_empty(), "{}", h.app.status);
+}
+
+#[test]
+fn a_daemon_from_another_build_is_named_with_the_fix() {
+    // After an upgrade the daemon keeps running from the old install, and
+    // nothing else says the client is talking to it.
+    let mut h = Harness::new();
+    let older = argus_protocol::Hello {
+        version: "0.1.0".into(),
+        ..argus_protocol::Hello::this_build()
+    };
+    h.app.greeted(Some(&older));
+    assert!(h.app.status.contains("0.1.0"), "{}", h.app.status);
+    assert!(
+        h.app.status.contains(env!("CARGO_PKG_VERSION")),
+        "{}",
+        h.app.status
+    );
+    assert!(h.app.status.contains("argus server restart"), "{}", h.app.status);
+    assert!(!h.app.status_alert, "a newer build still talks to it");
+}
+
+#[test]
+fn a_daemon_from_before_the_handshake_is_named_with_the_fix() {
+    let mut h = Harness::new();
+    h.app.greeted(None);
+    assert!(h.app.status.contains("predates"), "{}", h.app.status);
+    assert!(h.app.status.contains("argus server restart"), "{}", h.app.status);
+}
+
+#[test]
+fn a_daemon_on_another_protocol_is_an_alarm() {
+    let mut h = Harness::new();
+    let other = argus_protocol::Hello {
+        protocol: argus_protocol::PROTOCOL + 1,
+        version: "9.0.0".into(),
+        capabilities: Vec::new(),
+    };
+    h.app.greeted(Some(&other));
+    assert!(h.app.status_alert, "{}", h.app.status);
+    assert!(h.app.status.contains("9.0.0"), "{}", h.app.status);
+}
+
+#[test]
+fn a_greeting_answered_late_still_reports_the_daemons_build() {
+    let mut h = Harness::new();
+    h.app.on_server_msg(ServerMsg::Hello(argus_protocol::Hello {
+        version: "0.1.0".into(),
+        ..argus_protocol::Hello::this_build()
+    }));
+    assert!(h.app.status.contains("0.1.0"), "{}", h.app.status);
+}

@@ -6,6 +6,7 @@
 //! before anyone can observe the new tree.
 
 use super::*;
+use argus_protocol::Hello;
 
 impl App {
     /// Subscribes to everything currently on screen and drops the rest.
@@ -49,8 +50,33 @@ impl App {
         self.sync_subscription();
     }
 
+    /// Says so when the daemon this client reached is not from its own
+    /// build. `None` is a daemon that gave no greeting: one from before the
+    /// handshake. The fix is the same either way, since `server restart`
+    /// starts the daemon installed beside this client.
+    pub fn greeted(&mut self, daemon: Option<&Hello>) {
+        let ours = Hello::this_build();
+        let Some(daemon) = daemon else {
+            self.report("argusd predates this client; `argus server restart` to update it");
+            return;
+        };
+        if daemon.protocol != ours.protocol {
+            self.alert(format!(
+                "argusd {} cannot fully talk to this client {}; `argus server restart` to match",
+                daemon.version, ours.version
+            ));
+        } else if daemon.version != ours.version {
+            self.report(format!(
+                "argusd is {}, this client {}; `argus server restart` to match",
+                daemon.version, ours.version
+            ));
+        }
+    }
+
     pub fn on_server_msg(&mut self, msg: ServerMsg) {
         match msg {
+            // A greeting answered after the client stopped waiting for it.
+            ServerMsg::Hello(hello) => self.greeted(Some(&hello)),
             ServerMsg::Tree(tree) => self.receive_tree(tree),
             ServerMsg::Templates(names) => {
                 self.templates = names;

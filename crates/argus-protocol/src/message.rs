@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::decisions::DecisionBoard;
 use crate::features::{FeatureState, FeatureWrite};
+use crate::hello::Hello;
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
 use crate::diagrams::{DiagramAction, DiagramList};
@@ -342,10 +343,20 @@ pub enum ClientMsg {
     Restart,
     /// Ask the daemon to stop cleanly without starting a replacement.
     Stop,
+    /// This client's greeting: the first message it sends, and the only one
+    /// it sends before knowing the daemon can take more than the floor. A
+    /// daemon from before the handshake hangs up on it, which is how the
+    /// client finds out. See `hello`.
+    Hello(Hello),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ServerMsg {
+    /// The daemon's answer to a client's greeting, sent before anything
+    /// else — or, when the greeting arrived after the daemon stopped
+    /// waiting for one, as soon as it does. Never sent to a client that did
+    /// not greet, which could not read it.
+    Hello(Hello),
     /// Full project/checkout/pane tree, sent on connect and after any change.
     Tree(Vec<ProjectInfo>),
     /// Names of the configured agent templates, sent once on connect.

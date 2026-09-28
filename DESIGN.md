@@ -38,13 +38,28 @@ sets the level, `info` by default. Failing to open the log is never a reason not
 The daemon listens on a Unix socket or Windows named pipe. Messages are named MessagePack
 records framed by a four-byte big-endian length. Frames larger than 64 MiB are rejected.
 Several clients may connect at once and each connection may subscribe to several pane screens.
-There is no protocol negotiation or transport authentication.
+There is no transport authentication.
 
 A message a side cannot decode — one a newer peer added — is skipped, and the connection carries
 on. The whole frame is read before it is decoded, so the stream is still aligned; only a frame over
 the size cap, which is never read, or an I/O error ends a connection. Every reader goes through
 `read_known_msg`. Peers from before this skip unknown messages by hanging up, so nothing new may be
 sent to one.
+
+What is new is negotiated by a greeting, shaped around never sending an older peer a message it
+cannot read. The client's first message is `Hello`: a protocol number, its version, and the optional
+messages and encodings it can take, by name. The daemon sends its opening messages — tree,
+templates, workspaces — as it always has, and answers a `Hello` with its own whenever one arrives;
+it never sends one unasked, so a client that does not greet is never sent it. The client reads on
+until the answer, keeping what came first for the app. A daemon from before the greeting hangs up on
+it right after its opening messages, and the client connects again without greeting. One that takes
+the greeting and says nothing for three seconds is kept, with nothing optional assumed. Either side
+uses an optional message or encoding only when the other listed it, and the protocol number is
+raised only for a change nothing can be negotiated across.
+
+A client told of a daemon from another build says so on the status bar, with both versions and
+`argus server restart`, which starts the daemon installed beside the client. A daemon on another
+protocol number is an alarm rather than a note.
 
 A request that makes something — a shell, an agent, an editor, a worktree, a project, a
 repository — may name itself with a `request_id`, and the daemon answers that client alone with
@@ -69,6 +84,7 @@ live in this crate and a contract written twice drifts in silence.
 | module | answers |
 | --- | --- |
 | `message` | what a client asks for, and what the daemon sends back |
+| `hello` | what each side of a connection can take, said before anything else |
 | `tree` | what a client renders, which pane state outranks which, and what a row standing for several shows |
 | `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses |
 | `cell`, `framing`, `transport` | a screen cell, a frame, and the endpoint they travel over |
