@@ -569,6 +569,7 @@ impl App {
             KeyCode::Char('i') => self.new_repository_prompt(),
             KeyCode::Char('D') => self.remove_prompt(),
             KeyCode::Char('w') => self.open_workspace_picker(),
+            KeyCode::Char('W') => self.open_host_picker(),
             KeyCode::Char('o') => self.open_project_picker(),
             KeyCode::Char('t') => self.open_theme_picker(),
             KeyCode::Char('S') => self.open_settings(),

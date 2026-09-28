@@ -69,6 +69,11 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                         "type to filter   ↑/↓ move   enter open   esc cancel",
                         "enter open  esc",
                     ],
+                    PickerKind::Host { .. } => &[
+                        "type to filter or name a host to connect to   ↑/↓ move   enter open   esc cancel",
+                        "type to filter   ↑/↓ move   enter open   esc cancel",
+                        "enter open  esc",
+                    ],
                     PickerKind::Theme => &["j/k move   enter apply   esc cancel", "enter apply  esc"],
                     PickerKind::Project => &["j/k move   enter open   esc cancel", "enter open  esc"],
                     PickerKind::Branch { .. } => &[
@@ -226,7 +231,7 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             // hold every key at once, and most of them only apply somewhere.
             Mode::Stage(View::Workspace) | Mode::Rail => match app.focus {
                 Focus::Projects => &[
-                    "j/k  l open  n add  D rm  o switch  w wksp",
+                    "j/k  l open  n add  D rm  o switch  w wksp  W host",
                     "l open  n add  o switch",
                     "l open  n add",
                 ][..],

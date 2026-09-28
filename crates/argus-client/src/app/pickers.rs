@@ -337,6 +337,51 @@ impl App {
         ));
     }
 
+    /// `W` switches host: which machine's daemon the whole screen shows, a
+    /// level above workspaces. This machine first, then the hosts attached,
+    /// then the ones remembered and the ones the ssh config names. Typing a
+    /// name that is not listed connects to it.
+    pub(super) fn open_host_picker(&mut self) {
+        let mut hosts: Vec<Option<String>> = vec![None];
+        let known = self
+            .attached_hosts
+            .iter()
+            .flatten()
+            .cloned()
+            .chain(crate::settings::load().hosts)
+            .chain(crate::ssh_hosts::hosts());
+        for name in known {
+            if !hosts.iter().flatten().any(|listed| *listed == name) {
+                hosts.push(Some(name));
+            }
+        }
+
+        let names: Vec<String> = hosts
+            .iter()
+            .map(|host| host.clone().unwrap_or_else(|| "this machine".to_string()))
+            .collect();
+        let items = hosts
+            .iter()
+            .zip(&names)
+            .map(|(host, name)| {
+                if *host == self.host {
+                    format!("{name}  · here")
+                } else if self.attached_hosts.contains(host) {
+                    format!("{name}  · connected")
+                } else {
+                    name.clone()
+                }
+            })
+            .collect();
+        let sel = hosts.iter().position(|host| *host == self.host).unwrap_or(0);
+        self.picker = Some(Picker::new(
+            PickerKind::Host { hosts, names },
+            "open host",
+            items,
+            sel,
+        ));
+    }
+
     /// `o` switches the project the command-center rail shows. The rail
     /// holds one project at a time, so this is how the others are reached.
     pub(crate) fn open_project_picker(&mut self) {
@@ -464,6 +509,9 @@ impl App {
                         branch: name,
                     });
                 }
+                PickerKind::Host { .. } => {
+                    self.host_request = Some(HostRequest::Connect(name));
+                }
                 PickerKind::Workspace { .. } => {
                     let _ = self.out.send(ClientMsg::CreateWorkspace { name });
                     // The daemon opens what it creates, and it arrives
@@ -572,6 +620,20 @@ impl App {
                     });
                     self.report("creating worktree…");
                 }
+            }
+            PickerKind::Host { hosts, .. } => {
+                let Some(host) = picker.shown.get(picker.sel).and_then(|i| hosts.get(*i)) else {
+                    return;
+                };
+                if *host == self.host {
+                    return;
+                }
+                self.host_request = match host {
+                    Some(name) if !self.attached_hosts.contains(host) => {
+                        Some(HostRequest::Connect(name.clone()))
+                    }
+                    _ => Some(HostRequest::Show(host.clone())),
+                };
             }
             PickerKind::Workspace { ids, .. } => {
                 let Some(id) = picker.shown.get(picker.sel).and_then(|i| ids.get(*i)) else {

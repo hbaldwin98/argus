@@ -95,6 +95,7 @@ const VIEW: Group = Group {
         ("4", "checkouts — branches and worktrees"),
         ("t", "theme"),
         ("w", "workspace"),
+        ("W", "host — this machine or one over ssh"),
         ("S", "settings"),
     ],
 };

@@ -4,7 +4,7 @@
 //! client draws and behaves, so it is a file of its own and is never
 //! rewritten by the daemon.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -115,6 +115,10 @@ pub struct Settings {
     /// Audible attention signal. Off by default: attaching another client
     /// must not make an existing session unexpectedly noisy.
     pub notifications: NotificationMode,
+    /// Machines this client has reached over ssh, offered by the host
+    /// picker beside the ones the user's ssh config names. Written only by
+    /// [`remember_host`]; see [`save`].
+    pub hosts: Vec<String>,
 }
 
 impl Default for Settings {
@@ -125,6 +129,7 @@ impl Default for Settings {
             theme: crate::theme::THEMES[0].to_string(),
             review_split: false,
             notifications: NotificationMode::Off,
+            hosts: Vec::new(),
         }
     }
 }
@@ -137,28 +142,61 @@ pub fn path() -> PathBuf {
 /// stopping the client — a corrupt preference file should cost you your
 /// preferences, not your session.
 pub fn load() -> Settings {
-    let Ok(raw) = std::fs::read_to_string(path()) else {
-        return Settings::default();
-    };
-    match toml::from_str(&raw) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!("ignoring {}: {e}", path().display());
-            Settings::default()
-        }
-    }
+    load_from(&path())
 }
 
 /// Best-effort: failing to remember a preference is not worth failing the
 /// change the user just made.
 pub fn save(settings: &Settings) {
-    let p = path();
+    save_to(&path(), settings);
+}
+
+/// Adds `host` to the hosts the picker offers, if it is not there yet.
+pub fn remember_host(host: &str) {
+    remember_host_in(&path(), host);
+}
+
+fn load_from(p: &Path) -> Settings {
+    let Ok(raw) = std::fs::read_to_string(p) else {
+        return Settings::default();
+    };
+    match toml::from_str(&raw) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("ignoring {}: {e}", p.display());
+            Settings::default()
+        }
+    }
+}
+
+fn save_to(p: &Path, settings: &Settings) {
+    // Each host's app holds a copy of the settings loaded when it started,
+    // and a copy's hosts are only as fresh as that. The file's own list is
+    // kept, so a theme changed on one host cannot forget a host another
+    // one remembered.
+    let settings = Settings {
+        hosts: load_from(p).hosts,
+        ..settings.clone()
+    };
+    write(p, &settings);
+}
+
+fn remember_host_in(p: &Path, host: &str) {
+    let mut settings = load_from(p);
+    if settings.hosts.iter().any(|known| known == host) {
+        return;
+    }
+    settings.hosts.push(host.to_string());
+    write(p, &settings);
+}
+
+fn write(p: &Path, settings: &Settings) {
     if let Some(parent) = p.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
     match toml::to_string_pretty(settings) {
         Ok(text) => {
-            if let Err(e) = std::fs::write(&p, text) {
+            if let Err(e) = std::fs::write(p, text) {
                 tracing::warn!("could not save settings to {}: {e}", p.display());
             }
         }
@@ -224,9 +262,48 @@ mod tests {
             theme: "latte".to_string(),
             review_split: true,
             notifications: NotificationMode::Bell,
+            hosts: vec!["devbox".to_string()],
         };
         let back: Settings = toml::from_str(&toml::to_string_pretty(&s).unwrap()).unwrap();
         assert_eq!(back, s);
+    }
+
+    /// A settings file of its own, so a test never reads or writes the
+    /// user's.
+    fn scratch_file(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("argus-settings-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir.join("client.toml")
+    }
+
+    #[test]
+    fn a_remembered_host_is_offered_once() {
+        let file = scratch_file("remember");
+        remember_host_in(&file, "devbox");
+        remember_host_in(&file, "devbox");
+        remember_host_in(&file, "buildbox");
+        assert_eq!(load_from(&file).hosts, ["devbox", "buildbox"]);
+        let _ = std::fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn saving_another_preference_keeps_the_hosts_on_disk() {
+        // Each host's app has its own copy of the settings; one saving a
+        // theme must not forget a host another remembered since.
+        let file = scratch_file("keep");
+        let copy = load_from(&file);
+        remember_host_in(&file, "devbox");
+        save_to(
+            &file,
+            &Settings {
+                theme: "latte".to_string(),
+                ..copy
+            },
+        );
+        let saved = load_from(&file);
+        assert_eq!(saved.theme, "latte");
+        assert_eq!(saved.hosts, ["devbox"]);
+        let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
 
     #[test]

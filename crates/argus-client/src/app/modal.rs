@@ -20,6 +20,13 @@ pub enum PickerKind {
         ids: Vec<WorkspaceId>,
         names: Vec<String>,
     },
+    /// Put the chosen host on screen, connecting to it first when it is
+    /// not attached. `hosts` is parallel to the rows, `None` being this
+    /// machine; `names` is what is typed against, the rows carrying marks.
+    Host {
+        hosts: Vec<Option<String>>,
+        names: Vec<String>,
+    },
     /// Switch the rail to the chosen project in the open workspace.
     Project,
     /// Switch the color theme.
@@ -59,6 +66,7 @@ impl PickerKind {
                 | PickerKind::File { .. }
                 | PickerKind::Change
                 | PickerKind::Workspace { .. }
+                | PickerKind::Host { .. }
                 | PickerKind::FeatureCheckout { .. }
         )
     }
@@ -138,7 +146,9 @@ impl Picker {
         // names — otherwise typing a digit would "find" a workspace by how
         // many panes it happens to be running.
         self.shown = match &self.kind {
-            PickerKind::Workspace { names, .. } => matcher.filter(&self.query, names),
+            PickerKind::Workspace { names, .. } | PickerKind::Host { names, .. } => {
+                matcher.filter(&self.query, names)
+            }
             _ => matcher.filter(&self.query, &self.items),
         };
 
@@ -149,7 +159,7 @@ impl Picker {
                 let q = self.query.trim();
                 (!q.is_empty() && !self.items.iter().any(|b| b == q)).then(|| q.to_string())
             }
-            PickerKind::Workspace { names, .. } => {
+            PickerKind::Workspace { names, .. } | PickerKind::Host { names, .. } => {
                 let q = self.query.trim();
                 (!q.is_empty() && !names.iter().any(|n| n == q)).then(|| q.to_string())
             }

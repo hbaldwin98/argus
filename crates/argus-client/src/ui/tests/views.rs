@@ -1641,3 +1641,28 @@ fn moving_to_another_checkout_asks_for_that_checkouts_features() {
     });
     assert!(asked, "the feature list follows the selected checkout");
 }
+
+#[test]
+fn a_remote_host_is_named_in_the_product_mark_and_the_tabs_still_click() {
+    // Every tab under the mark is that host's, so the mark is what says
+    // whose agents these are. It is wider for it, and clicks must still
+    // land on the tab drawn where they land.
+    let mut app = app_with_tree();
+    app.host = Some("devbox".into());
+    let buf = draw_at(&mut app, 100, 30);
+    assert!(
+        row_of(&buf, "ARGUS · devbox").is_some(),
+        "{}",
+        lines(&buf).join("\n")
+    );
+
+    let views = app.layout.views;
+    let strip = views.outer;
+    let x = (0..strip.width)
+        .find(|x| crate::ui::tab_at(views, strip.x + x, strip.y) == Some(View::Feature))
+        .expect("the feature tab is on screen");
+    let under: String = (x..x + 12)
+        .filter_map(|dx| buf.cell((strip.x + dx, strip.y)).map(|c| c.symbol().to_string()))
+        .collect();
+    assert!(under.contains("FEATURE"), "the click lands on {under:?}");
+}

@@ -84,9 +84,29 @@ fn brand_cells(views: Panel) -> u16 {
     }
 }
 
+/// How long a host name may run in the product mark before it is cut.
+const HOST_IN_BRAND: usize = 24;
+
+/// The product mark, naming the host on screen when it is not this machine:
+/// every tab below it is that host's, so it is the one thing that says whose
+/// agents these are.
+fn brand_text(host: Option<&str>) -> String {
+    match host {
+        None => BRAND.to_string(),
+        Some(host) => {
+            let mut name: String = host.chars().take(HOST_IN_BRAND).collect();
+            if host.chars().count() > HOST_IN_BRAND {
+                name.pop();
+                name.push('…');
+            }
+            format!(" ■  ARGUS · {name}  ")
+        }
+    }
+}
+
 pub(super) fn render_view_tabs(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
-    let brand_width = BRAND.chars().count() as u16;
-    let brand = format!("{BRAND:<width$}", width = brand_width as usize);
+    let brand = brand_text(app.host.as_deref());
+    let brand_width = brand.chars().count() as u16;
     let mut labels = vec![Span::styled(
         brand.clone(),
         Style::default().fg(th.accent).add_modifier(Modifier::BOLD),

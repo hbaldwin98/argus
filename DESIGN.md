@@ -76,6 +76,18 @@ workspaces and one is on screen at a time. The host on screen is drawn and takes
 keep their connections. A host that loses its daemon reconnects the way it first connected, and a
 remote daemon from another build is named along with the host to update.
 
+`W` opens the host picker, a level above the workspace picker. It lists this machine first, then
+the hosts attached, then those this client has reached before — remembered in `client.toml` — and
+the plain `Host` names in `~/.ssh/config` and the files it `Include`s; patterns name no host anyone
+could pick and are left out. The host on screen and the attached ones are marked. Choosing an
+attached host puts it on screen; choosing any other, or typing a name nobody listed, connects to it
+in the background, puts it on screen once connected, and remembers it, while ssh's failure lands on
+the status bar. The product mark names the host on screen when it is not this machine. A host off
+screen holds no pane subscriptions — nothing draws its grids, and a remote one would stream them
+for nobody — and takes them back, sizes and all, when it returns. `client.toml`'s list of hosts is
+written only when a host is remembered: each host's app holds a copy of the settings, and saving a
+theme from one keeps the list on disk rather than its own.
+
 A request that makes something — a shell, an agent, an editor, a worktree, a project, a
 repository — may name itself with a `request_id`, and the daemon answers that client alone with
 `Created`: the id of what it made, or nothing when it refused (the reason still arrives as an
@@ -152,6 +164,7 @@ result of a request; `ui` is a pure function of it.
 | `bridge` | this machine's daemon on stdin and stdout, for a client on another machine to reach over ssh |
 | `hosts` | the daemons this client is attached to, each with an app of its own, and which one is on screen |
 | `remote` | reaching a daemon on another machine through ssh and its bridge, and saying why when ssh cannot |
+| `ssh_hosts` | the hosts the user's ssh config names, for the host picker |
 | `app` | the model: the tree, the selection, and which modal is up |
 | `app/rows`, `app/layout`, `app/modal` | naming a row independently of its index, where the last frame put things, and the layers that float over it |
 | `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |

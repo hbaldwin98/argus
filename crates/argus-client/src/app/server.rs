@@ -11,10 +11,14 @@ use argus_protocol::Hello;
 impl App {
     /// Subscribes to everything currently on screen and drops the rest.
     pub(super) fn sync_subscription(&mut self) {
-        let want: Vec<PaneId> = [self.column_pane(), self.overlay_pane()]
-            .into_iter()
-            .flatten()
-            .collect();
+        let want: Vec<PaneId> = if self.on_screen {
+            [self.column_pane(), self.overlay_pane()]
+                .into_iter()
+                .flatten()
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         let stale: Vec<PaneId> = self
             .grids
@@ -34,6 +38,13 @@ impl App {
                 let _ = self.out.send(ClientMsg::Subscribe { pane: id });
             }
         }
+    }
+
+    /// Puts this app's host on screen or takes it off. Off screen it lets
+    /// go of every pane; back on, it asks again for the ones it shows.
+    pub fn set_on_screen(&mut self, on_screen: bool) {
+        self.on_screen = on_screen;
+        self.sync_subscription();
     }
 
     /// Points the app at a new connection after the old one died.

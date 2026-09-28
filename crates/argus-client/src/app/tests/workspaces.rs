@@ -215,3 +215,81 @@ fn the_agent_picker_still_spawns_after_the_picker_grew_a_second_use() {
     h.key(KeyCode::Enter);
     assert!(matches!(h.sent()[0], ClientMsg::SpawnAgent { .. }));
 }
+
+// --- hosts --------------------------------------------------------------
+
+fn host_rows(h: &Harness) -> Vec<String> {
+    h.app.picker.as_ref().expect("the host picker is open").items.clone()
+}
+
+#[test]
+fn the_host_picker_lists_this_machine_first_and_marks_the_attached() {
+    let mut h = Harness::new();
+    h.app.attached_hosts = vec![None, Some("devbox".into())];
+    h.key(KeyCode::Char('W'));
+
+    let rows = host_rows(&h);
+    assert_eq!(rows[0], "this machine  · here");
+    assert!(rows.contains(&"devbox  · connected".to_string()), "{rows:?}");
+}
+
+#[test]
+fn choosing_an_attached_host_asks_to_show_it() {
+    let mut h = Harness::new();
+    h.app.attached_hosts = vec![None, Some("devbox".into())];
+    h.key(KeyCode::Char('W'));
+    h.key(KeyCode::Down);
+    h.key(KeyCode::Enter);
+    assert_eq!(
+        h.app.host_request,
+        Some(crate::app::HostRequest::Show(Some("devbox".into())))
+    );
+}
+
+#[test]
+fn typing_a_host_nobody_listed_asks_to_connect_to_it() {
+    let mut h = Harness::new();
+    h.key(KeyCode::Char('W'));
+    for c in "gpu-box-that-no-config-names".chars() {
+        h.key(KeyCode::Char(c));
+    }
+    h.key(KeyCode::Enter);
+    assert_eq!(
+        h.app.host_request,
+        Some(crate::app::HostRequest::Connect(
+            "gpu-box-that-no-config-names".into()
+        ))
+    );
+}
+
+#[test]
+fn choosing_the_host_already_on_screen_asks_nothing() {
+    let mut h = Harness::new();
+    h.key(KeyCode::Char('W'));
+    h.key(KeyCode::Enter);
+    assert_eq!(h.app.host_request, None);
+}
+
+#[test]
+fn a_host_off_screen_lets_go_of_its_panes_and_takes_them_back() {
+    // Nothing draws an app off screen, and a remote one would be
+    // streaming its grids over ssh for nobody.
+    let mut h = Harness::new();
+    h.keys("llll");
+    let pane = h.app.column_pane().unwrap();
+    assert!(h.app.grids.contains_key(&pane));
+    h.sent();
+
+    h.app.set_on_screen(false);
+    assert!(h.app.grids.is_empty());
+    assert!(h
+        .sent()
+        .iter()
+        .any(|m| matches!(m, ClientMsg::Unsubscribe { pane: p } if *p == pane)));
+
+    h.app.set_on_screen(true);
+    assert!(h
+        .sent()
+        .iter()
+        .any(|m| matches!(m, ClientMsg::Subscribe { pane: p } if *p == pane)));
+}

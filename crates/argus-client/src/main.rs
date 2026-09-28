@@ -28,6 +28,7 @@ mod remote;
 mod review;
 mod selection;
 mod settings;
+mod ssh_hosts;
 mod terminal;
 mod theme;
 mod ui;
@@ -53,7 +54,7 @@ const RECONNECT_ROUND_GAP: std::time::Duration = std::time::Duration::from_secs(
 /// The two ends of a connection to the daemon.
 type Connection = (mpsc::UnboundedSender<ClientMsg>, mpsc::Receiver<ServerMsg>);
 
-use app::App;
+use app::{App, HostRequest};
 use hosts::{Host, HostEvent, Hosts};
 use launch::Connected;
 use redraw::RedrawScheduler;
@@ -163,6 +164,11 @@ async fn run(
         let index = hosts.push(remote);
         hosts.show(index);
     }
+    // Hosts the picker asked for, connecting in the background so the
+    // screen stays live while ssh works.
+    let (connected_tx, mut connected_rx) =
+        mpsc::unbounded_channel::<(String, anyhow::Result<Connected>)>();
+    let mut connecting: std::collections::HashSet<String> = std::collections::HashSet::new();
     draw_frame(terminal, &mut hosts.on_screen().app)?;
 
     loop {
@@ -245,9 +251,47 @@ async fn run(
                     redraw.due();
                 }
             },
+            Some((name, result)) = connected_rx.recv() => {
+                connecting.remove(&name);
+                match result {
+                    Ok(connected) => {
+                        // What the host that asked says when it is shown
+                        // again, rather than the "connecting" it said then.
+                        hosts.on_screen().app.report(format!("{name} connected"));
+                        let host = attach(Some(name.clone()), connected, terminal, &mut profile)?;
+                        let index = hosts.push(host);
+                        hosts.show(index);
+                        settings::remember_host(&name);
+                    }
+                    Err(error) => hosts.on_screen().app.alert(error.to_string()),
+                }
+                redraw.changed();
+                redraw.due();
+            }
             _ = frames.tick(), if redraw.pending() => {
                 redraw.due();
             }
+        }
+
+        if let Some(request) = hosts.on_screen().app.host_request.take() {
+            let place = match request {
+                HostRequest::Show(place) => place,
+                HostRequest::Connect(name) => Some(name),
+            };
+            match (hosts.find(&place), place) {
+                (Some(index), _) => hosts.show(index),
+                (None, Some(name)) if connecting.insert(name.clone()) => {
+                    hosts.on_screen().app.report(format!("connecting to {name}…"));
+                    let connected_tx = connected_tx.clone();
+                    tokio::spawn(async move {
+                        let result = remote::connect(&name).await;
+                        let _ = connected_tx.send((name, result));
+                    });
+                }
+                _ => {}
+            }
+            redraw.changed();
+            redraw.due();
         }
 
         let host = hosts.on_screen();

@@ -170,10 +170,30 @@ impl<K: PartialEq + Copy> Outstanding<K> {
     }
 }
 
+/// A change of host the picker asked for. Hosts belong to the run loop,
+/// not to any one app, so the app records the ask and the loop carries it
+/// out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostRequest {
+    /// Put an attached host on screen; `None` is this machine.
+    Show(Option<String>),
+    /// Connect to a host over ssh, and put it on screen once connected.
+    Connect(String),
+}
+
 pub struct App {
     /// The machine this app's daemon runs on, as ssh names it; `None` for
     /// this one.
     pub host: Option<String>,
+    /// Whether this app's host is the one on screen. One that is not holds
+    /// no pane subscriptions: nothing draws its grids, and a remote host
+    /// would be streaming them over ssh for nobody.
+    pub on_screen: bool,
+    /// Every host this client is attached to, `None` for this machine, so
+    /// the host picker can say which are connected.
+    pub attached_hosts: Vec<Option<String>>,
+    /// What the host picker asked for, until the run loop takes it.
+    pub host_request: Option<HostRequest>,
     pub tree: Vec<ProjectInfo>,
     pub templates: Vec<String>,
     /// Every workspace, not just the open one — the picker lists them all,
@@ -373,6 +393,9 @@ impl App {
         let focus = Focus::Projects;
         App {
             host: None,
+            on_screen: true,
+            attached_hosts: vec![None],
+            host_request: None,
             tree: Vec::new(),
             templates: Vec::new(),
             workspaces: Vec::new(),

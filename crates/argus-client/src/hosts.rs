@@ -58,21 +58,45 @@ pub struct Hosts {
 
 impl Hosts {
     pub fn new(first: Host) -> Hosts {
-        Hosts {
+        let mut hosts = Hosts {
             list: vec![first],
             current: 0,
-        }
+        };
+        hosts.share_names();
+        hosts
     }
 
     /// Adds a host, off screen, and says where it went.
-    pub fn push(&mut self, host: Host) -> usize {
+    pub fn push(&mut self, mut host: Host) -> usize {
+        host.app.set_on_screen(false);
         self.list.push(host);
+        self.share_names();
         self.list.len() - 1
     }
 
+    /// Puts a host on screen. The one leaving lets go of its panes, and the
+    /// one arriving asks for its own again and claims their sizes afresh.
     pub fn show(&mut self, index: usize) {
-        if index < self.list.len() {
-            self.current = index;
+        if index >= self.list.len() || index == self.current {
+            return;
+        }
+        self.list[self.current].app.set_on_screen(false);
+        self.current = index;
+        let host = &mut self.list[index];
+        host.last_sizes.clear();
+        host.app.set_on_screen(true);
+    }
+
+    /// The host whose daemon is on `place`: `None` for this machine.
+    pub fn find(&self, place: &Option<String>) -> Option<usize> {
+        self.list.iter().position(|host| host.app.host == *place)
+    }
+
+    /// Tells every app which hosts are attached, for the host picker.
+    fn share_names(&mut self) {
+        let names: Vec<Option<String>> = self.list.iter().map(|h| h.app.host.clone()).collect();
+        for host in &mut self.list {
+            host.app.attached_hosts = names.clone();
         }
     }
 
@@ -137,6 +161,30 @@ mod tests {
 
         let event = timeout(Duration::from_secs(5), hosts.next()).await.unwrap();
         assert!(matches!(event, HostEvent::Message(1, Some(ServerMsg::Tree(_)))));
+    }
+
+    #[tokio::test]
+    async fn one_host_is_on_screen_and_every_app_knows_which_are_attached() {
+        let (local, _local_tx) = host();
+        let (mut remote, _remote_tx) = host();
+        remote.app.host = Some("devbox".into());
+        let mut hosts = Hosts::new(local);
+
+        let index = hosts.push(remote);
+        assert!(hosts.get(0).app.on_screen);
+        assert!(!hosts.get(index).app.on_screen, "a new host arrives off screen");
+        assert_eq!(hosts.find(&Some("devbox".into())), Some(index));
+        for i in [0, index] {
+            assert_eq!(
+                hosts.get(i).app.attached_hosts,
+                vec![None, Some("devbox".to_string())]
+            );
+        }
+
+        hosts.show(index);
+        assert!(!hosts.get(0).app.on_screen);
+        assert!(hosts.get(index).app.on_screen);
+        assert!(hosts.is_on_screen(index));
     }
 
     #[tokio::test]
