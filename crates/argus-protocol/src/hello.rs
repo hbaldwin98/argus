@@ -48,6 +48,13 @@ pub const OUTBOX: &str = "outbox";
 /// only a client that wants it adds it to its greeting ([`Hello::and`]).
 pub const WIDE_TREE: &str = "wide-tree";
 
+/// A client that shows what agents' live channels carry: the web server.
+/// Nothing is sent for it; the daemon starts a template's live channel
+/// only for a pane that starts while such a client is connected, because
+/// a channel puts Argus between the agent and its harness and nobody else
+/// reads what it carries. Not in [`CAPABILITIES`], for the same reason.
+pub const LIVE_CHANNELS: &str = "live-channels";
+
 /// One side's greeting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hello {

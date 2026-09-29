@@ -78,6 +78,7 @@ fn live_pane(dir: &std::path::Path, api: &str) -> (Arc<Daemon>, PaneId) {
     config.agents[0].env.insert("ANTHROPIC_BASE_URL".to_string(), api.to_string());
     let d = Daemon::new(config);
     d.start_tee().unwrap();
+    let _web = d.live_reader();
     let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
     (d, pane)
 }
@@ -228,25 +229,50 @@ async fn a_live_pane_is_pointed_at_the_proxy_and_told_it_is_anthropics_only_when
 
 #[cfg(unix)]
 #[tokio::test]
-async fn the_panes_own_environment_names_the_proxy() {
+async fn only_a_pane_that_asks_and_starts_while_the_web_server_is_connected_is_proxied() {
     let dir = tempfile::tempdir().unwrap();
     let mut config = fake_claude_config(dir.path());
-    config.agents[0].cmd = vec!["sh".into(), "-c".into(), "echo \"base=$ANTHROPIC_BASE_URL\"; exec cat".into()];
+    config.agents[0].cmd = vec!["sh".into(), "-c".into(), "echo \"base=[$ANTHROPIC_BASE_URL]\"; exec cat".into()];
     config.agents[0].live = true;
+    let mut plain = config.agents[0].clone();
+    plain.name = "plain".into();
+    plain.harness = Some("claude".into());
+    plain.live = false;
+    config.agents.push(plain);
     let d = Daemon::new(config);
     d.start_tee().unwrap();
-    let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+    let checkout = only_checkout(&d);
     let port = d.tee_port.load(std::sync::atomic::Ordering::Relaxed);
-    let want = format!("base=http://127.0.0.1:{port}/claude/{}/", pane.0);
-    let mut shown = String::new();
-    for _ in 0..100 {
-        let (_, _, cells, _, _, _, _) = d.subscribe_pane(pane).unwrap();
-        shown = cells.iter().map(|r| r.iter().map(|c| c.ch.as_str()).collect::<String>()).collect::<Vec<_>>().join("\n");
-        if shown.contains(&want) {
-            break;
+    let base = |pane: PaneId| {
+        let d = d.clone();
+        async move {
+            for _ in 0..250 {
+                let (_, _, cells, _, _, _, _) = d.subscribe_pane(pane).unwrap();
+                let shown = cells.iter().map(|r| r.iter().map(|c| c.ch.as_str()).collect::<String>()).collect::<String>();
+                if let Some(at) = shown.find("base=[") {
+                    if let Some(len) = shown[at..].find(']') {
+                        return shown[at + 6..at + len].to_string();
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            panic!("pane {} never said its base URL", pane.0);
         }
-        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+
+    let before = d.spawn_agent(checkout, "claude").unwrap();
+    assert_eq!(base(before).await, "", "no web server, no proxy");
+
+    let web = d.live_reader();
+    let during = d.spawn_agent(checkout, "claude").unwrap();
+    let not_asked = d.spawn_agent(checkout, "plain").unwrap();
+    assert_eq!(base(during).await, format!("http://127.0.0.1:{port}/claude/{}/{}", during.0, d.hook_token));
+    assert_eq!(base(not_asked).await, "", "a template that did not ask is never proxied");
+
+    drop(web);
+    let after = d.spawn_agent(checkout, "claude").unwrap();
+    assert_eq!(base(after).await, "", "the web server went");
+    for pane in [before, during, not_asked, after] {
+        let _ = d.close_pane(pane);
     }
-    assert!(shown.contains(&want), "{shown}");
-    let _ = d.close_pane(pane);
 }

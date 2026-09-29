@@ -8,7 +8,7 @@ use std::time::Duration;
 use argus_protocol::{
     read_msg, write_msg, Body, CheckoutId, CheckoutInfo, ClientMsg, Entry, Hello, PaneId,
     PaneInfo, PaneKind, PaneStatus, ProjectId, ProjectInfo, RepositoryId, RepositoryInfo,
-    ServerMsg, Update, WorkspaceId, WorkspaceTree, WIDE_TREE,
+    ServerMsg, Update, WorkspaceId, WorkspaceTree, LIVE_CHANNELS, WIDE_TREE,
 };
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
@@ -138,6 +138,7 @@ async fn play_daemon(running: &mut Running) -> DuplexStream {
         panic!("argus web greets first");
     };
     assert!(hello.can(WIDE_TREE), "argus web asks for every workspace");
+    assert!(hello.can(LIVE_CHANNELS), "and turns on the live channels templates ask for");
     write_msg(&mut stream, &ServerMsg::Hello(Hello::this_build())).await.unwrap();
     write_msg(&mut stream, &ServerMsg::WideTree(vec![tree()])).await.unwrap();
     stream

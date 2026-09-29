@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use argus_protocol::{
     read_known_msg, write_msg, AgentTelemetry, ClientMsg, Earlier, Hello, PaneId, Sent, ServerMsg,
-    WorkspaceId, WorkspaceTree, WIDE_TREE,
+    WorkspaceId, WorkspaceTree, LIVE_CHANNELS, WIDE_TREE,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc, watch};
@@ -444,7 +444,7 @@ where
         }
     });
 
-    let hello = Hello::this_build().and(WIDE_TREE);
+    let hello = Hello::this_build().and(WIDE_TREE).and(LIVE_CHANNELS);
     if write_msg(&mut wr, &ClientMsg::Hello(hello)).await.is_err() {
         reader.abort();
         return None;

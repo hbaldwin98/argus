@@ -4,8 +4,8 @@
 //! Claude Code writes a reply to its transcript only once each block is
 //! finished, and runs no server a second client could join, but it sends
 //! its requests wherever `ANTHROPIC_BASE_URL` says — with its own login, as
-//! it would to Anthropic. So a pane whose template asks for its live
-//! channel is pointed at this proxy, which forwards every request untouched
+//! it would to Anthropic. So a live pane (see `live` for which are) is
+//! pointed at this proxy, which forwards every request untouched
 //! to the API (or to the gateway the pane already named) and returns every
 //! reply untouched, reading the streaming ones as they pass. The login goes
 //! through and is never kept. The path each pane is given carries its id

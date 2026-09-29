@@ -1,8 +1,15 @@
-//! Running a pane's live channel: the harness's own server, started beside
-//! the pane, and Argus's connection to it as a second client.
+//! Running a pane's live channel: whether a starting pane gets one, the
+//! harness's own server started beside the pane, and Argus's connection to
+//! it as a second client.
 //!
-//! Only Codex has one, and only for an agent template that sets
-//! `live = true`: its app-server is experimental. The server is started
+//! A pane gets its channel only when its template sets `live = true` and a
+//! client that reads live channels — `argus web` — is connected as it
+//! starts. The channel is fixed for the pane's life: a process cannot be
+//! moved off one, so a pane started while the web server ran keeps its
+//! channel after the server goes, and one started before gets none.
+//!
+//! Only Codex runs a server: its app-server, which it marks
+//! experimental. Claude's channel is the daemon's tee. The server is started
 //! with the pane's environment, so hooks it runs still report to the pane,
 //! and the TUI is pointed at it with `--remote`; the server lives exactly as
 //! long as the pane. The connection takes the pane's inbox, so a reply, an
@@ -39,7 +46,43 @@ impl Drop for LiveServer {
     }
 }
 
+/// A connected client that reads live channels, counted until it goes.
+pub struct LiveReader(Arc<std::sync::atomic::AtomicUsize>);
+
+impl Drop for LiveReader {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 impl Daemon {
+    /// Counts a client that reads live channels for as long as the handle
+    /// is held.
+    pub fn live_reader(&self) -> LiveReader {
+        self.live_readers.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        LiveReader(self.live_readers.clone())
+    }
+
+    /// Whether any connected client reads live channels.
+    pub fn live_is_read(&self) -> bool {
+        self.live_readers.load(std::sync::atomic::Ordering::SeqCst) > 0
+    }
+
+    /// The live channel a pane about to start is to run on: its harness's,
+    /// when its template asked for it and something is connected to read
+    /// it. Never otherwise: a channel puts Argus between the agent and its
+    /// harness, which is only worth it while the web server shows it.
+    pub(super) fn live_channel(
+        &self,
+        template: &AgentConfig,
+        harness: &crate::harness::Harness,
+    ) -> Option<LiveChannel> {
+        if !template.live || !self.live_is_read() {
+            return None;
+        }
+        harness.live
+    }
+
     /// Starts the live channel's server for a pane about to spawn, when its
     /// template asked and its harness has one: the server, and the
     /// arguments that point the TUI at it.

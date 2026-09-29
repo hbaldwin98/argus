@@ -348,6 +348,8 @@ pub struct Daemon {
     tee_port: std::sync::atomic::AtomicU16,
     /// Where each live Claude pane's requests are to go.
     tee_upstreams: StdMutex<HashMap<PaneId, String>>,
+    /// How many connected clients read live channels. See `live`.
+    live_readers: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 /// A project as clients are shown it.

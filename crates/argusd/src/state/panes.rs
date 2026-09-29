@@ -250,7 +250,7 @@ impl Daemon {
             start,
             harness_session_id.as_deref(),
         );
-        let channel = template.live.then_some(harness.live).flatten();
+        let channel = self.live_channel(&template, &harness);
         if channel == Some(crate::harness::live::LiveChannel::AnthropicStream) {
             self.tee_env(id, &mut env);
         }

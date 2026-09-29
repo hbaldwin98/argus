@@ -99,7 +99,9 @@ listens on a network and exposure lasts exactly as long as the process. It binds
 by default — fixed, because an installed page belongs to one origin — and does no TLS; `--listen`
 binds elsewhere and warns when that is reachable without HTTPS. It greets with `wide-tree`, which
 the TUI never lists, and is sent `WideTree` — every workspace's projects — wherever the TUI is sent
-`Tree`, so following every agent never re-scopes the terminals. A phone pairs with a six-digit code
+`Tree`, so following every agent never re-scopes the terminals. It also greets with
+`live-channels`, which the TUI never lists either, and which is what lets a template's live channel
+start ("Panes and terminal state"). A phone pairs with a six-digit code
 printed with a QR code: single use, five minutes, five wrong guesses. It is given a 256-bit device
 token as an `HttpOnly`, `SameSite=Strict` cookie, which `web-devices.json` in the config directory
 keeps only as a SHA-256 hash; `argus web devices` lists them and `argus web revoke` removes one,
@@ -196,7 +198,7 @@ to the type or its locking.
 | `state/transcripts` | which file a pane's conversation is read from, and the clients following it |
 | `state/outbox` | what a client asked to say to an agent, and when it is typed |
 | `state/inbox` | the live channel a harness's plugin keeps open for what the daemon has to tell the agent |
-| `state/live` | running a pane's live channel: the harness's own server beside the pane, and Argus's connection to it |
+| `state/live` | running a pane's live channel: whether a starting pane gets one, the harness's own server beside the pane, and Argus's connection to it |
 | `state/tee` | the loopback proxy a live Claude pane's API traffic goes through, and the draft read off each reply |
 | `state/tree` | finding your way around the tree |
 | `state/features`, `state/tasks`, `state/decisions`, `state/diagrams` | a checkout's feature board, translated between client ids and store keys |
@@ -783,11 +785,18 @@ it asks for as a `Question` entry (allow once, always allow, reject) that it mar
 opencode says it was, from any surface. pi's extension turns messages into `sendUserMessage`,
 following up or steering while a turn runs, and interrupts into `abort`.
 
-Codex has a live channel of its own kind: its TUI can run on its app-server, which serves a thread
-to every client subscribed to it. An agent template that sets `live = true` on a harness that has
-one — only Codex, and off unless asked, since Codex marks the app-server experimental — starts
-`codex app-server --listen unix://…` with the pane's environment, so hooks it runs still report,
-and runs the TUI with `--remote` on it. The server lives exactly as long as the pane. The daemon
+A harness may have a live channel — Codex's app-server, or Claude's tee below — that streams what
+the agent does and takes what is said to it. A pane runs on it only when its template sets
+`live = true` and a client that greeted with `live-channels` is connected as the pane starts. Only
+`argus web` greets with it, so without the web server running no agent has Argus in its path, and
+nothing built in sets `live`. The choice is fixed for the pane's life, since a running process
+cannot be moved onto a channel or off one: a pane started before the web server has none until it
+next starts, and one started while it ran keeps its channel after it stops.
+
+Codex's is a live channel of its own kind: its TUI can run on its app-server, which serves a
+thread to every client subscribed to it. A live Codex pane — worth asking for with care, since
+Codex marks the app-server experimental — starts `codex app-server --listen unix://…` with the
+pane's environment, so hooks it runs still report, and runs the TUI with `--remote` on it. The server lives exactly as long as the pane. The daemon
 connects as a second client over the WebSocket the socket speaks, takes the pane's inbox, and once
 Codex's hooks have named the conversation, resumes that thread to follow it. `harness/live` reads
 what it hears: items as they start and complete, agent-message deltas as `AppendText` — the reply
@@ -800,7 +809,7 @@ sockets on Windows, where the template's `live` is ignored.
 
 Claude Code runs no server a second client could join, and writes a reply to its transcript only
 as each block finishes, but it sends its requests wherever `ANTHROPIC_BASE_URL` says, with its own
-login. A claude template that sets `live = true` gets its pane pointed at the tee: a loopback proxy
+login. A live Claude pane is pointed at the tee: a loopback proxy
 the daemon binds at startup, at a path carrying the pane's id and the per-boot token. The tee
 forwards each request untouched — headers and login included, asking only for an uncompressed
 reply so it can be read — to the gateway the pane's environment already named, or to

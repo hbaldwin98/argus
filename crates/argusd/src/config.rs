@@ -101,9 +101,10 @@ pub struct AgentConfig {
     #[serde(default)]
     pub restart: Restart,
     /// Run the CLI on its harness's live channel, when it has one — Codex's
-    /// app-server — so what it does streams and what is said to it goes
-    /// through the harness. Off by default: the channel is experimental on
-    /// Codex's side.
+    /// app-server, Claude's tee — so what it does streams and what is said
+    /// to it goes through the harness. Off by default, and taken only by a
+    /// pane that starts while `argus web` is connected: a channel puts
+    /// Argus in the agent's path, and only the web server reads it.
     #[serde(default)]
     pub live: bool,
 }

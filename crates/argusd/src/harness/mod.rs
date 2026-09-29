@@ -177,8 +177,9 @@ pub struct Harness {
     /// the key every built-in harness takes. Never Ctrl-C: pressed twice it
     /// quits most of these CLIs.
     pub interrupt: Option<String>,
-    /// The live channel this CLI offers, which an agent template turns on
-    /// with `live = true`. See `live`.
+    /// The live channel this CLI offers, which an agent template asks for
+    /// with `live = true`. See `live`, and `state::live` for when a pane
+    /// gets it.
     pub live: Option<live::LiveChannel>,
 }
 

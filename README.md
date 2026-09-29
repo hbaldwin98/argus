@@ -201,7 +201,8 @@ opencode's permission requests appear in the conversation as buttons.
 pane's API traffic goes through a loopback proxy in the daemon that forwards every request
 untouched — your login included, never stored — and reads the reply as it passes. For Codex, the
 pane runs on Codex's app-server (experimental on Codex's side; Linux and macOS). Both are off
-unless a template asks:
+unless a template asks, and even then apply only to agents started while `argus web` is running, so
+the terminal alone never puts Argus in an agent's path:
 
 ```toml
 [[agent]]
@@ -209,6 +210,9 @@ name = "claude"
 cmd = ["claude"]
 live = true
 ```
+
+An agent keeps what it started with: one started before `argus web` streams only once it next
+starts, and one started while it ran keeps using the proxy after it stops.
 
 Conversations are read for Claude Code, Codex, Cursor's `agent`, pi and opencode. Any other harness
 can push its own with `argus-hook transcript` (see DESIGN.md), and shows its Terminal tab until it

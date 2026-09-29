@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use argus_protocol::{
     grid_from_runs, read_known_msg, write_frame, CellRun, ClientMsg, Hello, PaneId, ServerMsg,
-    CELL_RUNS, PANE_TELEMETRY, WIDE_TREE,
+    CELL_RUNS, LIVE_CHANNELS, PANE_TELEMETRY, WIDE_TREE,
 };
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc, Semaphore};
@@ -79,6 +79,9 @@ where
     // What the client said it can take: nothing until it greets, and
     // nothing for good from a client that never does.
     let mut peer: Option<Hello> = None;
+    // Held while a client that reads live channels stays, so agents that
+    // start meanwhile get theirs.
+    let mut live_reader = None;
 
     loop {
         tokio::select! {
@@ -102,6 +105,9 @@ where
                 let Some(cmsg) = msg else { break };
                 if let ClientMsg::Hello(hello) = &cmsg {
                     subs.runs = hello.can(CELL_RUNS);
+                    if hello.can(LIVE_CHANNELS) && live_reader.is_none() {
+                        live_reader = Some(daemon.live_reader());
+                    }
                     peer = Some(hello.clone());
                 }
                 let wide_greeting = matches!(&cmsg, ClientMsg::Hello(h) if h.can(WIDE_TREE));
@@ -164,6 +170,7 @@ where
         }
     }
     daemon.release_viewer(viewer);
+    drop(live_reader);
     reader.abort();
     if let Some(task) = review_task {
         task.abort();
@@ -853,6 +860,37 @@ mod tests {
     #[tokio::test]
     async fn the_terminal_client_is_never_sent_a_wide_tree() {
         assert!(!Hello::this_build().can(WIDE_TREE));
+    }
+
+    #[tokio::test]
+    async fn a_client_that_reads_live_channels_turns_them_on_until_it_goes() {
+        let dir = tempfile::tempdir().unwrap();
+        let (daemon, pane) = daemon_with_a_pane(dir.path());
+        let greet = |hello: Hello| {
+            let daemon = daemon.clone();
+            async move {
+                let mut client = connect_to(daemon).await;
+                argus_protocol::write_msg(&mut client, &ClientMsg::Hello(hello)).await.unwrap();
+                assert!(matches!(next(&mut client).await, ServerMsg::Hello(_)));
+                client
+            }
+        };
+
+        let terminal = greet(Hello::this_build()).await;
+        assert!(!daemon.live_is_read(), "the terminal client never turns them on");
+        let web = greet(Hello::this_build().and(LIVE_CHANNELS)).await;
+        assert!(daemon.live_is_read());
+
+        drop(web);
+        let off = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while daemon.live_is_read() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        assert!(off.is_ok(), "they go off with the client that read them");
+        drop(terminal);
+        let _ = daemon.close_pane(pane);
     }
 
     /// A daemon with one shell pane, started before any client connects so
