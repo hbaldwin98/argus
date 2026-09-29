@@ -12,7 +12,8 @@
 //! `transcripts` for where a pane's conversation is read from, `outbox` for
 //! what clients asked to say to an agent, `inbox` for the live channel a
 //! harness's plugin keeps open, `live` for a harness server Argus is a
-//! second client of, and `tree`
+//! second client of, `tee` for the proxy a live Claude pane's API traffic
+//! goes through, and `tree`
 //! for finding your way around.
 //!
 //! The type and its locking are one thing; only which file a concern is
@@ -44,6 +45,7 @@ mod panel;
 mod panes;
 mod session;
 mod sync;
+mod tee;
 mod transcripts;
 mod tree;
 mod viewers;
@@ -104,12 +106,19 @@ struct Pane {
     queued: std::collections::VecDeque<argus_protocol::QueuedMessage>,
     /// When the outbox last typed into this pane.
     typed_at: Option<std::time::SystemTime>,
+    /// Whether its agent has reported a status yet. Until one whose harness
+    /// reports has, `Idle` is only the default, and its screen may hold a
+    /// startup dialog rather than a prompt.
+    heard: bool,
     /// The live channel its harness's plugin holds open, by the generation
     /// of the connection that opened it. See `inbox`.
     inbox: Option<(u64, tokio::sync::mpsc::UnboundedSender<argus_protocol::InboxItem>)>,
     /// The live channel's server, when the pane runs on one. Dropping it
     /// stops the server. See `live`.
     live_server: Option<live::LiveServer>,
+    /// What the agent is writing right now, as the tee reads it off its
+    /// reply: reasoning or not, and the text so far. See `tee`.
+    draft: Option<(bool, String)>,
     /// A hook won the race with session restoration, so saved metadata must
     /// not overwrite what the newly started process already reported.
     restore_status_reported: bool,
@@ -334,6 +343,11 @@ pub struct Daemon {
     /// Names each inbox connection, so a stale one closing cannot close
     /// the one that replaced it.
     next_inbox: std::sync::atomic::AtomicU64,
+    /// The proxy live Claude panes send their API traffic through; 0 until
+    /// it is bound. See `tee`.
+    tee_port: std::sync::atomic::AtomicU16,
+    /// Where each live Claude pane's requests are to go.
+    tee_upstreams: StdMutex<HashMap<PaneId, String>>,
 }
 
 /// A project as clients are shown it.

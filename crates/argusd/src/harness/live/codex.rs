@@ -1,6 +1,4 @@
-//! What a harness's own interface to its running session says, in Argus's
-//! terms: the live channel, for a harness whose TUI is itself a client of
-//! something Argus can also be a client of.
+//! Codex's app-server, in Argus's terms.
 //!
 //! Codex's TUI can run on its app-server (`codex --remote`), which serves a
 //! thread to every client subscribed to it. Argus subscribes too and reads
@@ -9,22 +7,10 @@
 //! a turn started or steered, an interrupt, an approval answered. Item ids
 //! are the ones Codex writes to its rollout file, so what arrives live and
 //! what is read from the file afterwards are the same entries.
-//!
-//! This module only translates. Running the server and the connection is
-//! `state::live`'s.
 
 use argus_protocol::transcript::{clip, one_line, MAX_TEXT_BYTES, MAX_THINKING_BYTES, MAX_TOOL_INPUT_BYTES, MAX_TOOL_OUTPUT_BYTES};
 use argus_protocol::{Body, Choice, Entry, InboxItem, ToolState, Update};
-use serde::Deserialize;
 use serde_json::{json, Value};
-
-/// Which live channel a harness has. Off unless an agent template asks for
-/// it with `live = true`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum LiveChannel {
-    CodexAppServer,
-}
 
 /// What the connection should do with one message from the app-server.
 #[derive(Debug, Clone, PartialEq)]

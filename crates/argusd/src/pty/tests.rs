@@ -20,6 +20,27 @@ fn nested_processes_do_not_inherit_the_outer_herdr_pane() {
     );
 }
 
+#[test]
+fn panes_do_not_inherit_the_claude_session_that_started_the_daemon() {
+    let mut command = CommandBuilder::new("dummy");
+    command.env("CLAUDE_CODE_CHILD_SESSION", "1");
+    command.env("CLAUDECODE", "1");
+    command.env("CLAUDE_CODE_USE_BEDROCK", "1");
+
+    strip_claude_session(
+        &mut command,
+        ["CLAUDE_CODE_CHILD_SESSION".into(), "CLAUDECODE".into(), "CLAUDE_CODE_USE_BEDROCK".into()],
+    );
+
+    assert_eq!(command.get_env("CLAUDE_CODE_CHILD_SESSION"), None);
+    assert_eq!(command.get_env("CLAUDECODE"), None);
+    assert_eq!(
+        command.get_env("CLAUDE_CODE_USE_BEDROCK"),
+        Some(std::ffi::OsStr::new("1")),
+        "configuration a person set stays"
+    );
+}
+
 #[cfg(windows)]
 #[test]
 fn windows_default_shell_is_explicitly_selected() {

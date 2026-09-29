@@ -172,3 +172,34 @@ fn every_built_in_harness_is_interrupted_with_esc_never_ctrl_c() {
         assert_eq!(harness.interrupt_keys(), [0x1b], "{}", harness.name);
     }
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn an_agent_that_has_not_reported_yet_is_not_typed_into() {
+    // The bug: a Claude pane still showing its folder-trust dialog read as
+    // idle, being the default, and the dialog took the message.
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_running(dir.path(), &["cat"]);
+    let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+    assert!(matches!(d.send_to_agent(pane, "before any hook", false), Sent::Queued { .. }));
+    assert!(!screen_shows(&d, pane, "before any hook", Duration::from_millis(800)).await);
+
+    // Its SessionStart hook says it is ready.
+    d.report_pane_status(pane, None, PaneStatus::Idle, None);
+    assert!(screen_shows(&d, pane, "before any hook", Duration::from_secs(5)).await);
+    close_all(&d);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn an_agent_whose_harness_never_reports_is_typed_into_when_idle() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = fake_claude_config(dir.path());
+    config.agents[0].cmd = vec!["cat".to_string()];
+    config.agents[0].harness = Some("generic".to_string());
+    let d = Daemon::new(config);
+    let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+    assert!(matches!(d.send_to_agent(pane, "no hooks here", false), Sent::Queued { .. }));
+    assert!(screen_shows(&d, pane, "no hooks here", Duration::from_secs(5)).await);
+    close_all(&d);
+}

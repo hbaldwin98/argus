@@ -224,3 +224,8 @@ details.detail .result.failed { border-color: var(--err); }
 .sheet .actions { display: flex; justify-content: flex-end; gap: 8px; }
 .sheet .actions button { border: 1px solid var(--edge); background: var(--bg); border-radius: 10px; padding: 8px 14px; }
 .sheet .actions .go { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+
+/* What the agent is writing right now. */
+.draft { white-space: pre-wrap; overflow-wrap: anywhere; }
+.draft.thinking { color: var(--muted); font-style: italic; font-size: 13px; background: var(--surface); border: 1px dashed var(--edge); border-radius: 10px; padding: 7px 10px; max-height: 8.5em; overflow: hidden; }
+.draft.writing::after { content: "▍"; color: var(--accent); animation: pulse 1s steps(2) infinite; margin-left: 1px; }

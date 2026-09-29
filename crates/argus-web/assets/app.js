@@ -192,7 +192,7 @@ function receive(message) {
 function conversation(pane) {
   let c = state.conversations.get(pane);
   if (!c) {
-    c = { order: [], entries: new Map(), earlier: null, asked: null };
+    c = { order: [], entries: new Map(), earlier: null, asked: null, draft: null };
     state.conversations.set(pane, c);
   }
   return c;
@@ -205,10 +205,16 @@ function applyTranscript({ pane, fresh, earlier, updates }) {
     c.entries = new Map();
     c.earlier = earlier;
     c.asked = null;
+    c.draft = null;
   }
   const stick = nearBottom();
   for (const update of updates) apply(c, update, false);
-  if (currentPane() === pane) {
+  if (currentPane() !== pane) return;
+  // A draft grows many times a second; only it is redrawn.
+  if (!fresh && updates.every((u) => u.op === "draft")) {
+    renderDraft(c);
+    if (stick) scrollToEnd();
+  } else {
     renderConversation(c, fresh || stick);
   }
 }
@@ -251,7 +257,47 @@ function apply(c, update, earlier) {
       if (entry) entry.state = update.state;
       break;
     }
+    case "draft":
+      applyDraft(c, update);
+      break;
   }
+  // The finished entry a draft was standing in for has arrived.
+  if (update.op === "upsert" && c.draft && c.draft.done) c.draft = null;
+}
+
+// What the agent is writing right now: shown until its finished entry
+// arrives, or a few seconds after it is done, whichever comes first.
+function applyDraft(c, update) {
+  if (update.state === "start") {
+    c.draft = { thinking: Boolean(update.thinking), text: "", done: false };
+  } else if (update.state === "more" && c.draft) {
+    c.draft.text += update.text || "";
+  } else if (update.state === "done" && c.draft) {
+    c.draft.done = true;
+    const draft = c.draft;
+    setTimeout(() => {
+      if (c.draft === draft) {
+        c.draft = null;
+        renderDraft(c);
+      }
+    }, 4000);
+  }
+}
+
+function renderDraft(c) {
+  const body = document.getElementById("conversation");
+  if (!body) return;
+  let node = document.getElementById("draft");
+  if (!c.draft || !c.draft.text) {
+    if (node) node.remove();
+    return;
+  }
+  if (!node) {
+    node = el("div", { id: "draft" });
+    body.append(node);
+  }
+  node.className = c.draft.thinking ? "draft thinking" : `draft reply${c.draft.done ? "" : " writing"}`;
+  node.textContent = c.draft.thinking ? `Thinking… ${c.draft.text}` : c.draft.text;
 }
 
 // --- views ---------------------------------------------------------------
@@ -693,8 +739,9 @@ function renderConversation(c, scroll) {
     const node = renderEntry(entry, results);
     if (node) nodes.push(node);
   }
-  if (nodes.length === 0) nodes.push(el("p", { class: "empty", text: "Nothing said yet." }));
+  if (nodes.length === 0 && !c.draft) nodes.push(el("p", { class: "empty", text: "Nothing said yet." }));
   body.replaceChildren(...nodes);
+  renderDraft(c);
   if (scroll) window.scrollTo(0, document.body.scrollHeight);
 }
 

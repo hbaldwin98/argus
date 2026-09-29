@@ -255,6 +255,7 @@ impl PaneRuntime {
         // Argus owns the outer Herdr pane. Processes nested in its PTYs must
         // not compete with the client's aggregate lifecycle report for it.
         strip_herdr_context(&mut cmd, std::env::vars_os().map(|(key, _)| key));
+        strip_claude_session(&mut cmd, std::env::vars_os().map(|(key, _)| key));
         cmd.cwd(cwd);
 
         #[cfg(windows)]

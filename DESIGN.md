@@ -197,6 +197,7 @@ to the type or its locking.
 | `state/outbox` | what a client asked to say to an agent, and when it is typed |
 | `state/inbox` | the live channel a harness's plugin keeps open for what the daemon has to tell the agent |
 | `state/live` | running a pane's live channel: the harness's own server beside the pane, and Argus's connection to it |
+| `state/tee` | the loopback proxy a live Claude pane's API traffic goes through, and the draft read off each reply |
 | `state/tree` | finding your way around the tree |
 | `state/features`, `state/tasks`, `state/decisions`, `state/diagrams` | a checkout's feature board, translated between client ids and store keys |
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
@@ -205,7 +206,7 @@ to the type or its locking.
 | `pty`, `pty/job`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; and its terminal emulator with the translation of its screen |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
-| `harness/live` | what a harness's own interface to its running session says, in Argus's terms |
+| `harness/live`, `harness/live/codex`, `harness/live/claude` | what a harness's own interface to its running session says, in Argus's terms: Codex's app-server, and Claude Code's API stream |
 | `harness/transcript`, `harness/transcript/claude`, `harness/transcript/codex`, `harness/transcript/cursor`, `harness/transcript/pi` | what a harness's own transcript says, read one line at a time into entries, and how each harness writes its own |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
 | `store/boards`, `store/reviews` | the feature boards and the review comments, as stored |
@@ -796,6 +797,32 @@ answered them elsewhere. Item ids are the ones Codex writes to its rollout file,
 live and what is read from the file afterwards are the same entries. A message becomes
 `turn/start`, or `turn/steer` mid-turn; an interrupt `turn/interrupt`. Unix only: tokio has no Unix
 sockets on Windows, where the template's `live` is ignored.
+
+Claude Code runs no server a second client could join, and writes a reply to its transcript only
+as each block finishes, but it sends its requests wherever `ANTHROPIC_BASE_URL` says, with its own
+login. A claude template that sets `live = true` gets its pane pointed at the tee: a loopback proxy
+the daemon binds at startup, at a path carrying the pane's id and the per-boot token. The tee
+forwards each request untouched — headers and login included, asking only for an uncompressed
+reply so it can be read — to the gateway the pane's environment already named, or to
+`https://api.anthropic.com`, and returns each reply untouched. It keeps no request and no login.
+A streaming reply to a turn that offers tools (not the small calls Claude Code makes for itself,
+such as naming a conversation) is read as it passes: text and thinking blocks become
+`Update::Draft` — started, added to, done — sent to watchers at most every 100 ms, and held on the
+pane so a watcher arriving mid-reply gets the draft so far. A draft is never stored; the finished
+block arrives from the transcript file and the page drops the draft for it. A pane whose requests
+reach Anthropic is also given `_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL`, an internal Claude Code
+variable without which a custom base URL counts as a third-party gateway and switches off Remote
+Control, cloud sessions and the managed-policy fetch; a release that drops it costs live panes
+those, nothing else. `ANTHROPIC_UNIX_SOCKET` was the alternative, and is not used: over it, Claude
+Code sends no login, so Argus would have to supply one.
+
+Two things the tee's first real run turned up. A new pane reads as idle before its harness has
+said anything, and Claude Code's folder-trust dialog took a queued message as its answer; the
+outbox now types into a pane whose harness reports only once it has reported. And Claude Code
+reads an Enter that arrives with a paste as part of it, so the outbox's Enter follows its paste
+after 150 ms. Separately, a pane no longer inherits the markers of a Claude Code session that
+started the daemon (`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION` and the like), which make a Claude
+agent in it save no transcript.
 
 The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
 /pane/<id>/status/<working|idle|waiting|needs-review|done|failed>` with an optional body as the note,

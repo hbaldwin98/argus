@@ -137,6 +137,8 @@ impl Daemon {
             transcripts: StdMutex::new(HashMap::new()),
             outbox: StdMutex::new(Default::default()),
             next_inbox: std::sync::atomic::AtomicU64::new(0),
+            tee_port: std::sync::atomic::AtomicU16::new(0),
+            tee_upstreams: StdMutex::new(HashMap::new()),
         });
         // Checkout rows are named after the branch occupying them, and that
         // name now comes from the cache. Reading HEAD is enough for a name;

@@ -7,6 +7,11 @@
 //! enough that its prompt is back. Codex's and Cursor's approval prompts
 //! report as working, so they hold a message too.
 //!
+//! A pane whose harness reports is not typed into until it has reported
+//! something: before its first hook, `Idle` is only the default, and what
+//! is on its screen may be a startup dialog — a folder to trust — that
+//! would take the message as its answer.
+//!
 //! One message goes out per turn: after typing one, the next waits until
 //! the pane has been busy and come back, or, for a harness that reports
 //! nothing, a couple of seconds. The queue lives only in memory; a daemon
@@ -28,6 +33,11 @@ const UNTURNED: Duration = Duration::from_secs(2);
 /// How often a pane with something queued is looked at, besides whenever
 /// the tree changes.
 const POLL: Duration = Duration::from_millis(250);
+
+/// How long a message's Enter waits behind its paste. Claude Code reads an
+/// Enter that arrives with the paste as part of what was pasted, and leaves
+/// the message sitting unsent in its input.
+const ENTER_AFTER: Duration = Duration::from_millis(150);
 
 /// The task typing queued messages, started by the first message queued,
 /// and the id the next one gets.
@@ -161,11 +171,18 @@ impl Daemon {
         self.write_pane(pane, &keys)
     }
 
-    /// One paste and Enter: what a person typing the message and pressing
-    /// return would have sent.
+    /// One paste and, a moment later, Enter: what a person pasting the
+    /// message and pressing return would have sent.
     fn type_into(&self, pane: PaneId, text: &str) -> anyhow::Result<()> {
         self.paste_pane(pane, text)?;
-        self.write_pane(pane, b"\r")
+        let input = self
+            .pane_input(pane)
+            .ok_or_else(|| anyhow::anyhow!("no such pane"))?;
+        tokio::spawn(async move {
+            tokio::time::sleep(ENTER_AFTER).await;
+            let _ = input.write(b"\r");
+        });
+        Ok(())
     }
 
     fn start_outbox(self: &Arc<Self>) {
@@ -187,6 +204,15 @@ impl Daemon {
             let mut inner = self.inner.lock().unwrap();
             for p in panes_mut(&mut inner.projects) {
                 if p.queued.is_empty() {
+                    continue;
+                }
+                let silent_harness = !p
+                    .harness
+                    .as_deref()
+                    .and_then(|name| self.harnesses.iter().find(|h| h.name == name))
+                    .is_some_and(|h| h.reports());
+                if !p.heard && !silent_harness {
+                    waiting = true;
                     continue;
                 }
                 if matches!(p.status, PaneStatus::Exited { .. }) {

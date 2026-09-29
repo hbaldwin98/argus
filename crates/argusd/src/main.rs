@@ -58,6 +58,11 @@ async fn main() -> anyhow::Result<()> {
     // name a previous daemon's port and are stale by definition.
     daemon.sweep_stale_hooks();
     daemon.start_hook_server()?;
+    // Before any pane restores, since a live Claude pane is pointed at it.
+    // Failing to bind costs live panes their drafts, not their start.
+    if let Err(error) = daemon.start_tee() {
+        tracing::warn!("live Claude panes will not stream: {error}");
+    }
     daemon.start_git_poll();
     daemon.start_git_watch();
     daemon.start_config_watch();

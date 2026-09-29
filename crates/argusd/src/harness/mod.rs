@@ -299,7 +299,7 @@ impl Harness {
             settings_version: None,
             transcript: Some(transcript::Dialect::Claude),
             interrupt: None,
-            live: None,
+            live: Some(live::LiveChannel::AnthropicStream),
         }
     }
 
@@ -492,6 +492,12 @@ impl Harness {
             Harness::agent(),
             Harness::generic(),
         ]
+    }
+
+    /// Whether this harness's agent reports its status at all — through
+    /// hook events or a plugin. One that does not sits at `Idle` for life.
+    pub fn reports(&self) -> bool {
+        !self.events.is_empty() || self.plugin.is_some()
     }
 
     /// The keys that interrupt this harness's agent.

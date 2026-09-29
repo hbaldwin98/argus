@@ -52,6 +52,9 @@ impl Daemon {
     ) -> Option<(LiveServer, Vec<String>)> {
         match channel? {
             LiveChannel::CodexAppServer => start_codex_server(pane, cwd, env),
+            // Runs no server of its own: the daemon's tee serves every
+            // live Claude pane, and the pane was pointed at it already.
+            LiveChannel::AnthropicStream => None,
         }
     }
 
@@ -135,7 +138,7 @@ mod codex {
     use tokio_tungstenite::tungstenite::Message;
 
     use super::*;
-    use crate::harness::live::{answer, answered, hear, question_id, request, Heard};
+    use crate::harness::live::codex::{answer, answered, hear, question_id, request, Heard};
 
     /// Where following a thread has got to.
     #[derive(Default)]

@@ -9,6 +9,7 @@ mod pane_api;
 mod outbox;
 mod reconcile;
 mod reload;
+mod tee;
 mod restore;
 mod transcripts;
 

@@ -195,14 +195,18 @@ Mozilla's), which is the only thing `argus web` sends off the machine. On iPhone
 the home screen first.
 
 opencode and pi take what the phone says through their own plugins rather than as typing, and
-opencode's permission requests appear in the conversation as buttons. Codex can run the same way
-on its app-server, which streams replies as they are written; it is experimental on Codex's side,
-so it is off unless a template asks (Linux and macOS):
+opencode's permission requests appear in the conversation as buttons.
+
+`live = true` on a template streams replies to the phone as they are written. For Claude Code, the
+pane's API traffic goes through a loopback proxy in the daemon that forwards every request
+untouched — your login included, never stored — and reads the reply as it passes. For Codex, the
+pane runs on Codex's app-server (experimental on Codex's side; Linux and macOS). Both are off
+unless a template asks:
 
 ```toml
 [[agent]]
-name = "codex"
-cmd = ["codex"]
+name = "claude"
+cmd = ["claude"]
 live = true
 ```
 

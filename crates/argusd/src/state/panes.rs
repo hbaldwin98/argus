@@ -53,8 +53,10 @@ impl Daemon {
                     status_since: std::time::SystemTime::now(),
                     queued: Default::default(),
                     typed_at: None,
+                    heard: false,
                     inbox: None,
                     live_server: None,
+                    draft: None,
                     restore_status_reported: false,
                     restore_title_reported: false,
                     harness_session_id: None,
@@ -147,8 +149,10 @@ impl Daemon {
                     status_since: std::time::SystemTime::now(),
                     queued: Default::default(),
                     typed_at: None,
+                    heard: false,
                     inbox: None,
                     live_server: None,
+                    draft: None,
                     restore_status_reported: false,
                     restore_title_reported: false,
                     harness_session_id: None,
@@ -246,10 +250,11 @@ impl Daemon {
             start,
             harness_session_id.as_deref(),
         );
-        let live = template
-            .live
-            .then(|| self.start_live_server(id, harness.live, &path, &env))
-            .flatten();
+        let channel = template.live.then_some(harness.live).flatten();
+        if channel == Some(crate::harness::live::LiveChannel::AnthropicStream) {
+            self.tee_env(id, &mut env);
+        }
+        let live = self.start_live_server(id, channel, &path, &env);
         if let Some((_, remote)) = &live {
             args.extend(remote.iter().cloned());
         }
@@ -306,8 +311,10 @@ impl Daemon {
                     status_since: std::time::SystemTime::now(),
                     queued: Default::default(),
                     typed_at: None,
+                    heard: restore_status_reported,
                     inbox: None,
                     live_server,
+                    draft: None,
                     restore_status_reported,
                     restore_title_reported,
                     harness_session_id: pending.harness_session_id.or(harness_session_id),
@@ -455,6 +462,7 @@ impl Daemon {
         let removed = removed.ok_or_else(|| anyhow::anyhow!("no such pane"))?;
         self.forget_pane_sizes(pane);
         self.forget_transcript(pane);
+        self.forget_tee(pane);
         let _ = removed.runtime.kill();
         if let Some(path) = orphaned_checkout {
             for h in &self.harnesses {
@@ -485,7 +493,7 @@ impl Daemon {
 
     /// A handle to a live pane's keyboard, held without the tree lock so it
     /// can outlast the lookup that found it.
-    fn pane_input(&self, pane: PaneId) -> Option<pty::PaneInput> {
+    pub(super) fn pane_input(&self, pane: PaneId) -> Option<pty::PaneInput> {
         let inner = self.inner.lock().unwrap();
         let pane = find_pane_ref(&inner.projects, pane)?;
         (!matches!(pane.status, PaneStatus::Exited { .. })).then(|| pane.runtime.input())

@@ -170,6 +170,15 @@ pub enum PhoneUpdate {
     Upsert { entry: Box<PhoneEntry> },
     Append { id: String, delta: String },
     Tool { id: String, state: &'static str },
+    /// What the agent is writing now: `start` (with `thinking`), `more`
+    /// (with `text`) or `done`. Shown until the finished entry arrives.
+    Draft {
+        state: &'static str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        thinking: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+    },
 }
 
 /// An entry, flattened for a page that switches on `kind`. Only the fields
@@ -376,6 +385,23 @@ pub fn update(update: Update) -> PhoneUpdate {
             id,
             state: tool_word(state),
         },
+        Update::Draft(draft) => match draft {
+            argus_protocol::Draft::Start { thinking } => PhoneUpdate::Draft {
+                state: "start",
+                thinking: Some(thinking),
+                text: None,
+            },
+            argus_protocol::Draft::More { text } => PhoneUpdate::Draft {
+                state: "more",
+                thinking: None,
+                text: Some(text),
+            },
+            argus_protocol::Draft::Done => PhoneUpdate::Draft {
+                state: "done",
+                thinking: None,
+                text: None,
+            },
+        },
     }
 }
 
@@ -499,6 +525,20 @@ mod tests {
                 now: false
             }
         );
+    }
+
+    #[test]
+    fn a_draft_reaches_the_page_as_start_more_and_done() {
+        let json = |d: argus_protocol::Draft| serde_json::to_value(update(Update::Draft(d))).unwrap();
+        assert_eq!(
+            json(argus_protocol::Draft::Start { thinking: true }),
+            serde_json::json!({ "op": "draft", "state": "start", "thinking": true })
+        );
+        assert_eq!(
+            json(argus_protocol::Draft::More { text: "Hel".into() }),
+            serde_json::json!({ "op": "draft", "state": "more", "text": "Hel" })
+        );
+        assert_eq!(json(argus_protocol::Draft::Done), serde_json::json!({ "op": "draft", "state": "done" }));
     }
 
     #[test]

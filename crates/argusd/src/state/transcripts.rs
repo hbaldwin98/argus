@@ -90,6 +90,8 @@ impl Pushed {
                     *held = *state;
                 }
             }
+            // A draft is what is being written now; nothing keeps it.
+            Update::Draft(_) => {}
         }
     }
 
@@ -211,10 +213,16 @@ impl Daemon {
         if first {
             self.broadcast_tree();
         }
+        self.tell_watchers(pane, push.fresh, updates);
+    }
+
+    /// Hands updates to whoever watches a pane's conversation, if anyone
+    /// does: what a push or a draft brings, which no file will.
+    pub(super) fn tell_watchers(&self, pane: PaneId, fresh: bool, updates: Vec<Update>) {
         if let Some(feed) = self.transcripts.lock().unwrap().get(&pane) {
             let _ = feed.tx.send(ServerMsg::Transcript {
                 pane,
-                fresh: push.fresh,
+                fresh,
                 earlier: None,
                 updates,
             });
@@ -333,6 +341,9 @@ impl Daemon {
             }
             None => (None, pushed),
         };
+        // What is being written now, for a watcher arriving mid-reply.
+        let mut updates = updates;
+        updates.extend(self.draft_so_far(pane));
         ServerMsg::Transcript {
             pane,
             fresh: true,

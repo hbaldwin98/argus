@@ -121,6 +121,22 @@ pub enum Update {
     /// A tool call has finished. Sent apart from the result so a call whose
     /// output is not worth showing still stops spinning.
     ToolState { id: String, state: ToolState },
+    /// What the agent is writing right now, before it is an entry: seen as
+    /// it streams, and never stored. The finished text arrives as an entry
+    /// of its own, which the draft gives way to.
+    Draft(Draft),
+}
+
+/// A change to the one draft a conversation has at a time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Draft {
+    /// The agent began a reply, or its reasoning; anything drafted before
+    /// is over.
+    Start { thinking: bool },
+    /// More of it.
+    More { text: String },
+    /// The agent finished it; its entry follows.
+    Done,
 }
 
 /// The most one push of entries may hold on the wire. What each entry
@@ -183,6 +199,10 @@ pub fn clipped(update: Update) -> Update {
             delta: clip(&delta, MAX_TEXT_BYTES),
         },
         state @ Update::ToolState { .. } => state,
+        Update::Draft(Draft::More { text }) => Update::Draft(Draft::More {
+            text: clip(&text, MAX_TEXT_BYTES),
+        }),
+        draft @ Update::Draft(_) => draft,
     }
 }
 

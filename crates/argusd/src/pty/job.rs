@@ -277,6 +277,36 @@ pub(super) fn strip_herdr_context(
     }
 }
 
+/// The variables a Claude Code session sets for what it runs, naming that
+/// session. A daemon started from inside one would hand them on to every
+/// pane, and a Claude agent there reads them as being that session's child
+/// — one that saves no transcript, which is what Argus reads its
+/// conversation from. What a person sets to configure Claude Code
+/// (`CLAUDE_CODE_USE_BEDROCK` and the like) is not among them.
+const CLAUDE_SESSION_MARKERS: &[&str] = &[
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_BRIDGE_SESSION_ID",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_PID",
+];
+
+pub(super) fn strip_claude_session(
+    command: &mut CommandBuilder,
+    keys: impl IntoIterator<Item = std::ffi::OsString>,
+) {
+    for key in keys {
+        if CLAUDE_SESSION_MARKERS.contains(&key.to_string_lossy().as_ref()) {
+            command.env_remove(key);
+        }
+    }
+}
+
 /// What ends a pane's child once the exit waiter owns the child itself.
 pub(super) type Killer = StdMutex<Box<dyn ChildKiller + Send + Sync>>;
 

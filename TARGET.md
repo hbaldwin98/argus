@@ -200,8 +200,13 @@ Codex's TUI can run on an app-server that several clients share, and opencode's 
 client of its own server; both stream tokens, take turns and interrupts, and pose approvals as
 requests that either surface can answer, with the other told. pi's extension runs inside the
 agent and can stream and inject. On such a channel replies, Stop and approvals go through it
-rather than the PTY. Claude Code has no such protocol: headless resume against a live session
-forks it, so a Claude conversation updates per finished content block.
+rather than the PTY. Claude Code has no such protocol — headless resume against a live session
+forks it — but it sends its API traffic wherever its base URL says, with its own login. A pane
+that asks for its live channel is pointed at a loopback proxy in the daemon that forwards every
+request untouched and reads each streaming reply as it passes, so the phone sees the reply being
+written; the finished text still comes from the transcript. It is opt-in because it puts Argus
+in the path of every request the pane makes. Without it, a Claude conversation updates per
+finished content block.
 
 Web Push tells a phone when a pane starts waiting or a turn ends. It needs the page served over
 HTTPS, and a push carries the pane's title and status, never transcript text.
