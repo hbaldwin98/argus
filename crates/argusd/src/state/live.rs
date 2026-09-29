@@ -137,6 +137,7 @@ impl Daemon {
     }
 
     /// The conversation a pane's own agent claimed, as its hooks named it.
+    #[cfg(unix)]
     pub(super) fn harness_session(&self, pane: PaneId) -> Option<String> {
         let inner = self.inner.lock().unwrap();
         find_pane_ref(&inner.projects, pane)?.harness_session_id.clone()

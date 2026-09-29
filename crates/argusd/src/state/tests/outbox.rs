@@ -10,6 +10,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use super::*;
 
 /// A daemon whose one agent template is `cmd`.
+#[cfg(unix)]
 fn daemon_running(dir: &std::path::Path, cmd: &[&str]) -> Arc<Daemon> {
     let mut config = fake_claude_config(dir);
     config.agents[0].cmd = cmd.iter().map(|s| s.to_string()).collect();
@@ -17,6 +18,7 @@ fn daemon_running(dir: &std::path::Path, cmd: &[&str]) -> Arc<Daemon> {
 }
 
 /// Everything on the pane's screen, row after row.
+#[cfg(unix)]
 fn screen(d: &Daemon, pane: PaneId) -> String {
     let (_, _, cells, _, _, _, _) = d.subscribe_pane(pane).unwrap();
     cells
@@ -27,6 +29,7 @@ fn screen(d: &Daemon, pane: PaneId) -> String {
 }
 
 /// Waits up to `limit` for `seen` to hold of the pane's screen.
+#[cfg(unix)]
 async fn screen_shows(d: &Daemon, pane: PaneId, text: &str, limit: Duration) -> bool {
     let deadline = tokio::time::Instant::now() + limit;
     while tokio::time::Instant::now() < deadline {

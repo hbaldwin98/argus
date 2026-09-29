@@ -12,6 +12,8 @@
 use serde::Deserialize;
 
 pub mod claude;
+// Only a Unix socket reaches Codex's app-server, so nothing else reads it.
+#[cfg(unix)]
 pub mod codex;
 
 /// Which live channel a harness has. Off unless an agent template asks for
