@@ -2,6 +2,7 @@
 //! over the fixtures they all build a daemon from.
 
 mod branches;
+mod conversation;
 mod hook_lifecycle;
 mod lifecycle;
 mod live;
@@ -11,7 +12,6 @@ mod reconcile;
 mod reload;
 mod tee;
 mod restore;
-mod transcripts;
 
 use super::*;
 use crate::config::ProjectConfig;

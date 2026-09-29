@@ -9,9 +9,10 @@
 //! the user adds and removes, `workspaces` for which scope is open,
 //! `hook_server` for the
 //! loopback receiver, `session` for what survives a restart,
-//! `transcripts` for where a pane's conversation is read from, `outbox` for
-//! what a person says to an agent and the way it reaches it, `live` for a
-//! harness server Argus is a second client of, `tee` for the proxy a live Claude pane's API traffic
+//! `conversation` for what a client is shown of a pane's conversation,
+//! `outbox` for what a person says to an agent and the way it reaches it,
+//! `live` for a harness server Argus is a second client of, `tee` for the
+//! proxy a live Claude pane's API traffic
 //! goes through, and `tree`
 //! for finding your way around.
 //!
@@ -31,6 +32,7 @@ use tokio::sync::broadcast;
 mod agents;
 mod board_parts;
 mod build;
+mod conversation;
 mod decisions;
 mod features;
 mod diagrams;
@@ -44,7 +46,6 @@ mod panes;
 mod session;
 mod sync;
 mod tee;
-mod transcripts;
 mod tree;
 mod viewers;
 mod workspaces;
@@ -88,15 +89,9 @@ struct Pane {
     /// Live only: model, context, spend and tool, as the harness last
     /// reported them. Not persisted; a restored agent reports afresh.
     telemetry: argus_protocol::AgentTelemetry,
-    /// Every file this pane's conversation has been written to, oldest
-    /// first, as its own agent's hooks named them. A conversation that
-    /// starts over moves to a new file, and the old one stays readable
-    /// above it for as long as the daemon remembers the pane. Not
-    /// persisted: a restored agent names its file again on its first hook.
-    transcripts: Vec<PathBuf>,
-    /// What a harness whose transcript is no file pushed of its
-    /// conversation: the latest entries, bounded. See `transcripts`.
-    pushed: Option<transcripts::Pushed>,
+    /// The pane's conversation as a client is shown it, and the clients
+    /// following it. See `conversation`.
+    conversation: conversation::Conversation,
     /// When `status` last changed, for a client to say how long the pane
     /// has been where it is, and for the outbox to tell a turn has passed.
     status_since: std::time::SystemTime,
@@ -106,9 +101,6 @@ struct Pane {
     /// The live channel's server, when the pane runs on one. Dropping it
     /// stops the server. See `live`.
     live_server: Option<live::LiveServer>,
-    /// What the agent is writing right now, as the tee reads it off its
-    /// reply: reasoning or not, and the text so far. See `tee`.
-    draft: Option<(bool, String)>,
     /// A hook won the race with session restoration, so saved metadata must
     /// not overwrite what the newly started process already reported.
     restore_status_reported: bool,
@@ -135,12 +127,10 @@ impl Pane {
             harness_session_id: None,
             children: Vec::new(),
             telemetry: Default::default(),
-            transcripts: Vec::new(),
-            pushed: None,
+            conversation: conversation::Conversation::new(id),
             status_since: std::time::SystemTime::now(),
             speaking: Default::default(),
             live_server: None,
-            draft: None,
             restore_status_reported: false,
             restore_title_reported: false,
             resumed: None,
@@ -359,9 +349,6 @@ pub struct Daemon {
     /// arrive.
     viewers: StdMutex<Viewers>,
     next_viewer: std::sync::atomic::AtomicU64,
-    /// The panes whose conversation some client is watching, and the task
-    /// reading each one's file. See `transcripts`.
-    transcripts: StdMutex<HashMap<PaneId, transcripts::Feed>>,
     /// The task typing queued messages, once anything has been queued, and
     /// the id the next message gets.
     outbox: StdMutex<outbox::Outbox>,
@@ -429,7 +416,7 @@ fn project_info(p: &Project) -> ProjectInfo {
                                         })
                                         .collect(),
                                     telemetry: pane.telemetry.clone(),
-                                    has_transcript: !pane.transcripts.is_empty() || pane.pushed.is_some(),
+                                    has_transcript: pane.conversation.offered(),
                                     since: pane
                                         .status_since
                                         .duration_since(std::time::UNIX_EPOCH)

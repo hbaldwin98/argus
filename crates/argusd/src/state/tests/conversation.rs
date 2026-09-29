@@ -1,12 +1,15 @@
-//! Where a pane's conversation is read from: which reports may name the
-//! file, what a watcher is sent, and paging back through what came before.
+//! A pane's conversation: what one read model over its files, its pushed
+//! entries and its draft shows, which reports may write to it, what a
+//! watcher is sent, and paging back through what came before.
 
 use std::io::Write;
 use std::time::Duration;
 
-use argus_protocol::{Body, Earlier, Update};
+use argus_protocol::{Body, Draft, Earlier, Entry, ToolState, Update};
 
 use super::*;
+use crate::harness::transcript::Dialect;
+use crate::state::conversation::Conversation;
 
 /// One Claude prompt record, padded so a few of them fill a test window.
 fn prompt(text: &str) -> String {
@@ -77,6 +80,210 @@ fn agent(dir: &std::path::Path) -> (Arc<Daemon>, PaneId) {
     let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
     (d, pane)
 }
+
+fn push(fresh: bool, texts: &[&str]) -> argus_protocol::Push {
+    argus_protocol::Push {
+        fresh,
+        updates: texts
+            .iter()
+            .map(|text| {
+                Update::Upsert(argus_protocol::Entry {
+                    id: format!("id-{text}"),
+                    at: None,
+                    body: Body::Reply {
+                        text: text.to_string(),
+                    },
+                })
+            })
+            .collect(),
+    }
+}
+
+/// The updates a fresh tail of `conversation` is sent.
+fn tail(conversation: &Conversation) -> Vec<Update> {
+    conversation.tail().read().1
+}
+
+fn upsert(id: &str, body: Body) -> Update {
+    Update::Upsert(Entry {
+        id: id.to_string(),
+        at: None,
+        body,
+    })
+}
+
+// --- the conversation itself, with no daemon ---------------------------
+
+#[test]
+fn a_fresh_push_replaces_everything_pushed_before() {
+    let mut conversation = Conversation::new(PaneId(1));
+    assert!(!conversation.offered());
+
+    let push1 = push(true, &["one", "two"]);
+    assert!(conversation.push(push1.fresh, push1.updates), "the first push offers it");
+    let push2 = push(false, &["three"]);
+    assert!(!conversation.push(push2.fresh, push2.updates), "offered once is enough");
+    assert_eq!(said(&tail(&conversation)), ["one", "two", "three"]);
+
+    let replay = push(true, &["again"]);
+    conversation.push(replay.fresh, replay.updates);
+    assert_eq!(said(&tail(&conversation)), ["again"]);
+}
+
+#[test]
+fn a_pushed_conversation_keeps_only_its_recent_end() {
+    let mut conversation = Conversation::new(PaneId(1));
+    let texts: Vec<String> = (0..600).map(|n| format!("m{n}")).collect();
+    let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+    conversation.push(false, push(false, &refs).updates);
+
+    let held = said(&tail(&conversation));
+    assert_eq!(held.len(), 500);
+    assert_eq!(held.first().map(String::as_str), Some("m100"));
+    assert_eq!(held.last().map(String::as_str), Some("m599"));
+}
+
+#[test]
+fn a_pushed_entry_grows_by_its_appended_text_and_takes_its_tools_state() {
+    let mut conversation = Conversation::new(PaneId(1));
+    let call = Body::ToolCall {
+        tool: "Bash".into(),
+        summary: "cargo test".into(),
+        input: String::new(),
+        state: ToolState::Running,
+    };
+    conversation.push(
+        false,
+        vec![
+            upsert("r", Body::Reply { text: "Build ".into() }),
+            upsert("t", call),
+            Update::AppendText { id: "r".into(), delta: "fixed.".into() },
+            Update::ToolState { id: "t".into(), state: ToolState::Done },
+            // Nothing by these ids was pushed; they change nothing.
+            Update::AppendText { id: "gone".into(), delta: "lost".into() },
+            Update::ToolState { id: "r".into(), state: ToolState::Failed },
+        ],
+    );
+
+    let updates = tail(&conversation);
+    assert_eq!(updates.len(), 2);
+    assert_eq!(updates[0], upsert("r", Body::Reply { text: "Build fixed.".into() }));
+    assert!(matches!(
+        &updates[1],
+        Update::Upsert(Entry { body: Body::ToolCall { state: ToolState::Done, .. }, .. })
+    ));
+}
+
+#[test]
+fn the_draft_comes_after_the_file_and_what_was_pushed_until_it_is_done() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("s1.jsonl");
+    write_lines(&file, &[prompt("from the file")]);
+    let mut conversation = Conversation::new(PaneId(1));
+    conversation.name_file(file, Dialect::Claude);
+    conversation.push(false, push(false, &["pushed"]).updates);
+
+    conversation.draft(vec![Draft::Start { thinking: true }, Draft::More { text: "Weigh".into() }]);
+    conversation.draft(vec![Draft::More { text: "ing".into() }]);
+    let updates = tail(&conversation);
+    assert_eq!(said(&updates), ["from the file", "pushed"]);
+    assert_eq!(
+        updates[2..],
+        [
+            Update::Draft(Draft::Start { thinking: true }),
+            Update::Draft(Draft::More { text: "Weighing".into() }),
+        ]
+    );
+
+    conversation.draft(vec![Draft::Done]);
+    assert!(!tail(&conversation).iter().any(|u| matches!(u, Update::Draft(_))));
+}
+
+#[test]
+fn a_draft_alone_is_no_conversation_to_offer() {
+    let mut conversation = Conversation::new(PaneId(1));
+    conversation.draft(vec![Draft::Start { thinking: false }]);
+    assert!(!conversation.offered());
+    assert_eq!(tail(&conversation), [
+        Update::Draft(Draft::Start { thinking: false }),
+        Update::Draft(Draft::More { text: String::new() }),
+    ]);
+}
+
+#[test]
+fn an_entry_both_read_and_pushed_is_shown_once_and_only_pushed_ones_still_show() {
+    // Codex's live channel pushes items the rollout file later records, and
+    // approvals it never does. A phone opening the pane afterwards sees each
+    // item once and the question too.
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("s1.jsonl");
+    write_lines(&file, &[prompt("from the file")]);
+    let mut conversation = Conversation::new(PaneId(1));
+    conversation.name_file(file, Dialect::Claude);
+    let Update::Upsert(read) = &tail(&conversation)[0] else { panic!("an entry") };
+
+    let mut pushed = push(false, &["only pushed"]).updates;
+    pushed.push(upsert(&read.id, Body::Reply { text: "a live copy of the file's entry".into() }));
+    conversation.push(false, pushed);
+
+    assert_eq!(said(&tail(&conversation)), ["from the file", "only pushed"]);
+}
+
+#[test]
+fn the_file_named_last_is_read_below_a_divider_and_naming_it_again_changes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("s1.jsonl");
+    let second = dir.path().join("s2.jsonl");
+    write_lines(&first, &[prompt("old")]);
+    write_lines(&second, &[prompt("after clear")]);
+    let mut conversation = Conversation::new(PaneId(1));
+
+    assert!(conversation.name_file(first, Dialect::Claude), "the first file offers it");
+    assert!(!conversation.name_file(second.clone(), Dialect::Claude));
+    assert!(!conversation.name_file(second, Dialect::Claude));
+
+    assert_eq!(said(&tail(&conversation)), ["--", "after clear"]);
+}
+
+#[tokio::test]
+async fn followers_are_sent_what_is_pushed_and_drafted() {
+    let mut conversation = Conversation::new(PaneId(7));
+    // Nobody follows yet: nothing to send to, and nothing lost by it.
+    conversation.push(false, push(false, &["before"]).updates);
+    let mut rx = conversation.follow(None, || None);
+
+    conversation.push(false, push(false, &["after"]).updates);
+    conversation.draft(vec![Draft::Start { thinking: false }]);
+
+    let (fresh, _, updates) = next_update(&mut rx).await;
+    assert!(!fresh);
+    assert_eq!(said(&updates), ["after"]);
+    let (_, _, updates) = next_update(&mut rx).await;
+    assert_eq!(updates, [Update::Draft(Draft::Start { thinking: false })]);
+}
+
+#[tokio::test]
+async fn the_followers_stop_when_the_last_watcher_goes() {
+    let mut conversation = Conversation::new(PaneId(1));
+    let _a = conversation.follow(None, || None);
+    let _b = conversation.follow(None, || None);
+    conversation.leave();
+    assert!(conversation.followed());
+    conversation.leave();
+    assert!(!conversation.followed());
+}
+
+#[tokio::test]
+async fn dropping_a_conversation_ends_every_watch_of_it() {
+    let mut conversation = Conversation::new(PaneId(1));
+    let mut rx = conversation.follow(None, || None);
+    drop(conversation);
+    let ended = tokio::time::timeout(Duration::from_secs(5), rx.recv()).await;
+    assert!(matches!(ended, Ok(Err(broadcast::error::RecvError::Closed))), "the watch outlived it");
+}
+
+// --- the conversation on a daemon's panes -------------------------------
+
 
 #[tokio::test]
 async fn a_pane_offers_its_conversation_once_its_own_agent_names_the_file() {
@@ -235,19 +442,6 @@ async fn paging_back_reaches_the_start_across_every_file_the_pane_used() {
 }
 
 #[tokio::test]
-async fn the_reader_stops_when_the_last_watcher_goes() {
-    let dir = tempfile::tempdir().unwrap();
-    let (d, pane) = agent(dir.path());
-    let _a = d.watch_transcript(pane);
-    let _b = d.watch_transcript(pane);
-    d.unwatch_transcript(pane);
-    assert!(d.transcript_watched(pane));
-    d.unwatch_transcript(pane);
-    assert!(!d.transcript_watched(pane));
-    let _ = d.close_pane(pane);
-}
-
-#[tokio::test]
 async fn closing_a_pane_ends_every_watch_of_it() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = agent(dir.path());
@@ -296,64 +490,29 @@ async fn a_new_session_names_its_file_on_the_same_report_that_claims_the_pane() 
     let _ = d.close_pane(pane);
 }
 
-fn push(fresh: bool, texts: &[&str]) -> argus_protocol::Push {
-    argus_protocol::Push {
-        fresh,
-        updates: texts
-            .iter()
-            .map(|text| {
-                Update::Upsert(argus_protocol::Entry {
-                    id: format!("id-{text}"),
-                    at: None,
-                    body: Body::Reply {
-                        text: text.to_string(),
-                    },
-                })
-            })
-            .collect(),
-    }
-}
-
 #[tokio::test]
-async fn a_pushed_conversation_is_offered_held_and_sent_to_watchers() {
+async fn only_the_panes_own_agent_can_push_its_conversation() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = agent(dir.path());
     d.set_pane_session_id(pane, "s1");
-    assert!(!pane_info(&d, pane).has_transcript);
-
-    d.report_pushed(pane, Some("s1"), push(true, &["one", "two"]));
-    assert!(pane_info(&d, pane).has_transcript);
-    let mut rx = d.watch_transcript(pane);
-    assert_eq!(said(&transcript(d.transcript_tail(pane)).2), ["one", "two"]);
-
-    d.report_pushed(pane, Some("s1"), push(false, &["three"]));
-    let (fresh, _, updates) = next_update(&mut rx).await;
-    assert!(!fresh);
-    assert_eq!(said(&updates), ["three"]);
-
-    // A replay replaces everything pushed before it.
-    d.report_pushed(pane, Some("s1"), push(true, &["again"]));
-    assert!(next_update(&mut rx).await.0);
-    assert_eq!(said(&transcript(d.transcript_tail(pane)).2), ["again"]);
 
     // A CLI inside the pane is not the pane's conversation.
     d.report_pushed(pane, Some("child"), push(false, &["intruder"]));
-    assert_eq!(said(&transcript(d.transcript_tail(pane)).2), ["again"]);
+    assert!(!pane_info(&d, pane).has_transcript);
+
+    d.report_pushed(pane, Some("s1"), push(true, &["one"]));
+    assert!(pane_info(&d, pane).has_transcript);
+    d.report_pushed(pane, Some("child"), push(false, &["intruder"]));
+    assert_eq!(said(&transcript(d.transcript_tail(pane)).2), ["one"]);
     let _ = d.close_pane(pane);
 }
 
 #[tokio::test]
-async fn a_pushed_conversation_keeps_only_its_recent_end() {
-    let dir = tempfile::tempdir().unwrap();
-    let (d, pane) = agent(dir.path());
-    let texts: Vec<String> = (0..600).map(|n| format!("m{n}")).collect();
-    let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
-    d.report_pushed(pane, None, push(false, &refs));
-    let held = said(&transcript(d.transcript_tail(pane)).2);
-    assert_eq!(held.len(), 500);
-    assert_eq!(held.first().map(String::as_str), Some("m100"));
-    assert_eq!(held.last().map(String::as_str), Some("m599"));
-    let _ = d.close_pane(pane);
+async fn a_watch_of_a_pane_that_is_gone_ends_at_once() {
+    let d = daemon_with_primary("/tmp/argus-test-conversation");
+    let mut rx = d.watch_transcript(PaneId(99));
+    assert!(matches!(rx.recv().await, Err(broadcast::error::RecvError::Closed)));
+    assert!(!d.transcript_watched(PaneId(99)));
 }
 
 #[tokio::test]
@@ -368,34 +527,5 @@ async fn a_push_bigger_than_an_ordinary_hook_is_taken_by_the_pane_api() {
 
     assert!(response.starts_with(b"HTTP/1.1 200 OK"), "{}", String::from_utf8_lossy(&response));
     assert!(pane_info(&d, pane).has_transcript);
-    let _ = d.close_pane(pane);
-}
-
-#[tokio::test]
-async fn a_pane_read_from_a_file_still_shows_what_only_was_pushed() {
-    // Codex's live channel pushes items the rollout file later records, and
-    // approvals it never does. A phone opening the pane afterwards sees each
-    // item once and the question too.
-    let dir = tempfile::tempdir().unwrap();
-    let (d, pane) = agent(dir.path());
-    let file = dir.path().join("s1.jsonl");
-    write_lines(&file, &[prompt("from the file")]);
-    d.report_transcript(pane, None, &file.to_string_lossy());
-    let file_id = {
-        let (_, _, updates) = transcript(d.transcript_tail(pane));
-        match &updates[0] {
-            Update::Upsert(entry) => entry.id.clone(),
-            other => panic!("{other:?}"),
-        }
-    };
-    let mut pushed = push(false, &["only pushed"]);
-    pushed.updates.push(Update::Upsert(argus_protocol::Entry {
-        id: file_id,
-        at: None,
-        body: Body::Reply { text: "a live copy of the file's entry".into() },
-    }));
-    d.report_pushed(pane, None, pushed);
-
-    assert_eq!(said(&transcript(d.transcript_tail(pane)).2), ["from the file", "only pushed"]);
     let _ = d.close_pane(pane);
 }

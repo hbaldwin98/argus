@@ -134,7 +134,6 @@ impl Daemon {
             restart_attempts: StdMutex::new(HashMap::new()),
             viewers: StdMutex::new(Viewers::default()),
             next_viewer: std::sync::atomic::AtomicU64::new(0),
-            transcripts: StdMutex::new(HashMap::new()),
             outbox: StdMutex::new(Default::default()),
             next_inbox: std::sync::atomic::AtomicU64::new(0),
             tee_port: std::sync::atomic::AtomicU16::new(0),

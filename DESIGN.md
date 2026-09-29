@@ -201,10 +201,10 @@ to the type or its locking.
 | `state/workspaces` | which scope is open, daemon-wide |
 | `state/hook_server` | the loopback receiver agents report to |
 | `state/session` | what survives a daemon restart |
-| `state/transcripts` | which file a pane's conversation is read from, and the clients following it |
+| `state/conversation` | what a client is shown of a pane's conversation — its files, pushed entries and draft merged into one — and the clients following it |
 | `state/outbox` | what is said to an agent and the way it reaches it: through its harness's inbox when one is open, typed now, or held until the agent is back at its prompt |
 | `state/live` | running a pane's live channel: whether a starting pane gets one, the harness's own server beside the pane, and Argus's connection to it |
-| `state/tee` | the loopback proxy a live Claude pane's API traffic goes through, and the draft read off each reply |
+| `state/tee` | the loopback proxy a live Claude pane's API traffic goes through |
 | `state/tree` | finding your way around the tree |
 | `state/features`, `state/tasks`, `state/decisions`, `state/diagrams` | a checkout's feature board, translated between client ids and store keys |
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |

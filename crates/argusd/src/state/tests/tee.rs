@@ -142,26 +142,6 @@ async fn a_live_panes_reply_comes_back_untouched_and_its_text_is_drafted() {
 }
 
 #[tokio::test]
-async fn a_watcher_arriving_mid_reply_is_sent_the_draft_so_far() {
-    let dir = tempfile::tempdir().unwrap();
-    let (api, _seen) = fake_api().await;
-    let (d, pane) = live_pane(dir.path(), &api);
-    d.draft(pane, vec![Draft::Start { thinking: true }, Draft::More { text: "Weighing".into() }]);
-    let ServerMsg::Transcript { updates, .. } = d.transcript_tail(pane) else { panic!() };
-    assert_eq!(
-        &updates[updates.len() - 2..],
-        [
-            Update::Draft(Draft::Start { thinking: true }),
-            Update::Draft(Draft::More { text: "Weighing".into() }),
-        ]
-    );
-    d.draft(pane, vec![Draft::Done]);
-    let ServerMsg::Transcript { updates, .. } = d.transcript_tail(pane) else { panic!() };
-    assert!(!updates.iter().any(|u| matches!(u, Update::Draft(_))));
-    let _ = d.close_pane(pane);
-}
-
-#[tokio::test]
 async fn nothing_but_a_panes_own_path_with_the_token_goes_through() {
     let dir = tempfile::tempdir().unwrap();
     let (api, mut seen) = fake_api().await;

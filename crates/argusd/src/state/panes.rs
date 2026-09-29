@@ -391,15 +391,15 @@ impl Daemon {
     /// Everything a pane leaves behind outside the tree, let go of once it
     /// has been taken out. Every removal comes through here, so a table
     /// keyed by pane cannot be forgotten by one path and not another — a
-    /// watch of a pane nobody closed by hand would otherwise poll its gone
-    /// id forever.
+    /// pane's upstream would otherwise outlive it in the tee. What the pane
+    /// holds itself, its conversation's followers among them, ends as it
+    /// is dropped here.
     ///
     /// Called without `inner` held: each table has its own lock. The
     /// checkout's managed hooks are not a pane's and stay with the caller;
     /// only `close_pane` takes them out.
     pub(super) fn retire_pane(&self, pane: Pane) {
         self.forget_pane_sizes(pane.id);
-        self.forget_transcript(pane.id);
         self.forget_tee(pane.id);
         // Best-effort: a pane retired because it exited has nothing left
         // to kill, but whatever it started in its session may still run.

@@ -1,5 +1,6 @@
-//! Which file a pane's conversation is read from, and the clients following
-//! it.
+//! A pane's conversation as a client is shown it — one read model over the
+//! files its harness writes, the entries a harness pushed and the draft of
+//! what the agent is writing now — and the clients following it.
 //!
 //! The harness keeps the transcript; the daemon only reads it. A pane's own
 //! agent names its file on the reports its hooks already make, and while
@@ -22,11 +23,16 @@
 //! a bounded tail, since there is nothing to read them back from; the
 //! plugin replays its whole session whenever it starts, which covers a
 //! daemon that restarted.
+//!
+//! The conversation lives on its pane, under the tree's lock, so its
+//! followers end when the pane leaves the tree, whichever way it goes. Its
+//! files are never read under that lock: what reading them needs is copied
+//! out first.
 
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use argus_protocol::{Body, Earlier, Entry, Update};
+use argus_protocol::{Body, Draft, Earlier, Entry, Update};
 
 use super::*;
 use crate::harness::transcript::Dialect;
@@ -52,9 +58,180 @@ const LINE_SEARCH: u64 = 64 * 1024;
 /// which is what a phone opens on.
 const MAX_PUSHED: usize = 500;
 
+/// One pane's conversation: what it is read from, what it holds, and who
+/// follows it. Written when a file is named, when entries are pushed and
+/// when the draft changes; read as a tail, a page before it, or followed.
+pub(super) struct Conversation {
+    pane: PaneId,
+    /// Every file the conversation has been written to, as its own agent's
+    /// hooks named them. A conversation that starts over moves to a new
+    /// file, and the old one stays readable above it for as long as the
+    /// daemon remembers the pane. Not persisted: a restored agent names its
+    /// file again on its first hook.
+    history: Option<History>,
+    /// What a harness whose transcript is no file pushed of it.
+    pushed: Option<Pushed>,
+    /// What the agent is writing right now, as the tee reads it off its
+    /// reply: reasoning or not, and the text so far.
+    draft: Option<(bool, String)>,
+    followers: Option<Followers>,
+}
+
+impl Conversation {
+    pub(super) fn new(pane: PaneId) -> Self {
+        Self {
+            pane,
+            history: None,
+            pushed: None,
+            draft: None,
+            followers: None,
+        }
+    }
+
+    /// Whether there is a conversation to offer: a file named, or entries
+    /// pushed. A draft alone is not one; it is only ever part of a reply.
+    pub(super) fn offered(&self) -> bool {
+        self.history.is_some() || self.pushed.is_some()
+    }
+
+    /// Takes the file the conversation is written to now. A file it is not
+    /// already on starts a new part of it, below everything before. Says
+    /// whether this is what first made the conversation offered.
+    pub(super) fn name_file(&mut self, path: PathBuf, dialect: Dialect) -> bool {
+        let was_offered = self.offered();
+        let history = self.history.get_or_insert_with(|| History {
+            files: Vec::new(),
+            dialect,
+        });
+        if history.files.last() != Some(&path) {
+            history.files.push(path);
+        }
+        !was_offered
+    }
+
+    /// Takes entries a harness pushed, and hands them to the followers.
+    /// `fresh` replaces everything pushed before. Says whether this is what
+    /// first made the conversation offered.
+    pub(super) fn push(&mut self, fresh: bool, updates: Vec<Update>) -> bool {
+        let was_offered = self.offered();
+        let pushed = self.pushed.get_or_insert_with(Pushed::default);
+        if fresh {
+            *pushed = Pushed::default();
+        }
+        for update in &updates {
+            pushed.apply(update);
+        }
+        self.tell(fresh, updates);
+        !was_offered
+    }
+
+    /// Applies draft changes, and hands them to the followers. The draft in
+    /// progress is held, so a follower arriving mid-reply is sent what has
+    /// been written so far.
+    pub(super) fn draft(&mut self, changes: Vec<Draft>) {
+        if changes.is_empty() {
+            return;
+        }
+        for change in &changes {
+            match change {
+                Draft::Start { thinking } => self.draft = Some((*thinking, String::new())),
+                Draft::More { text } => {
+                    if let Some((_, held)) = &mut self.draft {
+                        held.push_str(text);
+                    }
+                }
+                Draft::Done => self.draft = None,
+            }
+        }
+        self.tell(false, changes.into_iter().map(Update::Draft).collect());
+    }
+
+    /// Hands the followers, if there are any, what a push or a draft
+    /// brings, which no file will.
+    fn tell(&self, fresh: bool, updates: Vec<Update>) {
+        if let Some(followers) = &self.followers {
+            let _ = followers.tx.send(ServerMsg::Transcript {
+                pane: self.pane,
+                fresh,
+                earlier: None,
+                updates,
+            });
+        }
+    }
+
+    /// What a fresh tail is made of, copied out so that its files can be
+    /// read without the tree's lock.
+    pub(super) fn tail(&self) -> Tail {
+        let draft = match &self.draft {
+            Some((thinking, text)) => vec![
+                Update::Draft(Draft::Start { thinking: *thinking }),
+                Update::Draft(Draft::More { text: text.clone() }),
+            ],
+            None => Vec::new(),
+        };
+        Tail {
+            history: self.history.clone(),
+            pushed: self.pushed.as_ref().map_or_else(Vec::new, Pushed::tail),
+            draft,
+        }
+    }
+
+    /// The files, for paging back through and for following.
+    fn history(&self) -> Option<History> {
+        self.history.clone()
+    }
+
+    /// Joins the followers, if anyone is following.
+    fn join(&mut self) -> Option<broadcast::Receiver<ServerMsg>> {
+        let followers = self.followers.as_mut()?;
+        followers.watchers += 1;
+        Some(followers.tx.subscribe())
+    }
+
+    /// Joins the followers, starting them if nobody was following: a task
+    /// reading the files from `start`, which finds them through `files` on
+    /// every poll since more may be named while it runs.
+    pub(super) fn follow<F>(
+        &mut self,
+        start: Option<Position>,
+        files: F,
+    ) -> broadcast::Receiver<ServerMsg>
+    where
+        F: Fn() -> Option<History> + Send + 'static,
+    {
+        if let Some(rx) = self.join() {
+            return rx;
+        }
+        let (tx, rx) = broadcast::channel(64);
+        let task = tokio::spawn(follow(self.pane, tx.clone(), start, files));
+        self.followers = Some(Followers {
+            tx,
+            watchers: 1,
+            task,
+        });
+        rx
+    }
+
+    /// Leaves the followers, stopping them when nobody is left.
+    pub(super) fn leave(&mut self) {
+        let Some(followers) = &mut self.followers else {
+            return;
+        };
+        followers.watchers = followers.watchers.saturating_sub(1);
+        if followers.watchers == 0 {
+            self.followers = None;
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn followed(&self) -> bool {
+        self.followers.is_some()
+    }
+}
+
 /// A pushed conversation's latest entries, in order.
 #[derive(Default)]
-pub(super) struct Pushed {
+struct Pushed {
     order: std::collections::VecDeque<String>,
     entries: HashMap<String, Entry>,
 }
@@ -104,17 +281,65 @@ impl Pushed {
     }
 }
 
-/// A pane's followers: the channel its updates go out on, how many
-/// connections hold it, and the task reading the file while any do.
-pub(super) struct Feed {
+/// A conversation's followers: the channel its updates go out on, how many
+/// connections hold it, and the task reading its files while any do.
+/// Dropping them stops the task, which is how a pane leaving the tree ends
+/// every watch of it.
+struct Followers {
     tx: broadcast::Sender<ServerMsg>,
     watchers: usize,
-    tail: tokio::task::JoinHandle<()>,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for Followers {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+/// A conversation's tail as copied out of the tree, still to be read.
+#[derive(Default)]
+pub(super) struct Tail {
+    history: Option<History>,
+    pushed: Vec<Update>,
+    draft: Vec<Update>,
+}
+
+impl Tail {
+    /// The tail's updates, and where to ask for what came before them.
+    /// Blocking file I/O; call it off the runtime's threads.
+    ///
+    /// A pane can have both a file and pushed entries — Codex's live
+    /// channel pushes its items as they happen, and its approvals, while
+    /// the rollout file records the items afterwards. The file's entries
+    /// come first, and a pushed one only where the file has none by its id,
+    /// so an item read both ways is one entry and a question nothing wrote
+    /// down is still shown. The draft comes last, for a watcher arriving
+    /// mid-reply: it is what is being written after everything else.
+    pub(super) fn read(self) -> (Option<Earlier>, Vec<Update>) {
+        let page = self.history.as_ref().and_then(History::tail);
+        let (earlier, mut updates) = page.map_or((None, Vec::new()), |p| (p.earlier, p.updates));
+        let read: std::collections::HashSet<String> = updates
+            .iter()
+            .filter_map(|u| match u {
+                Update::Upsert(entry) => Some(entry.id.clone()),
+                _ => None,
+            })
+            .collect();
+        updates.extend(
+            self.pushed
+                .into_iter()
+                .filter(|u| !matches!(u, Update::Upsert(entry) if read.contains(&entry.id))),
+        );
+        updates.extend(self.draft);
+        (earlier, updates)
+    }
 }
 
 /// Every file a pane's conversation has lived in, oldest first, and how to
 /// read them.
-struct History {
+#[derive(Clone)]
+pub(super) struct History {
     files: Vec<PathBuf>,
     dialect: Dialect,
 }
@@ -122,7 +347,7 @@ struct History {
 /// Where following a pane has got to: which of its files, and the byte the
 /// next unread line starts at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Position {
+pub(super) struct Position {
     file: u32,
     offset: u64,
 }
@@ -146,8 +371,7 @@ impl Daemon {
     /// Records the file a pane's conversation is written to, as a report
     /// from its agent named it. Only the pane's own agent may: a CLI started
     /// inside it inherits the hook environment, and its conversation is not
-    /// the pane's. A file the pane is not already on starts a new part of
-    /// the conversation, below everything before it.
+    /// the pane's.
     pub(crate) fn report_transcript(&self, pane: PaneId, reporter: Option<&str>, raw: &str) {
         if self.child_of(pane, reporter).is_some() {
             return;
@@ -156,31 +380,26 @@ impl Daemon {
         if !path.is_absolute() {
             return;
         }
-        let first = {
+        let offered = {
             let mut inner = self.inner.lock().unwrap();
             let Some(p) = find_pane(&mut inner.projects, pane) else {
                 return;
             };
             // An exited pane still takes it: a hook can race its process's
             // exit, and what a finished agent did is still worth reading.
-            if p.harness.as_deref().and_then(|h| self.dialect_of(h)).is_none() {
+            let Some(dialect) = p.harness.as_deref().and_then(|h| self.dialect_of(h)) else {
                 return;
-            }
-            if p.transcripts.last() == Some(&path) {
-                return;
-            }
-            p.transcripts.push(path);
-            p.transcripts.len() == 1
+            };
+            p.conversation.name_file(path, dialect)
         };
         // The one change a client can see without watching: the pane now
         // has a conversation to offer.
-        if first {
+        if offered {
             self.broadcast_tree();
         }
     }
 
-    /// Takes entries a harness pushed, from the pane's own agent only, and
-    /// hands them to whoever is watching.
+    /// Takes entries a harness pushed, from the pane's own agent only.
     pub(super) fn report_pushed(
         &self,
         pane: PaneId,
@@ -195,43 +414,24 @@ impl Daemon {
             .into_iter()
             .map(argus_protocol::transcript::clipped)
             .collect();
-        let first = {
+        let offered = {
             let mut inner = self.inner.lock().unwrap();
             let Some(p) = find_pane(&mut inner.projects, pane) else {
                 return;
             };
-            let first = p.pushed.is_none() && p.transcripts.is_empty();
-            let pushed = p.pushed.get_or_insert_with(Pushed::default);
-            if push.fresh {
-                *pushed = Pushed::default();
-            }
-            for update in &updates {
-                pushed.apply(update);
-            }
-            first
+            p.conversation.push(push.fresh, updates)
         };
-        if first {
+        if offered {
             self.broadcast_tree();
         }
-        self.tell_watchers(pane, push.fresh, updates);
     }
 
-    /// Hands updates to whoever watches a pane's conversation, if anyone
-    /// does: what a push or a draft brings, which no file will.
-    pub(super) fn tell_watchers(&self, pane: PaneId, fresh: bool, updates: Vec<Update>) {
-        if let Some(feed) = self.transcripts.lock().unwrap().get(&pane) {
-            let _ = feed.tx.send(ServerMsg::Transcript {
-                pane,
-                fresh,
-                earlier: None,
-                updates,
-            });
+    /// Takes what the tee read off a pane's reply as it streamed.
+    pub(super) fn draft(&self, pane: PaneId, changes: Vec<Draft>) {
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(p) = find_pane(&mut inner.projects, pane) {
+            p.conversation.draft(changes);
         }
-    }
-
-    fn pushed_tail(&self, pane: PaneId) -> Option<Vec<Update>> {
-        let inner = self.inner.lock().unwrap();
-        find_pane_ref(&inner.projects, pane)?.pushed.as_ref().map(Pushed::tail)
     }
 
     fn dialect_of(&self, harness: &str) -> Option<Dialect> {
@@ -243,107 +443,65 @@ impl Daemon {
 
     fn history(&self, pane: PaneId) -> Option<History> {
         let inner = self.inner.lock().unwrap();
-        let p = find_pane_ref(&inner.projects, pane)?;
-        let dialect = self.dialect_of(p.harness.as_deref()?)?;
-        (!p.transcripts.is_empty()).then(|| History {
-            files: p.transcripts.clone(),
-            dialect,
-        })
+        find_pane_ref(&inner.projects, pane)?.conversation.history()
     }
 
-    /// Joins a pane's followers, starting the task that reads its file if
-    /// nobody was following it. What the file already holds is
-    /// [`Daemon::transcript_tail`]'s to send; this is everything after.
+    /// Joins a pane's followers, starting them if nobody was following it.
+    /// What the files already hold is [`Daemon::transcript_tail`]'s to send;
+    /// this is everything after. A pane that is gone has no followers, and
+    /// its watch ends at once.
     ///
     /// Where a new reader starts is settled here, before any tail can be
-    /// read, so that no tail can end before it.
+    /// read, so that no tail can end before it. Settling it reads the file,
+    /// so it is done outside the tree's lock, and anyone who started
+    /// following meanwhile is joined instead.
     pub fn watch_transcript(self: &Arc<Self>, pane: PaneId) -> broadcast::Receiver<ServerMsg> {
-        let mut feeds = self.transcripts.lock().unwrap();
-        if let Some(feed) = feeds.get_mut(&pane) {
-            feed.watchers += 1;
-            return feed.tx.subscribe();
-        }
-        let start = self.history(pane).map(|history| {
-            let file = history.files.len() - 1;
-            Position {
-                file: file as u32,
-                offset: last_line_end(&history.files[file]),
+        let history = {
+            let mut inner = self.inner.lock().unwrap();
+            let Some(p) = find_pane(&mut inner.projects, pane) else {
+                return ended();
+            };
+            if let Some(rx) = p.conversation.join() {
+                return rx;
             }
-        });
-        let (tx, rx) = broadcast::channel(64);
-        let tail = tokio::spawn(follow(self.clone(), pane, tx.clone(), start));
-        feeds.insert(
-            pane,
-            Feed {
-                tx,
-                watchers: 1,
-                tail,
-            },
-        );
-        rx
+            p.conversation.history()
+        };
+        let start = history.map(|history| history.end());
+
+        // Weak, so a follower does not keep the daemon it reads alive.
+        let daemon = Arc::downgrade(self);
+        let mut inner = self.inner.lock().unwrap();
+        let Some(p) = find_pane(&mut inner.projects, pane) else {
+            return ended();
+        };
+        p.conversation.follow(start, move || daemon.upgrade()?.history(pane))
     }
 
     /// Leaves a pane's followers, stopping its reader when nobody is left.
     pub fn unwatch_transcript(&self, pane: PaneId) {
-        let mut feeds = self.transcripts.lock().unwrap();
-        let Some(feed) = feeds.get_mut(&pane) else {
-            return;
-        };
-        feed.watchers = feed.watchers.saturating_sub(1);
-        if feed.watchers == 0 {
-            if let Some(feed) = feeds.remove(&pane) {
-                feed.tail.abort();
-            }
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(p) = find_pane(&mut inner.projects, pane) {
+            p.conversation.leave();
         }
     }
 
     /// Whether anyone is following a pane's conversation.
     #[cfg(test)]
     pub(crate) fn transcript_watched(&self, pane: PaneId) -> bool {
-        self.transcripts.lock().unwrap().contains_key(&pane)
-    }
-
-    /// Drops a closed pane's followers, which ends every watch of it.
-    pub(super) fn forget_transcript(&self, pane: PaneId) {
-        if let Some(feed) = self.transcripts.lock().unwrap().remove(&pane) {
-            feed.tail.abort();
-        }
+        let inner = self.inner.lock().unwrap();
+        find_pane_ref(&inner.projects, pane).is_some_and(|p| p.conversation.followed())
     }
 
     /// The end of a pane's conversation as a fresh copy: what a client
     /// starts from, and what one that fell behind starts again from.
     /// Blocking file I/O; call it off the runtime's threads.
-    ///
-    /// A pane can have both a file and pushed entries — Codex's live
-    /// channel pushes its items as they happen, and its approvals, while
-    /// the rollout file records the items afterwards. The file's entries
-    /// come first, and a pushed one only where the file has none by its id,
-    /// so an item read both ways is one entry and a question nothing wrote
-    /// down is still shown.
     pub fn transcript_tail(&self, pane: PaneId) -> ServerMsg {
-        let pushed = self.pushed_tail(pane).unwrap_or_default();
-        let (earlier, updates) = match self.history(pane) {
-            Some(history) => {
-                let (earlier, mut updates) = history
-                    .tail()
-                    .map_or((None, Vec::new()), |p| (p.earlier, p.updates));
-                let read: std::collections::HashSet<String> = updates
-                    .iter()
-                    .filter_map(|u| match u {
-                        Update::Upsert(entry) => Some(entry.id.clone()),
-                        _ => None,
-                    })
-                    .collect();
-                updates.extend(pushed.into_iter().filter(|u| {
-                    !matches!(u, Update::Upsert(entry) if read.contains(&entry.id))
-                }));
-                (earlier, updates)
-            }
-            None => (None, pushed),
+        let tail = {
+            let inner = self.inner.lock().unwrap();
+            let tail = find_pane_ref(&inner.projects, pane).map(|p| p.conversation.tail());
+            tail
         };
-        // What is being written now, for a watcher arriving mid-reply.
-        let mut updates = updates;
-        updates.extend(self.draft_so_far(pane));
+        let (earlier, updates) = tail.unwrap_or_default().read();
         ServerMsg::Transcript {
             pane,
             fresh: true,
@@ -355,11 +513,9 @@ impl Daemon {
     /// The part of a pane's conversation before `before`. Blocking file
     /// I/O; call it off the runtime's threads.
     pub fn earlier_transcript(&self, pane: PaneId, before: Earlier) -> ServerMsg {
-        let page = self.history(pane).and_then(|history| {
-            let path = history.files.get(before.file as usize)?;
-            history.page(before.file, path, before.offset)
-        });
-        let (earlier, updates) = page.map_or((None, Vec::new()), |p| (p.earlier, p.updates));
+        let (earlier, updates) = self
+            .history(pane)
+            .map_or((None, Vec::new()), |history| history.earlier(before));
         ServerMsg::EarlierTranscript {
             pane,
             before,
@@ -369,21 +525,29 @@ impl Daemon {
     }
 }
 
-/// Follows a pane's file for as long as anyone watches it, sending what
+/// A watch of nothing: its sender is gone before it starts, so it reads as
+/// ended.
+fn ended() -> broadcast::Receiver<ServerMsg> {
+    broadcast::channel(1).1
+}
+
+/// Follows a pane's files for as long as anyone watches it, sending what
 /// each new line says. `start` of `None` means the pane had no file yet, so
 /// whatever it names first is sent from its tail, fresh.
-async fn follow(
-    daemon: Arc<Daemon>,
+async fn follow<F>(
     pane: PaneId,
     tx: broadcast::Sender<ServerMsg>,
     start: Option<Position>,
-) {
+    files: F,
+) where
+    F: Fn() -> Option<History>,
+{
     let mut at = start;
     let mut poll = tokio::time::interval(POLL);
     poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         poll.tick().await;
-        let Some(history) = daemon.history(pane) else {
+        let Some(history) = files() else {
             continue;
         };
         let step = tokio::task::spawn_blocking(move || history.step(at)).await;
@@ -411,6 +575,16 @@ impl History {
     fn current(&self) -> (u32, &Path) {
         let file = self.files.len() - 1;
         (file as u32, &self.files[file])
+    }
+
+    /// Where following starts: after the last complete line of the current
+    /// file.
+    fn end(&self) -> Position {
+        let (file, path) = self.current();
+        Position {
+            file,
+            offset: last_line_end(path),
+        }
     }
 
     /// One poll of the pane's current file from `at`: what it says, and
@@ -468,6 +642,16 @@ impl History {
         let (file, path) = self.current();
         let len = std::fs::metadata(path).ok()?.len();
         self.page(file, path, len)
+    }
+
+    /// The part of the conversation before `before`, and where to ask for
+    /// what came before that.
+    fn earlier(&self, before: Earlier) -> (Option<Earlier>, Vec<Update>) {
+        let page = self
+            .files
+            .get(before.file as usize)
+            .and_then(|path| self.page(before.file, path, before.offset));
+        page.map_or((None, Vec::new()), |p| (p.earlier, p.updates))
     }
 
     /// The whole lines in the [`WINDOW`] of `path` that ends at `end`, read

@@ -1,5 +1,5 @@
-//! The loopback proxy a live Claude pane sends its API traffic through, and
-//! the draft read off each reply as it streams.
+//! The loopback proxy a live Claude pane sends its API traffic through,
+//! reading each streaming reply into the pane's draft as it passes.
 //!
 //! Claude Code writes a reply to its transcript only once each block is
 //! finished, and runs no server a second client could join, but it sends
@@ -16,7 +16,7 @@
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use argus_protocol::{Draft, Update};
+use argus_protocol::Draft;
 use bytes::Bytes;
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
@@ -121,45 +121,6 @@ impl Daemon {
 
     pub(super) fn forget_tee(&self, pane: PaneId) {
         self.tee_upstreams.lock().unwrap().remove(&pane);
-    }
-
-    /// Applies draft changes to a pane and hands them to whoever watches
-    /// it. The pane keeps the draft in progress, so a watcher arriving
-    /// mid-reply is sent what has been written so far.
-    pub(super) fn draft(&self, pane: PaneId, changes: Vec<Draft>) {
-        if changes.is_empty() {
-            return;
-        }
-        {
-            let mut inner = self.inner.lock().unwrap();
-            let Some(p) = find_pane(&mut inner.projects, pane) else {
-                return;
-            };
-            for change in &changes {
-                match change {
-                    Draft::Start { thinking } => p.draft = Some((*thinking, String::new())),
-                    Draft::More { text } => {
-                        if let Some((_, held)) = &mut p.draft {
-                            held.push_str(text);
-                        }
-                    }
-                    Draft::Done => p.draft = None,
-                }
-            }
-        }
-        self.tell_watchers(pane, false, changes.into_iter().map(Update::Draft).collect());
-    }
-
-    /// The draft a pane has in progress, as the changes that make it.
-    pub(super) fn draft_so_far(&self, pane: PaneId) -> Vec<Update> {
-        let inner = self.inner.lock().unwrap();
-        match find_pane_ref(&inner.projects, pane).and_then(|p| p.draft.clone()) {
-            Some((thinking, text)) => vec![
-                Update::Draft(Draft::Start { thinking }),
-                Update::Draft(Draft::More { text }),
-            ],
-            None => Vec::new(),
-        }
     }
 }
 
