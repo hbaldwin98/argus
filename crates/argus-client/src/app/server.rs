@@ -321,6 +321,9 @@ impl App {
             }
             ServerMsg::Restarting => {}
             ServerMsg::Stopping => self.should_quit = true,
+            // The terminal client never watches a conversation: it shows the
+            // pane itself. These are for the web client.
+            ServerMsg::Transcript { .. } | ServerMsg::EarlierTranscript { .. } => {}
         }
     }
 

@@ -8,7 +8,8 @@
 //! watchers that keep the tree level with the disk, `panel` for the rows
 //! the user adds and removes, `workspaces` for which scope is open,
 //! `hook_server` for the
-//! loopback receiver, `session` for what survives a restart, and `tree`
+//! loopback receiver, `session` for what survives a restart,
+//! `transcripts` for where a pane's conversation is read from, and `tree`
 //! for finding your way around.
 //!
 //! The type and its locking are one thing; only which file a concern is
@@ -37,6 +38,7 @@ mod panel;
 mod panes;
 mod session;
 mod sync;
+mod transcripts;
 mod tree;
 mod viewers;
 mod workspaces;
@@ -80,6 +82,12 @@ struct Pane {
     /// Live only: model, context, spend and tool, as the harness last
     /// reported them. Not persisted; a restored agent reports afresh.
     telemetry: argus_protocol::AgentTelemetry,
+    /// Every file this pane's conversation has been written to, oldest
+    /// first, as its own agent's hooks named them. A conversation that
+    /// starts over moves to a new file, and the old one stays readable
+    /// above it for as long as the daemon remembers the pane. Not
+    /// persisted: a restored agent names its file again on its first hook.
+    transcripts: Vec<PathBuf>,
     /// A hook won the race with session restoration, so saved metadata must
     /// not overwrite what the newly started process already reported.
     restore_status_reported: bool,
@@ -295,6 +303,9 @@ pub struct Daemon {
     /// arrive.
     viewers: StdMutex<Viewers>,
     next_viewer: std::sync::atomic::AtomicU64,
+    /// The panes whose conversation some client is watching, and the task
+    /// reading each one's file. See `transcripts`.
+    transcripts: StdMutex<HashMap<PaneId, transcripts::Feed>>,
 }
 
 type PaneSubscription = (
@@ -378,6 +389,7 @@ impl Daemon {
                                                 })
                                                 .collect(),
                                             telemetry: pane.telemetry.clone(),
+                                            has_transcript: !pane.transcripts.is_empty(),
                                         })
                                         .collect(),
                                     git,

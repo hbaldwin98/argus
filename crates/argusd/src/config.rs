@@ -154,6 +154,10 @@ pub struct HarnessConfig {
     /// Optional skill directory relative to the checkout; absent keeps the compact fallback.
     #[serde(default)]
     pub skill_dir: Option<String>,
+    /// Which built-in reader this CLI's transcript is written for, if any:
+    /// `"claude"`.
+    #[serde(default)]
+    pub transcript: Option<crate::harness::transcript::Dialect>,
 }
 
 /// A bare status is the common case; the table form is for an event that
@@ -246,6 +250,7 @@ impl From<HarnessConfig> for crate::harness::Harness {
             rule_file: c.rule_file.map(PathBuf::from),
             skill_dir: c.skill_dir.map(PathBuf::from),
             settings_version: None,
+            transcript: c.transcript,
         }
     }
 }

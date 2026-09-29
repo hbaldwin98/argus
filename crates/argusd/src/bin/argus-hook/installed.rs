@@ -11,6 +11,9 @@ pub(super) fn installed_hook(url: &str, rest: &[&str]) {
     let inherited_token = env_token();
     let (url, token) = routed_hook(url, token, &inherited_url, &inherited_token);
     let session = key.and_then(|key| raw.as_deref().and_then(|raw| json_string(raw, key)));
+    if let Some(path) = raw.as_deref().and_then(|raw| json_string(raw, "transcript_path")) {
+        name_transcript(&path);
+    }
     let _ = post_as(&url, &token, &note, session.as_deref());
     if rest.contains(&OWNS_SESSION_FLAG) {
         post_session_id(&url, &token, session.as_deref());

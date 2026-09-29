@@ -40,6 +40,26 @@ fn dispatch_pane(
             daemon.release_pane_size(viewer, pane);
             Ok(())
         }
+        ClientMsg::WatchTranscript { pane } => {
+            subs.watch_transcript(pane, daemon.clone(), out_tx.clone());
+            Ok(())
+        }
+        ClientMsg::UnwatchTranscript { pane } => {
+            subs.unwatch_transcript(pane);
+            Ok(())
+        }
+        // Reads a file, so it leaves the message loop.
+        ClientMsg::EarlierTranscript { pane, before } => {
+            let daemon = daemon.clone();
+            let out = out_tx.clone();
+            tokio::spawn(async move {
+                let read = move || daemon.earlier_transcript(pane, before);
+                if let Ok(page) = tokio::task::spawn_blocking(read).await {
+                    let _ = out.send(page);
+                }
+            });
+            Ok(())
+        }
         ClientMsg::Input { pane, bytes } => daemon.write_pane(pane, &bytes),
         ClientMsg::Paste { pane, text } => daemon.paste_pane(pane, &text),
         ClientMsg::Resize { pane, rows, cols } => daemon.resize_pane(viewer, pane, rows, cols),

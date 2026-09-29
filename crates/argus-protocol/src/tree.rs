@@ -170,6 +170,12 @@ pub struct PaneInfo {
     /// exposes a different subset of them.
     #[serde(default)]
     pub telemetry: AgentTelemetry,
+    /// Whether the daemon knows where this agent's conversation is written,
+    /// so a client can offer it. False for a harness that keeps none, and
+    /// until the first report that names the file. Not `transcript`: a
+    /// daemon from before sends a list under that name.
+    #[serde(default)]
+    pub has_transcript: bool,
     // No transcript. It rode here once, up to 200 events a pane in every
     // tree every client was sent, and no client read it. A daemon from
     // before still sends the field, and the derive ignores a field it does
@@ -391,6 +397,7 @@ mod tests {
                 })
                 .collect(),
             telemetry: AgentTelemetry::default(),
+            has_transcript: false,
         }
     }
 

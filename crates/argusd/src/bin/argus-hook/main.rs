@@ -79,7 +79,7 @@ use argus_protocol::{
     DiagramList, DiagramWrite, Endpoint, FeatureAction, FeatureBoard, FeatureWrite, Report,
     ReviewComment, TaskAction, TaskList, TaskPlace, TaskState, TaskWrite, ARTIFACT_SCOPE_VAR,
     CONTEXT_COMMAND, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
-    SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
+    SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, TRANSCRIPT_HEADER, URL_VAR,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(2);
@@ -241,10 +241,11 @@ mod tests {
             "127.0.0.1:4242",
             "tok",
             Some("s-1"),
+            None,
             "",
         );
         assert!(tagged.contains("\r\nX-Argus-Session: s-1\r\n"), "{tagged}");
-        let untagged = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", None, "");
+        let untagged = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", None, None, "");
         assert!(!untagged.contains("X-Argus-Session"), "{untagged}");
         assert!(untagged.contains("\r\nContent-Length: 0\r\n"), "{untagged}");
     }
@@ -256,7 +257,14 @@ mod tests {
         // daemon whichever header it swallowed: a session header it misses
         // files a child's report on its parent's row, and a Content-Length
         // it misses drops the note the report was carrying.
-        let req = request("/pane/1/title", "127.0.0.1:4242", "tok", Some("s-1"), "hi");
+        let req = request(
+            "/pane/1/title",
+            "127.0.0.1:4242",
+            "tok",
+            Some("s-1"),
+            Some("/home/u/.claude/projects/p/s-1.jsonl"),
+            "hi",
+        );
         let (head, body) = req
             .split_once("\r\n\r\n")
             .expect("a blank line ends the headers");
@@ -266,6 +274,23 @@ mod tests {
             assert!(!line.is_empty(), "blank header line: {req:?}");
         }
         assert!(head.contains("\r\nContent-Length: 2\r\n"), "{req:?}");
+    }
+
+    #[test]
+    fn a_report_names_the_file_its_conversation_is_written_to() {
+        let path = "/home/u/.claude/projects/p/s-1.jsonl";
+        let named = request("/pane/1/status/working", "127.0.0.1:4242", "tok", None, Some(path), "");
+        assert!(named.contains(&format!("\r\n{TRANSCRIPT_HEADER}: {path}\r\n")), "{named}");
+        // A path that would break the header into two lines is not sent.
+        let forged = request(
+            "/pane/1/status/working",
+            "127.0.0.1:4242",
+            "tok",
+            None,
+            Some("/tmp/x\r\nAuthorization: Bearer other"),
+            "",
+        );
+        assert!(!forged.contains(TRANSCRIPT_HEADER), "{forged}");
     }
 
     #[test]

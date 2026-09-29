@@ -14,6 +14,7 @@ use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
 use crate::diagrams::{DiagramAction, DiagramList};
 use crate::tasks::{TaskAction, TaskList};
+use crate::transcript::{Earlier, Update};
 use crate::tree::{AgentTelemetry, ProjectInfo, WorkspaceInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -366,6 +367,22 @@ pub enum ClientMsg {
     Restart,
     /// Ask the daemon to stop cleanly without starting a replacement.
     Stop,
+    /// Start following a pane's conversation. Answered with a fresh
+    /// [`ServerMsg::Transcript`], then updates. Only to a daemon that listed
+    /// `TRANSCRIPTS`.
+    WatchTranscript {
+        pane: PaneId,
+    },
+    /// Stop following a pane's conversation.
+    UnwatchTranscript {
+        pane: PaneId,
+    },
+    /// Ask for the part of a conversation before `before`, which a
+    /// [`ServerMsg::Transcript`] or an earlier answer handed out.
+    EarlierTranscript {
+        pane: PaneId,
+        before: Earlier,
+    },
     /// This client's greeting: the first message it sends, and the only one
     /// it sends before knowing the daemon can take more than the floor. A
     /// daemon from before the handshake hangs up on it, which is how the
@@ -388,6 +405,26 @@ pub enum ServerMsg {
     PaneTelemetry {
         pane: PaneId,
         telemetry: AgentTelemetry,
+    },
+    /// Updates to a watched pane's conversation.
+    ///
+    /// `fresh` says to drop whatever is held for the pane first: the answer
+    /// to a watch, and what a client that fell behind is sent instead of the
+    /// updates it missed. `earlier` is where to ask for what came before;
+    /// `None` means the start of the conversation is held.
+    Transcript {
+        pane: PaneId,
+        fresh: bool,
+        earlier: Option<Earlier>,
+        updates: Vec<Update>,
+    },
+    /// The answer to [`ClientMsg::EarlierTranscript`]: what came before
+    /// `before`, oldest first, to go ahead of what is held.
+    EarlierTranscript {
+        pane: PaneId,
+        before: Earlier,
+        earlier: Option<Earlier>,
+        updates: Vec<Update>,
     },
     /// Names of the configured agent templates, sent once on connect.
     Templates(Vec<String>),

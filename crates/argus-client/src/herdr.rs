@@ -305,6 +305,7 @@ mod tests {
                             template: Some("opencode".into()),
                             children: Vec::new(),
                             telemetry: Default::default(),
+                            has_transcript: false,
                         })
                         .collect(),
                     git: None,
@@ -393,6 +394,7 @@ mod tests {
                     template: Some("opencode".into()),
                     children: Vec::new(),
                     telemetry: Default::default(),
+                    has_transcript: false,
                 }],
                 git: None,
                 primary: true,

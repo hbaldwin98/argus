@@ -117,6 +117,7 @@ live in this crate and a contract written twice drifts in silence.
 | --- | --- |
 | `message` | what a client asks for, and what the daemon sends back |
 | `hello` | what each side of a connection can take, said before anything else |
+| `transcript` | a pane's conversation as entries, and the updates that keep a copy of it current |
 | `tree` | what a client renders, which pane state outranks which, and what a row standing for several shows |
 | `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses |
 | `cell`, `framing`, `transport` | a screen cell, a frame, and the endpoint they travel over |
@@ -143,6 +144,7 @@ to the type or its locking.
 | `state/workspaces` | which scope is open, daemon-wide |
 | `state/hook_server` | the loopback receiver agents report to |
 | `state/session` | what survives a daemon restart |
+| `state/transcripts` | which file a pane's conversation is read from, and the clients following it |
 | `state/tree` | finding your way around the tree |
 | `state/features`, `state/tasks`, `state/decisions`, `state/diagrams` | a checkout's feature board, translated between client ids and store keys |
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
@@ -151,6 +153,7 @@ to the type or its locking.
 | `pty`, `pty/job`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; and its terminal emulator with the translation of its screen |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
+| `harness/transcript`, `harness/transcript/claude` | what a harness's own transcript says, read one line at a time into entries, and how each harness writes its own |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
 | `store/boards`, `store/reviews` | the feature boards and the review comments, as stored |
 | `store/panel`, `store/session` | runtime changes to the panel, and the panes to bring back after a restart |
@@ -636,6 +639,30 @@ it: `ServerMsg::PaneTelemetry`, the one pane's record, to a client that greeted 
 `pane-telemetry`, and the whole tree to any other. A connection handles trees before telemetry, so a
 tree taken before a report cannot land after it and wind the numbers back, and one that falls behind
 the records is sent the tree, which holds them all.
+
+A pane's conversation is read from the transcript its harness already writes; Argus stores none.
+Any report may carry `X-Argus-Transcript` naming the file, and `argus-hook` adds it to every report
+the installed form makes when the event's JSON has a `transcript_path` (Claude Code, Codex, Cursor).
+The daemon takes it only from the pane's own session, after the report itself is applied, so a
+session claim that makes a new conversation the pane's own lands first. It keeps the files a pane's
+conversation has lived in, oldest first; `PaneInfo::has_transcript` says whether there is one. The
+harness names a dialect (`transcript = "claude"`; only Claude Code's exists so far), and
+`harness/transcript` reads one JSON line at a time into the harness-neutral entries of
+`argus_protocol::transcript`: prompts, replies, thinking, tool calls and results, notices, turn
+ends and dividers. An entry is named after its file and byte offset, or after the harness's own id
+for a tool call, so reading a line again replaces rather than repeats it. Text is clipped before it
+leaves the daemon, and a harness's bookkeeping records, subagent sidechains and what the CLI adds
+on the person's behalf are left out.
+
+A client that greeted with `transcripts` sends `WatchTranscript` and is answered with a fresh
+`Transcript` — the last megabyte of the current file — and then every update after it. One task per
+watched pane polls the file's length four times a second while anyone watches: a harness appends
+many small writes per turn, so a filesystem watcher would report each one only for the length to be
+read anyway. Following starts at a line boundary fixed when the first watcher joins, before any tail
+is read, so a tail and the stream after it can overlap but never leave a gap. A connection that
+falls behind is sent the tail again. When the pane moves to a new file the watchers are sent a
+divider and that file's tail below what they hold. `EarlierTranscript` pages back a megabyte at a
+time, and across into the file before, until the start. The terminal client never watches.
 
 The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
 /pane/<id>/status/<working|idle|waiting|needs-review|done|failed>` with an optional body as the note,

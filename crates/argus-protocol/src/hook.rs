@@ -57,6 +57,12 @@ pub const CONTEXT_COMMAND: &str = "context";
 /// pane's environment and would otherwise rewrite its parent's row.
 pub const SESSION_HEADER: &str = "X-Argus-Session";
 
+/// Names the file the reporting conversation is written to, when the
+/// harness says. Rides on whatever report a hook is already making rather
+/// than costing a request of its own, and is taken only from the session
+/// that owns the pane, for the reason [`SESSION_HEADER`] exists.
+pub const TRANSCRIPT_HEADER: &str = "X-Argus-Transcript";
+
 /// Flags a managed hook command carries. The installer writes them into a
 /// harness's settings file and the helper parses them back out.
 ///

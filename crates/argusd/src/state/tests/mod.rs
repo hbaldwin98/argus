@@ -7,6 +7,7 @@ mod pane_api;
 mod reconcile;
 mod reload;
 mod restore;
+mod transcripts;
 
 use super::*;
 use crate::config::ProjectConfig;

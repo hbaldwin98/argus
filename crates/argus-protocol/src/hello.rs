@@ -20,7 +20,7 @@ pub const PROTOCOL: u32 = 1;
 /// The optional messages and encodings this build can take. A side sends
 /// one only when the other listed it, so each addition is safe against a
 /// peer of any age.
-pub const CAPABILITIES: &[&str] = &[PANE_TELEMETRY, CELL_RUNS];
+pub const CAPABILITIES: &[&str] = &[PANE_TELEMETRY, CELL_RUNS, TRANSCRIPTS];
 
 /// `ServerMsg::PaneTelemetry` in place of a whole tree when an agent
 /// reports its model, context or spend.
@@ -30,6 +30,11 @@ pub const PANE_TELEMETRY: &str = "pane-telemetry";
 /// `ServerMsg::ScrollbackRuns` in place of their per-cell forms: a pane's
 /// screen and its history as runs of cells, and scrolls as moves.
 pub const CELL_RUNS: &str = "cell-runs";
+
+/// A pane's conversation: `ClientMsg::WatchTranscript` and its siblings
+/// from a client, `ServerMsg::Transcript` and `ServerMsg::EarlierTranscript`
+/// from the daemon. Listed by each side for the half it takes.
+pub const TRANSCRIPTS: &str = "transcripts";
 
 /// One side's greeting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

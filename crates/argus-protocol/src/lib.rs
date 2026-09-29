@@ -22,6 +22,7 @@ pub mod message;
 pub mod paths;
 pub mod review;
 pub mod tasks;
+pub mod transcript;
 pub mod transport;
 pub mod tree;
 
@@ -44,12 +45,12 @@ pub use features::{
     FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES, MAX_HOLD_BYTES,
 };
 pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
-pub use hello::{Hello, CAPABILITIES, CELL_RUNS, PANE_TELEMETRY, PROTOCOL};
+pub use hello::{Hello, CAPABILITIES, CELL_RUNS, PANE_TELEMETRY, PROTOCOL, TRANSCRIPTS};
 pub use hook::{
     endpoint_url, feature_url, pane_path, pane_url, parse_pane_path, parse_pane_url,
     parse_request_target, requested_feature, requested_scope, Endpoint, PaneUrl, Report, ARTIFACT_SCOPE_VAR, CONTEXT_COMMAND, HELPER_VAR,
     INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG, PANE_VAR, SESSION_HEADER,
-    SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
+    SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, TRANSCRIPT_HEADER, URL_VAR,
 };
 pub use ids::{CheckoutId, IdGen, PaneId, ProjectId, RepositoryId, WorkspaceId};
 pub use memory::{
@@ -70,6 +71,7 @@ pub use tasks::{
     checked_task_body, Task, TaskAction, TaskCounts, TaskList, TaskPlace, TaskState, TaskTreeRow,
     TaskWrite, MAX_TASK_BODY_BYTES, MAX_TASK_TITLE_BYTES,
 };
+pub use transcript::{Body, Earlier, Entry, ToolState, Update};
 pub use tree::{
     AgentTelemetry, CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneState, PaneStatus,
     ProjectInfo, RepositoryInfo, WorkspaceInfo,

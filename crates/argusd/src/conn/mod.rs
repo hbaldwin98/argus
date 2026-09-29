@@ -211,6 +211,11 @@ const FRAME_QUEUE: usize = 32;
 /// agent running behind it.
 struct Subscriptions {
     tasks: std::collections::HashMap<PaneId, tokio::task::JoinHandle<()>>,
+    /// The panes whose conversation this connection is watching, one
+    /// forwarding task each. They send on the reply queue rather than the
+    /// frame queue: an update is a record, not a frame a later one can
+    /// stand in for.
+    transcripts: std::collections::HashMap<PaneId, tokio::task::JoinHandle<()>>,
     /// Whether the client reads a pane's screen as runs (`CELL_RUNS`).
     /// Panes are sent in the form it reads; one that does not is sent the
     /// per-cell form, which the forwarder builds from the runs.
@@ -226,6 +231,7 @@ impl Subscriptions {
     fn new(frames: mpsc::Sender<ServerMsg>) -> Self {
         Subscriptions {
             tasks: std::collections::HashMap::new(),
+            transcripts: std::collections::HashMap::new(),
             runs: false,
             frames,
         }
@@ -258,13 +264,82 @@ impl Subscriptions {
             task.abort();
         }
     }
+
+    fn watch_transcript(
+        &mut self,
+        pane: PaneId,
+        daemon: Arc<Daemon>,
+        out: mpsc::UnboundedSender<ServerMsg>,
+    ) {
+        self.unwatch_transcript(pane);
+        let task = tokio::spawn(forward_transcript(pane, daemon, out));
+        self.transcripts.insert(pane, task);
+    }
+
+    fn unwatch_transcript(&mut self, pane: PaneId) {
+        if let Some(task) = self.transcripts.remove(&pane) {
+            task.abort();
+        }
+    }
 }
 
 impl Drop for Subscriptions {
     fn drop(&mut self) {
-        for task in self.tasks.values() {
+        for task in self.tasks.values().chain(self.transcripts.values()) {
             task.abort();
         }
+    }
+}
+
+/// Carries one pane's conversation to the connection: its tail, then every
+/// update after it, and the tail again whenever the connection falls
+/// behind the updates.
+///
+/// The watch is joined before the tail is read, so nothing written in
+/// between is missed; what arrives twice replaces itself.
+async fn forward_transcript(
+    pane: PaneId,
+    daemon: Arc<Daemon>,
+    out: mpsc::UnboundedSender<ServerMsg>,
+) {
+    let mut rx = daemon.watch_transcript(pane);
+    let _watching = TranscriptWatch {
+        daemon: daemon.clone(),
+        pane,
+    };
+    loop {
+        let reader = daemon.clone();
+        let Ok(tail) = tokio::task::spawn_blocking(move || reader.transcript_tail(pane)).await
+        else {
+            return;
+        };
+        if out.send(tail).is_err() {
+            return;
+        }
+        loop {
+            match rx.recv().await {
+                Ok(update) => {
+                    if out.send(update).is_err() {
+                        return;
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => break,
+                Err(broadcast::error::RecvError::Closed) => return,
+            }
+        }
+    }
+}
+
+/// One connection's hold on a pane's followers, let go however the task
+/// holding it ends — including being aborted.
+struct TranscriptWatch {
+    daemon: Arc<Daemon>,
+    pane: PaneId,
+}
+
+impl Drop for TranscriptWatch {
+    fn drop(&mut self) {
+        self.daemon.unwatch_transcript(self.pane);
     }
 }
 
@@ -636,6 +711,94 @@ mod tests {
             ServerMsg::Hello(hello) => assert_eq!(hello, Hello::this_build()),
             other => panic!("expected a greeting, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn watching_a_conversation_sends_its_tail_then_what_is_written_after() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let daemon = Daemon::new(ConfigFile {
+            workspaces: Vec::new(),
+            projects: vec![ProjectConfig {
+                name: "proj".to_string(),
+                repos: vec![dir.path().to_string_lossy().to_string()],
+                ..Default::default()
+            }],
+            agents: vec![crate::config::AgentConfig {
+                name: "claude".to_string(),
+                cmd: vec!["echo".to_string(), "hi".to_string()],
+                env: Default::default(),
+                harness: None,
+                restart: Default::default(),
+            }],
+            harnesses: Vec::new(),
+        });
+        let checkout = daemon.snapshot()[0].repositories[0].checkouts[0].id;
+        let pane = daemon.spawn_agent(checkout, "claude").unwrap();
+        let file = dir.path().join("s.jsonl");
+        let line = |record: serde_json::Value| format!("{record}\n");
+        std::fs::write(
+            &file,
+            line(serde_json::json!({"type": "user", "message": {"content": "hi there"}})),
+        )
+        .unwrap();
+        daemon.report_transcript(pane, None, &file.to_string_lossy());
+        let mut client = connect_to(daemon.clone()).await;
+
+        argus_protocol::write_msg(&mut client, &ClientMsg::WatchTranscript { pane })
+            .await
+            .unwrap();
+        let said = |updates: &[argus_protocol::Update]| -> Vec<String> {
+            updates
+                .iter()
+                .filter_map(|u| match u {
+                    argus_protocol::Update::Upsert(e) => match &e.body {
+                        argus_protocol::Body::Prompt { text }
+                        | argus_protocol::Body::Reply { text } => Some(text.clone()),
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .collect()
+        };
+        let tail = loop {
+            if let ServerMsg::Transcript { fresh: true, updates, .. } = next(&mut client).await {
+                break updates;
+            }
+        };
+        assert_eq!(said(&tail), ["hi there"]);
+
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&file)
+            .unwrap()
+            .write_all(
+                line(serde_json::json!({
+                    "type": "assistant",
+                    "message": {"content": [{"type": "text", "text": "hello"}]},
+                }))
+                .as_bytes(),
+            )
+            .unwrap();
+        let more = loop {
+            if let ServerMsg::Transcript { fresh: false, updates, .. } = next(&mut client).await {
+                break updates;
+            }
+        };
+        assert_eq!(said(&more), ["hello"]);
+
+        argus_protocol::write_msg(&mut client, &ClientMsg::UnwatchTranscript { pane })
+            .await
+            .unwrap();
+        let released = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while daemon.transcript_watched(pane) {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        assert!(released.is_ok(), "unwatching let go of the pane's reader");
+        let _ = daemon.close_pane(pane);
     }
 
     /// A daemon with one shell pane, started before any client connects so

@@ -148,8 +148,9 @@ async fn handle_hook_request(
         .unwrap_or("")
         .to_string();
 
+    let headers = read_hook_headers(&mut reader, &daemon.hook_token).await?;
     let (authorized, content_length, reporter) =
-        read_hook_headers(&mut reader, &daemon.hook_token).await?;
+        (headers.authorized, headers.content_length, headers.reporter);
     let (endpoint, artifact_scope) = parse_request_target(&path);
     let filing = super::features::Filing {
         scope: artifact_scope,
@@ -230,19 +231,38 @@ async fn handle_hook_request(
             _ => HookResponse::empty(200, "OK"),
         }
     };
+    // Any report may name the conversation's file. Taken after the report
+    // itself, so a session claim that makes this conversation the pane's
+    // own is in place before the file is judged by who sent it.
+    if let (true, Some((pane, _)), Some(transcript)) = (authorized, endpoint, &headers.transcript) {
+        daemon.report_transcript(pane, reporter.as_deref(), transcript);
+    }
     wr.write_all(&response.bytes()).await?;
     Ok(())
+}
+
+/// What a hook request's headers say about it.
+struct HookHeaders {
+    authorized: bool,
+    content_length: usize,
+    /// The conversation the report comes from.
+    reporter: Option<String>,
+    /// The file that conversation is written to, when the harness said.
+    transcript: Option<String>,
 }
 
 async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
     reader: &mut R,
     token: &str,
-) -> anyhow::Result<(bool, usize, Option<String>)> {
+) -> anyhow::Result<HookHeaders> {
     use tokio::io::AsyncBufReadExt;
 
-    let mut authorized = false;
-    let mut content_length = 0;
-    let mut reporter = None;
+    let mut headers = HookHeaders {
+        authorized: false,
+        content_length: 0,
+        reporter: None,
+        transcript: None,
+    };
     loop {
         let mut line = String::new();
         let n = reader.read_line(&mut line).await?;
@@ -250,14 +270,16 @@ async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
             break;
         }
         if let Some(v) = strip_header(&line, "Authorization") {
-            authorized = v.eq_ignore_ascii_case(&format!("Bearer {token}"));
+            headers.authorized = v.eq_ignore_ascii_case(&format!("Bearer {token}"));
         } else if let Some(v) = strip_header(&line, "Content-Length") {
-            content_length = v.parse().unwrap_or(0);
+            headers.content_length = v.parse().unwrap_or(0);
         } else if let Some(v) = strip_header(&line, argus_protocol::SESSION_HEADER) {
-            reporter = valid_session_id(v);
+            headers.reporter = valid_session_id(v);
+        } else if let Some(v) = strip_header(&line, argus_protocol::TRANSCRIPT_HEADER) {
+            headers.transcript = Some(v.to_string()).filter(|v| !v.is_empty());
         }
     }
-    Ok((authorized, content_length, reporter))
+    Ok(headers)
 }
 
 /// Answers with the decision as recorded, because its id is what the next

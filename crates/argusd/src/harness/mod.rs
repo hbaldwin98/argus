@@ -47,6 +47,7 @@ use serde_json::{json, Value};
 mod hooks;
 mod install;
 mod skill;
+pub mod transcript;
 
 use hooks::*;
 pub use hooks::{env, helper_path};
@@ -168,6 +169,9 @@ pub struct Harness {
     pub skill_dir: Option<PathBuf>,
     /// Top-level `version` some settings files require (Cursor's hooks.json).
     pub settings_version: Option<u64>,
+    /// How this CLI's own transcript reads, when it keeps one Argus can
+    /// follow. The file itself is named by the hooks, per session.
+    pub transcript: Option<transcript::Dialect>,
 }
 
 impl Event {
@@ -244,6 +248,7 @@ impl Harness {
             rule_file: None,
             skill_dir: None,
             settings_version: None,
+            transcript: None,
         }
     }
 
@@ -282,6 +287,7 @@ impl Harness {
             rule_file: None,
             skill_dir: Some(PathBuf::from(".claude/skills/argus")),
             settings_version: None,
+            transcript: Some(transcript::Dialect::Claude),
         }
     }
 
@@ -313,6 +319,7 @@ impl Harness {
             rule_file: None,
             skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: None,
+            transcript: None,
         }
     }
 
@@ -345,6 +352,7 @@ impl Harness {
             rule_file: None,
             skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: None,
+            transcript: None,
         }
     }
 
@@ -373,6 +381,7 @@ impl Harness {
             rule_file: None,
             skill_dir: Some(PathBuf::from(".pi/skills/argus")),
             settings_version: None,
+            transcript: None,
         }
     }
 
@@ -402,6 +411,7 @@ impl Harness {
             rule_file: Some(PathBuf::from(".agents").join("rules").join("argus.md")),
             skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: None,
+            transcript: None,
         }
     }
 
@@ -444,6 +454,7 @@ impl Harness {
             rule_file: Some(PathBuf::from(".cursor").join("rules").join("argus.mdc")),
             skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: Some(1),
+            transcript: None,
         }
     }
 

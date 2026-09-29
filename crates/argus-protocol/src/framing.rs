@@ -253,6 +253,7 @@ mod tests {
                         template: None,
                         children: Vec::new(),
                         telemetry: Default::default(),
+                        has_transcript: false,
                     }],
                 }],
             }],
