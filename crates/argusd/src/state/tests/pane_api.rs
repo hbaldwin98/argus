@@ -178,6 +178,24 @@ async fn one_client_sizes_a_pane_to_exactly_what_it_asked_for() {
 }
 
 #[tokio::test]
+async fn a_client_that_watches_without_asking_for_a_size_leaves_the_pane_alone() {
+    // A phone draws the desktop's grid at the desktop's size. Were it to
+    // count as a viewer, the smallest-request rule would shrink the pane
+    // on the desktop to a phone's width.
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let pane = d.spawn_shell(only_checkout(&d)).unwrap();
+    let desktop = d.new_viewer();
+    d.resize_pane(desktop, pane, 40, 120).unwrap();
+
+    let _phone = d.new_viewer();
+    let _stream = d.subscribe_pane(pane).unwrap();
+
+    assert_eq!(pane_size(&d, pane), (40, 120));
+    let _ = d.close_pane(pane);
+}
+
+#[tokio::test]
 async fn two_clients_get_a_pane_that_fits_in_both_of_their_windows() {
     // Sizing to the later request instead would leave the client that
     // asked first drawing a grid wider or taller than its own box.

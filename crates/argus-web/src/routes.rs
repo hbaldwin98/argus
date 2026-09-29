@@ -176,7 +176,9 @@ async fn phone(mut socket: WebSocket, app: Arc<App>, token: String) {
     let mut server = app.feeds.server.clone();
     let mut agents = app.feeds.agents.clone();
     let mut conversations = app.feeds.conversations.subscribe();
+    let mut screens = app.feeds.screens.subscribe();
     let mut watching: HashSet<u64> = HashSet::new();
+    let mut screening: HashSet<u64> = HashSet::new();
     // Answers meant for this phone alone: what became of its messages.
     let (direct, mut answers) = mpsc::unbounded_channel::<Arc<String>>();
     let mut recheck = tokio::time::interval(RECHECK);
@@ -196,7 +198,7 @@ async fn phone(mut socket: WebSocket, app: Arc<App>, token: String) {
                 match message {
                     Message::Text(text) => {
                         match serde_json::from_str::<FromPhone>(text.as_str()) {
-                            Ok(ask) => handle(&app, &mut watching, ask, &direct),
+                            Ok(ask) => handle(&app, &mut watching, &mut screening, ask, &direct),
                             Err(_) => Some(error("that message is not one this server knows")),
                         }
                     }
@@ -225,6 +227,16 @@ async fn phone(mut socket: WebSocket, app: Arc<App>, token: String) {
                 }
                 Err(broadcast::error::RecvError::Closed) => break,
             },
+            update = screens.recv() => match update {
+                Ok((pane, json)) => screening.contains(&pane).then_some(json),
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    for pane in &screening {
+                        let _ = app.asks.send(Ask::RefreshScreen(*pane));
+                    }
+                    None
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
             _ = recheck.tick() => {
                 if app.devices.check(&token).is_none() {
                     let _ = socket.send(Message::Close(None)).await;
@@ -242,6 +254,9 @@ async fn phone(mut socket: WebSocket, app: Arc<App>, token: String) {
     for pane in watching {
         let _ = app.asks.send(Ask::Unwatch(pane));
     }
+    for pane in screening {
+        let _ = app.asks.send(Ask::Unscreen(pane));
+    }
 }
 
 /// What a phone's ask does; anything it answers straight away comes back,
@@ -249,6 +264,7 @@ async fn phone(mut socket: WebSocket, app: Arc<App>, token: String) {
 fn handle(
     app: &App,
     watching: &mut HashSet<u64>,
+    screening: &mut HashSet<u64>,
     ask: FromPhone,
     direct: &mpsc::UnboundedSender<Arc<String>>,
 ) -> Option<Arc<String>> {
@@ -283,6 +299,21 @@ fn handle(
         FromPhone::Stop { pane } => {
             let _ = app.asks.send(Ask::Stop(pane));
         }
+        FromPhone::Screen { pane } => {
+            let ask = if screening.insert(pane) { Ask::Screen(pane) } else { Ask::RefreshScreen(pane) };
+            let _ = app.asks.send(ask);
+        }
+        FromPhone::Unscreen { pane } => {
+            if screening.remove(&pane) {
+                let _ = app.asks.send(Ask::Unscreen(pane));
+            }
+        }
+        FromPhone::Key { pane, key } => match crate::screen::key_bytes(&key) {
+            Some(bytes) => {
+                let _ = app.asks.send(Ask::Key(pane, bytes));
+            }
+            None => return Some(error("the key bar has no such key")),
+        },
     }
     None
 }

@@ -357,3 +357,74 @@ async fn a_phone_message_reaches_the_daemon_and_its_answer_comes_back() {
     };
     assert_eq!(stopped, PaneId(7));
 }
+
+#[tokio::test]
+async fn a_phone_watches_a_screen_without_resizing_it_and_answers_with_keys() {
+    let mut running = serve().await;
+    let cookie = paired_cookie(&running).await;
+    let mut daemon = play_daemon(&mut running).await;
+    let origin = format!("http://{}", running.addr);
+    let mut phone = open(running.addr, Some(&cookie), &origin).await.unwrap();
+    let _ = next_of(&mut phone, "agents").await;
+
+    phone
+        .send(tungstenite::Message::Text(r#"{"type":"screen","pane":7}"#.into()))
+        .await
+        .unwrap();
+    let mut seen = Vec::new();
+    let subscribed = loop {
+        let msg = read_msg::<_, ClientMsg>(&mut daemon).await.unwrap();
+        let done = matches!(msg, ClientMsg::Subscribe { .. });
+        seen.push(msg);
+        if done {
+            break seen.last().cloned().unwrap();
+        }
+    };
+    assert!(matches!(subscribed, ClientMsg::Subscribe { pane: PaneId(7) }));
+
+    let cells: Vec<argus_protocol::Cell> = "Allow cargo test? 1 yes 2 no"
+        .chars()
+        .map(|c| argus_protocol::Cell { ch: c.to_string().into(), ..Default::default() })
+        .collect();
+    write_msg(
+        &mut daemon,
+        &ServerMsg::PaneRows {
+            pane: PaneId(7),
+            rows: 2,
+            cols: 40,
+            runs: vec![argus_protocol::CellRun::encode(1, 0, &cells)],
+            cursor: Default::default(),
+            mouse: Default::default(),
+            alternate_screen: false,
+        },
+    )
+    .await
+    .unwrap();
+    let screen = next_of(&mut phone, "screen").await;
+    assert_eq!(screen["fresh"], true);
+    assert_eq!(screen["cols"], 40);
+    assert_eq!(screen["lines"][1][1][0][0], "Allow cargo test? 1 yes 2 no");
+
+    phone
+        .send(tungstenite::Message::Text(r#"{"type":"key","pane":7,"key":"1"}"#.into()))
+        .await
+        .unwrap();
+    phone
+        .send(tungstenite::Message::Text(r#"{"type":"key","pane":7,"key":"rm -rf /"}"#.into()))
+        .await
+        .unwrap();
+    let typed = loop {
+        let msg = read_msg::<_, ClientMsg>(&mut daemon).await.unwrap();
+        seen.push(msg.clone());
+        if let ClientMsg::Input { bytes, .. } = msg {
+            break bytes;
+        }
+    };
+    assert_eq!(typed, b"1");
+    let refused = next_of(&mut phone, "error").await;
+    assert_eq!(refused["message"], "the key bar has no such key");
+    assert!(
+        !seen.iter().any(|m| matches!(m, ClientMsg::Resize { .. })),
+        "a phone never resizes a pane: {seen:?}"
+    );
+}

@@ -19,6 +19,7 @@ mod markdown;
 mod pairing;
 mod phone;
 mod routes;
+mod screen;
 
 pub use pairing::Devices;
 

@@ -115,6 +115,16 @@ into links; every other string is set as text. Every phone shares one daemon con
 conversation several phones watch is watched once, and when the daemon says it is stopping
 `argus web` exits rather than start another.
 
+A phone's Terminal tab watches the pane's screen through `argus web`, which subscribes like any
+client but never sends `Resize`: the daemon sizes a pane to the smallest request among those that
+made one, so a phone that asked would shrink the desktop's pane to its width. `argus web` keeps the
+grid, applying each `RowDamage`'s scroll and then its runs, and sends phones the rows whose hash
+changed, at most every 100 ms, as runs of text with CSS colours; the sixteen named colours stay
+variables for the page's theme. The page draws them at the pane's own width, sized to fit, and its
+key bar sends named keys that `argus web` turns into bytes — digits, arrows, Enter, Esc, Tab, `y`
+and `n`, nothing else. The tab opens by itself when an agent starts waiting, and it is the whole view
+for a harness with no transcript.
+
 A request that makes something — a shell, an agent, an editor, a worktree, a project, a
 repository — may name itself with a `request_id`, and the daemon answers that client alone with
 `Created`: the id of what it made, or nothing when it refused (the reason still arrives as an
@@ -235,6 +245,7 @@ stream.
 | `pairing` | who may connect: the one-time code, and the device tokens it is traded for |
 | `phone` | what the page and the server say to each other |
 | `markdown` | a reply's markdown as HTML that can run nothing |
+| `screen` | a pane's screen as a phone draws it, and the keys the phone may type into it |
 
 ## Views
 

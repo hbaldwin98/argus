@@ -25,6 +25,13 @@ const state = {
   // The one agent view built for a pane, kept while it is on screen so a
   // half-typed message survives the list changing under it.
   shell: null,
+  // pane id -> "conversation" | "terminal"
+  tabs: new Map(),
+  // pane id -> the status last seen, to open the terminal on a new wait
+  lastStatus: new Map(),
+  // pane id -> { rows, cols, lines }
+  screens: new Map(),
+  screening: null,
 };
 
 // --- the connection ------------------------------------------------------
@@ -51,6 +58,7 @@ function connect() {
     retry = 500;
     state.connected = true;
     if (state.watching !== null) send({ type: "watch", pane: state.watching });
+    if (state.screening !== null) send({ type: "screen", pane: state.screening });
     render();
   });
   socket.addEventListener("message", (event) => receive(JSON.parse(event.data)));
@@ -101,6 +109,9 @@ function receive(message) {
         state.sending = null;
       }
       break;
+    case "screen":
+      applyScreen(message);
+      return;
     case "not_sent":
       state.notSent.push({ pane: message.pane, text: message.text });
       break;
@@ -190,6 +201,10 @@ window.addEventListener("hashchange", () => {
   if (state.watching !== null && state.watching !== pane) {
     send({ type: "unwatch", pane: state.watching });
     state.watching = null;
+  }
+  if (state.screening !== null && state.screening !== pane) {
+    send({ type: "unscreen", pane: state.screening });
+    state.screening = null;
   }
   if (pane !== null && state.watching !== pane) {
     state.watching = pane;
@@ -310,6 +325,31 @@ function renderAgent(pane) {
   const status = agent ? agent.loudest : "exited";
   const working = agent && (agent.status === "working" || agent.status === "waiting");
 
+  // The terminal opens by itself when the agent starts waiting on someone:
+  // whatever it is asking is on its screen. A harness with no transcript
+  // has only its screen.
+  const was = state.lastStatus.get(pane);
+  if (agent) state.lastStatus.set(pane, agent.status);
+  if (agent && agent.status === "waiting" && was !== undefined && was !== "waiting") {
+    state.tabs.set(pane, "terminal");
+  }
+  const readable = !agent || agent.has_transcript;
+  const tab = readable ? state.tabs.get(pane) || "conversation" : "terminal";
+  shell.tabConversation.setAttribute("aria-pressed", String(tab === "conversation"));
+  shell.tabConversation.disabled = !readable;
+  shell.tabTerminal.setAttribute("aria-pressed", String(tab === "terminal"));
+  shell.body.hidden = tab !== "conversation";
+  shell.term.hidden = tab !== "terminal";
+  shell.keys.hidden = tab !== "terminal";
+  if (tab === "terminal" && state.screening !== pane && state.connected) {
+    state.screening = pane;
+    send({ type: "screen", pane });
+  } else if (tab !== "terminal" && state.screening === pane) {
+    send({ type: "unscreen", pane });
+    state.screening = null;
+  }
+  if (tab === "terminal") renderScreen(pane);
+
   shell.dot.className = `dot s-${status}`;
   shell.title.textContent = agent ? agent.title : `pane ${pane}`;
   shell.stop.hidden = !working;
@@ -350,14 +390,7 @@ function renderAgent(pane) {
   shell.now.disabled = state.sending !== null;
   shell.error.textContent = state.sendError || "";
 
-  if (agent && !agent.has_transcript) {
-    shell.body.replaceChildren(el("p", {
-      class: "empty",
-      text: "This agent's harness keeps no conversation Argus can read.",
-    }));
-    return;
-  }
-  renderConversation(conversation(pane), false);
+  if (tab === "conversation") renderConversation(conversation(pane), false);
 }
 
 /// The agent view for `pane`: built once, then only filled in.
@@ -373,6 +406,23 @@ function agentShell(pane) {
   });
   shell.banners = el("div");
   shell.body = el("section", { class: "conversation", id: "conversation" });
+  shell.term = el("section", { class: "screen", hidden: true });
+  shell.rows = [];
+  shell.keys = el("div", { class: "keys", hidden: true },
+    ...KEYS.map(([key, label]) => el("button", {
+      type: "button",
+      text: label,
+      onclick: () => send({ type: "key", pane, key }),
+    })),
+  );
+  shell.tabConversation = el("button", {
+    text: "Conversation",
+    onclick: () => { state.tabs.set(pane, "conversation"); render(); scrollToEnd(); },
+  });
+  shell.tabTerminal = el("button", {
+    text: "Terminal",
+    onclick: () => { state.tabs.set(pane, "terminal"); render(); },
+  });
   shell.queue = el("div", { class: "queue" });
   shell.input = el("textarea", { rows: "1", maxlength: "16384", enterkeyhint: "send" });
   shell.input.addEventListener("input", () => fitInput(shell.input));
@@ -397,12 +447,10 @@ function agentShell(pane) {
       shell.stop,
     ),
     shell.banners,
-    el("nav", { class: "tabs" },
-      el("button", { "aria-pressed": "true", text: "Conversation" }),
-      el("button", { disabled: true, text: "Terminal" }),
-    ),
+    el("nav", { class: "tabs" }, shell.tabConversation, shell.tabTerminal),
     shell.body,
-    el("footer", { class: "dock" }, shell.queue, shell.error, form),
+    shell.term,
+    el("footer", { class: "dock" }, shell.keys, shell.queue, shell.error, form),
   );
   app.replaceChildren(shell.root);
   state.shell = shell;
@@ -417,6 +465,65 @@ function submit(pane, now) {
   state.sendError = null;
   send({ type: "send", pane, text, now });
   render();
+}
+
+// The key bar: what a harness's menus and prompts are answered with.
+const KEYS = [
+  ["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"],
+  ["up", "↑"], ["down", "↓"], ["enter", "Enter"], ["esc", "Esc"], ["tab", "Tab"],
+  ["y", "y"], ["n", "n"],
+];
+
+function scrollToEnd() {
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+function applyScreen({ pane, fresh, rows, cols, lines }) {
+  let screen = state.screens.get(pane);
+  if (fresh || !screen || screen.rows !== rows || screen.cols !== cols) {
+    screen = { rows, cols, lines: new Array(rows).fill(null).map(() => []), changed: new Set(), all: true };
+    state.screens.set(pane, screen);
+  }
+  for (const [row, runs] of lines) {
+    if (row < rows) {
+      screen.lines[row] = runs;
+      screen.changed.add(row);
+    }
+  }
+  if (state.shell && state.shell.pane === pane && !state.shell.term.hidden) renderScreen(pane);
+}
+
+/// Draws the pane's grid at its own width, sized to fit the phone's.
+function renderScreen(pane) {
+  const shell = state.shell;
+  const screen = state.screens.get(pane);
+  if (!shell || !screen) return;
+  if (screen.all || shell.rows.length !== screen.rows) {
+    shell.rows = screen.lines.map(() => el("div", { class: "row" }));
+    shell.term.replaceChildren(...shell.rows);
+    screen.changed = new Set(screen.lines.keys());
+    screen.all = false;
+  }
+  const width = shell.term.clientWidth || window.innerWidth;
+  const size = Math.max(6, Math.min(14, (width - 12) / (screen.cols * 0.6)));
+  shell.term.style.fontSize = `${size.toFixed(2)}px`;
+  for (const row of screen.changed) {
+    shell.rows[row].replaceChildren(...screen.lines[row].map(drawRun));
+  }
+  screen.changed.clear();
+}
+
+function drawRun([text, fg, bg, flags]) {
+  const span = document.createElement("span");
+  span.textContent = text;
+  let [color, background] = [fg, bg];
+  if (flags & 8) [color, background] = [bg || "var(--screen-bg)", fg || "var(--text)"];
+  if (color) span.style.color = color;
+  if (background) span.style.backgroundColor = background;
+  if (flags & 1) span.style.fontWeight = "700";
+  if (flags & 2) span.style.fontStyle = "italic";
+  if (flags & 4) span.style.textDecoration = "underline";
+  return span;
 }
 
 function fitInput(input) {

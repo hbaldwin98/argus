@@ -46,6 +46,14 @@ pub enum Ask {
     Cancel(u64, u64),
     /// Interrupt an agent.
     Stop(u64),
+    /// Start watching a pane's screen, which is sent whole.
+    Screen(u64),
+    /// Stop watching it, once nobody else is.
+    Unscreen(u64),
+    /// Send the whole screen again, for a phone that fell behind.
+    RefreshScreen(u64),
+    /// Keys straight to a pane.
+    Key(u64, &'static [u8]),
 }
 
 /// What the daemon connection keeps across reconnecting.
@@ -53,6 +61,8 @@ pub enum Ask {
 struct Link {
     /// How many phones watch each conversation.
     watching: HashMap<u64, usize>,
+    /// How many phones watch each screen.
+    screens: HashMap<u64, usize>,
     /// Messages sent and not yet answered, by request id: the pane, the
     /// text, and the phone to answer.
     requests: HashMap<u64, (u64, String, Reply)>,
@@ -76,6 +86,7 @@ pub struct Feeds {
     pub server: watch::Receiver<Arc<String>>,
     pub agents: watch::Receiver<Arc<String>>,
     pub conversations: broadcast::Sender<(u64, Arc<String>)>,
+    pub screens: broadcast::Sender<(u64, Arc<String>)>,
 }
 
 /// Why the connection loop ended.
@@ -89,6 +100,7 @@ struct Publish {
     server: watch::Sender<Arc<String>>,
     agents: watch::Sender<Arc<String>>,
     conversations: broadcast::Sender<(u64, Arc<String>)>,
+    screens: broadcast::Sender<(u64, Arc<String>)>,
 }
 
 impl Publish {
@@ -119,6 +131,12 @@ impl Publish {
     fn conversation(&self, pane: u64, msg: &ToPhone) {
         if let Ok(json) = serde_json::to_string(msg) {
             let _ = self.conversations.send((pane, Arc::new(json)));
+        }
+    }
+
+    fn screen(&self, pane: u64, update: crate::screen::ScreenUpdate) {
+        if let Ok(json) = serde_json::to_string(&ToPhone::Screen { pane, update }) {
+            let _ = self.screens.send((pane, Arc::new(json)));
         }
     }
 }
@@ -153,10 +171,12 @@ where
         workspaces: Vec::new(),
     }));
     let (conversations, _) = broadcast::channel(256);
+    let (screens, _) = broadcast::channel(64);
     let publish = Publish {
         server,
         agents,
         conversations: conversations.clone(),
+        screens: screens.clone(),
     };
     let (asks, asks_rx) = mpsc::unbounded_channel();
     let task = tokio::spawn(keep_connected(connect, publish, asks_rx));
@@ -164,6 +184,7 @@ where
         server: server_rx,
         agents: agents_rx,
         conversations,
+        screens,
     };
     (feeds, asks, task)
 }
@@ -248,6 +269,29 @@ impl Link {
                 id,
             }),
             Ask::Stop(pane) => Some(ClientMsg::Interrupt { pane: PaneId(pane) }),
+            Ask::Key(pane, bytes) => Some(ClientMsg::Input {
+                pane: PaneId(pane),
+                bytes: bytes.to_vec(),
+            }),
+            // Subscribing gets a whole grid; never a Resize, so the phone
+            // never changes the size the desktop gave the pane.
+            Ask::Screen(pane) => {
+                let watchers = self.screens.entry(pane).or_insert(0);
+                *watchers += 1;
+                (*watchers == 1).then_some(ClientMsg::Subscribe { pane: PaneId(pane) })
+            }
+            Ask::Unscreen(pane) => match self.screens.get_mut(&pane) {
+                Some(watchers) if *watchers <= 1 => {
+                    self.screens.remove(&pane);
+                    Some(ClientMsg::Unsubscribe { pane: PaneId(pane) })
+                }
+                Some(watchers) => {
+                    *watchers -= 1;
+                    None
+                }
+                None => None,
+            },
+            Ask::RefreshScreen(_) => None,
             other => count(&mut self.watching, &other),
         }
     }
@@ -319,7 +363,13 @@ fn count(watching: &mut HashMap<u64, usize>, ask: &Ask) -> Option<ClientMsg> {
             pane: PaneId(pane),
             before,
         }),
-        Ask::Send { .. } | Ask::Cancel(..) | Ask::Stop(_) => None,
+        Ask::Send { .. }
+        | Ask::Cancel(..)
+        | Ask::Stop(_)
+        | Ask::Screen(_)
+        | Ask::Unscreen(_)
+        | Ask::RefreshScreen(_)
+        | Ask::Key(..) => None,
     }
 }
 
@@ -355,9 +405,14 @@ where
     for pane in link.watching.keys() {
         let _ = write_msg(&mut wr, &ClientMsg::WatchTranscript { pane: PaneId(*pane) }).await;
     }
+    for pane in link.screens.keys() {
+        let _ = write_msg(&mut wr, &ClientMsg::Subscribe { pane: PaneId(*pane) }).await;
+    }
     link.first_tree = true;
 
     let mut state = State::default();
+    let mut flush = tokio::time::interval(crate::screen::FLUSH);
+    flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let ended = loop {
         tokio::select! {
             msg = incoming.recv() => {
@@ -368,9 +423,24 @@ where
             }
             ask = asks.recv() => {
                 let Some(ask) = ask else { break Some(Ended::Stopped) };
+                // A phone joining a screen others already watch starts from
+                // the whole of it, as does one that fell behind.
+                if let Ask::Screen(pane) | Ask::RefreshScreen(pane) = ask {
+                    if let Some(screen) = state.screens.get_mut(&pane) {
+                        screen.refresh();
+                    }
+                }
                 if let Some(msg) = link.ask(ask) {
                     if write_msg(&mut wr, &msg).await.is_err() {
                         break None;
+                    }
+                }
+            }
+            _ = flush.tick() => {
+                state.screens.retain(|pane, _| link.screens.contains_key(pane));
+                for (pane, screen) in &mut state.screens {
+                    if let Some(update) = screen.flush() {
+                        publish.screen(*pane, update);
                     }
                 }
             }
@@ -385,6 +455,8 @@ where
 struct State {
     daemon: Option<Hello>,
     tree: Vec<WorkspaceTree>,
+    /// The screens phones are watching, as the daemon streams them.
+    screens: HashMap<u64, crate::screen::Screen>,
     /// Whether the daemon sends every workspace. One from before sends
     /// only the open workspace's tree, which stands in for all of them.
     wide: bool,
@@ -451,6 +523,34 @@ impl State {
                     updates: phone::updates(updates),
                 },
             ),
+            ServerMsg::PaneRows {
+                pane,
+                rows,
+                cols,
+                runs,
+                cursor,
+                ..
+            } => match self.screens.get_mut(&pane.0) {
+                Some(screen) => screen.replace(rows, cols, &runs, cursor),
+                None => {
+                    let screen = crate::screen::Screen::new(rows, cols, &runs, cursor);
+                    self.screens.insert(pane.0, screen);
+                }
+            },
+            ServerMsg::RowDamage {
+                pane,
+                scroll,
+                runs,
+                cursor,
+                ..
+            } => {
+                if let Some(screen) = self.screens.get_mut(&pane.0) {
+                    screen.damage(scroll, &runs, cursor);
+                }
+            }
+            ServerMsg::PaneClosed { pane, .. } => {
+                self.screens.remove(&pane.0);
+            }
             ServerMsg::Stopping => return Some(Ended::Stopped),
             ServerMsg::Error { message } => tracing::warn!("argusd: {message}"),
             _ => {}

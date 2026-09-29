@@ -51,6 +51,13 @@ pub enum ToPhone {
         outcome: &'static str,
         reason: Option<String>,
     },
+    /// A watched pane's screen: whole when `fresh`, else the rows that
+    /// changed.
+    Screen {
+        pane: u64,
+        #[serde(flatten)]
+        update: crate::screen::ScreenUpdate,
+    },
     /// A message this page queued that the daemon no longer holds and never
     /// said it typed: it restarted, and its queue went with it.
     NotSent { pane: u64, text: String },
@@ -70,6 +77,11 @@ pub enum FromPhone {
     Cancel { pane: u64, id: u64 },
     /// Interrupt the agent.
     Stop { pane: u64 },
+    /// Start or stop watching a pane's screen.
+    Screen { pane: u64 },
+    Unscreen { pane: u64 },
+    /// One key from the key bar, by name, straight to the pane.
+    Key { pane: u64, key: String },
 }
 
 /// A daemon's answer to a message, as the page reads it.

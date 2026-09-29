@@ -171,6 +171,11 @@ permission dialog by accident; it is shown on the phone and on the agent's card 
 is typed, and either can take it back (`u` on the Panes stage). Send now types it straight away,
 for steering an agent mid-turn. Stop interrupts the agent with Esc.
 
+The Terminal tab shows the agent's own screen at the desktop's size — the phone never resizes a
+pane — with a key bar (digits, arrows, Enter, Esc, Tab, y, n) for answering a harness's menus and
+permission prompts. It opens by itself when an agent starts waiting, and it is the whole view for a
+harness whose conversation Argus cannot read.
+
 It prints a QR code and a six-digit code. The code pairs one device, works once, and expires after
 five minutes; press Enter in `argus web` for a new one. A paired device keeps a cookie, stored on
 the machine only as a hash.
@@ -180,8 +185,8 @@ With [Tailscale](https://tailscale.com), `tailscale serve --bg 7420` puts HTTPS 
 your tailnet; pass the name it prints as `--url` so the QR code opens it. `--listen 0.0.0.0` binds
 every interface instead, and warns that the cookie then crosses the network unencrypted.
 
-Conversations are read for Claude Code today. Other harnesses are listed with their status, and
-their conversations follow.
+Conversations are read for Claude Code today; other harnesses show their Terminal tab until theirs
+follow.
 
 ## Install on `PATH`
 
