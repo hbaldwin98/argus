@@ -4,6 +4,7 @@
 mod branches;
 mod hook_lifecycle;
 mod inbox;
+mod lifecycle;
 mod live;
 mod pane_api;
 mod outbox;

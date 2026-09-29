@@ -38,31 +38,7 @@ impl Daemon {
         {
             let mut inner = self.inner.lock().unwrap();
             if let Some(c) = find_checkout(&mut inner.projects, checkout) {
-                c.panes.push(Pane {
-                    id,
-                    kind: PaneKind::Shell,
-                    title: "shell".to_string(),
-                    status: PaneStatus::Idle,
-                    note: None,
-                    template: None,
-                    harness: None,
-                    children: Vec::new(),
-                    telemetry: Default::default(),
-                    transcripts: Vec::new(),
-                    pushed: None,
-                    status_since: std::time::SystemTime::now(),
-                    queued: Default::default(),
-                    typed_at: None,
-                    heard: false,
-                    inbox: None,
-                    live_server: None,
-                    draft: None,
-                    restore_status_reported: false,
-                    restore_title_reported: false,
-                    harness_session_id: None,
-                    resumed: None,
-                    runtime,
-                });
+                c.panes.push(Pane::new(id, PaneKind::Shell, "shell".to_string(), runtime));
             }
         }
         self.broadcast_tree();
@@ -134,31 +110,8 @@ impl Daemon {
         {
             let mut inner = self.inner.lock().unwrap();
             if let Some(c) = find_checkout(&mut inner.projects, checkout) {
-                c.panes.push(Pane {
-                    id,
-                    kind: PaneKind::Editor,
-                    title: rel_path.rsplit('/').next().unwrap_or(rel_path).to_string(),
-                    status: PaneStatus::Idle,
-                    note: None,
-                    template: None,
-                    harness: None,
-                    children: Vec::new(),
-                    telemetry: Default::default(),
-                    transcripts: Vec::new(),
-                    pushed: None,
-                    status_since: std::time::SystemTime::now(),
-                    queued: Default::default(),
-                    typed_at: None,
-                    heard: false,
-                    inbox: None,
-                    live_server: None,
-                    draft: None,
-                    restore_status_reported: false,
-                    restore_title_reported: false,
-                    harness_session_id: None,
-                    resumed: None,
-                    runtime,
-                });
+                let title = rel_path.rsplit('/').next().unwrap_or(rel_path).to_string();
+                c.panes.push(Pane::new(id, PaneKind::Editor, title, runtime));
             }
         }
         self.broadcast_tree();
@@ -290,41 +243,28 @@ impl Daemon {
             let mut starting = self.starting_agents.lock().unwrap();
             let mut inner = self.inner.lock().unwrap();
             let pending = starting.remove(&id).unwrap_or_default();
-            let restore_status_reported = pending.status.is_some();
-            let restore_title_reported = pending.title.is_some();
             if let Some(c) = find_checkout(&mut inner.projects, checkout) {
-                c.panes.push(Pane {
-                    id,
-                    kind: PaneKind::Agent,
-                    title: pending.title.unwrap_or_else(|| template.name.clone()),
-                    status: pending
-                        .status
-                        .as_ref()
-                        .map_or(PaneStatus::Idle, |(status, _)| *status),
-                    note: pending.status.and_then(|(_, note)| note),
-                    template: Some(template.name.clone()),
-                    harness: Some(harness.name.to_string()),
-                    children: pending.children,
-                    telemetry: Default::default(),
-                    transcripts: Vec::new(),
-                    pushed: None,
-                    status_since: std::time::SystemTime::now(),
-                    queued: Default::default(),
-                    typed_at: None,
-                    heard: restore_status_reported,
-                    inbox: None,
-                    live_server,
-                    draft: None,
-                    restore_status_reported,
-                    restore_title_reported,
-                    harness_session_id: pending.harness_session_id.or(harness_session_id),
-                    resumed: resuming.then(|| Resumed {
-                        checkout,
-                        template: template.name.clone(),
-                        at: std::time::Instant::now(),
-                    }),
-                    runtime,
+                let restore_title_reported = pending.title.is_some();
+                let title = pending.title.unwrap_or_else(|| template.name.clone());
+                let mut pane = Pane::new(id, PaneKind::Agent, title, runtime);
+                pane.restore_status_reported = pending.status.is_some();
+                pane.restore_title_reported = restore_title_reported;
+                pane.heard = pane.restore_status_reported;
+                if let Some((status, note)) = pending.status {
+                    pane.status = status;
+                    pane.note = note;
+                }
+                pane.template = Some(template.name.clone());
+                pane.harness = Some(harness.name.to_string());
+                pane.harness_session_id = pending.harness_session_id.or(harness_session_id);
+                pane.children = pending.children;
+                pane.live_server = live_server;
+                pane.resumed = resuming.then(|| Resumed {
+                    checkout,
+                    template: template.name.clone(),
+                    at: std::time::Instant::now(),
                 });
+                c.panes.push(pane);
             }
         }
         if let Some(socket) = live_socket {
@@ -365,7 +305,7 @@ impl Daemon {
                 "{} had nothing to resume in this checkout; starting it fresh",
                 r.template
             );
-            let _ = self.remove_pane(pane);
+            self.remove_pane(pane);
             if let Err(e) = self.start_agent(r.checkout, &r.template, Start::Fresh, None) {
                 tracing::warn!("could not start {} after a failed resume: {e}", r.template);
             }
@@ -374,7 +314,7 @@ impl Daemon {
 
         if let Some((checkout, template)) = restart {
             if self.restarts(&template, code, checkout) {
-                let _ = self.remove_pane(pane);
+                self.remove_pane(pane);
                 if let Err(e) = self.start_agent(checkout, &template, Start::Fresh, None) {
                     tracing::warn!("could not restart {template}: {e}");
                 }
@@ -438,9 +378,32 @@ impl Daemon {
     /// Drops a pane from the tree without touching the checkout's managed
     /// hooks — for a pane being replaced in place, where an agent is about
     /// to take its seat and would only have to write them back.
-    fn remove_pane(&self, pane: PaneId) -> Option<Pane> {
-        let mut inner = self.inner.lock().unwrap();
-        remove_pane_with_checkout(&mut inner.projects, pane).map(|(p, _)| p)
+    fn remove_pane(&self, pane: PaneId) {
+        let removed = {
+            let mut inner = self.inner.lock().unwrap();
+            remove_pane_with_checkout(&mut inner.projects, pane).map(|(p, _)| p)
+        };
+        if let Some(removed) = removed {
+            self.retire_pane(removed);
+        }
+    }
+
+    /// Everything a pane leaves behind outside the tree, let go of once it
+    /// has been taken out. Every removal comes through here, so a table
+    /// keyed by pane cannot be forgotten by one path and not another — a
+    /// watch of a pane nobody closed by hand would otherwise poll its gone
+    /// id forever.
+    ///
+    /// Called without `inner` held: each table has its own lock. The
+    /// checkout's managed hooks are not a pane's and stay with the caller;
+    /// only `close_pane` takes them out.
+    pub(super) fn retire_pane(&self, pane: Pane) {
+        self.forget_pane_sizes(pane.id);
+        self.forget_transcript(pane.id);
+        self.forget_tee(pane.id);
+        // Best-effort: a pane retired because it exited has nothing left
+        // to kill, but whatever it started in its session may still run.
+        let _ = pane.runtime.kill();
     }
 
     /// Kills the pane's process (best-effort — it may already have exited)
@@ -460,10 +423,10 @@ impl Daemon {
             (taken.map(|(p, _)| p), orphaned)
         };
         let removed = removed.ok_or_else(|| anyhow::anyhow!("no such pane"))?;
-        self.forget_pane_sizes(pane);
-        self.forget_transcript(pane);
-        self.forget_tee(pane);
-        let _ = removed.runtime.kill();
+        self.retire_pane(removed);
+        // Only here: a restart or failed resume has an agent about to take
+        // the seat, which would write the hooks straight back, and a
+        // vanished worktree has no directory to take them out of.
         if let Some(path) = orphaned_checkout {
             for h in &self.harnesses {
                 if let Err(e) = h.uninstall(&path) {

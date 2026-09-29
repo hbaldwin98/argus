@@ -353,9 +353,13 @@ impl Daemon {
                 .await;
         }
 
-        {
+        // Empty unless a pane was started here while git was removing it.
+        let stragglers = {
             let mut inner = self.inner.lock().unwrap();
-            remove_checkout_entry(&mut inner.projects, checkout);
+            remove_checkout_entry(&mut inner.projects, checkout).map_or_else(Vec::new, |c| c.panes)
+        };
+        for pane in stragglers {
+            self.retire_pane(pane);
         }
         self.refresh_branches();
         self.broadcast_tree();

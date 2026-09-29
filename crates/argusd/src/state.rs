@@ -129,6 +129,39 @@ struct Pane {
     runtime: PaneRuntime,
 }
 
+impl Pane {
+    /// A pane as it enters the tree, before anything has been heard from
+    /// it. Every default lives here, so a new field is added in one place
+    /// and a start that knows more sets only what it knows.
+    fn new(id: PaneId, kind: PaneKind, title: String, runtime: PaneRuntime) -> Self {
+        Self {
+            id,
+            kind,
+            title,
+            status: PaneStatus::Idle,
+            note: None,
+            template: None,
+            harness: None,
+            harness_session_id: None,
+            children: Vec::new(),
+            telemetry: Default::default(),
+            transcripts: Vec::new(),
+            pushed: None,
+            status_since: std::time::SystemTime::now(),
+            queued: Default::default(),
+            typed_at: None,
+            heard: false,
+            inbox: None,
+            live_server: None,
+            draft: None,
+            restore_status_reported: false,
+            restore_title_reported: false,
+            resumed: None,
+            runtime,
+        }
+    }
+}
+
 /// One agent running underneath a pane's own, tracked only so the operator
 /// can see it. Nothing here ever reaches the parent's status or title: the
 /// pane belongs to the agent Argus started in it.

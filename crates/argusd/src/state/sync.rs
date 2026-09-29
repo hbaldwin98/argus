@@ -481,7 +481,7 @@ impl Daemon {
             }
         }
         for pane in orphaned_panes {
-            let _ = pane.runtime.kill();
+            self.retire_pane(pane);
         }
     }
 

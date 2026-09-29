@@ -186,7 +186,7 @@ to the type or its locking.
 | `main` | daemon startup, and running until asked to stop |
 | `state` | what the tree is, and what a client is shown of it |
 | `state/build` | turning what the config declares into the tree the daemon runs on |
-| `state/panes` | a pane's lifecycle: spawned, restarted, closed, written to |
+| `state/panes` | a pane's lifecycle: spawned, restarted, written to, and retired — the one way out of the tree every removal takes |
 | `state/agents` | what an agent reports about itself, and what it is told |
 | `state/viewers` | the one pty size reconciled out of what every client asks for |
 | `state/git_ops` | the writes to Git |
