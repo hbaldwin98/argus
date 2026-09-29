@@ -172,6 +172,10 @@ pub struct Harness {
     /// How this CLI's own transcript reads, when it keeps one Argus can
     /// follow. The file itself is named by the hooks, per session.
     pub transcript: Option<transcript::Dialect>,
+    /// What to type to interrupt the agent mid-turn, when it is not Esc —
+    /// the key every built-in harness takes. Never Ctrl-C: pressed twice it
+    /// quits most of these CLIs.
+    pub interrupt: Option<String>,
 }
 
 impl Event {
@@ -249,6 +253,7 @@ impl Harness {
             skill_dir: None,
             settings_version: None,
             transcript: None,
+            interrupt: None,
         }
     }
 
@@ -288,6 +293,7 @@ impl Harness {
             skill_dir: Some(PathBuf::from(".claude/skills/argus")),
             settings_version: None,
             transcript: Some(transcript::Dialect::Claude),
+            interrupt: None,
         }
     }
 
@@ -320,6 +326,7 @@ impl Harness {
             skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: None,
             transcript: None,
+            interrupt: None,
         }
     }
 
@@ -353,6 +360,7 @@ impl Harness {
             skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: None,
             transcript: None,
+            interrupt: None,
         }
     }
 
@@ -382,6 +390,7 @@ impl Harness {
             skill_dir: Some(PathBuf::from(".pi/skills/argus")),
             settings_version: None,
             transcript: None,
+            interrupt: None,
         }
     }
 
@@ -412,6 +421,7 @@ impl Harness {
             skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: None,
             transcript: None,
+            interrupt: None,
         }
     }
 
@@ -455,6 +465,7 @@ impl Harness {
             skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: Some(1),
             transcript: None,
+            interrupt: None,
         }
     }
 
@@ -470,6 +481,13 @@ impl Harness {
             Harness::agent(),
             Harness::generic(),
         ]
+    }
+
+    /// The keys that interrupt this harness's agent.
+    pub fn interrupt_keys(&self) -> Vec<u8> {
+        self.interrupt
+            .as_deref()
+            .map_or_else(|| vec![0x1b], |keys| keys.as_bytes().to_vec())
     }
 
     fn settings_path(&self, checkout: &Path) -> Option<PathBuf> {

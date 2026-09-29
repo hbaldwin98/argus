@@ -383,6 +383,25 @@ pub enum ClientMsg {
         pane: PaneId,
         before: Earlier,
     },
+    /// Say `text` to an agent: typed as one paste and Enter once the agent
+    /// is idle, or straight away with `now`, which is how a person steers
+    /// one mid-turn. Answered with [`ServerMsg::Sent`] to this client. Only
+    /// to a daemon that listed `OUTBOX`.
+    SendToAgent {
+        pane: PaneId,
+        text: String,
+        now: bool,
+        request_id: u64,
+    },
+    /// Take back a message still waiting to be typed.
+    CancelQueued {
+        pane: PaneId,
+        id: u64,
+    },
+    /// Interrupt what the agent is doing, with its harness's own key.
+    Interrupt {
+        pane: PaneId,
+    },
     /// This client's greeting: the first message it sends, and the only one
     /// it sends before knowing the daemon can take more than the floor. A
     /// daemon from before the handshake hangs up on it, which is how the
@@ -428,6 +447,13 @@ pub enum ServerMsg {
         before: Earlier,
         earlier: Option<Earlier>,
         updates: Vec<Update>,
+    },
+    /// What became of a [`ClientMsg::SendToAgent`], to the client that
+    /// sent it.
+    Sent {
+        request_id: u64,
+        pane: PaneId,
+        sent: Sent,
     },
     /// Names of the configured agent templates, sent once on connect.
     Templates(Vec<String>),
@@ -620,6 +646,21 @@ pub enum ServerMsg {
 }
 
 /// What a creating request made.
+/// The most one message to an agent may hold. A prompt, not a document:
+/// a document belongs in a file the agent is pointed at.
+pub const MAX_SEND_BYTES: usize = 16 * 1024;
+
+/// What became of a message to an agent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Sent {
+    /// Typed into the agent's terminal.
+    Typed,
+    /// Waiting for the agent to be idle, under this id.
+    Queued { id: u64 },
+    /// Not taken, and why.
+    Refused { reason: String },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Created {
     Pane(PaneId),

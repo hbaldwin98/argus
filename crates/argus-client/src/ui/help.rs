@@ -66,6 +66,7 @@ const PANES: Group = Group {
         ("A", "this repository, or the whole workspace"),
         ("a", "an agent here"),
         ("s", "a shell here"),
+        ("u", "take back the newest message queued from a phone"),
         ("esc  q", "back to the workspace"),
     ],
 };

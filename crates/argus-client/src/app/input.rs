@@ -627,6 +627,7 @@ impl App {
                 KeyCode::Char('A') => self.show_all_panes = !self.show_all_panes,
                 KeyCode::Char('a') => self.open_picker(),
                 KeyCode::Char('s') => self.spawn_shell(),
+                KeyCode::Char('u') => self.unqueue_selected(),
                 _ => {}
             }
             return;

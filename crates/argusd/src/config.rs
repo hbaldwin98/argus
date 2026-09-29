@@ -158,6 +158,9 @@ pub struct HarnessConfig {
     /// `"claude"`.
     #[serde(default)]
     pub transcript: Option<crate::harness::transcript::Dialect>,
+    /// What interrupts this CLI's agent, when it is not Esc.
+    #[serde(default)]
+    pub interrupt: Option<String>,
 }
 
 /// A bare status is the common case; the table form is for an event that
@@ -251,6 +254,7 @@ impl From<HarnessConfig> for crate::harness::Harness {
             skill_dir: c.skill_dir.map(PathBuf::from),
             settings_version: None,
             transcript: c.transcript,
+            interrupt: c.interrupt,
         }
     }
 }

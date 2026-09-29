@@ -240,3 +240,33 @@ fn a_childs_copy_reaches_the_clipboard() {
     COPIED.with(|copied| assert_eq!(*copied.borrow(), vec!["from the agent".to_string()]));
     assert!(!h.app.status_alert);
 }
+
+// --- messages queued from a phone -----------------------------------------
+
+#[test]
+fn u_on_the_panes_stage_takes_back_the_newest_message_queued_for_that_agent() {
+    let mut h = Harness::new();
+    let mut t = tree();
+    for (pane, base) in t[0].repositories[0].checkouts[0].panes.iter_mut().zip([10, 20]) {
+        pane.queued = vec![
+            argus_protocol::QueuedMessage { id: base, text: "first".into() },
+            argus_protocol::QueuedMessage { id: base + 1, text: "second".into() },
+        ];
+    }
+    h.app.on_server_msg(ServerMsg::Tree(t));
+    h.keys("3");
+    h.sent();
+    let selected = h.app.current_pane().unwrap();
+    let (pane, newest) = (selected.id, selected.queued[1].id);
+
+    h.key(KeyCode::Char('u'));
+
+    let sent = h.sent();
+    assert!(
+        sent.iter().any(|m| matches!(m, ClientMsg::CancelQueued { pane: p, id } if *p == pane && *id == newest)),
+        "{sent:?}"
+    );
+    // Nothing is taken off the card until the daemon says it is gone: it
+    // may have been typed already.
+    assert_eq!(h.app.current_pane().unwrap().queued.len(), 2);
+}

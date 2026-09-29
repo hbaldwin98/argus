@@ -20,7 +20,7 @@ pub const PROTOCOL: u32 = 1;
 /// The optional messages and encodings this build can take. A side sends
 /// one only when the other listed it, so each addition is safe against a
 /// peer of any age.
-pub const CAPABILITIES: &[&str] = &[PANE_TELEMETRY, CELL_RUNS, TRANSCRIPTS];
+pub const CAPABILITIES: &[&str] = &[PANE_TELEMETRY, CELL_RUNS, TRANSCRIPTS, OUTBOX];
 
 /// `ServerMsg::PaneTelemetry` in place of a whole tree when an agent
 /// reports its model, context or spend.
@@ -35,6 +35,11 @@ pub const CELL_RUNS: &str = "cell-runs";
 /// from a client, `ServerMsg::Transcript` and `ServerMsg::EarlierTranscript`
 /// from the daemon. Listed by each side for the half it takes.
 pub const TRANSCRIPTS: &str = "transcripts";
+
+/// Saying something to an agent: `ClientMsg::SendToAgent`,
+/// `ClientMsg::CancelQueued` and `ClientMsg::Interrupt` from a client, and
+/// `ServerMsg::Sent` in answer.
+pub const OUTBOX: &str = "outbox";
 
 /// `ServerMsg::WideTree` in place of `ServerMsg::Tree`: every workspace's
 /// projects rather than the open one's. For a client that follows every

@@ -60,6 +60,25 @@ fn dispatch_pane(
             });
             Ok(())
         }
+        ClientMsg::SendToAgent {
+            pane,
+            text,
+            now,
+            request_id,
+        } => {
+            let sent = daemon.send_to_agent(pane, &text, now);
+            let _ = out_tx.send(ServerMsg::Sent {
+                request_id,
+                pane,
+                sent,
+            });
+            Ok(())
+        }
+        ClientMsg::CancelQueued { pane, id } => {
+            daemon.cancel_queued(pane, id);
+            Ok(())
+        }
+        ClientMsg::Interrupt { pane } => daemon.interrupt(pane),
         ClientMsg::Input { pane, bytes } => daemon.write_pane(pane, &bytes),
         ClientMsg::Paste { pane, text } => daemon.paste_pane(pane, &text),
         ClientMsg::Resize { pane, rows, cols } => daemon.resize_pane(viewer, pane, rows, cols),

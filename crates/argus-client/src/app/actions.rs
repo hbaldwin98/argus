@@ -379,6 +379,22 @@ impl App {
         }
     }
 
+    /// Takes back the newest message a phone queued for the selected
+    /// agent. The card changes when the daemon's tree says the message is
+    /// gone, not before: it may already have been typed.
+    pub(super) fn unqueue_selected(&mut self) {
+        let Some(pane) = self.current_pane() else {
+            return;
+        };
+        let Some(message) = pane.queued.last() else {
+            return;
+        };
+        let _ = self.out.send(ClientMsg::CancelQueued {
+            pane: pane.id,
+            id: message.id,
+        });
+    }
+
     /// Closes whatever pane is currently shown in the live view — reachable
     /// both from the open-agents list (`x`) and, via the leader chord, from
     /// inside the pane itself (`<leader>x`), since a bare `x` there is just

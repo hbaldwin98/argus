@@ -167,6 +167,7 @@ to the type or its locking.
 | `state/hook_server` | the loopback receiver agents report to |
 | `state/session` | what survives a daemon restart |
 | `state/transcripts` | which file a pane's conversation is read from, and the clients following it |
+| `state/outbox` | what a client asked to say to an agent, and when it is typed |
 | `state/tree` | finding your way around the tree |
 | `state/features`, `state/tasks`, `state/decisions`, `state/diagrams` | a checkout's feature board, translated between client ids and store keys |
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
@@ -700,6 +701,22 @@ is read, so a tail and the stream after it can overlap but never leave a gap. A 
 falls behind is sent the tail again. When the pane moves to a new file the watchers are sent a
 divider and that file's tail below what they hold. `EarlierTranscript` pages back a megabyte at a
 time, and across into the file before, until the start. The terminal client never watches.
+
+A client that greeted with `outbox` can say something to an agent with `SendToAgent`, answered with
+`Sent` to that client alone. Typing into a pane is typing into whatever has the agent's keyboard,
+and a dialog that has it takes the text as its answer, so a message waits in the pane's queue —
+`PaneInfo::queued`, shown on the TUI's pane card — until the agent is at its prompt: idle, done,
+failed or wanting a review, and so for 300 ms, since a turn's last hook can arrive just before its
+prompt is drawn. Codex's and Cursor's approval prompts report as working, so they hold a message
+too. One message goes out per turn: the next waits until the pane has been busy and come back, or
+two seconds for a harness that reports nothing. A message is typed as one paste and Enter. `now`
+types it straight away, which is how a person steers an agent mid-turn. One task does the typing,
+started by the first message queued, and wakes whenever the tree changes and four times a second
+while anything waits. The queue is not persisted, and an exited agent's queue is dropped.
+`CancelQueued` takes a waiting message back, from the phone or with `u` on the TUI's Panes stage,
+and the card changes when the tree says so. `Interrupt` types the harness's interrupt key: Esc,
+unless a `[[harness]]` block sets `interrupt`, and never Ctrl-C, which pressed twice quits most of
+these CLIs.
 
 The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
 /pane/<id>/status/<working|idle|waiting|needs-review|done|failed>` with an optional body as the note,

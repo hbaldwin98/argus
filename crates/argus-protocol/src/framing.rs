@@ -255,6 +255,7 @@ mod tests {
                         telemetry: Default::default(),
                         has_transcript: false,
                         since: None,
+                        queued: Vec::new(),
                     }],
                 }],
             }],

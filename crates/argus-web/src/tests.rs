@@ -168,6 +168,7 @@ fn tree() -> WorkspaceTree {
                         telemetry: Default::default(),
                         has_transcript: true,
                         since: Some(1_790_000_000),
+                        queued: Vec::new(),
                     }],
                     git: None,
                     primary: true,
@@ -307,4 +308,52 @@ fn a_pairing_time_reads_as_its_date() {
     assert_eq!(crate::date(0), "1970-01-01");
     assert_eq!(crate::date(1_790_656_736), "2026-09-29");
     assert_eq!(crate::date(951_782_400), "2000-02-29");
+}
+
+#[tokio::test]
+async fn a_phone_message_reaches_the_daemon_and_its_answer_comes_back() {
+    let mut running = serve().await;
+    let cookie = paired_cookie(&running).await;
+    let mut daemon = play_daemon(&mut running).await;
+    let origin = format!("http://{}", running.addr);
+    let mut phone = open(running.addr, Some(&cookie), &origin).await.unwrap();
+    let _ = next_of(&mut phone, "agents").await;
+
+    phone
+        .send(tungstenite::Message::Text(
+            r#"{"type":"send","pane":7,"text":"also run clippy","now":false}"#.into(),
+        ))
+        .await
+        .unwrap();
+    let (request_id, text, now) = loop {
+        match read_msg::<_, ClientMsg>(&mut daemon).await.unwrap() {
+            ClientMsg::SendToAgent { request_id, text, now, .. } => break (request_id, text, now),
+            _ => continue,
+        }
+    };
+    assert_eq!((text.as_str(), now), ("also run clippy", false));
+    write_msg(
+        &mut daemon,
+        &ServerMsg::Sent {
+            request_id,
+            pane: PaneId(7),
+            sent: argus_protocol::Sent::Queued { id: 1 },
+        },
+    )
+    .await
+    .unwrap();
+    let answer = next_of(&mut phone, "sent").await;
+    assert_eq!(answer["outcome"], "queued");
+
+    phone
+        .send(tungstenite::Message::Text(r#"{"type":"stop","pane":7}"#.into()))
+        .await
+        .unwrap();
+    let stopped = loop {
+        match read_msg::<_, ClientMsg>(&mut daemon).await.unwrap() {
+            ClientMsg::Interrupt { pane } => break pane,
+            _ => continue,
+        }
+    };
+    assert_eq!(stopped, PaneId(7));
 }

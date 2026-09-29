@@ -180,10 +180,23 @@ pub struct PaneInfo {
     /// epoch by the daemon's clock. `None` from a daemon that does not say.
     #[serde(default)]
     pub since: Option<u64>,
+    /// Messages waiting to be typed into this agent once it is idle,
+    /// oldest first. See `ClientMsg::SendToAgent`.
+    #[serde(default)]
+    pub queued: Vec<QueuedMessage>,
     // No transcript. It rode here once, up to 200 events a pane in every
     // tree every client was sent, and no client read it. A daemon from
     // before still sends the field, and the derive ignores a field it does
     // not know.
+}
+
+/// A message a client asked to have typed into an agent, waiting for the
+/// agent to be idle.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueuedMessage {
+    /// Unique among the daemon's queued messages for as long as it runs.
+    pub id: u64,
+    pub text: String,
 }
 
 /// One workspace's projects, for a client that follows every agent the
@@ -414,6 +427,7 @@ mod tests {
             telemetry: AgentTelemetry::default(),
             has_transcript: false,
             since: None,
+            queued: Vec::new(),
         }
     }
 

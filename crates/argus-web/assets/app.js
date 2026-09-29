@@ -17,6 +17,14 @@ const state = {
   // pane id -> conversation
   conversations: new Map(),
   watching: null,
+  // The message on its way, until the server says what became of it.
+  sending: null,
+  sendError: null,
+  // Messages a restarted daemon lost, until dismissed or resent.
+  notSent: [],
+  // The one agent view built for a pane, kept while it is on screen so a
+  // half-typed message survives the list changing under it.
+  shell: null,
 };
 
 // --- the connection ------------------------------------------------------
@@ -82,6 +90,20 @@ function receive(message) {
     case "earlier":
       applyEarlier(message);
       return;
+    case "sent":
+      if (state.sending && state.sending.pane === message.pane) {
+        if (message.outcome === "refused") {
+          state.sendError = message.reason || "The message was refused.";
+        } else if (state.shell && state.shell.pane === message.pane) {
+          state.shell.input.value = "";
+          fitInput(state.shell.input);
+        }
+        state.sending = null;
+      }
+      break;
+    case "not_sent":
+      state.notSent.push({ pane: message.pane, text: message.text });
+      break;
     case "error":
       console.warn("argus web:", message.message);
       return;
@@ -263,6 +285,7 @@ function renderList() {
       text: state.connected ? "No agents are running." : "Connecting…",
     }));
   }
+  state.shell = null;
   app.replaceChildren(
     el("header", { class: "bar" }, el("h1", {}, el("span", { class: "mark", text: "ARGUS" }))),
     ...banners(),
@@ -283,29 +306,122 @@ function renderAgent(pane) {
     state.watching = pane;
     send({ type: "watch", pane });
   }
-  const title = agent ? agent.title : `pane ${pane}`;
+  const shell = agentShell(pane);
   const status = agent ? agent.loudest : "exited";
-  const header = el("header", { class: "bar" },
-    el("button", { "aria-label": "All agents", onclick: () => { location.hash = "#/"; }, text: "‹" }),
-    el("span", { class: `dot s-${status}` }),
-    el("h1", { text: title }),
+  const working = agent && (agent.status === "working" || agent.status === "waiting");
+
+  shell.dot.className = `dot s-${status}`;
+  shell.title.textContent = agent ? agent.title : `pane ${pane}`;
+  shell.stop.hidden = !working;
+  shell.banners.replaceChildren(...banners(), ...(agent && agent.status === "waiting"
+    ? [el("div", { class: "banner", text: describe(agent) })]
+    : []));
+
+  shell.queue.replaceChildren(
+    ...(agent ? agent.queued : []).map((message) => el("div", { class: "queued" },
+      el("span", { class: "label", text: "Waiting for the agent" }),
+      el("span", { class: "text", text: message.text }),
+      el("button", {
+        text: "Take back",
+        onclick: () => send({ type: "cancel", pane, id: message.id }),
+      }),
+    )),
+    ...state.notSent.filter((m) => m.pane === pane).map((message) => el("div", { class: "queued lost" },
+      el("span", { class: "label", text: "Not sent: argusd restarted" }),
+      el("span", { class: "text", text: message.text }),
+      el("button", {
+        text: "Resend",
+        onclick: () => {
+          state.notSent = state.notSent.filter((m) => m !== message);
+          shell.input.value = message.text;
+          fitInput(shell.input);
+          render();
+        },
+      }),
+    )),
   );
-  const line = agent ? el("div", { class: "banner", text: describe(agent) }) : null;
-  const tabs = el("nav", { class: "tabs" },
-    el("button", { "aria-pressed": "true", text: "Conversation" }),
-    el("button", { disabled: true, text: "Terminal" }),
-  );
-  const body = el("section", { class: "conversation", id: "conversation" });
-  const waiting = agent && agent.status === "waiting" ? line : null;
-  app.replaceChildren(...[header, ...banners(), waiting, tabs, body].filter(Boolean));
+
+  const live = agent && agent.status !== "exited";
+  shell.input.disabled = !live;
+  shell.input.placeholder = live ? "Message the agent" : "This agent has exited";
+  shell.primary.textContent = working ? "Queue" : "Send";
+  shell.primary.disabled = !live || state.sending !== null;
+  shell.now.hidden = !working;
+  shell.now.disabled = state.sending !== null;
+  shell.error.textContent = state.sendError || "";
+
   if (agent && !agent.has_transcript) {
-    body.append(el("p", {
+    shell.body.replaceChildren(el("p", {
       class: "empty",
       text: "This agent's harness keeps no conversation Argus can read.",
     }));
     return;
   }
   renderConversation(conversation(pane), false);
+}
+
+/// The agent view for `pane`: built once, then only filled in.
+function agentShell(pane) {
+  if (state.shell && state.shell.pane === pane && app.contains(state.shell.root)) return state.shell;
+  const shell = { pane };
+  shell.dot = el("span", { class: "dot" });
+  shell.title = el("h1");
+  shell.stop = el("button", {
+    class: "stop",
+    text: "Stop",
+    onclick: () => send({ type: "stop", pane }),
+  });
+  shell.banners = el("div");
+  shell.body = el("section", { class: "conversation", id: "conversation" });
+  shell.queue = el("div", { class: "queue" });
+  shell.input = el("textarea", { rows: "1", maxlength: "16384", enterkeyhint: "send" });
+  shell.input.addEventListener("input", () => fitInput(shell.input));
+  shell.primary = el("button", { class: "go", type: "submit" });
+  shell.now = el("button", {
+    class: "now",
+    type: "button",
+    text: "Send now",
+    onclick: () => submit(pane, true),
+  });
+  shell.error = el("p", { class: "send-error" });
+  const form = el("form", { class: "composer" }, shell.input, shell.now, shell.primary);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submit(pane, false);
+  });
+  shell.root = el("div", { class: "agent-view" },
+    el("header", { class: "bar" },
+      el("button", { "aria-label": "All agents", onclick: () => { location.hash = "#/"; }, text: "‹" }),
+      shell.dot,
+      shell.title,
+      shell.stop,
+    ),
+    shell.banners,
+    el("nav", { class: "tabs" },
+      el("button", { "aria-pressed": "true", text: "Conversation" }),
+      el("button", { disabled: true, text: "Terminal" }),
+    ),
+    shell.body,
+    el("footer", { class: "dock" }, shell.queue, shell.error, form),
+  );
+  app.replaceChildren(shell.root);
+  state.shell = shell;
+  state.sendError = null;
+  return shell;
+}
+
+function submit(pane, now) {
+  const text = state.shell.input.value;
+  if (!text.trim() || state.sending) return;
+  state.sending = { pane };
+  state.sendError = null;
+  send({ type: "send", pane, text, now });
+  render();
+}
+
+function fitInput(input) {
+  input.style.height = "auto";
+  input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
 }
 
 function nearBottom() {

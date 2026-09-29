@@ -166,6 +166,11 @@ argus web devices                  # list paired devices
 argus web revoke "Pixel"           # unpair one
 ```
 
+A message typed on the phone waits until the agent is back at its prompt, so it can never answer a
+permission dialog by accident; it is shown on the phone and on the agent's card in the TUI until it
+is typed, and either can take it back (`u` on the Panes stage). Send now types it straight away,
+for steering an agent mid-turn. Stop interrupts the agent with Esc.
+
 It prints a QR code and a six-digit code. The code pairs one device, works once, and expires after
 five minutes; press Enter in `argus web` for a new one. A paired device keeps a cookie, stored on
 the machine only as a hash.

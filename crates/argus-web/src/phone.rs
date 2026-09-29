@@ -9,7 +9,7 @@
 //! every other string is text, for the page to set as text.
 
 use argus_protocol::{
-    Body, Earlier, PaneInfo, PaneKind, PaneStatus, ToolState, Update, WorkspaceTree,
+    Body, Earlier, PaneInfo, PaneKind, PaneStatus, Sent, ToolState, Update, WorkspaceTree,
 };
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +44,16 @@ pub enum ToPhone {
         earlier: Option<Earlier>,
         updates: Vec<PhoneUpdate>,
     },
+    /// What became of a message this page sent.
+    Sent {
+        pane: u64,
+        /// `typed`, `queued` or `refused`.
+        outcome: &'static str,
+        reason: Option<String>,
+    },
+    /// A message this page queued that the daemon no longer holds and never
+    /// said it typed: it restarted, and its queue went with it.
+    NotSent { pane: u64, text: String },
     Error { message: String },
 }
 
@@ -54,6 +64,26 @@ pub enum FromPhone {
     Watch { pane: u64 },
     Unwatch { pane: u64 },
     Earlier { pane: u64, before: Earlier },
+    /// Say `text` to the agent; `now` types it even mid-turn.
+    Send { pane: u64, text: String, now: bool },
+    /// Take back a message still queued.
+    Cancel { pane: u64, id: u64 },
+    /// Interrupt the agent.
+    Stop { pane: u64 },
+}
+
+/// A daemon's answer to a message, as the page reads it.
+pub fn sent(pane: u64, sent: Sent) -> ToPhone {
+    let (outcome, reason) = match sent {
+        Sent::Typed => ("typed", None),
+        Sent::Queued { .. } => ("queued", None),
+        Sent::Refused { reason } => ("refused", Some(reason)),
+    };
+    ToPhone::Sent {
+        pane,
+        outcome,
+        reason,
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -82,6 +112,14 @@ pub struct Agent {
     pub has_transcript: bool,
     pub model: Option<String>,
     pub tool: Option<String>,
+    /// Messages waiting for the agent's prompt, oldest first.
+    pub queued: Vec<Queued>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Queued {
+    pub id: u64,
+    pub text: String,
 }
 
 /// One change to the page's copy of a conversation.
@@ -190,6 +228,14 @@ fn agent(project: &str, checkout: &str, pane: &PaneInfo) -> (u8, Agent) {
         has_transcript: pane.has_transcript,
         model: pane.telemetry.model.clone(),
         tool: pane.telemetry.tool.clone(),
+        queued: pane
+            .queued
+            .iter()
+            .map(|m| Queued {
+                id: m.id,
+                text: m.text.clone(),
+            })
+            .collect(),
     };
     (loudest.status.urgency(), row)
 }
@@ -282,6 +328,7 @@ mod tests {
             telemetry: Default::default(),
             has_transcript: true,
             since: Some(1_790_000_000),
+            queued: Vec::new(),
         }
     }
 
@@ -369,5 +416,29 @@ mod tests {
                 before: Earlier { file: 0, offset: 99 }
             }
         );
+        let ask: FromPhone =
+            serde_json::from_str(r#"{"type":"send","pane":7,"text":"hi","now":false}"#).unwrap();
+        assert_eq!(
+            ask,
+            FromPhone::Send {
+                pane: 7,
+                text: "hi".into(),
+                now: false
+            }
+        );
+    }
+
+    #[test]
+    fn a_refusal_says_why() {
+        let json = serde_json::to_value(sent(
+            3,
+            Sent::Refused {
+                reason: "that is not a running agent".into(),
+            },
+        ))
+        .unwrap();
+        assert_eq!(json["type"], "sent");
+        assert_eq!(json["outcome"], "refused");
+        assert_eq!(json["reason"], "that is not a running agent");
     }
 }

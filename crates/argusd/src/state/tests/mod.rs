@@ -4,6 +4,7 @@
 mod branches;
 mod hook_lifecycle;
 mod pane_api;
+mod outbox;
 mod reconcile;
 mod reload;
 mod restore;

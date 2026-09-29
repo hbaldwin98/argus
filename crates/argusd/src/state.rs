@@ -9,7 +9,8 @@
 //! the user adds and removes, `workspaces` for which scope is open,
 //! `hook_server` for the
 //! loopback receiver, `session` for what survives a restart,
-//! `transcripts` for where a pane's conversation is read from, and `tree`
+//! `transcripts` for where a pane's conversation is read from, `outbox` for
+//! what clients asked to say to an agent, and `tree`
 //! for finding your way around.
 //!
 //! The type and its locking are one thing; only which file a concern is
@@ -34,6 +35,7 @@ mod diagrams;
 mod tasks;
 mod git_ops;
 mod hook_server;
+mod outbox;
 mod panel;
 mod panes;
 mod session;
@@ -89,8 +91,12 @@ struct Pane {
     /// persisted: a restored agent names its file again on its first hook.
     transcripts: Vec<PathBuf>,
     /// When `status` last changed, for a client to say how long the pane
-    /// has been where it is.
+    /// has been where it is, and for the outbox to tell a turn has passed.
     status_since: std::time::SystemTime,
+    /// Messages waiting to be typed once the agent is idle. See `outbox`.
+    queued: std::collections::VecDeque<argus_protocol::QueuedMessage>,
+    /// When the outbox last typed into this pane.
+    typed_at: Option<std::time::SystemTime>,
     /// A hook won the race with session restoration, so saved metadata must
     /// not overwrite what the newly started process already reported.
     restore_status_reported: bool,
@@ -309,6 +315,9 @@ pub struct Daemon {
     /// The panes whose conversation some client is watching, and the task
     /// reading each one's file. See `transcripts`.
     transcripts: StdMutex<HashMap<PaneId, transcripts::Feed>>,
+    /// The task typing queued messages, once anything has been queued, and
+    /// the id the next message gets.
+    outbox: StdMutex<outbox::Outbox>,
 }
 
 /// A project as clients are shown it.
@@ -369,6 +378,7 @@ fn project_info(p: &Project) -> ProjectInfo {
                                         .duration_since(std::time::UNIX_EPOCH)
                                         .ok()
                                         .map(|d| d.as_secs()),
+                                    queued: pane.queued.iter().cloned().collect(),
                                 })
                                 .collect(),
                             git,

@@ -307,6 +307,7 @@ mod tests {
                             telemetry: Default::default(),
                             has_transcript: false,
                             since: None,
+                            queued: Vec::new(),
                         })
                         .collect(),
                     git: None,
@@ -397,6 +398,7 @@ mod tests {
                     telemetry: Default::default(),
                     has_transcript: false,
                     since: None,
+                    queued: Vec::new(),
                 }],
                 git: None,
                 primary: true,

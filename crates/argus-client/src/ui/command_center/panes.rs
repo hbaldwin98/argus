@@ -84,6 +84,14 @@ pub(super) fn render_panes(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
                     Span::styled("■ ", Style::default().fg(color)),
                     Span::styled(short_status(pane.status), Style::default().fg(color)),
                     Span::styled(format!("  #{}", pane.id.0), Style::default().fg(th.dim)),
+                    // Messages from a phone waiting for the agent's prompt.
+                    Span::styled(
+                        match pane.queued.len() {
+                            0 => String::new(),
+                            n => format!("  ✉ {n} queued"),
+                        },
+                        Style::default().fg(th.warn),
+                    ),
                 ]),
                 Line::styled(
                     ellipsize_text(&pane.title, inner.width as usize),

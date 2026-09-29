@@ -322,11 +322,12 @@ impl App {
             ServerMsg::Restarting => {}
             ServerMsg::Stopping => self.should_quit = true,
             // The terminal client never watches a conversation, since it
-            // shows the pane itself, and never asks for every workspace.
-            // These are for the web client.
+            // shows the pane itself, never asks for every workspace, and
+            // never queues a message. These are for the web client.
             ServerMsg::Transcript { .. }
             | ServerMsg::EarlierTranscript { .. }
-            | ServerMsg::WideTree(_) => {}
+            | ServerMsg::WideTree(_)
+            | ServerMsg::Sent { .. } => {}
         }
     }
 

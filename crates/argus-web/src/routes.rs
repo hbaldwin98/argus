@@ -177,6 +177,8 @@ async fn phone(mut socket: WebSocket, app: Arc<App>, token: String) {
     let mut agents = app.feeds.agents.clone();
     let mut conversations = app.feeds.conversations.subscribe();
     let mut watching: HashSet<u64> = HashSet::new();
+    // Answers meant for this phone alone: what became of its messages.
+    let (direct, mut answers) = mpsc::unbounded_channel::<Arc<String>>();
     let mut recheck = tokio::time::interval(RECHECK);
     recheck.tick().await;
 
@@ -194,7 +196,7 @@ async fn phone(mut socket: WebSocket, app: Arc<App>, token: String) {
                 match message {
                     Message::Text(text) => {
                         match serde_json::from_str::<FromPhone>(text.as_str()) {
-                            Ok(ask) => handle(&app, &mut watching, ask),
+                            Ok(ask) => handle(&app, &mut watching, ask, &direct),
                             Err(_) => Some(error("that message is not one this server knows")),
                         }
                     }
@@ -202,6 +204,7 @@ async fn phone(mut socket: WebSocket, app: Arc<App>, token: String) {
                     _ => None,
                 }
             }
+            Some(answer) = answers.recv() => Some(answer),
             changed = server.changed() => {
                 if changed.is_err() { break }
                 Some(server.borrow_and_update().clone())
@@ -241,8 +244,14 @@ async fn phone(mut socket: WebSocket, app: Arc<App>, token: String) {
     }
 }
 
-/// What a phone's ask does; anything it answers straight away comes back.
-fn handle(app: &App, watching: &mut HashSet<u64>, ask: FromPhone) -> Option<Arc<String>> {
+/// What a phone's ask does; anything it answers straight away comes back,
+/// and anything the daemon answers later goes to `direct`.
+fn handle(
+    app: &App,
+    watching: &mut HashSet<u64>,
+    ask: FromPhone,
+    direct: &mpsc::UnboundedSender<Arc<String>>,
+) -> Option<Arc<String>> {
     match ask {
         FromPhone::Watch { pane } => {
             // Watching again still asks, for the fresh tail the page wants.
@@ -259,6 +268,20 @@ fn handle(app: &App, watching: &mut HashSet<u64>, ask: FromPhone) -> Option<Arc<
         }
         FromPhone::Earlier { pane, before } => {
             let _ = app.asks.send(Ask::Earlier(pane, before));
+        }
+        FromPhone::Send { pane, text, now } => {
+            let _ = app.asks.send(Ask::Send {
+                pane,
+                text,
+                now,
+                reply: direct.clone(),
+            });
+        }
+        FromPhone::Cancel { pane, id } => {
+            let _ = app.asks.send(Ask::Cancel(pane, id));
+        }
+        FromPhone::Stop { pane } => {
+            let _ = app.asks.send(Ask::Stop(pane));
         }
     }
     None
