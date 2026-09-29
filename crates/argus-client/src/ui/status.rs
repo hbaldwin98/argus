@@ -9,8 +9,9 @@ use crate::app::FeaturePanel;
 /// right. Context-sensitive, because the same key means different things
 /// inside a pane and in the nav columns.
 ///
-/// Every keymap is given as tiers, longest first, and the widest one that
-/// fits is what gets drawn. A single string would be cut mid-word on a
+/// Every bar is given as tiers, longest first, and the widest one that
+/// fits is what gets drawn. Most modes' tiers are read off the keymap they
+/// declare; the ones written out below depend on more than the mode. A single string would be cut mid-word on a
 /// narrow terminal -- "j/k move  l open  b branch  B all  F fe" -- which
 /// spends the same row on strictly less. Which keys to drop is a judgement
 /// about what is worth knowing, so it is made here rather than left to
@@ -123,55 +124,22 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                     ]
                 }
             }
-            Mode::Overlay(OverlayMode::Settings) => {
-                &["j/k move   h/l change   esc close", "h/l change  esc"][..]
-            }
-            Mode::Overlay(OverlayMode::Review) => {
-                // A commit reached from the history overlay goes back to it rather
-                // than flipping a side that means nothing there. `s` names where it
-                // would take you, not where you are.
-                let from_history = app
-                    .review
-                    .as_ref()
-                    .is_some_and(|v| v.review.commit.is_some())
-                    && app.history.is_some();
-                let split = if app.review_split {
-                    "s unified"
-                } else {
-                    "s split"
-                };
-                let base = if from_history {
-                    "h history"
-                } else {
-                    "b staged/unstaged"
-                };
-                // Built rather than matched out: the two switches are independent,
-                // and four spelled-out combinations times three tiers is twelve
-                // strings nobody could keep in step.
-                let hints: [String; 3] = [
-                    format!("j/k  ]/[ file  f jump  c comment  e edit  {split}  {base}  esc close"),
-                    format!("j/k  ]/[ file  c comment  {split}  {base}  esc"),
-                    format!("]/[ file  c comment  {split}  esc"),
-                ];
-                return draw_bar(f, app, area, &hints, th);
-            }
-            Mode::Overlay(OverlayMode::History) => &[
-                "j/k  ]/[ commit  l files/open  h fold  r refresh  R review  esc close",
-                "]/[ commit  l open  h fold  R review  esc",
-                "]/[ commit  R review  esc",
-            ][..],
-            Mode::Overlay(OverlayMode::SequenceDiagram) => {
-                &["j/k scroll  h/l pan  q close", "j/k  h/l  q", "h/l  q"][..]
-            }
+            // Read off the keymap each of these declares, which is also what
+            // dispatch looks the key up in, so a key cannot reach one and
+            // miss the other.
+            Mode::Rail
+            | Mode::Stage(View::Workspace | View::Panes | View::Checkouts)
+            | Mode::Overlay(
+                OverlayMode::Review
+                | OverlayMode::History
+                | OverlayMode::Settings
+                | OverlayMode::SequenceDiagram,
+            ) => return draw_bar(f, app, area, &app.mode().keymap().tiers(app), th),
             // The two modes have almost no keys in common, so the bar shows
             // the one you are actually in.
             Mode::Overlay(OverlayMode::Brief) => match app.brief.as_ref().map(|v| v.mode) {
                 Some(BriefMode::Insert) => &["typing — esc to stop and save", "esc saves"][..],
-                _ => &[
-                    "j/k move  i insert  o new line  q close",
-                    "j/k  i insert  q close",
-                    "i insert  q close",
-                ][..],
+                _ => return draw_bar(f, app, area, &app.mode().keymap().tiers(app), th),
             },
             Mode::Overlay(OverlayMode::Pane) => &[
                 "floating — ctrl-space then esc to close, x to kill   ctrl-v paste",
@@ -182,10 +150,11 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "typing — enter saves it, esc throws it away",
                 "enter saves  esc drops",
             ][..],
-            // Named per panel, since which keys are live depends on which
-            // one has them: `a` adds a feature or root task and `s` adds a
-            // subtask in the tasks panel, and a bar that said neither would
-            // be a bar saying nothing.
+            // Written out per panel rather than read off the keymap, since
+            // which keys are live and what they are called there both
+            // depend on which panel has them: `a` adds a feature or root
+            // task and `s` adds a subtask in the tasks panel, and a bar that
+            // said neither would be a bar saying nothing.
             Mode::Stage(View::Feature) => match app.panel {
                 FeaturePanel::Features => &[
                     "h/l panels  j/k move  a new  e brief  R rename  m checkout  p hold  w after  v archive  x drop  . accept  r refresh  q workspace",
@@ -208,16 +177,6 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                     "h/l  j/k  q workspace",
                 ][..],
             },
-            Mode::Stage(View::Panes) => &[
-                "j/k move   enter open   A all   a agent   s shell   q workspace",
-                "j/k  enter open  A all  q",
-            ][..],
-            Mode::Stage(View::Checkouts) => &[
-                "j/k move   / filter   enter open   R review   H history   m checkout   n worktree   D remove   q workspace",
-                "j/k  / filter  enter open  R review  H history  q",
-                "j/k  enter open  R review  q",
-                "j/k  enter open  q",
-            ][..],
             // A parked pane is not taking input anywhere the operator can
             // see, so the way back to the live screen outranks the usual
             // keymap.
@@ -236,30 +195,6 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "typing   ctrl-space: esc leave  f full  x close",
                 "typing   ctrl-space esc",
             ][..],
-            // Per row rather than one list of everything: the bar cannot
-            // hold every key at once, and most of them only apply somewhere.
-            Mode::Stage(View::Workspace) | Mode::Rail => match app.focus {
-                Focus::Projects => &[
-                    "j/k  l open  n add  D rm  o switch  w wksp  W host",
-                    "l open  n add  o switch",
-                    "l open  n add",
-                ][..],
-                Focus::Repositories => &[
-                    "j/k  l open  s shell  a agent  b branch  n add",
-                    "l open  s shell  a agent",
-                    "l open  a agent",
-                ][..],
-                Focus::Checkouts => &[
-                    "j/k  l open  b branch  F fetch  R review  H history",
-                    "j/k  l open  R review  H history",
-                    "l open  R review",
-                ][..],
-                _ => &[
-                    "j/k  l open  s shell  a agent  R review  x close",
-                    "l open  a agent  R review  x close",
-                    "l open  R review",
-                ][..],
-            },
         }
     };
 

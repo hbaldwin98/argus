@@ -240,6 +240,7 @@ result of a request; `ui` is a pure function of it.
 | `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |
 | `app/rail` | what the rail lists, in what order, which repository is open, and what choosing a row does |
 | `app/mode` | which mode has the keys — the one answer key dispatch, the status bar and `?` all match on |
+| `app/mode/keymap` | what each mode's keys are, said once: the keys, what `?` and the bar call them, and what they run |
 | `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
 | `app/awaited` | requests waiting on something the daemon is making, and what to do with it once the tree holds it |
 | `app/server` | what arrives back, and what it does to the selection |
@@ -364,7 +365,14 @@ pane, in a filter or a feature line, or in a brief being written it is a charact
 chord reaches the list from inside a pane. Which mode has the keys is decided once (`app/mode`)
 and key dispatch, the bar and `?` each match on that answer exhaustively, so a mode one of them
 forgets does not compile — the three used to work it out separately, in different orders, and
-disagreed.
+disagreed. What each mode's keys *are* is decided once too (`app/mode/keymap`): a mode declares
+its bindings — the keys, what `?` says of them, the bar's hint and how many narrower tiers keep it,
+and the action — and dispatch looks the key up there, `?` lists it, and the bar is read off the
+hints. A binding can be kept to `?`, or out of both, but only on purpose: a test fails when a key
+a mode takes is on neither its bar nor in its `?`. The bars that depend on more than the mode —
+the feature stage's per panel, the leader, a parked or fullscreen pane, a brief being written, and
+the typing surfaces — stay written out in `ui/status`, and typed text and the leader chord are
+still dispatched by hand in `app/input`, with the keymap only saying what `?` lists for them.
 
 A project takes its repositories from a root directory, from paths named one at a time, or from
 both. Each becomes a repository with its own primary checkout and linked worktrees. Repository

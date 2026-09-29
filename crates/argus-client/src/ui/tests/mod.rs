@@ -10,6 +10,7 @@ mod diff;
 mod frame;
 mod geometry;
 mod help;
+mod keymap;
 mod panes;
 mod picker;
 mod status;

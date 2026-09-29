@@ -5,9 +5,12 @@
 //! bar offered the rail's keys while the directory browser had them, and
 //! `?` over a sequence diagram listed the rail's. Now there is one answer,
 //! and each of the three matches on it exhaustively, so a mode nobody
-//! handles does not compile.
+//! handles does not compile. What the keys *are* in each mode is its child,
+//! [`keymap`].
 
 use super::*;
+
+mod keymap;
 
 /// What the keys go to, in the order they are claimed. The keymap window is
 /// not one of these: it opens over whichever of them raised the question,

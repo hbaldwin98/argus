@@ -5,6 +5,10 @@
 //! keys a prompt uses, and the navigation bindings are simply not reachable
 //! while one is open. That is what keeps a typed character from also being
 //! a command.
+//!
+//! Most modes' keys are a table in `app/mode/keymap`, which names the
+//! actions below. The handlers written out here are the ones a table of
+//! single keys cannot express: typed text, and the leader chord.
 
 use super::*;
 
@@ -72,12 +76,17 @@ impl App {
             Mode::Overlay(OverlayMode::Review) => self.on_key_review(key),
             Mode::Overlay(OverlayMode::History) => self.on_key_history(key),
             Mode::Overlay(OverlayMode::Brief) => self.on_key_brief(key),
-            Mode::Overlay(OverlayMode::SequenceDiagram) => self.on_key_sequence_diagram(key),
-            Mode::Overlay(OverlayMode::Settings) => self.on_key_settings(key),
             Mode::Overlay(OverlayMode::Pane) => self.on_key_floating_pane(key),
-            Mode::Stage(_) => self.on_key_view(key),
             Mode::Pane => self.on_key_pane_content(key),
-            Mode::Rail => self.on_key_nav(key),
+            // The typed line takes every key, digits included, so a title
+            // with an `x` in it does not delete the row behind it, and the
+            // first escape puts the line away rather than the view.
+            Mode::Stage(View::Feature) if self.line.is_some() => self.on_key_line(key),
+            Mode::Overlay(OverlayMode::SequenceDiagram | OverlayMode::Settings)
+            | Mode::Stage(_)
+            | Mode::Rail => {
+                self.press(key);
+            }
         }
     }
 
@@ -365,17 +374,9 @@ impl App {
         }
     }
 
-    fn on_key_settings(&mut self, key: KeyEvent) {
-        let Some(Overlay::Settings { sel }) = self.overlay else {
-            return;
-        };
-        match key.code {
-            KeyCode::Char('j') | KeyCode::Down => self.move_setting(1),
-            KeyCode::Char('k') | KeyCode::Up => self.move_setting(-1),
-            KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => self.cycle_setting(sel, 1),
-            KeyCode::Char('h') | KeyCode::Left => self.cycle_setting(sel, -1),
-            KeyCode::Esc | KeyCode::Char('q') => self.close_overlay(),
-            _ => {}
+    pub(super) fn cycle_selected_setting(&mut self, delta: isize) {
+        if let Some(Overlay::Settings { sel }) = self.overlay {
+            self.cycle_setting(sel, delta);
         }
     }
 
@@ -414,60 +415,38 @@ impl App {
     }
 
     /// Two keymaps, because a brief is read far more often than it is
-    /// written. View mode navigates with single keys; in insert mode every
-    /// key is a character, and `Esc` is the way back.
+    /// written. View mode navigates with single keys, from the keymap; in
+    /// insert mode every key is a character, and `Esc` is the way back.
     fn on_key_brief(&mut self, key: KeyEvent) {
         let Some(view) = &mut self.brief else {
             self.close_overlay();
             return;
         };
-        if view.mode == BriefMode::Insert {
-            match key.code {
-                KeyCode::Esc => {
-                    view.view_mode();
-                    // Leaving insert is the save point: it is the moment
-                    // the user stops typing, and it costs no extra key.
-                    self.save_brief();
-                }
-                KeyCode::Enter => view.newline(),
-                KeyCode::Backspace => view.backspace(),
-                KeyCode::Left => view.move_column(-1),
-                KeyCode::Right => view.move_column(1),
-                KeyCode::Up => view.move_by(-1),
-                KeyCode::Down => view.move_by(1),
-                KeyCode::Home => view.start_of_line(),
-                KeyCode::End => view.end_of_line(),
-                KeyCode::Tab => {
-                    for _ in 0..2 {
-                        view.insert_char(' ');
-                    }
-                }
-                KeyCode::Char(c) => view.insert_char(c),
-                _ => {}
-            }
+        if view.mode != BriefMode::Insert {
+            self.press(key);
             return;
         }
         match key.code {
-            KeyCode::Char('j') | KeyCode::Down => view.move_by(1),
-            KeyCode::Char('k') | KeyCode::Up => view.move_by(-1),
-            KeyCode::Char('d') | KeyCode::PageDown => view.move_by(10),
-            KeyCode::Char('u') | KeyCode::PageUp => view.move_by(-10),
-            KeyCode::Char('h') | KeyCode::Left => view.move_column(-1),
-            KeyCode::Char('l') | KeyCode::Right => view.move_column(1),
-            KeyCode::Char('g') => view.top(),
-            KeyCode::Char('G') => view.bottom(),
-            KeyCode::Char('0') | KeyCode::Home => view.start_of_line(),
-            KeyCode::Char('$') | KeyCode::End => view.end_of_line(),
-            KeyCode::Char('i') => view.insert_mode(),
-            KeyCode::Char('a') => {
-                view.move_column(1);
-                view.insert_mode();
-            }
-            KeyCode::Char('o') => view.open_below(),
-            KeyCode::Esc | KeyCode::Char('q') => {
+            KeyCode::Esc => {
+                view.view_mode();
+                // Leaving insert is the save point: it is the moment
+                // the user stops typing, and it costs no extra key.
                 self.save_brief();
-                self.close_overlay();
             }
+            KeyCode::Enter => view.newline(),
+            KeyCode::Backspace => view.backspace(),
+            KeyCode::Left => view.move_column(-1),
+            KeyCode::Right => view.move_column(1),
+            KeyCode::Up => view.move_by(-1),
+            KeyCode::Down => view.move_by(1),
+            KeyCode::Home => view.start_of_line(),
+            KeyCode::End => view.end_of_line(),
+            KeyCode::Tab => {
+                for _ in 0..2 {
+                    view.insert_char(' ');
+                }
+            }
+            KeyCode::Char(c) => view.insert_char(c),
             _ => {}
         }
     }
@@ -522,11 +501,11 @@ impl App {
 
     /// Only the table draws every checkout row, so only there does a
     /// filter have anything on screen to narrow.
-    fn checkouts_filterable(&self) -> bool {
+    pub(super) fn checkouts_filterable(&self) -> bool {
         self.view == View::Checkouts
     }
 
-    fn begin_checkout_filter(&mut self) {
+    pub(super) fn begin_checkout_filter(&mut self) {
         self.checkout_filtering = true;
         self.checkout_filter.clear();
         self.sync_checkout_filter_selection();
@@ -555,47 +534,9 @@ impl App {
         }
     }
 
-    fn on_key_nav(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Char('/') if self.checkouts_filterable() => self.begin_checkout_filter(),
-            KeyCode::Char('q') => self.should_quit = true,
-            KeyCode::Char('j') | KeyCode::Down => self.step_rail(1),
-            KeyCode::Char('k') | KeyCode::Up => self.step_rail(-1),
-            KeyCode::Char('l') | KeyCode::Enter | KeyCode::Right => self.enter_rail_row(),
-            KeyCode::Char('h') | KeyCode::Left | KeyCode::Esc => self.ascend(),
-            KeyCode::Char('s') => self.spawn_shell(),
-            KeyCode::Char('a') => self.open_picker(),
-            KeyCode::Char('n') => self.new_prompt(),
-            KeyCode::Char('i') => self.new_repository_prompt(),
-            KeyCode::Char('D') => self.remove_prompt(),
-            KeyCode::Char('w') => self.open_workspace_picker(),
-            KeyCode::Char('W') => self.open_host_picker(),
-            KeyCode::Char('o') => self.open_project_picker(),
-            KeyCode::Char('t') => self.open_theme_picker(),
-            KeyCode::Char('S') => self.open_settings(),
-            KeyCode::Char('b') => self.open_branch_picker(),
-            KeyCode::Char('B') => self.toggle_branches(),
-            KeyCode::Char('F') => self.fetch(),
-            KeyCode::Char('P') => self.pull(),
-            KeyCode::Char('f') => self.open_file_picker(),
-            KeyCode::Char('R') | KeyCode::Tab => self.open_review(),
-            KeyCode::Char('H') => self.open_history(),
-            KeyCode::Char('x') => self.kill_selected(),
-            KeyCode::Char('N') => self.jump_to_next_attention(),
-            KeyCode::Char(c) if View::from_digit(c).is_some() => {
-                self.open_view(View::from_digit(c).unwrap())
-            }
-            _ => {}
-        }
-    }
-
-    /// A view that is not the workspace, which is the feature view.
-    ///
-    /// The keys are one set rather than a set per panel: `j`/`k` moves in
-    /// whichever panel has them and `Tab` crosses between panels, so
-    /// stepping from the feature list into its tasks does not change what
-    /// the keys mean — only what they act on.
-    fn move_overview_pane(&mut self, delta: i32) {
+    /// The Panes stage's cursor, stepped through the cards in the order
+    /// they are drawn.
+    pub(super) fn move_overview_pane(&mut self, delta: i32) {
         let locations = self.overview_pane_locations();
         if locations.is_empty() {
             return;
@@ -606,106 +547,6 @@ impl App {
             .unwrap_or(0) as i32;
         let next = (current + delta).clamp(0, locations.len() as i32 - 1) as usize;
         self.select_pane_location(locations[next]);
-    }
-
-    fn on_key_view(&mut self, key: KeyEvent) {
-        if let KeyCode::Char(c) = key.code {
-            if let Some(view) = View::from_digit(c) {
-                self.open_view(view);
-                return;
-            }
-        }
-        if self.view == View::Panes {
-            match key.code {
-                KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Workspace),
-                KeyCode::Char('j') | KeyCode::Down => self.move_overview_pane(1),
-                KeyCode::Char('k') | KeyCode::Up => self.move_overview_pane(-1),
-                KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
-                    self.open_view(View::Workspace);
-                    self.focus = Focus::PaneContent;
-                }
-                KeyCode::Char('A') => self.show_all_panes = !self.show_all_panes,
-                KeyCode::Char('a') => self.open_picker(),
-                KeyCode::Char('s') => self.spawn_shell(),
-                KeyCode::Char('u') => self.unqueue_selected(),
-                _ => {}
-            }
-            return;
-        }
-        if self.view == View::Checkouts {
-            match key.code {
-                KeyCode::Char('/') => {
-                    self.begin_checkout_filter();
-                    return;
-                }
-                KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Workspace),
-                KeyCode::Char('j') | KeyCode::Down => self.step_checkout_table(1),
-                KeyCode::Char('k') | KeyCode::Up => self.step_checkout_table(-1),
-                KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.enter_checkout_row(),
-                KeyCode::Char('B') => self.toggle_branches(),
-                KeyCode::Char('a') => self.open_picker(),
-                KeyCode::Char('s') => self.spawn_shell(),
-                KeyCode::Char('m') | KeyCode::Char('b') => self.open_branch_picker(),
-                KeyCode::Char('n') => self.new_prompt(),
-                KeyCode::Char('D') => self.remove_prompt(),
-                KeyCode::Char('F') => self.fetch(),
-                KeyCode::Char('P') => self.pull(),
-                KeyCode::Char('R') | KeyCode::Tab => self.open_review(),
-                KeyCode::Char('H') => self.open_history(),
-                _ => {}
-            }
-            return;
-        }
-        match key.code {
-            // The typed line takes every key, so a title with an `x` in it
-            // does not delete the row behind it, and the first escape puts
-            // the line away rather than the view.
-            _ if self.line.is_some() => self.on_key_line(key),
-            KeyCode::Esc | KeyCode::Char('q') => self.open_view(View::Workspace),
-
-            KeyCode::Char('h') | KeyCode::Left => self.go_to_panel(FeaturePanel::Features),
-            KeyCode::Char('l') | KeyCode::Right => self.enter_feature(),
-            KeyCode::Tab => self.step_panel(1),
-            KeyCode::BackTab => self.step_panel(-1),
-            KeyCode::Char('j') | KeyCode::Down => self.move_in_feature(1),
-            KeyCode::Char('k') | KeyCode::Up => self.move_in_feature(-1),
-            KeyCode::Char('d') | KeyCode::PageDown => self.move_in_feature(10),
-            KeyCode::Char('u') | KeyCode::PageUp => self.move_in_feature(-10),
-            KeyCode::Char('g') | KeyCode::Home => self.move_in_feature(i32::MIN),
-            KeyCode::Char('G') | KeyCode::End => self.move_in_feature(i32::MAX),
-
-            KeyCode::Char('e') => self.edit_in_feature(),
-            KeyCode::Enter => self.open_in_feature(),
-            KeyCode::Char('a') => self.add_in_feature(),
-            KeyCode::Char('s') if self.panel == FeaturePanel::Tasks => self.begin_subtask(),
-            KeyCode::Char('x') => self.drop_in_feature(),
-            KeyCode::Char('R') => self.begin_feature_rename(),
-            KeyCode::Char('v') if self.panel == FeaturePanel::Features => {
-                self.toggle_feature_archive()
-            }
-            KeyCode::Char('m') if self.panel == FeaturePanel::Features => {
-                self.open_feature_checkout_picker()
-            }
-            KeyCode::Char('m') if self.panel == FeaturePanel::Tasks => {
-                self.open_task_feature_picker()
-            }
-            KeyCode::Char('>') => self.indent_selected_task(true),
-            KeyCode::Char('<') => self.indent_selected_task(false),
-            KeyCode::Char('p') if self.panel == FeaturePanel::Features => {
-                self.toggle_selected_feature_hold()
-            }
-            KeyCode::Char('w') if self.panel == FeaturePanel::Features => {
-                self.open_feature_wait_picker()
-            }
-            // Acceptance, and the only state left for anyone to set.
-            KeyCode::Char('.') => self.toggle_selected_feature_done(),
-            KeyCode::Char('H') => self.move_selected_task(-1),
-            KeyCode::Char('L') => self.move_selected_task(1),
-            KeyCode::Char('J') => self.reorder_selected_task(1),
-            KeyCode::Char('K') => self.reorder_selected_task(-1),
-            KeyCode::Char('r') => self.refresh_feature(),
-            _ => {}
-        }
     }
 
     /// A line being typed in the feature view.
@@ -719,150 +560,100 @@ impl App {
         }
     }
 
-    fn on_key_sequence_diagram(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => self.close_overlay(),
-            KeyCode::Char('j') | KeyCode::Down | KeyCode::Char('d') | KeyCode::PageDown => {
-                if let Some(view) = &mut self.diagram {
-                    let visible = self.layout.overlay.inner.height.max(1) as usize;
-                    view.scroll_by(1, visible);
-                }
-            }
-            KeyCode::Char('k') | KeyCode::Up | KeyCode::Char('u') | KeyCode::PageUp => {
-                if let Some(view) = &mut self.diagram {
-                    let visible = self.layout.overlay.inner.height.max(1) as usize;
-                    view.scroll_by(-1, visible);
-                }
-            }
-            KeyCode::Char('h') | KeyCode::Left => {
-                if let Some(view) = &mut self.diagram {
-                    let visible = self.layout.overlay.inner.width.max(1) as usize;
-                    view.scroll_horizontal_by(-1, visible);
-                }
-            }
-            KeyCode::Char('l') | KeyCode::Right => {
-                if let Some(view) = &mut self.diagram {
-                    let visible = self.layout.overlay.inner.width.max(1) as usize;
-                    view.scroll_horizontal_by(1, visible);
-                }
-            }
-            _ => {}
+    pub(super) fn scroll_diagram(&mut self, delta: i32) {
+        if let Some(view) = &mut self.diagram {
+            let visible = self.layout.overlay.inner.height.max(1) as usize;
+            view.scroll_by(delta, visible);
         }
     }
 
+    pub(super) fn pan_diagram(&mut self, delta: i32) {
+        if let Some(view) = &mut self.diagram {
+            let visible = self.layout.overlay.inner.width.max(1) as usize;
+            view.scroll_horizontal_by(delta, visible);
+        }
+    }
+
+    /// Focus without a diff would trap every keystroke, so a key that finds
+    /// nothing loaded to act on is the way out.
     fn on_key_review(&mut self, key: KeyEvent) {
-        // Taken first so they don't sit inside the view borrow.
-        match key.code {
-            KeyCode::Char('R') | KeyCode::Char('r') => {
-                if let Some(oid) = self
-                    .review
-                    .as_ref()
-                    .and_then(|v| v.review.commit.as_ref().map(|c| c.oid.clone()))
-                {
-                    return self.open_commit_review(oid, None);
-                }
-                return self.open_review();
-            }
-            KeyCode::Char('H') => return self.open_history(),
-            KeyCode::Char('b') => {
-                // The side toggle is meaningless on a commit, and flipping
-                // it here would silently change which side the next
-                // uncommitted review opens on.
-                if self
-                    .review
-                    .as_ref()
-                    .is_some_and(|v| v.review.commit.is_some())
-                {
-                    return;
-                }
-                self.review_base = self.review_base.next();
-                return self.open_review();
-            }
-            KeyCode::Char('f') => return self.open_change_picker(),
-            KeyCode::Char('s') => return self.toggle_review_split(),
-            KeyCode::Char('h') | KeyCode::Left => return self.close_review(),
-            KeyCode::Esc | KeyCode::Char('q') => return self.close_overlay(),
-            _ => {}
-        }
-        let Some(v) = &mut self.review else {
-            // Focus without a view would trap every keystroke; the only
-            // honest thing is to leave.
+        if !self.press(key) && self.review.is_none() {
             self.focus = Focus::Checkouts;
-            return;
-        };
-        match key.code {
-            KeyCode::Char('j') | KeyCode::Down => v.move_by(1),
-            KeyCode::Char('k') | KeyCode::Up => v.move_by(-1),
-            KeyCode::Char('d') | KeyCode::PageDown => v.move_by(10),
-            KeyCode::Char('u') | KeyCode::PageUp => v.move_by(-10),
-            KeyCode::Char(']') => v.jump_file(true),
-            KeyCode::Char('[') => v.jump_file(false),
-            KeyCode::Char('g') | KeyCode::Home => v.top_of_diff(),
-            KeyCode::Char('G') | KeyCode::End => v.bottom_of_diff(),
-            KeyCode::Char('V') | KeyCode::Char('v') => v.toggle_mark(),
-            KeyCode::Char('e') => {
-                let checkout = v.review.checkout;
-                if let Some(a) = v.anchor() {
-                    let line = a.preferred_start();
-                    let request_id = self.editor_request();
-                    let _ = self.out.send(ClientMsg::OpenInEditor {
-                        checkout,
-                        path: a.path,
-                        line,
-                        external: self.editor_mode().is_external(),
-                        command: self.editor_command(),
-                        request_id,
-                    });
-                    self.close_overlay();
-                }
-            }
-            KeyCode::Char('c') => {
-                let anchor = v.anchor();
-                if let Some(anchor) = anchor {
-                    self.prompt = Some(Prompt::Comment {
-                        anchor,
-                        input: String::new(),
-                    });
-                }
-            }
-            // The tree has likely moved on under an agent still editing it.
-            _ => {}
         }
     }
 
-    fn on_key_history(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Char('R') => return self.open_review(),
-            KeyCode::Char('r') | KeyCode::Char('H') => return self.open_history(),
-            // `h`/Left folds the commit the cursor is in before it closes
-            // the overlay, the way it steps back out of a review.
-            KeyCode::Char('h') | KeyCode::Left => {
-                let folded = self.history.as_mut().is_some_and(|v| v.collapse());
-                if !folded {
-                    self.close_overlay();
-                }
-                return;
-            }
-            KeyCode::Esc | KeyCode::Char('q') => return self.close_overlay(),
-            KeyCode::Char('l') | KeyCode::Enter | KeyCode::Right => {
-                return self.drill_into_history()
-            }
-            _ => {}
+    /// The same diff again, fresh: the commit it was, or the working tree.
+    pub(super) fn refresh_review(&mut self) {
+        if let Some(oid) = self
+            .review
+            .as_ref()
+            .and_then(|v| v.review.commit.as_ref().map(|c| c.oid.clone()))
+        {
+            return self.open_commit_review(oid, None);
         }
-        let Some(v) = &mut self.history else {
-            self.focus = Focus::Checkouts;
+        self.open_review();
+    }
+
+    pub(super) fn flip_review_base(&mut self) {
+        // The side toggle is meaningless on a commit, and flipping it here
+        // would silently change which side the next uncommitted review
+        // opens on.
+        if self
+            .review
+            .as_ref()
+            .is_some_and(|v| v.review.commit.is_some())
+        {
+            return;
+        }
+        self.review_base = self.review_base.next();
+        self.open_review();
+    }
+
+    pub(super) fn open_reviewed_line_in_editor(&mut self) {
+        let Some(v) = &self.review else {
             return;
         };
-        match key.code {
-            KeyCode::Char('j') | KeyCode::Down => v.move_by(1),
-            KeyCode::Char('k') | KeyCode::Up => v.move_by(-1),
-            KeyCode::Char('d') | KeyCode::PageDown => v.move_by(10),
-            KeyCode::Char('u') | KeyCode::PageUp => v.move_by(-10),
-            KeyCode::Char(']') => v.jump_commit(true),
-            KeyCode::Char('[') => v.jump_commit(false),
-            KeyCode::Char('g') | KeyCode::Home => v.top_of_list(),
-            KeyCode::Char('G') | KeyCode::End => v.bottom_of_list(),
-            _ => {}
+        let checkout = v.review.checkout;
+        let Some(a) = v.anchor() else {
+            return;
+        };
+        let line = a.preferred_start();
+        let request_id = self.editor_request();
+        let _ = self.out.send(ClientMsg::OpenInEditor {
+            checkout,
+            path: a.path,
+            line,
+            external: self.editor_mode().is_external(),
+            command: self.editor_command(),
+            request_id,
+        });
+        self.close_overlay();
+    }
+
+    pub(super) fn comment_on_reviewed_lines(&mut self) {
+        let Some(anchor) = self.review.as_ref().and_then(|v| v.anchor()) else {
+            return;
+        };
+        self.prompt = Some(Prompt::Comment {
+            anchor,
+            input: String::new(),
+        });
+    }
+
+    /// As [`App::on_key_review`]: with no commit list loaded, a key that
+    /// finds nothing to act on is the way out.
+    fn on_key_history(&mut self, key: KeyEvent) {
+        if !self.press(key) && self.history.is_none() {
+            self.focus = Focus::Checkouts;
+        }
+    }
+
+    /// `h` folds the commit the cursor is in before it closes the overlay,
+    /// the way it steps back out of a review.
+    pub(super) fn fold_or_close_history(&mut self) {
+        let folded = self.history.as_mut().is_some_and(|v| v.collapse());
+        if !folded {
+            self.close_overlay();
         }
     }
 }

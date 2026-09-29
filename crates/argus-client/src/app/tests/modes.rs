@@ -57,3 +57,46 @@ fn a_question_mark_is_typed_wherever_text_is_being_typed() {
     assert!(h.app.help.is_none());
     assert_eq!(h.app.line.as_ref().map(|line| line.text.as_str()), Some("?"));
 }
+
+#[test]
+fn a_key_runs_one_thing_in_each_mode_that_declares_it() {
+    // Dispatch takes the first binding that has the key, so a second one
+    // for the same key would be dead weight that `?` still advertised.
+    // Only bindings that apply in different states may share one.
+    let modes = [
+        Mode::Rail,
+        Mode::Stage(View::Panes),
+        Mode::Stage(View::Checkouts),
+        Mode::Stage(View::Feature),
+        Mode::Overlay(OverlayMode::Review),
+        Mode::Overlay(OverlayMode::History),
+        Mode::Overlay(OverlayMode::Brief),
+        Mode::Overlay(OverlayMode::Settings),
+        Mode::Overlay(OverlayMode::SequenceDiagram),
+    ];
+    for mode in modes {
+        let mut seen = Vec::new();
+        for binding in mode.keymap().bindings().filter(|binding| !binding.guarded()) {
+            for code in binding.codes() {
+                assert!(!seen.contains(&code), "{mode:?} binds {code:?} twice");
+                seen.push(code);
+            }
+        }
+    }
+}
+
+#[test]
+fn a_digit_typed_into_a_feature_line_is_a_character_rather_than_a_view() {
+    let mut h = Harness::new();
+    h.key(KeyCode::Char('2'));
+    h.app.on_server_msg(ServerMsg::Decisions(Box::new(argus_protocol::DecisionBoard {
+        project: Some(ProjectId(1)),
+        name: "argus".to_string(),
+        features: Vec::new(),
+        decisions: Vec::new(),
+    })));
+    h.key(KeyCode::Char('a'));
+    h.keys("v2");
+    assert_eq!(h.app.view, View::Feature);
+    assert_eq!(h.app.line.as_ref().map(|line| line.text.as_str()), Some("v2"));
+}

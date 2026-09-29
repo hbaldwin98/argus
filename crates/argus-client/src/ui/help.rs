@@ -5,292 +5,23 @@
 //! answering — it showed the keys that fit and left the rest to be
 //! discovered. This is the other half: `?` from anywhere that is not a
 //! typing surface, which lets the bar go back to being a reminder of the
-//! few keys worth having in front of you at all times.
+//! few keys worth having in front of you at all times. What it lists is
+//! each mode's keymap, declared in `app/mode/keymap`; this only draws it.
 
 use super::*;
-
-/// One heading and the keys under it. Grouped by what the key acts on
-/// rather than alphabetically: every binding sorted by character is a
-/// reference, and what somebody pressing `?` wants is an answer.
-pub(super) struct Group {
-    pub title: &'static str,
-    pub keys: &'static [(&'static str, &'static str)],
-}
-
-const MOVE: Group = Group {
-    title: "moving",
-    keys: &[
-        ("j / k", "up and down the rail, in the order it is drawn"),
-        ("l  enter", "into the row under the cursor"),
-        ("h  esc", "up to the row it hangs under"),
-        ("N", "jump to whatever needs attention"),
-    ],
-};
-
-const SELECTION: Group = Group {
-    title: "the thing under the cursor",
-    keys: &[
-        ("s", "a shell here"),
-        ("a", "an agent here"),
-        ("b", "switch branch"),
-        ("B", "also list branches nothing is on"),
-        ("F", "fetch"),
-        ("P", "pull"),
-        ("f", "open a file"),
-        ("R  tab", "review the diff"),
-        ("H", "history"),
-        ("n", "add one"),
-        ("i", "init a repository"),
-        ("D", "remove it"),
-        ("x", "close the pane"),
-    ],
-};
-
-const RAIL: Group = Group {
-    title: "the rail",
-    keys: &[
-        ("o  click project", "switch to another project"),
-        ("click repo", "open it; the one open before folds away"),
-        ("click pane", "show it, keys stay here — x closes it"),
-        ("enter  click", "type into the pane shown"),
-        ("wheel", "move along the rail"),
-        ("↑ ↓ + !", "a checkout's ahead, behind, staged, unstaged"),
-    ],
-};
-
-const PANES: Group = Group {
-    title: "panes",
-    keys: &[
-        ("j / k", "card by card"),
-        ("enter  l  click", "open it and type into it"),
-        ("A", "this repository, or the whole workspace"),
-        ("a", "an agent here"),
-        ("s", "a shell here"),
-        ("u", "take back the newest message queued from a phone"),
-        ("esc  q", "back to the workspace"),
-    ],
-};
-
-const CHECKOUTS: Group = Group {
-    title: "checkouts",
-    keys: &[
-        ("j / k  click", "row by row"),
-        ("/", "filter branches by name"),
-        ("enter  l", "open this checkout, or switch to this branch"),
-        ("B", "also list branches nothing is on"),
-        ("a", "an agent here"),
-        ("s", "a shell here"),
-        ("m  b", "checkout: put it on another branch"),
-        ("n", "a new worktree"),
-        ("D", "remove it"),
-        ("F  P", "fetch, pull"),
-        ("R  tab", "review the diff"),
-        ("H", "history"),
-        ("↑ ↓ + !", "state: ahead, behind, staged, unstaged"),
-        ("esc  q", "back to the workspace"),
-    ],
-};
-
-const VIEW: Group = Group {
-    title: "the view",
-    keys: &[
-        ("1", "workspace — the rail and the live pane"),
-        ("2", "feature — brief, tasks, and decisions"),
-        ("3", "panes — every pane as a card"),
-        ("4", "checkouts — branches and worktrees"),
-        ("t", "theme"),
-        ("w", "workspace"),
-        ("W", "host — this machine or one over ssh"),
-        ("S", "settings"),
-    ],
-};
-
-const PANE: Group = Group {
-    title: "in a pane",
-    keys: &[
-        ("", "every key goes to the program"),
-        ("ctrl-space esc", "hand the keyboard back"),
-        ("ctrl-space f", "fullscreen, and back"),
-        ("ctrl-space x", "close it"),
-        ("ctrl-space tab", "review"),
-        ("ctrl-space H", "history"),
-        ("ctrl-space N", "next needing attention"),
-        ("ctrl-space 1-4", "another view"),
-        ("shift-pgup", "back through the scrollback"),
-    ],
-};
-
-const REVIEW: Group = Group {
-    title: "reading a diff",
-    keys: &[
-        ("j / k", "line by line"),
-        ("d / u", "ten at a time"),
-        ("] / [", "next and previous file"),
-        ("g / G", "top and bottom"),
-        ("f", "jump to a change"),
-        ("v", "mark a range"),
-        ("c", "comment to the agent"),
-        ("e", "open it in your editor"),
-        ("s", "split and unified"),
-        ("b", "staged, unstaged, and the branch"),
-        ("H", "history"),
-        ("h", "back to the list"),
-        ("esc  q", "close"),
-    ],
-};
-
-const HISTORY: Group = Group {
-    title: "reading history",
-    keys: &[
-        ("j / k", "commit by commit"),
-        ("] / [", "next and previous commit"),
-        ("l  enter", "its files, then the diff"),
-        ("h", "fold it back up"),
-        ("g / G", "top and bottom"),
-        ("r", "refresh"),
-        ("R", "review the working tree instead"),
-        ("esc  q", "close"),
-    ],
-};
-
-const BRIEF: Group = Group {
-    title: "a brief",
-    keys: &[
-        ("j / k  h / l", "move the cursor"),
-        ("0 / $", "start and end of the line"),
-        ("i  a", "start typing"),
-        ("o", "a new line below"),
-        ("esc", "stop typing, and save"),
-        ("q", "close"),
-    ],
-};
-
-const SETTINGS: Group = Group {
-    title: "settings",
-    keys: &[
-        ("j / k", "move"),
-        ("h / l", "change this one"),
-        ("esc  q", "close"),
-    ],
-};
-
-const FEATURE: Group = Group {
-    title: "a feature",
-    keys: &[
-        ("h / l", "the features, and the feature under the cursor"),
-        ("tab", "features, tasks, diagrams, decisions in turn"),
-        ("j / k", "row by row, in whichever panel has the keys"),
-        ("d / u", "ten at a time"),
-        ("g / G", "top and bottom"),
-        ("a", "a new feature, or a new root task under one"),
-        ("s", "a subtask under the selected task"),
-        ("e", "rewrite this feature's brief, or this task's title"),
-        ("enter", "open this feature or task brief"),
-        ("R", "rename the feature"),
-        ("x", "remove it, keeping its decisions"),
-        (".", "accept it, or reopen it"),
-        ("v", "switch between active features and accepted history"),
-        ("m", "move this feature to another checkout"),
-        ("p", "hold this feature, saying why, or lift its hold"),
-        ("w", "choose a feature this one comes after, or take one back"),
-        ("H / L", "move this task along todo, doing, done"),
-        ("J / K", "earlier or later among sibling tasks"),
-        ("> / <", "under the task above it, or out beside its parent"),
-        ("m", "in tasks: move this task and its subtasks to another feature"),
-        ("r", "re-ask the daemon for all of it"),
-        (
-            "wheel",
-            "scroll the section under the pointer, brief included",
-        ),
-        ("click", "select a feature, task, or decision"),
-        ("esc  q", "back to the workspace"),
-    ],
-};
-
-const DIAGRAM: Group = Group {
-    title: "a sequence diagram",
-    keys: &[
-        ("j / k", "scroll"),
-        ("h / l", "pan across a diagram wider than the window"),
-        ("q  esc", "close it"),
-    ],
-};
-
-const CONFIRM: Group = Group {
-    title: "a question",
-    keys: &[("y  enter", "yes"), ("n  esc", "no")],
-};
-
-const LIST: Group = Group {
-    title: "a list to choose from",
-    keys: &[
-        ("j / k  ↑ / ↓", "move"),
-        ("type", "narrow it, where it takes text"),
-        ("enter", "choose"),
-        ("esc", "cancel"),
-    ],
-};
-
-const DIRECTORIES: Group = Group {
-    title: "finding a directory",
-    keys: &[
-        ("type", "narrow this directory's entries"),
-        ("↑ / ↓", "move"),
-        ("→  tab", "into the directory under the cursor"),
-        ("←", "up a directory"),
-        ("enter", "choose it"),
-        ("esc", "cancel"),
-    ],
-};
-
-const FILTER: Group = Group {
-    title: "filtering branches",
-    keys: &[
-        ("type", "narrow the rows to matching names"),
-        ("enter", "keep the filter"),
-        ("esc", "clear it"),
-    ],
-};
-
-/// True everywhere, so it is worth saying once rather than per mode.
-const EVERYWHERE: Group = Group {
-    title: "everywhere",
-    keys: &[
-        ("?", "this list"),
-        ("ctrl-v", "paste"),
-        ("F12", "close the floating window, whatever it is"),
-        ("q", "detach — the daemon and its panes keep running"),
-    ],
-};
-
-/// The keys that apply where the user actually is. Asked of the app rather
-/// than fixed, because `?` in a diff and `?` in the columns are different
-/// questions, and answering both with one wall of text answers neither.
-pub(super) fn groups(app: &App) -> Vec<&'static Group> {
-    let mut groups = match app.mode() {
-        Mode::Prompt => vec![&CONFIRM],
-        Mode::DirPicker => vec![&DIRECTORIES],
-        Mode::Picker => vec![&LIST],
-        Mode::CheckoutFilter => vec![&FILTER],
-        Mode::Overlay(OverlayMode::Review) => vec![&REVIEW],
-        Mode::Overlay(OverlayMode::History) => vec![&HISTORY],
-        Mode::Overlay(OverlayMode::Brief) => vec![&BRIEF],
-        Mode::Overlay(OverlayMode::Settings) => vec![&SETTINGS],
-        Mode::Overlay(OverlayMode::SequenceDiagram) => vec![&DIAGRAM],
-        Mode::Overlay(OverlayMode::Pane) | Mode::Pane => vec![&PANE],
-        Mode::Stage(View::Panes) => vec![&PANES, &VIEW],
-        Mode::Stage(View::Checkouts) => vec![&CHECKOUTS, &VIEW],
-        Mode::Stage(View::Feature) => vec![&FEATURE, &VIEW],
-        Mode::Stage(View::Workspace) | Mode::Rail => vec![&MOVE, &SELECTION, &RAIL, &VIEW],
-    };
-    groups.push(&EVERYWHERE);
-    groups
-}
 
 /// Draws the window over `area`, which is the columns and not the status
 /// bar: the bar is where it says how to put the window away.
 pub(super) fn render_help(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
-    let blocks: Vec<Vec<Line>> = groups(app).iter().map(|g| block_of(g, th)).collect();
+    // Asked of the mode rather than fixed, because `?` in a diff and `?` in
+    // the columns are different questions, and answering both with one
+    // wall of text answers neither.
+    let blocks: Vec<Vec<Line>> = app
+        .mode()
+        .keymap()
+        .help()
+        .map(|group| block_of(group.title(), group.listed().collect(), th))
+        .collect();
     let content_width = blocks.iter().flatten().map(Line::width).max().unwrap_or(0) as u16;
     let rows: usize = blocks.iter().map(Vec::len).sum();
 
@@ -368,18 +99,17 @@ pub(super) fn render_help(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
 /// One group's heading and rows, with the keys in a column of their own.
 /// Aligning them is what lets the eye run down the keys looking for one,
 /// which is how this window is actually read.
-fn block_of(group: &Group, th: Theme) -> Vec<Line<'static>> {
-    let gutter = group
-        .keys
+fn block_of(title: &str, listed: Vec<(&str, &str)>, th: Theme) -> Vec<Line<'static>> {
+    let gutter = listed
         .iter()
         .map(|(key, _)| key.chars().count())
         .max()
         .unwrap_or(0);
     let mut lines = vec![Line::from(Span::styled(
-        group.title.to_string(),
+        title.to_string(),
         Style::default().fg(th.text).add_modifier(Modifier::BOLD),
     ))];
-    for (key, what) in group.keys {
+    for (key, what) in listed {
         lines.push(Line::from(vec![
             Span::styled(format!("{key:>gutter$}  "), Style::default().fg(th.accent)),
             Span::styled(what.to_string(), Style::default().fg(th.muted)),
