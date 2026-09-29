@@ -185,6 +185,13 @@ With [Tailscale](https://tailscale.com), `tailscale serve --bg 7420` puts HTTPS 
 your tailnet; pass the name it prints as `--url` so the QR code opens it. `--listen 0.0.0.0` binds
 every interface instead, and warns that the cookie then crosses the network unencrypted.
 
+Served over HTTPS, the page can be added to a phone's home screen, and "Notify me" turns on pushes
+for when an agent starts waiting, wants a review, fails, or finishes its turn — not while that
+phone has the page open. A push names the agent and its status, never its conversation, and is
+encrypted for the phone; it travels through the browser's push service (Apple's, Google's or
+Mozilla's), which is the only thing `argus web` sends off the machine. On iPhone, add the page to
+the home screen first.
+
 Conversations are read for Claude Code, Codex, Cursor's `agent`, pi and opencode. Any other harness
 can push its own with `argus-hook transcript` (see DESIGN.md), and shows its Terminal tab until it
 does.

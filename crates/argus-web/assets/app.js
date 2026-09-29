@@ -32,6 +32,9 @@ const state = {
   // pane id -> { rows, cols, lines }
   screens: new Map(),
   screening: null,
+  // Whether this device takes pushes, and whether it could: pushes need a
+  // page served over HTTPS and a browser that has them.
+  push: { on: false, possible: false, busy: false },
 };
 
 // --- the connection ------------------------------------------------------
@@ -40,7 +43,12 @@ async function start() {
   const pairing = new URLSearchParams(location.hash.slice(1)).get("pair");
   const me = await fetch("/api/me", { credentials: "same-origin" });
   if (me.ok) {
-    state.device = (await me.json()).device;
+    const body = await me.json();
+    state.device = body.device;
+    state.push.on = body.push;
+    state.push.possible = body.can_push && window.isSecureContext
+      && "serviceWorker" in navigator && "PushManager" in window;
+    if (state.push.possible) navigator.serviceWorker.register("/sw.js").catch(() => {});
     if (pairing) history.replaceState(null, "", location.pathname);
     connect();
   } else {
@@ -57,6 +65,7 @@ function connect() {
   socket.addEventListener("open", () => {
     retry = 500;
     state.connected = true;
+    sendVisibility();
     if (state.watching !== null) send({ type: "watch", pane: state.watching });
     if (state.screening !== null) send({ type: "screen", pane: state.screening });
     render();
@@ -76,6 +85,49 @@ function connect() {
     setTimeout(connect, retry);
     retry = Math.min(retry * 2, 8000);
   });
+}
+
+// A device looking at the page is not pushed what it can already see.
+function sendVisibility() {
+  send({ type: "visible", visible: document.visibilityState === "visible" });
+}
+document.addEventListener("visibilitychange", sendVisibility);
+
+async function togglePush() {
+  if (state.push.busy) return;
+  state.push.busy = true;
+  render();
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    if (state.push.on) {
+      const subscription = await registration.pushManager.getSubscription();
+      if (subscription) await subscription.unsubscribe();
+      await fetch("/api/push/unsubscribe", { method: "POST", credentials: "same-origin" });
+      state.push.on = false;
+    } else if ((await Notification.requestPermission()) === "granted") {
+      const { key } = await (await fetch("/api/push/key", { credentials: "same-origin" })).json();
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: fromBase64Url(key),
+      });
+      const saved = await fetch("/api/push/subscribe", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(subscription),
+      });
+      state.push.on = saved.ok;
+    }
+  } catch (error) {
+    console.warn("argus web: notifications:", error);
+  }
+  state.push.busy = false;
+  render();
+}
+
+function fromBase64Url(text) {
+  const padded = text.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((text.length + 3) % 4);
+  return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
 }
 
 function send(message) {
@@ -301,8 +353,17 @@ function renderList() {
     }));
   }
   state.shell = null;
+  const bell = state.push.possible
+    ? el("button", {
+      class: `bell${state.push.on ? " on" : ""}`,
+      "aria-pressed": String(state.push.on),
+      disabled: state.push.busy,
+      text: state.push.on ? "Notifying" : "Notify me",
+      onclick: togglePush,
+    })
+    : null;
   app.replaceChildren(
-    el("header", { class: "bar" }, el("h1", {}, el("span", { class: "mark", text: "ARGUS" }))),
+    el("header", { class: "bar" }, el("h1", {}, el("span", { class: "mark", text: "ARGUS" })), bell),
     ...banners(),
     ...rows,
   );

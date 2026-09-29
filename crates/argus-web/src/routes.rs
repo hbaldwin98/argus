@@ -47,6 +47,11 @@ pub struct App {
     pub asks: mpsc::UnboundedSender<Ask>,
     pub devices: Devices,
     pub code: Mutex<Code>,
+    /// The key pushes are signed with; `None` when it could not be made,
+    /// which leaves everything but pushes working.
+    pub vapid: Option<crate::push::Vapid>,
+    /// How many of each device's pages are on screen now.
+    pub visible: Mutex<std::collections::HashMap<String, usize>>,
 }
 
 pub fn router(app: Arc<App>) -> Router {
@@ -54,8 +59,15 @@ pub fn router(app: Arc<App>) -> Router {
         .route("/", get(|| async { asset("text/html; charset=utf-8", INDEX) }))
         .route("/app.js", get(|| async { asset("text/javascript; charset=utf-8", APP_JS) }))
         .route("/style.css", get(|| async { asset("text/css; charset=utf-8", STYLE) }))
+        .route("/sw.js", get(|| async { asset("text/javascript; charset=utf-8", WORKER) }))
+        .route("/manifest.webmanifest", get(|| async { asset("application/manifest+json", MANIFEST) }))
+        .route("/icon-192.png", get(|| async { asset("image/png", ICON_192) }))
+        .route("/icon-512.png", get(|| async { asset("image/png", ICON_512) }))
         .route("/api/me", get(me))
         .route("/api/pair", post(pair))
+        .route("/api/push/key", get(push_key))
+        .route("/api/push/subscribe", post(push_subscribe))
+        .route("/api/push/unsubscribe", post(push_unsubscribe))
         .route("/ws", get(ws))
         .layer(middleware::from_fn(security_headers))
         .with_state(app)
@@ -64,6 +76,10 @@ pub fn router(app: Arc<App>) -> Router {
 const INDEX: &[u8] = include_bytes!("../assets/index.html");
 const APP_JS: &[u8] = include_bytes!("../assets/app.js");
 const STYLE: &[u8] = include_bytes!("../assets/style.css");
+const WORKER: &[u8] = include_bytes!("../assets/sw.js");
+const MANIFEST: &[u8] = include_bytes!("../assets/manifest.webmanifest");
+const ICON_192: &[u8] = include_bytes!("../assets/icon-192.png");
+const ICON_512: &[u8] = include_bytes!("../assets/icon-512.png");
 
 fn asset(content_type: &'static str, body: &'static [u8]) -> Response {
     ([(header::CONTENT_TYPE, content_type)], body).into_response()
@@ -112,9 +128,57 @@ pub fn device_token(headers: &HeaderMap) -> Option<String> {
 
 async fn me(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
     match device_token(&headers).and_then(|token| app.devices.check(&token)) {
-        Some(device) => Json(serde_json::json!({ "device": device.name })).into_response(),
+        Some(device) => Json(serde_json::json!({
+            "device": device.name,
+            "push": device.push.is_some(),
+            "can_push": app.vapid.is_some(),
+        }))
+        .into_response(),
         None => StatusCode::UNAUTHORIZED.into_response(),
     }
+}
+
+/// The paired device a request comes from, when it comes from this
+/// server's own page.
+fn paired(app: &App, headers: &HeaderMap) -> Option<crate::pairing::Device> {
+    if !same_origin(headers) {
+        return None;
+    }
+    device_token(headers).and_then(|token| app.devices.check(&token))
+}
+
+async fn push_key(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
+    let (Some(_), Some(vapid)) = (paired(&app, &headers), app.vapid.as_ref()) else {
+        return StatusCode::FORBIDDEN.into_response();
+    };
+    Json(serde_json::json!({ "key": vapid.public_key() })).into_response()
+}
+
+async fn push_subscribe(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    Json(subscription): Json<crate::push::Subscription>,
+) -> Response {
+    let Some(device) = paired(&app, &headers) else {
+        return StatusCode::FORBIDDEN.into_response();
+    };
+    // A push service is always reached over HTTPS; anything else is not
+    // one, and would be this server making a request wherever it is told.
+    if !subscription.endpoint.starts_with("https://") {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    match app.devices.set_push(&device.name, Some(subscription)) {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        _ => StatusCode::FORBIDDEN.into_response(),
+    }
+}
+
+async fn push_unsubscribe(State(app): State<Arc<App>>, headers: HeaderMap) -> Response {
+    let Some(device) = paired(&app, &headers) else {
+        return StatusCode::FORBIDDEN.into_response();
+    };
+    let _ = app.devices.set_push(&device.name, None);
+    StatusCode::NO_CONTENT.into_response()
 }
 
 #[derive(Deserialize)]
@@ -163,16 +227,17 @@ async fn ws(State(app): State<Arc<App>>, headers: HeaderMap, upgrade: WebSocketU
     let Some(token) = device_token(&headers) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
-    if app.devices.check(&token).is_none() {
+    let Some(device) = app.devices.check(&token) else {
         return StatusCode::UNAUTHORIZED.into_response();
-    }
-    upgrade.on_upgrade(move |socket| phone(socket, app, token))
+    };
+    upgrade.on_upgrade(move |socket| phone(socket, app, token, device.name))
 }
 
 /// One paired phone's session: whole-state messages as they change, the
 /// conversations it watches, and what it asks, until it goes or its device
 /// is revoked.
-async fn phone(mut socket: WebSocket, app: Arc<App>, token: String) {
+async fn phone(mut socket: WebSocket, app: Arc<App>, token: String, device: String) {
+    let mut visible = false;
     let mut server = app.feeds.server.clone();
     let mut agents = app.feeds.agents.clone();
     let mut conversations = app.feeds.conversations.subscribe();
@@ -198,6 +263,10 @@ async fn phone(mut socket: WebSocket, app: Arc<App>, token: String) {
                 match message {
                     Message::Text(text) => {
                         match serde_json::from_str::<FromPhone>(text.as_str()) {
+                            Ok(FromPhone::Visible { visible: now }) => {
+                                set_visible(&app, &device, &mut visible, now);
+                                None
+                            }
                             Ok(ask) => handle(&app, &mut watching, &mut screening, ask, &direct),
                             Err(_) => Some(error("that message is not one this server knows")),
                         }
@@ -251,11 +320,27 @@ async fn phone(mut socket: WebSocket, app: Arc<App>, token: String) {
             }
         }
     }
+    set_visible(&app, &device, &mut visible, false);
     for pane in watching {
         let _ = app.asks.send(Ask::Unwatch(pane));
     }
     for pane in screening {
         let _ = app.asks.send(Ask::Unscreen(pane));
+    }
+}
+
+/// Counts this page in or out of its device's pages on screen.
+fn set_visible(app: &App, device: &str, visible: &mut bool, now: bool) {
+    if *visible == now {
+        return;
+    }
+    *visible = now;
+    let mut counts = app.visible.lock().unwrap();
+    let count = counts.entry(device.to_string()).or_insert(0);
+    if now {
+        *count += 1;
+    } else {
+        *count = count.saturating_sub(1);
     }
 }
 
@@ -308,6 +393,7 @@ fn handle(
                 let _ = app.asks.send(Ask::Unscreen(pane));
             }
         }
+        FromPhone::Visible { .. } => {}
         FromPhone::Key { pane, key } => match crate::screen::key_bytes(&key) {
             Some(bytes) => {
                 let _ = app.asks.send(Ask::Key(pane, bytes));

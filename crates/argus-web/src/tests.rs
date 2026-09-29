@@ -23,6 +23,7 @@ struct Running {
     addr: std::net::SocketAddr,
     app: Arc<App>,
     daemon: mpsc::UnboundedReceiver<DuplexStream>,
+    notices: mpsc::UnboundedReceiver<crate::push::Notice>,
     _dir: tempfile::TempDir,
 }
 
@@ -38,12 +39,14 @@ async fn serve() -> Running {
             anyhow::Ok(ours)
         }
     };
-    let (feeds, asks, _link) = daemon::start(connect);
+    let (feeds, asks, notices, _link) = daemon::start(connect);
     let app = Arc::new(App {
         feeds,
         asks,
         devices: Devices::at(dir.path()),
         code: Mutex::new(pairing::Code::new().unwrap()),
+        vapid: crate::push::Vapid::load_or_create(dir.path()).ok(),
+        visible: Mutex::new(Default::default()),
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -53,6 +56,7 @@ async fn serve() -> Running {
         addr,
         app,
         daemon,
+        notices,
         _dir: dir,
     }
 }
@@ -427,4 +431,98 @@ async fn a_phone_watches_a_screen_without_resizing_it_and_answers_with_keys() {
         !seen.iter().any(|m| matches!(m, ClientMsg::Resize { .. })),
         "a phone never resizes a pane: {seen:?}"
     );
+}
+
+fn with_status(status: PaneStatus, note: Option<&str>) -> WorkspaceTree {
+    let mut t = tree();
+    let pane = &mut t.projects[0].repositories[0].checkouts[0].panes[0];
+    pane.status = status;
+    pane.note = note.map(str::to_string);
+    t
+}
+
+#[tokio::test]
+async fn an_agent_starting_to_wait_is_worth_a_push_and_a_first_look_is_not() {
+    let mut running = serve().await;
+    let mut daemon = play_daemon(&mut running).await;
+    // The tree play_daemon sent, with the agent already waiting, is the
+    // first this connection saw: taken as it is, not announced.
+    write_msg(&mut daemon, &ServerMsg::WideTree(vec![with_status(PaneStatus::Working, None)])).await.unwrap();
+    write_msg(
+        &mut daemon,
+        &ServerMsg::WideTree(vec![with_status(PaneStatus::Waiting, Some("allow cargo test?"))]),
+    )
+    .await
+    .unwrap();
+
+    let notice = tokio::time::timeout(Duration::from_secs(5), running.notices.recv())
+        .await
+        .expect("a notice")
+        .unwrap();
+    assert_eq!(notice.pane, 7);
+    assert_eq!(notice.title, "fixing the build");
+    assert_eq!(notice.body, "claude is waiting for you: allow cargo test?");
+    assert_eq!(notice.url, "/#/pane/7");
+    assert!(running.notices.try_recv().is_err(), "only the change into waiting");
+}
+
+#[test]
+fn a_notice_goes_to_subscribed_devices_that_are_not_looking() {
+    let subscription = |n: &str| crate::push::Subscription {
+        endpoint: format!("https://push.example/{n}"),
+        keys: crate::push::SubscriptionKeys { p256dh: "k".into(), auth: "a".into() },
+    };
+    let device = |name: &str, push: bool| crate::pairing::Device {
+        name: name.into(),
+        hash: String::new(),
+        paired: 0,
+        push: push.then(|| subscription(name)),
+    };
+    let devices = [device("phone", true), device("tablet", true), device("laptop", false)];
+    let looking = [("tablet".to_string(), 1usize)].into_iter().collect();
+    let chosen: Vec<String> = crate::recipients(&devices, &looking).into_iter().map(|(n, _)| n).collect();
+    assert_eq!(chosen, ["phone"]);
+}
+
+#[tokio::test]
+async fn a_device_subscribes_to_pushes_only_from_this_page_and_only_to_a_push_service() {
+    let running = serve().await;
+    let cookie = paired_cookie(&running).await;
+    let origin = format!("http://{}", running.addr);
+    let post = |origin: &str, body: &str| {
+        format!(
+            "POST /api/push/subscribe HTTP/1.1\r\nHost: {}\r\nOrigin: {origin}\r\nCookie: {cookie}\r\n\
+Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            running.addr,
+            body.len()
+        )
+    };
+    let good = r#"{"endpoint":"https://fcm.googleapis.com/fcm/send/x","expirationTime":null,"keys":{"p256dh":"k","auth":"a"}}"#;
+    let plain = r#"{"endpoint":"http://169.254.169.254/latest","keys":{"p256dh":"k","auth":"a"}}"#;
+
+    assert!(http(running.addr, &post("https://evil.example", good)).await.starts_with("HTTP/1.1 403"));
+    assert!(http(running.addr, &post(&origin, plain)).await.starts_with("HTTP/1.1 400"));
+    assert!(http(running.addr, &post(&origin, good)).await.starts_with("HTTP/1.1 204"));
+    let device = running.app.devices.list().into_iter().find(|d| d.name == "phone").unwrap();
+    assert_eq!(device.push.unwrap().endpoint, "https://fcm.googleapis.com/fcm/send/x");
+}
+
+#[tokio::test]
+async fn the_installable_pages_files_are_served_as_what_they_are() {
+    let running = serve().await;
+    for (path, kind) in [
+        ("/sw.js", "text/javascript"),
+        ("/manifest.webmanifest", "application/manifest+json"),
+        ("/icon-192.png", "image/png"),
+        ("/icon-512.png", "image/png"),
+    ] {
+        let response = http(
+            running.addr,
+            &format!("GET {path} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n", running.addr),
+        )
+        .await
+        .to_ascii_lowercase();
+        assert!(response.starts_with("http/1.1 200"), "{path}");
+        assert!(response.contains(&format!("content-type: {kind}")), "{path}: {response:.200}");
+    }
 }

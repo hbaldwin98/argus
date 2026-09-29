@@ -32,6 +32,9 @@ pub struct Device {
     pub hash: String,
     /// When it paired, in seconds since the Unix epoch.
     pub paired: u64,
+    /// Where its browser takes pushes, once it has asked for them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push: Option<crate::push::Subscription>,
 }
 
 /// The devices file.
@@ -90,6 +93,7 @@ impl Devices {
             name: name.to_string(),
             hash: hash(&token),
             paired: now(),
+            push: None,
         });
         self.save(&devices)?;
         Ok(token)
@@ -103,6 +107,18 @@ impl Devices {
         if devices.len() == before {
             return Ok(false);
         }
+        self.save(&devices)?;
+        Ok(true)
+    }
+
+    /// Sets or clears where a device takes pushes. Says whether the device
+    /// is still paired.
+    pub fn set_push(&self, name: &str, push: Option<crate::push::Subscription>) -> anyhow::Result<bool> {
+        let mut devices = self.list();
+        let Some(device) = devices.iter_mut().find(|d| d.name == name) else {
+            return Ok(false);
+        };
+        device.push = push;
         self.save(&devices)?;
         Ok(true)
     }

@@ -101,6 +101,8 @@ struct Publish {
     agents: watch::Sender<Arc<String>>,
     conversations: broadcast::Sender<(u64, Arc<String>)>,
     screens: broadcast::Sender<(u64, Arc<String>)>,
+    /// Status changes worth waking a phone for.
+    notices: mpsc::UnboundedSender<crate::push::Notice>,
 }
 
 impl Publish {
@@ -154,6 +156,7 @@ pub fn start<C, F, S>(
 ) -> (
     Feeds,
     mpsc::UnboundedSender<Ask>,
+    mpsc::UnboundedReceiver<crate::push::Notice>,
     tokio::task::JoinHandle<Ended>,
 )
 where
@@ -172,11 +175,13 @@ where
     }));
     let (conversations, _) = broadcast::channel(256);
     let (screens, _) = broadcast::channel(64);
+    let (notices, notices_rx) = mpsc::unbounded_channel();
     let publish = Publish {
         server,
         agents,
         conversations: conversations.clone(),
         screens: screens.clone(),
+        notices,
     };
     let (asks, asks_rx) = mpsc::unbounded_channel();
     let task = tokio::spawn(keep_connected(connect, publish, asks_rx));
@@ -186,7 +191,7 @@ where
         conversations,
         screens,
     };
-    (feeds, asks, task)
+    (feeds, asks, notices_rx, task)
 }
 
 async fn keep_connected<C, F, S>(
@@ -457,6 +462,10 @@ struct State {
     tree: Vec<WorkspaceTree>,
     /// The screens phones are watching, as the daemon streams them.
     screens: HashMap<u64, crate::screen::Screen>,
+    /// Each agent's loudest status in the last tree, to tell what changed.
+    /// Empty until this connection's first tree, which is taken as it is
+    /// rather than announced.
+    statuses: HashMap<u64, argus_protocol::PaneStatus>,
     /// Whether the daemon sends every workspace. One from before sends
     /// only the open workspace's tree, which stands in for all of them.
     wide: bool,
@@ -473,6 +482,7 @@ impl State {
                 self.wide = true;
                 self.tree = tree;
                 link.reconcile(&self.tree);
+                self.announce(publish);
                 publish.agents(&self.tree);
             }
             ServerMsg::Sent {
@@ -556,6 +566,44 @@ impl State {
             _ => {}
         }
         None
+    }
+
+    /// Tells phones of each agent whose state changed in a way worth
+    /// waking them for.
+    fn announce(&mut self, publish: &Publish) {
+        let agents = self
+            .tree
+            .iter()
+            .flat_map(|w| w.projects.iter())
+            .flat_map(|p| p.repositories.iter())
+            .flat_map(|r| r.checkouts.iter())
+            .flat_map(|c| c.panes.iter())
+            .filter(|p| p.kind == argus_protocol::PaneKind::Agent);
+        let mut seen = HashMap::new();
+        for pane in agents {
+            let loudest = pane.loudest_state();
+            seen.insert(pane.id.0, loudest.status);
+            let before = self.statuses.get(&pane.id.0).copied();
+            let Some(verb) = before.and_then(|before| crate::push::worth_telling(before, loudest.status)) else {
+                continue;
+            };
+            let who = loudest
+                .child
+                .map(str::to_string)
+                .or_else(|| pane.template.clone())
+                .unwrap_or_else(|| "The agent".to_string());
+            let body = match loudest.note {
+                Some(note) if !note.is_empty() => format!("{who} {verb}: {note}"),
+                _ => format!("{who} {verb}"),
+            };
+            let _ = publish.notices.send(crate::push::Notice {
+                title: pane.title.clone(),
+                body,
+                pane: pane.id.0,
+                url: format!("/#/pane/{}", pane.id.0),
+            });
+        }
+        self.statuses = seen;
     }
 
     fn merge_telemetry(&mut self, pane: PaneId, telemetry: AgentTelemetry) -> bool {

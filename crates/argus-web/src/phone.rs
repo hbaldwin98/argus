@@ -82,6 +82,9 @@ pub enum FromPhone {
     Unscreen { pane: u64 },
     /// One key from the key bar, by name, straight to the pane.
     Key { pane: u64, key: String },
+    /// Whether the page is on screen: a device looking at it is not pushed
+    /// what it can already see.
+    Visible { visible: bool },
 }
 
 /// A daemon's answer to a message, as the page reads it.

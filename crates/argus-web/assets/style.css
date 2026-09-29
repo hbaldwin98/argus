@@ -202,3 +202,6 @@ details.detail .result.failed { border-color: var(--err); }
   background: var(--bg); border: 1px solid var(--edge); border-radius: 8px; font-family: var(--mono);
 }
 .keys button:active { background: var(--surface-focus); }
+
+.bar .bell { font-size: 13px; border: 1px solid var(--edge); border-radius: 999px; padding: 3px 12px; color: var(--muted); }
+.bar .bell.on { color: var(--accent); border-color: var(--accent); }

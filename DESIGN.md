@@ -115,6 +115,20 @@ into links; every other string is set as text. Every phone shares one daemon con
 conversation several phones watch is watched once, and when the daemon says it is stopping
 `argus web` exits rather than start another.
 
+The page is installable: a manifest, icons, and a service worker that caches nothing, so the page
+is always the one this `argus web` serves, and that shows pushes and opens the agent a tapped one
+names. Web Push is the one thing `argus web` sends off the machine. A browser only subscribes from a
+page served over HTTPS, so the page offers "Notify me" only in a secure context. A device's
+subscription is kept with it in `web-devices.json`, and must name an `https://` endpoint, so the
+server cannot be told to post anywhere else. `argus web` compares each tree with the last and makes
+a notice when an agent's loudest state goes to waiting, needs-review or failed, or from working to
+idle — a turn ending; a connection's first tree is taken as it is. A notice carries the pane's title,
+who changed and the agent's note, never anything from the conversation. It is encrypted for the
+browser as RFC 8291 lays out, so the push service relays bytes it cannot read, and signed with a
+P-256 key made once and kept in `web-push.json` (VAPID, RFC 8292). It goes to every subscribed
+device except those with a page on screen, which each page reports; a subscription the service
+answers 404 or 410 for is forgotten.
+
 A phone's Terminal tab watches the pane's screen through `argus web`, which subscribes like any
 client but never sends `Resize`: the daemon sizes a pane to the smallest request among those that
 made one, so a phone that asked would shrink the desktop's pane to its width. `argus web` keeps the
@@ -246,6 +260,7 @@ stream.
 | `phone` | what the page and the server say to each other |
 | `markdown` | a reply's markdown as HTML that can run nothing |
 | `screen` | a pane's screen as a phone draws it, and the keys the phone may type into it |
+| `push` | telling a phone an agent needs it, through its browser's push service |
 
 ## Views
 

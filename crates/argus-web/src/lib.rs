@@ -18,6 +18,7 @@ mod daemon;
 mod markdown;
 mod pairing;
 mod phone;
+mod push;
 mod routes;
 mod screen;
 
@@ -55,18 +56,24 @@ where
                 options.listen
             )
         })?;
-    let (feeds, asks, link) = daemon::start(connect);
+    let (feeds, asks, notices, link) = daemon::start(connect);
+    let vapid = push::Vapid::load_or_create(&options.config_dir)
+        .map_err(|e| tracing::warn!("argus web cannot send pushes: {e:#}"))
+        .ok();
     let app = Arc::new(routes::App {
         feeds,
         asks,
         devices: Devices::at(&options.config_dir),
         code: Mutex::new(pairing::Code::new()?),
+        vapid,
+        visible: Mutex::new(Default::default()),
     });
 
     let url = options
         .url
         .clone()
         .unwrap_or_else(|| format!("http://{}", options.listen));
+    tokio::spawn(push_notices(app.clone(), notices, subject(&url)));
     println!("{}", banner(&options, &url, app.code.lock().unwrap().digits()));
     tokio::spawn(new_codes_on_enter(app.clone(), url));
 
@@ -80,6 +87,61 @@ where
         .with_graceful_shutdown(shutdown)
         .await?;
     Ok(())
+}
+
+/// Who a push service is told sends these pushes, which it may use to
+/// reach a person about them: the page's own address when it has an
+/// HTTPS one.
+fn subject(url: &str) -> String {
+    if url.starts_with("https://") {
+        url.trim_end_matches('/').to_string()
+    } else {
+        "mailto:argus-web@localhost".to_string()
+    }
+}
+
+/// Sends each notice to every device that asked for pushes and has no page
+/// on screen. A subscription its browser has let go of is forgotten.
+async fn push_notices(
+    app: Arc<routes::App>,
+    mut notices: tokio::sync::mpsc::UnboundedReceiver<push::Notice>,
+    subject: String,
+) {
+    while let Some(notice) = notices.recv().await {
+        if app.vapid.is_none() {
+            continue;
+        }
+        let looking = app.visible.lock().unwrap().clone();
+        for (device, subscription) in recipients(&app.devices.list(), &looking) {
+            let (app, notice, subject) = (app.clone(), notice.clone(), subject.clone());
+            tokio::task::spawn_blocking(move || {
+                let Some(vapid) = app.vapid.as_ref() else { return };
+                match vapid.send(&subscription, &notice, &subject) {
+                    Ok(404 | 410) => {
+                        let _ = app.devices.set_push(&device, None);
+                    }
+                    Ok(status) if !(200..300).contains(&status) => {
+                        tracing::warn!("a push to {device} was refused with {status}");
+                    }
+                    Ok(_) => {}
+                    Err(error) => tracing::warn!("a push to {device} failed: {error:#}"),
+                }
+            });
+        }
+    }
+}
+
+/// Who a notice goes to: every device that asked for pushes, except those
+/// with a page on screen, which can already see it.
+fn recipients(
+    devices: &[pairing::Device],
+    looking: &std::collections::HashMap<String, usize>,
+) -> Vec<(String, push::Subscription)> {
+    devices
+        .iter()
+        .filter(|d| looking.get(&d.name).copied().unwrap_or(0) == 0)
+        .filter_map(|d| Some((d.name.clone(), d.push.clone()?)))
+        .collect()
 }
 
 /// What `argus web` prints on starting: where to go, how to pair, and a
