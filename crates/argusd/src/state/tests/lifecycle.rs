@@ -102,3 +102,43 @@ async fn a_deleted_worktree_leaves_nothing_of_its_panes_behind() {
     assert!(d.checkout_at(&worktree).is_none(), "the worktree left the tree");
     assert_nothing_left_of(&d, pane);
 }
+
+#[tokio::test]
+async fn a_live_claude_pane_that_fails_to_start_leaves_no_upstream() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = fake_claude_config(dir.path());
+    config.agents[0].cmd = vec!["argus-no-such-program".to_string()];
+    config.agents[0].live = true;
+    let d = Daemon::new(config);
+    d.start_tee().unwrap();
+    let _reader = d.live_reader();
+
+    assert!(d.spawn_agent(only_checkout(&d), "claude").is_err());
+
+    assert!(d.tee_upstreams.lock().unwrap().is_empty(), "a pane that never started is not proxied");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_live_claude_panes_upstream_is_forgotten_once_its_agent_exits() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = fake_claude_config(dir.path());
+    config.agents[0].cmd = vec!["sh".to_string(), "-c".to_string(), "read line".to_string()];
+    config.agents[0].live = true;
+    let d = Daemon::new(config);
+    d.start_tee().unwrap();
+    let _reader = d.live_reader();
+    let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+    assert!(d.tee_upstreams.lock().unwrap().contains_key(&pane), "a live Claude pane is proxied");
+
+    d.write_pane(pane, b"\n").unwrap();
+
+    for _ in 0..250 {
+        if !d.tee_upstreams.lock().unwrap().contains_key(&pane) {
+            let _ = d.close_pane(pane);
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("an exited pane's upstream was never forgotten");
+}

@@ -98,9 +98,9 @@ struct Pane {
     /// What is said to its agent: the queue, and the inbox it may go
     /// through instead. See `outbox`.
     speaking: outbox::Speaking,
-    /// The live channel's server, when the pane runs on one. Dropping it
-    /// stops the server. See `live`.
-    live_server: Option<live::LiveServer>,
+    /// The live channel, when the pane runs on one. Dropping it stops the
+    /// channel. See `live`.
+    live: Option<live::RunningChannel>,
     /// A hook won the race with session restoration, so saved metadata must
     /// not overwrite what the newly started process already reported.
     restore_status_reported: bool,
@@ -130,7 +130,7 @@ impl Pane {
             conversation: conversation::Conversation::new(id),
             status_since: std::time::SystemTime::now(),
             speaking: Default::default(),
-            live_server: None,
+            live: None,
             restore_status_reported: false,
             restore_title_reported: false,
             resumed: None,
@@ -359,7 +359,7 @@ pub struct Daemon {
     /// it is bound. See `tee`.
     tee_port: std::sync::atomic::AtomicU16,
     /// Where each live Claude pane's requests are to go.
-    tee_upstreams: StdMutex<HashMap<PaneId, String>>,
+    tee_upstreams: Arc<StdMutex<HashMap<PaneId, String>>>,
     /// How many connected clients read live channels. See `live`.
     live_readers: Arc<std::sync::atomic::AtomicUsize>,
 }

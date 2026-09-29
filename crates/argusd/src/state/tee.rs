@@ -118,10 +118,6 @@ impl Daemon {
         }
         true
     }
-
-    pub(super) fn forget_tee(&self, pane: PaneId) {
-        self.tee_upstreams.lock().unwrap().remove(&pane);
-    }
 }
 
 /// The pane and token a request's path names, and the path it is for

@@ -68,7 +68,7 @@ async fn a_live_pane_follows_its_thread_and_speaks_back_through_it() {
 
     let socket = dir.path().join("codex.sock");
     let listener = tokio::net::UnixListener::bind(&socket).unwrap();
-    d.follow_live(pane, socket.clone());
+    d.follow_codex(pane, socket.clone());
     let (stream, _) = listener.accept().await.unwrap();
     let mut server = tokio_tungstenite::accept_async(stream).await.unwrap();
 
@@ -130,7 +130,7 @@ async fn a_live_pane_takes_nothing_through_its_inbox_before_it_knows_its_thread(
 
     let socket = dir.path().join("codex.sock");
     let listener = tokio::net::UnixListener::bind(&socket).unwrap();
-    d.follow_live(pane, socket.clone());
+    d.follow_codex(pane, socket.clone());
     let (stream, _) = listener.accept().await.unwrap();
     let mut server = tokio_tungstenite::accept_async(stream).await.unwrap();
     let init = next(&mut server).await;

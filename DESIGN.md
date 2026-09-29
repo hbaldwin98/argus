@@ -203,7 +203,7 @@ to the type or its locking.
 | `state/session` | what survives a daemon restart |
 | `state/conversation` | what a client is shown of a pane's conversation — its files, pushed entries and draft merged into one — and the clients following it |
 | `state/outbox` | what is said to an agent and the way it reaches it: through its harness's inbox when one is open, typed now, or held until the agent is back at its prompt |
-| `state/live` | running a pane's live channel: whether a starting pane gets one, the harness's own server beside the pane, and Argus's connection to it |
+| `state/live` | running a pane's live channel: whether a starting pane gets one, the harness's own server or the pane's registration with the tee, Argus's connection to it, and stopping all of it with the pane |
 | `state/tee` | the loopback proxy a live Claude pane's API traffic goes through |
 | `state/tree` | finding your way around the tree |
 | `state/features`, `state/tasks`, `state/decisions`, `state/diagrams` | a checkout's feature board, translated between client ids and store keys |
@@ -809,7 +809,10 @@ the agent does and takes what is said to it. A pane runs on it only when its tem
 `argus web` greets with it, so without the web server running no agent has Argus in its path, and
 nothing built in sets `live`. The choice is fixed for the pane's life, since a running process
 cannot be moved onto a channel or off one: a pane started before the web server has none until it
-next starts, and one started while it ran keeps its channel after it stops.
+next starts, and one started while it ran keeps its channel after it stops. The channel is
+the pane's own value, and ends when the pane's agent exits or the pane goes, whichever is first:
+the Codex server stops and the tee forgets the pane, so a restarted pane gets a new channel, and
+one whose agent never spawned leaves nothing behind.
 
 Codex's is a live channel of its own kind: its TUI can run on its app-server, which serves a
 thread to every client subscribed to it. A live Codex pane — worth asking for with care, since

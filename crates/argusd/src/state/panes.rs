@@ -203,14 +203,7 @@ impl Daemon {
             start,
             harness_session_id.as_deref(),
         );
-        let channel = self.live_channel(&template, &harness);
-        if channel == Some(crate::harness::live::LiveChannel::AnthropicStream) {
-            self.tee_env(id, &mut env);
-        }
-        let live = self.start_live_server(id, channel, &path, &env);
-        if let Some((_, remote)) = &live {
-            args.extend(remote.iter().cloned());
-        }
+        let live = self.prepare_live(id, &template, &harness, &path, &mut env, &mut args);
 
         let spec = pty::Spawn::Program {
             program: program.clone(),
@@ -230,13 +223,6 @@ impl Daemon {
             }
         };
 
-        let (live_server, live_socket) = match live {
-            Some((server, _)) => {
-                let socket = server.socket().to_path_buf();
-                (Some(server), Some(socket))
-            }
-            None => (None, None),
-        };
         {
             // Lock in this order everywhere that spans the pre-spawn mailbox
             // and pane tree, so an arriving hook cannot slip between them.
@@ -258,7 +244,7 @@ impl Daemon {
                 pane.harness = Some(harness.name.to_string());
                 pane.harness_session_id = pending.harness_session_id.or(harness_session_id);
                 pane.children = pending.children;
-                pane.live_server = live_server;
+                pane.live = live;
                 pane.resumed = resuming.then(|| Resumed {
                     checkout,
                     template: template.name.clone(),
@@ -267,9 +253,7 @@ impl Daemon {
                 c.panes.push(pane);
             }
         }
-        if let Some(socket) = live_socket {
-            self.follow_live(id, socket);
-        }
+        self.attach_live(id);
         self.broadcast_tree();
         Ok(id)
     }
@@ -281,8 +265,8 @@ impl Daemon {
                 Some((p, checkout)) => {
                     p.status = PaneStatus::Exited { code };
                     p.status_since = std::time::SystemTime::now();
-                    // Its live server has nobody left to serve.
-                    p.live_server = None;
+                    // Its live channel has nobody left to serve.
+                    p.live = None;
                     p.note = None;
                     p.children.clear();
                     let restart = p.template.clone().map(|template| (checkout, template));
@@ -390,17 +374,15 @@ impl Daemon {
 
     /// Everything a pane leaves behind outside the tree, let go of once it
     /// has been taken out. Every removal comes through here, so a table
-    /// keyed by pane cannot be forgotten by one path and not another — a
-    /// pane's upstream would otherwise outlive it in the tee. What the pane
-    /// holds itself, its conversation's followers among them, ends as it
-    /// is dropped here.
+    /// keyed by pane cannot be forgotten by one path and not another. What
+    /// the pane holds itself, its conversation's followers and its live
+    /// channel among them, ends as it is dropped here.
     ///
     /// Called without `inner` held: each table has its own lock. The
     /// checkout's managed hooks are not a pane's and stay with the caller;
     /// only `close_pane` takes them out.
     pub(super) fn retire_pane(&self, pane: Pane) {
         self.forget_pane_sizes(pane.id);
-        self.forget_tee(pane.id);
         // Best-effort: a pane retired because it exited has nothing left
         // to kill, but whatever it started in its session may still run.
         let _ = pane.runtime.kill();

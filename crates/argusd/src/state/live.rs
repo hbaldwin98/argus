@@ -1,6 +1,7 @@
 //! Running a pane's live channel: whether a starting pane gets one, the
-//! harness's own server started beside the pane, and Argus's connection to
-//! it as a second client.
+//! harness's own server started beside the pane or its registration with
+//! the tee, Argus's connection to it as a second client, and stopping all
+//! of it when the pane lets go.
 //!
 //! A pane gets its channel only when its template sets `live = true` and a
 //! client that reads live channels — `argus web` — is connected as it
@@ -27,16 +28,19 @@ use crate::harness::live::LiveChannel;
 #[cfg(unix)]
 const SERVER_START: Duration = Duration::from_secs(5);
 
+/// A pane's live channel while it runs, held by the pane: dropping it
+/// stops everything the channel started, so a pane that exits, is removed,
+/// or never manages to spawn leaves nothing of it behind.
+pub(super) enum RunningChannel {
+    Codex(LiveServer),
+    /// Held only to be dropped.
+    Tee { _upstream: TeeUpstream },
+}
+
 /// A live channel's server, stopped when the pane that owns it goes.
 pub(super) struct LiveServer {
     child: std::process::Child,
     socket: PathBuf,
-}
-
-impl LiveServer {
-    pub(super) fn socket(&self) -> &Path {
-        &self.socket
-    }
 }
 
 impl Drop for LiveServer {
@@ -44,6 +48,20 @@ impl Drop for LiveServer {
         let _ = self.child.kill();
         let _ = self.child.wait();
         let _ = std::fs::remove_file(&self.socket);
+    }
+}
+
+/// A pane's registration with the tee, forgotten when the pane lets go of
+/// it: the proxy answers a forgotten pane 410 rather than forwarding for a
+/// process that is gone.
+pub(super) struct TeeUpstream {
+    pane: PaneId,
+    upstreams: Arc<StdMutex<HashMap<PaneId, String>>>,
+}
+
+impl Drop for TeeUpstream {
+    fn drop(&mut self) {
+        self.upstreams.lock().unwrap().remove(&self.pane);
     }
 }
 
@@ -69,37 +87,53 @@ impl Daemon {
         self.live_readers.load(std::sync::atomic::Ordering::SeqCst) > 0
     }
 
-    /// The live channel a pane about to start is to run on: its harness's,
-    /// when its template asked for it and something is connected to read
-    /// it. Never otherwise: a channel puts Argus between the agent and its
-    /// harness, which is only worth it while the web server shows it.
-    pub(super) fn live_channel(
+    /// Starts the live channel of a pane about to spawn, pointing its
+    /// environment and arguments at it; `None` when the pane runs without
+    /// one. Only when its template asked for it and something is connected
+    /// to read it: a channel puts Argus between the agent and its harness,
+    /// which is only worth it while the web server shows it.
+    pub(super) fn prepare_live(
         &self,
+        pane: PaneId,
         template: &AgentConfig,
         harness: &crate::harness::Harness,
-    ) -> Option<LiveChannel> {
+        cwd: &Path,
+        env: &mut Vec<(String, String)>,
+        args: &mut Vec<String>,
+    ) -> Option<RunningChannel> {
         if !template.live || !self.live_is_read() {
             return None;
         }
-        harness.live
+        match harness.live? {
+            LiveChannel::CodexAppServer => {
+                let (server, remote) = start_codex_server(pane, cwd, env)?;
+                args.extend(remote);
+                Some(RunningChannel::Codex(server))
+            }
+            // Runs no server of its own: the daemon's tee serves every live
+            // Claude pane.
+            LiveChannel::AnthropicStream => {
+                if !self.tee_env(pane, env) {
+                    return None;
+                }
+                let upstreams = self.tee_upstreams.clone();
+                Some(RunningChannel::Tee { _upstream: TeeUpstream { pane, upstreams } })
+            }
+        }
     }
 
-    /// Starts the live channel's server for a pane about to spawn, when its
-    /// template asked and its harness has one: the server, and the
-    /// arguments that point the TUI at it.
-    pub(super) fn start_live_server(
-        &self,
-        pane: PaneId,
-        channel: Option<LiveChannel>,
-        cwd: &Path,
-        env: &[(String, String)],
-    ) -> Option<(LiveServer, Vec<String>)> {
-        match channel? {
-            LiveChannel::CodexAppServer => start_codex_server(pane, cwd, env),
-            // Runs no server of its own: the daemon's tee serves every
-            // live Claude pane, and the pane was pointed at it already.
-            LiveChannel::AnthropicStream => None,
-        }
+    /// Starts following a pane's live channel, once the pane is in the tree
+    /// for what it hears to land on. Only Codex's has anything to follow;
+    /// the tee hears a pane as its requests pass through.
+    pub(super) fn attach_live(self: &Arc<Self>, pane: PaneId) {
+        let socket = {
+            let inner = self.inner.lock().unwrap();
+            match find_pane_ref(&inner.projects, pane).and_then(|p| p.live.as_ref()) {
+                Some(RunningChannel::Codex(server)) => server.socket.clone(),
+                _ => return,
+            }
+        };
+        self.follow_codex(pane, socket);
     }
 
     /// The conversation a pane's own agent claimed, as its hooks named it.
@@ -108,10 +142,10 @@ impl Daemon {
         find_pane_ref(&inner.projects, pane)?.harness_session_id.clone()
     }
 
-    /// Connects to a pane's live channel and keeps following it until the
-    /// server goes.
+    /// Connects to a pane's Codex app-server and keeps following it until
+    /// the server goes.
     #[cfg(unix)]
-    pub(super) fn follow_live(self: &Arc<Self>, pane: PaneId, socket: PathBuf) {
+    pub(super) fn follow_codex(self: &Arc<Self>, pane: PaneId, socket: PathBuf) {
         let daemon = self.clone();
         tokio::spawn(async move {
             if let Err(error) = codex::follow(daemon, pane, &socket).await {
@@ -121,7 +155,7 @@ impl Daemon {
     }
 
     #[cfg(not(unix))]
-    pub(super) fn follow_live(self: &Arc<Self>, _pane: PaneId, _socket: PathBuf) {}
+    pub(super) fn follow_codex(self: &Arc<Self>, _pane: PaneId, _socket: PathBuf) {}
 }
 
 #[cfg(unix)]
