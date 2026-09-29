@@ -202,8 +202,7 @@ to the type or its locking.
 | `state/hook_server` | the loopback receiver agents report to |
 | `state/session` | what survives a daemon restart |
 | `state/transcripts` | which file a pane's conversation is read from, and the clients following it |
-| `state/outbox` | what a client asked to say to an agent, and when it is typed |
-| `state/inbox` | the live channel a harness's plugin keeps open for what the daemon has to tell the agent |
+| `state/outbox` | what is said to an agent and the way it reaches it: through its harness's inbox when one is open, typed now, or held until the agent is back at its prompt |
 | `state/live` | running a pane's live channel: whether a starting pane gets one, the harness's own server beside the pane, and Argus's connection to it |
 | `state/tee` | the loopback proxy a live Claude pane's API traffic goes through, and the draft read off each reply |
 | `state/tree` | finding your way around the tree |
@@ -770,7 +769,9 @@ and a dialog that has it takes the text as its answer, so a message waits in the
 failed or wanting a review, and so for 300 ms, since a turn's last hook can arrive just before its
 prompt is drawn. Codex's and Cursor's approval prompts report as working, so they hold a message
 too. One message goes out per turn: the next waits until the pane has been busy and come back, or
-two seconds for a harness that reports nothing. A message is typed as one paste and Enter. `now`
+two seconds for a harness that reports nothing. Every one of these rules, with the wait for a
+reporting harness's first report below, is one pure decision in `state/outbox`. A message is typed
+as one paste and Enter. `now`
 types it straight away, which is how a person steers an agent mid-turn. One task does the typing,
 started by the first message queued, and wakes whenever the tree changes and four times a second
 while anything waits. The queue is not persisted, and an exited agent's queue is dropped.
@@ -784,7 +785,8 @@ A plugin running inside the agent opens `GET /pane/<id>/inbox`, which the pane A
 server-sent events of `argus_protocol::InboxItem`: a message (with `steer` for mid-turn), an
 interrupt, or the answer to a question. Only the pane's own session may open it, the newest
 connection replaces an older one, and it closes the moment the plugin's end of the socket does, so
-nothing is handed to a plugin that has gone. `PaneInfo::live` says one is open. While it is,
+nothing is handed to a plugin that has gone. An adapter opens an inbox only once it can act on
+what it is told, so an open inbox decides the route alone. `PaneInfo::live` says one is open. While it is,
 `SendToAgent` goes straight to it — the harness waits or steers as it does, and nothing is typed,
 so nothing needs holding in the outbox — `Interrupt` goes to it instead of the interrupt key, and
 `Answer` reaches it; a pane without one takes answers on its screen. opencode's plugin turns these

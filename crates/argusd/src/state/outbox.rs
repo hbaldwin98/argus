@@ -1,26 +1,30 @@
-//! What a client asked to say to an agent, and when it is typed.
+//! What a person says to an agent — a message, a steer, an interrupt, an
+//! answer — and the way it reaches it: through its harness's inbox when one
+//! is open, typed now, or held until the agent is back at its prompt.
+//!
+//! An inbox is an in-process channel held by an adapter that speaks the
+//! harness's own protocol (opencode's and pi's plugin stream, the Codex
+//! app-server follower), which beats typing: nothing lands in a dialog, a
+//! message can steer or wait as the harness does, and a question the
+//! harness posed can be answered. An adapter opens it only once it can act
+//! on what it is told, so an open inbox is the whole route decision. Only
+//! the pane's own agent may open one, and the newest connection wins, so a
+//! plugin that reconnects after a hiccup takes over from its old stream.
 //!
 //! Typing into a pane is typing into whatever has the agent's keyboard, and
 //! a dialog that has it takes the text as its answer. So a message waits
-//! until the agent says it is idle — or done, failed, or wanting a review,
-//! which an agent also says at the end of a turn — and has said so for long
-//! enough that its prompt is back. Codex's and Cursor's approval prompts
-//! report as working, so they hold a message too.
-//!
-//! A pane whose harness reports is not typed into until it has reported
-//! something: before its first hook, `Idle` is only the default, and what
-//! is on its screen may be a startup dialog — a folder to trust — that
-//! would take the message as its answer.
-//!
-//! One message goes out per turn: after typing one, the next waits until
-//! the pane has been busy and come back, or, for a harness that reports
-//! nothing, a couple of seconds. The queue lives only in memory; a daemon
-//! that restarts forgets it, and a client that queued something learns so
-//! from the tree.
+//! until the agent is at its prompt; [`delivery`] holds every rule for when
+//! that is, and why. The queue lives only in memory; a daemon that restarts
+//! forgets it, and a client that queued something learns so from the tree.
 
-use argus_protocol::{QueuedMessage, Sent, MAX_SEND_BYTES};
+use std::collections::VecDeque;
+use std::time::SystemTime;
+
+use argus_protocol::{InboxItem, QueuedMessage, Sent, MAX_SEND_BYTES};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use super::*;
+use crate::harness::Harness;
 
 /// How long an agent must have been idle before it is typed into. A turn's
 /// last hook can arrive a moment before the prompt it returns to is drawn.
@@ -47,28 +51,88 @@ pub(super) struct Outbox {
     next_id: u64,
 }
 
-/// Whether an agent in this state is at its prompt.
-fn at_prompt(status: PaneStatus) -> bool {
-    matches!(
-        status,
-        PaneStatus::Idle | PaneStatus::NeedsReview | PaneStatus::Done | PaneStatus::Failed
-    )
+/// What a pane holds of what is said to its agent.
+#[derive(Default)]
+pub(super) struct Speaking {
+    /// Messages waiting to be typed once the agent is at its prompt.
+    pub(super) queued: VecDeque<QueuedMessage>,
+    /// When a queued message was last typed into the pane.
+    pub(super) typed_at: Option<SystemTime>,
+    /// Whether its agent has reported a status yet, set by the first
+    /// report. Until one whose harness reports has, `Idle` is only the
+    /// default, and its screen may hold a startup dialog, not a prompt.
+    pub(super) heard: bool,
+    /// The inbox its harness's adapter holds open, by the generation of the
+    /// connection that opened it.
+    pub(super) inbox: Option<(u64, UnboundedSender<InboxItem>)>,
 }
 
-/// Whether a pane in `status` since `since`, last typed into at `typed`,
-/// is ready for its next message at `now`.
-fn ready(
+/// The way something said to a pane went, or must go.
+enum Way {
+    /// Its harness's inbox took it.
+    Inbox,
+    /// Its terminal, where `interrupt` is what stops the agent.
+    Terminal { interrupt: Vec<u8> },
+    /// No running agent is there to hear it.
+    Nobody,
+}
+
+/// What the outbox does with the head of a pane's queue.
+#[derive(Debug, PartialEq)]
+enum Delivery {
+    Type,
+    Wait,
+    /// Throws the whole queue away.
+    Drop,
+}
+
+/// Everything [`delivery`] reads of a pane with a message queued.
+struct Moment {
     status: PaneStatus,
-    since: std::time::SystemTime,
-    typed: Option<std::time::SystemTime>,
-    now: std::time::SystemTime,
-) -> bool {
-    let settled = now.duration_since(since).is_ok_and(|held| held >= SETTLE);
-    let turned = match typed {
+    status_since: SystemTime,
+    typed_at: Option<SystemTime>,
+    heard: bool,
+    /// Whether its harness reports its status at all.
+    reports: bool,
+    now: SystemTime,
+}
+
+/// Whether the next queued message is typed now.
+///
+/// - An agent that has exited reads nothing, so its queue goes.
+/// - One whose harness reports is not typed into until it has reported
+///   something (see [`Speaking::heard`]); one whose harness never reports
+///   would wait forever, so it does not.
+/// - It must be at its prompt: idle, or done, failed or wanting a review,
+///   which an agent also says at the end of a turn. Codex's and Cursor's
+///   approval prompts report as working, so they hold a message too.
+/// - And have been so for [`SETTLE`].
+/// - One message goes out per turn: after one is typed, the next waits
+///   until the pane has been busy and come back, or, for a harness that
+///   reports no turn, [`UNTURNED`].
+fn delivery(m: &Moment) -> Delivery {
+    if matches!(m.status, PaneStatus::Exited { .. }) {
+        return Delivery::Drop;
+    }
+    if m.reports && !m.heard {
+        return Delivery::Wait;
+    }
+    let at_prompt = matches!(
+        m.status,
+        PaneStatus::Idle | PaneStatus::NeedsReview | PaneStatus::Done | PaneStatus::Failed
+    );
+    let settled = m.now.duration_since(m.status_since).is_ok_and(|held| held >= SETTLE);
+    let turned = match m.typed_at {
         None => true,
-        Some(typed) => since > typed || now.duration_since(typed).is_ok_and(|d| d >= UNTURNED),
+        Some(typed) => {
+            m.status_since > typed || m.now.duration_since(typed).is_ok_and(|d| d >= UNTURNED)
+        }
     };
-    at_prompt(status) && settled && turned
+    if at_prompt && settled && turned {
+        Delivery::Type
+    } else {
+        Delivery::Wait
+    }
 }
 
 impl Daemon {
@@ -82,30 +146,19 @@ impl Daemon {
         if text.len() > MAX_SEND_BYTES {
             return refused(&format!("a message holds at most {MAX_SEND_BYTES} bytes"));
         }
-        let is_live_agent = |p: &Pane| {
-            p.kind == PaneKind::Agent && !matches!(p.status, PaneStatus::Exited { .. })
-        };
-        // A harness with a live channel takes the message itself, and waits
-        // or steers as it does; nothing is typed, so nothing needs holding.
-        let live = {
-            let inner = self.inner.lock().unwrap();
-            find_pane_ref(&inner.projects, pane).is_some_and(|p| is_live_agent(p) && p.inbox.is_some())
-        };
-        let message = argus_protocol::InboxItem::Message {
+
+        let message = InboxItem::Message {
             text: text.to_string(),
             steer: now,
         };
-        if live && self.tell(pane, message) {
-            return Sent::Typed;
+        match self.say(pane, message) {
+            // The harness waits or steers as it does; nothing is typed, so
+            // nothing needs holding.
+            Way::Inbox => return Sent::Typed,
+            Way::Nobody => return refused("that is not a running agent"),
+            Way::Terminal { .. } => {}
         }
         if now {
-            let live = {
-                let inner = self.inner.lock().unwrap();
-                find_pane_ref(&inner.projects, pane).is_some_and(is_live_agent)
-            };
-            if !live {
-                return refused("that is not a running agent");
-            }
             return match self.type_into(pane, text) {
                 Ok(()) => Sent::Typed,
                 Err(error) => refused(&error.to_string()),
@@ -120,8 +173,8 @@ impl Daemon {
         let queued = {
             let mut inner = self.inner.lock().unwrap();
             match find_pane(&mut inner.projects, pane) {
-                Some(p) if is_live_agent(p) => {
-                    p.queued.push_back(QueuedMessage {
+                Some(p) if p.is_running_agent() => {
+                    p.speaking.queued.push_back(QueuedMessage {
                         id,
                         text: text.to_string(),
                     });
@@ -143,9 +196,10 @@ impl Daemon {
         let removed = {
             let mut inner = self.inner.lock().unwrap();
             find_pane(&mut inner.projects, pane).is_some_and(|p| {
-                let before = p.queued.len();
-                p.queued.retain(|m| m.id != id);
-                p.queued.len() != before
+                let queued = &mut p.speaking.queued;
+                let before = queued.len();
+                queued.retain(|m| m.id != id);
+                queued.len() != before
             })
         };
         if removed {
@@ -154,21 +208,97 @@ impl Daemon {
         removed
     }
 
-    /// Interrupts an agent: through its live channel when it has one, else
-    /// with its harness's own key.
+    /// Interrupts an agent: through its inbox when one is open, else with
+    /// its harness's own key.
     pub fn interrupt(&self, pane: PaneId) -> anyhow::Result<()> {
-        if self.tell(pane, argus_protocol::InboxItem::Interrupt) {
-            return Ok(());
+        match self.say(pane, InboxItem::Interrupt) {
+            Way::Inbox => Ok(()),
+            Way::Terminal { interrupt } => self.write_pane(pane, &interrupt),
+            Way::Nobody => anyhow::bail!("that is not a running agent"),
         }
-        let keys = {
-            let inner = self.inner.lock().unwrap();
-            let p = find_pane_ref(&inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;
-            p.harness
-                .as_deref()
-                .and_then(|name| self.harnesses.iter().find(|h| h.name == name))
-                .map_or_else(|| vec![0x1b], |h| h.interrupt_keys())
+    }
+
+    /// Answers a question the pane's harness posed. Only a harness with an
+    /// inbox poses one; any other takes its answers from its screen.
+    pub fn answer(&self, pane: PaneId, question: String, choice: String) -> anyhow::Result<()> {
+        match self.say(pane, InboxItem::Answer { question, choice }) {
+            Way::Inbox => Ok(()),
+            Way::Terminal { .. } => {
+                anyhow::bail!("this agent takes answers on its screen, not through Argus")
+            }
+            Way::Nobody => anyhow::bail!("that is not a running agent"),
+        }
+    }
+
+    /// Hands `item` to the pane's inbox if one is open, or says which way
+    /// it has to go instead. The one place the route is decided.
+    fn say(&self, pane: PaneId, item: InboxItem) -> Way {
+        let inner = self.inner.lock().unwrap();
+        let Some(p) = find_pane_ref(&inner.projects, pane).filter(|p| p.is_running_agent()) else {
+            return Way::Nobody;
         };
-        self.write_pane(pane, &keys)
+        // A send fails only in the moment between an adapter letting go of
+        // its end and closing the inbox, when the terminal is the way left.
+        let taken = p.speaking.inbox.as_ref().is_some_and(|(_, tx)| tx.send(item).is_ok());
+        if taken {
+            return Way::Inbox;
+        }
+        let interrupt = self
+            .harness_of(p)
+            .map_or_else(|| Harness::generic().interrupt_keys(), Harness::interrupt_keys);
+        Way::Terminal { interrupt }
+    }
+
+    /// The harness the pane started under, while the config still has it.
+    fn harness_of(&self, p: &Pane) -> Option<&Harness> {
+        let name = p.harness.as_deref()?;
+        self.harnesses.iter().find(|h| h.name == name)
+    }
+
+    /// Opens the pane's inbox for its own agent: the generation that names
+    /// this connection, and where its items arrive. `None` for a pane that
+    /// is gone or a report from an agent the pane does not belong to.
+    pub(super) fn open_inbox(
+        &self,
+        pane: PaneId,
+        reporter: Option<&str>,
+    ) -> Option<(u64, UnboundedReceiver<InboxItem>)> {
+        if self.child_of(pane, reporter).is_some() {
+            return None;
+        }
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let generation = self
+            .next_inbox
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let became_live = {
+            let mut inner = self.inner.lock().unwrap();
+            let p = find_pane(&mut inner.projects, pane)?;
+            let was = p.speaking.inbox.is_some();
+            p.speaking.inbox = Some((generation, tx));
+            !was
+        };
+        if became_live {
+            self.broadcast_tree();
+        }
+        Some((generation, rx))
+    }
+
+    /// Closes the inbox a connection opened, unless a newer one has taken
+    /// its place.
+    pub(super) fn close_inbox(&self, pane: PaneId, generation: u64) {
+        let closed = {
+            let mut inner = self.inner.lock().unwrap();
+            match find_pane(&mut inner.projects, pane) {
+                Some(p) if p.speaking.inbox.as_ref().is_some_and(|(g, _)| *g == generation) => {
+                    p.speaking.inbox = None;
+                    true
+                }
+                _ => false,
+            }
+        };
+        if closed {
+            self.broadcast_tree();
+        }
     }
 
     /// One paste and, a moment later, Enter: what a person pasting the
@@ -193,40 +323,40 @@ impl Daemon {
     }
 
     /// Types the next message into every pane ready for one, and drops the
-    /// queue of any agent that has exited, since nothing will read it.
-    /// Says whether anything is still waiting.
+    /// queue of any that will never read it. Says whether anything is
+    /// still waiting.
     fn type_ready(&self) -> bool {
-        let now = std::time::SystemTime::now();
+        let now = SystemTime::now();
         let mut due = Vec::new();
         let mut waiting = false;
         let mut dropped = false;
         {
             let mut inner = self.inner.lock().unwrap();
             for p in panes_mut(&mut inner.projects) {
-                if p.queued.is_empty() {
+                if p.speaking.queued.is_empty() {
                     continue;
                 }
-                let silent_harness = !p
-                    .harness
-                    .as_deref()
-                    .and_then(|name| self.harnesses.iter().find(|h| h.name == name))
-                    .is_some_and(|h| h.reports());
-                if !p.heard && !silent_harness {
-                    waiting = true;
-                    continue;
-                }
-                if matches!(p.status, PaneStatus::Exited { .. }) {
-                    p.queued.clear();
-                    dropped = true;
-                    continue;
-                }
-                if ready(p.status, p.status_since, p.typed_at, now) {
-                    if let Some(message) = p.queued.pop_front() {
-                        p.typed_at = Some(now);
+                let moment = Moment {
+                    status: p.status,
+                    status_since: p.status_since,
+                    typed_at: p.speaking.typed_at,
+                    heard: p.speaking.heard,
+                    reports: self.harness_of(p).is_some_and(Harness::reports),
+                    now,
+                };
+                match delivery(&moment) {
+                    Delivery::Wait => waiting = true,
+                    Delivery::Drop => {
+                        p.speaking.queued.clear();
+                        dropped = true;
+                    }
+                    Delivery::Type => {
+                        let message = p.speaking.queued.pop_front().expect("the queue is not empty");
+                        p.speaking.typed_at = Some(now);
                         due.push((p.id, message.text));
+                        waiting |= !p.speaking.queued.is_empty();
                     }
                 }
-                waiting |= !p.queued.is_empty();
             }
         }
         for (pane, text) in &due {
@@ -268,35 +398,116 @@ fn refused(reason: &str) -> Sent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::SystemTime;
 
-    #[test]
-    fn a_pane_is_ready_once_its_idle_has_settled() {
+    /// A reporting agent that has reported, idle long enough to have
+    /// settled, and never typed into: ready. Each test changes what its
+    /// rule reads.
+    fn ready_moment() -> Moment {
         let now = SystemTime::now();
-        let just = now - Duration::from_millis(50);
-        let settled = now - SETTLE - Duration::from_millis(1);
-        assert!(!ready(PaneStatus::Idle, just, None, now), "not yet settled");
-        assert!(ready(PaneStatus::Idle, settled, None, now));
-        for busy in [PaneStatus::Working, PaneStatus::Waiting, PaneStatus::Exited { code: None }] {
-            assert!(!ready(busy, settled, None, now), "{busy:?} holds a message");
-        }
-        for done in [PaneStatus::NeedsReview, PaneStatus::Done, PaneStatus::Failed] {
-            assert!(ready(done, settled, None, now), "{done:?} is the end of a turn");
+        Moment {
+            status: PaneStatus::Idle,
+            status_since: now - SETTLE - Duration::from_millis(1),
+            typed_at: None,
+            heard: true,
+            reports: true,
+            now,
         }
     }
 
     #[test]
+    fn a_settled_idle_agent_that_has_reported_is_typed_into() {
+        assert_eq!(delivery(&ready_moment()), Delivery::Type);
+    }
+
+    #[test]
+    fn an_exited_agents_queue_is_dropped_whatever_else_holds() {
+        for heard in [false, true] {
+            let m = Moment {
+                status: PaneStatus::Exited { code: Some(0) },
+                heard,
+                ..ready_moment()
+            };
+            assert_eq!(delivery(&m), Delivery::Drop, "heard: {heard}");
+        }
+    }
+
+    #[test]
+    fn a_reporting_agent_is_not_typed_into_before_it_has_reported() {
+        // The bug: a Claude pane still showing its folder-trust dialog read
+        // as idle, being the default, and the dialog took the message.
+        let m = Moment {
+            heard: false,
+            ..ready_moment()
+        };
+        assert_eq!(delivery(&m), Delivery::Wait);
+    }
+
+    #[test]
+    fn an_agent_whose_harness_never_reports_does_not_wait_to_be_heard() {
+        let m = Moment {
+            heard: false,
+            reports: false,
+            ..ready_moment()
+        };
+        assert_eq!(delivery(&m), Delivery::Type);
+    }
+
+    #[test]
+    fn only_an_agent_at_its_prompt_is_typed_into() {
+        for busy in [PaneStatus::Working, PaneStatus::Waiting] {
+            let m = Moment {
+                status: busy,
+                ..ready_moment()
+            };
+            assert_eq!(delivery(&m), Delivery::Wait, "{busy:?} holds a message");
+        }
+        for done in [PaneStatus::NeedsReview, PaneStatus::Done, PaneStatus::Failed] {
+            let m = Moment {
+                status: done,
+                ..ready_moment()
+            };
+            assert_eq!(delivery(&m), Delivery::Type, "{done:?} is the end of a turn");
+        }
+    }
+
+    #[test]
+    fn an_agent_is_typed_into_only_once_its_prompt_has_settled() {
+        let m = ready_moment();
+        let just = Moment {
+            status_since: m.now - Duration::from_millis(50),
+            ..m
+        };
+        assert_eq!(delivery(&just), Delivery::Wait);
+    }
+
+    #[test]
     fn the_next_message_waits_for_a_turn() {
-        let now = SystemTime::now();
-        let typed = now - Duration::from_millis(500);
-        let before_typing = typed - Duration::from_secs(1);
-        let after_typing = typed + Duration::from_millis(100);
+        let m = ready_moment();
+        let typed = m.now - Duration::from_millis(500);
+
         // Idle since before the last message: the agent never took its turn.
-        assert!(!ready(PaneStatus::Idle, before_typing, Some(typed), now));
+        let untaken = Moment {
+            status_since: typed - Duration::from_secs(1),
+            typed_at: Some(typed),
+            ..ready_moment()
+        };
+        assert_eq!(delivery(&untaken), Delivery::Wait);
+
         // Busy and back since: a turn has passed.
-        assert!(ready(PaneStatus::Idle, after_typing, Some(typed), now));
-        // A harness that reports nothing still gets the next, a while later.
-        let long_ago = now - UNTURNED - Duration::from_millis(1);
-        assert!(ready(PaneStatus::Idle, before_typing - UNTURNED, Some(long_ago), now));
+        let taken = Moment {
+            status_since: typed + Duration::from_millis(100),
+            typed_at: Some(typed),
+            ..ready_moment()
+        };
+        assert_eq!(delivery(&taken), Delivery::Type);
+
+        // A harness that reports no turn still gets the next, a while later.
+        let long_ago = m.now - UNTURNED - Duration::from_millis(1);
+        let unturned = Moment {
+            status_since: long_ago - Duration::from_secs(1),
+            typed_at: Some(long_ago),
+            ..m
+        };
+        assert_eq!(delivery(&unturned), Delivery::Type);
     }
 }

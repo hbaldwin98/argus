@@ -10,9 +10,8 @@
 //! `hook_server` for the
 //! loopback receiver, `session` for what survives a restart,
 //! `transcripts` for where a pane's conversation is read from, `outbox` for
-//! what clients asked to say to an agent, `inbox` for the live channel a
-//! harness's plugin keeps open, `live` for a harness server Argus is a
-//! second client of, `tee` for the proxy a live Claude pane's API traffic
+//! what a person says to an agent and the way it reaches it, `live` for a
+//! harness server Argus is a second client of, `tee` for the proxy a live Claude pane's API traffic
 //! goes through, and `tree`
 //! for finding your way around.
 //!
@@ -38,7 +37,6 @@ mod diagrams;
 mod tasks;
 mod git_ops;
 mod hook_server;
-mod inbox;
 mod live;
 mod outbox;
 mod panel;
@@ -102,17 +100,9 @@ struct Pane {
     /// When `status` last changed, for a client to say how long the pane
     /// has been where it is, and for the outbox to tell a turn has passed.
     status_since: std::time::SystemTime,
-    /// Messages waiting to be typed once the agent is idle. See `outbox`.
-    queued: std::collections::VecDeque<argus_protocol::QueuedMessage>,
-    /// When the outbox last typed into this pane.
-    typed_at: Option<std::time::SystemTime>,
-    /// Whether its agent has reported a status yet. Until one whose harness
-    /// reports has, `Idle` is only the default, and its screen may hold a
-    /// startup dialog rather than a prompt.
-    heard: bool,
-    /// The live channel its harness's plugin holds open, by the generation
-    /// of the connection that opened it. See `inbox`.
-    inbox: Option<(u64, tokio::sync::mpsc::UnboundedSender<argus_protocol::InboxItem>)>,
+    /// What is said to its agent: the queue, and the inbox it may go
+    /// through instead. See `outbox`.
+    speaking: outbox::Speaking,
     /// The live channel's server, when the pane runs on one. Dropping it
     /// stops the server. See `live`.
     live_server: Option<live::LiveServer>,
@@ -148,10 +138,7 @@ impl Pane {
             transcripts: Vec::new(),
             pushed: None,
             status_since: std::time::SystemTime::now(),
-            queued: Default::default(),
-            typed_at: None,
-            heard: false,
-            inbox: None,
+            speaking: Default::default(),
             live_server: None,
             draft: None,
             restore_status_reported: false,
@@ -159,6 +146,11 @@ impl Pane {
             resumed: None,
             runtime,
         }
+    }
+
+    /// Whether an agent is running in this pane, and so can be spoken to.
+    fn is_running_agent(&self) -> bool {
+        self.kind == PaneKind::Agent && !matches!(self.status, PaneStatus::Exited { .. })
     }
 }
 
@@ -443,8 +435,8 @@ fn project_info(p: &Project) -> ProjectInfo {
                                         .duration_since(std::time::UNIX_EPOCH)
                                         .ok()
                                         .map(|d| d.as_secs()),
-                                    queued: pane.queued.iter().cloned().collect(),
-                                    live: pane.inbox.is_some(),
+                                    queued: pane.speaking.queued.iter().cloned().collect(),
+                                    live: pane.speaking.inbox.is_some(),
                                 })
                                 .collect(),
                             git,

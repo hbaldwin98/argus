@@ -111,7 +111,7 @@ impl<'a> PaneOrPending<'a> {
     fn set_status(&mut self, status: PaneStatus, note: Option<String>) -> bool {
         let changed = match self {
             Self::Live(p) => {
-                p.heard = true;
+                p.speaking.heard = true;
                 if p.status != status {
                     p.status_since = std::time::SystemTime::now();
                 }
@@ -227,7 +227,7 @@ impl Daemon {
                 .iter()
                 .find(|pane| pane.id == recipient)
                 .ok_or_else(|| anyhow::anyhow!("recipient is not in that checkout"))?;
-            if pane.kind != PaneKind::Agent || matches!(pane.status, PaneStatus::Exited { .. }) {
+            if !pane.is_running_agent() {
                 anyhow::bail!("recipient must be a live agent pane");
             }
             (checkout.path.clone(), pane.runtime.input())
@@ -265,9 +265,7 @@ impl Daemon {
                     let Some(pane) = checkout.panes.iter().find(|pane| pane.id == pane_id) else {
                         continue;
                     };
-                    if pane.kind != PaneKind::Agent
-                        || matches!(pane.status, PaneStatus::Exited { .. })
-                    {
+                    if !pane.is_running_agent() {
                         anyhow::bail!("source must be a live agent pane");
                     }
                     let workspace_name = inner

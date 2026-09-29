@@ -249,7 +249,7 @@ impl Daemon {
                 let mut pane = Pane::new(id, PaneKind::Agent, title, runtime);
                 pane.restore_status_reported = pending.status.is_some();
                 pane.restore_title_reported = restore_title_reported;
-                pane.heard = pane.restore_status_reported;
+                pane.speaking.heard = pane.restore_status_reported;
                 if let Some((status, note)) = pending.status {
                     pane.status = status;
                     pane.note = note;
