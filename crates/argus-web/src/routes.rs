@@ -401,6 +401,16 @@ fn handle(
         } => {
             let _ = app.asks.send(Ask::Answer(pane, question, choice));
         }
+        FromPhone::Start { checkout, template } => {
+            let _ = app.asks.send(Ask::Start {
+                checkout,
+                template,
+                reply: direct.clone(),
+            });
+        }
+        FromPhone::Close { pane } => {
+            let _ = app.asks.send(Ask::Close(pane));
+        }
         FromPhone::Key { pane, key } => match crate::screen::key_bytes(&key) {
             Some(bytes) => {
                 let _ = app.asks.send(Ask::Key(pane, bytes));

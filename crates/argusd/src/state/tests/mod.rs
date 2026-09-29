@@ -291,6 +291,19 @@ pub(super) fn daemon_with_fake_claude(dir: &std::path::Path) -> Arc<Daemon> {
     Daemon::new(fake_claude_config(dir))
 }
 
+/// A daemon whose claude template stays running until closed. A pane that
+/// has exited takes no session claim, so a test that claims one on an agent
+/// that exits at once is decided by which happens first.
+pub(super) fn daemon_with_running_claude(dir: &std::path::Path) -> Arc<Daemon> {
+    let mut config = fake_claude_config(dir);
+    config.agents[0].cmd = if cfg!(windows) {
+        vec!["cmd".to_string(), "/K".to_string()]
+    } else {
+        vec!["cat".to_string()]
+    };
+    Daemon::new(config)
+}
+
 pub(super) fn fake_claude_config(dir: &std::path::Path) -> ConfigFile {
     ConfigFile {
         workspaces: Vec::new(),

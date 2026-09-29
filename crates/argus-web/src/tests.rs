@@ -11,6 +11,7 @@ use argus_protocol::{
     ServerMsg, Update, WorkspaceId, WorkspaceTree, WIDE_TREE,
 };
 use futures_util::{SinkExt, StreamExt};
+use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::{self, client::IntoClientRequest};
@@ -526,4 +527,56 @@ async fn the_installable_pages_files_are_served_as_what_they_are() {
         assert!(response.starts_with("http/1.1 200"), "{path}");
         assert!(response.contains(&format!("content-type: {kind}")), "{path}: {response:.200}");
     }
+}
+
+#[tokio::test]
+async fn a_phone_starts_an_agent_where_it_chose_and_closes_one() {
+    let mut running = serve().await;
+    let cookie = paired_cookie(&running).await;
+    let mut daemon = play_daemon(&mut running).await;
+    write_msg(&mut daemon, &ServerMsg::Templates(vec!["claude".into(), "codex".into()])).await.unwrap();
+    let origin = format!("http://{}", running.addr);
+    let mut phone = open(running.addr, Some(&cookie), &origin).await.unwrap();
+
+    let agents = loop {
+        let json = next_of(&mut phone, "agents").await;
+        if json["templates"].as_array().is_some_and(|t| !t.is_empty()) {
+            break json;
+        }
+    };
+    assert_eq!(agents["templates"], json!(["claude", "codex"]));
+    assert_eq!(agents["workspaces"][0]["checkouts"][0], json!({ "checkout": 0, "project": "argus", "name": "main" }));
+
+    phone
+        .send(tungstenite::Message::Text(r#"{"type":"start","checkout":0,"template":"codex"}"#.into()))
+        .await
+        .unwrap();
+    let request_id = loop {
+        match read_msg::<_, ClientMsg>(&mut daemon).await.unwrap() {
+            ClientMsg::SpawnAgent { checkout, template, request_id } => {
+                assert_eq!((checkout, template.as_str()), (CheckoutId(0), "codex"));
+                assert_ne!(request_id, 0, "a start names itself, to hear what it made");
+                break request_id;
+            }
+            _ => continue,
+        }
+    };
+    write_msg(
+        &mut daemon,
+        &ServerMsg::Created { request_id, created: Some(argus_protocol::Created::Pane(PaneId(9))) },
+    )
+    .await
+    .unwrap();
+    assert_eq!(next_of(&mut phone, "started").await["pane"], 9);
+
+    phone
+        .send(tungstenite::Message::Text(r#"{"type":"close","pane":9}"#.into()))
+        .await
+        .unwrap();
+    let closed = loop {
+        if let ClientMsg::Kill { pane } = read_msg::<_, ClientMsg>(&mut daemon).await.unwrap() {
+            break pane;
+        }
+    };
+    assert_eq!(closed, PaneId(9));
 }

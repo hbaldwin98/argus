@@ -56,6 +56,14 @@ pub enum Ask {
     Key(u64, &'static [u8]),
     /// Answer a question: the pane, the question's id, the choice's.
     Answer(u64, String, String),
+    /// Start an agent from a template in a checkout, answered to `reply`.
+    Start {
+        checkout: u64,
+        template: String,
+        reply: Reply,
+    },
+    /// Close a pane.
+    Close(u64),
 }
 
 /// What the daemon connection keeps across reconnecting.
@@ -71,6 +79,8 @@ struct Link {
     /// Messages the daemon queued for a phone, by pane and queue id, until
     /// a tree no longer lists them.
     placed: HashMap<(u64, u64), (String, Reply)>,
+    /// Agents asked for and not yet made, by request id: the phone to tell.
+    starting: HashMap<u64, Reply>,
     next_request: u64,
     /// Whether the next tree is this connection's first, against which a
     /// message placed with a daemon before it was not typed but lost.
@@ -123,11 +133,12 @@ impl Publish {
         );
     }
 
-    fn agents(&self, tree: &[WorkspaceTree]) {
+    fn agents(&self, tree: &[WorkspaceTree], templates: &[String]) {
         send(
             &self.agents,
             &ToPhone::Agents {
                 workspaces: phone::agents(tree),
+                templates: templates.to_vec(),
             },
         );
     }
@@ -174,6 +185,7 @@ where
     }));
     let (agents, agents_rx) = watch::channel(initial(&ToPhone::Agents {
         workspaces: Vec::new(),
+        templates: Vec::new(),
     }));
     let (conversations, _) = broadcast::channel(256);
     let (screens, _) = broadcast::channel(64);
@@ -224,6 +236,9 @@ where
         for (_, (pane, _, reply)) in link.requests.drain() {
             let _ = reply.send(json(&lost(pane)));
         }
+        for (_, reply) in link.starting.drain() {
+            let _ = reply.send(json(&ToPhone::Started { pane: None }));
+        }
         // Asks keep arriving while there is no daemon; the counts they
         // change are what the next connection watches again.
         let wait = tokio::time::sleep(backoff);
@@ -233,6 +248,9 @@ where
                 _ = &mut wait => break,
                 ask = asks.recv() => match ask {
                     Some(Ask::Send { pane, reply, .. }) => { let _ = reply.send(json(&lost(pane))); }
+                    Some(Ask::Start { reply, .. }) => {
+                        let _ = reply.send(json(&ToPhone::Started { pane: None }));
+                    }
                     Some(ask) => { link.ask(ask); }
                     None => return Ended::Stopped,
                 },
@@ -304,6 +322,20 @@ impl Link {
                 question,
                 choice,
             }),
+            Ask::Start {
+                checkout,
+                template,
+                reply,
+            } => {
+                self.next_request += 1;
+                self.starting.insert(self.next_request, reply);
+                Some(ClientMsg::SpawnAgent {
+                    checkout: argus_protocol::CheckoutId(checkout),
+                    template,
+                    request_id: self.next_request,
+                })
+            }
+            Ask::Close(pane) => Some(ClientMsg::Kill { pane: PaneId(pane) }),
             other => count(&mut self.watching, &other),
         }
     }
@@ -382,7 +414,9 @@ fn count(watching: &mut HashMap<u64, usize>, ask: &Ask) -> Option<ClientMsg> {
         | Ask::Unscreen(_)
         | Ask::RefreshScreen(_)
         | Ask::Key(..)
-        | Ask::Answer(..) => None,
+        | Ask::Answer(..)
+        | Ask::Start { .. }
+        | Ask::Close(_) => None,
     }
 }
 
@@ -470,6 +504,8 @@ struct State {
     tree: Vec<WorkspaceTree>,
     /// The screens phones are watching, as the daemon streams them.
     screens: HashMap<u64, crate::screen::Screen>,
+    /// The templates an agent can be started from.
+    templates: Vec<String>,
     /// Each agent's loudest status in the last tree, to tell what changed.
     /// Empty until this connection's first tree, which is taken as it is
     /// rather than announced.
@@ -491,11 +527,27 @@ impl State {
                 self.tree = tree;
                 link.reconcile(&self.tree);
                 self.announce(publish);
-                publish.agents(&self.tree);
+                publish.agents(&self.tree, &self.templates);
             }
             ServerMsg::Sent {
                 request_id, sent, ..
             } => link.answered(request_id, sent),
+            ServerMsg::Templates(names) => {
+                self.templates = names;
+                publish.agents(&self.tree, &self.templates);
+            }
+            ServerMsg::Created {
+                request_id,
+                created,
+            } => {
+                if let Some(reply) = link.starting.remove(&request_id) {
+                    let pane = match created {
+                        Some(argus_protocol::Created::Pane(pane)) => Some(pane.0),
+                        _ => None,
+                    };
+                    let _ = reply.send(json(&ToPhone::Started { pane }));
+                }
+            }
             ServerMsg::Tree(projects) if !self.wide => {
                 if self.daemon.is_none() {
                     publish.server(true, None);
@@ -506,11 +558,11 @@ impl State {
                     open: true,
                     projects,
                 }];
-                publish.agents(&self.tree);
+                publish.agents(&self.tree, &self.templates);
             }
             ServerMsg::PaneTelemetry { pane, telemetry } => {
                 if self.merge_telemetry(pane, telemetry) {
-                    publish.agents(&self.tree);
+                    publish.agents(&self.tree, &self.templates);
                 }
             }
             ServerMsg::Transcript {

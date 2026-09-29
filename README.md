@@ -171,6 +171,8 @@ permission dialog by accident; it is shown on the phone and on the agent's card 
 is typed, and either can take it back (`u` on the Panes stage). Send now types it straight away,
 for steering an agent mid-turn. Stop interrupts the agent with Esc.
 
+`+` starts an agent from one of your templates in any checkout, and Close ends one, after asking.
+
 The Terminal tab shows the agent's own screen at the desktop's size — the phone never resizes a
 pane — with a key bar (digits, arrows, Enter, Esc, Tab, y, n) for answering a harness's menus and
 permission prompts. It opens by itself when an agent starts waiting, and it is the whole view for a

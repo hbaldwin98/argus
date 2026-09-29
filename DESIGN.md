@@ -113,7 +113,9 @@ serves the page is the one that speaks it, so the two cannot drift. Replies arri
 in Rust with raw HTML escaped, links kept only for `http`, `https` and `mailto`, and images turned
 into links; every other string is set as text. Every phone shares one daemon connection, a
 conversation several phones watch is watched once, and when the daemon says it is stopping
-`argus web` exits rather than start another.
+`argus web` exits rather than start another. The agent list carries the templates and every
+checkout, so a phone can start an agent: a named `SpawnAgent` whose `Created` answer tells that
+phone which pane to open. Closing one is `Kill`, after the page asks.
 
 The page is installable: a manifest, icons, and a service worker that caches nothing, so the page
 is always the one this `argus web` serves, and that shows pushes and opens the agent a tapped one

@@ -35,6 +35,9 @@ const state = {
   // Whether this device takes pushes, and whether it could: pushes need a
   // page served over HTTPS and a browser that has them.
   push: { on: false, possible: false, busy: false },
+  templates: [],
+  // The start sheet, when open, and whether a start is on its way.
+  starting: null,
 };
 
 // --- the connection ------------------------------------------------------
@@ -143,6 +146,16 @@ function receive(message) {
       break;
     case "agents":
       state.workspaces = message.workspaces;
+      state.templates = message.templates || [];
+      break;
+    case "started":
+      if (state.starting) state.starting.busy = false;
+      if (message.pane !== null && message.pane !== undefined) {
+        state.starting = null;
+        location.hash = `#/pane/${message.pane}`;
+        return;
+      }
+      if (state.starting) state.starting.error = "The agent could not be started.";
       break;
     case "transcript":
       applyTranscript(message);
@@ -362,11 +375,51 @@ function renderList() {
       onclick: togglePush,
     })
     : null;
+  const places = state.workspaces.flatMap((w) => w.checkouts.map((c) => ({ ...c, workspace: w.name })));
+  const add = state.templates.length && places.length
+    ? el("button", {
+      class: "add",
+      "aria-label": "Start an agent",
+      text: "+",
+      onclick: () => { state.starting = { busy: false, error: null }; render(); },
+    })
+    : null;
   app.replaceChildren(
-    el("header", { class: "bar" }, el("h1", {}, el("span", { class: "mark", text: "ARGUS" })), bell),
+    el("header", { class: "bar" }, el("h1", {}, el("span", { class: "mark", text: "ARGUS" })), bell, add),
     ...banners(),
+    ...(state.starting ? [startSheet(places)] : []),
     ...rows,
   );
+}
+
+/// Where and what to start: a checkout and a template.
+function startSheet(places) {
+  const sheet = state.starting;
+  const where = el("select", { class: "field" },
+    ...places.map((p) => el("option", {
+      value: String(p.checkout),
+      text: `${p.project} · ${p.name}${state.workspaces.length > 1 ? ` (${p.workspace})` : ""}`,
+    })),
+  );
+  const what = el("select", { class: "field" }, ...state.templates.map((t) => el("option", { value: t, text: t })));
+  const form = el("form", { class: "sheet" },
+    el("h2", { text: "Start an agent" }),
+    el("label", {}, "In", where),
+    el("label", {}, "Agent", what),
+    el("p", { class: "send-error", text: sheet.error || "" }),
+    el("div", { class: "actions" },
+      el("button", { type: "button", text: "Cancel", onclick: () => { state.starting = null; render(); } }),
+      el("button", { class: "go", type: "submit", disabled: sheet.busy, text: sheet.busy ? "Starting…" : "Start" }),
+    ),
+  );
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    sheet.busy = true;
+    sheet.error = null;
+    send({ type: "start", checkout: Number(where.value), template: what.value });
+    render();
+  });
+  return form;
 }
 
 function findAgent(pane) {
@@ -466,6 +519,18 @@ function agentShell(pane) {
     text: "Stop",
     onclick: () => send({ type: "stop", pane }),
   });
+  shell.close = el("button", {
+    class: "close",
+    "aria-label": "Close this agent",
+    text: "Close",
+    onclick: () => {
+      const agent = findAgent(pane);
+      const name = agent ? agent.title : `pane ${pane}`;
+      if (!window.confirm(`Close ${name}? Its process ends.`)) return;
+      send({ type: "close", pane });
+      location.hash = "#/";
+    },
+  });
   shell.banners = el("div");
   shell.body = el("section", { class: "conversation", id: "conversation" });
   shell.term = el("section", { class: "screen", hidden: true });
@@ -507,6 +572,7 @@ function agentShell(pane) {
       shell.dot,
       shell.title,
       shell.stop,
+      shell.close,
     ),
     shell.banners,
     el("nav", { class: "tabs" }, shell.tabConversation, shell.tabTerminal),

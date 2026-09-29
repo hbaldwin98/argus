@@ -213,3 +213,14 @@ details.detail .result.failed { border-color: var(--err); }
 .question .choices { display: flex; flex-wrap: wrap; gap: 6px; }
 .question .choices button { background: var(--bg); border: 1px solid var(--edge); border-radius: 999px; padding: 6px 12px; font-size: 13px; }
 .question .choices button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+/* Starting and closing agents. */
+.bar .add { font-size: 22px; line-height: 1; padding: 2px 12px; border: 1px solid var(--edge); border-radius: 999px; color: var(--accent); }
+.bar .close { font-size: 13px; color: var(--muted); border: 1px solid var(--edge); border-radius: 999px; padding: 3px 10px; }
+.sheet { margin: 10px 8px; padding: 14px; background: var(--surface); border: 1px solid var(--edge); border-radius: 12px; display: flex; flex-direction: column; gap: 10px; }
+.sheet h2 { margin: 0; font-size: 16px; }
+.sheet label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.sheet .field { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--edge); border-radius: 8px; padding: 8px; }
+.sheet .actions { display: flex; justify-content: flex-end; gap: 8px; }
+.sheet .actions button { border: 1px solid var(--edge); background: var(--bg); border-radius: 10px; padding: 8px 14px; }
+.sheet .actions .go { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }

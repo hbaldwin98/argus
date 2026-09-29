@@ -62,7 +62,7 @@ async fn live(d: &Daemon, pane: PaneId, want: bool) -> bool {
 }
 
 fn agent(dir: &std::path::Path) -> (Arc<Daemon>, PaneId) {
-    let d = daemon_with_fake_claude(dir);
+    let d = daemon_with_running_claude(dir);
     d.start_hook_server().unwrap();
     let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
     d.set_pane_session_id(pane, "s1");
@@ -102,13 +102,13 @@ async fn what_is_said_to_a_live_agent_goes_through_its_plugin_not_its_terminal()
     );
 
     // The plugin goes away: the pane stops being live at once, and what is
-    // said next is not sent into a connection nobody holds.
+    // said next waits in the outbox rather than going into a connection
+    // nobody holds.
     drop(inbox);
     assert!(live(&d, pane, false).await, "the pane noticed its plugin go");
-    assert_ne!(
-        d.send_to_agent(pane, "anyone?", false),
-        Sent::Typed,
-        "nothing is handed to a plugin that has gone"
+    assert!(
+        matches!(d.send_to_agent(pane, "anyone?", false), Sent::Queued { .. }),
+        "nothing is handed to a plugin that has gone; it waits in the outbox"
     );
     let _ = d.close_pane(pane);
 }

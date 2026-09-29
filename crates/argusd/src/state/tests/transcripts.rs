@@ -73,7 +73,7 @@ async fn next_update(rx: &mut broadcast::Receiver<ServerMsg>) -> (bool, Option<E
 }
 
 fn agent(dir: &std::path::Path) -> (Arc<Daemon>, PaneId) {
-    let d = daemon_with_fake_claude(dir);
+    let d = daemon_with_running_claude(dir);
     let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
     (d, pane)
 }
@@ -368,5 +368,34 @@ async fn a_push_bigger_than_an_ordinary_hook_is_taken_by_the_pane_api() {
 
     assert!(response.starts_with(b"HTTP/1.1 200 OK"), "{}", String::from_utf8_lossy(&response));
     assert!(pane_info(&d, pane).has_transcript);
+    let _ = d.close_pane(pane);
+}
+
+#[tokio::test]
+async fn a_pane_read_from_a_file_still_shows_what_only_was_pushed() {
+    // Codex's live channel pushes items the rollout file later records, and
+    // approvals it never does. A phone opening the pane afterwards sees each
+    // item once and the question too.
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = agent(dir.path());
+    let file = dir.path().join("s1.jsonl");
+    write_lines(&file, &[prompt("from the file")]);
+    d.report_transcript(pane, None, &file.to_string_lossy());
+    let file_id = {
+        let (_, _, updates) = transcript(d.transcript_tail(pane));
+        match &updates[0] {
+            Update::Upsert(entry) => entry.id.clone(),
+            other => panic!("{other:?}"),
+        }
+    };
+    let mut pushed = push(false, &["only pushed"]);
+    pushed.updates.push(Update::Upsert(argus_protocol::Entry {
+        id: file_id,
+        at: None,
+        body: Body::Reply { text: "a live copy of the file's entry".into() },
+    }));
+    d.report_pushed(pane, None, pushed);
+
+    assert_eq!(said(&transcript(d.transcript_tail(pane)).2), ["from the file", "only pushed"]);
     let _ = d.close_pane(pane);
 }

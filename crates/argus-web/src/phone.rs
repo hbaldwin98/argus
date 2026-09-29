@@ -28,8 +28,15 @@ pub enum ToPhone {
         /// build's: what to restart to make them match.
         daemon_version: Option<String>,
     },
-    /// Every agent the daemon runs, whole, after any change.
-    Agents { workspaces: Vec<Workspace> },
+    /// Every agent the daemon runs, whole, after any change, with the
+    /// templates an agent can be started from.
+    Agents {
+        workspaces: Vec<Workspace>,
+        templates: Vec<String>,
+    },
+    /// What became of an agent this page asked to start: the pane, or
+    /// `None` when the daemon refused.
+    Started { pane: Option<u64> },
     /// Updates to a watched conversation. `fresh` replaces what is held.
     Transcript {
         pane: u64,
@@ -87,6 +94,10 @@ pub enum FromPhone {
     Visible { visible: bool },
     /// Answer a question the agent's harness posed.
     Answer { pane: u64, question: String, choice: String },
+    /// Start an agent from a template in a checkout.
+    Start { checkout: u64, template: String },
+    /// Close an agent's pane, ending its process.
+    Close { pane: u64 },
 }
 
 /// A daemon's answer to a message, as the page reads it.
@@ -108,6 +119,16 @@ pub struct Workspace {
     pub name: String,
     pub open: bool,
     pub agents: Vec<Agent>,
+    /// Where an agent can be started here.
+    pub checkouts: Vec<Place>,
+}
+
+/// A checkout an agent can be started in.
+#[derive(Debug, Clone, Serialize)]
+pub struct Place {
+    pub checkout: u64,
+    pub project: String,
+    pub name: String,
 }
 
 /// One agent pane, as a row on the phone.
@@ -229,10 +250,24 @@ pub fn agents(tree: &[WorkspaceTree]) -> Vec<Workspace> {
                 })
                 .collect();
             agents.sort_by(|(a, _), (b, _)| b.cmp(a));
+            let checkouts = workspace
+                .projects
+                .iter()
+                .flat_map(|project| {
+                    project.repositories.iter().flat_map(move |repository| {
+                        repository.checkouts.iter().map(move |checkout| Place {
+                            checkout: checkout.id.0,
+                            project: project.name.clone(),
+                            name: checkout.name.clone(),
+                        })
+                    })
+                })
+                .collect();
             Workspace {
                 name: workspace.name.clone(),
                 open: workspace.open,
                 agents: agents.into_iter().map(|(_, agent)| agent).collect(),
+                checkouts,
             }
         })
         .collect()

@@ -305,12 +305,33 @@ impl Daemon {
     /// The end of a pane's conversation as a fresh copy: what a client
     /// starts from, and what one that fell behind starts again from.
     /// Blocking file I/O; call it off the runtime's threads.
+    ///
+    /// A pane can have both a file and pushed entries — Codex's live
+    /// channel pushes its items as they happen, and its approvals, while
+    /// the rollout file records the items afterwards. The file's entries
+    /// come first, and a pushed one only where the file has none by its id,
+    /// so an item read both ways is one entry and a question nothing wrote
+    /// down is still shown.
     pub fn transcript_tail(&self, pane: PaneId) -> ServerMsg {
+        let pushed = self.pushed_tail(pane).unwrap_or_default();
         let (earlier, updates) = match self.history(pane) {
-            Some(history) => history
-                .tail()
-                .map_or((None, Vec::new()), |p| (p.earlier, p.updates)),
-            None => (None, self.pushed_tail(pane).unwrap_or_default()),
+            Some(history) => {
+                let (earlier, mut updates) = history
+                    .tail()
+                    .map_or((None, Vec::new()), |p| (p.earlier, p.updates));
+                let read: std::collections::HashSet<String> = updates
+                    .iter()
+                    .filter_map(|u| match u {
+                        Update::Upsert(entry) => Some(entry.id.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                updates.extend(pushed.into_iter().filter(|u| {
+                    !matches!(u, Update::Upsert(entry) if read.contains(&entry.id))
+                }));
+                (earlier, updates)
+            }
+            None => (None, pushed),
         };
         ServerMsg::Transcript {
             pane,
