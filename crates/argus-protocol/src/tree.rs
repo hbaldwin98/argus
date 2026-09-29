@@ -176,10 +176,25 @@ pub struct PaneInfo {
     /// daemon from before sends a list under that name.
     #[serde(default)]
     pub has_transcript: bool,
+    /// When the pane's status last changed, in seconds since the Unix
+    /// epoch by the daemon's clock. `None` from a daemon that does not say.
+    #[serde(default)]
+    pub since: Option<u64>,
     // No transcript. It rode here once, up to 200 events a pane in every
     // tree every client was sent, and no client read it. A daemon from
     // before still sends the field, and the derive ignores a field it does
     // not know.
+}
+
+/// One workspace's projects, for a client that follows every agent the
+/// daemon runs rather than the open workspace's (`WIDE_TREE`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceTree {
+    pub id: WorkspaceId,
+    pub name: String,
+    /// Whether this is the workspace the terminal clients have open.
+    pub open: bool,
+    pub projects: Vec<ProjectInfo>,
 }
 
 /// Harness-neutral telemetry for one agent pane.
@@ -398,6 +413,7 @@ mod tests {
                 .collect(),
             telemetry: AgentTelemetry::default(),
             has_transcript: false,
+            since: None,
         }
     }
 

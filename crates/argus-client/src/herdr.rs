@@ -306,6 +306,7 @@ mod tests {
                             children: Vec::new(),
                             telemetry: Default::default(),
                             has_transcript: false,
+                            since: None,
                         })
                         .collect(),
                     git: None,
@@ -395,6 +396,7 @@ mod tests {
                     children: Vec::new(),
                     telemetry: Default::default(),
                     has_transcript: false,
+                    since: None,
                 }],
                 git: None,
                 primary: true,

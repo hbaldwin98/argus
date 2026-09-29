@@ -88,6 +88,9 @@ struct Pane {
     /// above it for as long as the daemon remembers the pane. Not
     /// persisted: a restored agent names its file again on its first hook.
     transcripts: Vec<PathBuf>,
+    /// When `status` last changed, for a client to say how long the pane
+    /// has been where it is.
+    status_since: std::time::SystemTime,
     /// A hook won the race with session restoration, so saved metadata must
     /// not overwrite what the newly started process already reported.
     restore_status_reported: bool,
@@ -308,6 +311,76 @@ pub struct Daemon {
     transcripts: StdMutex<HashMap<PaneId, transcripts::Feed>>,
 }
 
+/// A project as clients are shown it.
+fn project_info(p: &Project) -> ProjectInfo {
+    ProjectInfo {
+        id: p.id,
+        name: p.name.clone(),
+        root: p.root.as_ref().map(|path| path.to_string_lossy().to_string()),
+        repositories: p
+            .repositories
+            .iter()
+            .map(|r| RepositoryInfo {
+                id: r.id,
+                name: r.name.clone(),
+                branches: r.branches.clone(),
+                default_branch: r.default_branch.clone(),
+                remote_branches: r.remote_branches.clone(),
+                checkouts: r
+                    .checkouts
+                    .iter()
+                    .map(|c| {
+                        let git = c.git.clone();
+                        CheckoutInfo {
+                            id: c.id,
+                            // A checkout names the branch currently occupying it,
+                            // including when a process switched outside Argus.
+                            name: git
+                                .as_ref()
+                                .and_then(|status| status.branch.clone())
+                                .unwrap_or_else(|| c.name.clone()),
+                            path: c.path.to_string_lossy().to_string(),
+                            panes: c
+                                .panes
+                                .iter()
+                                .map(|pane| PaneInfo {
+                                    id: pane.id,
+                                    kind: pane.kind,
+                                    title: pane.title.clone(),
+                                    status: pane.status,
+                                    note: pane.note.clone(),
+                                    template: pane.template.clone(),
+                                    children: pane
+                                        .children
+                                        .iter()
+                                        .map(|c| argus_protocol::ChildAgentInfo {
+                                            label: c
+                                                .label
+                                                .clone()
+                                                .unwrap_or_else(|| "agent".to_string()),
+                                            status: c.status,
+                                            note: c.note.clone(),
+                                        })
+                                        .collect(),
+                                    telemetry: pane.telemetry.clone(),
+                                    has_transcript: !pane.transcripts.is_empty(),
+                                    since: pane
+                                        .status_since
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .ok()
+                                        .map(|d| d.as_secs()),
+                                })
+                                .collect(),
+                            git,
+                            primary: c.primary,
+                        }
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
+
 type PaneSubscription = (
     u16,
     u16,
@@ -339,65 +412,26 @@ impl Daemon {
             .projects
             .iter()
             .filter(|p| p.workspace == open)
-            .map(|p| ProjectInfo {
-                id: p.id,
-                name: p.name.clone(),
-                root: p.root.as_ref().map(|path| path.to_string_lossy().to_string()),
-                repositories: p
-                    .repositories
+            .map(project_info)
+            .collect()
+    }
+
+    /// Every workspace's projects, for a client following every agent the
+    /// daemon runs. The terminal clients are sent [`Daemon::snapshot`].
+    pub fn wide_snapshot(&self) -> Vec<argus_protocol::WorkspaceTree> {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .workspaces
+            .iter()
+            .map(|w| argus_protocol::WorkspaceTree {
+                id: w.id,
+                name: w.name.clone(),
+                open: w.id == inner.open,
+                projects: inner
+                    .projects
                     .iter()
-                    .map(|r| RepositoryInfo {
-                        id: r.id,
-                        name: r.name.clone(),
-                        branches: r.branches.clone(),
-                        default_branch: r.default_branch.clone(),
-                        remote_branches: r.remote_branches.clone(),
-                        checkouts: r
-                            .checkouts
-                            .iter()
-                            .map(|c| {
-                                let git = c.git.clone();
-                                CheckoutInfo {
-                                    id: c.id,
-                                    // A checkout names the branch currently occupying it,
-                                    // including when a process switched outside Argus.
-                                    name: git
-                                        .as_ref()
-                                        .and_then(|status| status.branch.clone())
-                                        .unwrap_or_else(|| c.name.clone()),
-                                    path: c.path.to_string_lossy().to_string(),
-                                    panes: c
-                                        .panes
-                                        .iter()
-                                        .map(|pane| PaneInfo {
-                                            id: pane.id,
-                                            kind: pane.kind,
-                                            title: pane.title.clone(),
-                                            status: pane.status,
-                                            note: pane.note.clone(),
-                                            template: pane.template.clone(),
-                                            children: pane
-                                                .children
-                                                .iter()
-                                                .map(|c| argus_protocol::ChildAgentInfo {
-                                                    label: c
-                                                        .label
-                                                        .clone()
-                                                        .unwrap_or_else(|| "agent".to_string()),
-                                                    status: c.status,
-                                                    note: c.note.clone(),
-                                                })
-                                                .collect(),
-                                            telemetry: pane.telemetry.clone(),
-                                            has_transcript: !pane.transcripts.is_empty(),
-                                        })
-                                        .collect(),
-                                    git,
-                                    primary: c.primary,
-                                }
-                            })
-                            .collect(),
-                    })
+                    .filter(|p| p.workspace == w.id)
+                    .map(project_info)
                     .collect(),
             })
             .collect()

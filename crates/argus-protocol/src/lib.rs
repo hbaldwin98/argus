@@ -45,7 +45,7 @@ pub use features::{
     FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES, MAX_HOLD_BYTES,
 };
 pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
-pub use hello::{Hello, CAPABILITIES, CELL_RUNS, PANE_TELEMETRY, PROTOCOL, TRANSCRIPTS};
+pub use hello::{Hello, CAPABILITIES, CELL_RUNS, PANE_TELEMETRY, PROTOCOL, TRANSCRIPTS, WIDE_TREE};
 pub use hook::{
     endpoint_url, feature_url, pane_path, pane_url, parse_pane_path, parse_pane_url,
     parse_request_target, requested_feature, requested_scope, Endpoint, PaneUrl, Report, ARTIFACT_SCOPE_VAR, CONTEXT_COMMAND, HELPER_VAR,
@@ -74,5 +74,5 @@ pub use tasks::{
 pub use transcript::{Body, Earlier, Entry, ToolState, Update};
 pub use tree::{
     AgentTelemetry, CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneState, PaneStatus,
-    ProjectInfo, RepositoryInfo, WorkspaceInfo,
+    ProjectInfo, RepositoryInfo, WorkspaceInfo, WorkspaceTree,
 };

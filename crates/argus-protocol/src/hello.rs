@@ -36,6 +36,13 @@ pub const CELL_RUNS: &str = "cell-runs";
 /// from the daemon. Listed by each side for the half it takes.
 pub const TRANSCRIPTS: &str = "transcripts";
 
+/// `ServerMsg::WideTree` in place of `ServerMsg::Tree`: every workspace's
+/// projects rather than the open one's. For a client that follows every
+/// agent, and must not re-scope the terminals to do it. Not in
+/// [`CAPABILITIES`]: the terminal client shows one workspace at a time, so
+/// only a client that wants it adds it to its greeting ([`Hello::and`]).
+pub const WIDE_TREE: &str = "wide-tree";
+
 /// One side's greeting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hello {
@@ -57,6 +64,12 @@ impl Hello {
             version: env!("CARGO_PKG_VERSION").to_string(),
             capabilities: CAPABILITIES.iter().map(|c| c.to_string()).collect(),
         }
+    }
+
+    /// This greeting, also able to take `capability`.
+    pub fn and(mut self, capability: &str) -> Hello {
+        self.capabilities.push(capability.to_string());
+        self
     }
 
     /// Whether the side that sent this greeting can take `capability`.

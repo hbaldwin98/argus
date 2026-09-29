@@ -119,6 +119,27 @@ pub struct Settings {
     /// picker beside the ones the user's ssh config names. Written only by
     /// [`remember_host`]; see [`save`].
     pub hosts: Vec<String>,
+    /// How `argus web` serves, when its flags do not say.
+    #[serde(skip_serializing_if = "WebSettings::is_empty")]
+    pub web: WebSettings,
+}
+
+/// `[web]` in `client.toml`: the defaults `argus web` falls back on.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WebSettings {
+    /// The port to bind, `7420` when unset.
+    pub port: Option<u16>,
+    /// The address to bind, loopback when unset.
+    pub listen: Option<String>,
+    /// The address a phone opens, when a proxy puts another in front.
+    pub url: Option<String>,
+}
+
+impl WebSettings {
+    fn is_empty(&self) -> bool {
+        *self == WebSettings::default()
+    }
 }
 
 impl Default for Settings {
@@ -130,6 +151,7 @@ impl Default for Settings {
             review_split: false,
             notifications: NotificationMode::Off,
             hosts: Vec::new(),
+            web: WebSettings::default(),
         }
     }
 }
@@ -173,9 +195,12 @@ fn save_to(p: &Path, settings: &Settings) {
     // Each host's app holds a copy of the settings loaded when it started,
     // and a copy's hosts are only as fresh as that. The file's own list is
     // kept, so a theme changed on one host cannot forget a host another
-    // one remembered.
+    // one remembered. `[web]` is kept for the same reason, and because no
+    // client ever edits it: it is written by hand.
+    let on_disk = load_from(p);
     let settings = Settings {
-        hosts: load_from(p).hosts,
+        hosts: on_disk.hosts,
+        web: on_disk.web,
         ..settings.clone()
     };
     write(p, &settings);
@@ -263,6 +288,10 @@ mod tests {
             review_split: true,
             notifications: NotificationMode::Bell,
             hosts: vec!["devbox".to_string()],
+            web: WebSettings {
+                port: Some(7500),
+                ..Default::default()
+            },
         };
         let back: Settings = toml::from_str(&toml::to_string_pretty(&s).unwrap()).unwrap();
         assert_eq!(back, s);

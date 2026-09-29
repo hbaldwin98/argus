@@ -15,7 +15,7 @@ use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
 use crate::diagrams::{DiagramAction, DiagramList};
 use crate::tasks::{TaskAction, TaskList};
 use crate::transcript::{Earlier, Update};
-use crate::tree::{AgentTelemetry, ProjectInfo, WorkspaceInfo};
+use crate::tree::{AgentTelemetry, ProjectInfo, WorkspaceInfo, WorkspaceTree};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ClientMsg {
@@ -399,6 +399,9 @@ pub enum ServerMsg {
     Hello(Hello),
     /// Full project/checkout/pane tree, sent on connect and after any change.
     Tree(Vec<ProjectInfo>),
+    /// Every workspace's tree, in place of `Tree` after the greeting, to a
+    /// client that listed `WIDE_TREE`.
+    WideTree(Vec<WorkspaceTree>),
     /// One agent's telemetry, whole, after it reported. Only to a client
     /// that listed `PANE_TELEMETRY`; any other is sent the whole tree,
     /// which carries the same record.

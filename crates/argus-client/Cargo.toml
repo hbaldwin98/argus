@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 argus-protocol = { workspace = true }
+argus-web = { workspace = true }
 tokio = { workspace = true, features = ["io-std"] }
 serde = { workspace = true }
 anyhow = { workspace = true }

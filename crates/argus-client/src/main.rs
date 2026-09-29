@@ -10,6 +10,7 @@ mod app;
 mod backend;
 mod brief;
 mod bridge;
+mod web;
 mod diagram;
 mod clipboard;
 mod dirpicker;
@@ -67,6 +68,7 @@ async fn main() -> anyhow::Result<()> {
         Command::ServerStop => return launch::stop_daemon().await,
         Command::Init(dir) => return launch::init(dir).await,
         Command::Bridge => return bridge::run().await,
+        Command::Web(command) => return web::run(command).await,
         Command::Tui => None,
         Command::Host(host) => Some(host),
     };
@@ -100,6 +102,8 @@ enum Command {
     /// The client, with the daemon on this ssh host connected beside this
     /// machine's and on screen.
     Host(String),
+    /// The phone client, served by a client of this machine's daemon.
+    Web(web::WebCommand),
 }
 
 fn parse_command(args: &[String]) -> anyhow::Result<Command> {
@@ -112,9 +116,10 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         [init] if init == "init" => Ok(Command::Init(None)),
         [init, dir] if init == "init" => Ok(Command::Init(Some(dir.clone()))),
         [bridge] if bridge == "bridge" => Ok(Command::Bridge),
+        [web, rest @ ..] if web == "web" => web::parse(rest).map(Command::Web),
         [flag, host] if flag == "--host" && !host.is_empty() => Ok(Command::Host(host.clone())),
         _ => Err(anyhow::anyhow!(
-            "usage: argus [--host HOST | init [DIR] | server (restart | stop) | bridge]"
+            "usage: argus [--host HOST | init [DIR] | server (restart | stop) | bridge | web]"
         )),
     }
 }

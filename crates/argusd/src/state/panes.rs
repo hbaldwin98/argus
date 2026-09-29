@@ -49,6 +49,7 @@ impl Daemon {
                     children: Vec::new(),
                     telemetry: Default::default(),
                     transcripts: Vec::new(),
+                    status_since: std::time::SystemTime::now(),
                     restore_status_reported: false,
                     restore_title_reported: false,
                     harness_session_id: None,
@@ -137,6 +138,7 @@ impl Daemon {
                     children: Vec::new(),
                     telemetry: Default::default(),
                     transcripts: Vec::new(),
+                    status_since: std::time::SystemTime::now(),
                     restore_status_reported: false,
                     restore_title_reported: false,
                     harness_session_id: None,
@@ -276,6 +278,7 @@ impl Daemon {
                     children: pending.children,
                     telemetry: Default::default(),
                     transcripts: Vec::new(),
+                    status_since: std::time::SystemTime::now(),
                     restore_status_reported,
                     restore_title_reported,
                     harness_session_id: pending.harness_session_id.or(harness_session_id),
@@ -298,6 +301,7 @@ impl Daemon {
             match find_pane_with_checkout(&mut inner.projects, pane) {
                 Some((p, checkout)) => {
                     p.status = PaneStatus::Exited { code };
+                    p.status_since = std::time::SystemTime::now();
                     p.note = None;
                     p.children.clear();
                     let restart = p.template.clone().map(|template| (checkout, template));

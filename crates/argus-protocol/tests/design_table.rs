@@ -7,7 +7,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-const CRATES: [&str; 3] = ["argus-protocol", "argusd", "argus-client"];
+const CRATES: [&str; 4] = ["argus-protocol", "argusd", "argus-client", "argus-web"];
 
 fn workspace() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")

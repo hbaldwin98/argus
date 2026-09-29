@@ -153,6 +153,31 @@ argus server stop
 The command waits for the endpoint to be released. Connected Argus clients exit, and the next
 `argus` launch restores non-exited panes from the runtime session store.
 
+### From a phone
+
+`argus web` serves a phone-sized client in a browser: every agent the daemon runs, most urgent
+first, and each one's conversation, read from the transcript its harness already writes. It runs in
+the foreground and only for as long as you leave it running.
+
+```sh
+argus web                          # http://127.0.0.1:7420
+argus web --url https://box.tail1234.ts.net
+argus web devices                  # list paired devices
+argus web revoke "Pixel"           # unpair one
+```
+
+It prints a QR code and a six-digit code. The code pairs one device, works once, and expires after
+five minutes; press Enter in `argus web` for a new one. A paired device keeps a cookie, stored on
+the machine only as a hash.
+
+`argus web` binds loopback and does no TLS, so a phone reaches it through something that does.
+With [Tailscale](https://tailscale.com), `tailscale serve --bg 7420` puts HTTPS in front of it on
+your tailnet; pass the name it prints as `--url` so the QR code opens it. `--listen 0.0.0.0` binds
+every interface instead, and warns that the cookie then crosses the network unencrypted.
+
+Conversations are read for Claude Code today. Other harnesses are listed with their status, and
+their conversations follow.
+
 ## Install on `PATH`
 
 ### Release archive
@@ -363,6 +388,15 @@ notifications = "off"
 
 The settings panel writes this file immediately. Editor commands currently split on whitespace, so
 quoted arguments and executable paths containing spaces are not yet supported.
+
+`argus web` reads defaults for its flags from a `[web]` table, which no client writes:
+
+```toml
+[web]
+port = 7420
+listen = "127.0.0.1"
+url = "https://box.tail1234.ts.net"
+```
 
 ### Environment variables
 

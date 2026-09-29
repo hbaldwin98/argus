@@ -254,6 +254,7 @@ mod tests {
                         children: Vec::new(),
                         telemetry: Default::default(),
                         has_transcript: false,
+                        since: None,
                     }],
                 }],
             }],

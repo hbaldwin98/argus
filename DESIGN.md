@@ -8,7 +8,7 @@ checkouts. This document describes the code as it exists today. Desired behavior
 
 Argus has three binaries:
 
-- `argus`: the ratatui/crossterm client.
+- `argus`: the ratatui/crossterm client, and `argus web`, which serves the phone client.
 - `argusd`: the daemon that owns PTYs, terminal state, Git state, and runtime persistence.
 - `argus-hook`: the helper managed hooks run, and the command an agent runs to report on itself.
 
@@ -93,6 +93,28 @@ theme from one keeps the list on disk rather than its own. On a host elsewhere a
 pane: an external editor would be launched on that machine, where nobody is looking, and this
 machine's editor command is left out so the daemon there picks its own.
 
+`argus web` serves a phone-sized client over HTTP and one WebSocket. It is a foreground client of
+the local daemon, started through the same connect-or-start as the TUI, so the daemon itself never
+listens on a network and exposure lasts exactly as long as the process. It binds `127.0.0.1:7420`
+by default — fixed, because an installed page belongs to one origin — and does no TLS; `--listen`
+binds elsewhere and warns when that is reachable without HTTPS. It greets with `wide-tree`, which
+the TUI never lists, and is sent `WideTree` — every workspace's projects — wherever the TUI is sent
+`Tree`, so following every agent never re-scopes the terminals. A phone pairs with a six-digit code
+printed with a QR code: single use, five minutes, five wrong guesses. It is given a 256-bit device
+token as an `HttpOnly`, `SameSite=Strict` cookie, which `web-devices.json` in the config directory
+keeps only as a SHA-256 hash; `argus web devices` lists them and `argus web revoke` removes one,
+which a running server notices within ten seconds. The pairing request and the WebSocket upgrade
+must carry an `Origin` naming the host they were sent to, and the upgrade a known cookie; a site
+that rebinds its own name to this machine has no cookie for it. Every response carries a CSP that
+allows no script or style but the page's own, `X-Frame-Options: DENY` and
+`Referrer-Policy: no-referrer`. The page is plain JavaScript embedded in the binary, with no build
+step, and speaks JSON defined beside the server rather than the daemon's protocol: the binary that
+serves the page is the one that speaks it, so the two cannot drift. Replies arrive as HTML rendered
+in Rust with raw HTML escaped, links kept only for `http`, `https` and `mailto`, and images turned
+into links; every other string is set as text. Every phone shares one daemon connection, a
+conversation several phones watch is watched once, and when the daemon says it is stopping
+`argus web` exits rather than start another.
+
 A request that makes something — a shell, an agent, an editor, a worktree, a project, a
 repository — may name itself with a `request_id`, and the daemon answers that client alone with
 `Created`: the id of what it made, or nothing when it refused (the reason still arrives as an
@@ -170,6 +192,7 @@ result of a request; `ui` is a pure function of it.
 | --- | --- |
 | `main`, `redraw`, `terminal`, `wire`, `launch` | the event loop, the screen and socket it runs over, and the daemon lifecycle command |
 | `bridge` | this machine's daemon on stdin and stdout, for a client on another machine to reach over ssh |
+| `web` | the `argus web` command: its flags, and handing the web server this machine's daemon |
 | `hosts` | the daemons this client is attached to, each with an app of its own, and which one is on screen |
 | `remote` | reaching a daemon on another machine through ssh and its bridge, and saying why when ssh cannot |
 | `ssh_hosts` | the hosts the user's ssh config names, for the host picker |
@@ -197,6 +220,20 @@ result of a request; `ui` is a pure function of it.
 | `motion` | animation arithmetic: how far along a transition is at a given instant |
 | `settings`, `theme`, `backend`, `herdr`, `profile` | preferences, palette, the ratatui backend, and what is reported outward |
 | `fixtures` | the tree builders every test module shares |
+
+`argus-web` is the server behind `argus web`: a library the `argus` binary calls with its own way of
+reaching the daemon, so there is one way a daemon gets started. Its root serves until interrupted
+or the daemon stops, and answers `argus web devices` and `revoke`. The page it serves lives in
+`assets/`, and its tests run the server end to end against a daemon played over an in-memory
+stream.
+
+| module | answers |
+| --- | --- |
+| `daemon` | the one connection to the daemon, and what the server keeps of it for the phones |
+| `routes` | what each request gets, and the checks guarding everything that can reach an agent |
+| `pairing` | who may connect: the one-time code, and the device tokens it is traded for |
+| `phone` | what the page and the server say to each other |
+| `markdown` | a reply's markdown as HTML that can run nothing |
 
 ## Views
 

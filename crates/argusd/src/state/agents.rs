@@ -111,6 +111,9 @@ impl<'a> PaneOrPending<'a> {
     fn set_status(&mut self, status: PaneStatus, note: Option<String>) -> bool {
         let changed = match self {
             Self::Live(p) => {
+                if p.status != status {
+                    p.status_since = std::time::SystemTime::now();
+                }
                 let changed = p.status != status || p.note != note;
                 p.status = status;
                 p.note = note;
