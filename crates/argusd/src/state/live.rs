@@ -12,9 +12,10 @@
 //! experimental. Claude's channel is the daemon's tee. The server is started
 //! with the pane's environment, so hooks it runs still report to the pane,
 //! and the TUI is pointed at it with `--remote`; the server lives exactly as
-//! long as the pane. The connection takes the pane's inbox, so a reply, an
-//! interrupt or an answer goes to Codex as a request rather than as typing,
-//! and it reads the thread the pane's hooks named as it happens. Unix only:
+//! long as the pane. Once the pane's hooks have named its thread, the
+//! connection follows it and takes the pane's inbox, so a reply, an
+//! interrupt or an answer goes to Codex as a request rather than as typing;
+//! until then they are typed, as into any pane. Unix only:
 //! the server listens on a Unix socket.
 
 use std::path::{Path, PathBuf};
@@ -178,6 +179,7 @@ mod codex {
     use argus_protocol::{InboxItem, Push, Update};
     use futures_util::{SinkExt, StreamExt};
     use serde_json::{json, Value};
+    use tokio::sync::mpsc::UnboundedReceiver;
     use tokio_tungstenite::tungstenite::Message;
 
     use super::*;
@@ -206,9 +208,10 @@ mod codex {
         ws.send(Message::Text(json!({ "method": "initialized" }).to_string().into()))
             .await?;
 
-        let Some((generation, mut inbox)) = daemon.open_inbox(pane, None) else {
-            return Ok(());
-        };
+        // Opened once the thread is known, not before: until then `said`
+        // has nowhere to send a message, and an open inbox would take it
+        // from the terminal only to lose it.
+        let mut inbox: Option<(u64, UnboundedReceiver<InboxItem>)> = None;
         let mut state = Following {
             next_id: 1,
             ..Default::default()
@@ -223,7 +226,7 @@ mod codex {
                         let Ok(value) = serde_json::from_str::<Value>(text.as_str()) else { continue };
                         heard(&daemon, pane, &mut state, &value);
                     }
-                    item = inbox.recv() => {
+                    item = next_said(&mut inbox) => {
                         let Some(item) = item else { return Ok(()) };
                         if let Some(out) = said(&daemon, pane, &mut state, item) {
                             ws.send(Message::Text(out.to_string().into())).await?;
@@ -233,6 +236,8 @@ mod codex {
                     // until they have, there is nothing to follow.
                     _ = look.tick(), if state.thread.is_none() => {
                         if let Some(thread) = daemon.harness_session(pane) {
+                            let Some(opened) = daemon.open_inbox(pane, None) else { return Ok(()) };
+                            inbox = Some(opened);
                             let resume = json!({
                                 "id": state.next_id,
                                 "method": "thread/resume",
@@ -247,8 +252,18 @@ mod codex {
             }
         }
         .await;
-        daemon.close_inbox(pane, generation);
+        if let Some((generation, _)) = inbox {
+            daemon.close_inbox(pane, generation);
+        }
         result
+    }
+
+    /// The next item said through the inbox, once there is one.
+    async fn next_said(inbox: &mut Option<(u64, UnboundedReceiver<InboxItem>)>) -> Option<InboxItem> {
+        match inbox {
+            Some((_, items)) => items.recv().await,
+            None => std::future::pending().await,
+        }
     }
 
     fn push(daemon: &Daemon, pane: PaneId, updates: Vec<Update>) {

@@ -117,3 +117,42 @@ async fn a_live_pane_follows_its_thread_and_speaks_back_through_it() {
     assert!(eventually(|| !pane_info(&d, pane).live).await);
     let _ = d.close_pane(pane);
 }
+
+#[tokio::test]
+async fn a_live_pane_takes_nothing_through_its_inbox_before_it_knows_its_thread() {
+    // The bug: the inbox opened at `initialize`, before the hooks named a
+    // thread, and a message said then was reported sent and dropped.
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = fake_claude_config(dir.path());
+    config.agents[0].cmd = vec!["cat".to_string()];
+    let d = Daemon::new(config);
+    let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+
+    let socket = dir.path().join("codex.sock");
+    let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+    d.follow_live(pane, socket.clone());
+    let (stream, _) = listener.accept().await.unwrap();
+    let mut server = tokio_tungstenite::accept_async(stream).await.unwrap();
+    let init = next(&mut server).await;
+    tell(&mut server, json!({ "id": init["id"], "result": {} })).await;
+    assert_eq!(next(&mut server).await["method"], "initialized");
+    // Time for a follower to take the inbox, were it going to.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    assert!(!pane_info(&d, pane).live, "not live before a thread is followed");
+    assert!(
+        matches!(d.send_to_agent(pane, "early word", false), Sent::Queued { .. }),
+        "held for the terminal, not handed to a follower with nowhere to send it"
+    );
+
+    // Once the hooks name the thread, the follower takes the inbox.
+    d.set_pane_session_id(pane, "thread-1");
+    let resume = next(&mut server).await;
+    assert_eq!(resume["method"], "thread/resume");
+    assert!(eventually(|| pane_info(&d, pane).live).await, "live once following");
+    assert_eq!(d.send_to_agent(pane, "later word", false), Sent::Typed);
+    let start = next(&mut server).await;
+    assert_eq!(start["method"], "turn/start");
+    assert_eq!(start["params"]["input"][0]["text"], "later word");
+    let _ = d.close_pane(pane);
+}

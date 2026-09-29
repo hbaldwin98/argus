@@ -805,8 +805,9 @@ Codex's is a live channel of its own kind: its TUI can run on its app-server, wh
 thread to every client subscribed to it. A live Codex pane — worth asking for with care, since
 Codex marks the app-server experimental — starts `codex app-server --listen unix://…` with the
 pane's environment, so hooks it runs still report, and runs the TUI with `--remote` on it. The server lives exactly as long as the pane. The daemon
-connects as a second client over the WebSocket the socket speaks, takes the pane's inbox, and once
-Codex's hooks have named the conversation, resumes that thread to follow it. `harness/live` reads
+connects as a second client over the WebSocket the socket speaks, and once Codex's hooks have named
+the conversation, takes the pane's inbox and resumes that thread to follow it. Until then there is no
+thread to send a message to, so what is said is typed or held, as for any pane. `harness/live` reads
 what it hears: items as they start and complete, agent-message deltas as `AppendText` — the reply
 arriving token by token — turn ends, and approval requests posed as questions whose answer goes
 back as the response to Codex's request, and which are marked answered when Codex says someone
