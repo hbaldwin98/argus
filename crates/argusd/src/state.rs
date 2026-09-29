@@ -10,7 +10,9 @@
 //! `hook_server` for the
 //! loopback receiver, `session` for what survives a restart,
 //! `transcripts` for where a pane's conversation is read from, `outbox` for
-//! what clients asked to say to an agent, and `tree`
+//! what clients asked to say to an agent, `inbox` for the live channel a
+//! harness's plugin keeps open, `live` for a harness server Argus is a
+//! second client of, and `tree`
 //! for finding your way around.
 //!
 //! The type and its locking are one thing; only which file a concern is
@@ -35,6 +37,8 @@ mod diagrams;
 mod tasks;
 mod git_ops;
 mod hook_server;
+mod inbox;
+mod live;
 mod outbox;
 mod panel;
 mod panes;
@@ -100,6 +104,12 @@ struct Pane {
     queued: std::collections::VecDeque<argus_protocol::QueuedMessage>,
     /// When the outbox last typed into this pane.
     typed_at: Option<std::time::SystemTime>,
+    /// The live channel its harness's plugin holds open, by the generation
+    /// of the connection that opened it. See `inbox`.
+    inbox: Option<(u64, tokio::sync::mpsc::UnboundedSender<argus_protocol::InboxItem>)>,
+    /// The live channel's server, when the pane runs on one. Dropping it
+    /// stops the server. See `live`.
+    live_server: Option<live::LiveServer>,
     /// A hook won the race with session restoration, so saved metadata must
     /// not overwrite what the newly started process already reported.
     restore_status_reported: bool,
@@ -321,6 +331,9 @@ pub struct Daemon {
     /// The task typing queued messages, once anything has been queued, and
     /// the id the next message gets.
     outbox: StdMutex<outbox::Outbox>,
+    /// Names each inbox connection, so a stale one closing cannot close
+    /// the one that replaced it.
+    next_inbox: std::sync::atomic::AtomicU64,
 }
 
 /// A project as clients are shown it.
@@ -382,6 +395,7 @@ fn project_info(p: &Project) -> ProjectInfo {
                                         .ok()
                                         .map(|d| d.as_secs()),
                                     queued: pane.queued.iter().cloned().collect(),
+                                    live: pane.inbox.is_some(),
                                 })
                                 .collect(),
                             git,

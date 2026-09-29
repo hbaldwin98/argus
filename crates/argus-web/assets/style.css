@@ -205,3 +205,11 @@ details.detail .result.failed { border-color: var(--err); }
 
 .bar .bell { font-size: 13px; border: 1px solid var(--edge); border-radius: 999px; padding: 3px 12px; color: var(--muted); }
 .bar .bell.on { color: var(--accent); border-color: var(--accent); }
+
+/* A question the agent's harness is waiting on. */
+.question { background: var(--surface); border: 1px solid var(--warn); border-radius: 12px; padding: 10px 12px; }
+.question.answered { border-color: var(--edge); opacity: .7; }
+.question .ask { margin: 0 0 8px; }
+.question .choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.question .choices button { background: var(--bg); border: 1px solid var(--edge); border-radius: 999px; padding: 6px 12px; font-size: 13px; }
+.question .choices button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }

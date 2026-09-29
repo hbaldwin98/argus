@@ -108,15 +108,81 @@ function messageTelemetry(ctx, message) {
   return fields;
 }
 
+// --- the inbox -----------------------------------------------------------
+//
+// What Argus has for the agent — a message from the phone, an interrupt —
+// arrives on a stream this extension keeps open, and goes in through pi's
+// own API rather than as typing. Silent and patient when nobody answers.
+
+let lastCtx;
+let inboxOpen = false;
+
+// Unreferenced, so waiting to reconnect never keeps a process alive on
+// its own.
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms).unref?.());
+
+function act(pi, item) {
+  try {
+    if (item === "Interrupt") {
+      lastCtx?.abort?.();
+    } else if (item?.Message) {
+      const idle = lastCtx?.isIdle?.() ?? true;
+      const options = idle ? undefined : { deliverAs: item.Message.steer ? "steer" : "followUp" };
+      pi.sendUserMessage(item.Message.text, options);
+    }
+  } catch {
+    // The agent is where it is; the phone sees what happens next.
+  }
+}
+
+async function openInbox(pi) {
+  if (inboxOpen || !BASE || !TOKEN) return;
+  inboxOpen = true;
+  let wait = 500;
+  for (;;) {
+    try {
+      const headers = { authorization: `Bearer ${TOKEN}` };
+      if (lastSession) headers["X-Argus-Session"] = lastSession;
+      const response = await fetch(`${BASE}/inbox`, { headers });
+      if (response.ok && response.body) {
+        wait = 500;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let end;
+          while ((end = buffer.indexOf("\n\n")) >= 0) {
+            const event = buffer.slice(0, end);
+            buffer = buffer.slice(end + 2);
+            for (const line of event.split("\n")) {
+              if (line.startsWith("data: ")) act(pi, JSON.parse(line.slice(6)));
+            }
+          }
+        }
+      }
+    } catch {
+      // Nobody listening yet, or any more.
+    }
+    await sleep(wait);
+    wait = Math.min(wait * 2, 10000);
+  }
+}
+
 export default function Argus(pi) {
   pi.on("session_start", async (_event, ctx) => {
+    lastCtx = ctx;
     await enqueue(async () => {
       await reportSession(ctx);
       await report(ctx, "idle");
     });
+    void openInbox(pi);
   });
 
   pi.on("input", async (_event, ctx) => {
+    lastCtx = ctx;
     await enqueue(() => report(ctx, "working"));
     return { action: "continue" };
   });
@@ -130,6 +196,7 @@ export default function Argus(pi) {
   // A low-level run can restart after retry or compaction without another
   // input event. It is active work again even if the prior attempt failed.
   pi.on("agent_start", async (_event, ctx) => {
+    lastCtx = ctx;
     await enqueue(() => report(ctx, "working"));
   });
 

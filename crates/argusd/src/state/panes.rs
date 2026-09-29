@@ -53,6 +53,8 @@ impl Daemon {
                     status_since: std::time::SystemTime::now(),
                     queued: Default::default(),
                     typed_at: None,
+                    inbox: None,
+                    live_server: None,
                     restore_status_reported: false,
                     restore_title_reported: false,
                     harness_session_id: None,
@@ -145,6 +147,8 @@ impl Daemon {
                     status_since: std::time::SystemTime::now(),
                     queued: Default::default(),
                     typed_at: None,
+                    inbox: None,
+                    live_server: None,
                     restore_status_reported: false,
                     restore_title_reported: false,
                     harness_session_id: None,
@@ -235,13 +239,20 @@ impl Daemon {
         env.retain(|(k, _)| !template.env.contains_key(k));
         env.extend(template.env.clone());
 
-        let (args, resuming) = agent_args(
+        let (mut args, resuming) = agent_args(
             rest,
             &harness.resume,
             &harness.resume_id,
             start,
             harness_session_id.as_deref(),
         );
+        let live = template
+            .live
+            .then(|| self.start_live_server(id, harness.live, &path, &env))
+            .flatten();
+        if let Some((_, remote)) = &live {
+            args.extend(remote.iter().cloned());
+        }
 
         let spec = pty::Spawn::Program {
             program: program.clone(),
@@ -261,6 +272,13 @@ impl Daemon {
             }
         };
 
+        let (live_server, live_socket) = match live {
+            Some((server, _)) => {
+                let socket = server.socket().to_path_buf();
+                (Some(server), Some(socket))
+            }
+            None => (None, None),
+        };
         {
             // Lock in this order everywhere that spans the pre-spawn mailbox
             // and pane tree, so an arriving hook cannot slip between them.
@@ -288,6 +306,8 @@ impl Daemon {
                     status_since: std::time::SystemTime::now(),
                     queued: Default::default(),
                     typed_at: None,
+                    inbox: None,
+                    live_server,
                     restore_status_reported,
                     restore_title_reported,
                     harness_session_id: pending.harness_session_id.or(harness_session_id),
@@ -300,6 +320,9 @@ impl Daemon {
                 });
             }
         }
+        if let Some(socket) = live_socket {
+            self.follow_live(id, socket);
+        }
         self.broadcast_tree();
         Ok(id)
     }
@@ -311,6 +334,8 @@ impl Daemon {
                 Some((p, checkout)) => {
                     p.status = PaneStatus::Exited { code };
                     p.status_since = std::time::SystemTime::now();
+                    // Its live server has nobody left to serve.
+                    p.live_server = None;
                     p.note = None;
                     p.children.clear();
                     let restart = p.template.clone().map(|template| (checkout, template));

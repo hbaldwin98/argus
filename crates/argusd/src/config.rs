@@ -100,6 +100,12 @@ pub struct AgentConfig {
     /// What to do when the CLI exits on its own.
     #[serde(default)]
     pub restart: Restart,
+    /// Run the CLI on its harness's live channel, when it has one — Codex's
+    /// app-server — so what it does streams and what is said to it goes
+    /// through the harness. Off by default: the channel is experimental on
+    /// Codex's side.
+    #[serde(default)]
+    pub live: bool,
 }
 
 /// Whether a pane starts its agent again when the process ends. Closing a
@@ -255,6 +261,9 @@ impl From<HarnessConfig> for crate::harness::Harness {
             settings_version: None,
             transcript: c.transcript,
             interrupt: c.interrupt,
+            // A configured block cannot bring a live channel's client with
+            // it, any more than a parser.
+            live: None,
         }
     }
 }
@@ -288,6 +297,7 @@ pub fn default_agents() -> Vec<AgentConfig> {
             env: Default::default(),
             harness: None,
             restart: Restart::Never,
+            live: false,
         })
         .collect()
 }
@@ -450,6 +460,26 @@ mod tests {
             .expect("the built-in opencode agent should exist");
 
         assert_eq!(opencode.cmd, ["opencode", "--auto"]);
+    }
+
+    #[test]
+    fn a_live_channel_is_asked_for_by_the_template_and_off_unless_it_is() {
+        let cfg: ConfigFile = toml::from_str(
+            r#"
+            [[agent]]
+            name = "codex"
+            cmd = ["codex"]
+            live = true
+
+            [[agent]]
+            name = "claude"
+            cmd = ["claude"]
+            "#,
+        )
+        .unwrap();
+        assert!(cfg.agents[0].live);
+        assert!(!cfg.agents[1].live);
+        assert!(default_agents().iter().all(|agent| !agent.live), "nothing built in turns it on");
     }
 
     #[test]

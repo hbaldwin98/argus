@@ -394,6 +394,13 @@ fn handle(
             }
         }
         FromPhone::Visible { .. } => {}
+        FromPhone::Answer {
+            pane,
+            question,
+            choice,
+        } => {
+            let _ = app.asks.send(Ask::Answer(pane, question, choice));
+        }
         FromPhone::Key { pane, key } => match crate::screen::key_bytes(&key) {
             Some(bytes) => {
                 let _ = app.asks.send(Ask::Key(pane, bytes));

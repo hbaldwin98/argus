@@ -52,6 +52,7 @@ fn flat_harness() -> Harness {
         settings_version: None,
         transcript: None,
         interrupt: None,
+        live: None,
     }
 }
 
@@ -907,6 +908,143 @@ process.stdout.write(JSON.stringify(pushes));
     );
 }
 
+/// Runs `script` under node with a plugin's source beside it, returning
+/// what it printed; `None` when node is not installed.
+fn run_node(plugin_source: &str, script: &str) -> Option<Value> {
+    let dir = tempfile::tempdir().unwrap();
+    let plugin = dir.path().join("plugin.mjs");
+    let runner = dir.path().join("runner.mjs");
+    std::fs::write(&plugin, plugin_source).unwrap();
+    std::fs::write(&runner, script).unwrap();
+    let output = match std::process::Command::new("node")
+        .arg(&runner)
+        .arg(&plugin)
+        .env("ARGUS_HOOK_URL", "http://127.0.0.1/pane/1")
+        .env("ARGUS_HOOK_TOKEN", "test-token")
+        .output()
+    {
+        Ok(output) => output,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(e) => panic!("could not run node: {e}"),
+    };
+    assert!(output.status.success(), "node failed: {}", String::from_utf8_lossy(&output.stderr));
+    Some(serde_json::from_slice(&output.stdout).unwrap())
+}
+
+/// A fetch that serves the inbox once, as these server-sent events, and
+/// records every other request.
+const INBOX_STUB: &str = r#"
+const sent = [];
+let served = false;
+const inbox = (items) => new Response(new ReadableStream({
+  start(controller) {
+    for (const item of items) controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(item)}\n\n`));
+    controller.close();
+  },
+}), { status: 200 });
+const stubFetch = (items) => async (url, init) => {
+  if (url.endsWith("/inbox")) {
+    if (served) return { ok: false };
+    served = true;
+    return inbox(items);
+  }
+  sent.push({ url, body: init.body });
+};
+"#;
+
+#[test]
+fn the_opencode_plugin_takes_messages_interrupts_and_answers_through_opencode() {
+    let script = format!(
+        r#"
+import {{ pathToFileURL }} from "node:url";
+{INBOX_STUB}
+globalThis.fetch = stubFetch([
+  {{ Message: {{ text: "also run clippy", steer: false }} }},
+  "Interrupt",
+  {{ Answer: {{ question: "perm_1", choice: "once" }} }},
+]);
+const calls = [];
+const client = {{
+  session: {{
+    messages: async () => ({{ data: [] }}),
+    promptAsync: async (args) => calls.push(["prompt", args]),
+    abort: async (args) => calls.push(["abort", args]),
+  }},
+  postSessionIdPermissionsPermissionId: async (args) => calls.push(["permission", args]),
+}};
+const {{ ArgusStatus }} = await import(pathToFileURL(process.argv[2]));
+const hooks = await ArgusStatus({{ client }});
+const event = (type, properties) => hooks.event({{ event: {{ type, properties }} }});
+await event("session.created", {{ info: {{ id: "root" }} }});
+await event("permission.updated", {{ id: "perm_1", sessionID: "root", title: "Run cargo test?" }});
+await event("permission.replied", {{ sessionID: "root", permissionID: "perm_1", response: "once" }});
+await new Promise((resolve) => setTimeout(resolve, 400));
+const questions = sent
+  .filter((s) => s.url.endsWith("/transcript"))
+  .flatMap((s) => JSON.parse(s.body).updates)
+  .filter((u) => u.Upsert?.body?.Question)
+  .map((u) => u.Upsert);
+process.stdout.write(JSON.stringify({{ calls, questions }}));
+"#
+    );
+    let Some(result) = run_node(Harness::opencode().plugin.unwrap().source, &script) else {
+        return;
+    };
+    assert_eq!(
+        result["calls"],
+        json!([
+            ["prompt", { "path": { "id": "root" }, "body": { "parts": [{ "type": "text", "text": "also run clippy" }] } }],
+            ["abort", { "path": { "id": "root" } }],
+            ["permission", { "path": { "id": "root", "permissionID": "perm_1" }, "body": { "response": "once" } }],
+        ])
+    );
+    // The permission was posed as a question, and shown answered once it
+    // was; the two coalesce into the answered one within a push.
+    let question = result["questions"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!(question["id"], "perm_1");
+    assert_eq!(question["body"]["Question"]["prompt"], "Run cargo test?");
+    assert_eq!(question["body"]["Question"]["answered"], "once");
+    let push: argus_protocol::Update = serde_json::from_value(json!({ "Upsert": question })).unwrap();
+    assert!(matches!(push, argus_protocol::Update::Upsert(_)), "a question the daemon reads");
+}
+
+#[test]
+fn the_pi_extension_takes_messages_and_interrupts_through_pi() {
+    let script = format!(
+        r#"
+import {{ pathToFileURL }} from "node:url";
+{INBOX_STUB}
+globalThis.fetch = stubFetch([
+  {{ Message: {{ text: "steer left", steer: true }} }},
+  "Interrupt",
+]);
+const calls = [];
+const handlers = new Map();
+const pi = {{
+  on(name, handler) {{ handlers.set(name, handler); }},
+  sendUserMessage: (text, options) => calls.push(["send", text, options ?? null]),
+}};
+const {{ default: install }} = await import(pathToFileURL(process.argv[2]));
+install(pi);
+const ctx = {{
+  sessionManager: {{ getSessionId: () => "pi-session" }},
+  isIdle: () => false,
+  abort: () => calls.push(["abort"]),
+}};
+await handlers.get("session_start")({{}}, ctx);
+await new Promise((resolve) => setTimeout(resolve, 300));
+process.stdout.write(JSON.stringify(calls));
+"#
+    );
+    let Some(calls) = run_node(Harness::pi().plugin.unwrap().source, &script) else {
+        return;
+    };
+    assert_eq!(
+        calls,
+        json!([["send", "steer left", { "deliverAs": "steer" }], ["abort"]])
+    );
+}
+
 #[test]
 fn the_opencode_plugin_does_not_title_the_pane_from_the_user_prompt() {
     let dir = tempfile::tempdir().unwrap();
@@ -1018,7 +1156,10 @@ fn the_pi_extension_names_its_session_file_on_every_report() {
 import { pathToFileURL } from "node:url";
 
 const transcripts = [];
-globalThis.fetch = async (url, init) => { transcripts.push(init.headers["X-Argus-Transcript"] ?? null); };
+globalThis.fetch = async (url, init) => {
+  if (url.endsWith("/inbox")) return { ok: false };
+  transcripts.push(init.headers["X-Argus-Transcript"] ?? null);
+};
 const handlers = new Map();
 const { default: install } = await import(pathToFileURL(process.argv[2]));
 install({ on(name, handler) { handlers.set(name, handler); } });
@@ -1065,6 +1206,7 @@ import { pathToFileURL } from "node:url";
 
 const reports = [];
 globalThis.fetch = async (url, init) => {
+  if (url.endsWith("/inbox")) return { ok: false };
   reports.push({
     url,
     session: init.headers["X-Argus-Session"],

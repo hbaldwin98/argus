@@ -308,6 +308,7 @@ mod tests {
                             has_transcript: false,
                             since: None,
                             queued: Vec::new(),
+                            live: false,
                         })
                         .collect(),
                     git: None,
@@ -399,6 +400,7 @@ mod tests {
                     has_transcript: false,
                     since: None,
                     queued: Vec::new(),
+                    live: false,
                 }],
                 git: None,
                 primary: true,

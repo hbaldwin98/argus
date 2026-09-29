@@ -256,6 +256,7 @@ mod tests {
                         has_transcript: false,
                         since: None,
                         queued: Vec::new(),
+                        live: false,
                     }],
                 }],
             }],

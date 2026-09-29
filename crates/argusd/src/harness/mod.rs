@@ -46,6 +46,7 @@ use serde_json::{json, Value};
 
 mod hooks;
 mod install;
+pub mod live;
 mod skill;
 pub mod transcript;
 
@@ -176,6 +177,9 @@ pub struct Harness {
     /// the key every built-in harness takes. Never Ctrl-C: pressed twice it
     /// quits most of these CLIs.
     pub interrupt: Option<String>,
+    /// The live channel this CLI offers, which an agent template turns on
+    /// with `live = true`. See `live`.
+    pub live: Option<live::LiveChannel>,
 }
 
 impl Event {
@@ -254,6 +258,7 @@ impl Harness {
             settings_version: None,
             transcript: None,
             interrupt: None,
+            live: None,
         }
     }
 
@@ -294,6 +299,7 @@ impl Harness {
             settings_version: None,
             transcript: Some(transcript::Dialect::Claude),
             interrupt: None,
+            live: None,
         }
     }
 
@@ -327,6 +333,7 @@ impl Harness {
             settings_version: None,
             transcript: Some(transcript::Dialect::Codex),
             interrupt: None,
+            live: Some(live::LiveChannel::CodexAppServer),
         }
     }
 
@@ -361,6 +368,7 @@ impl Harness {
             settings_version: None,
             transcript: None,
             interrupt: None,
+            live: None,
         }
     }
 
@@ -391,6 +399,7 @@ impl Harness {
             settings_version: None,
             transcript: Some(transcript::Dialect::Pi),
             interrupt: None,
+            live: None,
         }
     }
 
@@ -422,6 +431,7 @@ impl Harness {
             settings_version: None,
             transcript: None,
             interrupt: None,
+            live: None,
         }
     }
 
@@ -466,6 +476,7 @@ impl Harness {
             settings_version: Some(1),
             transcript: Some(transcript::Dialect::Cursor),
             interrupt: None,
+            live: None,
         }
     }
 

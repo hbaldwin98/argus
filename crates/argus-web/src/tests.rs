@@ -173,6 +173,7 @@ fn tree() -> WorkspaceTree {
                         has_transcript: true,
                         since: Some(1_790_000_000),
                         queued: Vec::new(),
+                        live: false,
                     }],
                     git: None,
                     primary: true,

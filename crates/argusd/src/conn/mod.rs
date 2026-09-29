@@ -748,6 +748,7 @@ mod tests {
                 env: Default::default(),
                 harness: None,
                 restart: Default::default(),
+                live: false,
             }],
             harnesses: Vec::new(),
         });

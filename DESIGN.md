@@ -163,6 +163,7 @@ live in this crate and a contract written twice drifts in silence.
 | --- | --- |
 | `message` | what a client asks for, and what the daemon sends back |
 | `hello` | what each side of a connection can take, said before anything else |
+| `inbox` | what the daemon tells a harness's plugin over its inbox |
 | `transcript` | a pane's conversation as entries, and the updates that keep a copy of it current |
 | `tree` | what a client renders, which pane state outranks which, and what a row standing for several shows |
 | `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses |
@@ -192,6 +193,8 @@ to the type or its locking.
 | `state/session` | what survives a daemon restart |
 | `state/transcripts` | which file a pane's conversation is read from, and the clients following it |
 | `state/outbox` | what a client asked to say to an agent, and when it is typed |
+| `state/inbox` | the live channel a harness's plugin keeps open for what the daemon has to tell the agent |
+| `state/live` | running a pane's live channel: the harness's own server beside the pane, and Argus's connection to it |
 | `state/tree` | finding your way around the tree |
 | `state/features`, `state/tasks`, `state/decisions`, `state/diagrams` | a checkout's feature board, translated between client ids and store keys |
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
@@ -200,6 +203,7 @@ to the type or its locking.
 | `pty`, `pty/job`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; and its terminal emulator with the translation of its screen |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
+| `harness/live` | what a harness's own interface to its running session says, in Argus's terms |
 | `harness/transcript`, `harness/transcript/claude`, `harness/transcript/codex`, `harness/transcript/cursor`, `harness/transcript/pi` | what a harness's own transcript says, read one line at a time into entries, and how each harness writes its own |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
 | `store/boards`, `store/reviews` | the feature boards and the review comments, as stored |
@@ -761,6 +765,35 @@ while anything waits. The queue is not persisted, and an exited agent's queue is
 and the card changes when the tree says so. `Interrupt` types the harness's interrupt key: Esc,
 unless a `[[harness]]` block sets `interrupt`, and never Ctrl-C, which pressed twice quits most of
 these CLIs.
+
+A harness whose own interface can take what a person says gets it that way instead of as typing.
+A plugin running inside the agent opens `GET /pane/<id>/inbox`, which the pane API holds open as
+server-sent events of `argus_protocol::InboxItem`: a message (with `steer` for mid-turn), an
+interrupt, or the answer to a question. Only the pane's own session may open it, the newest
+connection replaces an older one, and it closes the moment the plugin's end of the socket does, so
+nothing is handed to a plugin that has gone. `PaneInfo::live` says one is open. While it is,
+`SendToAgent` goes straight to it — the harness waits or steers as it does, and nothing is typed,
+so nothing needs holding in the outbox — `Interrupt` goes to it instead of the interrupt key, and
+`Answer` reaches it; a pane without one takes answers on its screen. opencode's plugin turns these
+into `session.promptAsync`, `session.abort` and its permission response, and posts each permission
+it asks for as a `Question` entry (allow once, always allow, reject) that it marks answered when
+opencode says it was, from any surface. pi's extension turns messages into `sendUserMessage`,
+following up or steering while a turn runs, and interrupts into `abort`.
+
+Codex has a live channel of its own kind: its TUI can run on its app-server, which serves a thread
+to every client subscribed to it. An agent template that sets `live = true` on a harness that has
+one — only Codex, and off unless asked, since Codex marks the app-server experimental — starts
+`codex app-server --listen unix://…` with the pane's environment, so hooks it runs still report,
+and runs the TUI with `--remote` on it. The server lives exactly as long as the pane. The daemon
+connects as a second client over the WebSocket the socket speaks, takes the pane's inbox, and once
+Codex's hooks have named the conversation, resumes that thread to follow it. `harness/live` reads
+what it hears: items as they start and complete, agent-message deltas as `AppendText` — the reply
+arriving token by token — turn ends, and approval requests posed as questions whose answer goes
+back as the response to Codex's request, and which are marked answered when Codex says someone
+answered them elsewhere. Item ids are the ones Codex writes to its rollout file, so what arrives
+live and what is read from the file afterwards are the same entries. A message becomes
+`turn/start`, or `turn/steer` mid-turn; an interrupt `turn/interrupt`. Unix only: tokio has no Unix
+sockets on Windows, where the template's `live` is ignored.
 
 The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
 /pane/<id>/status/<working|idle|waiting|needs-review|done|failed>` with an optional body as the note,

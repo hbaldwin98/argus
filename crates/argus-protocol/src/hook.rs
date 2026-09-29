@@ -164,6 +164,9 @@ pub enum Endpoint {
     /// A [`crate::transcript::Push`]: conversation entries from a harness
     /// whose transcript is not a file Argus can read.
     Transcript,
+    /// `GET`, held open: the [`crate::InboxItem`]s for the agent, as
+    /// server-sent events.
+    Inbox,
 }
 
 impl Endpoint {
@@ -189,6 +192,7 @@ impl Endpoint {
             Endpoint::Diagrams => Cow::Borrowed("diagrams"),
             Endpoint::Telemetry => Cow::Borrowed("telemetry"),
             Endpoint::Transcript => Cow::Borrowed("transcript"),
+            Endpoint::Inbox => Cow::Borrowed("inbox"),
         }
     }
 }
@@ -227,6 +231,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "diagrams" => Endpoint::Diagrams,
         "telemetry" => Endpoint::Telemetry,
         "transcript" => Endpoint::Transcript,
+        "inbox" => Endpoint::Inbox,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -347,6 +352,7 @@ mod tests {
             Endpoint::Diagrams,
             Endpoint::Telemetry,
             Endpoint::Transcript,
+            Endpoint::Inbox,
         ];
         all.extend(Report::ALL.into_iter().map(Endpoint::Status));
         all

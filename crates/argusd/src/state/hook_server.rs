@@ -143,13 +143,21 @@ async fn handle_hook_request(
 
     let mut request_line = String::new();
     reader.read_line(&mut request_line).await?;
-    let path = request_line
-        .strip_prefix("POST ")
-        .and_then(|rest| rest.split(' ').next())
-        .unwrap_or("")
-        .to_string();
+    let (method, target) = request_line.split_once(' ').unwrap_or(("", ""));
+    let target = target.split(' ').next().unwrap_or("").to_string();
+    let path = if method == "POST" { target.clone() } else { String::new() };
 
     let headers = read_hook_headers(&mut reader, &daemon.hook_token).await?;
+    // The one request that is read rather than posted, and held open.
+    if method == "GET" {
+        if let Some((pane, Endpoint::Inbox)) = parse_request_target(&target).0 {
+            if !headers.authorized {
+                wr.write_all(&HookResponse::empty(401, "Unauthorized").bytes()).await?;
+                return Ok(());
+            }
+            return serve_inbox(reader, wr, daemon, pane, headers.reporter).await;
+        }
+    }
     let (authorized, content_length, reporter) =
         (headers.authorized, headers.content_length, headers.reporter);
     let (endpoint, artifact_scope) = parse_request_target(&path);
@@ -246,6 +254,56 @@ async fn handle_hook_request(
         daemon.report_transcript(pane, reporter.as_deref(), transcript);
     }
     wr.write_all(&response.bytes()).await?;
+    Ok(())
+}
+
+/// How often a quiet inbox says it is still there, so a plugin notices a
+/// daemon that went away and a daemon notices a plugin that did.
+const INBOX_HEARTBEAT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Holds a pane's inbox open, one server-sent event per item, until the
+/// plugin hangs up or a newer connection takes the pane.
+///
+/// The plugin never writes after its request, so anything read — its end of
+/// the socket closing — means it has gone, and the inbox closes at once
+/// rather than at the next item, which would otherwise be sent into a
+/// connection nobody holds and lost.
+async fn serve_inbox<R, W>(
+    mut rd: R,
+    mut wr: W,
+    daemon: Arc<Daemon>,
+    pane: PaneId,
+    reporter: Option<String>,
+) -> anyhow::Result<()>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let Some((generation, mut items)) = daemon.open_inbox(pane, reporter.as_deref()) else {
+        wr.write_all(&HookResponse::empty(409, "Conflict").bytes()).await?;
+        return Ok(());
+    };
+    let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-store\r\n\r\n";
+    let mut result = wr.write_all(head.as_bytes()).await;
+    let mut scratch = [0u8; 64];
+    while result.is_ok() {
+        let event = tokio::select! {
+            item = items.recv() => match item {
+                Some(item) => format!("data: {}\n\n", serde_json::to_string(&item)?),
+                None => break,
+            },
+            _ = rd.read(&mut scratch) => break,
+            _ = tokio::time::sleep(INBOX_HEARTBEAT) => ": still here\n\n".to_string(),
+        };
+        result = async {
+            wr.write_all(event.as_bytes()).await?;
+            wr.flush().await
+        }
+        .await;
+    }
+    daemon.close_inbox(pane, generation);
     Ok(())
 }
 

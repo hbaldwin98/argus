@@ -296,6 +296,7 @@ fn every_built_in_template_gets_a_harness_that_can_report() {
             env: Default::default(),
             harness: None,
             restart: Default::default(),
+            live: false,
         };
         let h = d.harness_for(&template);
         assert_ne!(

@@ -80,6 +80,25 @@ pub enum Body {
     /// agent started over, resumed another session, or compacted its
     /// context.
     Divider { text: String },
+    /// Something the agent is waiting on a person to choose — a permission
+    /// it asked for — posed by a harness that can take the answer through
+    /// its inbox. `answered` is the choice made, from any surface; an
+    /// answered question is only a record.
+    Question {
+        prompt: String,
+        choices: Vec<Choice>,
+        #[serde(default)]
+        answered: Option<String>,
+    },
+}
+
+/// One answer a question offers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Choice {
+    /// What the harness is told.
+    pub id: String,
+    /// What a person reads.
+    pub label: String,
 }
 
 /// Where a tool call has got to.
@@ -143,6 +162,18 @@ pub fn clipped(update: Update) -> Update {
                     failed,
                 },
                 turn @ Body::TurnEnd { .. } => turn,
+                Body::Question { prompt, choices, answered } => Body::Question {
+                    prompt: clip(&prompt, MAX_TEXT_BYTES),
+                    choices: choices
+                        .into_iter()
+                        .take(8)
+                        .map(|c| Choice {
+                            id: clip(&c.id, 64),
+                            label: one_line(&c.label),
+                        })
+                        .collect(),
+                    answered: answered.map(|a| clip(&a, 64)),
+                },
             };
             entry.id = clip(&entry.id, 256);
             Update::Upsert(entry)

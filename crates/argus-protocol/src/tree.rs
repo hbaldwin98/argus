@@ -184,6 +184,11 @@ pub struct PaneInfo {
     /// oldest first. See `ClientMsg::SendToAgent`.
     #[serde(default)]
     pub queued: Vec<QueuedMessage>,
+    /// Whether the agent's harness keeps a live channel open — its plugin's
+    /// inbox — so what is said to it goes through the harness rather than
+    /// being typed, and its questions can be answered.
+    #[serde(default)]
+    pub live: bool,
     // No transcript. It rode here once, up to 200 events a pane in every
     // tree every client was sent, and no client read it. A daemon from
     // before still sends the field, and the derive ignores a field it does
@@ -428,6 +433,7 @@ mod tests {
             has_transcript: false,
             since: None,
             queued: Vec::new(),
+            live: false,
         }
     }
 

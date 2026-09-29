@@ -137,7 +137,9 @@ up durable artifacts, and later agents receive the relevant subset without brows
 
 TARGET.md, "Mobile and web client", is the contract; each slice below ships and is tested on its
 own, in this order. Claude Code comes first because it has no live channel and is the harness the
-rest is tested from.
+rest is tested from. All seven have landed (DESIGN.md, "Process model" and "Panes and terminal
+state"); what remains is verifying Codex's live channel by hand against real turns, which is why it
+stays off unless a template asks.
 
 1. The daemon streams a pane's transcript: the transcript model in `argus-protocol`, the Claude
    Code dialect, file tailing, and a subscription negotiated in `Hello`.

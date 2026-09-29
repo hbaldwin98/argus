@@ -3,6 +3,8 @@
 
 mod branches;
 mod hook_lifecycle;
+mod inbox;
+mod live;
 mod pane_api;
 mod outbox;
 mod reconcile;
@@ -95,6 +97,7 @@ pub(super) fn daemon_with_a_restarting_agent(
             env: Default::default(),
             harness: None,
             restart,
+            live: false,
         }],
         harnesses: Vec::new(),
     })
@@ -132,6 +135,7 @@ pub(super) fn daemon_with_two_agent_checkouts(
             env: Default::default(),
             harness: None,
             restart: Default::default(),
+            live: false,
         }],
         harnesses: Vec::new(),
     })
@@ -303,6 +307,7 @@ pub(super) fn fake_claude_config(dir: &std::path::Path) -> ConfigFile {
             env: Default::default(),
             harness: None,
             restart: Default::default(),
+            live: false,
         }],
         harnesses: Vec::new(),
     }
@@ -324,6 +329,7 @@ pub(super) fn daemon_with_an_exclusive_project(dir: &std::path::Path) -> Arc<Dae
             env: Default::default(),
             harness: None,
             restart: Default::default(),
+            live: false,
         }],
         harnesses: Vec::new(),
     })
@@ -542,6 +548,7 @@ pub(super) fn restore_config(dir: &std::path::Path) -> ConfigFile {
             env: Default::default(),
             harness: None,
             restart: Default::default(),
+            live: false,
         }],
         harnesses: Vec::new(),
     }
@@ -637,6 +644,7 @@ pub(super) fn running_config(dir: &std::path::Path, names: &[&str], cmd: Vec<Str
                 env: Default::default(),
                 harness: Some("claude".into()),
                 restart: Default::default(),
+                live: false,
             })
             .collect(),
         harnesses: Vec::new(),

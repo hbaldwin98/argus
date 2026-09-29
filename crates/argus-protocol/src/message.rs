@@ -402,6 +402,13 @@ pub enum ClientMsg {
     Interrupt {
         pane: PaneId,
     },
+    /// Answer a question the agent's harness posed in its transcript
+    /// (`Body::Question`), by the question's entry id and a choice's id.
+    Answer {
+        pane: PaneId,
+        question: String,
+        choice: String,
+    },
     /// This client's greeting: the first message it sends, and the only one
     /// it sends before knowing the daemon can take more than the floor. A
     /// daemon from before the handshake hangs up on it, which is how the

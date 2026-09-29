@@ -54,6 +54,8 @@ pub enum Ask {
     RefreshScreen(u64),
     /// Keys straight to a pane.
     Key(u64, &'static [u8]),
+    /// Answer a question: the pane, the question's id, the choice's.
+    Answer(u64, String, String),
 }
 
 /// What the daemon connection keeps across reconnecting.
@@ -297,6 +299,11 @@ impl Link {
                 None => None,
             },
             Ask::RefreshScreen(_) => None,
+            Ask::Answer(pane, question, choice) => Some(ClientMsg::Answer {
+                pane: PaneId(pane),
+                question,
+                choice,
+            }),
             other => count(&mut self.watching, &other),
         }
     }
@@ -374,7 +381,8 @@ fn count(watching: &mut HashMap<u64, usize>, ask: &Ask) -> Option<ClientMsg> {
         | Ask::Screen(_)
         | Ask::Unscreen(_)
         | Ask::RefreshScreen(_)
-        | Ask::Key(..) => None,
+        | Ask::Key(..)
+        | Ask::Answer(..) => None,
     }
 }
 

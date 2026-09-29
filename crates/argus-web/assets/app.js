@@ -391,7 +391,8 @@ function renderAgent(pane) {
   // has only its screen.
   const was = state.lastStatus.get(pane);
   if (agent) state.lastStatus.set(pane, agent.status);
-  if (agent && agent.status === "waiting" && was !== undefined && was !== "waiting") {
+  // A harness with a live channel asks its questions in the conversation.
+  if (agent && !agent.live && agent.status === "waiting" && was !== undefined && was !== "waiting") {
     state.tabs.set(pane, "terminal");
   }
   const readable = !agent || agent.has_transcript;
@@ -678,6 +679,20 @@ function renderEntry(entry, results) {
       });
     case "divider":
       return el("div", { class: "divider", text: entry.text });
+    case "question":
+      // Posed by a harness that takes its answer through Argus. Answered
+      // anywhere — here, on the desktop — it stays only as a record.
+      return el("div", { class: `question${entry.answered ? " answered" : ""}` },
+        el("p", { class: "ask", text: entry.text }),
+        el("div", { class: "choices" },
+          ...(entry.choices || []).map(([id, label]) => el("button", {
+            text: label,
+            disabled: Boolean(entry.answered),
+            "aria-pressed": String(entry.answered === id),
+            onclick: () => send({ type: "answer", pane: currentPane(), question: entry.id, choice: id }),
+          })),
+        ),
+      );
     default:
       return null;
   }

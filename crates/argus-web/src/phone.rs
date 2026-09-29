@@ -85,6 +85,8 @@ pub enum FromPhone {
     /// Whether the page is on screen: a device looking at it is not pushed
     /// what it can already see.
     Visible { visible: bool },
+    /// Answer a question the agent's harness posed.
+    Answer { pane: u64, question: String, choice: String },
 }
 
 /// A daemon's answer to a message, as the page reads it.
@@ -125,6 +127,9 @@ pub struct Agent {
     pub loudest_child: Option<String>,
     pub since: Option<u64>,
     pub has_transcript: bool,
+    /// Whether the harness takes messages and answers itself, through its
+    /// plugin, rather than as typing.
+    pub live: bool,
     pub model: Option<String>,
     pub tool: Option<String>,
     /// Messages waiting for the agent's prompt, oldest first.
@@ -141,7 +146,7 @@ pub struct Queued {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum PhoneUpdate {
-    Upsert { entry: PhoneEntry },
+    Upsert { entry: Box<PhoneEntry> },
     Append { id: String, delta: String },
     Tool { id: String, state: &'static str },
 }
@@ -173,6 +178,12 @@ pub struct PhoneEntry {
     pub failed: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub millis: Option<u64>,
+    /// A question's answers, as `[id, label]`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub choices: Option<Vec<(String, String)>>,
+    /// The choice a question was answered with, from any surface.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub answered: Option<String>,
 }
 
 /// The pane API's word for a status, which is also what the page's styles
@@ -241,6 +252,7 @@ fn agent(project: &str, checkout: &str, pane: &PaneInfo) -> (u8, Agent) {
         loudest_child: loudest.child.map(str::to_string),
         since: pane.since,
         has_transcript: pane.has_transcript,
+        live: pane.live,
         model: pane.telemetry.model.clone(),
         tool: pane.telemetry.tool.clone(),
         queued: pane
@@ -311,8 +323,18 @@ pub fn update(update: Update) -> PhoneUpdate {
                     out.kind = "divider";
                     out.text = Some(text);
                 }
+                Body::Question {
+                    prompt,
+                    choices,
+                    answered,
+                } => {
+                    out.kind = "question";
+                    out.text = Some(prompt);
+                    out.choices = Some(choices.into_iter().map(|c| (c.id, c.label)).collect());
+                    out.answered = answered;
+                }
             }
-            PhoneUpdate::Upsert { entry: out }
+            PhoneUpdate::Upsert { entry: Box::new(out) }
         }
         Update::AppendText { id, delta } => PhoneUpdate::Append { id, delta },
         Update::ToolState { id, state } => PhoneUpdate::Tool {
@@ -344,6 +366,7 @@ mod tests {
             has_transcript: true,
             since: Some(1_790_000_000),
             queued: Vec::new(),
+            live: false,
         }
     }
 

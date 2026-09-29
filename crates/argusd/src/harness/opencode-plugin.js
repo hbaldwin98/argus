@@ -256,6 +256,93 @@ async function replay(client, sessionID) {
   }
 }
 
+// --- the inbox -----------------------------------------------------------
+//
+// What Argus has for the agent — a message from the phone, an interrupt,
+// the answer to a permission — arrives on a stream this plugin keeps open,
+// and goes in through opencode's own server rather than as typing, so it
+// can never land in a dialog. Silent and patient when nobody answers: the
+// daemon may be restarting.
+
+const permissions = new Map();
+let inboxOpen = false;
+
+// Unreferenced, so waiting to reconnect never keeps a process alive on
+// its own.
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms).unref?.());
+
+async function act(client, item) {
+  const session = { path: { id: rootSession } };
+  try {
+    if (item === "Interrupt") {
+      await client.session.abort(session);
+    } else if (item?.Message) {
+      const body = { parts: [{ type: "text", text: item.Message.text }] };
+      const send = client.session.promptAsync ?? client.session.prompt;
+      await send.call(client.session, { ...session, body });
+    } else if (item?.Answer) {
+      const asked = permissions.get(item.Answer.question);
+      await client.postSessionIdPermissionsPermissionId({
+        path: { id: asked?.sessionID ?? rootSession, permissionID: item.Answer.question },
+        body: { response: item.Answer.choice },
+      });
+    }
+  } catch {
+    // The agent is where it is; the phone sees what happens next.
+  }
+}
+
+async function openInbox(client) {
+  if (inboxOpen || !BASE || !TOKEN || !client) return;
+  inboxOpen = true;
+  let wait = 500;
+  for (;;) {
+    try {
+      const response = await fetch(`${BASE}/inbox`, {
+        headers: { authorization: `Bearer ${TOKEN}`, "X-Argus-Session": rootSession ?? "" },
+      });
+      if (response.ok && response.body) {
+        wait = 500;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let end;
+          while ((end = buffer.indexOf("\n\n")) >= 0) {
+            const event = buffer.slice(0, end);
+            buffer = buffer.slice(end + 2);
+            for (const line of event.split("\n")) {
+              if (line.startsWith("data: ")) await act(client, JSON.parse(line.slice(6)));
+            }
+          }
+        }
+      }
+    } catch {
+      // Nobody listening yet, or any more.
+    }
+    await sleep(wait);
+    wait = Math.min(wait * 2, 10000);
+  }
+}
+
+// A permission the agent is waiting on, as a question the phone can answer.
+function permissionQuestion(permission, answered = null) {
+  return entry(permission.id, {
+    Question: {
+      prompt: String(permission.title ?? "Allow this?"),
+      choices: [
+        { id: "once", label: "Allow once" },
+        { id: "always", label: "Always allow" },
+        { id: "reject", label: "Reject" },
+      ],
+      answered,
+    },
+  });
+}
+
 // A session belongs to this pane unless we saw it created with a parent.
 // The first session we hear about is the pane's own.
 function ownedByPane(sessionID) {
@@ -348,6 +435,7 @@ export const ArgusStatus = async ({ client } = {}) => {
       const root = ownedByPane(sessionID);
       if (root) await reportSession(rootSession);
       if (root && rootSession && replayedFor !== rootSession) await replay(client, rootSession);
+      if (rootSession) void openInbox(client);
 
       switch (type) {
         // The authoritative one. opencode drops the session to `idle` both
@@ -373,8 +461,18 @@ export const ArgusStatus = async ({ client } = {}) => {
         case "permission.asked":
         case "permission.updated":
           await report(sessionID ?? rootSession, "waiting", noteFrom(props));
+          // Only a plugin that can take the answer asks the question.
+          if (client && props.id) {
+            permissions.set(props.id, props);
+            queueUpdates([permissionQuestion(props)]);
+          }
           break;
-        case "permission.replied":
+        case "permission.replied": {
+          await report(sessionID ?? rootSession, "working");
+          const asked = permissions.get(props.permissionID);
+          if (asked) queueUpdates([permissionQuestion(asked, String(props.response ?? "answered"))]);
+          break;
+        }
         case "session.compacted":
           await report(sessionID ?? rootSession, "working");
           break;

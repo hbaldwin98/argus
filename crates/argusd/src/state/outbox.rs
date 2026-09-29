@@ -75,6 +75,19 @@ impl Daemon {
         let is_live_agent = |p: &Pane| {
             p.kind == PaneKind::Agent && !matches!(p.status, PaneStatus::Exited { .. })
         };
+        // A harness with a live channel takes the message itself, and waits
+        // or steers as it does; nothing is typed, so nothing needs holding.
+        let live = {
+            let inner = self.inner.lock().unwrap();
+            find_pane_ref(&inner.projects, pane).is_some_and(|p| is_live_agent(p) && p.inbox.is_some())
+        };
+        let message = argus_protocol::InboxItem::Message {
+            text: text.to_string(),
+            steer: now,
+        };
+        if live && self.tell(pane, message) {
+            return Sent::Typed;
+        }
         if now {
             let live = {
                 let inner = self.inner.lock().unwrap();
@@ -131,8 +144,12 @@ impl Daemon {
         removed
     }
 
-    /// Interrupts an agent with its harness's own key.
+    /// Interrupts an agent: through its live channel when it has one, else
+    /// with its harness's own key.
     pub fn interrupt(&self, pane: PaneId) -> anyhow::Result<()> {
+        if self.tell(pane, argus_protocol::InboxItem::Interrupt) {
+            return Ok(());
+        }
         let keys = {
             let inner = self.inner.lock().unwrap();
             let p = find_pane_ref(&inner.projects, pane).ok_or_else(|| anyhow::anyhow!("no such pane"))?;

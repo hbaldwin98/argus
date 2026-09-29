@@ -192,6 +192,18 @@ encrypted for the phone; it travels through the browser's push service (Apple's,
 Mozilla's), which is the only thing `argus web` sends off the machine. On iPhone, add the page to
 the home screen first.
 
+opencode and pi take what the phone says through their own plugins rather than as typing, and
+opencode's permission requests appear in the conversation as buttons. Codex can run the same way
+on its app-server, which streams replies as they are written; it is experimental on Codex's side,
+so it is off unless a template asks (Linux and macOS):
+
+```toml
+[[agent]]
+name = "codex"
+cmd = ["codex"]
+live = true
+```
+
 Conversations are read for Claude Code, Codex, Cursor's `agent`, pi and opencode. Any other harness
 can push its own with `argus-hook transcript` (see DESIGN.md), and shows its Terminal tab until it
 does.

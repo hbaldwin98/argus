@@ -17,6 +17,7 @@ pub mod framing;
 pub mod hello;
 pub mod hook;
 pub mod ids;
+pub mod inbox;
 pub mod memory;
 pub mod message;
 pub mod paths;
@@ -53,6 +54,7 @@ pub use hook::{
     SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, TRANSCRIPT_HEADER, URL_VAR,
 };
 pub use ids::{CheckoutId, IdGen, PaneId, ProjectId, RepositoryId, WorkspaceId};
+pub use inbox::InboxItem;
 pub use memory::{
     select_context_packet, Artifact, ArtifactContent, ArtifactKind, ArtifactState, ContextPacket,
     ContextQuery, ForwardedMaterial, InclusionReason, MemorySnapshot, MemorySource, PacketEntry,
@@ -71,7 +73,7 @@ pub use tasks::{
     checked_task_body, Task, TaskAction, TaskCounts, TaskList, TaskPlace, TaskState, TaskTreeRow,
     TaskWrite, MAX_TASK_BODY_BYTES, MAX_TASK_TITLE_BYTES,
 };
-pub use transcript::{Body, Earlier, Entry, Push, ToolState, Update, MAX_PUSH_BYTES};
+pub use transcript::{Body, Choice, Earlier, Entry, Push, ToolState, Update, MAX_PUSH_BYTES};
 pub use tree::{
     AgentTelemetry, CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneState, PaneStatus,
     ProjectInfo, QueuedMessage, RepositoryInfo, WorkspaceInfo, WorkspaceTree,

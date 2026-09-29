@@ -79,6 +79,11 @@ fn dispatch_pane(
             Ok(())
         }
         ClientMsg::Interrupt { pane } => daemon.interrupt(pane),
+        ClientMsg::Answer {
+            pane,
+            question,
+            choice,
+        } => daemon.answer(pane, question, choice),
         ClientMsg::Input { pane, bytes } => daemon.write_pane(pane, &bytes),
         ClientMsg::Paste { pane, text } => daemon.paste_pane(pane, &text),
         ClientMsg::Resize { pane, rows, cols } => daemon.resize_pane(viewer, pane, rows, cols),

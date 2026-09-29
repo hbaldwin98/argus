@@ -61,6 +61,7 @@ fn claude_reads_as_the_conversation_a_person_had() {
             Body::Divider { text } => format!("divider: {text}"),
             Body::Prompt { text } => format!("prompt: {text}"),
             Body::Thinking { .. } => "thinking".into(),
+            Body::Question { prompt, .. } => format!("question: {prompt}"),
         })
         .collect();
     assert_eq!(
@@ -165,6 +166,7 @@ fn described(updates: &[Update]) -> Vec<String> {
             Body::Notice { text } => format!("notice: {text}"),
             Body::TurnEnd { millis } => format!("turn end {millis:?}"),
             Body::Divider { text } => format!("divider: {text}"),
+            Body::Question { prompt, .. } => format!("question: {prompt}"),
         })
         .collect()
 }
