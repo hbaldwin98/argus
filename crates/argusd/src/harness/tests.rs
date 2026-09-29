@@ -920,6 +920,52 @@ fn pi_installs_its_project_extension_and_native_skill() {
 }
 
 #[test]
+fn the_pi_extension_names_its_session_file_on_every_report() {
+    let dir = tempfile::tempdir().unwrap();
+    let extension = dir.path().join("argus-status.mjs");
+    let runner = dir.path().join("runner.mjs");
+    std::fs::write(&extension, Harness::pi().plugin.unwrap().source).unwrap();
+    std::fs::write(
+        &runner,
+        r#"
+import { pathToFileURL } from "node:url";
+
+const transcripts = [];
+globalThis.fetch = async (url, init) => { transcripts.push(init.headers["X-Argus-Transcript"] ?? null); };
+const handlers = new Map();
+const { default: install } = await import(pathToFileURL(process.argv[2]));
+install({ on(name, handler) { handlers.set(name, handler); } });
+const ctx = {
+  sessionManager: { getSessionId: () => "pi-session", getSessionFile: () => "/home/u/.pi/agent/sessions/s.jsonl" },
+  isIdle: () => false,
+};
+await handlers.get("session_start")({}, ctx);
+await handlers.get("input")({ text: "go" }, ctx);
+process.stdout.write(JSON.stringify(transcripts));
+"#,
+    )
+    .unwrap();
+
+    let output = match std::process::Command::new("node")
+        .arg(&runner)
+        .arg(&extension)
+        .env("ARGUS_HOOK_URL", "http://127.0.0.1/pane/5")
+        .env("ARGUS_HOOK_TOKEN", "test-token")
+        .output()
+    {
+        Ok(output) => output,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+        Err(e) => panic!("could not run pi extension test: {e}"),
+    };
+    assert!(output.status.success(), "node failed: {}", String::from_utf8_lossy(&output.stderr));
+    let transcripts: Vec<Option<String>> = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(!transcripts.is_empty());
+    for transcript in transcripts {
+        assert_eq!(transcript.as_deref(), Some("/home/u/.pi/agent/sessions/s.jsonl"));
+    }
+}
+
+#[test]
 fn the_pi_extension_maps_its_lifecycle_to_the_pane_api() {
     let dir = tempfile::tempdir().unwrap();
     let extension = dir.path().join("argus-status.mjs");

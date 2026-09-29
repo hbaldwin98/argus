@@ -11,6 +11,9 @@ const INSTRUCTIONS = process.env.ARGUS_INSTRUCTIONS;
 let lastSession;
 let lastStatus;
 let delivery = Promise.resolve();
+// The session file pi writes this conversation to, sent with every report
+// so Argus can show the conversation. Updated whenever the session is.
+let transcript;
 
 function enqueue(task) {
   delivery = delivery.then(task, task);
@@ -25,6 +28,7 @@ async function post(path, body = "", session) {
   if (!BASE || !TOKEN) return;
   const headers = { authorization: `Bearer ${TOKEN}` };
   if (session) headers["X-Argus-Session"] = session;
+  if (transcript) headers["X-Argus-Transcript"] = transcript;
   try {
     await fetch(`${BASE}/${path}`, {
       method: "POST",
@@ -39,6 +43,8 @@ async function post(path, body = "", session) {
 }
 
 async function reportSession(ctx) {
+  const file = ctx.sessionManager?.getSessionFile?.();
+  if (typeof file === "string" && file) transcript = file;
   const id = sessionId(ctx);
   if (!id || id === lastSession) return id;
   lastSession = id;

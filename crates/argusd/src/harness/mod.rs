@@ -325,7 +325,7 @@ impl Harness {
             rule_file: None,
             skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: None,
-            transcript: None,
+            transcript: Some(transcript::Dialect::Codex),
             interrupt: None,
         }
     }
@@ -389,7 +389,7 @@ impl Harness {
             rule_file: None,
             skill_dir: Some(PathBuf::from(".pi/skills/argus")),
             settings_version: None,
-            transcript: None,
+            transcript: Some(transcript::Dialect::Pi),
             interrupt: None,
         }
     }
@@ -464,7 +464,7 @@ impl Harness {
             rule_file: Some(PathBuf::from(".cursor").join("rules").join("argus.mdc")),
             skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: Some(1),
-            transcript: None,
+            transcript: Some(transcript::Dialect::Cursor),
             interrupt: None,
         }
     }

@@ -13,6 +13,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 mod claude;
+mod codex;
+mod cursor;
+mod pi;
 
 /// Which harness wrote a transcript, and so how to read it. A `[[harness]]`
 /// block in the config names one with `transcript = "claude"`, since a
@@ -21,6 +24,9 @@ mod claude;
 #[serde(rename_all = "lowercase")]
 pub enum Dialect {
     Claude,
+    Codex,
+    Cursor,
+    Pi,
 }
 
 impl Dialect {
@@ -36,25 +42,31 @@ impl Dialect {
         };
         match self {
             Dialect::Claude => claude::read(&record, id),
+            Dialect::Codex => codex::read(&record, id),
+            Dialect::Cursor => cursor::read(&record, id),
+            Dialect::Pi => pi::read(&record, id),
         }
     }
 }
 
 /// A tool call's one-line summary, from whichever of the inputs harnesses
 /// commonly give a tool says most about what it is doing. A description
-/// the agent wrote for a person comes first, then the thing acted on.
+/// the agent wrote for a person comes first, then what it ran or looked
+/// for, then the thing acted on — a search names its pattern before the
+/// directory it searched.
 fn summary(input: &Value) -> String {
-    const KEYS: [&str; 12] = [
+    const KEYS: [&str; 13] = [
         "description",
         "command",
         "cmd",
+        "pattern",
+        "glob_pattern",
+        "query",
+        "url",
         "file_path",
         "filePath",
         "path",
         "notebook_path",
-        "pattern",
-        "url",
-        "query",
         "skill",
         "prompt",
     ];

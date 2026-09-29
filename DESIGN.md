@@ -186,7 +186,7 @@ to the type or its locking.
 | `pty`, `pty/job`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; and its terminal emulator with the translation of its screen |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
-| `harness/transcript`, `harness/transcript/claude` | what a harness's own transcript says, read one line at a time into entries, and how each harness writes its own |
+| `harness/transcript`, `harness/transcript/claude`, `harness/transcript/codex`, `harness/transcript/cursor`, `harness/transcript/pi` | what a harness's own transcript says, read one line at a time into entries, and how each harness writes its own |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
 | `store/boards`, `store/reviews` | the feature boards and the review comments, as stored |
 | `store/panel`, `store/session` | runtime changes to the panel, and the panes to bring back after a restart |
@@ -692,10 +692,16 @@ the records is sent the tree, which holds them all.
 A pane's conversation is read from the transcript its harness already writes; Argus stores none.
 Any report may carry `X-Argus-Transcript` naming the file, and `argus-hook` adds it to every report
 the installed form makes when the event's JSON has a `transcript_path` (Claude Code, Codex, Cursor).
-The daemon takes it only from the pane's own session, after the report itself is applied, so a
-session claim that makes a new conversation the pane's own lands first. It keeps the files a pane's
-conversation has lived in, oldest first; `PaneInfo::has_transcript` says whether there is one. The
-harness names a dialect (`transcript = "claude"`; only Claude Code's exists so far), and
+pi's extension sends it too, from `getSessionFile()`. The daemon takes it only from the pane's own
+session, after the report itself is applied, so a session claim that makes a new conversation the
+pane's own lands first. It keeps the files a pane's conversation has lived in, oldest first;
+`PaneInfo::has_transcript` says whether there is one. The harness names a dialect
+(`transcript = "claude"`, `"codex"`, `"cursor"` or `"pi"`). Claude Code writes a record per finished
+content block. Codex is read from its `item_completed` events — its own items, the person's message,
+the agent's, a command with its output, a file change — and not from the raw model exchange beside
+them, which carries injected instructions and the script its tools run in. Cursor writes messages
+with no ids, times or tool results, so its tool calls show as done, and its hidden reasoning as a
+`[REDACTED]` that is dropped. pi writes provider messages with each tool result naming its call.
 `harness/transcript` reads one JSON line at a time into the harness-neutral entries of
 `argus_protocol::transcript`: prompts, replies, thinking, tool calls and results, notices, turn
 ends and dividers. An entry is named after its file and byte offset, or after the harness's own id
