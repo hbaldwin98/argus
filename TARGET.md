@@ -162,6 +162,50 @@ client window. The navigation columns remain accessible via a keybinding or mous
 With several clients, PTY size has deterministic ownership or arbitration. A smaller background
 view cannot continuously resize a pane away from the active owner.
 
+## Mobile and web client
+
+A browser, including a phone, is one more client. It lists every agent the daemon runs, shows each
+one as a conversation rather than a terminal, takes a reply into the running agent, stops it,
+answers what it is waiting on, and is told when an agent needs someone. It works for every
+harness, and it never runs a harness headless or changes how one behaves: the agent the phone talks
+to is the one on the desktop.
+
+`argus web` serves it. It is a foreground client of the local daemon, as `argus bridge` is, so the
+daemon never listens on a network and exposure lasts exactly as long as the process. It binds
+`127.0.0.1:7420` by default, a fixed port so an installed page keeps its origin; `--listen` opts
+into another address. Argus terminates no TLS; a phone reaches the machine through Tailscale Serve
+or a similar proxy. Such a server can type into agents, so it is a shell on the machine: a phone
+pairs with a single-use code that `argus web` prints with a QR code, receives a revocable device
+token stored only as a hash, and every WebSocket upgrade must come from the served origin. The page
+and its JSON contract ship in the binary that speaks them, as plain JS with no build step.
+Transcript text is untrusted, so markdown is rendered in Rust with raw HTML escaped, and the page
+runs no inline script.
+
+A conversation comes from what the harness already records. Claude Code, Codex, Cursor's `agent`
+and pi write live JSONL; the daemon learns the file from the hook payload or pi's extension, tails
+it, and parses it by dialect into one transcript model whose entries keep stable ids and can be
+replaced or appended to. opencode's plugin replays and streams its session, and any harness can
+push entries through the pane API. Argus stores no transcript: the harness's file is the record,
+and the daemon keeps a bounded tail and pages the rest on request. A harness with no transcript
+shows its screen.
+
+A reply goes into the PTY as one paste and Enter, but only when the pane is idle. While the agent
+works or waits, the reply sits in a daemon outbox that the phone and the TUI both show and either
+can cancel, because typing into a dialog can answer it. Stop sends the harness's interrupt key,
+never Ctrl-C. A prompt is answered from the pane's screen: the daemon's grid drawn cell by cell
+with a key bar, opened by itself when the pane waits. The phone never resizes a pane.
+
+Where a harness offers a client protocol for its running session, the phone gets more through it.
+Codex's TUI can run on an app-server that several clients share, and opencode's TUI is already a
+client of its own server; both stream tokens, take turns and interrupts, and pose approvals as
+requests that either surface can answer, with the other told. pi's extension runs inside the
+agent and can stream and inject. On such a channel replies, Stop and approvals go through it
+rather than the PTY. Claude Code has no such protocol: headless resume against a live session
+forks it, so a Claude conversation updates per finished content block.
+
+Web Push tells a phone when a pane starts waiting or a turn ends. It needs the page served over
+HTTPS, and a push carries the pane's title and status, never transcript text.
+
 ## Protocol and safety
 
 The protocol remains host-agnostic and gains version/capability negotiation before remote use.

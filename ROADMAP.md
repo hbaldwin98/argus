@@ -133,6 +133,25 @@ up durable artifacts, and later agents receive the relevant subset without brows
 - SSH remote hosts landed (DESIGN.md, "Process model"). The client never installs argus on a
   remote machine; a missing or older argus there is reported with what to install.
 
+## P9: Mobile and Web Client
+
+TARGET.md, "Mobile and web client", is the contract; each slice below ships and is tested on its
+own, in this order. Claude Code comes first because it has no live channel and is the harness the
+rest is tested from.
+
+1. The daemon streams a pane's transcript: the transcript model in `argus-protocol`, the Claude
+   Code dialect, file tailing, and a subscription negotiated in `Hello`.
+2. `argus web`, read-only: the `argus-web` crate, pairing and device tokens, the security headers,
+   the daemon-wide agent list, and the conversation page.
+3. Replies: the daemon outbox that waits for an idle pane, and Stop through each harness's
+   interrupt key.
+4. The screen: a subscription that never resizes, the grid drawn in the page, and the key bar.
+5. Every harness: the Codex, Cursor and pi dialects, pushed entries, and opencode's plugin.
+6. Installable page and Web Push over HTTPS.
+7. Live channels: opencode's server, Codex's app-server behind a setting, and pi's extension.
+
+After these, spawning and closing agents from the phone.
+
 ## Open Decisions
 
 - True child-process reattachment versus guaranteed termination plus harness resume.
