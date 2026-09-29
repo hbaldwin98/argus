@@ -166,10 +166,11 @@ live in this crate and a contract written twice drifts in silence.
 | module | answers |
 | --- | --- |
 | `message` | what a client asks for, and what the daemon sends back |
-| `hello` | what each side of a connection can take, said before anything else |
+| `hello` | what each side of a connection can take, said before anything else, and how a client's greeting went |
 | `inbox` | what the daemon tells a harness's plugin over its inbox |
 | `transcript` | a pane's conversation as entries, and the updates that keep a copy of it current |
 | `tree` | what a client renders, which pane state outranks which, and what a row standing for several shows |
+| `held_tree` | a client's copy of the tree: every pane in it, telemetry applied to it between trees, and which panes changed state from the copy before |
 | `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses |
 | `cell`, `framing`, `transport` | a screen cell, a frame, and the endpoint they travel over |
 | `damage` | what changed on a pane's screen, as runs of cells and regions that scrolled |

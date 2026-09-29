@@ -14,6 +14,7 @@ pub mod decisions;
 pub mod diagrams;
 pub mod features;
 pub mod framing;
+pub mod held_tree;
 pub mod hello;
 pub mod hook;
 pub mod ids;
@@ -46,9 +47,10 @@ pub use features::{
     FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES, MAX_HOLD_BYTES,
 };
 pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
+pub use held_tree::{transitions, HeldTree, Transition};
 pub use hello::{
-    Hello, CAPABILITIES, CELL_RUNS, LIVE_CHANNELS, OUTBOX, PANE_TELEMETRY, PROTOCOL, TRANSCRIPTS,
-    WIDE_TREE,
+    Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, GREETING_WAIT, LIVE_CHANNELS, OUTBOX,
+    PANE_TELEMETRY, PROTOCOL, TRANSCRIPTS, WIDE_TREE,
 };
 pub use hook::{
     endpoint_url, feature_url, pane_path, pane_url, parse_pane_path, parse_pane_url,
