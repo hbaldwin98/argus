@@ -116,6 +116,146 @@ async function messageTelemetry(info) {
   );
 }
 
+// --- the conversation ----------------------------------------------------
+//
+// opencode keeps its conversation in its own database rather than a file
+// Argus can read, so this sends it: the whole session whenever the pane's
+// conversation starts or changes, then each part as it is written. The
+// entries are Argus's own shape (argus_protocol::transcript); the daemon
+// clips them, keeps the recent end, and shows them to whoever watches.
+
+const roles = new Map();
+const pending = new Map();
+let flushing;
+let replayedFor;
+
+// Well under the daemon's limit on one push, so a long replay goes in parts.
+const PUSH_BYTES = 192 * 1024;
+
+function entry(id, body, time) {
+  return { Upsert: { id: String(id), at: time ? new Date(time).toISOString() : null, body } };
+}
+
+// What one part of a message says, as entries. A tool part carries its
+// call and, once it has one, its result.
+function partUpdates(part, role) {
+  switch (part?.type) {
+    case "text": {
+      if (part.synthetic || part.ignored || !String(part.text ?? "").trim()) return [];
+      const body = role === "user" ? { Prompt: { text: part.text } } : { Reply: { text: part.text } };
+      return [entry(part.id, body, part.time?.start)];
+    }
+    case "reasoning":
+      if (!String(part.text ?? "").trim()) return [];
+      return [entry(part.id, { Thinking: { text: part.text } }, part.time?.start)];
+    case "tool": {
+      const state = part.state ?? {};
+      const input = state.input ?? {};
+      const done = state.status === "completed" || state.status === "error";
+      const summary =
+        state.title || input.description || input.command || input.filePath || input.pattern || input.url || "";
+      const updates = [
+        entry(
+          part.id,
+          {
+            ToolCall: {
+              tool: String(part.tool ?? "tool"),
+              summary: String(summary),
+              input: JSON.stringify(input, null, 2),
+              state: state.status === "completed" ? "Done" : state.status === "error" ? "Failed" : "Running",
+            },
+          },
+          state.time?.start,
+        ),
+      ];
+      if (done) {
+        updates.push(
+          entry(
+            `${part.id}.result`,
+            {
+              ToolResult: {
+                call: String(part.id),
+                output: String(state.output ?? state.error ?? ""),
+                failed: state.status === "error",
+              },
+            },
+            state.time?.end,
+          ),
+        );
+      }
+      return updates;
+    }
+    default:
+      return [];
+  }
+}
+
+async function pushTranscript(updates, fresh) {
+  if (!BASE || !TOKEN || !rootSession) return;
+  // Split so no one push outgrows what the daemon takes; only the first of
+  // a replay starts the conversation over.
+  const batches = [[]];
+  let size = 0;
+  for (const update of updates) {
+    const length = JSON.stringify(update).length;
+    if (size + length > PUSH_BYTES && batches[batches.length - 1].length) {
+      batches.push([]);
+      size = 0;
+    }
+    batches[batches.length - 1].push(update);
+    size += length;
+  }
+  for (const [index, batch] of batches.entries()) {
+    if (!batch.length && !(fresh && index === 0)) continue;
+    try {
+      await fetch(`${BASE}/transcript`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          "content-type": "application/json",
+          "X-Argus-Session": rootSession,
+        },
+        body: JSON.stringify({ fresh: fresh && index === 0, updates: batch }),
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch {
+      // Best-effort, like status.
+    }
+  }
+}
+
+// Parts change many times a second while a reply streams; each entry is
+// sent at most every quarter second, as it then stands.
+function queueUpdates(updates) {
+  for (const update of updates) pending.set(update.Upsert?.id ?? JSON.stringify(update), update);
+  flushing ??= setTimeout(async () => {
+    flushing = undefined;
+    const batch = [...pending.values()];
+    pending.clear();
+    await pushTranscript(batch, false);
+  }, 250);
+}
+
+// The whole of a conversation, read back through opencode's own server.
+async function replay(client, sessionID) {
+  if (!client?.session?.messages) return;
+  replayedFor = sessionID;
+  try {
+    const response = await client.session.messages({ path: { id: sessionID } });
+    const messages = response?.data ?? response ?? [];
+    const updates = [];
+    for (const message of Array.isArray(messages) ? messages : []) {
+      if (message?.info?.id) roles.set(message.info.id, message.info.role);
+      for (const part of message?.parts ?? []) updates.push(...partUpdates(part, message?.info?.role));
+    }
+    pending.clear();
+    await pushTranscript(updates, true);
+  } catch {
+    // An opencode without the call, or one busy starting: the parts that
+    // stream from here on still arrive.
+  }
+}
+
 // A session belongs to this pane unless we saw it created with a parent.
 // The first session we hear about is the pane's own.
 function ownedByPane(sessionID) {
@@ -137,7 +277,7 @@ function noteFrom(props) {
   return typeof raw === "string" ? raw.split("\n")[0].trim().slice(0, 200) : "";
 }
 
-export const ArgusStatus = async () => {
+export const ArgusStatus = async ({ client } = {}) => {
   if (!BASE || !TOKEN) return {};
 
   return {
@@ -183,7 +323,17 @@ export const ArgusStatus = async () => {
       // is showing; otherwise every event from the new conversation would
       // be mistaken for another session and the previous status would stick.
       if (type === "message.updated") {
+        if (props.info?.id) roles.set(props.info.id, props.info.role);
         if (ownedByPane(props.info?.sessionID)) await messageTelemetry(props.info);
+        return;
+      }
+      if (type === "message.part.updated") {
+        const part = props.part;
+        if (part && ownedByPane(part.sessionID)) {
+          await reportSession(rootSession);
+          if (replayedFor !== rootSession) await replay(client, rootSession);
+          queueUpdates(partUpdates(part, roles.get(part.messageID) ?? "assistant"));
+        }
         return;
       }
       if (type === "session.created" && props.info?.id && !props.info.parentID) {
@@ -192,10 +342,12 @@ export const ArgusStatus = async () => {
         lastTelemetry = undefined;
         await reportSession(rootSession);
         await report(rootSession, "idle");
+        await replay(client, rootSession);
         return;
       }
       const root = ownedByPane(sessionID);
       if (root) await reportSession(rootSession);
+      if (root && rootSession && replayedFor !== rootSession) await replay(client, rootSession);
 
       switch (type) {
         // The authoritative one. opencode drops the session to `idle` both
@@ -211,6 +363,7 @@ export const ArgusStatus = async () => {
         }
         case "session.idle":
           await report(sessionID ?? rootSession, "idle");
+          if (root) queueUpdates([entry(`turn-${Date.now()}`, { TurnEnd: { millis: null } })]);
           break;
         case "session.deleted":
           await report(sessionID ?? rootSession, "idle");

@@ -71,7 +71,7 @@ pub use tasks::{
     checked_task_body, Task, TaskAction, TaskCounts, TaskList, TaskPlace, TaskState, TaskTreeRow,
     TaskWrite, MAX_TASK_BODY_BYTES, MAX_TASK_TITLE_BYTES,
 };
-pub use transcript::{Body, Earlier, Entry, ToolState, Update};
+pub use transcript::{Body, Earlier, Entry, Push, ToolState, Update, MAX_PUSH_BYTES};
 pub use tree::{
     AgentTelemetry, CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneState, PaneStatus,
     ProjectInfo, QueuedMessage, RepositoryInfo, WorkspaceInfo, WorkspaceTree,

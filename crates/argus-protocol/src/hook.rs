@@ -161,6 +161,9 @@ pub enum Endpoint {
     Diagrams,
     /// A partial [`crate::AgentTelemetry`] report, as JSON.
     Telemetry,
+    /// A [`crate::transcript::Push`]: conversation entries from a harness
+    /// whose transcript is not a file Argus can read.
+    Transcript,
 }
 
 impl Endpoint {
@@ -185,6 +188,7 @@ impl Endpoint {
             Endpoint::Tasks => Cow::Borrowed("tasks"),
             Endpoint::Diagrams => Cow::Borrowed("diagrams"),
             Endpoint::Telemetry => Cow::Borrowed("telemetry"),
+            Endpoint::Transcript => Cow::Borrowed("transcript"),
         }
     }
 }
@@ -222,6 +226,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "tasks" => Endpoint::Tasks,
         "diagrams" => Endpoint::Diagrams,
         "telemetry" => Endpoint::Telemetry,
+        "transcript" => Endpoint::Transcript,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -341,6 +346,7 @@ mod tests {
             Endpoint::Tasks,
             Endpoint::Diagrams,
             Endpoint::Telemetry,
+            Endpoint::Transcript,
         ];
         all.extend(Report::ALL.into_iter().map(Endpoint::Status));
         all

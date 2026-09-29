@@ -88,11 +88,13 @@ mod board;
 mod context;
 mod installed;
 mod telemetry;
+mod transcript;
 mod transport;
 
 use board::*;
 use installed::*;
 use telemetry::*;
+use transcript::*;
 use transport::*;
 
 fn main() {
@@ -143,6 +145,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("decisions", decisions),
     ("decide", decide),
     ("telemetry", telemetry),
+    ("transcript", transcript),
 ];
 
 fn dispatch(command: Option<&str>, rest: &[&str]) {
@@ -291,6 +294,26 @@ mod tests {
             "",
         );
         assert!(!forged.contains(TRANSCRIPT_HEADER), "{forged}");
+    }
+
+    #[test]
+    fn transcript_flags_become_entries_in_order() {
+        let push = from_flags(&["--prompt", "fix it", "--id", "r1", "--reply", "done", "--turn-end"]);
+        assert!(!push.fresh);
+        let bodies: Vec<_> = push
+            .updates
+            .iter()
+            .map(|u| match u {
+                argus_protocol::Update::Upsert(e) => (e.id.starts_with("hook-") || e.id == "r1", e.body.clone()),
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(bodies[0].1, argus_protocol::Body::Prompt { text: "fix it".into() });
+        assert_eq!(bodies[1].1, argus_protocol::Body::Reply { text: "done".into() });
+        assert!(matches!(&push.updates[1], argus_protocol::Update::Upsert(e) if e.id == "r1"));
+        assert_eq!(bodies[2].1, argus_protocol::Body::TurnEnd { millis: None });
+        assert!(bodies.iter().all(|(named, _)| *named));
+        assert!(from_flags(&["--fresh"]).fresh);
     }
 
     #[test]

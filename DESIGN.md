@@ -709,6 +709,18 @@ for a tool call, so reading a line again replaces rather than repeats it. Text i
 leaves the daemon, and a harness's bookkeeping records, subagent sidechains and what the CLI adds
 on the person's behalf are left out.
 
+A harness whose conversation is no file Argus can read pushes it instead: `POST
+/pane/<id>/transcript` with an `argus_protocol::transcript::Push` — entries in Argus's own shape,
+and `fresh` to start the conversation over — up to 256 KiB a request, every text clipped on
+arrival. `argus-hook transcript` sends one from flags (`--prompt`, `--reply`, `--notice`,
+`--turn-end`, `--id`, `--fresh`) or as JSON on stdin. Pushed entries come only from the pane's own
+session and are kept in memory, the latest 500, since there is nothing to read them back from.
+opencode keeps its conversation in its own database, so its plugin replays the whole session
+through opencode's own server whenever the pane's conversation starts or changes, in parts that fit
+the limit, then pushes each part as it changes — at most every quarter second per entry, which
+makes a streaming reply arrive as it grows — and a turn's end on `session.idle`. A daemon that
+restarts relaunches opencode, whose plugin replays again.
+
 A client that greeted with `transcripts` sends `WatchTranscript` and is answered with a fresh
 `Transcript` — the last megabyte of the current file — and then every update after it. One task per
 watched pane polls the file's length four times a second while anyone watches: a harness appends

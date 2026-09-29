@@ -821,6 +821,93 @@ process.stdout.write(JSON.stringify(reports));
 }
 
 #[test]
+fn the_opencode_plugin_replays_its_conversation_then_streams_what_follows() {
+    let dir = tempfile::tempdir().unwrap();
+    let plugin = dir.path().join("argus-status.mjs");
+    let runner = dir.path().join("runner.mjs");
+    std::fs::write(&plugin, Harness::opencode().plugin.unwrap().source).unwrap();
+    std::fs::write(
+        &runner,
+        r#"
+import { pathToFileURL } from "node:url";
+
+const pushes = [];
+globalThis.fetch = async (url, init) => {
+  if (url.endsWith("/transcript")) pushes.push({ session: init.headers["X-Argus-Session"], ...JSON.parse(init.body) });
+};
+const client = {
+  session: {
+    messages: async ({ path }) => ({
+      data: path.id !== "root" ? [] : [
+        { info: { id: "m1", role: "user" }, parts: [{ id: "p1", type: "text", text: "fix the build" }] },
+        { info: { id: "m2", role: "assistant" }, parts: [
+          { id: "p2", type: "tool", tool: "bash", state: { status: "completed", input: { command: "cargo build" }, output: "ok", title: "cargo build" } },
+        ] },
+      ],
+    }),
+  },
+};
+const { ArgusStatus } = await import(pathToFileURL(process.argv[2]));
+const hooks = await ArgusStatus({ client });
+const event = (type, properties) => hooks.event({ event: { type, properties } });
+await event("session.created", { info: { id: "root" } });
+await event("message.updated", { info: { id: "m3", role: "assistant", sessionID: "root" } });
+await event("message.part.updated", { part: { id: "p3", messageID: "m3", sessionID: "root", type: "text", text: "Build" } });
+await event("message.part.updated", { part: { id: "p3", messageID: "m3", sessionID: "root", type: "text", text: "Build fixed." } });
+await event("session.created", { info: { id: "child", parentID: "root" } });
+await event("message.part.updated", { part: { id: "c1", messageID: "c", sessionID: "child", type: "text", text: "subagent" } });
+await new Promise((resolve) => setTimeout(resolve, 400));
+process.stdout.write(JSON.stringify(pushes));
+"#,
+    )
+    .unwrap();
+
+    let output = match std::process::Command::new("node")
+        .arg(&runner)
+        .arg(&plugin)
+        .env("ARGUS_HOOK_URL", "http://127.0.0.1/pane/1")
+        .env("ARGUS_HOOK_TOKEN", "test-token")
+        .output()
+    {
+        Ok(output) => output,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+        Err(e) => panic!("could not run opencode plugin test: {e}"),
+    };
+    assert!(output.status.success(), "node failed: {}", String::from_utf8_lossy(&output.stderr));
+    let pushes: Vec<argus_protocol::Push> = serde_json::from_slice::<Vec<Value>>(&output.stdout)
+        .unwrap()
+        .into_iter()
+        .map(|mut p| {
+            assert_eq!(p["session"], "root", "sent as the pane's own conversation");
+            p.as_object_mut().unwrap().remove("session");
+            serde_json::from_value(p).expect("a push the daemon reads")
+        })
+        .collect();
+
+    let described = |push: &argus_protocol::Push| -> Vec<String> {
+        push.updates
+            .iter()
+            .map(|u| match u {
+                argus_protocol::Update::Upsert(e) => format!("{}: {:?}", e.id, e.body),
+                other => format!("{other:?}"),
+            })
+            .collect()
+    };
+    assert_eq!(pushes.len(), 2, "{pushes:?}");
+    assert!(pushes[0].fresh, "a replay starts the conversation over");
+    let replay = described(&pushes[0]);
+    assert!(replay[0].starts_with("p1: Prompt"), "{replay:?}");
+    assert!(replay[1].starts_with("p2: ToolCall") && replay[1].contains("Done"), "{replay:?}");
+    assert!(replay[2].starts_with("p2.result: ToolResult"), "{replay:?}");
+    assert!(!pushes[1].fresh);
+    assert_eq!(
+        described(&pushes[1]),
+        ["p3: Reply { text: \"Build fixed.\" }"],
+        "the streamed reply is sent once, as it stood, and the child's parts not at all"
+    );
+}
+
+#[test]
 fn the_opencode_plugin_does_not_title_the_pane_from_the_user_prompt() {
     let dir = tempfile::tempdir().unwrap();
     let plugin = dir.path().join("argus-status.mjs");

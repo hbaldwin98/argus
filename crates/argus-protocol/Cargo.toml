@@ -12,3 +12,6 @@ rmp-serde = { workspace = true }
 compact_str = { workspace = true }
 directories = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

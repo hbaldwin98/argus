@@ -295,3 +295,78 @@ async fn a_new_session_names_its_file_on_the_same_report_that_claims_the_pane() 
     assert!(pane_info(&d, pane).has_transcript);
     let _ = d.close_pane(pane);
 }
+
+fn push(fresh: bool, texts: &[&str]) -> argus_protocol::Push {
+    argus_protocol::Push {
+        fresh,
+        updates: texts
+            .iter()
+            .map(|text| {
+                Update::Upsert(argus_protocol::Entry {
+                    id: format!("id-{text}"),
+                    at: None,
+                    body: Body::Reply {
+                        text: text.to_string(),
+                    },
+                })
+            })
+            .collect(),
+    }
+}
+
+#[tokio::test]
+async fn a_pushed_conversation_is_offered_held_and_sent_to_watchers() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = agent(dir.path());
+    d.set_pane_session_id(pane, "s1");
+    assert!(!pane_info(&d, pane).has_transcript);
+
+    d.report_pushed(pane, Some("s1"), push(true, &["one", "two"]));
+    assert!(pane_info(&d, pane).has_transcript);
+    let mut rx = d.watch_transcript(pane);
+    assert_eq!(said(&transcript(d.transcript_tail(pane)).2), ["one", "two"]);
+
+    d.report_pushed(pane, Some("s1"), push(false, &["three"]));
+    let (fresh, _, updates) = next_update(&mut rx).await;
+    assert!(!fresh);
+    assert_eq!(said(&updates), ["three"]);
+
+    // A replay replaces everything pushed before it.
+    d.report_pushed(pane, Some("s1"), push(true, &["again"]));
+    assert!(next_update(&mut rx).await.0);
+    assert_eq!(said(&transcript(d.transcript_tail(pane)).2), ["again"]);
+
+    // A CLI inside the pane is not the pane's conversation.
+    d.report_pushed(pane, Some("child"), push(false, &["intruder"]));
+    assert_eq!(said(&transcript(d.transcript_tail(pane)).2), ["again"]);
+    let _ = d.close_pane(pane);
+}
+
+#[tokio::test]
+async fn a_pushed_conversation_keeps_only_its_recent_end() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = agent(dir.path());
+    let texts: Vec<String> = (0..600).map(|n| format!("m{n}")).collect();
+    let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+    d.report_pushed(pane, None, push(false, &refs));
+    let held = said(&transcript(d.transcript_tail(pane)).2);
+    assert_eq!(held.len(), 500);
+    assert_eq!(held.first().map(String::as_str), Some("m100"));
+    assert_eq!(held.last().map(String::as_str), Some("m599"));
+    let _ = d.close_pane(pane);
+}
+
+#[tokio::test]
+async fn a_push_bigger_than_an_ordinary_hook_is_taken_by_the_pane_api() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = agent(dir.path());
+    d.start_hook_server().unwrap();
+    let long = "x".repeat(20_000);
+    let body = serde_json::to_string(&push(false, &[long.as_str()])).unwrap();
+
+    let response = post_agent_hook(&d, pane, argus_protocol::Endpoint::Transcript, &body).await;
+
+    assert!(response.starts_with(b"HTTP/1.1 200 OK"), "{}", String::from_utf8_lossy(&response));
+    assert!(pane_info(&d, pane).has_transcript);
+    let _ = d.close_pane(pane);
+}

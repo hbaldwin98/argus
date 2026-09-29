@@ -90,6 +90,9 @@ struct Pane {
     /// above it for as long as the daemon remembers the pane. Not
     /// persisted: a restored agent names its file again on its first hook.
     transcripts: Vec<PathBuf>,
+    /// What a harness whose transcript is no file pushed of its
+    /// conversation: the latest entries, bounded. See `transcripts`.
+    pushed: Option<transcripts::Pushed>,
     /// When `status` last changed, for a client to say how long the pane
     /// has been where it is, and for the outbox to tell a turn has passed.
     status_since: std::time::SystemTime,
@@ -372,7 +375,7 @@ fn project_info(p: &Project) -> ProjectInfo {
                                         })
                                         .collect(),
                                     telemetry: pane.telemetry.clone(),
-                                    has_transcript: !pane.transcripts.is_empty(),
+                                    has_transcript: !pane.transcripts.is_empty() || pane.pushed.is_some(),
                                     since: pane
                                         .status_since
                                         .duration_since(std::time::UNIX_EPOCH)

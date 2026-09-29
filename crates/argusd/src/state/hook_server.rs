@@ -63,6 +63,7 @@ const MAX_DIAGRAM_HOOK_BODY: usize = MAX_DIAGRAM_BODY_BYTES + 4096;
 fn max_hook_body(endpoint: Option<(PaneId, Endpoint)>) -> usize {
     match endpoint {
         Some((_, Endpoint::Diagrams)) => MAX_DIAGRAM_HOOK_BODY,
+        Some((_, Endpoint::Transcript)) => argus_protocol::MAX_PUSH_BYTES,
         _ => MAX_BODY,
     }
 }
@@ -216,6 +217,13 @@ async fn handle_hook_request(
             Some((pane, Endpoint::Telemetry)) => match decode(&body, "telemetry report") {
                 Ok(report) => {
                     daemon.report_pane_telemetry(pane, reporter.as_deref(), report);
+                    HookResponse::empty(200, "OK")
+                }
+                Err(refusal) => refusal,
+            },
+            Some((pane, Endpoint::Transcript)) => match decode(&body, "transcript push") {
+                Ok(push) => {
+                    daemon.report_pushed(pane, reporter.as_deref(), push);
                     HookResponse::empty(200, "OK")
                 }
                 Err(refusal) => refusal,

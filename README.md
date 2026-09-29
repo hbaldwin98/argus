@@ -185,8 +185,9 @@ With [Tailscale](https://tailscale.com), `tailscale serve --bg 7420` puts HTTPS 
 your tailnet; pass the name it prints as `--url` so the QR code opens it. `--listen 0.0.0.0` binds
 every interface instead, and warns that the cookie then crosses the network unencrypted.
 
-Conversations are read for Claude Code, Codex, Cursor's `agent` and pi. Other harnesses show their
-Terminal tab.
+Conversations are read for Claude Code, Codex, Cursor's `agent`, pi and opencode. Any other harness
+can push its own with `argus-hook transcript` (see DESIGN.md), and shows its Terminal tab until it
+does.
 
 ## Install on `PATH`
 

@@ -16,6 +16,12 @@
 //! A tail and the stream that continues it may overlap, never leave a gap:
 //! following starts no later than any tail a watcher is sent ends, and an
 //! entry read twice replaces itself.
+//!
+//! A harness whose conversation is no file Argus can read — opencode keeps
+//! it in a database — pushes entries instead. Those are held in memory, as
+//! a bounded tail, since there is nothing to read them back from; the
+//! plugin replays its whole session whenever it starts, which covers a
+//! daemon that restarted.
 
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -41,6 +47,60 @@ const MAX_READ: u64 = 16 * 1024 * 1024;
 /// How far back from a file's end following looks for the start of a line,
 /// in steps, before giving up and starting at the end.
 const LINE_SEARCH: u64 = 64 * 1024;
+
+/// How many pushed entries a pane keeps: the conversation's recent end,
+/// which is what a phone opens on.
+const MAX_PUSHED: usize = 500;
+
+/// A pushed conversation's latest entries, in order.
+#[derive(Default)]
+pub(super) struct Pushed {
+    order: std::collections::VecDeque<String>,
+    entries: HashMap<String, Entry>,
+}
+
+impl Pushed {
+    fn apply(&mut self, update: &Update) {
+        match update {
+            Update::Upsert(entry) => {
+                if self.entries.insert(entry.id.clone(), entry.clone()).is_none() {
+                    self.order.push_back(entry.id.clone());
+                }
+                while self.order.len() > MAX_PUSHED {
+                    if let Some(oldest) = self.order.pop_front() {
+                        self.entries.remove(&oldest);
+                    }
+                }
+            }
+            Update::AppendText { id, delta } => {
+                if let Some(entry) = self.entries.get_mut(id) {
+                    if let Body::Prompt { text } | Body::Reply { text } | Body::Thinking { text } =
+                        &mut entry.body
+                    {
+                        text.push_str(delta);
+                    }
+                }
+            }
+            Update::ToolState { id, state } => {
+                if let Some(Entry {
+                    body: Body::ToolCall { state: held, .. },
+                    ..
+                }) = self.entries.get_mut(id)
+                {
+                    *held = *state;
+                }
+            }
+        }
+    }
+
+    fn tail(&self) -> Vec<Update> {
+        self.order
+            .iter()
+            .filter_map(|id| self.entries.get(id))
+            .map(|entry| Update::Upsert(entry.clone()))
+            .collect()
+    }
+}
 
 /// A pane's followers: the channel its updates go out on, how many
 /// connections hold it, and the task reading the file while any do.
@@ -115,6 +175,55 @@ impl Daemon {
         if first {
             self.broadcast_tree();
         }
+    }
+
+    /// Takes entries a harness pushed, from the pane's own agent only, and
+    /// hands them to whoever is watching.
+    pub(super) fn report_pushed(
+        &self,
+        pane: PaneId,
+        reporter: Option<&str>,
+        push: argus_protocol::Push,
+    ) {
+        if self.child_of(pane, reporter).is_some() {
+            return;
+        }
+        let updates: Vec<Update> = push
+            .updates
+            .into_iter()
+            .map(argus_protocol::transcript::clipped)
+            .collect();
+        let first = {
+            let mut inner = self.inner.lock().unwrap();
+            let Some(p) = find_pane(&mut inner.projects, pane) else {
+                return;
+            };
+            let first = p.pushed.is_none() && p.transcripts.is_empty();
+            let pushed = p.pushed.get_or_insert_with(Pushed::default);
+            if push.fresh {
+                *pushed = Pushed::default();
+            }
+            for update in &updates {
+                pushed.apply(update);
+            }
+            first
+        };
+        if first {
+            self.broadcast_tree();
+        }
+        if let Some(feed) = self.transcripts.lock().unwrap().get(&pane) {
+            let _ = feed.tx.send(ServerMsg::Transcript {
+                pane,
+                fresh: push.fresh,
+                earlier: None,
+                updates,
+            });
+        }
+    }
+
+    fn pushed_tail(&self, pane: PaneId) -> Option<Vec<Update>> {
+        let inner = self.inner.lock().unwrap();
+        find_pane_ref(&inner.projects, pane)?.pushed.as_ref().map(Pushed::tail)
     }
 
     fn dialect_of(&self, harness: &str) -> Option<Dialect> {
@@ -197,8 +306,12 @@ impl Daemon {
     /// starts from, and what one that fell behind starts again from.
     /// Blocking file I/O; call it off the runtime's threads.
     pub fn transcript_tail(&self, pane: PaneId) -> ServerMsg {
-        let page = self.history(pane).and_then(|history| history.tail());
-        let (earlier, updates) = page.map_or((None, Vec::new()), |p| (p.earlier, p.updates));
+        let (earlier, updates) = match self.history(pane) {
+            Some(history) => history
+                .tail()
+                .map_or((None, Vec::new()), |p| (p.earlier, p.updates)),
+            None => (None, self.pushed_tail(pane).unwrap_or_default()),
+        };
         ServerMsg::Transcript {
             pane,
             fresh: true,

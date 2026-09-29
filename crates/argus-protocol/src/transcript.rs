@@ -104,6 +104,57 @@ pub enum Update {
     ToolState { id: String, state: ToolState },
 }
 
+/// The most one push of entries may hold on the wire. What each entry
+/// keeps is clipped on arrival besides.
+pub const MAX_PUSH_BYTES: usize = 256 * 1024;
+
+/// Entries a harness pushes to the pane API (`POST /pane/<id>/transcript`,
+/// or `argus-hook transcript`) when its transcript is not a file Argus can
+/// read. `fresh` replaces everything pushed before: what a plugin sends
+/// when it replays a whole session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Push {
+    #[serde(default)]
+    pub fresh: bool,
+    pub updates: Vec<Update>,
+}
+
+/// An update with every text in it held to its budget. Everything a
+/// harness pushes goes through this, since the daemon cannot know how big
+/// a plugin thought an entry should be.
+pub fn clipped(update: Update) -> Update {
+    match update {
+        Update::Upsert(mut entry) => {
+            entry.body = match entry.body {
+                Body::Prompt { text } => Body::Prompt { text: clip(&text, MAX_TEXT_BYTES) },
+                Body::Reply { text } => Body::Reply { text: clip(&text, MAX_TEXT_BYTES) },
+                Body::Thinking { text } => Body::Thinking { text: clip(&text, MAX_THINKING_BYTES) },
+                Body::Notice { text } => Body::Notice { text: clip(&text, MAX_TEXT_BYTES) },
+                Body::Divider { text } => Body::Divider { text: clip(&text, MAX_TEXT_BYTES) },
+                Body::ToolCall { tool, summary, input, state } => Body::ToolCall {
+                    tool: clip(&tool, 64),
+                    summary: one_line(&summary),
+                    input: clip(&input, MAX_TOOL_INPUT_BYTES),
+                    state,
+                },
+                Body::ToolResult { call, output, failed } => Body::ToolResult {
+                    call,
+                    output: clip(&output, MAX_TOOL_OUTPUT_BYTES),
+                    failed,
+                },
+                turn @ Body::TurnEnd { .. } => turn,
+            };
+            entry.id = clip(&entry.id, 256);
+            Update::Upsert(entry)
+        }
+        Update::AppendText { id, delta } => Update::AppendText {
+            id,
+            delta: clip(&delta, MAX_TEXT_BYTES),
+        },
+        state @ Update::ToolState { .. } => state,
+    }
+}
+
 /// Where the part of a transcript a client holds begins, for asking for
 /// what came before it. Opaque to a client: it only ever hands one back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -157,6 +208,30 @@ mod tests {
         assert_eq!(one_line("cargo  test\n  --workspace"), "cargo test --workspace");
         let long = "x ".repeat(200);
         assert!(one_line(&long).chars().count() <= MAX_SUMMARY_CHARS + 1);
+    }
+
+    #[test]
+    fn a_pushed_entry_is_held_to_its_budget() {
+        let huge = "x".repeat(MAX_TEXT_BYTES * 2);
+        let Update::Upsert(entry) = clipped(Update::Upsert(Entry {
+            id: "1".into(),
+            at: None,
+            body: Body::Reply { text: huge },
+        })) else {
+            panic!("still an upsert");
+        };
+        let Body::Reply { text } = entry.body else { panic!("still a reply") };
+        assert!(text.len() <= MAX_TEXT_BYTES);
+    }
+
+    #[test]
+    fn a_push_reads_from_the_json_a_plugin_writes() {
+        let push: Push = serde_json::from_str(
+            r#"{"fresh":true,"updates":[{"Upsert":{"id":"p1","body":{"Prompt":{"text":"hi"}}}},{"AppendText":{"id":"p2","delta":"more"}}]}"#,
+        )
+        .unwrap();
+        assert!(push.fresh);
+        assert_eq!(push.updates.len(), 2);
     }
 
     #[test]
