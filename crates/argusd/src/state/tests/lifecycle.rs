@@ -103,6 +103,9 @@ async fn a_deleted_worktree_leaves_nothing_of_its_panes_behind() {
     assert_nothing_left_of(&d, pane);
 }
 
+// Windows runs every program through `cmd.exe /C`, which starts even when the
+// program is missing, so only unix can make the spawn itself fail.
+#[cfg(unix)]
 #[tokio::test]
 async fn a_live_claude_pane_that_fails_to_start_leaves_no_upstream() {
     let dir = tempfile::tempdir().unwrap();
