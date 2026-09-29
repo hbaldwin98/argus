@@ -167,6 +167,8 @@ fn git_status_rides_along_on_checkout_rows() {
         branch: Some("master".to_string()),
         dirty: true,
         changed_files: 2,
+        staged: 1,
+        unstaged: 1,
         ahead: 1,
         behind: 0,
     });

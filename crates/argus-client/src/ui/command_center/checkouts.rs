@@ -122,17 +122,7 @@ pub(super) fn render_checkouts(f: &mut Frame, app: &mut App, area: Rect, th: The
                 let checkout = &repo.checkouts[i];
                 let git = checkout.git.as_ref();
                 let state = git
-                    .map(|g| {
-                        if g.dirty {
-                            format!("!{} modified", g.changed_files)
-                        } else if g.ahead > 0 {
-                            format!("↑{} clean", g.ahead)
-                        } else if g.behind > 0 {
-                            format!("↓{} behind", g.behind)
-                        } else {
-                            "clean".into()
-                        }
-                    })
+                    .map(git_state)
                     .unwrap_or_else(|| "not a repository".into());
                 let state_color = if git.is_some_and(|g| g.dirty) {
                     th.warn

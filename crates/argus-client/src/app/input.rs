@@ -649,6 +649,8 @@ impl App {
                 KeyCode::Char('D') => self.remove_prompt(),
                 KeyCode::Char('F') => self.fetch(),
                 KeyCode::Char('P') => self.pull(),
+                KeyCode::Char('R') | KeyCode::Tab => self.open_review(),
+                KeyCode::Char('H') => self.open_history(),
                 _ => {}
             }
             return;

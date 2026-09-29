@@ -409,17 +409,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                 let item = &project.repositories[repository].checkouts[checkout];
                 let git = item.git.as_ref();
                 let branch = git.and_then(|g| g.branch.as_deref()).unwrap_or(&item.name);
-                let state = git
-                    .map(|g| {
-                        if g.dirty {
-                            format!("!{}W", g.changed_files)
-                        } else if g.ahead > 0 {
-                            format!("↑{} clean", g.ahead)
-                        } else {
-                            "clean".into()
-                        }
-                    })
-                    .unwrap_or_default();
+                let state = git.map(git_state).unwrap_or_default();
                 Line::from(vec![
                     Span::styled(if on_cursor { "▌ " } else { "  " }, Style::default().fg(th.accent)),
                     Span::styled("   └ ", Style::default().fg(th.edge)),

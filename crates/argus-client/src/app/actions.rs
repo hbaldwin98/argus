@@ -88,6 +88,7 @@ impl App {
     /// Works from any column that still implies a checkout. `R` on a commit
     /// refreshes that commit; otherwise this is the uncommitted sides.
     pub(super) fn open_review(&mut self) {
+        self.note_review_return();
         if let Some(oid) = self
             .review
             .as_ref()
@@ -107,7 +108,20 @@ impl App {
         };
         self.history = None;
         self.history_request.clear();
+        self.review_fallback = None;
         self.request_uncommitted(id);
+    }
+
+    /// An overlay already up keeps the place it was opened from.
+    fn note_review_return(&mut self) {
+        if self.focus == Focus::Review {
+            return;
+        }
+        self.review_return = if self.focus == Focus::View {
+            Focus::View
+        } else {
+            Focus::Checkouts
+        };
     }
 
     pub(super) fn request_uncommitted(&mut self, id: CheckoutId) {
@@ -123,6 +137,7 @@ impl App {
 
     /// `H` from the tree, or from a review that is already up.
     pub(super) fn open_history(&mut self) {
+        self.note_review_return();
         let Some(id) = self
             .current_checkout()
             .map(|c| c.id)
@@ -212,7 +227,7 @@ impl App {
         self.history_request.clear();
         self.overlay = None;
         self.pane_fullscreen = false;
-        self.focus = Focus::Checkouts;
+        self.focus = self.review_return;
     }
 
     pub(super) fn send_to_agent(&mut self, anchor: ReviewAnchor, body: String) {

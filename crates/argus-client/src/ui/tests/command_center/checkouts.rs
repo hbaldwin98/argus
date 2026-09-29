@@ -18,6 +18,38 @@ fn checkout_overview_uses_the_designs_operational_table() {
 }
 
 #[test]
+fn a_dirty_checkout_shows_ahead_behind_staged_and_unstaged_together() {
+    let mut app = command_center();
+    let mut status = git(Some("master"), true, 4, 2, 1);
+    (status.staged, status.unstaged) = (1, 3);
+    app.tree[0].repositories[0].checkouts[0].git = Some(status);
+    app.open_view(View::Checkouts);
+    let text = lines(&draw_at(&mut app, 140, 30)).join("\n");
+    assert!(text.contains("↑2 ↓1 +1 !3"), "{text}");
+}
+
+#[test]
+fn a_daemon_without_staged_counts_still_shows_what_changed() {
+    let mut app = command_center();
+    let mut status = git(Some("master"), true, 4, 0, 0);
+    status.unstaged = 0;
+    app.tree[0].repositories[0].checkouts[0].git = Some(status);
+    app.open_view(View::Checkouts);
+    let text = lines(&draw_at(&mut app, 140, 30)).join("\n");
+    assert!(text.contains("!4"), "{text}");
+    assert!(!text.contains("clean"), "{text}");
+}
+
+#[test]
+fn a_clean_checkout_ahead_of_its_upstream_says_both() {
+    let mut app = command_center();
+    app.tree[0].repositories[0].checkouts[0].git = Some(git(Some("master"), false, 0, 3, 0));
+    app.open_view(View::Checkouts);
+    let text = lines(&draw_at(&mut app, 140, 30)).join("\n");
+    assert!(text.contains("↑3 clean"), "{text}");
+}
+
+#[test]
 fn b_lists_branch_only_rows_in_the_checkouts_table() {
     let mut app = command_center();
     app.tree[0].repositories[0].branches = vec!["spike".into()];

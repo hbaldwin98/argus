@@ -334,6 +334,12 @@ pub struct App {
     /// Sticky across reopens, so `b` is a setting rather than a per-visit
     /// choice.
     pub review_base: ReviewBase,
+    /// The side a review was first asked for, while the other side is being
+    /// tried because that one came back empty.
+    review_fallback: Option<ReviewBase>,
+    /// Where closing a review or history puts the keys: back on the
+    /// Checkouts stage when it was opened from there, else the rail.
+    review_return: Focus,
     /// Whether review pairs the two sides of a change rather than stacking
     /// them. Held here for whichever view opens next; the open view carries
     /// its own copy, because its rows are built from it.
@@ -467,6 +473,8 @@ impl App {
             list_wanted: None,
             next_browse_request: 1,
             review_base: ReviewBase::Unstaged,
+            review_fallback: None,
+            review_return: Focus::Checkouts,
             review_split,
             prompt: None,
             theme,

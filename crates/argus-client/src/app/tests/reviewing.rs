@@ -72,27 +72,104 @@ fn an_unsolicited_diff_never_hijacks_the_screen() {
     assert_eq!(h.app.focus, Focus::Projects);
 }
 
+fn nothing_on(
+    checkout: CheckoutId,
+    base: argus_protocol::ReviewBase,
+    request_id: u64,
+) -> argus_protocol::Review {
+    argus_protocol::Review {
+        request_id,
+        checkout,
+        base,
+        files: Vec::new(),
+        commit: None,
+    }
+}
+
 #[test]
 fn a_clean_checkout_says_so_instead_of_opening_an_empty_viewer() {
+    use argus_protocol::ReviewBase::{Staged, Unstaged};
     let mut h = Harness::new();
     let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
-    open_review(
-        &mut h,
-        argus_protocol::Review {
-            request_id: 1,
-            checkout,
-            base: argus_protocol::ReviewBase::Unstaged,
-            files: Vec::new(),
-            commit: None,
-        },
-    );
+    open_review(&mut h, nothing_on(checkout, Unstaged, 1));
+    h.sent();
+    h.app
+        .on_server_msg(ServerMsg::Review(nothing_on(checkout, Staged, 2)));
+
     assert!(h.app.review.is_none());
     assert_ne!(h.app.focus, Focus::Review);
     assert!(
-        h.app.status.contains("no changes vs unstaged"),
+        h.app.status.contains("no changes, staged or unstaged"),
         "{}",
         h.app.status
     );
+    assert_eq!(h.app.review_base, Unstaged, "the side asked for first stays the setting");
+}
+
+#[test]
+fn an_empty_unstaged_side_opens_on_the_staged_changes_instead() {
+    use argus_protocol::ReviewBase::{Staged, Unstaged};
+    let mut h = Harness::new();
+    let checkout = h.app.tree[0].repositories[0].checkouts[0].id;
+    open_review(&mut h, nothing_on(checkout, Unstaged, 1));
+    match &h.sent()[..] {
+        [ClientMsg::Review { base, .. }] => assert_eq!(*base, Staged),
+        other => panic!("expected one request for the staged side, got {other:?}"),
+    }
+
+    let mut staged = diff_of(checkout);
+    (staged.request_id, staged.base) = (2, Staged);
+    h.app.on_server_msg(ServerMsg::Review(staged));
+    assert_eq!(h.app.focus, Focus::Review);
+    assert_eq!(h.app.review.as_ref().unwrap().review.base, Staged);
+    assert!(h.app.status.contains("nothing unstaged"), "{}", h.app.status);
+}
+
+#[test]
+fn b_onto_an_empty_side_keeps_the_diff_on_screen() {
+    use argus_protocol::ReviewBase::{Staged, Unstaged};
+    let mut h = review_with_agent();
+    let checkout = h.app.review.as_ref().unwrap().review.checkout;
+    h.key(KeyCode::Char('b'));
+    h.sent();
+    h.app
+        .on_server_msg(ServerMsg::Review(nothing_on(checkout, Staged, 2)));
+
+    assert_eq!(h.app.review.as_ref().unwrap().review.base, Unstaged);
+    assert_eq!(h.app.review_base, Unstaged);
+    assert_eq!(h.app.focus, Focus::Review);
+    assert!(h.sent().is_empty(), "no second request behind the user's back");
+}
+
+#[test]
+fn r_and_h_work_from_the_checkouts_stage() {
+    let mut h = Harness::new();
+    h.checkouts_stage();
+    let checkout = h.app.current_checkout().unwrap().id;
+    h.key(KeyCode::Char('R'));
+    match &h.sent()[..] {
+        [ClientMsg::Review { checkout: c, .. }] => assert_eq!(*c, checkout),
+        other => panic!("unexpected {other:?}"),
+    }
+    h.key(KeyCode::Char('H'));
+    match &h.sent()[..] {
+        [ClientMsg::ListCommits { checkout: c, .. }] => assert_eq!(*c, checkout),
+        other => panic!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn closing_a_review_opened_from_the_checkouts_stage_goes_back_to_it() {
+    let mut h = Harness::new();
+    h.checkouts_stage();
+    let checkout = h.app.current_checkout().unwrap().id;
+    h.key(KeyCode::Char('R'));
+    h.sent();
+    h.app.on_server_msg(ServerMsg::Review(diff_of(checkout)));
+    assert_eq!(h.app.focus, Focus::Review);
+
+    h.key(KeyCode::Esc);
+    assert_eq!(h.app.mode(), Mode::Stage(View::Checkouts));
 }
 
 #[test]

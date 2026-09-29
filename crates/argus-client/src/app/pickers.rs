@@ -149,8 +149,8 @@ impl App {
         self.focus = match self.focus {
             Focus::Overlay => Focus::Panes,
             // A diff was opened from a checkout, so that is where closing
-            // it puts you back.
-            Focus::Review => Focus::Checkouts,
+            // it puts you back: its rail row, or the Checkouts stage.
+            Focus::Review => self.review_return,
             other => other,
         };
         self.sync_subscription();

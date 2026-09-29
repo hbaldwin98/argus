@@ -433,6 +433,8 @@ pub(super) fn git(
         branch: branch.map(str::to_string),
         dirty,
         changed_files: changed,
+        staged: 0,
+        unstaged: changed,
         ahead,
         behind,
     }

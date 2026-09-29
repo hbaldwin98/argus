@@ -267,7 +267,16 @@ pub struct GitStatus {
     /// `None` for a detached HEAD.
     pub branch: Option<String>,
     pub dirty: bool,
+    /// Paths with any change, staged or not, each counted once.
     pub changed_files: usize,
+    /// Paths whose index differs from HEAD. A path both staged and edited
+    /// again counts here and in `unstaged`, which is why neither is derived
+    /// from `changed_files`.
+    #[serde(default)]
+    pub staged: usize,
+    /// Paths whose working tree differs from the index, untracked included.
+    #[serde(default)]
+    pub unstaged: usize,
     /// Commits ahead/behind the upstream tracking branch; both 0 if there is
     /// no upstream configured.
     pub ahead: usize,
@@ -500,5 +509,28 @@ mod tests {
 
         assert_eq!(read.status, PaneStatus::Working);
         assert_eq!(read.title, "claude");
+    }
+
+    #[test]
+    fn git_status_from_a_daemon_without_staged_counts_reads_as_zero() {
+        #[derive(Serialize)]
+        struct OlderGitStatus {
+            branch: Option<String>,
+            dirty: bool,
+            changed_files: usize,
+            ahead: usize,
+            behind: usize,
+        }
+        let older = OlderGitStatus {
+            branch: Some("main".into()),
+            dirty: true,
+            changed_files: 2,
+            ahead: 1,
+            behind: 0,
+        };
+        let bytes = rmp_serde::to_vec_named(&older).unwrap();
+        let read: GitStatus = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!((read.changed_files, read.ahead), (2, 1));
+        assert_eq!((read.staged, read.unstaged), (0, 0));
     }
 }

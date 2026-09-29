@@ -251,8 +251,8 @@ repository does not open it — walking the list would otherwise unfold every ro
 opening one closes the last. On the project heading `n` adds a project and `D` removes this one.
 The rail's cursor is not stored: it is the selection read at the depth focus names, so a new tree
 cannot leave the two disagreeing. Checkouts with nothing running, and branches no checkout is on,
-are not rail rows; the Checkouts stage draws every one, and there `n`, `D`, `s`, `a`, `F`, `P` and
-Enter act on the row its table has selected — Enter opens a checkout in the workspace, or switches
+are not rail rows; the Checkouts stage draws every one, and there `n`, `D`, `s`, `a`, `F`, `P`,
+`R`/Tab, `H` and Enter act on the row its table has selected — Enter opens a checkout in the workspace, or switches
 the primary checkout to a branch.
 
 The status bar's keymaps are written as tiers and the widest that fits is drawn, so a narrow bar
@@ -774,12 +774,18 @@ client gets branch names without a workdir walk of every repository under a proj
 seconds, on a blocking-pool thread, the daemon then refreshes:
 
 - branch or detached-HEAD state;
-- dirty state and changed-file count, including untracked files;
+- dirty state and changed-file count, including untracked files, with how many paths are staged
+  and how many unstaged counted apart — a path staged and then edited again is in both;
 - ahead/behind against the tracking branch;
 - linked worktrees added or removed outside Argus.
 
 The first of those ticks is immediate, overlapping session restore, so dirty counts follow by the
 time the tree has been on screen a moment.
+
+The rail's checkout rows and the Checkouts stage draw that state the same way, as parts rather
+than a first match: `↑2 ↓1 +3 !4` is two ahead, one behind, three staged, four unstaged, and
+`clean` stands in for the last two. A dirty checkout therefore still says it has unpushed commits.
+"No upstream" and "in sync" both read as no arrows.
 
 On a slower ten-second beat it also rescans each project root for repositories added or removed
 there. Both run on the blocking pool.
@@ -893,7 +899,11 @@ Review shows uncommitted work split into the two sides Git itself keeps apart. `
 - `staged`: `HEAD` against the index — `git diff --cached`.
 
 The chosen side is a setting rather than a per-visit choice, and it survives closing and reopening
-the overlay.
+the overlay. An empty side never strands anyone: the toggle lives inside the overlay, so a fresh
+review whose side is empty asks once for the other side and opens on that, and only when both are
+empty says so and opens nothing. `b` onto an empty side keeps the diff already on screen and its
+side. Closing a review or history returns the keys to where it was opened from, the rail or the
+Checkouts stage.
 
 A third snapshot is one commit against its first parent, reached through the history overlay rather
 than the side toggle. `H` lists the newest 100 commits on the checkout's HEAD — identities only,

@@ -213,8 +213,9 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "j/k  enter open  A all  q",
             ][..],
             Mode::Stage(View::Checkouts) => &[
-                "j/k move   / filter   enter open   m checkout   n worktree   D remove   q workspace",
-                "j/k  / filter  enter open  q",
+                "j/k move   / filter   enter open   R review   H history   m checkout   n worktree   D remove   q workspace",
+                "j/k  / filter  enter open  R review  H history  q",
+                "j/k  enter open  R review  q",
                 "j/k  enter open  q",
             ][..],
             // A parked pane is not taking input anywhere the operator can

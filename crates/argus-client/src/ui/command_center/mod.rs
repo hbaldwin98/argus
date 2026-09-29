@@ -8,7 +8,7 @@
 
 use super::*;
 use crate::app::FeaturePanel;
-use argus_protocol::{PaneKind, PaneStatus, TaskState};
+use argus_protocol::{GitStatus, PaneKind, PaneStatus, TaskState};
 
 mod checkouts;
 mod feature;
@@ -248,6 +248,34 @@ fn status_glyph(app: &App, status: PaneStatus, still: &'static str) -> &'static 
     } else {
         still
     }
+}
+
+/// A checkout's git state as the rail and the Checkouts stage both show it:
+/// `↑` ahead of and `↓` behind its upstream, `+` staged and `!` unstaged
+/// paths, else `clean`. Built from parts so that being dirty never hides how
+/// far the branch is from its upstream.
+fn git_state(g: &GitStatus) -> String {
+    let mut parts = Vec::new();
+    if g.ahead > 0 {
+        parts.push(format!("↑{}", g.ahead));
+    }
+    if g.behind > 0 {
+        parts.push(format!("↓{}", g.behind));
+    }
+    if g.staged > 0 {
+        parts.push(format!("+{}", g.staged));
+    }
+    if g.unstaged > 0 {
+        parts.push(format!("!{}", g.unstaged));
+    }
+    // A daemon from before the staged counts sends only the total.
+    if g.dirty && g.staged == 0 && g.unstaged == 0 {
+        parts.push(format!("!{}", g.changed_files));
+    }
+    if !g.dirty {
+        parts.push("clean".into());
+    }
+    parts.join(" ")
 }
 
 /// A failed exit is drawn as loudly as the states asking for a person,

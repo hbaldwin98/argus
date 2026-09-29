@@ -54,6 +54,7 @@ const RAIL: Group = Group {
         ("click pane", "show it, keys stay here — x closes it"),
         ("enter  click", "type into the pane shown"),
         ("wheel", "move along the rail"),
+        ("↑ ↓ + !", "a checkout's ahead, behind, staged, unstaged"),
     ],
 };
 
@@ -82,6 +83,9 @@ const CHECKOUTS: Group = Group {
         ("n", "a new worktree"),
         ("D", "remove it"),
         ("F  P", "fetch, pull"),
+        ("R  tab", "review the diff"),
+        ("H", "history"),
+        ("↑ ↓ + !", "state: ahead, behind, staged, unstaged"),
         ("esc  q", "back to the workspace"),
     ],
 };

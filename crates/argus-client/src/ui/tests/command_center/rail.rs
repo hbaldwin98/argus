@@ -137,6 +137,31 @@ fn repository_rail_expands_active_branches_and_panes_after_click() {
 }
 
 #[test]
+fn the_rails_checkout_row_shows_ahead_and_staged_while_dirty() {
+    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+    let mut app = command_center();
+    let mut status = git(Some("master"), true, 3, 2, 0);
+    (status.staged, status.unstaged) = (2, 1);
+    app.tree[0].repositories[0].checkouts[0].git = Some(status);
+    draw_at(&mut app, 120, 30);
+    let row = app.layout.rail.inner.y;
+    app.on_mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: app.layout.rail.inner.x + 2,
+        row,
+        modifiers: KeyModifiers::NONE,
+    });
+    let text = lines(&draw_at(&mut app, 120, 30)).join("\n");
+
+    assert!(
+        text.lines()
+            .any(|line| line.contains("└ master") && line.contains("↑2 +2 !1")),
+        "{text}"
+    );
+}
+
+#[test]
 fn current_pane_is_highlighted_in_an_expanded_repository() {
     let mut app = command_center();
     app.focus = Focus::PaneContent;

@@ -652,12 +652,21 @@ impl App {
             None => format!("vs {}", review.base.label()),
         };
         let mut view = ReviewView::new(review, self.review_split);
+        let uncommitted = view.review.commit.is_none();
         if view.is_empty() {
+            if uncommitted && self.other_side_instead(view.review.checkout, view.review.base) {
+                return;
+            }
             self.review = None;
             self.pending_history_file = None;
-            self.report(format!("no changes {label}"));
+            if uncommitted {
+                self.report("no changes, staged or unstaged");
+            } else {
+                self.report(format!("no changes {label}"));
+            }
             return;
         }
+        let empty_side = self.review_fallback.take();
         if let Some(path) = self.pending_history_file.take() {
             if let Some(i) = view.review.files.iter().position(|f| f.path == path) {
                 view.jump_to_file(i);
@@ -667,7 +676,45 @@ impl App {
         self.overlay = Some(Overlay::Review);
         self.pane_fullscreen = false;
         self.focus = Focus::Review;
-        self.report(format!("{files} changed {label}"));
+        match empty_side {
+            Some(side) => self.report(format!(
+                "nothing {}; {files} changed {label}",
+                side.label()
+            )),
+            None => self.report(format!("{files} changed {label}")),
+        }
+    }
+
+    /// An uncommitted side came back empty. With a diff of the other side
+    /// on screen, `b` asked for it: keep that diff and its side. With none,
+    /// try the other side once, so a checkout whose changes are all staged
+    /// opens on them — the side toggle lives inside the overlay, so an
+    /// empty side that refused to open it would be a dead end. False when
+    /// both sides are empty, with the side asked for first restored.
+    fn other_side_instead(&mut self, checkout: CheckoutId, asked: ReviewBase) -> bool {
+        let showing = self
+            .review
+            .as_ref()
+            .filter(|v| v.review.commit.is_none() && v.review.checkout == checkout)
+            .map(|v| v.review.base)
+            .filter(|&base| base != asked);
+        if let Some(showing) = showing {
+            self.review_base = showing;
+            self.report(format!(
+                "nothing {}; still showing {}",
+                asked.label(),
+                showing.label()
+            ));
+            return true;
+        }
+        if let Some(first) = self.review_fallback.take() {
+            self.review_base = first;
+            return false;
+        }
+        self.review_fallback = Some(asked);
+        self.review_base = asked.next();
+        self.request_uncommitted(checkout);
+        true
     }
 
     fn receive_commit_files(

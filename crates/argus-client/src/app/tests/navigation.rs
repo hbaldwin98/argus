@@ -301,6 +301,8 @@ fn a_selected_branch_row_is_followed_into_the_checkout_that_takes_it() {
         branch: Some("spike".to_string()),
         dirty: false,
         changed_files: 0,
+        staged: 0,
+        unstaged: 0,
         ahead: 0,
         behind: 0,
     });

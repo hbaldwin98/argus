@@ -9,6 +9,19 @@ use argus_protocol::GitStatus;
 
 use crate::paths::same_path;
 
+const STAGED: git2::Status = git2::Status::INDEX_NEW
+    .union(git2::Status::INDEX_MODIFIED)
+    .union(git2::Status::INDEX_DELETED)
+    .union(git2::Status::INDEX_RENAMED)
+    .union(git2::Status::INDEX_TYPECHANGE);
+/// A conflict is work left in the tree, not something staged.
+const UNSTAGED: git2::Status = git2::Status::WT_NEW
+    .union(git2::Status::WT_MODIFIED)
+    .union(git2::Status::WT_DELETED)
+    .union(git2::Status::WT_RENAMED)
+    .union(git2::Status::WT_TYPECHANGE)
+    .union(git2::Status::CONFLICTED);
+
 /// Returns `None` if `path` isn't inside a git repo at all, or if the repo
 /// could not be read right now — a transient lock, or HEAD mid-rewrite
 /// during a checkout elsewhere. `None` means "unknown", never "clean and on
@@ -29,10 +42,15 @@ pub fn status(path: &Path) -> Option<GitStatus> {
 
     let mut opts = git2::StatusOptions::new();
     opts.include_untracked(true).renames_head_to_index(true);
-    let changed_files = repo
-        .statuses(Some(&mut opts))
-        .map(|s| s.iter().count())
-        .unwrap_or(0);
+    let (mut changed_files, mut staged, mut unstaged) = (0, 0, 0);
+    if let Ok(statuses) = repo.statuses(Some(&mut opts)) {
+        for entry in statuses.iter() {
+            let flags = entry.status();
+            changed_files += 1;
+            staged += usize::from(flags.intersects(STAGED));
+            unstaged += usize::from(flags.intersects(UNSTAGED));
+        }
+    }
 
     let (ahead, behind) = ahead_behind(&repo, head.as_ref()).unwrap_or((0, 0));
 
@@ -40,6 +58,8 @@ pub fn status(path: &Path) -> Option<GitStatus> {
         branch,
         dirty: changed_files > 0,
         changed_files,
+        staged,
+        unstaged,
         ahead,
         behind,
     })
@@ -50,8 +70,8 @@ pub fn status(path: &Path) -> Option<GitStatus> {
 /// Checkout rows are named from this. Dirty counts and ahead/behind need a
 /// full [`status`], which on a cold disk across a project root of many
 /// repositories is seconds of sequential I/O — too much to put in front of
-/// the first client. `dirty`/`ahead`/`behind` here are placeholders: false
-/// and zero until the poll fills them in.
+/// the first client. `dirty`, the counts and `ahead`/`behind` here are
+/// placeholders: false and zero until the poll fills them in.
 pub fn head(path: &Path) -> Option<GitStatus> {
     let repo = git2::Repository::open(path).ok()?;
     let (_head, branch) = head_of(&repo)?;
@@ -59,6 +79,8 @@ pub fn head(path: &Path) -> Option<GitStatus> {
         branch,
         dirty: false,
         changed_files: 0,
+        staged: 0,
+        unstaged: 0,
         ahead: 0,
         behind: 0,
     })
@@ -810,6 +832,51 @@ mod tests {
         let _repo = repo_with_a_commit(dir.path());
         let s = status(dir.path()).unwrap();
         assert_eq!((s.ahead, s.behind), (0, 0));
+    }
+
+    #[test]
+    fn status_counts_staged_and_unstaged_paths_apart() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = repo_with_a_commit(dir.path());
+        // a.txt staged and then edited again: one path, on both sides.
+        std::fs::write(dir.path().join("a.txt"), "staged").unwrap();
+        std::fs::write(dir.path().join("b.txt"), "new").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("a.txt")).unwrap();
+        index.add_path(Path::new("b.txt")).unwrap();
+        index.write().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "edited again").unwrap();
+        std::fs::write(dir.path().join("c.txt"), "untracked").unwrap();
+
+        let s = status(dir.path()).unwrap();
+        assert_eq!(s.changed_files, 3);
+        assert_eq!(s.staged, 2, "a.txt and b.txt are in the index");
+        assert_eq!(s.unstaged, 2, "a.txt edited again, c.txt untracked");
+    }
+
+    #[test]
+    fn a_dirty_checkout_still_counts_commits_ahead_of_its_upstream() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = repo_with_a_commit(dir.path());
+        rename_head_branch(&repo, "main");
+        let pushed = repo.head().unwrap().target().unwrap();
+        repo.remote("origin", "https://example.invalid/r.git").unwrap();
+        repo.reference("refs/remotes/origin/main", pushed, false, "fetched")
+            .unwrap();
+        repo.find_branch("main", git2::BranchType::Local)
+            .unwrap()
+            .set_upstream(Some("origin/main"))
+            .unwrap();
+        let sig = git2::Signature::now("t", "t@example.com").unwrap();
+        let tree = repo.head().unwrap().peel_to_tree().unwrap();
+        let parent = repo.find_commit(pushed).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "unpushed", &tree, &[&parent])
+            .unwrap();
+        std::fs::write(dir.path().join("a.txt"), "edited").unwrap();
+
+        let s = status(dir.path()).unwrap();
+        assert!(s.dirty);
+        assert_eq!((s.ahead, s.behind), (1, 0));
     }
 
     /// Discovery hands back the walk's own spelling of each path while

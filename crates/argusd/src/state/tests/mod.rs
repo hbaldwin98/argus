@@ -140,6 +140,8 @@ pub(super) fn status_on(branch: &str) -> GitStatus {
         branch: Some(branch.to_string()),
         dirty: false,
         changed_files: 0,
+        staged: 0,
+        unstaged: 0,
         ahead: 0,
         behind: 0,
     }

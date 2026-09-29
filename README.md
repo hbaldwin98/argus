@@ -19,7 +19,8 @@ The workspace builds three executables:
 - Starts and discovers Git worktrees and switches branches from the TUI.
 - Runs Claude Code, Codex, OpenCode, pi, Google Antigravity (AGY), Cursor Agent (`agent`), or custom command-line agent templates.
 - Names each agent pane from the user's latest prompt, so a column of running agents is not a list of identical template names.
-- Shows Git status, changed-file counts, and ahead/behind state.
+- Shows each checkout's Git state: `↑` ahead of and `↓` behind its upstream, `+` staged and `!`
+  unstaged files, or `clean`.
 - Reviews staged and unstaged work as two separate diffs, the way Git itself keeps them apart.
 - Captures deleted, renamed, and non-ignored untracked content for review.
 - Reads a diff unified or split side by side, with comments meaning the same thing in either.
@@ -422,7 +423,8 @@ location. Typing filters the folders in the current directory.
 | `F` | Fetch every remote (`--prune`), which is what makes the remote's branches appear as rows |
 | `P` | Pull the selected checkout, fast-forward only |
 | `f` | Open the file picker |
-| `R` / Tab | Open review |
+| `R` / Tab | Open review, from the rail or the Checkouts stage |
+| `H` | Open the checkout's commit history, from the rail or the Checkouts stage |
 | `N` | Jump to the next pane, or parent of a child, waiting, failed, or ready for review |
 | `S` | Open settings |
 | `t` | Choose a theme for this client process |
@@ -500,7 +502,7 @@ Other supported keys are forwarded to the child PTY.
 | `f` | Open the changed-file picker |
 | `c` | Send a comment to an agent in the checkout; choose one when several are running |
 | `e` | Open the selected line in the editor |
-| `b` | Toggle between staged and unstaged changes |
+| `b` | Toggle between staged and unstaged changes; an empty side leaves the diff on screen |
 | `s` | Toggle between the unified and split diff |
 | `r` / `R` | Refresh |
 | `h`, Left, Escape, `q` | Close review |

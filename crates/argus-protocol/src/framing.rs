@@ -239,6 +239,8 @@ mod tests {
                         branch: Some("master".to_string()),
                         dirty: true,
                         changed_files: 3,
+                        staged: 1,
+                        unstaged: 2,
                         ahead: 1,
                         behind: 2,
                     }),
@@ -260,7 +262,9 @@ mod tests {
         };
         let c = &tree[0].repositories[0].checkouts[0];
         assert!(c.primary);
-        assert_eq!(c.git.as_ref().unwrap().changed_files, 3);
+        let git = c.git.as_ref().unwrap();
+        assert_eq!(git.changed_files, 3);
+        assert_eq!((git.staged, git.unstaged), (1, 2));
         assert_eq!(c.panes[0].status, PaneStatus::Waiting);
     }
 
