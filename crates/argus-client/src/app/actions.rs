@@ -289,7 +289,7 @@ impl App {
     }
 
     pub(super) fn is_live_agent(&self, pane: PaneId) -> bool {
-        panes_in(&self.tree).any(|p| p.id == pane && is_live_agent_pane(p))
+        self.tree.panes().any(|p| p.id == pane && is_live_agent_pane(p))
     }
 
     /// Where an editor opens for this app's host. An external editor is

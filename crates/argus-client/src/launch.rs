@@ -7,7 +7,8 @@ use std::time::Duration;
 
 use anyhow::Context;
 use argus_protocol::{
-    read_known_msg, transport, write_msg, ClientMsg, FramingError, Hello, ServerMsg,
+    read_known_msg, transport, write_msg, ClientMsg, FramingError, Greeting, Hello, Refusal,
+    ServerMsg, GREETING_WAIT,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::time::sleep;
@@ -37,11 +38,6 @@ pub async fn ensure_daemon_and_connect(
     ))
 }
 
-/// How long a greeting waits for its answer. A daemon that greets answers
-/// the moment it reads the greeting, right behind its opening messages, so
-/// this only runs out on one that took the greeting and said nothing.
-pub(crate) const GREETING_WAIT: Duration = Duration::from_secs(3);
-
 /// A connection to the daemon, and what greeting it found out.
 pub struct Connected {
     pub channels: crate::Connection,
@@ -51,12 +47,11 @@ pub struct Connected {
     pub opening: Vec<ServerMsg>,
 }
 
-/// How a greeting went.
-pub(crate) enum Greeting {
+/// What this client makes of how its greeting went.
+pub(crate) enum Greeted {
     /// The connection is up, whether or not the daemon greeted back.
     Up(Connected),
-    /// Closed after the daemon's opening messages: a daemon from before the
-    /// handshake, hanging up on a greeting it could not read.
+    /// A daemon from before the handshake hung up on the greeting.
     Refused,
     /// Closed before the daemon said anything.
     Closed,
@@ -66,46 +61,36 @@ pub(crate) enum Greeting {
 /// greets it.
 ///
 /// A daemon from before the handshake hangs up on the greeting, and is
-/// told apart from one that went away by having sent its opening messages
-/// first. It is answered by connecting again without a greeting.
+/// answered by connecting again without one.
 pub async fn connect() -> anyhow::Result<Connected> {
     let channels = crate::wire::connection_channels(ensure_daemon_and_connect().await?);
     match greet(channels, GREETING_WAIT).await {
-        Greeting::Up(connected) => Ok(connected),
-        Greeting::Refused => Ok(Connected {
+        Greeted::Up(connected) => Ok(connected),
+        Greeted::Refused => Ok(Connected {
             channels: crate::wire::connection_channels(ensure_daemon_and_connect().await?),
             daemon: None,
             opening: Vec::new(),
         }),
-        Greeting::Closed => anyhow::bail!("argusd closed the connection before saying anything"),
+        Greeted::Closed => anyhow::bail!("argusd closed the connection before saying anything"),
     }
 }
 
 /// Greets the daemon on `channels` and reads until it answers, keeping what
 /// comes first.
-pub(crate) async fn greet(channels: crate::Connection, wait: Duration) -> Greeting {
+pub(crate) async fn greet(channels: crate::Connection, wait: Duration) -> Greeted {
     let (in_tx, mut out_rx) = channels;
     let _ = in_tx.send(ClientMsg::Hello(Hello::this_build()));
 
-    let mut opening = Vec::new();
-    let answer = tokio::time::timeout(wait, async {
-        while let Some(msg) = out_rx.recv().await {
-            match msg {
-                ServerMsg::Hello(hello) => return Some(hello),
-                other => opening.push(other),
-            }
-        }
-        None
-    })
-    .await;
-
-    let daemon = match answer {
-        Ok(Some(hello)) => Some(hello),
-        Ok(None) if opening.is_empty() => return Greeting::Closed,
-        Ok(None) => return Greeting::Refused,
-        Err(_) => None,
+    let (daemon, opening) = match Greeting::read(&mut out_rx, wait).await {
+        Greeting::Up { daemon, opening } => (daemon, opening),
+        // Carried on with, the way this client always has: the status bar
+        // raises the alarm, and the one command that fixes it is still
+        // reachable from here.
+        Greeting::Refused(Refusal::Protocol { daemon, opening }) => (Some(daemon), opening),
+        Greeting::Refused(Refusal::Predates) => return Greeted::Refused,
+        Greeting::Closed => return Greeted::Closed,
     };
-    Greeting::Up(Connected {
+    Greeted::Up(Connected {
         channels: (in_tx, out_rx),
         daemon,
         opening,
@@ -343,7 +328,7 @@ mod tests {
 
     /// A fake daemon on the other end of a greeting: sends its opening
     /// messages, reads the greeting, and then does what `then` says.
-    async fn greeting_against<F, Fut>(then: F) -> Greeting
+    async fn greeting_against<F, Fut>(then: F) -> Greeted
     where
         F: FnOnce(tokio::io::DuplexStream) -> Fut + Send + 'static,
         Fut: std::future::Future<Output = ()> + Send,
@@ -375,7 +360,7 @@ mod tests {
         })
         .await;
 
-        let Greeting::Up(connected) = greeting else {
+        let Greeted::Up(connected) = greeting else {
             panic!("the connection should be up");
         };
         assert_eq!(connected.daemon, Some(Hello::this_build()));
@@ -390,21 +375,26 @@ mod tests {
         // What a daemon from before the handshake does with a message it
         // cannot read.
         let greeting = greeting_against(|daemon| async move { drop(daemon) }).await;
-        assert!(matches!(greeting, Greeting::Refused));
+        assert!(matches!(greeting, Greeted::Refused));
     }
 
     #[tokio::test]
-    async fn a_daemon_that_takes_the_greeting_and_says_nothing_is_still_connected() {
-        let greeting = greeting_against(|daemon| async move {
-            let _open = daemon;
-            std::future::pending::<()>().await
+    async fn a_daemon_on_another_protocol_is_carried_on_with_for_the_status_bar_to_name() {
+        let other = Hello {
+            protocol: argus_protocol::PROTOCOL + 1,
+            ..Hello::this_build()
+        };
+        let sent = other.clone();
+        let greeting = greeting_against(|mut daemon| async move {
+            write_msg(&mut daemon, &ServerMsg::Hello(sent)).await.unwrap();
+            std::future::pending::<()>().await;
         })
         .await;
 
-        let Greeting::Up(connected) = greeting else {
+        let Greeted::Up(connected) = greeting else {
             panic!("the connection should be up");
         };
-        assert_eq!(connected.daemon, None);
+        assert_eq!(connected.daemon, Some(other));
         assert_eq!(connected.opening.len(), 2, "nothing it sent is lost");
     }
 
@@ -417,7 +407,7 @@ mod tests {
             Duration::from_millis(200),
         )
         .await;
-        assert!(matches!(greeting, Greeting::Closed));
+        assert!(matches!(greeting, Greeted::Closed));
     }
 
     #[test]

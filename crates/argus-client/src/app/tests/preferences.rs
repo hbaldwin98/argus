@@ -107,6 +107,20 @@ fn the_bell_is_opt_in_and_only_consumed_once() {
 }
 
 #[test]
+fn a_pane_that_came_to_need_you_while_the_daemon_was_away_still_rings() {
+    let mut h = Harness::new();
+    h.app.settings.notifications = crate::settings::NotificationMode::Bell;
+    let (out, _daemon) = tokio::sync::mpsc::unbounded_channel();
+    h.app.reconnect(out);
+    let mut next = tree();
+    next[0].repositories[0].checkouts[0].panes[1].status = PaneStatus::Waiting;
+
+    h.app.on_server_msg(ServerMsg::Tree(next));
+
+    assert!(h.app.take_bell(), "the tree before the reconnect is the baseline");
+}
+
+#[test]
 fn a_child_transition_names_its_parent() {
     let mut h = Harness::new();
     let mut working = tree();

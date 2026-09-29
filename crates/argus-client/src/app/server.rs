@@ -75,7 +75,7 @@ impl App {
             self.report(format!("{argusd} predates this client; {fix} to update it"));
             return;
         };
-        if daemon.protocol != ours.protocol {
+        if !daemon.speaks_ours() {
             self.alert(format!(
                 "{argusd} {} cannot fully talk to this client {}; {fix} to match",
                 daemon.version, ours.version
@@ -94,7 +94,7 @@ impl App {
             ServerMsg::Hello(hello) => self.greeted(Some(&hello)),
             ServerMsg::Tree(tree) => self.receive_tree(tree),
             ServerMsg::PaneTelemetry { pane, telemetry } => {
-                self.receive_telemetry(pane, telemetry);
+                self.tree.apply_telemetry(pane, telemetry);
             }
             ServerMsg::Templates(names) => {
                 self.templates = names;
@@ -413,22 +413,6 @@ impl App {
         }
     }
 
-    /// One agent's telemetry, in place of a whole tree. A pane this client
-    /// has not been told of yet is skipped: the tree that brings it carries
-    /// the same record.
-    fn receive_telemetry(&mut self, pane: PaneId, telemetry: argus_protocol::AgentTelemetry) {
-        let info = self
-            .tree
-            .iter_mut()
-            .flat_map(|project| project.repositories.iter_mut())
-            .flat_map(|repository| repository.checkouts.iter_mut())
-            .flat_map(|checkout| checkout.panes.iter_mut())
-            .find(|info| info.id == pane);
-        if let Some(info) = info {
-            info.telemetry = telemetry;
-        }
-    }
-
     fn receive_tree(&mut self, tree: Vec<ProjectInfo>) {
         self.record_state_transitions(&tree);
         let selected_pane = matches!(self.focus, Focus::Panes | Focus::PaneContent)
@@ -487,7 +471,7 @@ impl App {
         self.clamp();
         // A pane killed from elsewhere leaves its window orphaned.
         if let Some(pane) = self.overlay.as_ref().and_then(Overlay::pane) {
-            let alive = panes_in(&self.tree).any(|p| p.id == pane);
+            let alive = self.tree.panes().any(|p| p.id == pane);
             if !alive {
                 self.close_overlay();
             }
@@ -510,39 +494,29 @@ impl App {
         self.refresh_board_if_stale();
     }
 
+    /// Alerts, and rings the bell if asked to, for each pane that came to
+    /// need you. The tree held across a reconnect is the one compared
+    /// with, so a pane that started waiting while the daemon was away still
+    /// rings.
     fn record_state_transitions(&mut self, next: &[ProjectInfo]) {
-        if self.tree.is_empty() {
-            return;
-        }
-        let mut transitions = Vec::new();
-        for pane in panes_in(next) {
-            let Some(previous) = panes_in(&self.tree).find(|old| old.id == pane.id) else {
-                continue;
-            };
-            let before = previous.loudest_state();
-            let after = pane.loudest_state();
-            if before.status != after.status {
-                transitions.push((
-                    pane.id,
-                    before.status,
-                    after.status,
-                    effective_label(pane, after),
-                    after.note.map(str::to_string),
-                ));
-            }
-        }
-        for (pane, before, after, label, note) in transitions {
-            if after.needs_you() && (!before.needs_you() || before != after) {
-                let message = note
-                    .filter(|note| !note.is_empty())
-                    .map(|note| format!("{label}: {note}"))
-                    .unwrap_or_else(|| format!("{label}: {}", state_word(after)));
-                self.alert(message);
-                if self.settings.notifications == crate::settings::NotificationMode::Bell
-                    && self.input_pane() != Some(pane)
-                {
-                    self.bell_pending = true;
-                }
+        let alerts: Vec<(PaneId, String)> = argus_protocol::transitions(self.tree.as_slice(), next)
+            .into_iter()
+            .filter(|t| t.after.status.needs_you())
+            .map(|t| {
+                let label = effective_label(t.pane, t.after);
+                let message = match t.after.note {
+                    Some(note) if !note.is_empty() => format!("{label}: {note}"),
+                    _ => format!("{label}: {}", state_word(t.after.status)),
+                };
+                (t.pane.id, message)
+            })
+            .collect();
+        for (pane, message) in alerts {
+            self.alert(message);
+            if self.settings.notifications == crate::settings::NotificationMode::Bell
+                && self.input_pane() != Some(pane)
+            {
+                self.bell_pending = true;
             }
         }
     }
@@ -564,7 +538,7 @@ impl App {
     /// Whether anything on screen is mid-turn, and so whether the spinner
     /// is asking for frames at all.
     fn any_pane_working(&self) -> bool {
-        crate::app::panes_in(&self.tree).any(|p| p.status == PaneStatus::Working)
+        self.tree.panes().any(|p| p.status == PaneStatus::Working)
     }
 
     /// The clock the frame about to be drawn reads. Set once per frame so

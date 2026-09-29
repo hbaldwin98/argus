@@ -14,7 +14,9 @@ use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio::task::JoinHandle;
 
-use crate::launch::{greet, Connected, Greeting, GREETING_WAIT};
+use argus_protocol::GREETING_WAIT;
+
+use crate::launch::{greet, Connected, Greeted};
 
 /// How much of what ssh prints is kept for explaining a failure. Enough
 /// for its last lines, which are the ones that say what went wrong.
@@ -32,15 +34,15 @@ pub async fn connect(host: &str) -> anyhow::Result<Connected> {
 async fn connect_with(ssh: &OsStr, host: &str) -> anyhow::Result<Connected> {
     let session = Session::start(ssh, host)?;
     match greet(session.channels, GREETING_WAIT).await {
-        Greeting::Up(connected) => Ok(connected),
+        Greeted::Up(connected) => Ok(connected),
         // Its daemon predates the greeting and hung up on it: again,
         // without one.
-        Greeting::Refused => Ok(Connected {
+        Greeted::Refused => Ok(Connected {
             channels: Session::start(ssh, host)?.channels,
             daemon: None,
             opening: Vec::new(),
         }),
-        Greeting::Closed => {
+        Greeted::Closed => {
             let (stderr, code) = tokio::time::timeout(EXIT_WAIT, session.exit)
                 .await
                 .ok()

@@ -141,7 +141,7 @@ impl App {
     /// it, when asked to or when it is not a pane the workspace can hold
     /// (an editor is not a listed pane).
     fn focus_made_pane(&mut self, id: PaneId, floating: bool) -> bool {
-        let Some(title) = panes_in(&self.tree)
+        let Some(title) = self.tree.panes()
             .find(|p| p.id == id)
             .map(|p| p.title.clone())
         else {

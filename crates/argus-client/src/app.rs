@@ -13,9 +13,9 @@
 //! back.
 
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, ClientMsg, PaneId, PaneInfo, PaneKind, PaneState, PaneStatus,
-    ProjectId, ProjectInfo, RepositoryId, RepositoryInfo, ReviewAnchor, ServerMsg, WorkspaceId,
-    WorkspaceInfo,
+    CheckoutId, CheckoutInfo, ClientMsg, HeldTree, PaneId, PaneInfo, PaneKind, PaneState,
+    PaneStatus, ProjectId, ProjectInfo, RepositoryId, RepositoryInfo, ReviewAnchor, ServerMsg,
+    WorkspaceId, WorkspaceInfo,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
@@ -74,16 +74,12 @@ fn on_branch(c: &CheckoutInfo, branch: &str) -> bool {
         == branch
 }
 
-/// The tree flattened to its checkouts, and to its panes. Written once
-/// because half a dozen questions are one of these plus a `find`.
+/// The tree flattened to its checkouts. Written once because several
+/// questions are this plus a `find`; its panes are [`HeldTree::panes`].
 fn checkouts_in(tree: &[ProjectInfo]) -> impl Iterator<Item = &CheckoutInfo> {
     tree.iter()
         .flat_map(|project| project.repositories.iter())
         .flat_map(|repository| repository.checkouts.iter())
-}
-
-fn panes_in(tree: &[ProjectInfo]) -> impl Iterator<Item = &PaneInfo> {
-    checkouts_in(tree).flat_map(|checkout| checkout.panes.iter())
 }
 
 /// An agent pane that can still be spoken to: a shell has nothing to hear
