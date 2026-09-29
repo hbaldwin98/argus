@@ -353,6 +353,16 @@ function banners() {
   const out = [];
   if (!state.connected) {
     out.push(el("div", { class: "banner bad", text: "Not connected to argus web. Retrying…" }));
+  } else if (state.server && state.server.refused) {
+    // The daemon from another build, as below, but one argus web cannot
+    // use at all until it is restarted.
+    const daemon = state.server.daemon_version
+      ? `argusd ${state.server.daemon_version} cannot talk to`
+      : "argusd is too old for";
+    out.push(el("div", {
+      class: "banner bad",
+      text: `${daemon} argus web ${state.server.version}. Run argus server restart to match.`,
+    }));
   } else if (state.server && !state.server.connected) {
     out.push(el("div", { class: "banner bad", text: "argus web has lost argusd. Reconnecting…" }));
   } else if (state.server && state.server.daemon_version) {

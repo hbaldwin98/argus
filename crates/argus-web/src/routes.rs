@@ -275,7 +275,18 @@ async fn phone(mut socket: WebSocket, app: Arc<App>, token: String, device: Stri
                     _ => None,
                 }
             }
-            Some(answer) = answers.recv() => Some(answer),
+            Some(answer) = answers.recv() => {
+                // An answer may name an agent the list has only just
+                // gained, so a list waiting to go goes first: the page is
+                // never sent to a pane it does not have.
+                if agents.has_changed().unwrap_or(false) {
+                    let list = agents.borrow_and_update().clone();
+                    if socket.send(Message::Text(list.as_str().into())).await.is_err() {
+                        break;
+                    }
+                }
+                Some(answer)
+            }
             changed = server.changed() => {
                 if changed.is_err() { break }
                 Some(server.borrow_and_update().clone())

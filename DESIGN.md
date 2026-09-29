@@ -53,13 +53,16 @@ templates, workspaces — as it always has, and answers a `Hello` with its own w
 it never sends one unasked, so a client that does not greet is never sent it. The client reads on
 until the answer, keeping what came first for the app. A daemon from before the greeting hangs up on
 it right after its opening messages, and the client connects again without greeting. One that takes
-the greeting and says nothing for three seconds is kept, with nothing optional assumed. Either side
-uses an optional message or encoding only when the other listed it, and the protocol number is
-raised only for a change nothing can be negotiated across.
+the greeting and says nothing for three seconds is kept, with nothing optional assumed. `argus web`
+does not fall back: it is nothing without the transcripts and outbox such a daemon lacks, so it
+tells its phones argusd is too old and tries again every five seconds, for a restart to be noticed.
+Either side uses an optional message or encoding only when the other listed it, and the protocol
+number is raised only for a change nothing can be negotiated across.
 
 A client told of a daemon from another build says so on the status bar, with both versions and
 `argus server restart`, which starts the daemon installed beside the client. A daemon on another
-protocol number is an alarm rather than a note.
+protocol number is an alarm rather than a note; `argus web` refuses it as it refuses one from before
+the greeting, naming its version.
 
 A client can attach to the daemon on another machine as well as its own. `argus --host <host>`
 runs `ssh -T -o BatchMode=yes -- <host> argus bridge`, and the bridge on that machine carries its
@@ -117,7 +120,8 @@ into links; every other string is set as text. Every phone shares one daemon con
 conversation several phones watch is watched once, and when the daemon says it is stopping
 `argus web` exits rather than start another. The agent list carries the templates and every
 checkout, so a phone can start an agent: a named `SpawnAgent` whose `Created` answer tells that
-phone which pane to open. Closing one is `Kill`, after the page asks.
+phone which pane to open, once a tree lists it and the phone has been sent that list. Closing one
+is `Kill`, after the page asks.
 
 The page is installable: a manifest, icons, and a service worker that caches nothing, so the page
 is always the one this `argus web` serves, and that shows pushes and opens the agent a tapped one
@@ -126,7 +130,8 @@ page served over HTTPS, so the page offers "Notify me" only in a secure context.
 subscription is kept with it in `web-devices.json`, and must name an `https://` endpoint, so the
 server cannot be told to post anywhere else. `argus web` compares each tree with the last and makes
 a notice when an agent's loudest state goes to waiting, needs-review or failed, or from working to
-idle — a turn ending; a connection's first tree is taken as it is. A notice carries the pane's title,
+idle — a turn ending; the first tree it holds is taken as it is, and the last is kept across
+reconnecting, as the terminal client keeps its own. A notice carries the pane's title,
 who changed and the agent's note, never anything from the conversation. It is encrypted for the
 browser as RFC 8291 lays out, so the push service relays bytes it cannot read, and signed with a
 P-256 key made once and kept in `web-push.json` (VAPID, RFC 8292). It goes to every subscribed
@@ -639,8 +644,10 @@ outlive the state it explains.
 Automatic `Idle` events do not erase `Waiting`, `NeedsReview`, `Done`, or `Failed`; the agent reports
 `Working` when it resumes.
 
-Each client compares consecutive tree snapshots by pane ID. The first snapshot after attaching is a
-quiet baseline; a later effective-state change into `Waiting`, `NeedsReview`, or `Failed` is announced. Effective
+Each client compares consecutive tree snapshots by pane ID, through `held_tree`'s one reading of
+what changed. The first snapshot a client holds is a quiet baseline, as is a pane new to a snapshot,
+and the last one is kept across a reconnect, so a pane that started waiting while the daemon was
+away is still news; a later effective-state change into `Waiting`, `NeedsReview`, or `Failed` is announced. Effective
 state includes child agents because their parent pane is the selectable place the operator can open.
 Every row that stands for several panes — a checkout, a repository and its rail dot, the rail's need
 badge, the command band's tally — rolls up each listed pane and each child the same way, through

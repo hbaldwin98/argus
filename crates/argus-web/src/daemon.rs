@@ -7,15 +7,18 @@
 //! fresh tail, which the others take as a replacement for what they hold.
 //! The connection is made again whenever it drops, the way the terminal
 //! client makes it, except after the daemon says it is stopping: coming
-//! back would start another, which is not what stopping asked for.
+//! back would start another, which is not what stopping asked for. A
+//! daemon that cannot take the greeting is not fallen back to, as the
+//! terminal falls back: the server is nothing without the transcripts and
+//! the outbox such a daemon lacks, so phones are told to restart it.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use argus_protocol::{
-    read_known_msg, write_msg, AgentTelemetry, ClientMsg, Earlier, Hello, PaneId, Sent, ServerMsg,
-    WorkspaceId, WorkspaceTree, LIVE_CHANNELS, WIDE_TREE,
+    read_known_msg, write_msg, ClientMsg, Earlier, Greeting, HeldTree, Hello, PaneId, Refusal,
+    Sent, ServerMsg, WorkspaceId, WorkspaceTree, GREETING_WAIT, LIVE_CHANNELS, WIDE_TREE,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc, watch};
@@ -81,10 +84,18 @@ struct Link {
     placed: HashMap<(u64, u64), (String, Reply)>,
     /// Agents asked for and not yet made, by request id: the phone to tell.
     starting: HashMap<u64, Reply>,
+    /// Agents made and not yet in a tree, and the phone to tell once one
+    /// lists them: a phone told first would open a pane its list lacks.
+    made: Vec<(PaneId, Reply)>,
     next_request: u64,
     /// Whether the next tree is this connection's first, against which a
     /// message placed with a daemon before it was not typed but lost.
     first_tree: bool,
+    /// The last tree notices were decided against. Kept across
+    /// reconnecting, as the terminal keeps its tree, so an agent that
+    /// started waiting while the daemon was away is still announced; empty
+    /// until the process's first tree, which is taken as it is.
+    announced: Vec<WorkspaceTree>,
 }
 
 fn json(msg: &ToPhone) -> Arc<String> {
@@ -108,6 +119,32 @@ pub enum Ended {
     Stopped,
 }
 
+/// How one connection ended.
+#[derive(Debug, PartialEq, Eq)]
+enum Over {
+    /// The daemon said it was stopping, or nobody is left to ask anything.
+    Stopped,
+    /// It was up, and dropped.
+    Dropped,
+    /// Closed before the daemon said anything, or never made.
+    Closed,
+    /// The daemon could not take the greeting.
+    Refused,
+}
+
+/// What phones are told of the daemon.
+enum Reach<'a> {
+    Lost,
+    /// Connected, and the daemon's greeting if it gave one.
+    Up(Option<&'a Hello>),
+    /// It could not take the greeting: its own, if it gave one on another
+    /// protocol, or none from a daemon before the handshake.
+    Refused(Option<&'a Hello>),
+}
+
+const FIRST_BACKOFF: Duration = Duration::from_millis(250);
+const MAX_BACKOFF: Duration = Duration::from_secs(5);
+
 struct Publish {
     server: watch::Sender<Arc<String>>,
     agents: watch::Sender<Arc<String>>,
@@ -118,16 +155,24 @@ struct Publish {
 }
 
 impl Publish {
-    fn server(&self, connected: bool, daemon: Option<&Hello>) {
+    fn server(&self, reach: Reach) {
         let ours = env!("CARGO_PKG_VERSION");
+        let (connected, refused, daemon) = match reach {
+            Reach::Lost => (false, false, None),
+            Reach::Up(daemon) => (true, false, daemon),
+            Reach::Refused(daemon) => (false, true, daemon),
+        };
+        // A refusal names the daemon's build even when the number matches:
+        // the protocol differing is the news, and the version says which.
         let daemon_version = daemon
             .map(|hello| hello.version.clone())
-            .filter(|version| version != ours);
+            .filter(|version| refused || version != ours);
         send(
             &self.server,
             &ToPhone::Server {
                 version: ours.to_string(),
                 connected,
+                refused,
                 daemon_version,
             },
         );
@@ -181,6 +226,7 @@ where
     let (server, server_rx) = watch::channel(initial(&ToPhone::Server {
         version: env!("CARGO_PKG_VERSION").to_string(),
         connected: false,
+        refused: false,
         daemon_version: None,
     }));
     let (agents, agents_rx) = watch::channel(initial(&ToPhone::Agents {
@@ -219,19 +265,29 @@ where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let mut link = Link::default();
-    let mut backoff = Duration::from_millis(250);
+    let mut backoff = FIRST_BACKOFF;
     loop {
-        match connect().await {
-            Ok(stream) => {
-                backoff = Duration::from_millis(250);
-                if session(stream, &publish, &mut asks, &mut link).await == Some(Ended::Stopped) {
-                    publish.server(false, None);
-                    return Ended::Stopped;
-                }
+        let over = match connect().await {
+            Ok(stream) => session(stream, &publish, &mut asks, &mut link).await,
+            Err(error) => {
+                tracing::warn!("argus web could not reach argusd: {error:#}");
+                Over::Closed
             }
-            Err(error) => tracing::warn!("argus web could not reach argusd: {error:#}"),
+        };
+        match over {
+            Over::Stopped => {
+                publish.server(Reach::Lost);
+                return Ended::Stopped;
+            }
+            Over::Dropped => {
+                backoff = FIRST_BACKOFF;
+                publish.server(Reach::Lost);
+            }
+            Over::Closed => publish.server(Reach::Lost),
+            // Already told; asking again soon would only be refused again
+            // until somebody restarts the daemon.
+            Over::Refused => backoff = MAX_BACKOFF,
         }
-        publish.server(false, None);
         // Nothing sent and unanswered will be answered now.
         for (_, (pane, _, reply)) in link.requests.drain() {
             let _ = reply.send(json(&lost(pane)));
@@ -256,7 +312,7 @@ where
                 },
             }
         }
-        backoff = (backoff * 2).min(Duration::from_secs(5));
+        backoff = (backoff * 2).min(MAX_BACKOFF);
     }
 }
 
@@ -351,19 +407,43 @@ impl Link {
         let _ = reply.send(json(&phone::sent(pane, sent)));
     }
 
+    /// The daemon's answer to a start: the phone is told once a tree lists
+    /// the pane, which may already be the one in hand.
+    fn created(&mut self, request_id: u64, created: Option<argus_protocol::Created>, tree: &[WorkspaceTree]) {
+        let Some(reply) = self.starting.remove(&request_id) else {
+            return;
+        };
+        let Some(argus_protocol::Created::Pane(pane)) = created else {
+            let _ = reply.send(json(&ToPhone::Started { pane: None }));
+            return;
+        };
+        self.made.push((pane, reply));
+        self.settle(tree, false);
+    }
+
+    /// Tells each phone whose agent this tree lists which pane it is. On a
+    /// connection's first tree, one it does not list went with the daemon
+    /// before it.
+    fn settle(&mut self, tree: &[WorkspaceTree], first: bool) {
+        self.made.retain(|(pane, reply)| {
+            let listed = tree.panes().any(|p| p.id == *pane);
+            if listed {
+                let _ = reply.send(json(&ToPhone::Started { pane: Some(pane.0) }));
+            } else if first {
+                let _ = reply.send(json(&ToPhone::Started { pane: None }));
+            }
+            !listed && !first
+        });
+    }
+
     /// Forgets placed messages a tree no longer lists: typed or taken back,
     /// by a live daemon — or, on a connection's first tree, lost with the
     /// daemon before it, which their phones are told.
-    fn reconcile(&mut self, tree: &[WorkspaceTree]) {
+    fn reconcile(&mut self, tree: &[WorkspaceTree], first: bool) {
         let listed: std::collections::HashSet<(u64, u64)> = tree
-            .iter()
-            .flat_map(|w| w.projects.iter())
-            .flat_map(|p| p.repositories.iter())
-            .flat_map(|r| r.checkouts.iter())
-            .flat_map(|c| c.panes.iter())
+            .panes()
             .flat_map(|p| p.queued.iter().map(move |m| (p.id.0, m.id)))
             .collect();
-        let first = std::mem::take(&mut self.first_tree);
         self.placed.retain(|&(pane, id), (text, reply)| {
             if listed.contains(&(pane, id)) {
                 return true;
@@ -421,14 +501,13 @@ fn count(watching: &mut HashMap<u64, usize>, ask: &Ask) -> Option<ClientMsg> {
 }
 
 /// One connection's life: greet, watch again what phones are watching,
-/// then carry messages until it drops. `Some(Stopped)` when the daemon
-/// said it was stopping.
+/// then carry messages until it drops.
 async fn session<S>(
     stream: S,
     publish: &Publish,
     asks: &mut mpsc::UnboundedReceiver<Ask>,
     link: &mut Link,
-) -> Option<Ended>
+) -> Over
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
@@ -444,90 +523,114 @@ where
         }
     });
 
-    let hello = Hello::this_build().and(WIDE_TREE).and(LIVE_CHANNELS);
-    if write_msg(&mut wr, &ClientMsg::Hello(hello)).await.is_err() {
-        reader.abort();
-        return None;
-    }
-    for pane in link.watching.keys() {
-        let _ = write_msg(&mut wr, &ClientMsg::WatchTranscript { pane: PaneId(*pane) }).await;
-    }
-    for pane in link.screens.keys() {
-        let _ = write_msg(&mut wr, &ClientMsg::Subscribe { pane: PaneId(*pane) }).await;
-    }
-    link.first_tree = true;
+    let over = async {
+        let hello = Hello::this_build().and(WIDE_TREE).and(LIVE_CHANNELS);
+        if write_msg(&mut wr, &ClientMsg::Hello(hello)).await.is_err() {
+            return Over::Closed;
+        }
+        let (daemon, opening) = match Greeting::read(&mut incoming, GREETING_WAIT).await {
+            Greeting::Up { daemon, opening } => (daemon, opening),
+            Greeting::Refused(refusal) => {
+                let daemon = match &refusal {
+                    Refusal::Predates => None,
+                    Refusal::Protocol { daemon, .. } => Some(daemon),
+                };
+                tracing::warn!("argusd cannot take argus web's greeting: {refusal:?}");
+                publish.server(Reach::Refused(daemon));
+                return Over::Refused;
+            }
+            Greeting::Closed => return Over::Closed,
+        };
+        publish.server(Reach::Up(daemon.as_ref()));
 
-    let mut state = State::default();
-    let mut flush = tokio::time::interval(crate::screen::FLUSH);
-    flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let ended = loop {
-        tokio::select! {
-            msg = incoming.recv() => {
-                let Some(msg) = msg else { break None };
-                if let Some(ended) = state.take(msg, publish, link) {
-                    break Some(ended);
-                }
+        for pane in link.watching.keys() {
+            let _ = write_msg(&mut wr, &ClientMsg::WatchTranscript { pane: PaneId(*pane) }).await;
+        }
+        for pane in link.screens.keys() {
+            let _ = write_msg(&mut wr, &ClientMsg::Subscribe { pane: PaneId(*pane) }).await;
+        }
+        link.first_tree = true;
+
+        let mut state = State::default();
+        for msg in opening {
+            if let Some(over) = state.take(msg, publish, link) {
+                return over;
             }
-            ask = asks.recv() => {
-                let Some(ask) = ask else { break Some(Ended::Stopped) };
-                // A phone joining a screen others already watch starts from
-                // the whole of it, as does one that fell behind.
-                if let Ask::Screen(pane) | Ask::RefreshScreen(pane) = ask {
-                    if let Some(screen) = state.screens.get_mut(&pane) {
-                        screen.refresh();
+        }
+        let mut flush = tokio::time::interval(crate::screen::FLUSH);
+        flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tokio::select! {
+                msg = incoming.recv() => {
+                    let Some(msg) = msg else { return Over::Dropped };
+                    if let Some(over) = state.take(msg, publish, link) {
+                        return over;
                     }
                 }
-                if let Some(msg) = link.ask(ask) {
-                    if write_msg(&mut wr, &msg).await.is_err() {
-                        break None;
+                ask = asks.recv() => {
+                    let Some(ask) = ask else { return Over::Stopped };
+                    // A phone joining a screen others already watch starts from
+                    // the whole of it, as does one that fell behind.
+                    if let Ask::Screen(pane) | Ask::RefreshScreen(pane) = ask {
+                        if let Some(screen) = state.screens.get_mut(&pane) {
+                            screen.refresh();
+                        }
+                    }
+                    if let Some(msg) = link.ask(ask) {
+                        if write_msg(&mut wr, &msg).await.is_err() {
+                            return Over::Dropped;
+                        }
                     }
                 }
-            }
-            _ = flush.tick() => {
-                state.screens.retain(|pane, _| link.screens.contains_key(pane));
-                for (pane, screen) in &mut state.screens {
-                    if let Some(update) = screen.flush() {
-                        publish.screen(*pane, update);
+                _ = flush.tick() => {
+                    state.screens.retain(|pane, _| link.screens.contains_key(pane));
+                    for (pane, screen) in &mut state.screens {
+                        if let Some(update) = screen.flush() {
+                            publish.screen(*pane, update);
+                        }
                     }
                 }
             }
         }
-    };
+    }
+    .await;
     reader.abort();
-    ended
+    over
 }
 
 /// What this connection has been told.
 #[derive(Default)]
 struct State {
-    daemon: Option<Hello>,
     tree: Vec<WorkspaceTree>,
     /// The screens phones are watching, as the daemon streams them.
     screens: HashMap<u64, crate::screen::Screen>,
     /// The templates an agent can be started from.
     templates: Vec<String>,
-    /// Each agent's loudest status in the last tree, to tell what changed.
-    /// Empty until this connection's first tree, which is taken as it is
-    /// rather than announced.
-    statuses: HashMap<u64, argus_protocol::PaneStatus>,
     /// Whether the daemon sends every workspace. One from before sends
     /// only the open workspace's tree, which stands in for all of them.
     wide: bool,
 }
 
 impl State {
-    fn take(&mut self, msg: ServerMsg, publish: &Publish, link: &mut Link) -> Option<Ended> {
+    fn take(&mut self, msg: ServerMsg, publish: &Publish, link: &mut Link) -> Option<Over> {
         match msg {
-            ServerMsg::Hello(hello) => {
-                publish.server(true, Some(&hello));
-                self.daemon = Some(hello);
+            // A greeting answered after the wait for it ran out.
+            ServerMsg::Hello(hello) if !hello.speaks_ours() => {
+                publish.server(Reach::Refused(Some(&hello)));
+                return Some(Over::Refused);
             }
+            ServerMsg::Hello(hello) => publish.server(Reach::Up(Some(&hello))),
             ServerMsg::WideTree(tree) => {
                 self.wide = true;
                 self.tree = tree;
-                link.reconcile(&self.tree);
-                self.announce(publish);
+                let first = std::mem::take(&mut link.first_tree);
+                link.reconcile(&self.tree, first);
+                announce(&link.announced, &self.tree, publish);
+                link.announced = self.tree.clone();
                 publish.agents(&self.tree, &self.templates);
+                // After the list, so a phone told which agent it started
+                // already has it to open.
+                link.settle(&self.tree, first);
             }
             ServerMsg::Sent {
                 request_id, sent, ..
@@ -539,19 +642,8 @@ impl State {
             ServerMsg::Created {
                 request_id,
                 created,
-            } => {
-                if let Some(reply) = link.starting.remove(&request_id) {
-                    let pane = match created {
-                        Some(argus_protocol::Created::Pane(pane)) => Some(pane.0),
-                        _ => None,
-                    };
-                    let _ = reply.send(json(&ToPhone::Started { pane }));
-                }
-            }
+            } => link.created(request_id, created, &self.tree),
             ServerMsg::Tree(projects) if !self.wide => {
-                if self.daemon.is_none() {
-                    publish.server(true, None);
-                }
                 self.tree = vec![WorkspaceTree {
                     id: WorkspaceId(0),
                     name: "open workspace".to_string(),
@@ -559,9 +651,10 @@ impl State {
                     projects,
                 }];
                 publish.agents(&self.tree, &self.templates);
+                link.settle(&self.tree, false);
             }
             ServerMsg::PaneTelemetry { pane, telemetry } => {
-                if self.merge_telemetry(pane, telemetry) {
+                if self.tree.apply_telemetry(pane, telemetry) {
                     publish.agents(&self.tree, &self.templates);
                 }
             }
@@ -621,67 +714,39 @@ impl State {
             ServerMsg::PaneClosed { pane, .. } => {
                 self.screens.remove(&pane.0);
             }
-            ServerMsg::Stopping => return Some(Ended::Stopped),
+            ServerMsg::Stopping => return Some(Over::Stopped),
             ServerMsg::Error { message } => tracing::warn!("argusd: {message}"),
             _ => {}
         }
         None
     }
+}
 
-    /// Tells phones of each agent whose state changed in a way worth
-    /// waking them for.
-    fn announce(&mut self, publish: &Publish) {
-        let agents = self
-            .tree
-            .iter()
-            .flat_map(|w| w.projects.iter())
-            .flat_map(|p| p.repositories.iter())
-            .flat_map(|r| r.checkouts.iter())
-            .flat_map(|c| c.panes.iter())
-            .filter(|p| p.kind == argus_protocol::PaneKind::Agent);
-        let mut seen = HashMap::new();
-        for pane in agents {
-            let loudest = pane.loudest_state();
-            seen.insert(pane.id.0, loudest.status);
-            let before = self.statuses.get(&pane.id.0).copied();
-            let Some(verb) = before.and_then(|before| crate::push::worth_telling(before, loudest.status)) else {
-                continue;
-            };
-            let who = loudest
-                .child
-                .map(str::to_string)
-                .or_else(|| pane.template.clone())
-                .unwrap_or_else(|| "The agent".to_string());
-            let body = match loudest.note {
-                Some(note) if !note.is_empty() => format!("{who} {verb}: {note}"),
-                _ => format!("{who} {verb}"),
-            };
-            let _ = publish.notices.send(crate::push::Notice {
-                title: pane.title.clone(),
-                body,
-                pane: pane.id.0,
-                url: format!("/#/pane/{}", pane.id.0),
-            });
-        }
-        self.statuses = seen;
-    }
-
-    fn merge_telemetry(&mut self, pane: PaneId, telemetry: AgentTelemetry) -> bool {
-        let found = self
-            .tree
-            .iter_mut()
-            .flat_map(|w| w.projects.iter_mut())
-            .flat_map(|p| p.repositories.iter_mut())
-            .flat_map(|r| r.checkouts.iter_mut())
-            .flat_map(|c| c.panes.iter_mut())
-            .find(|p| p.id == pane);
-        match found {
-            Some(p) if p.telemetry != telemetry => {
-                p.telemetry = telemetry;
-                true
-            }
-            _ => false,
-        }
+/// Tells phones of each agent whose state changed from `previous` in a way
+/// worth waking them for.
+fn announce(previous: &[WorkspaceTree], tree: &[WorkspaceTree], publish: &Publish) {
+    let changed = argus_protocol::transitions(previous, tree)
+        .into_iter()
+        .filter(|t| t.pane.kind == argus_protocol::PaneKind::Agent);
+    for argus_protocol::Transition { pane, before, after } in changed {
+        let Some(verb) = crate::push::worth_telling(before, after.status) else {
+            continue;
+        };
+        let who = after
+            .child
+            .map(str::to_string)
+            .or_else(|| pane.template.clone())
+            .unwrap_or_else(|| "The agent".to_string());
+        let body = match after.note {
+            Some(note) if !note.is_empty() => format!("{who} {verb}: {note}"),
+            _ => format!("{who} {verb}"),
+        };
+        let _ = publish.notices.send(crate::push::Notice {
+            title: pane.title.clone(),
+            body,
+            pane: pane.id.0,
+            url: format!("/#/pane/{}", pane.id.0),
+        });
     }
 }
 
@@ -744,12 +809,11 @@ mod tests {
         assert!(phone.try_recv().unwrap().contains("\"outcome\":\"queued\""));
 
         // The same daemon lists it: still waiting.
-        link.reconcile(&tree_queuing(7, &[4]));
+        link.reconcile(&tree_queuing(7, &[4]), false);
         assert!(phone.try_recv().is_err());
 
         // A new connection whose first tree lacks it: that daemon never had it.
-        link.first_tree = true;
-        link.reconcile(&tree_queuing(7, &[]));
+        link.reconcile(&tree_queuing(7, &[]), true);
         let notice = phone.try_recv().unwrap();
         assert!(notice.contains("\"type\":\"not_sent\""), "{notice}");
         assert!(notice.contains("later please"), "{notice}");
@@ -763,7 +827,7 @@ mod tests {
         link.ask(Ask::Send { pane: 7, text: "x".into(), now: false, reply });
         link.answered(1, Sent::Queued { id: 4 });
         let _ = phone.try_recv();
-        link.reconcile(&tree_queuing(7, &[]));
+        link.reconcile(&tree_queuing(7, &[]), false);
         assert!(phone.try_recv().is_err(), "typed, not lost");
         assert!(link.placed.is_empty());
     }

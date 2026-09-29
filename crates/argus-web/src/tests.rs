@@ -449,7 +449,7 @@ async fn an_agent_starting_to_wait_is_worth_a_push_and_a_first_look_is_not() {
     let mut running = serve().await;
     let mut daemon = play_daemon(&mut running).await;
     // The tree play_daemon sent, with the agent already waiting, is the
-    // first this connection saw: taken as it is, not announced.
+    // first this process saw: taken as it is, not announced.
     write_msg(&mut daemon, &ServerMsg::WideTree(vec![with_status(PaneStatus::Working, None)])).await.unwrap();
     write_msg(
         &mut daemon,
@@ -568,6 +568,7 @@ async fn a_phone_starts_an_agent_where_it_chose_and_closes_one() {
     )
     .await
     .unwrap();
+    write_msg(&mut daemon, &ServerMsg::WideTree(vec![with_panes(&[7, 9])])).await.unwrap();
     assert_eq!(next_of(&mut phone, "started").await["pane"], 9);
 
     phone
@@ -580,4 +581,171 @@ async fn a_phone_starts_an_agent_where_it_chose_and_closes_one() {
         }
     };
     assert_eq!(closed, PaneId(9));
+}
+
+/// The played tree, its one agent copied under each of `ids`.
+fn with_panes(ids: &[u64]) -> WorkspaceTree {
+    let mut t = tree();
+    let panes = &mut t.projects[0].repositories[0].checkouts[0].panes;
+    let agent = panes[0].clone();
+    *panes = ids
+        .iter()
+        .map(|&id| PaneInfo { id: PaneId(id), ..agent.clone() })
+        .collect();
+    t
+}
+
+/// The phone's messages up to the first of type `kind`, that one last.
+async fn up_to(socket: &mut Socket, kind: &str) -> Vec<serde_json::Value> {
+    let mut seen = Vec::new();
+    loop {
+        let json = next_json(socket).await;
+        let done = json["type"] == kind;
+        seen.push(json);
+        if done {
+            return seen;
+        }
+    }
+}
+
+async fn asked_to_start(daemon: &mut DuplexStream) -> u64 {
+    loop {
+        if let ClientMsg::SpawnAgent { request_id, .. } = read_msg::<_, ClientMsg>(daemon).await.unwrap() {
+            return request_id;
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_started_agent_is_opened_once_the_daemon_has_answered_and_a_tree_lists_it() {
+    let mut running = serve().await;
+    let cookie = paired_cookie(&running).await;
+    let mut daemon = play_daemon(&mut running).await;
+    let origin = format!("http://{}", running.addr);
+    let mut phone = open(running.addr, Some(&cookie), &origin).await.unwrap();
+    let _ = next_of(&mut phone, "agents").await;
+    let start = r#"{"type":"start","checkout":0,"template":"claude"}"#;
+
+    // The answer first. A message's answer goes to the phone the way a
+    // start's does, so one sent behind the Created and arriving first
+    // shows the start was held.
+    phone.send(tungstenite::Message::Text(start.into())).await.unwrap();
+    let request_id = asked_to_start(&mut daemon).await;
+    phone
+        .send(tungstenite::Message::Text(r#"{"type":"send","pane":7,"text":"hi","now":true}"#.into()))
+        .await
+        .unwrap();
+    let message_id = loop {
+        if let ClientMsg::SendToAgent { request_id, .. } = read_msg::<_, ClientMsg>(&mut daemon).await.unwrap() {
+            break request_id;
+        }
+    };
+    let made = |pane| ServerMsg::Created { request_id, created: Some(argus_protocol::Created::Pane(PaneId(pane))) };
+    write_msg(&mut daemon, &made(9)).await.unwrap();
+    let typed = ServerMsg::Sent { request_id: message_id, pane: PaneId(7), sent: argus_protocol::Sent::Typed };
+    write_msg(&mut daemon, &typed).await.unwrap();
+    let answers: Vec<_> = up_to(&mut phone, "sent").await;
+    assert!(
+        !answers.iter().any(|m| m["type"] == "started"),
+        "no tree lists pane 9 yet: {answers:?}"
+    );
+
+    write_msg(&mut daemon, &ServerMsg::WideTree(vec![with_panes(&[7, 9])])).await.unwrap();
+    let seen = up_to(&mut phone, "started").await;
+    assert_eq!(seen.last().unwrap()["pane"], 9);
+    let list = seen.iter().rev().find(|m| m["type"] == "agents").expect("the list goes first");
+    let panes: Vec<_> = list["workspaces"][0]["agents"].as_array().unwrap().iter().map(|a| a["pane"].clone()).collect();
+    assert_eq!(panes, [json!(7), json!(9)]);
+
+    // The tree first: the answer finds the pane already listed.
+    phone.send(tungstenite::Message::Text(start.into())).await.unwrap();
+    let request_id = asked_to_start(&mut daemon).await;
+    write_msg(&mut daemon, &ServerMsg::WideTree(vec![with_panes(&[7, 9, 10])])).await.unwrap();
+    let made = ServerMsg::Created { request_id, created: Some(argus_protocol::Created::Pane(PaneId(10))) };
+    write_msg(&mut daemon, &made).await.unwrap();
+    assert_eq!(next_of(&mut phone, "started").await["pane"], 10);
+}
+
+#[tokio::test]
+async fn an_agent_that_started_waiting_while_argusd_was_away_is_still_announced() {
+    let mut running = serve().await;
+    let mut daemon = play_daemon(&mut running).await;
+    write_msg(&mut daemon, &ServerMsg::WideTree(vec![with_status(PaneStatus::Working, None)])).await.unwrap();
+    // The connection drops with the agent working; the next one's first
+    // tree has it waiting again, which is news whichever connection saw it.
+    drop(daemon);
+
+    let _daemon = play_daemon(&mut running).await;
+    let notice = tokio::time::timeout(Duration::from_secs(5), running.notices.recv())
+        .await
+        .expect("a notice across the reconnect")
+        .unwrap();
+    assert_eq!(notice.pane, 7);
+    assert_eq!(notice.body, "claude is waiting for you: allow cargo test?");
+}
+
+/// Plays a daemon that cannot take the greeting: sends its opening, reads
+/// the greeting, and answers it with `answer` or, given none, hangs up as
+/// one from before the handshake does.
+async fn refuse(running: &mut Running, answer: Option<Hello>) -> Option<DuplexStream> {
+    let mut stream = tokio::time::timeout(Duration::from_secs(5), running.daemon.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    write_msg(&mut stream, &ServerMsg::Tree(Vec::new())).await.unwrap();
+    write_msg(&mut stream, &ServerMsg::Templates(Vec::new())).await.unwrap();
+    let ClientMsg::Hello(_) = read_msg::<_, ClientMsg>(&mut stream).await.unwrap() else {
+        panic!("argus web greets first");
+    };
+    let answer = answer?;
+    write_msg(&mut stream, &ServerMsg::Hello(answer)).await.unwrap();
+    Some(stream)
+}
+
+async fn refused_banner(phone: &mut Socket) -> serde_json::Value {
+    loop {
+        let server = next_of(phone, "server").await;
+        if server["refused"] == true {
+            return server;
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_daemon_from_before_the_handshake_is_named_too_old_and_not_hammered() {
+    let mut running = serve().await;
+    let cookie = paired_cookie(&running).await;
+    let origin = format!("http://{}", running.addr);
+    let mut phone = open(running.addr, Some(&cookie), &origin).await.unwrap();
+
+    assert!(refuse(&mut running, None).await.is_none());
+    let server = refused_banner(&mut phone).await;
+    assert_eq!(server["connected"], false);
+    assert_eq!(server["daemon_version"], serde_json::Value::Null, "it never said");
+
+    let again = tokio::time::timeout(Duration::from_secs(1), running.daemon.recv()).await;
+    assert!(again.is_err(), "no connecting straight back to be refused again");
+}
+
+#[tokio::test]
+async fn a_daemon_on_another_protocol_is_refused_and_named() {
+    let mut running = serve().await;
+    let cookie = paired_cookie(&running).await;
+    let origin = format!("http://{}", running.addr);
+    let mut phone = open(running.addr, Some(&cookie), &origin).await.unwrap();
+
+    let other = Hello {
+        protocol: argus_protocol::PROTOCOL + 1,
+        version: "99.0.0".into(),
+        capabilities: Vec::new(),
+    };
+    let mut daemon = refuse(&mut running, Some(other)).await.unwrap();
+    let server = refused_banner(&mut phone).await;
+    assert_eq!(server["connected"], false);
+    assert_eq!(server["daemon_version"], "99.0.0");
+
+    // Hung up on: nothing more is asked of a daemon it cannot speak to.
+    let mut rest = Vec::new();
+    daemon.read_to_end(&mut rest).await.unwrap();
+    assert!(rest.is_empty(), "{} bytes sent after the refusal", rest.len());
 }

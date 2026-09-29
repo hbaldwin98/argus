@@ -24,8 +24,12 @@ pub enum ToPhone {
         version: String,
         /// Whether the daemon is connected right now.
         connected: bool,
+        /// Whether the daemon could not take the greeting: one from before
+        /// it, or on another protocol. Not connected, and not coming back
+        /// until it is restarted.
+        refused: bool,
         /// The daemon's version, when it greeted and differs from this
-        /// build's: what to restart to make them match.
+        /// build's, or it refused: what to restart to make them match.
         daemon_version: Option<String>,
     },
     /// Every agent the daemon runs, whole, after any change, with the
