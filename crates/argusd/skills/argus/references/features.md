@@ -19,8 +19,9 @@ checkout shares the selection, so inspect it before changing it.
 ## Choosing a feature
 
 For implementation work, start from the feature in your pane's context (or
-`context`). If the selected feature matches the request, keep it. Otherwise check `feature list` and `use` a matching one. Only
-`open` a new feature when none fits; `open` also selects it for this checkout.
+`context`). If the selected feature matches the request, keep it. Otherwise
+check `feature list` and `use` a matching one. Only `open` a new feature when
+none fits; `open` also selects it for this checkout.
 Do not switch features just to answer a question.
 
 To read or write a feature other than the selected one — another agent in this
@@ -42,10 +43,20 @@ Leave choices between options to the decision board rather than the brief.
 
 ## Keeping the brief current
 
+Every agent in the checkout is shown the whole brief at the start of each
+session, so it has to be true and short. It describes the feature as it stands,
+not how it got there.
+
 `note` appends to the brief. Add findings a later agent would otherwise have to
 rediscover: a non-obvious cause, a gotcha, where the real entry point lives, or
 a change of scope the human agreed to. Do not append progress logs, command
-output, or anything already recorded as a task or decision.
+output, or anything already recorded as a task or decision. What the human
+still has to check or choose goes on the board as tasks (see
+[tasks.md](tasks.md)), not in the brief.
+
+When the brief states something that is no longer true — a superseded
+decision, a scope item now built, a note later work disproved — rewrite that
+paragraph with `brief` rather than appending a correction beside it.
 
 ## Correcting a feature
 

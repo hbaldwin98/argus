@@ -26,6 +26,11 @@ it as the outcome ("restore resumes the recorded conversation"), not an activity
 ("look into restore"). Read the existing tasks before adding any, and extend the
 board rather than duplicating it.
 
+When you finish with checks only the human can make — a real device, their
+account, a choice left to them — add each as a `todo` task titled as the checked
+result ("a push reaches a real phone"), with what you verified and what remains
+in its brief. The pane's context lists open tasks, so the next agent sees them.
+
 Add subtasks with `--under` when a task needs several distinct steps, when you
 discover a smaller piece of work inside it, or when one step needs its own
 decision or verification. Do not create subtasks for single commands or for work

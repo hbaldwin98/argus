@@ -57,16 +57,3 @@ Read the list first so you know existing ids before dropping one.
 
 Do **not** append diagram source to the feature brief with `feature note`;
 briefs stay prose.
-
-## Humans in the TUI
-
-In the **Feature** view (command center layout):
-
-1. Select the feature the flow belongs to.
-2. **Tab** to the **Diagrams** panel, or use the **SEQUENCE** block in the document.
-3. **`a`** adds a starter diagram; **`Enter`** opens the selected row in an overlay.
-4. **`j`/`k`** scroll inside the overlay; **`q`** or **Esc** closes it without
-   removing the row.
-
-Press **`r`** on the feature view if a diagram was added elsewhere and the list
-has not refreshed.

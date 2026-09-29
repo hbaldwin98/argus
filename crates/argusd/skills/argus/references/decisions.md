@@ -20,8 +20,9 @@ agent might reasonably have chosen instead. Name the rejected option with
 constrained this one. Routine steps and forced choices do not need decisions.
 
 When a new finding invalidates a decision, record the replacement with
-`--supersedes` so the earlier reasoning stays visible. If the change reverses
-something the human decided, confirm with them first.
+`--supersedes` so the earlier reasoning stays visible, and rewrite whatever the
+feature's brief and open task briefs say about the old choice. If the change
+reverses something the human decided, confirm with them first.
 
 A decision recorded in error — wrong feature, wrong wording, never really
 decided — is withdrawn instead, with the number `decisions` prints. It stays in
