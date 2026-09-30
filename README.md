@@ -510,6 +510,8 @@ location. Typing filters the folders in the current directory.
 The stage beside the rail holds one view at a time: `1` Workspace (the selected pane's terminal),
 `2` Feature, `3` Panes, and `4` Checkouts. The tab strip along the top names them and carries the
 digit that opens each; clicking a tab does the same. Switching views never stops a pane.
+Drag the rail's right border to widen or narrow it; the width is saved to `client.toml` as
+`rail_width`.
 
 The Feature view reads the selected repository's features as a document: the feature list, then
 the selected one whole — its brief, the tasks left under it, its sequence diagrams, and the

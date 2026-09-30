@@ -119,6 +119,11 @@ pub struct Settings {
     /// picker beside the ones the user's ssh config names. Written only by
     /// [`remember_host`]; see [`save`].
     pub hosts: Vec<String>,
+    /// The rail's width as last dragged, `None` for the default. The frame
+    /// still clamps it, so a width chosen on a wide terminal cannot push the
+    /// stage off a narrow one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rail_width: Option<u16>,
     /// How `argus web` serves, when its flags do not say.
     #[serde(skip_serializing_if = "WebSettings::is_empty")]
     pub web: WebSettings,
@@ -151,6 +156,7 @@ impl Default for Settings {
             review_split: false,
             notifications: NotificationMode::Off,
             hosts: Vec::new(),
+            rail_width: None,
             web: WebSettings::default(),
         }
     }
@@ -288,6 +294,7 @@ mod tests {
             review_split: true,
             notifications: NotificationMode::Bell,
             hosts: vec!["devbox".to_string()],
+            rail_width: Some(40),
             web: WebSettings {
                 port: Some(7500),
                 ..Default::default()

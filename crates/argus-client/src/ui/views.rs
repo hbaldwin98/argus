@@ -19,18 +19,18 @@ fn tab_text(view: View) -> String {
 ///
 /// The rail's right edge lines up with the start of the FEATURE tab, so a
 /// wider rail grows the WORKSPACE tab and its highlight to that junction.
-fn workspace_tab_width(strip_width: u16) -> u16 {
-    let rail = crate::ui::command_center::rail_width(strip_width);
+fn workspace_tab_width(strip_width: u16, rail_pref: Option<u16>) -> u16 {
+    let rail = crate::ui::command_center::rail_width(strip_width, rail_pref);
     let brand = BRAND.chars().count() as u16;
     // The junction and sidebar border sit on the rail's last column.
     rail.saturating_sub(brand + 1)
         .max(tab_text(View::Workspace).chars().count() as u16)
 }
 
-fn drawn_tab_text(view: View, strip_width: u16) -> String {
+fn drawn_tab_text(view: View, strip_width: u16, rail_pref: Option<u16>) -> String {
     let base = tab_text(view);
     if view == View::Workspace {
-        let target = workspace_tab_width(strip_width);
+        let target = workspace_tab_width(strip_width, rail_pref);
         let current = base.chars().count() as u16;
         if target > current {
             return format!("{base}{}", " ".repeat((target - current) as usize));
@@ -39,8 +39,8 @@ fn drawn_tab_text(view: View, strip_width: u16) -> String {
     base
 }
 
-fn drawn_tab_width(view: View, strip_width: u16) -> u16 {
-    drawn_tab_text(view, strip_width)
+fn drawn_tab_width(view: View, strip_width: u16, rail_pref: Option<u16>) -> u16 {
+    drawn_tab_text(view, strip_width, rail_pref)
         .chars()
         .count() as u16
 }
@@ -52,7 +52,8 @@ const BRAND: &str = " ■  ARGUS  ";
 
 /// Which tab a point falls on. Shared with the renderer rather than
 /// re-derived, so a click lands on the tab that was actually drawn.
-pub fn tab_at(views: Panel, x: u16, y: u16) -> Option<View> {
+/// `rail_pref` is the dragged rail width the strip was drawn with.
+pub fn tab_at(views: Panel, rail_pref: Option<u16>, x: u16, y: u16) -> Option<View> {
     let strip = views.outer;
     // A zero-sized strip is one that was not drawn — on a short terminal,
     // or before the first frame — and its default rect sits on row 0,
@@ -65,7 +66,7 @@ pub fn tab_at(views: Panel, x: u16, y: u16) -> Option<View> {
     }
     let mut cell = strip.x.saturating_add(brand_cells(views));
     for view in View::ALL {
-        let width = drawn_tab_width(view, strip.width);
+        let width = drawn_tab_width(view, strip.width, rail_pref);
         if x >= cell && x < cell + width {
             return Some(view);
         }
@@ -117,7 +118,7 @@ pub(super) fn render_view_tabs(f: &mut Frame, app: &mut App, area: Rect, th: The
     )];
     for view in View::ALL {
         let open = view == app.view;
-        let text = drawn_tab_text(view, area.width);
+        let text = drawn_tab_text(view, area.width, app.settings.rail_width);
         labels.push(Span::styled(
             text.clone(),
             Style::default()

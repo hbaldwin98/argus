@@ -289,3 +289,51 @@ fn the_rail_switches_projects_through_the_project_picker() {
         "{text}"
     );
 }
+
+#[test]
+fn dragging_the_rails_border_resizes_it_and_the_stage_follows() {
+    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+    let mut app = command_center();
+    draw_at(&mut app, 120, 30);
+    let edge = app.layout.rail.outer.right() - 1;
+    let row = app.layout.rail.inner.y + 2;
+    let mouse = |kind, column| MouseEvent {
+        kind,
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    };
+    app.on_mouse(mouse(MouseEventKind::Down(MouseButton::Left), edge));
+    app.on_mouse(mouse(MouseEventKind::Drag(MouseButton::Left), 69));
+    app.on_mouse(mouse(MouseEventKind::Up(MouseButton::Left), 69));
+    draw_at(&mut app, 120, 30);
+
+    assert_eq!(app.layout.rail.outer.width, 70);
+    assert!(app.layout.terminal.outer.x >= 70);
+    assert!(!app.rail_drag, "the release lets go of the border");
+}
+
+#[test]
+fn the_rail_cannot_be_dragged_narrower_than_its_minimum_or_past_the_stage() {
+    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+    let mut app = command_center();
+    draw_at(&mut app, 120, 30);
+    let edge = app.layout.rail.outer.right() - 1;
+    let row = app.layout.rail.inner.y + 2;
+    let mouse = |kind, column| MouseEvent {
+        kind,
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    };
+    app.on_mouse(mouse(MouseEventKind::Down(MouseButton::Left), edge));
+    app.on_mouse(mouse(MouseEventKind::Drag(MouseButton::Left), 2));
+    draw_at(&mut app, 120, 30);
+    assert_eq!(app.layout.rail.outer.width, crate::ui::RAIL_MIN_WIDTH);
+
+    app.on_mouse(mouse(MouseEventKind::Drag(MouseButton::Left), 119));
+    draw_at(&mut app, 120, 30);
+    assert_eq!(app.layout.rail.outer.width, 120 - 24);
+}

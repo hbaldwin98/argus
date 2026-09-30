@@ -235,6 +235,8 @@ pub struct App {
     /// a desktop session.
     pub clipboard_write: fn(&str) -> bool,
     pub selection: Option<TerminalSelection>,
+    /// True between a press on the rail's right border and its release.
+    pub rail_drag: bool,
     pub should_quit: bool,
     /// The last thing worth saying on the status bar, and whether it is
     /// something the user *must* read. The rank rides along rather than
@@ -429,6 +431,7 @@ impl App {
             clipboard: crate::clipboard::read,
             clipboard_write: crate::clipboard::write,
             selection: None,
+            rail_drag: false,
             should_quit: false,
             // Empty, not a keymap: the bar's left half is the breadcrumb's
             // until something has actually happened to report.

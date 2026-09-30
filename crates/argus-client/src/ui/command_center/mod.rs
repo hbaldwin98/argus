@@ -31,6 +31,11 @@ use workspace::render_workspace;
 /// Wide enough for the workspace summary badges (`repos`, `agents`, `needs
 /// you`) on one row at two-digit counts without wrapping.
 pub const SIDEBAR_WIDTH: u16 = 50;
+/// The narrowest a drag can make the rail: below this the project heading
+/// and the checkout names are cut to nothing.
+pub const SIDEBAR_MIN_WIDTH: u16 = 24;
+/// What the stage keeps however wide the rail is asked to be.
+const STAGE_MIN_WIDTH: u16 = 24;
 const HEADER_HEIGHT: u16 = 2;
 
 fn contains(area: Rect, x: u16, y: u16) -> bool {
@@ -61,7 +66,7 @@ pub(super) fn render_command_center(
         return None;
     }
 
-    let rail_width = rail_width(frame[1].width);
+    let rail_width = rail_width(frame[1].width, app.settings.rail_width);
     let sidebar = Rect {
         width: rail_width,
         ..frame[1]
@@ -117,10 +122,12 @@ pub(super) fn render_command_center(
     }
 }
 
-/// The rail's width for a frame this wide. The tab strip reads it too, so
-/// the rail's edge and the start of the FEATURE tab are one line.
-pub(super) fn rail_width(total: u16) -> u16 {
-    SIDEBAR_WIDTH.min(total.saturating_sub(24).max(1))
+/// The rail's width for a frame this wide, given the width the operator
+/// dragged it to. The tab strip reads it too, so the rail's edge and the
+/// start of the FEATURE tab are one line.
+pub(crate) fn rail_width(total: u16, preferred: Option<u16>) -> u16 {
+    let wanted = preferred.map_or(SIDEBAR_WIDTH, |w| w.max(SIDEBAR_MIN_WIDTH));
+    wanted.min(total.saturating_sub(STAGE_MIN_WIDTH).max(1))
 }
 
 fn filled_badge(fg: Color, th: Theme) -> Style {

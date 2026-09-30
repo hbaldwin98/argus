@@ -91,7 +91,7 @@ fn clicking_a_tab_opens_it() {
     let strip = views.outer;
     // The second tab's first cell, found the way the renderer draws it.
     let x = (0..strip.width)
-        .find(|x| crate::ui::tab_at(views, strip.x + x, strip.y) == Some(View::Feature))
+        .find(|x| crate::ui::tab_at(views, None, strip.x + x, strip.y) == Some(View::Feature))
         .expect("the decisions tab is on screen");
 
     app.on_mouse(crossterm::event::MouseEvent {
@@ -117,7 +117,7 @@ fn clicking_the_workspace_tab_withdraws_pane_focus() {
     let views = app.layout.views;
     let strip = views.outer;
     let x = (0..strip.width)
-        .find(|x| crate::ui::tab_at(views, strip.x + x, strip.y) == Some(View::Workspace))
+        .find(|x| crate::ui::tab_at(views, None, strip.x + x, strip.y) == Some(View::Workspace))
         .expect("the workspace tab is on screen");
 
     app.on_mouse(crossterm::event::MouseEvent {
@@ -137,7 +137,7 @@ fn clicking_the_workspace_tab_withdraws_pane_focus() {
 
 #[test]
 fn a_click_before_the_first_frame_lands_on_no_tab() {
-    assert_eq!(crate::ui::tab_at(Panel::default(), 0, 0), None);
+    assert_eq!(crate::ui::tab_at(Panel::default(), None, 0, 0), None);
 }
 
 fn decision(id: i64, parent: Option<i64>, chose: &str) -> argus_protocol::Decision {
@@ -1851,7 +1851,7 @@ fn a_remote_host_is_named_in_the_product_mark_and_the_tabs_still_click() {
     let views = app.layout.views;
     let strip = views.outer;
     let x = (0..strip.width)
-        .find(|x| crate::ui::tab_at(views, strip.x + x, strip.y) == Some(View::Feature))
+        .find(|x| crate::ui::tab_at(views, None, strip.x + x, strip.y) == Some(View::Feature))
         .expect("the feature tab is on screen");
     let under: String = (x..x + 12)
         .filter_map(|dx| buf.cell((strip.x + dx, strip.y)).map(|c| c.symbol().to_string()))

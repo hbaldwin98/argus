@@ -70,6 +70,7 @@ pub(crate) use command_center::{
     pane_at as command_center_pane_at, project_header_at as command_center_project_header_at,
     rail_target_at as command_center_rail_target_at,
     sidebar_contains as command_center_sidebar_contains,
+    SIDEBAR_MIN_WIDTH as RAIL_MIN_WIDTH,
 };
 pub use term::CursorPlacement;
 pub use views::tab_at;

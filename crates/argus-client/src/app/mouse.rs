@@ -32,6 +32,9 @@ impl App {
         if self.update_selection(&ev) {
             return;
         }
+        if self.drag_rail_edge(&ev) {
+            return;
+        }
         if matches!(ev.kind, MouseEventKind::Down(_)) {
             self.selection = None;
         }
@@ -51,7 +54,7 @@ impl App {
         // it is the one row on screen that is not about whatever is open.
         if matches!(ev.kind, MouseEventKind::Down(_)) {
             if let Some(view) =
-                crate::ui::tab_at(self.layout.views, ev.column, ev.row)
+                crate::ui::tab_at(self.layout.views, self.settings.rail_width, ev.column, ev.row)
             {
                 self.open_view_from_tab(view);
                 return;
@@ -233,6 +236,36 @@ impl App {
             } else if self.current_pane().is_some() {
                 self.focus = Focus::PaneContent;
             }
+        }
+    }
+
+    /// A left press on the rail's right border grabs it, and the drag that
+    /// follows sets the rail's width until the release, which saves it.
+    /// The border is outside every row, so grabbing it costs no click.
+    fn drag_rail_edge(&mut self, ev: &MouseEvent) -> bool {
+        let rail = self.layout.rail.outer;
+        match ev.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                let on_edge = rail.width > 0
+                    && ev.column == rail.right() - 1
+                    && (rail.y..rail.bottom()).contains(&ev.row);
+                self.rail_drag = on_edge;
+                on_edge
+            }
+            MouseEventKind::Drag(MouseButton::Left) if self.rail_drag => {
+                let width = (ev.column + 1).saturating_sub(rail.x);
+                self.settings.rail_width =
+                    Some(width.max(crate::ui::RAIL_MIN_WIDTH));
+                true
+            }
+            MouseEventKind::Up(MouseButton::Left) if self.rail_drag => {
+                self.rail_drag = false;
+                if self.persist_settings {
+                    crate::settings::save(&self.settings);
+                }
+                true
+            }
+            _ => false,
         }
     }
 
