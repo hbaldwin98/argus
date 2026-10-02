@@ -650,6 +650,10 @@ image here (what a terminal types when a file is dropped on it), go to the daemo
 the checkout, and pastes the path spelled the way the host's terminal would drop it — which is
 the one form every harness takes an image in. The files go with the pane, and a starting daemon
 clears them all. Only to a daemon that listed `PASTE_FILE`; an older one is named on the bar.
+None of this reaches a client that is itself running over ssh: there is no clipboard on that
+side of the terminal, and a dropped path names the desktop's file, which it does not have. Both
+are said on the bar, with the fix — run the client on the desktop, with `--host` — rather than
+left for the agent to report as a file it cannot find.
 
 The current pane states are `Idle`, `Working`, `Waiting`, `NeedsReview`, `Done`, `Failed`, and
 `Exited { code }`. `NeedsReview` means work is ready for the operator to inspect; `Done` means it

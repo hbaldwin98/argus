@@ -11,6 +11,7 @@
 //! single keys cannot express: typed text, and the leader chord.
 
 use super::*;
+use crate::dropped::Dropped;
 
 /// The most a pasted file may be. Under the frame limit with room for the
 /// message around it; a screenshot is a few hundred kilobytes.
@@ -157,7 +158,10 @@ impl App {
             }
         }
         let Some(text) = (self.clipboard)() else {
-            self.alert("no clipboard here; paste with your terminal's paste key");
+            self.alert(
+                "no clipboard here: paste text with your terminal's paste key; \
+                 for an image, run argus on your desktop with --host",
+            );
             return;
         };
         if text.is_empty() {
@@ -216,10 +220,19 @@ impl App {
             return;
         }
         if let Some(pane) = self.input_pane() {
-            if let Some(path) = crate::dropped::file(&text) {
-                if self.paste_dropped(pane, &path) {
-                    return;
+            match crate::dropped::file(&text) {
+                Some(Dropped::Here(path)) => {
+                    if self.paste_dropped(pane, &path) {
+                        return;
+                    }
                 }
+                // Pasted all the same: the path is what was typed, and an
+                // agent told it will say it cannot find it. The bar says
+                // why first.
+                Some(Dropped::Elsewhere(name)) => self.alert(format!(
+                    "{name} is not on this machine; to paste it, run argus where it is with --host"
+                )),
+                None => {}
             }
             let _ = self.out.send(ClientMsg::Paste { pane, text });
         }

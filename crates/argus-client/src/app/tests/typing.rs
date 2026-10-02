@@ -207,6 +207,27 @@ fn an_image_dropped_on_the_terminal_crosses_as_the_file() {
 }
 
 #[test]
+fn an_image_dropped_from_another_machine_is_pasted_as_typed_and_the_fix_named() {
+    // The client is on a box ssh'd into from a desktop; the desktop's
+    // screenshot was dropped on that terminal. Nothing here can read it,
+    // and the way to make it cross is to run the client on the desktop.
+    let mut h = Harness::new();
+    h.keys("llll");
+    h.sent();
+    h.app.greeted(Some(&argus_protocol::Hello::this_build()));
+
+    h.app.on_paste("C:\\Users\\me\\Pictures\\shot.png".to_string());
+
+    assert!(matches!(
+        h.sent().as_slice(),
+        [ClientMsg::Paste { pane: PaneId(100), text }] if text == "C:\\Users\\me\\Pictures\\shot.png"
+    ));
+    assert!(h.app.status_alert, "{}", h.app.status);
+    assert!(h.app.status.contains("shot.png"), "{}", h.app.status);
+    assert!(h.app.status.contains("--host"), "{}", h.app.status);
+}
+
+#[test]
 fn a_dropped_path_an_old_daemon_cannot_take_as_a_file_pastes_as_the_path_and_says_so() {
     // The path still names the file to a daemon on this machine, which is
     // what every drop did before files crossed; the alert is for the one
