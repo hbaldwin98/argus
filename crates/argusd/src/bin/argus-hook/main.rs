@@ -84,6 +84,7 @@ use argus_protocol::{
 
 const TIMEOUT: Duration = Duration::from_secs(2);
 
+mod agents;
 mod board;
 mod context;
 mod installed;
@@ -567,6 +568,107 @@ mod tests {
             title_from(r#"{"session_id":"s","prompt":"  review split view  "}"#),
             "review split view"
         );
+    }
+
+    /// A post as the daemon saw it: request line, session header, body.
+    type Post = (String, String, String);
+
+    /// Answers `count` posts in turn and hands back each one in the order
+    /// they arrived.
+    fn record_posts(count: usize) -> (std::net::SocketAddr, std::thread::JoinHandle<Vec<Post>>) {
+        use std::io::BufRead as _;
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            (0..count)
+                .map(|_| {
+                    let (stream, _) = listener.accept().unwrap();
+                    let mut reader = std::io::BufReader::new(stream);
+                    let (mut line, mut session, mut length) = (String::new(), String::new(), 0);
+                    reader.read_line(&mut line).unwrap();
+                    loop {
+                        let mut header = String::new();
+                        reader.read_line(&mut header).unwrap();
+                        if header == "\r\n" {
+                            break;
+                        }
+                        if let Some(v) = header.strip_prefix("X-Argus-Session: ") {
+                            session = v.trim().to_string();
+                        }
+                        if let Some(v) = header.strip_prefix("Content-Length: ") {
+                            length = v.trim().parse().unwrap();
+                        }
+                    }
+                    let mut body = vec![0; length];
+                    reader.read_exact(&mut body).unwrap();
+                    let _ = reader.get_mut().write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+                    (line.trim().to_string(), session, String::from_utf8(body).unwrap())
+                })
+                .collect()
+        });
+        (address, server)
+    }
+
+    #[test]
+    fn a_turn_ending_mid_workflow_lists_the_workflow_again_after_it() {
+        let (address, server) = record_posts(3);
+        let stop: serde_json::Value = serde_json::from_str(
+            r#"{"hook_event_name":"Stop","background_tasks":[
+                {"id":"wk1","type":"workflow","status":"running","name":"probe"}]}"#,
+        )
+        .unwrap();
+
+        report_own(
+            &format!("http://{address}/pane/7/status/idle"),
+            "tok",
+            &[],
+            ("", ""),
+            Some("s"),
+            Some(&stop),
+        );
+        let mut posts = server.join().unwrap();
+
+        // The pane's own idle lands first, so the children it clears are
+        // cleared before the workflow's row is listed again.
+        assert_eq!(posts.remove(0), ("POST /pane/7/status/idle HTTP/1.1".into(), "s".into(), "".into()));
+        posts.sort();
+        assert_eq!(
+            posts,
+            vec![
+                ("POST /pane/7/status/working HTTP/1.1".into(), "s/workflows".into(), "".into()),
+                ("POST /pane/7/title HTTP/1.1".into(), "s/workflows".into(), "workflow probe".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_workflow_agent_finishing_keeps_its_row_working() {
+        let (address, server) = record_posts(2);
+        let child = agents::Child {
+            reporter: "s/workflows".into(),
+            label: Some("workflow probe".into()),
+            still_working: true,
+        };
+
+        report_child(&format!("http://{address}/pane/7/status/idle"), "tok", "", &child);
+        let mut posts = server.join().unwrap();
+        posts.sort();
+
+        assert_eq!(
+            posts,
+            vec![
+                ("POST /pane/7/status/working HTTP/1.1".into(), "s/workflows".into(), "".into()),
+                ("POST /pane/7/title HTTP/1.1".into(), "s/workflows".into(), "workflow probe".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_task_notification_is_not_a_title() {
+        let wake = r#"{"session_id":"s","hook_event_name":"UserPromptSubmit",
+            "prompt":"<task-notification>\n<task-id>wk1</task-id>\n<status>completed</status>"}"#;
+        assert_eq!(title_from(wake), "");
     }
 
     #[test]

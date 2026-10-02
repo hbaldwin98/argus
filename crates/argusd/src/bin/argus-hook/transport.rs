@@ -115,6 +115,20 @@ pub(super) fn post(url: &str, token: &str, body: &str) -> Option<()> {
 }
 
 pub(super) fn post_as(url: &str, token: &str, body: &str, session: Option<&str>) -> Option<()> {
+    send(url, token, body, session).map(drop)
+}
+
+/// [`post_as`], waiting until the daemon has answered: for a report a later
+/// one from the same hook must not overtake, since each travels on its own
+/// connection and the daemon takes them as they land.
+pub(super) fn post_settled(url: &str, token: &str, body: &str, session: Option<&str>) -> Option<()> {
+    let mut stream = send(url, token, body, session)?;
+    stream.set_read_timeout(Some(TIMEOUT)).ok()?;
+    let mut answer = Vec::new();
+    stream.read_to_end(&mut answer).ok().map(drop)
+}
+
+fn send(url: &str, token: &str, body: &str, session: Option<&str>) -> Option<TcpStream> {
     let rest = url.strip_prefix("http://")?;
     let (authority, path) = match rest.find('/') {
         Some(i) => (&rest[..i], &rest[i..]),
@@ -128,9 +142,9 @@ pub(super) fn post_as(url: &str, token: &str, body: &str, session: Option<&str>)
     let transcript = TRANSCRIPT.get().map(String::as_str);
     let req = request(path, authority, token, session, transcript, body);
     stream.write_all(req.as_bytes()).ok()?;
-    // The daemon's reply is deliberately not read: nothing here acts on it,
+    // The daemon's reply is not read unless asked for: nothing acts on it,
     // and not waiting keeps the agent's turn from stalling on a slow answer.
-    Some(())
+    Some(stream)
 }
 
 pub(super) fn post_response(url: &str, token: &str, body: &str) -> Option<(u16, String)> {

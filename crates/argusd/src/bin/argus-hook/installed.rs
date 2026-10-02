@@ -14,13 +14,15 @@ pub(super) fn installed_hook(url: &str, rest: &[&str]) {
     if let Some(path) = raw.as_deref().and_then(|raw| json_string(raw, "transcript_path")) {
         name_transcript(&path);
     }
-    let _ = post_as(&url, &token, &note, session.as_deref());
-    if rest.contains(&OWNS_SESSION_FLAG) {
-        post_session_id(&url, &token, session.as_deref());
-    }
-    post_title(&url, &token, &title, session.as_deref());
-    if let Some(report) = raw.as_deref().map(from_hook).filter(|r| !r.is_empty()) {
-        post_telemetry(&url, &token, &report, session.as_deref());
+    let event = raw.as_deref().and_then(json_value);
+    let child = event.as_ref().zip(session.as_deref()).and_then(|(e, s)| agents::child(e, s));
+    if let Some(child) = child {
+        report_child(&url, &token, &note, &child);
+    } else {
+        report_own(&url, &token, rest, (&note, &title), session.as_deref(), event.as_ref());
+        if let Some(report) = raw.as_deref().map(from_hook).filter(|r| !r.is_empty()) {
+            post_telemetry(&url, &token, &report, session.as_deref());
+        }
     }
 
     let mut out = std::io::stdout();
@@ -34,6 +36,52 @@ pub(super) fn installed_hook(url: &str, rest: &[&str]) {
         )
     );
     let _ = out.flush();
+}
+
+/// A subagent's event, filed under its own row. Its telemetry is not the
+/// pane's, and the daemon would drop it, so none is sent.
+pub(super) fn report_child(url: &str, token: &str, note: &str, child: &agents::Child) {
+    let url = match (child.still_working, pane_base(url)) {
+        (true, Some(base)) => endpoint_url(&base, Endpoint::Status(Report::Working)),
+        _ => url.to_string(),
+    };
+    let _ = post_as(&url, token, note, Some(&child.reporter));
+    if let Some(label) = &child.label {
+        post_title(&url, token, label, Some(&child.reporter));
+    }
+}
+
+/// The session's own event. When its turn ends with a workflow still
+/// running, the report that ends the turn also clears the pane's children,
+/// so the workflow's row is listed again after it — and only after it has
+/// landed, since each post travels on its own connection.
+pub(super) fn report_own(
+    url: &str,
+    token: &str,
+    rest: &[&str],
+    (note, title): (&str, &str),
+    session: Option<&str>,
+    event: Option<&serde_json::Value>,
+) {
+    let running = event.map(agents::running_workflows).unwrap_or_default();
+    match (session, agents::workflow_label(&running)) {
+        (Some(session), Some(label)) => {
+            let _ = post_settled(url, token, note, Some(session));
+            let reporter = agents::workflow_reporter(session);
+            if let Some(base) = pane_base(url) {
+                let working = endpoint_url(&base, Endpoint::Status(Report::Working));
+                let _ = post_as(&working, token, "", Some(&reporter));
+            }
+            post_title(url, token, &label, Some(&reporter));
+        }
+        _ => {
+            let _ = post_as(url, token, note, session);
+        }
+    }
+    if rest.contains(&OWNS_SESSION_FLAG) {
+        post_session_id(url, token, session);
+    }
+    post_title(url, token, title, session);
 }
 
 /// The JSON a hook runner needs so it does not treat bookkeeping as a
@@ -216,6 +264,16 @@ pub(super) fn note_from(raw: &str) -> String {
 /// session bookkeeping are not titles — a working pane named "Shell" says
 /// less than the template already does.
 pub(super) fn title_from(raw: &str) -> String {
+    let title = prompt_from(raw);
+    // A background task or workflow finishing wakes Claude Code with a
+    // prompt of its own making, which no one would call the pane.
+    if title.starts_with("<task-notification>") {
+        return String::new();
+    }
+    title
+}
+
+fn prompt_from(raw: &str) -> String {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) else {
         return raw
             .lines()

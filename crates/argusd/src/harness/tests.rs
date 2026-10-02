@@ -506,7 +506,7 @@ fn uninstall_keeps_the_users_own_settings_and_hooks() {
     std::fs::write(
         claude.join("settings.local.json"),
         r#"{"permissions":{"allow":["Bash"]},
-            "hooks":{"SubagentStop":[{"hooks":[{"type":"command","command":"echo hi"}]}]}}"#,
+            "hooks":{"PreCompact":[{"hooks":[{"type":"command","command":"echo hi"}]}]}}"#,
     )
     .unwrap();
 
@@ -517,7 +517,7 @@ fn uninstall_keeps_the_users_own_settings_and_hooks() {
     let root = settings_of(dir.path(), &h);
     assert_eq!(root["permissions"]["allow"][0], "Bash");
     assert!(
-        root["hooks"]["SubagentStop"].is_array(),
+        root["hooks"]["PreCompact"].is_array(),
         "the user's hook survives"
     );
     for event in h.managed_events() {

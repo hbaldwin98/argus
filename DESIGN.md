@@ -899,6 +899,20 @@ backstop for one that was killed mid-turn. A background agent outliving its pare
 by the second of those: its next report lists it again. A pane lists at most eight. A report with no
 session at all — `argus-hook status` run by hand — is the pane's own voice, as before.
 
+Claude Code runs subagents, and the agents of a dynamic workflow, inside the session, and fires the
+session's own hooks for them with an `agent_id`. The installed form files such an event under a
+reporter of its own — the session with the agent appended — so a subagent is a child row named after
+its `agent_type` (`SubagentStart` opens it, `SubagentStop` closes it), and its tool calls neither
+mark the pane working nor count as the pane's telemetry. A workflow can run dozens of agents, so all
+of a session's `workflow-subagent`s share one row, named after the workflows running. A workflow
+outlives the turn that started it: Claude's `Stop` fires with the workflow listed in
+`background_tasks`, and each agent's `SubagentStop` still lists it. So the turn-ending report, which
+clears the pane's children, is sent and answered before the workflow's row is listed again, and an
+agent finishing keeps the row working while its workflow runs. When the workflow ends, Claude wakes
+the session with a `<task-notification>` prompt, whose turn's `Stop` lists nothing and clears the
+row; that prompt is never taken as a title. Only workflows count as background work worth a row: a
+background shell can run as long as the session does.
+
 Agents name their own rows, and the daemon names them first. A prompt-submit
 event — Claude `UserPromptSubmit`, Cursor `beforeSubmitPrompt`, AGY
 `PreInvocation`, OpenCode `chat.message`, or pi `input` — carries the user's text; the helper
