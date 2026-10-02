@@ -297,6 +297,8 @@ async fn a_review_comment_reaches_a_live_agent_through_its_plugin() {
     };
     assert!(text.contains("fix this"), "{text}");
     assert!(!steer, "it waits for the agent's turn like anything a person says");
+    // The screen is only read back on Unix, where the test agent is `cat`.
+    #[cfg(unix)]
     assert!(!screen(&d, pane).contains("fix this"), "nothing was typed");
     let _ = d.close_pane(pane);
 }
