@@ -337,3 +337,29 @@ fn the_rail_cannot_be_dragged_narrower_than_its_minimum_or_past_the_stage() {
     draw_at(&mut app, 120, 30);
     assert_eq!(app.layout.rail.outer.width, 120 - 24);
 }
+
+#[test]
+fn an_agents_children_are_listed_under_it_and_a_click_on_one_selects_the_agent() {
+    // A workflow, a subagent, a CLI started in the pane: something running
+    // inside the agent, shown under it rather than as an agent of its own.
+    let mut app = command_center();
+    app.tree[0].repositories[0].checkouts[0].panes[0]
+        .children
+        .push(argus_protocol::ChildAgentInfo {
+            label: "workflow list-open-tasks".into(),
+            status: PaneStatus::Working,
+            note: None,
+        });
+    app.focus = Focus::PaneContent;
+    let text = lines(&draw_at(&mut app, 140, 40));
+
+    let agents = app.layout.agents.inner;
+    let parent = text[usize::from(agents.y)].clone();
+    let child = text[usize::from(agents.y) + 1].clone();
+    assert!(parent.contains("#100"), "{}", text.join("\n"));
+    assert!(child.contains("⤷ workflow list-open-tasks") && child.contains("RUNNING"), "{child}");
+
+    app.focus = Focus::Repositories;
+    click(&mut app, agents.x + 4, agents.y + 1);
+    assert_eq!(app.current_pane().map(|pane| pane.id), Some(PaneId(100)));
+}

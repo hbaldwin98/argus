@@ -107,8 +107,26 @@ pub(super) fn render_panes(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
                     ),
                 },
                 Line::styled(path, Style::default().fg(th.muted)),
+                children_line(&pane.children, inner.width as usize, th),
             ]),
             inner,
         );
     }
+}
+
+/// What is running inside the pane — subagents, a workflow, a CLI started
+/// in it — named on the card's last row, or nothing when there is none.
+fn children_line(children: &[argus_protocol::ChildAgentInfo], width: usize, th: Theme) -> Line<'static> {
+    if children.is_empty() {
+        return Line::default();
+    }
+    let names = children
+        .iter()
+        .map(|child| format!("{} {}", child.label, short_status(child.status).to_lowercase()))
+        .collect::<Vec<_>>()
+        .join(" · ");
+    Line::from(vec![
+        Span::styled("⤷ ", Style::default().fg(th.dim)),
+        Span::styled(ellipsize_text(&names, width.saturating_sub(2)), Style::default().fg(th.muted)),
+    ])
 }

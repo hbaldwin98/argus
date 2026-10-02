@@ -86,8 +86,19 @@ fn render_badge_chip(f: &mut Frame, area: Rect, text: &str, fg: Color, th: Theme
     );
 }
 
-/// Every agent in the workspace, in rail order, with where it lives.
-fn agent_rows(app: &App) -> Vec<PaneLocation> {
+/// One row of the AGENTS list: an agent, or the child it lists at `child`
+/// — a subagent, a workflow, a CLI started inside it. A child is something
+/// happening inside its pane rather than somewhere else to go, so a click on
+/// it lands on the pane.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct AgentRow {
+    pane: PaneLocation,
+    child: Option<usize>,
+}
+
+/// Every agent in the workspace, in rail order, with where it lives, each
+/// followed by its children.
+fn agent_rows(app: &App) -> Vec<AgentRow> {
     let Some(project) = app.current_project() else {
         return Vec::new();
     };
@@ -95,14 +106,20 @@ fn agent_rows(app: &App) -> Vec<PaneLocation> {
     for (repository, repo) in project.repositories.iter().enumerate() {
         for (checkout, item) in repo.checkouts.iter().enumerate() {
             for (pane, info) in item.listed_panes().enumerate() {
-                if info.kind == PaneKind::Agent {
-                    rows.push(PaneLocation {
-                        project: app.sel_project,
-                        repository,
-                        checkout,
-                        pane,
-                    });
+                if info.kind != PaneKind::Agent {
+                    continue;
                 }
+                let location = PaneLocation {
+                    project: app.sel_project,
+                    repository,
+                    checkout,
+                    pane,
+                };
+                rows.push(AgentRow { pane: location, child: None });
+                rows.extend((0..info.children.len()).map(|child| AgentRow {
+                    pane: location,
+                    child: Some(child),
+                }));
             }
         }
     }
@@ -117,7 +134,7 @@ pub(crate) fn agent_at(app: &App, x: u16, y: u16) -> Option<PaneLocation> {
     }
     agent_rows(app)
         .get(panel.first + usize::from(y - panel.inner.y))
-        .copied()
+        .map(|row| row.pane)
 }
 
 pub(super) fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
@@ -530,22 +547,31 @@ fn render_agents(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         .filter(|_| matches!(app.focus, Focus::Panes | Focus::PaneContent));
     let first = scrolled_to_show(
         0,
-        current.and_then(|c| rows.iter().position(|r| *r == c)),
+        current.and_then(|c| rows.iter().position(|r| *r == AgentRow { pane: c, child: None })),
         rows_area.height as usize,
         rows.len(),
     );
-    for (index, location) in rows
+    for (index, row) in rows
         .iter()
         .enumerate()
         .skip(first)
         .take(rows_area.height as usize)
     {
         let (Some(pane), Some((_, repo, checkout))) =
-            (app.pane_at(*location), app.pane_path(*location))
+            (app.pane_at(row.pane), app.pane_path(row.pane))
         else {
             continue;
         };
-        let selected = current == Some(*location);
+        let row_area = Rect {
+            y: rows_area.y + (index - first) as u16,
+            height: 1,
+            ..rows_area
+        };
+        if let Some(child) = row.child.and_then(|child| pane.children.get(child)) {
+            f.render_widget(Paragraph::new(child_line(child, row_area.width, th)), row_area);
+            continue;
+        }
+        let selected = current == Some(row.pane);
         let color = status_color(pane.status, th);
         let status = short_status(pane.status);
         let name_width = (rows_area.width as usize).saturating_sub(status.len() + 3);
@@ -570,11 +596,7 @@ fn render_agents(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                 ),
                 Span::styled(format!(" {status}"), Style::default().fg(color)),
             ])),
-            Rect {
-                y: rows_area.y + (index - first) as u16,
-                height: 1,
-                ..rows_area
-            },
+            row_area,
         );
     }
     app.layout.agents = Panel {
@@ -582,4 +604,20 @@ fn render_agents(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         inner: rows_area,
         first,
     };
+}
+
+/// A child's row under its agent: an elbow, what it calls itself, and its
+/// own status, in the columns its parent's row uses.
+fn child_line(child: &argus_protocol::ChildAgentInfo, width: u16, th: Theme) -> Line<'static> {
+    let color = status_color(child.status, th);
+    let status = short_status(child.status);
+    let label_width = (width as usize).saturating_sub(status.len() + 5);
+    Line::from(vec![
+        Span::styled("  ⤷ ", Style::default().fg(th.dim)),
+        Span::styled(
+            format!("{:<label_width$}", ellipsize_text(&child.label, label_width)),
+            Style::default().fg(th.muted),
+        ),
+        Span::styled(format!(" {status}"), Style::default().fg(color)),
+    ])
 }

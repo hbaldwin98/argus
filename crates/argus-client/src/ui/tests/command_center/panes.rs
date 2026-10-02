@@ -61,3 +61,19 @@ fn pane_overview_defaults_to_the_current_repository() {
     draw_at(&mut app, 120, 30);
     assert_eq!(app.overview_pane_locations().len(), 3);
 }
+
+#[test]
+fn a_card_names_what_is_running_inside_its_pane() {
+    let mut app = command_center();
+    app.tree[0].repositories[0].checkouts[0].panes[0]
+        .children
+        .push(argus_protocol::ChildAgentInfo {
+            label: "workflow list-open-tasks".into(),
+            status: PaneStatus::Working,
+            note: None,
+        });
+    app.open_view(View::Panes);
+    let text = lines(&draw_at(&mut app, 120, 30)).join("\n");
+
+    assert!(text.contains("⤷ workflow list-open-tasks"), "{text}");
+}
