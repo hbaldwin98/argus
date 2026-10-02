@@ -230,6 +230,20 @@ impl Daemon {
         }
     }
 
+    /// Tells an agent something now, without waiting for its prompt: what
+    /// Argus has to say on its own account, such as a review comment left
+    /// for it. Through its inbox when one is open, where the harness queues
+    /// it as it would a person's message, else typed in. Says whether it
+    /// went.
+    pub(super) fn notify(&self, pane: PaneId, text: &str) -> bool {
+        let message = InboxItem::Message { text: text.to_string(), steer: false };
+        match self.say(pane, message) {
+            Way::Inbox => true,
+            Way::Terminal { .. } => self.write_pane(pane, format!("{text}\r").as_bytes()).is_ok(),
+            Way::Nobody => false,
+        }
+    }
+
     /// Hands `item` to the pane's inbox if one is open, or says which way
     /// it has to go instead. The one place the route is decided.
     fn say(&self, pane: PaneId, item: InboxItem) -> Way {

@@ -278,3 +278,25 @@ async fn an_agent_with_no_live_channel_takes_answers_on_its_screen() {
     assert!(d.answer(pane, "q".into(), "yes".into()).is_err());
     let _ = d.close_pane(pane);
 }
+
+#[tokio::test]
+async fn a_review_comment_reaches_a_live_agent_through_its_plugin() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = agent(dir.path());
+    let (_, mut inbox) = open_inbox(&d, pane, "s1").await;
+    assert!(live(&d, pane, true).await);
+    let checkout = only_checkout(&d);
+
+    let (_, delivered) = d
+        .submit_review_comment(checkout, pane, review_anchor(8), "fix this".to_string())
+        .unwrap();
+
+    assert!(delivered);
+    let InboxItem::Message { text, steer } = next_item(&mut inbox).await else {
+        panic!("a review comment is a message")
+    };
+    assert!(text.contains("fix this"), "{text}");
+    assert!(!steer, "it waits for the agent's turn like anything a person says");
+    assert!(!screen(&d, pane).contains("fix this"), "nothing was typed");
+    let _ = d.close_pane(pane);
+}

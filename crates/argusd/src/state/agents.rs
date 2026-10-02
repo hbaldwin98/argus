@@ -201,8 +201,9 @@ pub(super) fn clean_title(raw: &str) -> String {
 }
 
 impl Daemon {
-    /// Persists first, then best-effort notifies the selected agent through
-    /// its terminal. A failed notification does not erase durable feedback.
+    /// Persists first, then best-effort notifies the selected agent: through
+    /// its harness's inbox when one is open, else typed into its terminal. A
+    /// failed notification does not erase durable feedback.
     pub fn submit_review_comment(
         &self,
         checkout_id: CheckoutId,
@@ -218,7 +219,7 @@ impl Daemon {
             anyhow::bail!("review comment exceeds {MAX_REVIEW_COMMENT_BYTES} bytes");
         }
 
-        let (checkout_path, input) = {
+        let checkout_path = {
             let inner = self.inner.lock().unwrap();
             let checkout = find_checkout_ref(&inner.projects, checkout_id)
                 .ok_or_else(|| anyhow::anyhow!("no such checkout"))?;
@@ -230,15 +231,13 @@ impl Daemon {
             if !pane.is_running_agent() {
                 anyhow::bail!("recipient must be a live agent pane");
             }
-            (checkout.path.clone(), pane.runtime.input())
+            checkout.path.clone()
         };
 
         let comment = self
             .store
             .add_review_comment(&checkout_path, anchor, body)?;
-        let mut notification = comment.anchor.notification(&comment.body).into_bytes();
-        notification.push(b'\r');
-        let delivered = input.write(&notification).is_ok();
+        let delivered = self.notify(recipient, &comment.anchor.notification(&comment.body));
         Ok((comment.id, delivered))
     }
 

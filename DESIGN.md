@@ -819,6 +819,9 @@ next step, with a toast so the person at the terminal sees it; an interrupt beco
 of the main loop's running turn. Claude Code's own dialogs are still answered on its screen. A
 Claude Code without mods ignores the variable, opens no inbox, and is typed into as before.
 
+Anything Argus says on its own account goes the same way: a review comment's notification is a
+message to the inbox when one is open, and typed in otherwise.
+
 A harness may have a live channel — Codex's app-server, or Claude's tee below — that streams what
 the agent does and takes what is said to it. A pane runs on it only when its template sets
 `live = true` and a client that greeted with `live-channels` is connected as the pane starts. Only
@@ -1217,8 +1220,9 @@ The client supports line and file navigation, single-file range marking, a chang
 picker, refresh, and opening the selected line in an editor. A comment records the review side,
 paths, separate old and new ranges, quoted diff text, and body. The client chooses among the live
 agents in the checkout when necessary. The daemon validates that recipient, persists the comment
-under the checkout path, then sends a flattened one-line notification to the recipient's PTY. A
-failed PTY write does not discard the stored comment. Live agents in the checkout can read the
+under the checkout path, then sends a flattened one-line notification to the recipient: through
+its inbox when one is open, else typed into its PTY. A failed delivery does not discard the stored
+comment. Live agents in the checkout can read the
 newest 100 comments with `argus-hook comments`.
 
 Added and removed lines are marked by a background wash rather than by foreground colour, which
