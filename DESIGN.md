@@ -211,6 +211,7 @@ to the type or its locking.
 | `conn` | one client connection, and which task each message runs on |
 | `conn/dispatch` | what each client message does |
 | `pty`, `pty/job`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; and its terminal emulator with the translation of its screen |
+| `pastes` | where a file pasted into a pane is kept on the pane's host, and how its path is spelled into the pane |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
 | `harness/plugin_dir` | the plugin folder a harness loads from outside the checkout — Claude Code's mod — and the variable that points a pane at it |
@@ -258,6 +259,7 @@ result of a request; `ui` is a pure function of it.
 | `review`, `history`, `brief`, `dirpicker` | the view state behind each overlay |
 | `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
 | `grid`, `selection`, `pty_input`, `pty_input/keys`, `pty_input/mouse`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
+| `dropped` | a file dropped on the terminal, recognized in what it pasted |
 | `motion` | animation arithmetic: how far along a transition is at a given instant |
 | `settings`, `theme`, `backend`, `herdr`, `profile` | preferences, palette, the ratatui backend, and what is reported outward |
 | `fixtures` | the tree builders every test module shares |
@@ -640,6 +642,14 @@ shell's `osc52` helper) is caught by the pane's parser and sent to the client as
 none, as over SSH, the terminal's own paste key arrives as a bracketed paste instead. Argus never
 asks the terminal to read its clipboard over OSC 52: most terminals refuse, and the reply would
 reach the key parser as typed text.
+
+An image crosses as a file, because the pane's process reads the daemon's disk and clipboard,
+not the client's. Ctrl-V with a picture on the clipboard, and a paste that is one path to an
+image here (what a terminal types when a file is dropped on it), go to the daemon as
+`ClientMsg::PasteFile`; it keeps the bytes under its config directory's `pastes/<pane>/`, never
+the checkout, and pastes the path spelled the way the host's terminal would drop it — which is
+the one form every harness takes an image in. The files go with the pane, and a starting daemon
+clears them all. Only to a daemon that listed `PASTE_FILE`; an older one is named on the bar.
 
 The current pane states are `Idle`, `Working`, `Waiting`, `NeedsReview`, `Done`, `Failed`, and
 `Exited { code }`. `NeedsReview` means work is ready for the operator to inspect; `Done` means it

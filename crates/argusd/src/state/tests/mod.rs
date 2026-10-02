@@ -8,6 +8,7 @@ mod lifecycle;
 mod live;
 mod pane_api;
 mod outbox;
+mod pastes;
 mod reconcile;
 mod reload;
 mod tee;

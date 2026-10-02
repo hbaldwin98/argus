@@ -76,6 +76,9 @@ impl Harness {
     pub(super) fn new() -> Self {
         let (tx, rx) = unbounded_channel();
         let mut app = App::new(tx);
+        // Never the desk's own clipboard: a test's is whatever it hands in.
+        app.clipboard = || None;
+        app.clipboard_image = || None;
         app.on_server_msg(ServerMsg::Tree(tree()));
         app.templates = vec!["claude".to_string(), "codex".to_string()];
         let mut h = Harness { app, rx };

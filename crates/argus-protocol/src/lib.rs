@@ -49,7 +49,7 @@ pub use features::{
 pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
 pub use held_tree::{transitions, HeldTree, Transition};
 pub use hello::{
-    Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, GREETING_WAIT, LIVE_CHANNELS, OUTBOX,
+    Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, GREETING_WAIT, LIVE_CHANNELS, OUTBOX, PASTE_FILE,
     PANE_TELEMETRY, PROTOCOL, TRANSCRIPTS, WIDE_TREE,
 };
 pub use hook::{

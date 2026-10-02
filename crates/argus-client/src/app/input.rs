@@ -12,6 +12,10 @@
 
 use super::*;
 
+/// The most a pasted file may be. Under the frame limit with room for the
+/// message around it; a screenshot is a few hundred kilobytes.
+const PASTE_FILE_MAX: usize = 32 * 1024 * 1024;
+
 impl App {
     /// Shuts any floating window, from anywhere, whatever has focus.
     ///
@@ -135,10 +139,23 @@ impl App {
     /// Pastes what is actually on the clipboard, rather than what the
     /// timing of a run of keystrokes suggested was one.
     ///
+    /// An image on it, with a pane to take one, wins over text: a screenshot
+    /// copied from a browser comes with its URL as text, and the picture is
+    /// what was meant. Only a pane can take one; the prompts and pickers
+    /// are typed text.
+    ///
     /// Over SSH there is no desktop clipboard to read, but the terminal's
     /// own paste still arrives as a bracketed paste, so the alert names
     /// that route instead of leaving the user with no way in.
     fn paste_clipboard(&mut self) {
+        if let Some(pane) = self.paste_target() {
+            if let Some(png) = (self.clipboard_image)() {
+                if self.paste_file(pane, "clipboard.png".to_string(), png) {
+                    self.report("pasted an image");
+                }
+                return;
+            }
+        }
         let Some(text) = (self.clipboard)() else {
             self.alert("no clipboard here; paste with your terminal's paste key");
             return;
@@ -157,6 +174,17 @@ impl App {
             "pasted {lines} line{}",
             if lines == 1 { "" } else { "s" }
         ));
+    }
+
+    /// The pane a paste reaches: the one typed into, with nothing above it
+    /// — a prompt, a picker — that takes the text first. The same order
+    /// `on_paste` walks.
+    fn paste_target(&self) -> Option<PaneId> {
+        let something_above = self.prompt.is_some() || self.dir_picker.is_some() || self.picker.is_some();
+        if something_above {
+            return None;
+        }
+        self.input_pane()
     }
 
     pub fn on_paste(&mut self, text: String) {
@@ -188,8 +216,54 @@ impl App {
             return;
         }
         if let Some(pane) = self.input_pane() {
+            if let Some(path) = crate::dropped::file(&text) {
+                if self.paste_dropped(pane, &path) {
+                    return;
+                }
+            }
             let _ = self.out.send(ClientMsg::Paste { pane, text });
         }
+    }
+
+    /// Carries a file dropped on the terminal to the pane's host. False
+    /// when it could not cross, having said why on the bar; the path then
+    /// pastes as the text it was, which still names the file to a daemon
+    /// on this machine.
+    fn paste_dropped(&mut self, pane: PaneId, path: &std::path::Path) -> bool {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.alert(format!("could not read {name}: {e}"));
+                return false;
+            }
+        };
+        let crossed = self.paste_file(pane, name.clone(), bytes);
+        if crossed {
+            self.report(format!("pasted {name}"));
+        }
+        crossed
+    }
+
+    /// Ships a file from this machine to the pane, where the daemon keeps
+    /// it and pastes its path there. False, having said why, when the
+    /// daemon is from before files crossed, or the file is more than a
+    /// frame holds.
+    fn paste_file(&mut self, pane: PaneId, name: String, bytes: Vec<u8>) -> bool {
+        if !self.pastes_files {
+            let (argusd, fix) = self.daemon_and_its_fix();
+            self.alert(format!("{argusd} predates pasting images; {fix}"));
+            return false;
+        }
+        if bytes.len() > PASTE_FILE_MAX {
+            self.alert(format!("{name} is too large to paste ({} MB)", bytes.len() >> 20));
+            return false;
+        }
+        let _ = self.out.send(ClientMsg::PasteFile { pane, name, bytes });
+        true
     }
 
     fn on_key_prompt(&mut self, key: KeyEvent) {

@@ -63,14 +63,11 @@ impl App {
 
     /// Says so when the daemon this client reached is not from its own
     /// build. `None` is a daemon that gave no greeting: one from before the
-    /// handshake. Here, `server restart` starts the daemon installed beside
-    /// this client; on another machine, argus there has to be updated.
+    /// handshake.
     pub fn greeted(&mut self, daemon: Option<&Hello>) {
         let ours = Hello::this_build();
-        let (argusd, fix) = match &self.host {
-            None => ("argusd".to_string(), "`argus server restart`".to_string()),
-            Some(host) => (format!("argusd on {host}"), format!("update argus on {host}")),
-        };
+        let (argusd, fix) = self.daemon_and_its_fix();
+        self.pastes_files = daemon.is_some_and(|d| d.can(argus_protocol::PASTE_FILE));
         let Some(daemon) = daemon else {
             self.report(format!("{argusd} predates this client; {fix} to update it"));
             return;
@@ -85,6 +82,16 @@ impl App {
                 "{argusd} is {}, this client {}; {fix} to match",
                 daemon.version, ours.version
             ));
+        }
+    }
+
+    /// What to call the daemon, and what to do about one that is behind:
+    /// here, `server restart` starts the daemon installed beside this
+    /// client; on another machine, argus there has to be updated.
+    pub(super) fn daemon_and_its_fix(&self) -> (String, String) {
+        match &self.host {
+            None => ("argusd".to_string(), "`argus server restart`".to_string()),
+            Some(host) => (format!("argusd on {host}"), format!("update argus on {host}")),
         }
     }
 

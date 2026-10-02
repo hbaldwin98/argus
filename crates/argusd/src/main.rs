@@ -15,6 +15,7 @@ mod gitignore;
 mod harness;
 mod highlight;
 mod logging;
+mod pastes;
 mod paths;
 mod pty;
 mod state;
@@ -65,6 +66,7 @@ async fn main() -> anyhow::Result<()> {
     }
     // Before any pane restores, too: a Claude pane is started with its mod.
     daemon.set_plugin_root(argus_protocol::config_dir().join("plugins"));
+    daemon.set_paste_root(argus_protocol::config_dir().join("pastes"));
     daemon.start_git_poll();
     daemon.start_git_watch();
     daemon.start_config_watch();

@@ -415,6 +415,9 @@ impl Daemon {
     /// only `close_pane` takes them out.
     pub(super) fn retire_pane(&self, pane: Pane) {
         self.forget_pane_sizes(pane.id);
+        if let Some(root) = self.paste_root.get() {
+            crate::pastes::forget(root, pane.id);
+        }
         // Best-effort: a pane retired because it exited has nothing left
         // to kill, but whatever it started in its session may still run.
         let _ = pane.runtime.kill();
@@ -466,6 +469,35 @@ impl Daemon {
         self.pane_input(pane)
             .ok_or_else(|| anyhow::anyhow!("no such pane"))?
             .paste(text.as_bytes())
+    }
+
+    /// Names the folder pasted files are kept under. Once, at startup, and
+    /// cleared then: whatever an earlier daemon's panes were pasted, they
+    /// read at the time, and their processes do not survive it.
+    pub fn set_paste_root(&self, root: std::path::PathBuf) {
+        crate::pastes::forget_all(&root);
+        let _ = self.paste_root.set(root);
+    }
+
+    /// Keeps a file from a client's machine where this pane's process can
+    /// open it, and pastes the path. The path comes back so a test, or a
+    /// caller with somewhere to show it, can say where it went.
+    pub fn paste_file(
+        &self,
+        pane: PaneId,
+        name: &str,
+        bytes: &[u8],
+    ) -> anyhow::Result<std::path::PathBuf> {
+        let input = self
+            .pane_input(pane)
+            .ok_or_else(|| anyhow::anyhow!("no such pane"))?;
+        let root = self
+            .paste_root
+            .get()
+            .ok_or_else(|| anyhow::anyhow!("this daemon keeps no pasted files"))?;
+        let path = crate::pastes::keep(root, pane, name, bytes)?;
+        input.paste(crate::pastes::dropped(&path).as_bytes())?;
+        Ok(path)
     }
 
     /// A handle to a live pane's keyboard, held without the tree lock so it

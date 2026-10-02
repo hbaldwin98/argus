@@ -21,6 +21,26 @@ pub fn read() -> Option<String> {
     arboard::Clipboard::new().ok()?.get_text().ok()
 }
 
+/// The clipboard's image as a PNG, or `None` when there is no clipboard
+/// to read or nothing picture-shaped on it.
+///
+/// PNG because it is the one encoding every harness's image path parser
+/// and every platform's clipboard agree on; the clipboard hands over raw
+/// RGBA, so the encoding is ours to do.
+pub fn read_image() -> Option<Vec<u8>> {
+    let image = arboard::Clipboard::new().ok()?.get_image().ok()?;
+    encode_png(image.width, image.height, &image.bytes).ok()
+}
+
+fn encode_png(width: usize, height: usize, rgba: &[u8]) -> Result<Vec<u8>, png::EncodingError> {
+    let mut out = Vec::new();
+    let mut encoder = png::Encoder::new(&mut out, width as u32, height as u32);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.write_header()?.write_image_data(rgba)?;
+    Ok(out)
+}
+
 /// Put text on the clipboard, reporting whether it could have arrived.
 ///
 /// Both routes are always taken, since neither knows whether it is the one
@@ -77,6 +97,19 @@ mod tests {
     #[test]
     fn copied_text_reaches_the_terminal_as_base64_osc_52() {
         assert_eq!(osc52("hi\n"), "\x1b]52;c;aGkK\x07");
+    }
+
+    #[test]
+    fn a_clipboard_image_is_encoded_as_a_png_a_harness_can_open() {
+        let rgba = [255, 0, 0, 255, 0, 0, 255, 255];
+        let encoded = encode_png(2, 1, &rgba).unwrap();
+
+        assert!(encoded.starts_with(b"\x89PNG\r\n\x1a\n"));
+        let mut reader = png::Decoder::new(std::io::Cursor::new(&encoded)).read_info().unwrap();
+        let mut decoded = vec![0; reader.output_buffer_size().unwrap()];
+        let info = reader.next_frame(&mut decoded).unwrap();
+        assert_eq!((info.width, info.height), (2, 1));
+        assert_eq!(&decoded[..info.buffer_size()], &rgba);
     }
 
     #[test]

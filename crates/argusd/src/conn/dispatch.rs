@@ -86,6 +86,9 @@ fn dispatch_pane(
         } => daemon.answer(pane, question, choice),
         ClientMsg::Input { pane, bytes } => daemon.write_pane(pane, &bytes),
         ClientMsg::Paste { pane, text } => daemon.paste_pane(pane, &text),
+        ClientMsg::PasteFile { pane, name, bytes } => {
+            daemon.paste_file(pane, &name, &bytes).map(|_| ())
+        }
         ClientMsg::Resize { pane, rows, cols } => daemon.resize_pane(viewer, pane, rows, cols),
         ClientMsg::Scrollback { pane, offset, top } => daemon
             .pane_scrollback(pane, offset as usize, top)

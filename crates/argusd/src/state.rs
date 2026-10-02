@@ -366,6 +366,9 @@ pub struct Daemon {
     /// `harness::plugin_dir`); unset until `main` names it, so a daemon
     /// built in a test writes none.
     plugin_root: std::sync::OnceLock<std::path::PathBuf>,
+    /// Where a file pasted into a pane is kept (see `pastes`); unset until
+    /// `main` names it, so a daemon built in a test takes no files.
+    paste_root: std::sync::OnceLock<std::path::PathBuf>,
 }
 
 /// A project as clients are shown it.

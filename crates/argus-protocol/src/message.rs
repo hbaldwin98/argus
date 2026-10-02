@@ -39,6 +39,20 @@ pub enum ClientMsg {
         pane: PaneId,
         text: String,
     },
+    /// A file from the client's machine, pasted or dropped into a pane: a
+    /// screenshot off the clipboard, an image dragged onto the terminal.
+    /// The daemon keeps it where the pane's host can read it and pastes
+    /// that path, so a harness that takes an image by path gets one
+    /// whether the daemon runs here or over ssh, where the client's
+    /// clipboard and files are out of its reach. Only to a daemon that
+    /// listed `PASTE_FILE`.
+    PasteFile {
+        pane: PaneId,
+        /// What the client calls it; the daemon keeps the extension, which
+        /// is how a harness tells an image from text.
+        name: String,
+        bytes: Vec<u8>,
+    },
     /// Ask for the rows sitting `offset` lines above a pane's live screen.
     /// `0` is the live screen itself, which is how the client says it has
     /// scrolled back to the bottom.

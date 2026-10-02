@@ -231,9 +231,15 @@ pub struct App {
     /// How the clipboard is read. A field so a test can hand the app a
     /// clipboard without there being a desktop session to hold one.
     pub clipboard: fn() -> Option<String>,
+    /// How the clipboard's image is read, as a PNG; injectable the same way.
+    pub clipboard_image: fn() -> Option<Vec<u8>>,
     /// How selected terminal text is written, injectable for tests without
     /// a desktop session.
     pub clipboard_write: fn(&str) -> bool,
+    /// Whether the daemon takes a file off this machine (`PASTE_FILE`).
+    /// False until it greets, and for a daemon from before the capability,
+    /// which is told about rather than sent a message it cannot read.
+    pub pastes_files: bool,
     pub selection: Option<TerminalSelection>,
     /// True between a press on the rail's right border and its release.
     pub rail_drag: bool,
@@ -429,7 +435,9 @@ impl App {
             leader_pending: false,
             pane_fullscreen: false,
             clipboard: crate::clipboard::read,
+            clipboard_image: crate::clipboard::read_image,
             clipboard_write: crate::clipboard::write,
+            pastes_files: false,
             selection: None,
             rail_drag: false,
             should_quit: false,

@@ -23,10 +23,21 @@ ratatui = { workspace = true }
 crossterm = { workspace = true, features = ["event-stream"] }
 futures = "0.3"
 nucleo-matcher = "0.3"
-arboard = { version = "3", default-features = false }
+# `image-data` reads the clipboard's image, which is what Ctrl-V with a
+# screenshot on it means.
+arboard = { version = "3", default-features = false, features = ["image-data"] }
+png = "0.18"
 base64 = { workspace = true }
 mermaid-text = "0.57.0"
 unicode-width = "0.2"
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# A Linux desktop is as likely Wayland as X11 now, and only the Wayland
+# route reaches a Wayland clipboard without XWayland in between.
+[target.'cfg(target_os = "linux")'.dependencies]
+arboard = { version = "3", default-features = false, features = ["image-data", "wayland-data-control"] }

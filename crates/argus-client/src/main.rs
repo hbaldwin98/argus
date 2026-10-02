@@ -14,6 +14,7 @@ mod web;
 mod diagram;
 mod clipboard;
 mod dirpicker;
+mod dropped;
 mod fuzzy;
 mod grid;
 mod herdr;

@@ -123,6 +123,113 @@ fn the_paste_key_says_so_rather_than_failing_silently() {
 }
 
 #[test]
+fn an_image_on_the_clipboard_crosses_as_a_file_not_as_its_text() {
+    // A screenshot copied from a browser comes with its URL as text; the
+    // picture is what was meant, and it goes as bytes because the pane's
+    // host may be another machine with no clipboard of this one's.
+    let mut h = Harness::new();
+    h.keys("llll");
+    h.sent();
+    h.app.greeted(Some(&argus_protocol::Hello::this_build()));
+    h.app.clipboard = || Some("https://example.com/shot".to_string());
+    h.app.clipboard_image = || Some(b"\x89PNG...".to_vec());
+
+    h.app
+        .on_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::CONTROL));
+
+    assert!(
+        matches!(
+            h.sent().as_slice(),
+            [ClientMsg::PasteFile { pane: PaneId(100), name, bytes }]
+                if name == "clipboard.png" && bytes == b"\x89PNG..."
+        ),
+        "{}",
+        h.app.status
+    );
+    assert!(h.app.status.contains("image"), "{}", h.app.status);
+}
+
+#[test]
+fn an_image_for_a_daemon_that_takes_none_is_said_not_sent() {
+    let mut h = Harness::new();
+    h.keys("llll");
+    h.sent();
+    h.app.greeted(None);
+    h.app.clipboard_image = || Some(vec![1, 2, 3]);
+
+    h.app
+        .on_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::CONTROL));
+
+    assert!(h.sent().is_empty(), "a message the daemon cannot read is never sent");
+    assert!(h.app.status_alert, "{}", h.app.status);
+    assert!(h.app.status.contains("argus server restart"), "{}", h.app.status);
+}
+
+#[test]
+fn an_image_is_not_pasted_where_only_text_goes() {
+    // A prompt over the pane takes typed text; an image on the clipboard
+    // must neither reach the pane behind it nor stop the text arriving.
+    let mut h = Harness::new();
+    h.keys("llll");
+    h.sent();
+    h.app.greeted(Some(&argus_protocol::Hello::this_build()));
+    h.app.prompt = Some(Prompt::EditorCommand { input: String::new() });
+    h.app.clipboard = || Some("typed".to_string());
+    h.app.clipboard_image = || Some(vec![1, 2, 3]);
+
+    h.app
+        .on_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::CONTROL));
+
+    assert!(h.sent().is_empty(), "nothing crosses for a prompt");
+    match &h.app.prompt {
+        Some(Prompt::EditorCommand { input }) => assert_eq!(input, "typed"),
+        _ => panic!("the prompt is gone"),
+    }
+}
+
+#[test]
+fn an_image_dropped_on_the_terminal_crosses_as_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let shot = dir.path().join("shot.png");
+    std::fs::write(&shot, b"picture").unwrap();
+    let mut h = Harness::new();
+    h.keys("llll");
+    h.sent();
+    h.app.greeted(Some(&argus_protocol::Hello::this_build()));
+
+    h.app.on_paste(format!("'{}'", shot.display()));
+
+    assert!(matches!(
+        h.sent().as_slice(),
+        [ClientMsg::PasteFile { pane: PaneId(100), name, bytes }]
+            if name == "shot.png" && bytes == b"picture"
+    ));
+}
+
+#[test]
+fn a_dropped_path_an_old_daemon_cannot_take_as_a_file_pastes_as_the_path_and_says_so() {
+    // The path still names the file to a daemon on this machine, which is
+    // what every drop did before files crossed; the alert is for the one
+    // on another machine, where it names nothing.
+    let dir = tempfile::tempdir().unwrap();
+    let shot = dir.path().join("shot.png");
+    std::fs::write(&shot, b"picture").unwrap();
+    let typed = shot.display().to_string();
+    let mut h = Harness::new();
+    h.keys("llll");
+    h.sent();
+    h.app.greeted(None);
+
+    h.app.on_paste(typed.clone());
+
+    assert!(matches!(
+        h.sent().as_slice(),
+        [ClientMsg::Paste { pane: PaneId(100), text }] if *text == typed
+    ));
+    assert!(h.app.status_alert, "{}", h.app.status);
+}
+
+#[test]
 fn a_paste_reaches_the_child_as_one_message() {
     let mut h = Harness::new();
     h.keys("llll");
