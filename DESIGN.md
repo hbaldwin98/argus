@@ -213,6 +213,7 @@ to the type or its locking.
 | `pty`, `pty/job`, `pty/vt` | a pane's child process; launching it, bounding what it starts and ending all of it; and its terminal emulator with the translation of its screen |
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
+| `harness/plugin_dir` | the plugin folder a harness loads from outside the checkout — Claude Code's mod — and the variable that points a pane at it |
 | `harness/live`, `harness/live/codex`, `harness/live/claude` | what a harness's own interface to its running session says, in Argus's terms: Codex's app-server, and Claude Code's API stream |
 | `harness/transcript`, `harness/transcript/claude`, `harness/transcript/codex`, `harness/transcript/cursor`, `harness/transcript/pi` | what a harness's own transcript says, read one line at a time into entries, and how each harness writes its own |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
@@ -803,6 +804,21 @@ it asks for as a `Question` entry (allow once, always allow, reject) that it mar
 opencode says it was, from any surface. pi's extension turns messages into `sendUserMessage`,
 following up or steering while a turn runs, and interrupts into `abort`.
 
+Claude Code's adapter is a mod: a plugin of function hooks that runs inside the session (2.1.287
+and later). Its source ships in the daemon (`harness/claude-mod`), and `harness/plugin_dir` writes
+it under Argus's config directory — only when a file differs, since Claude Code reloads a mod in
+every running session when its folder changes — and names that folder in the pane's
+`CLAUDE_CODE_PLUGIN_DIRS`, after any folders the template or the daemon's environment already
+named. Nothing is written into the checkout, so nothing there needs sweeping. A mod has no
+streaming HTTP — `$.http.fetch` answers once the body is read — but reads a child's output as it
+comes, so it runs `argus-hook inbox <session>`, which holds the inbox and prints one item a line,
+and opens it again whenever it closes, as whatever the session is by then. A message becomes
+`$.prompt.submit` as the person's own words, which Claude Code holds until the session is idle; a
+steer while a turn runs becomes a user row `$.session.append` adds, which the turn reads at its
+next step, with a toast so the person at the terminal sees it; an interrupt becomes `$.turn.abort`
+of the main loop's running turn. Claude Code's own dialogs are still answered on its screen. A
+Claude Code without mods ignores the variable, opens no inbox, and is typed into as before.
+
 A harness may have a live channel — Codex's app-server, or Claude's tee below — that streams what
 the agent does and takes what is said to it. A pane runs on it only when its template sets
 `live = true` and a client that greeted with `live-channels` is connected as the pane starts. Only
@@ -846,6 +862,16 @@ variable without which a custom base URL counts as a third-party gateway and swi
 Control, cloud sessions and the managed-policy fetch; a release that drops it costs live panes
 those, nothing else. `ANTHROPIC_UNIX_SOCKET` was the alternative, and is not used: over it, Claude
 Code sends no login, so Argus would have to supply one.
+
+The mod drafts without the tee. Its `turn.step` hook sees the main loop's reply stream as it
+arrives, text and thinking a piece at a time, and posts the same `Draft` changes to `POST
+/pane/<id>/draft`, gathered for 100 ms. A subagent's steps are not the pane's reply and are passed
+by. The posts go out one at a time from a loop the session started, holding the session's own `$`:
+when a turn is interrupted its step's hook is abandoned, and a post made through it never lands,
+so the turn's `turn.complete`, which fires for an aborted turn too, is what ends a draft cut off
+mid-block. The daemon takes a draft only from the pane's own session, and not at all from a pane
+on the tee, whose reply is read off the wire already. So every Claude pane with the mod streams,
+`live` or not, and `live = true` is now only worth setting for a Claude Code older than mods.
 
 Two things the tee's first real run turned up. A new pane reads as idle before its harness has
 said anything, and Claude Code's folder-trust dialog took a queued message as its answer; the

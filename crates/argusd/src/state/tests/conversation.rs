@@ -529,3 +529,42 @@ async fn a_push_bigger_than_an_ordinary_hook_is_taken_by_the_pane_api() {
     assert!(pane_info(&d, pane).has_transcript);
     let _ = d.close_pane(pane);
 }
+
+#[tokio::test]
+async fn a_plugin_inside_the_agent_drafts_its_reply_and_a_child_cannot() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = agent(dir.path());
+    d.start_hook_server().unwrap();
+    d.set_pane_session_id(pane, "s1");
+    let mut watching = d.watch_transcript(pane);
+
+    d.report_draft(pane, Some("s1/workflows"), vec![Draft::Start { thinking: false }]);
+    let body = serde_json::to_string(&[
+        Draft::Start { thinking: false },
+        Draft::More { text: "Build fixed.".into() },
+        Draft::Done,
+    ])
+    .unwrap();
+    let response = post_agent_hook(&d, pane, argus_protocol::Endpoint::Draft, &body).await;
+    assert!(response.starts_with(b"HTTP/1.1 200 OK"), "{}", String::from_utf8_lossy(&response));
+
+    let mut drafts = Vec::new();
+    while !drafts.contains(&Draft::Done) {
+        let msg = tokio::time::timeout(std::time::Duration::from_secs(5), watching.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        if let ServerMsg::Transcript { updates, .. } = msg {
+            drafts.extend(updates.into_iter().filter_map(|u| match u {
+                Update::Draft(d) => Some(d),
+                _ => None,
+            }));
+        }
+    }
+    assert_eq!(
+        drafts,
+        [Draft::Start { thinking: false }, Draft::More { text: "Build fixed.".into() }, Draft::Done],
+        "the child's draft never reached the pane"
+    );
+    let _ = d.close_pane(pane);
+}

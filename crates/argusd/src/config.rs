@@ -253,6 +253,7 @@ impl From<HarnessConfig> for crate::harness::Harness {
             // A plugin is a program, not a dialect, so it can only come
             // from a built-in. See `harness::Plugin`.
             plugin: None,
+            plugin_dir: None,
             resume: c.resume,
             resume_id: c.resume_id,
             command_string: false,

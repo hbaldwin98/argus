@@ -195,6 +195,10 @@ impl Daemon {
         }
         env.retain(|(k, _)| !template.env.contains_key(k));
         env.extend(template.env.clone());
+        if let Some(entry) = self.plugin_dir_env(&harness, &env) {
+            env.retain(|(k, _)| *k != entry.0);
+            env.push(entry);
+        }
 
         let (mut args, resuming) = agent_args(
             rest,
@@ -256,6 +260,34 @@ impl Daemon {
         self.attach_live(id);
         self.broadcast_tree();
         Ok(id)
+    }
+
+    /// Names the folder harness plugin folders are written under. Once, at
+    /// startup; a daemon that never names one starts no pane with a plugin.
+    pub fn set_plugin_root(&self, root: std::path::PathBuf) {
+        let _ = self.plugin_root.set(root);
+    }
+
+    /// The variable pointing an agent at its harness's plugin folder, which
+    /// is written first, with whatever folders the pane's environment, or
+    /// else the daemon's, already named ahead of it. A folder that cannot be
+    /// written costs the agent its plugin, not its start.
+    pub(super) fn plugin_dir_env(
+        &self,
+        harness: &crate::harness::Harness,
+        env: &[(String, String)],
+    ) -> Option<(String, String)> {
+        let plugin = harness.plugin_dir.as_ref()?;
+        let root = self.plugin_root.get()?;
+        let inherited = env
+            .iter()
+            .find(|(key, _)| key == plugin.var)
+            .map(|(_, value)| value.into())
+            .or_else(|| std::env::var_os(plugin.var));
+        plugin
+            .prepare(root, inherited)
+            .inspect_err(|error| tracing::warn!("could not write the {} plugin: {error}", harness.name))
+            .ok()
     }
 
     pub fn mark_pane_exited(self: &Arc<Self>, pane: PaneId, code: Option<i32>) {

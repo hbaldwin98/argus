@@ -1,0 +1,6 @@
+{
+  "name": "argus",
+  "version": "0.1.0",
+  "description": "Argus's way into a Claude Code session it runs: the pane's inbox, and the reply as it streams",
+  "author": { "name": "Argus" }
+}

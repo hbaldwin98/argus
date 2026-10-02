@@ -30,6 +30,7 @@
 //! argus-hook context "preface"                  # the preface, then the same
 //! argus-hook say "text"                          # prints, calls nobody
 //! argus-hook instructions                        # inherited instructions, then context
+//! argus-hook inbox <session-id>                  # the pane's inbox, one item a line
 //! argus-hook <url> <token> [--note-from-stdin] [--title-from-stdin]  # the installed hook form
 //! ```
 //!
@@ -87,6 +88,7 @@ const TIMEOUT: Duration = Duration::from_secs(2);
 mod agents;
 mod board;
 mod context;
+mod inbox;
 mod installed;
 mod telemetry;
 mod transcript;
@@ -147,6 +149,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("decide", decide),
     ("telemetry", telemetry),
     ("transcript", transcript),
+    ("inbox", inbox::inbox),
 ];
 
 fn dispatch(command: Option<&str>, rest: &[&str]) {

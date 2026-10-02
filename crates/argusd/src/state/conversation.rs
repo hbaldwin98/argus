@@ -426,6 +426,19 @@ impl Daemon {
         }
     }
 
+    /// Takes what a plugin inside the agent saw of its reply as it
+    /// streamed. Only the pane's own session drafts the pane's reply, and a
+    /// pane on the tee has its reply read off the wire already, which would
+    /// otherwise be drafted twice.
+    pub(super) fn report_draft(&self, pane: PaneId, reporter: Option<&str>, changes: Vec<Draft>) {
+        if self.child_of(pane, reporter).is_some()
+            || self.tee_upstreams.lock().unwrap().contains_key(&pane)
+        {
+            return;
+        }
+        self.draft(pane, changes);
+    }
+
     /// Takes what the tee read off a pane's reply as it streamed.
     pub(super) fn draft(&self, pane: PaneId, changes: Vec<Draft>) {
         let mut inner = self.inner.lock().unwrap();

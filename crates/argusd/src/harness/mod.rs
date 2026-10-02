@@ -47,6 +47,7 @@ use serde_json::{json, Value};
 mod hooks;
 mod install;
 pub mod live;
+pub mod plugin_dir;
 mod skill;
 pub mod transcript;
 
@@ -146,6 +147,9 @@ pub struct Harness {
     /// A module to drop into the checkout, for a harness that extends
     /// through code rather than through JSON.
     pub plugin: Option<Plugin>,
+    /// A plugin folder the harness loads from outside the checkout, named
+    /// in its environment: Claude Code's mod.
+    pub plugin_dir: Option<plugin_dir::PluginDir>,
     /// What turns this CLI's start command into "pick up where we left
     /// off", appended to the template's `cmd` — `["--continue"]` and the
     /// like. Only ever used when Argus restarts a pane it recorded, never
@@ -250,6 +254,7 @@ impl Harness {
             legacy_events: Vec::new(),
             context_event: None,
             plugin: None,
+            plugin_dir: None,
             resume: Vec::new(),
             resume_id: Vec::new(),
             command_string: false,
@@ -293,6 +298,7 @@ impl Harness {
             legacy_events: Vec::new(),
             context_event: Some("SessionStart".to_string()),
             plugin: None,
+            plugin_dir: Some(plugin_dir::claude_mod()),
             // Picks up the most recent conversation in the checkout, which
             // is the one the pane had: Argus starts each agent in its own
             // checkout's directory.
@@ -330,6 +336,7 @@ impl Harness {
             legacy_events: vec!["Stop".to_string()],
             context_event: Some("SessionStart".to_string()),
             plugin: None,
+            plugin_dir: None,
             resume: vec!["resume".to_string(), "--last".to_string()],
             resume_id: vec!["resume".to_string(), "{session_id}".to_string()],
             command_string: true,
@@ -365,6 +372,7 @@ impl Harness {
                 path: PathBuf::from(".opencode").join("plugin").join(PLUGIN_FILE),
                 source: include_str!("opencode-plugin.js"),
             }),
+            plugin_dir: None,
             resume: vec!["--continue".to_string()],
             resume_id: vec!["--session".to_string(), "{session_id}".to_string()],
             command_string: false,
@@ -396,6 +404,7 @@ impl Harness {
                     .join("argus-status.ts"),
                 source: include_str!("pi-extension.ts"),
             }),
+            plugin_dir: None,
             resume: vec!["--continue".to_string()],
             resume_id: vec!["--session".to_string(), "{session_id}".to_string()],
             command_string: false,
@@ -428,6 +437,7 @@ impl Harness {
             legacy_events: Vec::new(),
             context_event: None,
             plugin: None,
+            plugin_dir: None,
             resume: vec!["--continue".to_string()],
             resume_id: vec!["--conversation".to_string(), "{session_id}".to_string()],
             command_string: false,
@@ -470,6 +480,7 @@ impl Harness {
             legacy_events: Vec::new(),
             context_event: None,
             plugin: None,
+            plugin_dir: None,
             resume: vec!["--continue".to_string()],
             resume_id: vec!["--resume".to_string(), "{session_id}".to_string()],
             command_string: true,

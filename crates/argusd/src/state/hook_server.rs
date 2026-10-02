@@ -57,6 +57,7 @@ impl Daemon {
 }
 
 const MAX_BODY: usize = 4096;
+const MAX_DRAFT_BODY: usize = 64 * 1024;
 /// Diagram adds carry Mermaid source in JSON; allow room for encoding overhead.
 const MAX_DIAGRAM_HOOK_BODY: usize = MAX_DIAGRAM_BODY_BYTES + 4096;
 
@@ -64,6 +65,8 @@ fn max_hook_body(endpoint: Option<(PaneId, Endpoint)>) -> usize {
     match endpoint {
         Some((_, Endpoint::Diagrams)) => MAX_DIAGRAM_HOOK_BODY,
         Some((_, Endpoint::Transcript)) => argus_protocol::MAX_PUSH_BYTES,
+        // A tenth of a second of a reply, or more after a stall.
+        Some((_, Endpoint::Draft)) => MAX_DRAFT_BODY,
         _ => MAX_BODY,
     }
 }
@@ -232,6 +235,13 @@ async fn handle_hook_request(
             Some((pane, Endpoint::Transcript)) => match decode(&body, "transcript push") {
                 Ok(push) => {
                     daemon.report_pushed(pane, reporter.as_deref(), push);
+                    HookResponse::empty(200, "OK")
+                }
+                Err(refusal) => refusal,
+            },
+            Some((pane, Endpoint::Draft)) => match decode(&body, "draft") {
+                Ok(changes) => {
+                    daemon.report_draft(pane, reporter.as_deref(), changes);
                     HookResponse::empty(200, "OK")
                 }
                 Err(refusal) => refusal,

@@ -200,14 +200,16 @@ Codex's TUI can run on an app-server that several clients share, and opencode's 
 client of its own server; both stream tokens, take turns and interrupts, and pose approvals as
 requests that either surface can answer, with the other told. pi's extension runs inside the
 agent and can stream and inject. On such a channel replies, Stop and approvals go through it
-rather than the PTY. Claude Code has no such protocol — headless resume against a live session
-forks it — but it sends its API traffic wherever its base URL says, with its own login. A pane
-that asks for its live channel is pointed at a loopback proxy in the daemon that forwards every
-request untouched and reads each streaming reply as it passes, so the phone sees the reply being
-written; the finished text still comes from the transcript. It puts Argus in the path of every
-request the pane makes, so like every live channel it is opt-in per template and taken only by a
-pane that starts while `argus web` runs; nothing turns it on by default. Without it, a Claude
-conversation updates per finished content block.
+rather than the PTY. Claude Code has no client protocol — headless resume against a live session
+forks it — but from 2.1.287 it loads mods, plugins that run inside the session. Argus starts every
+Claude pane with one, kept outside the checkout, which takes messages, steering and interrupts
+through the pane's inbox and posts the reply as it streams, so the phone sees the reply being
+written without Argus in the path of the API traffic; the finished text still comes from the
+transcript. For a Claude Code older than mods, a pane that asks for its live channel is pointed at
+a loopback proxy in the daemon that forwards every request untouched and reads each streaming reply
+as it passes. That puts Argus in the path of every request the pane makes, so like every live
+channel it is opt-in per template and taken only by a pane that starts while `argus web` runs.
+Without either, a Claude conversation updates per finished content block.
 
 Web Push tells a phone when a pane starts waiting or a turn ends. It needs the page served over
 HTTPS, and a push carries the pane's title and status, never transcript text.

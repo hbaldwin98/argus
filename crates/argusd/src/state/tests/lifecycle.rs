@@ -145,3 +145,27 @@ async fn a_live_claude_panes_upstream_is_forgotten_once_its_agent_exits() {
     }
     panic!("an exited pane's upstream was never forgotten");
 }
+
+#[test]
+fn a_claude_pane_is_pointed_at_its_mod_after_any_folder_already_named() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_running_claude(dir.path());
+    let claude = crate::harness::Harness::claude();
+    assert_eq!(d.plugin_dir_env(&claude, &[]), None, "a daemon that names no root writes no plugin");
+
+    let root = tempfile::tempdir().unwrap();
+    d.set_plugin_root(root.path().to_path_buf());
+    let theirs = std::env::join_paths(["/opt/their-mods"]).unwrap().into_string().unwrap();
+    let (var, value) = d
+        .plugin_dir_env(&claude, &[("CLAUDE_CODE_PLUGIN_DIRS".to_string(), theirs)])
+        .unwrap();
+
+    assert_eq!(var, "CLAUDE_CODE_PLUGIN_DIRS");
+    let mod_dir = root.path().join("claude-mod");
+    assert_eq!(
+        std::env::split_paths(&value).collect::<Vec<_>>(),
+        vec![std::path::PathBuf::from("/opt/their-mods"), mod_dir.clone()]
+    );
+    assert!(mod_dir.join("hooks/register.ts").is_file());
+    assert_eq!(d.plugin_dir_env(&crate::harness::Harness::codex(), &[]), None);
+}

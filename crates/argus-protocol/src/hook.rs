@@ -167,6 +167,9 @@ pub enum Endpoint {
     /// `GET`, held open: the [`crate::InboxItem`]s for the agent, as
     /// server-sent events.
     Inbox,
+    /// [`crate::Draft`] changes, as a JSON list: what the agent is writing
+    /// now, from a plugin that sees its reply stream.
+    Draft,
 }
 
 impl Endpoint {
@@ -193,6 +196,7 @@ impl Endpoint {
             Endpoint::Telemetry => Cow::Borrowed("telemetry"),
             Endpoint::Transcript => Cow::Borrowed("transcript"),
             Endpoint::Inbox => Cow::Borrowed("inbox"),
+            Endpoint::Draft => Cow::Borrowed("draft"),
         }
     }
 }
@@ -232,6 +236,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "telemetry" => Endpoint::Telemetry,
         "transcript" => Endpoint::Transcript,
         "inbox" => Endpoint::Inbox,
+        "draft" => Endpoint::Draft,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -353,6 +358,7 @@ mod tests {
             Endpoint::Telemetry,
             Endpoint::Transcript,
             Endpoint::Inbox,
+            Endpoint::Draft,
         ];
         all.extend(Report::ALL.into_iter().map(Endpoint::Status));
         all

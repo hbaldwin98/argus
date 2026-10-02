@@ -137,6 +137,7 @@ impl Daemon {
             outbox: StdMutex::new(Default::default()),
             next_inbox: std::sync::atomic::AtomicU64::new(0),
             tee_port: std::sync::atomic::AtomicU16::new(0),
+            plugin_root: std::sync::OnceLock::new(),
             tee_upstreams: Arc::new(StdMutex::new(HashMap::new())),
             live_readers: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         });

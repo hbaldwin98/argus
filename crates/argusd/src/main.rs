@@ -63,6 +63,8 @@ async fn main() -> anyhow::Result<()> {
     if let Err(error) = daemon.start_tee() {
         tracing::warn!("live Claude panes will not stream: {error}");
     }
+    // Before any pane restores, too: a Claude pane is started with its mod.
+    daemon.set_plugin_root(argus_protocol::config_dir().join("plugins"));
     daemon.start_git_poll();
     daemon.start_git_watch();
     daemon.start_config_watch();

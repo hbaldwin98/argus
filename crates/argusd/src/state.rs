@@ -362,6 +362,10 @@ pub struct Daemon {
     tee_upstreams: Arc<StdMutex<HashMap<PaneId, String>>>,
     /// How many connected clients read live channels. See `live`.
     live_readers: Arc<std::sync::atomic::AtomicUsize>,
+    /// Where a harness's plugin folder is written (see
+    /// `harness::plugin_dir`); unset until `main` names it, so a daemon
+    /// built in a test writes none.
+    plugin_root: std::sync::OnceLock<std::path::PathBuf>,
 }
 
 /// A project as clients are shown it.

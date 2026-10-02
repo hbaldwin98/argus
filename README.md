@@ -194,10 +194,18 @@ encrypted for the phone; it travels through the browser's push service (Apple's,
 Mozilla's), which is the only thing `argus web` sends off the machine. On iPhone, add the page to
 the home screen first.
 
-opencode and pi take what the phone says through their own plugins rather than as typing, and
-opencode's permission requests appear in the conversation as buttons.
+opencode, pi and Claude Code take what the phone says through their own plugins rather than as
+typing, and opencode's permission requests appear in the conversation as buttons.
 
-`live = true` on a template streams replies to the phone as they are written. For Claude Code, the
+Claude Code 2.1.287 and later stream their replies to the phone as they are written, with nothing
+to turn on. Argus starts each Claude pane with a small mod (a Claude Code plugin of function hooks)
+that it writes into its own config directory, never the checkout, and names in the pane's
+`CLAUDE_CODE_PLUGIN_DIRS` after any folders already there. Inside the session the mod takes
+messages, steering and interrupts, and posts the reply as it streams. An older Claude Code ignores
+the folder, and is typed into as before.
+
+`live = true` on a template streams replies to the phone as they are written. For Claude Code
+older than mods, the
 pane's API traffic goes through a loopback proxy in the daemon that forwards every request
 untouched — your login included, never stored — and reads the reply as it passes. For Codex, the
 pane runs on Codex's app-server (experimental on Codex's side; Linux and macOS). Both are off
@@ -683,8 +691,10 @@ to inspect; `done` marks reviewed, completed work. A later `working` report resu
 
 Claude Code, Codex, OpenCode, pi, AGY, Cursor Agent (`agent`), and the generic environment-only harness are built in. The Claude
 harness manages
-`UserPromptSubmit`, `Stop`, `Notification`, and `SessionStart` entries in
+`UserPromptSubmit`, `Stop`, `Notification`, `SessionStart`, tool, and subagent entries in
 `<checkout>/.claude/settings.local.json`; its SessionStart hook captures top-level `session_id`.
+A subagent shows as a row under its pane, and all of a dynamic workflow's agents share one row
+named after the workflow, listed until the workflow finishes.
 Codex uses `<checkout>/.codex/hooks.json` with its required command-string handler shape. Its handler
 reads pane routing from the process environment, keeping its trust-sensitive content stable across
 pane starts and daemon restarts. OpenCode's

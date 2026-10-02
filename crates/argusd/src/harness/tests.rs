@@ -43,6 +43,7 @@ fn flat_harness() -> Harness {
         legacy_events: Vec::new(),
         context_event: None,
         plugin: None,
+        plugin_dir: None,
         resume: Vec::new(),
         resume_id: Vec::new(),
         command_string: false,
