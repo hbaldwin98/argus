@@ -717,7 +717,9 @@ from child sessions, and clears everything but the model when the pane's convers
 Telemetry is live state and is not persisted. The installed hook form derives a report from every
 event it reads: `tool_name` and `hook_event_name` (Claude Code, Codex, Cursor), `model` (Codex,
 Cursor), and the tail of `transcript_path` — Claude Code's assistant `usage` for context, Codex's
-`turn_context` and `token_count` records for model, window, and totals. The OpenCode plugin and pi
+`turn_context` and `token_count` records for model, window, and totals. Claude Code's transcript
+holds neither the window nor the cost, so its mod reports both, with the context in use, from
+`$.session.usage()` as each step and turn ends. The OpenCode plugin and pi
 extension report from their message and tool events. Claude Code tool hooks are answered with `{}`
 so the user's permission rules still apply. Clients show the report on the workspace breadcrumb and
 the pane cards.

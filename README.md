@@ -375,7 +375,8 @@ but cannot approve that trust decision; exact Codex identity capture starts afte
 Agent panes also show telemetry: the tool running now, context used against the model's window,
 cumulative cost, and the model. Each harness supplies what it can. Claude Code and Codex hooks
 read it from the hook payload and the transcript it names (Claude Code does not record its
-context window or cost there, and Codex prices nothing). The OpenCode plugin and pi extension
+context window or cost there, so its mod reports those from inside the session, and Codex prices
+nothing). The OpenCode plugin and pi extension
 report model, tokens, and cost from their message events, and Cursor and AGY hooks report the
 model and tool their payloads carry. Any other agent can run
 `argus-hook telemetry --model M --context N --window N --cost USD --tool NAME`.

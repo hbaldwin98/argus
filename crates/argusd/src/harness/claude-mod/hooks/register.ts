@@ -2,8 +2,8 @@
 //
 // Argus starts a Claude pane with this folder named in
 // CLAUDE_CODE_PLUGIN_DIRS, so Claude Code loads it inside the session (a
-// mod: Claude Code 2.1.287 or later). Two things go through it rather than
-// around it:
+// mod: Claude Code 2.1.287 or later). Three things go through it rather
+// than around it:
 //
 // - The pane's inbox. What a person says to the agent from another surface
 //   arrives here and goes in through Claude Code's own prompt, not typed
@@ -13,6 +13,9 @@
 // - The reply as it streams. Claude Code writes a reply to its transcript
 //   only as each block ends; the pieces seen here are posted as the pane's
 //   draft, without Argus standing in the path of the API traffic.
+// - What the session has cost and how full its context is, which the
+//   settings hooks cannot read: Claude Code's transcript records neither the
+//   window nor the cost.
 //
 // Everything is best-effort: a daemon that has gone makes this quiet, never
 // an error in the session.
@@ -41,8 +44,10 @@ let relaying = false
 // The reply being drafted, which its turn's end closes: an interrupted
 // step's own hook is abandoned before it can.
 let drafting: DraftState | undefined
-// Draft changes waiting to be posted, and what wakes the poster for them.
+// Draft changes waiting to be posted, whether the session's usage is due to
+// be reported, and what wakes the poster for either.
 let outgoing: Draft[] = []
+let usageDue = false
 let wake: (() => void) | undefined
 
 export const register: Register = on => {
@@ -51,7 +56,7 @@ export const register: Register = on => {
     if (!relaying) {
       relaying = true
       void relay($)
-      void postDrafts($)
+      void postToPane($)
     }
     return started
   })
@@ -69,6 +74,7 @@ export const register: Register = on => {
       send(drafting)
       drafting = undefined
     }
+    reportUsage()
     return next(e)
   })
 
@@ -85,6 +91,7 @@ export const register: Register = on => {
     }
     close(draft)
     send(draft)
+    reportUsage()
     return await stream.result
   })
 }
@@ -183,6 +190,11 @@ function close(draft: DraftState) {
   draft.pending.push('Done')
 }
 
+function reportUsage() {
+  usageDue = true
+  wake?.()
+}
+
 function send(draft: DraftState) {
   if (draft.pending.length === 0) return
   outgoing.push(...draft.pending)
@@ -191,29 +203,33 @@ function send(draft: DraftState) {
   wake?.()
 }
 
-// Posts the draft for the session's life, one post at a time so the daemon
-// takes them in the order they were made. It holds the session's own `$`:
-// a step's hook is abandoned when its turn is interrupted, and a post made
-// through it would never land.
-async function postDrafts($: EngineInterface) {
+// Posts for the session's life, one post at a time so the daemon takes a
+// draft in the order it was made. It holds the session's own `$`: a step's
+// hook is abandoned when its turn is interrupted, and a post made through it
+// would never land.
+async function postToPane($: EngineInterface) {
   const [base, token] = await Promise.all([$.env.get('ARGUS_HOOK_URL'), $.env.get('ARGUS_HOOK_TOKEN')])
   if (!base || !token) return
   for (;;) {
-    while (outgoing.length === 0) await new Promise<void>(resolve => (wake = resolve))
-    const changes = outgoing
-    outgoing = []
+    while (outgoing.length === 0 && !usageDue) await new Promise<void>(resolve => (wake = resolve))
     try {
-      await $.http.fetch(`${base}/draft`, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-          'x-argus-session': await $.session.id(),
-        },
-        body: JSON.stringify(changes),
-      })
+      const headers = {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        'x-argus-session': await $.session.id(),
+      }
+      if (outgoing.length > 0) {
+        const changes = outgoing
+        outgoing = []
+        await $.http.fetch(`${base}/draft`, { method: 'POST', headers, body: JSON.stringify(changes) })
+      } else {
+        usageDue = false
+        const { context, cost } = await $.session.usage()
+        const report = { context_tokens: context.tokens, context_window: context.window, cost_usd: cost?.usd }
+        await $.http.fetch(`${base}/telemetry`, { method: 'POST', headers, body: JSON.stringify(report) })
+      }
     } catch {
-      // A draft that does not land is only a draft.
+      // A draft or a figure that does not land is only that.
     }
   }
 }
