@@ -12,17 +12,41 @@ pub(crate) fn rail_target_at(app: &App, x: u16, y: u16) -> Option<RailRow> {
         .then(|| {
             list_rows(app)
                 .get(panel.first + usize::from(y - panel.inner.y))
-                .copied()
+                .map(|row| match *row {
+                    ListRow::Rail(row) => row,
+                    ListRow::Child(pane, _) => RailRow::Pane(pane),
+                })
         })
         .flatten()
 }
 
-/// The rows drawn in the scrolling list: everything but the heading.
-fn list_rows(app: &App) -> Vec<RailRow> {
-    app.rail_rows()
-        .into_iter()
-        .filter(|row| *row != RailRow::Project)
-        .collect()
+/// A row drawn in the scrolling list: one of the rows the cursor walks, or
+/// a child listed under an agent's row — a subagent, a workflow, a CLI
+/// started inside it. A child is something happening inside its pane rather
+/// than somewhere else to go, so the cursor steps over it and a click on it
+/// lands on the pane.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ListRow {
+    Rail(RailRow),
+    Child(PaneLocation, usize),
+}
+
+/// The rows drawn in the scrolling list: everything but the heading, with
+/// each pane's children under it.
+fn list_rows(app: &App) -> Vec<ListRow> {
+    let mut rows = Vec::new();
+    for row in app.rail_rows() {
+        match row {
+            RailRow::Project => continue,
+            RailRow::Pane(pane) => {
+                rows.push(ListRow::Rail(row));
+                let children = app.pane_at(pane).map_or(0, |info| info.children.len());
+                rows.extend((0..children).map(|child| ListRow::Child(pane, child)));
+            }
+            row => rows.push(ListRow::Rail(row)),
+        }
+    }
+    rows
 }
 
 pub(crate) fn sidebar_contains(app: &App, x: u16, y: u16) -> bool {
@@ -324,7 +348,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     let cursor = app.rail_cursor();
     let first = scrolled_to_show(
         app.layout.rail.first,
-        cursor.and_then(|cursor| rows.iter().position(|row| *row == cursor)),
+        cursor.and_then(|cursor| rows.iter().position(|row| *row == ListRow::Rail(cursor))),
         rows_area.height as usize,
         rows.len(),
     );
@@ -336,6 +360,20 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         let y = rows_area.y + screen as u16;
         let Some(project) = app.current_project() else {
             break;
+        };
+        let row = match row {
+            ListRow::Rail(row) => row,
+            ListRow::Child(pane, child) => {
+                let child = app.pane_at(*pane).and_then(|info| info.children.get(*child));
+                if let Some(child) = child {
+                    let bg = if pane.repository == app.sel_repository { th.surface } else { th.bg };
+                    f.render_widget(
+                        Paragraph::new(rail_child_line(child, width, th)).style(Style::default().bg(bg)),
+                        Rect { y, height: 1, ..rows_area },
+                    );
+                }
+                continue;
+            }
         };
         let on_cursor = cursor == Some(*row);
         // The selected repository and everything open under it read as one
@@ -452,8 +490,11 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                     && app.view == View::Workspace
                     && matches!(app.focus, Focus::Panes | Focus::PaneContent);
                 let bg = if selected { th.surface_focus } else { row_bg };
-                let color = status_color(pane.status, th);
-                let status = short_status(pane.status);
+                // The row speaks for what runs inside the pane too: an agent
+                // idle at its prompt while its workflow works is working.
+                let shown = pane.loudest_state().status;
+                let color = status_color(shown, th);
+                let status = short_status(shown);
                 let title_width = width.saturating_sub(13 + status.len());
                 Line::from(vec![
                     Span::styled(
@@ -466,7 +507,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                             "{} ",
                             status_glyph(
                                 app,
-                                pane.status,
+                                shown,
                                 if pane.kind == PaneKind::Agent {
                                     "◆"
                                 } else {
@@ -572,13 +613,14 @@ fn render_agents(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
             continue;
         }
         let selected = current == Some(row.pane);
-        let color = status_color(pane.status, th);
-        let status = short_status(pane.status);
+        let shown = pane.loudest_state().status;
+        let color = status_color(shown, th);
+        let status = short_status(shown);
         let name_width = (rows_area.width as usize).saturating_sub(status.len() + 3);
         f.render_widget(
             Paragraph::new(Line::from(vec![
                 Span::styled(
-                    format!("{} ", status_glyph(app, pane.status, "■")),
+                    format!("{} ", status_glyph(app, shown, "■")),
                     Style::default().fg(color),
                 ),
                 Span::styled(
@@ -619,5 +661,22 @@ fn child_line(child: &argus_protocol::ChildAgentInfo, width: u16, th: Theme) -> 
             Style::default().fg(th.muted),
         ),
         Span::styled(format!(" {status}"), Style::default().fg(color)),
+    ])
+}
+
+/// A child's line under its pane in the repository list, one step further
+/// in than the pane's own.
+fn rail_child_line(child: &argus_protocol::ChildAgentInfo, width: usize, th: Theme) -> Line<'static> {
+    let color = status_color(child.status, th);
+    let status = short_status(child.status);
+    let label_width = width.saturating_sub(15 + status.len());
+    Line::from(vec![
+        Span::raw("         "),
+        Span::styled("⤷ ", Style::default().fg(th.dim)),
+        Span::styled(
+            format!("{:<label_width$}", ellipsize_text(&child.label, label_width)),
+            Style::default().fg(th.muted),
+        ),
+        Span::styled(format!(" {status}  "), Style::default().fg(color)),
     ])
 }

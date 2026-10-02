@@ -66,7 +66,8 @@ pub(super) fn render_panes(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
             continue;
         };
         let selected = app.pane_location() == Some(*location);
-        let color = status_color(pane.status, th);
+        let shown = pane.loudest_state().status;
+        let color = status_color(shown, th);
         let path = app
             .pane_path(*location)
             .map(|(_, r, c)| format!("{r} · {c}"))
@@ -82,7 +83,7 @@ pub(super) fn render_panes(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
             Paragraph::new(vec![
                 Line::from(vec![
                     Span::styled("■ ", Style::default().fg(color)),
-                    Span::styled(short_status(pane.status), Style::default().fg(color)),
+                    Span::styled(short_status(shown), Style::default().fg(color)),
                     Span::styled(format!("  #{}", pane.id.0), Style::default().fg(th.dim)),
                     // Messages from a phone waiting for the agent's prompt.
                     Span::styled(

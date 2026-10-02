@@ -363,3 +363,50 @@ fn an_agents_children_are_listed_under_it_and_a_click_on_one_selects_the_agent()
     click(&mut app, agents.x + 4, agents.y + 1);
     assert_eq!(app.current_pane().map(|pane| pane.id), Some(PaneId(100)));
 }
+
+/// The fixture's agent idle at its prompt while a workflow it started runs.
+fn agent_with_a_running_workflow() -> App {
+    let mut app = command_center();
+    let pane = &mut app.tree[0].repositories[0].checkouts[0].panes[0];
+    pane.status = PaneStatus::Idle;
+    pane.children.push(argus_protocol::ChildAgentInfo {
+        label: "workflow list-open-tasks".into(),
+        status: PaneStatus::Working,
+        note: None,
+    });
+    app
+}
+
+#[test]
+fn an_open_repository_lists_a_panes_children_under_it_and_the_cursor_steps_over_them() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let mut app = agent_with_a_running_workflow();
+    draw_at(&mut app, 120, 30);
+    let list = app.layout.rail.inner;
+    click(&mut app, list.x + 2, list.y);
+    let text = lines(&draw_at(&mut app, 120, 30));
+
+    let agent = text.iter().position(|line| line.contains("└ ") && line.contains("claude")).unwrap();
+    assert!(text[agent].contains("RUNNING"), "the workflow's work is the agent's: {}", text[agent]);
+    assert!(text[agent + 1].contains("⤷ workflow list-open-tasks"), "{}", text.join("\n"));
+    assert!(text[agent + 2].contains("└ › shell"), "{}", text.join("\n"));
+
+    // A click on the child lands on its agent; the keys step past it.
+    click(&mut app, list.x + 12, agent as u16 + 1);
+    assert_eq!(app.current_pane().map(|pane| pane.id), Some(PaneId(100)));
+    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    assert_eq!(app.current_pane().map(|pane| pane.id), Some(PaneId(101)));
+}
+
+#[test]
+fn an_agent_idle_while_its_workflow_works_reads_as_working() {
+    let mut app = agent_with_a_running_workflow();
+    app.focus = Focus::PaneContent;
+    let text = lines(&draw_at(&mut app, 140, 40));
+
+    let agents = app.layout.agents.inner;
+    assert!(text[usize::from(agents.y)].contains("RUNNING"), "{}", text.join("\n"));
+    let header = text.iter().find(|line| line.contains("claude #100")).unwrap();
+    assert!(header.contains("RUNNING") && !header.contains("IDLE"), "{header}");
+}

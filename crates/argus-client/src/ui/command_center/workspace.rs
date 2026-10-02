@@ -44,9 +44,12 @@ pub(super) fn render_workspace(
         ));
         // Plain space before the chip, and one cell of padding inside it.
         header.push_span(Span::raw("  "));
+        // What runs inside the pane counts: an agent idle at its prompt
+        // while its workflow works is working.
+        let shown = pane.loudest_state().status;
         header.push_span(Span::styled(
-            format!(" {} ", short_status(pane.status)),
-            filled_badge(status_color(pane.status, th), th),
+            format!(" {} ", short_status(shown)),
+            filled_badge(status_color(shown, th), th),
         ));
         // A parked pane looks exactly like a quiet one, so the heading has
         // to say that the rows under it are history rather than the
