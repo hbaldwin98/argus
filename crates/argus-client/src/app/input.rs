@@ -119,8 +119,8 @@ impl App {
     }
 
     /// Whether pasted text has somewhere to land — the same routing
-    /// `on_paste` walks, asked ahead of time so a coalesced burst with no
-    /// target is replayed as keystrokes instead of vanishing.
+    /// `on_paste` walks, asked ahead of time by the paste key so it can
+    /// say so instead of reading the clipboard for nothing.
     pub fn accepts_paste(&self) -> bool {
         if let Some(prompt) = &self.prompt {
             return !matches!(prompt, Prompt::ConfirmRemove { .. });
@@ -226,23 +226,27 @@ impl App {
             }
             return;
         }
-        if let Some(pane) = self.input_pane() {
-            match crate::dropped::file(&text) {
-                Some(Dropped::Here(path)) => {
-                    if self.paste_dropped(pane, &path) {
-                        return;
-                    }
+        let Some(pane) = self.input_pane() else {
+            // Said, never typed: a dropped path's letters would be
+            // commands here, and one of them opened a prompt.
+            self.report("nothing here takes pasted text");
+            return;
+        };
+        match crate::dropped::file(&text) {
+            Some(Dropped::Here(path)) => {
+                if self.paste_dropped(pane, &path) {
+                    return;
                 }
-                // Pasted all the same: the path is what was typed, and an
-                // agent told it will say it cannot find it. The bar says
-                // why first.
-                Some(Dropped::Elsewhere(name)) => self.alert(format!(
-                    "{name} is not on this machine; to paste it, run argus where it is with --host"
-                )),
-                None => {}
             }
-            let _ = self.out.send(ClientMsg::Paste { pane, text });
+            // Pasted all the same: the path is what was typed, and an
+            // agent told it will say it cannot find it. The bar says
+            // why first.
+            Some(Dropped::Elsewhere(name)) => self.alert(format!(
+                "{name} is not on this machine; to paste it, run argus where it is with --host"
+            )),
+            None => {}
         }
+        let _ = self.out.send(ClientMsg::Paste { pane, text });
     }
 
     /// Carries a file dropped on the terminal to the pane's host. False

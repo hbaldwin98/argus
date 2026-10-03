@@ -627,7 +627,12 @@ a grid, because incremental damage has no rows to land on. Subscription changes 
 one frame and reduced to the settled selection, so crossing a column of panes costs one full grid
 rather than one per pane — but that settled selection is always sent.
 
-The client enables bracketed paste and forwards each paste as one protocol message. The daemon
+The client enables bracketed paste and forwards each paste as one protocol message. On Windows
+there is no bracketed paste: a paste, or a file dropped on the terminal, arrives as keystrokes,
+so every text key is held until the burst goes idle (under the redraw tick, so it costs no echo)
+and a burst longer than a person types is delivered whole as one paste. A paste with nowhere to
+land is said on the bar, never replayed as keystrokes: a dropped path typed into the tree is a
+run of commands. The daemon
 consults the pane parser and wraps the text in bracketed-paste delimiters only when the child has
 requested that mode. A wheel over a pane whose child is on the alternate screen and has not asked
 for mouse reporting is sent as a cursor key (xterm alternate-scroll); a child that has asked for

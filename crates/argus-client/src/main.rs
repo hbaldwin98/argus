@@ -418,7 +418,7 @@ async fn sleep_until(deadline: Option<std::time::Instant>) {
 }
 
 fn flush_burst(app: &mut App, burst: &mut PasteBurst) {
-    match burst.take(app.accepts_paste()) {
+    match burst.take() {
         Some(Flush::Paste(text)) => app.on_paste(text),
         Some(Flush::Keys(keys)) => {
             for key in keys {
@@ -694,15 +694,16 @@ mod tests {
             crossterm::event::KeyCode::Null,
             crossterm::event::KeyModifiers::NONE,
         );
+        let mut burst = PasteBurst::default();
 
         assert!(handle_terminal_event(
             &mut app,
-            &mut PasteBurst::default(),
+            &mut burst,
             Some(Ok(Event::Key(leader)))
         ));
         assert!(handle_terminal_event(
             &mut app,
-            &mut PasteBurst::default(),
+            &mut burst,
             Some(Ok(Event::Key(crossterm::event::KeyEvent {
                 kind: crossterm::event::KeyEventKind::Repeat,
                 ..leader
@@ -710,12 +711,15 @@ mod tests {
         ));
         assert!(handle_terminal_event(
             &mut app,
-            &mut PasteBurst::default(),
+            &mut burst,
             Some(Ok(Event::Key(crossterm::event::KeyEvent::new(
                 crossterm::event::KeyCode::Char('f'),
                 crossterm::event::KeyModifiers::NONE,
             ))))
         ));
+        // A text key is held for the burst it may start; the loop lets it
+        // go when the burst goes idle.
+        flush_burst(&mut app, &mut burst);
 
         assert!(
             app.pane_fullscreen,

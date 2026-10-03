@@ -2,17 +2,20 @@
 //!
 //! Bracketed paste only reaches us as `Event::Paste` where the terminal
 //! backend supports it; on Windows crossterm reads console records and a
-//! paste arrives as ordinary key events instead. Sending those on one at a
-//! time submits the agent's prompt at every newline, so a burst — text keys
-//! closer together than a person can type — is held back and delivered as a
-//! single paste.
+//! paste, or a file dropped on the terminal, arrives as ordinary key events
+//! instead. Sending those on one at a time submits the agent's prompt at
+//! every newline, and types a dropped path's letters as commands wherever
+//! the focus is not a pane — so text keys are held until the burst goes
+//! idle, and a burst longer than a person types is delivered as one paste.
 
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
-/// Longest gap between two keys still counted as one burst. Key repeat is
-/// an order of magnitude slower than this, so a held key never coalesces.
+/// Longest gap between two keys still counted as one burst, and how long
+/// a key is held waiting for the next. Key repeat is an order of magnitude
+/// slower than this, so a held key never coalesces; and it is under the
+/// redraw tick, so the hold never costs a frame of echo.
 pub const BURST_GAP: Duration = Duration::from_millis(10);
 
 /// Below this a burst is replayed as keystrokes: a couple of characters
@@ -35,6 +38,11 @@ pub enum Step {
 }
 
 /// A burst that has come due, in the form it should be delivered.
+///
+/// A paste is a paste wherever it lands: one with nowhere to go is for
+/// the app to say so about, never to replay as keystrokes — a dropped
+/// path typed into the tree as commands opened whatever its letters were
+/// bound to.
 #[derive(Debug, PartialEq)]
 pub enum Flush {
     Paste(String),
@@ -62,16 +70,17 @@ impl PasteBurst {
                 };
             }
         }
-        let continues = self
+        // A buffer the loop has not flushed yet, though its burst is over:
+        // the key arrived in the same turn as the deadline. It is not part
+        // of that burst, and goes straight through rather than joining it.
+        let stale = self
             .last_text
-            .is_some_and(|last| now.duration_since(last) < BURST_GAP);
-        self.last_text = Some(now);
-        if !continues && self.buffer.is_empty() {
-            // The first key of a burst still goes straight through: it costs
-            // nothing (a bare character never submits) and normal typing
-            // keeps its echo latency.
-            return Step::Dispatch(key);
+            .is_some_and(|last| now.duration_since(last) >= BURST_GAP);
+        if stale && !self.buffer.is_empty() {
+            self.last_text = None;
+            return Step::FlushThen(key);
         }
+        self.last_text = Some(now);
         self.buffer.push(key);
         self.deadline = Some(now + BURST_GAP);
         Step::Buffered
@@ -82,18 +91,20 @@ impl PasteBurst {
         self.deadline
     }
 
-    /// Takes whatever is buffered. `accepts_paste` is the app's answer to
-    /// whether a paste has anywhere to land right now; when it does not,
-    /// the keys are replayed so they are never silently dropped.
-    pub fn take(&mut self, accepts_paste: bool) -> Option<Flush> {
+    /// Takes whatever is buffered: a paste when it is more than a person
+    /// types in the time, the keys themselves otherwise.
+    pub fn take(&mut self) -> Option<Flush> {
         self.deadline = None;
         if self.buffer.is_empty() {
             return None;
         }
         let keys = std::mem::take(&mut self.buffer);
         let text: String = keys.iter().filter_map(text_char).collect();
-        let worth_pasting = text.contains('\n') || text.chars().count() >= PASTE_MIN;
-        if accepts_paste && worth_pasting {
+        // A lone Enter is a keystroke, now that every key is held: as a
+        // paste it would be a newline in the prompt, not a submit.
+        let chars = text.chars().count();
+        let worth_pasting = chars >= PASTE_MIN || (chars >= 2 && text.contains('\n'));
+        if worth_pasting {
             Some(Flush::Paste(text))
         } else {
             Some(Flush::Keys(keys))
@@ -160,10 +171,20 @@ mod tests {
         }
     }
 
+    /// Feeds `keys` `gap` apart, flushing at each deadline the way the
+    /// loop does, and returns what was dispatched as keys along the way.
+    /// A paste coming due mid-feed is a test's mistake.
     fn feed(burst: &mut PasteBurst, keys: &[KeyEvent], gap: Duration) -> Vec<KeyEvent> {
         let mut now = Instant::now();
         let mut dispatched = Vec::new();
         for key in keys {
+            if burst.deadline().is_some_and(|due| now >= due) {
+                match burst.take() {
+                    Some(Flush::Keys(keys)) => dispatched.extend(keys),
+                    Some(Flush::Paste(text)) => panic!("a paste of {text:?} came due mid-feed"),
+                    None => {}
+                }
+            }
             match burst.push(*key, now) {
                 Step::Dispatch(k) | Step::FlushThen(k) => dispatched.push(k),
                 Step::Buffered | Step::Drop => {}
@@ -182,8 +203,8 @@ mod tests {
 
         let dispatched = feed(&mut burst, &keys, Duration::from_millis(1));
 
-        assert_eq!(dispatched, vec![key('h')]);
-        assert_eq!(burst.take(true), Some(Flush::Keys(vec![key('i')])));
+        assert!(dispatched.is_empty());
+        assert_eq!(burst.take(), Some(Flush::Keys(vec![key('h'), key('i')])));
     }
 
     #[test]
@@ -202,9 +223,9 @@ mod tests {
         feed(&mut burst, &keys, Duration::from_millis(1));
 
         assert_eq!(
-            burst.take(true),
+            burst.take(),
             Some(Flush::Paste(
-                "B
+                "aB
 c"
                 .to_string()
             ))
@@ -212,20 +233,19 @@ c"
     }
 
     #[test]
-    fn a_pasted_block_arrives_as_one_paste_not_a_submit_per_line() {
+    fn a_pasted_block_arrives_whole_as_one_paste() {
+        // Whole: the leading key used to go early, which typed the opening
+        // quote of a dropped Windows path into the pane and pasted the rest
+        // without it, so nothing recognized the path as a file.
         let mut burst = PasteBurst::default();
-        let keys = [key('a'), enter(), key('b'), enter(), key('c')];
+        let keys = [key('"'), key('a'), enter(), key('b'), enter(), key('c')];
 
         let dispatched = feed(&mut burst, &keys, Duration::from_millis(1));
 
+        assert!(dispatched.is_empty(), "nothing goes early: {dispatched:?}");
         assert_eq!(
-            dispatched,
-            vec![key('a')],
-            "only the leading key goes early"
-        );
-        assert_eq!(
-            burst.take(true),
-            Some(Flush::Paste("\nb\nc".to_string())),
+            burst.take(),
+            Some(Flush::Paste("\"a\nb\nc".to_string())),
             "the newlines must not reach the pane as separate keys"
         );
     }
@@ -237,9 +257,28 @@ c"
 
         let dispatched = feed(&mut burst, &keys, Duration::from_millis(40));
 
-        assert_eq!(dispatched, keys.to_vec());
-        assert_eq!(burst.take(true), None);
+        assert_eq!(dispatched, keys[..2].to_vec(), "each key is let go before the next");
+        assert_eq!(
+            burst.take(),
+            Some(Flush::Keys(vec![enter()])),
+            "a lone Enter submits; as a paste it would only be a newline"
+        );
         assert!(burst.deadline().is_none());
+    }
+
+    #[test]
+    fn a_key_arriving_as_its_predecessor_comes_due_does_not_join_it() {
+        // The deadline and the key in the same turn of the loop: the key
+        // goes through on its own rather than being held for a burst that
+        // has already ended.
+        let mut burst = PasteBurst::default();
+        let now = Instant::now();
+        burst.push(key('a'), now);
+
+        let step = burst.push(key('b'), now + BURST_GAP);
+
+        assert!(matches!(step, Step::FlushThen(k) if k == key('b')));
+        assert_eq!(burst.take(), Some(Flush::Keys(vec![key('a')])));
     }
 
     #[test]
@@ -253,19 +292,19 @@ c"
         let step = burst.push(escape, now + Duration::from_millis(2));
 
         assert!(matches!(step, Step::FlushThen(k) if k == escape));
-        assert_eq!(burst.take(true), Some(Flush::Keys(vec![key('b')])));
+        assert_eq!(burst.take(), Some(Flush::Keys(vec![key('a'), key('b')])));
     }
 
     #[test]
-    fn a_burst_with_nowhere_to_paste_is_replayed_as_keys() {
+    fn a_burst_is_a_paste_whether_or_not_anything_takes_one() {
+        // Where the burst lands is the app's question. Replaying one with
+        // nowhere to go as keystrokes typed a dropped path into the tree,
+        // and its letters opened whatever they were bound to.
         let mut burst = PasteBurst::default();
         let keys = [key('a'), key('b'), key('c'), key('d')];
 
         feed(&mut burst, &keys, Duration::from_millis(1));
 
-        assert_eq!(
-            burst.take(false),
-            Some(Flush::Keys(vec![key('b'), key('c'), key('d')]))
-        );
+        assert_eq!(burst.take(), Some(Flush::Paste("abcd".to_string())));
     }
 }

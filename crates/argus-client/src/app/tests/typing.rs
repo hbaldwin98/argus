@@ -265,6 +265,22 @@ fn a_dropped_path_an_old_daemon_cannot_take_as_a_file_pastes_as_the_path_and_say
 }
 
 #[test]
+fn a_paste_with_nowhere_to_land_is_said_and_never_typed_as_commands() {
+    // A file dropped on Windows Terminal arrives as keystrokes; with the
+    // focus on the tree they were replayed as commands, and the `n` in the
+    // user's own name opened the new-worktree prompt.
+    let mut h = Harness::new();
+    h.checkouts_stage();
+    h.sent();
+
+    h.app.on_paste("C:\\Users\\hunte\\Pictures\\shot.png".to_string());
+
+    assert!(h.sent().is_empty());
+    assert!(h.app.prompt.is_none(), "no prompt opened");
+    assert!(h.app.status.contains("nothing here"), "{}", h.app.status);
+}
+
+#[test]
 fn a_paste_reaches_the_child_as_one_message() {
     let mut h = Harness::new();
     h.keys("llll");
