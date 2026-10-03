@@ -30,13 +30,20 @@ impl App {
         key.code == KeyCode::F(12)
     }
 
-    /// Ctrl-V, with or without shift. Taken by Argus everywhere, including
-    /// inside a pane: what the child would have made of it (quoted-insert
-    /// in a line editor, visual block in vim) is worth less than pasting
-    /// reliably, and the leader chord still reaches the child's own keys.
+    /// Ctrl-V, with or without shift, and Alt-V. Taken by Argus everywhere,
+    /// including inside a pane: what the child would have made of it
+    /// (quoted-insert in a line editor, visual block in vim) is worth less
+    /// than pasting reliably, and the leader chord still reaches the
+    /// child's own keys.
+    ///
+    /// Alt-V because Windows Terminal keeps Ctrl-V and Ctrl-Shift-V for its
+    /// own paste and never passes them on — and its paste of an image is
+    /// nothing at all. Alt-V is the key Claude Code chose for the same
+    /// reason, so it is the one a Windows user already knows.
     fn is_paste_key(key: &KeyEvent) -> bool {
-        key.modifiers.contains(KeyModifiers::CONTROL)
-            && matches!(key.code, KeyCode::Char('v') | KeyCode::Char('V'))
+        let v = matches!(key.code, KeyCode::Char('v') | KeyCode::Char('V'));
+        let held = key.modifiers;
+        v && (held.contains(KeyModifiers::CONTROL) || held.contains(KeyModifiers::ALT))
     }
 
     pub fn on_key(&mut self, key: KeyEvent) {

@@ -123,6 +123,20 @@ fn the_paste_key_says_so_rather_than_failing_silently() {
 }
 
 #[test]
+fn alt_v_pastes_too_for_a_terminal_that_keeps_ctrl_v() {
+    // Windows Terminal never passes Ctrl-V on; Alt-V is the key that gets
+    // through, and the one Claude Code taught Windows users already.
+    let mut h = Harness::new();
+    h.keys("llll");
+    h.sent();
+    h.app.clipboard = || Some("x".to_string());
+
+    h.app.on_key(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::ALT));
+
+    assert!(matches!(h.sent().as_slice(), [ClientMsg::Paste { .. }]));
+}
+
+#[test]
 fn an_image_on_the_clipboard_crosses_as_a_file_not_as_its_text() {
     // A screenshot copied from a browser comes with its URL as text; the
     // picture is what was meant, and it goes as bytes because the pane's

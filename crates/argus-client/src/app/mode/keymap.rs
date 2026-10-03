@@ -1234,7 +1234,7 @@ const EVERYWHERE: Group = Group {
     title: "everywhere",
     bindings: &[
         Binding::note("?", "this list"),
-        Binding::note("ctrl-v", "paste"),
+        Binding::note("ctrl-v, alt-v", "paste; an image on the clipboard pastes as a file"),
         Binding::note("F12", "close the floating window, whatever it is"),
     ],
 };

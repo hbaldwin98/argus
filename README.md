@@ -572,8 +572,11 @@ overlay; `q` or Escape closes it.
 | `Ctrl-Space`, `N` | Jump to the next pane waiting, failed, or ready for review |
 | `Ctrl-Space`, `1` / `2` | Open a view — the digits belong to the child while you are typing in a pane |
 | F12 | Emergency close for a floating window |
+| `Ctrl-V` or `Alt-V` | Paste the clipboard; an image on it, or an image file dropped on the terminal, reaches the pane as a file even when the daemon is on another machine |
 
-Other supported keys are forwarded to the child PTY.
+Other supported keys are forwarded to the child PTY. Use `Alt-V` in Windows Terminal, which keeps
+`Ctrl-V` for itself. Images and dropped files cross only from where the client runs: in an ssh
+session the client has no clipboard, so run `argus --host <machine>` on the desktop instead.
 
 ### Review
 

@@ -142,7 +142,7 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 _ => return draw_bar(f, app, area, &app.mode().keymap().tiers(app), th),
             },
             Mode::Overlay(OverlayMode::Pane) => &[
-                "floating — ctrl-space then esc to close, x to kill   ctrl-v paste",
+                "floating — ctrl-space then esc to close, x to kill   ctrl-v or alt-v paste",
                 "floating — ctrl-space then esc, x to kill",
                 "ctrl-space esc",
             ][..],

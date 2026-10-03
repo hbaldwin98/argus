@@ -641,7 +641,9 @@ shell's `osc52` helper) is caught by the pane's parser and sent to the client as
 `ServerMsg::Clipboard`, which puts it on the clipboard the same two ways. Ctrl-V reads the desktop clipboard; where there is
 none, as over SSH, the terminal's own paste key arrives as a bracketed paste instead. Argus never
 asks the terminal to read its clipboard over OSC 52: most terminals refuse, and the reply would
-reach the key parser as typed text.
+reach the key parser as typed text. Alt-V is the same key: Windows Terminal keeps Ctrl-V and
+Ctrl-Shift-V for its own paste, which of an image is nothing, and Alt-V is what Claude Code uses
+there for the same reason.
 
 An image crosses as a file, because the pane's process reads the daemon's disk and clipboard,
 not the client's. Ctrl-V with a picture on the clipboard, and a paste that is one path to an
