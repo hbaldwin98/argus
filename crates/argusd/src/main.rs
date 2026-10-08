@@ -5,6 +5,8 @@ mod browse;
 mod command;
 mod config;
 mod conn;
+#[cfg(windows)]
+mod ctrl_c;
 mod daemon_lock;
 mod diff;
 #[cfg(windows)]
@@ -33,6 +35,11 @@ async fn main() -> anyhow::Result<()> {
     #[cfg(windows)]
     if let Err(e) = dll_search::restrict() {
         tracing::error!("could not keep library loads out of the working directory: {e}");
+    }
+    // Before any pane can inherit the daemon's own deafness to it.
+    #[cfg(windows)]
+    if let Err(e) = ctrl_c::restore() {
+        tracing::error!("could not restore Ctrl-C for panes: {e}");
     }
 
     let Some(_daemon_lock) = daemon_lock::DaemonLock::acquire()? else {

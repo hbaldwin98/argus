@@ -225,6 +225,7 @@ to the type or its locking.
 | `config` | `projects.toml`, which is read and never written |
 | `daemon_lock`, `editor`, `watch`, `command`, `logging`, `paths` | the one daemon allowed to own an instance, and the small services the rest of the daemon uses |
 | `dll_search` | where the daemon loads libraries from on Windows: its own directory and System32, never the directory it was started in |
+| `ctrl_c` | whether a pane's child can be interrupted on Windows: the daemon clears the ignore-Ctrl-C flag it was started with, so no child inherits it |
 
 `argus` is a replaceable renderer over one model. `app` holds the state and never predicts the
 result of a request; `ui` is a pure function of it.
