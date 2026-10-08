@@ -695,10 +695,10 @@ to inspect; `done` marks reviewed, completed work. A later `working` report resu
 
 Claude Code, Codex, OpenCode, pi, AGY, Cursor Agent (`agent`), and the generic environment-only harness are built in. The Claude
 harness manages
-`UserPromptSubmit`, `Stop`, `Notification`, `SessionStart`, tool, and subagent entries in
+`UserPromptSubmit`, `Stop`, `Notification`, `SessionStart`, and tool entries in
 `<checkout>/.claude/settings.local.json`; its SessionStart hook captures top-level `session_id`.
-A subagent shows as a row under its pane, and all of a dynamic workflow's agents share one row
-named after the workflow, listed until the workflow finishes.
+Subagents and a dynamic workflow's agents run inside the pane's session and are not listed as rows;
+a pane whose turn ended with a workflow still running reads as working until the workflow finishes.
 Codex uses `<checkout>/.codex/hooks.json` with its required command-string handler shape. Its handler
 reads pane routing from the process environment, keeping its trust-sensitive content stable across
 pane starts and daemon restarts. OpenCode's

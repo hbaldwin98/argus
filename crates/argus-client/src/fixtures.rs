@@ -16,6 +16,7 @@ pub(crate) fn pane_info(id: u64, kind: PaneKind, title: &str, status: PaneStatus
         template: None,
         children: Vec::new(),
         telemetry: Default::default(),
+        background: false,
         has_transcript: false,
         since: None,
         queued: Vec::new(),

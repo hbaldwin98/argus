@@ -340,13 +340,13 @@ fn the_rail_cannot_be_dragged_narrower_than_its_minimum_or_past_the_stage() {
 
 #[test]
 fn an_agents_children_are_listed_under_it_and_a_click_on_one_selects_the_agent() {
-    // A workflow, a subagent, a CLI started in the pane: something running
-    // inside the agent, shown under it rather than as an agent of its own.
+    // A CLI started in the pane is something running inside the agent,
+    // shown under it rather than as an agent of its own.
     let mut app = command_center();
     app.tree[0].repositories[0].checkouts[0].panes[0]
         .children
         .push(argus_protocol::ChildAgentInfo {
-            label: "workflow list-open-tasks".into(),
+            label: "codex review".into(),
             status: PaneStatus::Working,
             note: None,
         });
@@ -357,20 +357,20 @@ fn an_agents_children_are_listed_under_it_and_a_click_on_one_selects_the_agent()
     let parent = text[usize::from(agents.y)].clone();
     let child = text[usize::from(agents.y) + 1].clone();
     assert!(parent.contains("#100"), "{}", text.join("\n"));
-    assert!(child.contains("⤷ workflow list-open-tasks") && child.contains("RUNNING"), "{child}");
+    assert!(child.contains("⤷ codex review") && child.contains("RUNNING"), "{child}");
 
     app.focus = Focus::Repositories;
     click(&mut app, agents.x + 4, agents.y + 1);
     assert_eq!(app.current_pane().map(|pane| pane.id), Some(PaneId(100)));
 }
 
-/// The fixture's agent idle at its prompt while a workflow it started runs.
-fn agent_with_a_running_workflow() -> App {
+/// The fixture's agent idle at its prompt while a CLI it started runs.
+fn agent_with_a_running_child() -> App {
     let mut app = command_center();
     let pane = &mut app.tree[0].repositories[0].checkouts[0].panes[0];
     pane.status = PaneStatus::Idle;
     pane.children.push(argus_protocol::ChildAgentInfo {
-        label: "workflow list-open-tasks".into(),
+        label: "codex review".into(),
         status: PaneStatus::Working,
         note: None,
     });
@@ -381,15 +381,15 @@ fn agent_with_a_running_workflow() -> App {
 fn an_open_repository_lists_a_panes_children_under_it_and_the_cursor_steps_over_them() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-    let mut app = agent_with_a_running_workflow();
+    let mut app = agent_with_a_running_child();
     draw_at(&mut app, 120, 30);
     let list = app.layout.rail.inner;
     click(&mut app, list.x + 2, list.y);
     let text = lines(&draw_at(&mut app, 120, 30));
 
     let agent = text.iter().position(|line| line.contains("└ ") && line.contains("claude")).unwrap();
-    assert!(text[agent].contains("RUNNING"), "the workflow's work is the agent's: {}", text[agent]);
-    assert!(text[agent + 1].contains("⤷ workflow list-open-tasks"), "{}", text.join("\n"));
+    assert!(text[agent].contains("RUNNING"), "the child's work is the agent's: {}", text[agent]);
+    assert!(text[agent + 1].contains("⤷ codex review"), "{}", text.join("\n"));
     assert!(text[agent + 2].contains("└ › shell"), "{}", text.join("\n"));
 
     // A click on the child lands on its agent; the keys step past it.
@@ -400,8 +400,24 @@ fn an_open_repository_lists_a_panes_children_under_it_and_the_cursor_steps_over_
 }
 
 #[test]
-fn an_agent_idle_while_its_workflow_works_reads_as_working() {
-    let mut app = agent_with_a_running_workflow();
+fn an_agent_idle_while_its_workflow_runs_reads_as_working_with_no_row_for_it() {
+    let mut app = command_center();
+    let pane = &mut app.tree[0].repositories[0].checkouts[0].panes[0];
+    pane.status = PaneStatus::Idle;
+    pane.background = true;
+    app.focus = Focus::PaneContent;
+    let text = lines(&draw_at(&mut app, 140, 40));
+
+    let agents = app.layout.agents.inner;
+    assert!(text[usize::from(agents.y)].contains("RUNNING"), "{}", text.join("\n"));
+    let header = text.iter().find(|line| line.contains("claude #100")).unwrap();
+    assert!(header.contains("RUNNING") && !header.contains("IDLE"), "{header}");
+    assert!(!text.iter().any(|line| line.contains("⤷")), "{}", text.join("\n"));
+}
+
+#[test]
+fn an_agent_idle_while_its_child_works_reads_as_working() {
+    let mut app = agent_with_a_running_child();
     app.focus = Focus::PaneContent;
     let text = lines(&draw_at(&mut app, 140, 40));
 

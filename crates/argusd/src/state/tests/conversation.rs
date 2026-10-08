@@ -491,6 +491,60 @@ async fn a_new_session_names_its_file_on_the_same_report_that_claims_the_pane() 
 }
 
 #[tokio::test]
+async fn a_turn_ending_mid_workflow_leaves_the_pane_idle_and_reading_as_working() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = agent(dir.path());
+    d.start_hook_server().unwrap();
+    d.set_pane_session_id(pane, "s1");
+    d.report_pane_status(pane, Some("s1"), PaneStatus::Working, None, false);
+
+    let request = format!(
+        "POST {} HTTP/1.1\r\nAuthorization: Bearer {}\r\n{}: s1\r\n{}: workflow\r\nContent-Length: 0\r\n\r\n",
+        argus_protocol::pane_path(pane, argus_protocol::Endpoint::Status(argus_protocol::Report::Idle)),
+        d.hook_token,
+        argus_protocol::SESSION_HEADER,
+        argus_protocol::BACKGROUND_HEADER,
+    );
+    let port = d.hook_port.load(std::sync::atomic::Ordering::Relaxed);
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).await.unwrap();
+    assert!(response.starts_with(b"HTTP/1.1 200 OK"));
+
+    // Idle is what lets a message be typed to it; working is what it reads as.
+    let info = pane_info(&d, pane);
+    assert_eq!(info.status, PaneStatus::Idle);
+    assert_eq!(info.loudest_state().status, PaneStatus::Working);
+    assert!(info.children.is_empty());
+
+    // The wake-up turn's own reports say nothing is left, and its end is the end.
+    d.report_pane_status(pane, Some("s1"), PaneStatus::Working, None, false);
+    d.report_pane_status(pane, Some("s1"), PaneStatus::Idle, None, false);
+    assert_eq!(pane_info(&d, pane).loudest_state().status, PaneStatus::Idle);
+    let _ = d.close_pane(pane);
+}
+
+#[tokio::test]
+async fn only_the_panes_own_agent_can_leave_work_running_behind_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = agent(dir.path());
+    d.set_pane_session_id(pane, "s1");
+
+    d.report_pane_status(pane, Some("child"), PaneStatus::Idle, None, true);
+    assert!(!pane_info(&d, pane).background);
+
+    d.report_pane_status(pane, Some("s1"), PaneStatus::Idle, None, true);
+    assert!(pane_info(&d, pane).background);
+    // The process ending takes what it left running with it.
+    d.clone().mark_pane_exited(pane, Some(0));
+    assert!(!pane_info(&d, pane).background);
+    let _ = d.close_pane(pane);
+}
+
+#[tokio::test]
 async fn only_the_panes_own_agent_can_push_its_conversation() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = agent(dir.path());

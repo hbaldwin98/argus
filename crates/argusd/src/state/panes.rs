@@ -301,6 +301,7 @@ impl Daemon {
                     p.live = None;
                     p.note = None;
                     p.children.clear();
+                    p.background = false;
                     let restart = p.template.clone().map(|template| (checkout, template));
                     (
                         p.resumed

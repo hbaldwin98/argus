@@ -941,7 +941,7 @@ which inherits the same hook URL and token and cannot be stopped from calling ho
 child of that pane instead. Children are listed as indented rows beneath the parent's in the rail —
 under an open repository's pane and in the agents list — each with its own status, and named on the
 parent's pane card. The parent's row, card and header chip show the loudest of its own state and its
-children's, so an agent idle at its prompt while its workflow works reads as working; the daemon's
+children's, so an agent idle at its prompt while a CLI it started works reads as working; the daemon's
 own status stays the agent's, since that is what decides when a message can be typed. Children are
 not separately selectable: the cursor steps over them, and clicking one selects the pane it runs in,
 because a child is something happening inside that pane rather than somewhere else to go. A child can
@@ -950,25 +950,29 @@ not its title, not its status, not its checkout, and not the conversation it res
 ID may take the pane over only while the pane is not working, which is what an agent starting a fresh
 conversation looks like and what an agent spawned mid-turn does not; taking over clears the child
 list. A child stops being listed three ways: it reports idle, its parent reports idle — the turn that
-spawned it is over, and most children never report an ending of their own because the subagent's
-harness fires the *parent's* hooks — or it goes ten minutes without reporting anything, which is the
+spawned it is over — or it goes ten minutes without reporting anything, which is the
 backstop for one that was killed mid-turn. A background agent outliving its parent's turn is not lost
 by the second of those: its next report lists it again. A pane lists at most eight. A report with no
 session at all — `argus-hook status` run by hand — is the pane's own voice, as before.
 
 Claude Code runs subagents, and the agents of a dynamic workflow, inside the session, and fires the
-session's own hooks for them with an `agent_id`. The installed form files such an event under a
-reporter of its own — the session with the agent appended — so a subagent is a child row named after
-its `agent_type` (`SubagentStart` opens it, `SubagentStop` closes it), and its tool calls neither
-mark the pane working nor count as the pane's telemetry. A workflow can run dozens of agents, so all
-of a session's `workflow-subagent`s share one row, named after the workflows running. A workflow
-outlives the turn that started it: Claude's `Stop` fires with the workflow listed in
-`background_tasks`, and each agent's `SubagentStop` still lists it. So the turn-ending report, which
-clears the pane's children, is sent and answered before the workflow's row is listed again, and an
-agent finishing keeps the row working while its workflow runs. When the workflow ends, Claude wakes
-the session with a `<task-notification>` prompt, whose turn's `Stop` lists nothing and clears the
-row; that prompt is never taken as a title. Only workflows count as background work worth a row: a
-background shell can run as long as the session does.
+session's own hooks for them with an `agent_id`. The installed form reports nothing for such an
+event: a subagent's tool calls are not the pane's turn and its numbers are not the pane's telemetry,
+and a workflow can run dozens of agents, which listed as rows bury the pane they run in. No
+`SubagentStart` or `SubagentStop` entry is written, and the ones an earlier version wrote are
+removed on the next install.
+
+A workflow outlives the turn that started it: Claude's `Stop` fires with the workflow still listed
+as running in `background_tasks`. The installed form says so on the report that ends the turn, with
+an `X-Argus-Background` header, and the daemon records it as the pane's `background` flag in the
+same edit as the status, so no client is shown the turn ending before it is shown what the turn
+left running. The pane's own status is idle, because an agent at its prompt can be typed to and the
+outbox holds a message for a working one; its row, card and header chip read as working, because
+`background` is one of the states they take the loudest of. Every later report from the pane's own
+agent restates the flag, so the turn Claude wakes the session for with a `<task-notification>`
+prompt — never taken as a title — ends it when its own `Stop` lists nothing. A child cannot set the
+flag, and the pane exiting or a new session taking it over clears it. Only workflows count as work
+left running: a background shell can run as long as the session does.
 
 Agents name their own rows, and the daemon names them first. A prompt-submit
 event — Claude `UserPromptSubmit`, Cursor `beforeSubmitPrompt`, AGY

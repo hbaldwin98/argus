@@ -45,7 +45,7 @@ pub(super) fn render_workspace(
         // Plain space before the chip, and one cell of padding inside it.
         header.push_span(Span::raw("  "));
         // What runs inside the pane counts: an agent idle at its prompt
-        // while its workflow works is working.
+        // while a CLI it started works is working.
         let shown = pane.loudest_state().status;
         header.push_span(Span::styled(
             format!(" {} ", short_status(shown)),

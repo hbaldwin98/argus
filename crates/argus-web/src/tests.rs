@@ -172,6 +172,7 @@ fn tree() -> WorkspaceTree {
                         template: Some("claude".into()),
                         children: Vec::new(),
                         telemetry: Default::default(),
+                        background: false,
                         has_transcript: true,
                         since: Some(1_790_000_000),
                         queued: Vec::new(),

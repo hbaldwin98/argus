@@ -115,8 +115,8 @@ pub(super) fn render_panes(f: &mut Frame, app: &mut App, area: Rect, th: Theme) 
     }
 }
 
-/// What is running inside the pane — subagents, a workflow, a CLI started
-/// in it — named on the card's last row, or nothing when there is none.
+/// What is running inside the pane — a CLI started in it — named on the
+/// card's last row, or nothing when there is none.
 fn children_line(children: &[argus_protocol::ChildAgentInfo], width: usize, th: Theme) -> Line<'static> {
     if children.is_empty() {
         return Line::default();

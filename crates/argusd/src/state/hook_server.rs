@@ -162,7 +162,7 @@ async fn handle_hook_request(
         }
     }
     let (authorized, content_length, reporter) =
-        (headers.authorized, headers.content_length, headers.reporter);
+        (headers.authorized, headers.content_length, headers.reporter.clone());
     let (endpoint, artifact_scope) = parse_request_target(&path);
     let filing = super::features::Filing {
         scope: artifact_scope,
@@ -184,7 +184,13 @@ async fn handle_hook_request(
         match endpoint {
             Some((pane, Endpoint::Status(report))) => {
                 let note = String::from_utf8_lossy(&body).to_string();
-                daemon.report_pane_status(pane, reporter.as_deref(), report.status(), Some(note));
+                daemon.report_pane_status(
+                    pane,
+                    reporter.as_deref(),
+                    report.status(),
+                    Some(note),
+                    headers.background,
+                );
                 HookResponse::empty(200, "OK")
             }
             Some((pane, Endpoint::Title)) => {
@@ -325,6 +331,8 @@ struct HookHeaders {
     reporter: Option<String>,
     /// The file that conversation is written to, when the harness said.
     transcript: Option<String>,
+    /// Whether that conversation left work running behind its turn.
+    background: bool,
 }
 
 async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
@@ -338,6 +346,7 @@ async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
         content_length: 0,
         reporter: None,
         transcript: None,
+        background: false,
     };
     loop {
         let mut line = String::new();
@@ -353,6 +362,8 @@ async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
             headers.reporter = valid_session_id(v);
         } else if let Some(v) = strip_header(&line, argus_protocol::TRANSCRIPT_HEADER) {
             headers.transcript = Some(v.to_string()).filter(|v| !v.is_empty());
+        } else if let Some(v) = strip_header(&line, argus_protocol::BACKGROUND_HEADER) {
+            headers.background = !v.is_empty();
         }
     }
     Ok(headers)

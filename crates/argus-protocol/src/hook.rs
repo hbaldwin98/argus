@@ -63,6 +63,12 @@ pub const SESSION_HEADER: &str = "X-Argus-Session";
 /// that owns the pane, for the reason [`SESSION_HEADER`] exists.
 pub const TRANSCRIPT_HEADER: &str = "X-Argus-Transcript";
 
+/// Says the reporting conversation left work running that outlives its turn
+/// — a Claude Code workflow still going after `Stop`. Rides on the status
+/// report itself, so the turn ending and what it left behind arrive as one
+/// fact rather than two reports that could land in either order.
+pub const BACKGROUND_HEADER: &str = "X-Argus-Background";
+
 /// Flags a managed hook command carries. The installer writes them into a
 /// harness's settings file and the helper parses them back out.
 ///

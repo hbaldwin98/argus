@@ -104,6 +104,15 @@ pub(super) fn name_transcript(path: &str) {
     let _ = TRANSCRIPT.set(path.to_string());
 }
 
+/// Whether this event's conversation left work running behind its turn.
+/// Set once, by the installed hook form, and carried on the reports it
+/// makes: the status report is the one the daemon reads it from.
+static BACKGROUND: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
+pub(super) fn name_background_work() {
+    let _ = BACKGROUND.set(());
+}
+
 pub(super) fn pane_base(url: &str) -> Option<String> {
     parse_pane_url(url).map(|url| url.base())
 }
@@ -115,20 +124,6 @@ pub(super) fn post(url: &str, token: &str, body: &str) -> Option<()> {
 }
 
 pub(super) fn post_as(url: &str, token: &str, body: &str, session: Option<&str>) -> Option<()> {
-    send(url, token, body, session).map(drop)
-}
-
-/// [`post_as`], waiting until the daemon has answered: for a report a later
-/// one from the same hook must not overtake, since each travels on its own
-/// connection and the daemon takes them as they land.
-pub(super) fn post_settled(url: &str, token: &str, body: &str, session: Option<&str>) -> Option<()> {
-    let mut stream = send(url, token, body, session)?;
-    stream.set_read_timeout(Some(TIMEOUT)).ok()?;
-    let mut answer = Vec::new();
-    stream.read_to_end(&mut answer).ok().map(drop)
-}
-
-fn send(url: &str, token: &str, body: &str, session: Option<&str>) -> Option<TcpStream> {
     let rest = url.strip_prefix("http://")?;
     let (authority, path) = match rest.find('/') {
         Some(i) => (&rest[..i], &rest[i..]),
@@ -140,11 +135,12 @@ fn send(url: &str, token: &str, body: &str, session: Option<&str>) -> Option<Tcp
     stream.set_write_timeout(Some(TIMEOUT)).ok()?;
 
     let transcript = TRANSCRIPT.get().map(String::as_str);
-    let req = request(path, authority, token, session, transcript, body);
+    let background = BACKGROUND.get().is_some();
+    let req = request(path, authority, token, session, transcript, background, body);
     stream.write_all(req.as_bytes()).ok()?;
-    // The daemon's reply is not read unless asked for: nothing acts on it,
+    // The daemon's reply is deliberately not read: nothing here acts on it,
     // and not waiting keeps the agent's turn from stalling on a slow answer.
-    Some(stream)
+    Some(())
 }
 
 pub(super) fn post_response(url: &str, token: &str, body: &str) -> Option<(u16, String)> {
@@ -158,7 +154,7 @@ pub(super) fn post_response(url: &str, token: &str, body: &str) -> Option<(u16, 
     stream.set_write_timeout(Some(TIMEOUT)).ok()?;
     stream.set_read_timeout(Some(TIMEOUT)).ok()?;
     stream
-        .write_all(request(path, authority, token, None, None, body).as_bytes())
+        .write_all(request(path, authority, token, None, None, false, body).as_bytes())
         .ok()?;
 
     let mut response = String::new();
@@ -179,6 +175,7 @@ pub(super) fn request(
     token: &str,
     session: Option<&str>,
     transcript: Option<&str>,
+    background: bool,
     body: &str,
 ) -> String {
     let session = match session.filter(|id| !id.is_empty()) {
@@ -190,12 +187,17 @@ pub(super) fn request(
         Some(path) => format!("{TRANSCRIPT_HEADER}: {path}\r\n"),
         None => String::new(),
     };
+    let background = match background {
+        true => format!("{BACKGROUND_HEADER}: workflow\r\n"),
+        false => String::new(),
+    };
     let mut req = String::new();
     req.push_str(&format!("POST {path} HTTP/1.1\r\n"));
     req.push_str(&format!("Host: {authority}\r\n"));
     req.push_str(&format!("Authorization: Bearer {token}\r\n"));
     req.push_str(&session);
     req.push_str(&transcript);
+    req.push_str(&background);
     req.push_str(&format!("Content-Length: {}\r\n", body.len()));
     req.push_str("Connection: close\r\n\r\n");
     req.push_str(body);

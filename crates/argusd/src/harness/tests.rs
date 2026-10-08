@@ -527,6 +527,29 @@ fn uninstall_keeps_the_users_own_settings_and_hooks() {
 }
 
 #[test]
+fn installing_removes_the_subagent_hooks_an_earlier_version_wrote() {
+    // Subagents were once listed as rows of their own, opened and closed
+    // by hooks a checkout's settings may still carry.
+    let dir = tempfile::tempdir().unwrap();
+    let h = Harness::claude();
+    h.install(dir.path(), PaneId(1), 5555, "tok").unwrap();
+    let mut root = settings_of(dir.path(), &h);
+    let ours = root["hooks"]["PreToolUse"][0].clone();
+    root["hooks"]["SubagentStart"] = json!([ours.clone()]);
+    root["hooks"]["SubagentStop"] =
+        json!([ours, {"hooks": [{"type": "command", "command": "echo hi"}]}]);
+    std::fs::write(dir.path().join(h.settings.as_ref().unwrap()), root.to_string()).unwrap();
+
+    h.install(dir.path(), PaneId(1), 5555, "tok").unwrap();
+
+    let root = settings_of(dir.path(), &h);
+    assert!(root["hooks"].get("SubagentStart").is_none(), "{root}");
+    let stop = root["hooks"]["SubagentStop"].as_array().unwrap();
+    assert_eq!(stop.len(), 1, "the user's own hook survives: {root}");
+    assert_eq!(stop[0]["hooks"][0]["command"], "echo hi");
+}
+
+#[test]
 fn uninstall_will_not_touch_a_users_hook_on_a_managed_event_name() {
     // The user is entitled to their own Stop hook. Ours is identified by
     // the command it runs, not by the event it sits on.

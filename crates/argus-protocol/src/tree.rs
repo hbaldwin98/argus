@@ -102,16 +102,23 @@ impl PaneState<'_> {
 }
 
 impl PaneInfo {
-    /// Every state this row stands for: the pane's own, then each child's
-    /// in the order they first reported. A child is an agent in its own
-    /// right — one of them waiting is a person being waited on — but the
-    /// parent's row is the only place it can be gone to.
+    /// Every state this row stands for: the pane's own, the work its agent
+    /// left running behind its turn, then each child's in the order they
+    /// first reported. A child is an agent in its own right — one of them
+    /// waiting is a person being waited on — but the parent's row is the
+    /// only place it can be gone to.
     pub fn states(&self) -> impl Iterator<Item = PaneState<'_>> {
-        std::iter::once(self.own_state()).chain(self.children.iter().map(|child| PaneState {
+        let background = self.background.then_some(PaneState {
+            status: PaneStatus::Working,
+            child: None,
+            note: None,
+        });
+        let children = self.children.iter().map(|child| PaneState {
             status: child.status,
             child: Some(child.label.as_str()),
             note: child.note.as_deref(),
-        }))
+        });
+        std::iter::once(self.own_state()).chain(background).chain(children)
     }
 
     /// The state the row speaks with: the most urgent of [`Self::states`],
@@ -165,6 +172,12 @@ pub struct PaneInfo {
     /// parent's to set.
     #[serde(default)]
     pub children: Vec<ChildAgentInfo>,
+    /// Whether the agent's last turn ended with work still running behind
+    /// it — a workflow it started. `status` stays the agent's own, since
+    /// an agent idle at its prompt can be typed to; the row reads as
+    /// working through [`PaneInfo::loudest_state`].
+    #[serde(default)]
+    pub background: bool,
     /// What the agent last said about its model, context, spend and the
     /// tool it is running. Every field is optional because each harness
     /// exposes a different subset of them.
@@ -430,6 +443,7 @@ mod tests {
                 })
                 .collect(),
             telemetry: AgentTelemetry::default(),
+            background: false,
             has_transcript: false,
             since: None,
             queued: Vec::new(),
@@ -496,6 +510,18 @@ mod tests {
                 note: Some("approve rm"),
             }
         );
+    }
+
+    #[test]
+    fn an_idle_pane_with_work_left_running_reads_as_working() {
+        let mut p = pane(PaneStatus::Idle, &[]);
+        p.background = true;
+        assert_eq!(p.loudest_state().status, PaneStatus::Working);
+        // Its own status is untouched: the agent is at its prompt.
+        assert_eq!(p.status, PaneStatus::Idle);
+        // Something louder than working still speaks over it.
+        p.status = PaneStatus::Waiting;
+        assert_eq!(p.loudest_state().status, PaneStatus::Waiting);
     }
 
     #[test]

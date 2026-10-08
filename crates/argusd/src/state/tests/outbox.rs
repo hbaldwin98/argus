@@ -70,7 +70,7 @@ async fn queued_messages_are_listed_on_the_pane_in_order_until_taken_back() {
     let dir = tempfile::tempdir().unwrap();
     let d = daemon_with_running_claude(dir.path());
     let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-    d.report_pane_status(pane, None, PaneStatus::Working, None);
+    d.report_pane_status(pane, None, PaneStatus::Working, None, false);
 
     let Sent::Queued { id } = d.send_to_agent(pane, "also fix the test", false) else {
         panic!("a working agent's message waits");
@@ -94,10 +94,10 @@ async fn a_queued_message_is_pasted_and_entered_once_the_agent_is_back_at_its_pr
     let dir = tempfile::tempdir().unwrap();
     let d = daemon_running(dir.path(), &["cat"]);
     let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-    d.report_pane_status(pane, None, PaneStatus::Working, None);
+    d.report_pane_status(pane, None, PaneStatus::Working, None, false);
     assert!(matches!(d.send_to_agent(pane, "hello agent", false), Sent::Queued { .. }));
 
-    d.report_pane_status(pane, None, PaneStatus::Idle, None);
+    d.report_pane_status(pane, None, PaneStatus::Idle, None, false);
     // The terminal echoes the paste, and `cat` repeats the line once the
     // Enter behind it arrives.
     let entered = async {
@@ -116,7 +116,7 @@ async fn send_now_types_straight_into_an_agent_mid_turn() {
     let dir = tempfile::tempdir().unwrap();
     let d = daemon_running(dir.path(), &["cat"]);
     let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-    d.report_pane_status(pane, None, PaneStatus::Working, None);
+    d.report_pane_status(pane, None, PaneStatus::Working, None, false);
 
     assert_eq!(d.send_to_agent(pane, "steer left", true), Sent::Typed);
     assert!(screen_shows(&d, pane, "steer left", Duration::from_secs(5)).await);
@@ -212,7 +212,7 @@ async fn what_is_said_to_a_live_agent_goes_through_its_plugin_not_its_terminal()
     assert!(live(&d, pane, true).await, "the pane says it is live");
 
     // Even while it works: the harness queues or steers for itself.
-    d.report_pane_status(pane, None, PaneStatus::Working, None);
+    d.report_pane_status(pane, None, PaneStatus::Working, None, false);
     assert_eq!(d.send_to_agent(pane, "also add tests", false), Sent::Typed);
     assert_eq!(
         next_item(&mut inbox).await,

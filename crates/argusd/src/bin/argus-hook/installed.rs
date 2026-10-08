@@ -14,12 +14,18 @@ pub(super) fn installed_hook(url: &str, rest: &[&str]) {
     if let Some(path) = raw.as_deref().and_then(|raw| json_string(raw, "transcript_path")) {
         name_transcript(&path);
     }
-    let event = raw.as_deref().and_then(json_value);
-    let child = event.as_ref().zip(session.as_deref()).and_then(|(e, s)| agents::child(e, s));
-    if let Some(child) = child {
-        report_child(&url, &token, &note, &child);
-    } else {
-        report_own(&url, &token, rest, (&note, &title), session.as_deref(), event.as_ref());
+    // Claude Code fires the session's own hooks for the agents it runs
+    // inside the session. Their tool calls are not the pane's turn and
+    // their numbers are not its telemetry, so they report nothing.
+    if !raw.as_deref().is_some_and(from_an_inner_agent) {
+        if raw.as_deref().is_some_and(leaves_a_workflow_running) {
+            name_background_work();
+        }
+        let _ = post_as(&url, &token, &note, session.as_deref());
+        if rest.contains(&OWNS_SESSION_FLAG) {
+            post_session_id(&url, &token, session.as_deref());
+        }
+        post_title(&url, &token, &title, session.as_deref());
         if let Some(report) = raw.as_deref().map(from_hook).filter(|r| !r.is_empty()) {
             post_telemetry(&url, &token, &report, session.as_deref());
         }
@@ -38,50 +44,24 @@ pub(super) fn installed_hook(url: &str, rest: &[&str]) {
     let _ = out.flush();
 }
 
-/// A subagent's event, filed under its own row. Its telemetry is not the
-/// pane's, and the daemon would drop it, so none is sent.
-pub(super) fn report_child(url: &str, token: &str, note: &str, child: &agents::Child) {
-    let url = match (child.still_working, pane_base(url)) {
-        (true, Some(base)) => endpoint_url(&base, Endpoint::Status(Report::Working)),
-        _ => url.to_string(),
-    };
-    let _ = post_as(&url, token, note, Some(&child.reporter));
-    if let Some(label) = &child.label {
-        post_title(&url, token, label, Some(&child.reporter));
-    }
+/// Whether an event speaks for a subagent or a workflow's agent rather
+/// than the session's own loop: Claude Code tags those with an `agent_id`.
+pub(super) fn from_an_inner_agent(raw: &str) -> bool {
+    let agent = json_value(raw).and_then(|v| Some(v.get("agent_id")?.as_str()?.to_string()));
+    agent.is_some_and(|id| !id.is_empty())
 }
 
-/// The session's own event. When its turn ends with a workflow still
-/// running, the report that ends the turn also clears the pane's children,
-/// so the workflow's row is listed again after it — and only after it has
-/// landed, since each post travels on its own connection.
-pub(super) fn report_own(
-    url: &str,
-    token: &str,
-    rest: &[&str],
-    (note, title): (&str, &str),
-    session: Option<&str>,
-    event: Option<&serde_json::Value>,
-) {
-    let running = event.map(agents::running_workflows).unwrap_or_default();
-    match (session, agents::workflow_label(&running)) {
-        (Some(session), Some(label)) => {
-            let _ = post_settled(url, token, note, Some(session));
-            let reporter = agents::workflow_reporter(session);
-            if let Some(base) = pane_base(url) {
-                let working = endpoint_url(&base, Endpoint::Status(Report::Working));
-                let _ = post_as(&working, token, "", Some(&reporter));
-            }
-            post_title(url, token, &label, Some(&reporter));
-        }
-        _ => {
-            let _ = post_as(url, token, note, session);
-        }
-    }
-    if rest.contains(&OWNS_SESSION_FLAG) {
-        post_session_id(url, token, session);
-    }
-    post_title(url, token, title, session);
+/// Whether an event lists a workflow still going in the background, as
+/// Claude Code's `Stop` does when the turn ends before the workflow it
+/// started. Only workflows count: a background shell can run for as long
+/// as the session does, and would keep the pane reading as working forever.
+pub(super) fn leaves_a_workflow_running(raw: &str) -> bool {
+    let event = json_value(raw);
+    let tasks = event.as_ref().and_then(|v| v.get("background_tasks")?.as_array());
+    tasks.into_iter().flatten().any(|task| {
+        let field = |key: &str| task.get(key).and_then(serde_json::Value::as_str);
+        field("type") == Some("workflow") && matches!(field("status"), Some("running" | "pending"))
+    })
 }
 
 /// The JSON a hook runner needs so it does not treat bookkeeping as a

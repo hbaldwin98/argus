@@ -289,13 +289,9 @@ impl Harness {
                     .owns_session(),
                 Event::tagged("PreToolUse", Report::Working, "session_id"),
                 Event::tagged("PostToolUse", Report::Working, "session_id"),
-                // Subagents and a workflow's agents fire the session's own
-                // hooks with an `agent_id`, which the helper files as a
-                // child row: these open and close it.
-                Event::tagged("SubagentStart", Report::Working, "session_id"),
-                Event::tagged("SubagentStop", Report::Idle, "session_id"),
             ],
-            legacy_events: Vec::new(),
+            // Written while subagents were listed as rows of their own.
+            legacy_events: vec!["SubagentStart".to_string(), "SubagentStop".to_string()],
             context_event: Some("SessionStart".to_string()),
             plugin: None,
             plugin_dir: Some(plugin_dir::claude_mod()),

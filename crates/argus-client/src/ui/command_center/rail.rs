@@ -21,10 +21,9 @@ pub(crate) fn rail_target_at(app: &App, x: u16, y: u16) -> Option<RailRow> {
 }
 
 /// A row drawn in the scrolling list: one of the rows the cursor walks, or
-/// a child listed under an agent's row — a subagent, a workflow, a CLI
-/// started inside it. A child is something happening inside its pane rather
-/// than somewhere else to go, so the cursor steps over it and a click on it
-/// lands on the pane.
+/// a child listed under an agent's row — a CLI started inside it. A child is
+/// something happening inside its pane rather than somewhere else to go, so
+/// the cursor steps over it and a click on it lands on the pane.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ListRow {
     Rail(RailRow),
@@ -111,9 +110,8 @@ fn render_badge_chip(f: &mut Frame, area: Rect, text: &str, fg: Color, th: Theme
 }
 
 /// One row of the AGENTS list: an agent, or the child it lists at `child`
-/// — a subagent, a workflow, a CLI started inside it. A child is something
-/// happening inside its pane rather than somewhere else to go, so a click on
-/// it lands on the pane.
+/// — a CLI started inside it. A child is something happening inside its pane
+/// rather than somewhere else to go, so a click on it lands on the pane.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct AgentRow {
     pane: PaneLocation,
@@ -491,7 +489,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                     && matches!(app.focus, Focus::Panes | Focus::PaneContent);
                 let bg = if selected { th.surface_focus } else { row_bg };
                 // The row speaks for what runs inside the pane too: an agent
-                // idle at its prompt while its workflow works is working.
+                // idle at its prompt while a CLI it started works is working.
                 let shown = pane.loudest_state().status;
                 let color = status_color(shown, th);
                 let status = short_status(shown);

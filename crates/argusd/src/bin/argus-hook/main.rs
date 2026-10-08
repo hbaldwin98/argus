@@ -80,12 +80,11 @@ use argus_protocol::{
     DiagramList, DiagramWrite, Endpoint, FeatureAction, FeatureBoard, FeatureWrite, Report,
     ReviewComment, TaskAction, TaskList, TaskPlace, TaskState, TaskWrite, ARTIFACT_SCOPE_VAR,
     CONTEXT_COMMAND, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
-    SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, TRANSCRIPT_HEADER, URL_VAR,
+    BACKGROUND_HEADER, SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, TRANSCRIPT_HEADER, URL_VAR,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(2);
 
-mod agents;
 mod board;
 mod context;
 mod inbox;
@@ -249,10 +248,11 @@ mod tests {
             "tok",
             Some("s-1"),
             None,
+            false,
             "",
         );
         assert!(tagged.contains("\r\nX-Argus-Session: s-1\r\n"), "{tagged}");
-        let untagged = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", None, None, "");
+        let untagged = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", None, None, false, "");
         assert!(!untagged.contains("X-Argus-Session"), "{untagged}");
         assert!(untagged.contains("\r\nContent-Length: 0\r\n"), "{untagged}");
     }
@@ -270,6 +270,7 @@ mod tests {
             "tok",
             Some("s-1"),
             Some("/home/u/.claude/projects/p/s-1.jsonl"),
+            false,
             "hi",
         );
         let (head, body) = req
@@ -286,7 +287,7 @@ mod tests {
     #[test]
     fn a_report_names_the_file_its_conversation_is_written_to() {
         let path = "/home/u/.claude/projects/p/s-1.jsonl";
-        let named = request("/pane/1/status/working", "127.0.0.1:4242", "tok", None, Some(path), "");
+        let named = request("/pane/1/status/working", "127.0.0.1:4242", "tok", None, Some(path), false, "");
         assert!(named.contains(&format!("\r\n{TRANSCRIPT_HEADER}: {path}\r\n")), "{named}");
         // A path that would break the header into two lines is not sent.
         let forged = request(
@@ -295,6 +296,7 @@ mod tests {
             "tok",
             None,
             Some("/tmp/x\r\nAuthorization: Bearer other"),
+            false,
             "",
         );
         assert!(!forged.contains(TRANSCRIPT_HEADER), "{forged}");
@@ -573,98 +575,36 @@ mod tests {
         );
     }
 
-    /// A post as the daemon saw it: request line, session header, body.
-    type Post = (String, String, String);
-
-    /// Answers `count` posts in turn and hands back each one in the order
-    /// they arrived.
-    fn record_posts(count: usize) -> (std::net::SocketAddr, std::thread::JoinHandle<Vec<Post>>) {
-        use std::io::BufRead as _;
-
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = std::thread::spawn(move || {
-            (0..count)
-                .map(|_| {
-                    let (stream, _) = listener.accept().unwrap();
-                    let mut reader = std::io::BufReader::new(stream);
-                    let (mut line, mut session, mut length) = (String::new(), String::new(), 0);
-                    reader.read_line(&mut line).unwrap();
-                    loop {
-                        let mut header = String::new();
-                        reader.read_line(&mut header).unwrap();
-                        if header == "\r\n" {
-                            break;
-                        }
-                        if let Some(v) = header.strip_prefix("X-Argus-Session: ") {
-                            session = v.trim().to_string();
-                        }
-                        if let Some(v) = header.strip_prefix("Content-Length: ") {
-                            length = v.trim().parse().unwrap();
-                        }
-                    }
-                    let mut body = vec![0; length];
-                    reader.read_exact(&mut body).unwrap();
-                    let _ = reader.get_mut().write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
-                    (line.trim().to_string(), session, String::from_utf8(body).unwrap())
-                })
-                .collect()
-        });
-        (address, server)
+    #[test]
+    fn an_agent_inside_the_session_is_not_the_panes_own_voice() {
+        let own = r#"{"session_id":"s","hook_event_name":"PreToolUse","tool_name":"Bash"}"#;
+        let subagent = r#"{"session_id":"s","agent_id":"a1","agent_type":"Explore","hook_event_name":"PreToolUse"}"#;
+        let workflow = r#"{"session_id":"s","agent_id":"a2","agent_type":"workflow-subagent","hook_event_name":"SubagentStop"}"#;
+        assert!(!from_an_inner_agent(own));
+        assert!(from_an_inner_agent(subagent));
+        assert!(from_an_inner_agent(workflow));
     }
 
     #[test]
-    fn a_turn_ending_mid_workflow_lists_the_workflow_again_after_it() {
-        let (address, server) = record_posts(3);
-        let stop: serde_json::Value = serde_json::from_str(
-            r#"{"hook_event_name":"Stop","background_tasks":[
-                {"id":"wk1","type":"workflow","status":"running","name":"probe"}]}"#,
-        )
-        .unwrap();
+    fn a_turn_ending_mid_workflow_says_what_it_left_running() {
+        // Recorded from Claude Code 2.1.287: Stop lists the background work
+        // still in flight, and the wake-up turn's Stop lists none.
+        let stop = r#"{"session_id":"s","hook_event_name":"Stop","background_tasks":[
+            {"id":"b1","type":"shell","status":"running","description":"npm run dev"},
+            {"id":"w1","type":"workflow","status":"completed","name":"old"},
+            {"id":"w2","type":"workflow","status":"running","name":"probe"}]}"#;
+        assert!(leaves_a_workflow_running(stop));
+        // A background shell can outlive every turn the session takes.
+        let shell = r#"{"hook_event_name":"Stop","background_tasks":[
+            {"id":"b1","type":"shell","status":"running"},
+            {"id":"w1","type":"workflow","status":"completed"}]}"#;
+        assert!(!leaves_a_workflow_running(shell));
+        assert!(!leaves_a_workflow_running(r#"{"hook_event_name":"Stop"}"#));
 
-        report_own(
-            &format!("http://{address}/pane/7/status/idle"),
-            "tok",
-            &[],
-            ("", ""),
-            Some("s"),
-            Some(&stop),
-        );
-        let mut posts = server.join().unwrap();
-
-        // The pane's own idle lands first, so the children it clears are
-        // cleared before the workflow's row is listed again.
-        assert_eq!(posts.remove(0), ("POST /pane/7/status/idle HTTP/1.1".into(), "s".into(), "".into()));
-        posts.sort();
-        assert_eq!(
-            posts,
-            vec![
-                ("POST /pane/7/status/working HTTP/1.1".into(), "s/workflows".into(), "".into()),
-                ("POST /pane/7/title HTTP/1.1".into(), "s/workflows".into(), "workflow probe".into()),
-            ]
-        );
-    }
-
-    #[test]
-    fn a_workflow_agent_finishing_keeps_its_row_working() {
-        let (address, server) = record_posts(2);
-        let child = agents::Child {
-            reporter: "s/workflows".into(),
-            label: Some("workflow probe".into()),
-            still_working: true,
-        };
-
-        report_child(&format!("http://{address}/pane/7/status/idle"), "tok", "", &child);
-        let mut posts = server.join().unwrap();
-        posts.sort();
-
-        assert_eq!(
-            posts,
-            vec![
-                ("POST /pane/7/status/working HTTP/1.1".into(), "s/workflows".into(), "".into()),
-                ("POST /pane/7/title HTTP/1.1".into(), "s/workflows".into(), "workflow probe".into()),
-            ]
-        );
+        let said = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", Some("s"), None, true, "");
+        assert!(said.contains(&format!("\r\n{BACKGROUND_HEADER}: workflow\r\n")), "{said}");
+        let unsaid = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", Some("s"), None, false, "");
+        assert!(!unsaid.contains(BACKGROUND_HEADER), "{unsaid}");
     }
 
     #[test]

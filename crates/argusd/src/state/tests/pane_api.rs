@@ -58,7 +58,7 @@ async fn an_agent_spawned_inside_a_pane_reports_as_a_child_of_it() {
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
     d.set_pane_session_id(pane, "parent-session");
     d.set_pane_title(pane, "fixing the pty deadlock");
-    d.report_pane_status(pane, Some("parent-session"), PaneStatus::Working, None);
+    d.report_pane_status(pane, Some("parent-session"), PaneStatus::Working, None, false);
 
     d.report_pane_title(pane, Some("child-session"), "reading the hook table");
     d.report_pane_status(
@@ -66,6 +66,7 @@ async fn an_agent_spawned_inside_a_pane_reports_as_a_child_of_it() {
         Some("child-session"),
         PaneStatus::Waiting,
         Some("needs a password".into()),
+        false,
     );
 
     let info = pane_info(&d, pane);
@@ -85,10 +86,10 @@ async fn a_child_that_has_finished_stops_being_listed() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
     d.set_pane_session_id(pane, "parent-session");
-    d.report_pane_status(pane, Some("child-session"), PaneStatus::Working, None);
+    d.report_pane_status(pane, Some("child-session"), PaneStatus::Working, None, false);
     assert_eq!(pane_info(&d, pane).children.len(), 1);
 
-    d.report_pane_status(pane, Some("child-session"), PaneStatus::Idle, None);
+    d.report_pane_status(pane, Some("child-session"), PaneStatus::Idle, None, false);
     assert!(pane_info(&d, pane).children.is_empty());
 
     d.close_pane(pane).unwrap();
@@ -99,7 +100,7 @@ async fn an_exited_parent_forgets_its_children() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
     d.set_pane_session_id(pane, "parent-session");
-    d.report_pane_status(pane, Some("child-session"), PaneStatus::Waiting, None);
+    d.report_pane_status(pane, Some("child-session"), PaneStatus::Waiting, None, false);
     assert_eq!(pane_info(&d, pane).children.len(), 1);
 
     d.clone().mark_pane_exited(pane, Some(1));
@@ -111,22 +112,22 @@ async fn an_exited_parent_forgets_its_children() {
 }
 #[tokio::test]
 async fn a_parent_going_idle_forgets_what_ran_under_it() {
-    // Most children never report finishing: a subagent's harness fires
-    // the parent's hooks, not its own. The turn ending is what says
-    // they are done, so the row must not keep claiming they are working.
+    // A child need not report finishing: one killed mid-turn never does.
+    // The turn ending is what says they are done, so the row must not
+    // keep claiming they are working.
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
     d.set_pane_session_id(pane, "parent-session");
-    d.report_pane_status(pane, Some("parent-session"), PaneStatus::Working, None);
-    d.report_pane_status(pane, Some("child-session"), PaneStatus::Working, None);
+    d.report_pane_status(pane, Some("parent-session"), PaneStatus::Working, None, false);
+    d.report_pane_status(pane, Some("child-session"), PaneStatus::Working, None, false);
     assert_eq!(pane_info(&d, pane).children.len(), 1);
 
-    d.report_pane_status(pane, Some("parent-session"), PaneStatus::Idle, None);
+    d.report_pane_status(pane, Some("parent-session"), PaneStatus::Idle, None, false);
     assert!(pane_info(&d, pane).children.is_empty());
 
     // A background agent that outlives the turn is not lost by this:
     // the next thing it reports lists it again.
-    d.report_pane_status(pane, Some("child-session"), PaneStatus::Working, None);
+    d.report_pane_status(pane, Some("child-session"), PaneStatus::Working, None, false);
     assert_eq!(pane_info(&d, pane).children.len(), 1);
 
     d.close_pane(pane).unwrap();
@@ -140,9 +141,9 @@ async fn a_child_that_goes_quiet_stops_being_listed() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
     d.set_pane_session_id(pane, "parent-session");
-    d.report_pane_status(pane, Some("parent-session"), PaneStatus::Working, None);
-    d.report_pane_status(pane, Some("live-child"), PaneStatus::Working, None);
-    d.report_pane_status(pane, Some("dead-child"), PaneStatus::Working, None);
+    d.report_pane_status(pane, Some("parent-session"), PaneStatus::Working, None, false);
+    d.report_pane_status(pane, Some("live-child"), PaneStatus::Working, None, false);
+    d.report_pane_status(pane, Some("dead-child"), PaneStatus::Working, None, false);
 
     // Age one of them past the silence the sweep allows.
     {
@@ -249,7 +250,7 @@ async fn a_pane_lists_only_so_many_children() {
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
     d.set_pane_session_id(pane, "parent-session");
     for i in 0..MAX_CHILDREN + 4 {
-        d.report_pane_status(pane, Some(&format!("child-{i}")), PaneStatus::Working, None);
+        d.report_pane_status(pane, Some(&format!("child-{i}")), PaneStatus::Working, None, false);
     }
     assert_eq!(pane_info(&d, pane).children.len(), MAX_CHILDREN);
     d.close_pane(pane).unwrap();
@@ -263,7 +264,7 @@ async fn a_session_started_mid_turn_cannot_take_over_the_row() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
     d.set_pane_session_id(pane, "parent-session");
-    d.report_pane_status(pane, Some("parent-session"), PaneStatus::Working, None);
+    d.report_pane_status(pane, Some("parent-session"), PaneStatus::Working, None, false);
 
     d.set_pane_session_id(pane, "nested-session");
 
@@ -284,7 +285,7 @@ async fn the_panes_own_agent_can_still_start_a_new_conversation() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
     d.set_pane_session_id(pane, "first-session");
-    d.report_pane_status(pane, Some("child-session"), PaneStatus::Working, None);
+    d.report_pane_status(pane, Some("child-session"), PaneStatus::Working, None, false);
 
     d.set_pane_session_id(pane, "second-session");
 
@@ -306,7 +307,7 @@ async fn a_report_with_no_session_at_all_is_the_panes_own() {
     d.set_pane_session_id(pane, "parent-session");
 
     d.report_pane_title(pane, None, "renamed by hand");
-    d.report_pane_status(pane, None, PaneStatus::NeedsReview, None);
+    d.report_pane_status(pane, None, PaneStatus::NeedsReview, None, false);
 
     let info = pane_info(&d, pane);
     assert_eq!(info.title, "renamed by hand");
@@ -337,6 +338,7 @@ async fn a_stalled_pane_says_what_it_is_stalled_on() {
         pane,
         PaneStatus::Waiting,
         Some("needs the staging password".to_string()),
+        false,
     );
     let info = pane_info(&d, pane);
     assert_eq!(info.status, PaneStatus::Waiting);
@@ -352,8 +354,8 @@ async fn the_note_goes_away_with_the_state_it_explained() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
 
-    d.set_pane_hook_status(pane, PaneStatus::Waiting, Some("needs a password".into()));
-    d.set_pane_hook_status(pane, PaneStatus::Working, None);
+    d.set_pane_hook_status(pane, PaneStatus::Waiting, Some("needs a password".into()), false);
+    d.set_pane_hook_status(pane, PaneStatus::Working, None, false);
 
     let info = pane_info(&d, pane);
     assert_eq!(info.status, PaneStatus::Working);
@@ -372,6 +374,7 @@ async fn a_failure_keeps_the_pane_alive_and_says_why() {
         pane,
         PaneStatus::Failed,
         Some("cargo test won't build".into()),
+        false,
     );
     let info = pane_info(&d, pane);
     assert_eq!(info.status, PaneStatus::Failed);
@@ -391,12 +394,12 @@ async fn automatic_idle_does_not_erase_an_explicit_completion_state() {
         PaneStatus::Done,
         PaneStatus::Failed,
     ] {
-        d.set_pane_hook_status(pane, status, Some("still relevant".into()));
-        d.set_pane_hook_status(pane, PaneStatus::Idle, None);
+        d.set_pane_hook_status(pane, status, Some("still relevant".into()), false);
+        d.set_pane_hook_status(pane, PaneStatus::Idle, None, false);
         let info = pane_info(&d, pane);
         assert_eq!(info.status, status);
         assert_eq!(info.note.as_deref(), Some("still relevant"));
-        d.set_pane_hook_status(pane, PaneStatus::Working, None);
+        d.set_pane_hook_status(pane, PaneStatus::Working, None, false);
     }
 
     d.close_pane(pane).unwrap();
@@ -498,7 +501,7 @@ async fn a_report_never_resurrects_an_exited_pane() {
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
     d.mark_pane_exited(pane, Some(1));
 
-    d.set_pane_hook_status(pane, PaneStatus::Idle, Some("all done".into()));
+    d.set_pane_hook_status(pane, PaneStatus::Idle, Some("all done".into()), false);
 
     let info = pane_info(&d, pane);
     assert_eq!(info.status, PaneStatus::Exited { code: Some(1) });
@@ -654,11 +657,12 @@ fn status_arriving_before_pane_registration_is_retained() {
         .unwrap()
         .insert(pane, PendingStart::default());
 
-    d.set_pane_hook_status(pane, PaneStatus::Working, None);
+    d.set_pane_hook_status(pane, PaneStatus::Working, None, false);
     d.set_pane_hook_status(
         pane,
         PaneStatus::Waiting,
         Some(" needs the database password ".to_string()),
+        false,
     );
 
     assert_eq!(
@@ -705,6 +709,7 @@ fn child_reports_arriving_before_pane_registration_are_retained() {
         Some("child-session"),
         PaneStatus::Waiting,
         Some("needs permission".to_string()),
+        false,
     );
     d.report_pane_title(pane, Some("child-session"), "test runner");
 
@@ -752,12 +757,12 @@ fn pending_parent_lifecycle_changes_clear_children() {
             ..PendingStart::default()
         },
     );
-    d.report_pane_status(pane, Some("child-session"), PaneStatus::Working, None);
+    d.report_pane_status(pane, Some("child-session"), PaneStatus::Working, None, false);
 
-    d.report_pane_status(pane, Some("parent-session"), PaneStatus::Idle, None);
+    d.report_pane_status(pane, Some("parent-session"), PaneStatus::Idle, None, false);
     assert!(d.starting_agents.lock().unwrap()[&pane].children.is_empty());
 
-    d.report_pane_status(pane, Some("child-session"), PaneStatus::Working, None);
+    d.report_pane_status(pane, Some("child-session"), PaneStatus::Working, None, false);
     d.set_pane_session_id(pane, "replacement-session");
     let starting = d.starting_agents.lock().unwrap();
     let pending = &starting[&pane];
@@ -774,7 +779,7 @@ async fn startup_reports_outrank_saved_restore_metadata() {
     let (d, pane) = daemon_with_an_agent(dir.path()).await;
     d.restoring
         .store(true, std::sync::atomic::Ordering::Relaxed);
-    d.set_pane_hook_status(pane, PaneStatus::Working, Some("new turn".to_string()));
+    d.set_pane_hook_status(pane, PaneStatus::Working, Some("new turn".to_string()), false);
     d.set_pane_title(pane, "current task");
 
     d.restore_pane_metadata(
@@ -949,7 +954,7 @@ async fn a_report_that_changes_nothing_persisted_does_not_rewrite_the_session() 
         "telemetry changed nothing the session keeps"
     );
 
-    d.report_pane_status(pane, None, PaneStatus::Working, None);
+    d.report_pane_status(pane, None, PaneStatus::Working, None, false);
     assert_eq!(
         d.store.panes().unwrap().len(),
         1,

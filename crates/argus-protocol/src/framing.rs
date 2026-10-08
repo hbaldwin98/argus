@@ -253,6 +253,7 @@ mod tests {
                         template: None,
                         children: Vec::new(),
                         telemetry: Default::default(),
+                        background: false,
                         has_transcript: false,
                         since: None,
                         queued: Vec::new(),

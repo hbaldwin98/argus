@@ -129,6 +129,15 @@ impl<'a> PaneOrPending<'a> {
         changed | self.clear_children_on_idle(status)
     }
 
+    /// A pane still in the pre-spawn mailbox has had no turn to leave
+    /// anything behind.
+    fn set_background(&mut self, background: bool) -> bool {
+        match self {
+            Self::Live(p) => std::mem::replace(&mut p.background, background) != background,
+            Self::Pending(_) => false,
+        }
+    }
+
     fn set_title(&mut self, title: String) -> bool {
         match self {
             Self::Live(p) => {
@@ -167,6 +176,7 @@ impl<'a> PaneOrPending<'a> {
                 }
                 p.harness_session_id = Some(session_id);
                 p.children.clear();
+                p.background = false;
             }
             Self::Pending(p) => {
                 p.harness_session_id = Some(session_id);
@@ -320,16 +330,21 @@ impl Daemon {
     /// token and cannot be stopped from calling home — lands in that pane's
     /// child list instead of overwriting the row. The agent Argus started
     /// stays the authority on what the pane says.
+    ///
+    /// `background` is whether the reporter left work running behind its
+    /// turn. Only the pane's own agent can say so: what a child leaves
+    /// behind is not the pane's.
     pub(super) fn report_pane_status(
         &self,
         pane: PaneId,
         reporter: Option<&str>,
         status: PaneStatus,
         note: Option<String>,
+        background: bool,
     ) {
         match self.child_of(pane, reporter) {
             Some(session) => self.set_child_status(pane, &session, status, note),
-            None => self.set_pane_hook_status(pane, status, note),
+            None => self.set_pane_hook_status(pane, status, note, background),
         }
     }
 
@@ -475,6 +490,7 @@ impl Daemon {
         pane: PaneId,
         status: PaneStatus,
         note: Option<String>,
+        background: bool,
     ) {
         let changed = {
             let mut starting = self.starting_agents.lock().unwrap();
@@ -488,7 +504,9 @@ impl Daemon {
                     // state takes it away with it, so a stale "waiting for
                     // the db password" can't sit under a working row.
                     let note = note.map(|n| clean_title(&n)).filter(|n| !n.is_empty());
-                    p.set_status(status, note)
+                    // One edit, so no client is shown the turn ended
+                    // before it is shown what the turn left running.
+                    p.set_background(background) | p.set_status(status, note)
                 }
                 _ => false,
             }

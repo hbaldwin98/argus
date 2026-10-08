@@ -86,6 +86,9 @@ struct Pane {
     /// from inside the pane's own agent inherits the hook environment, so
     /// without this its every turn would rewrite its parent's row.
     children: Vec<ChildAgent>,
+    /// Whether the agent's last turn ended with work still running behind
+    /// it. Said by the report that ended the turn, and by each one since.
+    background: bool,
     /// Live only: model, context, spend and tool, as the harness last
     /// reported them. Not persisted; a restored agent reports afresh.
     telemetry: argus_protocol::AgentTelemetry,
@@ -126,6 +129,7 @@ impl Pane {
             harness: None,
             harness_session_id: None,
             children: Vec::new(),
+            background: false,
             telemetry: Default::default(),
             conversation: conversation::Conversation::new(id),
             status_since: std::time::SystemTime::now(),
@@ -423,6 +427,7 @@ fn project_info(p: &Project) -> ProjectInfo {
                                         })
                                         .collect(),
                                     telemetry: pane.telemetry.clone(),
+                                    background: pane.background,
                                     has_transcript: pane.conversation.offered(),
                                     since: pane
                                         .status_since
