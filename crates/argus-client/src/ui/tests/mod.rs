@@ -59,6 +59,177 @@ pub(super) fn tree() -> Vec<ProjectInfo> {
     )]
 }
 
+// --- a feature with everything in it -------------------------------------
+
+/// The board the Feature stage's tests read: three features, the middle one
+/// with a task tree, a decision tree hung off it, and one flow.
+pub(super) fn feature_board(project: Option<ProjectId>) -> argus_protocol::DecisionBoard {
+    use argus_protocol::{Consequence, Decision, DecisionState, Feature, FeatureState, TaskCounts};
+    let feature = |number: i64, slug: &str, title: &str| Feature {
+        number,
+        slug: slug.into(),
+        title: title.into(),
+        origin_branch: Some("master".into()),
+        state: FeatureState::Open,
+        ..Feature::default()
+    };
+    let decision = |id: i64, parent: Option<i64>, task: Option<i64>, chose: &str| Decision {
+        id,
+        parent,
+        task,
+        at: id,
+        feature: Some("trim".into()),
+        chose: chose.into(),
+        ..Decision::default()
+    };
+    argus_protocol::DecisionBoard {
+        project,
+        name: "argus".into(),
+        features: vec![
+            Feature {
+                tasks: TaskCounts { todo: 0, doing: 0, done: 4 },
+                ..feature(6, "ctrl-c", "Hand a pane's child Ctrl-C handling on Windows")
+            },
+            Feature {
+                body: "The session-start hook prints the whole brief into every pane. Name the feature there instead.".into(),
+                checkouts: vec!["/repo".into()],
+                tasks: TaskCounts { todo: 4, doing: 2, done: 4 },
+                ..feature(7, "trim", "Trim Argus context injection")
+            },
+            Feature {
+                waits_on: vec!["trim".into()],
+                tasks: TaskCounts { todo: 5, doing: 0, done: 0 },
+                ..feature(8, "ratatui", "The ratatui 0.30 bump and visual pass")
+            },
+        ],
+        decisions: vec![
+            decision(1, None, Some(1), "Name the feature, don't print the brief"),
+            decision(2, Some(1), None, "The name line carries the feature id"),
+            Decision {
+                context: Some("Session start now only names the feature.".into()),
+                detail: Some("argus-hook asks the daemon for its pane's brief over the pane API.".into()),
+                because: Some("A hook that opens the file is a second contract.".into()),
+                consequences: vec![
+                    Consequence { gain: true, text: "One contract for the brief".into() },
+                    Consequence { gain: false, text: "A pane with no feature needs a refusal".into() },
+                ],
+                ..decision(3, None, Some(2), "The brief travels through the daemon")
+            },
+            decision(4, Some(3), None, "The route lives in the pane API URL grammar"),
+            Decision {
+                state: DecisionState::Rejected,
+                because: Some("the second contract this decision exists to avoid".into()),
+                ..decision(5, Some(3), None, "Hook reads the brief file directly")
+            },
+            Decision {
+                state: DecisionState::Open,
+                options: vec!["All of it".into(), "The last ten".into()],
+                ..decision(6, None, Some(3), "How much decision history does a pane get?")
+            },
+        ],
+    }
+}
+
+pub(super) fn feature_tasks() -> argus_protocol::TaskList {
+    use argus_protocol::{Criterion, Task, TaskNote, TaskState};
+    let task = |id: i64, parent: Option<i64>, state: TaskState, title: &str| Task {
+        id,
+        parent,
+        state,
+        position: id,
+        feature: "trim".into(),
+        title: title.into(),
+        ..Task::default()
+    };
+    use TaskState::{Doing, Done, Todo};
+    argus_protocol::TaskList {
+        project_name: "argus".into(),
+        feature: Some("trim".into()),
+        tasks: vec![
+            task(1, None, Done, "Name the feature at session start"),
+            task(5, Some(1), Done, "Print the name line"),
+            task(6, Some(1), Done, "Drop the brief from the hook"),
+            task(2, None, Doing, "Serve the brief on demand"),
+            task(7, Some(2), Done, "Add a brief route to the pane API URL grammar"),
+            Task {
+                body: Some("The hook asks the daemon for its pane's brief instead of opening the file.".into()),
+                claimed_by: Some("session-a".into()),
+                claimed_pane: Some(PaneId(100)),
+                criteria: vec![
+                    Criterion { text: "The hook's request uses the route from 2.1".into(), done: true },
+                    Criterion { text: "No path to the brief file is left in argus-hook".into(), done: false },
+                ],
+                notes: vec![
+                    TaskNote { at: 1, session: Some("session-a".into()), pane: Some(PaneId(100)), text: "route answers; wiring the hook to it now".into() },
+                    TaskNote { at: 2, session: None, pane: None, text: "keep the refusal case for 2.3".into() },
+                ],
+                ..task(8, Some(2), Doing, "argus-hook reads the brief through the daemon")
+            },
+            task(9, Some(2), Todo, "Refuse when the pane has no feature"),
+            task(3, None, Todo, "Cap the decision history a pane receives"),
+            task(10, Some(3), Todo, "Implement the cap"),
+            task(4, None, Todo, "Update the DESIGN.md responsibility table"),
+        ],
+    }
+}
+
+pub(super) const FLOW: &str = "sequenceDiagram
+    participant agent
+    participant hook
+    participant argusd
+    agent->>hook: ask for the brief
+    hook->>argusd: brief request
+    alt the pane has a feature
+        argusd-->>hook: the brief
+    else the pane has no feature
+        argusd-->>hook: refused
+    end";
+
+/// The Feature stage on its index with the board above pushed, the cursor
+/// on feature #7, and every message it sends readable.
+pub(super) fn feature_stage() -> (
+    App,
+    tokio::sync::mpsc::UnboundedReceiver<argus_protocol::ClientMsg>,
+) {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut app = App::new(tx);
+    app.on_server_msg(argus_protocol::ServerMsg::Tree(tree()));
+    let project = app.current_project().unwrap().id;
+    app.open_view(View::Feature);
+    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(feature_board(Some(project)))));
+    let at = app
+        .feature_rows()
+        .iter()
+        .position(|row| row.slug == "trim")
+        .expect("the fixture's active feature");
+    app.feature_sel = at;
+    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(feature_board(Some(project)))));
+    app.on_server_msg(argus_protocol::ServerMsg::Tasks(Box::new(feature_tasks())));
+    app.on_server_msg(argus_protocol::ServerMsg::SequenceDiagrams(Box::new(
+        argus_protocol::DiagramList {
+            project_name: "argus".into(),
+            feature: Some("trim".into()),
+            diagrams: vec![argus_protocol::SequenceDiagram {
+                id: 1,
+                feature: "trim".into(),
+                title: "Brief on demand".into(),
+                body: FLOW.into(),
+                at: 0,
+                session: None,
+            }],
+        },
+    )));
+    (app, rx)
+}
+
+/// Feature #7 open on its work lens.
+pub(super) fn app_reading_a_feature() -> App {
+    let (mut app, rx) = feature_stage();
+    std::mem::forget(rx);
+    app.feature_open = true;
+    app
+}
+
 /// Renders a real frame through ratatui's test backend and hands back
 /// the buffer, so the UI can be asserted on without a terminal.
 pub(super) fn draw(app: &mut App) -> ratatui::buffer::Buffer {

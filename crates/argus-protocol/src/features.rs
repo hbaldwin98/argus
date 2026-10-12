@@ -93,8 +93,13 @@ impl std::fmt::Display for FeatureState {
 }
 
 /// One feature of a project, and the document that says what it is.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Feature {
+    /// What a person calls it: `#7`. Counted up per board and never reused,
+    /// so a number said aloud last week still names the same feature. Zero
+    /// from a daemon that predates numbers.
+    #[serde(default)]
+    pub number: i64,
     /// Stable within a project, and what a decision row carries. Derived
     /// from the title once, at creation: a title someone later rewords
     /// must not orphan the decisions filed under it.
@@ -395,6 +400,7 @@ mod parked_tests {
             tasks: TaskCounts::default(),
             held: None,
             waits_on: waits_on.iter().map(|s| s.to_string()).collect(),
+            ..Feature::default()
         }
     }
 

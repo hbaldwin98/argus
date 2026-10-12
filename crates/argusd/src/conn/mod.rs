@@ -1291,6 +1291,103 @@ mod tests {
         assert!(error.contains("no such checkout"), "{error}");
     }
 
+    #[tokio::test]
+    async fn a_note_a_decision_and_its_answer_reach_the_board_from_a_client() {
+        use argus_protocol::{Capture, DecisionChange, DecisionState, DecisionWrite};
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+        let (project, checkout) = (h.daemon.snapshot()[0].id, h.checkout());
+        let mut boards = h.daemon.subscribe_decisions();
+        let mut lists = h.daemon.subscribe_tasks();
+
+        let note = "Bound the queue\nRefuse when full.\n- measure the backlog\n? which bound\n  a count";
+        h.send(ClientMsg::CaptureFeature {
+            project,
+            checkout,
+            into: None,
+            capture: Box::new(Capture::parse(note)),
+        });
+        let board = boards.try_recv().expect("the feature a note opened is pushed");
+        let feature = board.features[0].clone();
+        assert_eq!((feature.number, feature.body.as_str()), (1, "Refuse when full."));
+        let question = board.decisions[0].clone();
+        assert!(question.open() && question.options == ["a count"]);
+        let list = lists.try_recv().expect("and so are its tasks");
+        assert_eq!((list.feature.as_deref(), list.tasks.len()), (Some(feature.slug.as_str()), 1));
+
+        h.send(ClientMsg::CaptureFeature {
+            project,
+            checkout,
+            into: Some(feature.slug.clone()),
+            capture: Box::new(Capture::parse("any first line\n- drain it")),
+        });
+        let board = boards.try_recv().unwrap();
+        assert_eq!(board.features.len(), 1, "a note added to a feature opens none");
+        assert_eq!(board.features[0].title, "Bound the queue");
+        assert_eq!(lists.try_recv().unwrap().tasks.len(), 2);
+
+        h.send(ClientMsg::Decide {
+            project,
+            checkout,
+            feature: feature.slug.clone(),
+            write: DecisionWrite {
+                chose: "refuse rather than drop".into(),
+                state: DecisionState::Rejected,
+                task: Some(list.tasks[0].id),
+                ..Default::default()
+            },
+        });
+        let board = boards.try_recv().unwrap();
+        assert_eq!(board.decisions[1].state, DecisionState::Rejected);
+        assert_eq!(board.decisions[1].task, Some(list.tasks[0].id));
+
+        h.send(ClientMsg::ChangeDecision {
+            project,
+            checkout,
+            feature: feature.slug.clone(),
+            change: DecisionChange::Resolve {
+                id: question.id,
+                answer: "a count".into(),
+                because: None,
+            },
+        });
+        assert!(boards.try_recv().unwrap().decisions[0].stands());
+        assert!(h.replies().is_empty(), "each is answered by the push, to every client");
+
+        // A refusal is reported and pushes nothing: the panel keeps
+        // showing what is true.
+        h.send(ClientMsg::ChangeDecision {
+            project,
+            checkout,
+            feature: feature.slug.clone(),
+            change: DecisionChange::Resolve {
+                id: question.id,
+                answer: "a byte size".into(),
+                because: None,
+            },
+        });
+        let error = h.error().await;
+        assert!(error.contains("not an open question"), "{error}");
+        h.send(ClientMsg::CaptureFeature {
+            project,
+            checkout,
+            into: None,
+            capture: Box::new(Capture::parse("Half a note\nstray prose\n- a task\n  stray prose")),
+        });
+        let error = h.error().await;
+        assert!(error.contains("some lines read as nothing"), "{error}");
+        h.send(ClientMsg::Decide {
+            project,
+            checkout: CheckoutId(9999),
+            feature: feature.slug,
+            write: DecisionWrite { chose: "x".into(), ..Default::default() },
+        });
+        let error = h.error().await;
+        assert!(error.contains("checkout is not in this project"), "{error}");
+        assert!(boards.try_recv().is_err());
+    }
+
     #[test]
     fn a_restart_message_is_acknowledged_without_dispatching_state() {
         let dir = tempfile::tempdir().unwrap();

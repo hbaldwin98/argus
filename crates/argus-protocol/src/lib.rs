@@ -7,7 +7,9 @@
 //! travel in. Written twice they drift in silence; written once they
 //! cannot.
 
+pub mod adr;
 pub mod artifacts;
+pub mod capture;
 pub mod cell;
 pub mod damage;
 pub mod decisions;
@@ -35,8 +37,11 @@ pub use cell::{
 };
 pub use compact_str::{CompactString, ToCompactString};
 pub use damage::{damage, grid_from_runs, grid_runs, CellRun, Scroll, Style};
+pub use capture::{Capture, CapturedDecision, CapturedTask, MAX_CAPTURE_ROWS};
 pub use decisions::{
-    Decision, DecisionBoard, DecisionChange, DecisionTreeRow, DecisionWrite, MAX_DECISION_BYTES,
+    outline_number, Consequence, Decision, DecisionBoard, DecisionChange, DecisionState,
+    DecisionText, DecisionTreeRow, DecisionWrite, MAX_DECISION_BYTES, MAX_DECISION_CONSEQUENCES,
+    MAX_DECISION_OPTIONS,
 };
 pub use diagrams::{
     DiagramAction, DiagramList, DiagramWrite, SequenceDiagram, MAX_DIAGRAM_BODY_BYTES,
@@ -75,8 +80,10 @@ pub use review::{
     MAX_REVIEW_COMMENTS, MAX_REVIEW_COMMENT_BYTES,
 };
 pub use tasks::{
-    checked_task_body, Task, TaskAction, TaskCounts, TaskList, TaskPlace, TaskState, TaskTreeRow,
-    TaskWrite, MAX_TASK_BODY_BYTES, MAX_TASK_TITLE_BYTES,
+    checked_task_body, checked_task_line, Criterion, Task, TaskAction, TaskCounts, TaskList,
+    TaskNote, TaskPlace, TaskState, TaskTreeRow, TaskWrite, MAX_CRITERION_BYTES,
+    MAX_TASK_BODY_BYTES, MAX_TASK_CRITERIA, MAX_TASK_NOTES, MAX_TASK_NOTE_BYTES,
+    MAX_TASK_TITLE_BYTES,
 };
 pub use transcript::{Body, Choice, Draft, Earlier, Entry, Push, ToolState, Update, MAX_PUSH_BYTES};
 pub use tree::{

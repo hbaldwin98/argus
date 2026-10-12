@@ -14,7 +14,7 @@ pub(super) fn dispatch(
     review_task: &mut Option<tokio::task::JoinHandle<()>>,
     viewer: ViewerId,
 ) -> anyhow::Result<()> {
-    dispatch_pane(msg, daemon, out_tx, subs, viewer)
+    dispatch_pane(Box::new(msg), daemon, out_tx, subs, viewer)
         .or_else(|msg| dispatch_boards(msg, daemon, out_tx))
         .or_else(|msg| dispatch_panel(msg, daemon, out_tx))
         .or_else(|msg| dispatch_git(msg, daemon, out_tx))
@@ -26,13 +26,13 @@ pub(super) fn dispatch(
 /// The panes themselves: streaming one, typing into it, starting one — an
 /// editor included — and closing it.
 fn dispatch_pane(
-    msg: ClientMsg,
+    msg: Box<ClientMsg>,
     daemon: &Arc<Daemon>,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
     subs: &mut Subscriptions,
     viewer: ViewerId,
 ) -> DispatchResult {
-    let result = match msg {
+    let result = match *msg {
         ClientMsg::Subscribe { pane } => super::subscribe(daemon, pane, subs.runs)
             .map(|(snapshot, rx)| subs.add(pane, snapshot, rx, daemon.clone())),
         ClientMsg::Unsubscribe { pane } => {
@@ -146,7 +146,7 @@ fn dispatch_pane(
                 daemon.spawn_editor(checkout, &path, line, external, command.as_deref())
             })
         }
-        msg => return Err(msg),
+        msg => return Err(Box::new(msg)),
     };
     Ok(result)
 }
@@ -155,11 +155,11 @@ fn dispatch_pane(
 /// project scope, whole, and pushed at every client rather than answered to
 /// one.
 fn dispatch_boards(
-    msg: ClientMsg,
+    msg: Box<ClientMsg>,
     daemon: &Arc<Daemon>,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
 ) -> DispatchResult {
-    let result = match msg {
+    let result = match *msg {
         ClientMsg::GetDecisions { project, checkout } => {
             daemon.decision_board(project, checkout).map(|board| {
                 let _ = out_tx.send(ServerMsg::Decisions(Box::new(board)));
@@ -210,6 +210,24 @@ fn dispatch_boards(
                     }
                 })
         }
+        ClientMsg::Decide {
+            project,
+            checkout,
+            feature,
+            write,
+        } => daemon.decide_for_client(project, checkout, &feature, write),
+        ClientMsg::ChangeDecision {
+            project,
+            checkout,
+            feature,
+            change,
+        } => daemon.change_decision_for_client(project, checkout, &feature, change),
+        ClientMsg::CaptureFeature {
+            project,
+            checkout,
+            into,
+            capture,
+        } => daemon.capture_feature_for_client(project, checkout, into.as_deref(), *capture),
         ClientMsg::SequenceDiagram {
             project,
             checkout,
@@ -245,7 +263,7 @@ fn dispatch_boards(
             on,
             waits,
         } => daemon.wait_feature_for_client(project, checkout, &slug, &on, waits),
-        msg => return Err(msg),
+        msg => return Err(Box::new(msg)),
     };
     Ok(result)
 }
@@ -253,11 +271,11 @@ fn dispatch_boards(
 /// The rows of the panel and which workspace is open. The directory
 /// browser rides along because it is how a project or repository is added.
 fn dispatch_panel(
-    msg: ClientMsg,
+    msg: Box<ClientMsg>,
     daemon: &Arc<Daemon>,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
 ) -> DispatchResult {
-    let result = match msg {
+    let result = match *msg {
         ClientMsg::AddProject { path, request_id } => answered(
             out_tx,
             request_id,
@@ -290,7 +308,7 @@ fn dispatch_panel(
             });
             Ok(())
         }
-        msg => return Err(msg),
+        msg => return Err(Box::new(msg)),
     };
     Ok(result)
 }
@@ -298,11 +316,11 @@ fn dispatch_panel(
 /// Writes to Git. Each is real subprocess I/O, so it runs on its own task and
 /// reports a refusal on its own rather than stalling this connection.
 fn dispatch_git(
-    msg: ClientMsg,
+    msg: Box<ClientMsg>,
     daemon: &Arc<Daemon>,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
 ) -> DispatchResult {
-    let result = match msg {
+    let result = match *msg {
         // Both do real subprocess I/O (`git worktree add`/`remove`), so they
         // run on their own task instead of blocking this connection's
         // message loop — a slow worktree op must not stall keystrokes going
@@ -388,7 +406,7 @@ fn dispatch_git(
             });
             Ok(())
         }
-        msg => return Err(msg),
+        msg => return Err(Box::new(msg)),
     };
     Ok(result)
 }
@@ -397,11 +415,11 @@ fn dispatch_git(
 /// walks the working tree or the object store, so it answers from a
 /// blocking thread.
 fn dispatch_checkout_reads(
-    msg: ClientMsg,
+    msg: Box<ClientMsg>,
     daemon: &Arc<Daemon>,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
 ) -> DispatchResult {
-    let result = match msg {
+    let result = match *msg {
         // Listing walks a working tree, so it goes off the message loop.
         ClientMsg::ListBranches { checkout } => {
             reply_with(daemon, out_tx, checkout, move |path| ServerMsg::Branches {
@@ -452,19 +470,19 @@ fn dispatch_checkout_reads(
                 },
             },
         ),
-        msg => return Err(msg),
+        msg => return Err(Box::new(msg)),
     };
     Ok(result)
 }
 
 /// Reviewing a checkout's changes, and commenting on them to an agent.
 fn dispatch_review(
-    msg: ClientMsg,
+    msg: Box<ClientMsg>,
     daemon: &Arc<Daemon>,
     out_tx: &mpsc::UnboundedSender<ServerMsg>,
     review_task: &mut Option<tokio::task::JoinHandle<()>>,
 ) -> DispatchResult {
-    let result = match msg {
+    let result = match *msg {
         ClientMsg::Review {
             request_id,
             checkout,
@@ -523,12 +541,15 @@ fn dispatch_review(
             .map(|(id, delivered)| {
                 let _ = out_tx.send(ServerMsg::ReviewCommentSaved { id, delivered });
             }),
-        msg => return Err(msg),
+        msg => return Err(Box::new(msg)),
     };
     Ok(result)
 }
 
-type DispatchResult = Result<anyhow::Result<()>, ClientMsg>;
+/// The message comes back boxed when it was not this concern's: it is the
+/// largest thing a connection handles, and handed back inline it would make
+/// every dispatcher's result that size whether or not it was refused.
+type DispatchResult = Result<anyhow::Result<()>, Box<ClientMsg>>;
 
 /// Runs a daemon call on its own task, reporting a refusal to the client
 /// that asked for it.

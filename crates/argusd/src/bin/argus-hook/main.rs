@@ -20,8 +20,15 @@
 //! argus-hook decide "sqlite" --over "a file per feature" --because "both need migrations"
 //! argus-hook decide "one row per note" --under 3  # hangs under decision 3
 //! argus-hook decide "one row per note" --supersedes 7   # replaces decision 7
+//! argus-hook decide "which store?" --open --option sqlite --option "a file"  # asks, decides nothing
+//! argus-hook decisions resolve 9 "sqlite" --because "both need migrations"   # the person's answer
+//! argus-hook decisions show 9                        # one decision as a document
+//! argus-hook decisions rewrite 9 --stdin             # that document, corrected
 //! argus-hook task                                    # reads the task tree
 //! argus-hook task add "bound the queue" --under 12  # adds a subtask
+//! argus-hook task criterion add 12 "a full queue refuses"   # what done means
+//! argus-hook task criterion check 12 1               # checks the first one off
+//! argus-hook task note 12 "bounded; refusal next"    # where the work stands
 //! argus-hook diagram                                 # sequence diagrams on this feature
 //! argus-hook diagram add "open overlay" --stdin      # Mermaid source on stdin
 //! argus-hook diagram drop 3                          # removes diagram #3
@@ -76,7 +83,8 @@ use std::net::TcpStream;
 use std::time::Duration;
 
 use argus_protocol::{
-    is_slug, parse_pane_url, requested_scope, Decision, DecisionBoard, DecisionWrite, DiagramAction,
+    is_slug, parse_pane_url, requested_scope, Consequence, Decision, DecisionBoard,
+    DecisionChange, DecisionState, DecisionText, DecisionWrite, DiagramAction,
     DiagramList, DiagramWrite, Endpoint, FeatureAction, FeatureBoard, FeatureWrite, Report,
     ReviewComment, TaskAction, TaskList, TaskPlace, TaskState, TaskWrite, ARTIFACT_SCOPE_VAR,
     CONTEXT_COMMAND, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
@@ -850,6 +858,69 @@ mod tests {
     }
 
     #[test]
+    fn an_asked_question_is_reported_as_one_and_says_how_it_ends() {
+        let recorded = r#"{"id":9,"parent":null,"at":1,"session":null,"checkout":null,
+             "chose":"which store?","over":null,"because":null,"superseded_by":null,
+             "state":"open","options":["sqlite","a file"]}"#;
+        let (address, server) = serve_once(recorded);
+
+        let message = decide_message(
+            &["which", "store?", "--open", "--option", "sqlite", "--option", "a file"],
+            &format!("http://{address}/pane/4"),
+            "secret",
+        );
+        let _ = server.join();
+
+        assert_eq!(
+            message,
+            "asked open decision #9: which store?\n\
+             It is the person's to answer. When they have, \
+             `argus-hook decisions resolve 9 \"<their answer>\"`."
+        );
+    }
+
+    #[test]
+    fn an_answer_is_posted_as_a_change_to_the_decision_it_resolves() {
+        let (address, server) = serve_once(r#"{"project":null,"name":"argus","decisions":[]}"#);
+
+        let message = decisions_message(
+            &["resolve", "9", "sqlite"],
+            &format!("http://{address}/pane/4"),
+            "secret",
+        );
+
+        assert_eq!(message, "decision 9 resolved: sqlite");
+        assert!(server
+            .join()
+            .unwrap()
+            .starts_with("POST /pane/4/decision HTTP/1.1\r\n"));
+    }
+
+    #[test]
+    fn one_decision_is_shown_as_the_document_a_rewrite_reads_back() {
+        let board = r#"{"project":null,"name":"argus","decisions":[
+            {"id":9,"parent":null,"at":1,"session":null,"checkout":null,
+             "chose":"sqlite","over":"a file per feature","because":"both need migrations",
+             "superseded_by":null,"detail":"one file in WAL mode",
+             "consequences":[{"gain":false,"text":"a migration ladder"}]}]}"#;
+        let (address, server) = serve_once(board);
+
+        let shown = decisions_message(&["show", "#9"], &format!("http://{address}/pane/4"), "t");
+        let _ = server.join();
+
+        assert_eq!(
+            shown,
+            "sqlite\n\n## Decision\none file in WAL mode\n\n## Why\nboth need migrations\n\n\
+             ## Consequences\n- a migration ladder\n\n## Considered\na file per feature"
+        );
+        let read = DecisionText::from_markdown(&shown);
+        assert_eq!(
+            (read.chose.as_str(), read.over.as_deref(), read.consequences.len()),
+            ("sqlite", Some("a file per feature"), 1)
+        );
+    }
+
+    #[test]
     fn a_feature_is_read_as_its_brief_and_then_its_reasoning() {
         let board = r#"{"project":null,"project_name":"argus","current":"notes-storage",
             "unfiled":2,
@@ -989,6 +1060,7 @@ mod tests {
             tasks: Default::default(),
             held: None,
             waits_on: Vec::new(),
+            ..Default::default()
         };
         FeatureBoard {
             project: None,
@@ -1007,6 +1079,7 @@ mod tests {
                 because: Some("a poll cannot see a burst".into()),
                 superseded_by: None,
                 withdrawn_at: None,
+                ..Default::default()
             }],
             unfiled: 0,
         }

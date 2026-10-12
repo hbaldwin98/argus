@@ -5,7 +5,8 @@
 //! Review comments are printed whole because they are addressed to this
 //! agent. The feature is only named, with how much is filed under it: a
 //! brief sits in every request of a session whether or not the work touches
-//! it, so `feature` and `task` show it to the agent that asks.
+//! it, so `feature` and `task` show it to the agent that asks. Its open
+//! questions are the exception, and are listed.
 
 use super::*;
 
@@ -81,17 +82,29 @@ pub(super) fn format_context(
         return sections.join("\n\n");
     };
 
+    let open: Vec<&Decision> = board.decisions.iter().filter(|d| d.open()).collect();
     let mut feature = vec![format!(
-        "Feature: {} ({}), {}, {} decision(s).",
+        "Feature{}: {} ({}), {}, {} decision(s).",
+        super::board::feature_number(current),
         current.title,
         current.slug,
         match &tasks {
             Ok(list) => open_task_count(list),
             Err(message) => message.clone(),
         },
-        board.decisions.len()
+        board.decisions.len() - open.len()
     )];
     feature.extend(super::board::parked_lines(current, &board.features));
+    // Named here, where the brief is not, because this is the one thing on
+    // the board an agent can get wrong by not having read it: a question
+    // left for a person looks, from inside the work, like a choice to make.
+    if !open.is_empty() {
+        feature.push(format!(
+            "{} open question(s), the person's to answer — do not decide them alone:",
+            open.len()
+        ));
+        feature.extend(open.iter().map(|d| format!("  #{} {}", d.id, d.chose)));
+    }
     feature.push(
         "When the work touches it, `\"$ARGUS_HOOK\" feature` shows its brief and decisions \
          and `\"$ARGUS_HOOK\" task` its tasks."
@@ -168,6 +181,27 @@ mod tests {
         let text = format_context("no review comments", Ok(board), Ok(tasks()));
         assert!(
             text.contains("1 decision(s).\nHeld: until the user answers\nWhen the work"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn context_lists_the_questions_an_agent_must_not_answer_alone() {
+        let mut board = board(Some("notes"));
+        board.features[0].number = 7;
+        let mut question = board.decisions[0].clone();
+        question.id = 2;
+        question.chose = "which store?".to_string();
+        question.state = argus_protocol::DecisionState::Open;
+        board.decisions.push(question);
+        let text = format_context("no review comments", Ok(board), Ok(tasks()));
+        assert!(
+            text.contains(
+                "Feature #7: Notes (notes), 2 of 3 task(s) open, 1 decision(s).\n\
+                 1 open question(s), the person's to answer — do not decide them alone:\n\
+                 \x20 #2 which store?\n\
+                 When the work"
+            ),
             "{text}"
         );
     }

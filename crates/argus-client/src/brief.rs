@@ -33,6 +33,18 @@ pub enum BriefTarget {
         feature: String,
         id: i64,
     },
+    /// A decision, open as the record it reads as.
+    Decision {
+        project: ProjectId,
+        feature: String,
+        id: i64,
+    },
+    /// A note being written down as a feature, or into one that exists.
+    /// Sent whole when the person says so, never on leaving insert mode.
+    Capture {
+        project: ProjectId,
+        into: Option<String>,
+    },
 }
 
 /// One brief, open.
@@ -160,6 +172,20 @@ impl BriefView {
         self.dirty = true;
     }
 
+    /// A new line that starts as deep as the one it came from, so a list
+    /// of subtasks stays a list.
+    pub fn newline_keeping_indent(&mut self) {
+        let indent: String = self.lines[self.line]
+            .chars()
+            .take_while(|c| *c == ' ')
+            .collect();
+        // Splitting inside the indent carries the rest of it down already.
+        let depth = indent.len().min(self.column);
+        self.newline();
+        self.lines[self.line].insert_str(0, &indent[..depth]);
+        self.column = depth;
+    }
+
     /// Backspace: deletes the character before the cursor, or joins this
     /// line to the one above when there is nothing before it.
     pub fn backspace(&mut self) {
@@ -177,6 +203,21 @@ impl BriefView {
         self.line -= 1;
         self.column = self.lines[self.line].chars().count();
         self.lines[self.line].push_str(&tail);
+        self.dirty = true;
+    }
+
+    /// Indents the cursor's line by one level, or takes one level back.
+    /// Two spaces, which is what the note grammar reads as a level.
+    pub fn indent(&mut self, deeper: bool) {
+        let line = &mut self.lines[self.line];
+        if deeper {
+            line.insert_str(0, "  ");
+            self.column += 2;
+        } else {
+            let leading = line.chars().take(2).take_while(|c| *c == ' ').count();
+            line.drain(..leading);
+            self.column = self.column.saturating_sub(leading);
+        }
         self.dirty = true;
     }
 

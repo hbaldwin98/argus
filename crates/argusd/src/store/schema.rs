@@ -121,9 +121,9 @@ CREATE INDEX review_comment_checkout ON review_comment (checkout_path, id);
 /// renamed, say — so a constraint here would refuse writes to protect an
 /// invariant the reader does not rely on.
 ///
-/// Append-only by design. A decision that turns out to be wrong gets a new
-/// row, and the old row's `superseded_by` is what says so; nothing but
-/// that column is ever updated.
+/// A decision that turns out to be wrong gets a new row, and the old row's
+/// `superseded_by` is what says so. A row is never deleted; `SCHEMA_V19`
+/// says what else about one may change.
 pub(super) const SCHEMA_V5: &str = r#"
 CREATE TABLE decision (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -342,6 +342,72 @@ CREATE TABLE feature_wait (
     waits_on TEXT NOT NULL,
     PRIMARY KEY (project, slug, waits_on)
 ) WITHOUT ROWID;
+"#;
+
+/// What the feature view needs a board to say that it could not: what a
+/// feature is called aloud, whether a decision has been made yet and what it
+/// was raised under, and what "done" means for a task.
+///
+/// `feature.number` is counted per board and never handed out twice, so the
+/// number is not `MAX(number) + 1`: removing the newest feature would give
+/// its number to the next one, and a `#7` said last week would name
+/// something else. `feature_counter` holds the high-water mark instead.
+/// Existing features are numbered in the order a board has always listed
+/// them, `at` then slug.
+///
+/// A decision's `consequences` and `options`, and a task's `criteria`, are
+/// JSON text in a column rather than rows of their own. Each is a short
+/// bounded list that is read whole with its owner, written whole by one
+/// writer, and never queried by element — a criterion is addressed by its
+/// place in the list, so a table would only add a position to keep dense.
+/// JSON rather than newline-separated because a consequence carries a sign
+/// and a criterion a check mark, and a list of bare strings would have to be
+/// re-split the day either gained a field.
+///
+/// Notes are a table. They are appended one at a time by whoever is on the
+/// task, possibly several agents at once, and trimmed from the oldest end;
+/// a column would make every note a read-modify-write of all the others.
+///
+/// `decision.task` and `task_note.task` are not foreign keys, for the reason
+/// `task.parent` is not one; the writes that remove or move a task clear
+/// them. `claimed_pane` and `task_note.pane` hold a pane id, which names
+/// nothing after a restart, so `Store::forget_panes` clears both when the
+/// daemon starts.
+pub(super) const SCHEMA_V19: &str = r#"
+ALTER TABLE feature ADD COLUMN number INTEGER NOT NULL DEFAULT 0;
+UPDATE feature SET number = (
+    SELECT COUNT(*) FROM feature earlier
+    WHERE earlier.project = feature.project
+      AND (earlier.at < feature.at
+           OR (earlier.at = feature.at AND earlier.slug <= feature.slug))
+);
+
+CREATE TABLE feature_counter (
+    project TEXT PRIMARY KEY,
+    last    INTEGER NOT NULL
+) WITHOUT ROWID;
+INSERT INTO feature_counter (project, last)
+    SELECT project, MAX(number) FROM feature GROUP BY project;
+
+ALTER TABLE decision ADD COLUMN state        TEXT NOT NULL DEFAULT 'accepted';
+ALTER TABLE decision ADD COLUMN task         INTEGER;
+ALTER TABLE decision ADD COLUMN context      TEXT;
+ALTER TABLE decision ADD COLUMN detail       TEXT;
+ALTER TABLE decision ADD COLUMN consequences TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE decision ADD COLUMN options      TEXT NOT NULL DEFAULT '[]';
+
+ALTER TABLE task ADD COLUMN claimed_pane INTEGER;
+ALTER TABLE task ADD COLUMN criteria     TEXT NOT NULL DEFAULT '[]';
+
+CREATE TABLE task_note (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    task    INTEGER NOT NULL,
+    at      INTEGER NOT NULL,
+    session TEXT,
+    pane    INTEGER,
+    text    TEXT    NOT NULL
+);
+CREATE INDEX task_note_task ON task_note (task, id);
 "#;
 
 /// Mermaid sequence-diagram source, one row per diagram under a feature.

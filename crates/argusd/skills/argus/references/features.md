@@ -4,7 +4,9 @@
 
 A feature is the shared record of one piece of work: a brief, its tasks, and its
 decisions. The pane's checkout selects the feature, and every pane in that
-checkout shares the selection, so inspect it before changing it.
+checkout shares the selection, so inspect it before changing it. A human names
+a feature by its number (`#7`), which `feature` and `feature list` print;
+commands take its slug.
 
 ```sh
 "$ARGUS_HOOK" feature                      # the selected feature, brief, and decisions
@@ -39,7 +41,8 @@ paragraphs a later agent could start from without this conversation:
 - **Constraints**: contracts, files, or behavior that must not change.
 - **Verification**: how someone will know it works (tests, a manual check).
 
-Leave choices between options to the decision board rather than the brief.
+Leave choices between options to the decision board rather than the brief, and
+a choice that is the human's to make as an open decision there.
 
 ## Keeping the brief current
 

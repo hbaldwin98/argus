@@ -10,11 +10,13 @@
 //! are under, which is where a human accepts the work as a whole.
 //!
 //! So there is one way in, [`TaskAction`], routed like every other part of
-//! a feature (`board_parts`); this says only how a task is stored.
+//! a feature (`board_parts`); this says only how a task is stored. Who asked
+//! travels with it, so a task taken up or a note left through a pane says
+//! which pane, and one from a client says neither.
 
 use argus_protocol::{TaskAction, TaskList, TaskPlace};
 
-use super::board_parts::{BoardTarget, FeaturePart};
+use super::board_parts::{Author, BoardTarget, FeaturePart};
 use super::*;
 use crate::store::Store;
 
@@ -38,7 +40,11 @@ impl FeaturePart for TaskAction {
             | TaskAction::SetBody { id, .. }
             | TaskAction::Remove { id }
             | TaskAction::Reorder { id, .. }
-            | TaskAction::Place { id, .. } => Some(*id),
+            | TaskAction::Place { id, .. }
+            | TaskAction::AddCriterion { id, .. }
+            | TaskAction::SetCriterion { id, .. }
+            | TaskAction::RemoveCriterion { id, .. }
+            | TaskAction::Note { id, .. } => Some(*id),
         }
     }
 
@@ -62,21 +68,33 @@ impl FeaturePart for TaskAction {
         key: &str,
         feature: &str,
         at: i64,
-        session: Option<&str>,
+        by: Author<'_>,
     ) -> anyhow::Result<()> {
         match self {
             TaskAction::List => {}
             TaskAction::Add(write) => {
                 let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-                store.add_task(key, feature, &write, at, session)?;
+                store.add_task(key, feature, &write, at, by.session)?;
             }
-            TaskAction::Move { id, state } => store.move_task(key, id, state, session)?,
+            TaskAction::Move { id, state } => {
+                store.move_task(key, id, state, by.session, by.pane)?
+            }
             TaskAction::Retitle { id, title } => store.retitle_task(key, id, &title)?,
             TaskAction::SetBody { id, body } => store.set_task_body(key, id, body)?,
             TaskAction::Remove { id } => store.remove_task(key, id)?,
             TaskAction::Reorder { id, to } => store.reorder_task(key, id, to)?,
             TaskAction::Place { id, place } => {
                 store.place_task(key, id, &place)?;
+            }
+            TaskAction::AddCriterion { id, text } => store.add_task_criterion(key, id, &text)?,
+            TaskAction::SetCriterion { id, index, done } => {
+                store.set_task_criterion(key, id, index, done)?
+            }
+            TaskAction::RemoveCriterion { id, index } => {
+                store.remove_task_criterion(key, id, index)?
+            }
+            TaskAction::Note { id, text } => {
+                store.add_task_note(key, id, &text, at, by.session, by.pane)?
             }
         }
         Ok(())

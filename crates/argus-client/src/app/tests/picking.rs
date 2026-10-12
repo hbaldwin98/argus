@@ -16,6 +16,7 @@ fn feature(slug: &str) -> argus_protocol::Feature {
         tasks: Default::default(),
         held: None,
         waits_on: Vec::new(),
+        ..Default::default()
     }
 }
 

@@ -66,7 +66,7 @@ use views::*;
 
 pub(crate) use command_center::{
     agent_at as command_center_agent_at, checkout_at as command_center_checkout_at,
-    feature_row_at as command_center_feature_row_at,
+    feature_hit_at as command_center_feature_hit_at,
     pane_at as command_center_pane_at, project_header_at as command_center_project_header_at,
     rail_target_at as command_center_rail_target_at,
     sidebar_contains as command_center_sidebar_contains,
@@ -83,17 +83,6 @@ const CARET: &str = "▏";
 /// stays aligned whether or not it's selected.
 const MARKER: &str = "▌";
 const GUTTER: &str = " ";
-
-/// Root decisions have no tree guide; this fills the column tasks use for state.
-pub(crate) const DECISION_ROOT_MARK: &str = "◇";
-
-pub(crate) fn decision_title_pad(depth: usize) -> &'static str {
-    if depth == 0 {
-        "◇ "
-    } else {
-        "  "
-    }
-}
 
 /// A column's scroll thumb, drawn in the padding cell beside the border so
 /// it reads as part of the card's edge rather than as a row of its own.
@@ -224,9 +213,10 @@ pub fn render(f: &mut Frame, app: &mut App) {
 /// rect there would swallow a click meant for whatever is on screen.
 fn forget_feature_view(app: &mut App) {
     app.layout.features = Panel::default();
-    app.layout.feature_brief = Panel::default();
-    app.layout.feature_tasks = Panel::default();
-    app.layout.feature_decisions = Panel::default();
+    app.layout.feature_lenses = Panel::default();
+    app.layout.feature_flows = Panel::default();
+    app.layout.feature_list = Panel::default();
+    app.layout.feature_detail = Panel::default();
 }
 
 /// Zeroes the rail's and the stages' recorded regions, for the frames that

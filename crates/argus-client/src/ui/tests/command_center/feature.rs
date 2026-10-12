@@ -1,263 +1,772 @@
-//! The Feature stage: wrapped rows, tree guides and right-aligned ids.
+//! The Feature stage: the index, the three lenses over one feature, the
+//! note a feature is written as, and what each key sends.
 
 use super::*;
+use crate::app::{Lens, Standing};
+use crate::outline::WorkRef;
+use argus_protocol::{ClientMsg, DecisionChange, DecisionState, FeatureState, TaskAction, TaskState};
 
-fn feature_document_with_long_rows() -> App {
-    let mut app = command_center();
-    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(
-        argus_protocol::DecisionBoard {
-            project: None,
-            name: "argus".into(),
-            features: vec![argus_protocol::Feature {
-                slug: "focus".into(),
-                title: "Focused content".into(),
-                body: "A short brief.".into(),
-                origin_checkout: None,
-                origin_branch: Some("main".into()),
-                at: 0,
-                session: None,
-                state: argus_protocol::FeatureState::Open,
-                checkouts: Vec::new(),
-                tasks: Default::default(),
-                held: None,
-                waits_on: Vec::new(),
-            }],
-            decisions: vec![
-                argus_protocol::Decision {
-                    id: 1,
-                    parent: None,
-                    at: 0,
-                    session: None,
-                    checkout: None,
-                    feature: Some("focus".into()),
-                    chose: "Use the focused decision layout".into(),
-                    over: Some("the permanently verbose layout".into()),
-                    because: Some(
-                        "The full decision reasoning appears only while this decision is focused and "
-                            .to_string()
-                            + "decision rationale remains visible after wrapping.",
-                    ),
-                    superseded_by: None,
-                    withdrawn_at: None,
-                },
-                argus_protocol::Decision {
-                    id: 2,
-                    parent: None,
-                    at: 0,
-                    session: None,
-                    checkout: None,
-                    feature: Some("focus".into()),
-                    chose: "Keep the second decision compact".into(),
-                    over: None,
-                    because: None,
-                    superseded_by: None,
-                    withdrawn_at: None,
-                },
-            ],
-        },
-    )));
-    app.open_view(View::Feature);
-    app.on_server_msg(argus_protocol::ServerMsg::Tasks(Box::new(
-        argus_protocol::TaskList {
-            project_name: "argus".into(),
-            feature: Some("focus".into()),
-            tasks: vec![
-                argus_protocol::Task {
-                    id: 1,
-                    feature: "focus".into(),
-                    parent: None,
-                    title: "Carry the parser through the complete resize boundary".into(),
-                    body: Some(
-                        "The full task description appears only while this task is focused and "
-                            .to_string()
-                            + "task prose is visible after wrapping.",
-                    ),
-                    state: argus_protocol::TaskState::Todo,
-                    claimed_by: None,
-                    external: None,
-                    position: 0,
-                    at: 0,
-                    session: None,
-                },
-                argus_protocol::Task {
-                    id: 2,
-                    feature: "focus".into(),
-                    parent: None,
-                    title: "second".into(),
-                    body: None,
-                    state: argus_protocol::TaskState::Todo,
-                    claimed_by: None,
-                    external: None,
-                    position: 1,
-                    at: 0,
-                    session: None,
-                },
-            ],
-        },
-    )));
-    app
+fn press(app: &mut App, c: char) {
+    app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
 }
 
-#[test]
-fn focused_feature_rows_show_wrapped_text_without_expanding_every_row() {
-    let mut app = feature_document_with_long_rows();
-    let compact = lines(&draw_at(&mut app, 80, 96)).join("\n");
-    assert!(!compact.contains("full task description"), "{compact}");
-    assert!(!compact.contains("full decision reasoning"), "{compact}");
-    assert!(!compact.contains("permanently verbose"), "{compact}");
+fn key(app: &mut App, code: KeyCode) {
+    app.on_key(KeyEvent::new(code, KeyModifiers::NONE));
+}
 
-    let tasks = app.layout.feature_tasks.inner;
-    click(&mut app, tasks.x + 1, tasks.y);
-    let focused_task_lines = lines(&draw_at(&mut app, 80, 96));
-    let focused_task = focused_task_lines.join("\n");
-    assert!(focused_task.contains("boundary"), "{focused_task}");
-    assert!(
-        focused_task.contains("task prose")
-            && focused_task.contains("visible after")
-            && focused_task.contains("wrapping"),
-        "{focused_task}"
-    );
+fn type_in(app: &mut App, text: &str) {
+    text.chars().for_each(|c| press(app, c));
+}
 
-    let second_task_y = focused_task_lines
+fn screen(app: &mut App) -> String {
+    lines(&draw_at(app, 170, 44)).join("\n")
+}
+
+fn sent(rx: &mut tokio::sync::mpsc::UnboundedReceiver<ClientMsg>) -> Vec<ClientMsg> {
+    std::iter::from_fn(|| rx.try_recv().ok()).collect()
+}
+
+/// The stage inside feature #7, with the messages opening it sent cleared.
+fn reading() -> (App, tokio::sync::mpsc::UnboundedReceiver<ClientMsg>) {
+    let (mut app, mut rx) = feature_stage();
+    key(&mut app, KeyCode::Enter);
+    sent(&mut rx);
+    (app, rx)
+}
+
+fn select(app: &mut App, at: WorkRef) {
+    let row = app
+        .outline()
+        .rows
         .iter()
-        .position(|line| line.contains("second"))
-        .expect("the compact task remains visible") as u16;
-    click(&mut app, tasks.x + 1, second_task_y);
-    assert_eq!(app.task_sel, 1, "clicking past an expanded task selects the row");
+        .position(|row| row.at == at)
+        .expect("the row is in the outline");
+    app.work_sel = row;
+}
 
-    draw_at(&mut app, 80, 96);
-    app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-    app.on_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE));
-    app.decision_sel = 0;
-    let focused_decision_lines = lines(&draw_at(&mut app, 80, 96));
-    let focused_decision = focused_decision_lines.join("\n");
-    assert!(
-        focused_decision.contains("rationale")
-            && focused_decision.contains("remains")
-            && focused_decision.contains("visible")
-            && focused_decision.contains("wrapping"),
-        "{focused_decision}"
-    );
-    assert_eq!(app.panel, FeaturePanel::Decisions);
-    app.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+#[test]
+#[ignore = "prints each screen of the stage: cargo test -p argus dump_feature_stage -- --ignored --nocapture"]
+fn dump_feature_stage() {
+    let (mut app, _rx) = feature_stage();
+    println!("{}\n", screen(&mut app));
+    key(&mut app, KeyCode::Enter);
+    select(&mut app, WorkRef::Task(8));
+    println!("{}\n", screen(&mut app));
+    press(&mut app, '2');
+    app.decision_sel = 2;
+    println!("{}\n", screen(&mut app));
+    press(&mut app, '3');
+    println!("{}\n", screen(&mut app));
+    key(&mut app, KeyCode::Esc);
+    press(&mut app, 'a');
+    type_in(&mut app, "The ratatui bump");
+    key(&mut app, KeyCode::Enter);
+    type_in(&mut app, "- Bump ratatui");
+    key(&mut app, KeyCode::Enter);
+    key(&mut app, KeyCode::Tab);
+    type_in(&mut app, "- Fix what breaks");
+    println!("{}\n", screen(&mut app));
+}
+
+// ---- the index -----------------------------------------------------------
+
+#[test]
+fn the_index_groups_features_by_how_they_stand() {
+    let (mut app, _rx) = feature_stage();
+
+    let text = screen(&mut app);
+
+    let at = |needle: &str| text.find(needle).unwrap_or_else(|| panic!("missing {needle}:\n{text}"));
+    assert!(at("ACTIVE") < at("Trim Argus context injection"));
+    assert!(at("Trim Argus context injection") < at("QUEUED"));
+    assert!(at("QUEUED") < at("The ratatui 0.30 bump"));
+    assert!(at("The ratatui 0.30 bump") < at("DONE"));
+    assert!(text.contains("Features in orion"), "{text}");
+    assert!(text.contains("1 active · 1 queued · 1 done"), "{text}");
+}
+
+#[test]
+fn a_feature_row_says_its_number_progress_open_questions_branch_and_pane() {
+    let (mut app, _rx) = feature_stage();
+
+    // Where and who are the first columns a narrow list gives up.
+    let text = lines(&draw_at(&mut app, 230, 44)).join("\n");
+    let row = text
+        .lines()
+        .find(|line| line.contains("Trim Argus context injection") && line.contains("#7"))
+        .unwrap_or_else(|| panic!("{text}"));
+
+    assert!(row.contains("4/10"), "{row}");
+    assert!(row.contains("1 open"), "{row}");
+    assert!(row.contains("master"), "{row}");
+    assert!(row.contains("#100"), "{row}");
+    assert!(text.contains("after #7"), "what a queued feature waits on:\n{text}");
+}
+
+#[test]
+fn how_a_feature_stands_is_read_off_its_tasks_its_panes_and_what_it_waits_on() {
+    let (app, _rx) = feature_stage();
+
+    let standing: Vec<(i64, Standing)> = app
+        .feature_rows()
+        .iter()
+        .map(|row| (row.number, row.standing))
+        .collect();
+
     assert_eq!(
-        app.decision_sel, 1,
-        "moving past an expanded decision selects the next row"
+        standing,
+        [(7, Standing::Active), (8, Standing::Queued), (6, Standing::Done)]
     );
 }
 
 #[test]
-fn feature_decisions_show_tree_guides_and_right_aligned_ids() {
-    let mut app = command_center();
-    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(
-        argus_protocol::DecisionBoard {
-            project: None,
-            name: "argus".into(),
-            features: vec![argus_protocol::Feature {
-                slug: "tree".into(),
-                title: "Tree".into(),
-                body: String::new(),
-                origin_checkout: None,
-                origin_branch: Some("main".into()),
-                at: 0,
-                session: None,
-                state: argus_protocol::FeatureState::Open,
-                checkouts: Vec::new(),
-                tasks: Default::default(),
-                held: None,
-                waits_on: Vec::new(),
-            }],
-            decisions: vec![
-                argus_protocol::Decision {
-                    id: 10,
-                    parent: None,
-                    at: 0,
-                    session: None,
-                    checkout: None,
-                    feature: Some("tree".into()),
-                    chose: "root decision".into(),
-                    over: None,
-                    because: None,
-                    superseded_by: None,
-                    withdrawn_at: None,
-                },
-                argus_protocol::Decision {
-                    id: 11,
-                    parent: Some(10),
-                    at: 0,
-                    session: None,
-                    checkout: None,
-                    feature: Some("tree".into()),
-                    chose: "child decision".into(),
-                    over: None,
-                    because: None,
-                    superseded_by: None,
-                    withdrawn_at: None,
-                },
-            ],
-        },
-    )));
-    app.open_view(View::Feature);
-    let text = lines(&draw_at(&mut app, 80, 40)).join("\n");
+fn the_peek_shows_what_needs_you_what_is_in_flight_and_the_last_decision() {
+    let (mut app, _rx) = feature_stage();
+
+    let text = screen(&mut app);
+
+    for landmark in ["PEEK", "NEXT", "NEEDS YOU", "IN FLIGHT", "LAST DECIDED"] {
+        assert!(text.contains(landmark), "missing {landmark}:\n{text}");
+    }
+    assert!(text.contains("D3 How much decision history"), "{text}");
+    assert!(text.contains("D2.1 The route lives in the pane API"), "{text}");
+}
+
+#[test]
+fn held_and_archived_features_are_folded_until_z() {
+    let (mut app, _rx) = feature_stage();
+    let board = app.board.as_mut().unwrap();
+    board.features[0].state = FeatureState::Done;
+    board.features[2].held = Some("until the release".into());
+    app.rescope_feature();
+
+    assert_eq!(app.feature_rows().len(), 1);
+    assert!(screen(&mut app).contains("held and archived features are folded"));
+
+    press(&mut app, 'z');
+
+    let text = screen(&mut app);
+    assert_eq!(app.feature_rows().len(), 3);
+    assert!(text.contains("HELD") && text.contains("ARCHIVED"), "{text}");
+    assert_eq!(app.feature_slug().as_deref(), Some("trim"), "the cursor stays on its feature");
+}
+
+#[test]
+fn v_archives_the_feature_and_brings_an_archived_one_back() {
+    let (mut app, mut rx) = feature_stage();
+    sent(&mut rx);
+
+    press(&mut app, 'v');
+
+    assert!(matches!(
+        sent(&mut rx).as_slice(),
+        [ClientMsg::MoveFeature { slug, state: FeatureState::Done, .. }] if slug == "trim"
+    ));
+}
+
+#[test]
+fn a_repository_with_no_features_says_what_one_is_and_how_to_start_one() {
+    let (mut app, _rx) = feature_stage();
+    app.board.as_mut().unwrap().features.clear();
+    app.rescope_feature();
+
+    let text = screen(&mut app);
+
+    assert!(text.contains("No features in orion yet."), "{text}");
+    assert!(text.contains("Start a feature"), "{text}");
+    assert!(text.contains("WHAT IT HOLDS"), "{text}");
+}
+
+#[test]
+fn a_board_for_another_project_is_dropped_rather_than_drawn() {
+    let (mut app, _rx) = feature_stage();
+    let mut board = feature_board(None);
+    board.name = "elsewhere".into();
+    board.features.truncate(1);
+
+    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(board)));
+
+    assert_eq!(app.board.as_ref().unwrap().features.len(), 3);
+}
+
+// ---- levels ----------------------------------------------------------------
+
+#[test]
+fn enter_opens_a_feature_and_escape_climbs_one_level_at_a_time() {
+    let (mut app, _rx) = feature_stage();
+
+    key(&mut app, KeyCode::Enter);
+    assert!(app.feature_open);
+    select(&mut app, WorkRef::Task(8));
+    key(&mut app, KeyCode::Tab);
+    assert!(app.in_detail);
+
+    key(&mut app, KeyCode::Esc);
+    assert!(!app.in_detail && app.feature_open);
+    key(&mut app, KeyCode::Esc);
+    assert!(!app.feature_open && app.view == View::Feature);
+    key(&mut app, KeyCode::Esc);
+    assert_eq!(app.view, View::Workspace);
+}
+
+#[test]
+fn the_breadcrumb_names_the_feature_the_lens_and_the_row_under_the_cursor() {
+    let (mut app, _rx) = reading();
+    select(&mut app, WorkRef::Task(8));
+
+    let text = screen(&mut app);
+
     assert!(
-        text.contains('◇') && text.contains("root dec"),
-        "root decisions should show the root mark:\n{text}"
+        text.contains("orion › #7 Trim Argus context injection › work › 2 Serve the brief on demand › 2.2"),
+        "{text}"
     );
-    assert!(
-        text.contains('└') && text.contains("child dec"),
-        "nested decisions should render branch guides:\n{text}"
-    );
-    for line in text.lines().filter(|line| line.contains("decision")) {
-        let row = line.split('│').next_back().unwrap_or(line).trim();
-        let Some(hash) = row.rfind('#') else {
-            continue;
-        };
-        let id_tail = row[hash + 1..].trim();
-        assert!(
-            !id_tail.is_empty() && id_tail.chars().all(|c| c.is_ascii_digit()),
-            "decision id should sit on the right: {row:?}"
-        );
+    assert!(text.contains("esc up one level"), "{text}");
+}
+
+#[test]
+fn digits_switch_lenses_inside_a_feature_and_views_outside_one() {
+    let (mut app, _rx) = reading();
+
+    press(&mut app, '2');
+    assert_eq!((app.view, app.lens), (View::Feature, Lens::Record));
+    press(&mut app, '3');
+    assert_eq!(app.lens, Lens::Flows);
+
+    key(&mut app, KeyCode::Esc);
+    press(&mut app, '3');
+    assert_eq!(app.view, View::Panes);
+}
+
+#[test]
+fn the_heading_says_how_the_feature_stands_and_how_far_along_it_is() {
+    let (mut app, _rx) = reading();
+
+    let text = screen(&mut app);
+
+    assert!(text.contains("◐ ACTIVE · master · pane #100"), "{text}");
+    assert!(text.contains("4 of 10 tasks · 4 decided · 1 open"), "{text}");
+    assert!(text.contains("1 work  2 record  3 flows"), "{text}");
+    assert!(text.contains("The session-start hook prints the whole brief"), "{text}");
+}
+
+// ---- the work lens -----------------------------------------------------------
+
+#[test]
+fn the_outline_numbers_tasks_and_hangs_decisions_under_the_task_that_raised_them() {
+    let (mut app, _rx) = reading();
+
+    let text = screen(&mut app);
+    let at = |needle: &str| text.find(needle).unwrap_or_else(|| panic!("missing {needle}:\n{text}"));
+
+    assert!(at("2.3 Refuse when the pane has no feature") < at("D2   The brief travels through the daemon"));
+    assert!(at("D2   The brief travels") < at("D2.1 The route lives"));
+    assert!(at("D3   How much decision history") < at("3.1 Implement the cap"));
+    let question = text.lines().find(|line| line.contains("D3   How much")).unwrap();
+    assert!(question.contains("NEEDS YOU"), "{question}");
+}
+
+#[test]
+fn a_task_under_an_open_decision_says_what_it_waits_on() {
+    let (mut app, _rx) = reading();
+
+    let text = screen(&mut app);
+    let held = text.lines().find(|line| line.contains("Implement the cap")).unwrap();
+    let holder = text.lines().find(|line| line.contains("Cap the decision history")).unwrap();
+
+    assert!(held.contains("⊘") && held.contains("waits on D3"), "{held}");
+    assert!(!holder.contains("waits on"), "{holder}");
+}
+
+#[test]
+fn the_selected_task_is_read_whole_beside_the_outline() {
+    let (mut app, _rx) = reading();
+    select(&mut app, WorkRef::Task(8));
+
+    let text = screen(&mut app);
+
+    for landmark in [
+        "2.2 · under 2 Serve the brief on demand",
+        "in progress · pane #100",
+        "DESCRIPTION",
+        "DONE WHEN",
+        "✓ The hook's request uses the route from 2.1",
+        "○ No path to the brief file",
+        "BOUND BY",
+        "NOTES",
+        "pane #100  route answers; wiring the hook",
+        "you  keep the refusal case for 2.3",
+    ] {
+        assert!(text.contains(landmark), "missing {landmark}:\n{text}");
+    }
+    let bound = &text[text.find("BOUND BY").unwrap()..text.find("NOTES").unwrap()];
+    assert!(bound.contains("D2 ") && bound.contains("D2.1"), "{bound}");
+    assert!(!bound.contains("D2.2"), "a rejected decision binds nothing:\n{bound}");
+}
+
+#[test]
+fn h_folds_a_task_and_l_opens_it_again() {
+    let (mut app, _rx) = reading();
+    select(&mut app, WorkRef::Task(2));
+    let open = app.outline().rows.len();
+
+    press(&mut app, 'h');
+
+    let text = screen(&mut app);
+    assert!(app.outline().rows.len() < open);
+    assert!(text.contains("▸"), "{text}");
+    assert!(!text.contains("Refuse when the pane has no feature"), "{text}");
+    let folded = text.lines().find(|line| line.contains("Serve the brief on demand") && line.contains("▸")).unwrap();
+    assert!(folded.contains("3 decisions") && folded.contains("1/3"), "{folded}");
+
+    press(&mut app, 'l');
+    assert_eq!(app.outline().rows.len(), open);
+}
+
+#[test]
+fn space_marks_a_task_done_and_in_the_detail_checks_a_criterion() {
+    let (mut app, mut rx) = reading();
+    select(&mut app, WorkRef::Task(8));
+
+    press(&mut app, ' ');
+    assert!(matches!(
+        sent(&mut rx).as_slice(),
+        [ClientMsg::Task { action: TaskAction::Move { id: 8, state: TaskState::Done }, .. }]
+    ));
+
+    key(&mut app, KeyCode::Tab);
+    press(&mut app, 'j');
+    press(&mut app, ' ');
+    assert!(matches!(
+        sent(&mut rx).as_slice(),
+        [ClientMsg::Task { action: TaskAction::SetCriterion { id: 8, index: 1, done: true }, .. }]
+    ));
+}
+
+#[test]
+fn a_task_a_criterion_and_a_note_are_each_typed_on_the_last_row() {
+    let (mut app, mut rx) = reading();
+    select(&mut app, WorkRef::Task(8));
+
+    press(&mut app, 'c');
+    type_in(&mut app, "a test covers it");
+    assert!(screen(&mut app).contains("done when a test covers it_"));
+    key(&mut app, KeyCode::Enter);
+    press(&mut app, 'n');
+    type_in(&mut app, "halfway");
+    key(&mut app, KeyCode::Enter);
+    press(&mut app, 's');
+    type_in(&mut app, "wire it");
+    key(&mut app, KeyCode::Enter);
+
+    let actions: Vec<TaskAction> = sent(&mut rx)
+        .into_iter()
+        .filter_map(|msg| match msg {
+            ClientMsg::Task { action, .. } => Some(action),
+            _ => None,
+        })
+        .collect();
+    assert!(matches!(&actions[0], TaskAction::AddCriterion { id: 8, text } if text == "a test covers it"));
+    assert!(matches!(&actions[1], TaskAction::Note { id: 8, text } if text == "halfway"));
+    assert!(matches!(&actions[2], TaskAction::Add(write) if write.parent == Some(8) && write.title == "wire it"));
+}
+
+#[test]
+fn escape_abandons_the_line_rather_than_the_level() {
+    let (mut app, mut rx) = reading();
+
+    press(&mut app, 'a');
+    type_in(&mut app, "half a thou");
+    key(&mut app, KeyCode::Esc);
+
+    assert!(app.line.is_none() && app.feature_open);
+    assert!(sent(&mut rx).is_empty());
+}
+
+#[test]
+fn a_decision_typed_on_a_task_is_raised_under_it_and_a_question_mark_leaves_it_open() {
+    let (mut app, mut rx) = reading();
+    select(&mut app, WorkRef::Task(9));
+
+    press(&mut app, 'd');
+    type_in(&mut app, "? refuse or answer empty");
+    key(&mut app, KeyCode::Enter);
+
+    let msgs = sent(&mut rx);
+    let [ClientMsg::Decide { feature, write, .. }] = msgs.as_slice() else {
+        panic!("{msgs:?}");
+    };
+    assert_eq!(feature, "trim");
+    assert_eq!(write.chose, "refuse or answer empty");
+    assert_eq!((write.state, write.task), (DecisionState::Open, Some(9)));
+}
+
+#[test]
+fn a_tasks_changes_are_asked_of_the_daemon_and_not_predicted() {
+    let (mut app, mut rx) = reading();
+    select(&mut app, WorkRef::Task(8));
+
+    press(&mut app, 'L');
+
+    assert!(matches!(
+        sent(&mut rx).as_slice(),
+        [ClientMsg::Task { action: TaskAction::Move { id: 8, state: TaskState::Done }, .. }]
+    ));
+    assert_eq!(app.selected_task().unwrap().state, TaskState::Doing);
+}
+
+#[test]
+fn the_cursor_stays_on_its_row_when_the_tasks_under_it_are_replaced() {
+    let (mut app, _rx) = reading();
+    select(&mut app, WorkRef::Task(9));
+    let mut list = feature_tasks();
+    list.tasks.retain(|task| task.id != 7);
+
+    app.on_server_msg(argus_protocol::ServerMsg::Tasks(Box::new(list)));
+
+    assert_eq!(app.selected_work(), Some(WorkRef::Task(9)));
+}
+
+#[test]
+fn a_new_feature_offers_the_keys_that_put_the_first_thing_in_it() {
+    let (mut app, _rx) = reading();
+    let board = app.board.as_mut().unwrap();
+    board.decisions.clear();
+    board.features[1].body.clear();
+    board.features[1].tasks = Default::default();
+    board.features[1].checkouts.clear();
+    app.tasks.as_mut().unwrap().tasks.clear();
+    app.rescope_feature();
+
+    let text = screen(&mut app);
+
+    assert!(text.contains("○ NEW"), "{text}");
+    assert!(text.contains("no description yet"), "{text}");
+    assert!(text.contains("no tasks · no decisions"), "{text}");
+    for offer in ["Add the first task", "Record a decision", "Write the description", "Write it all as one note"] {
+        assert!(text.contains(offer), "missing {offer}:\n{text}");
     }
 }
 
+// ---- the record lens -----------------------------------------------------------
+
 #[test]
-fn focused_decision_keeps_id_on_the_right() {
-    let mut app = feature_document_with_long_rows();
-    let decisions = app.layout.feature_decisions.inner;
-    click(&mut app, decisions.x + 1, decisions.y);
-    let width = decisions.width as usize;
-    for line in lines(&draw_at(&mut app, 80, 60)) {
-        if !line.contains('#') {
-            continue;
-        }
-        let visible: String = line.chars().take(width).collect();
-        if visible.contains("no alternative") {
-            let trimmed = visible.trim_end();
-            assert!(
-                trimmed.ends_with('1') || trimmed.ends_with("#    1"),
-                "decision id should stay right-aligned on the detail row: {visible:?}"
-            );
-        }
-    }
+fn the_record_lists_every_decision_as_a_tree_with_how_it_stands() {
+    let (mut app, _rx) = reading();
+    press(&mut app, '2');
+
+    let text = screen(&mut app);
+    let line = |needle: &str| {
+        text.lines()
+            .find(|line| line.contains(needle))
+            .unwrap_or_else(|| panic!("missing {needle}:\n{text}"))
+            .to_string()
+    };
+
+    assert!(line("D1.1 The name line").contains("└"));
+    assert!(line("D2.1 The route lives").contains("├"));
+    assert!(line("D2.2 Hook reads the brief file directly").contains("rejected"));
+    assert!(line("D3   How much decision history").contains("open"));
+    assert!(text.contains("in the order they were made"), "{text}");
 }
 
 #[test]
-fn focused_task_keeps_id_on_the_right() {
-    let mut app = feature_document_with_long_rows();
-    let tasks = app.layout.feature_tasks.inner;
-    click(&mut app, tasks.x + 1, tasks.y);
-    let width = tasks.width as usize;
-    for line in lines(&draw_at(&mut app, 80, 60)) {
-        if !line.contains('#') {
-            continue;
+fn a_decision_reads_as_a_record() {
+    let (mut app, _rx) = reading();
+    press(&mut app, '2');
+    app.decision_sel = 2;
+
+    let text = screen(&mut app);
+
+    for landmark in [
+        "D2 ACCEPTED",
+        "raised under task 2 · by you",
+        "CONTEXT",
+        "DECISION",
+        "WHY",
+        "CONSEQUENCES",
+        "+ One contract for the brief",
+        "− A pane with no feature needs a refusal",
+        "CONSIDERED",
+        "rejected: the second contract",
+        "CARRIED OUT BY",
+        "2.2 argus-hook reads the brief through the daemon",
+    ] {
+        assert!(text.contains(landmark), "missing {landmark}:\n{text}");
+    }
+    assert!(text.contains("› record › D2"), "{text}");
+}
+
+#[test]
+fn an_open_decision_is_answered_by_taking_one_of_its_options() {
+    let (mut app, mut rx) = reading();
+    press(&mut app, '2');
+    app.decision_sel = 5;
+    assert!(screen(&mut app).contains("OPTIONS"));
+
+    key(&mut app, KeyCode::Tab);
+    press(&mut app, 'j');
+    key(&mut app, KeyCode::Enter);
+
+    assert!(matches!(
+        sent(&mut rx).as_slice(),
+        [ClientMsg::ChangeDecision { change: DecisionChange::Resolve { id: 6, answer, .. }, .. }]
+            if answer == "The last ten"
+    ));
+}
+
+#[test]
+fn a_sub_decision_and_a_supersession_name_the_decision_under_the_cursor() {
+    let (mut app, mut rx) = reading();
+    press(&mut app, '2');
+    app.decision_sel = 2;
+
+    press(&mut app, 's');
+    type_in(&mut app, "~ poll the file");
+    key(&mut app, KeyCode::Enter);
+    press(&mut app, 'u');
+    type_in(&mut app, "the brief is pushed");
+    key(&mut app, KeyCode::Enter);
+
+    let writes: Vec<_> = sent(&mut rx)
+        .into_iter()
+        .filter_map(|msg| match msg {
+            ClientMsg::Decide { write, .. } => Some(write),
+            _ => None,
+        })
+        .collect();
+    assert_eq!((writes[0].under, writes[0].state), (Some(3), DecisionState::Rejected));
+    assert_eq!(writes[0].chose, "poll the file");
+    assert_eq!((writes[1].supersedes, writes[1].under), (Some(3), None));
+}
+
+#[test]
+fn a_decision_is_withdrawn_rather_than_removed_and_x_again_restores_it() {
+    let (mut app, mut rx) = reading();
+    press(&mut app, '2');
+
+    press(&mut app, 'x');
+    assert!(matches!(
+        sent(&mut rx).as_slice(),
+        [ClientMsg::ChangeDecision { change: DecisionChange::Withdraw { id: 1 }, .. }]
+    ));
+
+    app.board.as_mut().unwrap().decisions[0].withdrawn_at = Some(9);
+    app.rescope_feature();
+    sent(&mut rx);
+    press(&mut app, 'x');
+    assert!(matches!(
+        sent(&mut rx).as_slice(),
+        [ClientMsg::ChangeDecision { change: DecisionChange::Restore { id: 1 }, .. }]
+    ));
+}
+
+#[test]
+fn e_opens_a_decision_as_its_record_and_saving_rewrites_it() {
+    let (mut app, mut rx) = reading();
+    press(&mut app, '2');
+    app.decision_sel = 2;
+
+    press(&mut app, 'e');
+    let body = app.brief.as_ref().expect("the record is open").body();
+    assert!(body.starts_with("The brief travels through the daemon\n\n## Context\n"), "{body}");
+    assert!(body.contains("## Considered"), "an empty section is offered to be filled:\n{body}");
+    press(&mut app, 'o');
+    type_in(&mut app, "x");
+    key(&mut app, KeyCode::Esc);
+
+    let msgs = sent(&mut rx);
+    assert!(
+        matches!(
+            msgs.as_slice(),
+            [ClientMsg::ChangeDecision { change: DecisionChange::Rewrite { id: 3, text }, .. }]
+                if text.chose == "The brief travels through the daemon" && text.consequences.len() == 2
+        ),
+        "{msgs:?}"
+    );
+}
+
+#[test]
+fn y_copies_the_decision_as_adr_markdown() {
+    fn keep(_: &str) -> bool {
+        true
+    }
+    let (mut app, _rx) = reading();
+    app.clipboard_write = keep;
+    press(&mut app, '2');
+
+    press(&mut app, 'y');
+
+    assert_eq!(app.status, "copied as ADR markdown");
+}
+
+// ---- the flows lens ------------------------------------------------------------
+
+#[test]
+fn a_flow_is_listed_as_steps_beside_its_diagram() {
+    let (mut app, _rx) = reading();
+    press(&mut app, '3');
+
+    let text = screen(&mut app);
+
+    assert!(text.contains("Brief on demand"), "{text}");
+    assert!(text.contains("4 steps · 1 branch"), "{text}");
+    assert!(text.contains("agent → hook"), "{text}");
+    assert!(text.contains("else the pane has no feature"), "{text}");
+    assert!(text.contains("BRIEF ON DEMAND"), "{text}");
+    assert!(text.contains("› flows › Brief on demand › step 1"), "{text}");
+}
+
+#[test]
+fn j_steps_through_a_flow_past_its_branch_lines() {
+    let (mut app, _rx) = reading();
+    press(&mut app, '3');
+
+    for _ in 0..9 {
+        press(&mut app, 'j');
+    }
+
+    assert_eq!(app.step_sel, 3, "four steps, and the branch line is not one");
+    assert!(screen(&mut app).contains("› step 4"));
+}
+
+// ---- writing a feature as one note ------------------------------------------------
+
+#[test]
+fn a_feature_is_written_as_one_note_and_sent_whole() {
+    let (mut app, mut rx) = feature_stage();
+    sent(&mut rx);
+
+    press(&mut app, 'a');
+    type_in(&mut app, "Ship the cap");
+    key(&mut app, KeyCode::Enter);
+    type_in(&mut app, "- Bump it");
+    key(&mut app, KeyCode::Enter);
+    key(&mut app, KeyCode::Tab);
+    type_in(&mut app, "- Fix what breaks");
+    key(&mut app, KeyCode::Enter);
+    key(&mut app, KeyCode::BackTab);
+    type_in(&mut app, "? Same release");
+    let text = screen(&mut app);
+    assert!(text.contains("READS AS") && text.contains("ready to create"), "{text}");
+    assert!(text.contains("1.1  Fix what breaks"), "{text}");
+    assert!(text.contains("orion › features › new"), "{text}");
+    app.on_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+
+    let msgs = sent(&mut rx);
+    let [ClientMsg::CaptureFeature { into: None, capture, .. }] = msgs.as_slice() else {
+        panic!("{msgs:?}");
+    };
+    assert_eq!(capture.title, "Ship the cap");
+    assert_eq!(capture.tasks[0].subtasks[0].title, "Fix what breaks");
+    assert!(capture.decisions[0].open);
+    assert!(app.capture.is_none());
+}
+
+#[test]
+fn a_note_that_does_not_read_is_kept_open_and_says_why() {
+    let (mut app, mut rx) = feature_stage();
+    sent(&mut rx);
+    press(&mut app, 'a');
+
+    app.on_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+
+    assert!(app.capture.is_some());
+    assert!(sent(&mut rx).is_empty());
+    assert_eq!(app.status, "a feature has to have a title");
+}
+
+#[test]
+fn typing_a_note_does_not_work_the_stage_underneath() {
+    let (mut app, mut rx) = feature_stage();
+    sent(&mut rx);
+    press(&mut app, 'a');
+
+    type_in(&mut app, "vxq2");
+
+    assert_eq!(app.capture.as_ref().unwrap().body(), "vxq2");
+    assert!(sent(&mut rx).is_empty());
+    assert_eq!(app.view, View::Feature);
+}
+
+#[test]
+fn i_writes_more_of_an_open_feature_as_a_note() {
+    let (mut app, mut rx) = reading();
+
+    press(&mut app, 'i');
+    type_in(&mut app, "- one more task");
+    app.on_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+
+    assert!(matches!(
+        sent(&mut rx).as_slice(),
+        [ClientMsg::CaptureFeature { into: Some(slug), capture, .. }]
+            if slug == "trim" && capture.tasks.len() == 1
+    ));
+}
+
+// ---- the bar, the mouse, and small frames -------------------------------------------
+
+#[test]
+fn the_bar_offers_the_keys_of_the_level_the_stage_is_on() {
+    let (mut app, _rx) = feature_stage();
+    assert!(bar(&draw_at(&mut app, 240, 30)).contains("v archive"));
+
+    key(&mut app, KeyCode::Enter);
+    let work = bar(&draw_at(&mut app, 240, 30));
+    assert!(work.contains("h/l fold") && !work.contains("v archive"), "{work}");
+
+    press(&mut app, '2');
+    assert!(bar(&draw_at(&mut app, 240, 30)).contains("u supersede"));
+}
+
+#[test]
+fn a_click_selects_a_feature_and_a_second_opens_it() {
+    let (mut app, _rx) = feature_stage();
+    let buf = draw_at(&mut app, 170, 44);
+    let row = row_of(&buf, "The ratatui 0.30 bump").expect("the queued feature is drawn");
+    let click = |app: &mut App| {
+        app.on_mouse(crossterm::event::MouseEvent {
+            kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+            column: app.layout.features.inner.x + 10,
+            row,
+            modifiers: KeyModifiers::NONE,
+        })
+    };
+
+    click(&mut app);
+    assert_eq!(app.feature_slug().as_deref(), Some("ratatui"));
+    assert!(!app.feature_open);
+
+    click(&mut app);
+    assert!(app.feature_open);
+}
+
+#[test]
+fn a_click_on_a_lens_opens_it() {
+    let (mut app, _rx) = reading();
+    draw_at(&mut app, 170, 44);
+    let strip = app.layout.feature_lenses.inner;
+
+    app.on_mouse(crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        column: strip.right() - 2,
+        row: strip.y,
+        modifiers: KeyModifiers::NONE,
+    });
+
+    assert_eq!(app.lens, Lens::Flows);
+}
+
+#[test]
+fn a_stage_too_small_for_two_columns_still_draws_without_panicking() {
+    for (w, h) in [(60, 8), (80, 12), (100, 6), (30, 3)] {
+        let (mut app, _rx) = reading();
+        for lens in ['1', '2', '3'] {
+            press(&mut app, lens);
+            draw_at(&mut app, w, h);
         }
-        let visible: String = line.chars().take(width).collect();
-        if visible.contains("#") && visible.contains("1") {
-            let trimmed = visible.trim_end();
-            assert!(
-                trimmed.ends_with('1') || trimmed.ends_with("#1"),
-                "task id should stay right-aligned when expanded: {visible:?}"
-            );
-        }
+        key(&mut app, KeyCode::Esc);
+        draw_at(&mut app, w, h);
+        press(&mut app, 'a');
+        draw_at(&mut app, w, h);
     }
 }

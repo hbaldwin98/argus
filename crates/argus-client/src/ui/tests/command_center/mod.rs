@@ -6,7 +6,6 @@ mod panes;
 mod rail;
 
 use super::*;
-use crate::app::FeaturePanel;
 
 fn command_center() -> App {
     app_with_tree()

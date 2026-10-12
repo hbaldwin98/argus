@@ -143,36 +143,34 @@ impl App {
             if self.view != View::Feature {
                 return;
             }
+            let at = |panel: Panel| in_rect(panel.outer, ev.column, ev.row);
             match ev.kind {
                 MouseEventKind::Down(MouseButton::Left) => {
                     self.focus = Focus::View;
-                    let panels = [
-                        (self.layout.features, FeaturePanel::Features),
-                        (self.layout.feature_tasks, FeaturePanel::Tasks),
-                        (self.layout.feature_diagrams, FeaturePanel::Diagrams),
-                        (self.layout.feature_decisions, FeaturePanel::Decisions),
-                    ];
-                    let hit = panels
-                        .into_iter()
-                        .find(|(panel, _)| in_rect(panel.outer, ev.column, ev.row));
-                    let Some((panel, which)) = hit else { return };
-                    let row =
-                        crate::ui::command_center_feature_row_at(self, which, ev.column, ev.row);
-                    // A click in a panel's empty space still moves the
-                    // keys there: the gesture said which panel to be in
-                    // even when it landed past the last row.
-                    match (which, row) {
-                        (FeaturePanel::Features, Some(row)) => {
-                            self.select_feature_row(row + panel.first)
+                    let hit = crate::ui::command_center_feature_hit_at(self, ev.column, ev.row);
+                    match hit {
+                        Some(FeatureHit::Feature(row)) if row == self.feature_sel => {
+                            self.open_selected_feature()
                         }
-                        (FeaturePanel::Tasks, Some(row)) => self.select_task(row + panel.first),
-                        (FeaturePanel::Diagrams, Some(row)) => {
-                            self.select_diagram(row + panel.first)
+                        Some(FeatureHit::Feature(row)) => self.select_feature_row(row),
+                        Some(FeatureHit::Lens(lens)) => self.set_lens(lens),
+                        Some(FeatureHit::Flow(row)) => self.select_diagram(row),
+                        Some(FeatureHit::Row(row)) => {
+                            self.in_detail = false;
+                            match self.lens {
+                                Lens::Work => self.work_sel = row,
+                                Lens::Record => self.decision_sel = row,
+                                Lens::Flows => self.step_sel = row,
+                            }
+                            self.clamp_feature_cursors();
                         }
-                        (FeaturePanel::Decisions, Some(row)) => {
-                            self.select_decision_row(row + panel.first)
+                        // A click in the detail's empty space still moves
+                        // the keys there: the gesture said where to be.
+                        None if at(self.layout.feature_detail) && !self.in_detail => {
+                            self.toggle_detail()
                         }
-                        (which, None) => self.go_to_panel(which),
+                        None if at(self.layout.feature_list) => self.in_detail = false,
+                        None => {}
                     }
                 }
                 MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
@@ -181,23 +179,13 @@ impl App {
                     } else {
                         1
                     };
-                    if in_rect(self.layout.feature_brief.outer, ev.column, ev.row) {
-                        self.feature_brief_scroll =
-                            self.feature_brief_scroll.saturating_add_signed(delta as i16);
-                        return;
+                    // The wheel scrolls the list under it, not whichever
+                    // column last had the keys.
+                    if at(self.layout.feature_list) {
+                        self.in_detail = false;
                     }
-                    // The wheel scrolls the section under it, not whichever
-                    // one last had the keys.
-                    if let Some((_, which)) = [
-                        (self.layout.features, FeaturePanel::Features),
-                        (self.layout.feature_tasks, FeaturePanel::Tasks),
-                        (self.layout.feature_diagrams, FeaturePanel::Diagrams),
-                        (self.layout.feature_decisions, FeaturePanel::Decisions),
-                    ]
-                    .into_iter()
-                    .find(|(panel, _)| in_rect(panel.outer, ev.column, ev.row))
-                    {
-                        self.go_to_panel(which);
+                    if at(self.layout.feature_flows) {
+                        return self.move_flow_selection(delta);
                     }
                     self.move_in_feature(delta);
                 }

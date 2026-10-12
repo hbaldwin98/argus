@@ -181,6 +181,8 @@ live in this crate and a contract written twice drifts in silence.
 | `damage` | what changed on a pane's screen, as runs of cells and regions that scrolled |
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
 | `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
+| `capture` | how one note reads as a feature: its title, brief, tasks and decisions |
+| `adr` | how a decision reads as a record somebody can paste or correct |
 | `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
 
 `argusd` owns PTYs, Git, and everything that outlives a client. Its state is one `Daemon` type
@@ -219,6 +221,7 @@ to the type or its locking.
 | `harness/transcript`, `harness/transcript/claude`, `harness/transcript/codex`, `harness/transcript/cursor`, `harness/transcript/pi` | what a harness's own transcript says, read one line at a time into entries, and how each harness writes its own |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
 | `store/boards`, `store/reviews` | the feature boards and the review comments, as stored |
+| `store/capture` | a whole note written down as a feature, in one transaction |
 | `store/panel`, `store/session` | runtime changes to the panel, and the panes to bring back after a restart |
 | `git`, `diff`, `browse`, `highlight` | the read-only questions asked of a repository |
 | `gitignore` | the repository-local excludes for generated Argus files |
@@ -247,18 +250,23 @@ result of a request; `ui` is a pure function of it.
 | `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
 | `app/awaited` | requests waiting on something the daemon is making, and what to do with it once the tree holds it |
 | `app/server` | what arrives back, and what it does to the selection |
-| `app/views` | which surface the content area holds, and the one feature selection everything on it is read at |
+| `app/views` | which surface the content area holds, and the fetches opening one makes |
+| `app/feature` | where the Feature stage is — the index, a feature on a lens, the row under the cursor — and how the keys move between them |
+| `app/board_writes` | what the Feature stage asks the daemon to change: the line or note being typed, and the message each key sends |
 | `ui` | the frame, and where the cursor goes on it |
 | `ui/card` | a card and the rows in it: its frame, one row, and how a list longer than the card scrolls |
 | `ui/command_center` | the HTML-specified shell: where the rail and stage go, the stage heading, the first-run state, and the status vocabulary they share |
 | `ui/command_center/rail` | drawing the rail — its summary, the rows `app/rail` lists, and the live agents — and which row a click lands on |
 | `ui/command_center/workspace`, `ui/command_center/feature`, `ui/command_center/panes`, `ui/command_center/checkouts` | one stage each, with the hit-test that shares its layout |
+| `ui/command_center/feature/index`, `ui/command_center/feature/work`, `ui/command_center/feature/record`, `ui/command_center/feature/flows`, `ui/command_center/feature/capture` | what fills the Feature stage's frame: the index of features, each of the three lenses, and the note a feature is written as |
 | `ui/text` | fitting text to a width |
 | `ui/help`, `ui/prose` | the keymap window, and markdown styled where it stands |
 | `ui/views` | the tab strip naming the four stages, and which tab a click lands on |
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
 | `review`, `history`, `brief`, `dirpicker` | the view state behind each overlay |
 | `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
+| `flow` | the steps a sequence diagram's source says, in the order it says them |
+| `outline` | how a feature's tasks and the decisions raised under them read as one outline: what binds a task, what carries a decision out, what an open one holds up |
 | `grid`, `selection`, `pty_input`, `pty_input/keys`, `pty_input/mouse`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
 | `dropped` | a file dropped on the terminal, recognized in what it pasted |
 | `motion` | animation arithmetic: how far along a transition is at a given instant |
@@ -296,8 +304,8 @@ project name switches projects through a picker. Selecting a repository
 changes the existing daemon-tree selection; the rail owns no parallel workspace model. Workspace
 holds the selected pane's real terminal beneath a flat breadcrumb header. Panes is a responsive
 card overview derived from the same pane locations, Checkouts is an operational table for the
-selected repository, and Feature reads the selected feature as a document of brief, tasks, and
-decisions. The command band follows the active surface.
+selected repository, and Feature lists the repository's features and reads the selected one as work, as a record
+of its decisions, and as flows. The command band follows the active surface.
 
 Switching views changes the stage and nothing else. Every pane keeps running, its subscription
 stands, and the Workspace stage is one keystroke back. Focus moves to the stage while another view
@@ -1289,9 +1297,16 @@ creation, and made unique by suffix inside the transaction — a title someone l
 orphan the decisions under it, and two agents opening the same-sounding feature must not silently
 share one scope. Schema v12 merges older branch-keyed boards into their repository board; colliding
 slugs receive deterministic numeric suffixes while tasks, decisions and events follow them. The
-document is the one part that is edited rather than appended to as
+document is edited rather than appended to as
 a tree: it is prose both sides write, bounded at 8 KiB, because a brief that has outgrown a screen
 has become the design document it was meant to point at.
+
+A slug is what a write names and a **number** is what a person says: `#7`. Schema v19's
+`feature.number` is counted up per board and never handed out twice, so it is not `MAX(number) + 1`
+— removing the newest feature would give its number to the next one, and a `#7` said last week
+would name something else. `feature_counter` holds each board's high-water mark, and the migration
+numbers existing features in the order a board has always listed them, by `at` and then slug.
+`argus-hook feature` and `feature list` print it; every command still takes the slug.
 
 An agent adds to a brief a paragraph at a time — `argus-hook feature note` — and replaces one only on
 purpose, with `feature brief <slug> "<text>"`, which is how a paragraph it appended in error is taken
@@ -1322,9 +1337,16 @@ its brief, then its decision tree, as one answer, since a decision without what 
 explains half of itself. `argus-hook feature list`, `feature open "<title>"`, `feature use <slug>`
 and `feature note "<text>"` are the writes. `argus-hook decisions` reads the same tree alone, and
 `argus-hook decide "<chose>" [--over ...] [--because ...] [--under <id>] [--supersedes <id>]`
-appends to it, answering with the id the next decision hangs off. `argus-hook task` reads the
-current task tree; `task add "<what to do>" [--key <tracker-key>] [--under <id>]` adds a task, and
-the other task verbs change its state, title, brief, or presence.
+appends to it, answering with the id the next decision hangs off; `--context`, `--detail`,
+repeatable `--consequence` and `--task <id>` say the rest of what a decision holds, `--rejected`
+records an answer turned down, and `--open` with repeatable `--option` asks a question instead.
+`decisions resolve <id> "<answer>" [--because ...]` answers one, `decisions show <id>` prints one
+decision as a document and `decisions rewrite <id> --stdin` reads that document back.
+`argus-hook task` reads the current task tree; `task add "<what to do>" [--key <tracker-key>]
+[--under <id>]` adds a task, and the other task verbs change its state, title, brief, criteria,
+notes, or presence. The view writes the same things with `ClientMsg::Decide`,
+`ClientMsg::ChangeDecision` and `ClientMsg::Task`, and after the feature is resolved the two take
+one path, so nothing a person can do to the board is closed to an agent or guarded differently.
 
 Every one of those — `feature`, `task`, `decisions`, `decide`, `diagram` — can name the feature it
 is about with `--feature <slug>`, and `feature <slug>` alone reads one. The checkout's pointer is
@@ -1334,7 +1356,7 @@ named request reads or writes that feature and leaves the pointer where it was. 
 helper, and one the board does not have is refused by name rather than read as naming none. A
 board read by name is about that feature: its decisions, and `current` naming it.
 
-The decision board is append-only. Nothing is ever edited, and there is no delete. A decision that a
+The decision board never loses a row: there is no delete. A decision that a
 later finding invalidates is *superseded*: the replacement is a new row that takes the old one's
 place in the tree — its parent, not its children — and the old row's `superseded_by` records what
 replaced it. The old node stays on the board and the view draws it dimmed, because the road not
@@ -1347,11 +1369,47 @@ again until it is restored — and `--supersedes` and `--under` name only a deci
 feature, since a number from another feature's board is a mistyped one. Decisions recorded before features existed keep a
 NULL `feature` and are reported as unfiled rather than dragged under a feature nobody chose.
 
-There is no policy flag on these writes: the board exists for agents to write, is append-only, and
-attributes every row, so there is nothing for a gate to protect.
+A decision is not always made yet. Schema v19 gives one a `state`: `accepted`, which every row
+written before it reads as; `open`, a question the work is waiting on, whose `chose` is the
+question and whose `options` are the answers being weighed; and `rejected`, an answer turned down
+and kept because it is the road not taken. An open decision is the one thing on the board an agent
+can get wrong by not having read it — from inside the work a question left for a person looks like
+a choice to make — so agents are not spared it the way they are spared a withdrawn one: every read
+carries it with its state, `argus-hook decisions` and `feature` mark it `(open)` under a line saying
+whose it is to answer, and `argus-hook context`, which otherwise only names the feature, lists the
+open questions by id. `DecisionChange::Resolve` answers one: it is refused for anything but a
+question still open, the answer becomes the decision's `detail`, the options not taken become what
+it was chosen `over` unless it already says, and it is accepted. The skill tells agents to raise a
+choice that is the person's as an open decision and to resolve one only on their word; the daemon
+does not enforce who answers, for the reason accepting a feature is not gated.
+
+The same schema lets a decision say more than its name — `context`, `detail` and a list of
+`consequences`, each a gain or a cost — and name the `task` it was raised under, which must be on
+the same feature. That link is what holds a task behind an open question. It is not a foreign key:
+removing the task, or moving it to another feature, clears the link and keeps the decision, since
+what was decided is still true of the feature it was decided about. `DecisionChange::Rewrite`
+replaces a decision's prose and nothing else — not its place, its state, its task or who recorded
+it — under the bounds a new decision is held to, and keeps `options` only on a question. It is how
+a person corrects what a decision says, as they correct a brief; a decision that turned out wrong
+is still superseded, so the board goes on recording what was believed.
+
+`consequences`, `options` and a task's `criteria` are JSON text in a column rather than rows of
+their own: each is a short bounded list read whole with its owner and addressed by place, so a
+table would only add a position to keep dense.
+
+There is no policy flag on these writes: the board exists for agents to write, never loses a row,
+and attributes every one, so there is nothing for a gate to protect.
+
+A person starting a feature has a paragraph, not a title, so the view sends a whole note —
+`ClientMsg::CaptureFeature`, read by `argus_protocol::capture` — and `store/capture` writes it in
+one transaction: the feature, opened exactly as `ClientMsg::OpenFeature` opens one, its tasks
+nested in order, and its decisions, a `?` line open with its options and a `!` line accepted with
+its reason, each under the task it was indented beneath. A refusal at the last row leaves nothing
+behind, not even the number the feature would have had. With `into`, the tasks and decisions are
+added to a feature that exists and its title and brief are left alone.
 
 Clients read the selected checkout's repository board — every feature and every decision in
-that scope — with `ClientMsg::GetDecisions`. Every client artifact request carries both project and
+that scope, each with its number, state and everything else above — with `ClientMsg::GetDecisions`. Every client artifact request carries both project and
 checkout ids; the daemon validates their relationship and resolves the durable board key. Boards are
 pushed with `ServerMsg::Decisions` whenever that scope changes, since a tree is meant to be
 watched being built and the daemon deliberately does not track which view a client has open; a
@@ -1363,62 +1421,101 @@ as unfiled by the daemon, but the feature list offers features only.
 
 ### The feature view
 
-The Feature stage draws the selected checkout's repository features at the top and whichever one
-is selected, whole, beneath them: its brief, the tasks left under it, its sequence diagrams, and
-the decision tree. Tasks can contain subtasks recursively, so newly discovered
-work remains under the task that exposed it instead of becoming an unrelated root. That is the
-order they are read and the order `argus-hook feature` prints them in — a
-decision without what the feature is for explains half of itself, and a task list without either
-says what to do and never why.
+The Feature stage has two levels. Its **index** lists the repository's features grouped by how they
+stand, with the one under the cursor peeked at beside the list: its brief, the task that comes next,
+what is waiting on a person, what is in flight, and the last thing decided. `Enter` opens a feature,
+and inside one the same object is read through three **lenses**: `1` work, `2` record, `3` flows.
+A breadcrumb over the stage says where that is — repository, feature, lens, and the row under the
+cursor with the row it sits under — and `Esc` climbs it one level at a time: out of the detail
+column, out of the feature, and from the index back to the workspace. `q` goes to the workspace
+from anywhere.
 
-It replaced three views. A decision board, a feature board and a task board were the same object
-drawn three times, and each carried a selection of its own: `App` held `board_feature_sel` for the
-decision view's list and a `(column, card)` pair for the board, and the task list resolved the
-card first. Opening the tasks while reading a feature's decisions therefore showed a different
-feature's tasks — whichever card the board was sitting on, which by default was the first of
-`proposed`. One selection is the fix, and there is now exactly one: `feature_sel`, an index into
-the same list every panel is scoped by, so the three cannot disagree about which feature is on
-screen.
+Inside a feature the digits are the lenses, not the views. A lens is where a reader goes next far
+more often than another stage is, and the tab strip still answers to a click; from the index the
+digits open views as they do everywhere else.
 
-The three panels take keys in turn rather than each having their own set. `h` and `l` cross between
-the list and the feature being read — `l` is a direction and stops at the last panel rather than
-wrapping — `Tab` steps through them in the order they are drawn, and `j`/`k` move in whichever has
-them. `a`, `s`, `e` and `x` act on what has the keys: a new feature or root task, a subtask under
-the selected task, the brief or the task's text, remove the feature or drop the task. The decision
-panel refuses both in prose, because
-the board is append-only and agents are what write it. Every panel draws its own selection whether
-or not it has the keys, the way the rail does — the selections are how a reader traces where they
-are, and one that vanished when the keys left would make crossing back a hunt. A line being typed —
-a new feature, task or subtask, or a rewrite — takes the stage's last row, so what is being written
-and what is already there are readable at once.
+It replaced one document of stacked panels, which had itself replaced three views. A decision
+board, a feature board and a task board were the same object drawn three times with a selection
+each, and they disagreed about which feature was on screen. One selection fixed that, and still
+holds: `feature_sel`, an index into the list every lens is scoped by. What the stacked document
+could not do is show how the parts bear on each other — it listed the tasks, then the decisions,
+and left the reader to work out which decision was about which task. The lenses are the answer to
+that, and they all read one link.
 
-The brief takes what its wrapped text needs, and the wheel scrolls what does not fit; the rest is
-one `e` away in the editor. In the panel that has the keys, the selected feature, task, and
-decision grow to their full wrapped text, and the window they scroll in is sized after paying for
-that growth — rounding up there is what let an expanded row start on the last line and run off the
-bottom.
+**That link is `Decision::task`**, the task a decision was raised under, and `outline` reads
+everything else off it rather than storing any of it:
+
+- the **work** lens draws tasks and the decisions they raised as one outline. A decision already
+  made follows the work that carries it out; a question still open leads the work it holds up;
+- a task is **bound by** every standing decision raised under it or under a task above it;
+- a decision is **carried out by** the tasks under the one it was raised under;
+- the tasks beneath a task holding an **open** decision are drawn as waiting on it. The holder is
+  not: it is where the question was asked, and answering it is the work.
+
+A sub-decision is raised where its parent was, and a decision under no task closes the outline,
+since it binds the feature as a whole. Tasks and decisions are named by their place — `2.2`,
+`D2.1` — which is for reading: a write names the row by id, because a place moves when a sibling
+is added.
+
+Each lens is a list with the selected row read whole beside it. For a task that is its
+description, what done means (`Task::criteria`, checked off with `space` from the detail column),
+what binds it, and the notes left on it. For a decision it is a record in the shape of an ADR:
+context, the decision, why, what it costs and buys, what was turned down — the `over` text and any
+child decision in state `rejected` — and what carries it out. `e` opens that record in the brief
+editor as the document `y` copies out (`argus-protocol::adr`), so the sections a reader sees are
+the ones a writer fills in, and saving sends `DecisionChange::Rewrite`. An open decision lists its
+options instead; `Tab` crosses into them and `Enter` takes one, which sends
+`DecisionChange::Resolve`, and `o` answers in words when none fits.
+
+`a`, `s`, `d`, `e` and `x` act on what the cursor is on: a root task, a subtask or sub-decision
+under it, a decision raised under it, a rewrite, and a removal. A decision is never removed — `x`
+withdraws it and `x` again restores it. A line being typed takes the stage's last row, so what is
+being written and what is already there are readable at once; a decision typed there is open when
+it starts with `?`, rejected with `~`, and made otherwise, which is the note grammar's marks.
+
+A new feature is written as **one note** rather than a title and then a task at a time
+(`argus-protocol::capture`). The note is typed on the left and what it reads as is drawn on the
+right — the title, the brief, the numbered tasks, the decisions — so what `Ctrl-S` creates is on
+screen before it is sent, and a line the grammar cannot place is named instead of dropped.
+`ClientMsg::CaptureFeature` writes all of it in one transaction. `i` inside a feature writes more
+of it the same way, where the first line is a row rather than a title.
+
+The client still predicts nothing. Marking a task done sends the move and draws the mark when the
+pushed list says so; the one optimistic write the old view made is gone with it.
 
 ### Sequence diagrams
 
-Sequence diagrams are stored as Mermaid source on a feature and opened from its Diagrams panel in
-a floating overlay. The client removes the dependency renderer's decorative block-fill glyphs so
+Sequence diagrams are stored as Mermaid source on a feature. The flows lens lists them, reads the
+selected one's source as steps (`flow`) — who asks whom for what, with each `else`, `opt` and
+`loop` as a line between them — and draws the diagram beside the list. The list is read off the
+source because a renderer returns a picture, and a picture cannot be stepped through. `Enter`
+opens the diagram whole in a floating overlay. The client removes the dependency renderer's decorative block-fill glyphs so
 `alt`, `opt`, and related frames retain their borders and arrows without filling the panel with
 visual noise. The rendered grid is recalculated against the overlay's current inner width after a
 resize; when the natural diagram is still wider than the panel, `h`/`l` or the left/right arrows
 pan it horizontally, while `j`/`k` scroll vertically. `q` and Escape close the overlay.
 
+A flow is written by an agent (`argus-hook diagram`) or added as a skeleton with `a`; there is no
+step editor, and `DiagramAction` has no update, so changing one means recording it again.
+
 ### What a feature row says
 
-A feature's line is read off what Argus already observes rather than maintained by anyone:
+A feature's row and its standing are read off what Argus already observes rather than maintained
+by anyone:
 
-- the agent panes running in its checkouts, summarized as the one thing worth knowing — `waiting:
-  <what for>`, `failed`, `needs review`, `2 working`, or `1 idle` — and coloured like the pane that
-  stopped, since a list of features is a list of places work might be stuck;
-- how its tasks stand, as `3/7 tasks`;
-- how many decisions are filed under it;
-- `after <slug>` for each feature it comes after that is not yet done;
-- `held` when someone has held it;
-- and, only when there is nothing else to say, the branch it was cut on.
+- `#7`, its number: counted up per board and never reused (schema v19), so a number said aloud
+  last week still names the same feature;
+- how its tasks stand, as a bar and `3/7`;
+- its questions still open, or else how many decisions stand;
+- the branch it is being worked on, and the agent pane a person would go to — the loudest on its
+  checkouts, coloured when it has stopped for somebody;
+- `after #7` for each feature it comes after that is not yet done.
+
+Its **standing** is derived the same way, and is what the index groups by: `ACTIVE` when a task is
+under way or an agent is on its checkouts, `QUEUED` when it is written down and not started or
+comes after a feature still open, `DONE` when every task is done, and `NEW` on its own page when
+there is nothing in it yet. Two are set by a person and folded out of the index until `z`: `HELD`,
+which carries its reason, and `ARCHIVED`, which is acceptance.
 
 `Feature` carries `checkouts` and `tasks` for this. The checkouts are every path `feature_scope`
 points at plus the one it originated in, so a feature a person wrote down and an agent later picked
@@ -1441,9 +1538,9 @@ reason it is a table — so `FeatureState::parse` still reads `submitted` and an
 `claimed_by`, `claimed_at`, `blocker` and `evidence` columns are cleared and left in place; nothing
 writes them, and the claim they held is what the panes now say directly.
 
-`done` stays stored and stays the human's decision. The normal list shows open features; `v`
-replaces it with accepted history so completed work remains available without crowding current
-work. `.` accepts the selected feature and reopens one already accepted over
+`done` stays stored and stays the human's decision; the index calls it archived, since `DONE` is
+what it says of a feature whose tasks are all finished and nobody has accepted yet. `v` archives
+the selected feature and brings an archived one back over
 `ClientMsg::MoveFeature`; the pushed board is the only state change the client trusts. An agent can
 carry the decision out — `argus-hook feature done <slug>`, and `feature reopen <slug>` to take it
 back — and the bundled skill says to only on a person's word, never because its own tasks are
@@ -1497,8 +1594,9 @@ multiline editor used for feature briefs, while `e` keeps the fast title editor.
 a document would be addressed by line number, and a line number moves whenever the text around it
 is edited — which is the one thing a list cannot take, since a row has to stay the same row while a
 human rewrites the list. Schema v8's `task` holds the title, the state, the
-claim, a `position` and an `external` key; schema v11 adds its optional body and schema v15 adds
-its nullable `parent` task id. `position` is per sibling list, so moving a child never reorders its
+claim, a `position` and an `external` key; schema v11 adds its optional body, schema v15 adds
+its nullable `parent` task id, and schema v19 adds its criteria, its notes and the pane holding its
+claim. `position` is per sibling list, so moving a child never reorders its
 parent's other children or the feature's root tasks.
 
 The states are still todo, doing and done, and unlike the feature columns they sat beside they are
@@ -1523,7 +1621,21 @@ optionally using `--under <id>`, `task doing <id>`, `task done <id>`, `task todo
 <id> <text>`, `task brief <id> <text>` and `task drop <id>`; the states are named as verbs rather than
 hidden behind a state argument, so what an agent types is what a reader of the transcript understands
 happened. Taking a task up is what claims it and finishing it is what releases it, so a row always
-says who is on it without anyone claiming by hand.
+says who is on it without anyone claiming by hand. The claim is the harness session, which tells a
+reader who, and since schema v19 the pane it was taken up through, which tells them where to look:
+the pane API knows which pane is asking, so a task moved to `doing` through one carries it and one
+moved from the view carries neither. Pane ids are handed out again from one on every start, so the
+store forgets them when the daemon opens it and keeps the session.
+
+A task's **criteria** are what done means for it, each a line checked off as it lands: `task
+criterion add <id> "<text>"`, and `criterion check`, `uncheck` or `drop` with `<id> <n>`, where `n`
+is the number `task` prints, counted from one for the person reading and sent as a place in the
+list. A place that is not there is refused in words. Its **notes** are lines left by whoever is on
+it — `task note <id> "<text>"` — each recording the session and pane it came through, or neither
+from the view. A task keeps its newest forty, in a `task_note` table rather than a column because
+they are appended one at a time, possibly by several agents, and a column would make every note a
+rewrite of the others. `argus-hook task` prints the criteria with their marks and the last three
+notes; removing a task removes its notes.
 
 `task move <id>` changes where a task sits, never its state: `--under <id>`, `--top`, `--before
 <id>` or `--after <id>` within its feature, or `--to <feature>` onto another feature on the same

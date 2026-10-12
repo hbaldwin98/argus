@@ -32,6 +32,7 @@ fn legacy_connection(path: &Path, version: usize) -> Connection {
         schema::SCHEMA_V15,
         schema::SCHEMA_V16,
         schema::SCHEMA_V17,
+        schema::SCHEMA_V18,
     ];
     for step in steps.into_iter().take(version) {
         conn.execute_batch(step).unwrap();
@@ -1102,8 +1103,8 @@ fn a_feature_carries_its_checkouts_and_how_its_tasks_stand() {
         .iter()
         .map(|t| t.id)
         .collect();
-    s.move_task("argus", ids[0], TaskState::Done, None).unwrap();
-    s.move_task("argus", ids[1], TaskState::Doing, Some("sess-1"))
+    s.move_task("argus", ids[0], TaskState::Done, None, None).unwrap();
+    s.move_task("argus", ids[1], TaskState::Doing, Some("sess-1"), None)
         .unwrap();
 
     let features = s.features("argus").unwrap();
@@ -1492,7 +1493,7 @@ fn taking_a_task_up_claims_it_and_finishing_it_lets_it_go() {
     };
     assert_eq!(state(id), (TaskState::Todo, None));
 
-    s.move_task("argus", id, TaskState::Doing, Some("sess-1"))
+    s.move_task("argus", id, TaskState::Doing, Some("sess-1"), None)
         .unwrap();
     assert_eq!(
         state(id),
@@ -1500,10 +1501,10 @@ fn taking_a_task_up_claims_it_and_finishing_it_lets_it_go() {
         "the doing column says who is on each card without anyone claiming by hand"
     );
 
-    s.move_task("argus", id, TaskState::Done, Some("sess-1"))
+    s.move_task("argus", id, TaskState::Done, Some("sess-1"), None)
         .unwrap();
     assert_eq!(state(id), (TaskState::Done, None));
-    assert!(s.move_task("argus", 999, TaskState::Done, None).is_err());
+    assert!(s.move_task("argus", 999, TaskState::Done, None, None).is_err());
 }
 
 #[test]
@@ -1833,4 +1834,475 @@ fn withdrawing_a_replacement_lets_what_it_replaced_stand_again() {
 
     s.set_decision_withdrawn("argus", second, None).unwrap();
     assert_eq!(superseded(&s), Some(second), "restored, it replaces it again");
+}
+
+// --- schema v19: numbers, decision states, criteria and notes ------------
+
+#[test]
+fn migrating_a_v18_store_numbers_each_boards_features_in_listed_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("runtime.db");
+    {
+        let conn = legacy_connection(&path, 18);
+        for (project, slug, at) in [
+            ("argus", "newest", 30),
+            ("argus", "b-tied", 10),
+            ("argus", "a-tied", 10),
+            ("other", "alone", 99),
+        ] {
+            conn.execute(
+                "INSERT INTO feature (project, slug, title, body, at, state)
+                 VALUES (?1, ?2, ?2, '', ?3, 'open')",
+                rusqlite::params![project, slug, at],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO decision (project, at, feature, chose) VALUES ('argus', 1, 'newest', 'sqlite')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO task (project, feature, title, at) VALUES ('argus', 'newest', 'port it', 1)",
+            [],
+        )
+        .unwrap();
+    }
+    let s = Store::open_at(&path).unwrap();
+
+    let numbered = |project: &str| -> Vec<(String, i64)> {
+        let features = s.features(project).unwrap();
+        features.into_iter().map(|f| (f.slug, f.number)).collect()
+    };
+    assert_eq!(
+        numbered("argus"),
+        [("a-tied".into(), 1), ("b-tied".into(), 2), ("newest".into(), 3)]
+    );
+    assert_eq!(numbered("other"), [("alone".into(), 1)], "each board counts from one");
+    let next = s.add_feature("argus", &feature("after"), None, None, 40, None).unwrap();
+    assert_eq!(next.number, 4, "and a new feature carries on from them");
+
+    // What was written before reads as it always meant: decided, with
+    // nothing more said, and a task with no criteria or notes.
+    let decision = &s.decisions("argus").unwrap()[0];
+    assert_eq!(decision.state, DecisionState::Accepted);
+    assert!(decision.stands() && decision.options.is_empty() && decision.task.is_none());
+    let task = &s.tasks("argus", "newest").unwrap()[0];
+    assert!(task.criteria.is_empty() && task.notes.is_empty() && task.claimed_pane.is_none());
+}
+
+#[test]
+fn a_feature_number_is_never_handed_out_twice() {
+    let s = store();
+    let open = |title: &str| s.add_feature("argus", &feature(title), None, None, 1, None).unwrap();
+    assert_eq!((open("one").number, open("two").number, open("three").number), (1, 2, 3));
+
+    // Removing the newest is the case a plain MAX + 1 gets wrong.
+    s.remove_feature("argus", "three").unwrap();
+    assert_eq!(open("four").number, 4, "#3 still names the feature that was removed");
+    s.remove_feature("argus", "one").unwrap();
+    s.remove_feature("argus", "two").unwrap();
+    s.remove_feature("argus", "four").unwrap();
+    assert_eq!(open("five").number, 5, "even on a board emptied out");
+    assert_eq!(
+        s.add_feature("elsewhere", &feature("one"), None, None, 1, None).unwrap().number,
+        1
+    );
+}
+
+/// A store with one feature, `the-pty`, and a second, `the-wire`.
+fn two_features() -> Store {
+    let s = store();
+    for title in ["the pty", "the wire"] {
+        s.add_feature("argus", &feature(title), None, None, 1, None).unwrap();
+    }
+    s
+}
+
+fn question(chose: &str, options: &[&str]) -> DecisionWrite {
+    DecisionWrite {
+        chose: chose.into(),
+        state: DecisionState::Open,
+        options: options.iter().map(|o| o.to_string()).collect(),
+        ..Default::default()
+    }
+}
+
+fn decision(s: &Store, id: i64) -> Decision {
+    let board = s.decisions("argus").unwrap();
+    board.into_iter().find(|d| d.id == id).unwrap()
+}
+
+#[test]
+fn a_decision_keeps_everything_it_was_recorded_with() {
+    let s = two_features();
+    let task = s.add_task("argus", "the-pty", &task("pick a store"), 1, None).unwrap().id;
+    let write = DecisionWrite {
+        chose: "sqlite".into(),
+        state: DecisionState::Rejected,
+        task: Some(task),
+        context: Some("two processes write".into()),
+        detail: Some("one file, WAL mode".into()),
+        consequences: vec![
+            Consequence { gain: true, text: "one transaction".into() },
+            Consequence { gain: false, text: "a migration ladder".into() },
+        ],
+        ..Default::default()
+    };
+    let id = s.add_decision("argus", &write, Some("the-pty"), 1, None, None).unwrap();
+
+    let read = decision(&s, id);
+    assert!(!read.stands() && !read.open(), "a rejected answer is neither");
+    assert_eq!(
+        (read.state, read.task, read.context, read.detail, read.consequences),
+        (write.state, write.task, write.context, write.detail, write.consequences)
+    );
+}
+
+#[test]
+fn a_decision_is_raised_only_under_a_task_on_its_own_feature() {
+    let s = two_features();
+    let elsewhere = s.add_task("argus", "the-wire", &task("frame it"), 1, None).unwrap().id;
+    let raise = |task: i64, feature: Option<&str>| {
+        let write = DecisionWrite {
+            chose: "length-prefixed".into(),
+            task: Some(task),
+            ..Default::default()
+        };
+        s.add_decision("argus", &write, feature, 1, None, None)
+    };
+
+    for refused in [raise(elsewhere, Some("the-pty")), raise(999, Some("the-pty")), raise(elsewhere, None)] {
+        let error = refused.unwrap_err().to_string();
+        assert!(error.contains("under this feature"), "{error}");
+    }
+    assert!(s.decisions("argus").unwrap().is_empty(), "a refusal records nothing");
+    assert!(raise(elsewhere, Some("the-wire")).is_ok());
+}
+
+#[test]
+fn a_decision_outlives_the_task_it_was_raised_under() {
+    let s = two_features();
+    let add = |title: &str, parent: Option<i64>| add_under(&s, "the-pty", title, parent);
+    let (removed, moved) = (add("removed", None), add("moved", None));
+    let child = add("child of removed", Some(removed));
+    let raise = |task: i64| {
+        let write = DecisionWrite {
+            chose: format!("raised under {task}"),
+            task: Some(task),
+            ..Default::default()
+        };
+        s.add_decision("argus", &write, Some("the-pty"), 1, None, None).unwrap()
+    };
+    let (on_child, on_moved) = (raise(child), raise(moved));
+    s.add_task_note("argus", child, "half way", 1, None, None).unwrap();
+
+    s.remove_task("argus", removed).unwrap();
+    assert_eq!(decision(&s, on_child).task, None, "a subtask's decision is unhooked too");
+    assert_eq!(decision(&s, on_moved).task, Some(moved));
+
+    // Within the feature the link holds; onto another it cannot.
+    s.place_task("argus", moved, &TaskPlace::Top).unwrap();
+    assert_eq!(decision(&s, on_moved).task, Some(moved));
+    s.place_task("argus", moved, &TaskPlace::Feature("the-wire".into())).unwrap();
+    let kept = decision(&s, on_moved);
+    assert_eq!((kept.task, kept.feature.as_deref()), (None, Some("the-pty")));
+}
+
+#[test]
+fn resolving_a_question_accepts_it_over_the_options_not_taken() {
+    let s = two_features();
+    let ask = |options: &[&str]| {
+        s.add_decision("argus", &question("which store?", options), Some("the-pty"), 1, None, None)
+            .unwrap()
+    };
+    let id = ask(&["sqlite", "a file per feature", "postgres"]);
+    assert!(decision(&s, id).open());
+
+    s.resolve_decision("argus", id, " SQLite ", Some("both need migrations")).unwrap();
+    let made = decision(&s, id);
+    assert!(made.stands());
+    assert_eq!(made.chose, "which store?", "the question stays the decision's name");
+    assert_eq!(made.detail.as_deref(), Some("SQLite"));
+    assert_eq!(made.because.as_deref(), Some("both need migrations"));
+    assert_eq!(made.over.as_deref(), Some("a file per feature; postgres"));
+    assert!(made.options.is_empty());
+
+    // An answer that was not one of the options passes over all of them,
+    // and one given no reason keeps none.
+    let other = ask(&["a", "b"]);
+    s.resolve_decision("argus", other, "neither", None).unwrap();
+    let made = decision(&s, other);
+    assert_eq!((made.over.as_deref(), made.because), (Some("a; b"), None));
+}
+
+#[test]
+fn only_a_question_still_open_can_be_resolved() {
+    let s = two_features();
+    let made = s.add_decision("argus", &chose("sqlite"), Some("the-pty"), 1, None, None).unwrap();
+    let asked = |s: &Store| {
+        s.add_decision("argus", &question("which?", &["a"]), Some("the-pty"), 1, None, None).unwrap()
+    };
+    let answered = asked(&s);
+    s.resolve_decision("argus", answered, "a", None).unwrap();
+    let withdrawn = asked(&s);
+    s.set_decision_withdrawn("argus", withdrawn, Some(5)).unwrap();
+
+    for id in [made, answered, withdrawn] {
+        let error = s.resolve_decision("argus", id, "b", None).unwrap_err().to_string();
+        assert!(error.contains("not an open question"), "{id}: {error}");
+    }
+    assert_eq!(decision(&s, answered).detail.as_deref(), Some("a"), "the first answer stands");
+    assert!(s.resolve_decision("argus", 999, "b", None).is_err());
+    let open = asked(&s);
+    assert!(s.resolve_decision("argus", open, "  ", None).is_err(), "an answer says something");
+    assert!(decision(&s, open).open());
+}
+
+#[test]
+fn a_rewrite_replaces_what_a_decision_says_and_nothing_about_where_it_stands() {
+    let s = two_features();
+    let task = s.add_task("argus", "the-pty", &task("pick"), 1, None).unwrap().id;
+    let root = s.add_decision("argus", &chose("root"), Some("the-pty"), 1, None, None).unwrap();
+    let write = DecisionWrite {
+        chose: "sqlight".into(),
+        over: Some("files".into()),
+        under: Some(root),
+        task: Some(task),
+        ..Default::default()
+    };
+    let id = s.add_decision("argus", &write, Some("the-pty"), 7, Some("sess-1"), None).unwrap();
+    let text = DecisionText {
+        chose: " sqlite ".into(),
+        because: Some("both need migrations".into()),
+        consequences: vec![Consequence { gain: false, text: "a ladder".into() }],
+        options: vec!["dropped: this one is made".into()],
+        ..Default::default()
+    };
+    s.rewrite_decision("argus", id, text.clone()).unwrap();
+
+    let read = decision(&s, id);
+    assert_eq!((read.chose.as_str(), read.over, read.because.as_deref()), ("sqlite", None, Some("both need migrations")));
+    assert_eq!(read.consequences, text.consequences);
+    assert!(read.options.is_empty(), "a made decision has what it was chosen over, not options");
+    assert_eq!(
+        (read.parent, read.task, read.state, read.at, read.session.as_deref()),
+        (Some(root), Some(task), DecisionState::Accepted, 7, Some("sess-1"))
+    );
+
+    let asked = s.add_decision("argus", &question("which?", &["a"]), Some("the-pty"), 1, None, None).unwrap();
+    let reworded = DecisionText {
+        chose: "which store?".into(),
+        options: vec!["a".into(), "b".into()],
+        ..Default::default()
+    };
+    s.rewrite_decision("argus", asked, reworded).unwrap();
+    let read = decision(&s, asked);
+    assert!(read.open());
+    assert_eq!(read.options, ["a", "b"]);
+
+    let empty = DecisionText::default();
+    assert!(s.rewrite_decision("argus", id, empty).is_err(), "a rewrite is held to a write's bounds");
+    assert_eq!(decision(&s, id).chose, "sqlite");
+}
+
+#[test]
+fn criteria_are_checked_and_dropped_by_their_place_in_the_list() {
+    let s = two_features();
+    let id = s.add_task("argus", "the-pty", &task("bound the queue"), 1, None).unwrap().id;
+    let criteria = || -> Vec<(String, bool)> {
+        let tasks = s.tasks("argus", "the-pty").unwrap();
+        tasks[0].criteria.iter().map(|c| (c.text.clone(), c.done)).collect()
+    };
+    for text in [" a full queue refuses ", "a drained one accepts"] {
+        s.add_task_criterion("argus", id, text).unwrap();
+    }
+    s.set_task_criterion("argus", id, 1, true).unwrap();
+    assert_eq!(
+        criteria(),
+        [("a full queue refuses".into(), false), ("a drained one accepts".into(), true)]
+    );
+    s.set_task_criterion("argus", id, 1, false).unwrap();
+    s.remove_task_criterion("argus", id, 0).unwrap();
+    assert_eq!(criteria(), [("a drained one accepts".into(), false)]);
+
+    for refused in [
+        s.set_task_criterion("argus", id, 1, true),
+        s.remove_task_criterion("argus", id, 5),
+    ] {
+        let error = refused.unwrap_err().to_string();
+        assert!(error.contains("it has 1"), "{error}");
+    }
+    assert!(s.add_task_criterion("argus", id, "  ").is_err());
+    let long = "x".repeat(argus_protocol::MAX_CRITERION_BYTES + 1);
+    assert!(s.add_task_criterion("argus", id, &long).is_err());
+    assert!(s.add_task_criterion("argus", 999, "no such task").is_err());
+    assert_eq!(criteria().len(), 1, "a refusal changes nothing");
+
+    for n in 1..argus_protocol::MAX_TASK_CRITERIA {
+        s.add_task_criterion("argus", id, &format!("criterion {n}")).unwrap();
+    }
+    let error = s.add_task_criterion("argus", id, "one too many").unwrap_err().to_string();
+    assert!(error.contains("several tasks"), "{error}");
+}
+
+#[test]
+fn a_task_keeps_its_newest_notes_and_who_left_them() {
+    let s = two_features();
+    let id = s.add_task("argus", "the-pty", &task("bound the queue"), 1, None).unwrap().id;
+    let other = s.add_task("argus", "the-pty", &task("unrelated"), 1, None).unwrap().id;
+    s.add_task_note("argus", other, "stays put", 1, None, None).unwrap();
+    s.add_task_note("argus", id, " from a pane ", 10, Some("sess-1"), Some(PaneId(4))).unwrap();
+    s.add_task_note("argus", id, "from a person", 11, None, None).unwrap();
+
+    let notes = |id: i64| {
+        let tasks = s.tasks("argus", "the-pty").unwrap();
+        tasks.into_iter().find(|t| t.id == id).unwrap().notes
+    };
+    assert_eq!(
+        notes(id),
+        [
+            TaskNote { at: 10, session: Some("sess-1".into()), pane: Some(PaneId(4)), text: "from a pane".into() },
+            TaskNote { at: 11, session: None, pane: None, text: "from a person".into() },
+        ]
+    );
+
+    for n in 0..argus_protocol::MAX_TASK_NOTES {
+        s.add_task_note("argus", id, &format!("note {n}"), 20, None, None).unwrap();
+    }
+    let kept = notes(id);
+    assert_eq!(kept.len(), argus_protocol::MAX_TASK_NOTES);
+    assert_eq!(kept[0].text, "note 0", "the oldest went first");
+    assert_eq!(notes(other).len(), 1, "another task's notes are not this one's to trim");
+
+    assert!(s.add_task_note("argus", id, "", 1, None, None).is_err());
+    let long = "x".repeat(argus_protocol::MAX_TASK_NOTE_BYTES + 1);
+    assert!(s.add_task_note("argus", id, &long, 1, None, None).is_err());
+    assert!(s.add_task_note("argus", 999, "no such task", 1, None, None).is_err());
+
+    s.remove_task("argus", id).unwrap();
+    let orphans: i64 = s
+        .conn()
+        .query_row("SELECT COUNT(*) FROM task_note WHERE task = ?1", [id], |r| r.get(0))
+        .unwrap();
+    assert_eq!(orphans, 0, "a removed task takes its notes with it");
+}
+
+#[test]
+fn a_claim_names_its_pane_until_it_is_released_or_the_daemon_restarts() {
+    let s = two_features();
+    let id = s.add_task("argus", "the-pty", &task("port the parser"), 1, None).unwrap().id;
+    let claim = || {
+        let task = s.tasks("argus", "the-pty").unwrap().remove(0);
+        (task.claimed_by, task.claimed_pane)
+    };
+
+    s.move_task("argus", id, TaskState::Doing, Some("sess-1"), Some(PaneId(4))).unwrap();
+    assert_eq!(claim(), (Some("sess-1".into()), Some(PaneId(4))));
+    s.move_task("argus", id, TaskState::Todo, Some("sess-1"), Some(PaneId(4))).unwrap();
+    assert_eq!(claim(), (None, None), "putting it back lets go of both");
+
+    // Pane ids are handed out again from one on the next start, so the
+    // session is kept and the pane it was in is not.
+    s.move_task("argus", id, TaskState::Doing, Some("sess-1"), Some(PaneId(4))).unwrap();
+    s.add_task_note("argus", id, "half way", 1, Some("sess-1"), Some(PaneId(4))).unwrap();
+    s.forget_panes().unwrap();
+    assert_eq!(claim(), (Some("sess-1".into()), None));
+    let note = s.tasks("argus", "the-pty").unwrap().remove(0).notes.remove(0);
+    assert_eq!((note.session.as_deref(), note.pane), (Some("sess-1"), None));
+}
+
+const NOTE: &str = "Bound the queue
+A full queue refuses instead of growing.
+
+- measure the backlog
+  ? which bound
+    a count
+    a byte size
+  - under load
+- refuse when full
+! refuse rather than drop
+  a dropped frame is a wrong screen";
+
+#[test]
+fn a_note_is_written_down_as_a_feature_with_its_tasks_and_decisions() {
+    let s = store();
+    let capture = Capture::parse(NOTE).checked(true).unwrap();
+    let slug = s.capture_feature("argus", None, &capture, 5).unwrap();
+
+    let opened = s.features("argus").unwrap().remove(0);
+    assert_eq!(
+        (opened.slug.as_str(), opened.title.as_str(), opened.body.as_str(), opened.number),
+        (slug.as_str(), "Bound the queue", "A full queue refuses instead of growing.", 1)
+    );
+    assert_eq!((opened.origin_checkout, opened.session), (None, None), "as a person opens one");
+
+    let tasks = s.tasks("argus", &slug).unwrap();
+    let outline: Vec<(&str, Option<i64>)> =
+        tasks.iter().map(|t| (t.title.as_str(), t.parent)).collect();
+    let measure = tasks[0].id;
+    assert_eq!(
+        outline,
+        [("measure the backlog", None), ("under load", Some(measure)), ("refuse when full", None)]
+    );
+
+    let decisions = s.decisions("argus").unwrap();
+    let (asked, made) = (&decisions[0], &decisions[1]);
+    assert!(asked.open());
+    assert_eq!(
+        (asked.chose.as_str(), asked.task, asked.options.as_slice()),
+        ("which bound", Some(measure), &["a count".to_string(), "a byte size".to_string()][..])
+    );
+    assert!(made.stands());
+    assert_eq!(
+        (made.chose.as_str(), made.task, made.because.as_deref()),
+        ("refuse rather than drop", None, Some("a dropped frame is a wrong screen"))
+    );
+    assert!(decisions.iter().all(|d| d.feature.as_deref() == Some(slug.as_str())));
+}
+
+#[test]
+fn a_note_added_to_a_feature_leaves_its_title_and_brief_alone() {
+    let s = store();
+    let write = argus_protocol::FeatureWrite {
+        title: "The queue".into(),
+        body: Some("the brief as written".into()),
+    };
+    s.add_feature("argus", &write, None, None, 1, None).unwrap();
+    s.add_task("argus", "the-queue", &task("already here"), 1, None).unwrap();
+
+    let capture = Capture::parse(NOTE).checked(false).unwrap();
+    let slug = s.capture_feature("argus", Some("the-queue"), &capture, 5).unwrap();
+
+    assert_eq!(slug, "the-queue");
+    let features = s.features("argus").unwrap();
+    assert_eq!(features.len(), 1, "no second feature is opened");
+    assert_eq!((features[0].title.as_str(), features[0].body.as_str()), ("The queue", "the brief as written"));
+    let titles: Vec<String> =
+        s.tasks("argus", "the-queue").unwrap().into_iter().map(|t| t.title).collect();
+    assert_eq!(titles, ["already here", "measure the backlog", "under load", "refuse when full"]);
+    assert_eq!(s.decisions("argus").unwrap().len(), 2);
+
+    let error = s.capture_feature("argus", Some("gone"), &capture, 5).unwrap_err().to_string();
+    assert!(error.contains("no feature gone"), "{error}");
+}
+
+#[test]
+fn a_note_that_cannot_be_written_whole_writes_nothing() {
+    let s = store();
+    // Refused at its last row, after the feature and a task went in.
+    let capture = Capture {
+        title: "Half a feature".into(),
+        tasks: vec![CapturedTask { title: "fine".into(), ..Default::default() }],
+        decisions: vec![CapturedDecision { chose: "  ".into(), ..Default::default() }],
+        ..Default::default()
+    };
+    assert!(s.capture_feature("argus", None, &capture, 5).is_err());
+
+    assert!(s.features("argus").unwrap().is_empty());
+    assert!(s.decisions("argus").unwrap().is_empty());
+    let tasks: i64 = s.conn().query_row("SELECT COUNT(*) FROM task", [], |r| r.get(0)).unwrap();
+    assert_eq!(tasks, 0);
+    let next = s.add_feature("argus", &feature("the next"), None, None, 1, None).unwrap();
+    assert_eq!(next.number, 1, "and the number it would have had is not spent");
 }

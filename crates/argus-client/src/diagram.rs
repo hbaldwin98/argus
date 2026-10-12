@@ -28,6 +28,11 @@ impl DiagramView {
         }
     }
 
+    /// Whether this is still a drawing of `diagram` as it now reads.
+    pub fn shows(&self, diagram: &SequenceDiagram) -> bool {
+        self.source == diagram.body && self.title == diagram.title
+    }
+
     /// Re-render after the overlay changes size. Sequence diagrams in
     /// `mermaid-text` have a fixed natural layout, so the width-aware pass
     /// belongs here rather than in the dependency's graph renderer.

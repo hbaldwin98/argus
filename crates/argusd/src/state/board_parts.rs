@@ -12,6 +12,15 @@ use argus_protocol::{PaneId, ProjectId};
 use super::*;
 use crate::store::Store;
 
+/// Who is asking for a change. An agent is the conversation it is and the
+/// pane it asked through; a person at a client is neither, which is what
+/// lets a claim or a note say whose it is without a flag for it.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Author<'a> {
+    pub session: Option<&'a str>,
+    pub pane: Option<PaneId>,
+}
+
 /// One kind of row filed under a feature, spoken to through the action
 /// that changes it.
 pub trait FeaturePart: Sized {
@@ -41,7 +50,7 @@ pub trait FeaturePart: Sized {
         key: &str,
         feature: &str,
         at: i64,
-        session: Option<&str>,
+        by: Author<'_>,
     ) -> anyhow::Result<()>;
     fn list(store: &Store, target: &BoardTarget) -> anyhow::Result<Self::List>;
     /// The answer on a checkout that is on no feature.
@@ -94,7 +103,11 @@ impl Daemon {
             key,
             feature,
         };
-        self.apply_part(&target, action, session)
+        let by = Author {
+            session,
+            pane: Some(pane_id),
+        };
+        self.apply_part(&target, action, by)
     }
 
     /// A change from the feature view, which names its feature outright
@@ -112,7 +125,7 @@ impl Daemon {
             key,
             feature: feature.to_string(),
         };
-        self.apply_part(&target, action, None)
+        self.apply_part(&target, action, Author::default())
     }
 
     /// Applies one change and answers with the list afterwards. Every
@@ -121,7 +134,7 @@ impl Daemon {
         &self,
         target: &BoardTarget,
         action: P,
-        session: Option<&str>,
+        by: Author<'_>,
     ) -> anyhow::Result<P::List> {
         if let Some(id) = action.id() {
             self.guard_part::<P>(target, id)?;
@@ -137,7 +150,7 @@ impl Daemon {
                 feature: feature.to_string(),
                 ..target.clone()
             });
-            action.apply(&self.store, &target.key, &target.feature, at, session)?;
+            action.apply(&self.store, &target.key, &target.feature, at, by)?;
             P::broadcast(self, target);
             if let Some(landed) = landed.filter(|landed| landed.feature != target.feature) {
                 P::broadcast(self, &landed);

@@ -214,9 +214,10 @@ pub(super) fn task(rest: &[&str]) {
 
 /// `task`, `task add`, `task add <title> --under <id>`, `task doing
 /// <id>`, `task done <id>`, `task todo <id>`, `task retitle <id> <text>`,
-/// `task brief <id> <text>`, `task drop <id>`, and `task move <id>` with one
+/// `task brief <id> <text>`, `task drop <id>`, `task move <id>` with one
 /// of `--under <id>`, `--top`, `--before <id>`, `--after <id>` or `--to
-/// <feature>`.
+/// <feature>`, `task criterion add <id> <text>`, `task criterion check|
+/// uncheck|drop <id> <n>`, and `task note <id> <text>`.
 ///
 /// The columns are named as verbs rather than hidden behind a state
 /// argument, so what an agent types is what a reader of the transcript
@@ -271,10 +272,68 @@ pub(super) fn task_message(rest: &[&str], base_url: &str, token: &str) -> String
             Ok((id, place)) => write_task(TaskAction::Place { id, place }, base_url, token),
             Err(message) => format!("could not change task: {message}"),
         },
+        Some("criterion") => match parse_task_criterion_args(&rest[1..]) {
+            Ok(action) => write_task(action, base_url, token),
+            Err(message) => format!("could not change task: {message}"),
+        },
+        Some("note") => match rest.get(1).and_then(|id| id.parse::<i64>().ok()) {
+            Some(id) => write_task(
+                TaskAction::Note {
+                    id,
+                    text: rest[2..].join(" "),
+                },
+                base_url,
+                token,
+            ),
+            None => "could not change task: note wants the number `task` prints".to_string(),
+        },
         Some(other) => format!(
             "could not change task: `{other}` is not one of add, doing, done, todo, retitle, \
-             brief, drop, move"
+             brief, drop, move, criterion, note"
         ),
+    }
+}
+
+/// `add <id> <text>`, or `check`, `uncheck` or `drop` with `<id> <n>`.
+///
+/// `n` is the number `task` prints beside the criterion, counted from one
+/// because a person reads it; the daemon is told its place in the list.
+pub(super) fn parse_task_criterion_args(args: &[&str]) -> Result<TaskAction, String> {
+    const USAGE: &str = "criterion wants add <task> <text>, or check, uncheck or drop with \
+                         <task> <n> as `task` numbers them";
+    let (Some(verb), Some(id)) = (
+        args.first().copied(),
+        args.get(1).and_then(|id| id.parse::<i64>().ok()),
+    ) else {
+        return Err(USAGE.to_string());
+    };
+    if verb == "add" {
+        return Ok(TaskAction::AddCriterion {
+            id,
+            text: args[2..].join(" "),
+        });
+    }
+    let [_, _, n] = args else {
+        return Err(USAGE.to_string());
+    };
+    let index = n
+        .parse::<usize>()
+        .ok()
+        .and_then(|n| n.checked_sub(1))
+        .ok_or_else(|| format!("{verb} wants the criterion's number, counted from 1, not {n:?}"))?;
+    match verb {
+        "check" => Ok(TaskAction::SetCriterion {
+            id,
+            index,
+            done: true,
+        }),
+        "uncheck" => Ok(TaskAction::SetCriterion {
+            id,
+            index,
+            done: false,
+        }),
+        "drop" => Ok(TaskAction::RemoveCriterion { id, index }),
+        _ => Err(USAGE.to_string()),
     }
 }
 
@@ -389,8 +448,10 @@ pub(super) fn format_tasks(list: &TaskList) -> String {
             Some(key) => format!(" [{key}]"),
             None => String::new(),
         };
-        let who = match (&task.state, &task.claimed_by) {
-            (TaskState::Doing, Some(session)) => format!(" — {session}"),
+        let who = match (&task.state, &task.claimed_by, task.claimed_pane) {
+            (TaskState::Doing, Some(session), Some(pane)) => format!(" — {session} (pane {pane})"),
+            (TaskState::Doing, Some(session), None) => format!(" — {session}"),
+            (TaskState::Doing, None, Some(pane)) => format!(" — pane {pane}"),
             _ => String::new(),
         };
         lines.push(format!(
@@ -400,13 +461,34 @@ pub(super) fn format_tasks(list: &TaskList) -> String {
             task.state,
             task.title
         ));
+        let prefix = task_body_prefix(&row);
         if let Some(body) = &task.body {
-            let prefix = task_body_prefix(&row);
             lines.extend(body.lines().map(|line| format!("{prefix}{line}")));
+        }
+        // Numbered, because the number is what `criterion check` takes.
+        for (index, criterion) in task.criteria.iter().enumerate() {
+            let mark = if criterion.done { 'x' } else { ' ' };
+            lines.push(format!("{prefix}[{mark}] {}. {}", index + 1, criterion.text));
+        }
+        let earlier = task.notes.len().saturating_sub(SHOWN_TASK_NOTES);
+        if earlier > 0 {
+            lines.push(format!("{prefix}({earlier} earlier note(s))"));
+        }
+        for note in &task.notes[earlier..] {
+            let who = match (&note.session, note.pane) {
+                (Some(session), _) => session.clone(),
+                (None, Some(pane)) => format!("pane {pane}"),
+                (None, None) => "a person".to_string(),
+            };
+            lines.push(format!("{prefix}note, {who}: {}", note.text));
         }
     }
     lines.join("\n")
 }
+
+/// The notes printed under a task: where the work stands is the last few
+/// lines, and the list is read at the start of every piece of work.
+const SHOWN_TASK_NOTES: usize = 3;
 
 const MAX_TASK_INDENT: usize = 24;
 
@@ -594,7 +676,12 @@ pub(super) fn format_feature(board: &FeatureBoard) -> String {
     else {
         return no_feature_here(board);
     };
-    let mut lines = vec![format!("Feature: {} ({})", current.title, current.slug)];
+    let mut lines = vec![format!(
+        "Feature{}: {} ({})",
+        feature_number(current),
+        current.title,
+        current.slug
+    )];
     if let Some(branch) = &current.origin_branch {
         lines.push(format!("Started on {branch}."));
     }
@@ -607,6 +694,7 @@ pub(super) fn format_feature(board: &FeatureBoard) -> String {
     if board.decisions.is_empty() {
         lines.push("Nothing decided under it yet.".to_string());
     } else {
+        lines.extend(open_question_lead(&board.decisions));
         lines.push("Decided under it, newest last:".to_string());
         let tree = DecisionBoard {
             project: board.project,
@@ -619,6 +707,27 @@ pub(super) fn format_feature(board: &FeatureBoard) -> String {
         }
     }
     lines.join("\n")
+}
+
+/// ` #7`, what a person calls the feature, or nothing from a daemon that
+/// predates numbers.
+pub(super) fn feature_number(feature: &argus_protocol::Feature) -> String {
+    match feature.number {
+        0 => String::new(),
+        number => format!(" #{number}"),
+    }
+}
+
+/// Said above a board that holds questions, because a tree read quickly
+/// reads as a list of things decided.
+fn open_question_lead(decisions: &[Decision]) -> Option<String> {
+    let open = decisions.iter().filter(|d| d.open()).count();
+    (open > 0).then(|| {
+        format!(
+            "{open} below marked (open) are questions, not decisions: the person's to answer, \
+             not yours."
+        )
+    })
 }
 
 /// The answer that has to teach, because it is what an agent hits first on
@@ -684,8 +793,12 @@ pub(super) fn format_feature_list(board: &FeatureBoard) -> String {
             true => String::new(),
             false => format!(" ({})", about.join(", ")),
         };
+        let number = match feature.number {
+            0 => String::new(),
+            number => format!("#{number} "),
+        };
         lines.push(format!(
-            "  {} — {}{branch}{about}{here}",
+            "  {number}{} — {}{branch}{about}{here}",
             feature.slug, feature.title
         ));
         // Beneath rather than in the parentheses, since a reason is a
@@ -760,6 +873,7 @@ How to write it:
   - Then follow the tree. A decision's children are the choices it forced, so they belong under it, and the shape of the tree is the shape of the argument.
   - `over` is the road not taken, and it is usually the more interesting half. A decision that names one is only half explained until you say what the alternative was and what ruled it out.
   - A node marked superseded was replaced by the decision it names. It is what was believed at the time, not a mistake to tidy away — say what it was and what changed.
+  - A node marked open is a question nobody has answered, and its options are what is being weighed. Write it as open; do not pick one. A node marked rejected is an answer that was turned down.
   - Write prose, in the register of the material. Bullets that restate chose/over/because are the board again, and the board can already be read.
   - Do not invent a reason a decision does not give. `the board does not say` is a better sentence than a plausible one you made up.
 
@@ -775,8 +889,15 @@ pub(super) fn decisions(rest: &[&str]) {
 }
 
 pub(super) fn decisions_message(rest: &[&str], base_url: &str, token: &str) -> String {
-    if let Some(verb @ ("withdraw" | "restore")) = rest.first().copied() {
-        return change_decision(verb, rest.get(1..).unwrap_or_default(), base_url, token);
+    let args = rest.get(1..).unwrap_or_default();
+    match rest.first().copied() {
+        Some(verb @ ("withdraw" | "restore")) => {
+            return withdraw_or_restore(verb, args, base_url, token)
+        }
+        Some("resolve") => return resolve_decision(args, base_url, token),
+        Some("show") => return show_decision(args, base_url, token),
+        Some("rewrite") => return rewrite_decision(args, base_url, token),
+        _ => {}
     }
     let board: DecisionBoard =
         match read_json("decisions", Endpoint::Decisions, rest, base_url, token) {
@@ -789,37 +910,145 @@ pub(super) fn decisions_message(rest: &[&str], base_url: &str, token: &str) -> S
     format_decision_board(&board)
 }
 
+fn decision_id(raw: Option<&&str>) -> Option<i64> {
+    raw?.trim_start_matches('#').parse::<i64>().ok()
+}
+
 /// `decisions withdraw <id>` and `decisions restore <id>`: takes a decision
 /// recorded in error back, keeping it in the history, and undoes that.
-fn change_decision(verb: &str, args: &[&str], base_url: &str, token: &str) -> String {
+fn withdraw_or_restore(verb: &str, args: &[&str], base_url: &str, token: &str) -> String {
     let id = match args {
-        [id] => id.trim_start_matches('#').parse::<i64>().ok(),
+        [id] => decision_id(Some(id)),
         _ => None,
     };
     let Some(id) = id else {
         return format!("could not change decision: {verb} wants the number `decisions` prints");
     };
     let (change, done) = if verb == "withdraw" {
-        (argus_protocol::DecisionChange::Withdraw { id }, "withdrawn")
+        (DecisionChange::Withdraw { id }, "withdrawn")
     } else {
-        (argus_protocol::DecisionChange::Restore { id }, "restored")
+        (DecisionChange::Restore { id }, "restored")
     };
-    let Ok(body) = serde_json::to_string(&change) else {
-        return "could not change decision: unencodable".to_string();
+    match post_decision_change(&change, base_url, token) {
+        Ok(()) => format!("decision {id} {done}"),
+        Err(message) => message,
+    }
+}
+
+/// `decisions resolve <id> <answer> [--because <why>]`: answers an open
+/// decision with what the person chose.
+fn resolve_decision(args: &[&str], base_url: &str, token: &str) -> String {
+    let change = match parse_resolve_args(args) {
+        Ok(change) => change,
+        Err(message) => return format!("could not change decision: {message}"),
+    };
+    match post_decision_change(&change, base_url, token) {
+        Ok(()) => match &change {
+            DecisionChange::Resolve { id, answer, .. } => format!("decision {id} resolved: {answer}"),
+            _ => "the decision changed".to_string(),
+        },
+        Err(message) => message,
+    }
+}
+
+pub(super) fn parse_resolve_args(args: &[&str]) -> Result<DecisionChange, String> {
+    let Some(id) = decision_id(args.first()) else {
+        return Err("resolve wants the number `decisions` prints, then the answer".to_string());
+    };
+    let mut answer: Vec<&str> = Vec::new();
+    let mut because = None;
+    let mut rest = args[1..].iter().copied();
+    while let Some(arg) = rest.next() {
+        match arg {
+            "--because" => {
+                let why = rest
+                    .next()
+                    .ok_or_else(|| "--because needs something after it".to_string())?;
+                because = Some(why.to_string());
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("{other} is not one of --because"))
+            }
+            word => answer.push(word),
+        }
+    }
+    let answer = answer.join(" ");
+    if answer.trim().is_empty() {
+        return Err("resolve wants the answer after the number".to_string());
+    }
+    Ok(DecisionChange::Resolve {
+        id,
+        answer,
+        because,
+    })
+}
+
+/// `decisions show <id>`: one decision as the document `rewrite` reads
+/// back, so correcting one is print, edit, send.
+fn show_decision(args: &[&str], base_url: &str, token: &str) -> String {
+    let [id] = args else {
+        return "could not read decisions: show wants the number `decisions` prints".to_string();
+    };
+    let Some(id) = decision_id(Some(id)) else {
+        return "could not read decisions: show wants the number `decisions` prints".to_string();
+    };
+    let board: DecisionBoard =
+        match read_json("decisions", Endpoint::Decisions, &[], base_url, token) {
+            Ok(board) => board,
+            Err(message) => return message,
+        };
+    match board.decisions.iter().find(|d| d.id == id) {
+        Some(decision) => DecisionText::from(decision)
+            .markdown(decision.state == DecisionState::Open, false)
+            .trim_end()
+            .to_string(),
+        None => format!("could not read decisions: decision {id} is not under this feature"),
+    }
+}
+
+/// `decisions rewrite <id> --stdin`: replaces what a decision says with the
+/// document on standard input, in the shape `show` prints.
+fn rewrite_decision(args: &[&str], base_url: &str, token: &str) -> String {
+    let id = match args {
+        [id, "--stdin"] => decision_id(Some(id)),
+        _ => None,
+    };
+    let Some(id) = id else {
+        return "could not change decision: rewrite wants the number `decisions` prints, then \
+                --stdin with the document `decisions show` prints"
+            .to_string();
+    };
+    let mut document = String::new();
+    if let Err(e) = std::io::stdin().read_to_string(&mut document) {
+        return format!("could not change decision: could not read the document: {e}");
+    }
+    let text = match DecisionText::from_markdown(&document).checked() {
+        Ok(text) => text,
+        Err(message) => return format!("could not change decision: {message}"),
+    };
+    match post_decision_change(&DecisionChange::Rewrite { id, text }, base_url, token) {
+        Ok(()) => format!("decision {id} rewritten"),
+        Err(message) => message,
+    }
+}
+
+fn post_decision_change(change: &DecisionChange, base_url: &str, token: &str) -> Result<(), String> {
+    let Ok(body) = serde_json::to_string(change) else {
+        return Err("could not change decision: unencodable".to_string());
     };
     let url = endpoint_url(base_url, Endpoint::DecisionChange);
     let Some((status, response)) = post_response(&url, token, &body) else {
-        return "could not change decision: daemon unavailable".to_string();
+        return Err("could not change decision: daemon unavailable".to_string());
     };
     let response = response.trim();
-    if status != 200 {
-        return if response.is_empty() {
-            "could not change decision: daemon refused the request".to_string()
-        } else {
-            format!("could not change decision: {response}")
-        };
+    if status == 200 {
+        return Ok(());
     }
-    format!("decision {id} {done}")
+    Err(if response.is_empty() {
+        "could not change decision: daemon refused the request".to_string()
+    } else {
+        format!("could not change decision: {response}")
+    })
 }
 
 pub(super) fn format_decision_board(board: &DecisionBoard) -> String {
@@ -834,6 +1063,7 @@ pub(super) fn format_decision_board(board: &DecisionBoard) -> String {
         .map(|f| f.title.clone())
         .unwrap_or_else(|| board.name.clone());
     let mut lines = vec![format!("Decisions on {scope}, newest last:")];
+    lines.extend(open_question_lead(&board.decisions));
     for row in board.tree_rows() {
         push_decision_lines(&mut lines, &row);
     }
@@ -847,9 +1077,20 @@ pub(super) fn push_decision_lines(
     let decision = row.decision;
     // The id leads because it is what the next decision is hung off,
     // and the branch is what says which one that would be under.
-    let mark = match decision.superseded_by {
-        Some(by) => format!("  (superseded by #{by})"),
-        None => String::new(),
+    let mut marks = Vec::new();
+    // Accepted is what a reader assumes, so only the others are said.
+    if decision.state != DecisionState::Accepted {
+        marks.push(decision.state.to_string());
+    }
+    if let Some(by) = decision.superseded_by {
+        marks.push(format!("superseded by #{by}"));
+    }
+    if let Some(task) = decision.task {
+        marks.push(format!("under task #{task}"));
+    }
+    let mark = match marks.is_empty() {
+        true => String::new(),
+        false => format!("  ({})", marks.join(", ")),
     };
     lines.push(format!(
         "{}#{} {}{mark}",
@@ -858,11 +1099,31 @@ pub(super) fn push_decision_lines(
         decision.chose
     ));
     let continuation = decision_continuation(row);
+    let mut field = |label: &str, text: &str| {
+        // A field written as a paragraph keeps its lines under its label.
+        let mut text = text.lines();
+        if let Some(first) = text.next() {
+            lines.push(format!("{continuation}   {label}{first}"));
+        }
+        lines.extend(text.map(|line| format!("{continuation}     {line}")));
+    };
+    if let Some(context) = &decision.context {
+        field("context: ", context);
+    }
+    if let Some(detail) = &decision.detail {
+        field("decision: ", detail);
+    }
+    for option in &decision.options {
+        field("option: ", option);
+    }
     if let Some(over) = &decision.over {
-        lines.push(format!("{continuation}   over: {over}"));
+        field("over: ", over);
     }
     if let Some(because) = &decision.because {
-        lines.push(format!("{continuation}   because: {because}"));
+        field("because: ", because);
+    }
+    for consequence in &decision.consequences {
+        field(&format!("{} ", consequence.sign()), &consequence.text);
     }
 }
 
@@ -931,10 +1192,22 @@ pub(super) fn decide_message(rest: &[&str], base_url: &str, token: &str) -> Stri
                 (Some(parent), None) => format!(" under #{parent}"),
                 (None, None) => String::new(),
             };
-            format!(
-                "recorded decision #{}{place}: {}",
-                decision.id, decision.chose
-            )
+            let id = decision.id;
+            match decision.state {
+                DecisionState::Accepted => {
+                    format!("recorded decision #{id}{place}: {}", decision.chose)
+                }
+                // Said as a question, with how it ends: an agent that reads
+                // "recorded" has been told the matter is closed.
+                DecisionState::Open => format!(
+                    "asked open decision #{id}{place}: {}\nIt is the person's to answer. When \
+                     they have, `argus-hook decisions resolve {id} \"<their answer>\"`.",
+                    decision.chose
+                ),
+                DecisionState::Rejected => {
+                    format!("recorded rejected decision #{id}{place}: {}", decision.chose)
+                }
+            }
         }
         // The write landed; only the account of it did not.
         Err(_) => "recorded the decision".to_string(),
@@ -942,7 +1215,9 @@ pub(super) fn decide_message(rest: &[&str], base_url: &str, token: &str) -> Stri
 }
 
 /// `decide <what was chosen> [--over <what against>] [--because <why>]
-/// [--under <id>] [--supersedes <id>]`.
+/// [--under <id>] [--supersedes <id>] [--task <id>] [--context <text>]
+/// [--detail <text>] [--consequence <text>]... [--rejected]`, or `decide
+/// <the question> --open [--option <text>]...` for one not made yet.
 ///
 /// The chosen thing is positional because it is the one field a decision
 /// cannot be recorded without, and an agent writing the common case should
@@ -950,6 +1225,7 @@ pub(super) fn decide_message(rest: &[&str], base_url: &str, token: &str) -> Stri
 pub(super) fn parse_decide_args(rest: &[&str]) -> Result<DecisionWrite, String> {
     let mut write = DecisionWrite::default();
     let mut chose: Vec<&str> = Vec::new();
+    let mut states: Vec<DecisionState> = Vec::new();
     let mut args = rest.iter().copied();
     while let Some(arg) = args.next() {
         let mut value = || {
@@ -959,29 +1235,48 @@ pub(super) fn parse_decide_args(rest: &[&str]) -> Result<DecisionWrite, String> 
         match arg {
             "--over" => write.over = Some(value()?.to_string()),
             "--because" => write.because = Some(value()?.to_string()),
+            "--context" => write.context = Some(value()?.to_string()),
+            "--detail" => write.detail = Some(value()?.to_string()),
             "--under" => {
-                write.under = Some(id_arg(arg, value()?)?);
+                write.under = Some(id_arg(arg, "decision", value()?)?);
             }
             "--supersedes" => {
-                write.supersedes = Some(id_arg(arg, value()?)?);
+                write.supersedes = Some(id_arg(arg, "decision", value()?)?);
             }
+            "--task" => write.task = Some(id_arg(arg, "task", value()?)?),
+            "--option" => write.options.push(value()?.to_string()),
+            "--consequence" => {
+                let raw = value()?;
+                let consequence = Consequence::parse(raw)
+                    .ok_or_else(|| format!("--consequence {raw:?} says nothing"))?;
+                write.consequences.push(consequence);
+            }
+            "--open" => states.push(DecisionState::Open),
+            "--rejected" => states.push(DecisionState::Rejected),
             other if other.starts_with("--") => {
                 return Err(format!(
-                    "{other} is not one of --over, --because, --under, --supersedes"
+                    "{other} is not one of --over, --because, --under, --supersedes, --task, \
+                     --context, --detail, --consequence, --open, --option, --rejected"
                 ))
             }
             word => chose.push(word),
         }
     }
+    write.state = match states.as_slice() {
+        [] => DecisionState::Accepted,
+        [state] => *state,
+        _ => return Err("a decision is open or rejected, not both".to_string()),
+    };
     write.chose = chose.join(" ");
     write.checked().map_err(str::to_string)
 }
 
-pub(super) fn id_arg(flag: &str, raw: &str) -> Result<i64, String> {
-    raw.parse::<i64>()
+pub(super) fn id_arg(flag: &str, what: &str, raw: &str) -> Result<i64, String> {
+    raw.trim_start_matches('#')
+        .parse::<i64>()
         .ok()
         .filter(|id| *id > 0)
-        .ok_or_else(|| format!("{flag} wants a decision number, not {raw:?}"))
+        .ok_or_else(|| format!("{flag} wants a {what} number, not {raw:?}"))
 }
 
 /// One JSON read from the pane API, with every way it can fail phrased for
@@ -1170,6 +1465,200 @@ mod tests {
     fn task_add_rejects_a_non_positive_parent_id() {
         let error = parse_task_add_args(&["child", "--under", "0"]).unwrap_err();
         assert!(error.contains("task number"), "{error}");
+    }
+
+    #[test]
+    fn a_question_is_asked_with_its_options_under_the_task_that_raised_it() {
+        let write = parse_decide_args(&[
+            "which", "store?", "--open", "--option", "sqlite", "--option", "a file per feature",
+            "--task", "#12", "--context", "two processes write",
+        ])
+        .unwrap();
+        assert_eq!(write.chose, "which store?");
+        assert_eq!(write.state, DecisionState::Open);
+        assert_eq!(write.options, ["sqlite", "a file per feature"]);
+        assert_eq!(write.task, Some(12));
+        assert_eq!(write.context.as_deref(), Some("two processes write"));
+    }
+
+    #[test]
+    fn a_made_decision_says_what_it_costs_and_buys() {
+        let write = parse_decide_args(&[
+            "sqlite", "--detail", "one file in WAL mode", "--consequence", "+one transaction",
+            "--consequence", "- a migration ladder", "--consequence", "no sign is a gain",
+        ])
+        .unwrap();
+        assert_eq!(write.state, DecisionState::Accepted);
+        assert_eq!(write.detail.as_deref(), Some("one file in WAL mode"));
+        let read: Vec<_> = write.consequences.iter().map(|c| (c.gain, c.text.as_str())).collect();
+        assert_eq!(
+            read,
+            [(true, "one transaction"), (false, "a migration ladder"), (true, "no sign is a gain")]
+        );
+        let turned_down = parse_decide_args(&["a file per feature", "--rejected"]).unwrap();
+        assert_eq!(turned_down.state, DecisionState::Rejected);
+    }
+
+    #[test]
+    fn a_decision_flag_that_cannot_mean_anything_is_refused_before_it_travels() {
+        for (bad, expected) in [
+            (&["x", "--open", "--rejected"][..], "not both"),
+            (&["x", "--option", "y"], "only an open decision has options"),
+            (&["x", "--open", "--supersedes", "3"], "a question cannot replace"),
+            (&["x", "--task", "twelve"], "wants a task number"),
+            (&["x", "--consequence", " + "], "says nothing"),
+            (&["x", "--option"], "needs something after it"),
+        ] {
+            let error = parse_decide_args(bad).unwrap_err();
+            assert!(error.contains(expected), "{bad:?} gave {error:?}");
+        }
+    }
+
+    #[test]
+    fn resolving_a_decision_wants_its_number_and_then_the_answer() {
+        assert_eq!(
+            parse_resolve_args(&["#9", "sqlite,", "in", "WAL", "--because", "both need migrations"]),
+            Ok(DecisionChange::Resolve {
+                id: 9,
+                answer: "sqlite, in WAL".into(),
+                because: Some("both need migrations".into()),
+            })
+        );
+        for bad in [&[][..], &["sqlite"], &["9"], &["9", "--because", "why"], &["9", "x", "--why", "y"]] {
+            assert!(parse_resolve_args(bad).is_err(), "{bad:?}");
+        }
+        let message = decisions_message(&["resolve"], "http://127.0.0.1:1/pane/1", "t");
+        assert!(message.starts_with("could not change decision: resolve wants"), "{message}");
+        let message = decisions_message(&["rewrite", "9"], "http://127.0.0.1:1/pane/1", "t");
+        assert!(message.contains("--stdin"), "{message}");
+    }
+
+    #[test]
+    fn a_criterion_is_named_by_the_number_a_person_reads() {
+        let parse = |args: &[&str]| parse_task_criterion_args(args);
+        assert_eq!(
+            parse(&["add", "12", "a", "full", "queue", "refuses"]),
+            Ok(TaskAction::AddCriterion { id: 12, text: "a full queue refuses".into() })
+        );
+        assert_eq!(parse(&["check", "12", "1"]), Ok(TaskAction::SetCriterion { id: 12, index: 0, done: true }));
+        assert_eq!(
+            parse(&["uncheck", "12", "3"]),
+            Ok(TaskAction::SetCriterion { id: 12, index: 2, done: false })
+        );
+        assert_eq!(parse(&["drop", "12", "2"]), Ok(TaskAction::RemoveCriterion { id: 12, index: 1 }));
+        for bad in [
+            &[][..],
+            &["check"],
+            &["check", "twelve", "1"],
+            &["check", "12"],
+            &["check", "12", "0"],
+            &["check", "12", "first"],
+            &["check", "12", "1", "2"],
+            &["tick", "12", "1"],
+        ] {
+            assert!(parse(bad).is_err(), "{bad:?}");
+        }
+        let message = task_message(&["note"], "http://127.0.0.1:1/pane/1", "t");
+        assert!(message.contains("note wants the number"), "{message}");
+    }
+
+    #[test]
+    fn a_task_is_printed_with_its_criteria_checked_and_its_latest_notes() {
+        let list: TaskList = serde_json::from_str(
+            r#"{"project_name":"argus","feature":"queue","tasks":[
+                {"id":12,"feature":"queue","parent":null,"title":"bound the queue","body":null,
+                 "state":"doing","claimed_by":"sess-1","claimed_pane":4,"external":null,
+                 "position":0,"at":1,"session":null,
+                 "criteria":[{"text":"a full queue refuses","done":true},
+                             {"text":"a drained one accepts"}],
+                 "notes":[{"at":1,"session":"sess-1","pane":4,"text":"first"},
+                          {"at":2,"session":"sess-1","pane":4,"text":"second"},
+                          {"at":3,"session":null,"pane":4,"text":"third"},
+                          {"at":4,"session":null,"text":"ship the bound first"}]},
+                {"id":13,"feature":"queue","parent":12,"title":"under load","body":null,
+                 "state":"doing","claimed_by":null,"claimed_pane":5,"external":null,
+                 "position":0,"at":1,"session":null,
+                 "criteria":[{"text":"holds at 10k","done":false}]}
+            ]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            format_tasks(&list),
+            "Tasks under queue:\n\
+             #12  doing bound the queue — sess-1 (pane 4)\n\
+             \x20     [x] 1. a full queue refuses\n\
+             \x20     [ ] 2. a drained one accepts\n\
+             \x20     (1 earlier note(s))\n\
+             \x20     note, sess-1: second\n\
+             \x20     note, pane 4: third\n\
+             \x20     note, a person: ship the bound first\n\
+             └─ #13  doing under load — pane 5\n\
+             \x20     [ ] 1. holds at 10k"
+        );
+    }
+
+    fn decision_board() -> DecisionBoard {
+        serde_json::from_str(
+            r#"{"project":null,"name":"argus",
+                "features":[{"number":7,"slug":"queue","title":"The queue","body":"",
+                             "origin_checkout":null,"origin_branch":null,"at":1,"session":null}],
+                "decisions":[
+                {"id":1,"parent":null,"at":1,"session":null,"checkout":null,"feature":"queue",
+                 "chose":"refuse rather than drop","over":"dropping","because":null,
+                 "superseded_by":null,"task":12,"context":"a dropped frame is a wrong screen",
+                 "detail":"a full queue answers busy\nand the sender retries",
+                 "consequences":[{"gain":true,"text":"no torn screens"},
+                                 {"gain":false,"text":"senders must retry"}]},
+                {"id":2,"parent":1,"at":2,"session":null,"checkout":null,"feature":"queue",
+                 "chose":"which bound?","over":null,"because":null,"superseded_by":null,
+                 "state":"open","options":["a count","a byte size"]},
+                {"id":3,"parent":null,"at":3,"session":null,"checkout":null,"feature":"queue",
+                 "chose":"grow without bound","over":null,"because":"memory","superseded_by":null,
+                 "state":"rejected"}]}"#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_board_says_which_decisions_are_questions_and_what_each_was_raised_under() {
+        assert_eq!(
+            format_decision_board(&decision_board()),
+            "Decisions on The queue, newest last:\n\
+             1 below marked (open) are questions, not decisions: the person's to answer, not \
+             yours.\n\
+             #1 refuse rather than drop  (under task #12)\n\
+             │     context: a dropped frame is a wrong screen\n\
+             │     decision: a full queue answers busy\n\
+             │       and the sender retries\n\
+             │     over: dropping\n\
+             │     + no torn screens\n\
+             │     - senders must retry\n\
+             └─ #2 which bound?  (open)\n\
+             \x20        option: a count\n\
+             \x20        option: a byte size\n\
+             #3 grow without bound  (rejected)\n\
+             \x20     because: memory"
+        );
+    }
+
+    #[test]
+    fn a_feature_is_read_and_listed_by_the_number_a_person_calls_it() {
+        let tree = decision_board();
+        let board = FeatureBoard {
+            project: None,
+            project_name: "argus".into(),
+            features: tree.features,
+            current: Some("queue".into()),
+            decisions: tree.decisions,
+            unfiled: 0,
+        };
+        let read = format_feature(&board);
+        assert!(read.starts_with("Feature #7: The queue (queue)\n"), "{read}");
+        assert!(
+            read.contains("\n1 below marked (open) are questions, not decisions"),
+            "{read}"
+        );
+        assert!(format_feature_list(&board).contains("  #7 queue — The queue"));
     }
 
     #[test]

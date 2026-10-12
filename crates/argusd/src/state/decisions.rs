@@ -8,11 +8,17 @@
 //! client is pushed, since it draws the features alongside it; an agent is
 //! answered one feature at a time by `features`.
 //!
+//! A decision is not always made yet: an open one is a question, usually
+//! the person's to answer, and a rejected one an answer turned down. Both
+//! sides write all of it — a person from the feature view, an agent through
+//! its pane — and after resolving which feature a request is about the two
+//! are one path, so what a change may touch cannot differ by who asked.
+//!
 //! Nothing here is gated on a project flag. The board exists for agents to
-//! write, is append-only, and attributes every row, so there is nothing for
-//! a policy to protect.
+//! write, never loses a row, and attributes every one, so there is nothing
+//! for a policy to protect.
 
-use argus_protocol::{Decision, DecisionBoard, DecisionWrite};
+use argus_protocol::{Decision, DecisionBoard, DecisionChange, DecisionWrite};
 
 use super::*;
 
@@ -51,7 +57,10 @@ impl Daemon {
         let key = scope.artifact_key(filing.scope);
         let feature = self.feature_for_agent(&scope, &filing)?;
         // A withdrawn decision stays on the board for people reading its
-        // history; an agent reads the ones that still stand.
+        // history; an agent reads the rest. That includes a question still
+        // open and an answer turned down, each carrying its state: what an
+        // agent must not do is read either as decided, and the surest way
+        // to have one decide a person's question alone is to hide it.
         let decisions = self
             .store
             .decisions(key)?
@@ -66,45 +75,78 @@ impl Daemon {
         })
     }
 
-    /// Withdraws a decision, or restores one withdrawn, for an agent, and
-    /// answers with the board as the agent now reads it.
-    ///
-    /// The decision has to be under the feature the request is about, as
-    /// every write naming a row does: an id from a list that has since
-    /// moved on must not reach into some other feature's history.
+    /// Changes one decision for an agent, and answers with the board as the
+    /// agent now reads it.
     pub fn change_decision_for_agent(
         &self,
         pane_id: PaneId,
-        change: argus_protocol::DecisionChange,
+        change: DecisionChange,
         filing: impl Into<super::features::Filing>,
     ) -> anyhow::Result<DecisionBoard> {
-        use argus_protocol::DecisionChange;
-
         let filing = filing.into();
         let scope = self.agent_scope(pane_id)?;
         let key = scope.artifact_key(filing.scope);
         let feature = self.feature_for_agent(&scope, &filing)?;
-        let (id, at) = match change {
-            DecisionChange::Withdraw { id } => {
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs() as i64)
-                    .unwrap_or_default();
-                (id, Some(now))
-            }
-            DecisionChange::Restore { id } => (id, None),
+        self.change_decision(&scope.project_name, key, feature.as_deref(), change)?;
+        self.decisions_for_agent(pane_id, filing)
+    }
+
+    /// Changes one decision from the feature view, which names its feature
+    /// outright.
+    pub fn change_decision_for_client(
+        &self,
+        project: ProjectId,
+        checkout: CheckoutId,
+        feature: &str,
+        change: DecisionChange,
+    ) -> anyhow::Result<()> {
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
+        self.change_decision(&name, &key, Some(feature), change)
+    }
+
+    /// Answers, rewords, withdraws or restores one decision, and pushes the
+    /// board.
+    ///
+    /// The decision has to be under the feature the request is about, as
+    /// every write naming a row does: an id from a list that has since
+    /// moved on must not reach into some other feature's history.
+    fn change_decision(
+        &self,
+        name: &str,
+        key: &str,
+        feature: Option<&str>,
+        change: DecisionChange,
+    ) -> anyhow::Result<()> {
+        let id = match &change {
+            DecisionChange::Withdraw { id }
+            | DecisionChange::Restore { id }
+            | DecisionChange::Resolve { id, .. }
+            | DecisionChange::Rewrite { id, .. } => *id,
         };
         let under = self
             .store
             .decisions(key)?
             .into_iter()
-            .any(|d| d.id == id && d.feature.is_some() && d.feature == feature);
+            .any(|d| d.id == id && d.feature.is_some() && d.feature.as_deref() == feature);
         if !under {
             anyhow::bail!("decision {id} is not under this feature");
         }
-        self.store.set_decision_withdrawn(key, id, at)?;
-        self.broadcast_decisions(&scope.project_name, key, self.store.decisions(key)?);
-        self.decisions_for_agent(pane_id, filing)
+        match change {
+            DecisionChange::Withdraw { id } => {
+                self.store.set_decision_withdrawn(key, id, Some(now()))?
+            }
+            DecisionChange::Restore { id } => self.store.set_decision_withdrawn(key, id, None)?,
+            DecisionChange::Resolve {
+                id,
+                answer,
+                because,
+            } => self
+                .store
+                .resolve_decision(key, id, &answer, because.as_deref())?,
+            DecisionChange::Rewrite { id, text } => self.store.rewrite_decision(key, id, text)?,
+        }
+        self.broadcast_decisions(name, key, self.store.decisions(key)?);
+        Ok(())
     }
 
     /// Appends one decision, and returns it as the board now holds it.
@@ -136,29 +178,52 @@ impl Daemon {
                  existing one with `argus-hook feature <slug>`"
                 )
             })?;
-        let at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or_default();
         let checkout = scope.checkout_path.to_string_lossy().to_string();
         let id = self.store.add_decision(
             key,
             &write,
             Some(feature.as_str()),
-            at,
+            now(),
             session,
             Some(checkout.as_str()),
         )?;
-        // Read back rather than assembled from the write: `supersedes`
-        // decides the parent inside the transaction, so what the store
-        // holds is the only account of where the node actually landed.
+        self.recorded(&scope.project_name, key, id)
+    }
+
+    /// Records a decision from the feature view, under the feature it
+    /// names. A person's decision has no session and no checkout: it was
+    /// made looking at the board, not from inside a working tree.
+    pub fn decide_for_client(
+        &self,
+        project: ProjectId,
+        checkout: CheckoutId,
+        feature: &str,
+        write: DecisionWrite,
+    ) -> anyhow::Result<()> {
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
+        let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
+        // The store files a decision under whatever slug it is handed, so
+        // a feature removed since the view last drew it is refused here.
+        if !self.store.features(&key)?.iter().any(|f| f.slug == feature) {
+            anyhow::bail!("there is no feature {feature} on this project");
+        }
+        let id = self
+            .store
+            .add_decision(&key, &write, Some(feature), now(), None, None)?;
+        self.recorded(&name, &key, id).map(|_| ())
+    }
+
+    /// The decision just written, read back rather than assembled from the
+    /// write: `supersedes` decides the parent inside the transaction, so
+    /// what the store holds is the only account of where the node landed.
+    fn recorded(&self, name: &str, key: &str, id: i64) -> anyhow::Result<Decision> {
         let board = self.store.decisions(key)?;
         let recorded = board
             .iter()
             .find(|d| d.id == id)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("the decision was not recorded"))?;
-        self.broadcast_decisions(&scope.project_name, key, board);
+        self.broadcast_decisions(name, key, board);
         Ok(recorded)
     }
 
@@ -182,4 +247,11 @@ impl Daemon {
             decisions,
         });
     }
+}
+
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or_default()
 }

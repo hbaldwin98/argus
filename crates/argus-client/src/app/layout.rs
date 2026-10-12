@@ -52,15 +52,15 @@ pub struct Layout {
     /// The selected pane's terminal: the Workspace stage, or the whole
     /// content area while the pane is fullscreen.
     pub terminal: Panel,
-    /// The feature view's four panels: the list of features, and the
-    /// selected feature's brief, tasks, and decision tree. All zero-sized
-    /// while another stage is open, so a click cannot land on a panel that is
-    /// not drawn.
+    /// The Feature stage: the index of features, or, inside one, the
+    /// lens strip, the flows offered, the list being read and the detail
+    /// beside it. All zero-sized while another stage is open, so a click
+    /// cannot land on a panel that is not drawn.
     pub features: Panel,
-    pub feature_brief: Panel,
-    pub feature_tasks: Panel,
-    pub feature_diagrams: Panel,
-    pub feature_decisions: Panel,
+    pub feature_lenses: Panel,
+    pub feature_flows: Panel,
+    pub feature_list: Panel,
+    pub feature_detail: Panel,
     /// The row of view tabs above everything else. Zero-sized on a
     /// terminal too short to spend a row on it.
     pub views: Panel,

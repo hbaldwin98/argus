@@ -522,14 +522,14 @@ digit that opens each; clicking a tab does the same. Switching views never stops
 Drag the rail's right border to widen or narrow it; the width is saved to `client.toml` as
 `rail_width`.
 
-The Feature view reads the selected repository's features as a document: the feature list, then
-the selected one whole — its brief, the tasks left under it, its sequence diagrams, and the
-decisions taken while building it. Tasks may be nested to any depth, so newly discovered work
-stays readable under what exposed it. Features belong to the repository rather than a branch, so
-they remain available after a feature worktree is removed. The active list stays focused on open
-work; `v` switches to accepted feature history without deleting it.
-Every panel is scoped to the same feature, and each feature's line says what is happening to it:
-the agents running in its checkouts, how its tasks stand, and how much has been decided.
+The Feature view opens on an index of the selected repository's features, grouped by how they
+stand — active, queued, done — with the one under the cursor peeked at beside the list. Held and
+archived features are folded away until `z`. `Enter` opens a feature, which is read through three
+lenses: `1` work, the tasks and the decisions they raised as one outline; `2` record, every
+decision as a tree with the selected one read as an ADR; and `3` flows, its sequence diagrams step
+by step. A breadcrumb says where you are and `Esc` climbs it one level at a time. Features belong
+to the repository rather than a branch, so they remain available after a feature worktree is
+removed.
 
 Agent helper commands use that same repository scope. For a change that intentionally
 crosses repositories or branches, set `ARGUS_ARTIFACT_SCOPE=workspace` for the `argus-hook feature`,
@@ -538,24 +538,34 @@ inherited from whichever workspace the TUI currently shows.
 
 | Key | Action |
 | --- | --- |
-| `h` / `l`, arrows | Cross between the feature list and the feature being read |
-| Tab / Shift-Tab | Step through the brief, the tasks and the decisions |
-| `j` / `k` | Move in whichever panel has the keys; `d`/`u` ten at a time, `g`/`G` for the ends |
-| `a` | Write down a new feature, or a new root task under one, depending on the panel |
-| `s` | Add a subtask under the selected task |
-| `e` | Open the feature's brief, or rewrite the selected task's title |
-| Enter | Open the selected feature or task brief in the multiline editor |
+| `j` / `k` | Move in whatever has the keys; PageUp/PageDown ten at a time, Home/End for the ends |
+| Enter | Open it: a feature, a task's brief, a decision's record, a flow |
+| `1` `2` `3` | Inside a feature: read it as work, as a record, as flows |
+| Tab | Into the detail beside the list, and back |
+| `a` | A new feature written as one note; inside one, a root task, or a flow on the flows lens |
+| `i` | Write more of the open feature as one note |
+| `s` | A subtask under the selected task, or a sub-decision under the selected decision |
+| `d` | A decision, raised under the task the cursor is on. Start it with `?` to leave it open |
+| `u` / `o` / `y` | Supersede the decision, answer an open one in words, copy it as ADR markdown |
+| `c` / `n` | A done-when criterion for the selected task, or a note on it |
+| Space | Mark the task done or not; in the detail, check a criterion off |
+| `e` | Rewrite it: the brief, the task's title, the decision's record |
+| `h` / `l` | Work: fold or unfold the task. Flows: the flow before or after |
+| `H` / `L`, `J` / `K`, `>` / `<` | Move the task along todo, doing, done; among its siblings; in or out a level |
+| `g` | Go to the pane working the task or the feature |
 | `R` | Rename the feature — the title only; its slug is frozen so nothing filed under it is orphaned |
-| `x` | Remove the feature (its decisions survive as unfiled), or drop the selected task |
-| `.` | Accept the feature, or reopen one already accepted. The one state a person sets, and the one an agent cannot |
-| `v` | Switch between active features and accepted history |
-| `m` | Transfer the selected feature from this checkout to another checkout in the repository |
-| `H` / `L` | Move the selected task along todo, doing, done |
-| `J` / `K` | Move the selected task earlier or later among its siblings |
+| `x` | Remove the feature or task. A decision is withdrawn instead, and `x` again restores it |
+| `v` / `z` | Archive the feature or bring it back; show or fold the held and archived ones |
+| `m` / `p` / `w` | Move the feature to another checkout, hold it with a reason, choose what it comes after |
 | `r` | Re-ask the daemon for all of it |
-| Escape, `q` | Back to the workspace |
+| Escape | Up one level; `q` goes straight back to the workspace |
 
-When the Diagrams panel is focused, `Enter` opens the selected Mermaid sequence diagram. `j`/`k`
+In the note a feature is written as, the first line is its title and the prose under it its brief;
+a `-` line is a task and an indented one a subtask, a `?` line an open decision with its options
+indented beneath, and a `!` line a decision already made with the reason beneath. `Ctrl-S` creates
+it, Tab and Shift-Tab indent, Escape throws it away.
+
+On the flows lens `Enter` opens the selected Mermaid sequence diagram whole. `j`/`k`
 scroll vertically and `h`/`l` (or the arrows) pan horizontally when the diagram is wider than the
 overlay; `q` or Escape closes it.
 
@@ -663,7 +673,7 @@ Argus installs a small **argus skill** for built-in harnesses: `.claude/skills/a
 Claude Code, `.pi/skills/argus` for pi, and `.agents/skills/argus` for Codex, OpenCode, AGY, and
 Cursor. Where the harness has a context hook (Claude Code, Codex), the agent starts with the
 pane's context already printed by `argus-hook context`: review comments, and the checkout's feature
-by name with how much is filed under it. The brief itself is read with `argus-hook feature` when
+by name with how much is filed under it and any open decisions waiting on a person. The brief itself is read with `argus-hook feature` when
 the work touches it. Elsewhere the startup instructions ask it to run that command once. The
 agent loads `SKILL.md` only when it reports status or changes the board, and each reference only
 when it writes to that part of it. Hooks keep reporting lifecycle

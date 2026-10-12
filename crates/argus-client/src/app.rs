@@ -38,10 +38,14 @@ pub use modal::{Help, Overlay, Picker, PickerKind, Prompt, RemoveTarget, Setting
 pub use mode::{Mode, OverlayMode};
 pub use rail::RailRow;
 pub use rows::{CheckoutAnchor, CheckoutRow, PaneLocation};
-pub use views::{FeaturePanel, View};
+pub use board_writes::LineInput;
+pub use feature::{FeatureHit, FeatureRow, Lens, Standing, GROUPS};
+pub use views::View;
 
 mod actions;
 mod awaited;
+mod board_writes;
+mod feature;
 use awaited::Then;
 mod input;
 mod layout;
@@ -305,16 +309,30 @@ pub struct App {
     pub feature_sel: usize,
     /// The checkout the last board request was scoped to.
     pub board_checkout: Option<CheckoutId>,
-    /// Lines of the command center's brief scrolled past.
-    pub feature_brief_scroll: u16,
-    /// Accepted features are history, not active work. The feature view
-    /// keeps them one key away without letting them crowd the working list.
-    pub show_archived_features: bool,
-    /// Where the cursor is in the panel that has the keys, and which panel
-    /// that is.
-    pub panel: FeaturePanel,
-    pub task_sel: usize,
+    /// Whether the held and archived features are listed. Neither is work
+    /// to pick up, so the index folds them away until asked.
+    pub show_folded_features: bool,
+    /// Whether the stage is inside the selected feature rather than on the
+    /// index of them.
+    pub feature_open: bool,
+    /// How the open feature is being read.
+    pub lens: Lens,
+    /// Whether the keys are in the detail column beside the list, and
+    /// where its cursor is among a task's criteria or a question's options.
+    pub in_detail: bool,
+    pub detail_sel: usize,
+    /// The cursor in the work lens's outline, the record's decision tree,
+    /// and the selected flow's steps.
+    pub work_sel: usize,
     pub decision_sel: usize,
+    pub step_sel: usize,
+    /// The tasks the outline has folded shut, by id.
+    pub folded: std::collections::HashSet<i64>,
+    /// The note a feature is being written as, when one is.
+    pub capture: Option<BriefView>,
+    /// The selected flow as last drawn, kept so a frame does not render
+    /// Mermaid again to draw what has not changed.
+    pub flow_drawn: Option<(i64, crate::diagram::DiagramView)>,
     /// The task list of the selected feature. `None` until one arrives,
     /// which is not the same as a feature with no tasks.
     pub tasks: Option<argus_protocol::TaskList>,
@@ -325,7 +343,7 @@ pub struct App {
     /// The line being typed in the feature view, when one is. `Some` is
     /// what makes the view swallow keys — a view whose `x` deletes a row
     /// while you are typing a title with an x in it is not usable.
-    pub line: Option<crate::app::views::LineInput>,
+    pub line: Option<LineInput>,
     /// What the outstanding request was for; a diff for anything else is
     /// stale and dropped.
     review_request: Outstanding<CheckoutId>,
@@ -464,11 +482,17 @@ impl App {
             board_scoped: None,
             feature_sel: 0,
             board_checkout: None,
-            feature_brief_scroll: 0,
-            show_archived_features: false,
-            panel: Default::default(),
-            task_sel: 0,
+            show_folded_features: false,
+            feature_open: false,
+            lens: Lens::default(),
+            in_detail: false,
+            detail_sel: 0,
+            work_sel: 0,
             decision_sel: 0,
+            step_sel: 0,
+            folded: Default::default(),
+            capture: None,
+            flow_drawn: None,
             tasks: None,
             diagrams: None,
             diagram_sel: 0,

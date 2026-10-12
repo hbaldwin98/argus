@@ -2,7 +2,7 @@
 //! the bar too unless its keymap kept it to `?` on purpose.
 
 use super::*;
-use crate::app::{FeaturePanel, Help, View};
+use crate::app::{Help, Lens, View};
 use std::collections::BTreeSet;
 
 /// Each mode whose keys come from its keymap, in every state that changes
@@ -24,17 +24,22 @@ fn modes() -> Vec<(&'static str, Vec<App>)> {
         app.open_view(view);
         app
     };
-    let feature = [
-        FeaturePanel::Features,
-        FeaturePanel::Tasks,
-        FeaturePanel::Diagrams,
-        FeaturePanel::Decisions,
-    ]
-    .map(|panel| {
-        let mut app = stage(View::Feature);
-        app.panel = panel;
+    // The index, each lens of an open feature, and the detail column.
+    let reading = |lens: Lens, in_detail: bool| {
+        let mut app = app_reading_a_feature();
+        app.lens = lens;
+        app.in_detail = in_detail;
         app
-    });
+    };
+    let mut index = app_reading_a_feature();
+    index.feature_open = false;
+    let feature = [
+        index,
+        reading(Lens::Work, false),
+        reading(Lens::Work, true),
+        reading(Lens::Record, false),
+        reading(Lens::Flows, false),
+    ];
     let mut from_history = app_with_review();
     from_history.review.as_mut().unwrap().review.commit = Some(argus_protocol::CommitInfo {
         oid: "a".repeat(40),
@@ -81,6 +86,7 @@ fn offered(bar: &str) -> BTreeSet<String> {
 /// A key as a bar spells it.
 fn spelled(code: KeyCode) -> String {
     match code {
+        KeyCode::Char(' ') => "space".to_string(),
         KeyCode::Char(c) => c.to_string(),
         KeyCode::Enter => "enter".to_string(),
         KeyCode::Esc => "esc".to_string(),

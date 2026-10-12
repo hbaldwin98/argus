@@ -3,7 +3,7 @@
 
 use super::*;
 
-use crate::app::FeaturePanel;
+use crate::app::Lens;
 
 /// The status bar: where you are on the left, what you can press on the
 /// right. Context-sensitive, because the same key means different things
@@ -150,31 +150,39 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 "typing — enter saves it, esc throws it away",
                 "enter saves  esc drops",
             ][..],
-            // Written out per panel rather than read off the keymap, since
-            // which keys are live and what they are called there both
-            // depend on which panel has them: `a` adds a feature or root
-            // task and `s` adds a subtask in the tasks panel, and a bar that
-            // said neither would be a bar saying nothing.
-            Mode::Stage(View::Feature) => match app.panel {
-                FeaturePanel::Features => &[
-                    "h/l panels  j/k move  a new  e brief  R rename  m checkout  p hold  w after  v archive  x drop  . accept  r refresh  q workspace",
-                    "l tasks  j/k move  a new  e brief  m move  v archive  x drop  . accept  q workspace",
-                    "j/k  a new  m move  p hold  w after  v archive  . accept  q",
+            Mode::Stage(View::Feature) if app.capture.is_some() => &[
+                "ctrl-s create   tab indent   shift-tab outdent   esc cancel",
+                "ctrl-s create  tab indent  esc cancel",
+                "ctrl-s  esc",
+            ][..],
+            // Written out per level rather than read off the keymap, since
+            // which keys are live and what they are called both depend on
+            // where the stage is: `a` is a feature on the index, a task in
+            // one, and a flow on the flows lens.
+            Mode::Stage(View::Feature) if !app.feature_open => &[
+                "j/k move  enter open  a new  e brief  R rename  m checkout  p hold  w after  v archive  z folded  x drop  g pane  r refresh  q workspace",
+                "j/k move  enter open  a new  m checkout  p hold  w after  v archive  z folded  q workspace",
+                "j/k  enter open  a new  v archive  q",
+            ][..],
+            Mode::Stage(View::Feature) if app.in_detail => &[
+                "j/k move  space check or take it  x drop  tab list  esc up",
+                "j/k  space  tab list  esc",
+            ][..],
+            Mode::Stage(View::Feature) => match app.lens {
+                Lens::Work => &[
+                    "j/k move  h/l fold  space done  a task  s subtask  d decision  c criterion  n note  i note  enter brief  H/L state  J/K order  >/< nest  m feature  x drop  tab detail  2 record  esc up",
+                    "j/k move  h/l fold  space done  a task  s subtask  d decision  tab detail  2 record  esc up",
+                    "j/k  space done  a task  s subtask  tab  esc",
                 ][..],
-                FeaturePanel::Tasks => &[
-                    "h/l panels  j/k move  a root  s subtask  e title  enter brief  H/L todo→doing→done  J/K order  >/< nest  m feature  x drop  q workspace",
-                    "h/l panels  j/k move  a root  s subtask  e title  enter brief  H/L move  J/K order  x drop  q",
-                    "j/k  a root  s subtask  e title  enter brief  H/L move  q",
+                Lens::Record => &[
+                    "j/k move  d new decision  s sub-decision  u supersede  e edit  y copy  o answer  x withdraw  tab detail  1 work  3 flows  esc up",
+                    "j/k move  d new decision  s sub-decision  u supersede  tab detail  1 work  esc up",
+                    "j/k  d decision  tab  1 work  esc",
                 ][..],
-                FeaturePanel::Diagrams => &[
-                    "h/l panels  j/k move  a new  enter open  x drop  q workspace",
-                    "h/l panels  j/k move  a new  enter open  x drop  q",
-                    "j/k  enter open  a new  q",
-                ][..],
-                FeaturePanel::Decisions => &[
-                    "h/l panels  j/k move  d/u ten  g/G ends  r refresh  q workspace — agents write this",
-                    "h/l panels  j/k move  r refresh  q workspace",
-                    "h/l  j/k  q workspace",
+                Lens::Flows => &[
+                    "j/k step  h/l flow  a new flow  enter open  x drop  1 work  2 record  esc up",
+                    "j/k step  h/l flow  enter open  1 work  2 record  esc up",
+                    "j/k  h/l flow  enter  esc",
                 ][..],
             },
             // A parked pane is not taking input anywhere the operator can

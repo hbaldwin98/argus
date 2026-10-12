@@ -6,10 +6,15 @@
 //! names what it was chosen *over* as well as what was chosen, and hangs
 //! off the decision that constrained it.
 //!
-//! Nothing here is ever edited. A decision that turns out to be wrong is
-//! superseded by a new one, which points back at it; the old node stays on
-//! the board, drawn dimmed. Editing it away would leave a board that
-//! agrees with itself and explains nothing.
+//! A decision that turns out to be wrong is superseded by a new one, which
+//! points back at it; the old node stays on the board, drawn dimmed.
+//! Editing it away would leave a board that agrees with itself and explains
+//! nothing. What a person may correct is a decision's prose, the way they
+//! correct a brief, and what anyone may do to a question is answer it.
+//!
+//! A decision is not always made yet. One still `Open` is a question the
+//! work is waiting on, with the answers being weighed; one `Rejected` is an
+//! answer that was turned down, kept because it is the road not taken.
 
 use serde::{Deserialize, Serialize};
 
@@ -19,9 +24,91 @@ use crate::ids::ProjectId;
 /// Past this a field has stopped being a decision and started being a
 /// design document, which belongs in the checkout it describes.
 pub const MAX_DECISION_BYTES: usize = 1024;
+/// A question with more answers than this has not been thought about yet.
+pub const MAX_DECISION_OPTIONS: usize = 9;
+pub const MAX_DECISION_CONSEQUENCES: usize = 12;
+
+/// Whether a decision stands, is still being asked, or was turned down.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DecisionState {
+    /// Made, and what the work is built on.
+    #[default]
+    Accepted,
+    /// A question nobody has answered. Its `chose` is the question, and it
+    /// holds the tasks beside it until somebody answers.
+    Open,
+    /// An answer that was considered and turned down.
+    Rejected,
+}
+
+/// Read by name so a state a later build adds reads as accepted instead of
+/// failing the whole board, for the reason `FeatureState` gives.
+impl<'de> Deserialize<'de> for DecisionState {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<DecisionState, D::Error> {
+        let name = String::deserialize(d)?;
+        Ok(DecisionState::parse(&name).unwrap_or_default())
+    }
+}
+
+impl DecisionState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DecisionState::Accepted => "accepted",
+            DecisionState::Open => "open",
+            DecisionState::Rejected => "rejected",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<DecisionState> {
+        match text.trim().to_ascii_lowercase().as_str() {
+            "accepted" => Some(DecisionState::Accepted),
+            "open" => Some(DecisionState::Open),
+            "rejected" => Some(DecisionState::Rejected),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for DecisionState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// One thing a decision costs or buys.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Consequence {
+    /// Whether it is something gained rather than something paid.
+    pub gain: bool,
+    pub text: String,
+}
+
+impl Consequence {
+    /// Reads a line as it is written: a leading `-` is a cost, a leading
+    /// `+` or nothing a gain. `None` for a line that says nothing.
+    pub fn parse(line: &str) -> Option<Consequence> {
+        let line = line.trim();
+        let (gain, text) = match line.chars().next()? {
+            '+' => (true, &line[1..]),
+            '-' => (false, &line[1..]),
+            '−' => (false, &line['−'.len_utf8()..]),
+            _ => (true, line),
+        };
+        let text = text.trim();
+        (!text.is_empty()).then(|| Consequence {
+            gain,
+            text: text.to_string(),
+        })
+    }
+
+    pub fn sign(&self) -> char {
+        if self.gain { '+' } else { '-' }
+    }
+}
 
 /// One recorded decision.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Decision {
     /// Durable for the life of the board, unlike a pane or project id:
     /// this is what an agent passes back to hang the next decision off.
@@ -57,6 +144,24 @@ pub struct Decision {
     /// the history still says it was once decided; agents are not shown it.
     #[serde(default)]
     pub withdrawn_at: Option<i64>,
+    #[serde(default)]
+    pub state: DecisionState,
+    /// The task it was raised under. That one link is what binds the task
+    /// and everything beneath it to the decision, and what an open one
+    /// holds up.
+    #[serde(default)]
+    pub task: Option<i64>,
+    /// What was true that made a decision necessary.
+    #[serde(default)]
+    pub context: Option<String>,
+    /// The decision in full, where `chose` is only its name.
+    #[serde(default)]
+    pub detail: Option<String>,
+    #[serde(default)]
+    pub consequences: Vec<Consequence>,
+    /// The answers an open decision is choosing between.
+    #[serde(default)]
+    pub options: Vec<String>,
 }
 
 impl Decision {
@@ -67,6 +172,17 @@ impl Decision {
     pub fn withdrawn(&self) -> bool {
         self.withdrawn_at.is_some()
     }
+
+    /// Whether it is a question still waiting on somebody.
+    pub fn open(&self) -> bool {
+        self.state == DecisionState::Open && !self.withdrawn() && !self.superseded()
+    }
+
+    /// Whether the work is built on it: accepted, and neither replaced nor
+    /// taken back.
+    pub fn stands(&self) -> bool {
+        self.state == DecisionState::Accepted && !self.withdrawn() && !self.superseded()
+    }
 }
 
 /// A change to one decision already on the board. A decision is otherwise
@@ -76,6 +192,105 @@ impl Decision {
 pub enum DecisionChange {
     Withdraw { id: i64 },
     Restore { id: i64 },
+    /// Answers an open decision. `answer` becomes its `detail`, the options
+    /// not taken become what it was chosen over, and it is accepted.
+    Resolve {
+        id: i64,
+        answer: String,
+        because: Option<String>,
+    },
+    /// Replaces a decision's prose, keeping its place, state and history.
+    /// A person correcting what a decision says; one that turned out wrong
+    /// is still superseded.
+    Rewrite { id: i64, text: DecisionText },
+}
+
+/// Everything a decision says, apart from where it hangs and how it stands.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionText {
+    pub chose: String,
+    #[serde(default)]
+    pub context: Option<String>,
+    #[serde(default)]
+    pub detail: Option<String>,
+    #[serde(default)]
+    pub because: Option<String>,
+    #[serde(default)]
+    pub over: Option<String>,
+    #[serde(default)]
+    pub consequences: Vec<Consequence>,
+    #[serde(default)]
+    pub options: Vec<String>,
+}
+
+impl DecisionText {
+    /// The same trimming and bounds a new decision gets, since a rewrite
+    /// must not be the way past them.
+    pub fn checked(self) -> Result<DecisionText, &'static str> {
+        let tidy = |s: Option<String>| s.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        let text = DecisionText {
+            chose: self.chose.trim().to_string(),
+            context: tidy(self.context),
+            detail: tidy(self.detail),
+            because: tidy(self.because),
+            over: tidy(self.over),
+            consequences: self
+                .consequences
+                .into_iter()
+                .filter_map(|c| {
+                    let text = c.text.trim().to_string();
+                    (!text.is_empty()).then_some(Consequence { text, ..c })
+                })
+                .collect(),
+            options: self
+                .options
+                .into_iter()
+                .map(|o| o.trim().to_string())
+                .filter(|o| !o.is_empty())
+                .collect(),
+        };
+        if text.chose.is_empty() {
+            return Err("a decision has to say what was chosen");
+        }
+        let longest = [
+            Some(&text.chose),
+            text.context.as_ref(),
+            text.detail.as_ref(),
+            text.because.as_ref(),
+            text.over.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        .chain(text.options.iter())
+        .map(String::len)
+        .chain(text.consequences.iter().map(|c| c.text.len()))
+        .max()
+        .unwrap_or(0);
+        if longest > MAX_DECISION_BYTES {
+            return Err("a decision is a sentence or two per field, not a document");
+        }
+        if text.options.len() > MAX_DECISION_OPTIONS {
+            return Err("a decision with that many options is not a question yet");
+        }
+        if text.consequences.len() > MAX_DECISION_CONSEQUENCES {
+            return Err("a decision lists the consequences that matter, not all of them");
+        }
+        Ok(text)
+    }
+}
+
+impl From<&Decision> for DecisionText {
+    fn from(d: &Decision) -> DecisionText {
+        DecisionText {
+            chose: d.chose.clone(),
+            context: d.context.clone(),
+            detail: d.detail.clone(),
+            because: d.because.clone(),
+            over: d.over.clone(),
+            consequences: d.consequences.clone(),
+            options: d.options.clone(),
+        }
+    }
 }
 
 /// A decision as it is asked for, before the store gives it an identity.
@@ -90,6 +305,23 @@ pub struct DecisionWrite {
     /// place in the tree — its parent, not its children — and the old one
     /// is marked rather than removed.
     pub supersedes: Option<i64>,
+    /// Accepted unless said otherwise: `Open` asks a question, `Rejected`
+    /// records an answer that was turned down.
+    #[serde(default)]
+    pub state: DecisionState,
+    /// The task it is raised under, which must be on the same feature.
+    #[serde(default)]
+    pub task: Option<i64>,
+    #[serde(default)]
+    pub context: Option<String>,
+    #[serde(default)]
+    pub detail: Option<String>,
+    #[serde(default)]
+    pub consequences: Vec<Consequence>,
+    /// Only an open decision has options; a made one has what it was
+    /// chosen over.
+    #[serde(default)]
+    pub options: Vec<String>,
 }
 
 impl DecisionWrite {
@@ -101,33 +333,41 @@ impl DecisionWrite {
     /// tells the agent what was wrong with it, and the daemon is what
     /// cannot be talked past.
     pub fn checked(self) -> Result<DecisionWrite, &'static str> {
-        let tidy = |s: Option<String>| s.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-        let write = DecisionWrite {
-            chose: self.chose.trim().to_string(),
-            over: tidy(self.over),
-            because: tidy(self.because),
-            ..self
-        };
-        if write.chose.is_empty() {
-            return Err("a decision has to say what was chosen");
+        let text = DecisionText {
+            chose: self.chose,
+            context: self.context,
+            detail: self.detail,
+            because: self.because,
+            over: self.over,
+            consequences: self.consequences,
+            options: self.options,
         }
-        let longest = [
-            Some(&write.chose),
-            write.over.as_ref(),
-            write.because.as_ref(),
-        ]
-        .into_iter()
-        .flatten()
-        .map(|s| s.len())
-        .max()
-        .unwrap_or(0);
-        if longest > MAX_DECISION_BYTES {
-            return Err("a decision is a sentence or two per field, not a document");
-        }
-        if write.under.is_some() && write.supersedes.is_some() {
+        .checked()?;
+        if self.under.is_some() && self.supersedes.is_some() {
             return Err("a decision either hangs under one or replaces one, not both");
         }
-        Ok(write)
+        if self.task.is_some_and(|id| id <= 0) {
+            return Err("a task id must be positive");
+        }
+        if self.state != DecisionState::Open && !text.options.is_empty() {
+            return Err("only an open decision has options; say what a made one was chosen over");
+        }
+        if self.state == DecisionState::Open && self.supersedes.is_some() {
+            return Err("a question cannot replace a decision; supersede it with the answer");
+        }
+        Ok(DecisionWrite {
+            chose: text.chose,
+            over: text.over,
+            because: text.because,
+            under: self.under,
+            supersedes: self.supersedes,
+            state: self.state,
+            task: self.task,
+            context: text.context,
+            detail: text.detail,
+            consequences: text.consequences,
+            options: text.options,
+        })
     }
 }
 
@@ -156,6 +396,26 @@ pub struct DecisionTreeRow<'a> {
     pub ancestor_continuations: Vec<bool>,
     pub has_next_sibling: bool,
     pub has_children: bool,
+    /// Its one-based place among its siblings at each depth, which is what
+    /// a reader calls it: `[2, 1]` is `D2.1`.
+    pub number: Vec<usize>,
+}
+
+impl DecisionTreeRow<'_> {
+    /// What a reader calls this decision. Positional, so it is for reading
+    /// a board and never for writing to one: `id` is what a write names.
+    pub fn label(&self) -> String {
+        format!("D{}", outline_number(&self.number))
+    }
+}
+
+/// A place in an outline as it is said aloud: `2.1`.
+pub fn outline_number(number: &[usize]) -> String {
+    number
+        .iter()
+        .map(usize::to_string)
+        .collect::<Vec<_>>()
+        .join(".")
 }
 
 impl DecisionBoard {
@@ -189,6 +449,20 @@ impl DecisionBoard {
             .count()
     }
 
+    /// One feature's decisions that stand, and its questions still open.
+    pub fn standing_for(&self, feature: Option<&str>) -> (usize, usize) {
+        let filed = self
+            .decisions
+            .iter()
+            .filter(|d| d.feature.as_deref() == feature);
+        filed.fold((0, 0), |(decided, open), d| {
+            (
+                decided + usize::from(d.stands()),
+                open + usize::from(d.open()),
+            )
+        })
+    }
+
     /// The board flattened depth-first with each decision's depth, which
     /// is the order it is drawn in.
     ///
@@ -213,7 +487,7 @@ impl DecisionBoard {
             children.entry(parent).or_default().push(d);
         }
         let mut out = Vec::new();
-        walk(&children, None, 0, &mut Vec::new(), &mut out);
+        walk(&children, None, &mut Vec::new(), &mut Vec::new(), &mut out);
         out
     }
 }
@@ -221,21 +495,24 @@ impl DecisionBoard {
 fn walk<'a>(
     children: &std::collections::HashMap<Option<i64>, Vec<&'a Decision>>,
     parent: Option<i64>,
-    depth: usize,
+    number: &mut Vec<usize>,
     ancestor_continuations: &mut Vec<bool>,
     out: &mut Vec<DecisionTreeRow<'a>>,
 ) {
     let Some(here) = children.get(&parent) else {
         return;
     };
+    let depth = number.len();
     for (index, decision) in here.iter().enumerate() {
         let has_next_sibling = index + 1 < here.len();
+        number.push(index + 1);
         out.push(DecisionTreeRow {
             depth,
             decision,
             ancestor_continuations: ancestor_continuations.clone(),
             has_next_sibling,
             has_children: children.contains_key(&Some(decision.id)),
+            number: number.clone(),
         });
         if depth > 0 {
             ancestor_continuations.push(has_next_sibling);
@@ -243,13 +520,14 @@ fn walk<'a>(
         walk(
             children,
             Some(decision.id),
-            depth + 1,
+            number,
             ancestor_continuations,
             out,
         );
         if depth > 0 {
             ancestor_continuations.pop();
         }
+        number.pop();
     }
 }
 
@@ -270,6 +548,7 @@ mod tests {
             because: None,
             superseded_by: None,
             withdrawn_at: None,
+            ..Decision::default()
         }
     }
 

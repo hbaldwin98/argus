@@ -17,11 +17,21 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::ids::PaneId;
+
 /// Past this a task title has stopped being a line on a card.
 pub const MAX_TASK_TITLE_BYTES: usize = 300;
 /// Enough room for task-specific context and acceptance criteria without
 /// turning one task into an unbounded document.
 pub const MAX_TASK_BODY_BYTES: usize = 8192;
+/// A criterion is one checkable line, and a task with more than a screen of
+/// them is several tasks.
+pub const MAX_CRITERION_BYTES: usize = 300;
+pub const MAX_TASK_CRITERIA: usize = 20;
+pub const MAX_TASK_NOTE_BYTES: usize = 600;
+/// The notes a task keeps. Past this the oldest go: a note says where the
+/// work stands, and what stood forty notes ago is the transcript's to keep.
+pub const MAX_TASK_NOTES: usize = 40;
 
 /// How far along a task is.
 ///
@@ -97,8 +107,41 @@ impl TaskCounts {
     }
 }
 
+/// One thing that has to be true before a task is done.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Criterion {
+    pub text: String,
+    #[serde(default)]
+    pub done: bool,
+}
+
+/// A line left on a task by whoever is working it, or by the person
+/// steering them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskNote {
+    pub at: i64,
+    /// The agent session that wrote it, `None` when a person did.
+    pub session: Option<String>,
+    /// The pane it was written from, when the daemon knew.
+    #[serde(default)]
+    pub pane: Option<PaneId>,
+    pub text: String,
+}
+
+/// Trims a criterion or a note and holds it to its bound.
+pub fn checked_task_line(text: &str, max: usize) -> Result<String, &'static str> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("there is nothing written there");
+    }
+    if text.len() > max {
+        return Err("that is a paragraph; a task's brief is where prose goes");
+    }
+    Ok(text.to_string())
+}
+
 /// One task, as it is stored and drawn.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Task {
     /// Stable for the life of the row, which is the whole reason a task is
     /// a row: a human rewriting the list around it must not renumber it.
@@ -126,6 +169,17 @@ pub struct Task {
     pub position: i64,
     pub at: i64,
     pub session: Option<String>,
+    /// The pane `claimed_by` was running in when it took the task, when the
+    /// daemon knew. A session id tells a reader nothing; a pane is
+    /// somewhere to go.
+    #[serde(default)]
+    pub claimed_pane: Option<PaneId>,
+    /// What "done" means for this task, each checked off as it lands.
+    #[serde(default)]
+    pub criteria: Vec<Criterion>,
+    /// Oldest first.
+    #[serde(default)]
+    pub notes: Vec<TaskNote>,
 }
 
 /// A task as it is asked for, before the store gives it an id.
@@ -216,6 +270,27 @@ pub enum TaskAction {
         id: i64,
         place: TaskPlace,
     },
+    /// Adds one thing that has to be true before the task is done.
+    AddCriterion {
+        id: i64,
+        text: String,
+    },
+    /// Checks a criterion off, or takes that back. `index` is zero-based
+    /// into the task's criteria as they were last read.
+    SetCriterion {
+        id: i64,
+        index: usize,
+        done: bool,
+    },
+    RemoveCriterion {
+        id: i64,
+        index: usize,
+    },
+    /// Leaves a line on the task.
+    Note {
+        id: i64,
+        text: String,
+    },
 }
 
 /// Where [`TaskAction::Place`] puts a task. Named against another task
@@ -261,6 +336,15 @@ pub struct TaskTreeRow<'a> {
     pub ancestor_continuations: Vec<bool>,
     pub has_next_sibling: bool,
     pub has_children: bool,
+    /// Its one-based place among its siblings at each depth: `[2, 2]` is
+    /// task `2.2`. For reading; a write names the task by `id`.
+    pub number: Vec<usize>,
+}
+
+impl TaskTreeRow<'_> {
+    pub fn label(&self) -> String {
+        crate::decisions::outline_number(&self.number)
+    }
 }
 
 impl TaskList {
@@ -281,24 +365,27 @@ impl TaskList {
 
         let mut out = Vec::new();
         let mut visited = std::collections::HashSet::new();
-        walk_tasks(&children, None, 0, &mut Vec::new(), &mut visited, &mut out);
+        walk_tasks(&children, None, &mut Vec::new(), &mut Vec::new(), &mut visited, &mut out);
         // A cycle cannot be created through the normal write path, but the
         // database intentionally has no foreign key so an interrupted or
         // hand-edited store must not hang a client while it renders. Start
         // any cycle member as a visible root and let `visited` stop the loop.
+        let mut roots = children.get(&None).map_or(0, Vec::len);
         for task in &self.tasks {
             if visited.insert(task.id) {
+                roots += 1;
                 out.push(TaskTreeRow {
                     depth: 0,
                     task,
                     ancestor_continuations: Vec::new(),
                     has_next_sibling: false,
                     has_children: children.contains_key(&Some(task.id)),
+                    number: vec![roots],
                 });
                 walk_tasks(
                     &children,
                     Some(task.id),
-                    1,
+                    &mut vec![roots],
                     &mut Vec::new(),
                     &mut visited,
                     &mut out,
@@ -322,7 +409,7 @@ impl TaskList {
 fn walk_tasks<'a>(
     children: &std::collections::HashMap<Option<i64>, Vec<&'a Task>>,
     parent: Option<i64>,
-    depth: usize,
+    number: &mut Vec<usize>,
     ancestor_continuations: &mut Vec<bool>,
     visited: &mut std::collections::HashSet<i64>,
     out: &mut Vec<TaskTreeRow<'a>>,
@@ -330,17 +417,20 @@ fn walk_tasks<'a>(
     let Some(siblings) = children.get(&parent) else {
         return;
     };
+    let depth = number.len();
     for (index, task) in siblings.iter().enumerate() {
         if !visited.insert(task.id) {
             continue;
         }
         let has_next_sibling = index + 1 < siblings.len();
+        number.push(index + 1);
         out.push(TaskTreeRow {
             depth,
             task,
             ancestor_continuations: ancestor_continuations.clone(),
             has_next_sibling,
             has_children: children.contains_key(&Some(task.id)),
+            number: number.clone(),
         });
         if depth > 0 {
             ancestor_continuations.push(has_next_sibling);
@@ -348,7 +438,7 @@ fn walk_tasks<'a>(
         walk_tasks(
             children,
             Some(task.id),
-            depth + 1,
+            number,
             ancestor_continuations,
             visited,
             out,
@@ -356,6 +446,7 @@ fn walk_tasks<'a>(
         if depth > 0 {
             ancestor_continuations.pop();
         }
+        number.pop();
     }
 }
 
@@ -438,7 +529,26 @@ mod tests {
             position,
             at: 0,
             session: None,
+            ..Task::default()
         }
+    }
+
+    #[test]
+    fn tasks_and_decisions_are_numbered_by_their_place_in_the_outline() {
+        let list = TaskList {
+            project_name: "argus".into(),
+            feature: Some("feature".into()),
+            tasks: vec![
+                task(1, None, 0, "root"),
+                task(2, None, 1, "second"),
+                task(3, Some(2), 0, "child"),
+                task(4, Some(2), 1, "sibling"),
+            ],
+        };
+
+        let labels: Vec<String> = list.tree_rows().iter().map(TaskTreeRow::label).collect();
+
+        assert_eq!(labels, ["1", "2", "2.1", "2.2"]);
     }
 
     #[test]

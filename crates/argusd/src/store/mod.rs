@@ -17,15 +17,19 @@ use std::sync::Mutex as StdMutex;
 
 use anyhow::{Context, Result};
 use argus_protocol::{
-    checked_task_body, slugify, Decision, DecisionWrite, Feature, FeatureEvent, FeatureMove,
-    FeatureState, FeatureWrite, PaneKind, PaneStatus, ReviewAnchor, ReviewComment, Task,
-    TaskCounts, TaskPlace, TaskState, TaskWrite, MAX_REVIEW_COMMENTS,
+    checked_task_body, checked_task_line, slugify, Capture, CapturedDecision, CapturedTask,
+    Consequence, Criterion, Decision, DecisionState, DecisionText, DecisionWrite, Feature,
+    FeatureEvent, FeatureMove, FeatureState, FeatureWrite, PaneId, PaneKind, PaneStatus,
+    ReviewAnchor, ReviewComment, Task, TaskCounts, TaskNote, TaskPlace, TaskState, TaskWrite,
+    MAX_CRITERION_BYTES, MAX_DECISION_BYTES, MAX_REVIEW_COMMENTS, MAX_TASK_CRITERIA,
+    MAX_TASK_NOTES, MAX_TASK_NOTE_BYTES,
 };
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::paths::same_path;
 
 mod boards;
+mod capture;
 mod legacy;
 mod panel;
 mod reviews;
@@ -34,7 +38,7 @@ mod session;
 
 use schema::{
     SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16,
-    SCHEMA_V17, SCHEMA_V18, SCHEMA_V2,
+    SCHEMA_V17, SCHEMA_V18, SCHEMA_V19, SCHEMA_V2,
     SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
 };
 
@@ -104,7 +108,7 @@ pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 pub(crate) static NO_RESTORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 18;
+const SCHEMA_VERSION: i64 = 19;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -134,6 +138,9 @@ impl Store {
         let store = Self::open_at(&path)
             .with_context(|| format!("opening the runtime store at {}", path.display()))?;
         store.import_legacy_files(&dir)?;
+        // Only here, on the one open a daemon makes of its own file: a test
+        // reopening a store at a path is checking what survived.
+        store.forget_panes()?;
         Ok(store)
     }
 
@@ -237,6 +244,9 @@ impl Store {
         }
         if from < 18 {
             tx.execute_batch(SCHEMA_V18)?;
+        }
+        if from < 19 {
+            tx.execute_batch(SCHEMA_V19)?;
         }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;

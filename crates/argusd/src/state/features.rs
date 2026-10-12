@@ -70,8 +70,9 @@ impl Daemon {
         let current = self.board_feature(scope, artifact_scope, &features, named)?;
         let decisions = self.store.decisions(key)?;
         let unfiled = decisions.iter().filter(|d| d.feature.is_none()).count();
-        // An agent reads the decisions that still stand; a withdrawn one is
-        // kept for people reading the history in the view.
+        // An agent reads everything but what was withdrawn, which is kept
+        // for people reading the history in the view; `decisions_for_agent`
+        // says why a question still open is not held back.
         let scoped: Vec<Decision> = match &current {
             Some(slug) => decisions
                 .into_iter()
@@ -416,6 +417,39 @@ impl Daemon {
             .map(|d| d.as_secs() as i64)
             .unwrap_or_default();
         self.store.add_feature(&key, &write, None, None, at, None)?;
+        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
+        Ok(())
+    }
+
+    /// Writes a note down as a feature, or with `into` adds its tasks and
+    /// decisions to one that exists, and pushes what changed.
+    ///
+    /// A new feature is opened as [`Self::open_feature_for_client`] opens
+    /// one, for the same reason: a person's note is work not yet started,
+    /// so it has no origin and no checkout pointed at it.
+    pub fn capture_feature_for_client(
+        &self,
+        project: ProjectId,
+        checkout: CheckoutId,
+        into: Option<&str>,
+        capture: argus_protocol::Capture,
+    ) -> anyhow::Result<()> {
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
+        let capture = capture
+            .checked(into.is_none())
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or_default();
+        let slug = self.store.capture_feature(&key, into, &capture, at)?;
+        // The tasks as well as the board: a client holding the feature's
+        // list open is owed the rows a note just added to it.
+        let _ = self.tasks_tx.send(argus_protocol::TaskList {
+            project_name: name.clone(),
+            tasks: self.store.tasks(&key, &slug)?,
+            feature: Some(slug),
+        });
         self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
         Ok(())
     }

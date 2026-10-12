@@ -1432,3 +1432,194 @@ async fn diagrams_belong_to_the_feature_the_checkout_is_on() {
     assert!(list.diagrams.is_empty(), "drop removes the row");
     close_all(&d);
 }
+
+// --- open decisions, and what a task says about its own progress ----------
+
+#[tokio::test]
+async fn an_open_question_reaches_an_agent_as_a_question_and_is_answered_once() {
+    use argus_protocol::{DecisionChange, DecisionState};
+
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    d.start_hook_server().unwrap();
+    let checkout = only_checkout(&d);
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+    open_feature(&d, agent, "notes storage");
+    let post = |endpoint, body: String| {
+        let d = d.clone();
+        async move { String::from_utf8_lossy(&post_agent_hook(&d, agent, endpoint, &body).await).to_string() }
+    };
+
+    let asked = post(
+        Endpoint::Decide,
+        r#"{"chose":"which store?","state":"open","options":["sqlite","a file per feature"]}"#.into(),
+    )
+    .await;
+    assert!(asked.starts_with("HTTP/1.1 200 OK"), "{asked}");
+    let read = d.decisions_for_agent(agent, ArtifactScope::default()).unwrap();
+    let question = &read.decisions[0];
+    assert!(question.open(), "the agent is shown it, and shown it as not decided");
+    assert_eq!(question.options, ["sqlite", "a file per feature"]);
+    let board = d.feature_board_for_agent(agent, ArtifactScope::default()).unwrap();
+    assert_eq!(board.decisions[0].state, DecisionState::Open);
+
+    // Options belong to a question; a made decision carrying them is told so.
+    let muddled = post(Endpoint::Decide, r#"{"chose":"sqlite","options":["x"]}"#.into()).await;
+    assert!(muddled.starts_with("HTTP/1.1 409") && muddled.contains("only an open decision"), "{muddled}");
+
+    let resolve = |answer: &str| {
+        serde_json::to_string(&DecisionChange::Resolve {
+            id: question.id,
+            answer: answer.into(),
+            because: Some("both need migrations".into()),
+        })
+        .unwrap()
+    };
+    let answered = post(Endpoint::DecisionChange, resolve("sqlite")).await;
+    assert!(answered.starts_with("HTTP/1.1 200 OK"), "{answered}");
+    let made = d.decisions_for_agent(agent, ArtifactScope::default()).unwrap().decisions.remove(0);
+    assert!(made.stands());
+    assert_eq!(
+        (made.detail.as_deref(), made.over.as_deref(), made.because.as_deref()),
+        (Some("sqlite"), Some("a file per feature"), Some("both need migrations"))
+    );
+
+    let again = post(Endpoint::DecisionChange, resolve("a file per feature")).await;
+    assert!(again.starts_with("HTTP/1.1 409") && again.contains("not an open question"), "{again}");
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn a_decision_full_to_its_bounds_fits_through_the_pane_api() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    d.start_hook_server().unwrap();
+    let agent = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+    open_feature(&d, agent, "notes storage");
+    let full = "x".repeat(argus_protocol::MAX_DECISION_BYTES);
+    let write = DecisionWrite {
+        chose: full.clone(),
+        context: Some(full.clone()),
+        detail: Some(full.clone()),
+        because: Some(full.clone()),
+        over: Some(full.clone()),
+        consequences: vec![
+            argus_protocol::Consequence { gain: false, text: full.clone() };
+            argus_protocol::MAX_DECISION_CONSEQUENCES
+        ],
+        ..Default::default()
+    };
+
+    let body = serde_json::to_string(&write).unwrap();
+    let recorded =
+        String::from_utf8_lossy(&post_agent_hook(&d, agent, Endpoint::Decide, &body).await).to_string();
+
+    assert!(recorded.starts_with("HTTP/1.1 200 OK"), "{}", &recorded[..recorded.len().min(200)]);
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn a_task_says_which_pane_took_it_up_and_a_person_names_none() {
+    use argus_protocol::{TaskState, TaskWrite};
+
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let checkout = only_checkout(&d);
+    let project = d.snapshot()[0].id;
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+    let slug = open_feature(&d, agent, "the pty");
+    let as_agent = |action: TaskAction| {
+        d.part_action_for_agent(agent, Some("sess-1"), action, ArtifactScope::default())
+    };
+    let as_person = |action: TaskAction| d.part_action_for_client(project, checkout, &slug, action);
+    let id = as_agent(TaskAction::Add(TaskWrite { title: "port the parser".into(), ..Default::default() }))
+        .unwrap()
+        .tasks[0]
+        .id;
+
+    let taken = as_agent(TaskAction::Move { id, state: TaskState::Doing }).unwrap().tasks.remove(0);
+    assert_eq!((taken.claimed_by.as_deref(), taken.claimed_pane), (Some("sess-1"), Some(agent)));
+    as_agent(TaskAction::Note { id, text: "lexer done".into() }).unwrap();
+    let noted = as_person(TaskAction::Note { id, text: "ship the lexer first".into() })
+        .unwrap()
+        .tasks
+        .remove(0);
+    let who: Vec<_> = noted.notes.iter().map(|n| (n.session.as_deref(), n.pane)).collect();
+    assert_eq!(who, [(Some("sess-1"), Some(agent)), (None, None)]);
+
+    let released = as_agent(TaskAction::Move { id, state: TaskState::Done }).unwrap().tasks.remove(0);
+    assert_eq!((released.claimed_by, released.claimed_pane), (None, None));
+    let by_hand = as_person(TaskAction::Move { id, state: TaskState::Doing }).unwrap().tasks.remove(0);
+    assert_eq!((by_hand.claimed_by, by_hand.claimed_pane), (None, None), "a person claims nothing");
+
+    // Criteria travel the same path, and a place that is not there is
+    // refused in words rather than ignored.
+    as_agent(TaskAction::AddCriterion { id, text: "round-trips a fixture".into() }).unwrap();
+    let checked = as_person(TaskAction::SetCriterion { id, index: 0, done: true }).unwrap();
+    assert!(checked.tasks[0].criteria[0].done);
+    let error = as_agent(TaskAction::SetCriterion { id, index: 1, done: true }).unwrap_err().to_string();
+    assert_eq!(error, "task 1 has no criterion 2; it has 1");
+
+    // And like every write naming a row, only under the feature asked about.
+    open_feature(&d, agent, "the wire");
+    for elsewhere in [
+        TaskAction::Note { id, text: "from the wrong feature".into() },
+        TaskAction::AddCriterion { id, text: "from the wrong feature".into() },
+        TaskAction::RemoveCriterion { id, index: 0 },
+    ] {
+        let error = as_agent(elsewhere).unwrap_err().to_string();
+        assert!(error.contains("is not under this feature"), "{error}");
+    }
+    close_all(&d);
+}
+
+#[tokio::test]
+async fn a_person_decides_and_changes_decisions_only_under_the_feature_they_name() {
+    use argus_protocol::{DecisionChange, DecisionState, DecisionText};
+
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let checkout = only_checkout(&d);
+    let project = d.snapshot()[0].id;
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+    let pty = open_feature(&d, agent, "the pty");
+    let wire = open_feature(&d, agent, "the wire");
+    let mut pushed = d.subscribe_decisions();
+
+    let question = DecisionWrite {
+        chose: "which framing?".into(),
+        state: DecisionState::Open,
+        options: vec!["length-prefixed".into(), "delimited".into()],
+        ..Default::default()
+    };
+    d.decide_for_client(project, checkout, &wire, question.clone()).unwrap();
+    let board = pushed.try_recv().expect("a decision from the view is pushed like any other");
+    let asked = board.decisions[0].clone();
+    assert_eq!((asked.feature.as_deref(), &asked.session, &asked.checkout), (Some(wire.as_str()), &None, &None));
+    assert_eq!(board.features.iter().map(|f| f.number).collect::<Vec<_>>(), [1, 2]);
+    assert_eq!(board.standing_for(Some(&wire)), (0, 1));
+
+    let refused = d.decide_for_client(project, checkout, "gone", question).unwrap_err().to_string();
+    assert!(refused.contains("no feature gone"), "{refused}");
+
+    let reword = DecisionChange::Rewrite {
+        id: asked.id,
+        text: DecisionText { chose: "how are frames delimited?".into(), ..DecisionText::from(&asked) },
+    };
+    let wrong_feature = d
+        .change_decision_for_client(project, checkout, &pty, reword.clone())
+        .unwrap_err()
+        .to_string();
+    assert!(wrong_feature.contains("is not under this feature"), "{wrong_feature}");
+    d.change_decision_for_client(project, checkout, &wire, reword).unwrap();
+    let resolve = DecisionChange::Resolve { id: asked.id, answer: "delimited".into(), because: None };
+    d.change_decision_for_client(project, checkout, &wire, resolve).unwrap();
+
+    let made = d.decision_board(project, checkout).unwrap().decisions.remove(0);
+    assert!(made.stands());
+    assert_eq!(
+        (made.chose.as_str(), made.detail.as_deref(), made.over.as_deref()),
+        ("how are frames delimited?", Some("delimited"), Some("length-prefixed"))
+    );
+    close_all(&d);
+}

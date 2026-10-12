@@ -98,7 +98,7 @@ impl App {
                 .as_ref()
                 .is_some_and(|v| v.mode == BriefMode::Insert),
             Mode::Overlay(OverlayMode::Pane) => true,
-            Mode::Stage(View::Feature) => self.line.is_some(),
+            Mode::Stage(View::Feature) => self.line.is_some() || self.capture.is_some(),
             Mode::Overlay(_) | Mode::Stage(_) | Mode::Rail => false,
         }
     }

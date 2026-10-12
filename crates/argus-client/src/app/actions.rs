@@ -82,6 +82,22 @@ impl App {
                 slug,
                 body,
             },
+            BriefTarget::Decision {
+                project,
+                feature,
+                id,
+            } => ClientMsg::ChangeDecision {
+                project,
+                checkout: checkout.expect("a decision belongs to the selected checkout"),
+                feature,
+                change: argus_protocol::DecisionChange::Rewrite {
+                    id,
+                    text: argus_protocol::DecisionText::from_markdown(&body),
+                },
+            },
+            // A note is sent whole by its own key, and is never the brief
+            // overlay's to save.
+            BriefTarget::Capture { .. } => return,
         });
     }
 

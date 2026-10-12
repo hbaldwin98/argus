@@ -352,6 +352,7 @@ impl App {
         // Held by slug across the swap: a board arriving while an agent
         // writes must not move the reader to another feature's tree.
         let was = self.current_feature_row().map(|row| row.slug);
+        let row = self.selected_work();
         self.board = Some(board);
         if let Some(at) = was.and_then(|slug| {
             self.feature_rows()
@@ -361,6 +362,7 @@ impl App {
             self.feature_sel = at;
         }
         self.rescope_feature();
+        self.keep_selection(row);
     }
 
     fn receive_tasks(&mut self, list: argus_protocol::TaskList) {
@@ -378,14 +380,11 @@ impl App {
         // Held by id across the swap, so a task reordered or moved under
         // the cursor is still the task under the cursor: a card you have
         // to go looking for reads as having been lost.
-        let was = self.selected_task().map(|task| task.id);
+        let was = self.selected_work();
         let mut list = list;
         list.tasks = list.tasks_in_tree_order();
         self.tasks = Some(list);
-        match restore_position_by_id(self.feature_tasks(), |task| task.id, was) {
-            Some(at) => self.task_sel = at,
-            None => self.clamp_task_selection(),
-        }
+        self.keep_selection(was);
     }
 
     fn receive_diagrams(&mut self, list: argus_protocol::DiagramList) {
@@ -400,7 +399,7 @@ impl App {
         self.diagrams = Some(list);
         match restore_position_by_id(self.feature_diagrams(), |d| d.id, was) {
             Some(at) => self.diagram_sel = at,
-            None => self.clamp_diagram_selection(),
+            None => self.clamp_feature_cursors(),
         }
     }
 

@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::damage::{CellRun, Scroll};
-use crate::decisions::DecisionBoard;
+use crate::capture::Capture;
+use crate::decisions::{DecisionBoard, DecisionChange, DecisionWrite};
 use crate::features::{FeatureState, FeatureWrite};
 use crate::hello::Hello;
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
@@ -248,6 +249,32 @@ pub enum ClientMsg {
         checkout: CheckoutId,
         feature: String,
         action: TaskAction,
+    },
+    /// Record a decision under a feature: the person's `argus-hook decide`.
+    /// The answer is the pushed board.
+    Decide {
+        project: ProjectId,
+        checkout: CheckoutId,
+        feature: String,
+        write: DecisionWrite,
+    },
+    /// Answer, reword, withdraw or restore a decision under a feature.
+    ChangeDecision {
+        project: ProjectId,
+        checkout: CheckoutId,
+        feature: String,
+        change: DecisionChange,
+    },
+    /// Write a whole note down as a feature: its title and brief, the tasks
+    /// under it and the decisions it already holds, in one transaction so
+    /// a note is never half a feature. With `into`, the note's tasks and
+    /// decisions are added to that feature, and its title and brief are
+    /// left as they are.
+    CaptureFeature {
+        project: ProjectId,
+        checkout: CheckoutId,
+        into: Option<String>,
+        capture: Box<Capture>,
     },
     /// Read or change one feature's sequence diagrams. A read is answered
     /// with [`ServerMsg::SequenceDiagrams`]; a write is pushed like tasks.

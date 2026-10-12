@@ -17,6 +17,9 @@ Tasks belong to the selected feature (see [features.md](features.md)).
 "$ARGUS_HOOK" task drop <id>
 "$ARGUS_HOOK" task move <id> --under <id>            # or --top, --before <id>, --after <id>
 "$ARGUS_HOOK" task move <id> --to <feature-slug>     # with its subtasks
+"$ARGUS_HOOK" task criterion add <id> "a full queue refuses"
+"$ARGUS_HOOK" task criterion check <id> <n>          # or uncheck, drop
+"$ARGUS_HOOK" task note <id> "bounded; the refusal path is next"
 ```
 
 ## Shaping the board
@@ -50,6 +53,23 @@ rarely needed.
   `done` only after every remaining subtask is `done` or dropped.
 - Return a task to `todo` if you stop without finishing it.
 - Task completion is separate from the human accepting the feature as a whole.
+
+## Criteria and notes
+
+A criterion is one checkable thing that has to be true before the task is done;
+`task` prints them numbered, and `<n>` is that number. Add them when you take a
+task up or when the human says what done means, check each off as it lands, and
+mark the task `done` only when every one is checked. Leave criteria the human
+wrote as they are unless they ask.
+
+A note is a line saying where the work stands: what is finished, what is next,
+what you are waiting on. Leave one when you stop mid-task or hand it over, so
+the next reader does not have to reconstruct it. Notes are not a log — a task
+keeps only its most recent ones — and a finding the whole feature needs belongs
+in the brief.
+
+A task raised behind an open decision (see [decisions.md](decisions.md)) waits
+for the human's answer; do not take it up by picking an option yourself.
 
 ## Correcting the board
 

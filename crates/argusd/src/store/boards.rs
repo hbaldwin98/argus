@@ -12,10 +12,6 @@ impl Store {
     /// and the mark on the row it replaces. A board that had gained the
     /// reversal but not the mark would show two live decisions
     /// contradicting each other.
-    ///
-    /// A superseding decision takes the place of the one it replaces —
-    /// its parent, not its children. It is a different answer to the same
-    /// question, so it belongs where that question was asked.
     pub fn add_decision(
         &self,
         project: &str,
@@ -27,53 +23,12 @@ impl Store {
     ) -> Result<i64> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        // A decision replaces or hangs under one on its own feature: a
-        // number from another feature's board is a mistyped number, and
-        // taking it would mark that feature's reasoning replaced.
-        let named = |id: i64| -> Result<Option<i64>> {
-            let (parent, on): (Option<i64>, Option<String>) = tx
-                .query_row(
-                    "SELECT parent, feature FROM decision WHERE id = ?1 AND project = ?2",
-                    rusqlite::params![id, project],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
-                )
-                .optional()?
-                .ok_or_else(|| anyhow::anyhow!("there is no decision {id} on this board"))?;
-            if feature.is_some() && on.as_deref() != feature {
-                anyhow::bail!("decision {id} is under another feature");
-            }
-            Ok(parent)
+        let filed = Filed {
+            project,
+            at,
+            session,
         };
-        let parent = match write.supersedes {
-            Some(old) => named(old)?,
-            None => write.under,
-        };
-        if let Some(under) = write.under {
-            named(under)?;
-        }
-        tx.execute(
-            "INSERT INTO decision
-                 (project, parent, at, session, checkout, feature, chose, over_, because)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            rusqlite::params![
-                project,
-                parent,
-                at,
-                session,
-                checkout,
-                feature,
-                write.chose,
-                write.over,
-                write.because
-            ],
-        )?;
-        let id = tx.last_insert_rowid();
-        if let Some(old) = write.supersedes {
-            tx.execute(
-                "UPDATE decision SET superseded_by = ?1 WHERE id = ?2 AND project = ?3",
-                rusqlite::params![id, old, project],
-            )?;
-        }
+        let id = insert_decision(&tx, &filed, write, feature, checkout)?;
         tx.commit()?;
         Ok(id)
     }
@@ -82,41 +37,7 @@ impl Store {
     /// tree with the old half cut off is a tree with no roots, which is
     /// the part that explains the rest.
     pub fn decisions(&self, project: &str) -> Result<Vec<Decision>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT id, parent, at, session, checkout, feature, chose, over_, because,
-                    superseded_by, withdrawn_at
-             FROM decision WHERE project = ?1 ORDER BY id",
-        )?;
-        let rows = stmt.query_map(rusqlite::params![project], |r| {
-            Ok(Decision {
-                id: r.get(0)?,
-                parent: r.get(1)?,
-                at: r.get(2)?,
-                session: r.get(3)?,
-                checkout: r.get(4)?,
-                feature: r.get(5)?,
-                chose: r.get(6)?,
-                over: r.get(7)?,
-                because: r.get(8)?,
-                superseded_by: r.get(9)?,
-                withdrawn_at: r.get(10)?,
-            })
-        })?;
-        let mut decisions = rows.collect::<rusqlite::Result<Vec<_>>>()?;
-        // A replacement withdrawn as recorded in error replaces nothing, so
-        // what it named stands again; restoring it brings the link back.
-        let withdrawn: Vec<i64> = decisions
-            .iter()
-            .filter(|d| d.withdrawn())
-            .map(|d| d.id)
-            .collect();
-        for decision in &mut decisions {
-            if decision.superseded_by.is_some_and(|by| withdrawn.contains(&by)) {
-                decision.superseded_by = None;
-            }
-        }
-        Ok(decisions)
+        read_decisions(&self.conn(), project)
     }
 
     /// Marks a decision withdrawn at `at`, or restores it with `None`.
@@ -131,14 +52,105 @@ impl Store {
         Ok(())
     }
 
+    /// Answers an open decision: it is accepted, `answer` becomes what was
+    /// decided in full, and the options not taken become what it was chosen
+    /// over unless it already says.
+    ///
+    /// Only a question can be answered. A decision already made is replaced
+    /// by superseding it, which keeps what was believed; answering it again
+    /// would overwrite that in place.
+    pub fn resolve_decision(
+        &self,
+        project: &str,
+        id: i64,
+        answer: &str,
+        because: Option<&str>,
+    ) -> Result<()> {
+        let answer = answer.trim();
+        let because = because.map(str::trim).filter(|b| !b.is_empty());
+        if answer.is_empty() {
+            anyhow::bail!("resolving a decision has to say what was decided");
+        }
+        if answer.len().max(because.map_or(0, str::len)) > MAX_DECISION_BYTES {
+            anyhow::bail!("a decision is a sentence or two per field, not a document");
+        }
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let decision = read_decisions(&tx, project)?
+            .into_iter()
+            .find(|d| d.id == id)
+            .ok_or_else(|| anyhow::anyhow!("there is no decision {id} on this board"))?;
+        if !decision.open() {
+            anyhow::bail!(
+                "decision {id} is not an open question; supersede a decision that was made"
+            );
+        }
+        let passed_over = decision
+            .options
+            .iter()
+            .filter(|option| !option.trim().eq_ignore_ascii_case(answer))
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join("; ");
+        let over = decision
+            .over
+            .or_else(|| (!passed_over.is_empty()).then(|| bounded(passed_over)));
+        tx.execute(
+            "UPDATE decision
+             SET state = ?1, detail = ?2, because = COALESCE(?3, because), over_ = ?4,
+                 options = '[]'
+             WHERE project = ?5 AND id = ?6",
+            rusqlite::params![
+                DecisionState::Accepted.as_str(),
+                answer,
+                because,
+                over,
+                project,
+                id
+            ],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Replaces what a decision says, leaving where it hangs, how it stands
+    /// and who recorded it alone.
+    ///
+    /// Options are what an open decision is choosing between, so they are
+    /// kept only on one: a made decision says what it was chosen over.
+    pub fn rewrite_decision(&self, project: &str, id: i64, text: DecisionText) -> Result<()> {
+        let text = text.checked().map_err(anyhow::Error::msg)?;
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let decision = read_decisions(&tx, project)?
+            .into_iter()
+            .find(|d| d.id == id)
+            .ok_or_else(|| anyhow::anyhow!("there is no decision {id} on this board"))?;
+        let options = if decision.open() { text.options } else { Vec::new() };
+        tx.execute(
+            "UPDATE decision
+             SET chose = ?1, context = ?2, detail = ?3, because = ?4, over_ = ?5,
+                 consequences = ?6, options = ?7
+             WHERE project = ?8 AND id = ?9",
+            rusqlite::params![
+                text.chose,
+                text.context,
+                text.detail,
+                text.because,
+                text.over,
+                encode(&text.consequences)?,
+                encode(&options)?,
+                project,
+                id
+            ],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
     // ---- features ----------------------------------------------------
 
-    /// Opens a feature and returns it with the slug it was given.
-    ///
-    /// The slug is derived from the title and made unique by suffix inside
-    /// the transaction: two agents opening the same-sounding feature on two
-    /// branches at the same moment must neither collide on one key nor end
-    /// up quietly filing decisions on the same board.
+    /// Opens a feature and returns it with the slug and number it was given.
     pub fn add_feature(
         &self,
         project: &str,
@@ -150,48 +162,12 @@ impl Store {
     ) -> Result<Feature> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        let base = slugify(&write.title);
-        let mut slug = base.clone();
-        for n in 2.. {
-            let taken: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
-                rusqlite::params![project, slug],
-                |r| r.get(0),
-            )?;
-            if !taken {
-                break;
-            }
-            slug = format!("{base}-{n}");
-        }
-        let feature = Feature {
-            slug,
-            title: write.title.clone(),
-            body: write.body.clone().unwrap_or_default(),
-            origin_checkout: origin_checkout.map(str::to_string),
-            origin_branch: origin_branch.map(str::to_string),
+        let filed = Filed {
+            project,
             at,
-            session: session.map(str::to_string),
-            state: FeatureState::default(),
-            checkouts: Vec::new(),
-            tasks: TaskCounts::default(),
-            held: None,
-            waits_on: Vec::new(),
+            session,
         };
-        tx.execute(
-            "INSERT INTO feature
-                 (project, slug, title, body, origin_checkout, origin_branch, at, session)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            rusqlite::params![
-                project,
-                feature.slug,
-                feature.title,
-                feature.body,
-                feature.origin_checkout,
-                feature.origin_branch,
-                feature.at,
-                feature.session
-            ],
-        )?;
+        let feature = insert_feature(&tx, &filed, write, origin_checkout, origin_branch)?;
         tx.commit()?;
         Ok(feature)
     }
@@ -200,7 +176,8 @@ impl Store {
     pub fn features(&self, project: &str) -> Result<Vec<Feature>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT slug, title, body, origin_checkout, origin_branch, at, session, state, held
+            "SELECT slug, title, body, origin_checkout, origin_branch, at, session, state, held,
+                    number
              FROM feature WHERE project = ?1 ORDER BY at, slug",
         )?;
         let rows = stmt.query_map(rusqlite::params![project], |r| {
@@ -220,6 +197,7 @@ impl Store {
                 tasks: TaskCounts::default(),
                 held: r.get(8)?,
                 waits_on: Vec::new(),
+                number: r.get(9)?,
             })
         })?;
         let mut features = rows.collect::<rusqlite::Result<Vec<_>>>()?;
@@ -330,7 +308,7 @@ impl Store {
     ///
     /// Its tasks go with it — a task is a thing somebody meant to do, and
     /// one under a feature that no longer exists is not owed to anyone.
-    /// Its decisions do not: the board is append-only because it records
+    /// Its decisions do not: the board keeps every decision because it records
     /// what was believed at the time, which outlives the feature it was
     /// believed about, so they are unfiled and show up on the board's
     /// "before features" row. Any checkout pointed here is unpointed, or
@@ -345,6 +323,11 @@ impl Store {
         if changed == 0 {
             anyhow::bail!("there is no feature {slug} on this project");
         }
+        tx.execute(
+            "DELETE FROM task_note WHERE task IN
+                 (SELECT id FROM task WHERE project = ?1 AND feature = ?2)",
+            rusqlite::params![project, slug],
+        )?;
         tx.execute(
             "DELETE FROM task WHERE project = ?1 AND feature = ?2",
             rusqlite::params![project, slug],
@@ -369,8 +352,9 @@ impl Store {
             "DELETE FROM artifact_feature_scope WHERE artifact_scope = ?1 AND slug = ?2",
             rusqlite::params![project, slug],
         )?;
+        // The tasks they were raised under went with the feature.
         tx.execute(
-            "UPDATE decision SET feature = NULL WHERE project = ?1 AND feature = ?2",
+            "UPDATE decision SET feature = NULL, task = NULL WHERE project = ?1 AND feature = ?2",
             rusqlite::params![project, slug],
         )?;
         tx.commit()?;
@@ -695,69 +679,14 @@ impl Store {
     ) -> Result<Task> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        let exists: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
-            rusqlite::params![project, feature],
-            |r| r.get(0),
-        )?;
-        if !exists {
-            anyhow::bail!("there is no feature {feature} on this project");
-        }
-        let parent = write.parent;
-        if parent.is_some_and(|parent| parent <= 0) {
-            anyhow::bail!("a parent task id must be positive");
-        }
-        if let Some(parent) = parent {
-            let exists: bool = tx.query_row(
-                "SELECT EXISTS(
-                     SELECT 1 FROM task
-                     WHERE project = ?1 AND feature = ?2 AND id = ?3
-                 )",
-                rusqlite::params![project, feature, parent],
-                |r| r.get(0),
-            )?;
-            if !exists {
-                anyhow::bail!("there is no parent task {parent} under feature {feature}");
-            }
-        }
-        let position: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(position), -1) + 1
-             FROM task
-             WHERE project = ?1 AND feature = ?2 AND parent IS ?3",
-            rusqlite::params![project, feature, parent],
-            |r| r.get(0),
-        )?;
-        tx.execute(
-            "INSERT INTO task
-                 (project, feature, parent, title, state, external, position, at, session)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            rusqlite::params![
-                project,
-                feature,
-                parent,
-                write.title,
-                TaskState::Todo.as_str(),
-                write.external,
-                position,
-                at,
-                session
-            ],
-        )?;
-        let id = tx.last_insert_rowid();
-        tx.commit()?;
-        Ok(Task {
-            id,
-            feature: feature.to_string(),
-            parent,
-            title: write.title.clone(),
-            body: None,
-            state: TaskState::Todo,
-            claimed_by: None,
-            external: write.external.clone(),
-            position,
+        let filed = Filed {
+            project,
             at,
-            session: session.map(str::to_string),
-        })
+            session,
+        };
+        let task = insert_task(&tx, &filed, feature, write)?;
+        tx.commit()?;
+        Ok(task)
     }
 
     /// One feature's tasks, in depth-first order. The database query is one
@@ -766,7 +695,8 @@ impl Store {
     pub fn tasks(&self, project: &str, feature: &str) -> Result<Vec<Task>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT id, feature, parent, title, body, state, claimed_by, external, position, at, session
+            "SELECT id, feature, parent, title, body, state, claimed_by, external, position, at,
+                    session, claimed_pane, criteria
              FROM task WHERE project = ?1 AND feature = ?2 ORDER BY position, id",
         )?;
         let rows = stmt.query_map(rusqlite::params![project, feature], |r| {
@@ -782,9 +712,40 @@ impl Store {
                 position: r.get(8)?,
                 at: r.get(9)?,
                 session: r.get(10)?,
+                claimed_pane: pane_column(r, 11)?,
+                criteria: decode_row(&r.get::<_, String>(12)?, 12)?,
+                notes: Vec::new(),
             })
         })?;
-        let tasks = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut tasks = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(stmt);
+
+        // One grouped read rather than a query per task, as the features
+        // read their checkouts.
+        let mut stmt = conn.prepare(
+            "SELECT note.task, note.at, note.session, note.pane, note.text
+             FROM task_note note JOIN task ON task.id = note.task
+             WHERE task.project = ?1 AND task.feature = ?2
+             ORDER BY note.id",
+        )?;
+        let notes = stmt
+            .query_map(rusqlite::params![project, feature], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    TaskNote {
+                        at: r.get(1)?,
+                        session: r.get(2)?,
+                        pane: pane_column(r, 3)?,
+                        text: r.get(4)?,
+                    },
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for (id, note) in notes {
+            if let Some(task) = tasks.iter_mut().find(|task| task.id == id) {
+                task.notes.push(note);
+            }
+        }
         Ok(argus_protocol::TaskList {
             project_name: String::new(),
             feature: Some(feature.to_string()),
@@ -797,23 +758,145 @@ impl Store {
     ///
     /// Taking it up is what claims it and finishing it is what releases
     /// it, so a `doing` column always says who is on each card without
-    /// anyone having to claim anything by hand.
+    /// anyone having to claim anything by hand. The pane goes with the
+    /// session and leaves with it: a session id tells a reader who, and
+    /// only the pane tells them where to look.
     pub fn move_task(
         &self,
         project: &str,
         id: i64,
         state: TaskState,
         session: Option<&str>,
+        pane: Option<PaneId>,
     ) -> Result<()> {
-        let claimed = match state {
-            TaskState::Doing => session,
-            TaskState::Todo | TaskState::Done => None,
+        let (claimed, pane) = match state {
+            TaskState::Doing => (session, pane),
+            TaskState::Todo | TaskState::Done => (None, None),
         };
         self.update_one(
-            "UPDATE task SET state = ?1, claimed_by = ?2 WHERE project = ?3 AND id = ?4",
-            rusqlite::params![state.as_str(), claimed, project, id],
+            "UPDATE task SET state = ?1, claimed_by = ?2, claimed_pane = ?3
+             WHERE project = ?4 AND id = ?5",
+            rusqlite::params![
+                state.as_str(),
+                claimed,
+                pane.map(|pane| pane.0 as i64),
+                project,
+                id
+            ],
             || format!("there is no task {id} on this project"),
         )
+    }
+
+    /// Adds one thing that has to be true before the task is done.
+    pub fn add_task_criterion(&self, project: &str, id: i64, text: &str) -> Result<()> {
+        let text = checked_task_line(text, MAX_CRITERION_BYTES).map_err(anyhow::Error::msg)?;
+        self.change_task_criteria(project, id, |criteria| {
+            if criteria.len() >= MAX_TASK_CRITERIA {
+                anyhow::bail!(
+                    "task {id} already has {MAX_TASK_CRITERIA} criteria; more than that is \
+                     several tasks"
+                );
+            }
+            criteria.push(Criterion { text, done: false });
+            Ok(())
+        })
+    }
+
+    /// Checks the criterion at zero-based `index` off, or takes that back.
+    pub fn set_task_criterion(&self, project: &str, id: i64, index: usize, done: bool) -> Result<()> {
+        self.change_task_criteria(project, id, |criteria| {
+            let count = criteria.len();
+            let criterion = criteria
+                .get_mut(index)
+                .ok_or_else(|| no_such_criterion(id, index, count))?;
+            criterion.done = done;
+            Ok(())
+        })
+    }
+
+    pub fn remove_task_criterion(&self, project: &str, id: i64, index: usize) -> Result<()> {
+        self.change_task_criteria(project, id, |criteria| {
+            if index >= criteria.len() {
+                return Err(no_such_criterion(id, index, criteria.len()));
+            }
+            criteria.remove(index);
+            Ok(())
+        })
+    }
+
+    /// One read-modify-write of a task's criteria. A transaction, so two
+    /// agents ticking different criteria of one task both land.
+    fn change_task_criteria(
+        &self,
+        project: &str,
+        id: i64,
+        change: impl FnOnce(&mut Vec<Criterion>) -> Result<()>,
+    ) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let stored: String = tx
+            .query_row(
+                "SELECT criteria FROM task WHERE project = ?1 AND id = ?2",
+                rusqlite::params![project, id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| anyhow::anyhow!("there is no task {id} on this project"))?;
+        let mut criteria: Vec<Criterion> = serde_json::from_str(&stored)?;
+        change(&mut criteria)?;
+        tx.execute(
+            "UPDATE task SET criteria = ?1 WHERE project = ?2 AND id = ?3",
+            rusqlite::params![encode(&criteria)?, project, id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Leaves a line on a task, dropping the oldest past the bound.
+    pub fn add_task_note(
+        &self,
+        project: &str,
+        id: i64,
+        text: &str,
+        at: i64,
+        session: Option<&str>,
+        pane: Option<PaneId>,
+    ) -> Result<()> {
+        let text = checked_task_line(text, MAX_TASK_NOTE_BYTES).map_err(anyhow::Error::msg)?;
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM task WHERE project = ?1 AND id = ?2)",
+            rusqlite::params![project, id],
+            |r| r.get(0),
+        )?;
+        if !exists {
+            anyhow::bail!("there is no task {id} on this project");
+        }
+        tx.execute(
+            "INSERT INTO task_note (task, at, session, pane, text) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![id, at, session, pane.map(|pane| pane.0 as i64), text],
+        )?;
+        tx.execute(
+            "DELETE FROM task_note WHERE task = ?1 AND id NOT IN
+                 (SELECT id FROM task_note WHERE task = ?1 ORDER BY id DESC LIMIT ?2)",
+            rusqlite::params![id, MAX_TASK_NOTES as i64],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Forgets which pane held each claim and wrote each note.
+    ///
+    /// Pane ids are handed out fresh on every start, so one read back after
+    /// a restart would name whichever pane happened to get the number. The
+    /// session beside it still says who.
+    pub(super) fn forget_panes(&self) -> Result<()> {
+        self.conn().execute_batch(
+            "UPDATE task SET claimed_pane = NULL WHERE claimed_pane IS NOT NULL;
+             UPDATE task_note SET pane = NULL WHERE pane IS NOT NULL;",
+        )?;
+        Ok(())
     }
 
     /// Rewrites a task's text, leaving where it is and who has it alone.
@@ -848,7 +931,7 @@ impl Store {
     /// decision is a record of what was believed, and a task is a thing
     /// somebody meant to do. A removed parent takes its newly discovered
     /// work with it; leaving those children behind would create rows with no
-    /// context and make the tree harder to trust.
+    /// context and make the tree harder to trust. Its notes go too.
     pub fn remove_task(&self, project: &str, id: i64) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
@@ -861,20 +944,34 @@ impl Store {
             )
             .optional()?
             .ok_or_else(|| anyhow::anyhow!("there is no task {id} on this project"))?;
-        tx.execute(
-            "WITH RECURSIVE descendants(id) AS (
-                 SELECT id FROM task
-                 WHERE project = ?1 AND feature = ?2 AND id = ?3
-                 UNION
-                 SELECT child.id FROM task child
-                 JOIN descendants parent ON child.parent = parent.id
-                 WHERE child.project = ?1 AND child.feature = ?2
-             )
-             DELETE FROM task
-             WHERE project = ?1 AND feature = ?2
-               AND id IN (SELECT id FROM descendants)",
-            rusqlite::params![project, feature, id],
-        )?;
+        let removed: Vec<i64> = tx
+            .prepare(
+                "WITH RECURSIVE descendants(id) AS (
+                     SELECT id FROM task
+                     WHERE project = ?1 AND feature = ?2 AND id = ?3
+                     UNION
+                     SELECT child.id FROM task child
+                     JOIN descendants parent ON child.parent = parent.id
+                     WHERE child.project = ?1 AND child.feature = ?2
+                 )
+                 SELECT id FROM descendants",
+            )?
+            .query_map(rusqlite::params![project, feature, id], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        for task in &removed {
+            tx.execute(
+                "DELETE FROM task WHERE project = ?1 AND id = ?2",
+                rusqlite::params![project, task],
+            )?;
+            tx.execute("DELETE FROM task_note WHERE task = ?1", [task])?;
+            // A decision outlives the task it was raised under: what was
+            // decided is still true of the feature, it just hangs from
+            // nothing now.
+            tx.execute(
+                "UPDATE decision SET task = NULL WHERE project = ?1 AND task = ?2",
+                rusqlite::params![project, task],
+            )?;
+        }
         // Keep the remaining sibling positions dense. The client sends a
         // sibling index, not a database-specific position; normalizing the
         // whole list also repairs gaps left by older stores.
@@ -1046,6 +1143,14 @@ impl Store {
                 "UPDATE task SET feature = ?1 WHERE project = ?2 AND id = ?3",
                 rusqlite::params![to_feature, project, task],
             )?;
+            // A decision stays on the feature it was made about, and a task
+            // on another feature is not one it can be raised under.
+            if to_feature != feature {
+                tx.execute(
+                    "UPDATE decision SET task = NULL WHERE project = ?1 AND task = ?2",
+                    rusqlite::params![project, task],
+                )?;
+            }
         }
         tx.execute(
             "UPDATE task SET parent = ?1 WHERE project = ?2 AND id = ?3",
@@ -1142,4 +1247,309 @@ impl Store {
         }
         Ok(())
     }
+}
+
+/// Who is writing a row, when, and on which board: what every insert under
+/// a feature needs and none of them decides.
+pub(super) struct Filed<'a> {
+    pub project: &'a str,
+    pub at: i64,
+    pub session: Option<&'a str>,
+}
+
+/// The slug is derived from the title and made unique by suffix inside the
+/// transaction: two agents opening the same-sounding feature on two
+/// branches at the same moment must neither collide on one key nor end up
+/// quietly filing decisions on the same board.
+pub(super) fn insert_feature(
+    tx: &rusqlite::Transaction<'_>,
+    filed: &Filed<'_>,
+    write: &FeatureWrite,
+    origin_checkout: Option<&str>,
+    origin_branch: Option<&str>,
+) -> Result<Feature> {
+    let project = filed.project;
+    let base = slugify(&write.title);
+    let mut slug = base.clone();
+    for n in 2.. {
+        let taken: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
+            rusqlite::params![project, slug],
+            |r| r.get(0),
+        )?;
+        if !taken {
+            break;
+        }
+        slug = format!("{base}-{n}");
+    }
+    // The counter, not the highest number in use: see `SCHEMA_V19`. The
+    // rows are consulted too, so a board whose counter was lost still
+    // cannot hand out a number somebody is using.
+    let number: i64 = tx.query_row(
+        "SELECT MAX(
+             COALESCE((SELECT last FROM feature_counter WHERE project = ?1), 0),
+             COALESCE((SELECT MAX(number) FROM feature WHERE project = ?1), 0)
+         ) + 1",
+        rusqlite::params![project],
+        |r| r.get(0),
+    )?;
+    tx.execute(
+        "INSERT INTO feature_counter (project, last) VALUES (?1, ?2)
+         ON CONFLICT(project) DO UPDATE SET last = excluded.last",
+        rusqlite::params![project, number],
+    )?;
+    let feature = Feature {
+        number,
+        slug,
+        title: write.title.clone(),
+        body: write.body.clone().unwrap_or_default(),
+        origin_checkout: origin_checkout.map(str::to_string),
+        origin_branch: origin_branch.map(str::to_string),
+        at: filed.at,
+        session: filed.session.map(str::to_string),
+        ..Feature::default()
+    };
+    tx.execute(
+        "INSERT INTO feature
+             (project, slug, title, body, origin_checkout, origin_branch, at, session, number)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        rusqlite::params![
+            project,
+            feature.slug,
+            feature.title,
+            feature.body,
+            feature.origin_checkout,
+            feature.origin_branch,
+            feature.at,
+            feature.session,
+            feature.number
+        ],
+    )?;
+    Ok(feature)
+}
+
+pub(super) fn insert_task(
+    tx: &rusqlite::Transaction<'_>,
+    filed: &Filed<'_>,
+    feature: &str,
+    write: &TaskWrite,
+) -> Result<Task> {
+    let project = filed.project;
+    let exists: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
+        rusqlite::params![project, feature],
+        |r| r.get(0),
+    )?;
+    if !exists {
+        anyhow::bail!("there is no feature {feature} on this project");
+    }
+    let parent = write.parent;
+    if parent.is_some_and(|parent| parent <= 0) {
+        anyhow::bail!("a parent task id must be positive");
+    }
+    if let Some(parent) = parent {
+        if !task_is_under(tx, project, feature, parent)? {
+            anyhow::bail!("there is no parent task {parent} under feature {feature}");
+        }
+    }
+    let position: i64 = tx.query_row(
+        "SELECT COALESCE(MAX(position), -1) + 1
+         FROM task
+         WHERE project = ?1 AND feature = ?2 AND parent IS ?3",
+        rusqlite::params![project, feature, parent],
+        |r| r.get(0),
+    )?;
+    tx.execute(
+        "INSERT INTO task
+             (project, feature, parent, title, state, external, position, at, session)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        rusqlite::params![
+            project,
+            feature,
+            parent,
+            write.title,
+            TaskState::Todo.as_str(),
+            write.external,
+            position,
+            filed.at,
+            filed.session
+        ],
+    )?;
+    Ok(Task {
+        id: tx.last_insert_rowid(),
+        feature: feature.to_string(),
+        parent,
+        title: write.title.clone(),
+        external: write.external.clone(),
+        position,
+        at: filed.at,
+        session: filed.session.map(str::to_string),
+        ..Task::default()
+    })
+}
+
+fn task_is_under(
+    tx: &rusqlite::Transaction<'_>,
+    project: &str,
+    feature: &str,
+    id: i64,
+) -> Result<bool> {
+    Ok(tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM task WHERE project = ?1 AND feature = ?2 AND id = ?3)",
+        rusqlite::params![project, feature, id],
+        |r| r.get(0),
+    )?)
+}
+
+/// A superseding decision takes the place of the one it replaces — its
+/// parent, not its children. It is a different answer to the same
+/// question, so it belongs where that question was asked.
+pub(super) fn insert_decision(
+    tx: &rusqlite::Transaction<'_>,
+    filed: &Filed<'_>,
+    write: &DecisionWrite,
+    feature: Option<&str>,
+    checkout: Option<&str>,
+) -> Result<i64> {
+    let project = filed.project;
+    // A decision replaces or hangs under one on its own feature: a
+    // number from another feature's board is a mistyped number, and
+    // taking it would mark that feature's reasoning replaced.
+    let named = |id: i64| -> Result<Option<i64>> {
+        let (parent, on): (Option<i64>, Option<String>) = tx
+            .query_row(
+                "SELECT parent, feature FROM decision WHERE id = ?1 AND project = ?2",
+                rusqlite::params![id, project],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+            .ok_or_else(|| anyhow::anyhow!("there is no decision {id} on this board"))?;
+        if feature.is_some() && on.as_deref() != feature {
+            anyhow::bail!("decision {id} is under another feature");
+        }
+        Ok(parent)
+    };
+    let parent = match write.supersedes {
+        Some(old) => named(old)?,
+        None => write.under,
+    };
+    if let Some(under) = write.under {
+        named(under)?;
+    }
+    // The same rule for the task it is raised under, for the same reason:
+    // the link is what holds a task behind an open question, and it must
+    // not reach onto another feature's list.
+    if let Some(task) = write.task {
+        let under = match feature {
+            Some(feature) => task_is_under(tx, project, feature, task)?,
+            None => false,
+        };
+        if !under {
+            anyhow::bail!("there is no task {task} under this feature to raise the decision under");
+        }
+    }
+    tx.execute(
+        "INSERT INTO decision
+             (project, parent, at, session, checkout, feature, chose, over_, because,
+              state, task, context, detail, consequences, options)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+        rusqlite::params![
+            project,
+            parent,
+            filed.at,
+            filed.session,
+            checkout,
+            feature,
+            write.chose,
+            write.over,
+            write.because,
+            write.state.as_str(),
+            write.task,
+            write.context,
+            write.detail,
+            encode(&write.consequences)?,
+            encode(&write.options)?
+        ],
+    )?;
+    let id = tx.last_insert_rowid();
+    if let Some(old) = write.supersedes {
+        tx.execute(
+            "UPDATE decision SET superseded_by = ?1 WHERE id = ?2 AND project = ?3",
+            rusqlite::params![id, old, project],
+        )?;
+    }
+    Ok(id)
+}
+
+/// Takes a connection so a write can read the board inside its own
+/// transaction, and judge a decision by what `Decision::open` says of it
+/// rather than by a second reading of the same columns.
+fn read_decisions(conn: &Connection, project: &str) -> Result<Vec<Decision>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, parent, at, session, checkout, feature, chose, over_, because,
+                superseded_by, withdrawn_at, state, task, context, detail, consequences, options
+         FROM decision WHERE project = ?1 ORDER BY id",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![project], |r| {
+        Ok(Decision {
+            id: r.get(0)?,
+            parent: r.get(1)?,
+            at: r.get(2)?,
+            session: r.get(3)?,
+            checkout: r.get(4)?,
+            feature: r.get(5)?,
+            chose: r.get(6)?,
+            over: r.get(7)?,
+            because: r.get(8)?,
+            superseded_by: r.get(9)?,
+            withdrawn_at: r.get(10)?,
+            // A state this build does not know was written by a newer one;
+            // read it as accepted rather than refusing the whole board.
+            state: DecisionState::parse(&r.get::<_, String>(11)?).unwrap_or_default(),
+            task: r.get(12)?,
+            context: r.get(13)?,
+            detail: r.get(14)?,
+            consequences: decode_row::<Vec<Consequence>>(&r.get::<_, String>(15)?, 15)?,
+            options: decode_row(&r.get::<_, String>(16)?, 16)?,
+        })
+    })?;
+    let mut decisions = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    // A replacement withdrawn as recorded in error replaces nothing, so
+    // what it named stands again; restoring it brings the link back.
+    let withdrawn: Vec<i64> = decisions
+        .iter()
+        .filter(|d| d.withdrawn())
+        .map(|d| d.id)
+        .collect();
+    for decision in &mut decisions {
+        if decision.superseded_by.is_some_and(|by| withdrawn.contains(&by)) {
+            decision.superseded_by = None;
+        }
+    }
+    Ok(decisions)
+}
+
+fn pane_column(row: &rusqlite::Row<'_>, column: usize) -> rusqlite::Result<Option<PaneId>> {
+    Ok(row
+        .get::<_, Option<i64>>(column)?
+        .and_then(|pane| u64::try_from(pane).ok())
+        .map(PaneId))
+}
+
+fn no_such_criterion(task: i64, index: usize, count: usize) -> anyhow::Error {
+    anyhow::anyhow!(
+        "task {task} has no criterion {}; it has {count}",
+        index.saturating_add(1)
+    )
+}
+
+/// Holds text assembled from several bounded fields to the bound of one,
+/// cutting on a character rather than through it.
+fn bounded(mut text: String) -> String {
+    let mut end = text.len().min(MAX_DECISION_BYTES);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text.truncate(end);
+    text
 }

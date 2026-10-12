@@ -38,6 +38,8 @@ mod wire;
 
 #[cfg(test)]
 mod fixtures;
+mod flow;
+mod outline;
 
 use argus_protocol::{ClientMsg, Hello, PaneId, ServerMsg};
 use crossterm::event::{Event, EventStream, KeyEventKind};

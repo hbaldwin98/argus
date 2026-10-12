@@ -94,6 +94,7 @@ impl App {
             // with an `x` in it does not delete the row behind it, and the
             // first escape puts the line away rather than the view.
             Mode::Stage(View::Feature) if self.line.is_some() => self.on_key_line(key),
+            Mode::Stage(View::Feature) if self.capture.is_some() => self.on_key_capture(key),
             Mode::Overlay(OverlayMode::SequenceDiagram | OverlayMode::Settings)
             | Mode::Stage(_)
             | Mode::Rail => {
@@ -645,6 +646,31 @@ impl App {
             .unwrap_or(0) as i32;
         let next = (current + delta).clamp(0, locations.len() as i32 - 1) as usize;
         self.select_pane_location(locations[next]);
+    }
+
+    /// A note being written down as a feature. Every key is text except
+    /// the few that shape the note, send it, or throw it away.
+    fn on_key_capture(&mut self, key: KeyEvent) {
+        let Some(note) = &mut self.capture else {
+            return;
+        };
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        match key.code {
+            KeyCode::Esc => self.capture = None,
+            KeyCode::Char('s') if ctrl => self.commit_capture(),
+            KeyCode::Enter => note.newline_keeping_indent(),
+            KeyCode::Backspace => note.backspace(),
+            KeyCode::Left => note.move_column(-1),
+            KeyCode::Right => note.move_column(1),
+            KeyCode::Up => note.move_by(-1),
+            KeyCode::Down => note.move_by(1),
+            KeyCode::Home => note.start_of_line(),
+            KeyCode::End => note.end_of_line(),
+            KeyCode::Tab => note.indent(true),
+            KeyCode::BackTab => note.indent(false),
+            KeyCode::Char(c) if !ctrl => note.insert_char(c),
+            _ => {}
+        }
     }
 
     /// A line being typed in the feature view.

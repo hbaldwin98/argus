@@ -61,8 +61,18 @@ const MAX_DRAFT_BODY: usize = 64 * 1024;
 /// Diagram adds carry Mermaid source in JSON; allow room for encoding overhead.
 const MAX_DIAGRAM_HOOK_BODY: usize = MAX_DIAGRAM_BODY_BYTES + 4096;
 
+/// A decision is several bounded fields and two bounded lists, each entry
+/// of which may run to the same bound; the room is for all of them full,
+/// with JSON's quoting on top.
+const MAX_DECISION_HOOK_BODY: usize = (6
+    + argus_protocol::MAX_DECISION_OPTIONS
+    + argus_protocol::MAX_DECISION_CONSEQUENCES)
+    * argus_protocol::MAX_DECISION_BYTES
+    * 2;
+
 fn max_hook_body(endpoint: Option<(PaneId, Endpoint)>) -> usize {
     match endpoint {
+        Some((_, Endpoint::Decide | Endpoint::DecisionChange)) => MAX_DECISION_HOOK_BODY,
         Some((_, Endpoint::Diagrams)) => MAX_DIAGRAM_HOOK_BODY,
         Some((_, Endpoint::Transcript)) => argus_protocol::MAX_PUSH_BYTES,
         // A tenth of a second of a reply, or more after a stall.

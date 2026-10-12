@@ -7,7 +7,6 @@
 //! vocabulary every stage shares. Each stage is its own submodule.
 
 use super::*;
-use crate::app::FeaturePanel;
 use argus_protocol::{GitStatus, PaneKind, PaneStatus, TaskState};
 
 mod checkouts;
@@ -18,8 +17,8 @@ mod workspace;
 
 pub(crate) use checkouts::checkout_at;
 use checkouts::render_checkouts;
-pub(crate) use feature::feature_row_at;
-use feature::render_feature_document;
+pub(crate) use feature::feature_hit_at;
+use feature::render_feature_stage;
 pub(crate) use panes::pane_at;
 use panes::render_panes;
 pub(crate) use rail::{agent_at, project_header_at, rail_target_at, sidebar_contains};
@@ -106,7 +105,7 @@ pub(super) fn render_command_center(
     match app.view {
         View::Workspace => render_workspace(f, app, stage, th),
         View::Feature => {
-            render_feature_document(f, app, stage, th);
+            render_feature_stage(f, app, stage, th);
             None
         }
         View::Panes => {

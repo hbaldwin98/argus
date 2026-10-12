@@ -289,7 +289,7 @@ const TO_WORKSPACE: Binding = Binding::new(
 .help_only();
 const TO_FEATURE: Binding = Binding::new(
     "2",
-    "feature — brief, tasks, and decisions",
+    "feature — the index, and each feature as work, record and flows",
     &[(&[Char('2')], |app| app.open_view(View::Feature))],
 )
 .help_only();
@@ -616,45 +616,34 @@ const CHECKOUTS: Keymap = Keymap {
     gap: ROOMY,
 };
 
-fn in_features(app: &App) -> bool {
-    app.panel == FeaturePanel::Features
+fn on_index(app: &App) -> bool {
+    !app.feature_open
 }
 
-fn in_tasks(app: &App) -> bool {
-    app.panel == FeaturePanel::Tasks
+fn in_a_feature(app: &App) -> bool {
+    app.feature_open
 }
 
-/// The keys are one set rather than a set per panel: `j`/`k` moves in
-/// whichever panel has them and `Tab` crosses between panels, so stepping
-/// from the feature list into its tasks does not change what the keys mean
-/// — only what they act on. Its bar is written out per panel in
-/// `ui/status`, since what a key is called there depends on the panel.
+fn on_work(app: &App) -> bool {
+    app.feature_open && app.lens == Lens::Work
+}
+
+fn on_flows(app: &App) -> bool {
+    app.feature_open && app.lens == Lens::Flows
+}
+
+/// One set of keys for the index and every lens: `j`/`k` moves in whatever
+/// is listed and `esc` climbs one level, so opening a feature does not
+/// change what the keys mean — only what they act on. Its bar is written
+/// out per level in `ui/status`, since what a key is called depends on it.
 const FEATURE: Keymap = Keymap {
     groups: &[
         &Group {
             title: "a feature",
             bindings: &[
                 Binding::new(
-                    "h / l",
-                    "the features, and the feature under the cursor",
-                    &[
-                        (&[Char('h'), Left], |app| app.go_to_panel(FeaturePanel::Features)),
-                        (&[Char('l'), Right], App::enter_feature),
-                    ],
-                )
-                .written(),
-                Binding::new(
-                    "tab",
-                    "features, tasks, diagrams, decisions in turn",
-                    &[
-                        (&[Tab], |app| app.step_panel(1)),
-                        (&[BackTab], |app| app.step_panel(-1)),
-                    ],
-                )
-                .help_only(),
-                Binding::new(
                     "j / k",
-                    "row by row, in whichever panel has the keys",
+                    "row by row, in whatever has the keys",
                     &[
                         (&[Char('j'), Down], |app| app.move_in_feature(1)),
                         (&[Char('k'), Up], |app| app.move_in_feature(-1)),
@@ -662,46 +651,156 @@ const FEATURE: Keymap = Keymap {
                 )
                 .written(),
                 Binding::new(
-                    "d / u",
+                    "pgdn / pgup",
                     "ten at a time",
                     &[
-                        (&[Char('d'), PageDown], |app| app.move_in_feature(10)),
-                        (&[Char('u'), PageUp], |app| app.move_in_feature(-10)),
+                        (&[PageDown], |app| app.move_in_feature(10)),
+                        (&[PageUp], |app| app.move_in_feature(-10)),
                     ],
+                )
+                .help_only(),
+                Binding::new(
+                    "home / end",
+                    "top and bottom",
+                    &[
+                        (&[Home], |app| app.move_in_feature(i32::MIN)),
+                        (&[End, Char('G')], |app| app.move_in_feature(i32::MAX)),
+                    ],
+                )
+                .help_only(),
+                Binding::new(
+                    "enter",
+                    "open it: a feature, a task's brief, a decision's record, a flow",
+                    &[(&[Enter], App::open_in_feature)],
                 )
                 .written(),
                 Binding::new(
-                    "g / G",
-                    "top and bottom",
+                    "l",
+                    "open the feature under the cursor",
+                    &[(&[Char('l'), Right], App::open_selected_feature)],
+                )
+                .when(on_index)
+                .help_only(),
+                Binding::new(
+                    "1 2 3",
+                    "read the feature as work, as a record, as flows",
                     &[
-                        (&[Char('g'), Home], |app| app.move_in_feature(i32::MIN)),
-                        (&[Char('G'), End], |app| app.move_in_feature(i32::MAX)),
+                        (&[Char('1')], |app| app.set_lens(Lens::Work)),
+                        (&[Char('2')], |app| app.set_lens(Lens::Record)),
+                        (&[Char('3')], |app| app.set_lens(Lens::Flows)),
                     ],
                 )
+                .when(in_a_feature)
+                .written(),
+                Binding::new(
+                    "tab",
+                    "into the detail beside the list, and back",
+                    &[(&[Tab, BackTab], App::toggle_detail)],
+                )
+                .when(in_a_feature)
+                .written(),
+                Binding::new(
+                    "h / l",
+                    "fold the task under the cursor, or unfold it",
+                    &[
+                        (&[Char('h'), Left], |app| app.fold_in_outline(true)),
+                        (&[Char('l'), Right], |app| app.fold_in_outline(false)),
+                    ],
+                )
+                .when(on_work)
+                .written(),
+                Binding::new(
+                    "h / l",
+                    "the flow before, and the one after",
+                    &[
+                        (&[Char('h'), Left], |app| app.move_flow_selection(-1)),
+                        (&[Char('l'), Right], |app| app.move_flow_selection(1)),
+                    ],
+                )
+                .when(on_flows)
+                .written(),
+                Binding::new(
+                    "space",
+                    "done, or not: the task, or the criterion in the detail",
+                    &[(&[Char(' ')], App::toggle_done)],
+                )
+                .when(in_a_feature)
                 .written(),
                 Binding::new(
                     "a",
-                    "a new feature, or a new root task under one",
+                    "a new feature as one note, a root task, or a flow",
                     &[(&[Char('a')], App::add_in_feature)],
                 )
                 .written(),
                 Binding::new(
                     "s",
-                    "a subtask under the selected task",
-                    &[(&[Char('s')], App::begin_subtask)],
+                    "a subtask under this task, or a sub-decision under this decision",
+                    &[(&[Char('s')], App::begin_under)],
                 )
-                .when(in_tasks)
+                .when(in_a_feature)
+                .written(),
+                Binding::new(
+                    "d",
+                    "a decision, raised under the task the cursor is on",
+                    &[(&[Char('d')], App::begin_decision)],
+                )
+                .when(in_a_feature)
+                .written(),
+                Binding::new(
+                    "u",
+                    "supersede this decision with a new one",
+                    &[(&[Char('u')], App::begin_supersede)],
+                )
+                .when(in_a_feature)
+                .written(),
+                Binding::new(
+                    "o",
+                    "answer this open decision in your own words",
+                    &[(&[Char('o')], App::begin_resolution)],
+                )
+                .when(in_a_feature)
+                .help_only(),
+                Binding::new(
+                    "y",
+                    "copy this decision as ADR markdown",
+                    &[(&[Char('y')], App::copy_decision_record)],
+                )
+                .when(in_a_feature)
+                .written(),
+                Binding::new(
+                    "c  n",
+                    "a criterion for this task, or a note on it",
+                    &[
+                        (&[Char('c')], App::begin_criterion),
+                        (&[Char('n')], App::begin_note),
+                    ],
+                )
+                .when(on_work)
                 .written(),
                 Binding::new(
                     "e",
-                    "rewrite this feature's brief, or this task's title",
+                    "rewrite it: the brief, this task's title, this decision's record",
                     &[(&[Char('e')], App::edit_in_feature)],
                 )
                 .written(),
                 Binding::new(
-                    "enter",
-                    "open this feature or task brief",
-                    &[(&[Enter], App::open_in_feature)],
+                    "E",
+                    "the feature's brief, from anywhere in it",
+                    &[(&[Char('E')], App::open_feature_brief)],
+                )
+                .when(in_a_feature)
+                .help_only(),
+                Binding::new(
+                    "i",
+                    "write more of this feature as one note",
+                    &[(&[Char('i')], App::begin_capture_into)],
+                )
+                .when(in_a_feature)
+                .written(),
+                Binding::new(
+                    "g",
+                    "go to the pane working this",
+                    &[(&[Char('g')], App::go_to_feature_pane)],
                 )
                 .written(),
                 Binding::new(
@@ -712,44 +811,45 @@ const FEATURE: Keymap = Keymap {
                 .written(),
                 Binding::new(
                     "x",
-                    "remove it, keeping its decisions",
+                    "remove it; a decision is withdrawn, and x again restores it",
                     &[(&[Char('x')], App::drop_in_feature)],
                 )
                 .written(),
                 // Acceptance, and the only state left for anyone to set.
                 Binding::new(
-                    ".",
-                    "accept it, or reopen it",
-                    &[(&[Char('.')], App::toggle_selected_feature_done)],
+                    "v",
+                    "archive the feature, or bring an archived one back",
+                    &[(&[Char('v')], App::toggle_selected_feature_archived)],
                 )
+                .when(on_index)
                 .written(),
                 Binding::new(
-                    "v",
-                    "switch between active features and accepted history",
-                    &[(&[Char('v')], App::toggle_feature_archive)],
+                    "z",
+                    "show the held and archived features, or fold them away",
+                    &[(&[Char('z')], App::toggle_folded_features)],
                 )
-                .when(in_features)
+                .when(on_index)
                 .written(),
                 Binding::new(
                     "m",
                     "move this feature to another checkout",
                     &[(&[Char('m')], App::open_feature_checkout_picker)],
                 )
-                .when(in_features)
+                .when(on_index)
                 .written(),
                 Binding::new(
                     "p",
                     "hold this feature, saying why, or lift its hold",
                     &[(&[Char('p')], App::toggle_selected_feature_hold)],
                 )
-                .when(in_features)
+                .when(on_index)
                 .written(),
                 Binding::new(
                     "w",
                     "choose a feature this one comes after, or take one back",
                     &[(&[Char('w')], App::open_feature_wait_picker)],
                 )
-                .when(in_features)
+                .when(on_index)
                 .written(),
                 Binding::new(
                     "H / L",
@@ -759,6 +859,7 @@ const FEATURE: Keymap = Keymap {
                         (&[Char('L')], |app| app.move_selected_task(1)),
                     ],
                 )
+                .when(on_work)
                 .written(),
                 Binding::new(
                     "J / K",
@@ -768,6 +869,7 @@ const FEATURE: Keymap = Keymap {
                         (&[Char('K')], |app| app.reorder_selected_task(-1)),
                     ],
                 )
+                .when(on_work)
                 .written(),
                 Binding::new(
                     "> / <",
@@ -777,13 +879,14 @@ const FEATURE: Keymap = Keymap {
                         (&[Char('<')], |app| app.indent_selected_task(false)),
                     ],
                 )
+                .when(on_work)
                 .written(),
                 Binding::new(
                     "m",
-                    "in tasks: move this task and its subtasks to another feature",
+                    "move this task and its subtasks to another feature",
                     &[(&[Char('m')], App::open_task_feature_picker)],
                 )
-                .when(in_tasks)
+                .when(on_work)
                 .written(),
                 Binding::new(
                     "r",
@@ -791,12 +894,18 @@ const FEATURE: Keymap = Keymap {
                     &[(&[Char('r')], App::refresh_feature)],
                 )
                 .written(),
-                Binding::note("wheel", "scroll the section under the pointer, brief included"),
-                Binding::note("click", "select a feature, task, or decision"),
+                Binding::note("wheel", "scroll the list under the pointer"),
+                Binding::note("click", "select a feature, a row, or a lens"),
                 Binding::new(
-                    "esc  q",
+                    "esc",
+                    "up one level: out of the detail, out of the feature, back to the workspace",
+                    &[(&[Esc], App::leave_feature_level)],
+                )
+                .written(),
+                Binding::new(
+                    "q",
                     "back to the workspace",
-                    &[(&[Esc, Char('q')], |app| app.open_view(View::Workspace))],
+                    &[(&[Char('q')], |app| app.open_view(View::Workspace))],
                 )
                 .written(),
             ],

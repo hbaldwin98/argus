@@ -129,7 +129,7 @@ fn each_command_center_view_lists_its_own_keys() {
     for (view, says) in [
         (View::Panes, "this repository, or the whole workspace"),
         (View::Checkouts, "open this checkout, or switch to this branch"),
-        (View::Feature, "scroll the section under the pointer"),
+        (View::Feature, "scroll the list under the pointer"),
     ] {
         app.help = None;
         app.open_view(view);

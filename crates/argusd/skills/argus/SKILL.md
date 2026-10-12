@@ -65,8 +65,8 @@ Each feature has a brief, tasks with subtasks, decisions, and optional sequence
 diagrams. Only when you are about to change one of them, read its reference:
 
 - [references/features.md](references/features.md): choosing, opening, and noting on a feature.
-- [references/tasks.md](references/tasks.md): shaping tasks and moving them through `todo`, `doing`, `done`.
-- [references/decisions.md](references/decisions.md): recording choices and superseding them.
+- [references/tasks.md](references/tasks.md): shaping tasks, moving them through `todo`, `doing`, `done`, and their criteria and notes.
+- [references/decisions.md](references/decisions.md): recording choices, superseding them, and raising one that is the human's as an open question.
 - [references/diagrams.md](references/diagrams.md): recording an interaction flow as Mermaid.
 
 Keep those records relevant to the requested work. Answering a question does not
