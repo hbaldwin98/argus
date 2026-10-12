@@ -1,12 +1,11 @@
-//! What an agent reads before it starts: the pane's review comments, the
-//! checkout's feature brief, and the tasks still open under it — one answer,
-//! sized to sit in the model's context for the whole session.
+//! What an agent reads before it starts: the pane's review comments, and
+//! which feature the checkout is on — one answer, sized to sit in the model's
+//! context for the whole session.
 //!
-//! One command rather than the three reads it replaces because every tool
-//! call re-reads the conversation so far; a context hook that prints this at
-//! session start costs the agent no calls at all. Deliberately a summary:
-//! finished tasks, task briefs and the decision tree are counted rather than
-//! printed, and `feature` and `task` still show them in full.
+//! Review comments are printed whole because they are addressed to this
+//! agent. The feature is only named, with how much is filed under it: a
+//! brief sits in every request of a session whether or not the work touches
+//! it, so `feature` and `task` show it to the agent that asks.
 
 use super::*;
 
@@ -82,60 +81,33 @@ pub(super) fn format_context(
         return sections.join("\n\n");
     };
 
-    let mut feature = vec![format!("Feature: {} ({})", current.title, current.slug)];
+    let mut feature = vec![format!(
+        "Feature: {} ({}), {}, {} decision(s).",
+        current.title,
+        current.slug,
+        match &tasks {
+            Ok(list) => open_task_count(list),
+            Err(message) => message.clone(),
+        },
+        board.decisions.len()
+    )];
     feature.extend(super::board::parked_lines(current, &board.features));
-    if !current.body.trim().is_empty() {
-        feature.push(current.body.trim().to_string());
-    }
-    if !board.decisions.is_empty() {
-        feature.push(format!(
-            "{} decision(s) recorded; `\"$ARGUS_HOOK\" feature` shows them.",
-            board.decisions.len()
-        ));
-    }
+    feature.push(
+        "When the work touches it, `\"$ARGUS_HOOK\" feature` shows its brief and decisions \
+         and `\"$ARGUS_HOOK\" task` its tasks."
+            .to_string(),
+    );
     sections.push(feature.join("\n"));
-
-    sections.push(match tasks {
-        Ok(list) => format_open_tasks(&list),
-        Err(message) => message,
-    });
     sections.join("\n\n")
 }
 
-/// Open tasks only, one line each. Parents stay in tree order so a subtask
-/// still reads beneath the work it belongs to, and a finished parent of an
-/// open subtask is named rather than listed.
-fn format_open_tasks(list: &TaskList) -> String {
-    let rows = list.tree_rows();
-    let done = rows
+fn open_task_count(list: &TaskList) -> String {
+    let open = list
+        .tasks
         .iter()
-        .filter(|row| row.task.state == TaskState::Done)
+        .filter(|task| task.state != TaskState::Done)
         .count();
-    let open: Vec<String> = rows
-        .iter()
-        .filter(|row| row.task.state != TaskState::Done)
-        .map(|row| {
-            let under = match row.task.parent {
-                Some(parent) => format!(" (under #{parent})"),
-                None => String::new(),
-            };
-            format!(
-                "#{} {} {}{under}",
-                row.task.id, row.task.state, row.task.title
-            )
-        })
-        .collect();
-    if rows.is_empty() {
-        return "No tasks under this feature yet.".to_string();
-    }
-    if open.is_empty() {
-        return format!("All {done} task(s) under this feature are done.");
-    }
-    format!(
-        "Open tasks ({done} of {} done):\n{}",
-        rows.len(),
-        open.join("\n")
-    )
+    format!("{open} of {} task(s) open", list.tasks.len())
 }
 
 #[cfg(test)]
@@ -173,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn context_carries_the_brief_and_only_open_tasks() {
+    fn context_names_the_feature_and_leaves_its_brief_to_be_asked_for() {
         let text = format_context("no review comments", Ok(board(Some("notes"))), Ok(tasks()));
         assert_eq!(
             text,
@@ -182,24 +154,20 @@ mod tests {
              Review comments:\n\
              no review comments\n\
              \n\
-             Feature: Notes (notes)\n\
-             keys outlive ids\n\
-             1 decision(s) recorded; `\"$ARGUS_HOOK\" feature` shows them.\n\
-             \n\
-             Open tasks (1 of 3 done):\n\
-             #2 doing child (under #1)\n\
-             #3 todo other"
+             Feature: Notes (notes), 2 of 3 task(s) open, 1 decision(s).\n\
+             When the work touches it, `\"$ARGUS_HOOK\" feature` shows its brief and decisions \
+             and `\"$ARGUS_HOOK\" task` its tasks."
         );
-        assert!(!text.contains("long brief"), "task briefs stay out");
+        assert!(!text.contains("keys outlive ids"), "the brief stays out");
     }
 
     #[test]
-    fn context_says_what_holds_the_feature_before_its_brief() {
+    fn context_says_what_holds_the_feature() {
         let mut board = board(Some("notes"));
         board.features[0].held = Some("until the user answers".to_string());
         let text = format_context("no review comments", Ok(board), Ok(tasks()));
         assert!(
-            text.contains("Feature: Notes (notes)\nHeld: until the user answers\nkeys outlive ids"),
+            text.contains("1 decision(s).\nHeld: until the user answers\nWhen the work"),
             "{text}"
         );
     }
@@ -208,7 +176,7 @@ mod tests {
     fn context_without_a_feature_points_at_the_list() {
         let text = format_context("no review comments", Ok(board(None)), Ok(tasks()));
         assert!(text.ends_with("`\"$ARGUS_HOOK\" feature list` shows the project's features."));
-        assert!(!text.contains("Open tasks"));
+        assert!(!text.contains("task(s) open"));
     }
 
     #[test]

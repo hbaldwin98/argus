@@ -19,15 +19,16 @@ its output to tell a refused write from a successful one.
 ## Context
 
 Your harness usually shows the pane's context at session start: review comments,
-the checkout's feature brief, and its open tasks. If it did not, or the checkout
-changed, or you are about to write to the board, run it once:
+and which feature the checkout is on. If it did not, or the checkout changed, run
+it once:
 
 ```sh
 "$ARGUS_HOOK" context
 ```
 
-`feature` and `task` show the full brief, decisions, and every task with its brief
-when the summary is not enough.
+The feature's brief is not in it. When the work touches the feature, or you are
+about to write to the board, `feature` shows the brief and decisions and `task`
+every task with its brief.
 
 ## Title and status
 

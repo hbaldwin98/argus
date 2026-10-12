@@ -29,7 +29,8 @@ board rather than duplicating it.
 When you finish with checks only the human can make — a real device, their
 account, a choice left to them — add each as a `todo` task titled as the checked
 result ("a push reaches a real phone"), with what you verified and what remains
-in its brief. The pane's context lists open tasks, so the next agent sees them.
+in its brief. The pane's context counts open tasks and `task` lists them, so the
+next agent finds them.
 
 Add subtasks with `--under` when a task needs several distinct steps, when you
 discover a smaller piece of work inside it, or when one step needs its own

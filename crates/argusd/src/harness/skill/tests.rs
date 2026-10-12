@@ -162,3 +162,28 @@ fn symlinked_skill_roots_and_files_are_left_alone() {
         assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 1);
     }
 }
+
+#[test]
+fn the_instructions_ask_for_context_only_where_no_hook_prints_it() {
+    for harness in Harness::builtins()
+        .into_iter()
+        .filter(|h| h.skill_dir.is_some())
+    {
+        let checkout = tempfile::tempdir().unwrap();
+        harness
+            .install(checkout.path(), PaneId(1), 1234, "token")
+            .unwrap();
+        let instructions = harness.instructions(checkout.path());
+        assert_eq!(
+            instructions.contains("\"$ARGUS_HOOK\" context"),
+            harness.context_event.is_none(),
+            "{}: {instructions}",
+            harness.name
+        );
+        assert!(
+            instructions.len() < 400,
+            "{}: it sits in every request of a session: {instructions}",
+            harness.name
+        );
+    }
+}

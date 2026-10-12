@@ -988,8 +988,9 @@ hooks cannot infer, and checkout moves; its references cover features, tasks, de
 diagrams, each read only before writing to that part of the board.
 
 Every tool call re-reads the conversation, so startup is designed to cost none. `argus-hook
-context` prints review comments, the feature brief (decisions counted, not listed) and the open
-tasks (titles only) in one answer. Claude's context hook runs `context <instructions>`, and Codex's
+context` prints review comments and names the checkout's feature, with its tasks and decisions
+counted. The brief is left out: it would sit in every request of the session whether or not the
+work touches the feature, so `feature` and `task` show it to the agent that asks. Claude's context hook runs `context <instructions>`, and Codex's
 `instructions` prints the inherited message followed by the same context, so both agents begin
 with it in front of them. The bootstrap tells an agent to load the skill only before reporting
 status or changing the board, not to answer a question. Lifecycle hooks still capture session

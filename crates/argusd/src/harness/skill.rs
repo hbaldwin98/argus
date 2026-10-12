@@ -81,24 +81,26 @@ impl Harness {
                     && std::fs::read_to_string(path).is_ok_and(|body| body == *source)
             })
         });
-        match skill {
-            // Loading the skill is deferred to when it is needed: every tool
-            // call re-reads the conversation, so a bootstrap that sends each
-            // session to read files first costs more than the work it guides.
-            Some(dir) => format!(
-                "You are running inside Argus (ARGUS_PANE and ARGUS_HOOK are set). \
-                 Your pane's context (review comments, the checkout's feature and its open tasks) \
-                 follows when your harness shows hook output; otherwise run \
-                 `\"$ARGUS_HOOK\" context` once. Name the pane with \
-                 `\"$ARGUS_HOOK\" title \"<a few words>\"` once you understand the task. \
-                 Before reporting status or changing features, tasks, decisions, or diagrams, \
-                 load the argus skill at `{}` (read SKILL.md directly if your harness has no \
-                 skill loader); answering a question does not need it. \
-                 If ARGUS_HOOK is unavailable, continue the user's task without Argus.",
-                dir.join("SKILL.md").display()
-            ),
-            None => fallback().to_string(),
+        let Some(dir) = skill else {
+            return fallback().to_string();
+        };
+        // Short because it sits in every request of the session, and it only
+        // points at the skill because loading that is deferred to when it is
+        // needed: a bootstrap that sends each session to read files first
+        // costs more than the work it guides. The guard is on ARGUS_HOOK
+        // because the hook that prints this stays in a checkout Argus has left.
+        let mut text = format!(
+            "When ARGUS_HOOK is set you are in an Argus pane: name it with \
+             `\"$ARGUS_HOOK\" title \"<a few words>\"` once you understand the task, and \
+             load the argus skill at `{}` before reporting status or changing features, \
+             tasks, decisions, or diagrams.",
+            dir.join("SKILL.md").display()
+        );
+        // Only a context event puts the pane's context after these words.
+        if self.context_event.is_none() {
+            text.push_str(" Run `\"$ARGUS_HOOK\" context` once for review comments.");
         }
+        text
     }
 
     fn skill_directory(&self, checkout: &Path) -> anyhow::Result<Option<PathBuf>> {
@@ -140,8 +142,8 @@ fn remove_managed<'a>(
 pub(super) fn fallback() -> &'static str {
     "Argus fallback (only when ARGUS_PANE and ARGUS_HOOK are set): invoke the executable \
      in ARGUS_HOOK using your shell's environment syntax (POSIX: \"$ARGUS_HOOK\"; \
-     PowerShell: & $env:ARGUS_HOOK). Run `context` once to read review feedback, the \
-     checkout's feature and its open tasks; run `title <short task>` to name your pane. \
+     PowerShell: & $env:ARGUS_HOOK). Run `context` once to read review feedback and \
+     which feature the checkout is on; run `title <short task>` to name your pane. \
      Report `status working` when starting or resuming if your harness has no hooks that \
      do it, `status waiting <reason>` when you need a human, `status failed <reason>` on \
      an unrecoverable failure, `status needs-review` when ready to inspect, and \

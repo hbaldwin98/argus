@@ -361,8 +361,8 @@ pub(super) const PLUGIN_MARKER: &str = "argus:managed-plugin";
 
 /// A hook whose stdout the harness puts in front of the model: the
 /// instructions, then the pane's live context. An agent starts with its
-/// comments, brief and open tasks already read, instead of spending a tool
-/// call on each. The instructions still print when the daemon is down.
+/// comments already read and its feature named, instead of spending a tool
+/// call to find out. The instructions still print when the daemon is down.
 pub(super) fn context_entry(command: &str, text: &str) -> Value {
     json!({
         "type": "command",

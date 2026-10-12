@@ -47,9 +47,9 @@ const FEATURE_QUERY: &str = "feature=";
 /// The context-only helper command used by stable, environment-based hooks.
 pub const INSTRUCTIONS_COMMAND: &str = "instructions";
 
-/// What an agent reads before it starts: review comments, the feature brief
-/// and its open tasks in one answer. Context hooks run it so an agent begins
-/// with them instead of spending tool calls on three separate reads.
+/// What an agent reads before it starts: review comments, and which feature
+/// the checkout is on. Context hooks run it so an agent begins with them
+/// instead of spending a tool call to find out.
 pub const CONTEXT_COMMAND: &str = "context";
 
 /// Names the conversation a report comes from, so the daemon can tell the

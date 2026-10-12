@@ -26,7 +26,7 @@
 //! argus-hook diagram add "open overlay" --stdin      # Mermaid source on stdin
 //! argus-hook diagram drop 3                          # removes diagram #3
 //! argus-hook telemetry --model gpt-5 --context 42000 --window 272000 --cost 0.12 --tool shell
-//! argus-hook context                           # comments, feature brief, open tasks
+//! argus-hook context                           # comments, and the feature by name
 //! argus-hook context "preface"                  # the preface, then the same
 //! argus-hook say "text"                          # prints, calls nobody
 //! argus-hook instructions                        # inherited instructions, then context

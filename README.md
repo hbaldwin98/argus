@@ -662,8 +662,9 @@ Every agent pane receives `ARGUS_HOOK`, `ARGUS_HOOK_URL`, `ARGUS_HOOK_TOKEN`, `A
 Argus installs a small **argus skill** for built-in harnesses: `.claude/skills/argus` for
 Claude Code, `.pi/skills/argus` for pi, and `.agents/skills/argus` for Codex, OpenCode, AGY, and
 Cursor. Where the harness has a context hook (Claude Code, Codex), the agent starts with the
-pane's context already printed by `argus-hook context`: review comments, the checkout's feature
-brief, and its open tasks. Elsewhere the startup instructions ask it to run that command once. The
+pane's context already printed by `argus-hook context`: review comments, and the checkout's feature
+by name with how much is filed under it. The brief itself is read with `argus-hook feature` when
+the work touches it. Elsewhere the startup instructions ask it to run that command once. The
 agent loads `SKILL.md` only when it reports status or changes the board, and each reference only
 when it writes to that part of it. Hooks keep reporting lifecycle
 events and session identity. `argus-hook task add "<what to do>" --under <id>` records newly
