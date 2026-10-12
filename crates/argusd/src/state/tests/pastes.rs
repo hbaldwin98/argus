@@ -1,6 +1,8 @@
 //! A file from a client's machine reaching a pane: kept where the pane's
 //! process can open it, pasted as its path there, and gone with the pane.
 
+// Only the test that waits on a pane's screen keeps time, and it runs `cat`.
+#[cfg(unix)]
 use std::time::Duration;
 
 use super::*;
