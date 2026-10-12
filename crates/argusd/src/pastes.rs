@@ -123,7 +123,14 @@ mod tests {
         // name with a directory in it must not land outside the pane's.
         assert_eq!(safe_name("Screen Shot 2026.png"), "Screen_Shot_2026.png");
         assert_eq!(safe_name("../../etc/passwd"), "passwd");
-        assert_eq!(safe_name("C:\\Users\\me\\a b.jpg"), "C__Users_me_a_b.jpg");
+        // A backslash separates directories only where the platform says
+        // so; anywhere else it is one more character a path cannot take.
+        let windows_path = safe_name("C:\\Users\\me\\a b.jpg");
+        if cfg!(windows) {
+            assert_eq!(windows_path, "a_b.jpg");
+        } else {
+            assert_eq!(windows_path, "C__Users_me_a_b.jpg");
+        }
         assert_eq!(safe_name(""), "pasted");
         assert_eq!(safe_name("..."), "pasted");
         let long = format!("{}.png", "x".repeat(100));
