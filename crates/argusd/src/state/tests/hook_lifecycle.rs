@@ -31,6 +31,9 @@ async fn an_exclusive_project_refuses_a_second_agent_in_one_checkout() {
     let err = d.spawn_agent(checkout, "claude").unwrap_err().to_string();
 
     assert!(err.contains("worktree"), "say what to do instead: {err:?}");
+    // The clients show this text as it is: it is all they learn of who
+    // holds the checkout.
+    assert!(err.starts_with("claude is already working here"), "name the agent already there: {err:?}");
     assert_eq!(d.snapshot()[0].repositories[0].checkouts[0].panes.len(), 1);
     let _ = d.close_pane(first);
 }

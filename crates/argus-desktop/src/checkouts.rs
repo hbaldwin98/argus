@@ -107,6 +107,7 @@ fn row_of(repo: &RepositoryInfo, row: CheckoutRow, view: &View) -> Option<Checko
                     .listed_panes()
                     .map(|p| Running { agent: p.kind == PaneKind::Agent, status: p.loudest_state().status.word() })
                     .collect(),
+                shared: c.shared_by(),
                 feature,
                 viewed,
             }
@@ -136,6 +137,7 @@ fn row_of(repo: &RepositoryInfo, row: CheckoutRow, view: &View) -> Option<Checko
                 },
                 last: None,
                 running: Vec::new(),
+                shared: None,
                 feature,
                 viewed,
             }
@@ -194,7 +196,8 @@ fn changes(g: &GitStatus) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fixtures::{checkout, repository};
+    use crate::fixtures::{checkout, pane, repository};
+    use argus_protocol::{PaneKind, PaneStatus};
 
     fn view<'a>(branches_shown: bool, filter: &'a str, selected: Option<&'a str>) -> View<'a> {
         View { branches_shown, filter, selected, board: None, viewed: None, now: 0 }
@@ -252,5 +255,16 @@ mod tests {
         let row = |key: &str| table.rows.iter().find(|r| r.key == key).unwrap().clone();
         assert_eq!((row("bspike").git.as_deref(), row("bspike").note), (Some("↑3"), Some("unmerged")));
         assert_eq!((row("bdone").git, row("bdone").note), (None, Some("merged")));
+    }
+
+    #[test]
+    fn a_checkout_row_says_how_many_agents_share_it_once_several_do() {
+        let mut repo = repo();
+        let agent = |id, title| pane(id, PaneKind::Agent, title, PaneStatus::Working);
+        repo.checkouts[0].panes = vec![agent(1, "Trim"), agent(2, "Tracker"), pane(3, PaneKind::Shell, "zsh", PaneStatus::Idle)];
+        repo.checkouts[1].panes = vec![agent(4, "Desktop")];
+        let table = build(&repo, &view(true, "", None));
+        let shared: Vec<_> = table.rows.iter().map(|r| (r.key.as_str(), r.shared)).collect();
+        assert_eq!(shared, [("c100", Some(2)), ("c101", None), ("bold", None), ("rorigin/transcripts", None)]);
     }
 }

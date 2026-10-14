@@ -299,7 +299,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks, each repository's layout — and what its messages and gestures change |
 | `features` | what the Feature stage's index shows from a board: its rows, the places a person may move each, and the peek |
-| `settings` | what the window remembers between runs: each repository's index layout |
+| `settings` | what the window remembers between runs: each repository's index layout, and the agent it last started |
 | `page` | what the page and the window's Rust say to each other |
 | `commands` | the calls the page makes, handed to the session |
 | `shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
@@ -1093,8 +1093,8 @@ one project can have a branch of the same name. Its `setup` commands run in a wo
 just created, in order, parsed into arguments without a shell like the editor command; the row is
 broadcast before they run, and a failure is reported without removing the worktree.
 
-A checkout may hold several agents. That is shown — a warning glyph on the row, and "shared by N"
-where the column is wide enough — rather than prevented, unless the project sets `exclusive`, which
+A checkout may hold several agents (`CheckoutInfo::shared_by`). That is shown — in the desktop
+window, `⚠N` on the rail row and "shared by N" in the Checkouts table — rather than prevented, unless the project sets `exclusive`, which
 turns a second fresh agent in one checkout into a refusal naming the one already there. Shells never
 count, and restoring a session is exempt: those panes were already running together.
 

@@ -88,7 +88,8 @@ pub struct Rail {
     /// away until the leader and `f` again.
     pub filled: bool,
     /// The agents a checkout's + offers beside a shell: the daemon's
-    /// templates, the first its default.
+    /// templates, the one this window last started first, and the first
+    /// its default.
     pub templates: Vec<String>,
 }
 
@@ -149,6 +150,8 @@ pub struct Checkout {
     /// `GitStatus::summary`, or `None` outside git.
     pub git: Option<String>,
     pub clean: bool,
+    /// `CheckoutInfo::shared_by`: how many agents share it, when several do.
+    pub shared: Option<usize>,
     pub panes: Vec<Pane>,
 }
 
@@ -383,6 +386,8 @@ pub struct CheckoutsRow {
     /// What was last committed here; a branch row has none.
     pub last: Option<LastCommit>,
     pub running: Vec<Running>,
+    /// `CheckoutInfo::shared_by`; a branch row has no agents to share it.
+    pub shared: Option<usize>,
     /// The number of the feature this checkout is on, when the board says.
     pub feature: Option<i64>,
     /// That feature is the one the Feature stage has under its cursor.
@@ -679,6 +684,7 @@ mod tests {
                         kind: "main",
                         git: Some("clean".into()),
                         clean: true,
+                        shared: None,
                         panes: vec![Pane {
                             id: 4,
                             agent: true,

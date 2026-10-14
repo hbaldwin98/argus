@@ -15,4 +15,8 @@ kind: "main" | "worktree",
 /**
  * `GitStatus::summary`, or `None` outside git.
  */
-git: string | null, clean: boolean, panes: Array<Pane>, };
+git: string | null, clean: boolean, 
+/**
+ * `CheckoutInfo::shared_by`: how many agents share it, when several do.
+ */
+shared: number | null, panes: Array<Pane>, };

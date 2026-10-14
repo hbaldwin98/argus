@@ -30,6 +30,10 @@ note: string | null,
  */
 last: LastCommit | null, running: Array<Running>, 
 /**
+ * `CheckoutInfo::shared_by`; a branch row has no agents to share it.
+ */
+shared: number | null, 
+/**
  * The number of the feature this checkout is on, when the board says.
  */
 feature: number | null, 

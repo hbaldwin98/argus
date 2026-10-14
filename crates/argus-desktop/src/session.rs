@@ -66,8 +66,12 @@ pub struct Session {
     last_request: u64,
     /// Spawns asked for and not yet answered.
     asked: Vec<u64>,
-    /// The agent templates the daemon offers, the first its default.
+    /// The agent templates the daemon offers, in its order.
     templates: Vec<String>,
+    /// The template of the agent this window last started, once the tree
+    /// showed it running: offered first, and what A starts.
+    last_agent: Option<String>,
+    last_agent_changed: bool,
     checkouts: CheckoutsStage,
     review: Option<ReviewDialog>,
     /// What the page was last sent of the review, so an unchanged one is
@@ -108,7 +112,7 @@ impl Session {
             project: None,
             repository: None,
             toggled: HashSet::new(),
-            features: FeatureStage::new(settings),
+            features: FeatureStage::new(settings.layouts),
             shown: None,
             screen: None,
             capacity: None,
@@ -116,6 +120,8 @@ impl Session {
             last_request: 0,
             asked: Vec::new(),
             templates: Vec::new(),
+            last_agent: settings.last_agent,
+            last_agent_changed: false,
             checkouts: CheckoutsStage::default(),
             review: None,
             review_sent: None,
@@ -321,10 +327,39 @@ impl Session {
         let Some(pane) = self.made else {
             return;
         };
-        if self.project_of(pane).is_some() {
-            self.made = None;
-            self.show(pane);
+        let Some(info) = self.pane_info(pane) else {
+            return;
+        };
+        // Read off the tree, not the request: a refused or mistaken spawn
+        // never becomes the one offered first.
+        let template = info.template.clone().filter(|_| info.kind == argus_protocol::PaneKind::Agent);
+        if template.is_some() && template != self.last_agent {
+            self.last_agent = template;
+            self.last_agent_changed = true;
+            self.rail_changed = true;
         }
+        self.made = None;
+        self.show(pane);
+    }
+
+    fn pane_info(&self, pane: PaneId) -> Option<&argus_protocol::PaneInfo> {
+        self.tree
+            .iter()
+            .flat_map(|p| &p.repositories)
+            .flat_map(|r| &r.checkouts)
+            .flat_map(|c| &c.panes)
+            .find(|p| p.id == pane)
+    }
+
+    /// The daemon's templates with the one last started first, while the
+    /// daemon still offers it. The first is what A and the rail's a start.
+    fn agents(&self) -> Vec<String> {
+        let mut agents = self.templates.clone();
+        if let Some(at) = self.last_agent.as_ref().and_then(|last| agents.iter().position(|t| t == last)) {
+            let last = agents.remove(at);
+            agents.insert(0, last);
+        }
+        agents
     }
 
     // ---- Gestures ----------------------------------------------------------
@@ -1014,7 +1049,7 @@ impl Session {
                 let Some(checkout) = self.checkouts.checkout(&repo) else {
                     return self.note("give the branch a worktree first (N)");
                 };
-                return match (action, self.templates.first().cloned()) {
+                return match (action, self.agents().into_iter().next()) {
                     (Action::StartShell, _) => self.spawn_shell(checkout),
                     (_, Some(agent)) => self.spawn_agent(checkout, agent),
                     (_, None) => self.note("argusd offers no agent to start"),
@@ -1027,7 +1062,13 @@ impl Session {
 
     /// The settings, when a change asks for them to be saved.
     pub fn take_settings(&mut self) -> Option<Settings> {
-        self.features.take_settings()
+        // Both, not short-circuited: each flag is cleared as it is read.
+        let layouts = self.features.take_layouts_changed();
+        let agent = std::mem::take(&mut self.last_agent_changed);
+        (layouts || agent).then(|| Settings {
+            layouts: self.features.layouts().clone(),
+            last_agent: self.last_agent.clone(),
+        })
     }
 
     fn current_project(&self) -> Option<&ProjectInfo> {
@@ -1203,7 +1244,7 @@ impl Session {
             "workspace"
         };
         rail.filled = self.filled && !self.features.is_open() && self.shown.is_some();
-        rail.templates = self.templates.clone();
+        rail.templates = self.agents();
         rail
     }
 
@@ -1829,6 +1870,84 @@ mod tests {
         s.events(0);
         assert!(s.spawn_agent(CheckoutId(100), "nobody".into()).is_empty());
         assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("nobody"))));
+    }
+
+    fn offered(s: &mut Session) -> Vec<String> {
+        s.events(0)
+            .into_iter()
+            .find_map(|e| match e {
+                Event::Rail(rail) => Some(rail.templates),
+                _ => None,
+            })
+            .expect("the rail is drawn again")
+    }
+
+    /// Asks for `template` on checkout 100 and has the daemon make pane 7
+    /// running it.
+    fn start(s: &mut Session, template: &str) {
+        let sent = s.spawn_agent(CheckoutId(100), template.into());
+        let Some(ClientMsg::SpawnAgent { request_id, .. }) = sent.first() else {
+            panic!("{sent:?}");
+        };
+        s.receive(ServerMsg::Created { request_id: *request_id, created: Some(Created::Pane(PaneId(7))) });
+        let mut grown = tree();
+        let made = argus_protocol::PaneInfo {
+            template: Some(template.into()),
+            ..pane(7, PaneKind::Agent, "Trim context", PaneStatus::Working)
+        };
+        grown[0].repositories[0].checkouts[0].panes.push(made);
+        s.receive(with_tree(grown));
+    }
+
+    #[test]
+    fn the_agent_last_started_is_offered_first_and_remembered() {
+        let mut s = session(without_focus());
+        s.receive(ServerMsg::Templates(vec!["claude".into(), "codex".into()]));
+        assert_eq!(offered(&mut s), ["claude", "codex"]);
+
+        start(&mut s, "codex");
+
+        assert_eq!(s.shown, Some(PaneId(7)));
+        assert_eq!(offered(&mut s), ["codex", "claude"]);
+        let saved = s.take_settings().expect("a new last agent is saved");
+        assert_eq!(saved.last_agent.as_deref(), Some("codex"));
+        assert!(s.take_settings().is_none(), "saved once");
+    }
+
+    #[test]
+    fn a_remembered_agent_leads_only_while_the_daemon_offers_it() {
+        let remembered = |last: &str| {
+            let settings = Settings { last_agent: Some(last.into()), ..Settings::default() };
+            let mut s = Session::new(settings);
+            s.connected(Some(without_focus()), None, vec![with_tree(tree())]);
+            s.receive(ServerMsg::Templates(vec!["claude".into(), "codex".into()]));
+            offered(&mut s)
+        };
+        assert_eq!(remembered("codex"), ["codex", "claude"]);
+        assert_eq!(remembered("aider"), ["claude", "codex"], "gone from the config");
+    }
+
+    #[test]
+    fn a_refused_agent_is_said_and_changes_nothing() {
+        let mut s = session(without_focus());
+        s.receive(ServerMsg::Templates(vec!["claude".into(), "codex".into()]));
+        s.events(0);
+        let sent = s.spawn_agent(CheckoutId(100), "codex".into());
+        let Some(ClientMsg::SpawnAgent { request_id, .. }) = sent.first() else {
+            panic!("{sent:?}");
+        };
+
+        let refusal = "claude is already working here, and this project allows one agent per checkout — make a worktree for another";
+        let mut answered = s.receive(ServerMsg::Created { request_id: *request_id, created: None });
+        answered.extend(s.receive(ServerMsg::Error { message: refusal.into() }));
+
+        assert!(answered.is_empty(), "nothing to subscribe to: {:?}", names(&answered));
+        assert_eq!(s.shown, None);
+        let events = s.events(0);
+        assert!(events.iter().any(|e| matches!(e, Event::Notice { text } if text == refusal)));
+        s.receive(with_tree(tree()));
+        assert_eq!(offered(&mut s), ["claude", "codex"], "a refused agent is not the last one started");
+        assert!(s.take_settings().is_none());
     }
 
     #[test]

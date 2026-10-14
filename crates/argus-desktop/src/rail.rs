@@ -108,6 +108,7 @@ fn checkout(checkout: &CheckoutInfo, shown: Option<PaneId>) -> page::Checkout {
         kind: if checkout.primary { "main" } else { "worktree" },
         git: checkout.git.as_ref().map(|g| g.summary()),
         clean: checkout.git.as_ref().is_some_and(|g| !g.dirty),
+        shared: checkout.shared_by(),
         panes: checkout
             .listed_panes()
             .map(|pane| page::Pane {
@@ -272,6 +273,17 @@ mod tests {
         co.git = None;
         let row = super::checkout(&co, None);
         assert_eq!((row.branch.as_str(), row.git, row.clean), ("", None, false));
+    }
+
+    #[test]
+    fn a_checkout_says_how_many_agents_share_it_once_several_do() {
+        let mut co = checkout(1, "main", true, vec![
+            pane(1, PaneKind::Agent, "Trim context", PaneStatus::Working),
+            pane(2, PaneKind::Shell, "zsh", PaneStatus::Idle),
+        ]);
+        assert_eq!(super::checkout(&co, None).shared, None, "one agent and a shell share nothing");
+        co.panes.push(pane(3, PaneKind::Agent, "Tracker", PaneStatus::Idle));
+        assert_eq!(super::checkout(&co, None).shared, Some(2));
     }
 
     #[test]
