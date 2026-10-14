@@ -8,6 +8,8 @@
 
 use serde::Serialize;
 
+use crate::keymap::Group;
+
 /// One message down the page's channel.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
@@ -24,6 +26,9 @@ pub enum Event {
     /// Something the daemon said that passes: a refused request's reason.
     /// The page shows it a while and lets it go.
     Notice { text: String },
+    /// Every binding, grouped as the shortcuts sheet lists them, sent once
+    /// a page loads: the page dispatches from it outside a pane.
+    Keymap { groups: Vec<Group> },
 }
 
 /// The connection, as the status bar and the empty stage show it.
@@ -72,6 +77,9 @@ pub struct Rail {
     /// `workspace` or `feature`.
     #[cfg_attr(test, ts(type = "\"workspace\" | \"feature\""))]
     pub stage: &'static str,
+    /// The pane fills the window: the rail and the stage's chrome are put
+    /// away until the leader and `f` again.
+    pub filled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -438,6 +446,7 @@ mod tests {
             loaded: true,
             repository: Some(2),
             stage: "workspace",
+            filled: false,
         };
         let value = as_json(Event::Rail(Box::new(rail)));
         assert_eq!(value["type"], "rail");

@@ -2,6 +2,7 @@
 // view state that is the page's own — a menu open, a filter typed.
 
 import type { Features } from './bindings/Features';
+import type { Group } from './bindings/Group';
 import type { Rail } from './bindings/Rail';
 import type { Status } from './bindings/Status';
 
@@ -9,6 +10,8 @@ export const state: {
   status: Status;
   rail: Rail;
   features: Features | null;
+  /** Every binding, as `src/keymap.rs` groups them. */
+  keymap: Group[];
   /** The project switcher's menu. */
   menuOpen: boolean;
   /** What the index's filter says. */
@@ -26,8 +29,10 @@ export const state: {
     loaded: false,
     repository: null,
     stage: 'workspace',
+    filled: false,
   },
   features: null,
+  keymap: [],
   menuOpen: false,
   filter: '',
   archivedOpen: false,

@@ -48,9 +48,18 @@ pane's history (the parked rows held in `screen`, asked further by line, typing 
 full-screen child that asked for nothing gets a cursor key a notch. The stage header leads its size
 with how far back a parked view is. It
 reports its view only while it has focus, so a window in the background never takes the focus from
-a terminal client being typed in. Rust holds the model (`session`); the page draws what it is sent
+a terminal client being typed in. Its keys are one table, `keymap`, of bindings each with its keys,
+where it works (Anywhere, In a pane, Feature, Board card — the shortcuts sheet's groups), what it
+does and what it is called. A key in a pane goes to Rust, which dispatches it from the table; the
+table crosses to the page once it loads, and the page dispatches every other key from it, so a key
+cannot be run by one and missing from what the sheet and the palette are drawn from. In a pane every
+key is the program's except the leader, `Ctrl-Space` as in the terminal client: the key after it is
+the window's, one nothing binds is dropped, and a second leader sends one through. The leader and
+`f` fill the window with the pane, putting the rail, the tabs and the stage header away until the
+same keys again. The Feature stage has them while it is open, and another pane brings them back
+for good. Rust holds the model (`session`); the page draws what it is sent
 and reports gestures. It is TypeScript in `crates/argus-desktop/page/src`, one module per subject
-(`chrome`, `screen`, `input`, `features`, with `dom`, `state` and `tauri` beneath them), compiled
+(`chrome`, `screen`, `input`, `keymap`, `features`, with `dom`, `state` and `tauri` beneath them), compiled
 into `assets/js` and committed, so building the crate needs no Node. The events it reads are
 `page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
 either committed output differs from what its source makes. Its webview keeps its storage
@@ -284,6 +293,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `page` | what the page and the window's Rust say to each other |
 | `commands` | the calls the page makes, handed to the session |
 | `shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
+| `keymap` | the window's keys: each binding's keys, where it works, what it does and what it is called, read by dispatch in Rust and on the page |
 | `keys` | a key the page reports, as the protocol's key |
 | `clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
 | `logging` | where the window's own diagnostics go |

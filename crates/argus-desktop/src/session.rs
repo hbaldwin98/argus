@@ -24,6 +24,7 @@ use argus_protocol::{
 
 use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
+use crate::keymap::{self, Action};
 use crate::keys::{self, PageKey};
 use crate::page::{Connection, Event, Status};
 use crate::settings::Settings;
@@ -65,6 +66,10 @@ pub struct Session {
     /// A pane the daemon made for us that no tree has carried yet.
     made: Option<PaneId>,
     focused: bool,
+    /// The leader was pressed in the pane: the next key is the window's.
+    leader: bool,
+    /// The person asked for the pane to fill the window.
+    filled: bool,
     /// The view last reported, so an unchanged one is not sent again.
     reported: Option<View>,
     status_changed: bool,
@@ -100,6 +105,8 @@ impl Session {
             asked: Vec::new(),
             made: None,
             focused: true,
+            leader: false,
+            filled: false,
             reported: None,
             status_changed: true,
             rail_changed: true,
@@ -284,6 +291,10 @@ impl Session {
         if let Some(pane) = self.shown.take() {
             self.out.push(ClientMsg::Unsubscribe { pane });
         }
+        // As in the terminal client, filling is for the pane it was asked
+        // on: another pane comes back with the rail beside it.
+        self.filled = false;
+        self.leader = false;
         self.screen = None;
         self.sized = None;
         self.rail_changed = true;
@@ -309,20 +320,47 @@ impl Session {
         self.out.push(ClientMsg::Resize { pane, rows: size.0, cols: size.1 });
     }
 
+    /// A key pressed in the pane, dispatched from the keymap: the leader
+    /// waits for the next key, a binding runs, and anything else is the
+    /// program's. A key after the leader that nothing binds is dropped, as
+    /// the terminal client drops it, rather than typed by surprise.
     pub fn key(&mut self, key: &PageKey) -> Vec<ClientMsg> {
-        let key = keys::to_key(key);
-        // Shift-PageUp and Shift-PageDown page the view, leaving the child
-        // its own unshifted paging keys, as in the terminal client.
-        if let Some(Key { code: code @ (KeyCode::PageUp | KeyCode::PageDown), mods }) = key {
-            if mods == Mods::SHIFT {
-                let height = self.screen.as_ref().map_or(2, |screen| screen.rows()).max(2) as i32 - 1;
-                self.scroll_by(if code == KeyCode::PageUp { -height } else { height });
-                return self.finish();
+        let after_leader = std::mem::take(&mut self.leader);
+        match keymap::in_pane(key, after_leader) {
+            Some(action) => self.run(action),
+            None if after_leader => {}
+            None if keymap::is_leader(key) && self.shown.is_some() => self.leader = true,
+            None => {
+                let bytes = keys::to_key(key).map(|k| argus_protocol::keys::encode(&k)).unwrap_or_default();
+                self.input(bytes);
             }
         }
-        let bytes = key.map(|k| argus_protocol::keys::encode(&k)).unwrap_or_default();
-        self.input(bytes);
         self.finish()
+    }
+
+    /// Whether `key` is the paste chord, which `commands` answers by
+    /// reading the clipboard rather than typing it.
+    pub fn pastes(&self, key: &PageKey) -> bool {
+        !self.leader && keymap::in_pane(key, false) == Some(Action::Paste)
+    }
+
+    fn run(&mut self, action: Action) {
+        let page = |s: &Session| s.screen.as_ref().map_or(2, |screen| screen.rows()).max(2) as i32 - 1;
+        match action {
+            Action::Leader => self.input(argus_protocol::keys::encode(&Key::new(KeyCode::Char(' '), Mods::CTRL))),
+            Action::Fill => {
+                self.filled = !self.filled;
+                self.rail_changed = true;
+            }
+            Action::Workspace => self.open_features(false),
+            Action::Feature => self.open_features(true),
+            // A screen less a line, so the line at the edge stays in view.
+            Action::PageUp => self.scroll_by(-page(self)),
+            Action::PageDown => self.scroll_by(page(self)),
+            // `commands` reads the clipboard before the key gets here; the
+            // rest are the page's, for keys a pane never hears.
+            _ => {}
+        }
     }
 
     /// The wheel over the pane, `notches` up when negative, at the cell
@@ -519,11 +557,15 @@ impl Session {
 
     /// Shows the Feature stage, or goes back to the Workspace.
     pub fn show_features(&mut self, open: bool) -> Vec<ClientMsg> {
+        self.open_features(open);
+        self.finish()
+    }
+
+    fn open_features(&mut self, open: bool) {
         if self.features.is_open() != open {
             self.features.set_open(open);
             self.rail_changed = true;
         }
-        self.finish()
     }
 
     pub fn peek(&mut self, slug: &str) -> Vec<ClientMsg> {
@@ -671,7 +713,8 @@ impl Session {
         if let Some(screen) = &mut self.screen {
             screen.refresh();
         }
-        let mut events = self.events(now);
+        let mut events = vec![Event::Keymap { groups: keymap::groups() }];
+        events.append(&mut self.events(now));
         if !events.iter().any(|e| matches!(e, Event::Features(_))) {
             let scope = self.scope();
             events.push(Event::Features(Box::new(self.features.everything(scope.as_ref(), &self.tree))));
@@ -701,6 +744,7 @@ impl Session {
         let mut rail = rail::build(&self.tree, &choices, self.loaded);
         rail.repository = self.chosen_repository().map(|r| r.id.0);
         rail.stage = if self.features.is_open() { "feature" } else { "workspace" };
+        rail.filled = self.filled && !self.features.is_open() && self.shown.is_some();
         rail
     }
 
@@ -926,7 +970,7 @@ mod tests {
         assert!(s.events(0).is_empty());
         s.toggle_repository(RepositoryId(10));
         assert!(matches!(s.events(0).as_slice(), [Event::Rail(_)]));
-        assert_eq!(s.everything(0).len(), 3, "a fresh page hears it all");
+        assert_eq!(s.everything(0).len(), 4, "a fresh page hears it all, the keymap first");
     }
 
     #[test]
@@ -1092,6 +1136,78 @@ mod tests {
         assert_eq!(scrollback(&s.key(&page_up)), [(4, None)]);
         let plain = PageKey { key: "PageUp".into(), ..PageKey::default() };
         assert_eq!(names(&s.key(&plain)), ["input 2 [27, 91, 53, 126]"], "the child's own key");
+    }
+
+    fn ctrl_space() -> PageKey {
+        PageKey { key: " ".into(), code: "Space".into(), ctrl: true, ..PageKey::default() }
+    }
+
+    fn press(key: &str) -> PageKey {
+        PageKey { key: key.into(), ..PageKey::default() }
+    }
+
+    #[test]
+    fn leader_twice_sends_leader_to_pane() {
+        let mut s = showing(5, false);
+        assert!(s.key(&ctrl_space()).is_empty(), "the leader waits for the next key");
+        assert_eq!(names(&s.key(&ctrl_space())), ["input 2 [0]"]);
+        assert_eq!(names(&s.key(&press("a"))), ["input 2 [97]"], "and the pane has its keys again");
+    }
+
+    #[test]
+    fn a_key_after_the_leader_is_the_windows_not_the_programs() {
+        let mut s = showing(5, false);
+        s.events(0);
+        s.key(&ctrl_space());
+        let typed = |msgs: Vec<ClientMsg>| msgs.iter().any(|m| matches!(m, ClientMsg::Input { .. }));
+        assert!(!typed(s.key(&press("2"))), "nothing typed");
+        assert!(s.features.is_open());
+        s.key(&ctrl_space());
+        s.key(&press("1"));
+        assert!(!s.features.is_open());
+        s.key(&ctrl_space());
+        assert!(s.key(&press("q")).is_empty(), "an unbound key after the leader is dropped");
+        assert_eq!(names(&s.key(&press("2"))), ["input 2 [50]"], "a digit alone is typed");
+    }
+
+    #[test]
+    fn leader_f_fills_the_window_with_the_pane_and_again_gives_it_back() {
+        let mut s = showing(5, false);
+        let filled = |s: &mut Session| match s.events(0).as_slice() {
+            [.., Event::Rail(rail)] => rail.filled,
+            other => panic!("no rail in {other:?}"),
+        };
+        s.events(0);
+        s.key(&ctrl_space());
+        assert!(s.key(&press("f")).is_empty());
+        assert!(filled(&mut s));
+        s.key(&ctrl_space());
+        s.key(&press("f"));
+        assert!(!filled(&mut s));
+    }
+
+    #[test]
+    fn a_filled_window_gives_the_rail_back_for_another_pane_or_stage() {
+        let mut s = showing(5, false);
+        s.key(&ctrl_space());
+        s.key(&press("f"));
+        s.show_features(true);
+        assert!(!s.rail(0).filled, "the Feature stage has no pane to fill");
+        s.show_features(false);
+        assert!(s.rail(0).filled, "and the pane fills again on the way back");
+        s.select(PaneId(1));
+        assert!(!s.rail(0).filled);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn the_paste_chord_reads_the_clipboard_unless_the_leader_is_waiting() {
+        let mut s = showing(5, false);
+        let ctrl_v = PageKey { ctrl: true, ..press("v") };
+        assert!(s.pastes(&ctrl_v));
+        assert!(!s.pastes(&press("v")));
+        s.key(&ctrl_space());
+        assert!(!s.pastes(&ctrl_v));
     }
 
     #[test]

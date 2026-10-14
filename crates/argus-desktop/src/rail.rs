@@ -47,6 +47,7 @@ pub fn build(tree: &[ProjectInfo], choices: &Choices, loaded: bool) -> Rail {
         // The session's to say.
         repository: None,
         stage: "workspace",
+        filled: false,
     }
 }
 

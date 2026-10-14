@@ -2,19 +2,11 @@
 // methods and the clipboard work as they do anywhere else, and the
 // window's focus, which says whether this window's view is the person's.
 import { $ } from './dom.js';
+import { actionFor } from './keymap.js';
 import { screen } from './screen.js';
 import { call } from './tauri.js';
 const MODIFIERS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock']);
 const MAC = /Macintosh|Mac OS X/.test(navigator.userAgent);
-// Ctrl-V reads the clipboard, as it does in the terminal client, and so do
-// Ctrl-Shift-V and Alt-V, the keys a terminal on Windows keeps for itself.
-function isPasteChord(e) {
-    if (e.key.toLowerCase() !== 'v')
-        return false;
-    if (MAC)
-        return e.metaKey;
-    return (e.ctrlKey && !e.altKey) || (e.altKey && !e.ctrlKey && !e.shiftKey);
-}
 export function listen() {
     const input = $('input');
     if (!(input instanceof HTMLTextAreaElement))
@@ -23,19 +15,17 @@ export function listen() {
         // WebKit reports an input method's keys as 229 without isComposing.
         if (e.isComposing || e.keyCode === 229)
             return;
-        if (isPasteChord(e)) {
-            e.preventDefault();
-            call('paste_clipboard', {});
-            return;
-        }
-        // The command key's chords are the window's (quit, close).
-        if (MAC && e.metaKey)
+        // The command key's chords are the window's (quit, close), but for
+        // those the keymap gives the pane: paste.
+        if (MAC && e.metaKey && !actionFor(['pane'], e))
             return;
         if (MODIFIERS.has(e.key))
             return;
         screen.select(null);
-        // Every other key goes to the pane, so no webview accelerator (F5,
-        // Ctrl+F, Ctrl+R) fires behind the person's back.
+        // Every other key goes to Rust, which dispatches it from the keymap:
+        // the leader and the paste chord are the window's, the rest the
+        // pane's. No webview accelerator (F5, Ctrl+F, Ctrl+R) fires behind the
+        // person's back.
         e.preventDefault();
         call('key', {
             key: {

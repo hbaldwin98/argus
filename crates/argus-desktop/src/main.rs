@@ -18,6 +18,7 @@ mod feature_stage;
 mod features;
 #[cfg(test)]
 mod fixtures;
+mod keymap;
 mod keys;
 mod logging;
 mod page;

@@ -1667,3 +1667,9 @@ button:focus-visible,
   user-select: none;
   touch-action: none;
 }
+/* Ctrl-Space f: the pane fills the window, the rail and the stage's chrome put away. */
+body.filled .rail,
+body.filled .tabs,
+body.filled .head {
+  display: none;
+}

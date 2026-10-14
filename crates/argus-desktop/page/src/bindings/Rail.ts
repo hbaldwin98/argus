@@ -35,4 +35,9 @@ repository: number | null,
 /**
  * `workspace` or `feature`.
  */
-stage: "workspace" | "feature", };
+stage: "workspace" | "feature", 
+/**
+ * The pane fills the window: the rail and the stage's chrome are put
+ * away until the leader and `f` again.
+ */
+filled: boolean, };

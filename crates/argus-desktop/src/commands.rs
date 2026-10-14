@@ -40,6 +40,9 @@ pub async fn resize(shared: State<'_, Arc<Shared>>, rows: u16, cols: u16) -> Ans
 
 #[tauri::command]
 pub async fn key(shared: State<'_, Arc<Shared>>, key: PageKey) -> Answer {
+    if shared.read(|s| s.pastes(&key)) {
+        return paste_clipboard(shared).await;
+    }
     shared.act(|s| s.key(&key));
     Ok(())
 }

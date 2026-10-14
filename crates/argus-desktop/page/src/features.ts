@@ -4,6 +4,7 @@
 // board says so. Only Held and Archived take a dropped card: the other
 // columns follow the work.
 
+import type { Action } from './bindings/Action';
 import type { Agent } from './bindings/Agent';
 import type { FeatureRow } from './bindings/FeatureRow';
 import type { Features } from './bindings/Features';
@@ -682,7 +683,7 @@ function drop(row: FeatureRow, group: Group): void {
 
 // ---- Menus and the hold dialog --------------------------------------------
 
-function closeLayer(): void {
+export function closeLayer(): void {
   $('layer').replaceChildren();
 }
 
@@ -803,9 +804,8 @@ function goToPane(pane: number | null | undefined): void {
 
 // ---- Keys --------------------------------------------------------------------
 
-/** The stage's keys, heard only while nothing that takes text has focus. */
-function featureKey(e: KeyboardEvent): boolean {
-  if (state.rail.stage !== 'feature' || e.ctrlKey || e.metaKey || e.altKey) return false;
+/** Runs a Feature or Board card binding, saying whether it had a feature to act on. */
+export function featureAction(action: Action): boolean {
   const rows = visibleRows();
   const at = rows.findIndex((row) => row.peeked);
   const row = rows[at];
@@ -813,54 +813,48 @@ function featureKey(e: KeyboardEvent): boolean {
     const next = rows[Math.max(0, Math.min(rows.length - 1, i))];
     if (next) call('peek', { slug: next.slug });
   };
-  switch (e.key) {
-    case 'j':
-    case 'ArrowDown':
+  switch (action) {
+    case 'next':
       peekAt(at + 1);
       return true;
-    case 'k':
-    case 'ArrowUp':
+    case 'previous':
       peekAt(at - 1);
       return true;
-    case 'Home':
+    case 'first':
       peekAt(0);
       return true;
-    case 'End':
+    case 'last':
       peekAt(rows.length - 1);
       return true;
-    case 'v':
-    case 'V':
+    case 'layout':
       call('set_layout', { layout: state.features?.layout === 'board' ? 'list' : 'board' });
       return true;
-    case 'z':
+    case 'folded':
       call('toggle_folded', {});
       return true;
-    case '/':
+    case 'filter':
       document.getElementById('feature-filter')?.focus();
       return true;
     default:
       break;
   }
   if (!row) return false;
-  switch (e.key) {
-    case 'm':
-    case 'M': {
+  switch (action) {
+    case 'move': {
       const box = document
         .querySelector(`[data-slug="${CSS.escape(row.slug)}"]`)
         ?.getBoundingClientRect();
       moveMenu(row, box ? box.left + 40 : 200, box ? box.bottom : 200);
       return true;
     }
-    case 'h':
-    case 'H':
+    case 'hold':
       if (row.group === 'held') call('hold', { slug: row.slug, reason: null });
       else holdDialog(row);
       return true;
-    case 'A':
+    case 'archive':
       call('archive', { slug: row.slug, archived: row.group !== 'archived' });
       return true;
-    case 'g':
-    case 'G':
+    case 'goToPane':
       goToPane(row.agent?.pane ?? state.features?.peek?.pane);
       return true;
     default:
@@ -871,24 +865,6 @@ function featureKey(e: KeyboardEvent): boolean {
 export function listen(): void {
   document.addEventListener('pointermove', onPointerMove);
   document.addEventListener('pointerup', onPointerUp);
-
-  document.addEventListener('keydown', (e) => {
-    const layer = $('layer');
-    if (e.key === 'Escape' && layer.childElementCount) {
-      closeLayer();
-      e.preventDefault();
-      return;
-    }
-    const typing =
-      e.target instanceof Element && e.target.closest('input, textarea, [contenteditable]');
-    if (typing || layer.childElementCount) return;
-    if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === '1' || e.key === '2')) {
-      call('show_features', { open: e.key === '2' });
-      e.preventDefault();
-      return;
-    }
-    if (featureKey(e)) e.preventDefault();
-  });
 
   document.addEventListener('mousedown', (e) => {
     const layer = $('layer');
