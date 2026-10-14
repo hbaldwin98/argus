@@ -1096,9 +1096,10 @@ just created, in order, parsed into arguments without a shell like the editor co
 broadcast before they run, and a failure is reported without removing the worktree.
 
 A checkout may hold several agents (`CheckoutInfo::shared_by`). That is shown — in the desktop
-window, `⚠N` on the rail row and "shared by N" in the Checkouts table — rather than prevented, unless the project sets `exclusive`, which
-turns a second fresh agent in one checkout into a refusal naming the one already there. Shells never
-count, and restoring a session is exempt: those panes were already running together.
+window, `⚠N` on the rail row and "shared by N" in the Checkouts table — rather than prevented,
+unless the project sets `exclusive`, which turns a second fresh agent in one checkout into a refusal
+naming the one already there. Shells never count, nor does the marker count an agent that has
+exited, and restoring a session is exempt: those panes were already running together.
 
 Argus-created worktrees live under `<primary>/.argus/worktrees/<branch>` by default; a branch name that is not
 a plain path component is refused before it becomes a directory, and a name starting with a dash is

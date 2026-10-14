@@ -377,9 +377,14 @@ impl CheckoutInfo {
     /// rather than prevented (an `exclusive` project refuses it instead),
     /// since two agents in one directory is never something to find out
     /// from the diff later. Shells do not count, nor an agent's children,
-    /// which run inside its own turn.
+    /// which run inside its own turn, nor an agent that has exited: its
+    /// pane stays until closed, but it no longer works in the directory.
     pub fn shared_by(&self) -> Option<usize> {
-        let agents = self.panes.iter().filter(|p| p.kind == PaneKind::Agent).count();
+        let agents = self
+            .panes
+            .iter()
+            .filter(|p| p.kind == PaneKind::Agent && !matches!(p.status, PaneStatus::Exited { .. }))
+            .count();
         (agents > 1).then_some(agents)
     }
 }
@@ -557,6 +562,14 @@ mod tests {
         let agent = || pane(PaneStatus::Working, &[PaneStatus::Working, PaneStatus::Working]);
         assert_eq!(checkout(vec![agent(), shell.clone()]).shared_by(), None, "children and shells are not agents of the checkout");
         assert_eq!(checkout(vec![agent(), shell, agent(), agent()]).shared_by(), Some(3));
+    }
+
+    #[test]
+    fn an_exited_agent_no_longer_shares_its_checkout() {
+        let agent = || pane(PaneStatus::Working, &[]);
+        let exited = pane(PaneStatus::Exited { code: Some(0) }, &[]);
+        assert_eq!(checkout(vec![exited.clone(), agent()]).shared_by(), None);
+        assert_eq!(checkout(vec![exited, agent(), agent()]).shared_by(), Some(2));
     }
 
     #[test]
