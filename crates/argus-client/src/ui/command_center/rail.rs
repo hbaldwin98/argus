@@ -247,7 +247,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                 let item = &project.repositories[repository].checkouts[checkout];
                 let git = item.git.as_ref();
                 let branch = git.and_then(|g| g.branch.as_deref()).unwrap_or(&item.name);
-                let state = git.map(git_state).unwrap_or_default();
+                let state = git.map(GitStatus::summary).unwrap_or_default();
                 let dirty = git.is_some_and(|g| g.dirty);
                 let branch_width =
                     width.saturating_sub(5 + state.chars().count() + RIGHT_PAD);

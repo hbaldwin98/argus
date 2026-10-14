@@ -35,22 +35,12 @@ impl App {
         listed
     }
 
-    /// The open project's repositories as (active, quiet): the active in
-    /// tree order, the quiet most recently used first, the never used last.
-    /// A repository is quiet when no checkout of it has a listed pane.
+    /// The open project's repositories as (active, quiet), in the order
+    /// `ProjectInfo::repositories_by_activity` gives every client.
     fn repositories_by_activity(&self) -> (Vec<usize>, Vec<usize>) {
-        let Some(project) = self.current_project() else {
-            return (Vec::new(), Vec::new());
-        };
-        let (active, mut quiet): (Vec<usize>, Vec<usize>) =
-            (0..project.repositories.len()).partition(|index| {
-                project.repositories[*index]
-                    .checkouts
-                    .iter()
-                    .any(|checkout| checkout.listed_panes().next().is_some())
-            });
-        quiet.sort_by_key(|index| std::cmp::Reverse(project.repositories[*index].last_used));
-        (active, quiet)
+        self.current_project()
+            .map(ProjectInfo::repositories_by_activity)
+            .unwrap_or_default()
     }
 
     /// The quiet repository the divider is drawn above: the first of them,

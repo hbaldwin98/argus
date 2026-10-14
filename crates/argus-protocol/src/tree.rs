@@ -320,6 +320,36 @@ pub struct GitStatus {
     pub behind: usize,
 }
 
+impl GitStatus {
+    /// A checkout's git state as every client shows it: `↑` ahead of and
+    /// `↓` behind its upstream, `+` staged and `!` unstaged paths, else
+    /// `clean`. Built from parts so that being dirty never hides how far the
+    /// branch is from its upstream.
+    pub fn summary(&self) -> String {
+        let mut parts = Vec::new();
+        if self.ahead > 0 {
+            parts.push(format!("↑{}", self.ahead));
+        }
+        if self.behind > 0 {
+            parts.push(format!("↓{}", self.behind));
+        }
+        if self.staged > 0 {
+            parts.push(format!("+{}", self.staged));
+        }
+        if self.unstaged > 0 {
+            parts.push(format!("!{}", self.unstaged));
+        }
+        // A daemon from before the staged counts sends only the total.
+        if self.dirty && self.staged == 0 && self.unstaged == 0 {
+            parts.push(format!("!{}", self.changed_files));
+        }
+        if !self.dirty {
+            parts.push("clean".into());
+        }
+        parts.join(" ")
+    }
+}
+
 impl CheckoutInfo {
     /// The panes the tree lists. An editor belongs to the window it opened
     /// in, not to the checkout's pane list — it is a way of looking at a
@@ -388,6 +418,25 @@ pub struct ProjectInfo {
     #[serde(default)]
     pub root: Option<String>,
     pub repositories: Vec<RepositoryInfo>,
+}
+
+impl ProjectInfo {
+    /// The repositories by index as (active, quiet): the active, with a
+    /// listed pane in any checkout, in tree order, since what is running is
+    /// what a rail is for; then the quiet, the most recently used first so
+    /// the one just left is nearest to hand, the never used last. Here so
+    /// that every client's rail lists them in one order.
+    pub fn repositories_by_activity(&self) -> (Vec<usize>, Vec<usize>) {
+        let (active, mut quiet): (Vec<usize>, Vec<usize>) =
+            (0..self.repositories.len()).partition(|index| {
+                self.repositories[*index]
+                    .checkouts
+                    .iter()
+                    .any(|checkout| checkout.listed_panes().next().is_some())
+            });
+        quiet.sort_by_key(|index| std::cmp::Reverse(self.repositories[*index].last_used));
+        (active, quiet)
+    }
 }
 
 /// A named group of projects. Exactly one workspace is *open* at a time —
@@ -567,6 +616,71 @@ mod tests {
 
         assert_eq!(read.status, PaneStatus::Working);
         assert_eq!(read.title, "claude");
+    }
+
+    fn git(dirty: bool, staged: usize, unstaged: usize, ahead: usize, behind: usize) -> GitStatus {
+        GitStatus {
+            branch: Some("main".into()),
+            dirty,
+            changed_files: staged + unstaged,
+            staged,
+            unstaged,
+            ahead,
+            behind,
+        }
+    }
+
+    #[test]
+    fn a_git_summary_says_distance_and_changes_together() {
+        assert_eq!(git(false, 0, 0, 0, 0).summary(), "clean");
+        assert_eq!(git(false, 0, 0, 2, 1).summary(), "↑2 ↓1 clean");
+        assert_eq!(git(true, 2, 8, 0, 0).summary(), "+2 !8");
+        assert_eq!(git(true, 0, 1, 0, 1).summary(), "↓1 !1");
+    }
+
+    #[test]
+    fn a_git_summary_from_a_daemon_without_staged_counts_says_the_total() {
+        let older = GitStatus {
+            changed_files: 3,
+            ..git(true, 0, 0, 0, 0)
+        };
+        assert_eq!(older.summary(), "!3");
+    }
+
+    fn repository(name: &str, panes: usize, last_used: Option<u64>) -> RepositoryInfo {
+        RepositoryInfo {
+            id: RepositoryId(0),
+            name: name.into(),
+            checkouts: vec![CheckoutInfo {
+                id: CheckoutId(0),
+                name: "main".into(),
+                path: String::new(),
+                panes: (0..panes).map(|_| pane(PaneStatus::Idle, &[])).collect(),
+                git: None,
+                primary: true,
+            }],
+            branches: Vec::new(),
+            default_branch: None,
+            remote_branches: Vec::new(),
+            last_used,
+        }
+    }
+
+    #[test]
+    fn active_repositories_lead_in_tree_order_and_quiet_ones_follow_by_last_use() {
+        let project = ProjectInfo {
+            id: ProjectId(0),
+            name: "src".into(),
+            root: None,
+            repositories: vec![
+                repository("never", 0, None),
+                repository("hearth", 1, Some(5)),
+                repository("old", 0, Some(10)),
+                repository("argus", 2, None),
+                repository("recent", 0, Some(30)),
+            ],
+        };
+        assert_eq!(project.repositories_by_activity(), (vec![1, 3], vec![4, 2, 0]));
     }
 
     #[test]
