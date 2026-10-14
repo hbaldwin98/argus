@@ -61,6 +61,8 @@ impl HistoryDialog {
     pub fn receive_commits(&mut self, request_id: u64, commits: Vec<CommitInfo>) {
         if request_id == self.asked {
             self.view = Some(HistoryView::new(self.checkout, commits));
+            // A filter typed while they loaded already hides some.
+            self.keep_cursor_shown();
         }
     }
 
@@ -120,13 +122,17 @@ impl HistoryDialog {
     /// the first it shows.
     pub fn set_filter(&mut self, filter: String, id: impl FnMut() -> u64) -> Then {
         self.filter = filter;
+        self.keep_cursor_shown();
+        self.want_diff(id)
+    }
+
+    fn keep_cursor_shown(&mut self) {
         let shown = self.shown();
         if let Some(view) = self.view.as_mut().filter(|v| !shown.contains(&v.sel)) {
             if let Some(first) = shown.first() {
                 view.sel = *first;
             }
         }
-        self.want_diff(id)
     }
 
     /// The rows the filter shows: each matching commit with its files.
@@ -341,6 +347,17 @@ mod tests {
         assert!(matches!(d.as_review(), Then::Nothing), "nothing under a hidden cursor");
         d.set_filter(String::new(), || 1);
         assert_eq!(d.page(0).rows.len(), 2);
+    }
+
+    #[test]
+    fn a_filter_typed_while_loading_lights_the_first_match() {
+        let (mut d, _) = HistoryDialog::open(&checkout(100, "main", true, Vec::new()), 5);
+        d.set_filter("fix".into(), || 1);
+        d.receive_commits(5, vec![commit("aaaa1", "Other"), commit("bbbb2", "Fix one"), commit("cccc3", "Fix two")]);
+        assert!(d.page(0).rows[0].on, "the first match is lit");
+        assert!(matches!(d.as_review(), Then::Review(oid) if oid == "bbbb2"));
+        d.move_by(1, || 1);
+        assert!(d.page(0).rows[1].on, "j steps to the second match, not past it");
     }
 
     #[test]
