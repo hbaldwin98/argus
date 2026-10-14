@@ -20,7 +20,6 @@ mod feature_stage;
 mod features;
 #[cfg(test)]
 mod fixtures;
-mod fuzzy;
 mod keymap;
 mod history;
 mod keys;

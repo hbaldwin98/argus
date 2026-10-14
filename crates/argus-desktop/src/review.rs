@@ -5,13 +5,13 @@
 //! `argus_protocol::review_view`'s, so a comment written here means what
 //! one written in the terminal client does.
 
+use argus_protocol::fuzzy::Fuzzy;
 use argus_protocol::review_view::{marker, ReviewView, Row};
 use argus_protocol::{
     CheckoutId, CheckoutInfo, ChangeKind, ClientMsg, DiffLine, HighlightKind, LineKind, PaneId, PaneKind, Review,
     ReviewBase,
 };
 
-use crate::fuzzy;
 use crate::page::{DiffRow, DiffSide, Recipient, ReviewFile, ReviewJump, ReviewPage};
 use crate::settings::ReviewLayout;
 
@@ -295,7 +295,10 @@ impl ReviewDialog {
 
     fn jump_matches(&self) -> Vec<usize> {
         match (&self.jump, self.side(self.base)) {
-            (Some(jump), Some(view)) => fuzzy::paths(&jump.query, view.review.files.iter().map(|f| f.path.as_str())),
+            (Some(jump), Some(view)) => {
+                let paths: Vec<String> = view.review.files.iter().map(|f| f.path.clone()).collect();
+                Fuzzy::paths().filter(&jump.query, &paths)
+            }
             _ => Vec::new(),
         }
     }

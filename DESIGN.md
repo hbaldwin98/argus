@@ -187,6 +187,7 @@ live in this crate and a contract written twice drifts in silence.
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
 | `review_view` | a diff flattened into the rows a viewer moves over, unified or split, and what a comment on the picked ones anchors to |
 | `history_view` | a checkout's recent commits flattened into rows, each unfolding to the files it touched once they are asked for |
+| `fuzzy` | which items a typed query matches, best first, so a picker in either client finds the same ones |
 | `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
 | `tracker_links` | how a repository's work reaches the team's trackers: which tickets a feature is linked to, how a ticket's tracker and key are read out of its URL, and the board's tracker map and its draft |
 | `capture` | how one note reads as a feature: its title, brief, tasks and decisions |
@@ -274,7 +275,7 @@ result of a request; `ui` is a pure function of it.
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
 | `brief`, `dirpicker` | the view state behind each overlay |
 | `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
-| `grid`, `selection`, `pty_input`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
+| `grid`, `selection`, `pty_input`, `paste`, `clipboard` | a pane's screen, its selected text, and the input primitives |
 | `pty_input/keys` | a terminal key event as the protocol's key, and the leader chord that is never sent |
 | `pty_input/mouse` | a terminal mouse event as the protocol's, relative to the pane's area |
 | `dropped` | a file dropped on the terminal, recognized in what it pasted |
@@ -295,7 +296,6 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `rail` | what the rail lists from the tree, and what a row says |
 | `review` | what the review dialog holds — a checkout's unstaged and staged sides, the diff on screen, the lines picked, who a comment goes to and the file being jumped to — and what its gestures ask of the daemon |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff — and what its gestures ask of the daemon |
-| `fuzzy` | which paths a typed query matches, best first: the review's jump field |
 | `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row — and what its keys and buttons ask of the daemon |
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks, each repository's layout — and what its messages and gestures change |

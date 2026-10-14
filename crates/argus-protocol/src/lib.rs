@@ -20,6 +20,7 @@ pub mod features;
 pub mod flow;
 pub mod focus;
 pub mod framing;
+pub mod fuzzy;
 pub mod held_tree;
 pub mod history_view;
 pub mod hello;

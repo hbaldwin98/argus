@@ -14,7 +14,7 @@
 use argus_protocol::{DirEntry, DirListing, ProjectId};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::fuzzy::Fuzzy;
+use argus_protocol::fuzzy::Fuzzy;
 
 /// What a confirmed directory becomes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
