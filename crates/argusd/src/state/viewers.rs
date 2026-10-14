@@ -1,5 +1,6 @@
-//! What each attached client is showing, and the one pty size reconciled
-//! out of what they all ask for.
+//! What each attached client is showing: the one pty size reconciled out
+//! of what they all ask for, and the view of the client the person was
+//! last at, which is where they are working.
 //!
 //! A pty has one size and clients do not have to agree on it, so a request
 //! is recorded against the viewer that made it and applied only once every
@@ -11,12 +12,16 @@ use super::*;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ViewerId(pub(super) u64);
 
-/// The requested pane sizes of every attached client, and what was last
-/// actually applied to each pty.
+/// The requested pane sizes of every attached client, what was last
+/// actually applied to each pty, and the view each client reported.
 #[derive(Default)]
 pub(super) struct Viewers {
     wanted: HashMap<PaneId, HashMap<ViewerId, (u16, u16)>>,
     applied: HashMap<PaneId, (u16, u16)>,
+    /// Ordered by when each client was last active, the latest last: the
+    /// focus is the last view, and falls back to the one before it when
+    /// that client goes.
+    views: Vec<(ViewerId, View)>,
 }
 
 impl Viewers {
@@ -31,6 +36,33 @@ impl Viewers {
             .values()
             .copied()
             .reduce(|(ar, ac), (br, bc)| (ar.min(br), ac.min(bc)))
+    }
+
+    /// Records what `viewer` is showing. An active view moves its client
+    /// to the front; an inactive one keeps its place, and a client first
+    /// heard of inactive goes behind every other.
+    fn record_view(&mut self, viewer: ViewerId, view: View) {
+        let held = self.views.iter().position(|(v, _)| *v == viewer);
+        match held {
+            Some(i) if view.active => {
+                self.views.remove(i);
+                self.views.push((viewer, view));
+            }
+            Some(i) => self.views[i].1 = view,
+            None if view.active => self.views.push((viewer, view)),
+            None => self.views.insert(0, (viewer, view)),
+        }
+    }
+
+    /// Whether `viewer` had reported a view, which it no longer has.
+    fn forget_view(&mut self, viewer: ViewerId) -> bool {
+        let before = self.views.len();
+        self.views.retain(|(v, _)| *v != viewer);
+        self.views.len() != before
+    }
+
+    fn focused_view(&self) -> Option<&View> {
+        self.views.last().map(|(_, view)| view)
     }
 
     /// The size to apply for `pane`, or `None` when nothing would change.
@@ -103,8 +135,40 @@ impl Daemon {
         let _ = self.reconcile_size(pane);
     }
 
-    /// Drops every claim a disconnecting client held.
+    /// Records what a client is showing, and tells whoever watches the
+    /// focus that it may have moved.
+    pub fn report_view(&self, viewer: ViewerId, view: View) {
+        self.viewers.lock().unwrap().record_view(viewer, view);
+        let _ = self.views_tx.send(());
+    }
+
+    /// A tick each time a client's view changes or goes; the focus is read
+    /// again with [`Daemon::focus_in`].
+    pub fn subscribe_views(&self) -> broadcast::Receiver<()> {
+        self.views_tx.subscribe()
+    }
+
+    /// Where the person is working, read against `tree`: the view of the
+    /// client they were last at. `None` while no client reports one.
+    pub fn focus_in(&self, tree: &[ProjectInfo]) -> Option<Focus> {
+        let view = self.viewers.lock().unwrap().focused_view().cloned()?;
+        let workspace = {
+            let inner = self.inner.lock().unwrap();
+            inner
+                .workspaces
+                .iter()
+                .find(|w| w.id == inner.open)
+                .map(|w| w.name.clone())
+                .unwrap_or_default()
+        };
+        Some(Focus::of(&view, &workspace, tree))
+    }
+
+    /// Drops every claim a disconnecting client held, and its view.
     pub fn release_viewer(&self, viewer: ViewerId) {
+        if self.viewers.lock().unwrap().forget_view(viewer) {
+            let _ = self.views_tx.send(());
+        }
         let touched: Vec<PaneId> = {
             let viewers = self.viewers.lock().unwrap();
             viewers
@@ -168,6 +232,72 @@ impl Daemon {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn view(pane: u64, active: bool) -> View {
+        View {
+            pane: Some(PaneId(pane)),
+            active,
+            ..View::default()
+        }
+    }
+
+    fn focused_pane(viewers: &Viewers) -> Option<PaneId> {
+        viewers.focused_view().and_then(|view| view.pane)
+    }
+
+    #[test]
+    fn the_focus_is_the_view_of_the_client_last_active() {
+        let mut viewers = Viewers::default();
+        let (first, second) = (ViewerId(0), ViewerId(1));
+        viewers.record_view(first, view(1, true));
+        viewers.record_view(second, view(2, true));
+        assert_eq!(focused_pane(&viewers), Some(PaneId(2)));
+
+        viewers.record_view(first, view(3, true));
+        assert_eq!(focused_pane(&viewers), Some(PaneId(3)));
+    }
+
+    #[test]
+    fn a_background_clients_selection_moving_does_not_take_the_focus() {
+        // A tree closing the pane a client in another window had selected
+        // moves its selection without anybody being at it.
+        let mut viewers = Viewers::default();
+        let (here, elsewhere) = (ViewerId(0), ViewerId(1));
+        viewers.record_view(elsewhere, view(1, true));
+        viewers.record_view(here, view(2, true));
+
+        viewers.record_view(elsewhere, view(5, false));
+        assert_eq!(focused_pane(&viewers), Some(PaneId(2)));
+
+        viewers.record_view(here, view(6, false));
+        assert_eq!(
+            focused_pane(&viewers),
+            Some(PaneId(6)),
+            "the client the person was last at still speaks for them"
+        );
+    }
+
+    #[test]
+    fn a_client_first_heard_of_inactive_does_not_take_the_focus() {
+        let mut viewers = Viewers::default();
+        viewers.record_view(ViewerId(0), view(1, true));
+        viewers.record_view(ViewerId(1), view(2, false));
+        assert_eq!(focused_pane(&viewers), Some(PaneId(1)));
+    }
+
+    #[test]
+    fn the_focus_falls_back_when_its_client_goes() {
+        let mut viewers = Viewers::default();
+        let (first, second) = (ViewerId(0), ViewerId(1));
+        viewers.record_view(first, view(1, true));
+        viewers.record_view(second, view(2, true));
+
+        assert!(viewers.forget_view(second));
+        assert_eq!(focused_pane(&viewers), Some(PaneId(1)));
+        assert!(viewers.forget_view(first));
+        assert_eq!(viewers.focused_view(), None);
+        assert!(!viewers.forget_view(first), "nothing was left to forget");
+    }
 
     #[test]
     fn a_size_already_applied_is_not_applied_again() {

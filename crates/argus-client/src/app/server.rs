@@ -45,6 +45,7 @@ impl App {
     pub fn set_on_screen(&mut self, on_screen: bool) {
         self.on_screen = on_screen;
         self.sync_subscription();
+        self.report_view();
     }
 
     /// Points the app at a new connection after the old one died.
@@ -68,6 +69,9 @@ impl App {
         let ours = Hello::this_build();
         let (argusd, fix) = self.daemon_and_its_fix();
         self.pastes_files = daemon.is_some_and(|d| d.can(argus_protocol::PASTE_FILE));
+        // A daemon newly reached has been told nothing.
+        self.reports_view = daemon.is_some_and(|d| d.can(argus_protocol::FOCUS));
+        self.view_sent = None;
         let Some(daemon) = daemon else {
             self.report(format!("{argusd} predates this client; {fix} to update it"));
             return;
@@ -327,6 +331,8 @@ impl App {
                 self.settle_awaited();
             }
             ServerMsg::Restarting => {}
+            // Sent only to a client watching the focus, which this is not.
+            ServerMsg::Focus(_) => {}
             ServerMsg::Stopping => self.should_quit = true,
             // The terminal client never watches a conversation, since it
             // shows the pane itself, never asks for every workspace, and

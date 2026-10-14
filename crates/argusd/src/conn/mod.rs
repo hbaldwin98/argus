@@ -10,8 +10,8 @@
 use std::sync::Arc;
 
 use argus_protocol::{
-    grid_from_runs, read_known_msg, write_frame, CellRun, ClientMsg, Hello, PaneId, ServerMsg,
-    CELL_RUNS, LIVE_CHANNELS, PANE_TELEMETRY, WIDE_TREE,
+    grid_from_runs, read_known_msg, write_frame, CellRun, ClientMsg, Focus, Hello, PaneId,
+    ServerMsg, CELL_RUNS, LIVE_CHANNELS, PANE_TELEMETRY, WIDE_TREE,
 };
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc, Semaphore};
@@ -74,6 +74,9 @@ where
     let mut decisions_rx = daemon.subscribe_decisions();
     let mut tasks_rx = daemon.subscribe_tasks();
     let mut diagrams_rx = daemon.subscribe_diagrams();
+    let mut views_rx = daemon.subscribe_views();
+    // Set once the client asks to be told where the person is working.
+    let mut focus_watch: Option<FocusWatch> = None;
     let mut subs = Subscriptions::new(frames_tx);
     let mut review_task = None;
     // What the client said it can take: nothing until it greets, and
@@ -103,6 +106,21 @@ where
             }
             msg = client_rx.recv() => {
                 let Some(cmsg) = msg else { break };
+                // Here rather than in dispatch: watching is this
+                // connection's, as its viewer is.
+                match cmsg {
+                    ClientMsg::View(view) => {
+                        daemon.report_view(viewer, view);
+                        continue;
+                    }
+                    ClientMsg::WatchFocus => {
+                        let watch = focus_watch.insert(FocusWatch::default());
+                        let focus = daemon.focus_in(&daemon.snapshot());
+                        let _ = out_tx.send(watch.first(focus));
+                        continue;
+                    }
+                    _ => {}
+                }
                 if let ClientMsg::Hello(hello) = &cmsg {
                     subs.runs = hello.can(CELL_RUNS);
                     if hello.can(LIVE_CHANNELS) && live_reader.is_none() {
@@ -135,7 +153,21 @@ where
                 }
             }
             Ok(tree) = tree_rx.recv() => {
+                if let Some(watch) = &mut focus_watch {
+                    if let Some(msg) = watch.changed(daemon.focus_in(&tree)) {
+                        let _ = out_tx.send(msg);
+                    }
+                }
                 let _ = out_tx.send(tree_for(&daemon, peer.as_ref(), tree));
+            }
+            // Lagging only means several changes were missed, and the
+            // focus is read whole either way.
+            Ok(()) | Err(broadcast::error::RecvError::Lagged(_))
+                = views_rx.recv(), if focus_watch.is_some() => {
+                let watch = focus_watch.as_mut().expect("guarded on a watch");
+                if let Some(msg) = watch.changed(daemon.focus_in(&daemon.snapshot())) {
+                    let _ = out_tx.send(msg);
+                }
             }
             report = telemetry_rx.recv() => match report {
                 Ok((pane, telemetry)) if peer.as_ref().is_some_and(|p| p.can(PANE_TELEMETRY)) => {
@@ -153,9 +185,8 @@ where
                 let _ = out_tx.send(ServerMsg::Workspaces(ws));
             }
             // Every client is told, and one with another project open
-            // drops it by name. Filtering here would mean the daemon
-            // tracking what each client is looking at, which is the one
-            // thing about a view it deliberately does not know.
+            // drops it by name. The view a client reports is for saying
+            // where the person is, never for deciding what it is sent.
             Ok(board) = decisions_rx.recv() => {
                 let _ = out_tx.send(ServerMsg::Decisions(Box::new(board)));
             }
@@ -174,6 +205,30 @@ where
     reader.abort();
     if let Some(task) = review_task {
         task.abort();
+    }
+}
+
+/// What a connection watching the focus was last sent, so a tree that
+/// changes nothing it names sends nothing.
+#[derive(Default)]
+struct FocusWatch {
+    sent: Option<Focus>,
+}
+
+impl FocusWatch {
+    /// The answer to asking: sent whatever it is.
+    fn first(&mut self, focus: Option<Focus>) -> ServerMsg {
+        self.sent = focus.clone();
+        ServerMsg::Focus(focus.map(Box::new))
+    }
+
+    /// The message to send for `focus`, or `None` when it is what was
+    /// last sent.
+    fn changed(&mut self, focus: Option<Focus>) -> Option<ServerMsg> {
+        if focus == self.sent {
+            return None;
+        }
+        Some(self.first(focus))
     }
 }
 
@@ -853,6 +908,67 @@ mod tests {
         let panes = &workspaces[0].projects[0].repositories[0].checkouts[0].panes;
         assert_eq!(panes.len(), 2);
         assert!(panes[0].since.is_some());
+        let _ = daemon.close_pane(pane);
+        let _ = daemon.close_pane(second);
+    }
+
+    /// The next focus a watcher is sent, past the trees around it.
+    async fn next_focus(client: &mut tokio::io::DuplexStream) -> Option<argus_protocol::Focus> {
+        loop {
+            if let ServerMsg::Focus(focus) = next(client).await {
+                return focus.map(|focus| *focus);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_watcher_is_told_where_the_person_is_and_when_that_goes() {
+        let dir = tempfile::tempdir().unwrap();
+        let (daemon, pane) = daemon_with_a_pane(dir.path());
+        let mut watcher = connect_to(daemon.clone()).await;
+        argus_protocol::write_msg(&mut watcher, &ClientMsg::WatchFocus).await.unwrap();
+        assert_eq!(next_focus(&mut watcher).await, None, "nobody has said where they are");
+
+        let mut terminal = connect_to(daemon.clone()).await;
+        let view = argus_protocol::View {
+            pane: Some(pane),
+            active: true,
+            ..Default::default()
+        };
+        argus_protocol::write_msg(&mut terminal, &ClientMsg::View(view.clone())).await.unwrap();
+        let focus = next_focus(&mut watcher).await.expect("the terminal's view");
+        assert_eq!(focus.pane.map(|p| p.id), Some(pane));
+        assert!(focus.checkout.is_some());
+
+        // The same view again is not news.
+        argus_protocol::write_msg(&mut terminal, &ClientMsg::View(view)).await.unwrap();
+        drop(terminal);
+        assert_eq!(next_focus(&mut watcher).await, None, "its client went");
+        let _ = daemon.close_pane(pane);
+    }
+
+    #[tokio::test]
+    async fn a_client_that_does_not_watch_is_never_sent_the_focus() {
+        let dir = tempfile::tempdir().unwrap();
+        let (daemon, pane) = daemon_with_a_pane(dir.path());
+        let mut terminal = connect_to(daemon.clone()).await;
+        let view = argus_protocol::View {
+            pane: Some(pane),
+            active: true,
+            ..Default::default()
+        };
+        argus_protocol::write_msg(&mut terminal, &ClientMsg::View(view)).await.unwrap();
+        let taken = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while daemon.focus_in(&daemon.snapshot()).is_none() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+        assert!(taken.is_ok(), "the daemon should take the view");
+        // Anything at all, to have something arrive after the view.
+        let checkout = daemon.snapshot()[0].repositories[0].checkouts[0].id;
+        let second = daemon.spawn_shell(checkout).unwrap();
+        assert!(matches!(next(&mut terminal).await, ServerMsg::Tree(_)));
         let _ = daemon.close_pane(pane);
         let _ = daemon.close_pane(second);
     }

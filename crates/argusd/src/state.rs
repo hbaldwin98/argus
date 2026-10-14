@@ -3,8 +3,9 @@
 //! One `Daemon` type behind a small set of mutexes. Everything done *to*
 //! the tree lives in a sibling module named after it — `build` for
 //! constructing one, `panes` for a pane's lifecycle, `agents` for what an
-//! agent reports about itself, `viewers` for the size each client asks a
-//! pty for, `git_ops` for the writes to Git, `sync` for the polls and
+//! agent reports about itself, `viewers` for what each client shows (the
+//! size it asks a pty for, and the view that says where the person is),
+//! `git_ops` for the writes to Git, `sync` for the polls and
 //! watchers that keep the tree level with the disk, `panel` for the rows
 //! the user adds and removes, `workspaces` for which scope is open,
 //! `hook_server` for the
@@ -24,8 +25,9 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use argus_protocol::{
-    Cell, CheckoutId, CheckoutInfo, GitStatus, IdGen, PaneId, PaneInfo, PaneKind, PaneStatus,
-    ProjectId, ProjectInfo, RepositoryId, RepositoryInfo, ServerMsg, WorkspaceId, WorkspaceInfo,
+    Cell, CheckoutId, CheckoutInfo, Focus, GitStatus, IdGen, PaneId, PaneInfo, PaneKind,
+    PaneStatus, ProjectId, ProjectInfo, RepositoryId, RepositoryInfo, ServerMsg, View,
+    WorkspaceId, WorkspaceInfo,
 };
 use tokio::sync::broadcast;
 
@@ -353,6 +355,9 @@ pub struct Daemon {
     /// arrive.
     viewers: StdMutex<Viewers>,
     next_viewer: std::sync::atomic::AtomicU64,
+    /// A tick whenever a client's view changes or goes, for the
+    /// connections watching the focus to read it again.
+    views_tx: broadcast::Sender<()>,
     /// The task typing queued messages, once anything has been queued, and
     /// the id the next message gets.
     outbox: StdMutex<outbox::Outbox>,

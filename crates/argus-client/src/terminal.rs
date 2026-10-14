@@ -4,7 +4,8 @@
 use std::io::{self, Write};
 
 use crossterm::event::{
-    DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
+    EnableFocusChange, EnableMouseCapture,
 };
 use crossterm::execute;
 use crossterm::terminal::{
@@ -33,7 +34,9 @@ pub fn enter_terminal() -> anyhow::Result<Term> {
         stdout,
         EnterAlternateScreen,
         EnableMouseCapture,
-        EnableBracketedPaste
+        EnableBracketedPaste,
+        // So the daemon can tell which of several clients the person is at.
+        EnableFocusChange
     )?;
     Ok(Terminal::new(TermBackend::new(
         io::BufWriter::with_capacity(FRAME_BUFFER, stdout),
@@ -76,6 +79,7 @@ pub fn leave_terminal(terminal: &mut Term) -> anyhow::Result<()> {
         .set_cursor_shape(argus_protocol::CursorShape::Default);
     execute!(
         terminal.backend_mut(),
+        DisableFocusChange,
         DisableBracketedPaste,
         DisableMouseCapture,
         LeaveAlternateScreen

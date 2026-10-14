@@ -15,6 +15,7 @@ pub mod damage;
 pub mod decisions;
 pub mod diagrams;
 pub mod features;
+pub mod focus;
 pub mod framing;
 pub mod held_tree;
 pub mod hello;
@@ -51,10 +52,11 @@ pub use features::{
     is_slug, slugify, Actor, Feature, FeatureAction, FeatureBoard, FeatureEvent, FeatureMove, FeatureState,
     FeatureWrite, MAX_FEATURE_BODY_BYTES, MAX_FEATURE_TITLE_BYTES, MAX_HOLD_BYTES,
 };
+pub use focus::{Focus, FocusCheckout, FocusPane, FocusProject, FocusRepository, View};
 pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
 pub use held_tree::{transitions, HeldTree, Transition};
 pub use hello::{
-    Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, GREETING_WAIT, LIVE_CHANNELS, OUTBOX, PASTE_FILE,
+    Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, LIVE_CHANNELS, OUTBOX, PASTE_FILE,
     PANE_TELEMETRY, PROTOCOL, TRANSCRIPTS, WIDE_TREE,
 };
 pub use hook::{

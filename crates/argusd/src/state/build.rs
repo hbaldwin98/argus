@@ -109,6 +109,7 @@ impl Daemon {
         let (decisions_tx, _) = broadcast::channel(32);
         let (tasks_tx, _) = broadcast::channel(32);
         let (diagrams_tx, _) = broadcast::channel(32);
+        let (views_tx, _) = broadcast::channel(16);
         let daemon = Arc::new(Daemon {
             inner: StdMutex::new(Inner {
                 workspaces,
@@ -133,6 +134,7 @@ impl Daemon {
             store,
             restart_attempts: StdMutex::new(HashMap::new()),
             viewers: StdMutex::new(Viewers::default()),
+            views_tx,
             next_viewer: std::sync::atomic::AtomicU64::new(0),
             outbox: StdMutex::new(Default::default()),
             next_inbox: std::sync::atomic::AtomicU64::new(0),

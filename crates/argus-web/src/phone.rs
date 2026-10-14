@@ -9,7 +9,7 @@
 //! every other string is text, for the page to set as text.
 
 use argus_protocol::{
-    Body, Earlier, PaneInfo, PaneKind, PaneStatus, Sent, ToolState, Update, WorkspaceTree,
+    Body, Earlier, PaneInfo, PaneKind, Sent, ToolState, Update, WorkspaceTree,
 };
 use serde::{Deserialize, Serialize};
 
@@ -220,20 +220,6 @@ pub struct PhoneEntry {
     pub answered: Option<String>,
 }
 
-/// The pane API's word for a status, which is also what the page's styles
-/// are named after.
-pub fn status_word(status: PaneStatus) -> &'static str {
-    match status {
-        PaneStatus::Idle => "idle",
-        PaneStatus::Working => "working",
-        PaneStatus::Waiting => "waiting",
-        PaneStatus::NeedsReview => "needs-review",
-        PaneStatus::Done => "done",
-        PaneStatus::Failed => "failed",
-        PaneStatus::Exited { .. } => "exited",
-    }
-}
-
 fn tool_word(state: ToolState) -> &'static str {
     match state {
         ToolState::Running => "running",
@@ -294,9 +280,9 @@ fn agent(project: &str, checkout: &str, pane: &PaneInfo) -> (u8, Agent) {
         template: pane.template.clone(),
         project: project.to_string(),
         checkout: checkout.to_string(),
-        status: status_word(pane.status),
+        status: pane.status.word(),
         note: pane.note.clone(),
-        loudest: status_word(loudest.status),
+        loudest: loudest.status.word(),
         loudest_child: loudest.child.map(str::to_string),
         since: pane.since,
         has_transcript: pane.has_transcript,
@@ -416,7 +402,9 @@ pub fn updates(updates: Vec<Update>) -> Vec<PhoneUpdate> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use argus_protocol::{CheckoutInfo, Entry, PaneId, ProjectInfo, RepositoryInfo, WorkspaceId};
+    use argus_protocol::{
+        CheckoutInfo, Entry, PaneId, PaneStatus, ProjectInfo, RepositoryInfo, WorkspaceId,
+    };
 
     fn pane(id: u64, kind: PaneKind, status: PaneStatus) -> PaneInfo {
         PaneInfo {

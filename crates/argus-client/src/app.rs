@@ -9,8 +9,8 @@
 //! The `impl` is split by what the operator is doing: `nav` for moving
 //! between columns, `input` for keys, `mouse` for the pointer, `scroll`
 //! for a pane parked in its history, `actions` for what is asked of the
-//! daemon, `pickers` for the modal layers, and `server` for what arrives
-//! back.
+//! daemon, `pickers` for the modal layers, `server` for what arrives
+//! back, and `showing` for what the daemon is told this client shows.
 
 use argus_protocol::{
     CheckoutId, CheckoutInfo, ClientMsg, HeldTree, PaneId, PaneInfo, PaneKind, PaneState,
@@ -58,6 +58,7 @@ mod rail;
 mod rows;
 mod scroll;
 mod server;
+mod showing;
 mod views;
 
 /// The branch a remote-tracking name would become locally:
@@ -244,6 +245,13 @@ pub struct App {
     /// False until it greets, and for a daemon from before the capability,
     /// which is told about rather than sent a message it cannot read.
     pub pastes_files: bool,
+    /// Whether the daemon takes this client's view (`FOCUS`), and the
+    /// view it was last sent. See `showing`.
+    reports_view: bool,
+    view_sent: Option<argus_protocol::View>,
+    /// Whether the terminal holds the person's focus. True until it says
+    /// otherwise, which a terminal that reports no focus never does.
+    terminal_focused: bool,
     pub selection: Option<TerminalSelection>,
     /// True between a press on the rail's right border and its release.
     pub rail_drag: bool,
@@ -457,6 +465,9 @@ impl App {
             clipboard_image: crate::clipboard::read_image,
             clipboard_write: crate::clipboard::write,
             pastes_files: false,
+            reports_view: false,
+            view_sent: None,
+            terminal_focused: true,
             selection: None,
             rail_drag: false,
             should_quit: false,

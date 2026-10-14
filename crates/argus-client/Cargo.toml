@@ -14,6 +14,7 @@ argus-protocol = { workspace = true }
 argus-web = { workspace = true }
 tokio = { workspace = true, features = ["io-std"] }
 serde = { workspace = true }
+serde_json = { workspace = true }
 anyhow = { workspace = true }
 directories = { workspace = true }
 toml = { workspace = true }

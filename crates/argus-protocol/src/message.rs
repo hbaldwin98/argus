@@ -10,6 +10,7 @@ use crate::damage::{CellRun, Scroll};
 use crate::capture::Capture;
 use crate::decisions::{DecisionBoard, DecisionChange, DecisionWrite};
 use crate::features::{FeatureState, FeatureWrite};
+use crate::focus::{Focus, View};
 use crate::hello::Hello;
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
@@ -450,6 +451,14 @@ pub enum ClientMsg {
         question: String,
         choice: String,
     },
+    /// What this client is showing, sent whenever that changes and again
+    /// when its terminal regains focus. Only to a daemon that listed
+    /// `FOCUS`.
+    View(View),
+    /// Start being told where the person is working: answered with a
+    /// [`ServerMsg::Focus`] now and another each time it changes. Only to a
+    /// daemon that listed `FOCUS`.
+    WatchFocus,
     /// This client's greeting: the first message it sends, and the only one
     /// it sends before knowing the daemon can take more than the floor. A
     /// daemon from before the handshake hangs up on it, which is how the
@@ -685,6 +694,10 @@ pub enum ServerMsg {
         request_id: u64,
         created: Option<Created>,
     },
+    /// Where the person is working, to a client that sent
+    /// [`ClientMsg::WatchFocus`]: what the most recently active client is
+    /// showing, or `None` while no client reports a view.
+    Focus(Option<Box<Focus>>),
     /// The daemon accepted a restart request and will exit after this frame
     /// reaches the client.
     Restarting,

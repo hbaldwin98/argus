@@ -153,6 +153,23 @@ argus server stop
 The command waits for the endpoint to be released. Connected Argus clients exit, and the next
 `argus` launch restores non-exited panes from the runtime session store.
 
+To ask where you are working, for a script or a status line, run:
+
+```sh
+argus focus           # one JSON object, then exits
+argus focus --watch   # a JSON object per line, each time it changes
+```
+
+It prints what the Argus client you were last at is showing: the workspace, project, repository,
+checkout (path, branch, whether it is the primary checkout and dirty) and pane (id, kind, title,
+agent, status, note, model). Each part is `null` when nothing is selected there. The whole line is
+`null` while no client is open, and in `--watch` while the daemon is down; the watch connects
+again once it is back. `argus focus` never starts the daemon.
+
+```sh
+argus focus | jq -r '"\(.checkout.branch) · \(.pane.agent // "shell") \(.pane.status)"'
+```
+
 ### From a phone
 
 `argus web` serves a phone-sized client in a browser: every agent the daemon runs, most urgent

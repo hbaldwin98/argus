@@ -158,6 +158,22 @@ unnamed request (id zero, what a client from before this sends) is never answere
 client never receives a message it cannot read, and an older daemon ignores the name — a newer
 client talking to it simply does not move to what it made.
 
+Where the person is working is the client's to know, since the selection is client state, so the
+daemon is told. A client whose daemon listed `focus` sends a `View` (the project, checkout and pane
+its selection names) whenever that changes, and again when its terminal regains focus, which the
+client asks the terminal to report. A view is *active* while the terminal has focus, or always for a
+terminal that never says; only an active view moves the focus to its client, so a tree reshuffling
+the selection of a client in another window does not. The focus is the view of the client most
+recently active, falling back to the one before when that client goes. A host taken off screen
+reports a view of nothing, since the person is looking at another machine. A client that sends
+`WatchFocus` is sent `Focus` at once, and again whenever a tree or a view changes what it says: the
+view read against the daemon's own tree, so a pane is named where it is now rather than where the
+client last saw it. `argus focus` is that client. It prints the focus as JSON and exits, or with
+`--watch` prints a line per change, `null` while the daemon is gone, and connects again once it is
+back. It never starts a daemon, because a status line runs it every few seconds. The view decides
+only what the daemon says about where the person is; every client is still sent the same trees and
+boards.
+
 ## Where each responsibility lives
 
 One rule decides which file a thing goes in: a module is named after the question it answers, and
@@ -172,6 +188,7 @@ live in this crate and a contract written twice drifts in silence.
 | --- | --- |
 | `message` | what a client asks for, and what the daemon sends back |
 | `hello` | what each side of a connection can take, said before anything else, and how a client's greeting went |
+| `focus` | where the person is working: the view a client reports, and the focus the daemon makes of it and `argus focus` prints |
 | `inbox` | what the daemon tells a harness's plugin over its inbox |
 | `transcript` | a pane's conversation as entries, and the updates that keep a copy of it current |
 | `tree` | what a client renders, which pane state outranks which, and what a row standing for several shows |
@@ -196,7 +213,7 @@ to the type or its locking.
 | `state/build` | turning what the config declares into the tree the daemon runs on |
 | `state/panes` | a pane's lifecycle: spawned, restarted, written to, and retired — the one way out of the tree every removal takes |
 | `state/agents` | what an agent reports about itself, and what it is told |
-| `state/viewers` | the one pty size reconciled out of what every client asks for |
+| `state/viewers` | what each client is showing: the one pty size reconciled out of what they all ask for, and the view of the client the person was last at |
 | `state/git_ops` | the writes to Git |
 | `state/sync` | the polls and watchers that keep the tree level with the disk |
 | `state/panel` | the rows the user adds and removes by hand |
@@ -238,6 +255,7 @@ result of a request; `ui` is a pure function of it.
 | `main`, `redraw`, `terminal`, `wire`, `launch` | the event loop, the screen and socket it runs over, and the daemon lifecycle command |
 | `bridge` | this machine's daemon on stdin and stdout, for a client on another machine to reach over ssh |
 | `web` | the `argus web` command: its flags, and handing the web server this machine's daemon |
+| `focus` | the `argus focus` command: where the person is working, as JSON, once or on every change |
 | `hosts` | the daemons this client is attached to, each with an app of its own, and which one is on screen |
 | `remote` | reaching a daemon on another machine through ssh and its bridge, and saying why when ssh cannot |
 | `ssh_hosts` | the hosts the user's ssh config names, for the host picker |
@@ -250,6 +268,7 @@ result of a request; `ui` is a pure function of it.
 | `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
 | `app/awaited` | requests waiting on something the daemon is making, and what to do with it once the tree holds it |
 | `app/server` | what arrives back, and what it does to the selection |
+| `app/showing` | what the daemon is told this client shows |
 | `app/views` | which surface the content area holds, and the fetches opening one makes |
 | `app/feature` | where the Feature stage is — the index, a feature on a lens, the row under the cursor — and how the keys move between them |
 | `app/board_writes` | what the Feature stage asks the daemon to change: the line or note being typed, and the message each key sends |

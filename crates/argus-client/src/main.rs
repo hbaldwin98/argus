@@ -15,6 +15,7 @@ mod diagram;
 mod clipboard;
 mod dirpicker;
 mod dropped;
+mod focus;
 mod fuzzy;
 mod grid;
 mod herdr;
@@ -72,6 +73,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Init(dir) => return launch::init(dir).await,
         Command::Bridge => return bridge::run().await,
         Command::Web(command) => return web::run(command).await,
+        Command::Focus { watch } => return focus::run(watch).await,
         Command::Tui => None,
         Command::Host(host) => Some(host),
     };
@@ -107,6 +109,8 @@ enum Command {
     Host(String),
     /// The phone client, served by a client of this machine's daemon.
     Web(web::WebCommand),
+    /// Where the person is working, as JSON: once, or a line per change.
+    Focus { watch: bool },
 }
 
 fn parse_command(args: &[String]) -> anyhow::Result<Command> {
@@ -119,10 +123,15 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         [init] if init == "init" => Ok(Command::Init(None)),
         [init, dir] if init == "init" => Ok(Command::Init(Some(dir.clone()))),
         [bridge] if bridge == "bridge" => Ok(Command::Bridge),
+        [focus] if focus == "focus" => Ok(Command::Focus { watch: false }),
+        [focus, watch] if focus == "focus" && watch == "--watch" => {
+            Ok(Command::Focus { watch: true })
+        }
         [web, rest @ ..] if web == "web" => web::parse(rest).map(Command::Web),
         [flag, host] if flag == "--host" && !host.is_empty() => Ok(Command::Host(host.clone())),
         _ => Err(anyhow::anyhow!(
-            "usage: argus [--host HOST | init [DIR] | server (restart | stop) | bridge | web]"
+            "usage: argus [--host HOST | init [DIR] | server (restart | stop) | focus [--watch] \
+             | bridge | web]"
         )),
     }
 }
@@ -305,6 +314,7 @@ async fn run(
         }
 
         let host = hosts.on_screen();
+        host.app.report_view();
         if host.app.should_quit {
             break;
         }
@@ -491,6 +501,8 @@ fn handle_terminal_event(
             flush_burst(app, burst);
             app.on_paste(text);
         }
+        Some(Ok(Event::FocusGained)) => app.set_terminal_focus(true),
+        Some(Ok(Event::FocusLost)) => app.set_terminal_focus(false),
         Some(Ok(_)) => {}
         Some(Err(_)) | None => {
             flush_burst(app, burst);
@@ -560,6 +572,16 @@ mod tests {
     #[test]
     fn no_arguments_open_the_tui() {
         assert!(matches!(parse_command(&[]), Ok(Command::Tui)));
+    }
+
+    #[test]
+    fn focus_prints_once_or_watches() {
+        let once = ["focus".to_string()];
+        assert_eq!(parse_command(&once).unwrap(), Command::Focus { watch: false });
+        let watch = ["focus".to_string(), "--watch".to_string()];
+        assert_eq!(parse_command(&watch).unwrap(), Command::Focus { watch: true });
+        let other = ["focus".to_string(), "--json".to_string()];
+        assert!(parse_command(&other).is_err());
     }
 
     #[test]

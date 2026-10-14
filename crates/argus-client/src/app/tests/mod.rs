@@ -12,6 +12,7 @@ mod preferences;
 mod prompts;
 mod reviewing;
 mod scrollback;
+mod showing;
 mod spawning;
 mod tree_updates;
 mod typing;

@@ -67,6 +67,20 @@ impl PaneStatus {
         }
     }
 
+    /// The pane API's word for a status, which is also what the phone's
+    /// styles and `argus focus` call it.
+    pub fn word(self) -> &'static str {
+        match self {
+            PaneStatus::Idle => "idle",
+            PaneStatus::Working => "working",
+            PaneStatus::Waiting => "waiting",
+            PaneStatus::NeedsReview => "needs-review",
+            PaneStatus::Done => "done",
+            PaneStatus::Failed => "failed",
+            PaneStatus::Exited { .. } => "exited",
+        }
+    }
+
     /// What a row standing for several states shows: the most urgent of
     /// them, the first on a tie. `None` when there are none.
     pub fn loudest(statuses: impl IntoIterator<Item = PaneStatus>) -> Option<PaneStatus> {
