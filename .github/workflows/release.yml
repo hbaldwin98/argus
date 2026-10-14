@@ -37,26 +37,14 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+  # The whole CI matrix, not a Linux-only copy of it: a tag publishes a
+  # package for every platform, so every platform has to pass first.
   quality:
     name: Verify release behavior
     needs: verify
-    runs-on: ubuntu-22.04
-    timeout-minutes: 45
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v6
-
-      - name: Install stable Rust
-        run: |
-          rustup update stable --no-self-update
-          rustup default stable
-          rustup component add clippy
-
-      - name: Test workspace
-        run: cargo test --workspace --locked
-
-      - name: Lint workspace
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
 
   build:
     name: Package ${{ matrix.target }}
