@@ -15,6 +15,7 @@
 use std::collections::HashSet;
 
 use argus_protocol::keys::{Key, KeyCode, Mods};
+use argus_protocol::mouse::{self, MouseEvent, MouseKind};
 use argus_protocol::{
     Cell, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
     RepositoryId, ServerMsg, View, FOCUS,
@@ -27,6 +28,10 @@ use crate::page::{Connection, Event, Status};
 use crate::settings::Settings;
 use crate::rail::{self, Choices};
 use crate::screen::Screen;
+
+/// Lines one wheel notch moves a parked view, as terminals scroll for one
+/// detent of a physical wheel.
+const WHEEL_LINES: i32 = 3;
 
 /// The most spawn requests held unanswered. A daemon older than the answer
 /// never sends one, and a request nobody will answer should not be carried
@@ -319,18 +324,32 @@ impl Session {
         self.finish()
     }
 
-    /// The wheel over the pane: `lines` up when negative, down toward the
-    /// live screen when positive. The normal screen has history behind it,
-    /// so the view moves; a full-screen child keeps none, so it is sent
-    /// cursor keys instead, as xterm's alternate scroll does.
-    pub fn scroll(&mut self, lines: i32) -> Vec<ClientMsg> {
-        let alternate = self.screen.as_ref().is_some_and(|screen| screen.alternate_screen());
-        if alternate && self.screen.as_ref().is_some_and(|screen| screen.parked().is_none()) {
-            let code = if lines < 0 { KeyCode::Up } else { KeyCode::Down };
-            let bytes = argus_protocol::keys::encode(&Key::new(code, Mods::NONE));
-            self.input(bytes.repeat(lines.unsigned_abs() as usize));
-        } else {
-            self.scroll_by(lines);
+    /// The wheel over the pane, `notches` up when negative, at the cell
+    /// `at` under the pointer, decided as the terminal client decides it: a
+    /// child that asked for the mouse gets its wheel reports; otherwise the
+    /// normal screen, which has history behind it, moves the view; and a
+    /// full-screen child that asked for nothing gets a cursor key a notch,
+    /// xterm's alternate scroll, which is what Claude Code, Codex and
+    /// Cursor Agent listen for.
+    pub fn wheel(&mut self, notches: i32, at: (u16, u16)) -> Vec<ClientMsg> {
+        let Some(screen) = &self.screen else {
+            return self.finish();
+        };
+        let (mouse, alternate, parked) = (screen.mouse(), screen.alternate_screen(), screen.parked().is_some());
+        let count = notches.unsigned_abs() as usize;
+        let up = notches < 0;
+        let event = MouseEvent {
+            kind: if up { MouseKind::ScrollUp } else { MouseKind::ScrollDown },
+            row: at.0,
+            col: at.1,
+        };
+        match mouse::encode(&event, mouse) {
+            Some(report) if !parked => self.input(report.repeat(count)),
+            _ if alternate && !parked => {
+                let code = if up { KeyCode::Up } else { KeyCode::Down };
+                self.input(argus_protocol::keys::encode(&Key::new(code, Mods::NONE)).repeat(count));
+            }
+            _ => self.scroll_by(notches.saturating_mul(WHEEL_LINES)),
         }
         self.finish()
     }
@@ -1007,39 +1026,39 @@ mod tests {
     #[test]
     fn the_wheel_parks_the_view_and_asks_further_up_by_line() {
         let mut s = showing(5, false);
-        assert_eq!(scrollback(&s.scroll(-3)), [(3, None)]);
+        assert_eq!(scrollback(&s.wheel(-1, (0, 0))), [(3, None)]);
         s.receive(history(3, 50, Some(100)));
-        assert_eq!(scrollback(&s.scroll(-3)), [(6, Some(97))]);
-        assert_eq!(scrollback(&s.scroll(2)), [(4, Some(99))]);
+        assert_eq!(scrollback(&s.wheel(-1, (0, 0))), [(6, Some(97))]);
+        assert_eq!(scrollback(&s.wheel(1, (0, 0))), [(3, Some(100))]);
     }
 
     #[test]
     fn scrolling_stops_at_the_depth_the_daemon_gave() {
         let mut s = showing(5, false);
-        s.scroll(-3);
+        s.wheel(-1, (0, 0));
         s.receive(history(3, 4, Some(10)));
-        assert_eq!(scrollback(&s.scroll(-3)), [(4, Some(9))]);
+        assert_eq!(scrollback(&s.wheel(-1, (0, 0))), [(4, Some(9))]);
         s.receive(history(4, 4, Some(9)));
-        assert!(scrollback(&s.scroll(-3)).is_empty(), "already at the top");
+        assert!(scrollback(&s.wheel(-1, (0, 0))).is_empty(), "already at the top");
     }
 
     #[test]
     fn scrolling_down_to_the_bottom_is_live_without_asking() {
         let mut s = showing(5, false);
-        s.scroll(-3);
+        s.wheel(-1, (0, 0));
         s.receive(history(3, 50, Some(100)));
-        assert!(scrollback(&s.scroll(10)).is_empty());
+        assert!(scrollback(&s.wheel(4, (0, 0))).is_empty());
         assert!(s.screen.as_ref().unwrap().parked().is_none());
     }
 
     #[test]
     fn typing_or_pasting_returns_the_view_to_the_live_screen() {
         let mut s = showing(5, false);
-        s.scroll(-3);
+        s.wheel(-1, (0, 0));
         s.key(&PageKey { key: "a".into(), ..PageKey::default() });
         assert!(s.screen.as_ref().unwrap().parked().is_none());
 
-        s.scroll(-3);
+        s.wheel(-1, (0, 0));
         s.paste("x".into());
         assert!(s.screen.as_ref().unwrap().parked().is_none());
     }
@@ -1056,15 +1075,35 @@ mod tests {
     #[test]
     fn the_wheel_over_a_full_screen_child_is_cursor_keys() {
         let mut s = showing(5, true);
-        assert_eq!(names(&s.scroll(-2)), ["input 2 [27, 91, 65, 27, 91, 65]"]);
-        assert_eq!(names(&s.scroll(1)), ["input 2 [27, 91, 66]"]);
+        assert_eq!(names(&s.wheel(-2, (0, 0))), ["input 2 [27, 91, 65, 27, 91, 65]"]);
+        assert_eq!(names(&s.wheel(1, (0, 0))), ["input 2 [27, 91, 66]"]);
+    }
+
+    #[test]
+    fn the_wheel_over_a_child_that_asked_for_the_mouse_is_its_wheel_report() {
+        // Claude Code asks for the mouse; a cursor key there walks its
+        // prompt history instead of scrolling.
+        let mut s = showing(5, true);
+        s.receive(ServerMsg::RowDamage {
+            pane: PaneId(2),
+            scroll: None,
+            runs: Vec::new(),
+            cursor: argus_protocol::Cursor::default(),
+            mouse: argus_protocol::MouseTracking {
+                mode: argus_protocol::MouseMode::PressRelease,
+                encoding: argus_protocol::MouseEncoding::Sgr,
+            },
+            alternate_screen: true,
+        });
+        let up = "[<64;4;2M".repeat(2).into_bytes();
+        assert_eq!(names(&s.wheel(-2, (1, 3))), [format!("input 2 {up:?}")]);
     }
 
     #[test]
     fn a_history_with_nothing_behind_the_screen_leaves_it_live_and_says_so() {
         let mut s = showing(5, false);
         s.events(0);
-        s.scroll(-3);
+        s.wheel(-1, (0, 0));
         s.receive(history(0, 0, None));
         assert!(s.screen.as_ref().unwrap().parked().is_none());
         assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text == "nothing further back")));
@@ -1073,7 +1112,7 @@ mod tests {
     #[test]
     fn a_late_answer_does_not_pull_a_live_view_up() {
         let mut s = showing(5, false);
-        s.scroll(-3);
+        s.wheel(-1, (0, 0));
         s.key(&PageKey { key: "a".into(), ..PageKey::default() });
         s.receive(history(3, 50, Some(100)));
         assert!(s.screen.as_ref().unwrap().parked().is_none());

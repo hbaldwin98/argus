@@ -89,18 +89,18 @@ export function listen(): void {
     anchor = null;
   });
 
-  // Three lines a notch, as terminals send for one detent; a touchpad's
-  // small deltas add up until they make a line.
+  // Rust decides what a notch is to the pane. A notch of a physical wheel
+  // is 100 pixels or 3 lines; a touchpad's small deltas add up to one.
   let wheel = 0;
   $('terminal').addEventListener(
     'wheel',
     (e) => {
       e.preventDefault();
-      wheel += e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY : (e.deltaY * 3) / 100;
-      const lines = Math.trunc(wheel);
-      if (!lines) return;
-      wheel -= lines;
-      call('scroll', { lines });
+      wheel += e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY / 3 : e.deltaY / 100;
+      const notches = Math.trunc(wheel);
+      if (!notches) return;
+      wheel -= notches;
+      call('wheel', { notches, at: screen.cellAt(e.clientX, e.clientY) });
     },
     { passive: false },
   );

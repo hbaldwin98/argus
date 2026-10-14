@@ -40,9 +40,11 @@ starts again a daemon somebody stopped. It shows one pane at a time; the daemon 
 client the person was last at, so a window and a terminal client on one pane each fill while in use.
 A drag across the pane selects and letting go copies; the text is read from the window's grid in Rust,
 and the clipboard is written and read there too (Ctrl-V, Ctrl-Shift-V, Alt-V), not by the page.
-The wheel and Shift-PageUp/PageDown park the view in the pane's history exactly as the terminal
-client's do (the parked rows held in `screen`, asked further by line, typing back to live, cursor
-keys to a full-screen child); the stage header leads its size with how far back the view is. It
+The wheel and Shift-PageUp/PageDown act as the terminal client's do: a child that asked for the
+mouse gets its wheel reports (`argus_protocol::mouse`), the normal screen parks the view in the
+pane's history (the parked rows held in `screen`, asked further by line, typing back to live), and a
+full-screen child that asked for nothing gets a cursor key a notch. The stage header leads its size
+with how far back a parked view is. It
 reports its view only while it has focus, so a window in the background never takes the focus from
 a terminal client being typed in. Rust holds the model (`session`); the page draws what it is sent
 and reports gestures. It is TypeScript in `crates/argus-desktop/page/src`, one module per subject
@@ -165,6 +167,7 @@ live in this crate and a contract written twice drifts in silence.
 | `cell`, `framing`, `transport` | a screen cell, a frame, and the endpoint they travel over |
 | `damage` | what changed on a pane's screen, as runs of cells and regions that scrolled |
 | `keys` | the bytes a key press is to a pane's child, decided once so every client types the same thing |
+| `mouse` | the bytes a mouse event is to a pane's child that asked for them, decided once so every client reports the mouse the same way |
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
 | `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
 | `tracker_links` | how a repository's work reaches the team's trackers: which tickets a feature is linked to, how a ticket's tracker and key are read out of its URL, and the board's tracker map and its draft |
@@ -253,8 +256,9 @@ result of a request; `ui` is a pure function of it.
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
 | `review`, `history`, `brief`, `dirpicker` | the view state behind each overlay |
 | `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
-| `grid`, `selection`, `pty_input`, `pty_input/mouse`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
+| `grid`, `selection`, `pty_input`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
 | `pty_input/keys` | a terminal key event as the protocol's key, and the leader chord that is never sent |
+| `pty_input/mouse` | a terminal mouse event as the protocol's, relative to the pane's area |
 | `dropped` | a file dropped on the terminal, recognized in what it pasted |
 | `browser` | opening a ticket's URL in the person's browser, or copying it where no browser is at hand |
 | `motion` | animation arithmetic: how far along a transition is at a given instant |

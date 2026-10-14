@@ -11,7 +11,7 @@
 //! `Scroll::apply` and `CellRun::apply`, never a copy in the page, so this
 //! window reads damage exactly as the terminal client does.
 
-use argus_protocol::{grid_from_runs, Cell, Color, Cursor, CursorShape, PaneId, ServerMsg, BLANK};
+use argus_protocol::{grid_from_runs, Cell, Color, Cursor, CursorShape, MouseTracking, PaneId, ServerMsg, BLANK};
 use unicode_width::UnicodeWidthChar;
 
 use crate::page::{Frame, FrameCursor, Parked, Segment, BOLD, ITALIC, REVERSE, UNDERLINE, WIDE};
@@ -41,6 +41,8 @@ pub struct Screen {
     /// nothing to land on.
     received: bool,
     parked: Option<View>,
+    /// What mouse reports the child asked for.
+    mouse: MouseTracking,
 }
 
 impl Screen {
@@ -57,6 +59,7 @@ impl Screen {
             cursor_moved: false,
             received: false,
             parked: None,
+            mouse: MouseTracking::default(),
         }
     }
 
@@ -64,15 +67,15 @@ impl Screen {
     /// else, which is left alone.
     pub fn apply(&mut self, msg: &ServerMsg) -> bool {
         match msg {
-            ServerMsg::PaneRows { pane, rows, cols, runs, cursor, alternate_screen, .. } if *pane == self.pane => {
+            ServerMsg::PaneRows { pane, rows, cols, runs, cursor, mouse, alternate_screen } if *pane == self.pane => {
                 self.replace(*rows, *cols, grid_from_runs(*rows, *cols, runs));
-                self.moved(*cursor, *alternate_screen);
+                self.moved(*cursor, *mouse, *alternate_screen);
             }
-            ServerMsg::PaneSnapshot { pane, rows, cols, cells, cursor, alternate_screen, .. } if *pane == self.pane => {
+            ServerMsg::PaneSnapshot { pane, rows, cols, cells, cursor, mouse, alternate_screen } if *pane == self.pane => {
                 self.replace(*rows, *cols, cells.clone());
-                self.moved(*cursor, *alternate_screen);
+                self.moved(*cursor, *mouse, *alternate_screen);
             }
-            ServerMsg::RowDamage { pane, scroll, runs, cursor, alternate_screen, .. } if *pane == self.pane => {
+            ServerMsg::RowDamage { pane, scroll, runs, cursor, mouse, alternate_screen } if *pane == self.pane => {
                 if !self.received {
                     return true;
                 }
@@ -88,9 +91,9 @@ impl Screen {
                     run.apply(&mut self.grid);
                     self.mark(run.row);
                 }
-                self.moved(*cursor, *alternate_screen);
+                self.moved(*cursor, *mouse, *alternate_screen);
             }
-            ServerMsg::Damage { pane, spans, cursor, alternate_screen, .. } if *pane == self.pane => {
+            ServerMsg::Damage { pane, spans, cursor, mouse, alternate_screen } if *pane == self.pane => {
                 if !self.received {
                     return true;
                 }
@@ -103,7 +106,7 @@ impl Screen {
                     }
                     self.mark(span.row);
                 }
-                self.moved(*cursor, *alternate_screen);
+                self.moved(*cursor, *mouse, *alternate_screen);
             }
             _ => return false,
         }
@@ -122,6 +125,10 @@ impl Screen {
 
     pub fn alternate_screen(&self) -> bool {
         self.alternate_screen
+    }
+
+    pub fn mouse(&self) -> MouseTracking {
+        self.mouse
     }
 
     /// How far up the view is parked, how deep the history was last said
@@ -265,11 +272,12 @@ impl Screen {
         }
     }
 
-    fn moved(&mut self, cursor: Cursor, alternate_screen: bool) {
+    fn moved(&mut self, cursor: Cursor, mouse: MouseTracking, alternate_screen: bool) {
         if cursor != self.cursor || alternate_screen != self.alternate_screen {
             self.cursor_moved = true;
         }
         self.cursor = cursor;
+        self.mouse = mouse;
         self.alternate_screen = alternate_screen;
     }
 }

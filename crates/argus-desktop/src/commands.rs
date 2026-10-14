@@ -56,10 +56,11 @@ pub async fn paste(shared: State<'_, Arc<Shared>>, text: String) -> Answer {
     Ok(())
 }
 
-/// The wheel over the pane, in lines: negative up into the history.
+/// The wheel over the pane, in notches (negative up), at the `[row, col]`
+/// under the pointer.
 #[tauri::command]
-pub async fn scroll(shared: State<'_, Arc<Shared>>, lines: i32) -> Answer {
-    shared.act(|s| s.scroll(lines));
+pub async fn wheel(shared: State<'_, Arc<Shared>>, notches: i32, at: (u16, u16)) -> Answer {
+    shared.act(|s| s.wheel(notches, at));
     Ok(())
 }
 

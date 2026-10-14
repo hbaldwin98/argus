@@ -61,7 +61,7 @@ fn main() {
             commands::paste,
             commands::paste_clipboard,
             commands::copy,
-            commands::scroll,
+            commands::wheel,
             commands::spawn_shell,
             commands::focus,
             commands::select_project,
