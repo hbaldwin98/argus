@@ -7,6 +7,12 @@ export type Checkout = { id: number, name: string,
  */
 branch: string, 
 /**
+ * `main` for the repository's own working directory, `worktree` for a
+ * linked one: the row always names which, since a primary checkout is
+ * named after its repository and says nothing of it.
+ */
+kind: "main" | "worktree", 
+/**
  * `GitStatus::summary`, or `None` outside git.
  */
 git: string | null, clean: boolean, panes: Array<Pane>, };

@@ -123,6 +123,11 @@ pub struct Checkout {
     pub name: String,
     /// The branch, `detached`, or empty when the path is not a git checkout.
     pub branch: String,
+    /// `main` for the repository's own working directory, `worktree` for a
+    /// linked one: the row always names which, since a primary checkout is
+    /// named after its repository and says nothing of it.
+    #[cfg_attr(test, ts(type = "\"main\" | \"worktree\""))]
+    pub kind: &'static str,
     /// `GitStatus::summary`, or `None` outside git.
     pub git: Option<String>,
     pub clean: bool,
@@ -405,6 +410,7 @@ mod tests {
                         id: 3,
                         name: "main".into(),
                         branch: "main".into(),
+                        kind: "main",
                         git: Some("clean".into()),
                         clean: true,
                         panes: vec![Pane {

@@ -19,13 +19,23 @@ export function drawChrome() {
     $('fstage').hidden = !feature;
     $('body').hidden = feature;
     drawFeatures();
+    drawTabsMeta();
     drawHeading();
     drawRail();
     drawHead();
     drawBar();
     drawStage();
-    $('rail').classList.toggle('held', stopped);
+    // What the window last heard, dimmed: the heading, the rail and the
+    // pane's header as much as its screen.
+    for (const id of ['heading', 'rail', 'head'])
+        $(id).classList.toggle('held', stopped);
     $('stopped').hidden = !stopped;
+}
+/** The Feature stage names the repository it reads, at the tabs' end. */
+function drawTabsMeta() {
+    const { project, repository, stage } = state.rail;
+    const chosen = project?.repositories.find((repo) => repo.id === repository);
+    $('tabs-meta').textContent = stage === 'feature' && chosen ? chosen.name : '';
 }
 export function drawHeading() {
     const { project, projects } = state.rail;
@@ -70,15 +80,25 @@ function drawRail() {
     const rail = $('rail');
     const { project, loaded } = state.rail;
     if (!loaded) {
-        rail.replaceChildren(el('div', { 'aria-hidden': 'true' }, [110, 160, 190, 140, 120].map((width) => {
+        rail.replaceChildren(el('div', { class: 'skeleton', 'aria-hidden': 'true' }, 
+        // A repository, its checkout, two panes, another checkout.
+        [
+            [110, null],
+            [160, 'var(--sp-24)'],
+            [190, 'var(--sp-32)'],
+            [140, 'var(--sp-32)'],
+            [120, 'var(--sp-24)'],
+        ].map(([width, indent]) => {
             const ghost = el('div', { class: 'ghost' });
             ghost.style.width = `${width}px`;
+            if (indent)
+                ghost.style.marginLeft = String(indent);
             return ghost;
         })));
         return;
     }
     if (!project) {
-        rail.replaceChildren(el('div', { class: 'meta empty-rail' }, 'No projects yet.'));
+        rail.replaceChildren(el('div', { class: 'empty-rail' }, 'No projects yet.'));
         return;
     }
     const rows = [];
@@ -97,7 +117,7 @@ function drawRail() {
             onclick: () => call('choose_repository', { repository: repo.id }),
         }, el('span', { class: 'chev' }, icon(repo.open ? 'down' : 'right')), statusDot, el('span', { class: 'rname ttl' }, repo.name), el('span', { class: 'cnt' }, repo.used ?? (repo.panes || '')))));
         for (const co of repo.checkouts) {
-            rows.push(el('div', { class: 'co' }, el('span', { class: 'name' }, co.name), co.branch && co.branch !== co.name && el('span', null, co.branch), co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git), el('button', {
+            rows.push(el('div', { class: 'co' }, el('span', { class: 'name', title: co.branch || null }, co.name), el('span', null, co.kind), co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git), el('button', {
                 class: 'icon',
                 title: 'Start a shell',
                 'aria-label': `Start a shell on ${repo.name} ${co.name}`,
@@ -168,7 +188,10 @@ function drawStage() {
     if (shown)
         return;
     let body;
+    // Each state's text is set to its own measure.
+    let measure;
     if (!loaded) {
+        measure = 'connecting';
         body = [
             icon('spinner'),
             el('div', { class: 'type-title' }, 'Connecting to argusd…'),
@@ -179,6 +202,7 @@ function drawStage() {
         ];
     }
     else if (!project) {
+        measure = 'no-projects';
         body = [
             icon('folder'),
             el('div', { class: 'type-title' }, 'No projects'),
@@ -187,13 +211,14 @@ function drawStage() {
         ];
     }
     else {
+        measure = 'pick';
         body = [
             icon('terminal'),
             el('div', { class: 'type-title' }, 'Pick a pane on the left'),
             el('div', { class: 'fg-muted' }, 'Its screen shows here and takes your keys. To start a shell, use + on a checkout.'),
         ];
     }
-    empty.replaceChildren(el('div', { class: 'empty-body' }, body));
+    empty.replaceChildren(el('div', { class: `empty-body ${measure}` }, body));
 }
 let noticeTimer;
 /** Shows a line along the bottom of the window for a few seconds. */

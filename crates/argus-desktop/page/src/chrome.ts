@@ -22,13 +22,23 @@ export function drawChrome(): void {
   $('fstage').hidden = !feature;
   $('body').hidden = feature;
   drawFeatures();
+  drawTabsMeta();
   drawHeading();
   drawRail();
   drawHead();
   drawBar();
   drawStage();
-  $('rail').classList.toggle('held', stopped);
+  // What the window last heard, dimmed: the heading, the rail and the
+  // pane's header as much as its screen.
+  for (const id of ['heading', 'rail', 'head']) $(id).classList.toggle('held', stopped);
   $('stopped').hidden = !stopped;
+}
+
+/** The Feature stage names the repository it reads, at the tabs' end. */
+function drawTabsMeta(): void {
+  const { project, repository, stage } = state.rail;
+  const chosen = project?.repositories.find((repo) => repo.id === repository);
+  $('tabs-meta').textContent = stage === 'feature' && chosen ? chosen.name : '';
 }
 
 export function drawHeading(): void {
@@ -94,10 +104,18 @@ function drawRail(): void {
     rail.replaceChildren(
       el(
         'div',
-        { 'aria-hidden': 'true' },
-        [110, 160, 190, 140, 120].map((width) => {
+        { class: 'skeleton', 'aria-hidden': 'true' },
+        // A repository, its checkout, two panes, another checkout.
+        [
+          [110, null],
+          [160, 'var(--sp-24)'],
+          [190, 'var(--sp-32)'],
+          [140, 'var(--sp-32)'],
+          [120, 'var(--sp-24)'],
+        ].map(([width, indent]) => {
           const ghost = el('div', { class: 'ghost' });
           ghost.style.width = `${width}px`;
+          if (indent) ghost.style.marginLeft = String(indent);
           return ghost;
         }),
       ),
@@ -105,7 +123,7 @@ function drawRail(): void {
     return;
   }
   if (!project) {
-    rail.replaceChildren(el('div', { class: 'meta empty-rail' }, 'No projects yet.'));
+    rail.replaceChildren(el('div', { class: 'empty-rail' }, 'No projects yet.'));
     return;
   }
   const rows: HTMLElement[] = [];
@@ -139,8 +157,8 @@ function drawRail(): void {
         el(
           'div',
           { class: 'co' },
-          el('span', { class: 'name' }, co.name),
-          co.branch && co.branch !== co.name && el('span', null, co.branch),
+          el('span', { class: 'name', title: co.branch || null }, co.name),
+          el('span', null, co.kind),
           co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git),
           el(
             'button',
@@ -239,7 +257,10 @@ function drawStage(): void {
   if (shown) return;
 
   let body: Child[];
+  // Each state's text is set to its own measure.
+  let measure: string;
   if (!loaded) {
+    measure = 'connecting';
     body = [
       icon('spinner'),
       el('div', { class: 'type-title' }, 'Connecting to argusd…'),
@@ -255,6 +276,7 @@ function drawStage(): void {
       el('div', { class: 'meta' }, 'Trying again every 2 seconds.'),
     ];
   } else if (!project) {
+    measure = 'no-projects';
     body = [
       icon('folder'),
       el('div', { class: 'type-title' }, 'No projects'),
@@ -266,6 +288,7 @@ function drawStage(): void {
       el('div', { class: 'cmd' }, 'argus init'),
     ];
   } else {
+    measure = 'pick';
     body = [
       icon('terminal'),
       el('div', { class: 'type-title' }, 'Pick a pane on the left'),
@@ -276,7 +299,7 @@ function drawStage(): void {
       ),
     ];
   }
-  empty.replaceChildren(el('div', { class: 'empty-body' }, body));
+  empty.replaceChildren(el('div', { class: `empty-body ${measure}` }, body));
 }
 
 let noticeTimer: ReturnType<typeof setTimeout> | undefined;

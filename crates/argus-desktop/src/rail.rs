@@ -103,6 +103,7 @@ fn checkout(checkout: &CheckoutInfo, shown: Option<PaneId>) -> page::Checkout {
         id: checkout.id.0,
         name: checkout.name.clone(),
         branch: branch(checkout),
+        kind: if checkout.primary { "main" } else { "worktree" },
         git: checkout.git.as_ref().map(|g| g.summary()),
         clean: checkout.git.as_ref().is_some_and(|g| !g.dirty),
         panes: checkout
@@ -283,6 +284,12 @@ mod tests {
     }
 
     #[test]
+    fn a_checkout_says_whether_it_is_the_main_one_or_a_worktree() {
+        assert_eq!(super::checkout(&checkout(1, "argus", true, vec![]), None).kind, "main");
+        assert_eq!(super::checkout(&checkout(2, "tracker-links", false, vec![]), None).kind, "worktree");
+    }
+
+    #[test]
     fn ages_read_in_the_largest_unit_that_fits() {
         assert_eq!(ago(None, 100), "—");
         assert_eq!(ago(Some(100), 100), "1m");
@@ -307,7 +314,7 @@ mod tests {
             let tail = repo.used.unwrap_or_else(|| repo.panes.to_string());
             println!("  {} {}  {}", if repo.open { "▾" } else { "▸" }, repo.name, tail);
             for co in repo.checkouts {
-                println!("      {} {}  {}", co.name, co.branch, co.git.unwrap_or_default());
+                println!("      {} {} {}  {}", co.name, co.kind, co.branch, co.git.unwrap_or_default());
                 for pane in co.panes {
                     let glyph = if pane.agent { "◆" } else { "›" };
                     println!("        {glyph} {}  {}", pane.title, pane.status);

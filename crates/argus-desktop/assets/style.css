@@ -1263,6 +1263,10 @@ button:focus-visible,
 .start {
   align-self: flex-start;
 }
+.btn.tall {
+  height: 36px;
+  padding: 0 var(--sp-16);
+}
 
 .app {
   height: 100%;
@@ -1293,6 +1297,16 @@ button:focus-visible,
 }
 .tab[disabled] .kbd {
   opacity: 0.6;
+}
+.bar .actions {
+  align-items: center;
+}
+.skeleton {
+  padding-top: var(--sp-8);
+}
+.empty-rail {
+  padding: var(--sp-16);
+  color: var(--fg-faint);
 }
 
 /* The project switcher opens under the heading. */
@@ -1344,6 +1358,9 @@ button:focus-visible,
   resize: none;
   overflow: hidden;
 }
+.head .glyph {
+  font-size: var(--fs-lg);
+}
 .head .meta.mono {
   font-family: var(--font-mono);
 }
@@ -1368,6 +1385,15 @@ button:focus-visible,
   max-width: 520px;
   text-align: center;
   padding: var(--sp-24);
+}
+.empty-body.no-projects {
+  max-width: 460px;
+}
+.empty-body.pick {
+  max-width: 440px;
+}
+.empty-icon {
+  color: var(--fg-disabled);
 }
 .spinner {
   animation: spin 1s linear infinite;
