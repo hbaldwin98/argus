@@ -178,7 +178,7 @@ pub struct Harness {
     pub settings_version: Option<u64>,
     /// Where the CLI keeps a session's transcript and in which format, for
     /// previewing a past session. `None` for one that keeps none Argus can
-    /// read: its sessions are still listed, without what was said.
+    /// read, which is `Conversation::NoTranscript` rather than an error.
     #[cfg_attr(not(test), allow(dead_code))]
     pub transcript: Option<transcript::Source>,
 }

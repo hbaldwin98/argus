@@ -1,11 +1,7 @@
 //! The neutral transcript format: what a harness Argus has no reader for
-//! writes so its sessions can be previewed.
-//!
-//! Each line is an [`Entry`] as JSON — `{"kind":"user","text":"…"}`,
-//! `{"kind":"agent",…}`, `{"kind":"tool","tool":"…","summary":"…"}`, each
-//! with an optional RFC 3339 `at` — or a `{"kind":"title","text":"…"}` line
-//! naming the session. The shape is the protocol's, so what is read here
-//! is what a client is sent.
+//! writes so its sessions can be previewed. Its lines are spelled out in
+//! DESIGN.md, "Transcripts"; each is the protocol's [`Entry`] as JSON, so
+//! what is read here is what a client is sent.
 
 use argus_protocol::transcript::{Entry, TITLE_KIND};
 use serde_json::Value;

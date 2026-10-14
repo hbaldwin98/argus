@@ -160,11 +160,8 @@ pub struct HarnessConfig {
     pub transcript: Option<TranscriptConfig>,
 }
 
-/// `transcript = "claude"` for a CLI that writes a known format where that
-/// format's own harness keeps it — the form older configs wrote — or
-/// `transcript = { format = "neutral", path = "~/.herdr/{session_id}.jsonl" }`
-/// to say where. A table without `format` is the neutral format, and one
-/// without `path` the format's own place.
+/// The string form is what older configs wrote, so it stays a format kept
+/// where its own harness keeps it (DESIGN.md, "Transcripts").
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum TranscriptConfig {

@@ -413,15 +413,14 @@ Set `session_id` to the top-level stdin JSON key containing its stable conversat
 `resume_id` is an argv template; every `{session_id}` placeholder is replaced without invoking a
 shell. `resume` remains the broad fallback for session records created before identity capture.
 Omit `settings` for an environment-only harness. Omit `resume` for a CLI that cannot be asked to
-continue its last conversation; its panes still come back, just empty.
-`transcript` says where the CLI keeps a session's transcript, for previewing a past session:
-`format` is `claude`, `codex`, `cursor`, `pi`, or `neutral` (one JSON object per line,
-`{"kind":"user"|"agent","text":"…"}`, `{"kind":"tool","tool":"…","summary":"…"}` or
-`{"kind":"title","text":"…"}`), and `path` a template with `~`, `{session_id}`, `{checkout}` and
-`*`. `transcript = "claude"` alone reads Claude Code's format where Claude Code keeps it. Omit it
-and the CLI's sessions are listed without a transcript (DESIGN.md, "Transcripts"). A block that reuses a
+continue its last conversation; its panes still come back, just empty. A block that reuses a
 built-in name replaces it outright, including a plugin module and resume arguments the built-in
 shipped.
+`transcript` says where the CLI keeps a session's transcript and in which format: `format` is
+`claude`, `codex`, `cursor`, `pi` or `neutral`, and `path` a template with `~`, `{session_id}`,
+`{checkout}` and `*`. `transcript = "claude"` alone reads Claude Code's format where Claude Code
+keeps it. The key is accepted ahead of the session previews that will read it (HUN-174); the
+neutral format and the templates are spelled out in DESIGN.md, "Transcripts".
 
 ### `client.toml`
 

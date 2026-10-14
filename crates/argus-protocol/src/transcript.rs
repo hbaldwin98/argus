@@ -23,10 +23,8 @@ pub const MAX_ENTRIES: usize = 500;
 
 /// One thing said or done in a session.
 ///
-/// Also a line of the neutral transcript format, which a harness Argus has
-/// no reader for may write (DESIGN.md, "Transcripts"): each line is one of
-/// these as JSON, `{"kind":"user","text":"…","at":"…"}`, or a
-/// [`TITLE_KIND`] line naming the session.
+/// Its JSON is also a line of the neutral transcript format (DESIGN.md,
+/// "Transcripts"), so the format cannot drift from what a client is sent.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Entry {
@@ -66,7 +64,7 @@ pub enum Entry {
 }
 
 /// The `kind` of a neutral transcript line that names the session rather
-/// than adding to it: `{"kind":"title","text":"…"}`. The last one wins.
+/// than adding to it. The last one wins.
 pub const TITLE_KIND: &str = "title";
 
 /// What a transcript says about the session as a whole, where it is cheap
@@ -92,7 +90,6 @@ pub struct Meta {
     pub cwd: Option<String>,
 }
 
-/// A session's transcript as read.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Transcript {
     #[serde(default)]
@@ -109,8 +106,8 @@ pub struct Transcript {
 /// What a session's preview can show of what was said in it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Conversation {
-    /// The harness keeps no transcript Argus can read. The session is still
-    /// listed, from what Argus recorded of it.
+    /// The harness keeps no transcript Argus can read: a client shows the
+    /// session from what Argus recorded of it instead.
     NoTranscript,
     /// The harness keeps one, and it is not where the harness says: moved,
     /// cleaned up, or never written.

@@ -997,8 +997,9 @@ truth and the table follows it: a pane that closed has no row to update.
 
 ## Transcripts
 
-A past session can be previewed from the transcript its harness keeps. Argus never stores one and
-never follows one as it grows: `harness/transcript` reads the harness's own file whole, when asked,
+The daemon can read a past session's transcript from the file its harness keeps, for the session
+previews HUN-174 adds; until then nothing asks it to. Argus never stores a transcript and never
+follows one as it grows: `harness/transcript` reads the harness's own file whole, when asked,
 into `argus_protocol::transcript::Transcript` — the person's turns, the agent's replies and the tools
 it ran, each with the time the harness wrote, plus the session's title (the one the harness gave it,
 else the first prompt that is not a slash or shell command), its first and last times, its turn
@@ -1018,19 +1019,30 @@ session id that holds a separator, `*`, `:` or `..` names nothing. The built-ins
 | `agent` | `cursor` | `~/.cursor/projects/*/agent-transcripts/{session_id}.jsonl`, or in a directory of the same name |
 | `pi` | `pi` | `~/.pi/agent/sessions/*/*_{session_id}.jsonl` |
 
-OpenCode, AGY and `generic` keep none Argus reads, so their sessions are listed from what Argus
-recorded — title, times, checkout — and the preview says there is no transcript
-(`Conversation::NoTranscript`); a transcript a harness names but that is not on disk is `Missing`.
+OpenCode, AGY and `generic` keep none Argus reads, and asking after one of their sessions answers
+`Conversation::NoTranscript`, for HUN-174 to list the session from what Argus recorded — title,
+times, checkout — and say it has no transcript. A transcript a harness names but that is not on
+disk is `Missing`.
 
 A `[[harness]]` block sets `transcript = "claude"` (a known format where its own harness keeps it —
 the form older configs wrote, for a wrapper around that CLI) or `transcript = { format = "…", path =
-"…" }`. A table without `format` is the neutral format: one JSON object per line, each a
-`transcript::Entry` as `{"kind":"user","text":"…","at":"…"}`, `{"kind":"agent",…}` or
-`{"kind":"tool","tool":"…","summary":"…","failed":true}` — `at`, `summary` and `failed` optional —
-or `{"kind":"title","text":"…"}` naming the session. It is what `argus-hook` would write for a
-harness that reports its turns, and the serde shape of the protocol's entry, so it cannot drift from
-what a client is sent. An unknown format, or the neutral one with no `path`, is logged and the
-block loads without a transcript.
+"…" }`, where `format` is `claude`, `codex`, `cursor`, `pi` or `neutral`. A table without `format`
+is neutral, and one without `path` looks where the format's own harness keeps it. An unknown
+format, or the neutral one with no `path`, is logged and the block loads without a transcript.
+
+The neutral format is one JSON object per line, each a `transcript::Entry`:
+
+```jsonl
+{"kind":"user","text":"Tidy the release notes","at":"2026-10-14T09:00:00Z"}
+{"kind":"tool","tool":"shell","summary":"npm run lint","at":"…","failed":true}
+{"kind":"agent","text":"The notes are tidied.","at":"…"}
+{"kind":"title","text":"Release notes"}
+```
+
+`at` (RFC 3339), `summary` and `failed` are optional; a `title` line names the session, the last
+one winning; a line of any other `kind` is skipped, as a client skips an entry of a kind it does not
+know. It is what `argus-hook` would write for a harness that reports its turns, and the serde shape
+of the protocol's entry, so it cannot drift from what a client is sent.
 
 ## Git and checkouts
 

@@ -44,7 +44,7 @@ impl Format {
             "codex" => Format::Codex,
             "cursor" => Format::Cursor,
             "pi" => Format::Pi,
-            "neutral" | "jsonl" => Format::Neutral,
+            "neutral" => Format::Neutral,
             _ => return None,
         })
     }
@@ -126,7 +126,6 @@ pub fn read(format: Format, path: &Path) -> std::io::Result<Transcript> {
     Ok(reading.finish())
 }
 
-/// A transcript being read, a record at a time.
 #[derive(Debug, Default)]
 pub struct Reading {
     transcript: Transcript,
@@ -200,7 +199,8 @@ impl Reading {
         });
     }
 
-    /// The result of the call named `id` came back.
+    /// A call's failure, which some harnesses record only later, in a
+    /// result keyed by their own id for the call.
     fn finished(&mut self, id: &str, failed: bool, at: Option<&str>) {
         self.at(at);
         let Some(&i) = self.calls.get(id) else {
@@ -283,7 +283,6 @@ fn blocks_text(content: &Value) -> String {
     }
 }
 
-/// A record's `key`, as a string.
 fn text<'a>(record: &'a Value, key: &str) -> Option<&'a str> {
     record.get(key).and_then(Value::as_str)
 }
