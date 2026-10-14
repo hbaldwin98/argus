@@ -6,7 +6,5 @@ import type { Place } from "./Place";
 /**
  * A command the palette lists: what it runs, what it is called there, and
  * the keys that run it outside the palette, from the binding in `place`.
- * A command with no `place` acts where no key reaches: on the pane on
- * screen's checkout, which only a picked rail row has keys for.
  */
 export type Command = { action: Action, label: string, place: Place | null, chords: Array<Chord>, };

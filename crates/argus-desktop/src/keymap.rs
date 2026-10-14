@@ -146,8 +146,6 @@ pub struct Group {
 
 /// A command the palette lists: what it runs, what it is called there, and
 /// the keys that run it outside the palette, from the binding in `place`.
-/// A command with no `place` acts where no key reaches: on the pane on
-/// screen's checkout, which only a picked rail row has keys for.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -320,8 +318,8 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (Shortcuts, Some(Anywhere), "Show the keyboard shortcuts"),
     (Fill, Some(Pane), "Fill the window with the pane, and back"),
     (Close, Some(Pane), "Close the pane, ending its program"),
-    (StartShell, None, "Start a shell on this checkout"),
-    (StartAgent, None, "Start the default agent on this checkout"),
+    (StartShell, Some(CheckoutsTable), "Start a shell on this checkout"),
+    (StartAgent, Some(CheckoutsTable), "Start the default agent on this checkout"),
     (OpenReview, Some(CheckoutsTable), "Review this checkout's changes"),
     (OpenHistory, Some(CheckoutsTable), "Read this checkout's history"),
     (Fetch, Some(CheckoutsTable), "Fetch this checkout"),
