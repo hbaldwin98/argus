@@ -231,6 +231,10 @@ impl FeatureStage {
         self.index(scope, tree)
     }
 
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
     /// The settings, when a change asks for them to be saved.
     pub fn take_settings(&mut self) -> Option<Settings> {
         std::mem::take(&mut self.settings_changed).then(|| self.settings.clone())

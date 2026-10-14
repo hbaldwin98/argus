@@ -13,4 +13,8 @@ detail: string | null,
  * What stays true while this connection lasts and the person should
  * know: the daemon is another build, or speaks another protocol.
  */
-alarm: string | null, };
+alarm: string | null, 
+/**
+ * Whether the window chimes, for the status bar's switch.
+ */
+chime: boolean, };

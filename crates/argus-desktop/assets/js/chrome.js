@@ -355,7 +355,7 @@ function drawBar() {
             left.push(el('span', { class: 'fg-accent' }, `⋮ ${working} working`));
         if (alarm)
             left.push(el('span', { class: 'fg-attention' }, alarm));
-        right.push(el('span', { class: 'actions' }, dot(), 'Connected'));
+        right.push(chimeSwitch(), el('span', { class: 'actions' }, dot(), 'Connected'));
     }
     else if (connection === 'connecting') {
         left.push(el('span', { class: 'actions' }, dot('var(--attention)'), 'Connecting'));
@@ -374,6 +374,17 @@ function drawBar() {
         }, keycaps(palette), 'Commands'));
     }
     $('bar').replaceChildren(...left, el('span', { class: 'grow' }), ...right);
+}
+function chimeSwitch() {
+    const on = state.status.chime;
+    const label = on ? 'Mute the chime when an agent needs you' : 'Chime when an agent needs you';
+    return el('button', {
+        class: 'icon',
+        title: label,
+        'aria-label': label,
+        'aria-pressed': String(on),
+        onclick: () => call('set_chime', { on: !on }),
+    }, icon(on ? 'bell' : 'bell-off'));
 }
 function drawStage() {
     const { connection, detail } = state.status;
