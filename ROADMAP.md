@@ -147,6 +147,14 @@ carries the role, on this machine or another through `argus --host`: the pane is
 the status bar (and the bell, when it is on) says when an agent needs someone, and a review comment
 reaches an agent through its harness's inbox.
 
+## P10: Desktop Client — planned
+
+A Tauri desktop app as a second renderer of the daemon beside the terminal client. Nothing is built
+yet; [`DESKTOP.md`](DESKTOP.md) is the plan for its first slice: the shared key encoder in
+`argus-protocol`, `argus bridge` exiting when its daemon hangs up, `argus desktop`, and an
+`argus-desktop` binary that reaches the daemon through `argus bridge` and shows the rail and one live
+pane. Parity with the terminal client's stages, review and feature board comes after it.
+
 ## Open Decisions
 
 - True child-process reattachment versus guaranteed termination plus harness resume.
