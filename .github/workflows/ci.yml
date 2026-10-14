@@ -51,6 +51,15 @@ jobs:
           rustup default stable
           rustup component add clippy
 
+      # Nearly all of a run is compiling dependencies that did not change,
+      # most of them vendored C: libgit2, SQLite, the tree-sitter grammars.
+      # Only main saves, so a pull request or a tag reads main's cache and
+      # cannot fill the repository's quota with its own.
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
       - name: Test workspace
         run: cargo test --workspace --locked
 
