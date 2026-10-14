@@ -216,6 +216,24 @@ fn a_board_for_another_project_is_dropped_rather_than_drawn() {
     assert_eq!(app.board.as_ref().unwrap().features.len(), 3);
 }
 
+#[test]
+fn a_board_for_another_repository_of_the_project_is_dropped_too() {
+    // Every board of a project carries its name; before boards named their
+    // repositories, a write to one replaced the board on screen for another.
+    let (mut app, _rx) = feature_stage();
+    let ours = app.current_repository().unwrap().id;
+    let mut board = feature_board(None);
+    board.repositories = vec![argus_protocol::RepositoryId(ours.0 + 1000)];
+    board.features.truncate(1);
+
+    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(board.clone())));
+    assert_eq!(app.board.as_ref().unwrap().features.len(), 3, "another repository's");
+
+    board.repositories = vec![ours];
+    app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(board)));
+    assert_eq!(app.board.as_ref().unwrap().features.len(), 1, "this repository's is taken");
+}
+
 // ---- levels ----------------------------------------------------------------
 
 #[test]

@@ -102,6 +102,7 @@ impl FeaturePart for TaskAction {
 
     fn list(store: &Store, target: &BoardTarget) -> anyhow::Result<TaskList> {
         Ok(TaskList {
+            repositories: Vec::new(),
             project_name: target.project_name.clone(),
             feature: Some(target.feature.clone()),
             tasks: store.tasks(&target.key, &target.feature)?,
@@ -110,6 +111,7 @@ impl FeaturePart for TaskAction {
 
     fn empty(project_name: String) -> TaskList {
         TaskList {
+            repositories: Vec::new(),
             project_name,
             feature: None,
             tasks: Vec::new(),
@@ -130,6 +132,7 @@ impl FeaturePart for TaskAction {
         } = target;
         let tasks = daemon.store.tasks(key, feature).unwrap_or_default();
         let _ = daemon.tasks_tx.send(TaskList {
+            repositories: daemon.repositories_keyed(key),
             project_name: project_name.clone(),
             feature: Some(feature.clone()),
             tasks,

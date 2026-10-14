@@ -19,7 +19,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::features::Feature;
-use crate::ids::ProjectId;
+use crate::ids::{ProjectId, RepositoryId};
 use crate::tracker_links::TrackerMap;
 
 /// Past this a field has stopped being a decision and started being a
@@ -388,6 +388,35 @@ pub struct DecisionBoard {
     /// How the artifact scope's work maps to the team's trackers.
     #[serde(default)]
     pub tracker_map: TrackerMap,
+    /// The repositories in the tree whose board this is, so a client keeps
+    /// only its own: every board is pushed to every client, and the
+    /// repositories of a project share its name. Empty from a daemon that
+    /// does not say, which leaves the name to go by.
+    #[serde(default)]
+    pub repositories: Vec<RepositoryId>,
+}
+
+/// Whether a board, a task list or a diagram list pushed to every client is
+/// the one of `repository`, in the project named `project_name`. Said once
+/// so every client keeps the same pushes: before boards named their
+/// repositories, a write to one repository's board replaced the board on
+/// screen for another repository of the same project.
+pub fn is_for(
+    pushed_project: &str,
+    pushed_repositories: &[RepositoryId],
+    project_name: &str,
+    repository: RepositoryId,
+) -> bool {
+    pushed_project == project_name
+        && (pushed_repositories.is_empty() || pushed_repositories.contains(&repository))
+}
+
+impl DecisionBoard {
+    /// Whether this is the board of `repository` in the project named
+    /// `project_name`.
+    pub fn is_for(&self, project_name: &str, repository: RepositoryId) -> bool {
+        is_for(&self.name, &self.repositories, project_name, repository)
+    }
 }
 
 /// One row of a decision tree, including the topology a renderer needs to
@@ -443,6 +472,7 @@ impl DecisionBoard {
                 .cloned()
                 .collect(),
             tracker_map: self.tracker_map.clone(),
+            repositories: self.repositories.clone(),
         }
     }
 
@@ -539,6 +569,22 @@ fn walk<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_push_is_for_the_repository_it_names_and_an_unnamed_one_goes_by_project() {
+        let named = DecisionBoard {
+            name: "src".into(),
+            repositories: vec![RepositoryId(2)],
+            ..DecisionBoard::default()
+        };
+        assert!(named.is_for("src", RepositoryId(2)));
+        assert!(!named.is_for("src", RepositoryId(3)), "another repository of the project");
+        assert!(!named.is_for("work", RepositoryId(2)), "another project");
+
+        let from_an_older_daemon = DecisionBoard { name: "src".into(), ..DecisionBoard::default() };
+        assert!(from_an_older_daemon.is_for("src", RepositoryId(3)));
+        assert!(!from_an_older_daemon.is_for("work", RepositoryId(3)));
+    }
 
     fn decision(id: i64, parent: Option<i64>, chose: &str) -> Decision {
         Decision {

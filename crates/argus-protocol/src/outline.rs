@@ -242,6 +242,7 @@ mod tests {
 
     fn fixture() -> (TaskList, DecisionBoard) {
         let tasks = TaskList {
+            repositories: Vec::new(),
             project_name: "argus".into(),
             feature: Some("f".into()),
             tasks: vec![

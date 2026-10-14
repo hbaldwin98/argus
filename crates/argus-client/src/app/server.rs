@@ -341,11 +341,7 @@ impl App {
     /// about every project's board, because the daemon does not track which
     /// view anyone has open.
     fn receive_decisions(&mut self, board: argus_protocol::DecisionBoard) {
-        let ours = self
-            .current_project()
-            .map(|p| p.name == board.name)
-            .unwrap_or(false);
-        if !ours {
+        if !self.reads_board_of(|project, repository| board.is_for(project, repository)) {
             return;
         }
         // Held by slug across the swap: a board arriving while an agent
@@ -364,14 +360,22 @@ impl App {
         self.keep_selection(row);
     }
 
+    /// Whether what was pushed is from the board on screen: the current
+    /// repository's, in the current project. `argus_protocol`'s `is_for`
+    /// decides, so every client keeps the same pushes.
+    fn reads_board_of(&self, is_for: impl Fn(&str, RepositoryId) -> bool) -> bool {
+        match (self.current_project(), self.current_repository()) {
+            (Some(project), Some(repository)) => is_for(&project.name, repository.id),
+            _ => false,
+        }
+    }
+
     fn receive_tasks(&mut self, list: argus_protocol::TaskList) {
         // A push for a feature the view is not on is another client's
         // business, exactly as a board for another project is. Feature
         // slugs are only unique inside that project, so both scopes have to
         // agree before installing it.
-        let ours = self
-            .current_project()
-            .is_some_and(|project| project.name == list.project_name)
+        let ours = self.reads_board_of(|project, repository| list.is_for(project, repository))
             && self.feature_slug() == list.feature;
         if !ours {
             return;
@@ -387,9 +391,7 @@ impl App {
     }
 
     fn receive_diagrams(&mut self, list: argus_protocol::DiagramList) {
-        let ours = self
-            .current_project()
-            .is_some_and(|project| project.name == list.project_name)
+        let ours = self.reads_board_of(|project, repository| list.is_for(project, repository))
             && self.feature_slug() == list.feature;
         if !ours {
             return;

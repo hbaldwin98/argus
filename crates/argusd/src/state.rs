@@ -349,6 +349,11 @@ pub struct Daemon {
     /// and when that run of restarts began. Keeps a CLI that dies on
     /// every start from being restarted forever.
     restart_attempts: StdMutex<HashMap<(CheckoutId, String), (u32, std::time::Instant)>>,
+    /// The board key each repository's checkout path files under. Reading
+    /// one opens the repository, so it is read once per path, and a pushed
+    /// board can name the repositories it belongs to without opening them
+    /// all on every write.
+    board_keys: StdMutex<HashMap<PathBuf, String>>,
     /// Every attached client's requested size for the panes it is showing.
     /// A pty has one size and clients do not have to agree on it, so the
     /// sizes are collected here and reconciled rather than applied as they

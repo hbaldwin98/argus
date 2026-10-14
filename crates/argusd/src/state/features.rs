@@ -470,6 +470,7 @@ impl Daemon {
         // The tasks as well as the board: a client holding the feature's
         // list open is owed the rows a note just added to it.
         let _ = self.tasks_tx.send(argus_protocol::TaskList {
+            repositories: self.repositories_keyed(&key),
             project_name: name.clone(),
             tasks: self.store.tasks(&key, &slug)?,
             feature: Some(slug),

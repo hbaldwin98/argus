@@ -19,8 +19,11 @@ impl AgentScope {
 }
 
 pub(super) fn repository_artifact_key(_repository: &Repository, checkout: &Checkout) -> String {
-    let git_dir =
-        crate::git::repository_common_dir(&checkout.path).unwrap_or_else(|| checkout.path.clone());
+    path_artifact_key(&checkout.path)
+}
+
+fn path_artifact_key(path: &std::path::Path) -> String {
+    let git_dir = crate::git::repository_common_dir(path).unwrap_or_else(|| path.to_path_buf());
     format!("repository\0{}", git_dir.to_string_lossy())
 }
 
@@ -292,6 +295,51 @@ impl Daemon {
             }
         }
         anyhow::bail!("no such source pane")
+    }
+
+    /// The repositories in the tree whose board is the one filed under
+    /// `key`: what a pushed board names so each client keeps only its own.
+    /// More than one when a repository is listed twice.
+    pub(crate) fn repositories_keyed(&self, key: &str) -> Vec<RepositoryId> {
+        let paths: Vec<(RepositoryId, PathBuf)> = {
+            let inner = self.inner.lock().unwrap();
+            inner
+                .projects
+                .iter()
+                .flat_map(|project| &project.repositories)
+                .filter_map(|repository| {
+                    let checkout = repository
+                        .checkouts
+                        .iter()
+                        .find(|checkout| checkout.primary)
+                        .or_else(|| repository.checkouts.first())?;
+                    Some((repository.id, checkout.path.clone()))
+                })
+                .collect()
+        };
+        paths
+            .into_iter()
+            .filter(|(_, path)| self.board_key(path) == key)
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    /// [`Self::repositories_keyed`] for the board a client named by its
+    /// checkout; empty for one that is not in the tree.
+    pub(crate) fn board_repositories(&self, project: ProjectId, checkout: CheckoutId) -> Vec<RepositoryId> {
+        match self.client_artifact_scope(project, checkout) {
+            Ok((_, key)) => self.repositories_keyed(&key),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    fn board_key(&self, path: &std::path::Path) -> String {
+        if let Some(key) = self.board_keys.lock().unwrap().get(path) {
+            return key.clone();
+        }
+        let key = path_artifact_key(path);
+        self.board_keys.lock().unwrap().insert(path.to_path_buf(), key.clone());
+        key
     }
 
     pub(super) fn client_artifact_scope(

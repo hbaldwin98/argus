@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::ids::RepositoryId;
+
 pub const MAX_DIAGRAM_TITLE_BYTES: usize = 200;
 /// Room for a non-trivial interaction without turning the store into a
 /// design repo.
@@ -60,4 +62,18 @@ pub struct DiagramList {
     pub project_name: String,
     pub feature: Option<String>,
     pub diagrams: Vec<SequenceDiagram>,
+    /// The repositories in the tree whose board this is, so a client keeps
+    /// only its own: every board is pushed to every client, and the
+    /// repositories of a project share its name. Empty from a daemon that
+    /// does not say, which leaves the name to go by.
+    #[serde(default)]
+    pub repositories: Vec<RepositoryId>,
+}
+
+impl DiagramList {
+    /// Whether this is a list from the board of `repository` in the
+    /// project named `project_name`; see [`crate::decisions::is_for`].
+    pub fn is_for(&self, project_name: &str, repository: RepositoryId) -> bool {
+        crate::decisions::is_for(&self.project_name, &self.repositories, project_name, repository)
+    }
 }

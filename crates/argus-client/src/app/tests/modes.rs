@@ -47,6 +47,7 @@ fn a_question_mark_is_typed_wherever_text_is_being_typed() {
 
     h.key(KeyCode::Char('2'));
     h.app.on_server_msg(ServerMsg::Decisions(Box::new(argus_protocol::DecisionBoard {
+        repositories: Vec::new(),
         project: Some(ProjectId(1)),
         tracker_map: Default::default(),
         name: "argus".to_string(),
@@ -90,6 +91,7 @@ fn a_digit_typed_into_a_feature_note_is_a_character_rather_than_a_view() {
     let mut h = Harness::new();
     h.key(KeyCode::Char('2'));
     h.app.on_server_msg(ServerMsg::Decisions(Box::new(argus_protocol::DecisionBoard {
+        repositories: Vec::new(),
         project: Some(ProjectId(1)),
         tracker_map: Default::default(),
         name: "argus".to_string(),

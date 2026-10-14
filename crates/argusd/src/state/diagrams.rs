@@ -59,6 +59,7 @@ impl FeaturePart for DiagramAction {
 
     fn list(store: &Store, target: &BoardTarget) -> anyhow::Result<DiagramList> {
         Ok(DiagramList {
+            repositories: Vec::new(),
             project_name: target.project_name.clone(),
             feature: Some(target.feature.clone()),
             diagrams: store.sequence_diagrams(&target.key, &target.feature)?,
@@ -67,6 +68,7 @@ impl FeaturePart for DiagramAction {
 
     fn empty(project_name: String) -> DiagramList {
         DiagramList {
+            repositories: Vec::new(),
             project_name,
             feature: None,
             diagrams: Vec::new(),
@@ -79,6 +81,7 @@ impl FeaturePart for DiagramAction {
             .sequence_diagrams(&target.key, &target.feature)
             .unwrap_or_default();
         let _ = daemon.diagrams_tx.send(DiagramList {
+            repositories: daemon.repositories_keyed(&target.key),
             project_name: target.project_name.clone(),
             feature: Some(target.feature.clone()),
             diagrams,

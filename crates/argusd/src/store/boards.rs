@@ -884,6 +884,7 @@ impl Store {
             }
         }
         Ok(argus_protocol::TaskList {
+            repositories: Vec::new(),
             project_name: String::new(),
             feature: Some(feature.to_string()),
             tasks,

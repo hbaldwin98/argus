@@ -17,7 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::PaneId;
+use crate::ids::{PaneId, RepositoryId};
 
 /// Past this a task title has stopped being a line on a card.
 pub const MAX_TASK_TITLE_BYTES: usize = 300;
@@ -321,6 +321,12 @@ pub struct TaskList {
     /// parent id so a consumer that does not use the renderer can rebuild
     /// the hierarchy without relying on ordering.
     pub tasks: Vec<Task>,
+    /// The repositories in the tree whose board this is, so a client keeps
+    /// only its own: every board is pushed to every client, and the
+    /// repositories of a project share its name. Empty from a daemon that
+    /// does not say, which leaves the name to go by.
+    #[serde(default)]
+    pub repositories: Vec<RepositoryId>,
 }
 
 /// One task row with the topology a renderer needs for branch guides.
@@ -348,6 +354,12 @@ impl TaskTreeRow<'_> {
 }
 
 impl TaskList {
+    /// Whether this is a list from the board of `repository` in the
+    /// project named `project_name`; see [`crate::decisions::is_for`].
+    pub fn is_for(&self, project_name: &str, repository: RepositoryId) -> bool {
+        crate::decisions::is_for(&self.project_name, &self.repositories, project_name, repository)
+    }
+
     /// The tasks flattened depth-first, with sibling order taken from their
     /// stored positions. Missing parents are treated as roots rather than
     /// making a malformed row disappear.
@@ -536,6 +548,7 @@ mod tests {
     #[test]
     fn tasks_and_decisions_are_numbered_by_their_place_in_the_outline() {
         let list = TaskList {
+            repositories: Vec::new(),
             project_name: "argus".into(),
             feature: Some("feature".into()),
             tasks: vec![
@@ -554,6 +567,7 @@ mod tests {
     #[test]
     fn nested_tasks_are_read_depth_first_in_sibling_order() {
         let list = TaskList {
+            repositories: Vec::new(),
             project_name: "argus".into(),
             feature: Some("feature".into()),
             tasks: vec![

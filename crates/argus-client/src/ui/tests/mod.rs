@@ -83,6 +83,7 @@ pub(super) fn feature_board(project: Option<ProjectId>) -> argus_protocol::Decis
         ..Decision::default()
     };
     argus_protocol::DecisionBoard {
+        repositories: Vec::new(),
         project,
         tracker_map: Default::default(),
         name: "argus".into(),
@@ -144,6 +145,7 @@ pub(super) fn feature_tasks() -> argus_protocol::TaskList {
     };
     use TaskState::{Doing, Done, Todo};
     argus_protocol::TaskList {
+        repositories: Vec::new(),
         project_name: "argus".into(),
         feature: Some("trim".into()),
         tasks: vec![
@@ -211,6 +213,7 @@ pub(super) fn feature_stage() -> (
     app.on_server_msg(argus_protocol::ServerMsg::Tasks(Box::new(feature_tasks())));
     app.on_server_msg(argus_protocol::ServerMsg::SequenceDiagrams(Box::new(
         argus_protocol::DiagramList {
+            repositories: Vec::new(),
             project_name: "argus".into(),
             feature: Some("trim".into()),
             diagrams: vec![argus_protocol::SequenceDiagram {

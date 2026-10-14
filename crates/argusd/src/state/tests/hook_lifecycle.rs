@@ -1711,3 +1711,42 @@ async fn a_person_decides_and_changes_decisions_only_under_the_feature_they_name
     );
     close_all(&d);
 }
+
+#[tokio::test]
+async fn a_pushed_board_names_its_repository_so_another_of_the_project_keeps_its_own() {
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    real_repo(a.path());
+    real_repo(b.path());
+    let d = daemon_with_repositories(&[
+        a.path().to_str().unwrap(),
+        b.path().to_str().unwrap(),
+    ]);
+    let tree = d.snapshot();
+    let project = &tree[0];
+    let checkout_of = |index: usize| {
+        let repository = &project.repositories[index];
+        (repository.id, repository.checkouts[0].id)
+    };
+    let (repo_a, checkout_a) = checkout_of(0);
+    let (repo_b, checkout_b) = checkout_of(1);
+    let mut rx = d.subscribe_decisions();
+
+    d.open_feature_for_client(
+        project.id,
+        checkout_a,
+        argus_protocol::FeatureWrite { title: "only in a".into(), body: None },
+    )
+    .unwrap();
+
+    let pushed = rx.try_recv().expect("the write is pushed");
+    assert_eq!(pushed.repositories, [repo_a]);
+    assert!(pushed.is_for(&project.name, repo_a));
+    assert!(
+        !pushed.is_for(&project.name, repo_b),
+        "a client reading b's board keeps it, though the project's name matches"
+    );
+    let asked = d.decision_board(project.id, checkout_b).unwrap();
+    assert_eq!(asked.repositories, [repo_b], "an answer names its repository too");
+    assert!(asked.features.is_empty());
+}

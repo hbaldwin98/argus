@@ -137,6 +137,7 @@ impl Daemon {
             recorded: StdMutex::new(None),
             store,
             restart_attempts: StdMutex::new(HashMap::new()),
+            board_keys: StdMutex::new(HashMap::new()),
             viewers: StdMutex::new(Viewers::default()),
             views_tx,
             next_viewer: std::sync::atomic::AtomicU64::new(0),

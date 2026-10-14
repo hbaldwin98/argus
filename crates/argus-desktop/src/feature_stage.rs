@@ -111,13 +111,13 @@ impl FeatureStage {
     }
 
     /// A board, answered or pushed. Every client is pushed every board;
-    /// this keeps only the one it asked for. It is known by its project's
-    /// name, as the terminal client knows it.
+    /// this keeps only the one it asked for, by the repositories it names
+    /// (`DecisionBoard::is_for`, which the terminal client asks too).
     pub fn receive_board(&mut self, board: DecisionBoard, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
         let Some(scope) = scope else {
             return;
         };
-        if self.asked != Some(scope.repository) || board.name != scope.project_name {
+        if self.asked != Some(scope.repository) || !board.is_for(&scope.project_name, scope.repository) {
             return;
         }
         self.board = Some(board);
@@ -127,7 +127,7 @@ impl FeatureStage {
     }
 
     pub fn receive_tasks(&mut self, list: TaskList, scope: Option<&Scope>) {
-        let ours = scope.is_some_and(|scope| scope.project_name == list.project_name)
+        let ours = scope.is_some_and(|scope| list.is_for(&scope.project_name, scope.repository))
             && list.feature.is_some()
             && list.feature == self.peek;
         if ours {
@@ -327,6 +327,21 @@ mod tests {
         let other = DecisionBoard { name: "work".into(), ..fixtures::board() };
         stage.receive_board(other, Some(&scope()), &fixtures::feature_tree(), &mut out);
         assert!(!stage.everything(Some(&scope()), &[]).loaded, "another project's board");
+    }
+
+    #[test]
+    fn a_board_another_repository_of_the_project_was_pushed_is_dropped() {
+        let mut stage = FeatureStage::new(Settings::default());
+        stage.set_open(true);
+        let mut out = Vec::new();
+        stage.refresh(Some(&scope()), &mut out);
+        let elsewhere = DecisionBoard { repositories: vec![RepositoryId(9)], ..fixtures::board() };
+        stage.receive_board(elsewhere, Some(&scope()), &fixtures::feature_tree(), &mut out);
+        assert!(!stage.everything(Some(&scope()), &[]).loaded, "the same project, another repository");
+
+        let ours = DecisionBoard { repositories: vec![RepositoryId(2)], ..fixtures::board() };
+        stage.receive_board(ours, Some(&scope()), &fixtures::feature_tree(), &mut out);
+        assert!(stage.everything(Some(&scope()), &[]).loaded);
     }
 
     #[test]

@@ -1295,8 +1295,12 @@ Clients read the selected checkout's repository board — every feature and ever
 that scope, each with its number, state and everything else above — with `ClientMsg::GetDecisions`. Every client artifact request carries both project and
 checkout ids; the daemon validates their relationship and resolves the durable board key. Boards are
 pushed with `ServerMsg::Decisions` whenever that scope changes, since a tree is meant to be
-watched being built and the daemon deliberately does not track which view a client has open; a
-client with another project open drops it by name. `DecisionBoard::scoped` is what narrows that to
+watched being built and the daemon deliberately does not track which view a client has open; every
+board, task list and diagram list names the repositories in the tree it belongs to, and a client
+reading another drops it (`DecisionBoard::is_for`, shared by both clients). The project's name
+alone is not enough: every repository of a project shares it, and a write to one repository's board
+once replaced the board on screen for another. The daemon reads each repository's board key once
+and keeps it, so a push costs no repository opens. `DecisionBoard::scoped` is what narrows that to
 one feature in the client, so switching scope costs no round trip. The tree is drawn two lines per
 decision with branch rails and elbows connecting every child to its parent, and `argus-hook
 decisions` draws the same topology for agents. Decisions from before features existed are reported

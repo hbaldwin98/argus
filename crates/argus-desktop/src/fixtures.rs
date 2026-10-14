@@ -70,6 +70,7 @@ pub fn board() -> argus_protocol::DecisionBoard {
     };
     let counts = |todo, doing, done| TaskCounts { todo, doing, done };
     argus_protocol::DecisionBoard {
+        repositories: Vec::new(),
         project: Some(ProjectId(1)),
         name: "src".into(),
         features: vec![
@@ -144,6 +145,7 @@ pub fn tasks(feature: &str) -> argus_protocol::TaskList {
         notes: Vec::new(),
     };
     argus_protocol::TaskList {
+        repositories: Vec::new(),
         project_name: "src".into(),
         feature: Some(feature.into()),
         tasks: vec![

@@ -31,6 +31,7 @@ impl Daemon {
     ) -> anyhow::Result<DecisionBoard> {
         let (name, key) = self.client_artifact_scope(project, checkout)?;
         Ok(DecisionBoard {
+            repositories: self.repositories_keyed(&key),
             project: Some(project),
             features: self.store.features(&key)?,
             tracker_map: self.store.tracker_map(&key)?,
@@ -69,6 +70,8 @@ impl Daemon {
             .filter(|d| d.feature == feature && !d.withdrawn())
             .collect();
         Ok(DecisionBoard {
+            // Read by an agent through its own pane, never pushed to clients.
+            repositories: Vec::new(),
             project: self.project_id_named(&scope.project_name),
             features: self.store.features(key)?,
             tracker_map: self.store.tracker_map(key)?,
@@ -238,11 +241,12 @@ impl Daemon {
     ///
     /// Pushed rather than answered to one client, because a board is
     /// meant to be watched: the point of drawing the tree is
-    /// seeing it built up while the work happens. A client with another
-    /// project open drops it by name.
+    /// seeing it built up while the work happens. It names the repositories
+    /// it is the board of, and a client reading another drops it.
     pub(super) fn broadcast_decisions(&self, name: &str, key: &str, decisions: Vec<Decision>) {
         let features = self.store.features(key).unwrap_or_default();
         let _ = self.decisions_tx.send(DecisionBoard {
+            repositories: self.repositories_keyed(key),
             project: self.project_id_named(name),
             name: name.to_string(),
             features,

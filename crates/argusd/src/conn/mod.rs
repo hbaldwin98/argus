@@ -171,8 +171,8 @@ where
             Ok(ws) = workspaces_rx.recv() => {
                 let _ = out_tx.send(ServerMsg::Workspaces(ws));
             }
-            // Every client is told, and one with another project open
-            // drops it by name. The view a client reports is for saying
+            // Every client is told, and one reading another repository's
+            // board drops it by the repositories it names. The view a client reports is for saying
             // where the person is, never for deciding what it is sent.
             Ok(board) = decisions_rx.recv() => {
                 let _ = out_tx.send(ServerMsg::Decisions(Box::new(board)));
