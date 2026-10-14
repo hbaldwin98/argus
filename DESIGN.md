@@ -39,8 +39,12 @@ fails. After `Stopping` it does not reconnect until the person presses Reconnect
 starts again a daemon somebody stopped. It shows one pane at a time; the daemon sizes a pane to the
 smallest of its viewers, so a window and a terminal client on one pane share the smaller size. It
 reports its view only while it has focus, so a window in the background never takes the focus from
-a terminal client being typed in. Rust holds the model (`session`); the page is plain JavaScript
-with no build step, drawing what it is sent and reporting gestures. Its webview keeps its storage
+a terminal client being typed in. Rust holds the model (`session`); the page draws what it is sent
+and reports gestures. It is TypeScript in `crates/argus-desktop/page/src`, one module per subject
+(`chrome`, `screen`, `input`, `features`, with `dom`, `state` and `tauri` beneath them), compiled
+into `assets/js` and committed, so building the crate needs no Node. The events it reads are
+`page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
+either committed output differs from what its source makes. Its webview keeps its storage
 under the instance's config directory, so a dev window never shares it with the installed one, and
 it logs to `argus-desktop.log` beside the config, keeping the previous run's.
 

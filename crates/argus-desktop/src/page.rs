@@ -3,11 +3,14 @@
 //! Everything here crosses into `assets/app.js` as JSON, so a field's name
 //! is a contract with the script that reads it: the tests pin each shape.
 //! Rust sends events down one channel; the page's calls are in `commands`.
+//! `cargo test` writes each type as TypeScript into `page/src/bindings`, so
+//! the page is compiled against these definitions rather than a copy.
 
 use serde::Serialize;
 
 /// One message down the page's channel.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Event {
     Status(Status),
@@ -25,6 +28,7 @@ pub enum Event {
 
 /// The connection, as the status bar and the empty stage show it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     pub connection: Connection,
@@ -36,6 +40,7 @@ pub struct Status {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub enum Connection {
     Connecting,
@@ -47,6 +52,7 @@ pub enum Connection {
 
 /// Everything the rail, the stage header and the status bar's counts draw.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct Rail {
     /// Every project, for the switcher.
@@ -64,10 +70,12 @@ pub struct Rail {
     /// The repository whose features the Feature stage reads.
     pub repository: Option<u64>,
     /// `workspace` or `feature`.
+    #[cfg_attr(test, ts(type = "\"workspace\" | \"feature\""))]
     pub stage: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectChoice {
     pub id: u64,
@@ -76,6 +84,7 @@ pub struct ProjectChoice {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct Project {
     pub id: u64,
@@ -85,6 +94,7 @@ pub struct Project {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct Repository {
     pub id: u64,
@@ -97,6 +107,7 @@ pub struct Repository {
     /// Listed panes across its checkouts.
     pub panes: usize,
     /// The loudest status word beneath it, for its dot.
+    #[cfg_attr(test, ts(type = "(\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\") | null"))]
     pub status: Option<&'static str>,
     /// How long since it was last used, for a quiet one: `2h`, `3d`.
     pub used: Option<String>,
@@ -105,6 +116,7 @@ pub struct Repository {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct Checkout {
     pub id: u64,
@@ -118,12 +130,14 @@ pub struct Checkout {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct Pane {
     pub id: u64,
     pub agent: bool,
     pub title: String,
     /// The loudest status word the row stands for, its children's included.
+    #[cfg_attr(test, ts(type = "\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\""))]
     pub status: &'static str,
     pub note: Option<String>,
     pub on: bool,
@@ -131,6 +145,7 @@ pub struct Pane {
 
 /// The pane on screen, as the stage's header names it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct Shown {
     pub pane: u64,
@@ -139,17 +154,20 @@ pub struct Shown {
     pub branch: String,
     pub agent: bool,
     pub title: String,
+    #[cfg_attr(test, ts(type = "\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\""))]
     pub status: &'static str,
 }
 
 /// The Feature stage's index: one repository's features, as a list or a
 /// board, and the one peeked at.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct Features {
     /// The repository's name, for the heading.
     pub repository: String,
     /// `list` or `board`, as remembered for this repository.
+    #[cfg_attr(test, ts(type = "\"list\" | \"board\""))]
     pub layout: &'static str,
     /// Whether held and archived features are shown in the list.
     pub show_folded: bool,
@@ -168,14 +186,17 @@ pub struct Features {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct FeatureRow {
     pub slug: String,
     pub number: i64,
     pub title: String,
     /// `new`, `queued`, `active`, `done`, `held` or `archived`.
+    #[cfg_attr(test, ts(type = "\"new\" | \"queued\" | \"active\" | \"done\" | \"held\" | \"archived\""))]
     pub standing: &'static str,
     /// The heading it is listed under: `new` is listed as `queued`.
+    #[cfg_attr(test, ts(type = "\"queued\" | \"active\" | \"done\" | \"held\" | \"archived\""))]
     pub group: &'static str,
     pub tasks_done: usize,
     pub tasks_total: usize,
@@ -194,19 +215,23 @@ pub struct FeatureRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct Agent {
     pub pane: u64,
     pub title: String,
+    #[cfg_attr(test, ts(type = "\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\""))]
     pub status: &'static str,
     pub needs_you: bool,
 }
 
 /// One place on the board, as a card's Move to… menu offers it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct Move {
     /// `queued`, `active`, `done`, `held`, `archived`, `unhold`, `reopen`.
+    #[cfg_attr(test, ts(type = "\"queued\" | \"active\" | \"done\" | \"held\" | \"archived\" | \"unhold\" | \"reopen\""))]
     pub to: &'static str,
     pub label: String,
     /// Why it cannot be chosen, for a place that follows the work.
@@ -215,11 +240,13 @@ pub struct Move {
 
 /// What the index shows of the feature under the cursor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct Peek {
     pub slug: String,
     pub number: i64,
     pub title: String,
+    #[cfg_attr(test, ts(type = "\"new\" | \"queued\" | \"active\" | \"done\" | \"held\" | \"archived\""))]
     pub standing: &'static str,
     pub branch: Option<String>,
     pub brief: String,
@@ -236,6 +263,7 @@ pub struct Peek {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct Link {
     pub tracker: String,
@@ -245,6 +273,7 @@ pub struct Link {
 
 /// A labelled line: `D3 How much history…`, `2.2 argus-hook reads…`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct Line {
     pub label: String,
@@ -255,6 +284,7 @@ pub struct Line {
 
 /// The rows of a pane's screen that changed since the last frame.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct Frame {
     pub pane: u64,
@@ -269,6 +299,7 @@ pub struct Frame {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct FrameCursor {
     pub row: u16,
@@ -276,6 +307,7 @@ pub struct FrameCursor {
     pub visible: bool,
     /// `block`, `underline` or `bar`; `block` for a child that asked for
     /// nothing.
+    #[cfg_attr(test, ts(type = "\"block\" | \"underline\" | \"bar\""))]
     pub shape: &'static str,
 }
 
@@ -285,6 +317,7 @@ pub struct FrameCursor {
 /// Colours are packed as on the wire — `0` the default, `1 << 24 | index`,
 /// `2 << 24 | rgb` — so a theme switch is a repaint the page does alone.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 pub struct Segment(pub u16, pub Vec<String>, pub u32, pub u32, pub u8);
 
 pub const BOLD: u8 = 1;

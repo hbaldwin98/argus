@@ -10,6 +10,7 @@ use serde::Deserialize;
 
 /// A `keydown` as the page reports it.
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct PageKey {
     /// `KeyboardEvent.key`: what the key means under the current layout.

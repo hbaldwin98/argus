@@ -71,7 +71,61 @@ jobs:
       - name: Test workspace
         run: cargo test --workspace --locked
 
+      # `cargo test` writes the desktop page's TypeScript types from
+      # crates/argus-desktop/src/page.rs; what is committed has to be what
+      # it writes, or the page compiles against a contract Rust no longer
+      # keeps. Checked on one platform: the output is the same on each.
+      - name: Check the page's bindings match page.rs
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          changed="$(git status --porcelain -- crates/argus-desktop/page/src/bindings)"
+          if [[ -n "$changed" ]]; then
+            echo "$changed"
+            echo "run cargo test -p argus-desktop and commit page/src/bindings" >&2
+            exit 1
+          fi
+
       # Runs after a failed test step too, so one run reports both.
       - name: Lint workspace
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  # The desktop window's page is TypeScript compiled into
+  # crates/argus-desktop/assets/js, which is committed so building the crate
+  # needs no Node. This holds the committed output to its sources, and the
+  # sources and the stylesheet to the linter and the formatter.
+  page:
+    name: Desktop page
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: crates/argus-desktop/page
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: crates/argus-desktop/page/package-lock.json
+
+      - name: Install the page's tools
+        run: npm ci
+
+      - name: Compile, lint and check formatting
+        run: npm run check
+
+      - name: Check the committed page is what its sources compile to
+        shell: bash
+        run: |
+          changed="$(git status --porcelain -- ../assets/js)"
+          if [[ -n "$changed" ]]; then
+            echo "$changed"
+            echo "run npm run build in crates/argus-desktop/page and commit assets/js" >&2
+            exit 1
+          fi
+

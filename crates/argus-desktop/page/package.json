@@ -1,0 +1,18 @@
+{
+  "name": "argus-desktop-page",
+  "private": true,
+  "description": "The desktop window's page: TypeScript compiled into ../assets/js, which is committed so building the crate needs no Node.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p . && node -e \"require('node:fs').rmSync('../assets/js/bindings', { recursive: true, force: true })\"",
+    "lint": "oxlint",
+    "fmt": "cd .. && oxfmt -c page/.oxfmtrc.json page/src assets/style.css",
+    "check": "npm run build && oxlint --deny-warnings && cd .. && oxfmt -c page/.oxfmtrc.json --check page/src assets/style.css"
+  },
+  "devDependencies": {
+    "@tauri-apps/api": "2.12.3",
+    "oxfmt": "0.73.0",
+    "oxlint": "1.88.0",
+    "typescript": "7.0.2"
+  }
+}

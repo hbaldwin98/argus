@@ -725,7 +725,7 @@ Hook files are checkout-wide, but handlers use or rebase to the valid pane-speci
 ## Development
 
 GitHub Actions runs tests and clippy on Linux x86_64, macOS arm64, and Windows x86_64 for
-pull requests and pushes to `main`. The sources are hand-formatted, so rustfmt is disabled in
+pull requests and pushes to `main`, and checks the desktop page (the `Desktop page` job). The sources are hand-formatted, so rustfmt is disabled in
 `rustfmt.toml` and `cargo fmt` changes nothing.
 
 To make CI mandatory, create a branch ruleset for `main` under **Settings > Rules > Rulesets** and
@@ -739,6 +739,21 @@ cargo check --workspace --all-targets --locked
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ```
+
+The desktop window's page is TypeScript in `crates/argus-desktop/page`, compiled into
+`crates/argus-desktop/assets/js`. The compiled JavaScript is committed, so building the crate needs
+no Node; editing the page does. From `crates/argus-desktop/page`:
+
+```sh
+npm ci            # once: TypeScript, oxlint and oxfmt, at the locked versions
+npm run build     # compile src/ into ../assets/js; commit what it writes
+npm run fmt       # format the TypeScript and assets/style.css with oxfmt
+npm run check     # compile, oxlint with warnings denied, and oxfmt --check, as CI does
+```
+
+The types of what Rust sends the page are written from `crates/argus-desktop/src/page.rs` into
+`page/src/bindings` by `cargo test -p argus-desktop`; commit them with the change to `page.rs`. A
+`tsconfig.json` is in `page/`, so any TypeScript language server reads the page as the compiler does.
 
 Some tests launch real PTYs and Git processes. `cargo test` can finish all assertions while a spawned
 test process briefly delays command teardown.

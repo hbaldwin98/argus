@@ -19,5 +19,9 @@ tracing-subscriber = { workspace = true }
 # The version alacritty uses, so a cell's width here is the daemon's.
 unicode-width = "0.2"
 
+[dev-dependencies]
+# Writes page.rs's types as TypeScript for the page, in test builds only.
+ts-rs = "12.0.1"
+
 [build-dependencies]
 tauri-build = "2.7.2"

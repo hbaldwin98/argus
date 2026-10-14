@@ -1,0 +1,6 @@
+# Read by ts-rs when `cargo test -p argus-desktop` writes the page's
+# TypeScript types from crates/argus-desktop/src/page.rs: ids travel as JSON
+# numbers, not bigints, and the types land beside the page's own sources.
+[env]
+TS_RS_LARGE_INT = "number"
+TS_RS_EXPORT_DIR = { value = "crates/argus-desktop/page/src/bindings", relative = true }

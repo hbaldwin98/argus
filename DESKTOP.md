@@ -31,7 +31,7 @@ recent sessions need.
 3. **Rust holds the model, the page renders it.** All state — the tree, the selection, the screen
    grid, connection status — lives in a plain Rust struct (`session`) that takes `ServerMsg`s and
    page gestures and returns the `ClientMsg`s to send and the page events to emit. It has no Tauri
-   types in it, so it is unit-tested like the TUI's `app`. The page (plain JS, no build step, like
+   types in it, so it is unit-tested like the TUI's `app`. The page (TypeScript compiled to committed JS, like
    the deleted phone client) draws what it is sent and reports gestures. It holds a mirror of the
    rows only to repaint.
 4. **No contract written twice.** Keys are encoded by ONE encoder, moved from the TUI's

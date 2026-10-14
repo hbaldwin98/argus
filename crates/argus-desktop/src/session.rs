@@ -239,8 +239,13 @@ impl Session {
 
     // ---- Gestures ----------------------------------------------------------
 
-    /// Puts a pane on screen.
+    /// Puts a pane on screen, leaving the Feature stage for it: a pane
+    /// chosen on the rail is one the person means to look at and type into.
     pub fn select(&mut self, pane: PaneId) -> Vec<ClientMsg> {
+        if self.project_of(pane).is_some() && self.features.is_open() {
+            self.features.set_open(false);
+            self.rail_changed = true;
+        }
         self.show(pane);
         self.finish()
     }
@@ -851,6 +856,17 @@ mod tests {
             "{:?}",
             names(&sent)
         );
+    }
+
+    #[test]
+    fn choosing_a_pane_on_the_rail_leaves_the_feature_stage() {
+        let mut s = session(without_focus());
+        s.show_features(true);
+        s.select(PaneId(2));
+        assert!(!s.features.is_open());
+        s.show_features(true);
+        s.select(PaneId(99));
+        assert!(s.features.is_open(), "a pane that is not there changes nothing");
     }
 
     #[test]

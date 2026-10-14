@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "unicorn",
+    "oxc"
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "ignorePatterns": [
+    "src/bindings/**",
+    "node_modules/**"
+  ],
+  "rules": {
+    "no-underscore-dangle": [
+      "warn",
+      {
+        "allow": [
+          "__TAURI__"
+        ]
+      }
+    ]
+  }
+}
