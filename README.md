@@ -200,7 +200,9 @@ with `B` the branches without one: Enter opens a checkout on its first pane or s
 checkout to a branch, `F` fetches, `P` pulls, and `S`/`A` start a shell or the default agent in the
 selected checkout. `N` gives a branch row a worktree, or a checkout a new branch in one; `D`
 deletes a branch row (asking again, before `git branch -D`, when git refuses an unmerged one) or
-removes a worktree once asked. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
+removes a worktree once asked. `R` opens the checkout's review: its unstaged
+and staged changes beside the diff, where `v` picks lines and `c` comments to the checkout's agent.
+`H` opens its history: commits unfolding to their files, and any of them opened as a review. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
 again. The rest of the terminal client's surfaces are still to come; `DESKTOP.md` has the plan.
 
 Its keys are the terminal client's where the two share a surface. In a pane every key goes to the

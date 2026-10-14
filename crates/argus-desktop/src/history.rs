@@ -1,0 +1,326 @@
+//! What the history dialog holds — a checkout's newest commits, the ones
+//! unfolded to their files, and the diff of the file under the cursor —
+//! and what its gestures ask of the daemon. The rows and what unfolding
+//! asks for are `argus_protocol::history_view`'s, as in the terminal
+//! client; a commit's diff is asked for once and kept while the dialog is
+//! open.
+
+use std::collections::HashMap;
+
+use argus_protocol::history_view::{Drill, HistoryRow, HistoryView};
+use argus_protocol::review_view::ReviewView;
+use argus_protocol::{CheckoutId, CheckoutInfo, ClientMsg, CommitFile, CommitInfo, Review, ReviewBase};
+
+use crate::page::{HistoryPage, HistoryRowView};
+use crate::review::{file_rows, files_of};
+
+pub struct HistoryDialog {
+    checkout: CheckoutId,
+    name: String,
+    branch: String,
+    asked: u64,
+    view: Option<HistoryView>,
+    failed: Option<String>,
+    /// Each opened commit's diff against its parent, by oid.
+    diffs: HashMap<String, ReviewView>,
+    /// Diffs asked for and not yet answered: request id to oid.
+    pending: HashMap<u64, String>,
+}
+
+/// What a gesture in the dialog comes to.
+pub enum Then {
+    Nothing,
+    Ask(Box<ClientMsg>),
+    /// Open this commit as a review, where comments record it.
+    Review(String),
+}
+
+impl HistoryDialog {
+    pub fn open(checkout: &CheckoutInfo, request_id: u64) -> (HistoryDialog, ClientMsg) {
+        let dialog = HistoryDialog {
+            checkout: checkout.id,
+            name: checkout.name.clone(),
+            branch: checkout.git.as_ref().and_then(|g| g.branch.clone()).unwrap_or_default(),
+            asked: request_id,
+            view: None,
+            failed: None,
+            diffs: HashMap::new(),
+            pending: HashMap::new(),
+        };
+        (dialog, ClientMsg::ListCommits { request_id, checkout: checkout.id })
+    }
+
+    pub fn checkout(&self) -> CheckoutId {
+        self.checkout
+    }
+
+    pub fn receive_commits(&mut self, request_id: u64, commits: Vec<CommitInfo>) {
+        if request_id == self.asked {
+            self.view = Some(HistoryView::new(self.checkout, commits));
+        }
+    }
+
+    pub fn commits_failed(&mut self, request_id: u64, message: String) {
+        if request_id == self.asked {
+            self.failed = Some(message);
+        }
+    }
+
+    pub fn receive_files(&mut self, checkout: CheckoutId, commit: &str, files: Vec<CommitFile>) {
+        if let Some(view) = self.view.as_mut().filter(|_| checkout == self.checkout) {
+            view.receive_files(commit, files);
+        }
+    }
+
+    pub fn files_failed(&mut self, checkout: CheckoutId, commit: &str) {
+        if let Some(view) = self.view.as_mut().filter(|_| checkout == self.checkout) {
+            view.fail_files(commit);
+        }
+    }
+
+    /// A commit's diff, kept if this dialog asked for it.
+    pub fn receive_diff(&mut self, review: Review) -> bool {
+        let Some(oid) = self.pending.remove(&review.request_id) else {
+            return false;
+        };
+        self.diffs.insert(oid, ReviewView::new(review, false));
+        true
+    }
+
+    pub fn move_by(&mut self, delta: isize, id: impl FnMut() -> u64) -> Then {
+        if let Some(view) = &mut self.view {
+            view.move_by(delta);
+        }
+        self.want_diff(id)
+    }
+
+    pub fn ends(&mut self, bottom: bool, id: impl FnMut() -> u64) -> Then {
+        if let Some(view) = &mut self.view {
+            if bottom {
+                view.bottom_of_list();
+            } else {
+                view.top_of_list();
+            }
+        }
+        self.want_diff(id)
+    }
+
+    pub fn select_row(&mut self, row: usize, id: impl FnMut() -> u64) -> Then {
+        if let Some(view) = self.view.as_mut().filter(|v| row < v.rows.len()) {
+            view.sel = row;
+        }
+        self.want_diff(id)
+    }
+
+    /// `l`: unfolds a commit to its files, asking what they are the first
+    /// time.
+    pub fn unfold(&mut self) -> Then {
+        let Some(view) = &mut self.view else {
+            return Then::Nothing;
+        };
+        match view.drill() {
+            Drill::Fetch(commit) => Then::Ask(Box::new(ClientMsg::ListCommitFiles { checkout: self.checkout, commit })),
+            Drill::Open | Drill::Shown => Then::Nothing,
+        }
+    }
+
+    /// `h`: folds the commit back up.
+    pub fn fold(&mut self) {
+        if let Some(view) = &mut self.view {
+            view.collapse();
+        }
+    }
+
+    /// Enter: a commit unfolds; a file opens as a review of its commit.
+    pub fn choose(&mut self) -> Then {
+        match self.selected_row() {
+            Some(HistoryRow::Commit { .. }) => self.unfold(),
+            Some(HistoryRow::File { .. }) => self.as_review(),
+            None => Then::Nothing,
+        }
+    }
+
+    /// The commit under the cursor, as a review.
+    pub fn as_review(&self) -> Then {
+        match self.view.as_ref().and_then(HistoryView::selected_oid) {
+            Some(oid) => Then::Review(oid.to_owned()),
+            None => Then::Nothing,
+        }
+    }
+
+    fn selected_row(&self) -> Option<HistoryRow> {
+        self.view.as_ref().and_then(|v| v.rows.get(v.sel).copied())
+    }
+
+    /// The cursor on a file of a commit whose diff has not been asked for:
+    /// ask, once.
+    fn want_diff(&mut self, mut id: impl FnMut() -> u64) -> Then {
+        let Some(HistoryRow::File { .. }) = self.selected_row() else {
+            return Then::Nothing;
+        };
+        let Some(oid) = self.view.as_ref().and_then(HistoryView::selected_oid).map(str::to_owned) else {
+            return Then::Nothing;
+        };
+        if self.diffs.contains_key(&oid) || self.pending.values().any(|o| *o == oid) {
+            return Then::Nothing;
+        }
+        let request_id = id();
+        self.pending.insert(request_id, oid.clone());
+        Then::Ask(Box::new(ClientMsg::Review {
+            request_id,
+            checkout: self.checkout,
+            base: ReviewBase::Commit,
+            commit: Some(oid),
+        }))
+    }
+
+    pub fn page(&self, now: u64) -> HistoryPage {
+        let Some(view) = &self.view else {
+            return HistoryPage {
+                open: true,
+                name: self.name.clone(),
+                branch: self.branch.clone(),
+                loading: self.failed.is_none(),
+                empty: self.failed.clone(),
+                ..HistoryPage::default()
+            };
+        };
+        let rows = view
+            .rows
+            .iter()
+            .enumerate()
+            .filter_map(|(i, row)| {
+                let entry = view.commits.get(row.commit())?;
+                let on = i == view.sel;
+                Some(match *row {
+                    HistoryRow::Commit { .. } => HistoryRowView {
+                        row: i,
+                        kind: "commit",
+                        short: entry.info.short.clone(),
+                        text: entry.info.summary.clone(),
+                        ago: argus_protocol::ago(u64::try_from(entry.info.time).ok(), now),
+                        files: entry.files.as_ref().map(Vec::len),
+                        loading: entry.pending,
+                        expanded: entry.expanded,
+                        added: 0,
+                        removed: 0,
+                        on,
+                    },
+                    HistoryRow::File { .. } => {
+                        let file = view.file_at(*row)?;
+                        HistoryRowView {
+                            row: i,
+                            kind: "file",
+                            short: String::new(),
+                            text: file.path.clone(),
+                            ago: String::new(),
+                            files: None,
+                            loading: false,
+                            expanded: false,
+                            added: file.added,
+                            removed: file.removed,
+                            on,
+                        }
+                    }
+                })
+            })
+            .collect();
+        // The diff of the file under the cursor, from its commit's diff.
+        let file = view.selected_file().map(|f| f.path.clone());
+        let commit = view.selected_commit().map(|c| c.info.clone());
+        let diff = view.selected_oid().and_then(|oid| self.diffs.get(oid));
+        let shown = match (diff, &file) {
+            (Some(d), Some(path)) => d.review.files.iter().position(|f| &f.path == path).map(|at| (d, at)),
+            _ => None,
+        };
+        HistoryPage {
+            open: true,
+            name: self.name.clone(),
+            branch: self.branch.clone(),
+            loading: false,
+            empty: view.commits.is_empty().then(|| format!("No commits in {} yet.", self.name)),
+            rows,
+            commit: commit.map(|c| c.short),
+            path: file.clone(),
+            diff: shown.map(|(d, at)| file_rows(d, at, None, |_| false)).unwrap_or_default(),
+            diff_loading: file.is_some() && shown.is_none(),
+            files: shown.map(|(d, _)| files_of(d).len()).unwrap_or(0),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fixtures::checkout;
+    use argus_protocol::{ChangeKind, DiffLine, FileDiff, Hunk, LineKind};
+
+    fn commit(oid: &str, summary: &str) -> CommitInfo {
+        CommitInfo { oid: oid.into(), short: oid[..4].into(), summary: summary.into(), author: "t".into(), time: 0 }
+    }
+
+    fn opened() -> HistoryDialog {
+        let (mut d, msg) = HistoryDialog::open(&checkout(100, "main", true, Vec::new()), 5);
+        assert!(matches!(msg, ClientMsg::ListCommits { request_id: 5, .. }));
+        d.receive_commits(5, vec![commit("aaaa1", "Newest"), commit("bbbb2", "Older")]);
+        d
+    }
+
+    #[test]
+    fn unfolding_a_commit_asks_for_its_files_once() {
+        let mut d = opened();
+        assert!(matches!(d.unfold(), Then::Ask(msg) if matches!(&*msg, ClientMsg::ListCommitFiles { commit, .. } if commit == "aaaa1")));
+        assert!(d.page(0).rows[0].loading);
+        d.receive_files(CheckoutId(100), "aaaa1", vec![CommitFile {
+            path: "DESKTOP.md".into(),
+            old_path: None,
+            kind: ChangeKind::Modified,
+            added: 3,
+            removed: 1,
+        }]);
+        let page = d.page(0);
+        assert_eq!(page.rows.iter().map(|r| r.kind).collect::<Vec<_>>(), ["commit", "file", "commit"]);
+    }
+
+    #[test]
+    fn a_file_under_the_cursor_shows_its_commits_diff_asked_for_once() {
+        let mut d = opened();
+        d.unfold();
+        d.receive_files(CheckoutId(100), "aaaa1", vec![CommitFile {
+            path: "DESKTOP.md".into(),
+            old_path: None,
+            kind: ChangeKind::Modified,
+            added: 1,
+            removed: 0,
+        }]);
+        let mut ids = 40..;
+        let Then::Ask(msg) = d.move_by(1, || ids.next().unwrap()) else {
+            panic!("the diff is asked for");
+        };
+        let ClientMsg::Review { request_id, commit, base, .. } = *msg else {
+            panic!("a review of the commit");
+        };
+        assert_eq!((base, commit.as_deref()), (ReviewBase::Commit, Some("aaaa1")));
+        assert!(d.page(0).diff_loading);
+        assert!(matches!(d.select_row(1, || 99), Then::Nothing), "asked once");
+        d.receive_diff(Review {
+            request_id,
+            checkout: CheckoutId(100),
+            base: ReviewBase::Commit,
+            files: vec![FileDiff {
+                path: "DESKTOP.md".into(),
+                old_path: None,
+                kind: ChangeKind::Modified,
+                hunks: vec![Hunk {
+                    header: "@@ -1 +1,2 @@".into(),
+                    lines: vec![DiffLine { kind: LineKind::Added, old_lineno: None, new_lineno: Some(2), text: "more".into(), spans: Vec::new() }],
+                }],
+                note: None,
+            }],
+            commit: None,
+        });
+        let page = d.page(0);
+        assert_eq!(page.diff.len(), 2, "its hunk and its line");
+        assert!(matches!(d.choose(), Then::Review(oid) if oid == "aaaa1"));
+    }
+}

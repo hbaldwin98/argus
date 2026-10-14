@@ -21,10 +21,12 @@ mod features;
 #[cfg(test)]
 mod fixtures;
 mod keymap;
+mod history;
 mod keys;
 mod logging;
 mod page;
 mod rail;
+mod review;
 mod screen;
 mod session;
 mod settings;
@@ -81,6 +83,13 @@ fn main() {
             commands::checkouts_action,
             commands::answer_checkouts,
             commands::new_worktree,
+            commands::open_review,
+            commands::review_action,
+            commands::review_click,
+            commands::review_refresh,
+            commands::review_comment,
+            commands::open_history,
+            commands::history_action,
             commands::peek,
             commands::set_layout,
             commands::toggle_folded,

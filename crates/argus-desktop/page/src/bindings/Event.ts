@@ -3,10 +3,12 @@ import type { Checkouts } from "./Checkouts";
 import type { Features } from "./Features";
 import type { Frame } from "./Frame";
 import type { Group } from "./Group";
+import type { HistoryPage } from "./HistoryPage";
 import type { Rail } from "./Rail";
+import type { ReviewPage } from "./ReviewPage";
 import type { Status } from "./Status";
 
 /**
  * One message down the page's channel.
  */
-export type Event = { "type": "status" } & Status | { "type": "rail" } & Rail | { "type": "frame" } & Frame | { "type": "features" } & Features | { "type": "checkouts" } & Checkouts | { "type": "clipboard", text: string, } | { "type": "notice", text: string, } | { "type": "keymap", groups: Array<Group>, };
+export type Event = { "type": "status" } & Status | { "type": "rail" } & Rail | { "type": "frame" } & Frame | { "type": "features" } & Features | { "type": "checkouts" } & Checkouts | { "type": "review" } & ReviewPage | { "type": "history" } & HistoryPage | { "type": "clipboard", text: string, } | { "type": "notice", text: string, } | { "type": "keymap", groups: Array<Group>, };

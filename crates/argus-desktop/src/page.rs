@@ -22,6 +22,12 @@ pub enum Event {
     // and every other one would otherwise be sized to carry them.
     Features(Box<Features>),
     Checkouts(Box<Checkouts>),
+    /// The review dialog, whole, whenever it changes; `open` false once
+    /// it closes.
+    Review(Box<ReviewPage>),
+    /// The history dialog, whole, whenever it changes; `open` false once
+    /// it closes.
+    History(Box<HistoryPage>),
     /// Text a pane's child put on the clipboard (OSC 52).
     Clipboard { text: String },
     /// Something the daemon said that passes: a refused request's reason.
@@ -413,6 +419,141 @@ pub struct CheckoutDetail {
     pub upstream: Option<String>,
     /// `1 unstaged file`, `3 staged · 2 unstaged files`, `no changes`.
     pub changes: Option<String>,
+}
+
+/// The review dialog: one checkout's diff, a side at a time.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewPage {
+    pub open: bool,
+    pub checkout: u64,
+    pub name: String,
+    pub branch: String,
+    /// `unstaged`, `staged`, or `commit` for one commit against its parent.
+    #[cfg_attr(test, ts(type = "\"unstaged\" | \"staged\" | \"commit\""))]
+    pub base: &'static str,
+    /// The commit, `short  summary`, when the review is of one.
+    pub commit: Option<String>,
+    /// How many files each side changes; `None` until it has been read.
+    pub unstaged: Option<usize>,
+    pub staged: Option<usize>,
+    pub split: bool,
+    pub added: usize,
+    pub removed: usize,
+    pub files: Vec<ReviewFile>,
+    /// The file on screen, an index into `files`.
+    pub file: Option<usize>,
+    /// The picked lines, as `new lines 39–40`.
+    pub pick: Option<String>,
+    /// The file on screen's hunks and lines.
+    pub rows: Vec<DiffRow>,
+    pub loading: bool,
+    /// Why there is no diff: nothing on this side, or a failed read.
+    pub empty: Option<String>,
+    pub composing: bool,
+    /// The agents in the checkout a comment can go to.
+    pub recipients: Vec<Recipient>,
+    pub recipient: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewFile {
+    pub path: String,
+    /// The directory part, drawn faint, ending in `/`; empty at the root.
+    pub dir: String,
+    pub name: String,
+    pub added: usize,
+    pub removed: usize,
+    #[cfg_attr(test, ts(type = "\"added\" | \"modified\" | \"deleted\" | \"renamed\" | \"untracked\""))]
+    pub kind: &'static str,
+}
+
+/// The history dialog: a checkout's newest commits, and the diff of the
+/// file under the cursor.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryPage {
+    pub open: bool,
+    pub name: String,
+    pub branch: String,
+    pub loading: bool,
+    /// Why there are no rows: no commits yet, or a failed read.
+    pub empty: Option<String>,
+    pub rows: Vec<HistoryRowView>,
+    /// The commit under the cursor, short.
+    pub commit: Option<String>,
+    /// The file under the cursor, whose diff is `diff`.
+    pub path: Option<String>,
+    pub diff: Vec<DiffRow>,
+    pub diff_loading: bool,
+    /// How many files the commit's diff holds, once read.
+    pub files: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryRowView {
+    pub row: usize,
+    #[cfg_attr(test, ts(type = "\"commit\" | \"file\""))]
+    pub kind: &'static str,
+    pub short: String,
+    /// A commit's subject, or a file's path.
+    pub text: String,
+    pub ago: String,
+    /// How many files a commit touched, once asked.
+    pub files: Option<usize>,
+    pub loading: bool,
+    pub expanded: bool,
+    pub added: usize,
+    pub removed: usize,
+    pub on: bool,
+}
+
+/// A row of the diff: a hunk header, a note, a line, or in split view a
+/// pair of lines.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DiffRow {
+    /// What a click on it sends back.
+    pub row: usize,
+    #[cfg_attr(test, ts(type = "\"hunk\" | \"note\" | \"line\" | \"pair\""))]
+    pub kind: &'static str,
+    /// A hunk's `@@` line, or a note's reason.
+    pub text: String,
+    /// A line, or a pair's removed side.
+    pub left: Option<DiffSide>,
+    /// A pair's added side.
+    pub right: Option<DiffSide>,
+    pub cursor: bool,
+    pub picked: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct DiffSide {
+    pub old: Option<u32>,
+    pub new: Option<u32>,
+    pub marker: &'static str,
+    #[cfg_attr(test, ts(type = "\"added\" | \"removed\" | \"context\""))]
+    pub kind: &'static str,
+    /// The text as `[text, highlight]`, the highlight a short class name
+    /// (`k`, `s`, `c`, …) or empty.
+    pub parts: Vec<(String, &'static str)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Recipient {
+    pub pane: u64,
+    pub title: String,
 }
 
 /// A mouse gesture over the pane the page did not keep for a selection.

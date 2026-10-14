@@ -5,6 +5,8 @@ import type { Checkouts } from './bindings/Checkouts';
 import type { Features } from './bindings/Features';
 import type { Group } from './bindings/Group';
 import type { Rail } from './bindings/Rail';
+import type { ReviewPage } from './bindings/ReviewPage';
+import type { HistoryPage } from './bindings/HistoryPage';
 import type { Status } from './bindings/Status';
 
 export const state: {
@@ -22,6 +24,10 @@ export const state: {
    *  elsewhere: a checkout, or a pane and its checkout. */
   railPick: { checkout: number; pane: number | null } | null;
   checkouts: Checkouts | null;
+  review: ReviewPage | null;
+  history: HistoryPage | null;
+  /** The comment being written, kept across the dialog's redraws. */
+  reviewDraft: string;
   /** What the index's filter says. */
   filter: string;
   /** Whether the board's archived column is unfolded. */
@@ -46,6 +52,9 @@ export const state: {
   start: null,
   railPick: null,
   checkouts: null,
+  review: null,
+  history: null,
+  reviewDraft: '',
   filter: '',
   archivedOpen: false,
 };

@@ -52,6 +52,10 @@ pub enum Place {
     Checkouts,
     /// A checkout's + menu while it is open, which holds the keys.
     Start,
+    /// The review dialog while it is open, which holds the keys.
+    Review,
+    /// The history dialog while it is open, which holds the keys.
+    History,
 }
 
 /// What a binding does. The page runs those of the places it dispatches,
@@ -93,6 +97,23 @@ pub enum Action {
     Pull,
     NewWorktree,
     Delete,
+    /// Open the selected checkout's review.
+    OpenReview,
+    /// Start a range at the cursor, or let it go.
+    Pick,
+    Comment,
+    /// Unstaged or staged.
+    Side,
+    Split,
+    NextFile,
+    PreviousFile,
+    /// Open the selected checkout's history.
+    OpenHistory,
+    /// Unfold a commit to its files.
+    Unfold,
+    Fold,
+    /// The commit under the cursor as a review.
+    AsReview,
 }
 
 #[derive(Debug, Serialize)]
@@ -165,6 +186,8 @@ impl Place {
             Place::Card => "Board card",
             Place::Checkouts => "Checkouts",
             Place::Start => "A checkout's + menu",
+            Place::Review => "Review",
+            Place::History => "History",
         }
     }
 }
@@ -185,7 +208,7 @@ const fn bind(place: Place, chords: &'static [Chord], action: Action, label: &'s
 }
 
 use Action::*;
-use Place::{Anywhere, Card, Pane, Rail, Start};
+use Place::{Anywhere, Card, History, Pane, Rail, Review, Start};
 use Place::Checkouts as CheckoutsTable;
 
 pub static BINDINGS: &[Binding] = &[
@@ -230,6 +253,8 @@ pub static BINDINGS: &[Binding] = &[
     bind(CheckoutsTable, &[Chord::key("p"), Chord::key("P")], Pull, "pull"),
     bind(CheckoutsTable, &[Chord::key("n"), Chord::key("N")], NewWorktree, "new worktree"),
     bind(CheckoutsTable, &[Chord::key("D")], Delete, "delete"),
+    bind(CheckoutsTable, &[Chord::key("r"), Chord::key("R")], OpenReview, "review"),
+    bind(CheckoutsTable, &[Chord::key("h"), Chord::key("H")], OpenHistory, "history"),
     bind(CheckoutsTable, &[Chord::key("s"), Chord::key("S")], StartShell, "start a shell"),
     bind(CheckoutsTable, &[Chord::key("a"), Chord::key("A")], StartAgent, "start the default agent"),
     bind(Start, &[Chord::key("s"), Chord::key("S")], StartShell, "start a shell"),
@@ -237,9 +262,27 @@ pub static BINDINGS: &[Binding] = &[
     bind(Start, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next item"),
     bind(Start, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous item"),
     bind(Start, &[Chord::key("Enter")], Choose, "start the highlighted one"),
+    bind(Review, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next line"),
+    bind(Review, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous line"),
+    bind(Review, &[Chord::key("Home")], First, "first line"),
+    bind(Review, &[Chord::key("End")], Last, "last line"),
+    bind(Review, &[Chord::key("]")], NextFile, "next file"),
+    bind(Review, &[Chord::key("[")], PreviousFile, "previous file"),
+    bind(Review, &[Chord::key("v"), Chord::key("V")], Pick, "pick a range"),
+    bind(Review, &[Chord::key("c"), Chord::key("C")], Comment, "comment"),
+    bind(Review, &[Chord::key("b"), Chord::key("B")], Side, "staged or unstaged"),
+    bind(Review, &[Chord::key("s"), Chord::key("S")], Split, "split or unified"),
+    bind(History, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next row"),
+    bind(History, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous row"),
+    bind(History, &[Chord::key("Home")], First, "newest"),
+    bind(History, &[Chord::key("End")], Last, "oldest"),
+    bind(History, &[Chord::key("l"), Chord::key("ArrowRight")], Unfold, "open a commit"),
+    bind(History, &[Chord::key("h"), Chord::key("ArrowLeft")], Fold, "fold it"),
+    bind(History, &[Chord::key("Enter")], Choose, "open a commit, or a file as a review"),
+    bind(History, &[Chord::key("o"), Chord::key("O")], AsReview, "open as a review"),
 ];
 
-const ORDER: [Place; 7] = [Anywhere, Pane, Rail, Place::Feature, Card, CheckoutsTable, Start];
+const ORDER: [Place; 9] = [Anywhere, Pane, Rail, Place::Feature, Card, CheckoutsTable, Start, Review, History];
 
 /// The table as the sheet lists it: a group per place, in the sheet's order.
 pub fn groups() -> Vec<Group> {
@@ -292,7 +335,7 @@ mod tests {
         let titles: Vec<_> = groups.iter().map(|g| g.title).collect();
         assert_eq!(
             titles,
-            ["Anywhere", "In a pane", "Rail", "Feature", "Board card", "Checkouts", "A checkout's + menu"]
+            ["Anywhere", "In a pane", "Rail", "Feature", "Board card", "Checkouts", "A checkout's + menu", "Review", "History"]
         );
     }
 
@@ -301,8 +344,8 @@ mod tests {
     /// and an open + menu hears only its own and Anywhere's.
     #[test]
     fn no_key_is_bound_twice_where_it_is_heard() {
-        let heard_together: [&[Place]; 5] =
-            [&[Anywhere, Place::Feature, Card], &[Pane], &[Anywhere, Rail], &[Anywhere, CheckoutsTable], &[Anywhere, Start]];
+        let heard_together: [&[Place]; 7] =
+            [&[Anywhere, Place::Feature, Card], &[Pane], &[Anywhere, Rail], &[Anywhere, CheckoutsTable], &[Anywhere, Start], &[Anywhere, Review], &[Anywhere, History]];
         for places in heard_together {
             let chords: Vec<&Chord> = BINDINGS
                 .iter()

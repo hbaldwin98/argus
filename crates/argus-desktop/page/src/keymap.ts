@@ -6,6 +6,8 @@ import type { Action } from './bindings/Action';
 import type { Chord } from './bindings/Chord';
 import type { Place } from './bindings/Place';
 import { answerNo, checkoutsAction } from './checkouts.js';
+import { historyOpen } from './history.js';
+import { reviewOpen } from './review.js';
 import { railAction, railPicked, startAction, startOpen } from './chrome.js';
 import { $ } from './dom.js';
 import { closeLayer, featureAction } from './features.js';
@@ -65,6 +67,23 @@ export function listen(): void {
     const typing =
       e.target instanceof Element && e.target.closest('input, textarea, [contenteditable]');
     if (typing) return;
+    // The review dialog holds the keys while it is open; Rust runs them.
+    if (reviewOpen()) {
+      const action = actionFor(['anywhere', 'review'], e);
+      if (action && action !== 'workspace' && action !== 'feature' && action !== 'checkouts') {
+        e.preventDefault();
+        call('review_action', { action });
+      }
+      return;
+    }
+    if (historyOpen()) {
+      const action = actionFor(['anywhere', 'history'], e);
+      if (action && action !== 'workspace' && action !== 'feature' && action !== 'checkouts') {
+        e.preventDefault();
+        call('history_action', { action, row: null });
+      }
+      return;
+    }
     // An open + menu holds the keys until it closes.
     if (startOpen()) {
       const action = actionFor(['anywhere', 'start'], e);

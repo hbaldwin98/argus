@@ -293,6 +293,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `session` | what this window holds of the daemon — the tree, the pane on screen, the connection's state — and what each message and gesture changes |
 | `screen` | a pane's screen as the page draws it: the grid the daemon's damage lands on, and the rows changed since the last frame |
 | `rail` | what the rail lists from the tree, and what a row says |
+| `review` | what the review dialog holds — a checkout's unstaged and staged sides, the diff on screen, the lines picked and who a comment goes to — and what its gestures ask of the daemon |
+| `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, and each opened commit's diff — and what its gestures ask of the daemon |
 | `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row — and what its keys and buttons ask of the daemon |
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks, each repository's layout — and what its messages and gestures change |

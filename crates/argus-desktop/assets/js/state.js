@@ -20,6 +20,9 @@ export const state = {
     start: null,
     railPick: null,
     checkouts: null,
+    review: null,
+    history: null,
+    reviewDraft: '',
     filter: '',
     archivedOpen: false,
 };

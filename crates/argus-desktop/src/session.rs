@@ -30,6 +30,8 @@ use crate::page::{Connection, Event, PageMouse, Status};
 use crate::settings::Settings;
 use crate::rail::{self, Choices};
 use crate::checkouts_stage::{CheckoutsStage, Deleting, Opened};
+use crate::history::{HistoryDialog, Then};
+use crate::review::ReviewDialog;
 use crate::screen::Screen;
 
 /// Lines one wheel notch moves a parked view, as terminals scroll for one
@@ -67,6 +69,12 @@ pub struct Session {
     /// The agent templates the daemon offers, the first its default.
     templates: Vec<String>,
     checkouts: CheckoutsStage,
+    review: Option<ReviewDialog>,
+    /// What the page was last sent of the review, so an unchanged one is
+    /// not sent again.
+    review_sent: Option<crate::page::ReviewPage>,
+    history: Option<HistoryDialog>,
+    history_sent: Option<crate::page::HistoryPage>,
     /// A pane the daemon made for us that no tree has carried yet.
     made: Option<PaneId>,
     focused: bool,
@@ -109,6 +117,10 @@ impl Session {
             asked: Vec::new(),
             templates: Vec::new(),
             checkouts: CheckoutsStage::default(),
+            review: None,
+            review_sent: None,
+            history: None,
+            history_sent: None,
             made: None,
             focused: true,
             leader: false,
@@ -206,6 +218,45 @@ impl Session {
                     Some(Created::Checkout(checkout)) => self.checkouts.select(format!("c{}", checkout.0)),
                     _ => {}
                 }
+            }
+            ServerMsg::Review(review) => {
+                let taken = self.history.as_mut().is_some_and(|h| h.receive_diff(review.clone()));
+                if let Some(dialog) = self.review.as_mut().filter(|_| !taken) {
+                    dialog.receive(review);
+                }
+            }
+            ServerMsg::Commits { request_id, commits, .. } => {
+                if let Some(dialog) = &mut self.history {
+                    dialog.receive_commits(request_id, commits);
+                }
+            }
+            ServerMsg::CommitsFailed { request_id, message, .. } => {
+                if let Some(dialog) = &mut self.history {
+                    dialog.commits_failed(request_id, message);
+                }
+            }
+            ServerMsg::CommitFiles { checkout, commit, files } => {
+                if let Some(dialog) = &mut self.history {
+                    dialog.receive_files(checkout, &commit, files);
+                }
+            }
+            ServerMsg::CommitFilesFailed { checkout, commit, message } => {
+                if let Some(dialog) = &mut self.history {
+                    dialog.files_failed(checkout, &commit);
+                }
+                self.passing.push(Event::Notice { text: message });
+            }
+            ServerMsg::ReviewFailed { request_id, message, .. } => {
+                if let Some(dialog) = &mut self.review {
+                    dialog.failed(request_id, message);
+                }
+            }
+            ServerMsg::ReviewCommentSaved { id, delivered } => {
+                if let Some(dialog) = &mut self.review {
+                    dialog.commented();
+                }
+                let text = if delivered { format!("comment #{id} sent") } else { format!("comment #{id} saved; the agent was not there to take it") };
+                self.passing.push(Event::Notice { text });
             }
             ServerMsg::BranchNotMerged { checkout, branch, commits } => {
                 self.checkouts.refused(checkout, branch, &commits, argus_protocol::ago::now());
@@ -565,6 +616,12 @@ impl Session {
         self.finish()
     }
 
+    /// Names a request answered by its own message rather than `Created`.
+    fn fresh_id(&mut self) -> u64 {
+        self.last_request = self.last_request.wrapping_add(1).max(1);
+        self.last_request
+    }
+
     /// Names a request whose answer this window waits for.
     fn next_request(&mut self) -> u64 {
         self.last_request = self.last_request.wrapping_add(1).max(1);
@@ -719,6 +776,139 @@ impl Session {
         }
     }
 
+    fn checkout_info(&self, checkout: CheckoutId) -> Option<&argus_protocol::CheckoutInfo> {
+        self.tree.iter().flat_map(|p| &p.repositories).flat_map(|r| &r.checkouts).find(|c| c.id == checkout)
+    }
+
+    /// Opens the review of a checkout's working changes.
+    pub fn open_review(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
+        let Some(info) = self.checkout_info(checkout).cloned() else {
+            return self.finish();
+        };
+        let mut ids = Vec::new();
+        let (dialog, msgs) = ReviewDialog::working(&info, || {
+            let id = self.fresh_id();
+            ids.push(id);
+            id
+        });
+        self.review = Some(dialog);
+        self.out.extend(msgs);
+        self.finish()
+    }
+
+    pub fn open_history(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
+        let Some(info) = self.checkout_info(checkout).cloned() else {
+            return self.finish();
+        };
+        let (dialog, msg) = HistoryDialog::open(&info, self.fresh_id());
+        self.history = Some(dialog);
+        self.out.push(msg);
+        self.finish()
+    }
+
+    /// A key or click of the history dialog; `row` is a clicked row.
+    pub fn history_action(&mut self, action: Action, row: Option<usize>) -> Vec<ClientMsg> {
+        let Some(mut dialog) = self.history.take() else {
+            return self.finish();
+        };
+        let then = match (action, row) {
+            (_, Some(row)) => dialog.select_row(row, || self.fresh_id()),
+            (Action::Next, _) => dialog.move_by(1, || self.fresh_id()),
+            (Action::Previous, _) => dialog.move_by(-1, || self.fresh_id()),
+            (Action::First, _) => dialog.ends(false, || self.fresh_id()),
+            (Action::Last, _) => dialog.ends(true, || self.fresh_id()),
+            (Action::Unfold, _) => dialog.unfold(),
+            (Action::Fold, _) => {
+                dialog.fold();
+                Then::Nothing
+            }
+            (Action::Choose, _) => dialog.choose(),
+            (Action::AsReview, _) => dialog.as_review(),
+            (Action::CloseLayer, _) => return self.finish(),
+            _ => Then::Nothing,
+        };
+        match then {
+            Then::Nothing => self.history = Some(dialog),
+            Then::Ask(msg) => {
+                self.history = Some(dialog);
+                self.out.push(*msg);
+            }
+            // The history gives way to the review of the commit.
+            Then::Review(commit) => {
+                if let Some(info) = self.checkout_info(dialog.checkout()).cloned() {
+                    let (review, msg) = ReviewDialog::of_commit(&info, commit, self.fresh_id());
+                    self.review = Some(review);
+                    self.out.push(msg);
+                }
+            }
+        }
+        self.finish()
+    }
+
+    /// A key or button of the review dialog.
+    pub fn review_action(&mut self, action: Action) -> Vec<ClientMsg> {
+        let Some(dialog) = &mut self.review else {
+            return self.finish();
+        };
+        match action {
+            Action::Next => dialog.move_by(1),
+            Action::Previous => dialog.move_by(-1),
+            Action::First => dialog.ends(false),
+            Action::Last => dialog.ends(true),
+            Action::NextFile => dialog.jump_file(true),
+            Action::PreviousFile => dialog.jump_file(false),
+            Action::Pick => dialog.toggle_pick(),
+            Action::Side => dialog.switch_side(),
+            Action::Split => dialog.toggle_split(),
+            Action::Comment => {
+                if let Err(text) = dialog.compose() {
+                    self.passing.push(Event::Notice { text: text.into() });
+                }
+            }
+            Action::CloseLayer => self.review = None,
+            _ => {}
+        }
+        self.finish()
+    }
+
+    /// A click in the review: a file in the list, a line in the diff (with
+    /// shift, extending the range), a side, or a recipient.
+    pub fn review_click(&mut self, target: ReviewClick) -> Vec<ClientMsg> {
+        if let Some(dialog) = &mut self.review {
+            match target {
+                ReviewClick::File { file } => dialog.open_file(file),
+                ReviewClick::Row { row, extend } => dialog.select_row(row, extend),
+                ReviewClick::Side { staged } => dialog.show_side(staged),
+                ReviewClick::Recipient { pane } => dialog.choose_recipient(PaneId(pane)),
+            }
+        }
+        self.finish()
+    }
+
+    pub fn review_refresh(&mut self) -> Vec<ClientMsg> {
+        let Some(mut dialog) = self.review.take() else {
+            return self.finish();
+        };
+        let msgs = dialog.refresh(|| self.fresh_id());
+        self.review = Some(dialog);
+        self.out.extend(msgs);
+        self.finish()
+    }
+
+    pub fn review_comment(&mut self, body: Option<String>) -> Vec<ClientMsg> {
+        let Some(dialog) = &mut self.review else {
+            return self.finish();
+        };
+        match body {
+            None => dialog.cancel_comment(),
+            Some(body) => match dialog.comment(body) {
+                Ok(msg) => self.out.push(msg),
+                Err(text) => self.passing.push(Event::Notice { text: text.into() }),
+            },
+        }
+        self.finish()
+    }
+
     /// The answer to the stage's question: a yes does what it asked about.
     pub fn answer_checkouts(&mut self, yes: bool) -> Vec<ClientMsg> {
         if let Some(deleting) = self.checkouts.answer(yes) {
@@ -782,6 +972,14 @@ impl Session {
                     });
                 }
             }
+            Action::OpenReview => match self.checkouts.checkout(&repo) {
+                Some(checkout) => return self.open_review(checkout),
+                None => self.passing.push(Event::Notice { text: "a branch has no changes of its own to review".into() }),
+            },
+            Action::OpenHistory => match self.checkouts.checkout(&repo) {
+                Some(checkout) => return self.open_history(checkout),
+                None => self.passing.push(Event::Notice { text: "a branch's history opens from a checkout of it".into() }),
+            },
             Action::Delete => match self.checkouts.delete(&repo) {
                 Ok(Some(deleting)) => self.out.push(deletion(deleting)),
                 Ok(None) => {}
@@ -897,6 +1095,26 @@ impl Session {
         if let Some(features) = self.features.take(scope.as_ref(), &self.tree) {
             events.push(Event::Features(Box::new(features)));
         }
+        if self.review.is_some() || self.review_sent.as_ref().is_some_and(|r| r.open) {
+            let page = match &self.review {
+                Some(dialog) => dialog.page(self.checkout_info(dialog.checkout())),
+                None => crate::page::ReviewPage::default(),
+            };
+            if self.review_sent.as_ref() != Some(&page) {
+                self.review_sent = Some(page.clone());
+                events.push(Event::Review(Box::new(page)));
+            }
+        }
+        if self.history.is_some() || self.history_sent.as_ref().is_some_and(|h| h.open) {
+            let page = match &self.history {
+                Some(dialog) => dialog.page(now),
+                None => crate::page::HistoryPage::default(),
+            };
+            if self.history_sent.as_ref() != Some(&page) {
+                self.history_sent = Some(page.clone());
+                events.push(Event::History(Box::new(page)));
+            }
+        }
         if self.checkouts.is_open() {
             let repo = self.chosen_repository().cloned();
             if let Some(table) = self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), now) {
@@ -911,6 +1129,8 @@ impl Session {
     /// shown pane's whole screen follows with the next frame.
     pub fn everything(&mut self, now: u64) -> Vec<Event> {
         self.status_changed = true;
+        self.review_sent = None;
+        self.history_sent = None;
         self.rail_changed = true;
         if let Some(screen) = &mut self.screen {
             screen.refresh();
@@ -977,6 +1197,16 @@ impl Session {
 
 /// What to say of a daemon from another build than this window, as the
 /// terminal client says it.
+/// What a click in the review dialog landed on.
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum ReviewClick {
+    File { file: usize },
+    Row { row: usize, extend: bool },
+    Side { staged: bool },
+    Recipient { pane: u64 },
+}
+
 fn deletion(deleting: Deleting) -> ClientMsg {
     match deleting {
         Deleting::Branch { checkout, branch, force } => ClientMsg::DeleteBranch { checkout, branch, force },

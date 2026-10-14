@@ -14,6 +14,8 @@ import {
 } from './chrome.js';
 import { drawCheckouts } from './checkouts.js';
 import { $ } from './dom.js';
+import { drawHistory } from './history.js';
+import { drawReview } from './review.js';
 import { drawFeatures, listen as listenToFeatures } from './features.js';
 import { listen as listenToInput } from './input.js';
 import { listen as listenToKeys } from './keymap.js';
@@ -52,6 +54,14 @@ function receive(event: Event): void {
       break;
     case 'notice':
       notice(event.text);
+      break;
+    case 'history':
+      state.history = event;
+      drawHistory();
+      break;
+    case 'review':
+      state.review = event;
+      drawReview();
       break;
     case 'checkouts':
       state.checkouts = event;

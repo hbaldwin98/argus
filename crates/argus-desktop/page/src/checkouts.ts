@@ -121,18 +121,21 @@ function actions(row: CheckoutsRow): Child {
     ];
   }
   const checkout = row.checkout;
-  const soon = (label: string, key: string): HTMLElement =>
-    el(
-      'button',
-      { class: 'btn sm soon', disabled: true, title: 'Not in this window yet' },
-      `${label} `,
-      keycap(key),
-    );
   const hot = state.start?.checkout === checkout && state.start.from === 'table';
   return [
     open,
-    soon('Review', 'R'),
-    soon('History', 'H'),
+    el(
+      'button',
+      { class: 'btn sm', onclick: () => call('open_review', { checkout }) },
+      'Review ',
+      keycap('R'),
+    ),
+    el(
+      'button',
+      { class: 'btn sm', onclick: () => call('open_history', { checkout }) },
+      'History ',
+      keycap('H'),
+    ),
     el(
       'button',
       { class: 'btn sm', onclick: () => call('checkouts_action', { action: 'pull' }) },

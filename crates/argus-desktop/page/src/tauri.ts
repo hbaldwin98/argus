@@ -41,6 +41,19 @@ interface Commands {
   checkouts_action: { action: Action };
   answer_checkouts: { yes: boolean };
   new_worktree: { name: string | null };
+  open_review: { checkout: number };
+  review_action: { action: Action };
+  review_click: {
+    target:
+      | { on: 'file'; file: number }
+      | { on: 'row'; row: number; extend: boolean }
+      | { on: 'side'; staged: boolean }
+      | { on: 'recipient'; pane: number };
+  };
+  review_refresh: None;
+  open_history: { checkout: number };
+  history_action: { action: Action; row: number | null };
+  review_comment: { body: string | null };
   peek: { slug: string };
   set_layout: { layout: 'list' | 'board' };
   toggle_folded: None;

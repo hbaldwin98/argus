@@ -15,6 +15,7 @@ use crate::features::Layout;
 use crate::keymap::Action;
 use crate::keys::PageKey;
 use crate::page::{Event, PageMouse};
+use crate::session::ReviewClick;
 use crate::shared::Shared;
 
 type Answer = Result<(), String>;
@@ -185,6 +186,51 @@ pub async fn select_checkout_row(shared: State<'_, Arc<Shared>>, key: String) ->
 #[tauri::command]
 pub async fn filter_checkouts(shared: State<'_, Arc<Shared>>, filter: String) -> Answer {
     shared.act(|s| s.filter_checkouts(filter));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_review(shared: State<'_, Arc<Shared>>, checkout: u64) -> Answer {
+    shared.act(|s| s.open_review(CheckoutId(checkout)));
+    Ok(())
+}
+
+/// A key or button of the review dialog.
+#[tauri::command]
+pub async fn review_action(shared: State<'_, Arc<Shared>>, action: Action) -> Answer {
+    shared.act(|s| s.review_action(action));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn review_click(shared: State<'_, Arc<Shared>>, target: ReviewClick) -> Answer {
+    shared.act(|s| s.review_click(target));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_history(shared: State<'_, Arc<Shared>>, checkout: u64) -> Answer {
+    shared.act(|s| s.open_history(CheckoutId(checkout)));
+    Ok(())
+}
+
+/// A key of the history dialog, or with `row` a click on a row.
+#[tauri::command]
+pub async fn history_action(shared: State<'_, Arc<Shared>>, action: Action, row: Option<usize>) -> Answer {
+    shared.act(|s| s.history_action(action, row));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn review_refresh(shared: State<'_, Arc<Shared>>) -> Answer {
+    shared.act(|s| s.review_refresh());
+    Ok(())
+}
+
+/// Sends the comment, or with no `body` puts the box away.
+#[tauri::command]
+pub async fn review_comment(shared: State<'_, Arc<Shared>>, body: Option<String>) -> Answer {
+    shared.act(|s| s.review_comment(body));
     Ok(())
 }
 

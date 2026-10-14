@@ -1863,7 +1863,6 @@ body.filled .head {
   container-type: inline-size;
 }
 @container (max-width: 980px) {
-  .ctable .soon,
   .ctable .col-last {
     display: none;
   }
@@ -1883,4 +1882,245 @@ body.filled .head {
 }
 .confirm-dialog {
   width: 560px;
+}
+
+/* ---- The review dialog ------------------------------------------------- */
+
+.review-layer .scrim {
+  z-index: 5;
+}
+.review-dialog {
+  width: min(1340px, 94vw);
+  height: min(820px, 92vh);
+  display: flex;
+  flex-direction: column;
+}
+.review-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-12);
+  flex-wrap: wrap;
+}
+.review-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.review-files {
+  width: 300px;
+  flex: none;
+  border-right: 1px solid var(--line);
+  padding: var(--sp-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+  overflow-y: auto;
+}
+.review-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.rfile {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  padding: var(--sp-4) var(--sp-8);
+  cursor: pointer;
+}
+.rfile.on {
+  background: var(--bg-selected);
+}
+.rfile .rname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.review-diff {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.fhdr {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-12);
+  padding: var(--sp-8) var(--sp-12);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-chrome);
+}
+.dbody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 20px;
+}
+.review-empty {
+  padding: var(--sp-24);
+}
+.drow {
+  display: flex;
+  cursor: text;
+}
+.drow.hunk,
+.drow.note {
+  color: var(--fg-faint);
+  background: var(--bg-chrome);
+  padding: 0 var(--sp-12);
+  cursor: default;
+}
+.dside {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 44px 44px 16px 1fr;
+}
+.dbody.split .dside {
+  grid-template-columns: 44px 16px 1fr;
+}
+.dbody.split .dside + .dside {
+  border-left: 1px solid var(--line);
+}
+.dno {
+  color: var(--fg-faint);
+  text-align: right;
+  padding-right: var(--sp-8);
+  user-select: none;
+}
+.dmark {
+  user-select: none;
+}
+.dcode {
+  white-space: pre;
+}
+.dside.added {
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+.dside.added .dmark {
+  color: var(--ok);
+}
+.dside.removed {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.dside.removed .dmark {
+  color: var(--danger);
+}
+.drow.picked .dside {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.drow.cursor,
+.drow.picked {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.drow.cursor:not(.picked) .dside {
+  background-image: linear-gradient(var(--fill), var(--fill));
+}
+.sx-k {
+  color: var(--mauve);
+}
+.sx-s {
+  color: var(--green);
+}
+.sx-c {
+  color: var(--fg-faint);
+  font-style: italic;
+}
+.sx-n {
+  color: var(--peach);
+}
+.sx-t {
+  color: var(--yellow);
+}
+.sx-f {
+  color: var(--blue);
+}
+.sx-p {
+  color: var(--teal);
+}
+.sx-o {
+  color: var(--fg-muted);
+}
+.comment-card {
+  margin: var(--sp-8) var(--sp-12) var(--sp-8) 104px;
+  padding: var(--sp-12);
+  background: var(--bg-surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+  font-family: var(--font-ui);
+}
+.comment-body {
+  height: 64px;
+  resize: none;
+  padding: var(--sp-8);
+}
+@container (max-width: 900px) {
+  .review-files {
+    width: 220px;
+  }
+}
+
+/* ---- The history dialog ------------------------------------------------ */
+
+.history-list {
+  width: 520px;
+  flex: none;
+  border-right: 1px solid var(--line);
+  padding: var(--sp-8);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.hrow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  padding: var(--sp-6) var(--sp-8);
+  cursor: pointer;
+  min-width: 0;
+}
+.hrow.on {
+  background: var(--bg-selected);
+}
+.hrow.open .ellipsis {
+  font-weight: 600;
+}
+.hrow.file {
+  padding-left: var(--sp-24);
+  min-height: 28px;
+}
+.ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 1100px) {
+  .history-list {
+    width: 360px;
+  }
 }
