@@ -122,12 +122,15 @@ fn each_command_center_view_lists_its_own_keys() {
     let rail = lines(&draw_at(&mut app, 200, 60)).join("\n");
     assert!(rail.contains("x closes it"), "{rail}");
     assert!(
+        rail.contains("take back the newest message queued from a phone"),
+        "{rail}"
+    );
+    assert!(
         rail.contains("checkouts — branches and worktrees"),
         "{rail}"
     );
 
     for (view, says) in [
-        (View::Panes, "this repository, or the whole workspace"),
         (View::Checkouts, "open this checkout, or switch to this branch"),
         (View::Feature, "scroll the list under the pointer"),
     ] {

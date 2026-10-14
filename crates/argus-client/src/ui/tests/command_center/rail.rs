@@ -426,3 +426,37 @@ fn an_agent_idle_while_its_child_works_reads_as_working() {
     let header = text.iter().find(|line| line.contains("claude #100")).unwrap();
     assert!(header.contains("RUNNING") && !header.contains("IDLE"), "{header}");
 }
+
+#[test]
+fn a_pane_row_counts_the_messages_queued_for_it_before_its_status() {
+    let mut app = command_center();
+    app.tree[0].repositories[0].checkouts[0].panes[0].queued = vec![
+        argus_protocol::QueuedMessage { id: 1, text: "first".into() },
+        argus_protocol::QueuedMessage { id: 2, text: "second".into() },
+    ];
+    app.focus = Focus::Panes;
+    let text = lines(&draw_at(&mut app, 120, 30));
+
+    let agent = text.iter().find(|line| line.contains("└ ") && line.contains("claude")).unwrap();
+    assert!(agent.contains(" ✉2 RUNNING"), "{agent}");
+    let shell = text.iter().find(|line| line.contains("└ ") && line.contains("shell")).unwrap();
+    assert!(!shell.contains('✉'), "nothing queued, nothing said: {shell}");
+}
+
+#[test]
+fn the_queued_badge_takes_its_width_from_the_title_and_leaves_the_status_in_place() {
+    let mut app = command_center();
+    app.focus = Focus::Panes;
+    let status_column = |app: &mut App| {
+        let text = lines(&draw_at(app, 120, 30));
+        let row = text.iter().find(|line| line.contains("└ ") && line.contains("claude")).unwrap().clone();
+        let rail: String = row.chars().take(usize::from(app.layout.rail.outer.width)).collect();
+        rail.trim_end().chars().count()
+    };
+
+    let bare = status_column(&mut app);
+    app.tree[0].repositories[0].checkouts[0].panes[0].queued =
+        vec![argus_protocol::QueuedMessage { id: 1, text: "first".into() }];
+
+    assert_eq!(status_column(&mut app), bare);
+}

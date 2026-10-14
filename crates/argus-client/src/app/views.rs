@@ -23,9 +23,6 @@ pub enum View {
     /// its brief, what is left to do under it, and why it has the shape it
     /// does.
     Feature,
-    /// Every live pane in the workspace, arranged for scanning rather than
-    /// terminal input.
-    Panes,
     /// The selected repository's checkouts and worktrees as an operational
     /// table.
     Checkouts,
@@ -33,20 +30,19 @@ pub enum View {
 
 impl View {
     /// Every top-level surface, in the order shown by the design document.
-    pub const ALL: [View; 4] = [View::Workspace, View::Feature, View::Panes, View::Checkouts];
+    pub const ALL: [View; 3] = [View::Workspace, View::Feature, View::Checkouts];
 
     pub fn label(self) -> &'static str {
         match self {
             View::Workspace => "workspace",
             View::Feature => "feature",
-            View::Panes => "panes",
             View::Checkouts => "checkouts",
         }
     }
 
     /// The digit that opens this view, which is also its place in the
     /// strip. Numbered rather than cycled because a cycle key makes the
-    /// second view cheap to reach and the fourth expensive, and because a
+    /// second view cheap to reach and the last expensive, and because a
     /// tab strip that shows numbers teaches its own bindings.
     pub fn digit(self) -> char {
         let index = View::ALL.iter().position(|v| *v == self).unwrap_or(0);
@@ -206,12 +202,13 @@ mod tests {
             assert_eq!(View::from_digit(view.digit()), Some(view));
         }
         assert_eq!(View::from_digit('1'), Some(View::Workspace));
+        assert_eq!(View::from_digit('3'), Some(View::Checkouts));
     }
 
     #[test]
     fn a_digit_no_view_sits_on_opens_nothing() {
         assert_eq!(View::from_digit('0'), None);
-        assert_eq!(View::from_digit('5'), None);
+        assert_eq!(View::from_digit('4'), None);
         assert_eq!(View::from_digit('x'), None);
     }
 }

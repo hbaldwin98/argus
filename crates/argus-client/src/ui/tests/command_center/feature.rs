@@ -257,7 +257,7 @@ fn digits_switch_lenses_inside_a_feature_and_views_outside_one() {
 
     key(&mut app, KeyCode::Esc);
     press(&mut app, '3');
-    assert_eq!(app.view, View::Panes);
+    assert_eq!(app.view, View::Checkouts);
 }
 
 #[test]

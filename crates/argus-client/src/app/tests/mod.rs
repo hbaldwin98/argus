@@ -117,7 +117,7 @@ impl Harness {
     /// Opens the Checkouts stage, whose table draws every checkout and
     /// branch row and whose `j`/`k` walk them.
     pub(super) fn checkouts_stage(&mut self) {
-        self.key(KeyCode::Char('4'));
+        self.key(KeyCode::Char('3'));
     }
 
     pub(super) fn key(&mut self, code: KeyCode) {
@@ -322,7 +322,6 @@ pub(super) fn laid_out(h: &mut Harness) {
             first: 0,
         },
         checkouts: Panel::default(),
-        panes: Panel::default(),
         terminal: panel(48, 20),
         features: Panel::default(),
         feature_lenses: Default::default(),

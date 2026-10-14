@@ -11,7 +11,6 @@ use argus_protocol::{GitStatus, PaneKind, PaneStatus, TaskState};
 
 mod checkouts;
 mod feature;
-mod panes;
 mod rail;
 mod workspace;
 
@@ -19,8 +18,6 @@ pub(crate) use checkouts::checkout_at;
 use checkouts::render_checkouts;
 pub(crate) use feature::feature_hit_at;
 use feature::render_feature_stage;
-pub(crate) use panes::pane_at;
-use panes::render_panes;
 pub(crate) use rail::{agent_at, project_header_at, rail_target_at, sidebar_contains};
 use rail::render_sidebar;
 use workspace::render_workspace;
@@ -99,18 +96,12 @@ pub(super) fn render_command_center(
     }
 
     app.layout.checkouts = Panel::default();
-    app.layout.panes = Panel::default();
     app.layout.terminal = Panel::default();
 
     match app.view {
         View::Workspace => render_workspace(f, app, stage, th),
         View::Feature => {
             render_feature_stage(f, app, stage, th);
-            None
-        }
-        View::Panes => {
-            forget_feature_view(app);
-            render_panes(f, app, stage, th);
             None
         }
         View::Checkouts => {

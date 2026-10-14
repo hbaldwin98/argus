@@ -257,11 +257,11 @@ result of a request; `ui` is a pure function of it.
 | `ui/card` | a card and the rows in it: its frame, one row, and how a list longer than the card scrolls |
 | `ui/command_center` | the HTML-specified shell: where the rail and stage go, the stage heading, the first-run state, and the status vocabulary they share |
 | `ui/command_center/rail` | drawing the rail — its summary, the rows `app/rail` lists, and the live agents — and which row a click lands on |
-| `ui/command_center/workspace`, `ui/command_center/feature`, `ui/command_center/panes`, `ui/command_center/checkouts` | one stage each, with the hit-test that shares its layout |
+| `ui/command_center/workspace`, `ui/command_center/feature`, `ui/command_center/checkouts` | one stage each, with the hit-test that shares its layout |
 | `ui/command_center/feature/index`, `ui/command_center/feature/work`, `ui/command_center/feature/record`, `ui/command_center/feature/flows`, `ui/command_center/feature/capture` | what fills the Feature stage's frame: the index of features, each of the three lenses, and the note a feature is written as |
 | `ui/text` | fitting text to a width |
 | `ui/help`, `ui/prose` | the keymap window, and markdown styled where it stands |
-| `ui/views` | the tab strip naming the four stages, and which tab a click lands on |
+| `ui/views` | the tab strip naming the three stages, and which tab a click lands on |
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
 | `review`, `history`, `brief`, `dirpicker` | the view state behind each overlay |
 | `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
@@ -292,19 +292,18 @@ stream.
 ## Views
 
 The production client follows `Argus Command Center.dc.html`: a two-row product-and-navigation
-band, a stable 32-cell contextual rail, one dominant stage, and a one-row command band. Four tabs
-name the stage surfaces: Workspace, Feature, Panes, and Checkouts. Their digits still open them;
+band, a stable 32-cell contextual rail, one dominant stage, and a one-row command band. Three tabs
+name the stage surfaces: Workspace, Feature, and Checkouts. Their digits still open them;
 from inside a pane the digits belong to the child, so a view is reached through the leader
 (`Ctrl-Space`, then the digit). The empty tree replaces the shell with the first-run surface rather
 than pretending first-run is a permanent view.
 
-The rail is stable across all four surfaces. It summarizes the open workspace and selected project,
+The rail is stable across all three surfaces. It summarizes the open workspace and selected project,
 lists that project's repositories, and rolls live agents up at the bottom. `o` or a click on the
 project name switches projects through a picker. Selecting a repository
 changes the existing daemon-tree selection; the rail owns no parallel workspace model. Workspace
-holds the selected pane's real terminal beneath a flat breadcrumb header. Panes is a responsive
-card overview derived from the same pane locations, Checkouts is an operational table for the
-selected repository, and Feature lists the repository's features and reads the selected one as work, as a record
+holds the selected pane's real terminal beneath a flat breadcrumb header. Checkouts is an
+operational table for the selected repository, and Feature lists the repository's features and reads the selected one as work, as a record
 of its decisions, and as flows. The command band follows the active surface.
 
 Switching views changes the stage and nothing else. Every pane keeps running, its subscription
@@ -314,7 +313,8 @@ and returns to where it was when Workspace comes back. Which view is open is thi
 state and is never sent to the daemon: two people attached to one daemon are not necessarily
 reading the same thing.
 
-There are four views: Workspace, Feature, Panes, and Checkouts. Review, history, settings, briefs,
+There are three views: Workspace, Feature, and Checkouts. The panes have no view of their own:
+the rail lists them, each with its status and its queued count on its row. Review, history, settings, briefs,
 and editors remain overlays because they are temporary work over the current surface. The command
 center is the only presentation, and the one the client's tests draw: the five-column spine it
 replaced, with its folding columns and draggable gutters, is gone rather than kept compiled beside
@@ -752,8 +752,7 @@ Cursor), and the tail of `transcript_path` — Claude Code's assistant `usage` f
 holds neither the window nor the cost, so its mod reports both, with the context in use, from
 `$.session.usage()` as each step and turn ends. The OpenCode plugin and pi
 extension report from their message and tool events. Claude Code tool hooks are answered with `{}`
-so the user's permission rules still apply. Clients show the report on the workspace breadcrumb and
-the pane cards.
+so the user's permission rules still apply. Clients show the report on the workspace breadcrumb.
 
 A report arrives with every tool call, so it does not travel in a tree. The daemon publishes the
 pane's merged record on a channel of its own, and each connection sends it as its client can take
@@ -807,7 +806,7 @@ time, and across into the file before, until the start. The terminal client neve
 A client that greeted with `outbox` can say something to an agent with `SendToAgent`, answered with
 `Sent` to that client alone. Typing into a pane is typing into whatever has the agent's keyboard,
 and a dialog that has it takes the text as its answer, so a message waits in the pane's queue —
-`PaneInfo::queued`, shown on the TUI's pane card — until the agent is at its prompt: idle, done,
+`PaneInfo::queued`, counted on the pane's rail row in the TUI (`✉2`) — until the agent is at its prompt: idle, done,
 failed or wanting a review, and so for 300 ms, since a turn's last hook can arrive just before its
 prompt is drawn. Codex's and Cursor's approval prompts report as working, so they hold a message
 too. One message goes out per turn: the next waits until the pane has been busy and come back, or
@@ -817,8 +816,8 @@ as one paste and Enter. `now`
 types it straight away, which is how a person steers an agent mid-turn. One task does the typing,
 started by the first message queued, and wakes whenever the tree changes and four times a second
 while anything waits. The queue is not persisted, and an exited agent's queue is dropped.
-`CancelQueued` takes a waiting message back, from the phone or with `u` on the TUI's Panes stage,
-and the card changes when the tree says so. `Interrupt` types the harness's interrupt key: Esc,
+`CancelQueued` takes a waiting message back, from the phone or with `u` on the pane's rail row in the TUI,
+and the row's count changes when the tree says so. `Interrupt` types the harness's interrupt key: Esc,
 unless a `[[harness]]` block sets `interrupt`, and never Ctrl-C, which pressed twice quits most of
 these CLIs.
 
@@ -948,8 +947,8 @@ Every report carries the session it came from, and the pane belongs to one of th
 claims a pane first owns it; a report from any other session — a CLI started from inside the pane,
 which inherits the same hook URL and token and cannot be stopped from calling home — is recorded as a
 child of that pane instead. Children are listed as indented rows beneath the parent's in the rail —
-under an open repository's pane and in the agents list — each with its own status, and named on the
-parent's pane card. The parent's row, card and header chip show the loudest of its own state and its
+under an open repository's pane and in the agents list — each with its own status. The
+parent's row and header chip show the loudest of its own state and its
 children's, so an agent idle at its prompt while a CLI it started works reads as working; the daemon's
 own status stays the agent's, since that is what decides when a message can be typed. Children are
 not separately selectable: the cursor steps over them, and clicking one selects the pane it runs in,
@@ -976,7 +975,7 @@ as running in `background_tasks`. The installed form says so on the report that 
 an `X-Argus-Background` header, and the daemon records it as the pane's `background` flag in the
 same edit as the status, so no client is shown the turn ending before it is shown what the turn
 left running. The pane's own status is idle, because an agent at its prompt can be typed to and the
-outbox holds a message for a working one; its row, card and header chip read as working, because
+outbox holds a message for a working one; its row and header chip read as working, because
 `background` is one of the states they take the loudest of. Every later report from the pane's own
 agent restates the flag, so the turn Claude wakes the session for with a `<task-notification>`
 prompt — never taken as a title — ends it when its own `Stop` lists nothing. A child cannot set the

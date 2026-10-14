@@ -402,7 +402,7 @@ fn a_childs_copy_reaches_the_clipboard() {
 // --- messages queued from a phone -----------------------------------------
 
 #[test]
-fn u_on_the_panes_stage_takes_back_the_newest_message_queued_for_that_agent() {
+fn u_on_a_rail_pane_row_takes_back_the_newest_message_queued_for_that_agent() {
     let mut h = Harness::new();
     let mut t = tree();
     for (pane, base) in t[0].repositories[0].checkouts[0].panes.iter_mut().zip([10, 20]) {
@@ -412,7 +412,7 @@ fn u_on_the_panes_stage_takes_back_the_newest_message_queued_for_that_agent() {
         ];
     }
     h.app.on_server_msg(ServerMsg::Tree(t));
-    h.keys("3");
+    h.app.focus = Focus::Panes;
     h.sent();
     let selected = h.app.current_pane().unwrap();
     let (pane, newest) = (selected.id, selected.queued[1].id);
@@ -424,7 +424,27 @@ fn u_on_the_panes_stage_takes_back_the_newest_message_queued_for_that_agent() {
         sent.iter().any(|m| matches!(m, ClientMsg::CancelQueued { pane: p, id } if *p == pane && *id == newest)),
         "{sent:?}"
     );
-    // Nothing is taken off the card until the daemon says it is gone: it
+    // Nothing is taken off the row until the daemon says it is gone: it
     // may have been typed already.
     assert_eq!(h.app.current_pane().unwrap().queued.len(), 2);
+}
+
+#[test]
+fn u_takes_nothing_back_while_the_rail_cursor_is_above_the_pane_rows() {
+    let mut h = Harness::new();
+    let mut t = tree();
+    t[0].repositories[0].checkouts[0].panes[0].queued =
+        vec![argus_protocol::QueuedMessage { id: 10, text: "first".into() }];
+    h.app.on_server_msg(ServerMsg::Tree(t));
+    h.sent();
+
+    for focus in [Focus::Projects, Focus::Repositories, Focus::Checkouts] {
+        h.app.focus = focus;
+        h.key(KeyCode::Char('u'));
+        let sent = h.sent();
+        assert!(
+            !sent.iter().any(|m| matches!(m, ClientMsg::CancelQueued { .. })),
+            "{focus:?}: {sent:?}"
+        );
+    }
 }

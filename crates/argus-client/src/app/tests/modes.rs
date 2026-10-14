@@ -65,7 +65,6 @@ fn a_key_runs_one_thing_in_each_mode_that_declares_it() {
     // Only bindings that apply in different states may share one.
     let modes = [
         Mode::Rail,
-        Mode::Stage(View::Panes),
         Mode::Stage(View::Checkouts),
         Mode::Stage(View::Feature),
         Mode::Overlay(OverlayMode::Review),

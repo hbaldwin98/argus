@@ -1,4 +1,4 @@
-//! The tab strip naming the four stages, and which tab a click lands on.
+//! The tab strip naming the three stages, and which tab a click lands on.
 //!
 //! The strip is the top of the command center, above the rail and every
 //! stage. It costs its rows on purpose: a view you cannot see the existence

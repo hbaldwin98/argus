@@ -2,7 +2,7 @@
 //! bar call them, and what they run.
 //!
 //! Dispatch, the bar and `?` used to carry a copy each, and the copies
-//! drifted — `u` reached dispatch and `?` and never the Panes bar. Now a
+//! drifted — a key could reach dispatch and `?` and never the bar. Now a
 //! mode's keys are one table: dispatch looks a key up in it, `?` lists it,
 //! and the bar is read off the hints it carries. Where the keys are typed
 //! text or a leader chord, dispatch stays written out in `app/input` and the
@@ -257,7 +257,6 @@ impl Mode {
             Mode::Overlay(OverlayMode::Settings) => &SETTINGS,
             Mode::Overlay(OverlayMode::SequenceDiagram) => &DIAGRAM,
             Mode::Overlay(OverlayMode::Pane) | Mode::Pane => &PANE,
-            Mode::Stage(View::Panes) => &PANES,
             Mode::Stage(View::Checkouts) => &CHECKOUTS,
             Mode::Stage(View::Feature) => &FEATURE,
             // The workspace stage is the rail and the live pane; with the
@@ -293,16 +292,10 @@ const TO_FEATURE: Binding = Binding::new(
     &[(&[Char('2')], |app| app.open_view(View::Feature))],
 )
 .help_only();
-const TO_PANES: Binding = Binding::new(
-    "3",
-    "panes — every pane as a card",
-    &[(&[Char('3')], |app| app.open_view(View::Panes))],
-)
-.help_only();
 const TO_CHECKOUTS: Binding = Binding::new(
-    "4",
+    "3",
     "checkouts — branches and worktrees",
-    &[(&[Char('4')], |app| app.open_view(View::Checkouts))],
+    &[(&[Char('3')], |app| app.open_view(View::Checkouts))],
 )
 .help_only();
 
@@ -310,7 +303,7 @@ const TO_CHECKOUTS: Binding = Binding::new(
 /// the rail's, where the keys go back to whenever the workspace is shown.
 const VIEWS: Group = Group {
     title: "the view",
-    bindings: &[TO_WORKSPACE, TO_FEATURE, TO_PANES, TO_CHECKOUTS],
+    bindings: &[TO_WORKSPACE, TO_FEATURE, TO_CHECKOUTS],
 };
 
 // --- the rail -------------------------------------------------------------
@@ -325,6 +318,11 @@ fn on_repositories(app: &App) -> bool {
 
 fn on_checkouts(app: &App) -> bool {
     app.focus == Focus::Checkouts
+}
+
+/// A pane row and nothing looser: what the key acts on is that row's pane.
+fn on_pane_row(app: &App) -> bool {
+    app.focus == Focus::Panes
 }
 
 /// The pane rows, and anywhere else that leaves the keys with the rail.
@@ -437,6 +435,13 @@ const RAIL: Keymap = Keymap {
                     .hints(&[Hint::new("D rm", 0).when(on_projects)]),
                 Binding::new("x", "close the pane", &[(&[Char('x')], App::kill_selected)])
                     .hints(&[Hint::new("x close", 1).when(on_panes)]),
+                Binding::new(
+                    "u",
+                    "take back the newest message queued from a phone",
+                    &[(&[Char('u')], App::unqueue_selected)],
+                )
+                .when(on_pane_row)
+                .help_only(),
             ],
         },
         &Group {
@@ -460,7 +465,6 @@ const RAIL: Keymap = Keymap {
             bindings: &[
                 TO_WORKSPACE,
                 TO_FEATURE,
-                TO_PANES,
                 TO_CHECKOUTS,
                 Binding::new("t", "theme", &[(&[Char('t')], App::open_theme_picker)]).help_only(),
                 Binding::new(
@@ -489,58 +493,6 @@ const RAIL: Keymap = Keymap {
 };
 
 // --- the stages -------------------------------------------------------------
-
-const PANES: Keymap = Keymap {
-    groups: &[
-        &Group {
-            title: "panes",
-            bindings: &[
-                Binding::new(
-                    "j / k",
-                    "card by card",
-                    &[
-                        (&[Char('j'), Down], |app| app.move_overview_pane(1)),
-                        (&[Char('k'), Up], |app| app.move_overview_pane(-1)),
-                    ],
-                )
-                .hints(&[Hint::new("j/k move", 1).narrow("j/k")]),
-                Binding::new(
-                    "enter  l  click",
-                    "open it and type into it",
-                    &[(&[Enter, Char('l'), Right], |app| {
-                        app.open_view(View::Workspace);
-                        app.focus = Focus::PaneContent;
-                    })],
-                )
-                .hints(&[Hint::new("enter open", 1)]),
-                Binding::new(
-                    "A",
-                    "this repository, or the whole workspace",
-                    &[(&[Char('A')], |app| app.show_all_panes = !app.show_all_panes)],
-                )
-                .hints(&[Hint::new("A all", 1)]),
-                Binding::new("a", "an agent here", &[(&[Char('a')], App::open_picker)])
-                    .hints(&[Hint::new("a agent", 0)]),
-                Binding::new("s", "a shell here", &[(&[Char('s')], App::spawn_shell)])
-                    .hints(&[Hint::new("s shell", 0)]),
-                Binding::new(
-                    "u",
-                    "take back the newest message queued from a phone",
-                    &[(&[Char('u')], App::unqueue_selected)],
-                )
-                .hints(&[Hint::new("u take back", 0)]),
-                Binding::new(
-                    "esc  q",
-                    "back to the workspace",
-                    &[(&[Esc, Char('q')], |app| app.open_view(View::Workspace))],
-                )
-                .hints(&[Hint::new("q workspace", 1).narrow("q")]),
-            ],
-        },
-        &VIEWS,
-    ],
-    gap: ROOMY,
-};
 
 const CHECKOUTS: Keymap = Keymap {
     groups: &[
@@ -1282,7 +1234,7 @@ const PANE: Keymap = Keymap {
             Binding::note("ctrl-space tab", "review"),
             Binding::note("ctrl-space H", "history"),
             Binding::note("ctrl-space N", "next needing attention"),
-            Binding::note("ctrl-space 1-4", "another view"),
+            Binding::note("ctrl-space 1-3", "another view"),
             Binding::note("shift-pgup", "back through the scrollback"),
         ],
     }],

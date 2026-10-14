@@ -167,8 +167,8 @@ argus web revoke "Pixel"           # unpair one
 ```
 
 A message typed on the phone waits until the agent is back at its prompt, so it can never answer a
-permission dialog by accident; it is shown on the phone and on the agent's card in the TUI until it
-is typed, and either can take it back (`u` on the Panes stage). Send now types it straight away,
+permission dialog by accident; it is shown on the phone and counted on the agent's rail row in the TUI
+(`✉2`) until it is typed, and either can take it back (`u` on that row). Send now types it straight away,
 for steering an agent mid-turn. Stop interrupts the agent with Esc.
 
 `+` starts an agent from one of your templates in any checkout, and Close ends one, after asking.
@@ -518,12 +518,13 @@ location. Typing filters the folders in the current directory.
 | `S` | Open settings |
 | `t` | Choose a theme for this client process |
 | `x` | Kill the selected pane |
+| `u` | On a pane row, take back the newest message queued for it from a phone |
 | `q` | Detach the client |
 
 ### Views
 
 The stage beside the rail holds one view at a time: `1` Workspace (the selected pane's terminal),
-`2` Feature, `3` Panes, and `4` Checkouts. The tab strip along the top names them and carries the
+`2` Feature, and `3` Checkouts. The tab strip along the top names them and carries the
 digit that opens each; clicking a tab does the same. Switching views never stops a pane.
 Drag the rail's right border to widen or narrow it; the width is saved to `client.toml` as
 `rail_width`.
@@ -586,7 +587,7 @@ overlay; `q` or Escape closes it.
 | `Ctrl-Space`, `x` | Kill the pane |
 | `Ctrl-Space`, Tab | Open review |
 | `Ctrl-Space`, `N` | Jump to the next pane waiting, failed, or ready for review |
-| `Ctrl-Space`, `1` / `2` | Open a view — the digits belong to the child while you are typing in a pane |
+| `Ctrl-Space`, `1` / `2` / `3` | Open a view — the digits belong to the child while you are typing in a pane |
 | F12 | Emergency close for a floating window |
 | `Ctrl-V` or `Alt-V` | Paste the clipboard; an image on it, or an image file dropped on the terminal, reaches the pane as a file even when the daemon is on another machine |
 

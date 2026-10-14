@@ -84,7 +84,6 @@ fn fullscreen_gives_the_main_area_to_the_selected_pane() {
         app.layout.rail,
         app.layout.agents,
         app.layout.checkouts,
-        app.layout.panes,
     ] {
         assert_eq!(
             panel.outer,

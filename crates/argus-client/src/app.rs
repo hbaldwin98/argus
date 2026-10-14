@@ -271,9 +271,6 @@ pub struct App {
     /// repository: the rail stays useful as an index until asked for more.
     /// Read through [`App::open_repository`].
     opened_repository: Option<RepositoryId>,
-    /// Pane overview scope. It starts on the selected repository; `A`
-    /// temporarily broadens it to every repository in the workspace.
-    pub show_all_panes: bool,
     pub picker: Option<Picker>,
     /// The directory browser, up in place of a prompt when a project or a
     /// repository is being added.
@@ -468,7 +465,6 @@ impl App {
             checkout_filter: String::new(),
             checkout_filtering: false,
             opened_repository: None,
-            show_all_panes: false,
             picker: None,
             dir_picker: None,
             overlay: None,

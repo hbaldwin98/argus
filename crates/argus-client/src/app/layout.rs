@@ -47,8 +47,6 @@ pub struct Layout {
     pub rail: Panel,
     /// The Checkouts stage's table.
     pub checkouts: Panel,
-    /// The Panes stage's cards.
-    pub panes: Panel,
     /// The selected pane's terminal: the Workspace stage, or the whole
     /// content area while the pane is fullscreen.
     pub terminal: Panel,

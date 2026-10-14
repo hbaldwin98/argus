@@ -45,6 +45,18 @@ fn a_digit_opens_its_view_over_the_whole_content_area() {
 }
 
 #[test]
+fn the_digit_three_opens_checkouts() {
+    let mut app = app_with_tree();
+
+    press(&mut app, '3');
+    assert_eq!(app.view, View::Checkouts);
+
+    // The strip ends at three: a fourth digit is not a view.
+    press(&mut app, '4');
+    assert_eq!(app.view, View::Checkouts);
+}
+
+#[test]
 fn coming_back_lands_on_the_column_you_left() {
     let mut app = app_with_tree();
     app.focus = Focus::Checkouts;

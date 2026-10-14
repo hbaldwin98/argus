@@ -493,7 +493,14 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                 let shown = pane.loudest_state().status;
                 let color = status_color(shown, th);
                 let status = short_status(shown);
-                let title_width = width.saturating_sub(13 + status.len());
+                // Messages a phone left for the agent's prompt. This row is
+                // the only place the count shows, and `u` takes one back.
+                let queued = match pane.queued.len() {
+                    0 => String::new(),
+                    n => format!(" ✉{n}"),
+                };
+                let title_width =
+                    width.saturating_sub(13 + status.len() + queued.chars().count());
                 Line::from(vec![
                     Span::styled(
                         if selected { "▌      " } else { "       " },
@@ -526,6 +533,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                                 Modifier::empty()
                             }),
                     ),
+                    Span::styled(queued, Style::default().fg(th.warn).bg(bg)),
                     Span::styled(format!(" {status}  "), Style::default().fg(color).bg(bg)),
                 ])
             }

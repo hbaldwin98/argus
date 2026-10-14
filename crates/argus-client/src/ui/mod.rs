@@ -67,7 +67,7 @@ use views::*;
 pub(crate) use command_center::{
     agent_at as command_center_agent_at, checkout_at as command_center_checkout_at,
     feature_hit_at as command_center_feature_hit_at,
-    pane_at as command_center_pane_at, project_header_at as command_center_project_header_at,
+    project_header_at as command_center_project_header_at,
     rail_target_at as command_center_rail_target_at,
     sidebar_contains as command_center_sidebar_contains,
     SIDEBAR_MIN_WIDTH as RAIL_MIN_WIDTH,
@@ -226,7 +226,6 @@ fn forget_rail_and_stages(app: &mut App) {
     app.layout.rail = Panel::default();
     app.layout.agents = Panel::default();
     app.layout.checkouts = Panel::default();
-    app.layout.panes = Panel::default();
 }
 
 /// The selected pane's terminal given the whole content area, while it is

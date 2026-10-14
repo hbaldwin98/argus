@@ -633,21 +633,6 @@ impl App {
         }
     }
 
-    /// The Panes stage's cursor, stepped through the cards in the order
-    /// they are drawn.
-    pub(super) fn move_overview_pane(&mut self, delta: i32) {
-        let locations = self.overview_pane_locations();
-        if locations.is_empty() {
-            return;
-        }
-        let current = self
-            .pane_location()
-            .and_then(|selected| locations.iter().position(|location| *location == selected))
-            .unwrap_or(0) as i32;
-        let next = (current + delta).clamp(0, locations.len() as i32 - 1) as usize;
-        self.select_pane_location(locations[next]);
-    }
-
     /// A note being written down as a feature. Every key is text except
     /// the few that shape the note, send it, or throw it away.
     fn on_key_capture(&mut self, key: KeyEvent) {

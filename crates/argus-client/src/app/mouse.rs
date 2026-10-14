@@ -115,18 +115,6 @@ impl App {
         // lands in it and every later keypress goes to a child nobody can
         // see.
         if self.view != View::Workspace {
-            if self.view == View::Panes {
-                if matches!(ev.kind, MouseEventKind::Down(MouseButton::Left)) {
-                    if let Some(location) =
-                        crate::ui::command_center_pane_at(self, ev.column, ev.row)
-                    {
-                        self.select_pane_location(location);
-                        self.open_view(View::Workspace);
-                        self.focus = Focus::PaneContent;
-                    }
-                }
-                return;
-            }
             if self.view == View::Checkouts {
                 match ev.kind {
                     MouseEventKind::Down(MouseButton::Left) => {

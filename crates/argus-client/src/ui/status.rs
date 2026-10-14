@@ -128,7 +128,7 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             // dispatch looks the key up in, so a key cannot reach one and
             // miss the other.
             Mode::Rail
-            | Mode::Stage(View::Workspace | View::Panes | View::Checkouts)
+            | Mode::Stage(View::Workspace | View::Checkouts)
             | Mode::Overlay(
                 OverlayMode::Review
                 | OverlayMode::History

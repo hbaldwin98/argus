@@ -2,7 +2,6 @@
 
 mod checkouts;
 mod feature;
-mod panes;
 mod rail;
 
 use super::*;
@@ -93,7 +92,7 @@ fn the_shell_leaves_a_row_above_the_tabs_and_below_the_status_band() {
 }
 
 #[test]
-fn the_workspace_header_and_pane_cards_show_agent_telemetry() {
+fn the_workspace_header_shows_agent_telemetry() {
     let mut app = command_center();
     {
         let pane = &mut app.tree[0].repositories[0].checkouts[0].panes[0];
@@ -113,10 +112,6 @@ fn the_workspace_header_and_pane_cards_show_agent_telemetry() {
         text.contains("▸ Bash · ctx 41k/272k 15% · $0.50 · gpt-5-codex"),
         "{text}"
     );
-
-    app.open_view(View::Panes);
-    let text = lines(&draw_at(&mut app, 160, 30)).join("\n");
-    assert!(text.contains("▸ Bash · ctx 41k/272k"), "{text}");
 }
 
 #[test]
