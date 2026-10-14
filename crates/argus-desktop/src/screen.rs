@@ -198,6 +198,7 @@ impl Screen {
                 full: true,
                 cursor: FrameCursor { row: 0, col: 0, visible: false, shape: "block" },
                 alternate_screen: self.alternate_screen,
+                mouse: self.mouse.enabled(),
                 lines: (0..self.rows).map(|row| (row, segments(&view.grid[row as usize]))).collect(),
                 parked: Some(Parked { offset: view.offset, depth: view.depth.max(view.offset) }),
             });
@@ -226,6 +227,7 @@ impl Screen {
                 shape: shape(self.cursor.shape),
             },
             alternate_screen: self.alternate_screen,
+            mouse: self.mouse.enabled(),
             lines,
             parked: None,
         })
@@ -273,7 +275,7 @@ impl Screen {
     }
 
     fn moved(&mut self, cursor: Cursor, mouse: MouseTracking, alternate_screen: bool) {
-        if cursor != self.cursor || alternate_screen != self.alternate_screen {
+        if cursor != self.cursor || alternate_screen != self.alternate_screen || mouse != self.mouse {
             self.cursor_moved = true;
         }
         self.cursor = cursor;

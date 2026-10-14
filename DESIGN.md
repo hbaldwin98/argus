@@ -45,7 +45,9 @@ terminal client does (`argus_protocol::paste`).
 The wheel and Shift-PageUp/PageDown act as the terminal client's do: a child that asked for the
 mouse gets its wheel reports (`argus_protocol::mouse`), the normal screen parks the view in the
 pane's history (the parked rows held in `screen`, asked further by line, typing back to live), and a
-full-screen child that asked for nothing gets a cursor key a notch. The stage header leads its size
+full-screen child that asked for nothing gets a cursor key a notch. A press, release, drag or move over a child that
+asked for the mouse goes to it in the mode it asked for, and only Shift-drag selects there; the frame
+says whether it asked, so the page can tell a press for the child from the start of a selection. The stage header leads its size
 with how far back a parked view is. It
 reports its view only while it has focus, so a window in the background never takes the focus from
 a terminal client being typed in. Its keys are one table, `keymap`, of bindings each with its keys,

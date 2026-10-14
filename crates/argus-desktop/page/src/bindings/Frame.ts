@@ -12,6 +12,11 @@ export type Frame = { pane: number, rows: number, cols: number,
  */
 full: boolean, cursor: FrameCursor, alternateScreen: boolean, 
 /**
+ * The child asked for mouse reports, so a press goes to it and only
+ * Shift-drag selects here.
+ */
+mouse: boolean, 
+/**
  * `[row, segments]`, each row cleared before its segments are drawn.
  */
 lines: Array<[number, Array<Segment>]>, 

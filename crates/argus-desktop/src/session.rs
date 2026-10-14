@@ -15,7 +15,7 @@
 use std::collections::HashSet;
 
 use argus_protocol::keys::{Key, KeyCode, Mods};
-use argus_protocol::mouse::{self, MouseEvent, MouseKind};
+use argus_protocol::mouse::{self, MouseButton, MouseEvent, MouseKind};
 use argus_protocol::paste;
 use argus_protocol::{
     Cell, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
@@ -26,7 +26,7 @@ use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
 use crate::keymap::{self, Action};
 use crate::keys::{self, PageKey};
-use crate::page::{Connection, Event, Status};
+use crate::page::{Connection, Event, PageMouse, Status};
 use crate::settings::Settings;
 use crate::rail::{self, Choices};
 use crate::screen::Screen;
@@ -389,6 +389,29 @@ impl Session {
                 self.input(argus_protocol::keys::encode(&Key::new(code, Mods::NONE)).repeat(count));
             }
             _ => self.scroll_by(notches.saturating_mul(WHEEL_LINES)),
+        }
+        self.finish()
+    }
+
+    /// A press, release or motion over the pane, at `[row, col]`, with
+    /// `button` as `MouseEvent.button` counts (0 left, 1 middle, 2 right).
+    /// The child gets it only as its mode reports it; a press, like typing,
+    /// returns a parked view to live.
+    pub fn mouse(&mut self, gesture: PageMouse, button: u8, at: (u16, u16)) -> Vec<ClientMsg> {
+        let button = match button {
+            1 => MouseButton::Middle,
+            2 => MouseButton::Right,
+            _ => MouseButton::Left,
+        };
+        let kind = match gesture {
+            PageMouse::Down => MouseKind::Down(button),
+            PageMouse::Up => MouseKind::Up(button),
+            PageMouse::Drag => MouseKind::Drag(button),
+            PageMouse::Move => MouseKind::Moved,
+        };
+        let tracking = self.screen.as_ref().map(|screen| screen.mouse()).unwrap_or_default();
+        if let Some(bytes) = mouse::encode(&MouseEvent { kind, row: at.0, col: at.1 }, tracking) {
+            self.input(bytes);
         }
         self.finish()
     }
@@ -1277,5 +1300,26 @@ mod tests {
         let mut s = session(without_focus());
         s.select(PaneId(2));
         assert_eq!(names(&s.paste("one\r\ntwo".into())), ["paste 2 one\ntwo"]);
+    }
+
+    #[test]
+    fn a_press_reaches_a_child_only_in_the_mode_it_asked_for() {
+        let mut s = showing(5, false);
+        assert!(s.mouse(PageMouse::Down, 0, (1, 3)).is_empty(), "it asked for nothing");
+
+        s.receive(ServerMsg::RowDamage {
+            pane: PaneId(2),
+            scroll: None,
+            runs: Vec::new(),
+            cursor: argus_protocol::Cursor::default(),
+            mouse: argus_protocol::MouseTracking {
+                mode: argus_protocol::MouseMode::PressRelease,
+                encoding: argus_protocol::MouseEncoding::Sgr,
+            },
+            alternate_screen: false,
+        });
+        let down = b"\x1b[<2;4;2M".to_vec();
+        assert_eq!(names(&s.mouse(PageMouse::Down, 2, (1, 3))), [format!("input 2 {down:?}")]);
+        assert!(s.mouse(PageMouse::Drag, 0, (1, 4)).is_empty(), "no motion asked for");
     }
 }

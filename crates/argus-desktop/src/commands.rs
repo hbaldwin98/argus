@@ -13,7 +13,7 @@ use tauri::State;
 use crate::clipboard;
 use crate::features::Layout;
 use crate::keys::PageKey;
-use crate::page::Event;
+use crate::page::{Event, PageMouse};
 use crate::shared::Shared;
 
 type Answer = Result<(), String>;
@@ -64,6 +64,14 @@ pub async fn paste(shared: State<'_, Arc<Shared>>, text: String) -> Answer {
 #[tauri::command]
 pub async fn wheel(shared: State<'_, Arc<Shared>>, notches: i32, at: (u16, u16)) -> Answer {
     shared.act(|s| s.wheel(notches, at));
+    Ok(())
+}
+
+/// A mouse gesture over the pane the page did not keep for a selection,
+/// at the `[row, col]` under the pointer.
+#[tauri::command]
+pub async fn mouse(shared: State<'_, Arc<Shared>>, gesture: PageMouse, button: u8, at: (u16, u16)) -> Answer {
+    shared.act(|s| s.mouse(gesture, button, at));
     Ok(())
 }
 

@@ -62,6 +62,7 @@ function makeScreen() {
   // text it covers is read from Rust's grid when the drag ends.
   let selection: { anchor: Cell; head: Cell } | null = null;
   let parked: Parked | null = null;
+  let mouse = false;
 
   function measure(): void {
     const css = getComputedStyle(document.documentElement);
@@ -216,6 +217,7 @@ function makeScreen() {
     rows = f.rows;
     cols = f.cols;
     parked = f.parked;
+    mouse = f.mouse;
     if (resized) {
       mirror.length = rows;
       for (let row = 0; row < rows; row++) mirror[row] ??= [];
@@ -319,7 +321,13 @@ function makeScreen() {
     repaint();
   });
 
-  return { frame, drawCursor, report, sizeLabel, cellAt, select };
+  // Whether the child asked for the mouse: a press is then its, and only
+  // Shift-drag selects here.
+  function takesMouse(): boolean {
+    return mouse && !parked;
+  }
+
+  return { frame, drawCursor, report, sizeLabel, cellAt, select, takesMouse };
 }
 
 export const screen = makeScreen();

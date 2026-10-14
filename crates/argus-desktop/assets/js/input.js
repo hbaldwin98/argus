@@ -56,19 +56,47 @@ export function listen() {
     input.addEventListener('focus', () => screen.drawCursor());
     input.addEventListener('blur', () => screen.drawCursor());
     // A drag selects, and letting go copies, as in the terminal client. A
-    // click without a drag only takes the keys.
+    // child that asked for the mouse gets its presses, drags and moves
+    // instead, as Rust encodes them for its mode; Shift-drag still selects.
     let anchor = null;
     let moved = false;
+    let held = null;
+    let last = null;
+    const report = (gesture, button, at) => {
+        last = at;
+        call('mouse', { gesture, button, at });
+    };
+    const moving = (at) => !last || last[0] !== at[0] || last[1] !== at[1];
     $('terminal').addEventListener('mousedown', (e) => {
         e.preventDefault();
         input.focus();
+        const at = screen.cellAt(e.clientX, e.clientY);
+        if (screen.takesMouse() && !e.shiftKey) {
+            held = e.button;
+            report('down', e.button, at);
+            return;
+        }
         if (e.button !== 0)
             return;
-        anchor = screen.cellAt(e.clientX, e.clientY);
+        anchor = at;
         moved = false;
         screen.select(null);
     });
+    $('terminal').addEventListener('contextmenu', (e) => e.preventDefault());
+    $('terminal').addEventListener('mousemove', (e) => {
+        if (anchor || held !== null || !screen.takesMouse())
+            return;
+        const at = screen.cellAt(e.clientX, e.clientY);
+        if (moving(at))
+            report('move', 0, at);
+    });
     window.addEventListener('mousemove', (e) => {
+        if (held !== null) {
+            const at = screen.cellAt(e.clientX, e.clientY);
+            if (moving(at))
+                report('drag', held, at);
+            return;
+        }
         if (!anchor)
             return;
         const head = screen.cellAt(e.clientX, e.clientY);
@@ -77,6 +105,13 @@ export function listen() {
             screen.select({ anchor, head });
     });
     window.addEventListener('mouseup', (e) => {
+        if (held !== null) {
+            if (e.button === held) {
+                report('up', held, screen.cellAt(e.clientX, e.clientY));
+                held = null;
+            }
+            return;
+        }
         if (!anchor)
             return;
         if (moved)

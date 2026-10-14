@@ -5,6 +5,7 @@
 import type { Channel as TauriChannel, invoke as tauriInvoke } from '@tauri-apps/api/core';
 import type { Event } from './bindings/Event';
 import type { PageKey } from './bindings/PageKey';
+import type { PageMouse } from './bindings/PageMouse';
 
 declare global {
   interface Window {
@@ -23,6 +24,7 @@ interface Commands {
   paste: { text: string };
   paste_clipboard: None;
   wheel: { notches: number; at: [number, number] };
+  mouse: { gesture: PageMouse; button: number; at: [number, number] };
   copy: { from: [number, number]; to: [number, number] };
   spawn_shell: { checkout: number };
   focus: { focused: boolean };
