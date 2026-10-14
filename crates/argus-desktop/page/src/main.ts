@@ -3,7 +3,15 @@
 // window's `session` — so each event replaces what the page held.
 
 import type { Event } from './bindings/Event';
-import { closeStart, drawChrome, drawHeading, notice, reconnect } from './chrome.js';
+import {
+  closeStart,
+  drawChrome,
+  drawHeading,
+  notice,
+  railPicked,
+  reconnect,
+  unpickRail,
+} from './chrome.js';
 import { drawCheckouts } from './checkouts.js';
 import { $ } from './dom.js';
 import { drawFeatures, listen as listenToFeatures } from './features.js';
@@ -28,9 +36,11 @@ function receive(event: Event): void {
       // A pane newly on screen takes the keys, however it got there: a
       // click on its row, or a shell started from a checkout's +. So does
       // the pane coming back with the Workspace, and leaving it for the
-      // Feature stage lets the keys go to the stage.
+      // Feature stage lets the keys go to the stage. A row picked in the
+      // rail keeps them, the pane it shows or the one after a close.
       const shown = event.shown && event.shown.pane !== before.shown?.pane;
       if (event.stage !== before.stage && event.stage === 'feature') $('input').blur();
+      else if (railPicked()) return;
       else if (shown || (event.shown && event.stage !== before.stage)) $('input').focus();
       break;
     }
@@ -68,6 +78,10 @@ document.addEventListener('click', (e) => {
     state.menuOpen = false;
     drawHeading();
   }
+});
+// A press anywhere but the rail lets go of its picked row.
+document.addEventListener('mousedown', (e) => {
+  if (e.target instanceof Node && !$('rail').contains(e.target)) unpickRail();
 });
 $('reconnect').addEventListener('click', reconnect);
 $('tab-checkouts').addEventListener('click', () => call('show_checkouts', { open: true }));

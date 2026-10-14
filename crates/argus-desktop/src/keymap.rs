@@ -31,8 +31,7 @@ pub struct Chord {
     pub leader: bool,
 }
 
-/// Where a binding works: the shortcuts sheet's groups, in its order. Rail
-/// and Review join them when those surfaces take keys.
+/// Where a binding works: the shortcuts sheet's groups, in its order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +40,10 @@ pub enum Place {
     Anywhere,
     /// In a pane, where `session` dispatches; everywhere else the page does.
     Pane,
+    /// A checkout or pane clicked in the rail, which holds the keys until
+    /// a click elsewhere: the terminal client's rail cursor, where a pane
+    /// is closed with a bare x rather than typed into.
+    Rail,
     /// The Feature stage's index.
     Feature,
     /// The feature under the cursor, in the list or on the board.
@@ -157,6 +160,7 @@ impl Place {
         match self {
             Place::Anywhere => "Anywhere",
             Place::Pane => "In a pane",
+            Place::Rail => "Rail",
             Place::Feature => "Feature",
             Place::Card => "Board card",
             Place::Checkouts => "Checkouts",
@@ -181,7 +185,7 @@ const fn bind(place: Place, chords: &'static [Chord], action: Action, label: &'s
 }
 
 use Action::*;
-use Place::{Anywhere, Card, Pane, Start};
+use Place::{Anywhere, Card, Pane, Rail, Start};
 use Place::Checkouts as CheckoutsTable;
 
 pub static BINDINGS: &[Binding] = &[
@@ -198,6 +202,12 @@ pub static BINDINGS: &[Binding] = &[
     bind(Pane, PASTE, Paste, "paste"),
     bind(Pane, &[Chord::key("PageUp").shift()], PageUp, "back through the history"),
     bind(Pane, &[Chord::key("PageDown").shift()], PageDown, "forward to the live screen"),
+    bind(Rail, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next checkout or pane"),
+    bind(Rail, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous checkout or pane"),
+    bind(Rail, &[Chord::key("s"), Chord::key("S")], StartShell, "start a shell on its checkout"),
+    bind(Rail, &[Chord::key("a"), Chord::key("A")], StartAgent, "start the default agent on its checkout"),
+    bind(Rail, &[Chord::key("x"), Chord::key("X")], Close, "close the pane, ending its program"),
+    bind(Rail, &[Chord::key("Enter")], Choose, "open the checkout's + menu, or type into the pane"),
     bind(Place::Feature, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next feature"),
     bind(Place::Feature, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous feature"),
     bind(Place::Feature, &[Chord::key("Home")], First, "first feature"),
@@ -229,7 +239,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Start, &[Chord::key("Enter")], Choose, "start the highlighted one"),
 ];
 
-const ORDER: [Place; 6] = [Anywhere, Pane, Place::Feature, Card, CheckoutsTable, Start];
+const ORDER: [Place; 7] = [Anywhere, Pane, Rail, Place::Feature, Card, CheckoutsTable, Start];
 
 /// The table as the sheet lists it: a group per place, in the sheet's order.
 pub fn groups() -> Vec<Group> {
@@ -280,7 +290,10 @@ mod tests {
         assert_eq!(listed, BINDINGS.len());
         assert!(groups.iter().all(|g| !g.bindings.is_empty()), "an empty heading");
         let titles: Vec<_> = groups.iter().map(|g| g.title).collect();
-        assert_eq!(titles, ["Anywhere", "In a pane", "Feature", "Board card", "Checkouts", "A checkout's + menu"]);
+        assert_eq!(
+            titles,
+            ["Anywhere", "In a pane", "Rail", "Feature", "Board card", "Checkouts", "A checkout's + menu"]
+        );
     }
 
     /// The page hears Anywhere, Feature and Card together, so a key may
@@ -288,8 +301,8 @@ mod tests {
     /// and an open + menu hears only its own and Anywhere's.
     #[test]
     fn no_key_is_bound_twice_where_it_is_heard() {
-        let heard_together: [&[Place]; 4] =
-            [&[Anywhere, Place::Feature, Card], &[Pane], &[Anywhere, CheckoutsTable], &[Anywhere, Start]];
+        let heard_together: [&[Place]; 5] =
+            [&[Anywhere, Place::Feature, Card], &[Pane], &[Anywhere, Rail], &[Anywhere, CheckoutsTable], &[Anywhere, Start]];
         for places in heard_together {
             let chords: Vec<&Chord> = BINDINGS
                 .iter()
@@ -300,6 +313,25 @@ mod tests {
                 assert!(!chords[i + 1..].contains(chord), "{chord:?} is bound twice");
             }
         }
+    }
+
+    /// As in the terminal client's rail: j and k move the pick, s and a
+    /// start on its checkout, and a bare x closes a picked pane.
+    #[test]
+    fn a_picked_rail_row_moves_starts_and_closes_without_the_leader() {
+        let rail = |key: &str| {
+            BINDINGS
+                .iter()
+                .filter(|b| b.place == Rail)
+                .find(|b| b.chords.iter().any(|c| c.matches(&page(key))))
+                .map(|b| b.action)
+        };
+        assert_eq!(rail("s"), Some(StartShell));
+        assert_eq!(rail("a"), Some(StartAgent));
+        assert_eq!(rail("x"), Some(Close));
+        assert_eq!(rail("Enter"), Some(Choose));
+        assert_eq!(rail("j"), Some(Next));
+        assert_eq!(rail("ArrowUp"), Some(Previous));
     }
 
     #[test]

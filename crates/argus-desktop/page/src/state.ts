@@ -18,6 +18,9 @@ export const state: {
   /** The checkout whose + menu is open, where it opened from, and its
    *  highlighted item. */
   start: { checkout: number; from: 'rail' | 'table'; at: number } | null;
+  /** The rail's row last clicked, which holds the keys until a click
+   *  elsewhere: a checkout, or a pane and its checkout. */
+  railPick: { checkout: number; pane: number | null } | null;
   checkouts: Checkouts | null;
   /** What the index's filter says. */
   filter: string;
@@ -41,6 +44,7 @@ export const state: {
   keymap: [],
   menuOpen: false,
   start: null,
+  railPick: null,
   checkouts: null,
   filter: '',
   archivedOpen: false,

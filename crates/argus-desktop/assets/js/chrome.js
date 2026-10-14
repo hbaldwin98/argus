@@ -115,7 +115,11 @@ function drawRail() {
             onclick: () => call('choose_repository', { repository: repo.id }),
         }, el('span', { class: 'chev' }, icon(repo.open ? 'down' : 'right')), statusDot, el('span', { class: 'rname ttl' }, repo.name), el('span', { class: 'cnt' }, repo.used ?? (repo.panes || '')))));
         for (const co of repo.checkouts) {
-            rows.push(el('div', { class: 'co' }, el('span', { class: 'name', title: co.branch || null }, co.name), el('span', null, co.kind), co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git), el('button', {
+            const coPicked = state.railPick?.checkout === co.id && state.railPick.pane === null;
+            rows.push(el('div', {
+                class: `co${coPicked ? ' picked' : ''}`,
+                onclick: () => pickRail(co.id, null),
+            }, el('span', { class: 'name', title: co.branch || null }, co.name), el('span', null, co.kind), co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git), el('button', {
                 class: `icon${railStart(co.id) ? ' hot' : ''}`,
                 title: 'Start a shell or an agent',
                 'aria-label': `Start a shell or an agent on ${repo.name} ${co.name}`,
@@ -127,18 +131,98 @@ function drawRail() {
             }, icon('plus')), railStart(co.id) && startMenu(`${repo.name} ${co.name}`, co.id)));
             for (const pane of co.panes) {
                 rows.push(el('div', { class: 'pane-row' }, el('button', {
-                    class: `pane${pane.on ? ' on' : ''} ${pane.status}`,
+                    class: `pane${pane.on ? ' on' : ''}${state.railPick?.pane === pane.id ? ' picked' : ''} ${pane.status}`,
                     title: pane.note,
                     'aria-current': pane.on ? 'true' : null,
+                    // The pane comes on screen, but the keys stay in the rail
+                    // until Enter or a click on the terminal, so x closes it.
                     onclick: () => {
+                        pickRail(co.id, pane.id);
                         call('select', { pane: pane.id });
-                        $('input').focus();
                     },
                 }, el('span', { class: `glyph${pane.agent ? '' : ' sh'}` }, pane.agent ? '◆' : '›'), el('span', { class: 'ttl' }, pane.title), el('span', { class: `st ${pane.status}` }, pane.status)), closeButton(pane.id, pane.title)));
             }
         }
     }
     rail.replaceChildren(...rows);
+}
+// ---- The rail's picked row -------------------------------------------------
+function pickRail(checkout, pane) {
+    state.railPick = { checkout, pane };
+    $('input').blur();
+    drawRail();
+}
+export function railPicked() {
+    return state.railPick !== null;
+}
+export function unpickRail() {
+    if (!state.railPick)
+        return;
+    state.railPick = null;
+    drawRail();
+}
+/** Moves the pick `by` rows, through every checkout and its panes in the
+ *  rail's order, stopping at the ends. A pane picked comes on screen, as
+ *  a click on it does. */
+function stepRail(by) {
+    const pick = state.railPick;
+    if (!pick)
+        return;
+    const rows = (state.rail.project?.repositories ?? []).flatMap((repo) => repo.checkouts.flatMap((co) => [
+        { checkout: co.id, pane: null },
+        ...co.panes.map((pane) => ({ checkout: co.id, pane: pane.id })),
+    ]));
+    const at = rows.findIndex((row) => row.checkout === pick.checkout && row.pane === pick.pane);
+    const next = rows[Math.max(0, Math.min(rows.length - 1, at + by))];
+    if (!next)
+        return;
+    pickRail(next.checkout, next.pane);
+    if (next.pane !== null)
+        call('select', { pane: next.pane });
+}
+/** Runs `action` on the rail's picked row, saying whether it took it. */
+export function railAction(action) {
+    const pick = state.railPick;
+    if (!pick)
+        return false;
+    switch (action) {
+        case 'closeLayer':
+            unpickRail();
+            return true;
+        case 'next':
+        case 'previous':
+            stepRail(action === 'next' ? 1 : -1);
+            return true;
+        case 'startShell':
+            start(pick.checkout, null);
+            return true;
+        case 'startAgent': {
+            const agent = state.rail.templates[0];
+            if (agent)
+                start(pick.checkout, agent);
+            else
+                notice('argusd offers no agent to start');
+            return true;
+        }
+        case 'close':
+            if (pick.pane === null)
+                return false;
+            call('close', { pane: pick.pane });
+            // The rail drops the pane when the daemon's tree does; the cursor
+            // falls back to its checkout, so a second x closes nothing else.
+            pickRail(pick.checkout, null);
+            return true;
+        case 'choose':
+            if (pick.pane === null) {
+                toggleStart(pick.checkout, 'rail');
+                return true;
+            }
+            unpickRail();
+            $('input').focus();
+            return true;
+        default:
+            return false;
+    }
 }
 // ---- A checkout's + menu ---------------------------------------------------
 // What the + menu offers, in its order: a shell, then each of the daemon's
@@ -151,6 +235,8 @@ function starts() {
 }
 function start(checkout, agent) {
     closeStart();
+    // The new pane takes the keys when it comes on screen.
+    unpickRail();
     if (agent === null)
         call('spawn_shell', { checkout });
     else

@@ -18,6 +18,7 @@ export const state = {
     keymap: [],
     menuOpen: false,
     start: null,
+    railPick: null,
     checkouts: null,
     filter: '',
     archivedOpen: false,

@@ -793,6 +793,16 @@
   background: var(--bg-selected);
   box-shadow: inset 3px 0 0 var(--accent);
 }
+/* The rail's picked row, which holds the keys: ringed, so it reads apart
+   from the pane on screen. */
+.co {
+  cursor: pointer;
+}
+.co.picked,
+.pane.picked {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
 .glyph {
   width: 12px;
   flex: none;

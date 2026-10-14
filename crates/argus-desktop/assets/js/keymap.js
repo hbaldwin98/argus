@@ -2,7 +2,7 @@
 // (`src/keymap.rs`) and run here. A pane's keys go to Rust whole, and its
 // leader is dispatched there.
 import { answerNo, checkoutsAction } from './checkouts.js';
-import { startAction, startOpen } from './chrome.js';
+import { railAction, railPicked, startAction, startOpen } from './chrome.js';
 import { $ } from './dom.js';
 import { closeLayer, featureAction } from './features.js';
 import { state } from './state.js';
@@ -64,6 +64,13 @@ export function listen() {
         if (startOpen()) {
             const action = actionFor(['anywhere', 'start'], e);
             if (action && startAction(action))
+                e.preventDefault();
+            return;
+        }
+        // A row picked in the rail holds the keys until a click elsewhere.
+        if (railPicked()) {
+            const action = actionFor(['anywhere', 'rail'], e);
+            if (action && (railAction(action) || run(action)))
                 e.preventDefault();
             return;
         }
