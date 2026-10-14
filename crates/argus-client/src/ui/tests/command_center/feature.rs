@@ -18,8 +18,28 @@ fn type_in(app: &mut App, text: &str) {
     text.chars().for_each(|c| press(app, c));
 }
 
+const SCREEN_WIDTH: u16 = 170;
+const SCREEN_HEIGHT: u16 = 44;
+
 fn screen(app: &mut App) -> String {
-    lines(&draw_at(app, 170, 44)).join("\n")
+    lines(&draw_at(app, SCREEN_WIDTH, SCREEN_HEIGHT)).join("\n")
+}
+
+/// The screen without the rail and its border. The rail is the same in
+/// every dump and is a quarter of each line, which is what pushed five
+/// screens past what a tool's output keeps. The status bar runs under the
+/// rail, so its row is kept whole.
+fn stage(app: &mut App) -> String {
+    let rail = usize::from(rail_width(SCREEN_WIDTH, app.settings.rail_width));
+    let frame = draw_at(app, SCREEN_WIDTH, SCREEN_HEIGHT);
+    let bar = usize::from(bar_row(&frame));
+
+    let rows: Vec<String> = lines(&frame)
+        .into_iter()
+        .enumerate()
+        .map(|(y, line)| if y == bar { line } else { line.chars().skip(rail).collect() })
+        .collect();
+    rows.join("\n")
 }
 
 fn sent(rx: &mut tokio::sync::mpsc::UnboundedReceiver<ClientMsg>) -> Vec<ClientMsg> {
@@ -44,19 +64,22 @@ fn select(app: &mut App, at: WorkRef) {
     app.work_sel = row;
 }
 
+/// Not an assertion — the stage's five screens, to look at while working
+/// on it: `cargo test -p argus dump_feature_stage -- --ignored --nocapture`.
+/// Only the stage is printed; `dump_frame` shows the rail.
 #[test]
-#[ignore = "prints each screen of the stage: cargo test -p argus dump_feature_stage -- --ignored --nocapture"]
+#[ignore = "prints each screen of the stage for eyeballing; asserts nothing"]
 fn dump_feature_stage() {
     let (mut app, _rx) = feature_stage();
-    println!("{}\n", screen(&mut app));
+    println!("{}\n", stage(&mut app));
     key(&mut app, KeyCode::Enter);
     select(&mut app, WorkRef::Task(8));
-    println!("{}\n", screen(&mut app));
+    println!("{}\n", stage(&mut app));
     press(&mut app, '2');
     app.decision_sel = 2;
-    println!("{}\n", screen(&mut app));
+    println!("{}\n", stage(&mut app));
     press(&mut app, '3');
-    println!("{}\n", screen(&mut app));
+    println!("{}\n", stage(&mut app));
     key(&mut app, KeyCode::Esc);
     press(&mut app, 'a');
     type_in(&mut app, "The ratatui bump");
@@ -65,7 +88,7 @@ fn dump_feature_stage() {
     key(&mut app, KeyCode::Enter);
     key(&mut app, KeyCode::Tab);
     type_in(&mut app, "- Fix what breaks");
-    println!("{}\n", screen(&mut app));
+    println!("{}\n", stage(&mut app));
 }
 
 // ---- the index -----------------------------------------------------------

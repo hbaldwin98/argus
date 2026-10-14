@@ -2,7 +2,7 @@
 //!
 //! The table is how a reader finds where a question is answered, and it
 //! drifted by two dozen rows before anything noticed. It lives here only
-//! because the workspace has no root package; it checks all three crates.
+//! because the workspace has no root package; it checks every crate in `CRATES`.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
