@@ -11,7 +11,7 @@ import type { Features } from './bindings/Features';
 import type { Line } from './bindings/Line';
 import type { Peek } from './bindings/Peek';
 import { notice } from './chrome.js';
-import { $, el, icon, type Child } from './dom.js';
+import { $, el, ghosts, icon, type Child } from './dom.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 
@@ -115,20 +115,14 @@ export function drawFeatures(): void {
       empty(
         icon('folder'),
         el('div', { class: 'type-title' }, 'No repository'),
-        el('div', { class: 'fg-muted' }, 'Choose a repository on the left to read its features.'),
+        el('div', { class: 'fg-muted' }, 'Choose one on the left.'),
       ),
     );
     return;
   }
   const head = indexHead(f);
   if (!f.loaded) {
-    stage.replaceChildren(
-      head,
-      empty(
-        icon('spinner'),
-        el('div', { class: 'fg-muted' }, `Reading the features in ${f.repository}…`),
-      ),
-    );
+    stage.replaceChildren(head, ghosts([[0.5], [0.8], [0.65], [0.75], [0.55], [0.7]]));
     return;
   }
   if (!f.rows.length) {
@@ -140,9 +134,9 @@ export function drawFeatures(): void {
         el(
           'div',
           { class: 'fg-muted' },
-          'An agent opens one with ',
+          'Agents open them with ',
           el('span', { class: 'mono fg' }, 'argus-hook feature open'),
-          ', and it shows up here with its tasks and decisions.',
+          '.',
         ),
       ),
     );
@@ -482,7 +476,7 @@ function board(): HTMLElement {
       el(
         'div',
         { class: 'meta' },
-        'Queued, Active and Done follow the work: a card moves when a task starts, an agent arrives or the last task closes. You can drag only into Held, which asks for a reason, and Archived.',
+        'Queued, Active and Done follow the work. Drag a card to Held or Archived.',
       ),
     ),
   );
@@ -779,11 +773,7 @@ function holdDialog(row: FeatureRow): void {
         { class: 'dbody' },
         el('label', { class: 'label', for: 'hold-reason' }, 'Why is it held?'),
         reason,
-        el(
-          'div',
-          { class: 'meta' },
-          'A held feature is folded away until the hold is lifted. Agents read the reason.',
-        ),
+        el('div', { class: 'meta' }, 'Agents read the reason.'),
       ),
       el(
         'div',

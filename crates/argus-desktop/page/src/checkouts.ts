@@ -8,7 +8,7 @@ import type { Checkouts } from './bindings/Checkouts';
 import type { Confirm } from './bindings/Confirm';
 import type { CheckoutsRow } from './bindings/CheckoutsRow';
 import { startMenu, toggleStart } from './chrome.js';
-import { $, el, icon, type Child } from './dom.js';
+import { $, el, ghosts, icon, type Child } from './dom.js';
 import { closeLayer } from './features.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
@@ -39,7 +39,7 @@ function head(c: Checkouts): HTMLElement {
     },
   });
   filter.value = c.filter;
-  const branches = `${c.branches} branch${c.branches === 1 ? '' : 'es'} without one`;
+  const branches = `${c.branches} other branch${c.branches === 1 ? '' : 'es'}`;
   return el(
     'div',
     { class: 'fhead index-head' },
@@ -48,20 +48,7 @@ function head(c: Checkouts): HTMLElement {
       { class: 'crumbs' },
       el('span', { class: 'fg' }, 'Checkouts'),
       el('span', { class: 'grow' }),
-      el(
-        'span',
-        { class: 'meta' },
-        keycap('Enter'),
-        ' open · ',
-        keycap('B'),
-        ' branches · ',
-        keycap('N'),
-        ' worktree · ',
-        keycap('F'),
-        ' fetch · ',
-        keycap('D'),
-        ' delete',
-      ),
+      el('span', { class: 'meta' }, keycap('Enter'), ' open · ', keycap('D'), ' delete'),
     ),
     el(
       'div',
@@ -71,7 +58,7 @@ function head(c: Checkouts): HTMLElement {
         'span',
         { class: 'meta' },
         `${c.checkouts} checkout${c.checkouts === 1 ? '' : 's'} · ${branches}`,
-        c.main && [' · main is ', el('span', { class: 'mono fg-ref' }, c.main)],
+        c.main && [' · main ', el('span', { class: 'mono fg-ref' }, c.main)],
       ),
       el('span', { class: 'grow' }),
       filter,
@@ -266,12 +253,6 @@ function detail(c: Checkouts): HTMLElement {
       d.upstream && stack('Upstream', d.upstream),
       d.changes && stack('Changes', d.changes),
     ],
-    el('span', { class: 'grow' }),
-    el(
-      'span',
-      { class: 'meta cnote' },
-      'A branch row opens by switching the primary checkout to it. Fetch and pull run in the selected checkout, or the primary one for a branch.',
-    ),
   );
 }
 
@@ -319,13 +300,7 @@ function nameDialog(from: string): void {
           { class: 'dbody' },
           el('label', { class: 'label', for: 'worktree-name' }, 'Branch'),
           name,
-          el(
-            'div',
-            { class: 'meta' },
-            'A new branch off ',
-            el('span', { class: 'mono' }, from),
-            ', in a directory of its own.',
-          ),
+          el('div', { class: 'meta' }, 'Off ', el('span', { class: 'mono' }, from), '.'),
         ),
         el(
           'div',
@@ -355,27 +330,10 @@ function confirmDialog(question: Confirm): HTMLElement {
     : ['Remove ', el('span', { class: 'mono' }, question.name), '?'];
   const body = force
     ? [
-        el(
-          'div',
-          { class: 'fg-muted' },
-          'Git refused the first delete: this branch has commits that no other branch has.',
-        ),
-        el(
-          'div',
-          { class: 'meta' },
-          'Delete anyway runs ',
-          el('span', { class: 'mono' }, `git branch -D ${question.branch}`),
-          ' in the primary checkout. It is local: nothing is pushed, and origin keeps whatever it has.',
-        ),
+        el('div', { class: 'fg-muted' }, 'It has commits no other branch has.'),
+        el('div', { class: 'meta' }, 'Local only: nothing is pushed.'),
       ]
-    : [
-        el(
-          'div',
-          { class: 'fg-muted' },
-          'Every pane in it ends, its directory is removed, and its branch is deleted.',
-        ),
-        el('div', { class: 'meta' }, 'Like deleting a branch, it is local: nothing is pushed.'),
-      ];
+    : [el('div', { class: 'fg-muted' }, 'Its panes end; its directory and branch are deleted.')];
   return el(
     'div',
     {
@@ -437,12 +395,16 @@ export function drawCheckouts(): void {
   if (state.rail.stage !== 'checkouts') return;
   const stage = $('cstage');
   const c = state.checkouts;
-  if (!c || !c.repository) {
+  if (!c) {
+    stage.replaceChildren(ghosts([[0.3], [0.9], [0.85], [0.9], [0.6]]));
+    return;
+  }
+  if (!c.repository) {
     stage.replaceChildren(
       empty(
         icon('folder'),
         el('div', { class: 'type-title' }, 'No repository'),
-        el('div', { class: 'fg-muted' }, 'Choose a repository on the left to list its checkouts.'),
+        el('div', { class: 'fg-muted' }, 'Choose one on the left.'),
       ),
     );
     return;

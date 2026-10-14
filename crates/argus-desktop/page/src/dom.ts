@@ -56,6 +56,21 @@ function append(node: Node, children: readonly Child[]): void {
   }
 }
 
+/** Grey bars standing where content will be, one per `[width, indent]`;
+ *  a width under 1 is a fraction of the row. */
+export function ghosts(bars: [number, number?][]): HTMLElement {
+  return el(
+    'div',
+    { class: 'skeleton', 'aria-hidden': 'true' },
+    bars.map(([width, indent]) => {
+      const bar = el('div', { class: 'ghost' });
+      bar.style.width = width < 1 ? `${width * 100}%` : `${width}px`;
+      if (indent) bar.style.marginLeft = `${indent}px`;
+      return bar;
+    }),
+  );
+}
+
 export function icon(name: IconName): Element {
   const holder = document.createElement('span');
   holder.innerHTML = ICON[name];

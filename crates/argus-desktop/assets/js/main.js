@@ -19,6 +19,7 @@ function receive(event) {
         case 'rail': {
             const before = state.rail;
             state.rail = event;
+            screen.expect(event.shown?.pane ?? null);
             drawChrome();
             document.body.classList.toggle('filled', event.filled);
             // A pane newly on screen takes the keys, however it got there: a

@@ -101,7 +101,7 @@ impl CheckoutsStage {
                 let c = repo.checkouts.get(i)?;
                 match c.listed_panes().next() {
                     Some(pane) => Opened::Pane(pane.id),
-                    None => Opened::Say(format!("nothing runs in {}: its + starts a shell or an agent", c.name)),
+                    None => Opened::Say(format!("nothing running in {}", c.name)),
                 }
             }
             CheckoutRow::Branch(i) => switch(repo, repo.branches.get(i)?)?,
@@ -120,7 +120,7 @@ impl CheckoutsStage {
             CheckoutRow::Checkout(i) => {
                 let c = repo.checkouts.get(i).ok_or("nothing is selected")?;
                 if c.primary {
-                    return Err(format!("{} is the repository's own directory and stays", c.name));
+                    return Err(format!("{} is the primary checkout and stays", c.name));
                 }
                 let branch = c.git.as_ref().and_then(|g| g.branch.clone()).unwrap_or_else(|| c.name.clone());
                 self.confirm = Some((Confirm::Remove { name: c.name.clone(), branch }, Deleting::Checkout(c.id)));
@@ -131,11 +131,11 @@ impl CheckoutsStage {
                 if Some(branch.as_str()) == main {
                     return Err(format!("{branch} is the main branch and stays"));
                 }
-                let checkout = primary(repo).ok_or("the repository has no primary checkout to run git in")?;
+                let checkout = primary(repo).ok_or("no primary checkout")?;
                 Ok(Some(Deleting::Branch { checkout, branch: branch.clone(), force: false }))
             }
             CheckoutRow::Remote(i) => Err(format!(
-                "{} is only on the remote; deleting it there would be a push, which this window does not do",
+                "{} is remote-only; nothing is pushed from here",
                 repo.remote_branches.get(i).map_or("it", String::as_str)
             )),
         }
@@ -167,12 +167,12 @@ impl CheckoutsStage {
             }
             CheckoutRow::Branch(i) => {
                 let branch = repo.branches.get(i).ok_or("nothing is selected")?;
-                Ok((primary(repo).ok_or("the repository has no primary checkout")?, branch.clone()))
+                Ok((primary(repo).ok_or("no primary checkout")?, branch.clone()))
             }
             CheckoutRow::Remote(i) => {
                 let remote = repo.remote_branches.get(i).ok_or("nothing is selected")?;
-                let local = local_name(remote).ok_or("the remote branch has no local name")?;
-                Ok((primary(repo).ok_or("the repository has no primary checkout")?, local.to_owned()))
+                let local = local_name(remote).ok_or("no local name for that branch")?;
+                Ok((primary(repo).ok_or("no primary checkout")?, local.to_owned()))
             }
         }
     }

@@ -496,7 +496,7 @@ impl Session {
             return self.finish();
         };
         let note = if !self.daemon.as_ref().is_some_and(|d| d.can(PASTE_FILE)) {
-            "argusd predates pasting files; `argus server restart` updates it".to_string()
+            "argusd is too old to paste files: run `argus server restart`".to_string()
         } else if bytes.len() > paste::PASTE_FILE_MAX {
             format!("{name} is too large to paste ({} MB)", bytes.len() >> 20)
         } else {
@@ -787,7 +787,7 @@ impl Session {
             },
             Action::StartShell | Action::StartAgent => {
                 let Some(checkout) = self.checkouts.checkout(&repo) else {
-                    return self.note("a branch has no directory to start in yet: give it a worktree first");
+                    return self.note("give the branch a worktree first (N)");
                 };
                 return match (action, self.templates.first().cloned()) {
                     (Action::StartShell, _) => self.spawn_shell(checkout),
@@ -986,7 +986,7 @@ fn another_build(daemon: &Hello) -> Option<String> {
     let ours = env!("CARGO_PKG_VERSION");
     (daemon.version != ours).then(|| {
         format!(
-            "argusd is {}, this window {ours}: `argus server restart` brings them together",
+            "argusd {}, window {ours}: run `argus server restart`",
             daemon.version
         )
     })
@@ -1516,7 +1516,7 @@ mod tests {
         old.select(PaneId(2));
         old.events(0);
         assert!(old.paste_file("shot.png".into(), vec![1]).is_empty());
-        assert!(old.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("predates"))));
+        assert!(old.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("too old"))));
     }
 
     #[test]

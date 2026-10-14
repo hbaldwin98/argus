@@ -4,7 +4,7 @@
 // board says so. Only Held and Archived take a dropped card: the other
 // columns follow the work.
 import { notice } from './chrome.js';
-import { $, el, icon } from './dom.js';
+import { $, el, ghosts, icon } from './dom.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 const GROUP_LABEL = {
@@ -101,16 +101,16 @@ export function drawFeatures() {
     const stage = $('fstage');
     const f = state.features;
     if (!f || !f.repository) {
-        stage.replaceChildren(empty(icon('folder'), el('div', { class: 'type-title' }, 'No repository'), el('div', { class: 'fg-muted' }, 'Choose a repository on the left to read its features.')));
+        stage.replaceChildren(empty(icon('folder'), el('div', { class: 'type-title' }, 'No repository'), el('div', { class: 'fg-muted' }, 'Choose one on the left.')));
         return;
     }
     const head = indexHead(f);
     if (!f.loaded) {
-        stage.replaceChildren(head, empty(icon('spinner'), el('div', { class: 'fg-muted' }, `Reading the features in ${f.repository}…`)));
+        stage.replaceChildren(head, ghosts([[0.5], [0.8], [0.65], [0.75], [0.55], [0.7]]));
         return;
     }
     if (!f.rows.length) {
-        stage.replaceChildren(head, empty(icon('folder'), el('div', { class: 'type-title' }, `No features in ${f.repository} yet`), el('div', { class: 'fg-muted' }, 'An agent opens one with ', el('span', { class: 'mono fg' }, 'argus-hook feature open'), ', and it shows up here with its tasks and decisions.')));
+        stage.replaceChildren(head, empty(icon('folder'), el('div', { class: 'type-title' }, `No features in ${f.repository} yet`), el('div', { class: 'fg-muted' }, 'Agents open them with ', el('span', { class: 'mono fg' }, 'argus-hook feature open'), '.')));
         return;
     }
     stage.replaceChildren(head, f.layout === 'board' ? board() : list(f));
@@ -249,7 +249,7 @@ function board() {
         }
         return section;
     };
-    return el('div', { class: 'board' }, column('queued'), column('active'), column('done'), el('div', { class: 'side' }, column('archived'), column('held'), el('div', { class: 'meta' }, 'Queued, Active and Done follow the work: a card moves when a task starts, an agent arrives or the last task closes. You can drag only into Held, which asks for a reason, and Archived.')));
+    return el('div', { class: 'board' }, column('queued'), column('active'), column('done'), el('div', { class: 'side' }, column('archived'), column('held'), el('div', { class: 'meta' }, 'Queued, Active and Done follow the work. Drag a card to Held or Archived.')));
 }
 function card(row) {
     // A held card's reason stands in for its questions, as the canvas draws it.
@@ -476,7 +476,7 @@ function holdDialog(row) {
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'hold-title',
-    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title', id: 'hold-title' }, `Hold #${row.number} ${row.title}`)), el('div', { class: 'dbody' }, el('label', { class: 'label', for: 'hold-reason' }, 'Why is it held?'), reason, el('div', { class: 'meta' }, 'A held feature is folded away until the hold is lifted. Agents read the reason.')), el('div', { class: 'dfoot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: closeLayer }, 'Cancel'), el('button', { class: 'btn primary', onclick: hold }, 'Hold'))));
+    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title', id: 'hold-title' }, `Hold #${row.number} ${row.title}`)), el('div', { class: 'dbody' }, el('label', { class: 'label', for: 'hold-reason' }, 'Why is it held?'), reason, el('div', { class: 'meta' }, 'Agents read the reason.')), el('div', { class: 'dfoot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: closeLayer }, 'Cancel'), el('button', { class: 'btn primary', onclick: hold }, 'Hold'))));
     $('layer').replaceChildren(dialog);
     reason.focus();
 }

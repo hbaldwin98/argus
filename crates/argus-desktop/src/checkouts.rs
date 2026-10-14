@@ -143,7 +143,7 @@ fn detail(c: &CheckoutInfo) -> CheckoutDetail {
         name: c.name.clone(),
         path: c.path.clone(),
         upstream: c.git.as_ref().map(|g| match (g.ahead, g.behind) {
-            (0, 0) => "in sync, or no upstream".to_string(),
+            (0, 0) => "in sync".to_string(),
             (a, 0) => format!("{a} ahead"),
             (0, b) => format!("{b} behind"),
             (a, b) => format!("{a} ahead · {b} behind"),

@@ -3,7 +3,7 @@
 
 import type { Action } from './bindings/Action';
 import { drawCheckouts } from './checkouts.js';
-import { $, el, icon, type Child } from './dom.js';
+import { $, el, ghosts, icon, type Child } from './dom.js';
 import { drawFeatures } from './features.js';
 import { screen } from './screen.js';
 import { state } from './state.js';
@@ -107,24 +107,15 @@ function drawRail(): void {
   const rail = $('rail');
   const { project, loaded } = state.rail;
   if (!loaded) {
+    // A repository, its checkout, two panes, another checkout.
     rail.replaceChildren(
-      el(
-        'div',
-        { class: 'skeleton', 'aria-hidden': 'true' },
-        // A repository, its checkout, two panes, another checkout.
-        [
-          [110, null],
-          [160, 'var(--sp-24)'],
-          [190, 'var(--sp-32)'],
-          [140, 'var(--sp-32)'],
-          [120, 'var(--sp-24)'],
-        ].map(([width, indent]) => {
-          const ghost = el('div', { class: 'ghost' });
-          ghost.style.width = `${width}px`;
-          if (indent) ghost.style.marginLeft = String(indent);
-          return ghost;
-        }),
-      ),
+      ghosts([
+        [110, 16],
+        [160, 24],
+        [190, 32],
+        [140, 32],
+        [120, 24],
+      ]),
     );
     return;
   }
@@ -370,10 +361,9 @@ function drawBar(): void {
     right.push(el('span', { class: 'actions' }, dot(), 'Connected'));
   } else if (connection === 'connecting') {
     left.push(el('span', { class: 'actions' }, dot('var(--attention)'), 'Connecting'));
-    left.push(el('span', { class: 'fg-faint' }, 'retrying through argus bridge'));
   } else {
     left.push(el('span', { class: 'actions' }, dot('var(--fg-faint)'), 'Stopped'));
-    left.push(el('span', { class: 'fg-faint' }, 'no reconnect until you ask'));
+
     right.push(el('button', { class: 'btn sm', onclick: reconnect }, 'Reconnect'));
   }
   $('bar').replaceChildren(...left, el('span', { class: 'grow' }), ...right);
@@ -394,41 +384,24 @@ function drawStage(): void {
   if (!loaded) {
     measure = 'connecting';
     body = [
-      icon('spinner'),
-      el('div', { class: 'type-title' }, 'Connecting to argusd…'),
-      detail &&
-        el(
-          'div',
-          { class: 'fg-muted' },
-          'The last try ended before the daemon said a word. This is what ',
-          el('span', { class: 'fg mono' }, 'argus bridge'),
-          ' printed:',
-        ),
+      ghosts([[0.6], [0.9], [0.75], [0.85], [0.4]]),
+      el('div', { class: 'meta' }, 'Connecting to argusd…'),
       detail && el('div', { class: 'err' }, detail),
-      el('div', { class: 'meta' }, 'Trying again every 2 seconds.'),
     ];
   } else if (!project) {
     measure = 'no-projects';
     body = [
       icon('folder'),
       el('div', { class: 'type-title' }, 'No projects'),
-      el(
-        'div',
-        { class: 'fg-muted' },
-        'Add a folder of repositories, or run this in one, and it shows up here.',
-      ),
+      el('div', { class: 'fg-muted' }, 'Run this in a folder of repositories:'),
       el('div', { class: 'cmd' }, 'argus init'),
     ];
   } else {
     measure = 'pick';
     body = [
       icon('terminal'),
-      el('div', { class: 'type-title' }, 'Pick a pane on the left'),
-      el(
-        'div',
-        { class: 'fg-muted' },
-        'Its screen shows here and takes your keys. To start a shell, use + on a checkout.',
-      ),
+      el('div', { class: 'type-title' }, 'Pick a pane'),
+      el('div', { class: 'fg-muted' }, 'or start one with + on a checkout.'),
     ];
   }
   empty.replaceChildren(el('div', { class: `empty-body ${measure}` }, body));

@@ -817,6 +817,24 @@
   border-radius: var(--r-xs);
   background: var(--fill);
   margin: var(--sp-8) var(--sp-16) 0;
+  animation: ghost 1.4s ease-in-out infinite;
+}
+@keyframes ghost {
+  50% {
+    opacity: 0.45;
+  }
+}
+.term-skeleton {
+  position: absolute;
+  inset: var(--sp-12) var(--sp-16);
+}
+.empty-body .skeleton,
+.fstage > .skeleton {
+  width: 100%;
+  max-width: 560px;
+}
+.fstage > .skeleton {
+  padding: var(--sp-12) var(--sp-20);
 }
 
 /* stage, header and status bar */
@@ -1522,6 +1540,7 @@ button:focus-visible,
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .ghost,
   .spinner,
   .pane.working .st {
     animation: none;
@@ -1803,10 +1822,6 @@ body.filled .head {
   background: var(--bg-chrome);
   border-top: 1px solid var(--line);
 }
-.cdetail .cnote {
-  max-width: 420px;
-  white-space: normal;
-}
 .cdetail {
   flex-wrap: wrap;
   row-gap: var(--sp-8);
@@ -1836,9 +1851,6 @@ body.filled .head {
 }
 @container (max-width: 680px) {
   .ctable .col-running {
-    display: none;
-  }
-  .cdetail .cnote {
     display: none;
   }
 }

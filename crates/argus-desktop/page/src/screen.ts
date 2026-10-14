@@ -6,7 +6,7 @@ import type { Frame } from './bindings/Frame';
 import type { FrameCursor } from './bindings/FrameCursor';
 import type { Parked } from './bindings/Parked';
 import type { Segment } from './bindings/Segment';
-import { $ } from './dom.js';
+import { $, ghosts } from './dom.js';
 import { call } from './tauri.js';
 
 // The terminal's type, as the design system's --type-mono gives it.
@@ -202,7 +202,15 @@ function makeScreen() {
     drawCursor();
   }
 
+  // Bars stand in for a pane until its first screen arrives.
+  const waiting = $('term-skeleton');
+  waiting.replaceChildren(ghosts([[0.55], [0.8], [0.7], [0.85], [0.4], [0.75], [0.6]]));
+  function expect(next: number | null): void {
+    waiting.hidden = next === null || next === pane;
+  }
+
   function frame(f: Frame): void {
+    waiting.hidden = true;
     // The page can run before the stylesheet applies, when every token
     // reads empty; a colour the canvas cannot parse leaves the last one
     // standing, so the palette is read again until it is there.
@@ -331,7 +339,7 @@ function makeScreen() {
     return mouse && !parked;
   }
 
-  return { frame, drawCursor, report, sizeLabel, cellAt, select, takesMouse };
+  return { frame, drawCursor, report, sizeLabel, cellAt, select, takesMouse, expect };
 }
 
 export const screen = makeScreen();
