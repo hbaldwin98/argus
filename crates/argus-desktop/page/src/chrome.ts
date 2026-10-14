@@ -2,6 +2,7 @@
 // header, the status bar, the empty stage, and notices that pass.
 
 import type { Action } from './bindings/Action';
+import { drawCheckouts } from './checkouts.js';
 import { $, el, icon, type Child } from './dom.js';
 import { drawFeatures } from './features.js';
 import { screen } from './screen.js';
@@ -12,17 +13,20 @@ const LOUD = new Set(['waiting', 'needs-review', 'failed']);
 
 export function drawChrome(): void {
   const stopped = state.status.connection === 'stopped';
-  const feature = state.rail.stage === 'feature';
+  const stage = state.rail.stage;
   for (const [id, on] of [
-    ['tab-workspace', !feature],
-    ['tab-feature', feature],
+    ['tab-workspace', stage === 'workspace'],
+    ['tab-feature', stage === 'feature'],
+    ['tab-checkouts', stage === 'checkouts'],
   ] as const) {
     $(id).classList.toggle('on', on);
     $(id).setAttribute('aria-selected', String(on));
   }
-  $('fstage').hidden = !feature;
-  $('body').hidden = feature;
+  $('fstage').hidden = stage !== 'feature';
+  $('cstage').hidden = stage !== 'checkouts';
+  $('body').hidden = stage !== 'workspace';
   drawFeatures();
+  drawCheckouts();
   drawTabsMeta();
   drawHeading();
   drawRail();
@@ -35,11 +39,12 @@ export function drawChrome(): void {
   $('stopped').hidden = !stopped;
 }
 
-/** The Feature stage names the repository it reads, at the tabs' end. */
+/** The Feature and Checkouts stages name the repository they read, at
+ *  the tabs' end. */
 function drawTabsMeta(): void {
   const { project, repository, stage } = state.rail;
   const chosen = project?.repositories.find((repo) => repo.id === repository);
-  $('tabs-meta').textContent = stage === 'feature' && chosen ? chosen.name : '';
+  $('tabs-meta').textContent = stage !== 'workspace' && chosen ? chosen.name : '';
 }
 
 export function drawHeading(): void {
@@ -164,19 +169,18 @@ function drawRail(): void {
           el(
             'button',
             {
-              class: `icon${state.start?.checkout === co.id ? ' hot' : ''}`,
+              class: `icon${railStart(co.id) ? ' hot' : ''}`,
               title: 'Start a shell or an agent',
               'aria-label': `Start a shell or an agent on ${repo.name} ${co.name}`,
-              'aria-expanded': String(state.start?.checkout === co.id),
+              'aria-expanded': String(railStart(co.id)),
               onclick: (e: MouseEvent) => {
                 e.stopPropagation();
-                state.start = state.start?.checkout === co.id ? null : { checkout: co.id, at: 0 };
-                drawRail();
+                toggleStart(co.id, 'rail');
               },
             },
             icon('plus'),
           ),
-          state.start?.checkout === co.id && startMenu(`${repo.name} ${co.name}`, co.id),
+          railStart(co.id) && startMenu(`${repo.name} ${co.name}`, co.id),
         ),
       );
       for (const pane of co.panes) {
@@ -225,7 +229,19 @@ function start(checkout: number, agent: string | null): void {
   else call('spawn_agent', { checkout, template: agent });
 }
 
-function startMenu(name: string, checkout: number): HTMLElement {
+function railStart(checkout: number): boolean {
+  return state.start?.checkout === checkout && state.start.from === 'rail';
+}
+
+/** Opens a checkout's + menu where it was pressed, or closes it. */
+export function toggleStart(checkout: number, from: 'rail' | 'table'): void {
+  const open = state.start?.checkout === checkout && state.start.from === from;
+  state.start = open ? null : { checkout, from, at: 0 };
+  drawRail();
+  drawCheckouts();
+}
+
+export function startMenu(name: string, checkout: number): HTMLElement {
   const items = starts();
   const at = state.start?.at ?? 0;
   return el(
@@ -260,6 +276,7 @@ export function closeStart(): void {
   if (!state.start) return;
   state.start = null;
   drawRail();
+  drawCheckouts();
 }
 
 /** Runs an open + menu's `action`, saying whether it took it. */
@@ -284,6 +301,7 @@ export function startAction(action: Action): boolean {
     case 'previous':
       open.at = (open.at + (action === 'next' ? 1 : items.length - 1)) % items.length;
       drawRail();
+      drawCheckouts();
       return true;
     case 'choose': {
       const item = items[open.at];

@@ -3,6 +3,7 @@
 // `src/page.rs`'s, typed by the bindings `cargo test` writes.
 
 import type { Channel as TauriChannel, invoke as tauriInvoke } from '@tauri-apps/api/core';
+import type { Action } from './bindings/Action';
 import type { Event } from './bindings/Event';
 import type { PageKey } from './bindings/PageKey';
 import type { PageMouse } from './bindings/PageMouse';
@@ -34,6 +35,10 @@ interface Commands {
   toggle_repository: { repository: number };
   choose_repository: { repository: number };
   show_features: { open: boolean };
+  show_checkouts: { open: boolean };
+  select_checkout_row: { key: string };
+  filter_checkouts: { filter: string };
+  checkouts_action: { action: Action };
   peek: { slug: string };
   set_layout: { layout: 'list' | 'board' };
   toggle_folded: None;

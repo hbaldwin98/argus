@@ -11,7 +11,7 @@
 //! in the terminal client: the key after it is the window's, and a second
 //! leader sends one through.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::keys::PageKey;
 
@@ -45,13 +45,15 @@ pub enum Place {
     Feature,
     /// The feature under the cursor, in the list or on the board.
     Card,
+    /// The Checkouts stage's table.
+    Checkouts,
     /// A checkout's + menu while it is open, which holds the keys.
     Start,
 }
 
 /// What a binding does. The page runs those of the places it dispatches,
 /// `session` those of a pane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub enum Action {
@@ -79,8 +81,13 @@ pub enum Action {
     StartShell,
     /// The daemon's default agent: its first template.
     StartAgent,
-    /// What the highlighted item of a menu does.
+    /// What the highlighted item of a menu does, or Enter on a row.
     Choose,
+    Checkouts,
+    /// Show or hide the branches no checkout is on.
+    Branches,
+    Fetch,
+    Pull,
 }
 
 #[derive(Debug, Serialize)]
@@ -150,6 +157,7 @@ impl Place {
             Place::Pane => "In a pane",
             Place::Feature => "Feature",
             Place::Card => "Board card",
+            Place::Checkouts => "Checkouts",
             Place::Start => "A checkout's + menu",
         }
     }
@@ -172,16 +180,19 @@ const fn bind(place: Place, chords: &'static [Chord], action: Action, label: &'s
 
 use Action::*;
 use Place::{Anywhere, Card, Pane, Start};
+use Place::Checkouts as CheckoutsTable;
 
 pub static BINDINGS: &[Binding] = &[
     bind(Anywhere, &[Chord::key("1")], Workspace, "Workspace"),
     bind(Anywhere, &[Chord::key("2")], Feature, "Feature"),
+    bind(Anywhere, &[Chord::key("3")], Action::Checkouts, "Checkouts"),
     bind(Anywhere, &[Chord::key("Escape")], CloseLayer, "close the menu or dialog"),
     bind(Pane, &[LEADER.after_leader()], Leader, "send ctrl-space to the program"),
     bind(Pane, &[Chord::key("f").after_leader()], Fill, "fill the window with the pane, and back"),
     bind(Pane, &[Chord::key("1").after_leader()], Workspace, "Workspace"),
     bind(Pane, &[Chord::key("2").after_leader()], Feature, "Feature"),
     bind(Pane, &[Chord::key("x").after_leader()], Close, "close the pane, ending its program"),
+    bind(Pane, &[Chord::key("3").after_leader()], Action::Checkouts, "Checkouts"),
     bind(Pane, PASTE, Paste, "paste; a picture or a copied file pastes as a file"),
     bind(Pane, &[Chord::key("PageUp").shift()], PageUp, "back through the history"),
     bind(Pane, &[Chord::key("PageDown").shift()], PageDown, "forward to the live screen"),
@@ -196,6 +207,17 @@ pub static BINDINGS: &[Binding] = &[
     bind(Card, &[Chord::key("h"), Chord::key("H")], Hold, "hold, or lift its hold"),
     bind(Card, &[Chord::key("A")], Archive, "archive, or reopen"),
     bind(Card, &[Chord::key("g"), Chord::key("G")], GoToPane, "go to its agent's pane"),
+    bind(CheckoutsTable, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next row"),
+    bind(CheckoutsTable, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous row"),
+    bind(CheckoutsTable, &[Chord::key("Home")], First, "first row"),
+    bind(CheckoutsTable, &[Chord::key("End")], Last, "last row"),
+    bind(CheckoutsTable, &[Chord::key("Enter")], Choose, "open the checkout, or switch the primary checkout to the branch"),
+    bind(CheckoutsTable, &[Chord::key("b"), Chord::key("B")], Branches, "show or hide the branches without a checkout"),
+    bind(CheckoutsTable, &[Chord::key("/")], Filter, "filter by checkout or branch"),
+    bind(CheckoutsTable, &[Chord::key("f"), Chord::key("F")], Fetch, "fetch every remote and prune"),
+    bind(CheckoutsTable, &[Chord::key("p"), Chord::key("P")], Pull, "pull the checkout, fast-forward only"),
+    bind(CheckoutsTable, &[Chord::key("s"), Chord::key("S")], StartShell, "start a shell in the checkout"),
+    bind(CheckoutsTable, &[Chord::key("a"), Chord::key("A")], StartAgent, "start the default agent in the checkout"),
     bind(Start, &[Chord::key("s"), Chord::key("S")], StartShell, "start a shell"),
     bind(Start, &[Chord::key("a"), Chord::key("A")], StartAgent, "start the default agent"),
     bind(Start, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next item"),
@@ -203,7 +225,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Start, &[Chord::key("Enter")], Choose, "start the highlighted one"),
 ];
 
-const ORDER: [Place; 5] = [Anywhere, Pane, Place::Feature, Card, Start];
+const ORDER: [Place; 6] = [Anywhere, Pane, Place::Feature, Card, CheckoutsTable, Start];
 
 /// The table as the sheet lists it: a group per place, in the sheet's order.
 pub fn groups() -> Vec<Group> {
@@ -254,7 +276,7 @@ mod tests {
         assert_eq!(listed, BINDINGS.len());
         assert!(groups.iter().all(|g| !g.bindings.is_empty()), "an empty heading");
         let titles: Vec<_> = groups.iter().map(|g| g.title).collect();
-        assert_eq!(titles, ["Anywhere", "In a pane", "Feature", "Board card", "A checkout's + menu"]);
+        assert_eq!(titles, ["Anywhere", "In a pane", "Feature", "Board card", "Checkouts", "A checkout's + menu"]);
     }
 
     /// The page hears Anywhere, Feature and Card together, so a key may
@@ -262,7 +284,8 @@ mod tests {
     /// and an open + menu hears only its own and Anywhere's.
     #[test]
     fn no_key_is_bound_twice_where_it_is_heard() {
-        let heard_together: [&[Place]; 3] = [&[Anywhere, Place::Feature, Card], &[Pane], &[Anywhere, Start]];
+        let heard_together: [&[Place]; 4] =
+            [&[Anywhere, Place::Feature, Card], &[Pane], &[Anywhere, CheckoutsTable], &[Anywhere, Start]];
         for places in heard_together {
             let chords: Vec<&Chord> = BINDINGS
                 .iter()

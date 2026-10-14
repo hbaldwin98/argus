@@ -29,6 +29,7 @@ use crate::keys::{self, PageKey};
 use crate::page::{Connection, Event, PageMouse, Status};
 use crate::settings::Settings;
 use crate::rail::{self, Choices};
+use crate::checkouts_stage::{CheckoutsStage, Opened};
 use crate::screen::Screen;
 
 /// Lines one wheel notch moves a parked view, as terminals scroll for one
@@ -65,6 +66,7 @@ pub struct Session {
     asked: Vec<u64>,
     /// The agent templates the daemon offers, the first its default.
     templates: Vec<String>,
+    checkouts: CheckoutsStage,
     /// A pane the daemon made for us that no tree has carried yet.
     made: Option<PaneId>,
     focused: bool,
@@ -106,6 +108,7 @@ impl Session {
             last_request: 0,
             asked: Vec::new(),
             templates: Vec::new(),
+            checkouts: CheckoutsStage::default(),
             made: None,
             focused: true,
             leader: false,
@@ -269,9 +272,8 @@ impl Session {
     /// Puts a pane on screen, leaving the Feature stage for it: a pane
     /// chosen on the rail is one the person means to look at and type into.
     pub fn select(&mut self, pane: PaneId) -> Vec<ClientMsg> {
-        if self.project_of(pane).is_some() && self.features.is_open() {
-            self.features.set_open(false);
-            self.rail_changed = true;
+        if self.project_of(pane).is_some() {
+            self.leave_stages();
         }
         self.show(pane);
         self.finish()
@@ -364,8 +366,9 @@ impl Session {
                     self.kill(pane);
                 }
             }
-            Action::Workspace => self.open_features(false),
+            Action::Workspace => self.leave_stages(),
             Action::Feature => self.open_features(true),
+            Action::Checkouts => self.open_checkouts(true),
             // A screen less a line, so the line at the edge stays in view.
             Action::PageUp => self.scroll_by(-page(self)),
             Action::PageDown => self.scroll_by(page(self)),
@@ -618,11 +621,19 @@ impl Session {
 
     /// Shows the Feature stage, or goes back to the Workspace.
     pub fn show_features(&mut self, open: bool) -> Vec<ClientMsg> {
-        self.open_features(open);
+        if open {
+            self.open_features(true);
+        } else {
+            self.leave_stages();
+        }
         self.finish()
     }
 
     fn open_features(&mut self, open: bool) {
+        if open && self.checkouts.is_open() {
+            self.checkouts.set_open(false);
+            self.rail_changed = true;
+        }
         if self.features.is_open() != open {
             self.features.set_open(open);
             self.rail_changed = true;
@@ -662,8 +673,87 @@ impl Session {
     /// Leaves the Feature stage for a pane working a feature.
     pub fn go_to_pane(&mut self, pane: PaneId) -> Vec<ClientMsg> {
         if self.project_of(pane).is_some() {
-            self.features.set_open(false);
+            self.leave_stages();
             self.show(pane);
+        }
+        self.finish()
+    }
+
+    /// Leaves whichever stage is open for the Workspace.
+    fn leave_stages(&mut self) {
+        if self.features.is_open() || self.checkouts.is_open() {
+            self.features.set_open(false);
+            self.checkouts.set_open(false);
+            self.rail_changed = true;
+        }
+    }
+
+    /// Shows the Checkouts stage, or goes back to the Workspace.
+    pub fn show_checkouts(&mut self, open: bool) -> Vec<ClientMsg> {
+        self.open_checkouts(open);
+        self.finish()
+    }
+
+    fn open_checkouts(&mut self, open: bool) {
+        if open {
+            self.open_features(false);
+        }
+        if self.checkouts.is_open() != open {
+            self.checkouts.set_open(open);
+            self.rail_changed = true;
+        }
+    }
+
+    pub fn select_checkout_row(&mut self, key: String) -> Vec<ClientMsg> {
+        self.checkouts.select(key);
+        self.finish()
+    }
+
+    pub fn filter_checkouts(&mut self, filter: String) -> Vec<ClientMsg> {
+        self.checkouts.set_filter(filter);
+        self.finish()
+    }
+
+    /// A key or button of the Checkouts stage, acting on its selected row.
+    pub fn checkouts_action(&mut self, action: Action) -> Vec<ClientMsg> {
+        let Some(repo) = self.chosen_repository().cloned() else {
+            return self.finish();
+        };
+        match action {
+            Action::Next => self.checkouts.step(&repo, 1),
+            Action::Previous => self.checkouts.step(&repo, -1),
+            Action::First => self.checkouts.step(&repo, isize::MIN),
+            Action::Last => self.checkouts.step(&repo, isize::MAX),
+            Action::Branches => self.checkouts.toggle_branches(),
+            Action::Choose => match self.checkouts.open_row(&repo) {
+                Some(Opened::Pane(pane)) => {
+                    self.leave_stages();
+                    self.show(pane);
+                }
+                Some(Opened::Switch { checkout, branch }) => self.out.push(ClientMsg::SwitchBranch { checkout, branch }),
+                Some(Opened::Say(text)) => self.passing.push(Event::Notice { text }),
+                None => {}
+            },
+            Action::Fetch | Action::Pull => {
+                if let Some(checkout) = self.checkouts.where_git_runs(&repo) {
+                    self.out.push(if action == Action::Fetch {
+                        ClientMsg::Fetch { checkout }
+                    } else {
+                        ClientMsg::Pull { checkout }
+                    });
+                }
+            }
+            Action::StartShell | Action::StartAgent => {
+                let Some(checkout) = self.checkouts.checkout(&repo) else {
+                    return self.note("a branch has no directory to start in yet: give it a worktree first");
+                };
+                return match (action, self.templates.first().cloned()) {
+                    (Action::StartShell, _) => self.spawn_shell(checkout),
+                    (_, Some(agent)) => self.spawn_agent(checkout, agent),
+                    (_, None) => self.note("argusd offers no agent to start"),
+                };
+            }
+            _ => {}
         }
         self.finish()
     }
@@ -715,6 +805,7 @@ impl Session {
 
     /// The messages this change sends, with the view when it changed.
     fn finish(&mut self) -> Vec<ClientMsg> {
+        self.features.set_board_wanted(self.checkouts.is_open());
         // Whatever changed may have changed which board the stage reads.
         let scope = self.scope();
         if self.connection == Connection::Connected {
@@ -762,6 +853,12 @@ impl Session {
         if let Some(features) = self.features.take(scope.as_ref(), &self.tree) {
             events.push(Event::Features(Box::new(features)));
         }
+        if self.checkouts.is_open() {
+            let repo = self.chosen_repository().cloned();
+            if let Some(table) = self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked()) {
+                events.push(Event::Checkouts(Box::new(table)));
+            }
+        }
         events.append(&mut self.passing);
         events
     }
@@ -779,6 +876,11 @@ impl Session {
         if !events.iter().any(|e| matches!(e, Event::Features(_))) {
             let scope = self.scope();
             events.push(Event::Features(Box::new(self.features.everything(scope.as_ref(), &self.tree))));
+        }
+        if !events.iter().any(|e| matches!(e, Event::Checkouts(_))) {
+            let repo = self.chosen_repository().cloned();
+            let table = self.checkouts.everything(repo.as_ref(), self.features.board(), self.features.peeked());
+            events.push(Event::Checkouts(Box::new(table)));
         }
         events
     }
@@ -804,7 +906,13 @@ impl Session {
         };
         let mut rail = rail::build(&self.tree, &choices, self.loaded);
         rail.repository = self.chosen_repository().map(|r| r.id.0);
-        rail.stage = if self.features.is_open() { "feature" } else { "workspace" };
+        rail.stage = if self.features.is_open() {
+            "feature"
+        } else if self.checkouts.is_open() {
+            "checkouts"
+        } else {
+            "workspace"
+        };
         rail.filled = self.filled && !self.features.is_open() && self.shown.is_some();
         rail.templates = self.templates.clone();
         rail
@@ -1060,7 +1168,7 @@ mod tests {
         assert!(s.events(0).is_empty());
         s.toggle_repository(RepositoryId(10));
         assert!(matches!(s.events(0).as_slice(), [Event::Rail(_)]));
-        assert_eq!(s.everything(0).len(), 4, "a fresh page hears it all, the keymap first");
+        assert_eq!(s.everything(0).len(), 5, "a fresh page hears it all, the keymap first");
     }
 
     #[test]
@@ -1415,5 +1523,37 @@ mod tests {
         s.events(0);
         assert!(s.spawn_agent(CheckoutId(100), "nobody".into()).is_empty());
         assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("nobody"))));
+    }
+
+    #[test]
+    fn the_checkouts_stage_opens_alone_and_asks_for_the_board_it_names_features_from() {
+        let mut s = session(without_focus());
+        s.open_features(true);
+        let sent = s.show_checkouts(true);
+        assert!(!s.features.is_open() && s.checkouts.is_open(), "one stage at a time");
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::GetDecisions { .. })), "{sent:?}");
+        let events = s.events(0);
+        assert!(events.iter().any(|e| matches!(e, Event::Checkouts(table) if table.repository.as_deref() == Some("argus"))));
+        let Some(Event::Rail(rail)) = events.iter().find(|e| matches!(e, Event::Rail(_))) else { panic!() };
+        assert_eq!(rail.stage, "checkouts");
+    }
+
+    #[test]
+    fn enter_on_a_checkout_row_shows_its_pane_in_the_workspace() {
+        let mut s = session(without_focus());
+        s.show_checkouts(true);
+        s.select_checkout_row("c100".into());
+        s.checkouts_action(Action::Choose);
+        assert_eq!(s.shown, Some(PaneId(1)));
+        assert!(!s.checkouts.is_open());
+    }
+
+    #[test]
+    fn fetch_and_pull_run_in_the_selected_checkout() {
+        let mut s = session(without_focus());
+        s.show_checkouts(true);
+        s.select_checkout_row("c100".into());
+        assert!(matches!(s.checkouts_action(Action::Pull).as_slice(), [ClientMsg::Pull { checkout: CheckoutId(100) }]));
+        assert!(matches!(s.checkouts_action(Action::Fetch).as_slice(), [ClientMsg::Fetch { checkout: CheckoutId(100) }]));
     }
 }

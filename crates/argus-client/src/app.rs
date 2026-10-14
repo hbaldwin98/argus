@@ -61,23 +61,7 @@ mod server;
 mod showing;
 mod views;
 
-/// The branch a remote-tracking name would become locally:
-/// `origin/feature/x` → `feature/x`. Remote names have no slash in them,
-/// so the first one is the split.
-fn local_name(remote_branch: &str) -> Option<&str> {
-    remote_branch.split_once('/').map(|(_, rest)| rest)
-}
-
-/// Whether this checkout is the one sitting on `branch`. Its git status is
-/// the truth; the row's name stands in only until the first poll has been
-/// round.
-fn on_branch(c: &CheckoutInfo, branch: &str) -> bool {
-    c.git
-        .as_ref()
-        .and_then(|g| g.branch.as_deref())
-        .unwrap_or(&c.name)
-        == branch
-}
+use argus_protocol::column::local_name;
 
 /// The tree flattened to its checkouts. Written once because several
 /// questions are this plus a `find`; its panes are [`HeldTree::panes`].

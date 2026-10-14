@@ -12,6 +12,7 @@ use tauri::State;
 
 use crate::clipboard;
 use crate::features::Layout;
+use crate::keymap::Action;
 use crate::keys::PageKey;
 use crate::page::{Event, PageMouse};
 use crate::shared::Shared;
@@ -164,6 +165,33 @@ pub async fn choose_repository(shared: State<'_, Arc<Shared>>, repository: u64) 
 #[tauri::command]
 pub async fn show_features(shared: State<'_, Arc<Shared>>, open: bool) -> Answer {
     shared.act(|s| s.show_features(open));
+    Ok(())
+}
+
+/// `open` true shows the Checkouts stage, false goes back to the Workspace.
+#[tauri::command]
+pub async fn show_checkouts(shared: State<'_, Arc<Shared>>, open: bool) -> Answer {
+    shared.act(|s| s.show_checkouts(open));
+    Ok(())
+}
+
+/// A row of the Checkouts table chosen by its key.
+#[tauri::command]
+pub async fn select_checkout_row(shared: State<'_, Arc<Shared>>, key: String) -> Answer {
+    shared.act(|s| s.select_checkout_row(key));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn filter_checkouts(shared: State<'_, Arc<Shared>>, filter: String) -> Answer {
+    shared.act(|s| s.filter_checkouts(filter));
+    Ok(())
+}
+
+/// A key or button of the Checkouts stage, acting on its selected row.
+#[tauri::command]
+pub async fn checkouts_action(shared: State<'_, Arc<Shared>>, action: Action) -> Answer {
+    shared.act(|s| s.checkouts_action(action));
     Ok(())
 }
 

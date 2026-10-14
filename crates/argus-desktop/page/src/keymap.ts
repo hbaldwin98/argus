@@ -5,6 +5,7 @@
 import type { Action } from './bindings/Action';
 import type { Chord } from './bindings/Chord';
 import type { Place } from './bindings/Place';
+import { checkoutsAction } from './checkouts.js';
 import { startAction, startOpen } from './chrome.js';
 import { $ } from './dom.js';
 import { closeLayer, featureAction } from './features.js';
@@ -47,8 +48,11 @@ function run(action: Action): boolean {
     case 'feature':
       call('show_features', { open: action === 'feature' });
       return true;
+    case 'checkouts':
+      call('show_checkouts', { open: true });
+      return true;
     default:
-      return featureAction(action);
+      return state.rail.stage === 'checkouts' ? checkoutsAction(action) : featureAction(action);
   }
 }
 
@@ -66,7 +70,11 @@ export function listen(): void {
       return;
     }
     const places: Place[] =
-      state.rail.stage === 'feature' ? ['anywhere', 'feature', 'card'] : ['anywhere'];
+      state.rail.stage === 'feature'
+        ? ['anywhere', 'feature', 'card']
+        : state.rail.stage === 'checkouts'
+          ? ['anywhere', 'checkouts']
+          : ['anywhere'];
     const action = actionFor(places, e);
     if (action && run(action)) e.preventDefault();
   });

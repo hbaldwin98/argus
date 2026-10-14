@@ -1703,3 +1703,95 @@ body.filled .tabs,
 body.filled .head {
   display: none;
 }
+
+/* ---- The Checkouts stage ---------------------------------------------- */
+
+.ctable-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.ctable {
+  width: 100%;
+  border-collapse: collapse;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+}
+.ctable th {
+  font: var(--type-label);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  text-align: left;
+  padding: var(--sp-8) var(--sp-12);
+  border-bottom: 1px solid var(--line);
+}
+.ctable td {
+  height: 40px;
+  padding: 0 var(--sp-12);
+  border-bottom: 1px solid var(--line);
+}
+.ctable th:nth-child(1) {
+  width: 190px;
+}
+.ctable th:nth-child(2) {
+  width: 140px;
+}
+.ctable th:nth-child(3) {
+  width: 110px;
+}
+.ctable th:nth-child(4) {
+  width: 190px;
+}
+.ctable th:nth-child(5) {
+  width: 70px;
+}
+.ctable tr.group td {
+  height: 30px;
+  border-bottom: 0;
+  font: var(--type-label);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+.ctable tbody tr:not(.group) {
+  cursor: pointer;
+}
+.ctable tr.on {
+  background: var(--bg-selected);
+}
+.ctable tr.on td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.ctable .git + .meta,
+.ctable .glyph + .st {
+  margin-left: var(--sp-6);
+}
+.ctable .row-actions {
+  text-align: right;
+}
+.ctable .row-actions > * + * {
+  margin-left: var(--sp-6);
+}
+.start-at {
+  position: relative;
+  display: inline-block;
+  vertical-align: middle;
+}
+.start-at .menu {
+  right: 0;
+  top: 28px;
+  text-align: left;
+}
+.cdetail {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-24);
+  padding: var(--sp-12) var(--sp-20);
+  background: var(--bg-chrome);
+  border-top: 1px solid var(--line);
+}
+.cdetail .cnote {
+  max-width: 420px;
+  white-space: normal;
+}

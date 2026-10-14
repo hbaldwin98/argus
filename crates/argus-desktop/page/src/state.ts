@@ -1,6 +1,7 @@
 // What the page holds: the last of each event Rust sent, and the little
 // view state that is the page's own — a menu open, a filter typed.
 
+import type { Checkouts } from './bindings/Checkouts';
 import type { Features } from './bindings/Features';
 import type { Group } from './bindings/Group';
 import type { Rail } from './bindings/Rail';
@@ -14,8 +15,10 @@ export const state: {
   keymap: Group[];
   /** The project switcher's menu. */
   menuOpen: boolean;
-  /** The checkout whose + menu is open, and its highlighted item. */
-  start: { checkout: number; at: number } | null;
+  /** The checkout whose + menu is open, where it opened from, and its
+   *  highlighted item. */
+  start: { checkout: number; from: 'rail' | 'table'; at: number } | null;
+  checkouts: Checkouts | null;
   /** What the index's filter says. */
   filter: string;
   /** Whether the board's archived column is unfolded. */
@@ -38,6 +41,7 @@ export const state: {
   keymap: [],
   menuOpen: false,
   start: null,
+  checkouts: null,
   filter: '',
   archivedOpen: false,
 };

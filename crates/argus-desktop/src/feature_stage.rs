@@ -31,6 +31,9 @@ pub struct Scope {
 
 pub struct FeatureStage {
     open: bool,
+    /// Another stage reads the board while this one is closed: the
+    /// Checkouts stage names each checkout's feature.
+    board_wanted: bool,
     /// The repository whose board was asked for on this connection.
     asked: Option<RepositoryId>,
     board: Option<DecisionBoard>,
@@ -48,6 +51,7 @@ impl FeatureStage {
     pub fn new(settings: Settings) -> FeatureStage {
         FeatureStage {
             open: false,
+            board_wanted: false,
             asked: None,
             board: None,
             board_for: None,
@@ -69,6 +73,20 @@ impl FeatureStage {
         self.changed = true;
     }
 
+    pub fn set_board_wanted(&mut self, wanted: bool) {
+        self.board_wanted = wanted;
+    }
+
+    /// The repository's board, once it has arrived.
+    pub fn board(&self) -> Option<&DecisionBoard> {
+        self.board.as_ref()
+    }
+
+    /// The feature under the stage's cursor.
+    pub fn peeked(&self) -> Option<&str> {
+        self.peek.as_deref()
+    }
+
     /// A new connection: whatever was asked of the last is asked again.
     pub fn forget_asked(&mut self) {
         self.asked = None;
@@ -83,7 +101,7 @@ impl FeatureStage {
     /// been asked for on this connection. A board for another repository
     /// is dropped at once, so the index never shows the wrong one.
     pub fn refresh(&mut self, scope: Option<&Scope>, out: &mut Vec<ClientMsg>) {
-        if !self.open {
+        if !self.open && !self.board_wanted {
             return;
         }
         let Some(scope) = scope else {

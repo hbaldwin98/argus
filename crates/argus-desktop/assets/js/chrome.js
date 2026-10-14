@@ -1,5 +1,6 @@
 // The window's frame around the stage: the rail, the stage tabs, the pane
 // header, the status bar, the empty stage, and notices that pass.
+import { drawCheckouts } from './checkouts.js';
 import { $, el, icon } from './dom.js';
 import { drawFeatures } from './features.js';
 import { screen } from './screen.js';
@@ -8,17 +9,20 @@ import { call } from './tauri.js';
 const LOUD = new Set(['waiting', 'needs-review', 'failed']);
 export function drawChrome() {
     const stopped = state.status.connection === 'stopped';
-    const feature = state.rail.stage === 'feature';
+    const stage = state.rail.stage;
     for (const [id, on] of [
-        ['tab-workspace', !feature],
-        ['tab-feature', feature],
+        ['tab-workspace', stage === 'workspace'],
+        ['tab-feature', stage === 'feature'],
+        ['tab-checkouts', stage === 'checkouts'],
     ]) {
         $(id).classList.toggle('on', on);
         $(id).setAttribute('aria-selected', String(on));
     }
-    $('fstage').hidden = !feature;
-    $('body').hidden = feature;
+    $('fstage').hidden = stage !== 'feature';
+    $('cstage').hidden = stage !== 'checkouts';
+    $('body').hidden = stage !== 'workspace';
     drawFeatures();
+    drawCheckouts();
     drawTabsMeta();
     drawHeading();
     drawRail();
@@ -31,11 +35,12 @@ export function drawChrome() {
         $(id).classList.toggle('held', stopped);
     $('stopped').hidden = !stopped;
 }
-/** The Feature stage names the repository it reads, at the tabs' end. */
+/** The Feature and Checkouts stages name the repository they read, at
+ *  the tabs' end. */
 function drawTabsMeta() {
     const { project, repository, stage } = state.rail;
     const chosen = project?.repositories.find((repo) => repo.id === repository);
-    $('tabs-meta').textContent = stage === 'feature' && chosen ? chosen.name : '';
+    $('tabs-meta').textContent = stage !== 'workspace' && chosen ? chosen.name : '';
 }
 export function drawHeading() {
     const { project, projects } = state.rail;
@@ -118,16 +123,15 @@ function drawRail() {
         }, el('span', { class: 'chev' }, icon(repo.open ? 'down' : 'right')), statusDot, el('span', { class: 'rname ttl' }, repo.name), el('span', { class: 'cnt' }, repo.used ?? (repo.panes || '')))));
         for (const co of repo.checkouts) {
             rows.push(el('div', { class: 'co' }, el('span', { class: 'name', title: co.branch || null }, co.name), el('span', null, co.kind), co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git), el('button', {
-                class: `icon${state.start?.checkout === co.id ? ' hot' : ''}`,
+                class: `icon${railStart(co.id) ? ' hot' : ''}`,
                 title: 'Start a shell or an agent',
                 'aria-label': `Start a shell or an agent on ${repo.name} ${co.name}`,
-                'aria-expanded': String(state.start?.checkout === co.id),
+                'aria-expanded': String(railStart(co.id)),
                 onclick: (e) => {
                     e.stopPropagation();
-                    state.start = state.start?.checkout === co.id ? null : { checkout: co.id, at: 0 };
-                    drawRail();
+                    toggleStart(co.id, 'rail');
                 },
-            }, icon('plus')), state.start?.checkout === co.id && startMenu(`${repo.name} ${co.name}`, co.id)));
+            }, icon('plus')), railStart(co.id) && startMenu(`${repo.name} ${co.name}`, co.id)));
             for (const pane of co.panes) {
                 rows.push(el('div', { class: 'pane-row' }, el('button', {
                     class: `pane${pane.on ? ' on' : ''} ${pane.status}`,
@@ -159,7 +163,17 @@ function start(checkout, agent) {
     else
         call('spawn_agent', { checkout, template: agent });
 }
-function startMenu(name, checkout) {
+function railStart(checkout) {
+    return state.start?.checkout === checkout && state.start.from === 'rail';
+}
+/** Opens a checkout's + menu where it was pressed, or closes it. */
+export function toggleStart(checkout, from) {
+    const open = state.start?.checkout === checkout && state.start.from === from;
+    state.start = open ? null : { checkout, from, at: 0 };
+    drawRail();
+    drawCheckouts();
+}
+export function startMenu(name, checkout) {
     const items = starts();
     const at = state.start?.at ?? 0;
     return el('div', { class: 'menu', role: 'menu', 'aria-label': `Start on ${name}` }, items.flatMap((item, i) => [
@@ -182,6 +196,7 @@ export function closeStart() {
         return;
     state.start = null;
     drawRail();
+    drawCheckouts();
 }
 /** Runs an open + menu's `action`, saying whether it took it. */
 export function startAction(action) {
@@ -208,6 +223,7 @@ export function startAction(action) {
         case 'previous':
             open.at = (open.at + (action === 'next' ? 1 : items.length - 1)) % items.length;
             drawRail();
+            drawCheckouts();
             return true;
         case 'choose': {
             const item = items[open.at];

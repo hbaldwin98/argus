@@ -21,6 +21,7 @@ pub enum Event {
     // The rail and the index are boxed: they are far the largest events,
     // and every other one would otherwise be sized to carry them.
     Features(Box<Features>),
+    Checkouts(Box<Checkouts>),
     /// Text a pane's child put on the clipboard (OSC 52).
     Clipboard { text: String },
     /// Something the daemon said that passes: a refused request's reason.
@@ -75,7 +76,7 @@ pub struct Rail {
     /// The repository whose features the Feature stage reads.
     pub repository: Option<u64>,
     /// `workspace` or `feature`.
-    #[cfg_attr(test, ts(type = "\"workspace\" | \"feature\""))]
+    #[cfg_attr(test, ts(type = "\"workspace\" | \"feature\" | \"checkouts\""))]
     pub stage: &'static str,
     /// The pane fills the window: the rail and the stage's chrome are put
     /// away until the leader and `f` again.
@@ -317,6 +318,74 @@ pub struct Frame {
     pub lines: Vec<(u16, Vec<Segment>)>,
     /// Set while the view is parked above the live screen.
     pub parked: Option<Parked>,
+}
+
+/// The Checkouts stage: the chosen repository's checkouts, and the
+/// branches no checkout is on while they are shown.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Checkouts {
+    /// The repository it lists; `None` before one is chosen.
+    pub repository: Option<String>,
+    pub checkouts: usize,
+    /// Local and remote branches no checkout is on, shown or not.
+    pub branches: usize,
+    /// The repository's main branch, as the heading names it.
+    pub main: Option<String>,
+    pub branches_shown: bool,
+    pub filter: String,
+    pub rows: Vec<CheckoutsRow>,
+    /// The selected row's `key`.
+    pub selected: Option<String>,
+    pub detail: Option<CheckoutDetail>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CheckoutsRow {
+    /// Names the row in what the page sends back: `c<id>`, `b<branch>` or
+    /// `r<origin/branch>`.
+    pub key: String,
+    /// The checkout's id; `None` for a branch with no directory.
+    pub checkout: Option<u64>,
+    /// The checkout's name; `None` for a branch row.
+    pub name: Option<String>,
+    pub primary: bool,
+    pub branch: String,
+    /// The compact git state, as on the rail; a branch row has none.
+    pub git: Option<String>,
+    pub clean: bool,
+    /// Said beside the git state: `remote only` for what a fetch turned up.
+    pub note: Option<&'static str>,
+    pub running: Vec<Running>,
+    /// The number of the feature this checkout is on, when the board says.
+    pub feature: Option<i64>,
+    /// That feature is the one the Feature stage has under its cursor.
+    pub viewed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Running {
+    pub agent: bool,
+    pub status: &'static str,
+}
+
+/// The selected checkout, said in full along the stage's foot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct CheckoutDetail {
+    pub name: String,
+    pub path: String,
+    /// How far it is from its upstream: `1 behind`, `in sync`; `None`
+    /// when git has not been read.
+    pub upstream: Option<String>,
+    /// `1 unstaged file`, `3 staged · 2 unstaged files`, `no changes`.
+    pub changes: Option<String>,
 }
 
 /// A mouse gesture over the pane the page did not keep for a selection.

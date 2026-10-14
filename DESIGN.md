@@ -179,6 +179,7 @@ live in this crate and a contract written twice drifts in silence.
 | `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses |
 | `cell`, `framing`, `transport` | a screen cell, a frame, and the endpoint they travel over |
 | `damage` | what changed on a pane's screen, as runs of cells and regions that scrolled |
+| `column` | the order a repository's checkouts column lists its rows: the main branch first, then the checkouts, then the branches without one while they are shown |
 | `keys` | the bytes a key press is to a pane's child, decided once so every client types the same thing |
 | `mouse` | the bytes a mouse event is to a pane's child that asked for them, decided once so every client reports the mouse the same way |
 | `paste` | what a client sends as a paste: text with its line endings as a pty wants them, and how large a file may be to cross |
@@ -289,6 +290,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `session` | what this window holds of the daemon — the tree, the pane on screen, the connection's state — and what each message and gesture changes |
 | `screen` | a pane's screen as the page draws it: the grid the daemon's damage lands on, and the rows changed since the last frame |
 | `rail` | what the rail lists from the tree, and what a row says |
+| `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row — and what its keys and buttons ask of the daemon |
+| `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks, each repository's layout — and what its messages and gestures change |
 | `features` | what the Feature stage's index shows from a board: its rows, the places a person may move each, and the peek |
 | `settings` | what the window remembers between runs: each repository's index layout |

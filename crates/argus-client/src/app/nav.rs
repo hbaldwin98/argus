@@ -128,37 +128,9 @@ impl App {
     /// of them would otherwise bury the handful of checkouts that are the
     /// point of the column.
     pub fn checkout_rows(&self) -> Vec<CheckoutRow> {
-        let Some(r) = self.current_repository() else {
-            return Vec::new();
-        };
-        let default = r.default_branch.as_deref();
-        // `branches` only holds the ones no checkout has, so a hit here
-        // means the main branch has no directory and needs a row of its own.
-        let pinned = default.and_then(|d| r.branches.iter().position(|b| b == d));
-        let leads = |i: &usize| default.is_some_and(|d| on_branch(&r.checkouts[*i], d));
-
-        let mut rows: Vec<CheckoutRow> = pinned.map(CheckoutRow::Branch).into_iter().collect();
-        rows.extend(
-            (0..r.checkouts.len())
-                .filter(leads)
-                .map(CheckoutRow::Checkout),
-        );
-        rows.extend(
-            (0..r.checkouts.len())
-                .filter(|i| !leads(i))
-                .map(CheckoutRow::Checkout),
-        );
-        if self.show_branches {
-            rows.extend(
-                (0..r.branches.len())
-                    .filter(|i| Some(*i) != pinned)
-                    .map(CheckoutRow::Branch),
-            );
-            // What a fetch turned up comes last: it is the furthest from
-            // being somewhere you can work.
-            rows.extend((0..r.remote_branches.len()).map(CheckoutRow::Remote));
-        }
-        rows
+        self.current_repository()
+            .map(|r| r.column(self.show_branches))
+            .unwrap_or_default()
     }
 
     /// The selected row when it is a branch nothing is sitting on.
@@ -287,7 +259,7 @@ impl App {
             // A branch that has just been given a directory is still the
             // row the user was on, so follow it into its new checkout.
             (CheckoutRow::Checkout(i), CheckoutAnchor::Branch(name)) => {
-                r.checkouts.get(*i).is_some_and(|c| on_branch(c, name))
+                r.checkouts.get(*i).is_some_and(|c| c.on_branch(name))
             }
             _ => false,
         });

@@ -12,6 +12,8 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 mod clipboard;
+mod checkouts;
+mod checkouts_stage;
 mod commands;
 mod daemon;
 mod feature_stage;
@@ -72,6 +74,10 @@ fn main() {
             commands::toggle_repository,
             commands::choose_repository,
             commands::show_features,
+            commands::show_checkouts,
+            commands::select_checkout_row,
+            commands::filter_checkouts,
+            commands::checkouts_action,
             commands::peek,
             commands::set_layout,
             commands::toggle_folded,

@@ -4,13 +4,14 @@
 
 import type { Event } from './bindings/Event';
 import { closeStart, drawChrome, drawHeading, notice, reconnect } from './chrome.js';
+import { drawCheckouts } from './checkouts.js';
 import { $ } from './dom.js';
 import { drawFeatures, listen as listenToFeatures } from './features.js';
 import { listen as listenToInput } from './input.js';
 import { listen as listenToKeys } from './keymap.js';
 import { screen } from './screen.js';
 import { state } from './state.js';
-import { connect } from './tauri.js';
+import { call, connect } from './tauri.js';
 
 function receive(event: Event): void {
   switch (event.type) {
@@ -41,6 +42,10 @@ function receive(event: Event): void {
     case 'notice':
       notice(event.text);
       break;
+    case 'checkouts':
+      state.checkouts = event;
+      drawCheckouts();
+      break;
     case 'features':
       state.features = event;
       drawFeatures();
@@ -64,6 +69,7 @@ document.addEventListener('click', (e) => {
   }
 });
 $('reconnect').addEventListener('click', reconnect);
+$('tab-checkouts').addEventListener('click', () => call('show_checkouts', { open: true }));
 
 drawChrome();
 connect(receive);

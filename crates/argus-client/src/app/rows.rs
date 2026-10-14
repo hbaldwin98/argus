@@ -6,18 +6,9 @@
 
 use super::*;
 
-/// One row of the checkouts column, as an index into the repository's own
-/// `checkouts` or `branches`. The two kinds interleave — the main branch
-/// leads the column whichever it turns out to be — so the column's order is
-/// [`App::checkout_rows`] rather than either list on its own.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CheckoutRow {
-    Checkout(usize),
-    Branch(usize),
-    /// A branch that exists on a remote and nowhere else — an index into
-    /// `remote_branches`, which holds them as `origin/feature`.
-    Remote(usize),
-}
+/// One row of the checkouts column; its order is the protocol's, so the
+/// desktop window lists the same rows.
+pub use argus_protocol::CheckoutRow;
 
 /// What the checkouts column had selected, as an identity rather than a
 /// position. Row indices shift under the column whenever a branch row
