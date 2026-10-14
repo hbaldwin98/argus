@@ -41,6 +41,50 @@ fn panes_do_not_inherit_the_claude_session_that_started_the_daemon() {
     );
 }
 
+#[test]
+fn panes_do_not_inherit_the_hook_identity_of_the_pane_that_started_the_daemon() {
+    // A daemon started from inside another Argus pane (a dev instance) has
+    // that pane's hook variables; handed on, a shell here would report to
+    // the other daemon as that pane, and read and write its board.
+    let mut shell = CommandBuilder::new("dummy");
+    shell.env("ARGUS_HOOK_URL", "http://127.0.0.1:9/pane/37");
+    shell.env("ARGUS_HOOK_TOKEN", "outer");
+    shell.env("ARGUS_PANE", "37");
+    shell.env("ARGUS_HOOK", "/outer/argus-hook");
+    shell.env("ARGUS_INSTRUCTIONS", "outer instructions");
+    shell.env("ARGUS_INSTANCE", "dev");
+
+    strip_argus_hook_identity(&mut shell);
+
+    for key in ["ARGUS_HOOK_URL", "ARGUS_HOOK_TOKEN", "ARGUS_PANE", "ARGUS_HOOK", "ARGUS_INSTRUCTIONS"] {
+        assert_eq!(shell.get_env(key), None, "{key} is the outer pane's");
+    }
+    assert_eq!(
+        shell.get_env("ARGUS_INSTANCE"),
+        Some(std::ffi::OsStr::new("dev")),
+        "the instance is this daemon's own"
+    );
+}
+
+#[test]
+fn an_agent_keeps_the_hook_identity_it_is_given() {
+    // The strip comes before a pane's own variables, so a daemon restarted
+    // from inside a pane, whose inherited ARGUS_HOOK is the very helper it
+    // hands its agents, still hands it on.
+    let spawn = Spawn::Program {
+        program: "dummy".into(),
+        args: Vec::new(),
+        env: vec![
+            ("ARGUS_PANE".into(), "2".into()),
+            ("ARGUS_HOOK".into(), "/this/argus-hook".into()),
+        ],
+        resource_policy: ResourcePolicy::Unrestricted,
+    };
+    let (command, _) = spawn.into_command();
+    assert_eq!(command.get_env("ARGUS_PANE"), Some(std::ffi::OsStr::new("2")));
+    assert_eq!(command.get_env("ARGUS_HOOK"), Some(std::ffi::OsStr::new("/this/argus-hook")));
+}
+
 #[cfg(windows)]
 #[test]
 fn windows_default_shell_is_explicitly_selected() {

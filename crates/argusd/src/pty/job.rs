@@ -307,6 +307,29 @@ pub(super) fn strip_claude_session(
     }
 }
 
+/// The variables that make a process an Argus pane: which pane, how to
+/// reach its daemon, and what to tell its agent. A daemon started from
+/// inside another Argus pane, as a dev instance is, inherits that pane's;
+/// handed on, its shells would report to the other daemon as that pane and
+/// read and write that daemon's board. `ARGUS_INSTANCE` and
+/// `ARGUS_ARTIFACT_SCOPE` are not among them: they are settings, and the
+/// instance is this daemon's own.
+const ARGUS_HOOK_IDENTITY: &[&str] = &[
+    argus_protocol::URL_VAR,
+    argus_protocol::TOKEN_VAR,
+    argus_protocol::PANE_VAR,
+    argus_protocol::HELPER_VAR,
+    argus_protocol::INSTRUCTIONS_VAR,
+];
+
+/// Drops an inherited hook identity. Called before a pane's own variables
+/// are set, so an agent's are never the ones removed.
+pub(super) fn strip_argus_hook_identity(command: &mut CommandBuilder) {
+    for key in ARGUS_HOOK_IDENTITY {
+        command.env_remove(key);
+    }
+}
+
 /// What ends a pane's child once the exit waiter owns the child itself.
 pub(super) type Killer = StdMutex<Box<dyn ChildKiller + Send + Sync>>;
 

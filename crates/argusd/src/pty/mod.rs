@@ -71,10 +71,11 @@ pub enum Spawn {
 impl Spawn {
     fn into_command(self) -> (CommandBuilder, ResourcePolicy) {
         match self {
-            Self::DefaultShell => (
-                default_shell_command(),
-                ResourcePolicy::Unrestricted,
-            ),
+            Self::DefaultShell => {
+                let mut command = default_shell_command();
+                strip_argus_hook_identity(&mut command);
+                (command, ResourcePolicy::Unrestricted)
+            }
             Self::Program {
                 program,
                 args,
@@ -82,6 +83,9 @@ impl Spawn {
                 resource_policy,
             } => {
                 let mut command = program_command(&program, &args);
+                // Before the pane's own: an agent is handed a hook identity
+                // of its own, which may equal what the daemon inherited.
+                strip_argus_hook_identity(&mut command);
                 for (key, value) in env {
                     command.env(key, value);
                 }
