@@ -16,8 +16,10 @@ pub enum RailRow {
     /// cursor: `n` adds a project and `D` removes this one from there.
     Project,
     Repository(usize),
-    /// A checkout with panes running in it. One with none has nothing for
-    /// the rail to say; the Checkouts stage lists every one.
+    /// A checkout with panes running in it, or the repository's primary
+    /// one even when empty, so there is always somewhere to start a shell
+    /// or an agent. Another with none has nothing for the rail to say; the
+    /// Checkouts stage lists every one.
     Checkout(usize, usize),
     Pane(PaneLocation),
 }
@@ -130,7 +132,7 @@ impl App {
             }
             for (checkout, item) in repo.checkouts.iter().enumerate() {
                 let panes = item.listed_panes().count();
-                if panes == 0 {
+                if panes == 0 && !item.primary {
                     continue;
                 }
                 rows.push(RailRow::Checkout(repository, checkout));

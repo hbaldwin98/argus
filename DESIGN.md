@@ -342,7 +342,8 @@ client. Panes in other workspaces continue to run. The production TUI projects t
 project's repositories into the stable rail and gives the selected pane's terminal the
 remaining stage. Repository rows are ordered active-first, the quiet ones folded behind their line,
 and stay collapsed until chosen; the one open repository shows a card for each checkout with panes
-running: a box whose top row is the branch with its git state at the right, and whose rows under it
+running, and for its primary checkout even with none, so there is always a checkout to start a shell
+or an agent in from the rail: a box whose top row is the branch with its git state at the right, and whose rows under it
 are those panes and their children. The card's border carries the checkout's state: the accent while
 the cursor or the stage is in it, else the colour of its loudest state from working up, and the
 rule's colour while everything in it is idle or done. A click on a card's border lands on its

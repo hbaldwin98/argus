@@ -294,6 +294,33 @@ fn a_checkouts_card_is_edged_in_what_it_is_doing() {
 }
 
 #[test]
+fn the_primary_checkout_keeps_its_card_with_nothing_running_and_another_does_not() {
+    let mut app = command_center();
+    app.tree[0].repositories[0].checkouts = vec![
+        checkout(10, "master", true, vec![]),
+        checkout(
+            11,
+            "feat",
+            false,
+            vec![pane_info(100, PaneKind::Agent, "claude", PaneStatus::Working)],
+        ),
+        checkout(12, "stale", false, vec![]),
+    ];
+    app.choose_rail_row(crate::app::RailRow::Repository(0));
+    let text = rail_lines(&mut app, 120, 30);
+    let lists = |branch: &str| text.iter().any(|line| line.starts_with(&format!(" │ {branch}")));
+
+    assert!(lists("master") && lists("feat"), "{}", text.join("\n"));
+    assert!(!lists("stale"), "{}", text.join("\n"));
+
+    // Its card is a row like any other: the cursor stops on it, and a shell
+    // or an agent started there starts in it.
+    app.on_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    assert_eq!(app.rail_cursor(), Some(crate::app::RailRow::Checkout(0, 0)));
+    assert_eq!(app.current_checkout().map(|c| c.id), Some(CheckoutId(10)));
+}
+
+#[test]
 fn clicking_a_repository_collapses_the_one_open_before_it() {
     let mut app = command_center();
     app.tree[0].repositories.push(repository(
