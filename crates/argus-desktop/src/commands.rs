@@ -68,6 +68,12 @@ pub async fn wheel(shared: State<'_, Arc<Shared>>, notches: i32, at: (u16, u16))
 /// needs no permission from the webview.
 #[tauri::command]
 pub async fn paste_clipboard(shared: State<'_, Arc<Shared>>) -> Answer {
+    // A picture first, as the terminal client does: a screenshot copied
+    // from some apps carries a text form too, and the picture is the point.
+    if let Some(png) = clipboard::read_image() {
+        shared.act(|s| s.paste_image(png));
+        return Ok(());
+    }
     match clipboard::read() {
         Some(text) => shared.act(|s| s.paste(text)),
         None => shared.act(|s| s.note("nothing on the clipboard to paste")),

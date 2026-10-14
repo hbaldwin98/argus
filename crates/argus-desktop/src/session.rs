@@ -16,9 +16,10 @@ use std::collections::HashSet;
 
 use argus_protocol::keys::{Key, KeyCode, Mods};
 use argus_protocol::mouse::{self, MouseEvent, MouseKind};
+use argus_protocol::paste;
 use argus_protocol::{
     Cell, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
-    RepositoryId, ServerMsg, View, FOCUS,
+    RepositoryId, ServerMsg, View, FOCUS, PASTE_FILE,
 };
 
 use crate::feature_stage::{FeatureStage, Scope};
@@ -398,9 +399,29 @@ impl Session {
     pub fn paste(&mut self, text: String) -> Vec<ClientMsg> {
         if let (Some(pane), false) = (self.shown, text.is_empty()) {
             self.live();
-            self.out.push(ClientMsg::Paste { pane, text });
+            self.out.push(ClientMsg::Paste { pane, text: paste::normalize(&text) });
         }
         self.finish()
+    }
+
+    /// A picture off the clipboard, sent as a file: the pane's process
+    /// reads the daemon's disk, not this machine's clipboard. The daemon
+    /// keeps it and pastes its path, the one form every harness takes an
+    /// image in.
+    pub fn paste_image(&mut self, png: Vec<u8>) -> Vec<ClientMsg> {
+        let Some(pane) = self.shown else {
+            return self.finish();
+        };
+        let note = if !self.daemon.as_ref().is_some_and(|d| d.can(PASTE_FILE)) {
+            "argusd predates pasting images; `argus server restart` updates it".to_string()
+        } else if png.len() > paste::PASTE_FILE_MAX {
+            format!("the picture is too large to paste ({} MB)", png.len() >> 20)
+        } else {
+            self.live();
+            self.out.push(ClientMsg::PasteFile { pane, name: "clipboard.png".into(), bytes: png });
+            "pasted an image".to_string()
+        };
+        self.note(note)
     }
 
     fn live(&mut self) {
@@ -1095,7 +1116,7 @@ mod tests {
             },
             alternate_screen: true,
         });
-        let up = "[<64;4;2M".repeat(2).into_bytes();
+        let up = "\x1b[<64;4;2M".repeat(2).into_bytes();
         assert_eq!(names(&s.wheel(-2, (1, 3))), [format!("input 2 {up:?}")]);
     }
 
@@ -1116,5 +1137,28 @@ mod tests {
         s.key(&PageKey { key: "a".into(), ..PageKey::default() });
         s.receive(history(3, 50, Some(100)));
         assert!(s.screen.as_ref().unwrap().parked().is_none());
+    }
+
+    #[test]
+    fn a_pasted_picture_crosses_as_a_file_to_a_daemon_that_takes_one() {
+        let mut s = session(Hello::this_build());
+        s.select(PaneId(2));
+        let sent = s.paste_image(vec![1, 2, 3]);
+        assert!(sent.iter().any(|m| matches!(m,
+            ClientMsg::PasteFile { pane: PaneId(2), name, bytes } if name == "clipboard.png" && bytes == &[1, 2, 3]
+        )));
+
+        let mut old = session(without_focus());
+        old.select(PaneId(2));
+        old.events(0);
+        assert!(old.paste_image(vec![1]).is_empty());
+        assert!(old.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("predates"))));
+    }
+
+    #[test]
+    fn a_pasted_windows_line_ending_is_not_enter() {
+        let mut s = session(without_focus());
+        s.select(PaneId(2));
+        assert_eq!(names(&s.paste("one\r\ntwo".into())), ["paste 2 one\ntwo"]);
     }
 }

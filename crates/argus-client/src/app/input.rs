@@ -12,10 +12,7 @@
 
 use super::*;
 use crate::dropped::Dropped;
-
-/// The most a pasted file may be. Under the frame limit with room for the
-/// message around it; a screenshot is a few hundred kilobytes.
-const PASTE_FILE_MAX: usize = 32 * 1024 * 1024;
+use argus_protocol::paste::{normalize, PASTE_FILE_MAX};
 
 impl App {
     /// Shuts any floating window, from anywhere, whatever has focus.
@@ -184,7 +181,7 @@ impl App {
             return;
         }
         let lines = text.lines().count();
-        self.on_paste(crate::clipboard::normalize(&text));
+        self.on_paste(normalize(&text));
         self.report(format!(
             "pasted {lines} line{}",
             if lines == 1 { "" } else { "s" }

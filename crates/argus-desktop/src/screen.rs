@@ -540,8 +540,7 @@ mod tests {
     fn a_backward_drag_copies_in_reading_order_without_trailing_blanks() {
         let mut screen = Screen::new(PANE);
         screen.apply(&rows(Cursor::default(), &["abcdefgh", "ijkl"], 8));
-        assert_eq!(screen.text((1, 3), (0, 1)), "bcdefgh
-ijkl");
+        assert_eq!(screen.text((1, 3), (0, 1)), "bcdefgh\nijkl");
     }
 
     #[test]

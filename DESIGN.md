@@ -39,7 +39,9 @@ fails. After `Stopping` it does not reconnect until the person presses Reconnect
 starts again a daemon somebody stopped. It shows one pane at a time; the daemon sizes a pane to the
 client the person was last at, so a window and a terminal client on one pane each fill while in use.
 A drag across the pane selects and letting go copies; the text is read from the window's grid in Rust,
-and the clipboard is written and read there too (Ctrl-V, Ctrl-Shift-V, Alt-V), not by the page.
+and the clipboard is written and read there too (Ctrl-V, Ctrl-Shift-V, Alt-V), not by the page. A
+picture on it crosses as a file (`PasteFile`), and text has its line endings made newlines, as the
+terminal client does (`argus_protocol::paste`).
 The wheel and Shift-PageUp/PageDown act as the terminal client's do: a child that asked for the
 mouse gets its wheel reports (`argus_protocol::mouse`), the normal screen parks the view in the
 pane's history (the parked rows held in `screen`, asked further by line, typing back to live), and a
@@ -168,6 +170,7 @@ live in this crate and a contract written twice drifts in silence.
 | `damage` | what changed on a pane's screen, as runs of cells and regions that scrolled |
 | `keys` | the bytes a key press is to a pane's child, decided once so every client types the same thing |
 | `mouse` | the bytes a mouse event is to a pane's child that asked for them, decided once so every client reports the mouse the same way |
+| `paste` | what a client sends as a paste: text with its line endings as a pty wants them, and how large a file may be to cross |
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
 | `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
 | `tracker_links` | how a repository's work reaches the team's trackers: which tickets a feature is linked to, how a ticket's tracker and key are read out of its URL, and the board's tracker map and its draft |
