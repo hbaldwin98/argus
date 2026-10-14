@@ -909,6 +909,31 @@ impl Session {
         self.finish()
     }
 
+    /// `x` on a checkout in the rail: the Checkouts stage opens on its row
+    /// and asks, since its question is the stage's and is drawn there.
+    pub fn remove_checkout(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
+        let Some(repo) = self
+            .current_project()
+            .and_then(|p| p.repositories.iter().find(|r| r.checkouts.iter().any(|c| c.id == checkout)))
+            .cloned()
+        else {
+            return self.finish();
+        };
+        let Some(info) = repo.checkouts.iter().find(|c| c.id == checkout) else {
+            return self.finish();
+        };
+        if let Err(text) = self.checkouts.ask_remove(info) {
+            return self.note(text);
+        }
+        if self.repository != Some(repo.id) {
+            self.repository = Some(repo.id);
+            self.rail_changed = true;
+        }
+        self.open_checkouts(true);
+        self.checkouts.select(format!("c{}", checkout.0));
+        self.finish()
+    }
+
     /// The answer to the stage's question: a yes does what it asked about.
     pub fn answer_checkouts(&mut self, yes: bool) -> Vec<ClientMsg> {
         if let Some(deleting) = self.checkouts.answer(yes) {
@@ -1854,6 +1879,33 @@ mod tests {
             sent.as_slice(),
             [ClientMsg::DeleteBranch { checkout: CheckoutId(100), branch, force: true }] if branch == "spike"
         ));
+    }
+
+    #[test]
+    fn x_on_a_rail_worktree_opens_its_row_and_asks_and_the_primary_stays() {
+        let mut s = session(without_focus());
+        let mut more = tree();
+        more[0].repositories[0].checkouts.push(checkout(101, "spike", false, Vec::new()));
+        s.receive(with_tree(more));
+        s.events(0);
+        let sent = s.remove_checkout(CheckoutId(101));
+        assert!(!sent.iter().any(|m| matches!(m, ClientMsg::RemoveCheckout { .. })), "nothing is removed before the answer");
+        assert!(s.checkouts.is_open());
+        assert_eq!(s.checkouts.selected_key(), Some("c101"));
+        let asked = s.events(0).into_iter().find_map(|e| match e {
+            Event::Checkouts(table) => table.confirm,
+            _ => None,
+        });
+        assert!(matches!(asked, Some(crate::page::Confirm::Remove { name, .. }) if name == "spike"));
+        assert!(matches!(s.answer_checkouts(true).as_slice(), [ClientMsg::RemoveCheckout { checkout: CheckoutId(101) }]));
+
+        s.remove_checkout(CheckoutId(100));
+        let said = s.events(0).into_iter().find_map(|e| match e {
+            Event::Notice { text } => Some(text),
+            _ => None,
+        });
+        assert_eq!(said.as_deref(), Some("main is the primary checkout and stays"));
+        assert!(s.answer_checkouts(true).is_empty(), "nothing was asked");
     }
 
     #[test]

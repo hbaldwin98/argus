@@ -268,10 +268,14 @@ export function railAction(action: Action): boolean {
       return true;
     }
     case 'close':
-      if (pick.pane === null) return false;
+      // On a checkout, the Checkouts stage opens on it and asks first.
+      if (pick.pane === null) {
+        call('remove_checkout', { checkout: pick.checkout });
+        return true;
+      }
       call('close', { pane: pick.pane });
       // The rail drops the pane when the daemon's tree does; the cursor
-      // falls back to its checkout, so a second x closes nothing else.
+      // falls back to its checkout.
       pickRail(pick.checkout, null);
       return true;
     case 'choose':

@@ -81,6 +81,7 @@ fn main() {
             commands::select_checkout_row,
             commands::filter_checkouts,
             commands::checkouts_action,
+            commands::remove_checkout,
             commands::answer_checkouts,
             commands::new_worktree,
             commands::open_review,

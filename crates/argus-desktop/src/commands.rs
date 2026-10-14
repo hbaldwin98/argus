@@ -234,6 +234,13 @@ pub async fn review_comment(shared: State<'_, Arc<Shared>>, body: Option<String>
     Ok(())
 }
 
+/// Asks whether to remove a worktree picked in the rail.
+#[tauri::command]
+pub async fn remove_checkout(shared: State<'_, Arc<Shared>>, checkout: u64) -> Answer {
+    shared.act(|s| s.remove_checkout(CheckoutId(checkout)));
+    Ok(())
+}
+
 /// The answer to the Checkouts stage's question.
 #[tauri::command]
 pub async fn answer_checkouts(shared: State<'_, Arc<Shared>>, yes: bool) -> Answer {

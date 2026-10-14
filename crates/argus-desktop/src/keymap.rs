@@ -229,7 +229,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Rail, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous checkout or pane"),
     bind(Rail, &[Chord::key("s"), Chord::key("S")], StartShell, "start a shell on its checkout"),
     bind(Rail, &[Chord::key("a"), Chord::key("A")], StartAgent, "start the default agent on its checkout"),
-    bind(Rail, &[Chord::key("x"), Chord::key("X")], Close, "close the pane, ending its program"),
+    bind(Rail, &[Chord::key("x"), Chord::key("X")], Close, "close the pane, or remove the checkout"),
     bind(Rail, &[Chord::key("Enter")], Choose, "open the checkout's + menu, or type into the pane"),
     bind(Place::Feature, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next feature"),
     bind(Place::Feature, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous feature"),

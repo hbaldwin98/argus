@@ -4,7 +4,7 @@
 //! branch or a pull shows once the tree says so.
 
 use argus_protocol::column::{local_name, CheckoutRow};
-use argus_protocol::{CheckoutId, DecisionBoard, PaneId, RepositoryInfo};
+use argus_protocol::{CheckoutId, CheckoutInfo, DecisionBoard, PaneId, RepositoryInfo};
 
 use crate::checkouts::{self, last_commit, View};
 use crate::page::{self, Confirm};
@@ -118,12 +118,7 @@ impl CheckoutsStage {
         let main = repo.default_branch.as_deref();
         match self.row(repo).ok_or("nothing is selected")? {
             CheckoutRow::Checkout(i) => {
-                let c = repo.checkouts.get(i).ok_or("nothing is selected")?;
-                if c.primary {
-                    return Err(format!("{} is the primary checkout and stays", c.name));
-                }
-                let branch = c.git.as_ref().and_then(|g| g.branch.clone()).unwrap_or_else(|| c.name.clone());
-                self.confirm = Some((Confirm::Remove { name: c.name.clone(), branch }, Deleting::Checkout(c.id)));
+                self.ask_remove(repo.checkouts.get(i).ok_or("nothing is selected")?)?;
                 Ok(None)
             }
             CheckoutRow::Branch(i) => {
@@ -139,6 +134,17 @@ impl CheckoutsStage {
                 repo.remote_branches.get(i).map_or("it", String::as_str)
             )),
         }
+    }
+
+    /// Asks whether to remove the worktree `c`, whichever row is selected:
+    /// `D` on its row, or `x` on it in the rail.
+    pub fn ask_remove(&mut self, c: &CheckoutInfo) -> Result<(), String> {
+        if c.primary {
+            return Err(format!("{} is the primary checkout and stays", c.name));
+        }
+        let branch = c.git.as_ref().and_then(|g| g.branch.clone()).unwrap_or_else(|| c.name.clone());
+        self.confirm = Some((Confirm::Remove { name: c.name.clone(), branch }, Deleting::Checkout(c.id)));
+        Ok(())
     }
 
     /// Git refused to delete `branch`: ask whether to force it, naming the
