@@ -178,11 +178,12 @@ pub(super) const FLOW: &str = "sequenceDiagram
     participant hook
     participant argusd
     agent->>hook: ask for the brief
-    hook->>argusd: brief request
+    hook->>argusd: brief request %% decision #4
     alt the pane has a feature
         argusd-->>hook: the brief
     else the pane has no feature
         argusd-->>hook: refused
+        %% task #9
     end";
 
 /// The Feature stage on its index with the board above pushed, the cursor

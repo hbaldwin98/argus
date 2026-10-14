@@ -6,9 +6,9 @@ Sequence diagrams belong to the selected feature (see [features.md](features.md)
 They record how parts of the system talk during one flow — client and daemon,
 hook and store, user and TUI — without replacing decisions or tasks.
 
-Argus stores **Mermaid** `sequenceDiagram` source on the feature. The TUI renders
-it as Unicode box-drawing in a floating overlay; the list stays one line per
-diagram in the Feature view **SEQUENCE** section.
+Argus stores **Mermaid** `sequenceDiagram` source on the feature. The TUI's
+flows lens lists each diagram, reads its messages as numbered steps, and draws
+it beside them.
 
 ## When to add one
 
@@ -43,6 +43,23 @@ sequenceDiagram
 
 Keep participants few and messages readable. Alt/opt blocks are fine when a
 branch matters; avoid styling directives the TUI renderer may ignore.
+
+## Binding a step
+
+A step a decision settles, or a task carries out, names it in a Mermaid comment
+on the message's line or the line right after it. Use the ids `"$ARGUS_HOOK"
+feature` and `task` print:
+
+```mermaid
+sequenceDiagram
+    hook->>argusd: brief request %% decision #4
+    argusd-->>hook: refused
+    %% task #9
+```
+
+The TUI shows the decision beside the step and, under it, the tasks that carry
+it out. Bind only where the decision or task is about that message; a comment
+that names neither is an ordinary comment.
 
 ## Helper commands
 

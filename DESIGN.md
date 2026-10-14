@@ -1507,7 +1507,13 @@ pushed list says so; the one optimistic write the old view made is gone with it.
 Sequence diagrams are stored as Mermaid source on a feature. The flows lens lists them, reads the
 selected one's source as steps (`flow`) — who asks whom for what, with each `else`, `opt` and
 `loop` as a line between them — and draws the diagram beside the list. The list is read off the
-source because a renderer returns a picture, and a picture cannot be stepped through. `Enter`
+source because a renderer returns a picture, and a picture cannot be stepped through. A step
+names what binds it in a Mermaid comment on its line or the next, `%% decision #4 task #9`: its
+row shows each decision's label and each task's, and the selected step's decisions are listed
+under the steps with the tasks that carry them out, read off the outline as the work lens reads
+them. The binding lives in the source so it is written with the flow and needs no table; the
+renderer skips comments. The selected step is lit where the diagram draws it, found by its label
+below the step before it, and the picture scrolls to keep it in view. `Enter`
 opens the diagram whole in a floating overlay. The client removes the dependency renderer's decorative block-fill glyphs so
 `alt`, `opt`, and related frames retain their borders and arrows without filling the panel with
 visual noise. The rendered grid is recalculated against the overlay's current inner width after a

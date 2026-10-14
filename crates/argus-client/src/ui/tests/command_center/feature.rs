@@ -79,6 +79,7 @@ fn dump_feature_stage() {
     app.decision_sel = 2;
     println!("{}\n", stage(&mut app));
     press(&mut app, '3');
+    press(&mut app, 'j');
     println!("{}\n", stage(&mut app));
     key(&mut app, KeyCode::Esc);
     press(&mut app, 'a');
@@ -650,6 +651,37 @@ fn j_steps_through_a_flow_past_its_branch_lines() {
 
     assert_eq!(app.step_sel, 3, "four steps, and the branch line is not one");
     assert!(screen(&mut app).contains("› step 4"));
+}
+
+#[test]
+fn a_step_names_what_binds_it_and_the_selected_one_says_what_carries_it_out() {
+    let (mut app, _rx) = reading();
+    press(&mut app, '3');
+
+    let text = screen(&mut app);
+    assert!(text.contains("brief request          D2.1"), "{text}");
+    assert!(text.contains("refused            task 2.3"), "{text}");
+    assert!(!text.contains("IS BOUND BY"), "step 1 is bound by nothing:\n{text}");
+
+    press(&mut app, 'j');
+    let text = screen(&mut app);
+    let at = |needle: &str| text.find(needle).unwrap_or_else(|| panic!("missing {needle}:\n{text}"));
+    assert!(at("STEP 2 IS BOUND BY") < at("D2.1 The route lives in the pane API URL"));
+    assert!(at("CARRIED OUT BY") < at("2.2 argus-hook reads the brief"));
+    assert!(at("2.2 argus-hook reads the brief") < at("2.3 Refuse when the pane has no feature"));
+}
+
+#[test]
+fn the_selected_step_is_lit_where_the_diagram_draws_it() {
+    let (mut app, _rx) = reading();
+    press(&mut app, '3');
+    press(&mut app, 'j');
+    let th = crate::theme::Theme::default();
+
+    let buf = draw_at(&mut app, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+    assert_eq!(fg_of(&buf, "┆ brief request"), Some(th.accent));
+    assert_eq!(fg_of(&buf, "┆ ask for the brief"), Some(th.dim));
 }
 
 // ---- writing a feature as one note ------------------------------------------------

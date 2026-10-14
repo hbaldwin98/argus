@@ -3,6 +3,10 @@
 //! A diagram is stored as Mermaid and drawn by a renderer that returns a
 //! picture. A list of who asks whom for what cannot be read back off a
 //! picture, so it is read off the source: the same lines, as rows.
+//!
+//! What binds a step is said in the source too, as a Mermaid comment on
+//! its line or the line after it — `%% decision #12 task #31` — so it is
+//! written with the flow, travels with it, and the renderer skips it.
 
 /// One line of a flow that a reader steps through.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +27,10 @@ pub struct Step {
     /// A dashed arrow: an answer rather than a request.
     pub reply: bool,
     pub text: String,
+    /// The decisions that bind it, by id.
+    pub decisions: Vec<i64>,
+    /// The tasks that carry it out, by id, beyond those its decisions name.
+    pub tasks: Vec<i64>,
 }
 
 impl Step {
@@ -45,7 +53,21 @@ const ARROWS: [&str; 8] = ["-->>", "--x", "--)", "-->", "->>", "-x", "-)", "->"]
 pub fn rows(source: &str) -> Vec<FlowRow> {
     let mut rows = Vec::new();
     let mut number = 0;
+    let mut under_step = false;
     for line in source.lines().map(str::trim) {
+        let (line, comment) = line.split_once("%%").unwrap_or((line, ""));
+        let line = line.trim();
+        let (decisions, tasks) = named_in(comment);
+        if line.is_empty() {
+            // A comment on a line of its own binds the step just above it,
+            // and only while nothing has come between them.
+            if let (true, Some(FlowRow::Step(step))) = (under_step, rows.last_mut()) {
+                step.decisions.extend(decisions);
+                step.tasks.extend(tasks);
+            }
+            continue;
+        }
+        under_step = false;
         let (word, rest) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
         match word {
             // The first arm of an `alt` is the flow as it usually goes; it
@@ -81,9 +103,37 @@ pub fn rows(source: &str) -> Vec<FlowRow> {
             to: (to != from).then(|| to.to_string()),
             reply: arrow.starts_with("--"),
             text: text.trim().to_string(),
+            decisions,
+            tasks,
         }));
+        under_step = true;
     }
     rows
+}
+
+/// The decisions and tasks a comment names, as `decision #12 task #31
+/// #32`. A comment that names neither is only a comment.
+fn named_in(comment: &str) -> (Vec<i64>, Vec<i64>) {
+    let mut decisions = Vec::new();
+    let mut tasks = Vec::new();
+    let mut naming_tasks = None;
+    for word in comment.split(|c: char| c.is_whitespace() || c == ',') {
+        match word {
+            "decision" | "decisions" => naming_tasks = Some(false),
+            "task" | "tasks" => naming_tasks = Some(true),
+            _ => {
+                let Some(id) = word.strip_prefix('#').and_then(|id| id.parse().ok()) else {
+                    continue;
+                };
+                match naming_tasks {
+                    Some(true) => tasks.push(id),
+                    Some(false) => decisions.push(id),
+                    None => {}
+                }
+            }
+        }
+    }
+    (decisions, tasks)
 }
 
 /// How many steps and branches a flow has, as its row in the list says.
@@ -142,6 +192,41 @@ mod tests {
             ]
         );
         assert_eq!(summary(&rows), "6 steps · 1 branch");
+    }
+
+    #[test]
+    fn a_comment_binds_the_step_on_its_line_or_the_one_above() {
+        let rows = rows(
+            "sequenceDiagram
+    a->>b: ask %% decision #12
+    b-->>a: answer
+    %% decisions #3, #4 task #31
+    %% the renderer skips this, and so does the list
+    alt it fails
+    %% task #5
+    b-->>a: refused
+    else retried
+    %% task #9
+    a->>b: again",
+        );
+
+        let steps: Vec<(&str, &[i64], &[i64])> = rows
+            .iter()
+            .filter_map(|row| match row {
+                FlowRow::Step(step) => Some((step.text.as_str(), &step.decisions[..], &step.tasks[..])),
+                FlowRow::Branch { .. } => None,
+            })
+            .collect();
+        assert_eq!(
+            steps,
+            [
+                ("ask", &[12][..], &[][..]),
+                ("answer", &[3, 4][..], &[31][..]),
+                ("refused", &[][..], &[][..]),
+                ("again", &[][..], &[][..]),
+            ],
+            "a comment under any other line binds nothing"
+        );
     }
 
     #[test]

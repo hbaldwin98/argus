@@ -79,6 +79,35 @@ impl DiagramView {
         window(line, self.horizontal_scroll, visible)
     }
 
+    /// The line the `index`th of `texts` is labelled on, the texts being
+    /// the steps' in the order the source says them. The renderer returns
+    /// a picture, so a step is found again by its words, each searched
+    /// for below the one before it so that a repeated label lands on its
+    /// own arrow. Spaces are ignored because compaction can take a column
+    /// out of the middle of a label.
+    pub fn step_line(&self, texts: &[&str], index: usize) -> Option<usize> {
+        let mut from = 0;
+        for (at, text) in texts.iter().enumerate().take(index + 1) {
+            let needle: String = text.chars().filter(|c| !c.is_whitespace()).take(16).collect();
+            if needle.is_empty() {
+                if at == index {
+                    return None;
+                }
+                continue;
+            }
+            let found = self.lines[from.min(self.lines.len())..].iter().position(|line| {
+                let drawn: String = line.chars().filter(|c| !c.is_whitespace()).collect();
+                drawn.contains(&needle)
+            });
+            let line = from + found?;
+            if at == index {
+                return Some(line);
+            }
+            from = line + 1;
+        }
+        None
+    }
+
     fn max_horizontal_scroll(&self, visible: usize) -> usize {
         max_line_width(&self.lines).saturating_sub(visible.max(1))
     }
@@ -249,6 +278,26 @@ mod tests {
         let view = DiagramView::open(&diagram, 60);
         assert!(view.lines.len() > 1);
         assert!(view.lines.iter().any(|l| l.contains('A') || l.contains('B')));
+    }
+
+    #[test]
+    fn a_step_is_found_on_its_own_label_even_when_another_says_the_same() {
+        let diagram = SequenceDiagram {
+            id: 3,
+            feature: "x".into(),
+            title: "t".into(),
+            body: "sequenceDiagram\n    A->>B: ping\n    B-->>A: pong\n    A->>B: ping".into(),
+            at: 0,
+            session: None,
+        };
+        let view = DiagramView::open(&diagram, 60);
+        let texts = ["ping", "pong", "ping"];
+
+        let lines: Vec<usize> = (0..3).map(|index| view.step_line(&texts, index).unwrap()).collect();
+
+        assert!(lines[0] < lines[1] && lines[1] < lines[2], "{lines:?}\n{}", view.lines.join("\n"));
+        assert!(view.lines[lines[2]].contains("ping"));
+        assert_eq!(view.step_line(&["", "pong"], 0), None, "a step with no words cannot be found");
     }
 
     #[test]
