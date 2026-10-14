@@ -66,12 +66,7 @@ async fn main() -> anyhow::Result<()> {
     // name a previous daemon's port and are stale by definition.
     daemon.sweep_stale_hooks();
     daemon.start_hook_server()?;
-    // Before any pane restores, since a live Claude pane is pointed at it.
-    // Failing to bind costs live panes their drafts, not their start.
-    if let Err(error) = daemon.start_tee() {
-        tracing::warn!("live Claude panes will not stream: {error}");
-    }
-    // Before any pane restores, too: a Claude pane is started with its mod.
+    // Before any pane restores: a Claude pane is started with its mod.
     daemon.set_plugin_root(argus_protocol::config_dir().join("plugins"));
     daemon.set_paste_root(argus_protocol::config_dir().join("pastes"));
     daemon.start_git_poll();

@@ -2,25 +2,19 @@
 //! way it went — closed, restarted, replaced after a failed resume, or
 //! taken with a worktree deleted underneath it.
 
-use crate::state::live::LiveReader;
 use super::*;
 
-/// A daemon whose claude template runs live through the tee, and the
-/// reader that keeps it live. Every pane it starts has an upstream to
-/// forget, and `cat` keeps it running until something ends it.
-fn live_claude(dir: &std::path::Path, restart: crate::config::Restart) -> (Arc<Daemon>, LiveReader) {
+/// A daemon whose claude template runs `cat`, which keeps a pane running
+/// until something ends it.
+fn running_claude(dir: &std::path::Path, restart: crate::config::Restart) -> Arc<Daemon> {
     let mut config = fake_claude_config(dir);
     config.agents[0].cmd = if cfg!(windows) {
         vec!["cmd".to_string(), "/K".to_string()]
     } else {
         vec!["cat".to_string()]
     };
-    config.agents[0].live = true;
     config.agents[0].restart = restart;
-    let d = Daemon::new(config);
-    d.start_tee().unwrap();
-    let reader = d.live_reader();
-    (d, reader)
+    Daemon::new(config)
 }
 
 /// Watches `pane`'s conversation, as a client would, and checks the pane
@@ -28,22 +22,17 @@ fn live_claude(dir: &std::path::Path, restart: crate::config::Restart) -> (Arc<D
 fn watched(d: &Arc<Daemon>, pane: PaneId) -> tokio::sync::broadcast::Receiver<ServerMsg> {
     let watching = d.watch_transcript(pane);
     assert!(d.transcript_watched(pane));
-    assert!(d.tee_upstreams.lock().unwrap().contains_key(&pane), "a live Claude pane is proxied");
     watching
 }
 
 fn assert_nothing_left_of(d: &Daemon, pane: PaneId) {
     assert!(!d.transcript_watched(pane), "the watch of a gone pane ends");
-    assert!(
-        !d.tee_upstreams.lock().unwrap().contains_key(&pane),
-        "a gone pane's upstream is forgotten"
-    );
 }
 
 #[tokio::test]
 async fn closing_a_pane_leaves_nothing_of_it_behind() {
     let dir = tempfile::tempdir().unwrap();
-    let (d, _reader) = live_claude(dir.path(), Default::default());
+    let d = running_claude(dir.path(), Default::default());
     let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
     let _watching = watched(&d, pane);
 
@@ -68,7 +57,7 @@ async fn closing_a_pane_marks_its_repository_as_used_then() {
 #[tokio::test]
 async fn a_restarted_agent_leaves_nothing_of_its_old_pane_behind() {
     let dir = tempfile::tempdir().unwrap();
-    let (d, _reader) = live_claude(dir.path(), crate::config::Restart::Always);
+    let d = running_claude(dir.path(), crate::config::Restart::Always);
     let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
     let _watching = watched(&d, pane);
 
@@ -84,7 +73,7 @@ async fn a_restarted_agent_leaves_nothing_of_its_old_pane_behind() {
 #[tokio::test]
 async fn a_failed_resume_leaves_nothing_of_its_old_pane_behind() {
     let dir = tempfile::tempdir().unwrap();
-    let (d, _reader) = live_claude(dir.path(), Default::default());
+    let d = running_claude(dir.path(), Default::default());
     let pane = d
         .start_agent(only_checkout(&d), "claude", Start::Resuming, None)
         .unwrap();
@@ -104,7 +93,7 @@ async fn a_deleted_worktree_leaves_nothing_of_its_panes_behind() {
     let dir = tempfile::tempdir().unwrap();
     let worktree = dir.path().join("wt");
     std::fs::create_dir(&worktree).unwrap();
-    let (d, _reader) = live_claude(dir.path(), Default::default());
+    let d = running_claude(dir.path(), Default::default());
     d.reconcile_worktrees_with(|_| vec![dir.path().to_path_buf(), worktree.clone()]);
     let checkout = d.checkout_at(&worktree).expect("the worktree joined the tree");
     let pane = d.spawn_agent(checkout, "claude").unwrap();
@@ -114,49 +103,6 @@ async fn a_deleted_worktree_leaves_nothing_of_its_panes_behind() {
 
     assert!(d.checkout_at(&worktree).is_none(), "the worktree left the tree");
     assert_nothing_left_of(&d, pane);
-}
-
-// Windows runs every program through `cmd.exe /C`, which starts even when the
-// program is missing, so only unix can make the spawn itself fail.
-#[cfg(unix)]
-#[tokio::test]
-async fn a_live_claude_pane_that_fails_to_start_leaves_no_upstream() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut config = fake_claude_config(dir.path());
-    config.agents[0].cmd = vec!["argus-no-such-program".to_string()];
-    config.agents[0].live = true;
-    let d = Daemon::new(config);
-    d.start_tee().unwrap();
-    let _reader = d.live_reader();
-
-    assert!(d.spawn_agent(only_checkout(&d), "claude").is_err());
-
-    assert!(d.tee_upstreams.lock().unwrap().is_empty(), "a pane that never started is not proxied");
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn a_live_claude_panes_upstream_is_forgotten_once_its_agent_exits() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut config = fake_claude_config(dir.path());
-    config.agents[0].cmd = vec!["sh".to_string(), "-c".to_string(), "read line".to_string()];
-    config.agents[0].live = true;
-    let d = Daemon::new(config);
-    d.start_tee().unwrap();
-    let _reader = d.live_reader();
-    let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-    assert!(d.tee_upstreams.lock().unwrap().contains_key(&pane), "a live Claude pane is proxied");
-
-    d.write_pane(pane, b"\n").unwrap();
-
-    for _ in 0..250 {
-        if !d.tee_upstreams.lock().unwrap().contains_key(&pane) {
-            let _ = d.close_pane(pane);
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-    }
-    panic!("an exited pane's upstream was never forgotten");
 }
 
 #[test]

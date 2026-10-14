@@ -56,14 +56,6 @@ pub const PASTE_FILE: &str = "paste-file";
 /// daemon. Listed by each side for the half it takes.
 pub const FOCUS: &str = "focus";
 
-/// A client that shows what agents' live channels carry. Nothing is sent
-/// for it; the daemon starts a template's live channel only for a pane that
-/// starts while such a client is connected, because a channel puts Argus
-/// between the agent and its harness and nobody else reads what it carries.
-/// Not in [`CAPABILITIES`], for the same reason: only a client that wants
-/// it adds it to its greeting ([`Hello::and`]).
-pub const LIVE_CHANNELS: &str = "live-channels";
-
 /// One side's greeting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hello {
@@ -85,12 +77,6 @@ impl Hello {
             version: env!("CARGO_PKG_VERSION").to_string(),
             capabilities: CAPABILITIES.iter().map(|c| c.to_string()).collect(),
         }
-    }
-
-    /// This greeting, also able to take `capability`.
-    pub fn and(mut self, capability: &str) -> Hello {
-        self.capabilities.push(capability.to_string());
-        self
     }
 
     /// Whether the side that sent this greeting can take `capability`.

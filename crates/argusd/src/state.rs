@@ -12,10 +12,7 @@
 //! loopback receiver, `session` for what survives a restart,
 //! `conversation` for what a client is shown of a pane's conversation,
 //! `outbox` for what a person says to an agent and the way it reaches it,
-//! `live` for a harness server Argus is a second client of, `tee` for the
-//! proxy a live Claude pane's API traffic
-//! goes through, and `tree`
-//! for finding your way around.
+//! and `tree` for finding your way around.
 //!
 //! The type and its locking are one thing; only which file a concern is
 //! read in is split.
@@ -42,13 +39,11 @@ mod tasks;
 mod tracker_map;
 mod git_ops;
 mod hook_server;
-mod live;
 mod outbox;
 mod panel;
 mod panes;
 mod session;
 mod sync;
-mod tee;
 mod tree;
 mod viewers;
 mod workspaces;
@@ -105,9 +100,6 @@ struct Pane {
     /// What is said to its agent: the queue, and the inbox it may go
     /// through instead. See `outbox`.
     speaking: outbox::Speaking,
-    /// The live channel, when the pane runs on one. Dropping it stops the
-    /// channel. See `live`.
-    live: Option<live::RunningChannel>,
     /// A hook won the race with session restoration, so saved metadata must
     /// not overwrite what the newly started process already reported.
     restore_status_reported: bool,
@@ -138,7 +130,6 @@ impl Pane {
             conversation: conversation::Conversation::new(id),
             status_since: std::time::SystemTime::now(),
             speaking: Default::default(),
-            live: None,
             restore_status_reported: false,
             restore_title_reported: false,
             resumed: None,
@@ -379,13 +370,6 @@ pub struct Daemon {
     /// Names each inbox connection, so a stale one closing cannot close
     /// the one that replaced it.
     next_inbox: std::sync::atomic::AtomicU64,
-    /// The proxy live Claude panes send their API traffic through; 0 until
-    /// it is bound. See `tee`.
-    tee_port: std::sync::atomic::AtomicU16,
-    /// Where each live Claude pane's requests are to go.
-    tee_upstreams: Arc<StdMutex<HashMap<PaneId, String>>>,
-    /// How many connected clients read live channels. See `live`.
-    live_readers: Arc<std::sync::atomic::AtomicUsize>,
     /// Where a harness's plugin folder is written (see
     /// `harness::plugin_dir`); unset until `main` names it, so a daemon
     /// built in a test writes none.

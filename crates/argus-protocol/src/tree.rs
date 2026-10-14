@@ -211,9 +211,9 @@ pub struct PaneInfo {
     /// oldest first. See `ClientMsg::SendToAgent`.
     #[serde(default)]
     pub queued: Vec<QueuedMessage>,
-    /// Whether the agent's harness keeps a live channel open — its plugin's
-    /// inbox — so what is said to it goes through the harness rather than
-    /// being typed, and its questions can be answered.
+    /// Whether a plugin inside the agent holds the pane's inbox open, so
+    /// what is said to it goes through the harness rather than being typed,
+    /// and its questions can be answered.
     #[serde(default)]
     pub live: bool,
     // No transcript. It rode here once, up to 200 events a pane in every

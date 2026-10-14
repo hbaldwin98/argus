@@ -53,7 +53,6 @@ fn flat_harness() -> Harness {
         settings_version: None,
         transcript: None,
         interrupt: None,
-        live: None,
     }
 }
 

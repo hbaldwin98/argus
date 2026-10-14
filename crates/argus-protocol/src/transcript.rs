@@ -115,7 +115,7 @@ pub enum Update {
     /// Add the entry at the end, or replace the one with its id where it
     /// stands.
     Upsert(Entry),
-    /// More text for an entry that is still being written. Only a live
+    /// More text for an entry that is still being written. Only a pushed
     /// source sends these; a file is only ever read in whole records.
     AppendText { id: String, delta: String },
     /// A tool call has finished. Sent apart from the result so a call whose

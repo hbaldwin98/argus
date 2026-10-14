@@ -100,14 +100,6 @@ pub struct AgentConfig {
     /// What to do when the CLI exits on its own.
     #[serde(default)]
     pub restart: Restart,
-    /// Run the CLI on its harness's live channel, when it has one — Codex's
-    /// app-server, Claude's tee — so what it does streams and what is said
-    /// to it goes through the harness. Off by default, and taken only by a
-    /// pane that starts while a client that reads live channels is
-    /// connected: a channel puts Argus in the agent's path, and only such a
-    /// client reads it.
-    #[serde(default)]
-    pub live: bool,
 }
 
 /// Whether a pane starts its agent again when the process ends. Closing a
@@ -264,9 +256,6 @@ impl From<HarnessConfig> for crate::harness::Harness {
             settings_version: None,
             transcript: c.transcript,
             interrupt: c.interrupt,
-            // A configured block cannot bring a live channel's client with
-            // it, any more than a parser.
-            live: None,
         }
     }
 }
@@ -300,7 +289,6 @@ pub fn default_agents() -> Vec<AgentConfig> {
             env: Default::default(),
             harness: None,
             restart: Restart::Never,
-            live: false,
         })
         .collect()
 }
@@ -466,23 +454,20 @@ mod tests {
     }
 
     #[test]
-    fn a_live_channel_is_asked_for_by_the_template_and_off_unless_it_is() {
-        let cfg: ConfigFile = toml::from_str(
+    fn a_template_that_still_sets_live_loads_as_if_it_did_not() {
+        // `live` ran a template's CLI on its harness's live channel, which
+        // only `argus web` turned on, and both are gone. The file is written
+        // by hand, so the old key is read past rather than refused.
+        let cfg = parse(
             r#"
-            [[agent]]
-            name = "codex"
-            cmd = ["codex"]
-            live = true
-
-            [[agent]]
-            name = "claude"
-            cmd = ["claude"]
-            "#,
-        )
-        .unwrap();
-        assert!(cfg.agents[0].live);
-        assert!(!cfg.agents[1].live);
-        assert!(default_agents().iter().all(|agent| !agent.live), "nothing built in turns it on");
+[[agent]]
+name = "codex"
+cmd = ["codex"]
+live = true
+"#,
+        );
+        assert_eq!(cfg.agents[0].name, "codex");
+        assert_eq!(cfg.agents[0].cmd, ["codex"]);
     }
 
     #[test]

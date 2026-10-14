@@ -2,14 +2,15 @@
 //! answer — and the way it reaches it: through its harness's inbox when one
 //! is open, typed now, or held until the agent is back at its prompt.
 //!
-//! An inbox is an in-process channel held by an adapter that speaks the
-//! harness's own protocol (opencode's and pi's plugin stream, the Codex
-//! app-server follower), which beats typing: nothing lands in a dialog, a
-//! message can steer or wait as the harness does, and a question the
-//! harness posed can be answered. An adapter opens it only once it can act
-//! on what it is told, so an open inbox is the whole route decision. Only
-//! the pane's own agent may open one, and the newest connection wins, so a
-//! plugin that reconnects after a hiccup takes over from its old stream.
+//! An inbox is an in-process channel the pane API streams to an adapter
+//! inside the agent (opencode's plugin, pi's extension, Claude Code's mod)
+//! that speaks the harness's own protocol, which beats typing: nothing
+//! lands in a dialog, a message can steer or wait as the harness does, and
+//! a question the harness posed can be answered. An adapter opens it only
+//! once it can act on what it is told, so an open inbox is the whole route
+//! decision. Only the pane's own agent may open one, and the newest
+//! connection wins, so a plugin that reconnects after a hiccup takes over
+//! from its old stream.
 //!
 //! Typing into a pane is typing into whatever has the agent's keyboard, and
 //! a dialog that has it takes the text as its answer. So a message waits

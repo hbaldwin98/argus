@@ -200,14 +200,13 @@ impl Daemon {
             env.push(entry);
         }
 
-        let (mut args, resuming) = agent_args(
+        let (args, resuming) = agent_args(
             rest,
             &harness.resume,
             &harness.resume_id,
             start,
             harness_session_id.as_deref(),
         );
-        let live = self.prepare_live(id, &template, &harness, &path, &mut env, &mut args);
 
         let spec = pty::Spawn::Program {
             program: program.clone(),
@@ -248,7 +247,6 @@ impl Daemon {
                 pane.harness = Some(harness.name.to_string());
                 pane.harness_session_id = pending.harness_session_id.or(harness_session_id);
                 pane.children = pending.children;
-                pane.live = live;
                 pane.resumed = resuming.then(|| Resumed {
                     checkout,
                     template: template.name.clone(),
@@ -257,7 +255,6 @@ impl Daemon {
                 c.panes.push(pane);
             }
         }
-        self.attach_live(id);
         self.broadcast_tree();
         Ok(id)
     }
@@ -297,8 +294,6 @@ impl Daemon {
                 Some((p, checkout)) => {
                     p.status = PaneStatus::Exited { code };
                     p.status_since = std::time::SystemTime::now();
-                    // Its live channel has nobody left to serve.
-                    p.live = None;
                     p.note = None;
                     p.children.clear();
                     p.background = false;
@@ -408,8 +403,8 @@ impl Daemon {
     /// Everything a pane leaves behind outside the tree, let go of once it
     /// has been taken out. Every removal comes through here, so a table
     /// keyed by pane cannot be forgotten by one path and not another. What
-    /// the pane holds itself, its conversation's followers and its live
-    /// channel among them, ends as it is dropped here.
+    /// the pane holds itself, its conversation's followers among them, ends
+    /// as it is dropped here.
     ///
     /// Called without `inner` held: each table has its own lock. The
     /// checkout's managed hooks are not a pane's and stay with the caller;

@@ -12,7 +12,7 @@
 //   typing, so a Claude Code without mods is typed into as before.
 // - The reply as it streams. Claude Code writes a reply to its transcript
 //   only as each block ends; the pieces seen here are posted as the pane's
-//   draft, without Argus standing in the path of the API traffic.
+//   draft.
 // - What the session has cost and how full its context is, which the
 //   settings hooks cannot read: Claude Code's transcript records neither the
 //   window nor the cost.

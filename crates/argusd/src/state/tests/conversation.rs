@@ -212,9 +212,8 @@ fn a_draft_alone_is_no_conversation_to_offer() {
 
 #[test]
 fn an_entry_both_read_and_pushed_is_shown_once_and_only_pushed_ones_still_show() {
-    // Codex's live channel pushes items the rollout file later records, and
-    // approvals it never does. A watcher opening the pane afterwards sees
-    // each item once and the question too.
+    // A pushed entry the file later records, and one it never does. A
+    // watcher opening the pane afterwards sees each once.
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("s1.jsonl");
     write_lines(&file, &[prompt("from the file")]);
@@ -223,7 +222,7 @@ fn an_entry_both_read_and_pushed_is_shown_once_and_only_pushed_ones_still_show()
     let Update::Upsert(read) = &tail(&conversation)[0] else { panic!("an entry") };
 
     let mut pushed = push(false, &["only pushed"]).updates;
-    pushed.push(upsert(&read.id, Body::Reply { text: "a live copy of the file's entry".into() }));
+    pushed.push(upsert(&read.id, Body::Reply { text: "a pushed copy of the file's entry".into() }));
     conversation.push(false, pushed);
 
     assert_eq!(said(&tail(&conversation)), ["from the file", "only pushed"]);

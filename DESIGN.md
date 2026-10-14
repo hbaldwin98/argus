@@ -168,8 +168,6 @@ to the type or its locking.
 | `state/session` | what survives a daemon restart |
 | `state/conversation` | what a client is shown of a pane's conversation — its files, pushed entries and draft merged into one — and the clients following it |
 | `state/outbox` | what is said to an agent and the way it reaches it: through its harness's inbox when one is open, typed now, or held until the agent is back at its prompt |
-| `state/live` | running a pane's live channel: whether a starting pane gets one, the harness's own server or the pane's registration with the tee, Argus's connection to it, and stopping all of it with the pane |
-| `state/tee` | the loopback proxy a live Claude pane's API traffic goes through |
 | `state/tree` | finding your way around the tree |
 | `state/features`, `state/tasks`, `state/decisions`, `state/diagrams`, `state/tracker_map` | a checkout's feature board, translated between client ids and store keys |
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
@@ -180,7 +178,6 @@ to the type or its locking.
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
 | `harness/plugin_dir` | the plugin folder a harness loads from outside the checkout — Claude Code's mod — and the variable that points a pane at it |
-| `harness/live`, `harness/live/codex`, `harness/live/claude` | what a harness's own interface to its running session says, in Argus's terms: Codex's app-server, and Claude Code's API stream |
 | `harness/transcript`, `harness/transcript/claude`, `harness/transcript/codex`, `harness/transcript/cursor`, `harness/transcript/pi` | what a harness's own transcript says, read one line at a time into entries, and how each harness writes its own |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
 | `store/boards`, `store/reviews` | the feature boards and the review comments, as stored |
@@ -481,6 +478,11 @@ leaves the row alone. A pane closed by the operator is removed before it is kill
 never a restart. Three restarts of one template in one checkout within a minute stops the cycle and
 leaves the exited row, which is what says what happened.
 
+A pane does not inherit the markers of a Claude Code session that started the daemon (`CLAUDECODE`,
+`CLAUDE_CODE_CHILD_SESSION` and the like): a Claude agent in it would read them as that session's
+child and save no transcript. What a person sets to configure Claude Code, such as
+`CLAUDE_CODE_USE_BEDROCK`, is still handed on.
+
 On Windows, each agent process tree runs in its own Job Object with a 32 GiB committed-memory limit
 and a 256-process limit. Closing the pane or dropping its runtime terminates the whole job rather
 than only the template's immediate process. Shell and editor panes are not subject to these limits.
@@ -775,9 +777,11 @@ and a dialog that has it takes the text as its answer, so a message waits in the
 failed or wanting a review, and so for 300 ms, since a turn's last hook can arrive just before its
 prompt is drawn. Codex's and Cursor's approval prompts report as working, so they hold a message
 too. One message goes out per turn: the next waits until the pane has been busy and come back, or
-two seconds for a harness that reports nothing. Every one of these rules, with the wait for a
-reporting harness's first report below, is one pure decision in `state/outbox`. A message is typed
-as one paste and Enter. `now`
+two seconds for a harness that reports nothing. A pane whose harness reports is typed into only once
+it has reported: a new pane reads as idle before its harness has said anything, and Claude Code's
+folder-trust dialog took a queued message as its answer. Every one of these rules is one pure
+decision in `state/outbox`. A message is typed as one paste and, 150 ms later, Enter, since Claude
+Code reads an Enter that arrives with a paste as part of it. `now`
 types it straight away, which is how a person steers an agent mid-turn. One task does the typing,
 started by the first message queued, and wakes whenever the tree changes and four times a second
 while anything waits. The queue is not persisted, and an exited agent's queue is dropped.
@@ -819,67 +823,17 @@ Claude Code without mods ignores the variable, opens no inbox, and is typed into
 Anything Argus says on its own account goes the same way: a review comment's notification is a
 message to the inbox when one is open, and typed in otherwise.
 
-A harness may have a live channel — Codex's app-server, or Claude's tee below — that streams what
-the agent does and takes what is said to it. A pane runs on it only when its template sets
-`live = true` and a client that greeted with `live-channels` is connected as the pane starts. No
-client Argus ships greets with it, so no agent has Argus in its path, and nothing built in sets
-`live`. The choice is fixed for the pane's life, since a running process cannot be moved onto a
-channel or off one: a pane started before such a client connects has none until it next starts,
-and one started while one was connected keeps its channel after it goes. The channel is
-the pane's own value, and ends when the pane's agent exits or the pane goes, whichever is first:
-the Codex server stops and the tee forgets the pane, so a restarted pane gets a new channel, and
-one whose agent never spawned leaves nothing behind.
-
-Codex's is a live channel of its own kind: its TUI can run on its app-server, which serves a
-thread to every client subscribed to it. A live Codex pane — worth asking for with care, since
-Codex marks the app-server experimental — starts `codex app-server --listen unix://…` with the
-pane's environment, so hooks it runs still report, and runs the TUI with `--remote` on it. The server lives exactly as long as the pane. The daemon
-connects as a second client over the WebSocket the socket speaks, and once Codex's hooks have named
-the conversation, takes the pane's inbox and resumes that thread to follow it. Until then there is no
-thread to send a message to, so what is said is typed or held, as for any pane. `harness/live` reads
-what it hears: items as they start and complete, agent-message deltas as `AppendText` — the reply
-arriving token by token — turn ends, and approval requests posed as questions whose answer goes
-back as the response to Codex's request, and which are marked answered when Codex says someone
-answered them elsewhere. Item ids are the ones Codex writes to its rollout file, so what arrives
-live and what is read from the file afterwards are the same entries. A message becomes
-`turn/start`, or `turn/steer` mid-turn; an interrupt `turn/interrupt`. Unix only: tokio has no Unix
-sockets on Windows, where the template's `live` is ignored.
-
-Claude Code runs no server a second client could join, and writes a reply to its transcript only
-as each block finishes, but it sends its requests wherever `ANTHROPIC_BASE_URL` says, with its own
-login. A live Claude pane is pointed at the tee: a loopback proxy
-the daemon binds at startup, at a path carrying the pane's id and the per-boot token. The tee
-forwards each request untouched — headers and login included, asking only for an uncompressed
-reply so it can be read — to the gateway the pane's environment already named, or to
-`https://api.anthropic.com`, and returns each reply untouched. It keeps no request and no login.
-A streaming reply to a turn that offers tools (not the small calls Claude Code makes for itself,
-such as naming a conversation) is read as it passes: text and thinking blocks become
-`Update::Draft` — started, added to, done — sent to watchers at most every 100 ms, and held on the
-pane so a watcher arriving mid-reply gets the draft so far. A draft is never stored; the finished
-block arrives from the transcript file and a watcher drops the draft for it. A pane whose requests
-reach Anthropic is also given `_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL`, an internal Claude Code
-variable without which a custom base URL counts as a third-party gateway and switches off Remote
-Control, cloud sessions and the managed-policy fetch; a release that drops it costs live panes
-those, nothing else. `ANTHROPIC_UNIX_SOCKET` was the alternative, and is not used: over it, Claude
-Code sends no login, so Argus would have to supply one.
-
-The mod drafts without the tee. Its `turn.step` hook sees the main loop's reply stream as it
-arrives, text and thinking a piece at a time, and posts the same `Draft` changes to `POST
+Claude Code writes a reply to its transcript only as each block finishes, so the mod drafts it as
+it streams. Its `turn.step` hook sees the main loop's reply stream as it arrives, text and thinking
+a piece at a time, and posts it as `Draft` changes — started, added to, done — to `POST
 /pane/<id>/draft`, gathered for 100 ms. A subagent's steps are not the pane's reply and are passed
 by. The posts go out one at a time from a loop the session started, holding the session's own `$`:
 when a turn is interrupted its step's hook is abandoned, and a post made through it never lands,
 so the turn's `turn.complete`, which fires for an aborted turn too, is what ends a draft cut off
-mid-block. The daemon takes a draft only from the pane's own session, and not at all from a pane
-on the tee, whose reply is read off the wire already. So every Claude pane with the mod streams,
-`live` or not, and `live = true` is now only worth setting for a Claude Code older than mods.
-
-Two things the tee's first real run turned up. A new pane reads as idle before its harness has
-said anything, and Claude Code's folder-trust dialog took a queued message as its answer; the
-outbox now types into a pane whose harness reports only once it has reported. And Claude Code
-reads an Enter that arrives with a paste as part of it, so the outbox's Enter follows its paste
-after 150 ms. Separately, a pane no longer inherits the markers of a Claude Code session that
-started the daemon (`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION` and the like), which make a Claude
-agent in it save no transcript.
+mid-block. The daemon takes a draft only from the pane's own session, sends it to watchers as
+`Update::Draft`, and holds it on the pane so a watcher arriving mid-reply gets the draft so far. A
+draft is never stored; the finished block arrives from the transcript file and a watcher drops the
+draft for it.
 
 The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
 /pane/<id>/status/<working|idle|waiting|needs-review|done|failed>` with an optional body as the note,

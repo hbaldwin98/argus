@@ -71,8 +71,8 @@ pub(super) struct Conversation {
     history: Option<History>,
     /// What a harness whose transcript is no file pushed of it.
     pushed: Option<Pushed>,
-    /// What the agent is writing right now, as the tee reads it off its
-    /// reply: reasoning or not, and the text so far.
+    /// What the agent is writing right now, as a plugin inside it drafts
+    /// it: reasoning or not, and the text so far.
     draft: Option<(bool, String)>,
     followers: Option<Followers>,
 }
@@ -309,13 +309,13 @@ impl Tail {
     /// The tail's updates, and where to ask for what came before them.
     /// Blocking file I/O; call it off the runtime's threads.
     ///
-    /// A pane can have both a file and pushed entries — Codex's live
-    /// channel pushes its items as they happen, and its approvals, while
-    /// the rollout file records the items afterwards. The file's entries
-    /// come first, and a pushed one only where the file has none by its id,
-    /// so an item read both ways is one entry and a question nothing wrote
-    /// down is still shown. The draft comes last, for a watcher arriving
-    /// mid-reply: it is what is being written after everything else.
+    /// A pane can have both a file and pushed entries: anything inside the
+    /// agent may push what the file records later, or what it never
+    /// records. The file's entries come first, and a pushed one only where
+    /// the file has none by its id, so an entry read both ways is one entry
+    /// and one nothing wrote down is still shown. The draft comes last, for
+    /// a watcher arriving mid-reply: it is what is being written after
+    /// everything else.
     pub(super) fn read(self) -> (Option<Earlier>, Vec<Update>) {
         let page = self.history.as_ref().and_then(History::tail);
         let (earlier, mut updates) = page.map_or((None, Vec::new()), |p| (p.earlier, p.updates));
@@ -427,20 +427,11 @@ impl Daemon {
     }
 
     /// Takes what a plugin inside the agent saw of its reply as it
-    /// streamed. Only the pane's own session drafts the pane's reply, and a
-    /// pane on the tee has its reply read off the wire already, which would
-    /// otherwise be drafted twice.
+    /// streamed. Only the pane's own session drafts the pane's reply.
     pub(super) fn report_draft(&self, pane: PaneId, reporter: Option<&str>, changes: Vec<Draft>) {
-        if self.child_of(pane, reporter).is_some()
-            || self.tee_upstreams.lock().unwrap().contains_key(&pane)
-        {
+        if self.child_of(pane, reporter).is_some() {
             return;
         }
-        self.draft(pane, changes);
-    }
-
-    /// Takes what the tee read off a pane's reply as it streamed.
-    pub(super) fn draft(&self, pane: PaneId, changes: Vec<Draft>) {
         let mut inner = self.inner.lock().unwrap();
         if let Some(p) = find_pane(&mut inner.projects, pane) {
             p.conversation.draft(changes);

@@ -272,7 +272,7 @@ async fn a_plugin_that_reconnects_takes_over_from_its_old_stream() {
 }
 
 #[tokio::test]
-async fn an_agent_with_no_live_channel_takes_answers_on_its_screen() {
+async fn an_agent_with_no_inbox_open_takes_answers_on_its_screen() {
     let dir = tempfile::tempdir().unwrap();
     let (d, pane) = agent(dir.path());
     assert!(d.answer(pane, "q".into(), "yes".into()).is_err());
