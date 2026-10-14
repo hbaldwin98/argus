@@ -140,6 +140,7 @@ live in this crate and a contract written twice drifts in silence.
 | `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses |
 | `cell`, `framing`, `transport` | a screen cell, a frame, and the endpoint they travel over |
 | `damage` | what changed on a pane's screen, as runs of cells and regions that scrolled |
+| `keys` | the bytes a key press is to a pane's child, decided once so every client types the same thing |
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
 | `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
 | `tracker_links` | how a repository's work reaches the team's trackers: which tickets a feature is linked to, how a ticket's tracker and key are read out of its URL, and the board's tracker map and its draft |
@@ -225,7 +226,8 @@ result of a request; `ui` is a pure function of it.
 | `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
 | `flow` | the steps a sequence diagram's source says, in the order it says them |
 | `outline` | how a feature's tasks and the decisions raised under them read as one outline: what binds a task, what carries a decision out, what an open one holds up |
-| `grid`, `selection`, `pty_input`, `pty_input/keys`, `pty_input/mouse`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
+| `grid`, `selection`, `pty_input`, `pty_input/mouse`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
+| `pty_input/keys` | a terminal key event as the protocol's key, and the leader chord that is never sent |
 | `dropped` | a file dropped on the terminal, recognized in what it pasted |
 | `browser` | opening a ticket's URL in the person's browser, or copying it where no browser is at hand |
 | `motion` | animation arithmetic: how far along a transition is at a given instant |

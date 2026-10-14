@@ -22,6 +22,7 @@ pub mod hello;
 pub mod hook;
 pub mod ids;
 pub mod inbox;
+pub mod keys;
 pub mod memory;
 pub mod message;
 pub mod paths;

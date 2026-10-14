@@ -42,7 +42,7 @@ recent sessions need.
 
 ## Foundation (separate commit, before the desktop crate)
 
-- **`argus-protocol/src/keys.rs`** — "the bytes a key press is to a pane's child". A
+- **`argus-protocol/src/keys.rs`** (HUN-178, done) — "the bytes a key press is to a pane's child". A
   crossterm-free `Key { code: KeyCode, mods: Mods }` (`KeyCode`: `Char(char)`, `Enter`, `Tab`,
   `BackTab`, `Backspace`, `Esc`, `Left`, `Right`, `Up`, `Down`, `Home`, `End`, `PageUp`,
   `PageDown`, `Delete`, `Insert`, `F(u8)` — whatever the existing encoder covers, no more; `Mods`:
