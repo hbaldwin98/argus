@@ -82,7 +82,6 @@ fn fullscreen_gives_the_main_area_to_the_selected_pane() {
     for panel in [
         app.layout.views,
         app.layout.rail,
-        app.layout.agents,
         app.layout.checkouts,
     ] {
         assert_eq!(
@@ -91,7 +90,7 @@ fn fullscreen_gives_the_main_area_to_the_selected_pane() {
             "nothing hidden may remain clickable"
         );
     }
-    for label in ["REPOSITORIES", "WORKSPACE", "FEATURE"] {
+    for label in ["▌ argus", "WORKSPACE", "FEATURE"] {
         assert!(!text.contains(label), "{label} stayed visible in fullscreen");
     }
     assert!(text.contains("argus › orion › master › claude"));
@@ -586,6 +585,81 @@ fn dump_frame() {
         .unwrap_or(20);
     for line in lines(&draw_at(&mut app, w, h)) {
         println!("|{line}");
+    }
+}
+
+/// The rail with enough in it to judge: about eight repositories, two of
+/// them active and one open over two checkouts, drawn with the quiet ones
+/// folded and then shown.
+#[test]
+#[ignore]
+fn dump_rail_busy() {
+    use argus_protocol::{ChildAgentInfo, QueuedMessage};
+
+    let mut waiting = pane_info(100, PaneKind::Agent, "fix login flow", PaneStatus::Waiting);
+    waiting.queued = vec![
+        QueuedMessage { id: 1, text: "first".into() },
+        QueuedMessage { id: 2, text: "second".into() },
+    ];
+    waiting.children.push(ChildAgentInfo {
+        label: "codex review".into(),
+        status: PaneStatus::Working,
+        note: None,
+    });
+    let mut repositories = vec![
+        repository(
+            2,
+            "orion",
+            vec![
+                CheckoutInfo {
+                    git: Some(git(Some("master"), true, 2, 0, 0)),
+                    ..checkout(
+                        10,
+                        "master",
+                        true,
+                        vec![waiting, pane_info(101, PaneKind::Shell, "shell", PaneStatus::Idle)],
+                    )
+                },
+                CheckoutInfo {
+                    git: Some(git(Some("feat/rail"), false, 0, 0, 0)),
+                    ..checkout(
+                        11,
+                        "feat/rail",
+                        false,
+                        vec![pane_info(102, PaneKind::Agent, "rework rail", PaneStatus::Working)],
+                    )
+                },
+            ],
+        ),
+        repository(
+            3,
+            "argus-web",
+            vec![checkout(
+                12,
+                "main",
+                true,
+                vec![pane_info(103, PaneKind::Shell, "dev server", PaneStatus::Idle)],
+            )],
+        ),
+    ];
+    let quiet = ["atlas", "courier", "dotfiles", "hermes", "ledger", "satellite"];
+    repositories.extend(quiet.iter().zip(20..).map(|(name, id)| {
+        repository(id, name, vec![checkout(id + 20, "main", true, vec![])])
+    }));
+
+    let mut app = app_with_tree();
+    app.tree = vec![
+        project(1, "argus", repositories),
+        project(4, "hermes", vec![]),
+        project(5, "notes", vec![]),
+    ];
+    app.choose_rail_row(crate::app::RailRow::Repository(0));
+    for open in [false, true] {
+        app.quiet_open = open;
+        println!("fold {}:", if open { "open" } else { "closed" });
+        for line in lines(&draw_at(&mut app, 100, 30)) {
+            println!("|{line}");
+        }
     }
 }
 

@@ -497,7 +497,7 @@ location. Typing filters the folders in the current directory.
 
 | Key | Action |
 | --- | --- |
-| `j` / `k`, arrows | Move along the rail — the project, its repositories, and the open repository's checkouts and panes — in the order it is drawn |
+| `j` / `k`, arrows | Move along the rail — the project, its listed repositories, and the open repository's checkouts and panes — in the order it is drawn |
 | `l`, Right, Enter | Open the repository and move into it, go to the checkout's first pane, or type into the pane |
 | `h`, Left, Escape | Up to the row this one hangs under |
 | `s` | Start a shell — on a branch row, in a new worktree for that branch |
@@ -507,6 +507,7 @@ location. Typing filters the folders in the current directory.
 | `D` | Remove what the row is, after confirmation: a project or repository (out of the panel only — nothing on disk is touched), a linked worktree (deleted), or a branch row (the local branch, deleted; the remote is untouched). An unmerged branch is refused and asked about again, and confirming that second prompt force-deletes it |
 | `w` | Switch workspace |
 | `o` | Switch project (command center rail; also click the project name) |
+| `z` | Show or fold the repositories with nothing running (also click the `+ N quiet` line) |
 | `b` | Open the branch picker |
 | `B` | In the Checkouts stage, show or hide the branches no checkout is sitting on — the main branch's offer first, and the ones only a remote has last |
 | `F` | Fetch every remote (`--prune`), which is what makes the remote's branches appear as rows |

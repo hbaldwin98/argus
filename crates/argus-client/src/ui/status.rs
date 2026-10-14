@@ -299,11 +299,11 @@ fn draw_bar<S: AsRef<str>>(
 /// What the whole fleet is doing, in the left of the bar.
 ///
 /// That seat used to hold a breadcrumb, and a breadcrumb there says nothing
-/// new: in the columns it repeats the word written on the card above it,
-/// and everywhere else it repeats the path already spelled out across the
-/// live view's title. What is *not* written anywhere on screen is the state
-/// of the agents you are not currently looking at — which is the entire
-/// reason this program has a pane list at all.
+/// new: it repeats the path already spelled out across the workspace
+/// heading. What is *not* written anywhere on screen is the state of the
+/// agents you are not currently looking at — the rail shows one project,
+/// and one repository of it open — which is the entire reason the bar
+/// counts them.
 ///
 /// Ordered by urgency, so the count you have to do something about is the
 /// one nearest the corner your eye already goes to. Empty when nothing is

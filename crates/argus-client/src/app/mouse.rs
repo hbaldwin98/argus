@@ -88,15 +88,10 @@ impl App {
         if crate::ui::command_center_sidebar_contains(self, ev.column, ev.row) {
             match ev.kind {
                 MouseEventKind::Down(MouseButton::Left) => {
-                    // An agent in the AGENTS list goes straight to it: its
-                    // repository opens in the rail and its pane takes the stage.
-                    if let Some(location) =
-                        crate::ui::command_center_agent_at(self, ev.column, ev.row)
-                    {
-                        self.choose_rail_row(RailRow::Pane(location));
-                    } else if crate::ui::command_center_project_header_at(self, ev.column, ev.row)
-                    {
+                    if crate::ui::command_center_project_header_at(self, ev.column, ev.row) {
                         self.choose_rail_row(RailRow::Project);
+                    } else if crate::ui::command_center_quiet_fold_at(self, ev.column, ev.row) {
+                        self.toggle_quiet_fold();
                     } else if let Some(row) =
                         crate::ui::command_center_rail_target_at(self, ev.column, ev.row)
                     {

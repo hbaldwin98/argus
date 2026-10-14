@@ -18,14 +18,12 @@ pub(crate) use checkouts::checkout_at;
 use checkouts::render_checkouts;
 pub(crate) use feature::feature_hit_at;
 use feature::render_feature_stage;
-pub(crate) use rail::{agent_at, project_header_at, rail_target_at, sidebar_contains};
+pub(crate) use rail::{project_header_at, quiet_fold_at, rail_target_at, sidebar_contains};
 use rail::render_sidebar;
 use workspace::render_workspace;
 
 /// The mark and the WORKSPACE tab: the rail's border continues the FEATURE
 /// tab's left edge so the workspace highlight runs the full tab width.
-/// Wide enough for the workspace summary badges (`repos`, `agents`, `needs
-/// you`) on one row at two-digit counts without wrapping.
 pub const SIDEBAR_WIDTH: u16 = 50;
 /// The narrowest a drag can make the rail: below this the project heading
 /// and the checkout names are cut to nothing.

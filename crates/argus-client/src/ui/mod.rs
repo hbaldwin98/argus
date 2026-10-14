@@ -20,7 +20,7 @@ use argus_protocol::{
     Color as PColor, FileDiff, HighlightKind, HighlightSpan, LineKind, PaneStatus,
 };
 use ratatui::buffer::Buffer;
-use ratatui::layout::{Alignment, Constraint, Direction, Layout, Position, Rect};
+use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget, Wrap};
@@ -65,9 +65,10 @@ use text::*;
 use views::*;
 
 pub(crate) use command_center::{
-    agent_at as command_center_agent_at, checkout_at as command_center_checkout_at,
+    checkout_at as command_center_checkout_at,
     feature_hit_at as command_center_feature_hit_at,
     project_header_at as command_center_project_header_at,
+    quiet_fold_at as command_center_quiet_fold_at,
     rail_target_at as command_center_rail_target_at,
     sidebar_contains as command_center_sidebar_contains,
     SIDEBAR_MIN_WIDTH as RAIL_MIN_WIDTH,
@@ -224,7 +225,6 @@ fn forget_feature_view(app: &mut App) {
 /// can see.
 fn forget_rail_and_stages(app: &mut App) {
     app.layout.rail = Panel::default();
-    app.layout.agents = Panel::default();
     app.layout.checkouts = Panel::default();
 }
 

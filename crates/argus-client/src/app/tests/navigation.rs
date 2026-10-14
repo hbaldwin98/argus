@@ -4,8 +4,16 @@
 use super::*;
 
 /// The fixture with a second, quiet repository listed first in the tree,
-/// so the rail's active-first order and the tree's order differ.
+/// so the rail's active-first order and the tree's order differ. The fold
+/// is open: closed, `atlas` is no row at all and there is no order to walk.
 fn quiet_repository_first() -> Harness {
+    let mut h = quiet_repository_folded();
+    h.app.quiet_open = true;
+    h
+}
+
+/// The same tree as the client first shows it, `atlas` folded away.
+fn quiet_repository_folded() -> Harness {
     let mut h = Harness::new();
     let mut t = tree();
     t[0].repositories
@@ -88,6 +96,103 @@ fn j_and_k_walk_the_rows_in_the_order_the_rail_draws_them() {
     h.key(KeyCode::Char('k'));
     h.key(KeyCode::Char('k'));
     assert_eq!(h.app.focus, Focus::Projects, "the heading is the first stop");
+}
+
+#[test]
+fn quiet_repositories_are_not_rail_rows_while_another_repository_is_active() {
+    let h = quiet_repository_folded();
+    assert_eq!(h.app.rail_rows(), [RailRow::Project, RailRow::Repository(1)]);
+    assert_eq!(
+        h.app.quiet_fold(),
+        Some(QuietFold { open: false, count: 1, above: None }),
+        "one trailing line stands for `atlas`"
+    );
+}
+
+#[test]
+fn the_selected_repository_is_a_rail_row_with_the_fold_closed() {
+    // The cursor and the Checkouts stage both read the selection, so it is
+    // never a row the rail does not draw.
+    let mut h = quiet_repository_first();
+    h.keys("jj"); // onto `atlas`
+    h.key(KeyCode::Char('z'));
+
+    assert!(!h.app.quiet_open);
+    assert_eq!(h.app.rail_cursor(), Some(RailRow::Repository(0)));
+    assert_eq!(
+        h.app.rail_rows(),
+        [RailRow::Project, RailRow::Repository(1), RailRow::Repository(0)]
+    );
+    assert_eq!(h.app.quiet_fold(), None, "nothing is left hidden to count");
+}
+
+#[test]
+fn nothing_folds_when_no_repository_is_active() {
+    let mut h = Harness::new();
+    let mut t = tree();
+    t[0].repositories[0].checkouts[0].panes.clear();
+    t[0].repositories
+        .push(repository(7, "atlas", vec![checkout(30, "main", true, vec![])]));
+    h.app.on_server_msg(ServerMsg::Tree(t));
+
+    assert_eq!(
+        h.app.rail_rows(),
+        [RailRow::Project, RailRow::Repository(0), RailRow::Repository(1)]
+    );
+    assert_eq!(h.app.quiet_fold(), None);
+    h.key(KeyCode::Char('z'));
+    assert!(!h.app.quiet_open, "with no line to show it, `z` changes nothing");
+}
+
+#[test]
+fn z_closes_a_fold_whose_line_has_gone() {
+    let mut h = Harness::new();
+    let mut t = tree();
+    t[0].repositories[0].checkouts[0].panes.clear();
+    t[0].repositories
+        .push(repository(7, "atlas", vec![checkout(30, "main", true, vec![])]));
+    h.app.on_server_msg(ServerMsg::Tree(t));
+    h.app.quiet_open = true;
+
+    assert_eq!(h.app.quiet_fold(), None, "nothing is active, so no line is drawn");
+    h.key(KeyCode::Char('z'));
+    assert!(!h.app.quiet_open, "or the next repository to go quiet arrives revealed");
+}
+
+#[test]
+fn z_opens_the_fold_above_the_quiet_repositories_and_closes_it_again() {
+    let mut h = quiet_repository_folded();
+    h.key(KeyCode::Char('j'));
+    h.sent();
+    h.key(KeyCode::Char('z'));
+
+    assert_eq!(
+        h.app.rail_rows(),
+        [RailRow::Project, RailRow::Repository(1), RailRow::Repository(0)]
+    );
+    assert_eq!(
+        h.app.quiet_fold(),
+        Some(QuietFold { open: true, count: 1, above: Some(0) })
+    );
+    assert!(h.sent().is_empty(), "the fold is this client's own state");
+
+    h.key(KeyCode::Char('z'));
+    assert_eq!(h.app.rail_rows(), [RailRow::Project, RailRow::Repository(1)]);
+}
+
+#[test]
+fn j_and_k_never_stop_on_the_fold_line() {
+    // Closed, the line trails the list and the cursor stops above it.
+    let mut h = quiet_repository_folded();
+    h.keys("jjjj");
+    assert_eq!(h.app.rail_cursor(), Some(RailRow::Repository(1)), "`orion`, the last row");
+
+    // Open, the line sits between `orion` and `atlas`: one step crosses it.
+    h.key(KeyCode::Char('z'));
+    h.key(KeyCode::Char('j'));
+    assert_eq!(h.app.rail_cursor(), Some(RailRow::Repository(0)));
+    h.key(KeyCode::Char('k'));
+    assert_eq!(h.app.rail_cursor(), Some(RailRow::Repository(1)));
 }
 
 #[test]

@@ -315,10 +315,11 @@ pub(super) fn laid_out(h: &mut Harness) {
     };
     h.app.layout = Layout {
         views: Panel::default(),
-        // The rail's rows start under its project header, as drawn.
+        // The rail's rows start under its one-row heading and the rule
+        // beneath it, as drawn.
         rail: Panel {
             outer: Rect::new(0, 0, 32, 8),
-            inner: Rect::new(1, 4, 30, 4),
+            inner: Rect::new(0, 2, 31, 6),
             first: 0,
         },
         checkouts: Panel::default(),
@@ -330,7 +331,6 @@ pub(super) fn laid_out(h: &mut Harness) {
         feature_detail: Default::default(),
         overlay: Panel::default(),
         help: Panel::default(),
-        agents: Panel::default(),
         cursor: None,
     };
 }

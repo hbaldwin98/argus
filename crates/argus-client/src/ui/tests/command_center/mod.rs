@@ -15,17 +15,11 @@ fn production_shell_matches_the_designs_four_regions() {
     let mut app = command_center();
     let text = lines(&draw_at(&mut app, 120, 30)).join("\n");
 
-    for landmark in [
-        "ARGUS",
-        "WORKSPACE",
-        "ACTIVE WORKSPACE",
-        "REPOSITORIES",
-        "AGENTS",
-    ] {
+    for landmark in ["ARGUS", "WORKSPACE", "FEATURE", "▌ argus", " orion"] {
         assert!(text.contains(landmark), "missing {landmark}:\n{text}");
     }
     assert!(
-        !text.contains("└ master"),
+        !text.lines().any(|line| line.starts_with("    master")),
         "repositories expand only after a click:\n{text}"
     );
     assert_eq!(app.layout.rail.outer.x, 0);

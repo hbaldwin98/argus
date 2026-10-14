@@ -358,13 +358,6 @@ impl App {
             .nth(location.pane)
     }
 
-    pub fn pane_path(&self, location: PaneLocation) -> Option<(&str, &str, &str)> {
-        let project = self.tree.get(location.project)?;
-        let repository = project.repositories.get(location.repository)?;
-        let checkout = repository.checkouts.get(location.checkout)?;
-        Some((&project.name, &repository.name, &checkout.name))
-    }
-
     pub fn select_pane_location(&mut self, location: PaneLocation) -> bool {
         let valid = self.pane_at(location).is_some();
         if !valid {

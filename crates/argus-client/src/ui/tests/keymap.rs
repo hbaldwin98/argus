@@ -16,6 +16,13 @@ fn modes() -> Vec<(&'static str, Vec<App>)> {
     ]
     .map(|focus| {
         let mut app = app_with_tree();
+        // A repository with nothing running, so the rail has a fold to
+        // offer `z` beside.
+        app.tree[0].repositories.push(repository(
+            9,
+            "satellite",
+            vec![checkout(20, "main", true, vec![])],
+        ));
         app.focus = focus;
         app
     });

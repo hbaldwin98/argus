@@ -244,7 +244,7 @@ result of a request; `ui` is a pure function of it.
 | `app` | the model: the tree, the selection, and which modal is up |
 | `app/rows`, `app/layout`, `app/modal` | naming a row independently of its index, where the last frame put things, and the layers that float over it |
 | `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |
-| `app/rail` | what the rail lists, in what order, which repository is open, and what choosing a row does |
+| `app/rail` | what the rail lists, in what order, which repositories fold away as quiet, which one is open, and what choosing a row does |
 | `app/mode` | which mode has the keys — the one answer key dispatch, the status bar and `?` all match on |
 | `app/mode/keymap` | what each mode's keys are, said once: the keys, what `?` and the bar call them, and what they run |
 | `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
@@ -256,7 +256,7 @@ result of a request; `ui` is a pure function of it.
 | `ui` | the frame, and where the cursor goes on it |
 | `ui/card` | a card and the rows in it: its frame, one row, and how a list longer than the card scrolls |
 | `ui/command_center` | the HTML-specified shell: where the rail and stage go, the stage heading, the first-run state, and the status vocabulary they share |
-| `ui/command_center/rail` | drawing the rail — its summary, the rows `app/rail` lists, and the live agents — and which row a click lands on |
+| `ui/command_center/rail` | drawing the rail — its heading, the rows `app/rail` lists, and the line the quiet repositories fold behind — and which row a click lands on |
 | `ui/command_center/workspace`, `ui/command_center/feature`, `ui/command_center/checkouts` | one stage each, with the hit-test that shares its layout |
 | `ui/command_center/feature/index`, `ui/command_center/feature/work`, `ui/command_center/feature/record`, `ui/command_center/feature/flows`, `ui/command_center/feature/capture` | what fills the Feature stage's frame: the index of features, each of the three lenses, and the note a feature is written as |
 | `ui/text` | fitting text to a width |
@@ -292,15 +292,23 @@ stream.
 ## Views
 
 The production client follows `Argus Command Center.dc.html`: a two-row product-and-navigation
-band, a stable 32-cell contextual rail, one dominant stage, and a one-row command band. Three tabs
+band, a stable contextual rail, one dominant stage, and a one-row command band. Three tabs
 name the stage surfaces: Workspace, Feature, and Checkouts. Their digits still open them;
 from inside a pane the digits belong to the child, so a view is reached through the leader
 (`Ctrl-Space`, then the digit). The empty tree replaces the shell with the first-run surface rather
 than pretending first-run is a permanent view.
 
-The rail is stable across all three surfaces. It summarizes the open workspace and selected project,
-lists that project's repositories, and rolls live agents up at the bottom. `o` or a click on the
-project name switches projects through a picker. Selecting a repository
+The rail is stable across all three surfaces. Its heading is one row: the selected project's name,
+which of the projects it is when there are several, and at the right edge how many of its agents
+need a person, written only when some do. Under one rule it lists that project's repositories, each
+a status glyph, a name and the bare count of the panes running in it. A repository with nothing
+running is quiet, and while any other is active the quiet ones fold away behind one dim line,
+`+ N quiet`, so the rail's height goes to what is happening; `z` or a click on the line toggles the
+fold, and open it reads `− N quiet` above the repositories it revealed. The selected repository is
+listed whatever the fold says, and a project with nothing active at all is listed whole, having
+nothing to fold behind. The fold is this client's own state, like the open view. An agent is listed
+once, on its pane's row under its checkout: the rail has no second roll-up of agents. `o` or a click
+on the heading switches projects through a picker. Selecting a repository
 changes the existing daemon-tree selection; the rail owns no parallel workspace model. Workspace
 holds the selected pane's real terminal beneath a flat breadcrumb header. Checkouts is an
 operational table for the selected repository, and Feature lists the repository's features and reads the selected one as work, as a record
@@ -314,7 +322,8 @@ state and is never sent to the daemon: two people attached to one daemon are not
 reading the same thing.
 
 There are three views: Workspace, Feature, and Checkouts. The panes have no view of their own:
-the rail lists them, each with its status and its queued count on its row. Review, history, settings, briefs,
+the rail lists them, each with its status glyph and its queued count on its row, and the status
+written out as a word only when it is one that needs a person. Review, history, settings, briefs,
 and editors remain overlays because they are temporary work over the current surface. The command
 center is the only presentation, and the one the client's tests draw: the five-column spine it
 replaced, with its folding columns and draggable gutters, is gone rather than kept compiled beside
@@ -330,10 +339,12 @@ Workspace scope -> Project -> Repository -> Checkout -> Pane
 
 A workspace is daemon-wide scope, not a navigation column. Switching it changes every attached
 client. Panes in other workspaces continue to run. The production TUI projects the selected
-project's repositories and agents into the stable rail and gives the selected pane's terminal the
-remaining stage. Repository rows are ordered active-first and stay collapsed until chosen; the one
-open repository shows its checkouts with panes running and those panes, with the pane being viewed
-marked in place. Checkout and pane identity remain the same indices and IDs used by the daemon
+project's repositories into the stable rail and gives the selected pane's terminal the
+remaining stage. Repository rows are ordered active-first, the quiet ones folded behind their line,
+and stay collapsed until chosen; the one open repository shows its checkouts with panes running and
+those panes, indented under it without connecting glyphs, with the pane being viewed marked in
+place. Only the cursor's row and the pane being viewed are filled; the selected repository is told
+by its bar and bold name. Checkout and pane identity remain the same indices and IDs used by the daemon
 tree. While typing in a pane, `Ctrl-Space`, `f` lets its terminal take the main content area;
 repeating the chord restores the shell. The command band remains visible in both layouts.
 
@@ -342,7 +353,9 @@ keys reach too. `j`/`k` and the wheel step through the project heading, the repo
 open repository's checkouts and panes; `l`/Enter opens a repository and moves into it, goes to a
 checkout's first pane, or types into a pane; `h`/Escape climbs to the row above. Stepping past a
 repository does not open it — walking the list would otherwise unfold every row it crossed — and
-opening one closes the last. On the project heading `n` adds a project and `D` removes this one.
+opening one closes the last. The quiet fold's line is drawn but is not one of those rows: the cursor
+steps over it, `z` works it from anywhere on the rail, and closing it under a cursor that is on a
+quiet repository leaves that one listed. On the project heading `n` adds a project and `D` removes this one.
 The rail's cursor is not stored: it is the selection read at the depth focus names, so a new tree
 cannot leave the two disagreeing. Checkouts with nothing running, and branches no checkout is on,
 are not rail rows; the Checkouts stage draws every one, and there `n`, `D`, `s`, `a`, `F`, `P`,
@@ -360,8 +373,9 @@ The left of the bar counts the fleet — how many agents are working, how many a
 are waiting on a person — ordered so the count you have to act on is the one nearest the corner.
 It held a breadcrumb before, which said the path already spelled out across the workspace
 heading. What is *not* written anywhere else on
-screen is the state of the agents you are not currently looking at, which is the reason the
-program has a pane list at all. Idle and exited panes are left out: a tally that counts them
+screen is the state of the agents you are not currently looking at — the rail shows one project,
+and one repository of it open — which is the reason the
+bar counts them. Idle and exited panes are left out: a tally that counts them
 reads the same whether anything is happening or not, and when nothing is happening the breadcrumb
 comes back rather than the bar spending a row on `0 working`.
 
@@ -423,7 +437,7 @@ Checkout rows use the branch currently occupying their path as their display nam
 another process switches the branch outside Argus. A live agent can report that it has started
 working in another known checkout in the same project. Argus then moves the existing pane under that
 checkout without restarting its PTY or changing its id, title, status, or conversation. The client
-follows the pane when the pane list or terminal has focus; project and checkout navigation stays put.
+follows the pane when a pane row or the terminal has focus; project and checkout navigation stays put.
 
 ## Configuration
 
@@ -688,8 +702,8 @@ what changed. The first snapshot a client holds is a quiet baseline, as is a pan
 and the last one is kept across a reconnect, so a pane that started waiting while the daemon was
 away is still news; a later effective-state change into `Waiting`, `NeedsReview`, or `Failed` is announced. Effective
 state includes child agents because their parent pane is the selectable place the operator can open.
-Every row that stands for several panes — a checkout, a repository and its rail dot, the rail's need
-badge, the command band's tally — rolls up each listed pane and each child the same way, through
+Every row that stands for several panes — a checkout, a repository and its rail dot, the rail
+heading's need count, the command band's tally — rolls up each listed pane and each child the same way, through
 `tree`'s one ranking: a failed exit outranks a working agent, and only a clean exit is calm.
 Transitions into `Waiting`, `NeedsReview`, or `Failed` also put the pane or child note in the status
 bar. A client can optionally ring its terminal bell for those transitions when the pane is not the
@@ -946,8 +960,9 @@ pane to idle.
 Every report carries the session it came from, and the pane belongs to one of them. The session that
 claims a pane first owns it; a report from any other session — a CLI started from inside the pane,
 which inherits the same hook URL and token and cannot be stopped from calling home — is recorded as a
-child of that pane instead. Children are listed as indented rows beneath the parent's in the rail —
-under an open repository's pane and in the agents list — each with its own status. The
+child of that pane instead. Children are listed as indented rows beneath the parent's in the rail,
+under an open repository's pane and nowhere else, each marked in its status's colour and writing
+the status out only when it needs a person. The
 parent's row and header chip show the loudest of its own state and its
 children's, so an agent idle at its prompt while a CLI it started works reads as working; the daemon's
 own status stays the agent's, since that is what decides when a message can be typed. Children are

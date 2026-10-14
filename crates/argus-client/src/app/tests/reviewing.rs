@@ -679,7 +679,7 @@ fn clicking_the_rail_leaves_the_live_pane_subscribed() {
     let watching = h.app.column_pane();
     assert!(watching.is_some(), "precondition: something is being shown");
 
-    h.app.on_mouse(click(2, 4)); // the rail's repository row
+    h.app.on_mouse(click(2, 2)); // the rail's repository row
 
     assert_eq!(h.app.focus, Focus::Repositories);
     assert_eq!(h.app.column_pane(), watching, "still showing the same pane");

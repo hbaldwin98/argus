@@ -1,50 +1,77 @@
-//! The contextual rail: the workspace summary, the selected project's
-//! repositories and checkouts, and the live agents rolled up beneath them,
-//! with the hit-tests that map a click back onto a row.
+//! The contextual rail: the project heading, the selected project's
+//! repositories with the open one's checkouts and panes, and the line the
+//! quiet repositories fold behind, with the hit-tests that map a click back
+//! onto a row.
 
 use super::*;
+use crate::app::QuietFold;
+
+/// Blank cells every row keeps before the rail's border, so the column of
+/// counts and status words does not sit against the rule.
+const RIGHT_PAD: usize = 2;
 
 /// The rail row a click landed on. The project heading is drawn above the
-/// list and hit-tested on its own ([`project_header_at`]).
+/// list and the fold's line is not a row the cursor can be on, so each is
+/// hit-tested on its own ([`project_header_at`], [`quiet_fold_at`]).
 pub(crate) fn rail_target_at(app: &App, x: u16, y: u16) -> Option<RailRow> {
+    match list_row_at(app, x, y)? {
+        ListRow::Rail(row) => Some(row),
+        ListRow::Child(pane, _) => Some(RailRow::Pane(pane)),
+        ListRow::QuietFold(_) => None,
+    }
+}
+
+/// Whether a click landed on the line the quiet repositories fold behind.
+pub(crate) fn quiet_fold_at(app: &App, x: u16, y: u16) -> bool {
+    matches!(list_row_at(app, x, y), Some(ListRow::QuietFold(_)))
+}
+
+fn list_row_at(app: &App, x: u16, y: u16) -> Option<ListRow> {
     let panel = app.layout.rail;
-    contains(panel.inner, x, y)
-        .then(|| {
-            list_rows(app)
-                .get(panel.first + usize::from(y - panel.inner.y))
-                .map(|row| match *row {
-                    ListRow::Rail(row) => row,
-                    ListRow::Child(pane, _) => RailRow::Pane(pane),
-                })
-        })
-        .flatten()
+    if !contains(panel.inner, x, y) {
+        return None;
+    }
+    list_rows(app)
+        .get(panel.first + usize::from(y - panel.inner.y))
+        .copied()
 }
 
 /// A row drawn in the scrolling list: one of the rows the cursor walks, or
-/// a child listed under an agent's row — a CLI started inside it. A child is
-/// something happening inside its pane rather than somewhere else to go, so
-/// the cursor steps over it and a click on it lands on the pane.
+/// one it steps over. A child listed under an agent's row — a CLI started
+/// inside it — is something happening inside its pane rather than somewhere
+/// else to go, so a click on it lands on the pane. The fold's line stands
+/// for rows rather than being one.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ListRow {
     Rail(RailRow),
     Child(PaneLocation, usize),
+    QuietFold(QuietFold),
 }
 
 /// The rows drawn in the scrolling list: everything but the heading, with
-/// each pane's children under it.
+/// each pane's children under it and the fold's line where `app/rail` puts
+/// it.
 fn list_rows(app: &App) -> Vec<ListRow> {
+    let fold = app.quiet_fold();
     let mut rows = Vec::new();
     for row in app.rail_rows() {
         match row {
             RailRow::Project => continue,
+            RailRow::Repository(index) => {
+                let lid = fold.filter(|fold| fold.above == Some(index));
+                rows.extend(lid.map(ListRow::QuietFold));
+                rows.push(ListRow::Rail(row));
+            }
             RailRow::Pane(pane) => {
                 rows.push(ListRow::Rail(row));
                 let children = app.pane_at(pane).map_or(0, |info| info.children.len());
                 rows.extend((0..children).map(|child| ListRow::Child(pane, child)));
             }
-            row => rows.push(ListRow::Rail(row)),
+            RailRow::Checkout(..) => rows.push(ListRow::Rail(row)),
         }
     }
+    let trailing = fold.filter(|fold| fold.above.is_none());
+    rows.extend(trailing.map(ListRow::QuietFold));
     rows
 }
 
@@ -52,111 +79,11 @@ pub(crate) fn sidebar_contains(app: &App, x: u16, y: u16) -> bool {
     contains(app.layout.rail.outer, x, y)
 }
 
-/// The project name and the workspace line under it: clicking either opens
-/// the project picker, since the rail shows one project at a time.
+/// The project heading, the rail's first row: clicking it opens the project
+/// picker, since the rail shows one project at a time.
 pub(crate) fn project_header_at(app: &App, x: u16, y: u16) -> bool {
     let outer = app.layout.rail.outer;
-    contains(outer, x, y) && (outer.y + 1..=outer.y + 2).contains(&y)
-}
-
-fn project_root_line(app: &App, width: u16) -> String {
-    let Some(project) = app.current_project() else {
-        return String::new();
-    };
-    let max = usize::from(width.saturating_sub(4));
-    if let Some(root) = project.root.as_deref() {
-        return ellipsize_text(&display_path(root), max);
-    }
-    project
-        .repositories
-        .iter()
-        .flat_map(|r| r.checkouts.iter())
-        .find(|c| c.primary)
-        .or_else(|| {
-            project
-                .repositories
-                .iter()
-                .flat_map(|r| r.checkouts.iter())
-                .next()
-        })
-        .map(|c| ellipsize_text(&display_path(&c.path), max))
-        .unwrap_or_default()
-}
-
-const BADGE_CHIP_HEIGHT: u16 = 1;
-
-fn summary_chip_label(count: usize, unit: &str) -> String {
-    format!("{count:>2} {}", unit.to_ascii_uppercase())
-}
-
-fn badge_chip_label(text: &str) -> String {
-    format!(" {} ", text.to_ascii_uppercase())
-}
-
-fn badge_chip_width(text: &str) -> u16 {
-    badge_chip_label(text).chars().count() as u16
-}
-
-fn render_badge_chip(f: &mut Frame, area: Rect, text: &str, fg: Color, th: Theme) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-    f.render_widget(
-        Paragraph::new(badge_chip_label(text))
-            .style(filled_badge(fg, th))
-            .alignment(Alignment::Center),
-        area,
-    );
-}
-
-/// One row of the AGENTS list: an agent, or the child it lists at `child`
-/// — a CLI started inside it. A child is something happening inside its pane
-/// rather than somewhere else to go, so a click on it lands on the pane.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct AgentRow {
-    pane: PaneLocation,
-    child: Option<usize>,
-}
-
-/// Every agent in the workspace, in rail order, with where it lives, each
-/// followed by its children.
-fn agent_rows(app: &App) -> Vec<AgentRow> {
-    let Some(project) = app.current_project() else {
-        return Vec::new();
-    };
-    let mut rows = Vec::new();
-    for (repository, repo) in project.repositories.iter().enumerate() {
-        for (checkout, item) in repo.checkouts.iter().enumerate() {
-            for (pane, info) in item.listed_panes().enumerate() {
-                if info.kind != PaneKind::Agent {
-                    continue;
-                }
-                let location = PaneLocation {
-                    project: app.sel_project,
-                    repository,
-                    checkout,
-                    pane,
-                };
-                rows.push(AgentRow { pane: location, child: None });
-                rows.extend((0..info.children.len()).map(|child| AgentRow {
-                    pane: location,
-                    child: Some(child),
-                }));
-            }
-        }
-    }
-    rows
-}
-
-/// The agent a click in the rail's AGENTS list landed on.
-pub(crate) fn agent_at(app: &App, x: u16, y: u16) -> Option<PaneLocation> {
-    let panel = app.layout.agents;
-    if !contains(panel.inner, x, y) {
-        return None;
-    }
-    agent_rows(app)
-        .get(panel.first + usize::from(y - panel.inner.y))
-        .map(|row| row.pane)
+    contains(outer, x, y) && y == outer.y
 }
 
 pub(super) fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
@@ -171,147 +98,81 @@ pub(super) fn render_sidebar(f: &mut Frame, app: &mut App, area: Rect, th: Theme
         width: area.width.saturating_sub(1),
         ..area
     };
-    let checkouts = || {
-        app.current_project()
-            .into_iter()
-            .flat_map(|p| p.repositories.iter())
-            .flat_map(|r| r.checkouts.iter())
+    let heading = Rect {
+        height: inner.height.min(1),
+        ..inner
     };
-    let agents = checkouts()
-        .flat_map(|c| c.listed_panes())
-        .filter(|p| p.kind == PaneKind::Agent)
-        .count();
-    let needs = checkouts()
-        .flat_map(|c| c.statuses())
-        .filter(|s| s.needs_you())
-        .count();
-    let project = app.current_project();
-    let repo_count = project.map(|p| p.repositories.len()).unwrap_or(0);
-    let name = project
-        .map(|p| p.name.clone())
-        .unwrap_or_else(|| "no project".into());
-
-    // Header: label, the project under an accent bar, and its root path.
-    let x = inner.x + 1;
-    let width = inner.width.saturating_sub(2);
-    let root_line = project_root_line(app, width);
-    let put = |f: &mut Frame, y: u16, line: Line| {
-        if y < inner.bottom() {
-            f.render_widget(Paragraph::new(line), Rect::new(x, y, width, 1));
-        }
+    render_heading(f, app, heading, th);
+    let list = Rect {
+        y: heading.bottom(),
+        height: inner.height - heading.height,
+        ..inner
     };
-    put(
-        f,
-        inner.y,
-        Line::styled("ACTIVE WORKSPACE", Style::default().fg(th.dim)),
-    );
-    // With more than one project, the header says which of them this is
-    // and that `o` reaches the rest.
-    let position = if app.tree.len() > 1 {
-        format!(" {}/{} ▾", app.sel_project + 1, app.tree.len())
-    } else {
-        String::new()
-    };
-    let name_width = (width as usize).saturating_sub(2 + position.chars().count());
-    // The heading is the rail's first stop: `n` adds a project and `D`
-    // removes this one from there, so the cursor has to be seen on it.
-    let heading_bg = if app.focus == Focus::Projects {
-        th.surface_focus
-    } else {
-        th.bg
-    };
-    put(
-        f,
-        inner.y + 1,
-        Line::from(vec![
-            Span::styled("▌ ", Style::default().fg(th.accent).bg(heading_bg)),
-            Span::styled(
-                ellipsize_text(&name, name_width),
-                Style::default()
-                    .fg(th.text)
-                    .bg(heading_bg)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(position, Style::default().fg(th.dim).bg(heading_bg)),
-        ]),
-    );
-    if !root_line.is_empty() {
-        put(
-            f,
-            inner.y + 2,
-            Line::styled(
-                format!("  {root_line}"),
-                Style::default().fg(th.dim),
-            ),
+    render_repositories(f, app, list, th);
+    // The rule under the heading meets the border from the left only: the
+    // stage's own heading rule is a row lower, so a tee facing right would
+    // point at nothing.
+    if list.y < area.bottom() && area.width > 0 {
+        f.render_widget(
+            Paragraph::new(Span::styled("┤", Style::default().fg(th.edge))),
+            Rect::new(area.right() - 1, list.y, 1, 1),
         );
-    }
-
-    // Badges: one-row chips on a raised surface fill when the rail is wide enough.
-    let mut badges = vec![
-        (summary_chip_label(repo_count, "repos"), th.muted),
-        (summary_chip_label(agents, "agents"), th.ok),
-    ];
-    if needs > 0 {
-        badges.push((summary_chip_label(needs, "need"), th.warn));
-    }
-    let gap = 1u16;
-    let badge_row_end = x.saturating_add(width);
-    let header_rows = 2 + u16::from(!root_line.is_empty());
-    let mut bx = x;
-    let mut by = inner.y + header_rows;
-    for (text, color) in badges {
-        let chip_w = badge_chip_width(&text);
-        if bx > x && bx.saturating_add(chip_w) > badge_row_end {
-            bx = x;
-            by = by.saturating_add(BADGE_CHIP_HEIGHT);
-        }
-        if by.saturating_add(BADGE_CHIP_HEIGHT) <= inner.bottom() {
-            let w = chip_w.min(badge_row_end.saturating_sub(bx));
-            render_badge_chip(
-                f,
-                Rect::new(bx, by, w, BADGE_CHIP_HEIGHT),
-                &text,
-                color,
-                th,
-            );
-        }
-        bx = bx.saturating_add(chip_w + gap);
-    }
-    let summary_height = (by + BADGE_CHIP_HEIGHT)
-        .saturating_sub(inner.y)
-        .min(inner.height);
-
-    // Agents take what they list, up to a third of the rail.
-    let agent_count = agent_rows(app).len() as u16;
-    let rest = inner.height.saturating_sub(summary_height);
-    let agent_height = (agent_count.max(1) + 4).min(rest / 3).min(rest);
-    let repos_area = Rect {
-        y: inner.y + summary_height,
-        height: rest.saturating_sub(agent_height),
-        ..inner
-    };
-    render_repositories(f, app, repos_area, th);
-    let agents_area = Rect {
-        y: repos_area.bottom(),
-        height: agent_height,
-        ..inner
-    };
-    render_agents(f, app, agents_area, th);
-    for y in [repos_area.y, agents_area.y] {
-        if y < area.bottom() && area.width > 0 {
-            f.render_widget(
-                Paragraph::new(Span::styled("├", Style::default().fg(th.edge))),
-                Rect::new(area.right() - 1, y, 1, 1),
-            );
-        }
     }
     // Repository rows are the rail's interactive interior, while the whole
     // rail remains its hit target and geometry landmark.
     app.layout.rail.outer = area;
 }
 
+/// The project's name, which of the projects it is, and how many of its
+/// agents are waiting on a person — said only when some are.
+fn render_heading(f: &mut Frame, app: &App, area: Rect, th: Theme) {
+    let project = app.current_project();
+    let name = project.map_or("no project", |p| p.name.as_str());
+    let needs = project
+        .into_iter()
+        .flat_map(|p| p.repositories.iter())
+        .flat_map(|r| r.checkouts.iter())
+        .flat_map(|c| c.statuses())
+        .filter(|s| s.needs_you())
+        .count();
+    // With more than one project, the heading says which of them this is
+    // and that `o` reaches the rest.
+    let position = if app.tree.len() > 1 {
+        format!(" {}/{} ▾", app.sel_project + 1, app.tree.len())
+    } else {
+        String::new()
+    };
+    let need = match needs {
+        0 => String::new(),
+        n => format!(" {n} need"),
+    };
+
+    let width = area.width as usize;
+    let left_width = width.saturating_sub(2 + need.chars().count() + RIGHT_PAD);
+    let name = ellipsize_text(name, left_width.saturating_sub(position.chars().count()));
+    let filler = left_width.saturating_sub(name.chars().count() + position.chars().count());
+    // The heading is the rail's first stop: `n` adds a project and `D`
+    // removes this one from there, so the cursor has to be seen on it.
+    let fill = if app.focus == Focus::Projects {
+        th.surface_focus
+    } else {
+        th.bg
+    };
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("▌ ", Style::default().fg(th.accent)),
+            Span::styled(name, Style::default().fg(th.text).add_modifier(Modifier::BOLD)),
+            Span::styled(position, Style::default().fg(th.dim)),
+            Span::raw(" ".repeat(filler)),
+            Span::styled(need, Style::default().fg(th.warn)),
+        ]))
+        .style(Style::default().bg(fill)),
+        area,
+    );
+}
+
 fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
-    if area.height < 3 {
+    if area.height < 2 {
         app.layout.rail = Panel::default();
         return;
     }
@@ -321,23 +182,9 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
             .border_style(Style::default().fg(th.edge)),
         area,
     );
-    f.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(
-                format!(
-                    "  {:<width$}",
-                    "REPOSITORIES",
-                    width = (area.width as usize).saturating_sub(6)
-                ),
-                Style::default().fg(th.dim),
-            ),
-            Span::styled("j/k", Style::default().fg(th.edge)),
-        ])),
-        Rect::new(area.x, area.y + 1, area.width, 1),
-    );
     let rows_area = Rect {
-        y: area.y + 2,
-        height: area.height.saturating_sub(2),
+        y: area.y + 1,
+        height: area.height - 1,
         ..area
     };
     let rows = list_rows(app);
@@ -350,206 +197,160 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
         rows_area.height as usize,
         rows.len(),
     );
+    let viewed = app.pane_location().filter(|_| {
+        app.view == View::Workspace && matches!(app.focus, Focus::Panes | Focus::PaneContent)
+    });
     let width = rows_area.width as usize;
-    for (screen, row) in rows.iter().skip(first).enumerate() {
-        if screen as u16 >= rows_area.height {
-            break;
-        }
-        let y = rows_area.y + screen as u16;
+    let drawn = rows.iter().skip(first).take(rows_area.height as usize);
+    for (screen, row) in drawn.enumerate() {
         let Some(project) = app.current_project() else {
             break;
         };
-        let row = match row {
-            ListRow::Rail(row) => row,
-            ListRow::Child(pane, child) => {
-                let child = app.pane_at(*pane).and_then(|info| info.children.get(*child));
-                if let Some(child) = child {
-                    let bg = if pane.repository == app.sel_repository { th.surface } else { th.bg };
-                    f.render_widget(
-                        Paragraph::new(rail_child_line(child, width, th)).style(Style::default().bg(bg)),
-                        Rect { y, height: 1, ..rows_area },
-                    );
-                }
-                continue;
-            }
-        };
-        let on_cursor = cursor == Some(*row);
-        // The selected repository and everything open under it read as one
-        // raised block; the cursor and the pane being viewed are lifted one
-        // step further.
-        let in_selected = match *row {
-            RailRow::Repository(index) | RailRow::Checkout(index, _) => {
-                index == app.sel_repository
-            }
-            RailRow::Pane(location) => location.repository == app.sel_repository,
-            RailRow::Project => false,
-        };
-        let row_bg = if in_selected { th.surface } else { th.bg };
+        let on_cursor = matches!(*row, ListRow::Rail(row) if cursor == Some(row));
         let line = match *row {
-            RailRow::Project => continue,
-            RailRow::Repository(index) => {
+            ListRow::Rail(RailRow::Project) => continue,
+            ListRow::QuietFold(fold) => {
+                let label = format!("{} quiet", fold.count);
+                let label_width = width.saturating_sub(5 + RIGHT_PAD);
+                Line::styled(
+                    format!(
+                        " {} {:<label_width$} z",
+                        if fold.open { "−" } else { "+" },
+                        ellipsize_text(&label, label_width),
+                    ),
+                    Style::default().fg(th.dim),
+                )
+            }
+            ListRow::Rail(RailRow::Repository(index)) => {
                 let repo = &project.repositories[index];
                 let selected = index == app.sel_repository;
+                let loudest =
+                    PaneStatus::loudest(repo.checkouts.iter().flat_map(|c| c.statuses()));
                 let panes = repo
                     .checkouts
                     .iter()
                     .map(|c| c.listed_panes().count())
                     .sum::<usize>();
-                let loudest =
-                    PaneStatus::loudest(repo.checkouts.iter().flat_map(|c| c.statuses()));
-                let bg = if on_cursor {
-                    th.surface_focus
-                } else if selected {
-                    th.surface
-                } else {
-                    th.bg
+                let count = match panes {
+                    0 => String::new(),
+                    n => format!(" {n}"),
                 };
-                let checkouts = plural(repo.checkouts.len(), "checkout");
-                let name_len = repo.name.chars().count();
-                // The template's full meta when the name still fits beside
-                // it, and the more telling half when it does not.
-                let meta = [
-                    if panes > 0 {
-                        format!("{checkouts} · {}", plural(panes, "pane"))
-                    } else {
-                        checkouts.clone()
-                    },
-                    if panes > 0 {
-                        plural(panes, "pane")
-                    } else {
-                        checkouts
-                    },
-                ]
-                .into_iter()
-                .find(|meta| name_len + meta.chars().count() + 8 <= width)
-                .unwrap_or_default();
-                let name_width = width.saturating_sub(meta.chars().count() + 6);
+                let name_width = width.saturating_sub(3 + count.chars().count() + RIGHT_PAD);
+                let name_color = if selected {
+                    th.text
+                } else if loudest.is_some() {
+                    th.muted
+                } else {
+                    th.dim
+                };
                 Line::from(vec![
                     Span::styled(
-                        if selected { "▌ " } else { "  " },
-                        Style::default().fg(th.accent).bg(bg),
+                        if selected { "▌" } else { " " },
+                        Style::default().fg(th.accent),
                     ),
                     Span::styled(
-                        match loudest {
-                            Some(status) => format!("{}  ", status_glyph(app, status, "●")),
-                            None => "·  ".to_string(),
-                        },
-                        Style::default()
-                            .fg(loudest.map(|s| status_color(s, th)).unwrap_or(th.dim))
-                            .bg(bg),
+                        format!("{} ", loudest.map_or("·", |status| status_glyph(app, status, "●"))),
+                        Style::default().fg(loudest.map_or(th.dim, |s| status_color(s, th))),
                     ),
                     Span::styled(
                         format!("{:<name_width$}", ellipsize_text(&repo.name, name_width)),
-                        Style::default()
-                            .fg(if selected {
-                                th.text
-                            } else if loudest.is_some() {
-                                th.muted
-                            } else {
-                                th.dim
-                            })
-                            .bg(bg)
-                            .add_modifier(if selected {
-                                Modifier::BOLD
-                            } else {
-                                Modifier::empty()
-                            }),
+                        Style::default().fg(name_color).add_modifier(bold_when(selected)),
                     ),
-                    Span::styled(format!("{meta:>}  "), Style::default().fg(th.dim).bg(bg)),
+                    Span::styled(count, Style::default().fg(th.dim)),
                 ])
             }
-            RailRow::Checkout(repository, checkout) => {
+            ListRow::Rail(RailRow::Checkout(repository, checkout)) => {
                 let item = &project.repositories[repository].checkouts[checkout];
                 let git = item.git.as_ref();
                 let branch = git.and_then(|g| g.branch.as_deref()).unwrap_or(&item.name);
                 let state = git.map(git_state).unwrap_or_default();
+                let dirty = git.is_some_and(|g| g.dirty);
+                let branch_width =
+                    width.saturating_sub(5 + state.chars().count() + RIGHT_PAD);
                 Line::from(vec![
-                    Span::styled(if on_cursor { "▌ " } else { "  " }, Style::default().fg(th.accent)),
-                    Span::styled("   └ ", Style::default().fg(th.edge)),
                     Span::styled(
-                        ellipsize_text(branch, width.saturating_sub(18)),
+                        if on_cursor { "▌   " } else { "    " },
+                        Style::default().fg(th.accent),
+                    ),
+                    Span::styled(
+                        ellipsize_text(branch, branch_width),
                         Style::default().fg(th.syntax.function),
                     ),
                     Span::styled(
                         format!(" {state}"),
-                        Style::default().fg(if git.is_some_and(|g| g.dirty) {
-                            th.warn
-                        } else {
-                            th.ok
-                        }),
+                        Style::default().fg(if dirty { th.warn } else { th.ok }),
                     ),
                 ])
             }
-            RailRow::Pane(location) => {
+            ListRow::Rail(RailRow::Pane(location)) => {
                 let Some(pane) = app.pane_at(location) else {
                     continue;
                 };
-                let selected = app.pane_location() == Some(location)
-                    && app.view == View::Workspace
-                    && matches!(app.focus, Focus::Panes | Focus::PaneContent);
-                let bg = if selected { th.surface_focus } else { row_bg };
+                let selected = viewed == Some(location);
                 // The row speaks for what runs inside the pane too: an agent
                 // idle at its prompt while a CLI it started works is working.
                 let shown = pane.loudest_state().status;
                 let color = status_color(shown, th);
-                let status = short_status(shown);
+                let still = if pane.kind == PaneKind::Agent { "◆" } else { "›" };
                 // Messages a phone left for the agent's prompt. This row is
                 // the only place the count shows, and `u` takes one back.
                 let queued = match pane.queued.len() {
                     0 => String::new(),
                     n => format!(" ✉{n}"),
                 };
-                let title_width =
-                    width.saturating_sub(13 + status.len() + queued.chars().count());
+                let word = status_word(shown);
+                let title_width = width.saturating_sub(
+                    8 + queued.chars().count() + word.chars().count() + RIGHT_PAD,
+                );
                 Line::from(vec![
                     Span::styled(
-                        if selected { "▌      " } else { "       " },
-                        Style::default().fg(th.accent).bg(bg),
+                        if selected { "▌     " } else { "      " },
+                        Style::default().fg(th.accent),
                     ),
-                    Span::styled("└ ", Style::default().fg(th.edge).bg(bg)),
                     Span::styled(
-                        format!(
-                            "{} ",
-                            status_glyph(
-                                app,
-                                shown,
-                                if pane.kind == PaneKind::Agent {
-                                    "◆"
-                                } else {
-                                    "›"
-                                }
-                            )
-                        ),
-                        Style::default().fg(color).bg(bg),
+                        format!("{} ", status_glyph(app, shown, still)),
+                        Style::default().fg(color),
                     ),
                     Span::styled(
                         format!("{:<title_width$}", ellipsize_text(&pane.title, title_width)),
                         Style::default()
                             .fg(if selected { th.text } else { th.muted })
-                            .bg(bg)
-                            .add_modifier(if selected {
-                                Modifier::BOLD
-                            } else {
-                                Modifier::empty()
-                            }),
+                            .add_modifier(bold_when(selected)),
                     ),
-                    Span::styled(queued, Style::default().fg(th.warn).bg(bg)),
-                    Span::styled(format!(" {status}  "), Style::default().fg(color).bg(bg)),
+                    Span::styled(queued, Style::default().fg(th.warn)),
+                    Span::styled(word, Style::default().fg(color)),
+                ])
+            }
+            ListRow::Child(pane, child) => {
+                let Some(child) = app.pane_at(pane).and_then(|info| info.children.get(child))
+                else {
+                    continue;
+                };
+                // A child has no glyph of its own, so its marker carries the
+                // colour of a state the row no longer always spells out.
+                let color = status_color(child.status, th);
+                let word = status_word(child.status);
+                let label_width =
+                    width.saturating_sub(10 + word.chars().count() + RIGHT_PAD);
+                Line::from(vec![
+                    Span::styled("        ⤷ ", Style::default().fg(color)),
+                    Span::styled(
+                        format!("{:<label_width$}", ellipsize_text(&child.label, label_width)),
+                        Style::default().fg(th.muted),
+                    ),
+                    Span::styled(word, Style::default().fg(color)),
                 ])
             }
         };
-        let viewed_pane = matches!(*row, RailRow::Pane(l) if app.pane_location() == Some(l)
-            && app.view == View::Workspace
-            && matches!(app.focus, Focus::Panes | Focus::PaneContent));
-        let fill = if on_cursor || viewed_pane {
-            th.surface_focus
-        } else {
-            row_bg
-        };
+        // One highlight: the cursor's row and the pane on the stage. The
+        // selected repository is told by its bar and bold name alone, since
+        // a band under everything it holds read as a second cursor.
+        let lit = on_cursor || matches!(*row, ListRow::Rail(RailRow::Pane(l)) if viewed == Some(l));
+        let fill = if lit { th.surface_focus } else { th.bg };
         f.render_widget(
             Paragraph::new(line).style(Style::default().bg(fill)),
             Rect {
-                y,
+                y: rows_area.y + screen as u16,
                 height: 1,
                 ..rows_area
             },
@@ -562,127 +363,21 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
     };
 }
 
-fn render_agents(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
-    app.layout.agents = Panel::default();
-    if area.height < 3 {
-        return;
+/// A status as a row writes it out: the word only for one that is waiting
+/// on a person, led by the space that parts it from the title. The glyph
+/// already says the rest, and a column of `IDLE` and `RUNNING` is what the
+/// word that matters gets lost in.
+fn status_word(status: PaneStatus) -> String {
+    if !status.needs_you() {
+        return String::new();
     }
-    f.render_widget(
-        Block::default()
-            .borders(Borders::TOP)
-            .border_style(Style::default().fg(th.edge)),
-        area,
-    );
-    let inner = Rect {
-        x: area.x + 2,
-        y: area.y + 1,
-        width: area.width.saturating_sub(3),
-        height: area.height.saturating_sub(2),
-    };
-    f.render_widget(
-        Paragraph::new(Line::styled("AGENTS", Style::default().fg(th.dim))),
-        Rect { height: 1, ..inner },
-    );
-    let rows_area = Rect {
-        y: inner.y + 2,
-        height: inner.height.saturating_sub(2),
-        ..inner
-    };
-    let rows = agent_rows(app);
-    let current = app
-        .pane_location()
-        .filter(|_| matches!(app.focus, Focus::Panes | Focus::PaneContent));
-    let first = scrolled_to_show(
-        0,
-        current.and_then(|c| rows.iter().position(|r| *r == AgentRow { pane: c, child: None })),
-        rows_area.height as usize,
-        rows.len(),
-    );
-    for (index, row) in rows
-        .iter()
-        .enumerate()
-        .skip(first)
-        .take(rows_area.height as usize)
-    {
-        let (Some(pane), Some((_, repo, checkout))) =
-            (app.pane_at(row.pane), app.pane_path(row.pane))
-        else {
-            continue;
-        };
-        let row_area = Rect {
-            y: rows_area.y + (index - first) as u16,
-            height: 1,
-            ..rows_area
-        };
-        if let Some(child) = row.child.and_then(|child| pane.children.get(child)) {
-            f.render_widget(Paragraph::new(child_line(child, row_area.width, th)), row_area);
-            continue;
-        }
-        let selected = current == Some(row.pane);
-        let shown = pane.loudest_state().status;
-        let color = status_color(shown, th);
-        let status = short_status(shown);
-        let name_width = (rows_area.width as usize).saturating_sub(status.len() + 3);
-        f.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(
-                    format!("{} ", status_glyph(app, shown, "■")),
-                    Style::default().fg(color),
-                ),
-                Span::styled(
-                    format!(
-                        "{:<name_width$}",
-                        ellipsize_text(&format!("{repo} · {checkout} #{}", pane.id.0), name_width)
-                    ),
-                    Style::default()
-                        .fg(if selected { th.text } else { th.muted })
-                        .add_modifier(if selected {
-                            Modifier::BOLD
-                        } else {
-                            Modifier::empty()
-                        }),
-                ),
-                Span::styled(format!(" {status}"), Style::default().fg(color)),
-            ])),
-            row_area,
-        );
-    }
-    app.layout.agents = Panel {
-        outer: area,
-        inner: rows_area,
-        first,
-    };
+    format!(" {}", short_status(status))
 }
 
-/// A child's row under its agent: an elbow, what it calls itself, and its
-/// own status, in the columns its parent's row uses.
-fn child_line(child: &argus_protocol::ChildAgentInfo, width: u16, th: Theme) -> Line<'static> {
-    let color = status_color(child.status, th);
-    let status = short_status(child.status);
-    let label_width = (width as usize).saturating_sub(status.len() + 5);
-    Line::from(vec![
-        Span::styled("  ⤷ ", Style::default().fg(th.dim)),
-        Span::styled(
-            format!("{:<label_width$}", ellipsize_text(&child.label, label_width)),
-            Style::default().fg(th.muted),
-        ),
-        Span::styled(format!(" {status}"), Style::default().fg(color)),
-    ])
-}
-
-/// A child's line under its pane in the repository list, one step further
-/// in than the pane's own.
-fn rail_child_line(child: &argus_protocol::ChildAgentInfo, width: usize, th: Theme) -> Line<'static> {
-    let color = status_color(child.status, th);
-    let status = short_status(child.status);
-    let label_width = width.saturating_sub(15 + status.len());
-    Line::from(vec![
-        Span::raw("         "),
-        Span::styled("⤷ ", Style::default().fg(th.dim)),
-        Span::styled(
-            format!("{:<label_width$}", ellipsize_text(&child.label, label_width)),
-            Style::default().fg(th.muted),
-        ),
-        Span::styled(format!(" {status}  "), Style::default().fg(color)),
-    ])
+fn bold_when(selected: bool) -> Modifier {
+    if selected {
+        Modifier::BOLD
+    } else {
+        Modifier::empty()
+    }
 }
