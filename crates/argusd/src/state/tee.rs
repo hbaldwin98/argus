@@ -47,7 +47,7 @@ const PREFIX: &str = "/claude/";
 
 /// The least time between two pieces of a draft sent to watchers; what
 /// arrives between is sent together. A reply streams many small pieces a
-/// second, more than a phone needs to be told.
+/// second, more than a watcher needs to be told.
 const DRAFT_EVERY: Duration = Duration::from_millis(100);
 
 type Upstream = Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>;

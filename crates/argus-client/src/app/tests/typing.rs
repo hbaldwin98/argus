@@ -399,7 +399,7 @@ fn a_childs_copy_reaches_the_clipboard() {
     assert!(!h.app.status_alert);
 }
 
-// --- messages queued from a phone -----------------------------------------
+// --- messages queued for an agent -----------------------------------------
 
 #[test]
 fn u_on_a_rail_pane_row_takes_back_the_newest_message_queued_for_that_agent() {

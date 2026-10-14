@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-Argus is a Rust 2021 workspace of four crates. `crates/argus-client/` contains the `argus` terminal UI, `crates/argusd/` contains the daemon plus `argus-hook`, `crates/argus-web/` is the library behind `argus web` that the `argus` binary calls, and `crates/argus-protocol/` owns everything the three binaries have to agree on.
+Argus is a Rust 2021 workspace of three crates. `crates/argus-client/` contains the `argus` terminal UI, `crates/argusd/` contains the daemon plus `argus-hook`, and `crates/argus-protocol/` owns everything the three binaries have to agree on.
 
 One rule decides where code goes: **a module is named after the question it answers, and answers only that one.** Nothing is split across two files, and no file holds two subjects. If you cannot name a module's single responsibility in a sentence, it is two modules. Adding, moving or deleting a module fails `cargo test -p argus-protocol --test design_table` until the table in `DESIGN.md` §"Where each responsibility lives" has its row, so change the row in the same edit.
 
@@ -12,7 +12,7 @@ Tests live beside the code they cover, in a `#[cfg(test)] mod tests` block for a
 
 ## Build, Test, and Development Commands
 
-- Package names for `-p` are `argus` (`crates/argus-client`), `argusd`, `argus-web` and `argus-protocol`.
+- Package names for `-p` are `argus` (`crates/argus-client`), `argusd` and `argus-protocol`.
 - `rustup update stable` before a batch of work: CI lints with the newest stable, so an older local clippy passes what CI rejects.
 - `cargo test -p <pkg> --locked 2>&1 | grep -E '^error|^test .* FAILED|panicked at|^test result'` runs one crate's tests and prints only failures and totals; `cargo test --workspace --locked` is the full suite.
 - `cargo clippy --workspace --all-targets --locked -- -D warnings` is CI's lint. A crate is clippy-clean before it is handed to another agent as a contract.

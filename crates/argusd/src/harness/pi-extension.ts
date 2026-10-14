@@ -110,7 +110,7 @@ function messageTelemetry(ctx, message) {
 
 // --- the inbox -----------------------------------------------------------
 //
-// What Argus has for the agent — a message from the phone, an interrupt —
+// What Argus has for the agent — a message for it, an interrupt —
 // arrives on a stream this extension keeps open, and goes in through pi's
 // own API rather than as typing. Silent and patient when nobody answers.
 
@@ -131,7 +131,7 @@ function act(pi, item) {
       pi.sendUserMessage(item.Message.text, options);
     }
   } catch {
-    // The agent is where it is; the phone sees what happens next.
+    // The agent is where it is; what happens next shows in its pane.
   }
 }
 

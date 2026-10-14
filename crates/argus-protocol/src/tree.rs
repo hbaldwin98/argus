@@ -67,8 +67,8 @@ impl PaneStatus {
         }
     }
 
-    /// The pane API's word for a status, which is also what the phone's
-    /// styles and `argus focus` call it.
+    /// The pane API's word for a status, which is also what `argus focus`
+    /// calls it.
     pub fn word(self) -> &'static str {
         match self {
             PaneStatus::Idle => "idle",
@@ -229,17 +229,6 @@ pub struct QueuedMessage {
     /// Unique among the daemon's queued messages for as long as it runs.
     pub id: u64,
     pub text: String,
-}
-
-/// One workspace's projects, for a client that follows every agent the
-/// daemon runs rather than the open workspace's (`WIDE_TREE`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkspaceTree {
-    pub id: WorkspaceId,
-    pub name: String,
-    /// Whether this is the workspace the terminal clients have open.
-    pub open: bool,
-    pub projects: Vec<ProjectInfo>,
 }
 
 /// Harness-neutral telemetry for one agent pane.

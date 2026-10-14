@@ -56,18 +56,12 @@ pub const PASTE_FILE: &str = "paste-file";
 /// daemon. Listed by each side for the half it takes.
 pub const FOCUS: &str = "focus";
 
-/// `ServerMsg::WideTree` in place of `ServerMsg::Tree`: every workspace's
-/// projects rather than the open one's. For a client that follows every
-/// agent, and must not re-scope the terminals to do it. Not in
-/// [`CAPABILITIES`]: the terminal client shows one workspace at a time, so
-/// only a client that wants it adds it to its greeting ([`Hello::and`]).
-pub const WIDE_TREE: &str = "wide-tree";
-
-/// A client that shows what agents' live channels carry: the web server.
-/// Nothing is sent for it; the daemon starts a template's live channel
-/// only for a pane that starts while such a client is connected, because
-/// a channel puts Argus between the agent and its harness and nobody else
-/// reads what it carries. Not in [`CAPABILITIES`], for the same reason.
+/// A client that shows what agents' live channels carry. Nothing is sent
+/// for it; the daemon starts a template's live channel only for a pane that
+/// starts while such a client is connected, because a channel puts Argus
+/// between the agent and its harness and nobody else reads what it carries.
+/// Not in [`CAPABILITIES`], for the same reason: only a client that wants
+/// it adds it to its greeting ([`Hello::and`]).
 pub const LIVE_CHANNELS: &str = "live-channels";
 
 /// One side's greeting.

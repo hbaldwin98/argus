@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use argus_protocol::{
     grid_from_runs, read_known_msg, write_frame, CellRun, ClientMsg, Focus, Hello, PaneId,
-    ServerMsg, CELL_RUNS, LIVE_CHANNELS, PANE_TELEMETRY, WIDE_TREE,
+    ServerMsg, CELL_RUNS, LIVE_CHANNELS, PANE_TELEMETRY,
 };
 use tokio::io::{split, AsyncRead, AsyncWrite};
 use tokio::sync::{broadcast, mpsc, Semaphore};
@@ -128,7 +128,6 @@ where
                     }
                     peer = Some(hello.clone());
                 }
-                let wide_greeting = matches!(&cmsg, ClientMsg::Hello(h) if h.can(WIDE_TREE));
                 let shutdown_reason = handle_client_msg(
                     cmsg,
                     &daemon,
@@ -145,12 +144,6 @@ where
                     let _ = shutdown.send(reason);
                     break;
                 }
-                // Behind the greeting's answer, so the client knows what it
-                // is reading; the tree it was sent on connecting was only
-                // the open workspace's.
-                if wide_greeting {
-                    let _ = out_tx.send(ServerMsg::WideTree(daemon.wide_snapshot()));
-                }
             }
             Ok(tree) = tree_rx.recv() => {
                 if let Some(watch) = &mut focus_watch {
@@ -158,7 +151,7 @@ where
                         let _ = out_tx.send(msg);
                     }
                 }
-                let _ = out_tx.send(tree_for(&daemon, peer.as_ref(), tree));
+                let _ = out_tx.send(ServerMsg::Tree(tree));
             }
             // Lagging only means several changes were missed, and the
             // focus is read whole either way.
@@ -176,7 +169,7 @@ where
                 // A client that cannot take one pane's record, or one that
                 // fell behind the records, is sent them all in a tree.
                 Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {
-                    let _ = out_tx.send(tree_for(&daemon, peer.as_ref(), daemon.snapshot()));
+                    let _ = out_tx.send(ServerMsg::Tree(daemon.snapshot()));
                 }
                 // The daemon holds the sender for as long as it runs.
                 Err(broadcast::error::RecvError::Closed) => break,
@@ -229,16 +222,6 @@ impl FocusWatch {
             return None;
         }
         Some(self.first(focus))
-    }
-}
-
-/// The tree as this client reads it: every workspace's to one that listed
-/// `WIDE_TREE`, the open workspace's (`tree`) to any other.
-fn tree_for(daemon: &Daemon, peer: Option<&Hello>, tree: Vec<argus_protocol::ProjectInfo>) -> ServerMsg {
-    if peer.is_some_and(|p| p.can(WIDE_TREE)) {
-        ServerMsg::WideTree(daemon.wide_snapshot())
-    } else {
-        ServerMsg::Tree(tree)
     }
 }
 
@@ -881,37 +864,6 @@ mod tests {
         let _ = daemon.close_pane(pane);
     }
 
-    #[tokio::test]
-    async fn a_client_that_follows_every_agent_is_sent_every_workspace() {
-        let dir = tempfile::tempdir().unwrap();
-        let (daemon, pane) = daemon_with_a_pane(dir.path());
-        let mut client = connect_to(daemon.clone()).await;
-        argus_protocol::write_msg(
-            &mut client,
-            &ClientMsg::Hello(Hello::this_build().and(WIDE_TREE)),
-        )
-        .await
-        .unwrap();
-        assert!(matches!(next(&mut client).await, ServerMsg::Hello(_)));
-        let ServerMsg::WideTree(workspaces) = next(&mut client).await else {
-            panic!("a wide tree follows the greeting");
-        };
-        assert_eq!(workspaces.len(), 1);
-        assert!(workspaces[0].open);
-
-        // A change anywhere reaches it as a wide tree too, never a scoped one.
-        let checkout = daemon.snapshot()[0].repositories[0].checkouts[0].id;
-        let second = daemon.spawn_shell(checkout).unwrap();
-        let ServerMsg::WideTree(workspaces) = next(&mut client).await else {
-            panic!("changes arrive wide");
-        };
-        let panes = &workspaces[0].projects[0].repositories[0].checkouts[0].panes;
-        assert_eq!(panes.len(), 2);
-        assert!(panes[0].since.is_some());
-        let _ = daemon.close_pane(pane);
-        let _ = daemon.close_pane(second);
-    }
-
     /// The next focus a watcher is sent, past the trees around it.
     async fn next_focus(client: &mut tokio::io::DuplexStream) -> Option<argus_protocol::Focus> {
         loop {
@@ -974,11 +926,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_terminal_client_is_never_sent_a_wide_tree() {
-        assert!(!Hello::this_build().can(WIDE_TREE));
-    }
-
-    #[tokio::test]
     async fn a_client_that_reads_live_channels_turns_them_on_until_it_goes() {
         let dir = tempfile::tempdir().unwrap();
         let (daemon, pane) = daemon_with_a_pane(dir.path());
@@ -994,10 +941,10 @@ mod tests {
 
         let terminal = greet(Hello::this_build()).await;
         assert!(!daemon.live_is_read(), "the terminal client never turns them on");
-        let web = greet(Hello::this_build().and(LIVE_CHANNELS)).await;
+        let reader = greet(Hello::this_build().and(LIVE_CHANNELS)).await;
         assert!(daemon.live_is_read());
 
-        drop(web);
+        drop(reader);
         let off = tokio::time::timeout(std::time::Duration::from_secs(5), async {
             while daemon.live_is_read() {
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;

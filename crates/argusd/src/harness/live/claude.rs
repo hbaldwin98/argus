@@ -1,6 +1,6 @@
 //! Claude Code's API stream, as the tee reads it: the server-sent events of
-//! a streaming Messages response, read into the draft a phone shows while
-//! the reply is written.
+//! a streaming Messages response, read into the draft a watcher shows
+//! while the reply is written.
 //!
 //! Only text and thinking are drafted. A tool call is written to the
 //! transcript the moment its block ends, which is soon enough, and its

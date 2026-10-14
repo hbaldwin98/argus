@@ -78,7 +78,7 @@ fn live_pane(dir: &std::path::Path, api: &str) -> (Arc<Daemon>, PaneId) {
     config.agents[0].env.insert("ANTHROPIC_BASE_URL".to_string(), api.to_string());
     let d = Daemon::new(config);
     d.start_tee().unwrap();
-    let _web = d.live_reader();
+    let _reader = d.live_reader();
     let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
     (d, pane)
 }
@@ -209,7 +209,7 @@ async fn a_live_pane_is_pointed_at_the_proxy_and_told_it_is_anthropics_only_when
 
 #[cfg(unix)]
 #[tokio::test]
-async fn only_a_pane_that_asks_and_starts_while_the_web_server_is_connected_is_proxied() {
+async fn only_a_pane_that_asks_and_starts_while_live_channels_are_read_is_proxied() {
     let dir = tempfile::tempdir().unwrap();
     let mut config = fake_claude_config(dir.path());
     config.agents[0].cmd = vec!["sh".into(), "-c".into(), "echo \"base=[$ANTHROPIC_BASE_URL]\"; exec cat".into()];
@@ -241,17 +241,17 @@ async fn only_a_pane_that_asks_and_starts_while_the_web_server_is_connected_is_p
     };
 
     let before = d.spawn_agent(checkout, "claude").unwrap();
-    assert_eq!(base(before).await, "", "no web server, no proxy");
+    assert_eq!(base(before).await, "", "no reader, no proxy");
 
-    let web = d.live_reader();
+    let reader = d.live_reader();
     let during = d.spawn_agent(checkout, "claude").unwrap();
     let not_asked = d.spawn_agent(checkout, "plain").unwrap();
     assert_eq!(base(during).await, format!("http://127.0.0.1:{port}/claude/{}/{}", during.0, d.hook_token));
     assert_eq!(base(not_asked).await, "", "a template that did not ask is never proxied");
 
-    drop(web);
+    drop(reader);
     let after = d.spawn_agent(checkout, "claude").unwrap();
-    assert_eq!(base(after).await, "", "the web server went");
+    assert_eq!(base(after).await, "", "the reader went");
     for pane in [before, during, not_asked, after] {
         let _ = d.close_pane(pane);
     }

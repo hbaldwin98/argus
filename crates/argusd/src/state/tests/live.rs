@@ -31,7 +31,7 @@ async fn tell(server: &mut Server, value: Value) {
     server.send(Message::Text(value.to_string().into())).await.unwrap();
 }
 
-/// The conversation as a phone would be sent it, as `kind: text` lines.
+/// The conversation as a watcher would be sent it, as `kind: text` lines.
 fn conversation(d: &Daemon, pane: PaneId) -> Vec<String> {
     let ServerMsg::Transcript { updates, .. } = d.transcript_tail(pane) else { panic!() };
     updates

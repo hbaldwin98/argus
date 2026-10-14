@@ -170,79 +170,6 @@ again once it is back. `argus focus` never starts the daemon.
 argus focus | jq -r '"\(.checkout.branch) · \(.pane.agent // "shell") \(.pane.status)"'
 ```
 
-### From a phone
-
-`argus web` serves a phone-sized client in a browser: every agent the daemon runs, most urgent
-first, and each one's conversation, read from the transcript its harness already writes. It runs in
-the foreground and only for as long as you leave it running.
-
-```sh
-argus web                          # http://127.0.0.1:7420
-argus web --url https://box.tail1234.ts.net
-argus web devices                  # list paired devices
-argus web revoke "Pixel"           # unpair one
-```
-
-A message typed on the phone waits until the agent is back at its prompt, so it can never answer a
-permission dialog by accident; it is shown on the phone and counted on the agent's rail row in the TUI
-(`✉2`) until it is typed, and either can take it back (`u` on that row). Send now types it straight away,
-for steering an agent mid-turn. Stop interrupts the agent with Esc.
-
-`+` starts an agent from one of your templates in any checkout, and Close ends one, after asking.
-
-The Terminal tab shows the agent's own screen at the desktop's size — the phone never resizes a
-pane — with a key bar (digits, arrows, Enter, Esc, Tab, y, n) for answering a harness's menus and
-permission prompts. It opens by itself when an agent starts waiting, and it is the whole view for a
-harness whose conversation Argus cannot read.
-
-It prints a QR code and a six-digit code. The code pairs one device, works once, and expires after
-five minutes; press Enter in `argus web` for a new one. A paired device keeps a cookie, stored on
-the machine only as a hash.
-
-`argus web` binds loopback and does no TLS, so a phone reaches it through something that does.
-With [Tailscale](https://tailscale.com), `tailscale serve --bg 7420` puts HTTPS in front of it on
-your tailnet; pass the name it prints as `--url` so the QR code opens it. `--listen 0.0.0.0` binds
-every interface instead, and warns that the cookie then crosses the network unencrypted.
-
-Served over HTTPS, the page can be added to a phone's home screen, and "Notify me" turns on pushes
-for when an agent starts waiting, wants a review, fails, or finishes its turn — not while that
-phone has the page open. A push names the agent and its status, never its conversation, and is
-encrypted for the phone; it travels through the browser's push service (Apple's, Google's or
-Mozilla's), which is the only thing `argus web` sends off the machine. On iPhone, add the page to
-the home screen first.
-
-opencode, pi and Claude Code take what the phone says through their own plugins rather than as
-typing, and opencode's permission requests appear in the conversation as buttons.
-
-Claude Code 2.1.287 and later stream their replies to the phone as they are written, with nothing
-to turn on. Argus starts each Claude pane with a small mod (a Claude Code plugin of function hooks)
-that it writes into its own config directory, never the checkout, and names in the pane's
-`CLAUDE_CODE_PLUGIN_DIRS` after any folders already there. Inside the session the mod takes
-messages, steering and interrupts, and posts the reply as it streams. An older Claude Code ignores
-the folder, and is typed into as before.
-
-`live = true` on a template streams replies to the phone as they are written. For Claude Code
-older than mods, the
-pane's API traffic goes through a loopback proxy in the daemon that forwards every request
-untouched — your login included, never stored — and reads the reply as it passes. For Codex, the
-pane runs on Codex's app-server (experimental on Codex's side; Linux and macOS). Both are off
-unless a template asks, and even then apply only to agents started while `argus web` is running, so
-the terminal alone never puts Argus in an agent's path:
-
-```toml
-[[agent]]
-name = "claude"
-cmd = ["claude"]
-live = true
-```
-
-An agent keeps what it started with: one started before `argus web` streams only once it next
-starts, and one started while it ran keeps using the proxy after it stops.
-
-Conversations are read for Claude Code, Codex, Cursor's `agent`, pi and opencode. Any other harness
-can push its own with `argus-hook transcript` (see DESIGN.md), and shows its Terminal tab until it
-does.
-
 ## Install on `PATH`
 
 ### Release archive
@@ -389,6 +316,13 @@ default), to the repository-local `.git/info/exclude` when it discovers a checko
 Codex treats project hooks as untrusted until the user approves them. Argus writes the correct hook,
 but cannot approve that trust decision; exact Codex identity capture starts after approval.
 
+Claude Code 2.1.287 and later also run a small mod (a Claude Code plugin of function hooks) that
+Argus writes into its own config directory, never the checkout, and names in the pane's
+`CLAUDE_CODE_PLUGIN_DIRS` after any folders already there. Through it, as through the OpenCode
+plugin and the pi extension, what Argus says to the agent — a review comment, say — goes in through
+the harness rather than as typing, so it can never land in a dialog. An older Claude Code ignores
+the folder, and is typed into as before.
+
 Agent panes also show telemetry: the tool running now, context used against the model's window,
 cumulative cost, and the model. Each harness supplies what it can. Claude Code and Codex hooks
 read it from the hook payload and the transcript it names (Claude Code does not record its
@@ -454,15 +388,6 @@ notifications = "off"
 
 The settings panel writes this file immediately. Editor commands currently split on whitespace, so
 quoted arguments and executable paths containing spaces are not yet supported.
-
-`argus web` reads defaults for its flags from a `[web]` table, which no client writes:
-
-```toml
-[web]
-port = 7420
-listen = "127.0.0.1"
-url = "https://box.tail1234.ts.net"
-```
 
 ### Environment variables
 
@@ -535,7 +460,7 @@ location. Typing filters the folders in the current directory.
 | `S` | Open settings |
 | `t` | Choose a theme for this client process |
 | `x` | Kill the selected pane |
-| `u` | On a pane row, take back the newest message queued for it from a phone |
+| `u` | On a pane row, take back the newest message queued for it |
 | `q` | Detach the client |
 
 ### Views

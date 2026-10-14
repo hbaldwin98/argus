@@ -633,7 +633,7 @@ fn dump_rail_busy() {
         ),
         repository(
             3,
-            "argus-web",
+            "argus-site",
             vec![checkout(
                 12,
                 "main",

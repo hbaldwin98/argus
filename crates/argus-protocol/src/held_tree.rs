@@ -2,17 +2,16 @@
 //! applied to it between trees, and which panes changed state from the
 //! copy before.
 //!
-//! Here rather than in each client because the terminal and the web server
-//! both hold a copy, and two readings of what changed would ring a bell for
-//! a pane the phone was never told of.
+//! Here beside the tree rather than in the terminal client, so that any
+//! client holding a copy reads what changed as the terminal does: two
+//! readings would ring a bell in one for a pane the other never mentions.
 
 use std::collections::HashMap;
 
 use crate::ids::PaneId;
-use crate::tree::{AgentTelemetry, PaneInfo, PaneState, PaneStatus, ProjectInfo, WorkspaceTree};
+use crate::tree::{AgentTelemetry, PaneInfo, PaneState, PaneStatus, ProjectInfo};
 
-/// A tree a client holds: the open workspace's projects, or every
-/// workspace's (`WIDE_TREE`).
+/// A tree a client holds: the open workspace's projects.
 pub trait HeldTree {
     /// Every pane, editors included: a pane is a pane to be found whether
     /// or not the checkout lists it.
@@ -51,17 +50,6 @@ impl HeldTree for [ProjectInfo] {
     }
 }
 
-impl HeldTree for [WorkspaceTree] {
-    fn panes(&self) -> impl Iterator<Item = &PaneInfo> {
-        self.iter().flat_map(|workspace| workspace.projects.panes())
-    }
-
-    fn panes_mut(&mut self) -> impl Iterator<Item = &mut PaneInfo> {
-        self.iter_mut()
-            .flat_map(|workspace| workspace.projects.panes_mut())
-    }
-}
-
 /// A pane whose loudest state is not the one it had in the last tree.
 #[derive(Debug, Clone, Copy)]
 pub struct Transition<'a> {
@@ -72,7 +60,7 @@ pub struct Transition<'a> {
 }
 
 /// The panes of `next` whose loudest state differs from `previous`'s, in
-/// `next`'s order. Which of them are worth a bell or a push is each
+/// `next`'s order. Which of them are worth a bell or a note is each
 /// client's own call.
 ///
 /// A pane `previous` does not hold is not a transition: it is new, and
@@ -95,7 +83,7 @@ pub fn transitions<'a, T: HeldTree + ?Sized>(previous: &T, next: &'a T) -> Vec<T
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ids::{CheckoutId, ProjectId, RepositoryId, WorkspaceId};
+    use crate::ids::{CheckoutId, ProjectId, RepositoryId};
     use crate::tree::{CheckoutInfo, ChildAgentInfo, PaneKind, RepositoryInfo};
 
     fn pane(id: u64, status: PaneStatus) -> PaneInfo {
@@ -145,25 +133,12 @@ mod tests {
             .collect()
     }
 
-    fn workspaces(groups: Vec<Vec<PaneInfo>>) -> Vec<WorkspaceTree> {
-        groups
-            .into_iter()
-            .enumerate()
-            .map(|(i, panes)| WorkspaceTree {
-                id: WorkspaceId(i as u64),
-                name: format!("w{i}"),
-                open: i == 0,
-                projects: projects(vec![panes]),
-            })
-            .collect()
-    }
-
     fn ids(tree: &(impl HeldTree + ?Sized)) -> Vec<u64> {
         tree.panes().map(|pane| pane.id.0).collect()
     }
 
     #[test]
-    fn every_pane_is_walked_in_every_workspace_and_project() {
+    fn every_pane_is_walked_in_every_project() {
         let mut editor = pane(3, PaneStatus::Idle);
         editor.kind = PaneKind::Editor;
         let tree = projects(vec![
@@ -171,14 +146,11 @@ mod tests {
             vec![editor],
         ]);
         assert_eq!(ids(tree.as_slice()), [1, 2, 3], "editors are panes too");
-
-        let wide = workspaces(vec![vec![pane(1, PaneStatus::Idle)], vec![pane(4, PaneStatus::Idle)]]);
-        assert_eq!(ids(wide.as_slice()), [1, 4]);
     }
 
     #[test]
     fn telemetry_lands_on_its_pane_and_says_whether_anything_changed() {
-        let mut tree = workspaces(vec![vec![pane(1, PaneStatus::Working)], vec![pane(2, PaneStatus::Working)]]);
+        let mut tree = projects(vec![vec![pane(1, PaneStatus::Working)], vec![pane(2, PaneStatus::Working)]]);
         let report = AgentTelemetry {
             model: Some("opus".into()),
             ..Default::default()
@@ -207,7 +179,7 @@ mod tests {
 
     #[test]
     fn a_pane_whose_loudest_state_changed_is_a_transition() {
-        let previous = workspaces(vec![
+        let previous = projects(vec![
             vec![pane(1, PaneStatus::Working), pane(2, PaneStatus::Working)],
             vec![pane(3, PaneStatus::Working)],
         ]);
@@ -217,7 +189,7 @@ mod tests {
             status: PaneStatus::Waiting,
             note: Some("approve rm".into()),
         });
-        let next = workspaces(vec![
+        let next = projects(vec![
             vec![child_waits, pane(2, PaneStatus::Working)],
             vec![pane(3, PaneStatus::Idle)],
         ]);

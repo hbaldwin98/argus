@@ -4,7 +4,6 @@ members = [
     "crates/argus-protocol",
     "crates/argusd",
     "crates/argus-client",
-    "crates/argus-web",
 ]
 
 [workspace.package]
@@ -26,7 +25,6 @@ toml = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 argus-protocol = { path = "crates/argus-protocol" }
-argus-web = { path = "crates/argus-web" }
 portable-pty = "0.9"
 alacritty_terminal = "0.26"
 git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }

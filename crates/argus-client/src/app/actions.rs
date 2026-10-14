@@ -416,7 +416,7 @@ impl App {
         }
     }
 
-    /// Takes back the newest message a phone queued for the selected
+    /// Takes back the newest message a client queued for the selected
     /// agent. The row's count changes when the daemon's tree says the message
     /// is gone, not before: it may already have been typed.
     pub(super) fn unqueue_selected(&mut self) {

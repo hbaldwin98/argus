@@ -8,7 +8,7 @@ checkouts. This document describes the code as it exists today. Desired behavior
 
 Argus has three binaries:
 
-- `argus`: the ratatui/crossterm client, and `argus web`, which serves the phone client.
+- `argus`: the ratatui/crossterm client.
 - `argusd`: the daemon that owns PTYs, terminal state, Git state, and runtime persistence.
 - `argus-hook`: the helper managed hooks run, and the command an agent runs to report on itself.
 
@@ -53,16 +53,13 @@ templates, workspaces — as it always has, and answers a `Hello` with its own w
 it never sends one unasked, so a client that does not greet is never sent it. The client reads on
 until the answer, keeping what came first for the app. A daemon from before the greeting hangs up on
 it right after its opening messages, and the client connects again without greeting. One that takes
-the greeting and says nothing for three seconds is kept, with nothing optional assumed. `argus web`
-does not fall back: it is nothing without the transcripts and outbox such a daemon lacks, so it
-tells its phones argusd is too old and tries again every five seconds, for a restart to be noticed.
-Either side uses an optional message or encoding only when the other listed it, and the protocol
-number is raised only for a change nothing can be negotiated across.
+the greeting and says nothing for three seconds is kept, with nothing optional assumed. Either side
+uses an optional message or encoding only when the other listed it, and the protocol number is
+raised only for a change nothing can be negotiated across.
 
 A client told of a daemon from another build says so on the status bar, with both versions and
 `argus server restart`, which starts the daemon installed beside the client. A daemon on another
-protocol number is an alarm rather than a note; `argus web` refuses it as it refuses one from before
-the greeting, naming its version.
+protocol number is an alarm rather than a note.
 
 A client can attach to the daemon on another machine as well as its own. `argus --host <host>`
 runs `ssh -T -o BatchMode=yes -- <host> argus bridge`, and the bridge on that machine carries its
@@ -95,58 +92,6 @@ written only when a host is remembered: each host's app holds a copy of the sett
 theme from one keeps the list on disk rather than its own. On a host elsewhere an editor always opens in a floating
 pane: an external editor would be launched on that machine, where nobody is looking, and this
 machine's editor command is left out so the daemon there picks its own.
-
-`argus web` serves a phone-sized client over HTTP and one WebSocket. It is a foreground client of
-the local daemon, started through the same connect-or-start as the TUI, so the daemon itself never
-listens on a network and exposure lasts exactly as long as the process. It binds `127.0.0.1:7420`
-by default — fixed, because an installed page belongs to one origin — and does no TLS; `--listen`
-binds elsewhere and warns when that is reachable without HTTPS. It greets with `wide-tree`, which
-the TUI never lists, and is sent `WideTree` — every workspace's projects — wherever the TUI is sent
-`Tree`, so following every agent never re-scopes the terminals. It also greets with
-`live-channels`, which the TUI never lists either, and which is what lets a template's live channel
-start ("Panes and terminal state"). A phone pairs with a six-digit code
-printed with a QR code: single use, five minutes, five wrong guesses. It is given a 256-bit device
-token as an `HttpOnly`, `SameSite=Strict` cookie, which `web-devices.json` in the config directory
-keeps only as a SHA-256 hash; `argus web devices` lists them and `argus web revoke` removes one,
-which a running server notices within ten seconds. The pairing request and the WebSocket upgrade
-must carry an `Origin` naming the host they were sent to, and the upgrade a known cookie; a site
-that rebinds its own name to this machine has no cookie for it. Every response carries a CSP that
-allows no script or style but the page's own, `X-Frame-Options: DENY` and
-`Referrer-Policy: no-referrer`. The page is plain JavaScript embedded in the binary, with no build
-step, and speaks JSON defined beside the server rather than the daemon's protocol: the binary that
-serves the page is the one that speaks it, so the two cannot drift. Replies arrive as HTML rendered
-in Rust with raw HTML escaped, links kept only for `http`, `https` and `mailto`, and images turned
-into links; every other string is set as text. Every phone shares one daemon connection, a
-conversation several phones watch is watched once, and when the daemon says it is stopping
-`argus web` exits rather than start another. The agent list carries the templates and every
-checkout, so a phone can start an agent: a named `SpawnAgent` whose `Created` answer tells that
-phone which pane to open, once a tree lists it and the phone has been sent that list. Closing one
-is `Kill`, after the page asks.
-
-The page is installable: a manifest, icons, and a service worker that caches nothing, so the page
-is always the one this `argus web` serves, and that shows pushes and opens the agent a tapped one
-names. Web Push is the one thing `argus web` sends off the machine. A browser only subscribes from a
-page served over HTTPS, so the page offers "Notify me" only in a secure context. A device's
-subscription is kept with it in `web-devices.json`, and must name an `https://` endpoint, so the
-server cannot be told to post anywhere else. `argus web` compares each tree with the last and makes
-a notice when an agent's loudest state goes to waiting, needs-review or failed, or from working to
-idle — a turn ending; the first tree it holds is taken as it is, and the last is kept across
-reconnecting, as the terminal client keeps its own. A notice carries the pane's title,
-who changed and the agent's note, never anything from the conversation. It is encrypted for the
-browser as RFC 8291 lays out, so the push service relays bytes it cannot read, and signed with a
-P-256 key made once and kept in `web-push.json` (VAPID, RFC 8292). It goes to every subscribed
-device except those with a page on screen, which each page reports; a subscription the service
-answers 404 or 410 for is forgotten.
-
-A phone's Terminal tab watches the pane's screen through `argus web`, which subscribes like any
-client but never sends `Resize`: the daemon sizes a pane to the smallest request among those that
-made one, so a phone that asked would shrink the desktop's pane to its width. `argus web` keeps the
-grid, applying each `RowDamage`'s scroll and then its runs, and sends phones the rows whose hash
-changed, at most every 100 ms, as runs of text with CSS colours; the sixteen named colours stay
-variables for the page's theme. The page draws them at the pane's own width, sized to fit, and its
-key bar sends named keys that `argus web` turns into bytes — digits, arrows, Enter, Esc, Tab, `y`
-and `n`, nothing else. The tab opens by itself when an agent starts waiting, and it is the whole view
-for a harness with no transcript.
 
 A request that makes something — a shell, an agent, an editor, a worktree, a project, a
 repository — may name itself with a `request_id`, and the daemon answers that client alone with
@@ -255,7 +200,6 @@ result of a request; `ui` is a pure function of it.
 | --- | --- |
 | `main`, `redraw`, `terminal`, `wire`, `launch` | the event loop, the screen and socket it runs over, and the daemon lifecycle command |
 | `bridge` | this machine's daemon on stdin and stdout, for a client on another machine to reach over ssh |
-| `web` | the `argus web` command: its flags, and handing the web server this machine's daemon |
 | `focus` | the `argus focus` command: where the person is working, as JSON, once or on every change |
 | `hosts` | the daemons this client is attached to, each with an app of its own, and which one is on screen |
 | `remote` | reaching a daemon on another machine through ssh and its bridge, and saying why when ssh cannot |
@@ -293,22 +237,6 @@ result of a request; `ui` is a pure function of it.
 | `motion` | animation arithmetic: how far along a transition is at a given instant |
 | `settings`, `theme`, `backend`, `herdr`, `profile` | preferences, palette, the ratatui backend, and what is reported outward |
 | `fixtures` | the tree builders every test module shares |
-
-`argus-web` is the server behind `argus web`: a library the `argus` binary calls with its own way of
-reaching the daemon, so there is one way a daemon gets started. Its root serves until interrupted
-or the daemon stops, and answers `argus web devices` and `revoke`. The page it serves lives in
-`assets/`, and its tests run the server end to end against a daemon played over an in-memory
-stream.
-
-| module | answers |
-| --- | --- |
-| `daemon` | the one connection to the daemon, and what the server keeps of it for the phones |
-| `routes` | what each request gets, and the checks guarding everything that can reach an agent |
-| `pairing` | who may connect: the one-time code, and the device tokens it is traded for |
-| `phone` | what the page and the server say to each other |
-| `markdown` | a reply's markdown as HTML that can run nothing |
-| `screen` | a pane's screen as a phone draws it, and the keys the phone may type into it |
-| `push` | telling a phone an agent needs it, through its browser's push service |
 
 ## Views
 
@@ -659,13 +587,14 @@ the pane's own broadcast recovers the same way.
 
 Each client's requested size for each pane it is showing is recorded against its connection, and a
 pane's PTY is sized to the smallest request in each dimension, so no client is ever sent more rows
-or columns than it has room to draw. A client with a larger window pads; sizing to the largest
-would truncate content out of the smaller one instead. Unsubscribing releases that client's claim,
-and so does disconnecting, so a pane grows back once whatever was holding it small stops showing it.
-A pane no client is showing keeps the size it has rather than reverting to the default. A request
-that does not change the effective size is not applied, so a second client agreeing with the first
-costs no snapshot. On the client side, a pane leaving the screen forgets its remembered size, so
-returning to the screen re-sends it.
+or columns than it has room to draw. A client with a larger window pads; sizing to the largest would
+truncate content out of the smaller one instead. A client that subscribes without sending a size
+makes no request, so one that only watches leaves the pane at the size the others asked for.
+Unsubscribing releases that client's claim, and so does disconnecting, so a pane grows back once
+whatever was holding it small stops showing it. A pane no client is showing keeps the size it has
+rather than reverting to the default. A request that does not change the effective size is not
+applied, so a second client agreeing with the first costs no snapshot. On the client side, a pane
+leaving the screen forgets its remembered size, so returning to the screen re-sends it.
 
 The client drops a pane's cached grid the moment it stops drawing it, so a subscription it takes
 back is never redundant even when the daemon never stopped streaming: only a snapshot can rebuild
@@ -852,7 +781,7 @@ as one paste and Enter. `now`
 types it straight away, which is how a person steers an agent mid-turn. One task does the typing,
 started by the first message queued, and wakes whenever the tree changes and four times a second
 while anything waits. The queue is not persisted, and an exited agent's queue is dropped.
-`CancelQueued` takes a waiting message back, from the phone or with `u` on the pane's rail row in the TUI,
+`CancelQueued` takes a waiting message back, which the TUI sends for `u` on the pane's rail row,
 and the row's count changes when the tree says so. `Interrupt` types the harness's interrupt key: Esc,
 unless a `[[harness]]` block sets `interrupt`, and never Ctrl-C, which pressed twice quits most of
 these CLIs.
@@ -892,11 +821,11 @@ message to the inbox when one is open, and typed in otherwise.
 
 A harness may have a live channel — Codex's app-server, or Claude's tee below — that streams what
 the agent does and takes what is said to it. A pane runs on it only when its template sets
-`live = true` and a client that greeted with `live-channels` is connected as the pane starts. Only
-`argus web` greets with it, so without the web server running no agent has Argus in its path, and
-nothing built in sets `live`. The choice is fixed for the pane's life, since a running process
-cannot be moved onto a channel or off one: a pane started before the web server has none until it
-next starts, and one started while it ran keeps its channel after it stops. The channel is
+`live = true` and a client that greeted with `live-channels` is connected as the pane starts. No
+client Argus ships greets with it, so no agent has Argus in its path, and nothing built in sets
+`live`. The choice is fixed for the pane's life, since a running process cannot be moved onto a
+channel or off one: a pane started before such a client connects has none until it next starts,
+and one started while one was connected keeps its channel after it goes. The channel is
 the pane's own value, and ends when the pane's agent exits or the pane goes, whichever is first:
 the Codex server stops and the tee forgets the pane, so a restarted pane gets a new channel, and
 one whose agent never spawned leaves nothing behind.
@@ -927,7 +856,7 @@ A streaming reply to a turn that offers tools (not the small calls Claude Code m
 such as naming a conversation) is read as it passes: text and thinking blocks become
 `Update::Draft` — started, added to, done — sent to watchers at most every 100 ms, and held on the
 pane so a watcher arriving mid-reply gets the draft so far. A draft is never stored; the finished
-block arrives from the transcript file and the page drops the draft for it. A pane whose requests
+block arrives from the transcript file and a watcher drops the draft for it. A pane whose requests
 reach Anthropic is also given `_CLAUDE_CODE_ASSUME_FIRST_PARTY_BASE_URL`, an internal Claude Code
 variable without which a custom base URL counts as a third-party gateway and switches off Remote
 Control, cloud sessions and the managed-policy fetch; a release that drops it costs live panes

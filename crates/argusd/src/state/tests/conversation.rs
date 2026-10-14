@@ -213,8 +213,8 @@ fn a_draft_alone_is_no_conversation_to_offer() {
 #[test]
 fn an_entry_both_read_and_pushed_is_shown_once_and_only_pushed_ones_still_show() {
     // Codex's live channel pushes items the rollout file later records, and
-    // approvals it never does. A phone opening the pane afterwards sees each
-    // item once and the question too.
+    // approvals it never does. A watcher opening the pane afterwards sees
+    // each item once and the question too.
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("s1.jsonl");
     write_lines(&file, &[prompt("from the file")]);

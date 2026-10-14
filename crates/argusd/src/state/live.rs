@@ -4,10 +4,10 @@
 //! of it when the pane lets go.
 //!
 //! A pane gets its channel only when its template sets `live = true` and a
-//! client that reads live channels — `argus web` — is connected as it
-//! starts. The channel is fixed for the pane's life: a process cannot be
-//! moved off one, so a pane started while the web server ran keeps its
-//! channel after the server goes, and one started before gets none.
+//! client that reads live channels is connected as it starts. The channel
+//! is fixed for the pane's life: a process cannot be moved off one, so a
+//! pane started while such a client was connected keeps its channel after
+//! the client goes, and one started before gets none.
 //!
 //! Only Codex runs a server: its app-server, which it marks
 //! experimental. Claude's channel is the daemon's tee. The server is started
@@ -91,7 +91,7 @@ impl Daemon {
     /// environment and arguments at it; `None` when the pane runs without
     /// one. Only when its template asked for it and something is connected
     /// to read it: a channel puts Argus between the agent and its harness,
-    /// which is only worth it while the web server shows it.
+    /// which is only worth it while a client shows it.
     pub(super) fn prepare_live(
         &self,
         pane: PaneId,
@@ -323,7 +323,8 @@ mod codex {
                 state.asked.insert(question_id(&request), (request, question.clone()));
                 push(daemon, pane, vec![question]);
             }
-            // Answered on the desktop, most likely: the phone's buttons go.
+            // Answered in the pane itself, most likely: the watchers'
+            // buttons go.
             Heard::Resolved(request) => {
                 if let Some((_, question)) = state.asked.remove(&question_id(&request)) {
                     push(daemon, pane, answered(&question, "answered").into_iter().collect());

@@ -258,7 +258,7 @@ async function replay(client, sessionID) {
 
 // --- the inbox -----------------------------------------------------------
 //
-// What Argus has for the agent — a message from the phone, an interrupt,
+// What Argus has for the agent — a message for it, an interrupt,
 // the answer to a permission — arrives on a stream this plugin keeps open,
 // and goes in through opencode's own server rather than as typing, so it
 // can never land in a dialog. Silent and patient when nobody answers: the
@@ -288,7 +288,7 @@ async function act(client, item) {
       });
     }
   } catch {
-    // The agent is where it is; the phone sees what happens next.
+    // The agent is where it is; what happens next shows in its pane.
   }
 }
 
@@ -328,7 +328,7 @@ async function openInbox(client) {
   }
 }
 
-// A permission the agent is waiting on, as a question the phone can answer.
+// A permission the agent is waiting on, as a question a client can answer.
 function permissionQuestion(permission, answered = null) {
   return entry(permission.id, {
     Question: {

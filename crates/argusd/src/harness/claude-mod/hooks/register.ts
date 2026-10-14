@@ -151,7 +151,7 @@ async function act($: EngineInterface, item: InboxItem) {
     // An answer is for a question this plugin posed, and it poses none:
     // Claude Code's own dialogs are answered on its screen.
   } catch {
-    // The agent is where it is; the phone sees what happens next.
+    // The agent is where it is; what happens next shows in its pane.
   }
 }
 

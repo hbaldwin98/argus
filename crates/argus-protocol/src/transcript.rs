@@ -9,8 +9,8 @@
 use serde::{Deserialize, Serialize};
 
 /// The most text one prompt, reply or notice keeps. A reply longer than this
-/// is a document someone should open on a desk, not scroll through on a
-/// phone, and the whole of it is still in the harness's file.
+/// is a document someone should open, not scroll through in a conversation,
+/// and the whole of it is still in the harness's file.
 pub const MAX_TEXT_BYTES: usize = 64 * 1024;
 
 /// The most a thinking block keeps. It is collapsed by default, so what it
@@ -52,7 +52,7 @@ pub enum Body {
     Reply { text: String },
     /// The agent's reasoning, where the harness keeps it readable.
     Thinking { text: String },
-    /// A tool the agent ran. `summary` is the one line a phone shows —
+    /// A tool the agent ran. `summary` is the one line a watcher shows —
     /// the command, the file, the pattern — and `input` the detail behind
     /// it.
     ToolCall {

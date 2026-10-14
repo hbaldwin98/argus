@@ -23,7 +23,7 @@ fn live_claude(dir: &std::path::Path, restart: crate::config::Restart) -> (Arc<D
     (d, reader)
 }
 
-/// Watches `pane`'s conversation, as a phone would, and checks the pane
+/// Watches `pane`'s conversation, as a client would, and checks the pane
 /// holds what its removal has to let go of.
 fn watched(d: &Arc<Daemon>, pane: PaneId) -> tokio::sync::broadcast::Receiver<ServerMsg> {
     let watching = d.watch_transcript(pane);

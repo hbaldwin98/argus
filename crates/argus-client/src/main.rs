@@ -11,7 +11,6 @@ mod backend;
 mod brief;
 mod bridge;
 mod browser;
-mod web;
 mod diagram;
 mod clipboard;
 mod dirpicker;
@@ -73,7 +72,6 @@ async fn main() -> anyhow::Result<()> {
         Command::ServerStop => return launch::stop_daemon().await,
         Command::Init(dir) => return launch::init(dir).await,
         Command::Bridge => return bridge::run().await,
-        Command::Web(command) => return web::run(command).await,
         Command::Focus { watch } => return focus::run(watch).await,
         Command::Tui => None,
         Command::Host(host) => Some(host),
@@ -108,8 +106,6 @@ enum Command {
     /// The client, with the daemon on this ssh host connected beside this
     /// machine's and on screen.
     Host(String),
-    /// The phone client, served by a client of this machine's daemon.
-    Web(web::WebCommand),
     /// Where the person is working, as JSON: once, or a line per change.
     Focus { watch: bool },
 }
@@ -128,11 +124,10 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         [focus, watch] if focus == "focus" && watch == "--watch" => {
             Ok(Command::Focus { watch: true })
         }
-        [web, rest @ ..] if web == "web" => web::parse(rest).map(Command::Web),
         [flag, host] if flag == "--host" && !host.is_empty() => Ok(Command::Host(host.clone())),
         _ => Err(anyhow::anyhow!(
             "usage: argus [--host HOST | init [DIR] | server (restart | stop) | focus [--watch] \
-             | bridge | web]"
+             | bridge]"
         )),
     }
 }

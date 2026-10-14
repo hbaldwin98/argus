@@ -504,27 +504,6 @@ impl Daemon {
             .collect()
     }
 
-    /// Every workspace's projects, for a client following every agent the
-    /// daemon runs. The terminal clients are sent [`Daemon::snapshot`].
-    pub fn wide_snapshot(&self) -> Vec<argus_protocol::WorkspaceTree> {
-        let inner = self.inner.lock().unwrap();
-        inner
-            .workspaces
-            .iter()
-            .map(|w| argus_protocol::WorkspaceTree {
-                id: w.id,
-                name: w.name.clone(),
-                open: w.id == inner.open,
-                projects: inner
-                    .projects
-                    .iter()
-                    .filter(|p| p.workspace == w.id)
-                    .map(|p| project_info(p, &inner.used))
-                    .collect(),
-            })
-            .collect()
-    }
-
     pub fn subscribe_tree(&self) -> broadcast::Receiver<Vec<ProjectInfo>> {
         self.tree_tx.subscribe()
     }

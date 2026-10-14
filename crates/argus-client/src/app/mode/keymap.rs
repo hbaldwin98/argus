@@ -437,7 +437,7 @@ const RAIL: Keymap = Keymap {
                     .hints(&[Hint::new("x close", 1).when(on_panes)]),
                 Binding::new(
                     "u",
-                    "take back the newest message queued from a phone",
+                    "take back the newest message queued for the agent",
                     &[(&[Char('u')], App::unqueue_selected)],
                 )
                 .when(on_pane_row)

@@ -180,16 +180,16 @@ async fn one_client_sizes_a_pane_to_exactly_what_it_asked_for() {
 
 #[tokio::test]
 async fn a_client_that_watches_without_asking_for_a_size_leaves_the_pane_alone() {
-    // A phone draws the desktop's grid at the desktop's size. Were it to
-    // count as a viewer, the smallest-request rule would shrink the pane
-    // on the desktop to a phone's width.
+    // A client that only watches draws the grid at the size another one
+    // asked for. Were it to count as a viewer, the smallest-request rule
+    // would shrink the pane in every window to whatever it was showing in.
     let dir = tempfile::tempdir().unwrap();
     let d = daemon_with_fake_claude(dir.path());
     let pane = d.spawn_shell(only_checkout(&d)).unwrap();
-    let desktop = d.new_viewer();
-    d.resize_pane(desktop, pane, 40, 120).unwrap();
+    let terminal = d.new_viewer();
+    d.resize_pane(terminal, pane, 40, 120).unwrap();
 
-    let _phone = d.new_viewer();
+    let _watcher = d.new_viewer();
     let _stream = d.subscribe_pane(pane).unwrap();
 
     assert_eq!(pane_size(&d, pane), (40, 120));
@@ -343,6 +343,19 @@ async fn a_stalled_pane_says_what_it_is_stalled_on() {
     let info = pane_info(&d, pane);
     assert_eq!(info.status, PaneStatus::Waiting);
     assert_eq!(info.note.as_deref(), Some("needs the staging password"));
+
+    d.close_pane(pane).unwrap();
+}
+
+#[tokio::test]
+async fn a_pane_in_the_tree_says_when_its_status_last_changed() {
+    // `argus focus` passes it on, for how long the pane has been as it is.
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = daemon_with_an_agent(dir.path()).await;
+    let started = pane_info(&d, pane).since.expect("a pane is in a state from its start");
+
+    d.set_pane_hook_status(pane, PaneStatus::Waiting, None, false);
+    assert!(pane_info(&d, pane).since.is_some_and(|since| since >= started));
 
     d.close_pane(pane).unwrap();
 }

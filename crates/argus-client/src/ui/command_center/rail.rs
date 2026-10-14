@@ -276,7 +276,7 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                 let shown = pane.loudest_state().status;
                 let color = status_color(shown, th);
                 let still = if pane.kind == PaneKind::Agent { "◆" } else { "›" };
-                // Messages a phone left for the agent's prompt. This row is
+                // Messages a client left for the agent's prompt. This row is
                 // the only place the count shows, and `u` takes one back.
                 let queued = match pane.queued.len() {
                     0 => String::new(),

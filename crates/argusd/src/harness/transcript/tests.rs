@@ -153,7 +153,7 @@ fn a_huge_tool_output_is_clipped_before_it_leaves_the_daemon() {
 }
 
 
-/// Each entry as one line of text: its kind and what a phone would show.
+/// Each entry as one line of text: its kind and what a watcher would show.
 fn described(updates: &[Update]) -> Vec<String> {
     entries(updates)
         .iter()

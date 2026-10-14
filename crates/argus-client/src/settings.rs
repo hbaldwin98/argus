@@ -124,27 +124,6 @@ pub struct Settings {
     /// stage off a narrow one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rail_width: Option<u16>,
-    /// How `argus web` serves, when its flags do not say.
-    #[serde(skip_serializing_if = "WebSettings::is_empty")]
-    pub web: WebSettings,
-}
-
-/// `[web]` in `client.toml`: the defaults `argus web` falls back on.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct WebSettings {
-    /// The port to bind, `7420` when unset.
-    pub port: Option<u16>,
-    /// The address to bind, loopback when unset.
-    pub listen: Option<String>,
-    /// The address a phone opens, when a proxy puts another in front.
-    pub url: Option<String>,
-}
-
-impl WebSettings {
-    fn is_empty(&self) -> bool {
-        *self == WebSettings::default()
-    }
 }
 
 impl Default for Settings {
@@ -157,7 +136,6 @@ impl Default for Settings {
             notifications: NotificationMode::Off,
             hosts: Vec::new(),
             rail_width: None,
-            web: WebSettings::default(),
         }
     }
 }
@@ -201,12 +179,9 @@ fn save_to(p: &Path, settings: &Settings) {
     // Each host's app holds a copy of the settings loaded when it started,
     // and a copy's hosts are only as fresh as that. The file's own list is
     // kept, so a theme changed on one host cannot forget a host another
-    // one remembered. `[web]` is kept for the same reason, and because no
-    // client ever edits it: it is written by hand.
-    let on_disk = load_from(p);
+    // one remembered.
     let settings = Settings {
-        hosts: on_disk.hosts,
-        web: on_disk.web,
+        hosts: load_from(p).hosts,
         ..settings.clone()
     };
     write(p, &settings);
@@ -295,10 +270,6 @@ mod tests {
             notifications: NotificationMode::Bell,
             hosts: vec!["devbox".to_string()],
             rail_width: Some(40),
-            web: WebSettings {
-                port: Some(7500),
-                ..Default::default()
-            },
         };
         let back: Settings = toml::from_str(&toml::to_string_pretty(&s).unwrap()).unwrap();
         assert_eq!(back, s);
@@ -360,6 +331,18 @@ mod tests {
         let s: Settings = toml::from_str(
             "theme = \"latte\"\ncolumn_widths = [12, 16, 18, 24, 46]\nfolded_columns = 1\n\
              feature_panel_heights = [6, 12, 10]\npane_view = \"flat\"",
+        )
+        .unwrap();
+        assert_eq!(s.theme, "latte");
+    }
+
+    #[test]
+    fn a_file_with_the_old_web_table_still_loads() {
+        // `[web]` held the defaults of `argus web`, which is gone. It was
+        // written by hand, so it is read past rather than refused, and
+        // dropped the next time the file is saved.
+        let s: Settings = toml::from_str(
+            "theme = \"latte\"\n[web]\nport = 7500\nurl = \"https://box.example\"",
         )
         .unwrap();
         assert_eq!(s.theme, "latte");

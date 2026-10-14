@@ -55,7 +55,7 @@ const MAX_READ: u64 = 16 * 1024 * 1024;
 const LINE_SEARCH: u64 = 64 * 1024;
 
 /// How many pushed entries a pane keeps: the conversation's recent end,
-/// which is what a phone opens on.
+/// which is what a watcher opens on.
 const MAX_PUSHED: usize = 500;
 
 /// One pane's conversation: what it is read from, what it holds, and who
