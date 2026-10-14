@@ -25,5 +25,6 @@ pub(super) fn read(record: &Value, reading: &mut Reading) {
         Entry::Tool { tool, summary, at, failed } => {
             reading.tool(None, &tool, &Value::String(summary), at.as_deref(), failed)
         }
+        Entry::Unknown => {}
     }
 }

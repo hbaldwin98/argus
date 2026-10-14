@@ -58,6 +58,11 @@ pub enum Entry {
         #[serde(default)]
         failed: bool,
     },
+    /// A kind this build does not know, from a newer peer or a neutral
+    /// line. Without it one new kind would fail the whole transcript; it
+    /// is dropped by a reader and passed over by a client.
+    #[serde(other)]
+    Unknown,
 }
 
 /// The `kind` of a neutral transcript line that names the session rather
@@ -207,5 +212,34 @@ mod tests {
 
         let bytes = rmp_serde::to_vec_named(&Conversation::NoTranscript).unwrap();
         assert_eq!(rmp_serde::from_slice::<Conversation>(&bytes).unwrap(), Conversation::NoTranscript);
+    }
+
+    #[test]
+    fn an_entry_of_a_kind_this_build_does_not_know_does_not_fail_its_transcript() {
+        // A newer daemon's transcript, as an older client would receive it.
+        #[derive(Serialize)]
+        struct Memo {
+            kind: &'static str,
+            text: &'static str,
+        }
+        #[derive(Serialize)]
+        #[serde(untagged)]
+        enum Newer {
+            Known(Entry),
+            New(Memo),
+        }
+        #[derive(Serialize)]
+        struct NewerTranscript {
+            entries: Vec<Newer>,
+        }
+        let newer = NewerTranscript {
+            entries: vec![
+                Newer::New(Memo { kind: "memo", text: "a kind added later" }),
+                Newer::Known(Entry::Agent { text: "Done.".into(), at: None }),
+            ],
+        };
+        let bytes = rmp_serde::to_vec_named(&newer).unwrap();
+        let read: Transcript = rmp_serde::from_slice(&bytes).unwrap();
+        assert_eq!(read.entries, [Entry::Unknown, Entry::Agent { text: "Done.".into(), at: None }]);
     }
 }

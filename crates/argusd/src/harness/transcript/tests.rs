@@ -24,6 +24,7 @@ fn described(transcript: &Transcript) -> Vec<String> {
             Entry::Agent { text, .. } => format!("agent: {}", text.lines().next().unwrap_or("")),
             Entry::Tool { tool, summary, failed: false, .. } => format!("tool {tool}: {summary}"),
             Entry::Tool { tool, summary, failed: true, .. } => format!("tool {tool} failed: {summary}"),
+            Entry::Unknown => "unknown".to_string(),
         })
         .collect()
 }
