@@ -16,6 +16,9 @@ const WIDE = 16;
 function step(c) {
     return c ? 55 + 40 * c : 0;
 }
+function clamp(n, most) {
+    return Math.max(0, Math.min(most - 1, n));
+}
 function canvas(id) {
     const node = $(id);
     if (!(node instanceof HTMLCanvasElement))
@@ -37,6 +40,9 @@ function makeScreen() {
     let cell = { w: 8, h: LINE_HEIGHT, ascent: 10, dpr: 1 };
     let palette = { fg: '', bg: '', ansi: [] };
     let fontFamily = 'monospace';
+    // A drag across the pane, `[row, col]` at each end. Only drawn here; the
+    // text it covers is read from Rust's grid when the drag ends.
+    let selection = null;
     function measure() {
         const css = getComputedStyle(document.documentElement);
         fontFamily = css.getPropertyValue('--font-mono').trim() || 'monospace';
@@ -121,7 +127,7 @@ function makeScreen() {
                 tctx.fillRect(x, y + cell.h - 3, width, 1);
         }
     }
-    function cellAt(row, col) {
+    function glyphAt(row, col) {
         for (const [start, cells, , , flags] of mirror[row] ?? []) {
             const span = flags & WIDE ? 2 : cells.length;
             if (col >= start && col < start + span) {
@@ -130,8 +136,26 @@ function makeScreen() {
         }
         return ' ';
     }
+    function drawSelection() {
+        if (!selection)
+            return;
+        const [start, end] = selection.anchor[0] < selection.head[0] ||
+            (selection.anchor[0] === selection.head[0] && selection.anchor[1] <= selection.head[1])
+            ? [selection.anchor, selection.head]
+            : [selection.head, selection.anchor];
+        cctx.save();
+        cctx.globalAlpha = 0.3;
+        cctx.fillStyle = palette.fg;
+        for (let row = start[0]; row <= end[0] && row < rows; row++) {
+            const from = row === start[0] ? start[1] : 0;
+            const to = row === end[0] ? end[1] + 1 : cols;
+            cctx.fillRect(from * cell.w, row * cell.h, (to - from) * cell.w, cell.h);
+        }
+        cctx.restore();
+    }
     function drawCursor() {
         cctx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+        drawSelection();
         if (!cursor.visible || cursor.row >= rows || cursor.col >= cols)
             return;
         const x = cursor.col * cell.w;
@@ -152,7 +176,7 @@ function makeScreen() {
             cctx.fillRect(x, y, cell.w, cell.h);
             cctx.font = `${FONT_SIZE}px ${fontFamily}`;
             cctx.fillStyle = palette.bg;
-            cctx.fillText(cellAt(cursor.row, cursor.col), x, y + cell.ascent);
+            cctx.fillText(glyphAt(cursor.row, cursor.col), x, y + cell.ascent);
         }
     }
     function repaint() {
@@ -168,6 +192,8 @@ function makeScreen() {
         if (!palette.fg)
             readPalette();
         if (f.pane !== pane || f.full) {
+            if (f.pane !== pane)
+                selection = null;
             pane = f.pane;
             mirror = Array.from({ length: f.rows }, () => []);
         }
@@ -196,11 +222,24 @@ function makeScreen() {
         cursor = f.cursor;
         drawCursor();
     }
+    // The cell under a point, held inside the grid so a drag past its edge
+    // selects to the edge.
+    function cellAt(x, y) {
+        const box = text.getBoundingClientRect();
+        return [
+            clamp(Math.floor((y - box.top) / cell.h), rows),
+            clamp(Math.floor((x - box.left) / cell.w), cols),
+        ];
+    }
+    function select(next) {
+        selection = next;
+        drawCursor();
+    }
     function sizeLabel() {
         return cols ? `${cols} × ${rows}` : '';
     }
     // The room the terminal has, in cells. The daemon sizes a pane to the
-    // smallest of its viewers, so the grid that comes back may be smaller.
+    // client the person was last at, so the grid that comes back may differ.
     let sent = null;
     let resizeTimer;
     function report() {
@@ -246,6 +285,6 @@ function makeScreen() {
         readPalette();
         repaint();
     });
-    return { frame, drawCursor, report, sizeLabel };
+    return { frame, drawCursor, report, sizeLabel, cellAt, select };
 }
 export const screen = makeScreen();

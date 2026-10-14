@@ -11,6 +11,7 @@
 //! output is still seen.
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
+mod clipboard;
 mod commands;
 mod daemon;
 mod feature_stage;
@@ -58,6 +59,8 @@ fn main() {
             commands::key,
             commands::text,
             commands::paste,
+            commands::paste_clipboard,
+            commands::copy,
             commands::spawn_shell,
             commands::focus,
             commands::select_project,

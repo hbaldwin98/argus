@@ -6,9 +6,14 @@ import { screen } from './screen.js';
 import { call } from './tauri.js';
 const MODIFIERS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock']);
 const MAC = /Macintosh|Mac OS X/.test(navigator.userAgent);
+// Ctrl-V reads the clipboard, as it does in the terminal client, and so do
+// Ctrl-Shift-V and Alt-V, the keys a terminal on Windows keeps for itself.
 function isPasteChord(e) {
-    const key = e.key.toLowerCase();
-    return MAC ? e.metaKey && key === 'v' : e.ctrlKey && e.shiftKey && key === 'v';
+    if (e.key.toLowerCase() !== 'v')
+        return false;
+    if (MAC)
+        return e.metaKey;
+    return (e.ctrlKey && !e.altKey) || (e.altKey && !e.ctrlKey && !e.shiftKey);
 }
 export function listen() {
     const input = $('input');
@@ -18,14 +23,17 @@ export function listen() {
         // WebKit reports an input method's keys as 229 without isComposing.
         if (e.isComposing || e.keyCode === 229)
             return;
-        // Left to the browser so its paste event fires.
-        if (isPasteChord(e))
+        if (isPasteChord(e)) {
+            e.preventDefault();
+            call('paste_clipboard', {});
             return;
+        }
         // The command key's chords are the window's (quit, close).
         if (MAC && e.metaKey)
             return;
         if (MODIFIERS.has(e.key))
             return;
+        screen.select(null);
         // Every other key goes to the pane, so no webview accelerator (F5,
         // Ctrl+F, Ctrl+R) fires behind the person's back.
         e.preventDefault();
@@ -57,9 +65,33 @@ export function listen() {
     });
     input.addEventListener('focus', () => screen.drawCursor());
     input.addEventListener('blur', () => screen.drawCursor());
+    // A drag selects, and letting go copies, as in the terminal client. A
+    // click without a drag only takes the keys.
+    let anchor = null;
+    let moved = false;
     $('terminal').addEventListener('mousedown', (e) => {
         e.preventDefault();
         input.focus();
+        if (e.button !== 0)
+            return;
+        anchor = screen.cellAt(e.clientX, e.clientY);
+        moved = false;
+        screen.select(null);
+    });
+    window.addEventListener('mousemove', (e) => {
+        if (!anchor)
+            return;
+        const head = screen.cellAt(e.clientX, e.clientY);
+        moved ||= head[0] !== anchor[0] || head[1] !== anchor[1];
+        if (moved)
+            screen.select({ anchor, head });
+    });
+    window.addEventListener('mouseup', (e) => {
+        if (!anchor)
+            return;
+        if (moved)
+            call('copy', { from: anchor, to: screen.cellAt(e.clientX, e.clientY) });
+        anchor = null;
     });
     window.addEventListener('focus', () => {
         call('focus', { focused: true });

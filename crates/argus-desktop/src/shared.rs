@@ -49,6 +49,11 @@ impl Shared {
         }
     }
 
+    /// Reads the session without changing it.
+    pub fn read<R>(&self, look: impl FnOnce(&Session) -> R) -> R {
+        look(&lock(&self.session))
+    }
+
     /// A connection is up: what the page asks goes over `out` from now on.
     pub fn connected(
         &self,

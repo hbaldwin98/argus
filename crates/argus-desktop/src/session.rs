@@ -277,8 +277,8 @@ impl Session {
     }
 
     /// The room the page has for a screen. The daemon sizes a pane to the
-    /// smallest of its viewers, so the grid may come back smaller, and the
-    /// page pads it.
+    /// client the person was last at, so while another is that client the
+    /// grid may come back another size, and the page pads or crops it.
     pub fn resize(&mut self, rows: u16, cols: u16) -> Vec<ClientMsg> {
         self.capacity = Some((rows.max(1), cols.max(1)));
         self.send_size();
@@ -319,6 +319,18 @@ impl Session {
         if let (Some(pane), false) = (self.shown, text.is_empty()) {
             self.out.push(ClientMsg::Paste { pane, text });
         }
+        self.finish()
+    }
+
+    /// The shown pane's text between two cells; empty with no pane.
+    pub fn selected_text(&self, from: (u16, u16), to: (u16, u16)) -> String {
+        self.screen.as_ref().map(|screen| screen.text(from, to)).unwrap_or_default()
+    }
+
+    /// Something this window says on the bar a while, as it does the
+    /// daemon's refusals.
+    pub fn note(&mut self, text: impl Into<String>) -> Vec<ClientMsg> {
+        self.passing.push(Event::Notice { text: text.into() });
         self.finish()
     }
 

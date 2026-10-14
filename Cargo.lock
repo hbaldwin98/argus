@@ -139,6 +139,7 @@ name = "argus-desktop"
 version = "0.27.0"
 dependencies = [
  "anyhow",
+ "arboard",
  "argus-protocol",
  "serde",
  "serde_json",

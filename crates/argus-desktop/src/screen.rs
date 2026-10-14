@@ -132,6 +132,30 @@ impl Screen {
         })
     }
 
+    /// The text between two cells, inclusive and in reading order whichever
+    /// way the drag went, as the terminal client copies it: each row's
+    /// trailing blanks dropped, rows joined by newlines.
+    pub fn text(&self, a: (u16, u16), b: (u16, u16)) -> String {
+        let (start, end) = if a <= b { (a, b) } else { (b, a) };
+        let last = (end.0 as usize).min(self.grid.len().saturating_sub(1));
+        let mut lines = Vec::new();
+        for (index, row) in self.grid.iter().enumerate().take(last + 1).skip(start.0 as usize) {
+            let from = if index == start.0 as usize { start.1 as usize } else { 0 };
+            let to = if index == end.0 as usize { end.1 as usize + 1 } else { row.len() };
+            let mut line = String::new();
+            let mut col = 0;
+            while col < to.min(row.len()) {
+                let cell = &row[col];
+                if col >= from {
+                    line.push_str(&cell.ch);
+                }
+                col += if is_wide(cell) { 2 } else { 1 };
+            }
+            lines.push(line.trim_end().to_string());
+        }
+        lines.join("\n")
+    }
+
     fn replace(&mut self, rows: u16, cols: u16, grid: Vec<Vec<Cell>>) {
         self.rows = rows;
         self.cols = cols;
@@ -409,5 +433,30 @@ mod tests {
         let frame = screen.take_frame().unwrap();
         assert!(frame.full);
         assert_eq!(frame.lines.len(), 2);
+    }
+
+    #[test]
+    fn a_backward_drag_copies_in_reading_order_without_trailing_blanks() {
+        let mut screen = Screen::new(PANE);
+        screen.apply(&rows(Cursor::default(), &["abcdefgh", "ijkl"], 8));
+        assert_eq!(screen.text((1, 3), (0, 1)), "bcdefgh
+ijkl");
+    }
+
+    #[test]
+    fn a_wide_character_is_copied_once() {
+        let mut screen = Screen::new(PANE);
+        let mut cells = vec![cell("a"), cell("日"), cell(" "), cell("b")];
+        cells.resize(6, Cell::default());
+        screen.apply(&ServerMsg::PaneSnapshot {
+            pane: PANE,
+            rows: 1,
+            cols: 6,
+            cells: vec![cells],
+            cursor: Cursor::default(),
+            mouse: MouseTracking::default(),
+            alternate_screen: false,
+        });
+        assert_eq!(screen.text((0, 0), (0, 5)), "a日b");
     }
 }

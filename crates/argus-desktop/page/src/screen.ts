@@ -19,6 +19,8 @@ const UNDERLINE = 4;
 const REVERSE = 8;
 const WIDE = 16;
 
+type Cell = [number, number];
+
 interface Palette {
   fg: string;
   bg: string;
@@ -28,6 +30,10 @@ interface Palette {
 // One level of the 256-colour cube.
 function step(c: number): number {
   return c ? 55 + 40 * c : 0;
+}
+
+function clamp(n: number, most: number): number {
+  return Math.max(0, Math.min(most - 1, n));
 }
 
 function canvas(id: string): [HTMLCanvasElement, CanvasRenderingContext2D] {
@@ -51,6 +57,9 @@ function makeScreen() {
   let cell = { w: 8, h: LINE_HEIGHT, ascent: 10, dpr: 1 };
   let palette: Palette = { fg: '', bg: '', ansi: [] };
   let fontFamily = 'monospace';
+  // A drag across the pane, `[row, col]` at each end. Only drawn here; the
+  // text it covers is read from Rust's grid when the drag ends.
+  let selection: { anchor: Cell; head: Cell } | null = null;
 
   function measure(): void {
     const css = getComputedStyle(document.documentElement);
@@ -133,7 +142,7 @@ function makeScreen() {
     }
   }
 
-  function cellAt(row: number, col: number): string {
+  function glyphAt(row: number, col: number): string {
     for (const [start, cells, , , flags] of mirror[row] ?? []) {
       const span = flags & WIDE ? 2 : cells.length;
       if (col >= start && col < start + span) {
@@ -143,8 +152,27 @@ function makeScreen() {
     return ' ';
   }
 
+  function drawSelection(): void {
+    if (!selection) return;
+    const [start, end] =
+      selection.anchor[0] < selection.head[0] ||
+      (selection.anchor[0] === selection.head[0] && selection.anchor[1] <= selection.head[1])
+        ? [selection.anchor, selection.head]
+        : [selection.head, selection.anchor];
+    cctx.save();
+    cctx.globalAlpha = 0.3;
+    cctx.fillStyle = palette.fg;
+    for (let row = start[0]; row <= end[0] && row < rows; row++) {
+      const from = row === start[0] ? start[1] : 0;
+      const to = row === end[0] ? end[1] + 1 : cols;
+      cctx.fillRect(from * cell.w, row * cell.h, (to - from) * cell.w, cell.h);
+    }
+    cctx.restore();
+  }
+
   function drawCursor(): void {
     cctx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+    drawSelection();
     if (!cursor.visible || cursor.row >= rows || cursor.col >= cols) return;
     const x = cursor.col * cell.w;
     const y = cursor.row * cell.h;
@@ -161,7 +189,7 @@ function makeScreen() {
       cctx.fillRect(x, y, cell.w, cell.h);
       cctx.font = `${FONT_SIZE}px ${fontFamily}`;
       cctx.fillStyle = palette.bg;
-      cctx.fillText(cellAt(cursor.row, cursor.col), x, y + cell.ascent);
+      cctx.fillText(glyphAt(cursor.row, cursor.col), x, y + cell.ascent);
     }
   }
 
@@ -177,6 +205,7 @@ function makeScreen() {
     // standing, so the palette is read again until it is there.
     if (!palette.fg) readPalette();
     if (f.pane !== pane || f.full) {
+      if (f.pane !== pane) selection = null;
       pane = f.pane;
       mirror = Array.from({ length: f.rows }, (): Segment[] => []);
     }
@@ -200,12 +229,27 @@ function makeScreen() {
     drawCursor();
   }
 
+  // The cell under a point, held inside the grid so a drag past its edge
+  // selects to the edge.
+  function cellAt(x: number, y: number): Cell {
+    const box = text.getBoundingClientRect();
+    return [
+      clamp(Math.floor((y - box.top) / cell.h), rows),
+      clamp(Math.floor((x - box.left) / cell.w), cols),
+    ];
+  }
+
+  function select(next: { anchor: Cell; head: Cell } | null): void {
+    selection = next;
+    drawCursor();
+  }
+
   function sizeLabel(): string {
     return cols ? `${cols} × ${rows}` : '';
   }
 
   // The room the terminal has, in cells. The daemon sizes a pane to the
-  // smallest of its viewers, so the grid that comes back may be smaller.
+  // client the person was last at, so the grid that comes back may differ.
   let sent: { rows: number; cols: number } | null = null;
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   function report(): void {
@@ -259,7 +303,7 @@ function makeScreen() {
     repaint();
   });
 
-  return { frame, drawCursor, report, sizeLabel };
+  return { frame, drawCursor, report, sizeLabel, cellAt, select };
 }
 
 export const screen = makeScreen();

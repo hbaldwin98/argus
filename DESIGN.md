@@ -37,7 +37,9 @@ connect-or-start lives only in the terminal client. It greets like any client, k
 on screen while it tries again every two seconds, and shows what the bridge printed when a try
 fails. After `Stopping` it does not reconnect until the person presses Reconnect: a client never
 starts again a daemon somebody stopped. It shows one pane at a time; the daemon sizes a pane to the
-smallest of its viewers, so a window and a terminal client on one pane share the smaller size. It
+client the person was last at, so a window and a terminal client on one pane each fill while in use.
+A drag across the pane selects and letting go copies; the text is read from the window's grid in Rust,
+and the clipboard is written and read there too (Ctrl-V, Ctrl-Shift-V, Alt-V), not by the page. It
 reports its view only while it has focus, so a window in the background never takes the focus from
 a terminal client being typed in. Rust holds the model (`session`); the page draws what it is sent
 and reports gestures. It is TypeScript in `crates/argus-desktop/page/src`, one module per subject
@@ -273,6 +275,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `commands` | the calls the page makes, handed to the session |
 | `shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
 | `keys` | a key the page reports, as the protocol's key |
+| `clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
 | `logging` | where the window's own diagnostics go |
 | `fixtures` | the tree builders the test modules share |
 

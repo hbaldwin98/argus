@@ -21,6 +21,8 @@ interface Commands {
   key: { key: PageKey };
   text: { text: string };
   paste: { text: string };
+  paste_clipboard: None;
+  copy: { from: [number, number]; to: [number, number] };
   spawn_shell: { checkout: number };
   focus: { focused: boolean };
   select_project: { project: number };

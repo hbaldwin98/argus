@@ -10,6 +10,7 @@ use argus_protocol::{CheckoutId, PaneId, ProjectId, RepositoryId};
 use tauri::ipc::Channel;
 use tauri::State;
 
+use crate::clipboard;
 use crate::features::Layout;
 use crate::keys::PageKey;
 use crate::page::Event;
@@ -52,6 +53,31 @@ pub async fn text(shared: State<'_, Arc<Shared>>, text: String) -> Answer {
 #[tauri::command]
 pub async fn paste(shared: State<'_, Arc<Shared>>, text: String) -> Answer {
     shared.act(|s| s.paste(text));
+    Ok(())
+}
+
+/// The paste key: the clipboard is read here, not by the page, so a paste
+/// needs no permission from the webview.
+#[tauri::command]
+pub async fn paste_clipboard(shared: State<'_, Arc<Shared>>) -> Answer {
+    match clipboard::read() {
+        Some(text) => shared.act(|s| s.paste(text)),
+        None => shared.act(|s| s.note("nothing on the clipboard to paste")),
+    }
+    Ok(())
+}
+
+/// A drag across the pane, `from` and `to` as `[row, col]`: the cells
+/// between them go on the clipboard.
+#[tauri::command]
+pub async fn copy(shared: State<'_, Arc<Shared>>, from: (u16, u16), to: (u16, u16)) -> Answer {
+    let text = shared.read(|s| s.selected_text(from, to));
+    if text.is_empty() {
+        return Ok(());
+    }
+    if let Err(e) = clipboard::write(&text) {
+        shared.act(|s| s.note(format!("could not copy: {e}")));
+    }
     Ok(())
 }
 

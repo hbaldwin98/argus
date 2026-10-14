@@ -16,8 +16,17 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+# The clipboard's text, read and written in Rust rather than by the page:
+# a webview's clipboard API wants a user gesture that a copy finished over
+# IPC no longer has.
+arboard = { version = "3", default-features = false }
 # The version alacritty uses, so a cell's width here is the daemon's.
 unicode-width = "0.2"
+
+# A Linux desktop is as likely Wayland as X11 now, as the terminal client
+# found.
+[target.'cfg(target_os = "linux")'.dependencies]
+arboard = { version = "3", default-features = false, features = ["wayland-data-control"] }
 
 [dev-dependencies]
 # Writes page.rs's types as TypeScript for the page, in test builds only.
