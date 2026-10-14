@@ -148,6 +148,7 @@ export function drawFeatures(): void {
     return;
   }
   stage.replaceChildren(head, f.layout === 'board' ? board() : list(f));
+  dress();
 }
 
 function keycap(key: string): HTMLElement {
@@ -155,10 +156,10 @@ function keycap(key: string): HTMLElement {
 }
 
 /** The key a Move to… item has, to say beside it. */
-function moveKey(to: string): string {
-  if (to === 'archived') return 'Shift A';
-  if (to === 'held' || to === 'unhold') return 'H';
-  return '';
+function moveKey(to: string): HTMLElement | null {
+  if (to === 'archived' || to === 'reopen') return keycap('Shift A');
+  if (to === 'held' || to === 'unhold') return keycap('H');
+  return null;
 }
 
 function indexHead(f: Features): HTMLElement {
@@ -204,7 +205,7 @@ function indexHead(f: Features): HTMLElement {
   );
   return el(
     'div',
-    { class: 'fhead index-head' },
+    { class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}` },
     el(
       'div',
       { class: 'crumbs' },
@@ -308,21 +309,35 @@ function list(f: Features): HTMLElement {
   return el('div', { class: 'split' }, section, peekPanel(f.peek));
 }
 
-function lines(label: string, items: Line[], mark: string): HTMLElement | null {
+/** How a peek section colours its lines, as the canvas does: what asks for
+ * you is attention throughout, work in hand marks attention but keeps its
+ * task number quiet, and only a settled decision's label reads as a ref. */
+type Tone = { mark: string; head: string; label: string; text: string };
+
+const NEEDS_YOU: Tone = {
+  mark: 'fg-attention',
+  head: 'fg-attention',
+  label: 'fg-attention',
+  text: '',
+};
+const IN_FLIGHT: Tone = { mark: 'fg-attention', head: '', label: 'fg-faint', text: '' };
+const NEXT_UP: Tone = { mark: 'fg-faint', head: '', label: 'fg-faint', text: '' };
+const LAST_DECIDED: Tone = { mark: 'fg-ok', head: '', label: 'fg-ref', text: 'fg-muted' };
+
+function lines(label: string, items: Line[], mark: string, tone: Tone): HTMLElement | null {
   if (!items.length) return null;
-  const markClass = mark === '?' ? 'fg-attention' : mark === '✓' ? 'fg-ok' : 'fg-faint';
   return el(
     'div',
     { class: 'stack-4' },
-    el('div', { class: `label${mark === '?' ? ' fg-attention' : ''}` }, label),
+    el('div', { class: `label ${tone.head}` }, label),
     items.map((line) => [
       el(
         'div',
         null,
-        el('span', { class: markClass }, `${mark} `),
-        el('span', { class: 'mono fg-ref' }, line.label),
+        el('span', { class: tone.mark }, `${mark} `),
+        el('span', { class: `mono ${tone.label}` }, line.label),
         ' ',
-        line.text,
+        tone.text ? el('span', { class: tone.text }, line.text) : line.text,
       ),
       line.aside && el('div', { class: 'meta indented' }, line.aside),
     ]),
@@ -370,10 +385,10 @@ function peekPanel(peek: Peek | null): HTMLElement {
           ),
         ),
       ),
-    lines('Needs you', peek.needsYou, '?'),
-    lines('In flight', peek.inFlight, '◐'),
-    lines('Next up', peek.nextUp ? [peek.nextUp] : [], '○'),
-    lines('Last decided', peek.lastDecided ? [peek.lastDecided] : [], '✓'),
+    lines('Needs you', peek.needsYou, '?', NEEDS_YOU),
+    lines('In flight', peek.inFlight, '◐', IN_FLIGHT),
+    lines('Next up', peek.nextUp ? [peek.nextUp] : [], '○', NEXT_UP),
+    lines('Last decided', peek.lastDecided ? [peek.lastDecided] : [], '✓', LAST_DECIDED),
     el('div', { class: 'grow' }),
     el(
       'div',
@@ -473,8 +488,10 @@ function board(): HTMLElement {
 }
 
 function card(row: FeatureRow): HTMLElement {
-  let corner: HTMLElement;
-  if (row.after.length) corner = el('span', { class: 'meta' }, 'after ', after(row));
+  // A held card's reason stands in for its questions, as the canvas draws it.
+  let corner: HTMLElement | null;
+  if (row.group === 'held') corner = null;
+  else if (row.after.length) corner = el('span', { class: 'meta' }, 'after ', after(row));
   else if (row.standing === 'new') corner = el('span', { class: 'pill fg-faint' }, 'new');
   else corner = questions(row);
 
@@ -543,7 +560,7 @@ const drag: {
   press: { slug: string; x: number; y: number; box: DOMRect } | null;
   ghost: HTMLElement | null;
   offset: { x: number; y: number };
-  over: HTMLElement | null;
+  over: Group | null;
   justDropped: boolean;
 } = { press: null, ghost: null, offset: { x: 0, y: 0 }, over: null, justDropped: false };
 
@@ -551,17 +568,56 @@ function cardNode(slug: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(`.kcard[data-slug="${CSS.escape(slug)}"]`);
 }
 
-function columnAt(x: number, y: number): HTMLElement | null {
-  return document.elementFromPoint(x, y)?.closest<HTMLElement>('.kcol[data-group]') ?? null;
+function groupAt(x: number, y: number): Group | null {
+  const column = document.elementFromPoint(x, y)?.closest<HTMLElement>('.kcol[data-group]');
+  const group = column?.dataset.group;
+  return isGroup(group) ? group : null;
 }
 
-function markColumn(column: HTMLElement | null): void {
-  if (drag.over && drag.over !== column) drag.over.classList.remove('drop', 'refuse');
-  drag.over = column;
-  if (!column) return;
-  const settable = column.dataset.group === 'held' || column.dataset.group === 'archived';
-  column.classList.toggle('drop', settable);
-  column.classList.toggle('refuse', !settable);
+/** Whether a dropped card asks for anything: only a move the row offers and
+ * a person sets. The columns that follow the work light up for nothing, as
+ * on the canvas, and say why once the card lands on them. */
+function takes(row: FeatureRow, group: Group): boolean {
+  return (
+    (group === 'held' || group === 'archived') &&
+    row.moves.some((move) => move.to === group && !move.disabled)
+  );
+}
+
+function dropWords(row: FeatureRow, group: Group): string {
+  return group === 'archived'
+    ? `Drop to archive: you accept #${row.number} as finished`
+    : `Drop to hold: you say why #${row.number} waits`;
+}
+
+/** Marks the drag on the board as drawn now: the card's place keeps a
+ * placeholder, and a column that takes it says what the drop asks. Run after
+ * every draw too, since a board pushed mid-drag is drawn plain; the card
+ * itself moves only when a pushed board says it did. */
+function dress(): void {
+  const press = drag.press;
+  const row = press && drag.ghost ? rowBySlug(press.slug) : undefined;
+  if (!row) return;
+  const target = drag.over && takes(row, drag.over) ? drag.over : null;
+  const words = `#${row.number} is being dragged${target ? ` to ${GROUP_LABEL[target]}` : ''}`;
+  const place = document.querySelector('.ghostcard') ?? cardNode(row.slug);
+  place?.replaceWith(
+    el(
+      'div',
+      { class: 'kcard ghostcard', 'aria-hidden': 'true' },
+      el('span', { class: 'meta' }, words),
+    ),
+  );
+  for (const column of document.querySelectorAll<HTMLElement>('.kcol[data-group]')) {
+    const on = target !== null && column.dataset.group === target;
+    column.classList.toggle('drop', on);
+    column.querySelector('.dropzone')?.remove();
+    if (on) {
+      column
+        .querySelector('.khead')
+        ?.after(el('div', { class: 'dropzone' }, dropWords(row, target)));
+    }
+  }
 }
 
 function onPointerMove(e: PointerEvent): void {
@@ -573,47 +629,51 @@ function onPointerMove(e: PointerEvent): void {
     if (!node) return;
     const ghost = node.cloneNode(true);
     if (!(ghost instanceof HTMLElement)) return;
-    ghost.classList.add('ghost-card');
+    ghost.classList.remove('on');
+    ghost.classList.add('dragging', 'ghost-card');
     ghost.style.width = `${press.box.width}px`;
     drag.offset = { x: press.x - press.box.left, y: press.y - press.box.top };
     document.body.append(ghost);
     drag.ghost = ghost;
-    node.classList.add('dragging');
+    drag.over = null;
+    dress();
   }
   drag.ghost.style.left = `${e.clientX - drag.offset.x}px`;
   drag.ghost.style.top = `${e.clientY - drag.offset.y}px`;
-  markColumn(columnAt(e.clientX, e.clientY));
+  const over = groupAt(e.clientX, e.clientY);
+  if (over !== drag.over) {
+    drag.over = over;
+    dress();
+  }
 }
 
 function onPointerUp(e: PointerEvent): void {
   const press = drag.press;
   drag.press = null;
   if (!press || !drag.ghost) return;
-  const column = columnAt(e.clientX, e.clientY);
+  const group = groupAt(e.clientX, e.clientY);
   drag.ghost.remove();
   drag.ghost = null;
-  cardNode(press.slug)?.classList.remove('dragging');
-  markColumn(null);
+  drag.over = null;
+  // Back where the last board put it: a drop that is taken moves the card
+  // when the daemon's board says so.
+  drawFeatures();
   // The click that follows the release is the drag's, not a peek.
   drag.justDropped = true;
   setTimeout(() => {
     drag.justDropped = false;
   }, 0);
   const row = rowBySlug(press.slug);
-  const group = column?.dataset.group;
-  if (row && isGroup(group)) drop(row, group);
+  if (row && group) drop(row, group);
 }
 
 /** A card dropped on a column. Only the two a person sets take it; the
  * rest say why they follow the work instead. */
 function drop(row: FeatureRow, group: Group): void {
   if (group === row.group) return;
-  if (group === 'held') {
-    holdDialog(row);
-    return;
-  }
-  if (group === 'archived') {
-    call('archive', { slug: row.slug, archived: true });
+  if (takes(row, group)) {
+    if (group === 'held') holdDialog(row);
+    else call('archive', { slug: row.slug, archived: true });
     return;
   }
   const move = row.moves.find((m) => m.to === group);
@@ -645,9 +705,9 @@ function moveMenu(row: FeatureRow, x: number, y: number): void {
         },
         'Go to its pane',
         el('span', { class: 'grow' }),
-        el('span', { class: 'kbd' }, 'G'),
+        keycap('G'),
       ),
-    el('div', { class: 'msep' }),
+    agent && el('div', { class: 'msep' }),
     el('div', { class: 'mlabel' }, 'Move to'),
     row.moves.map((move) =>
       el(
@@ -667,9 +727,7 @@ function moveMenu(row: FeatureRow, x: number, y: number): void {
         move.disabled === 'here now' && el('span', { class: 'fg-ok' }, '✓'),
         move.label,
         el('span', { class: 'grow' }),
-        move.disabled
-          ? el('span', { class: 'meta' }, move.disabled)
-          : el('span', { class: 'kbd' }, moveKey(move.to)),
+        move.disabled ? el('span', { class: 'meta' }, move.disabled) : moveKey(move.to),
       ),
     ),
   );

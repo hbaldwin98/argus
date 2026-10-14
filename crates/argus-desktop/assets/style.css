@@ -1547,12 +1547,17 @@ button:focus-visible,
   padding-left: var(--sp-20);
 }
 .filter {
-  width: 180px;
+  width: 220px;
+}
+.index-head.on-board .filter {
+  width: 200px;
 }
 .pbar span {
   width: 0;
 }
 
+/* Columns keep the canvas's fixed widths; a window too narrow for them
+ * scrolls the board sideways rather than squeezing the cards. */
 .board {
   flex: 1;
   min-height: 0;
@@ -1564,17 +1569,10 @@ button:focus-visible,
 }
 .board .kcol {
   overflow-y: auto;
-  width: auto;
-  flex: 1 1 0;
-  min-width: 180px;
 }
 .board .side {
-  flex: 0 0 220px;
+  flex: 0 0 236px;
   min-width: 0;
-}
-.kcol.refuse {
-  border-style: dashed;
-  border-color: var(--line-strong);
 }
 .side {
   display: flex;
@@ -1582,19 +1580,16 @@ button:focus-visible,
   gap: var(--sp-12);
 }
 .side .kcol {
+  width: auto;
   flex: none;
   min-width: 0;
 }
-.kcard.dragging {
-  opacity: 0.4;
-}
+/* The card under the pointer, drawn as the canvas's .kcard.dragging. */
 .ghost-card {
   position: fixed;
   z-index: 5;
   pointer-events: none;
   transform: rotate(-2deg);
-  box-shadow: var(--shadow-pop);
-  border-color: var(--line-strong);
 }
 
 .layer {

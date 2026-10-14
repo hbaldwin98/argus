@@ -114,17 +114,18 @@ export function drawFeatures() {
         return;
     }
     stage.replaceChildren(head, f.layout === 'board' ? board() : list(f));
+    dress();
 }
 function keycap(key) {
     return el('span', { class: 'kbd' }, key);
 }
 /** The key a Move to… item has, to say beside it. */
 function moveKey(to) {
-    if (to === 'archived')
-        return 'Shift A';
+    if (to === 'archived' || to === 'reopen')
+        return keycap('Shift A');
     if (to === 'held' || to === 'unhold')
-        return 'H';
-    return '';
+        return keycap('H');
+    return null;
 }
 function indexHead(f) {
     const parts = [
@@ -158,7 +159,7 @@ function indexHead(f) {
         'aria-checked': String(f.layout === layout),
         onclick: () => call('set_layout', { layout }),
     }, layout === 'list' ? 'List' : 'Board')));
-    return el('div', { class: 'fhead index-head' }, el('div', { class: 'crumbs' }, el('span', { class: 'fg' }, 'Features'), el('span', { class: 'grow' }), el('span', { class: 'meta' }, keycap('V'), ' list or board · ', keycap('M'), ' move to… · ', keycap('G'), ' go to its pane')), el('div', { class: 'actions index-tools' }, el('span', { class: 'type-title' }, `Features in ${f.repository}`), el('span', { class: 'meta' }, counts), el('span', { class: 'grow' }), filter, f.layout === 'list' &&
+    return el('div', { class: `fhead index-head${f.layout === 'board' ? ' on-board' : ''}` }, el('div', { class: 'crumbs' }, el('span', { class: 'fg' }, 'Features'), el('span', { class: 'grow' }), el('span', { class: 'meta' }, keycap('V'), ' list or board · ', keycap('M'), ' move to… · ', keycap('G'), ' go to its pane')), el('div', { class: 'actions index-tools' }, el('span', { class: 'type-title' }, `Features in ${f.repository}`), el('span', { class: 'meta' }, counts), el('span', { class: 'grow' }), filter, f.layout === 'list' &&
         folded > 0 &&
         el('button', { class: 'btn', onclick: () => call('toggle_folded', {}) }, f.showFolded ? 'Fold held and archived ' : 'Show held and archived ', el('span', { class: 'fg-faint' }, String(folded))), seg));
 }
@@ -189,12 +190,20 @@ function list(f) {
     section.append(el('div', { class: 'meta index-foot' }, "Held and archived features are folded away. A feature's standing is read off its tasks and the agents on its checkouts; only holding and archiving are set by hand."));
     return el('div', { class: 'split' }, section, peekPanel(f.peek));
 }
-function lines(label, items, mark) {
+const NEEDS_YOU = {
+    mark: 'fg-attention',
+    head: 'fg-attention',
+    label: 'fg-attention',
+    text: '',
+};
+const IN_FLIGHT = { mark: 'fg-attention', head: '', label: 'fg-faint', text: '' };
+const NEXT_UP = { mark: 'fg-faint', head: '', label: 'fg-faint', text: '' };
+const LAST_DECIDED = { mark: 'fg-ok', head: '', label: 'fg-ref', text: 'fg-muted' };
+function lines(label, items, mark, tone) {
     if (!items.length)
         return null;
-    const markClass = mark === '?' ? 'fg-attention' : mark === '✓' ? 'fg-ok' : 'fg-faint';
-    return el('div', { class: 'stack-4' }, el('div', { class: `label${mark === '?' ? ' fg-attention' : ''}` }, label), items.map((line) => [
-        el('div', null, el('span', { class: markClass }, `${mark} `), el('span', { class: 'mono fg-ref' }, line.label), ' ', line.text),
+    return el('div', { class: 'stack-4' }, el('div', { class: `label ${tone.head}` }, label), items.map((line) => [
+        el('div', null, el('span', { class: tone.mark }, `${mark} `), el('span', { class: `mono ${tone.label}` }, line.label), ' ', tone.text ? el('span', { class: tone.text }, line.text) : line.text),
         line.aside && el('div', { class: 'meta indented' }, line.aside),
     ]));
 }
@@ -204,7 +213,7 @@ function peekPanel(peek) {
     }
     const row = rowBySlug(peek.slug);
     return el('aside', { class: 'peek', 'aria-label': `Peek at #${peek.number}` }, el('div', null, el('div', { class: 'label' }, el('span', { class: 'fg-accent' }, `#${peek.number}`), el('span', { class: GROUP_CLASS[peek.standing] ?? '' }, peek.standing), el('span', { class: 'grow' }), peek.branch && el('span', { class: 'label-aside' }, `from ${peek.branch}`)), el('div', { class: 'peek-title' }, peek.title), peek.held && el('div', { class: 'fg-attention' }, `held: “${peek.held}”`), peek.brief && el('div', { class: 'fg-muted peek-brief' }, peek.brief)), peek.links.length > 0 &&
-        el('div', { class: 'actions' }, peek.links.map((link) => el('span', { class: 'track', title: link.url }, link.tracker, ' ', el('b', null, link.key)))), lines('Needs you', peek.needsYou, '?'), lines('In flight', peek.inFlight, '◐'), lines('Next up', peek.nextUp ? [peek.nextUp] : [], '○'), lines('Last decided', peek.lastDecided ? [peek.lastDecided] : [], '✓'), el('div', { class: 'grow' }), el('div', { class: 'actions' }, el('button', { class: 'btn', disabled: peek.pane == null, onclick: () => goToPane(peek.pane) }, 'Go to its pane'), el('span', { class: 'grow' }), row && moveButtons(row)));
+        el('div', { class: 'actions' }, peek.links.map((link) => el('span', { class: 'track', title: link.url }, link.tracker, ' ', el('b', null, link.key)))), lines('Needs you', peek.needsYou, '?', NEEDS_YOU), lines('In flight', peek.inFlight, '◐', IN_FLIGHT), lines('Next up', peek.nextUp ? [peek.nextUp] : [], '○', NEXT_UP), lines('Last decided', peek.lastDecided ? [peek.lastDecided] : [], '✓', LAST_DECIDED), el('div', { class: 'grow' }), el('div', { class: 'actions' }, el('button', { class: 'btn', disabled: peek.pane == null, onclick: () => goToPane(peek.pane) }, 'Go to its pane'), el('span', { class: 'grow' }), row && moveButtons(row)));
 }
 function moveButtons(row) {
     return [
@@ -243,8 +252,11 @@ function board() {
     return el('div', { class: 'board' }, column('queued'), column('active'), column('done'), el('div', { class: 'side' }, column('archived'), column('held'), el('div', { class: 'meta' }, 'Queued, Active and Done follow the work: a card moves when a task starts, an agent arrives or the last task closes. You can drag only into Held, which asks for a reason, and Archived.')));
 }
 function card(row) {
+    // A held card's reason stands in for its questions, as the canvas draws it.
     let corner;
-    if (row.after.length)
+    if (row.group === 'held')
+        corner = null;
+    else if (row.after.length)
         corner = el('span', { class: 'meta' }, 'after ', after(row));
     else if (row.standing === 'new')
         corner = el('span', { class: 'pill fg-faint' }, 'new');
@@ -294,18 +306,46 @@ const drag = { press: null, ghost: null, offset: { x: 0, y: 0 }, over: null, jus
 function cardNode(slug) {
     return document.querySelector(`.kcard[data-slug="${CSS.escape(slug)}"]`);
 }
-function columnAt(x, y) {
-    return document.elementFromPoint(x, y)?.closest('.kcol[data-group]') ?? null;
+function groupAt(x, y) {
+    const column = document.elementFromPoint(x, y)?.closest('.kcol[data-group]');
+    const group = column?.dataset.group;
+    return isGroup(group) ? group : null;
 }
-function markColumn(column) {
-    if (drag.over && drag.over !== column)
-        drag.over.classList.remove('drop', 'refuse');
-    drag.over = column;
-    if (!column)
+/** Whether a dropped card asks for anything: only a move the row offers and
+ * a person sets. The columns that follow the work light up for nothing, as
+ * on the canvas, and say why once the card lands on them. */
+function takes(row, group) {
+    return ((group === 'held' || group === 'archived') &&
+        row.moves.some((move) => move.to === group && !move.disabled));
+}
+function dropWords(row, group) {
+    return group === 'archived'
+        ? `Drop to archive: you accept #${row.number} as finished`
+        : `Drop to hold: you say why #${row.number} waits`;
+}
+/** Marks the drag on the board as drawn now: the card's place keeps a
+ * placeholder, and a column that takes it says what the drop asks. Run after
+ * every draw too, since a board pushed mid-drag is drawn plain; the card
+ * itself moves only when a pushed board says it did. */
+function dress() {
+    const press = drag.press;
+    const row = press && drag.ghost ? rowBySlug(press.slug) : undefined;
+    if (!row)
         return;
-    const settable = column.dataset.group === 'held' || column.dataset.group === 'archived';
-    column.classList.toggle('drop', settable);
-    column.classList.toggle('refuse', !settable);
+    const target = drag.over && takes(row, drag.over) ? drag.over : null;
+    const words = `#${row.number} is being dragged${target ? ` to ${GROUP_LABEL[target]}` : ''}`;
+    const place = document.querySelector('.ghostcard') ?? cardNode(row.slug);
+    place?.replaceWith(el('div', { class: 'kcard ghostcard', 'aria-hidden': 'true' }, el('span', { class: 'meta' }, words)));
+    for (const column of document.querySelectorAll('.kcol[data-group]')) {
+        const on = target !== null && column.dataset.group === target;
+        column.classList.toggle('drop', on);
+        column.querySelector('.dropzone')?.remove();
+        if (on) {
+            column
+                .querySelector('.khead')
+                ?.after(el('div', { class: 'dropzone' }, dropWords(row, target)));
+        }
+    }
 }
 function onPointerMove(e) {
     const press = drag.press;
@@ -320,35 +360,42 @@ function onPointerMove(e) {
         const ghost = node.cloneNode(true);
         if (!(ghost instanceof HTMLElement))
             return;
-        ghost.classList.add('ghost-card');
+        ghost.classList.remove('on');
+        ghost.classList.add('dragging', 'ghost-card');
         ghost.style.width = `${press.box.width}px`;
         drag.offset = { x: press.x - press.box.left, y: press.y - press.box.top };
         document.body.append(ghost);
         drag.ghost = ghost;
-        node.classList.add('dragging');
+        drag.over = null;
+        dress();
     }
     drag.ghost.style.left = `${e.clientX - drag.offset.x}px`;
     drag.ghost.style.top = `${e.clientY - drag.offset.y}px`;
-    markColumn(columnAt(e.clientX, e.clientY));
+    const over = groupAt(e.clientX, e.clientY);
+    if (over !== drag.over) {
+        drag.over = over;
+        dress();
+    }
 }
 function onPointerUp(e) {
     const press = drag.press;
     drag.press = null;
     if (!press || !drag.ghost)
         return;
-    const column = columnAt(e.clientX, e.clientY);
+    const group = groupAt(e.clientX, e.clientY);
     drag.ghost.remove();
     drag.ghost = null;
-    cardNode(press.slug)?.classList.remove('dragging');
-    markColumn(null);
+    drag.over = null;
+    // Back where the last board put it: a drop that is taken moves the card
+    // when the daemon's board says so.
+    drawFeatures();
     // The click that follows the release is the drag's, not a peek.
     drag.justDropped = true;
     setTimeout(() => {
         drag.justDropped = false;
     }, 0);
     const row = rowBySlug(press.slug);
-    const group = column?.dataset.group;
-    if (row && isGroup(group))
+    if (row && group)
         drop(row, group);
 }
 /** A card dropped on a column. Only the two a person sets take it; the
@@ -356,12 +403,11 @@ function onPointerUp(e) {
 function drop(row, group) {
     if (group === row.group)
         return;
-    if (group === 'held') {
-        holdDialog(row);
-        return;
-    }
-    if (group === 'archived') {
-        call('archive', { slug: row.slug, archived: true });
+    if (takes(row, group)) {
+        if (group === 'held')
+            holdDialog(row);
+        else
+            call('archive', { slug: row.slug, archived: true });
         return;
     }
     const move = row.moves.find((m) => m.to === group);
@@ -381,7 +427,7 @@ function moveMenu(row, x, y) {
                 closeLayer();
                 goToPane(agent.pane);
             },
-        }, 'Go to its pane', el('span', { class: 'grow' }), el('span', { class: 'kbd' }, 'G')), el('div', { class: 'msep' }), el('div', { class: 'mlabel' }, 'Move to'), row.moves.map((move) => el('button', {
+        }, 'Go to its pane', el('span', { class: 'grow' }), keycap('G')), agent && el('div', { class: 'msep' }), el('div', { class: 'mlabel' }, 'Move to'), row.moves.map((move) => el('button', {
         class: 'mi',
         role: 'menuitem',
         disabled: !!move.disabled,
@@ -396,9 +442,7 @@ function moveMenu(row, x, y) {
             else if (move.to === 'reopen')
                 call('archive', { slug: row.slug, archived: false });
         },
-    }, move.disabled === 'here now' && el('span', { class: 'fg-ok' }, '✓'), move.label, el('span', { class: 'grow' }), move.disabled
-        ? el('span', { class: 'meta' }, move.disabled)
-        : el('span', { class: 'kbd' }, moveKey(move.to)))));
+    }, move.disabled === 'here now' && el('span', { class: 'fg-ok' }, '✓'), move.label, el('span', { class: 'grow' }), move.disabled ? el('span', { class: 'meta' }, move.disabled) : moveKey(move.to))));
     $('layer').replaceChildren(menu);
     const box = menu.getBoundingClientRect();
     menu.style.left = `${Math.min(x, window.innerWidth - box.width - 8)}px`;
