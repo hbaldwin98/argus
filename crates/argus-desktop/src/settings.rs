@@ -1,5 +1,6 @@
 //! What the window remembers between runs: how each repository's feature
-//! index is laid out, and which agent it last started.
+//! index is laid out, which agent it last started, and whether an agent
+//! coming to need you chimes.
 //!
 //! Its own file beside the config, `desktop.json`, rather than a section
 //! of the terminal client's `client.toml`: whether the two clients share
@@ -11,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Settings {
     /// `list` or `board`, by the path of a repository's primary checkout:
     /// the path outlives the daemon's ids, which are handed out anew each run.
@@ -23,6 +24,21 @@ pub struct Settings {
     /// restarted, would forget which one the person reaches for.
     #[serde(default)]
     pub last_agent: Option<String>,
+    /// On unless turned off, unlike the terminal client's opt-in bell: a
+    /// window is not where a person is already typing, so it is the place
+    /// they are least likely to see an agent finish.
+    #[serde(default = "on")]
+    pub chime: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings { layouts: BTreeMap::new(), last_agent: None, chime: true }
+    }
+}
+
+fn on() -> bool {
+    true
 }
 
 fn path() -> PathBuf {
@@ -75,6 +91,7 @@ mod tests {
         let mut settings = Settings::default();
         settings.layouts.insert("/src/argus".into(), "board".into());
         settings.last_agent = Some("codex".into());
+        settings.chime = false;
         save_to(&path, &settings).unwrap();
         assert_eq!(load_from(&path), settings);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
@@ -91,13 +108,14 @@ mod tests {
     }
 
     #[test]
-    fn a_file_from_before_the_last_agent_still_loads_its_layouts() {
+    fn a_file_from_before_the_last_agent_and_the_chime_keeps_its_layouts_and_chimes() {
         let path = scratch("older");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, br#"{ "layouts": { "/src/argus": "board" } }"#).unwrap();
         let loaded = load_from(&path);
         assert_eq!(loaded.layouts.get("/src/argus").map(String::as_str), Some("board"));
         assert_eq!(loaded.last_agent, None);
+        assert!(loaded.chime);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }

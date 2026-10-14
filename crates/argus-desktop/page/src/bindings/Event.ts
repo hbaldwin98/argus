@@ -11,4 +11,4 @@ import type { Status } from "./Status";
 /**
  * One message down the page's channel.
  */
-export type Event = { "type": "status" } & Status | { "type": "rail" } & Rail | { "type": "frame" } & Frame | { "type": "features" } & Features | { "type": "checkouts" } & Checkouts | { "type": "review" } & ReviewPage | { "type": "history" } & HistoryPage | { "type": "clipboard", text: string, } | { "type": "notice", text: string, } | { "type": "keymap", groups: Array<Group>, };
+export type Event = { "type": "status" } & Status | { "type": "rail" } & Rail | { "type": "frame" } & Frame | { "type": "features" } & Features | { "type": "checkouts" } & Checkouts | { "type": "review" } & ReviewPage | { "type": "history" } & HistoryPage | { "type": "clipboard", text: string, } | { "type": "notice", text: string, } | { "type": "chime" } | { "type": "keymap", groups: Array<Group>, };

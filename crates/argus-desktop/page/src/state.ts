@@ -33,7 +33,7 @@ export const state: {
   /** Whether the board's archived column is unfolded. */
   archivedOpen: boolean;
 } = {
-  status: { connection: 'connecting', detail: null, alarm: null },
+  status: { connection: 'connecting', detail: null, alarm: null, chime: true },
   rail: {
     projects: [],
     project: null,

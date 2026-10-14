@@ -18,7 +18,7 @@ use argus_protocol::keys::{Key, KeyCode, Mods};
 use argus_protocol::mouse::{self, MouseButton, MouseEvent, MouseKind};
 use argus_protocol::paste;
 use argus_protocol::{
-    Cell, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
+    transitions, Cell, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
     RepositoryId, ServerMsg, View, FOCUS, PASTE_FILE,
 };
 
@@ -88,6 +88,8 @@ pub struct Session {
     filled: bool,
     /// The view last reported, so an unchanged one is not sent again.
     reported: Option<View>,
+    chime: bool,
+    chime_changed: bool,
     status_changed: bool,
     rail_changed: bool,
     passing: Vec<Event>,
@@ -102,6 +104,7 @@ impl Default for Session {
 
 impl Session {
     pub fn new(settings: Settings) -> Session {
+        let chime = settings.chime;
         Session {
             tree: Vec::new(),
             loaded: false,
@@ -132,6 +135,8 @@ impl Session {
             leader: false,
             filled: false,
             reported: None,
+            chime,
+            chime_changed: false,
             status_changed: true,
             rail_changed: true,
             passing: Vec::new(),
@@ -304,7 +309,17 @@ impl Session {
         }
     }
 
+    /// The tree held across a reconnect is the one compared with, so an
+    /// agent that finished while the daemon was away still chimes; the
+    /// first tree, compared with none, is quiet.
     fn take_tree(&mut self, tree: Vec<ProjectInfo>) {
+        let watched = self.watched();
+        let rings = transitions(self.tree.as_slice(), tree.as_slice())
+            .iter()
+            .any(|t| t.after.status.needs_you() && Some(t.pane.id) != watched);
+        if rings && self.chime {
+            self.passing.push(Event::Chime);
+        }
         self.tree = tree;
         self.loaded = true;
         self.rail_changed = true;
@@ -1060,14 +1075,33 @@ impl Session {
         self.finish()
     }
 
+    /// The pane the person is looking at: on screen, in a window they are
+    /// in. It needs no chime, as the terminal client rings for no pane
+    /// being typed in.
+    fn watched(&self) -> Option<PaneId> {
+        let on_screen = !self.features.is_open() && !self.checkouts.is_open();
+        self.shown.filter(|_| self.focused && on_screen)
+    }
+
+    pub fn set_chime(&mut self, on: bool) -> Vec<ClientMsg> {
+        if self.chime != on {
+            self.chime = on;
+            self.chime_changed = true;
+            self.status_changed = true;
+        }
+        self.finish()
+    }
+
     /// The settings, when a change asks for them to be saved.
     pub fn take_settings(&mut self) -> Option<Settings> {
-        // Both, not short-circuited: each flag is cleared as it is read.
+        // All three, not short-circuited: each flag is cleared as it is read.
         let layouts = self.features.take_layouts_changed();
         let agent = std::mem::take(&mut self.last_agent_changed);
-        (layouts || agent).then(|| Settings {
+        let chime = std::mem::take(&mut self.chime_changed);
+        (layouts || agent || chime).then(|| Settings {
             layouts: self.features.layouts().clone(),
             last_agent: self.last_agent.clone(),
+            chime: self.chime,
         })
     }
 
@@ -1224,6 +1258,7 @@ impl Session {
             connection: self.connection,
             detail: self.detail.clone(),
             alarm: self.alarm.clone(),
+            chime: self.chime,
         }
     }
 
@@ -1529,6 +1564,77 @@ mod tests {
         s.connected(Some(Hello::this_build()), None, Vec::new());
         let Event::Status(status) = &s.events(0)[0] else { panic!() };
         assert_eq!(status.alarm, None);
+    }
+
+    fn chimes(s: &mut Session) -> usize {
+        s.events(0).iter().filter(|e| matches!(e, Event::Chime)).count()
+    }
+
+    fn with_status(pane: usize, status: PaneStatus) -> ServerMsg {
+        let mut next = tree();
+        next[0].repositories[0].checkouts[0].panes[pane].status = status;
+        with_tree(next)
+    }
+
+    #[test]
+    fn an_agent_coming_to_need_you_chimes_once() {
+        let mut s = session(without_focus());
+        s.events(0);
+        s.receive(with_status(0, PaneStatus::NeedsReview));
+        assert_eq!(chimes(&mut s), 1);
+        s.receive(with_status(0, PaneStatus::NeedsReview));
+        assert_eq!(chimes(&mut s), 0, "still needing you is not news");
+        s.receive(with_status(0, PaneStatus::Working));
+        assert_eq!(chimes(&mut s), 0, "starting work is not worth a sound");
+    }
+
+    #[test]
+    fn the_first_tree_is_quiet_however_many_need_you() {
+        let mut s = Session::default();
+        s.connected(Some(without_focus()), None, vec![with_status(0, PaneStatus::Waiting)]);
+        assert_eq!(chimes(&mut s), 0);
+    }
+
+    #[test]
+    fn the_pane_you_are_looking_at_does_not_chime_until_you_look_away() {
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        s.events(0);
+        s.receive(with_status(0, PaneStatus::NeedsReview));
+        assert_eq!(chimes(&mut s), 0, "on screen in a focused window");
+
+        s.receive(with_status(0, PaneStatus::Working));
+        s.focus(false);
+        s.receive(with_status(0, PaneStatus::NeedsReview));
+        assert_eq!(chimes(&mut s), 1, "the window is in the background");
+
+        s.receive(with_status(0, PaneStatus::Working));
+        s.focus(true);
+        s.show_features(true);
+        s.receive(with_status(0, PaneStatus::NeedsReview));
+        assert_eq!(chimes(&mut s), 1, "another stage hides it");
+    }
+
+    #[test]
+    fn an_agent_that_finished_while_the_daemon_was_away_still_chimes() {
+        let mut s = session(without_focus());
+        s.connecting(None);
+        s.connected(Some(without_focus()), None, vec![with_status(0, PaneStatus::NeedsReview)]);
+        assert_eq!(chimes(&mut s), 1);
+    }
+
+    #[test]
+    fn turning_the_chime_off_silences_it_and_asks_to_be_saved() {
+        let mut s = session(without_focus());
+        assert!(s.take_settings().is_none());
+        s.set_chime(false);
+        let Some(Event::Status(status)) = s.events(0).into_iter().next() else { panic!() };
+        assert!(!status.chime);
+        assert_eq!(s.take_settings().map(|s| s.chime), Some(false));
+        assert!(s.take_settings().is_none(), "saved once");
+
+        s.receive(with_status(0, PaneStatus::Failed));
+        assert_eq!(chimes(&mut s), 0);
     }
 
     #[test]

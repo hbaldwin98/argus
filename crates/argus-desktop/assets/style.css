@@ -1410,6 +1410,10 @@ button:focus-visible,
 .bar .actions {
   align-items: center;
 }
+.bar .icon {
+  width: 20px;
+  height: 20px;
+}
 .skeleton {
   padding-top: var(--sp-8);
 }

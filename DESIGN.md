@@ -61,7 +61,7 @@ the window's, one nothing binds is dropped, and a second leader sends one throug
 same keys again. The Feature stage has them while it is open, and another pane brings them back
 for good. Rust holds the model (`session`); the page draws what it is sent
 and reports gestures. It is TypeScript in `crates/argus-desktop/page/src`, one module per subject
-(`chrome`, `screen`, `input`, `keymap`, `features`, with `dom`, `state` and `tauri` beneath them), compiled
+(`chrome`, `screen`, `input`, `keymap`, `features`, `chime`, with `dom`, `state` and `tauri` beneath them), compiled
 into `assets/js` and committed, so building the crate needs no Node. The events it reads are
 `page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
 either committed output differs from what its source makes. Its webview keeps its storage
@@ -299,7 +299,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks, each repository's layout — and what its messages and gestures change |
 | `features` | what the Feature stage's index shows from a board: its rows, the places a person may move each, and the peek |
-| `settings` | what the window remembers between runs: each repository's index layout, and the agent it last started |
+| `settings` | what the window remembers between runs: each repository's index layout, the agent it last started, and whether it chimes |
 | `page` | what the page and the window's Rust say to each other |
 | `commands` | the calls the page makes, handed to the session |
 | `shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
@@ -738,7 +738,9 @@ heading's need count, the command band's tally — rolls up each listed pane and
 `tree`'s one ranking: a failed exit outranks a working agent, and only a clean exit is calm.
 Transitions into `Waiting`, `NeedsReview`, or `Failed` also put the pane or child note in the status
 bar. A client can optionally ring its terminal bell for those transitions when the pane is not the
-active input pane; notifications default to off and are saved in `client.toml`.
+active input pane; notifications default to off and are saved in `client.toml`. The desktop window
+chimes for the same transitions unless the pane is on screen in a focused window. Its chime is on
+by default, switched from the status bar, and saved in `desktop.json`.
 
 When the client itself runs in a Herdr pane, it reports one aggregate `argus` agent for the open
 workspace. Its message names that workspace and groups every live pane by harness, with each pane's

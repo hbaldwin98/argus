@@ -3,6 +3,7 @@
 // window's `session` — so each event replaces what the page held.
 
 import type { Event } from './bindings/Event';
+import { chime, listen as listenForSound } from './chime.js';
 import {
   closeStart,
   drawChrome,
@@ -71,6 +72,9 @@ function receive(event: Event): void {
       state.features = event;
       drawFeatures();
       break;
+    case 'chime':
+      chime();
+      break;
     case 'keymap':
       state.keymap = event.groups;
       break;
@@ -78,6 +82,7 @@ function receive(event: Event): void {
 }
 
 listenToInput();
+listenForSound();
 listenToKeys();
 listenToFeatures();
 
