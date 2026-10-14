@@ -9,7 +9,7 @@
 //! selection, and anchoring run over whichever rows came out, which is why
 //! a comment written in one view means the same thing in the other.
 
-use argus_protocol::{FileDiff, LineKind, Review, ReviewAnchor};
+use crate::{FileDiff, LineKind, Review, ReviewAnchor};
 
 /// Headers and notes are drawn but never selected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -337,7 +337,7 @@ fn flatten(files: &[FileDiff], split: bool) -> Vec<Row> {
 /// removals and the run of additions that replaced them belong to the same
 /// change, and a context line ends both runs because it is where the two
 /// sides are known to line up again.
-fn paired(rows: &mut Vec<Row>, file: usize, hunk: usize, diff: &argus_protocol::Hunk) {
+fn paired(rows: &mut Vec<Row>, file: usize, hunk: usize, diff: &crate::Hunk) {
     let (mut removed, mut added): (Vec<usize>, Vec<usize>) = (Vec::new(), Vec::new());
     let flush = |rows: &mut Vec<Row>, removed: &mut Vec<usize>, added: &mut Vec<usize>| {
         for i in 0..removed.len().max(added.len()) {
@@ -372,7 +372,7 @@ fn paired(rows: &mut Vec<Row>, file: usize, hunk: usize, diff: &argus_protocol::
 #[cfg(test)]
 mod tests {
     use super::*;
-    use argus_protocol::{ChangeKind, CheckoutId, DiffLine, Hunk};
+    use crate::{ChangeKind, CheckoutId, DiffLine, Hunk};
 
     fn line(kind: LineKind, no: u32, text: &str) -> DiffLine {
         let (old_lineno, new_lineno) = match kind {
@@ -411,7 +411,7 @@ mod tests {
             Review {
                 request_id: 1,
                 checkout: CheckoutId(1),
-                base: argus_protocol::ReviewBase::Unstaged,
+                base: crate::ReviewBase::Unstaged,
                 files,
                 commit: None,
             },

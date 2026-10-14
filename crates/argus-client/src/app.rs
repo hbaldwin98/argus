@@ -25,9 +25,9 @@ use crate::brief::{BriefMode, BriefTarget, BriefView};
 use crate::dirpicker::{DirAction, DirPicker, DirTarget};
 use crate::fuzzy::Fuzzy;
 use crate::grid::Grid;
-use crate::history::{Drill, HistoryView};
+use argus_protocol::history_view::{Drill, HistoryView};
 use crate::pty_input::{encode_key, encode_mouse, is_leader};
-use crate::review::ReviewView;
+use argus_protocol::review_view::ReviewView;
 use crate::selection::TerminalSelection;
 use crate::theme::Theme;
 

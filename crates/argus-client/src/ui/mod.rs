@@ -33,8 +33,8 @@ use crate::app::{
 use crate::brief::BriefMode;
 use crate::dirpicker::DirRow;
 use crate::grid::Grid;
-use crate::history::{HistoryRow, HistoryView};
-use crate::review::{ReviewView, Row};
+use argus_protocol::history_view::{HistoryRow, HistoryView};
+use argus_protocol::review_view::{ReviewView, Row};
 use crate::theme::Theme;
 use argus_protocol::CursorShape;
 

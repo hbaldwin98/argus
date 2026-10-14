@@ -745,7 +745,7 @@ impl App {
         }
         let n = commits.len();
         self.review = None;
-        self.history = Some(crate::history::HistoryView::new(checkout, commits));
+        self.history = Some(argus_protocol::history_view::HistoryView::new(checkout, commits));
         self.overlay = Some(Overlay::History);
         self.pane_fullscreen = false;
         self.focus = Focus::Review;

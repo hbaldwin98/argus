@@ -7,7 +7,7 @@
 //! diff against its parent, so it is fetched when the cursor drills into
 //! that commit and kept for as long as the overlay is open.
 
-use argus_protocol::{CheckoutId, CommitFile, CommitInfo};
+use crate::{CheckoutId, CommitFile, CommitInfo};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HistoryRow {
@@ -259,7 +259,7 @@ fn flatten(commits: &[HistoryEntry]) -> Vec<HistoryRow> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use argus_protocol::ChangeKind;
+    use crate::ChangeKind;
 
     fn info(oid: &str, summary: &str) -> CommitInfo {
         CommitInfo {

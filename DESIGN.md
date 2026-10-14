@@ -185,6 +185,8 @@ live in this crate and a contract written twice drifts in silence.
 | `mouse` | the bytes a mouse event is to a pane's child that asked for them, decided once so every client reports the mouse the same way |
 | `paste` | what a client sends as a paste: text with its line endings as a pty wants them, and how large a file may be to cross |
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
+| `review_view` | a diff flattened into the rows a viewer moves over, unified or split, and what a comment on the picked ones anchors to |
+| `history_view` | a checkout's recent commits flattened into rows, each unfolding to the files it touched once they are asked for |
 | `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
 | `tracker_links` | how a repository's work reaches the team's trackers: which tickets a feature is linked to, how a ticket's tracker and key are read out of its URL, and the board's tracker map and its draft |
 | `capture` | how one note reads as a feature: its title, brief, tasks and decisions |
@@ -270,7 +272,7 @@ result of a request; `ui` is a pure function of it.
 | `ui/help`, `ui/prose` | the keymap window, and markdown styled where it stands |
 | `ui/views` | the tab strip naming the three stages, and which tab a click lands on |
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
-| `review`, `history`, `brief`, `dirpicker` | the view state behind each overlay |
+| `brief`, `dirpicker` | the view state behind each overlay |
 | `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
 | `grid`, `selection`, `pty_input`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
 | `pty_input/keys` | a terminal key event as the protocol's key, and the leader chord that is never sent |

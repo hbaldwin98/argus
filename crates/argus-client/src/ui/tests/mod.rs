@@ -470,7 +470,7 @@ pub(super) fn diff_line(
 pub(super) fn app_with_diff(split: bool, lines: Vec<argus_protocol::DiffLine>) -> App {
     let mut app = app_with_tree();
     app.review_split = split;
-    app.review = Some(crate::review::ReviewView::new(
+    app.review = Some(argus_protocol::review_view::ReviewView::new(
         argus_protocol::Review {
             request_id: 1,
             checkout: CheckoutId(1),
@@ -497,7 +497,7 @@ pub(super) fn app_with_diff(split: bool, lines: Vec<argus_protocol::DiffLine>) -
 /// As the overlay first opens: headers, and no commit summarized yet.
 pub(super) fn app_with_history() -> App {
     let mut app = app_with_tree();
-    app.history = Some(crate::history::HistoryView::new(
+    app.history = Some(argus_protocol::history_view::HistoryView::new(
         CheckoutId(1),
         vec![argus_protocol::CommitInfo {
             oid: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),

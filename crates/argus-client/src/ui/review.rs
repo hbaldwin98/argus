@@ -153,7 +153,7 @@ pub(super) fn review_line<'a>(
             let mut spans = vec![
                 Span::styled(format!("{no} "), Style::default().fg(th.dim)),
                 Span::styled(
-                    crate::review::marker(l.kind).to_string(),
+                    argus_protocol::review_view::marker(l.kind).to_string(),
                     Style::default().fg(marker_fg),
                 ),
             ];
@@ -220,7 +220,7 @@ pub(super) fn diff_side<'a>(
     let mut spans = vec![
         Span::styled(format!("{no} "), Style::default().fg(th.dim)),
         Span::styled(
-            crate::review::marker(l.kind).to_string(),
+            argus_protocol::review_view::marker(l.kind).to_string(),
             Style::default().fg(marker_fg),
         ),
     ];
