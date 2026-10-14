@@ -21,6 +21,7 @@ use argus_protocol::{
     Consequence, Criterion, Decision, DecisionState, DecisionText, DecisionWrite, Feature,
     FeatureEvent, FeatureMove, FeatureState, FeatureWrite, PaneId, PaneKind, PaneStatus,
     ReviewAnchor, ReviewComment, Task, TaskCounts, TaskNote, TaskPlace, TaskState, TaskWrite,
+    TrackerLink, MAX_FEATURE_LINKS,
     MAX_CRITERION_BYTES, MAX_DECISION_BYTES, MAX_REVIEW_COMMENTS, MAX_TASK_CRITERIA,
     MAX_TASK_NOTES, MAX_TASK_NOTE_BYTES,
 };
@@ -38,7 +39,7 @@ mod session;
 
 use schema::{
     SCHEMA_V1, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15, SCHEMA_V16,
-    SCHEMA_V17, SCHEMA_V18, SCHEMA_V19, SCHEMA_V2,
+    SCHEMA_V17, SCHEMA_V18, SCHEMA_V19, SCHEMA_V2, SCHEMA_V20,
     SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8, SCHEMA_V9,
 };
 
@@ -108,7 +109,7 @@ pub const NO_RESTORE: &str = "ARGUS_NO_RESTORE";
 pub(crate) static NO_RESTORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// The current schema version. Bump it and add an arm to [`migrate`].
-const SCHEMA_VERSION: i64 = 19;
+const SCHEMA_VERSION: i64 = 20;
 
 impl std::fmt::Debug for Store {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -247,6 +248,9 @@ impl Store {
         }
         if from < 19 {
             tx.execute_batch(SCHEMA_V19)?;
+        }
+        if from < 20 {
+            tx.execute_batch(SCHEMA_V20)?;
         }
         tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
         tx.commit()?;

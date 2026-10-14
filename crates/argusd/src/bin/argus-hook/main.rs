@@ -86,7 +86,8 @@ use std::time::Duration;
 use argus_protocol::{
     is_slug, parse_pane_url, requested_scope, Consequence, Decision, DecisionBoard,
     DecisionChange, DecisionState, DecisionText, DecisionWrite, DiagramAction,
-    DiagramList, DiagramWrite, Endpoint, FeatureAction, FeatureBoard, FeatureWrite, Report,
+    DiagramList, DiagramWrite, Endpoint, FeatureAction, FeatureBoard, FeatureWrite, LinkWrite,
+    Report,
     ReviewComment, TaskAction, TaskList, TaskPlace, TaskState, TaskWrite, ARTIFACT_SCOPE_VAR,
     CONTEXT_COMMAND, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
     BACKGROUND_HEADER, SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, TRANSCRIPT_HEADER, URL_VAR,

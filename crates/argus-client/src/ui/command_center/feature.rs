@@ -464,6 +464,19 @@ fn render_feature_heading(f: &mut Frame, app: &mut App, area: Rect, th: Theme) -
         text.width,
     )));
 
+    // On every lens: `t` opens one from any of them.
+    let links = app.selected_feature().map(|f| f.links.clone()).unwrap_or_default();
+    if !links.is_empty() {
+        let mut row = vec![span("⇄ ", th.accent)];
+        for (at, link) in links.iter().enumerate() {
+            if at > 0 {
+                row.push(span(" · ", th.dim));
+            }
+            row.extend([span(format!("{} ", link.tracker), th.muted), span(link.key.clone(), th.accent)]);
+        }
+        lines.push(Line::from(spread(row, vec![span("t open", th.dim)], text.width)));
+    }
+
     // The brief sits over the work, which is what it explains; the record
     // and the flows say their own why and keep the room.
     if app.lens == Lens::Work {

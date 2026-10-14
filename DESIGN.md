@@ -198,6 +198,7 @@ live in this crate and a contract written twice drifts in silence.
 | `damage` | what changed on a pane's screen, as runs of cells and regions that scrolled |
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
 | `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
+| `tracker_links` | which tickets in the team's trackers a feature is linked to, and how a ticket's tracker and key are read out of its URL |
 | `capture` | how one note reads as a feature: its title, brief, tasks and decisions |
 | `adr` | how a decision reads as a record somebody can paste or correct |
 | `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
@@ -288,6 +289,7 @@ result of a request; `ui` is a pure function of it.
 | `outline` | how a feature's tasks and the decisions raised under them read as one outline: what binds a task, what carries a decision out, what an open one holds up |
 | `grid`, `selection`, `pty_input`, `pty_input/keys`, `pty_input/mouse`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
 | `dropped` | a file dropped on the terminal, recognized in what it pasted |
+| `browser` | opening a ticket's URL in the person's browser, or copying it where no browser is at hand |
 | `motion` | animation arithmetic: how far along a transition is at a given instant |
 | `settings`, `theme`, `backend`, `herdr`, `profile` | preferences, palette, the ratatui backend, and what is reported outward |
 | `fixtures` | the tree builders every test module shares |
@@ -1610,6 +1612,19 @@ and any it already waits on — where confirming one it waits on takes the wait 
 `feature hold <slug> "<why>"`, `feature unhold <slug>`, `feature wait <slug> <on>` and `feature
 unwait <slug> <on>`; `feature list` prints a hold and the open prerequisites under the row, and
 `feature` and the pane context lead with them.
+
+A feature can be linked to tickets in the team's trackers (schema v20): a `feature_link` row per
+ticket holds the tracker's name, the key and the URL, in the order they were linked, and nothing
+read from the ticket, because Argus never reads it and a copy beside the link would go stale.
+`tracker_links` reads the tracker and key out of a Linear, Jira or GitHub URL without going online,
+and otherwise takes the host and the last path segment, which `--tracker` and `--key` override; only
+an `http` or `https` URL is a link, since the client hands it to the system's opener. Linking a key
+the feature has corrects its URL, an unlink names the key in any case, and removing a feature clears
+its links. The heading names them on every lens; `t` opens the ticket in the browser, or offers a
+choice of several, and `T` takes a pasted URL. Over SSH there is no browser at the desk to start, so
+`t` copies the URL instead. An agent uses `feature link <slug> <url>` and `feature unlink <slug>
+<key>`, and `feature` lists the links with their URLs. Argus talks to no tracker: an agent reads and
+writes the ticket with its own tools, and only what the person asked for and approved.
 
 `m` transfers the selected feature's active checkout association to another checkout in the same
 repository over `ClientMsg::TransferFeature`. The daemon validates both runtime ids, removes the

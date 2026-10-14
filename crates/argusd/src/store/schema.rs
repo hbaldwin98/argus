@@ -410,6 +410,26 @@ CREATE TABLE task_note (
 CREATE INDEX task_note_task ON task_note (task, id);
 "#;
 
+/// The tickets a feature is linked to in the team's trackers.
+///
+/// Only what gets a person and an agent to the ticket: the tracker's name,
+/// the key and the URL. Nothing read from the ticket is stored, because
+/// Argus never reads it and a copy would go stale. `place` keeps the order
+/// they were linked in, which a timestamp cannot when two links land in the
+/// same second. As with `feature_wait`, `slug` is not a foreign key and
+/// removing a feature clears its links.
+pub(super) const SCHEMA_V20: &str = r#"
+CREATE TABLE feature_link (
+    project TEXT    NOT NULL,
+    slug    TEXT    NOT NULL,
+    key     TEXT    NOT NULL,
+    tracker TEXT    NOT NULL,
+    url     TEXT    NOT NULL,
+    place   INTEGER NOT NULL,
+    PRIMARY KEY (project, slug, key)
+) WITHOUT ROWID;
+"#;
+
 /// Mermaid sequence-diagram source, one row per diagram under a feature.
 pub(super) const SCHEMA_V16: &str = r#"
 CREATE TABLE sequence_diagram (

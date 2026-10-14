@@ -6,11 +6,12 @@
 //! showing what is.
 
 use argus_protocol::{
-    Capture, DecisionChange, DecisionState, DecisionText, DecisionWrite, FeatureState, TaskAction,
-    TaskPlace, TaskState, TaskWrite,
+    Capture, DecisionChange, DecisionState, DecisionText, DecisionWrite, FeatureState, LinkWrite,
+    TaskAction, TaskPlace, TaskState, TaskWrite,
 };
 
 use super::*;
+use crate::browser::Opened;
 use crate::outline::WorkRef;
 
 /// A line being typed at the foot of the stage.
@@ -32,6 +33,8 @@ pub enum LineEdit {
     Feature(String),
     /// Why the feature with this slug is held.
     Hold(String),
+    /// The URL of a ticket to link the feature with this slug to.
+    Link(String),
     Criterion(i64),
     Note(i64),
     /// A decision: under another, raised under a task, or replacing one.
@@ -56,6 +59,7 @@ impl LineInput {
             LineEdit::Task(_) => "rewrite",
             LineEdit::Feature(_) => "rename",
             LineEdit::Hold(_) => "hold because",
+            LineEdit::Link(_) => "ticket URL",
             LineEdit::Criterion(_) => "done when",
             LineEdit::Note(_) => "note",
             LineEdit::Decision {
@@ -170,6 +174,24 @@ impl App {
                     checkout,
                     slug,
                     reason: Some(text),
+                });
+            }
+            LineEdit::Link(slug) => {
+                let link = LinkWrite {
+                    url: text,
+                    ..LinkWrite::default()
+                };
+                // Checked here only so a typo is said at once rather than
+                // as the daemon's refusal; the daemon checks it again.
+                match link.clone().checked() {
+                    Ok(read) => self.report(format!("linked to {} {}", read.tracker, read.key)),
+                    Err(message) => return self.report(message),
+                }
+                let _ = self.out.send(ClientMsg::LinkFeature {
+                    project,
+                    checkout,
+                    slug,
+                    link,
                 });
             }
             LineEdit::NewTask => self.send_task(task(text, None)),
@@ -324,6 +346,43 @@ impl App {
             FeatureState::Done => format!("{slug} archived"),
             FeatureState::Open => format!("{slug} reopened"),
         });
+    }
+
+    /// Opens the selected feature's ticket, or offers its tickets when it is
+    /// linked to more than one.
+    pub(super) fn open_selected_ticket(&mut self) {
+        let Some(feature) = self.selected_feature() else {
+            return self.report("no feature selected");
+        };
+        let links = feature.links.clone();
+        match links.as_slice() {
+            [] => self.report("no ticket linked to this feature; T links one"),
+            [only] => self.open_ticket(&only.url),
+            _ => {
+                let items = links
+                    .iter()
+                    .map(|link| format!("{} {}  {}", link.tracker, link.key, link.url))
+                    .collect();
+                let urls = links.into_iter().map(|link| link.url).collect();
+                self.picker = Some(Picker::new(PickerKind::Ticket { urls }, "open ticket", items, 0));
+            }
+        }
+    }
+
+    pub(super) fn open_ticket(&mut self, url: &str) {
+        match (self.open_url)(url) {
+            Opened::Browser => self.report(format!("opened {url}")),
+            Opened::Copied => self.report(format!("no browser here; copied {url}")),
+            Opened::Refused(why) => self.report(why),
+        }
+    }
+
+    /// Asks for the URL of a ticket to link the selected feature to.
+    pub(super) fn begin_link(&mut self) {
+        let Some(slug) = self.feature_slug() else {
+            return self.report("no feature selected");
+        };
+        self.begin_line(LineEdit::Link(slug), String::new());
     }
 
     /// Lifts the selected feature's hold, or asks why it should be held.

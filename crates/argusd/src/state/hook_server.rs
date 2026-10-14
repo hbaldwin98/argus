@@ -406,6 +406,7 @@ fn feature_response(
     filing: super::features::Filing,
 ) -> HookResponse {
     use argus_protocol::FeatureAction;
+    use super::LinkChange;
 
     let action: FeatureAction = match decode(body, "feature change") {
         Ok(action) => action,
@@ -451,6 +452,12 @@ fn feature_response(
         }
         FeatureAction::Unwait { slug, on } => {
             daemon.wait_feature_for_agent(source, &slug, &on, false, filing.scope)
+        }
+        FeatureAction::Link { slug, link } => {
+            daemon.link_feature_for_agent(source, &slug, LinkChange::Link(link), filing.scope)
+        }
+        FeatureAction::Unlink { slug, key } => {
+            daemon.link_feature_for_agent(source, &slug, LinkChange::Unlink(key), filing.scope)
         }
     })
 }

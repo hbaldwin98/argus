@@ -67,6 +67,9 @@ pub enum PickerKind {
         others: Vec<String>,
         waited: Vec<bool>,
     },
+    /// Open the chosen ticket of a feature linked to several. `urls` is
+    /// parallel to the rows.
+    Ticket { urls: Vec<String> },
 }
 
 impl PickerKind {

@@ -670,6 +670,14 @@ impl App {
                     slug: slug.clone(),
                 });
             }
+            PickerKind::Ticket { urls } => {
+                let Some(url) = picker.shown.get(picker.sel).and_then(|index| urls.get(*index))
+                else {
+                    return;
+                };
+                let url = url.clone();
+                self.open_ticket(&url);
+            }
             PickerKind::TaskFeature { features } => {
                 let Some(feature) = picker
                     .shown

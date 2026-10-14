@@ -4,7 +4,9 @@
 use super::*;
 use crate::app::{Lens, Standing};
 use crate::outline::WorkRef;
-use argus_protocol::{ClientMsg, DecisionChange, DecisionState, FeatureState, TaskAction, TaskState};
+use argus_protocol::{
+    ClientMsg, DecisionChange, DecisionState, FeatureState, TaskAction, TaskState, TrackerLink,
+};
 
 fn press(app: &mut App, c: char) {
     app.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
@@ -271,6 +273,105 @@ fn the_heading_says_how_the_feature_stands_and_how_far_along_it_is() {
     assert!(text.contains("4 of 10 tasks · 4 decided · 1 open"), "{text}");
     assert!(text.contains("1 work  2 record  3 flows"), "{text}");
     assert!(text.contains("The session-start hook prints the whole brief"), "{text}");
+}
+
+// ---- tickets -----------------------------------------------------------------
+
+fn link(tracker: &str, key: &str, url: &str) -> TrackerLink {
+    TrackerLink {
+        tracker: tracker.into(),
+        key: key.into(),
+        url: url.into(),
+    }
+}
+
+/// Feature #7 open, linked to a Linear issue and a Jira story.
+fn linked() -> (App, tokio::sync::mpsc::UnboundedReceiver<ClientMsg>) {
+    let (mut app, rx) = reading();
+    let board = app.board.as_mut().unwrap();
+    let trim = board.features.iter_mut().find(|f| f.slug == "trim").unwrap();
+    trim.links = vec![
+        link("Linear", "ENG-88", "https://linear.app/acme/issue/ENG-88/trim"),
+        link("Jira", "ARG-142", "https://acme.atlassian.net/browse/ARG-142"),
+    ];
+    (app, rx)
+}
+
+/// Not an assertion — the heading of a feature linked to two tickets, and
+/// the picker `t` offers: `cargo test -p argus dump_linked_feature -- --ignored --nocapture`.
+#[test]
+#[ignore = "prints a linked feature for eyeballing; asserts nothing"]
+fn dump_linked_feature() {
+    let (mut app, _rx) = linked();
+    println!("{}\n", stage(&mut app));
+    press(&mut app, 't');
+    println!("{}\n", stage(&mut app));
+}
+
+#[test]
+fn the_heading_names_every_ticket_the_feature_is_linked_to_on_every_lens() {
+    let (mut app, _rx) = linked();
+    for lens in ['1', '2', '3'] {
+        press(&mut app, lens);
+        let text = screen(&mut app);
+        assert!(text.contains("⇄ Linear ENG-88 · Jira ARG-142"), "lens {lens}: {text}");
+    }
+}
+
+#[test]
+fn t_opens_the_only_ticket_and_offers_a_choice_of_several() {
+    let (mut app, _rx) = linked();
+    press(&mut app, 't');
+    assert!(app.picker.is_some(), "two tickets: which one");
+    key(&mut app, KeyCode::Down);
+    key(&mut app, KeyCode::Enter);
+    assert_eq!(app.status, "no browser here; copied https://acme.atlassian.net/browse/ARG-142");
+
+    let board = app.board.as_mut().unwrap();
+    let trim = board.features.iter_mut().find(|f| f.slug == "trim").unwrap();
+    trim.links.truncate(1);
+    press(&mut app, 't');
+    assert!(app.picker.is_none(), "one ticket: no question");
+    assert_eq!(app.status, "no browser here; copied https://linear.app/acme/issue/ENG-88/trim");
+}
+
+#[test]
+fn t_on_a_feature_with_no_ticket_says_how_to_link_one() {
+    let (mut app, _rx) = reading();
+    press(&mut app, 't');
+    assert!(app.status.contains("T links one"), "{}", app.status);
+}
+
+#[test]
+fn a_pasted_ticket_url_links_the_feature_and_is_not_predicted() {
+    let (mut app, mut rx) = reading();
+    press(&mut app, 'T');
+    app.on_paste("https://linear.app/acme/issue/ENG-88/trim".into());
+    assert!(screen(&mut app).contains("ticket URL https://linear.app/acme/issue/ENG-88/trim"));
+    key(&mut app, KeyCode::Enter);
+
+    let links: Vec<_> = sent(&mut rx)
+        .into_iter()
+        .filter_map(|msg| match msg {
+            ClientMsg::LinkFeature { slug, link, .. } => Some((slug, link.url)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(links, [("trim".to_string(), "https://linear.app/acme/issue/ENG-88/trim".to_string())]);
+    assert!(
+        app.selected_feature().unwrap().links.is_empty(),
+        "the heading waits for the daemon's board"
+    );
+}
+
+#[test]
+fn a_ticket_url_that_is_no_link_is_said_at_once_and_never_sent() {
+    let (mut app, mut rx) = reading();
+    press(&mut app, 'T');
+    type_in(&mut app, "ENG-88");
+    key(&mut app, KeyCode::Enter);
+    assert!(app.status.contains("http or https"), "{}", app.status);
+    assert!(!sent(&mut rx).iter().any(|msg| matches!(msg, ClientMsg::LinkFeature { .. })));
 }
 
 // ---- the work lens -----------------------------------------------------------

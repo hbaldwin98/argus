@@ -60,7 +60,7 @@ pub(super) fn name_feature(slug: &str) {
 /// from one of them.
 const FEATURE_SUBCOMMANDS: &[&str] = &[
     "list", "open", "use", "note", "export", "done", "reopen", "retitle", "brief", "drop", "hold",
-    "unhold", "wait", "unwait",
+    "unhold", "wait", "unwait", "link", "unlink",
 ];
 
 /// The feature a board command names, and its arguments without the name.

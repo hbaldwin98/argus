@@ -17,7 +17,7 @@
 
 use argus_protocol::{
     Actor, ArtifactScope, Decision, Feature, FeatureBoard, FeatureMove, FeatureState, FeatureWrite,
-    PaneId, ProjectId,
+    LinkWrite, PaneId, ProjectId,
 };
 
 use super::agents::AgentScope;
@@ -386,6 +386,30 @@ impl Daemon {
         self.feature_changed_for_agent(&scope, artifact_scope)
     }
 
+    /// Links a feature to a ticket, or takes a link away, for an agent.
+    pub fn link_feature_for_agent(
+        &self,
+        pane_id: PaneId,
+        slug: &str,
+        change: LinkChange,
+        artifact_scope: ArtifactScope,
+    ) -> anyhow::Result<FeatureBoard> {
+        let scope = self.agent_scope(pane_id)?;
+        self.change_feature_link(scope.artifact_key(artifact_scope), slug, change)?;
+        self.feature_changed_for_agent(&scope, artifact_scope)
+    }
+
+    /// The one write both an agent's link and a person's go through.
+    fn change_feature_link(&self, key: &str, slug: &str, change: LinkChange) -> anyhow::Result<()> {
+        match change {
+            LinkChange::Link(write) => {
+                let link = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
+                self.store.link_feature(key, slug, &link)
+            }
+            LinkChange::Unlink(ticket) => self.store.unlink_feature(key, slug, &ticket),
+        }
+    }
+
     /// The board after an agent changed a feature, pushed to every client.
     fn feature_changed_for_agent(
         &self,
@@ -543,6 +567,20 @@ impl Daemon {
         Ok(())
     }
 
+    /// Links a feature to a ticket, or takes a link away, from the view.
+    pub fn link_feature_for_client(
+        &self,
+        project: ProjectId,
+        checkout: CheckoutId,
+        slug: &str,
+        change: LinkChange,
+    ) -> anyhow::Result<()> {
+        let (name, key) = self.client_artifact_scope(project, checkout)?;
+        self.change_feature_link(&key, slug, change)?;
+        self.broadcast_decisions(&name, &key, self.store.decisions(&key)?);
+        Ok(())
+    }
+
     /// Records, or takes back, that a feature comes after another, from the
     /// view.
     pub fn wait_feature_for_client(
@@ -599,4 +637,10 @@ impl Daemon {
             .and_then(|c| c.git.as_ref())
             .and_then(|git| git.branch.clone())
     }
+}
+
+/// A link made, or the key of one taken away.
+pub enum LinkChange {
+    Link(LinkWrite),
+    Unlink(String),
 }

@@ -10,6 +10,7 @@ mod app;
 mod backend;
 mod brief;
 mod bridge;
+mod browser;
 mod web;
 mod diagram;
 mod clipboard;

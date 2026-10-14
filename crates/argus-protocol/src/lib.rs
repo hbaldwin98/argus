@@ -27,6 +27,7 @@ pub mod message;
 pub mod paths;
 pub mod review;
 pub mod tasks;
+pub mod tracker_links;
 pub mod transcript;
 pub mod transport;
 pub mod tree;
@@ -86,6 +87,10 @@ pub use tasks::{
     TaskNote, TaskPlace, TaskState, TaskTreeRow, TaskWrite, MAX_CRITERION_BYTES,
     MAX_TASK_BODY_BYTES, MAX_TASK_CRITERIA, MAX_TASK_NOTES, MAX_TASK_NOTE_BYTES,
     MAX_TASK_TITLE_BYTES,
+};
+pub use tracker_links::{
+    LinkWrite, TrackerLink, MAX_FEATURE_LINKS, MAX_LINK_KEY_BYTES, MAX_LINK_TRACKER_BYTES,
+    MAX_LINK_URL_BYTES,
 };
 pub use transcript::{Body, Choice, Draft, Earlier, Entry, Push, ToolState, Update, MAX_PUSH_BYTES};
 pub use tree::{

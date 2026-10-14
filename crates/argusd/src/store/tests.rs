@@ -1724,6 +1724,74 @@ fn removing_a_feature_clears_its_waits_both_ways() {
     s.add_feature_wait("argus", "handshake", "traffic").unwrap();
 }
 
+fn ticket(tracker: &str, key: &str) -> TrackerLink {
+    TrackerLink {
+        tracker: tracker.into(),
+        key: key.into(),
+        url: format!("https://tracker.example/{key}"),
+    }
+}
+
+#[test]
+fn a_feature_keeps_its_links_in_the_order_they_were_made() {
+    let s = store();
+    s.add_feature("argus", &feature("remote"), None, None, 1, None)
+        .unwrap();
+    s.link_feature("argus", "remote", &ticket("Linear", "ENG-88")).unwrap();
+    s.link_feature("argus", "remote", &ticket("Jira", "ARG-142")).unwrap();
+    let links = |s: &Store| s.features("argus").unwrap()[0].links.clone();
+    assert_eq!(links(&s), [ticket("Linear", "ENG-88"), ticket("Jira", "ARG-142")]);
+
+    let mut moved = ticket("Linear", "ENG-88");
+    moved.url = "https://linear.app/acme/issue/ENG-88".into();
+    s.link_feature("argus", "remote", &moved).unwrap();
+    assert_eq!(
+        links(&s),
+        [moved, ticket("Jira", "ARG-142")],
+        "relinking a key corrects its URL and keeps its place"
+    );
+    assert!(s.link_feature("argus", "gone", &ticket("Jira", "X-1")).is_err());
+}
+
+#[test]
+fn an_unlink_names_the_ticket_in_any_case() {
+    let s = store();
+    s.add_feature("argus", &feature("remote"), None, None, 1, None)
+        .unwrap();
+    s.link_feature("argus", "remote", &ticket("Linear", "ENG-88")).unwrap();
+    s.unlink_feature("argus", "remote", " eng-88 ").unwrap();
+    assert!(s.features("argus").unwrap()[0].links.is_empty());
+    assert!(s.unlink_feature("argus", "remote", "ENG-88").is_err());
+}
+
+#[test]
+fn a_feature_has_a_bounded_number_of_links() {
+    let s = store();
+    s.add_feature("argus", &feature("remote"), None, None, 1, None)
+        .unwrap();
+    for n in 0..MAX_FEATURE_LINKS {
+        s.link_feature("argus", "remote", &ticket("Jira", &format!("T-{n}"))).unwrap();
+    }
+    assert!(s.link_feature("argus", "remote", &ticket("Jira", "T-new")).is_err());
+    s.link_feature("argus", "remote", &ticket("Linear", "T-0"))
+        .expect("relinking one it has is not another link");
+}
+
+#[test]
+fn removing_a_feature_clears_its_links() {
+    let s = store();
+    s.add_feature("argus", &feature("remote"), None, None, 1, None)
+        .unwrap();
+    s.link_feature("argus", "remote", &ticket("Linear", "ENG-88")).unwrap();
+    s.remove_feature("argus", "remote").unwrap();
+    s.add_feature("argus", &feature("remote"), None, None, 2, None)
+        .unwrap();
+    assert!(
+        s.features("argus").unwrap()[0].links.is_empty(),
+        "a feature opened later under the same name starts with no links"
+    );
+}
+
 #[test]
 fn migrating_a_v17_store_leaves_every_feature_unheld() {
     let dir = tempfile::tempdir().unwrap();

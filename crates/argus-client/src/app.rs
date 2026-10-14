@@ -241,6 +241,9 @@ pub struct App {
     /// How selected terminal text is written, injectable for tests without
     /// a desktop session.
     pub clipboard_write: fn(&str) -> bool,
+    /// How a ticket's URL is opened, injectable so a test never starts the
+    /// desk's browser.
+    pub open_url: fn(&str) -> crate::browser::Opened,
     /// Whether the daemon takes a file off this machine (`PASTE_FILE`).
     /// False until it greets, and for a daemon from before the capability,
     /// which is told about rather than sent a message it cannot read.
@@ -464,6 +467,7 @@ impl App {
             clipboard: crate::clipboard::read,
             clipboard_image: crate::clipboard::read_image,
             clipboard_write: crate::clipboard::write,
+            open_url: crate::browser::open,
             pastes_files: false,
             reports_view: false,
             view_sent: None,

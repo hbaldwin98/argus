@@ -132,6 +132,9 @@ impl App {
         if let Some(picker) = &self.picker {
             return picker.kind.is_fuzzy();
         }
+        if self.line.is_some() {
+            return true;
+        }
         self.input_pane().is_some()
     }
 
@@ -192,7 +195,10 @@ impl App {
     /// — a prompt, a picker — that takes the text first. The same order
     /// `on_paste` walks.
     fn paste_target(&self) -> Option<PaneId> {
-        let something_above = self.prompt.is_some() || self.dir_picker.is_some() || self.picker.is_some();
+        let something_above = self.prompt.is_some()
+            || self.dir_picker.is_some()
+            || self.picker.is_some()
+            || self.line.is_some();
         if something_above {
             return None;
         }
@@ -225,6 +231,12 @@ impl App {
                     .extend(text.chars().filter(|c| !c.is_control()));
                 picker.refilter();
             }
+            return;
+        }
+        // A board line is one line: a URL pasted into it arrives whole,
+        // where typed it would be read as the view's keys.
+        if let Some(input) = &mut self.line {
+            input.text.extend(text.chars().filter(|c| !c.is_control()));
             return;
         }
         let Some(pane) = self.input_pane() else {

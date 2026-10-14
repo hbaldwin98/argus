@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::decisions::Decision;
 use crate::ids::ProjectId;
 use crate::tasks::TaskCounts;
+use crate::tracker_links::{LinkWrite, TrackerLink};
 
 /// Past this a feature document has stopped being a brief and started
 /// being a design document, which belongs in the checkout it describes.
@@ -142,6 +143,9 @@ pub struct Feature {
     /// prerequisite releases it without anyone remembering to.
     #[serde(default)]
     pub waits_on: Vec<String>,
+    /// The tickets it is linked to, in the order they were linked.
+    #[serde(default)]
+    pub links: Vec<TrackerLink>,
 }
 
 impl Feature {
@@ -227,6 +231,10 @@ pub enum FeatureAction {
     Wait { slug: String, on: String },
     /// Takes back a `Wait`.
     Unwait { slug: String, on: String },
+    /// Links a feature to a ticket in one of the team's trackers.
+    Link { slug: String, link: LinkWrite },
+    /// Takes back a `Link`, naming the ticket by its key.
+    Unlink { slug: String, key: String },
 }
 
 /// One state change, in the order they happened.

@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::state::FeaturePart;
+use crate::state::LinkChange;
 use argus_protocol::Created;
 
 pub(super) fn dispatch(
@@ -256,6 +257,18 @@ fn dispatch_boards(
             slug,
             reason,
         } => daemon.hold_feature_for_client(project, checkout, &slug, reason.as_deref()),
+        ClientMsg::LinkFeature {
+            project,
+            checkout,
+            slug,
+            link,
+        } => daemon.link_feature_for_client(project, checkout, &slug, LinkChange::Link(link)),
+        ClientMsg::UnlinkFeature {
+            project,
+            checkout,
+            slug,
+            key,
+        } => daemon.link_feature_for_client(project, checkout, &slug, LinkChange::Unlink(key)),
         ClientMsg::WaitFeature {
             project,
             checkout,

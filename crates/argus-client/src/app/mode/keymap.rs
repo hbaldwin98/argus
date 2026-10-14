@@ -816,6 +816,18 @@ const FEATURE: Keymap = Keymap {
                 .when(on_index)
                 .written(),
                 Binding::new(
+                    "t",
+                    "open this feature's ticket in the browser",
+                    &[(&[Char('t')], App::open_selected_ticket)],
+                )
+                .written(),
+                Binding::new(
+                    "T",
+                    "link this feature to a ticket, by its URL",
+                    &[(&[Char('T')], App::begin_link)],
+                )
+                .written(),
+                Binding::new(
                     "H / L",
                     "move this task along todo, doing, done",
                     &[

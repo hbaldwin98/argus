@@ -197,6 +197,7 @@ impl Store {
                 tasks: TaskCounts::default(),
                 held: r.get(8)?,
                 waits_on: Vec::new(),
+                links: Vec::new(),
                 number: r.get(9)?,
             })
         })?;
@@ -215,6 +216,22 @@ impl Store {
         for (slug, on) in waits {
             if let Some(feature) = features.iter_mut().find(|f| f.slug == slug) {
                 feature.waits_on.push(on);
+            }
+        }
+
+        let mut stmt = conn.prepare(
+            "SELECT slug, tracker, key, url FROM feature_link WHERE project = ?1 ORDER BY slug, place",
+        )?;
+        let links = stmt
+            .query_map(rusqlite::params![project], |r| {
+                let link = TrackerLink { tracker: r.get(1)?, key: r.get(2)?, url: r.get(3)? };
+                Ok((r.get::<_, String>(0)?, link))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(stmt);
+        for (slug, link) in links {
+            if let Some(feature) = features.iter_mut().find(|f| f.slug == slug) {
+                feature.links.push(link);
             }
         }
 
@@ -345,6 +362,10 @@ impl Store {
             rusqlite::params![project, slug],
         )?;
         tx.execute(
+            "DELETE FROM feature_link WHERE project = ?1 AND slug = ?2",
+            rusqlite::params![project, slug],
+        )?;
+        tx.execute(
             "DELETE FROM feature_scope WHERE project = ?1 AND slug = ?2",
             rusqlite::params![project, slug],
         )?;
@@ -467,6 +488,51 @@ impl Store {
             "DELETE FROM feature_wait WHERE project = ?1 AND slug = ?2 AND waits_on = ?3",
             rusqlite::params![project, slug, on],
             || format!("{slug} does not wait on {on}"),
+        )
+    }
+
+    /// Links a feature to a ticket. Linking a key it already has replaces
+    /// that link's tracker and URL and keeps its place, so correcting a
+    /// mistyped URL is the same command as making the link.
+    pub fn link_feature(&self, project: &str, slug: &str, link: &TrackerLink) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM feature WHERE project = ?1 AND slug = ?2)",
+            rusqlite::params![project, slug],
+            |r| r.get(0),
+        )?;
+        if !exists {
+            anyhow::bail!("there is no feature {slug} on this project");
+        }
+        let (count, relinked): (i64, bool) = tx.query_row(
+            "SELECT COUNT(*), COALESCE(SUM(key = ?3), 0) > 0
+             FROM feature_link WHERE project = ?1 AND slug = ?2",
+            rusqlite::params![project, slug, link.key],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        if !relinked && count >= MAX_FEATURE_LINKS as i64 {
+            anyhow::bail!("{slug} is linked to {MAX_FEATURE_LINKS} tickets already; unlink one first");
+        }
+        tx.execute(
+            "INSERT INTO feature_link (project, slug, key, tracker, url, place)
+             VALUES (?1, ?2, ?3, ?4, ?5,
+                     (SELECT COALESCE(MAX(place), 0) + 1 FROM feature_link
+                      WHERE project = ?1 AND slug = ?2))
+             ON CONFLICT(project, slug, key) DO UPDATE SET tracker = excluded.tracker, url = excluded.url",
+            rusqlite::params![project, slug, link.key, link.tracker, link.url],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Takes a feature's link to `key` away. The key is matched without
+    /// regard to case, since `eng-88` is how it is often typed.
+    pub fn unlink_feature(&self, project: &str, slug: &str, key: &str) -> Result<()> {
+        self.update_one(
+            "DELETE FROM feature_link WHERE project = ?1 AND slug = ?2 AND key = ?3 COLLATE NOCASE",
+            rusqlite::params![project, slug, key.trim()],
+            || format!("{slug} is not linked to {}", key.trim()),
         )
     }
 

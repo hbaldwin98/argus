@@ -582,6 +582,7 @@ inherited from whichever workspace the TUI currently shows.
 | `x` | Remove the feature or task. A decision is withdrawn instead, and `x` again restores it |
 | `v` / `z` | Archive the feature or bring it back; show or fold the held and archived ones |
 | `m` / `p` / `w` | Move the feature to another checkout, hold it with a reason, choose what it comes after |
+| `t` / `T` | Open the feature's ticket in the browser (over SSH, copy its URL); link it to a ticket by pasting the URL |
 | `r` | Re-ask the daemon for all of it |
 | Escape | Up one level; `q` goes straight back to the workspace |
 

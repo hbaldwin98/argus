@@ -188,10 +188,42 @@ pub(super) fn feature_message(rest: &[&str], base_url: &str, token: &str) -> Str
             };
             confirmed(write_feature(action, base_url, token), || said)
         }
+        Some("link") => {
+            let Some(slug) = rest.get(1) else {
+                return "could not change feature: link wants a slug, then the ticket's URL".to_string();
+            };
+            let link = match parse_link_args(rest.get(2..).unwrap_or_default()) {
+                Ok(link) => link,
+                Err(message) => return format!("could not change feature: {message}"),
+            };
+            // Read here only to say what it will be called; the daemon
+            // reads it again with the same function, so the two agree.
+            let said = match link.clone().checked() {
+                Ok(read) => format!("{slug} is linked to {} {}", read.tracker, read.key),
+                Err(message) => return format!("could not change feature: {message}"),
+            };
+            let action = FeatureAction::Link {
+                slug: slug.to_string(),
+                link,
+            };
+            confirmed(write_feature(action, base_url, token), || said)
+        }
+        Some("unlink") => {
+            let (Some(slug), Some(key)) = (rest.get(1), rest.get(2)) else {
+                return "could not change feature: unlink wants a slug, then the ticket's key".to_string();
+            };
+            let action = FeatureAction::Unlink {
+                slug: slug.to_string(),
+                key: key.to_string(),
+            };
+            confirmed(write_feature(action, base_url, token), || {
+                format!("{slug} is no longer linked to {key}")
+            })
+        }
         Some(other) => format!(
             "{other} is not one of list, open, use, note, export, done, reopen, retitle, brief, \
-             drop, hold, unhold, wait, unwait — `argus-hook feature use {other}` works on an \
-             existing feature"
+             drop, hold, unhold, wait, unwait, link, unlink — `argus-hook feature use {other}` \
+             works on an existing feature"
         ),
     }
 }
@@ -360,6 +392,42 @@ fn parse_task_move_args(args: &[&str]) -> Result<(i64, TaskPlace), String> {
         _ => return Err(USAGE.to_string()),
     };
     Ok((id, place))
+}
+
+/// `<url> [--tracker <name>] [--key <key>]`: the URL, and what the person
+/// knows better than the URL does. A tracker's name may be several words.
+fn parse_link_args(args: &[&str]) -> Result<LinkWrite, String> {
+    let mut link = LinkWrite::default();
+    let mut index = 0;
+    while index < args.len() {
+        match args[index] {
+            flag @ ("--tracker" | "--key") => {
+                index += 1;
+                let start = index;
+                while index < args.len() && !args[index].starts_with("--") {
+                    index += 1;
+                }
+                if index == start {
+                    return Err(format!("{flag} needs something after it"));
+                }
+                let value = Some(args[start..index].join(" "));
+                if flag == "--tracker" {
+                    link.tracker = value;
+                } else {
+                    link.key = value;
+                }
+            }
+            url if link.url.is_empty() => {
+                link.url = url.to_string();
+                index += 1;
+            }
+            extra => return Err(format!("link takes one URL; {extra:?} is a second")),
+        }
+    }
+    if link.url.is_empty() {
+        return Err("link wants the ticket's URL after the slug".to_string());
+    }
+    Ok(link)
 }
 
 fn parse_task_add_args(args: &[&str]) -> Result<TaskWrite, String> {
@@ -697,6 +765,9 @@ pub(super) fn format_feature(board: &FeatureBoard) -> String {
         lines.push(format!("Started on {branch}."));
     }
     lines.extend(parked_lines(current, &board.features));
+    for link in &current.links {
+        lines.push(format!("Linked to {} {}: {}", link.tracker, link.key, link.url));
+    }
     if !current.body.trim().is_empty() {
         lines.push(String::new());
         lines.push(current.body.trim().to_string());
@@ -1470,6 +1541,37 @@ mod tests {
         assert_eq!(write.title, "bound the queue");
         assert_eq!(write.external.as_deref(), Some("ORION-412"));
         assert_eq!(write.parent, Some(7));
+    }
+
+    #[test]
+    fn link_arguments_take_one_url_and_what_the_person_knows_better() {
+        let write = parse_link_args(&[
+            "https://tracker.example/t/9",
+            "--tracker",
+            "Azure",
+            "DevOps",
+            "--key",
+            "AB-9",
+        ])
+        .unwrap();
+        assert_eq!(write.url, "https://tracker.example/t/9");
+        assert_eq!(write.tracker.as_deref(), Some("Azure DevOps"));
+        assert_eq!(write.key.as_deref(), Some("AB-9"));
+
+        assert!(parse_link_args(&[]).is_err());
+        assert!(parse_link_args(&["https://a.example/1", "https://b.example/2"]).is_err());
+        assert!(parse_link_args(&["https://a.example/1", "--key"]).is_err());
+    }
+
+    #[test]
+    fn a_link_that_reads_as_no_ticket_is_refused_before_it_travels() {
+        let answer = feature_message(
+            &["link", "remote", "file:///etc/passwd"],
+            "http://127.0.0.1:1/pane/1/",
+            "token",
+        );
+        assert!(answer.starts_with("could not change feature"), "{answer}");
+        assert!(!answer.contains("unavailable"), "refused here, not by the daemon: {answer}");
     }
 
     #[test]

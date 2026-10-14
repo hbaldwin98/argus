@@ -2,7 +2,7 @@
 //! running in it, and their removal when the last one leaves.
 
 use super::*;
-use argus_protocol::{ArtifactScope, DecisionWrite, TaskAction, TaskWrite};
+use argus_protocol::{ArtifactScope, DecisionWrite, LinkWrite, TaskAction, TaskWrite};
 #[tokio::test]
 async fn sharing_a_checkout_is_allowed_unless_the_project_says_otherwise() {
     let dir = tempfile::tempdir().unwrap();
@@ -432,6 +432,50 @@ async fn an_agent_holds_a_feature_and_orders_it_after_another_and_takes_both_bac
         d.wait_feature_for_agent(agent, &later, &later, true, ArtifactScope::default())
             .is_err()
     );
+
+    d.close_pane(agent).unwrap();
+}
+
+#[tokio::test]
+async fn an_agent_links_a_feature_to_tickets_and_takes_a_link_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    let agent = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+    let slug = open_feature(&d, agent, "trim context");
+    let link = |url: &str| LinkChange::Link(LinkWrite { url: url.into(), ..LinkWrite::default() });
+
+    d.link_feature_for_agent(
+        agent,
+        &slug,
+        link("https://linear.app/acme/issue/ENG-88/trim"),
+        ArtifactScope::default(),
+    )
+    .unwrap();
+    let board = d
+        .link_feature_for_agent(
+            agent,
+            &slug,
+            link("https://acme.atlassian.net/browse/ARG-142"),
+            ArtifactScope::default(),
+        )
+        .unwrap();
+    let keys: Vec<_> = board.features[0].links.iter().map(|l| l.key.as_str()).collect();
+    assert_eq!(keys, ["ENG-88", "ARG-142"], "the board it answers with shows the link");
+
+    assert!(
+        d.link_feature_for_agent(agent, &slug, link("file:///etc/passwd"), ArtifactScope::default())
+            .is_err(),
+        "only a web URL is a link"
+    );
+    let board = d
+        .link_feature_for_agent(
+            agent,
+            &slug,
+            LinkChange::Unlink("eng-88".into()),
+            ArtifactScope::default(),
+        )
+        .unwrap();
+    assert_eq!(board.features[0].links.len(), 1);
 
     d.close_pane(agent).unwrap();
 }

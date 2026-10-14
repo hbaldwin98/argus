@@ -16,6 +16,7 @@ use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
 use crate::diagrams::{DiagramAction, DiagramList};
 use crate::tasks::{TaskAction, TaskList};
+use crate::tracker_links::LinkWrite;
 use crate::transcript::{Earlier, Update};
 use crate::tree::{AgentTelemetry, ProjectInfo, WorkspaceInfo, WorkspaceTree};
 
@@ -185,6 +186,20 @@ pub enum ClientMsg {
         checkout: CheckoutId,
         slug: String,
         reason: Option<String>,
+    },
+    /// Link a feature to a ticket in one of the team's trackers.
+    LinkFeature {
+        project: ProjectId,
+        checkout: CheckoutId,
+        slug: String,
+        link: LinkWrite,
+    },
+    /// Take a feature's link to the ticket with this key away.
+    UnlinkFeature {
+        project: ProjectId,
+        checkout: CheckoutId,
+        slug: String,
+        key: String,
     },
     /// Record that a feature comes after another, or take that back.
     WaitFeature {

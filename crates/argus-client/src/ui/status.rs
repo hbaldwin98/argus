@@ -104,6 +104,10 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                         "type to filter   ↑/↓ move   enter waits on it, or no longer   esc cancel",
                         "enter toggle  esc",
                     ],
+                    PickerKind::Ticket { .. } => &[
+                        "↑/↓ move   enter open in the browser   esc cancel",
+                        "enter open  esc",
+                    ],
                 }
             }
             Mode::CheckoutFilter => &[
@@ -160,8 +164,8 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             // where the stage is: `a` is a feature on the index, a task in
             // one, and a flow on the flows lens.
             Mode::Stage(View::Feature) if !app.feature_open => &[
-                "j/k move  enter open  a new  e brief  R rename  m checkout  p hold  w after  v archive  z folded  x drop  g pane  r refresh  q workspace",
-                "j/k move  enter open  a new  m checkout  p hold  w after  v archive  z folded  q workspace",
+                "j/k move  enter open  a new  e brief  R rename  m checkout  p hold  w after  t ticket  T link  v archive  z folded  x drop  g pane  r refresh  q workspace",
+                "j/k move  enter open  a new  m checkout  p hold  w after  t ticket  v archive  z folded  q workspace",
                 "j/k  enter open  a new  v archive  q",
             ][..],
             Mode::Stage(View::Feature) if app.in_detail => &[
@@ -170,17 +174,17 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             ][..],
             Mode::Stage(View::Feature) => match app.lens {
                 Lens::Work => &[
-                    "j/k move  h/l fold  space done  a task  s subtask  d decision  c criterion  n note  i note  enter brief  H/L state  J/K order  >/< nest  m feature  x drop  tab detail  2 record  esc up",
-                    "j/k move  h/l fold  space done  a task  s subtask  d decision  tab detail  2 record  esc up",
+                    "j/k move  h/l fold  space done  a task  s subtask  d decision  c criterion  n note  i note  enter brief  H/L state  J/K order  >/< nest  m feature  t ticket  T link  x drop  tab detail  2 record  esc up",
+                    "j/k move  h/l fold  space done  a task  s subtask  d decision  t ticket  tab detail  2 record  esc up",
                     "j/k  space done  a task  s subtask  tab  esc",
                 ][..],
                 Lens::Record => &[
-                    "j/k move  d new decision  s sub-decision  u supersede  e edit  y copy  o answer  x withdraw  tab detail  1 work  3 flows  esc up",
+                    "j/k move  d new decision  s sub-decision  u supersede  e edit  y copy  o answer  x withdraw  t ticket  tab detail  1 work  3 flows  esc up",
                     "j/k move  d new decision  s sub-decision  u supersede  tab detail  1 work  esc up",
                     "j/k  d decision  tab  1 work  esc",
                 ][..],
                 Lens::Flows => &[
-                    "j/k step  h/l flow  d bind a decision  e edit  a new flow  enter open  x drop  1 work  2 record  esc up",
+                    "j/k step  h/l flow  d bind a decision  e edit  a new flow  enter open  x drop  t ticket  1 work  2 record  esc up",
                     "j/k step  h/l flow  d bind  e edit  enter open  1 work  2 record  esc up",
                     "j/k  h/l flow  enter  esc",
                 ][..],

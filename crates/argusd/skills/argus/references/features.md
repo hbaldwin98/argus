@@ -93,6 +93,26 @@ reader can tell when it no longer stands. Use `wait` rather than a hold when
 the reason is another feature: the wait ends by itself once that feature is
 accepted. Lift a hold when its reason has gone.
 
+## Linking a feature to its tickets
+
+```sh
+"$ARGUS_HOOK" feature link <slug> <ticket-url>                # tracker and key read from the URL
+"$ARGUS_HOOK" feature link <slug> <url> --tracker Shortcut --key SC-12
+"$ARGUS_HOOK" feature unlink <slug> <key>
+```
+
+A link records which ticket in the team's tracker (Linear, Jira, GitHub
+Issues, anything with a URL) a feature is about, so a person can open it from
+Argus and you know which ticket to read. `feature` lists the links with their
+URLs. Argus reads tracker and key out of Linear, Jira and GitHub URLs; for
+another tracker give `--key`, and `--tracker` if the host is not its name.
+Linking the same key again corrects its URL.
+
+Argus does not talk to trackers; you do, with whatever tools your harness
+has. Change nothing in a tracker, and bring nothing from one into Argus, that
+the human has not asked for and approved line by line: say what you would
+pull or send, wait for their answer, then do only that and report each change.
+
 ## Accepting a feature
 
 ```sh
