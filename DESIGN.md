@@ -629,9 +629,12 @@ more than 32 frames for it. A copy or an exit is never dropped; it waits for roo
 the pane's own broadcast recovers the same way.
 
 Each client's requested size for each pane it is showing is recorded against its connection, and a
-pane's PTY is sized to the smallest request in each dimension, so no client is ever sent more rows
-or columns than it has room to draw. A client with a larger window pads; sizing to the largest would
-truncate content out of the smaller one instead. A client that subscribes without sending a size
+pane's PTY is sized to the request of the client the person was last at — the latest of the views
+clients report — as tmux's `window-size latest` does. The client being looked at fills; another
+client on the same pane pads or crops until the person goes back to it, whose view then resizes the
+pane again. Sizing to the smallest of them all left a desktop window padding a terminal-sized grid.
+When no client showing the pane has reported a view, the smallest request in each dimension is used,
+so none of them is sent more than it can draw. A client that subscribes without sending a size
 makes no request, so one that only watches leaves the pane at the size the others asked for.
 Unsubscribing releases that client's claim, and so does disconnecting, so a pane grows back once
 whatever was holding it small stops showing it. A pane no client is showing keeps the size it has

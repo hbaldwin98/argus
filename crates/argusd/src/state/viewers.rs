@@ -26,16 +26,22 @@ pub(super) struct Viewers {
 
 impl Viewers {
     /// The size a pane should be given the clients currently showing it:
-    /// the smallest request in each dimension, so no client is ever sent a
-    /// grid with more rows or columns than it has room to draw. A client
-    /// with a bigger window pads; the alternative — sizing to the largest —
-    /// truncates content out of the smaller one entirely.
+    /// the request of the one the person was last at, as tmux's
+    /// `window-size latest` does, so the window being looked at is filled
+    /// and the others pad or crop until the person goes back to them. The
+    /// smallest-of-all rule this replaced left a desktop window padding a
+    /// terminal-sized grid whenever a terminal client showed the same pane.
+    /// Only when none of them has reported a view is it the smallest
+    /// request in each dimension, which crops nobody.
     fn effective(&self, pane: PaneId) -> Option<(u16, u16)> {
         let wanted = self.wanted.get(&pane)?;
-        wanted
-            .values()
-            .copied()
-            .reduce(|(ar, ac), (br, bc)| (ar.min(br), ac.min(bc)))
+        let latest = self.views.iter().rev().find_map(|(viewer, _)| wanted.get(viewer));
+        latest.copied().or_else(|| {
+            wanted
+                .values()
+                .copied()
+                .reduce(|(ar, ac), (br, bc)| (ar.min(br), ac.min(bc)))
+        })
     }
 
     /// Records what `viewer` is showing. An active view moves its client
@@ -144,10 +150,18 @@ impl Daemon {
     }
 
     /// Records what a client is showing, and tells whoever watches the
-    /// focus that it may have moved.
+    /// focus that it may have moved. A client becoming the latest takes
+    /// the size of every pane it shows.
     pub fn report_view(&self, viewer: ViewerId, view: View) {
-        self.viewers.lock().unwrap().record_view(viewer, view);
+        let shown: Vec<PaneId> = {
+            let mut viewers = self.viewers.lock().unwrap();
+            viewers.record_view(viewer, view);
+            viewers.wanted.keys().copied().collect()
+        };
         let _ = self.views_tx.send(());
+        for pane in shown {
+            let _ = self.reconcile_size(pane);
+        }
     }
 
     /// A tick each time a client's view changes or goes; the focus is read
@@ -305,6 +319,47 @@ mod tests {
         assert!(viewers.forget_view(first));
         assert_eq!(viewers.focused_view(), None);
         assert!(!viewers.forget_view(first), "nothing was left to forget");
+    }
+
+    fn want(viewers: &mut Viewers, viewer: ViewerId, pane: u64, size: (u16, u16)) {
+        viewers.wanted.entry(PaneId(pane)).or_default().insert(viewer, size);
+    }
+
+    #[test]
+    fn a_pane_takes_the_size_of_the_client_last_active() {
+        let mut viewers = Viewers::default();
+        let (terminal, window) = (ViewerId(0), ViewerId(1));
+        want(&mut viewers, terminal, 1, (30, 100));
+        want(&mut viewers, window, 1, (50, 180));
+
+        viewers.record_view(terminal, view(1, true));
+        viewers.record_view(window, view(1, true));
+        assert_eq!(viewers.effective(PaneId(1)), Some((50, 180)));
+
+        viewers.record_view(terminal, view(1, true));
+        assert_eq!(viewers.effective(PaneId(1)), Some((30, 100)));
+    }
+
+    #[test]
+    fn a_latest_client_not_showing_the_pane_leaves_it_to_the_next_one() {
+        let mut viewers = Viewers::default();
+        let (small, big, elsewhere) = (ViewerId(0), ViewerId(1), ViewerId(2));
+        want(&mut viewers, small, 1, (20, 80));
+        want(&mut viewers, big, 1, (50, 180));
+        viewers.record_view(small, view(1, true));
+        viewers.record_view(big, view(1, true));
+        viewers.record_view(elsewhere, view(2, true));
+
+        assert_eq!(viewers.effective(PaneId(1)), Some((50, 180)));
+    }
+
+    #[test]
+    fn clients_that_report_no_view_get_a_size_that_fits_them_all() {
+        let mut viewers = Viewers::default();
+        want(&mut viewers, ViewerId(0), 1, (60, 80));
+        want(&mut viewers, ViewerId(1), 1, (30, 200));
+
+        assert_eq!(viewers.effective(PaneId(1)), Some((30, 80)));
     }
 
     #[test]
