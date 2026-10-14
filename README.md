@@ -170,6 +170,17 @@ again once it is back. `argus focus` never starts the daemon.
 argus focus | jq -r '"\(.checkout.branch) · \(.pane.agent // "shell") \(.pane.status)"'
 ```
 
+To open the desktop window beside the terminal client, run:
+
+```sh
+argus desktop
+```
+
+It starts `argus-desktop` from beside `argus`, or from `PATH`, detached so closing the terminal
+leaves the window open, and returns at once. The window reaches the same daemon through
+`argus bridge`, so it shows what the terminal client shows. The desktop app is still being built
+(see `DESKTOP.md`); until it ships, the command says it cannot find `argus-desktop`.
+
 ## Install on `PATH`
 
 ### Release archive

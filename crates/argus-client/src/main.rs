@@ -13,6 +13,7 @@ mod bridge;
 mod browser;
 mod diagram;
 mod clipboard;
+mod desktop;
 mod dirpicker;
 mod dropped;
 mod focus;
@@ -31,6 +32,7 @@ mod remote;
 mod review;
 mod selection;
 mod settings;
+mod sibling;
 mod ssh_hosts;
 mod terminal;
 mod theme;
@@ -72,6 +74,7 @@ async fn main() -> anyhow::Result<()> {
         Command::ServerStop => return launch::stop_daemon().await,
         Command::Init(dir) => return launch::init(dir).await,
         Command::Bridge => return bridge::run().await,
+        Command::Desktop => return desktop::run(),
         Command::Focus { watch } => return focus::run(watch).await,
         Command::Tui => None,
         Command::Host(host) => Some(host),
@@ -103,6 +106,8 @@ enum Command {
     /// Carry this machine's daemon on stdin and stdout, for a client on
     /// another machine reaching it over ssh.
     Bridge,
+    /// Open the desktop window, detached from this terminal.
+    Desktop,
     /// The client, with the daemon on this ssh host connected beside this
     /// machine's and on screen.
     Host(String),
@@ -120,6 +125,7 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         [init] if init == "init" => Ok(Command::Init(None)),
         [init, dir] if init == "init" => Ok(Command::Init(Some(dir.clone()))),
         [bridge] if bridge == "bridge" => Ok(Command::Bridge),
+        [desktop] if desktop == "desktop" => Ok(Command::Desktop),
         [focus] if focus == "focus" => Ok(Command::Focus { watch: false }),
         [focus, watch] if focus == "focus" && watch == "--watch" => {
             Ok(Command::Focus { watch: true })
@@ -127,7 +133,7 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         [flag, host] if flag == "--host" && !host.is_empty() => Ok(Command::Host(host.clone())),
         _ => Err(anyhow::anyhow!(
             "usage: argus [--host HOST | init [DIR] | server (restart | stop) | focus [--watch] \
-             | bridge]"
+             | desktop | bridge]"
         )),
     }
 }
@@ -632,6 +638,15 @@ mod tests {
             parse_command(&["bridge".to_string()]).unwrap(),
             Command::Bridge
         );
+    }
+
+    #[test]
+    fn desktop_opens_the_window_and_takes_no_arguments() {
+        assert_eq!(
+            parse_command(&["desktop".to_string()]).unwrap(),
+            Command::Desktop
+        );
+        assert!(parse_command(&["desktop".to_string(), "x".to_string()]).is_err());
     }
 
     #[test]

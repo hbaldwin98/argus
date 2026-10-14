@@ -194,6 +194,8 @@ result of a request; `ui` is a pure function of it.
 | module | answers |
 | --- | --- |
 | `main`, `redraw`, `terminal`, `wire`, `launch` | the event loop, the screen and socket it runs over, and the daemon lifecycle command |
+| `sibling` | starting another of Argus's executables, found beside this one, so it outlives this process |
+| `desktop` | the `argus desktop` command: opening the desktop window beside this terminal client |
 | `bridge` | this machine's daemon on stdin and stdout, for a client on another machine to reach over ssh |
 | `focus` | the `argus focus` command: where the person is working, as JSON, once or on every change |
 | `hosts` | the daemons this client is attached to, each with an app of its own, and which one is on screen |

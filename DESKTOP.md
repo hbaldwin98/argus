@@ -56,15 +56,13 @@ recent sessions need.
 - **`argus bridge` exits when the daemon hangs up** (HUN-179, done). `tokio::io::stdin()` is a
   blocking read that keeps the runtime alive (see Findings), so `bridge.rs` ends the process the
   moment `pipe` returns instead of returning to `main`.
-- **`argus desktop`** — a TUI subcommand (`crates/argus-client/src/desktop.rs`, "the `argus
-  desktop` command: opening the desktop window beside this terminal client") that starts
-  `argus-desktop` from beside the `argus` executable (falling back to PATH), detached so closing
-  the terminal does not close the window (unix `setsid` via `pre_exec`, as `launch.rs`
-  `spawn_daemon` does; Windows `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`), stdio null, and
-  returns. A missing binary is an error that says what to do. Usage string, `main.rs` parsing
-  tests, README.
-- **CI**: in `.github/workflows/ci.yml` and `release.yml`, a step before building that runs only on
-  Linux (`if: runner.os == 'Linux'`):
+- **`argus desktop`** (HUN-180, done) — `crates/argus-client/src/desktop.rs` starts `argus-desktop`
+  from beside `argus`, else from PATH, detached, and says where to get it when it is missing. The
+  daemon and the window are started by one module, `sibling`, rather than two copies of the detach.
+- **CI and release packaging** land in the same commit as the crate, not before: a release cut
+  while `argus-desktop` does not exist would fail to copy it, and nothing needs WebKitGTK until the
+  crate links it. In `.github/workflows/ci.yml` and `release.yml`, a step before building that runs
+  only on Linux (`if: runner.os == 'Linux'`):
   `sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libdbus-1-dev pkg-config`,
   with a comment saying why (the desktop crate links WebKitGTK). `release.yml` packages
   `argus-desktop` beside the other three binaries in both the Unix `cp` list and the Windows

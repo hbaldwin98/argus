@@ -271,54 +271,8 @@ async fn wait_for_daemon_to_stop(operation: &str) -> anyhow::Result<()> {
 }
 
 fn spawn_daemon() -> anyhow::Result<()> {
-    let exe = daemon_exe_path();
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        let mut cmd = std::process::Command::new(&exe);
-        cmd.stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        unsafe {
-            cmd.pre_exec(|| {
-                libc::setsid();
-                Ok(())
-            });
-        }
-        cmd.spawn()?;
-    }
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        std::process::Command::new(&exe)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
-            .spawn()?;
-    }
-
+    crate::sibling::spawn_detached(&crate::sibling::path("argusd"))?;
     Ok(())
-}
-
-fn daemon_exe_path() -> PathBuf {
-    let name = if cfg!(windows) {
-        "argusd.exe"
-    } else {
-        "argusd"
-    };
-    if let Ok(mut path) = std::env::current_exe() {
-        path.pop();
-        path.push(name);
-        if path.exists() {
-            return path;
-        }
-    }
-    PathBuf::from(name)
 }
 
 #[cfg(test)]
