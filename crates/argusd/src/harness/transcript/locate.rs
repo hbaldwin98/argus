@@ -33,9 +33,11 @@ pub(super) fn find(templates: &[String], session_id: &str, checkout: &Path) -> O
 }
 
 fn expand(template: &str, session_id: &str, checkout: &Path) -> Option<PathBuf> {
+    // The id goes in last: filled in first, an id spelling `{checkout}`
+    // would have the checkout's separators spliced into it.
     let filled = template
-        .replace("{session_id}", session_id)
-        .replace("{checkout}", &checkout.to_string_lossy());
+        .replace("{checkout}", &checkout.to_string_lossy())
+        .replace("{session_id}", session_id);
     match filled.strip_prefix('~') {
         Some(rest) if rest.is_empty() || rest.starts_with(['/', '\\']) => {
             let home = directories::BaseDirs::new()?.home_dir().to_path_buf();
@@ -135,6 +137,17 @@ mod tests {
         for id in ["../secret", "..\\secret", "*", ""] {
             assert_eq!(find(&template, id, checkout.path()), None, "{id}");
         }
+    }
+
+    #[test]
+    fn a_session_id_spelling_a_placeholder_is_only_an_id() {
+        // A checkout spelled relative to a project directory would lead
+        // the id `{checkout}` out of it, were the id expanded again.
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("projects").join("p")).unwrap();
+        std::fs::write(root.path().join("secret.jsonl"), "{}\n").unwrap();
+        let template = [format!("{}/projects/*/{{session_id}}.jsonl", root.path().display())];
+        assert_eq!(find(&template, "{checkout}", Path::new("../../secret")), None);
     }
 
     #[test]
