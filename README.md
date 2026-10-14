@@ -583,6 +583,7 @@ inherited from whichever workspace the TUI currently shows.
 | `v` / `z` | Archive the feature or bring it back; show or fold the held and archived ones |
 | `m` / `p` / `w` | Move the feature to another checkout, hold it with a reason, choose what it comes after |
 | `t` / `T` | Open the feature's ticket in the browser (over SSH, copy its URL); link it to a ticket by pasting the URL |
+| `M` | On the index: the repository's tracker map, edited like a brief; when an agent has drafted one, the draft, which `A` approves as it reads and `D` turns down |
 | `r` | Re-ask the daemon for all of it |
 | Escape | Up one level; `q` goes straight back to the workspace |
 

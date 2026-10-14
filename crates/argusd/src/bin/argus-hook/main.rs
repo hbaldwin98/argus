@@ -33,6 +33,8 @@
 //! argus-hook diagram add "open overlay" --stdin      # Mermaid source on stdin
 //! argus-hook diagram rewrite 3 "open overlay" --stdin  # replaces #3's source
 //! argus-hook diagram drop 3                          # removes diagram #3
+//! argus-hook tracker-map                             # how this repo maps to its trackers
+//! argus-hook tracker-map draft --stdin               # proposes one; the person approves it
 //! argus-hook telemetry --model gpt-5 --context 42000 --window 272000 --cost 0.12 --tool shell
 //! argus-hook context                           # comments, and the feature by name
 //! argus-hook context "preface"                  # the preface, then the same
@@ -87,7 +89,7 @@ use argus_protocol::{
     is_slug, parse_pane_url, requested_scope, Consequence, Decision, DecisionBoard,
     DecisionChange, DecisionState, DecisionText, DecisionWrite, DiagramAction,
     DiagramList, DiagramWrite, Endpoint, FeatureAction, FeatureBoard, FeatureWrite, LinkWrite,
-    Report,
+    Report, TrackerMap,
     ReviewComment, TaskAction, TaskList, TaskPlace, TaskState, TaskWrite, ARTIFACT_SCOPE_VAR,
     CONTEXT_COMMAND, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
     BACKGROUND_HEADER, SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, TRANSCRIPT_HEADER, URL_VAR,
@@ -154,6 +156,7 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("feature", feature),
     ("task", task),
     ("diagram", diagram),
+    ("tracker-map", tracker_map),
     ("decisions", decisions),
     ("decide", decide),
     ("telemetry", telemetry),

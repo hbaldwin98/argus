@@ -26,6 +26,7 @@ fn feature_transfer_picker_offers_sibling_checkout_and_sends_its_id() {
     h.app.on_server_msg(ServerMsg::Decisions(Box::new(
         argus_protocol::DecisionBoard {
             project: Some(ProjectId(1)),
+            tracker_map: Default::default(),
             name: "argus".to_string(),
             features: vec![feature("move-plans")],
             decisions: Vec::new(),

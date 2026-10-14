@@ -39,6 +39,7 @@ mod decisions;
 mod features;
 mod diagrams;
 mod tasks;
+mod tracker_map;
 mod git_ops;
 mod hook_server;
 mod live;

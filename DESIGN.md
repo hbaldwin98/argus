@@ -198,7 +198,7 @@ live in this crate and a contract written twice drifts in silence.
 | `damage` | what changed on a pane's screen, as runs of cells and regions that scrolled |
 | `review`, `ids`, `paths` | the shapes review, identity and location data travel in |
 | `features`, `tasks`, `decisions`, `diagrams` | a feature board's parts: its scope, what is left to do, why it is built that way, and how it flows |
-| `tracker_links` | which tickets in the team's trackers a feature is linked to, and how a ticket's tracker and key are read out of its URL |
+| `tracker_links` | how a repository's work reaches the team's trackers: which tickets a feature is linked to, how a ticket's tracker and key are read out of its URL, and the board's tracker map and its draft |
 | `capture` | how one note reads as a feature: its title, brief, tasks and decisions |
 | `adr` | how a decision reads as a record somebody can paste or correct |
 | `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
@@ -226,7 +226,7 @@ to the type or its locking.
 | `state/live` | running a pane's live channel: whether a starting pane gets one, the harness's own server or the pane's registration with the tee, Argus's connection to it, and stopping all of it with the pane |
 | `state/tee` | the loopback proxy a live Claude pane's API traffic goes through |
 | `state/tree` | finding your way around the tree |
-| `state/features`, `state/tasks`, `state/decisions`, `state/diagrams` | a checkout's feature board, translated between client ids and store keys |
+| `state/features`, `state/tasks`, `state/decisions`, `state/diagrams`, `state/tracker_map` | a checkout's feature board, translated between client ids and store keys |
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
 | `conn` | one client connection, and which task each message runs on |
 | `conn/dispatch` | what each client message does |
@@ -1625,6 +1625,19 @@ choice of several, and `T` takes a pasted URL. Over SSH there is no browser at t
 `t` copies the URL instead. An agent uses `feature link <slug> <url>` and `feature unlink <slug>
 <key>`, and `feature` lists the links with their URLs. Argus talks to no tracker: an agent reads and
 writes the ticket with its own tools, and only what the person asked for and approved.
+
+Each board has a tracker map (schema v21, `tracker_map`): a page of plain words saying what a
+feature, a task and a decision answer to in each tracker, which every agent that links or reconciles
+reads first. Argus stores it and never parses it. The row holds two texts, because who may write
+each differs: the map is the person's, and an agent can only fill the draft beside it, with
+`argus-hook tracker-map draft --stdin` over the pane API's `tracker-map` endpoint, which answers a
+bare read with the map and any waiting draft. The board carries both to the view. The index's
+heading says when a draft waits; `M` opens the draft if there is one, else the map. The map edits
+and saves like a brief over `ClientMsg::TrackerMap` with `MapChange::Write`; a draft is never saved
+by leaving the editor, only approved with `A` as it then reads, edits included, or turned down with
+`D`. Approval carries the text the person read rather than naming the draft, so an agent that
+redrafts in between cannot have its newer text approved unseen, and the store refuses an approval or
+a turn-down when no draft is waiting.
 
 `m` transfers the selected feature's active checkout association to another checkout in the same
 repository over `ClientMsg::TransferFeature`. The daemon validates both runtime ids, removes the

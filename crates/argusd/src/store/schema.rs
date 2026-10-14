@@ -430,6 +430,21 @@ CREATE TABLE feature_link (
 ) WITHOUT ROWID;
 "#;
 
+/// Each artifact scope's tracker map, and the draft an agent proposed for
+/// it. One row, two texts: the map is the person's, written or approved by
+/// them, and an agent can only fill the draft beside it. `drafted_by` is
+/// the view's name for the pane, kept as words because a pane id means
+/// nothing after a restart.
+pub(super) const SCHEMA_V21: &str = r#"
+CREATE TABLE tracker_map (
+    project    TEXT    PRIMARY KEY,
+    body       TEXT    NOT NULL DEFAULT '',
+    draft      TEXT,
+    drafted_by TEXT,
+    drafted_at INTEGER
+) WITHOUT ROWID;
+"#;
+
 /// Mermaid sequence-diagram source, one row per diagram under a feature.
 pub(super) const SCHEMA_V16: &str = r#"
 CREATE TABLE sequence_diagram (

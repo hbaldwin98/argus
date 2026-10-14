@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::features::Feature;
 use crate::ids::ProjectId;
+use crate::tracker_links::TrackerMap;
 
 /// Past this a field has stopped being a decision and started being a
 /// design document, which belongs in the checkout it describes.
@@ -384,6 +385,9 @@ pub struct DecisionBoard {
     /// Oldest first, so a parent is always already known by the time its
     /// children are read.
     pub decisions: Vec<Decision>,
+    /// How the artifact scope's work maps to the team's trackers.
+    #[serde(default)]
+    pub tracker_map: TrackerMap,
 }
 
 /// One row of a decision tree, including the topology a renderer needs to
@@ -438,6 +442,7 @@ impl DecisionBoard {
                 .filter(|d| d.feature.as_deref() == feature)
                 .cloned()
                 .collect(),
+            tracker_map: self.tracker_map.clone(),
         }
     }
 
@@ -558,6 +563,7 @@ mod tests {
             name: "argus".into(),
             features: Vec::new(),
             decisions,
+            ..DecisionBoard::default()
         }
     }
 

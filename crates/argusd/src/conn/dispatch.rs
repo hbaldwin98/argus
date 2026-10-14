@@ -269,6 +269,11 @@ fn dispatch_boards(
             slug,
             key,
         } => daemon.link_feature_for_client(project, checkout, &slug, LinkChange::Unlink(key)),
+        ClientMsg::TrackerMap {
+            project,
+            checkout,
+            change,
+        } => daemon.change_tracker_map_for_client(project, checkout, change),
         ClientMsg::WaitFeature {
             project,
             checkout,

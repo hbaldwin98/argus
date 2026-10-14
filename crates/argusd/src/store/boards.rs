@@ -1,5 +1,6 @@
-//! The feature boards: features, the decisions filed under them, and
-//! their tasks, all keyed by artifact rather than by project.
+//! The feature boards: features, the decisions filed under them, their
+//! tasks, and the tracker map beside them, all keyed by artifact rather
+//! than by project.
 
 use super::*;
 
@@ -533,6 +534,76 @@ impl Store {
             "DELETE FROM feature_link WHERE project = ?1 AND slug = ?2 AND key = ?3 COLLATE NOCASE",
             rusqlite::params![project, slug, key.trim()],
             || format!("{slug} is not linked to {}", key.trim()),
+        )
+    }
+
+    // ---- the tracker map -------------------------------------------
+
+    /// The project's tracker map, empty when nobody has written one.
+    pub fn tracker_map(&self, project: &str) -> Result<TrackerMap> {
+        let row = self
+            .conn()
+            .query_row(
+                "SELECT body, draft, drafted_by, drafted_at FROM tracker_map WHERE project = ?1",
+                [project],
+                |r| {
+                    let draft = r.get::<_, Option<String>>(1)?.map(|body| -> rusqlite::Result<_> {
+                        Ok(MapDraft {
+                            body,
+                            by: r.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                            at: r.get::<_, Option<i64>>(3)?.unwrap_or_default(),
+                        })
+                    });
+                    Ok(TrackerMap {
+                        body: r.get(0)?,
+                        draft: draft.transpose()?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(row.unwrap_or_default())
+    }
+
+    /// The map as the person wrote it. A waiting draft is left waiting.
+    pub fn set_tracker_map(&self, project: &str, body: &str) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO tracker_map (project, body) VALUES (?1, ?2)
+             ON CONFLICT(project) DO UPDATE SET body = excluded.body",
+            rusqlite::params![project, body],
+        )?;
+        Ok(())
+    }
+
+    /// An agent's proposed map. It replaces any earlier draft, and the
+    /// map itself is not touched.
+    pub fn draft_tracker_map(&self, project: &str, body: &str, by: &str, at: i64) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO tracker_map (project, draft, drafted_by, drafted_at) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(project) DO UPDATE SET draft = excluded.draft,
+                 drafted_by = excluded.drafted_by, drafted_at = excluded.drafted_at",
+            rusqlite::params![project, body, by, at],
+        )?;
+        Ok(())
+    }
+
+    /// The draft approved as `body`, which becomes the map. Refused when
+    /// there is no draft: one turned down from another view is not
+    /// approved by a key pressed on a stale screen.
+    pub fn approve_tracker_map(&self, project: &str, body: &str) -> Result<()> {
+        self.update_one(
+            "UPDATE tracker_map SET body = ?2, draft = NULL, drafted_by = NULL, drafted_at = NULL
+             WHERE project = ?1 AND draft IS NOT NULL",
+            rusqlite::params![project, body],
+            || "there is no draft of the tracker map to approve".to_string(),
+        )
+    }
+
+    pub fn discard_tracker_map_draft(&self, project: &str) -> Result<()> {
+        self.update_one(
+            "UPDATE tracker_map SET draft = NULL, drafted_by = NULL, drafted_at = NULL
+             WHERE project = ?1 AND draft IS NOT NULL",
+            [project],
+            || "there is no draft of the tracker map to turn down".to_string(),
         )
     }
 

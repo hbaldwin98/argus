@@ -481,6 +481,33 @@ async fn an_agent_links_a_feature_to_tickets_and_takes_a_link_back() {
 }
 
 #[tokio::test]
+async fn an_agents_tracker_map_is_a_draft_until_the_person_approves_it() {
+    use argus_protocol::MapChange;
+
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_claude_aliases(dir.path(), &["claude"]);
+    let checkout = only_checkout(&d);
+    let project = d.snapshot()[0].id;
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+    let scope = ArtifactScope::default();
+
+    let map = d.tracker_map_for_agent(agent, "Linear: a feature is an issue", scope).unwrap();
+    assert_eq!(map.body, "", "a draft is not the map");
+    assert_eq!(map.draft.unwrap().by, format!("pane #{}", agent.0));
+    assert_eq!(d.tracker_map_for_agent(agent, "  ", scope).unwrap().body, "", "a blank body reads");
+
+    d.change_tracker_map_for_client(project, checkout, MapChange::Approve("Linear: issues".into()))
+        .unwrap();
+    let board = d.decision_board(project, checkout).unwrap();
+    assert_eq!((board.tracker_map.body.as_str(), board.tracker_map.draft), ("Linear: issues", None));
+    assert_eq!(d.tracker_map_for_agent(agent, "", scope).unwrap().body, "Linear: issues");
+
+    let long = "x".repeat(argus_protocol::MAX_TRACKER_MAP_BYTES + 1);
+    assert!(d.tracker_map_for_agent(agent, &long, scope).is_err());
+    d.close_pane(agent).unwrap();
+}
+
+#[tokio::test]
 async fn an_agent_told_to_accept_a_feature_is_recorded_as_the_one_who_did() {
     // Acceptance is a person's call; an agent carrying it out must not
     // make the history say the person moved it themselves.

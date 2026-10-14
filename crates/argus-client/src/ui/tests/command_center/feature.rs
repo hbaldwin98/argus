@@ -5,7 +5,8 @@ use super::*;
 use crate::app::{Lens, Standing};
 use crate::outline::WorkRef;
 use argus_protocol::{
-    ClientMsg, DecisionChange, DecisionState, FeatureState, TaskAction, TaskState, TrackerLink,
+    ClientMsg, DecisionChange, DecisionState, FeatureState, MapChange, TaskAction, TaskState,
+    TrackerLink,
 };
 
 fn press(app: &mut App, c: char) {
@@ -372,6 +373,100 @@ fn a_ticket_url_that_is_no_link_is_said_at_once_and_never_sent() {
     key(&mut app, KeyCode::Enter);
     assert!(app.status.contains("http or https"), "{}", app.status);
     assert!(!sent(&mut rx).iter().any(|msg| matches!(msg, ClientMsg::LinkFeature { .. })));
+}
+
+// ---- the tracker map ---------------------------------------------------------
+
+const DRAFT: &str = "Linear: a feature is an issue\nJira: a feature is a story";
+
+/// The index, with a draft of the tracker map waiting from pane #32.
+fn drafted() -> (App, tokio::sync::mpsc::UnboundedReceiver<ClientMsg>) {
+    let (mut app, mut rx) = feature_stage();
+    app.board.as_mut().unwrap().tracker_map = argus_protocol::TrackerMap {
+        body: "Linear: issues".into(),
+        draft: Some(argus_protocol::MapDraft { body: DRAFT.into(), by: "pane #32".into(), at: 1 }),
+    };
+    sent(&mut rx);
+    (app, rx)
+}
+
+fn map_changes(rx: &mut tokio::sync::mpsc::UnboundedReceiver<ClientMsg>) -> Vec<MapChange> {
+    sent(rx)
+        .into_iter()
+        .filter_map(|msg| match msg {
+            ClientMsg::TrackerMap { change, .. } => Some(change),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Not an assertion — the index with a draft waiting, and the draft open:
+/// `cargo test -p argus dump_tracker_map_draft -- --ignored --nocapture`.
+#[test]
+#[ignore = "prints the tracker map draft for eyeballing; asserts nothing"]
+fn dump_tracker_map_draft() {
+    let (mut app, _rx) = drafted();
+    println!("{}\n", stage(&mut app));
+    press(&mut app, 'M');
+    println!("{}\n", screen(&mut app));
+}
+
+#[test]
+fn the_index_says_a_draft_of_the_map_is_waiting() {
+    let (mut app, _rx) = drafted();
+    let text = screen(&mut app);
+    assert!(text.contains("tracker map drafted by pane #32 M review"), "{text}");
+}
+
+#[test]
+fn a_draft_is_approved_as_it_reads_in_the_editor_and_not_predicted() {
+    let (mut app, mut rx) = drafted();
+    press(&mut app, 'M');
+    assert!(screen(&mut app).contains("Jira: a feature is a story"));
+
+    press(&mut app, 'G');
+    press(&mut app, 'o');
+    type_in(&mut app, "GitHub: never");
+    key(&mut app, KeyCode::Esc);
+    assert!(map_changes(&mut rx).is_empty(), "leaving insert saves no draft");
+
+    press(&mut app, 'A');
+    assert_eq!(map_changes(&mut rx), [MapChange::Approve(format!("{DRAFT}\nGitHub: never"))]);
+    assert!(app.brief.is_none() || app.overlay.is_none(), "the editor closes");
+    assert_eq!(app.board.as_ref().unwrap().tracker_map.body, "Linear: issues", "the board waits");
+}
+
+#[test]
+fn a_draft_closed_unanswered_keeps_waiting_and_d_turns_it_down() {
+    let (mut app, mut rx) = drafted();
+    press(&mut app, 'M');
+    press(&mut app, 'q');
+    assert!(map_changes(&mut rx).is_empty(), "closing is not an answer");
+    assert_eq!(app.mode(), crate::app::Mode::Stage(View::Feature), "and puts you back on the index");
+
+    press(&mut app, 'M');
+    press(&mut app, 'D');
+    assert_eq!(map_changes(&mut rx), [MapChange::Discard]);
+}
+
+#[test]
+fn with_no_draft_the_map_is_edited_like_a_brief_and_a_and_d_are_its_own_keys() {
+    let (mut app, mut rx) = feature_stage();
+    sent(&mut rx);
+    press(&mut app, 'M');
+    assert!(app.status.contains("no tracker map yet"), "{}", app.status);
+    press(&mut app, 'D');
+    press(&mut app, 'A');
+    assert!(map_changes(&mut rx).is_empty(), "nothing to approve or turn down");
+
+    press(&mut app, 'i');
+    type_in(&mut app, "Linear: issues");
+    key(&mut app, KeyCode::Esc);
+    let changes = map_changes(&mut rx);
+    assert!(
+        matches!(changes.as_slice(), [MapChange::Write(body)] if body.ends_with("Linear: issues")),
+        "{changes:?}"
+    );
 }
 
 // ---- the work lens -----------------------------------------------------------

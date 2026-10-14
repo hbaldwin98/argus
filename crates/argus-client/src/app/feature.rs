@@ -572,7 +572,6 @@ impl App {
         let width = self.layout.terminal.inner.width.max(40) as usize;
         self.diagram = Some(crate::diagram::DiagramView::open(&diagram, width));
         self.overlay = Some(Overlay::SequenceDiagram);
-        self.focus = Focus::Overlay;
     }
 
     // ---- what the keys act on ------------------------------------------

@@ -164,7 +164,7 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
             // where the stage is: `a` is a feature on the index, a task in
             // one, and a flow on the flows lens.
             Mode::Stage(View::Feature) if !app.feature_open => &[
-                "j/k move  enter open  a new  e brief  R rename  m checkout  p hold  w after  t ticket  T link  v archive  z folded  x drop  g pane  r refresh  q workspace",
+                "j/k move  enter open  a new  e brief  R rename  m checkout  p hold  w after  t ticket  T link  M map  v archive  z folded  x drop  g pane  r refresh  q workspace",
                 "j/k move  enter open  a new  m checkout  p hold  w after  t ticket  v archive  z folded  q workspace",
                 "j/k  enter open  a new  v archive  q",
             ][..],

@@ -828,6 +828,13 @@ const FEATURE: Keymap = Keymap {
                 )
                 .written(),
                 Binding::new(
+                    "M",
+                    "the repository's tracker map, or the draft an agent left for it",
+                    &[(&[Char('M')], App::open_tracker_map)],
+                )
+                .when(on_index)
+                .written(),
+                Binding::new(
                     "H / L",
                     "move this task along todo, doing, done",
                     &[
@@ -1098,6 +1105,10 @@ const HISTORY: Keymap = Keymap {
     gap: TIGHT,
 };
 
+fn on_map_draft(app: &App) -> bool {
+    app.open_map_draft().is_some()
+}
+
 fn in_brief(app: &mut App, act: impl FnOnce(&mut BriefView)) {
     if let Some(view) = &mut app.brief {
         act(view);
@@ -1169,6 +1180,20 @@ const BRIEF: Keymap = Keymap {
             )
             .hints(&[Hint::new("o new line", 0)]),
             Binding::note("esc", "stop typing, and save"),
+            Binding::new(
+                "A",
+                "approve this draft as the tracker map, as it reads here",
+                &[(&[Char('A')], App::approve_tracker_map)],
+            )
+            .when(on_map_draft)
+            .hints(&[Hint::new("A approve", 3)]),
+            Binding::new(
+                "D",
+                "turn this draft down; the map stays as it was",
+                &[(&[Char('D')], App::discard_tracker_map)],
+            )
+            .when(on_map_draft)
+            .hints(&[Hint::new("D turn down", 3).narrow("D no")]),
             Binding::new(
                 "q",
                 "close",

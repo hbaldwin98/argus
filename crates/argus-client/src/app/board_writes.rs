@@ -385,6 +385,75 @@ impl App {
         self.begin_line(LineEdit::Link(slug), String::new());
     }
 
+    /// Opens the board's tracker map, or the draft an agent left for it.
+    ///
+    /// A waiting draft comes first: it is the one thing about the map that
+    /// needs the person, and it is never saved by leaving the editor, only
+    /// approved or turned down in so many words.
+    pub(super) fn open_tracker_map(&mut self) {
+        let Some(board) = &self.board else {
+            return;
+        };
+        let Some(project) = board.project else {
+            return self.report("no repository selected");
+        };
+        let map = &board.tracker_map;
+        let view = match &map.draft {
+            Some(draft) => BriefView::new(
+                BriefTarget::TrackerMap { project, draft: true },
+                format!("tracker map · draft from {}", draft.by),
+                &draft.body,
+            ),
+            None => BriefView::new(
+                BriefTarget::TrackerMap { project, draft: false },
+                "tracker map".to_string(),
+                &map.body,
+            ),
+        };
+        let empty = map.body.is_empty() && map.draft.is_none();
+        self.open_brief(view);
+        if empty {
+            self.report("no tracker map yet: write one, or ask an agent to draft it");
+        }
+    }
+
+    /// Makes the draft open in the editor the map, as it reads there now.
+    pub(super) fn approve_tracker_map(&mut self) {
+        let Some(body) = self.open_map_draft().map(BriefView::body) else {
+            return;
+        };
+        self.send_map_change(argus_protocol::MapChange::Approve(body), "tracker map approved");
+    }
+
+    /// Turns down the draft open in the editor; the map stays as it was.
+    pub(super) fn discard_tracker_map(&mut self) {
+        if self.open_map_draft().is_some() {
+            self.send_map_change(argus_protocol::MapChange::Discard, "draft turned down");
+        }
+    }
+
+    pub fn open_map_draft(&self) -> Option<&BriefView> {
+        self.brief
+            .as_ref()
+            .filter(|view| matches!(view.target, BriefTarget::TrackerMap { draft: true, .. }))
+    }
+
+    fn send_map_change(&mut self, change: argus_protocol::MapChange, done: &str) {
+        let (Some(BriefTarget::TrackerMap { project, .. }), Some(checkout)) = (
+            self.brief.as_ref().map(|view| view.target.clone()),
+            self.current_checkout().map(|checkout| checkout.id),
+        ) else {
+            return;
+        };
+        let _ = self.out.send(ClientMsg::TrackerMap {
+            project,
+            checkout,
+            change,
+        });
+        self.close_overlay();
+        self.report(done);
+    }
+
     /// Lifts the selected feature's hold, or asks why it should be held.
     pub(super) fn toggle_selected_feature_hold(&mut self) {
         let (Some((project, checkout, slug)), Some(feature)) =
@@ -424,10 +493,12 @@ impl App {
         self.open_brief(view);
     }
 
+    /// Focus stays on the stage: the overlay alone decides the keys while
+    /// it is open, and closing it then lands back where it was opened from
+    /// rather than on the rail.
     fn open_brief(&mut self, view: BriefView) {
         self.brief = Some(view);
         self.overlay = Some(Overlay::Brief);
-        self.focus = Focus::Overlay;
     }
 
     // ---- tasks ----------------------------------------------------------

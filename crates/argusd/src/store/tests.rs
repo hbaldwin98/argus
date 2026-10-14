@@ -1793,6 +1793,39 @@ fn removing_a_feature_clears_its_links() {
 }
 
 #[test]
+fn an_agents_draft_waits_beside_the_map_until_the_person_approves_it() {
+    let s = store();
+    assert_eq!(s.tracker_map("argus").unwrap(), TrackerMap::default());
+
+    s.set_tracker_map("argus", "Linear: a feature is an issue").unwrap();
+    s.draft_tracker_map("argus", "Linear: a feature is a project", "pane #32", 7).unwrap();
+    let map = s.tracker_map("argus").unwrap();
+    assert_eq!(map.body, "Linear: a feature is an issue", "a draft leaves the map alone");
+    assert_eq!(
+        map.draft,
+        Some(MapDraft { body: "Linear: a feature is a project".into(), by: "pane #32".into(), at: 7 })
+    );
+
+    s.set_tracker_map("argus", "Linear: a feature is an issue.").unwrap();
+    assert!(s.tracker_map("argus").unwrap().draft.is_some(), "an edit leaves the draft waiting");
+
+    s.approve_tracker_map("argus", "Linear: a feature is a project, edited").unwrap();
+    let map = s.tracker_map("argus").unwrap();
+    assert_eq!((map.body.as_str(), map.draft), ("Linear: a feature is a project, edited", None));
+    assert!(s.approve_tracker_map("argus", "again").is_err(), "nothing is left to approve");
+}
+
+#[test]
+fn a_turned_down_draft_changes_nothing() {
+    let s = store();
+    s.draft_tracker_map("argus", "Jira: a task is a sub-task", "pane #4", 1).unwrap();
+    s.discard_tracker_map_draft("argus").unwrap();
+    assert_eq!(s.tracker_map("argus").unwrap(), TrackerMap::default());
+    assert!(s.discard_tracker_map_draft("argus").is_err());
+    assert_eq!(s.tracker_map("elsewhere").unwrap(), TrackerMap::default(), "each board has its own");
+}
+
+#[test]
 fn migrating_a_v17_store_leaves_every_feature_unheld() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("runtime.db");

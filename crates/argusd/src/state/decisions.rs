@@ -33,6 +33,7 @@ impl Daemon {
         Ok(DecisionBoard {
             project: Some(project),
             features: self.store.features(&key)?,
+            tracker_map: self.store.tracker_map(&key)?,
             decisions: self.store.decisions(&key)?,
             name,
         })
@@ -70,6 +71,7 @@ impl Daemon {
         Ok(DecisionBoard {
             project: self.project_id_named(&scope.project_name),
             features: self.store.features(key)?,
+            tracker_map: self.store.tracker_map(key)?,
             name: scope.project_name,
             decisions,
         })
@@ -245,11 +247,12 @@ impl Daemon {
             name: name.to_string(),
             features,
             decisions,
+            tracker_map: self.store.tracker_map(key).unwrap_or_default(),
         });
     }
 }
 
-fn now() -> i64 {
+pub(super) fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)

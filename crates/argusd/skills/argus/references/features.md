@@ -113,6 +113,18 @@ has. Change nothing in a tracker, and bring nothing from one into Argus, that
 the human has not asked for and approved line by line: say what you would
 pull or send, wait for their answer, then do only that and report each change.
 
+```sh
+"$ARGUS_HOOK" tracker-map                        # the repo's map, and any draft waiting
+"$ARGUS_HOOK" tracker-map draft --stdin          # propose one; plain words on stdin
+```
+
+The tracker map says, in plain words, what a feature, a task and a decision
+answer to in each tracker, and what never leaves Argus. Read it before you link
+or sync anything, and follow it. When asked to write one, draft it from what
+you can read of the trackers: the draft waits beside the map until the human
+approves it with `M` on the feature index, and until then the map that stands
+is the one to follow. Draft only when asked.
+
 ## Accepting a feature
 
 ```sh

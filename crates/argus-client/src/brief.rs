@@ -46,6 +46,12 @@ pub enum BriefTarget {
         feature: String,
         id: i64,
     },
+    /// The board's tracker map, saved like a brief; or, as `draft`, the map
+    /// an agent proposed, which is never saved, only approved or not.
+    TrackerMap {
+        project: ProjectId,
+        draft: bool,
+    },
     /// A note being written down as a feature, or into one that exists.
     /// Sent whole when the person says so, never on leaving insert mode.
     Capture {

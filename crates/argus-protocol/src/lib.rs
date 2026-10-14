@@ -89,8 +89,8 @@ pub use tasks::{
     MAX_TASK_TITLE_BYTES,
 };
 pub use tracker_links::{
-    LinkWrite, TrackerLink, MAX_FEATURE_LINKS, MAX_LINK_KEY_BYTES, MAX_LINK_TRACKER_BYTES,
-    MAX_LINK_URL_BYTES,
+    checked_map, LinkWrite, MapChange, MapDraft, TrackerLink, TrackerMap, MAX_FEATURE_LINKS,
+    MAX_LINK_KEY_BYTES, MAX_LINK_TRACKER_BYTES, MAX_LINK_URL_BYTES, MAX_TRACKER_MAP_BYTES,
 };
 pub use transcript::{Body, Choice, Draft, Earlier, Entry, Push, ToolState, Update, MAX_PUSH_BYTES};
 pub use tree::{

@@ -111,9 +111,14 @@ impl App {
                     },
                 },
             },
-            // A note is sent whole by its own key, and is never the brief
-            // overlay's to save.
-            BriefTarget::Capture { .. } => return,
+            BriefTarget::TrackerMap { project, draft: false } => ClientMsg::TrackerMap {
+                project,
+                checkout: checkout.expect("a tracker map belongs to the selected checkout's board"),
+                change: argus_protocol::MapChange::Write(body),
+            },
+            // A note is sent whole by its own key, and an agent's draft is
+            // approved by one; neither is the brief overlay's to save.
+            BriefTarget::Capture { .. } | BriefTarget::TrackerMap { draft: true, .. } => return,
         });
     }
 

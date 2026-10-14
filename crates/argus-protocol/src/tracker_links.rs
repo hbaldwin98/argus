@@ -1,5 +1,6 @@
-//! A feature's links to tickets in the team's trackers, and how a ticket's
-//! tracker and key are read out of its URL.
+//! How a repository's work reaches the team's trackers: a feature's links
+//! to tickets, how a ticket's tracker and key are read out of its URL, and
+//! the repository's map of what in Argus answers to what in each tracker.
 //!
 //! Argus talks to no tracker. A link is what a person needs to get from a
 //! feature to its ticket, and what an agent needs to know which ticket to
@@ -15,6 +16,10 @@ pub const MAX_LINK_KEY_BYTES: usize = 100;
 pub const MAX_LINK_TRACKER_BYTES: usize = 40;
 /// A feature is one piece of work; past this many tickets it is a project.
 pub const MAX_FEATURE_LINKS: usize = 20;
+
+/// A map is a page of plain words, not a config: long enough for a few
+/// trackers' worth of rules, short enough that an agent reads it whole.
+pub const MAX_TRACKER_MAP_BYTES: usize = 16 * 1024;
 
 /// One ticket a feature is linked to.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -73,6 +78,54 @@ impl LinkWrite {
         }
         Ok(TrackerLink { tracker, key, url })
     }
+}
+
+/// A repository's tracker map: in plain words, what a feature, a task and a
+/// decision answer to in each tracker, and what never leaves Argus. Every
+/// agent that links or reconciles reads it first. Argus stores it and never
+/// parses it, so a tracker Argus has never heard of works the same way.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrackerMap {
+    /// The map as the person last approved or wrote it. Empty until then.
+    pub body: String,
+    /// A map an agent has proposed, waiting for the person. An agent can
+    /// write only this; it becomes the map when the person approves it.
+    pub draft: Option<MapDraft>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MapDraft {
+    pub body: String,
+    /// Who proposed it, as the view names a pane: `pane #32`.
+    pub by: String,
+    /// Unix seconds.
+    pub at: i64,
+}
+
+/// A change the person makes to a repository's map. An agent has none of
+/// these: it proposes with a draft and waits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MapChange {
+    /// The map rewritten by hand. A waiting draft stays waiting.
+    Write(String),
+    /// The draft approved as this text: what the person read, perhaps
+    /// edited, rather than whatever the draft holds by the time this
+    /// arrives, since an agent can redraft in between.
+    Approve(String),
+    /// The draft turned down. The map stays as it was.
+    Discard,
+}
+
+/// The map text as it will be kept, or why it will not.
+pub fn checked_map(body: &str) -> Result<String, &'static str> {
+    let body = body.trim_end();
+    if body.len() > MAX_TRACKER_MAP_BYTES {
+        return Err("a tracker map is a page, not a manual; this one is too long");
+    }
+    if body.chars().any(|c| c.is_control() && c != '\n' && c != '\t') {
+        return Err("a tracker map is plain text");
+    }
+    Ok(body.to_string())
 }
 
 fn given(text: Option<String>) -> Option<String> {
@@ -194,6 +247,13 @@ mod tests {
         assert!(link("ENG-88").is_err());
         assert!(link("https://").is_err());
         assert!(link("https://linear.app/a b").is_err());
+    }
+
+    #[test]
+    fn a_map_is_plain_text_of_bounded_length() {
+        assert_eq!(checked_map("Linear: a feature is an issue\n\n").unwrap(), "Linear: a feature is an issue");
+        assert!(checked_map("a\u{1b}[2Jb").is_err());
+        assert!(checked_map(&"x".repeat(MAX_TRACKER_MAP_BYTES + 1)).is_err());
     }
 
     #[test]

@@ -165,6 +165,9 @@ pub enum Endpoint {
     Tasks,
     /// The current feature's sequence diagrams, and every change to them.
     Diagrams,
+    /// The board's tracker map, read; with a body, an agent's draft of it,
+    /// which waits for the person and changes nothing until they approve.
+    TrackerMap,
     /// A partial [`crate::AgentTelemetry`] report, as JSON.
     Telemetry,
     /// A [`crate::transcript::Push`]: conversation entries from a harness
@@ -199,6 +202,7 @@ impl Endpoint {
             Endpoint::Feature => Cow::Borrowed("feature"),
             Endpoint::Tasks => Cow::Borrowed("tasks"),
             Endpoint::Diagrams => Cow::Borrowed("diagrams"),
+            Endpoint::TrackerMap => Cow::Borrowed("tracker-map"),
             Endpoint::Telemetry => Cow::Borrowed("telemetry"),
             Endpoint::Transcript => Cow::Borrowed("transcript"),
             Endpoint::Inbox => Cow::Borrowed("inbox"),
@@ -239,6 +243,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "feature" => Endpoint::Feature,
         "tasks" => Endpoint::Tasks,
         "diagrams" => Endpoint::Diagrams,
+        "tracker-map" => Endpoint::TrackerMap,
         "telemetry" => Endpoint::Telemetry,
         "transcript" => Endpoint::Transcript,
         "inbox" => Endpoint::Inbox,
@@ -365,6 +370,7 @@ mod tests {
             Endpoint::Transcript,
             Endpoint::Inbox,
             Endpoint::Draft,
+            Endpoint::TrackerMap,
         ];
         all.extend(Report::ALL.into_iter().map(Endpoint::Status));
         all

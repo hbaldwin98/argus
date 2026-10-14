@@ -74,6 +74,9 @@ fn max_hook_body(endpoint: Option<(PaneId, Endpoint)>) -> usize {
     match endpoint {
         Some((_, Endpoint::Decide | Endpoint::DecisionChange)) => MAX_DECISION_HOOK_BODY,
         Some((_, Endpoint::Diagrams)) => MAX_DIAGRAM_HOOK_BODY,
+        // Room for a map at its bound, as UTF-8 that the server refuses
+        // past it in words rather than as a body cut off.
+        Some((_, Endpoint::TrackerMap)) => argus_protocol::MAX_TRACKER_MAP_BYTES + 1024,
         Some((_, Endpoint::Transcript)) => argus_protocol::MAX_PUSH_BYTES,
         // A tenth of a second of a reply, or more after a stall.
         Some((_, Endpoint::Draft)) => MAX_DRAFT_BODY,
@@ -268,6 +271,11 @@ async fn handle_hook_request(
             Some((pane, Endpoint::Diagrams)) => {
                 diagrams_response(&daemon, pane, reporter.as_deref(), &body, filing)
             }
+            Some((pane, Endpoint::TrackerMap)) => json_reply(daemon.tracker_map_for_agent(
+                pane,
+                &String::from_utf8_lossy(&body),
+                filing.scope,
+            )),
             // A checkout move from an agent that does not own the pane is
             // dropped: the row follows the agent Argus started in it.
             _ => HookResponse::empty(200, "OK"),

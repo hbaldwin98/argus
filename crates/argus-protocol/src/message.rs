@@ -16,7 +16,7 @@ use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
 use crate::diagrams::{DiagramAction, DiagramList};
 use crate::tasks::{TaskAction, TaskList};
-use crate::tracker_links::LinkWrite;
+use crate::tracker_links::{LinkWrite, MapChange};
 use crate::transcript::{Earlier, Update};
 use crate::tree::{AgentTelemetry, ProjectInfo, WorkspaceInfo, WorkspaceTree};
 
@@ -200,6 +200,13 @@ pub enum ClientMsg {
         checkout: CheckoutId,
         slug: String,
         key: String,
+    },
+    /// Write the repository's tracker map, or approve or turn down the
+    /// draft an agent proposed for it.
+    TrackerMap {
+        project: ProjectId,
+        checkout: CheckoutId,
+        change: MapChange,
     },
     /// Record that a feature comes after another, or take that back.
     WaitFeature {

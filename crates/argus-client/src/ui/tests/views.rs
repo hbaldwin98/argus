@@ -180,6 +180,7 @@ fn a_tree_that_moves_nothing_does_not_ask_for_the_board_again() {
     app.on_server_msg(argus_protocol::ServerMsg::Decisions(Box::new(
         argus_protocol::DecisionBoard {
             project: Some(project.id),
+            tracker_map: Default::default(),
             name: project.name.clone(),
             features: Vec::new(),
             decisions: vec![argus_protocol::Decision {

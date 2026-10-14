@@ -84,6 +84,7 @@ pub(super) fn feature_board(project: Option<ProjectId>) -> argus_protocol::Decis
     };
     argus_protocol::DecisionBoard {
         project,
+        tracker_map: Default::default(),
         name: "argus".into(),
         features: vec![
             Feature {

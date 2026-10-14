@@ -61,14 +61,21 @@ pub(super) fn render_overlay(
             // The mode is in the title because it changes what every key
             // does, and a modal surface that does not say which mode it is
             // in is a trap.
-            Some(v) => format!(
-                "brief · {}  ·  {}",
-                v.title,
-                match v.mode {
-                    BriefMode::View => "i edit · q close",
-                    BriefMode::Insert => "INSERT · esc to save",
-                }
-            ),
+            Some(v) => {
+                // A draft is never saved by leaving insert, so it must not
+                // say it is.
+                let draft = app.open_map_draft().is_some();
+                format!(
+                    "brief · {}  ·  {}",
+                    v.title,
+                    match (v.mode, draft) {
+                        (BriefMode::View, false) => "i edit · q close",
+                        (BriefMode::View, true) => "i edit · A approve · D turn down · q later",
+                        (BriefMode::Insert, false) => "INSERT · esc to save",
+                        (BriefMode::Insert, true) => "INSERT · esc, then A to approve",
+                    }
+                )
+            }
             None => "brief".to_string(),
         },
     };

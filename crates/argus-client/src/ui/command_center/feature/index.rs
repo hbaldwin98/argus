@@ -156,6 +156,19 @@ pub(super) fn render(f: &mut Frame, app: &mut App, area: Rect, repo: &str, th: T
     if tally.is_empty() {
         tally.push(span("none yet", th.dim));
     }
+    // The one thing about the tracker map that waits on the person, so
+    // the heading says so wherever the cursor is.
+    let draft = app.board.as_ref().and_then(|board| board.tracker_map.draft.as_ref());
+    if let Some(draft) = draft {
+        let mut cue = vec![
+            span(format!("tracker map drafted by {}", draft.by), th.warn),
+            span(" M", th.accent),
+            span(" review", th.dim),
+            span("   ", th.dim),
+        ];
+        cue.append(&mut tally);
+        tally = cue;
+    }
     let text = inset(area, 2, 0);
     paint(
         f,
