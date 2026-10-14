@@ -31,8 +31,13 @@ function call(command, args) {
 
 const state = {
   status: { connection: 'connecting', detail: null, alarm: null },
-  rail: { projects: [], project: null, needsYou: 0, working: 0, shown: null, loaded: false },
+  rail: { projects: [], project: null, needsYou: 0, working: 0, shown: null, loaded: false, stage: 'workspace' },
+  features: null,
   menuOpen: false,
+  // The index's own view state: what the filter says, and whether the
+  // board's archived column is unfolded.
+  filter: '',
+  archivedOpen: false,
 };
 
 function connect() {
@@ -72,6 +77,10 @@ function receive(event) {
     case 'notice':
       notice(event.text);
       break;
+    case 'features':
+      state.features = event;
+      drawFeatures();
+      break;
   }
 }
 
@@ -87,7 +96,7 @@ function el(tag, props, ...children) {
     else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
     else node.setAttribute(key, value === true ? '' : value);
   }
-  for (const child of children.flat()) {
+  for (const child of children.flat(Infinity)) {
     if (child == null || child === false) continue;
     node.append(child instanceof Node ? child : document.createTextNode(String(child)));
   }
@@ -105,6 +114,14 @@ const LOUD = new Set(['waiting', 'needs-review', 'failed']);
 
 function drawChrome() {
   const stopped = state.status.connection === 'stopped';
+  const feature = state.rail.stage === 'feature';
+  for (const [id, on] of [['tab-workspace', !feature], ['tab-feature', feature]]) {
+    $(id).classList.toggle('on', on);
+    $(id).setAttribute('aria-selected', String(on));
+  }
+  $('fstage').hidden = !feature;
+  $('body').hidden = feature;
+  drawFeatures();
   drawHeading();
   drawRail();
   drawHead();
@@ -172,18 +189,19 @@ function drawRail() {
     rail.replaceChildren(el('div', { class: 'meta empty-rail' }, 'No projects yet.'));
     return;
   }
-  const shownRepo = state.rail.shown?.repository;
   const rows = [];
   for (const repo of project.repositories) {
     if (repo.divider) rows.push(el('div', { class: 'rule', 'aria-hidden': 'true' }));
     const colour = statusColour(repo.status);
     const dot = colour && el('span', { class: 'rdot' });
     if (dot) dot.style.background = colour;
-    rows.push(el('div', { class: `repo${repo.quiet ? ' quiet' : ''}${repo.name === shownRepo ? ' sel' : ''}` },
+    const chosen = repo.id === state.rail.repository;
+    rows.push(el('div', { class: `repo${repo.quiet ? ' quiet' : ''}${chosen ? ' sel' : ''}` },
       el('button', {
         class: 'repobtn',
         'aria-expanded': String(repo.open),
-        onclick: () => call('toggle_repository', { repository: repo.id }),
+        'aria-current': chosen ? 'true' : null,
+        onclick: () => call('choose_repository', { repository: repo.id }),
       },
       el('span', { class: 'chev' }, icon(repo.open ? 'down' : 'right')),
       dot,
@@ -222,7 +240,7 @@ function drawRail() {
 function drawHead() {
   const shown = state.rail.shown;
   const head = $('head');
-  head.hidden = !shown;
+  head.hidden = !shown || state.rail.stage === 'feature';
   if (!shown) return;
   head.replaceChildren(
     el('span', { class: 'crumbs' },
@@ -311,6 +329,476 @@ function notice(text) {
 function reconnect() {
   call('reconnect');
 }
+
+// ---- The Feature stage ---------------------------------------------------
+//
+// The index of one repository's features, as a list beside a peek or as a
+// board. Where a feature stands is the daemon's tree and board, read by
+// Rust; a hold or an archive is asked for and shows when the board comes
+// back saying so. Only Held and Archived take a dropped card: the other
+// columns follow the work.
+
+const GROUP_LABEL = { active: 'Active', queued: 'Queued', done: 'Done', held: 'Held', archived: 'Archived' };
+const GROUP_CLASS = { active: 'fg-attention', done: 'fg-ok' };
+const COLUMN_NOTE = {
+  queued: 'written down, not started',
+  done: 'every task done',
+  held: 'set by you',
+  archived: 'set by you',
+};
+
+function visibleRows() {
+  const f = state.features;
+  if (!f) return [];
+  const query = state.filter.trim().toLowerCase().replace(/^#/, '');
+  return f.rows.filter((row) => {
+    if (f.layout === 'list' && !f.showFolded && (row.group === 'held' || row.group === 'archived')) return false;
+    if (!query) return true;
+    return row.title.toLowerCase().includes(query) || String(row.number) === query;
+  });
+}
+
+function rowBySlug(slug) {
+  return state.features?.rows.find((row) => row.slug === slug);
+}
+
+function progress(row, width) {
+  const bar = el('span', { class: 'pbar' }, el('span'));
+  if (width) bar.style.width = `${width}px`;
+  const share = row.tasksTotal ? row.tasksDone / row.tasksTotal : 0;
+  bar.firstChild.style.width = `${Math.round(share * 100)}%`;
+  return bar;
+}
+
+function questions(row) {
+  if (row.open > 0) return el('span', { class: 'pill fg-attention start' }, `${row.open} open`);
+  if (row.decided > 0) return el('span', { class: 'meta fg-ok' }, `${row.decided} decided`);
+  return el('span', { class: 'meta fg-faint' }, '—');
+}
+
+function agentLine(agent) {
+  return [
+    el('span', { class: 'glyph' }, '◆'),
+    el('span', { class: 'ttl' }, agent.title),
+    el('span', { class: `st ${agent.status}` }, agent.status),
+  ];
+}
+
+// What a row says under its title: why it is where it is.
+function rowNote(row) {
+  if (row.held) return el('span', null, el('span', { class: 'fg-faint' }, 'held: '), `“${row.held}”`);
+  if (row.after.length) {
+    return el('span', null, el('span', { class: 'fg-faint' }, 'after '),
+      el('span', { class: 'mono' }, row.after.map((n) => `#${n}`).join(', ')));
+  }
+  if (row.agent) return agentLine(row.agent);
+  if (row.standing === 'new') return el('span', { class: 'fg-faint' }, 'nothing written yet');
+  if (row.group === 'done') return el('span', { class: 'fg-faint' }, 'every task done · archive it to accept it');
+  if (row.group === 'archived') return el('span', { class: 'fg-faint' }, 'archived');
+  return null;
+}
+
+function drawFeatures() {
+  const stage = $('fstage');
+  if (state.rail.stage !== 'feature') return;
+  const f = state.features;
+  if (!f || !f.repository) {
+    stage.replaceChildren(el('div', { class: 'empty' }, el('div', { class: 'empty-body' },
+      icon('folder'),
+      el('div', { class: 'type-title' }, 'No repository'),
+      el('div', { class: 'fg-muted' }, 'Choose a repository on the left to read its features.'))));
+    return;
+  }
+  const head = indexHead(f);
+  if (!f.loaded) {
+    stage.replaceChildren(head, el('div', { class: 'empty' }, el('div', { class: 'empty-body' },
+      icon('spinner'), el('div', { class: 'fg-muted' }, `Reading the features in ${f.repository}…`))));
+    return;
+  }
+  if (!f.rows.length) {
+    stage.replaceChildren(head, el('div', { class: 'empty' }, el('div', { class: 'empty-body' },
+      icon('folder'),
+      el('div', { class: 'type-title' }, `No features in ${f.repository} yet`),
+      el('div', { class: 'fg-muted' }, 'An agent opens one with ', el('span', { class: 'mono fg' }, 'argus-hook feature open'),
+        ', and it shows up here with its tasks and decisions.'))));
+    return;
+  }
+  stage.replaceChildren(head, f.layout === 'board' ? board(f) : list(f));
+}
+
+function indexHead(f) {
+  const counts = [
+    f.active && el('span', { class: 'fg-attention' }, `${f.active} active`),
+    f.queued && el('span', null, `${f.queued} queued`),
+    f.done && el('span', { class: 'fg-ok' }, `${f.done} done`),
+  ].filter(Boolean).flatMap((part, i) => (i ? [' · ', part] : [part]));
+  const folded = f.held + f.archived;
+  const filter = el('input', {
+    class: 'field filter', id: 'feature-filter', placeholder: 'Filter by title or #', 'aria-label': 'Filter features',
+    oninput: (e) => {
+      state.filter = e.target.value;
+      drawFeatures();
+      const again = $('feature-filter');
+      again.focus();
+      again.setSelectionRange(again.value.length, again.value.length);
+    },
+  });
+  filter.value = state.filter;
+  const seg = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Layout' },
+    ['list', 'board'].map((layout) => el('button', {
+      class: `segb${f.layout === layout ? ' on' : ''}`,
+      role: 'radio',
+      'aria-checked': String(f.layout === layout),
+      onclick: () => call('set_layout', { layout }),
+    }, layout === 'list' ? 'List' : 'Board')));
+  return el('div', { class: 'fhead index-head' },
+    el('div', { class: 'crumbs' }, el('span', { class: 'fg' }, 'Features'), el('span', { class: 'grow' }),
+      el('span', { class: 'meta' }, el('span', { class: 'kbd' }, 'V'), ' list or board · ', el('span', { class: 'kbd' }, 'M'), ' move to… · ',
+        el('span', { class: 'kbd' }, 'G'), ' go to its pane')),
+    el('div', { class: 'actions index-tools' },
+      el('span', { class: 'type-title' }, `Features in ${f.repository}`),
+      el('span', { class: 'meta' }, counts),
+      el('span', { class: 'grow' }),
+      filter,
+      f.layout === 'list' && folded > 0 && el('button', { class: 'btn', onclick: () => call('toggle_folded') },
+        f.showFolded ? 'Fold held and archived ' : 'Show held and archived ', el('span', { class: 'fg-faint' }, String(folded))),
+      seg));
+}
+
+function list(f) {
+  const rows = visibleRows();
+  const section = el('section', { class: 'index-list', 'aria-label': 'Features' },
+    el('div', { class: 'irow label' }, el('span'), el('span', null, 'Feature'), el('span', null, 'Tasks'),
+      el('span', null, 'Questions'), el('span', null, 'Checkout')));
+  let group = null;
+  for (const row of rows) {
+    if (row.group !== group) {
+      group = row.group;
+      section.append(el('div', { class: 'label group-label' }, el('span', { class: GROUP_CLASS[group] }, GROUP_LABEL[group])));
+    }
+    const quiet = ['done', 'held', 'archived'].includes(row.group);
+    section.append(el('button', {
+      class: `irow${row.peeked ? ' on' : ''}`,
+      'aria-current': row.peeked ? 'true' : null,
+      'data-slug': row.slug,
+      onclick: () => call('peek', { slug: row.slug }),
+      oncontextmenu: (e) => {
+        e.preventDefault();
+        call('peek', { slug: row.slug });
+        moveMenu(row, e.clientX, e.clientY);
+      },
+    },
+    el('span', { class: `n${row.peeked ? ' fg-accent' : ''}` }, `#${row.number}`),
+    el('span', { class: `ttl${row.peeked ? ' strong' : ''}${quiet ? ' fg-muted' : ''}` }, row.title),
+    row.standing === 'new'
+      ? el('span', { class: 'meta fg-faint' }, 'new')
+      : row.tasksTotal === 0
+        ? el('span', { class: 'meta fg-faint' }, 'no tasks')
+        : el('span', { class: 'meta' }, progress(row), ` ${row.tasksDone}/${row.tasksTotal}`),
+    questions(row),
+    el('span', { class: `mono ${quiet ? 'fg-faint' : 'fg-ref'} small-mono` }, row.branch || '—'),
+    el('span', { class: 'sub2' }, rowNote(row))));
+  }
+  if (!rows.length) section.append(el('div', { class: 'meta group-label' }, 'Nothing matches the filter.'));
+  section.append(el('div', { class: 'meta index-foot' },
+    'Held and archived features are folded away. A feature\'s standing is read off its tasks and the agents on its checkouts; only holding and archiving are set by hand.'));
+  return el('div', { class: 'split' }, section, peekPanel(f.peek));
+}
+
+function lines(label, items, mark) {
+  if (!items.length) return null;
+  return el('div', { class: 'stack-4' }, el('div', { class: `label${mark === '?' ? ' fg-attention' : ''}` }, label),
+    items.map((line) => [
+      el('div', null, mark && el('span', { class: mark === '?' ? 'fg-attention' : mark === '✓' ? 'fg-ok' : 'fg-faint' }, `${mark} `),
+        el('span', { class: 'mono fg-ref' }, line.label), ' ', line.text),
+      line.aside && el('div', { class: 'meta indented' }, line.aside),
+    ]));
+}
+
+function peekPanel(peek) {
+  if (!peek) return el('aside', { class: 'peek', 'aria-label': 'Peek' }, el('div', { class: 'meta' }, 'Choose a feature to peek at it.'));
+  const row = rowBySlug(peek.slug);
+  return el('aside', { class: 'peek', 'aria-label': `Peek at #${peek.number}` },
+    el('div', null,
+      el('div', { class: 'label' }, el('span', { class: 'fg-accent' }, `#${peek.number}`),
+        el('span', { class: GROUP_CLASS[peek.standing] }, peek.standing), el('span', { class: 'grow' }),
+        peek.branch && el('span', { class: 'label-aside' }, `from ${peek.branch}`)),
+      el('div', { class: 'peek-title' }, peek.title),
+      peek.held && el('div', { class: 'fg-attention' }, `held: “${peek.held}”`),
+      peek.brief && el('div', { class: 'fg-muted peek-brief' }, peek.brief)),
+    peek.links.length > 0 && el('div', { class: 'actions' }, peek.links.map((link) =>
+      el('span', { class: 'track', title: link.url }, link.tracker, ' ', el('b', null, link.key)))),
+    lines('Needs you', peek.needsYou, '?'),
+    lines('In flight', peek.inFlight, '◐'),
+    lines('Next up', peek.nextUp ? [peek.nextUp] : [], '○'),
+    lines('Last decided', peek.lastDecided ? [peek.lastDecided] : [], '✓'),
+    el('div', { class: 'grow' }),
+    el('div', { class: 'actions' },
+      el('button', { class: 'btn', disabled: !peek.pane, onclick: () => goToPane(peek.pane) }, 'Go to its pane'),
+      el('span', { class: 'grow' }),
+      row && moveButtons(row)));
+}
+
+function moveButtons(row) {
+  return [
+    row.group === 'held'
+      ? el('button', { class: 'btn', onclick: () => call('hold', { slug: row.slug, reason: null }) }, 'Lift the hold')
+      : el('button', { class: 'btn', onclick: () => holdDialog(row) }, 'Hold…'),
+    row.group === 'archived'
+      ? el('button', { class: 'btn', onclick: () => call('archive', { slug: row.slug, archived: false }) }, 'Reopen')
+      : el('button', { class: 'btn', onclick: () => call('archive', { slug: row.slug, archived: true }) }, 'Archive'),
+  ];
+}
+
+function board(f) {
+  const rows = visibleRows();
+  const column = (group, extra) => {
+    const cards = rows.filter((row) => row.group === group);
+    const section = el('section', {
+      class: `kcol${extra || ''}`,
+      'aria-label': `${GROUP_LABEL[group]}, ${cards.length} features`,
+      'data-group': group,
+    },
+    el('div', { class: 'khead' }, el('span', { class: GROUP_CLASS[group] }, GROUP_LABEL[group]),
+      el('span', { class: 'fg-faint' }, String(cards.length)), el('span', { class: 'grow' }),
+      COLUMN_NOTE[group] && el('span', { class: 'regular meta' }, COLUMN_NOTE[group])));
+    const shown = group === 'archived' && !state.archivedOpen ? [] : cards;
+    for (const row of shown) section.append(card(row));
+    if (group === 'archived' && cards.length) {
+      section.append(el('button', { class: 'kmore', onclick: () => { state.archivedOpen = !state.archivedOpen; drawFeatures(); } },
+        state.archivedOpen ? 'Fold the archived' : `Show the ${cards.length} archived`));
+    }
+    return section;
+  };
+  return el('div', { class: 'board' },
+    column('queued'), column('active'), column('done'),
+    el('div', { class: 'side' }, column('archived'), column('held'),
+      el('div', { class: 'meta' }, 'Queued, Active and Done follow the work: a card moves when a task starts, an agent arrives or the last task closes. You can drag only into Held, which asks for a reason, and Archived.')));
+}
+
+function card(row) {
+  const node = el('button', {
+    class: `kcard${row.peeked ? ' on' : ''}`,
+    'data-slug': row.slug,
+    onclick: () => {
+      if (drag.justDropped) return;
+      call('peek', { slug: row.slug });
+    },
+    oncontextmenu: (e) => {
+      e.preventDefault();
+      call('peek', { slug: row.slug });
+      moveMenu(row, e.clientX, e.clientY);
+    },
+    onpointerdown: (e) => {
+      // Measured now: a board pushed before the drag starts redraws the
+      // card, and the old element measures as nowhere.
+      if (e.button === 0) drag.press = { slug: row.slug, x: e.clientX, y: e.clientY, node, box: node.getBoundingClientRect() };
+    },
+  },
+  el('span', { class: 'krow' }, el('span', { class: `n${row.peeked ? ' fg-accent' : ''}` }, `#${row.number}`), el('span', { class: 'grow' }),
+    row.after.length ? el('span', { class: 'meta' }, 'after ', el('span', { class: 'mono' }, row.after.map((n) => `#${n}`).join(', ')))
+      : row.standing === 'new' ? el('span', { class: 'pill fg-faint' }, 'new') : questions(row)),
+  el('span', { class: 'kttl' }, row.title),
+  row.standing === 'new'
+    ? el('span', { class: 'meta' }, 'nothing written yet')
+    : row.tasksTotal === 0
+      ? el('span', { class: 'meta' }, 'no tasks yet')
+      : el('span', { class: 'krow' }, progress(row), el('span', { class: 'meta' }, `${row.tasksDone}/${row.tasksTotal}`),
+      el('span', { class: 'grow' }), row.branch && el('span', { class: 'mono fg-ref small-mono' }, row.branch)),
+  row.agent && el('span', { class: 'krow meta' }, agentLine(row.agent)),
+  row.held && el('span', { class: 'meta' }, `held: “${row.held}”`));
+  return node;
+}
+
+// A card being dragged, by pointer events rather than HTML drag and drop:
+// one behaviour in every webview (WebKitGTK's drop does not reliably
+// arrive), and the card under the pointer is drawn as the canvas draws it.
+const drag = { press: null, slug: null, ghost: null, over: null, justDropped: false };
+
+function columnAt(x, y) {
+  return document.elementFromPoint(x, y)?.closest('.kcol[data-group]');
+}
+
+function markColumn(column) {
+  if (drag.over && drag.over !== column) drag.over.classList.remove('drop', 'refuse');
+  drag.over = column;
+  if (!column) return;
+  const settable = column.dataset.group === 'held' || column.dataset.group === 'archived';
+  column.classList.toggle('drop', settable);
+  column.classList.toggle('refuse', !settable);
+}
+
+document.addEventListener('pointermove', (e) => {
+  const press = drag.press;
+  if (!press) return;
+  if (!drag.slug) {
+    if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < 6) return;
+    drag.slug = press.slug;
+    const box = press.box;
+    press.node = document.querySelector(`.kcard[data-slug="${CSS.escape(press.slug)}"]`) || press.node;
+    drag.ghost = press.node.cloneNode(true);
+    drag.ghost.classList.add('ghost-card');
+    drag.ghost.style.width = `${box.width}px`;
+    drag.offset = { x: press.x - box.left, y: press.y - box.top };
+    document.body.append(drag.ghost);
+    press.node.classList.add('dragging');
+  }
+  drag.ghost.style.left = `${e.clientX - drag.offset.x}px`;
+  drag.ghost.style.top = `${e.clientY - drag.offset.y}px`;
+  markColumn(columnAt(e.clientX, e.clientY));
+});
+
+document.addEventListener('pointerup', (e) => {
+  const press = drag.press;
+  drag.press = null;
+  if (!press || !drag.slug) return;
+  const column = columnAt(e.clientX, e.clientY);
+  const slug = drag.slug;
+  drag.ghost?.remove();
+  document.querySelector(`.kcard[data-slug="${CSS.escape(slug)}"]`)?.classList.remove('dragging');
+  markColumn(null);
+  drag.slug = null;
+  drag.ghost = null;
+  // The click that follows the release is the drag's, not a peek.
+  drag.justDropped = true;
+  setTimeout(() => { drag.justDropped = false; }, 0);
+  const row = rowBySlug(slug);
+  if (row && column) drop(row, column.dataset.group);
+});
+
+// A card dropped on a column. Only the two a person sets take it; the
+// rest say why they follow the work instead.
+function drop(row, group) {
+  if (group === row.group) return;
+  if (group === 'held') return holdDialog(row);
+  if (group === 'archived') return call('archive', { slug: row.slug, archived: true });
+  const move = row.moves.find((m) => m.to === group);
+  notice(`${GROUP_LABEL[group]} follows the work${move?.disabled ? `: ${move.disabled}` : ''}.`);
+}
+
+function closeLayer() {
+  $('layer').replaceChildren();
+}
+
+function moveMenu(row, x, y) {
+  const menu = el('div', { class: 'menu', role: 'menu', 'aria-label': `#${row.number} ${row.title}` },
+    el('div', { class: 'mlabel' }, `#${row.number} ${row.title}`),
+    row.agent && el('button', { class: 'mi', role: 'menuitem', onclick: () => { closeLayer(); goToPane(row.agent.pane); } },
+      'Go to its pane', el('span', { class: 'grow' }), el('span', { class: 'kbd' }, 'G')),
+    el('div', { class: 'msep' }),
+    el('div', { class: 'mlabel' }, 'Move to'),
+    row.moves.map((move) => el('button', {
+      class: 'mi', role: 'menuitem', disabled: !!move.disabled,
+      onclick: () => {
+        closeLayer();
+        if (move.to === 'held') holdDialog(row);
+        else if (move.to === 'unhold') call('hold', { slug: row.slug, reason: null });
+        else if (move.to === 'archived') call('archive', { slug: row.slug, archived: true });
+        else if (move.to === 'reopen') call('archive', { slug: row.slug, archived: false });
+      },
+    },
+    move.disabled === 'here now' && el('span', { class: 'fg-ok' }, '✓'),
+    move.label, el('span', { class: 'grow' }),
+    move.disabled ? el('span', { class: 'meta' }, move.disabled)
+      : el('span', { class: 'kbd' }, move.to === 'archived' ? 'Shift A' : move.to === 'held' || move.to === 'unhold' ? 'H' : ''))));
+  const layer = $('layer');
+  layer.replaceChildren(menu);
+  const box = menu.getBoundingClientRect();
+  menu.style.left = `${Math.min(x, window.innerWidth - box.width - 8)}px`;
+  menu.style.top = `${Math.min(y, window.innerHeight - box.height - 8)}px`;
+  menu.querySelector('.mi:not([disabled])')?.focus();
+}
+
+function holdDialog(row) {
+  const reason = el('input', { class: 'field', id: 'hold-reason', placeholder: 'until the ratatui bump lands' });
+  const hold = () => {
+    call('hold', { slug: row.slug, reason: reason.value });
+    closeLayer();
+  };
+  reason.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') hold();
+    if (e.key === 'Escape') closeLayer();
+  });
+  const dialog = el('div', { class: 'scrim', onclick: (e) => { if (e.target === e.currentTarget) closeLayer(); } },
+    el('section', { class: 'dialog hold-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'hold-title' },
+      el('div', { class: 'dhead' }, el('div', { class: 'type-title', id: 'hold-title' }, `Hold #${row.number} ${row.title}`)),
+      el('div', { class: 'dbody' },
+        el('label', { class: 'label', for: 'hold-reason' }, 'Why is it held?'),
+        reason,
+        el('div', { class: 'meta' }, 'A held feature is folded away until the hold is lifted. Agents read the reason.')),
+      el('div', { class: 'dfoot' }, el('span', { class: 'grow' }),
+        el('button', { class: 'btn', onclick: closeLayer }, 'Cancel'),
+        el('button', { class: 'btn primary', onclick: hold }, 'Hold'))));
+  $('layer').replaceChildren(dialog);
+  reason.focus();
+}
+
+function goToPane(pane) {
+  if (pane == null) return;
+  call('go_to_pane', { pane });
+}
+
+// The stage's keys, heard only while nothing that takes text has focus.
+function featureKey(e) {
+  if (state.rail.stage !== 'feature' || e.ctrlKey || e.metaKey || e.altKey) return false;
+  const rows = visibleRows();
+  const at = rows.findIndex((row) => row.peeked);
+  const row = rows[at];
+  const peekAt = (i) => {
+    const next = rows[Math.max(0, Math.min(rows.length - 1, i))];
+    if (next) call('peek', { slug: next.slug });
+  };
+  switch (e.key) {
+    case 'j': case 'ArrowDown': peekAt(at + 1); return true;
+    case 'k': case 'ArrowUp': peekAt(at - 1); return true;
+    case 'Home': peekAt(0); return true;
+    case 'End': peekAt(rows.length - 1); return true;
+    case 'v': case 'V':
+      call('set_layout', { layout: state.features?.layout === 'board' ? 'list' : 'board' });
+      return true;
+    case 'z': call('toggle_folded'); return true;
+    case '/': $('feature-filter')?.focus(); return true;
+  }
+  if (!row) return false;
+  switch (e.key) {
+    case 'm': case 'M': {
+      const node = document.querySelector(`[data-slug="${CSS.escape(row.slug)}"]`)?.getBoundingClientRect();
+      moveMenu(row, node ? node.left + 40 : 200, node ? node.bottom : 200);
+      return true;
+    }
+    case 'h': case 'H':
+      if (row.group === 'held') call('hold', { slug: row.slug, reason: null });
+      else holdDialog(row);
+      return true;
+    case 'A': call('archive', { slug: row.slug, archived: row.group !== 'archived' }); return true;
+    case 'g': case 'G': goToPane(row.agent?.pane ?? state.features.peek?.pane); return true;
+  }
+  return false;
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('layer').childElementCount) {
+    closeLayer();
+    e.preventDefault();
+    return;
+  }
+  const typing = e.target.closest?.('input, textarea, [contenteditable]');
+  if (typing || $('layer').childElementCount) return;
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === '1' || e.key === '2')) {
+    call('show_features', { open: e.key === '2' });
+    e.preventDefault();
+    return;
+  }
+  if (featureKey(e)) e.preventDefault();
+});
+
+document.addEventListener('mousedown', (e) => {
+  const layer = $('layer');
+  if (layer.querySelector('.menu') && !layer.contains(e.target)) closeLayer();
+});
+
+$('tab-workspace').addEventListener('click', () => call('show_features', { open: false }));
+$('tab-feature').addEventListener('click', () => call('show_features', { open: true }));
 
 // ---- The screen ----------------------------------------------------------
 

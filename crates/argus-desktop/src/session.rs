@@ -9,7 +9,8 @@
 //! The client never predicts: the rail changes when the daemon's tree does,
 //! and a shell asked for is shown only once the daemon has said it made it
 //! and a tree holds it. Which pane is on screen is this window's own choice,
-//! as the terminal client's selection is.
+//! as the terminal client's selection is. The Feature stage's own state is
+//! `feature_stage`'s; the session tells it which repository it is about.
 
 use std::collections::HashSet;
 
@@ -18,8 +19,11 @@ use argus_protocol::{
     ServerMsg, View, FOCUS,
 };
 
+use crate::feature_stage::{FeatureStage, Scope};
+use crate::features::Layout;
 use crate::keys::{self, PageKey};
 use crate::page::{Connection, Event, Status};
+use crate::settings::Settings;
 use crate::rail::{self, Choices};
 use crate::screen::Screen;
 
@@ -37,7 +41,11 @@ pub struct Session {
     detail: Option<String>,
     alarm: Option<String>,
     project: Option<ProjectId>,
+    /// The repository the rail last had chosen, whose features the Feature
+    /// stage reads.
+    repository: Option<RepositoryId>,
     toggled: HashSet<RepositoryId>,
+    features: FeatureStage,
     shown: Option<PaneId>,
     screen: Option<Screen>,
     /// The rows and columns the page has room for.
@@ -60,12 +68,12 @@ pub struct Session {
 
 impl Default for Session {
     fn default() -> Self {
-        Session::new()
+        Session::new(Settings::default())
     }
 }
 
 impl Session {
-    pub fn new() -> Session {
+    pub fn new(settings: Settings) -> Session {
         Session {
             tree: Vec::new(),
             loaded: false,
@@ -74,7 +82,9 @@ impl Session {
             detail: None,
             alarm: None,
             project: None,
+            repository: None,
             toggled: HashSet::new(),
+            features: FeatureStage::new(settings),
             shown: None,
             screen: None,
             capacity: None,
@@ -131,6 +141,7 @@ impl Session {
         self.sized = None;
         self.reported = None;
         self.asked.clear();
+        self.features.forget_asked();
         for msg in opening {
             self.apply(msg);
         }
@@ -183,6 +194,14 @@ impl Session {
             ServerMsg::Restarting => self.passing.push(Event::Notice {
                 text: "argusd is restarting".into(),
             }),
+            ServerMsg::Decisions(board) => {
+                let scope = self.scope();
+                self.features.receive_board(*board, scope.as_ref(), &self.tree, &mut self.out);
+            }
+            ServerMsg::Tasks(list) => {
+                let scope = self.scope();
+                self.features.receive_tasks(*list, scope.as_ref());
+            }
             // The tree that follows says what closed and what stopping
             // ends; the rest answers requests this window does not make yet.
             _ => {}
@@ -193,6 +212,7 @@ impl Session {
         self.tree = tree;
         self.loaded = true;
         self.rail_changed = true;
+        self.features.tree_changed();
         if !self.tree.iter().any(|p| Some(p.id) == self.project) {
             self.project = self.tree.first().map(|p| p.id);
         }
@@ -234,6 +254,7 @@ impl Session {
         };
         self.hide();
         self.project = Some(project);
+        self.repository = None;
         self.shown = Some(pane);
         self.screen = Some(Screen::new(pane));
         self.rail_changed = true;
@@ -339,10 +360,128 @@ impl Session {
         self.finish()
     }
 
+    /// A click on a repository's row: the first chooses it, for the
+    /// Feature stage to read, and opens it; a second on the chosen one
+    /// opens or closes it.
+    pub fn choose_repository(&mut self, repository: RepositoryId) -> Vec<ClientMsg> {
+        let Some(repo) = self.current_project().and_then(|p| p.repositories.iter().find(|r| r.id == repository)) else {
+            return self.finish();
+        };
+        if self.chosen_repository().map(|r| r.id) == Some(repository) {
+            return self.toggle_repository(repository);
+        }
+        let quiet = !repo.checkouts.iter().any(|c| c.listed_panes().next().is_some());
+        let open = quiet == self.toggled.contains(&repository);
+        if !open {
+            self.toggle_repository(repository);
+        }
+        self.repository = Some(repository);
+        self.rail_changed = true;
+        self.finish()
+    }
+
+    // ---- The Feature stage ---------------------------------------------------
+
+    /// Shows the Feature stage, or goes back to the Workspace.
+    pub fn show_features(&mut self, open: bool) -> Vec<ClientMsg> {
+        if self.features.is_open() != open {
+            self.features.set_open(open);
+            self.rail_changed = true;
+        }
+        self.finish()
+    }
+
+    pub fn peek(&mut self, slug: &str) -> Vec<ClientMsg> {
+        let scope = self.scope();
+        self.features.peek(slug, scope.as_ref(), &mut self.out);
+        self.finish()
+    }
+
+    pub fn set_layout(&mut self, layout: Layout) -> Vec<ClientMsg> {
+        let scope = self.scope();
+        self.features.set_layout(layout, scope.as_ref());
+        self.finish()
+    }
+
+    pub fn toggle_folded(&mut self) -> Vec<ClientMsg> {
+        let scope = self.scope();
+        self.features.toggle_folded(scope.as_ref(), &self.tree, &mut self.out);
+        self.finish()
+    }
+
+    pub fn hold(&mut self, slug: &str, reason: Option<String>) -> Vec<ClientMsg> {
+        let scope = self.scope();
+        self.features.hold(slug, reason, scope.as_ref(), &mut self.out);
+        self.finish()
+    }
+
+    pub fn archive(&mut self, slug: &str, archived: bool) -> Vec<ClientMsg> {
+        let scope = self.scope();
+        self.features.archive(slug, archived, scope.as_ref(), &mut self.out);
+        self.finish()
+    }
+
+    /// Leaves the Feature stage for a pane working a feature.
+    pub fn go_to_pane(&mut self, pane: PaneId) -> Vec<ClientMsg> {
+        if self.project_of(pane).is_some() {
+            self.features.set_open(false);
+            self.show(pane);
+        }
+        self.finish()
+    }
+
+    /// The settings, when a change asks for them to be saved.
+    pub fn take_settings(&mut self) -> Option<Settings> {
+        self.features.take_settings()
+    }
+
+    fn current_project(&self) -> Option<&ProjectInfo> {
+        self.tree.iter().find(|p| Some(p.id) == self.project)
+    }
+
+    /// The repository the Feature stage reads: the one chosen on the rail,
+    /// else the one holding the pane on screen, else the first with
+    /// anything running, else the first.
+    fn chosen_repository(&self) -> Option<&argus_protocol::RepositoryInfo> {
+        let project = self.current_project()?;
+        let by_id = |id: RepositoryId| project.repositories.iter().find(|r| r.id == id);
+        let holding_shown = self.shown.and_then(|pane| {
+            project
+                .repositories
+                .iter()
+                .find(|r| r.checkouts.iter().any(|c| c.panes.iter().any(|p| p.id == pane)))
+        });
+        let (active, _) = project.repositories_by_activity();
+        self.repository
+            .and_then(by_id)
+            .or(holding_shown)
+            .or_else(|| active.first().map(|i| &project.repositories[*i]))
+            .or_else(|| project.repositories.first())
+    }
+
+    fn scope(&self) -> Option<Scope> {
+        let project = self.current_project()?;
+        let repo = self.chosen_repository()?;
+        let checkout = repo.checkouts.iter().find(|c| c.primary).or_else(|| repo.checkouts.first())?;
+        Some(Scope {
+            project: project.id,
+            project_name: project.name.clone(),
+            repository: repo.id,
+            repository_name: repo.name.clone(),
+            checkout: checkout.id,
+            key: checkout.path.clone(),
+        })
+    }
+
     // ---- What goes out -----------------------------------------------------
 
     /// The messages this change sends, with the view when it changed.
     fn finish(&mut self) -> Vec<ClientMsg> {
+        // Whatever changed may have changed which board the stage reads.
+        let scope = self.scope();
+        if self.connection == Connection::Connected {
+            self.features.refresh(scope.as_ref(), &mut self.out);
+        }
         if self.daemon.as_ref().is_some_and(|d| d.can(FOCUS)) {
             let view = self.view();
             if self.reported.as_ref() != Some(&view) {
@@ -379,7 +518,11 @@ impl Session {
             events.push(Event::Status(self.status()));
         }
         if std::mem::take(&mut self.rail_changed) {
-            events.push(Event::Rail(self.rail(now)));
+            events.push(Event::Rail(Box::new(self.rail(now))));
+        }
+        let scope = self.scope();
+        if let Some(features) = self.features.take(scope.as_ref(), &self.tree) {
+            events.push(Event::Features(Box::new(features)));
         }
         events.append(&mut self.passing);
         events
@@ -393,7 +536,12 @@ impl Session {
         if let Some(screen) = &mut self.screen {
             screen.refresh();
         }
-        self.events(now)
+        let mut events = self.events(now);
+        if !events.iter().any(|e| matches!(e, Event::Features(_))) {
+            let scope = self.scope();
+            events.push(Event::Features(Box::new(self.features.everything(scope.as_ref(), &self.tree))));
+        }
+        events
     }
 
     pub fn take_frame(&mut self) -> Option<Event> {
@@ -415,7 +563,10 @@ impl Session {
             toggled: &self.toggled,
             now,
         };
-        rail::build(&self.tree, &choices, self.loaded)
+        let mut rail = rail::build(&self.tree, &choices, self.loaded);
+        rail.repository = self.chosen_repository().map(|r| r.id.0);
+        rail.stage = if self.features.is_open() { "feature" } else { "workspace" };
+        rail
     }
 
     fn project_of(&self, pane: PaneId) -> Option<ProjectId> {
@@ -475,7 +626,7 @@ mod tests {
 
     /// A session connected to a daemon of this build, holding `tree()`.
     fn session(daemon: Hello) -> Session {
-        let mut session = Session::new();
+        let mut session = Session::default();
         session.connected(Some(daemon), None, vec![with_tree(tree())]);
         session
     }
@@ -633,16 +784,19 @@ mod tests {
     fn the_page_hears_each_change_once() {
         let mut s = session(without_focus());
         let first = s.events(0);
-        assert!(matches!(first.as_slice(), [Event::Status(_), Event::Rail(_)]), "{first:?}");
+        assert!(
+            matches!(first.as_slice(), [Event::Status(_), Event::Rail(_), Event::Features(_)]),
+            "{first:?}"
+        );
         assert!(s.events(0).is_empty());
         s.toggle_repository(RepositoryId(10));
         assert!(matches!(s.events(0).as_slice(), [Event::Rail(_)]));
-        assert_eq!(s.everything(0).len(), 2, "a fresh page hears it all");
+        assert_eq!(s.everything(0).len(), 3, "a fresh page hears it all");
     }
 
     #[test]
     fn a_daemon_from_another_build_is_an_alarm_until_the_next_connection() {
-        let mut s = Session::new();
+        let mut s = Session::default();
         let other = Hello { version: "0.0.1".into(), ..Hello::this_build() };
         s.connected(Some(other), None, Vec::new());
         let Event::Status(status) = &s.events(0)[0] else { panic!() };
@@ -666,6 +820,45 @@ mod tests {
             events.as_slice(),
             [Event::Notice { text }, Event::Clipboard { text: copied }] if text == "no" && copied == "copied"
         ), "{events:?}");
+    }
+
+    #[test]
+    fn opening_the_feature_stage_asks_for_the_chosen_repositorys_board() {
+        let mut s = session(without_focus());
+        assert!(names(&s.show_features(true)).iter().any(|m| m.starts_with("GetDecisions")));
+        assert!(s.show_features(true).is_empty(), "asked once");
+        let Some(Event::Rail(rail)) = s.events(0).into_iter().find(|e| matches!(e, Event::Rail(_))) else {
+            panic!("the rail says which stage is open");
+        };
+        assert_eq!((rail.stage, rail.repository), ("feature", Some(10)));
+    }
+
+    #[test]
+    fn a_pane_on_screen_chooses_its_repository_until_another_is_chosen() {
+        let mut tree = tree();
+        tree[0].repositories.push(crate::fixtures::repository(11, "hearth", None, vec![checkout(110, "main", true, vec![
+            pane(5, PaneKind::Shell, "zsh", PaneStatus::Idle),
+        ])]));
+        let mut s = Session::default();
+        s.connected(Some(without_focus()), None, vec![with_tree(tree)]);
+        s.select(PaneId(5));
+        assert_eq!(s.chosen_repository().map(|r| r.id), Some(RepositoryId(11)));
+        s.choose_repository(RepositoryId(10));
+        assert_eq!(s.chosen_repository().map(|r| r.id), Some(RepositoryId(10)));
+        let sent = s.show_features(true);
+        assert!(
+            sent.iter().any(|m| matches!(m, ClientMsg::GetDecisions { checkout: CheckoutId(100), .. })),
+            "{:?}",
+            names(&sent)
+        );
+    }
+
+    #[test]
+    fn going_to_a_features_pane_leaves_the_stage_for_it() {
+        let mut s = session(without_focus());
+        s.show_features(true);
+        assert_eq!(names(&s.go_to_pane(PaneId(1))), ["subscribe 1"]);
+        assert!(!s.features.is_open());
     }
 
     #[test]

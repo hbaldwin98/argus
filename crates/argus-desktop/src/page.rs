@@ -11,8 +11,11 @@ use serde::Serialize;
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Event {
     Status(Status),
-    Rail(Rail),
+    Rail(Box<Rail>),
     Frame(Frame),
+    // The rail and the index are boxed: they are far the largest events,
+    // and every other one would otherwise be sized to carry them.
+    Features(Box<Features>),
     /// Text a pane's child put on the clipboard (OSC 52).
     Clipboard { text: String },
     /// Something the daemon said that passes: a refused request's reason.
@@ -58,6 +61,10 @@ pub struct Rail {
     /// Whether the daemon has sent a tree yet, so the page can tell "no
     /// projects" from "not heard yet".
     pub loaded: bool,
+    /// The repository whose features the Feature stage reads.
+    pub repository: Option<u64>,
+    /// `workspace` or `feature`.
+    pub stage: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -133,6 +140,117 @@ pub struct Shown {
     pub agent: bool,
     pub title: String,
     pub status: &'static str,
+}
+
+/// The Feature stage's index: one repository's features, as a list or a
+/// board, and the one peeked at.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Features {
+    /// The repository's name, for the heading.
+    pub repository: String,
+    /// `list` or `board`, as remembered for this repository.
+    pub layout: &'static str,
+    /// Whether held and archived features are shown in the list.
+    pub show_folded: bool,
+    /// Whether the board has arrived; until then the index says so.
+    pub loaded: bool,
+    pub active: usize,
+    pub queued: usize,
+    pub done: usize,
+    pub held: usize,
+    pub archived: usize,
+    /// Every feature, grouped Active, Queued, Done, Held, Archived. The
+    /// list folds the last two away unless `show_folded`; the board shows
+    /// them as columns.
+    pub rows: Vec<FeatureRow>,
+    pub peek: Option<Peek>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeatureRow {
+    pub slug: String,
+    pub number: i64,
+    pub title: String,
+    /// `new`, `queued`, `active`, `done`, `held` or `archived`.
+    pub standing: &'static str,
+    /// The heading it is listed under: `new` is listed as `queued`.
+    pub group: &'static str,
+    pub tasks_done: usize,
+    pub tasks_total: usize,
+    pub decided: usize,
+    pub open: usize,
+    pub branch: Option<String>,
+    /// The loudest agent on its checkouts: its title and status word.
+    pub agent: Option<Agent>,
+    /// Numbers of the open features it comes after.
+    pub after: Vec<i64>,
+    /// The reason it is held.
+    pub held: Option<String>,
+    pub peeked: bool,
+    /// Where a person may move it by hand, with why the rest are not.
+    pub moves: Vec<Move>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Agent {
+    pub pane: u64,
+    pub title: String,
+    pub status: &'static str,
+    pub needs_you: bool,
+}
+
+/// One place on the board, as a card's Move to… menu offers it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Move {
+    /// `queued`, `active`, `done`, `held`, `archived`, `unhold`, `reopen`.
+    pub to: &'static str,
+    pub label: String,
+    /// Why it cannot be chosen, for a place that follows the work.
+    pub disabled: Option<String>,
+}
+
+/// What the index shows of the feature under the cursor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Peek {
+    pub slug: String,
+    pub number: i64,
+    pub title: String,
+    pub standing: &'static str,
+    pub branch: Option<String>,
+    pub brief: String,
+    pub held: Option<String>,
+    pub links: Vec<Link>,
+    /// Open questions, then agents stopped for a person.
+    pub needs_you: Vec<Line>,
+    /// Tasks being done, each with the agent on it.
+    pub in_flight: Vec<Line>,
+    pub next_up: Option<Line>,
+    pub last_decided: Option<Line>,
+    /// The agent pane to go to.
+    pub pane: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Link {
+    pub tracker: String,
+    pub key: String,
+    pub url: String,
+}
+
+/// A labelled line: `D3 How much history…`, `2.2 argus-hook reads…`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Line {
+    pub label: String,
+    pub text: String,
+    /// Said under it in small type: the agent and branch, a state.
+    pub aside: Option<String>,
 }
 
 /// The rows of a pane's screen that changed since the last frame.
@@ -266,8 +384,10 @@ mod tests {
                 status: "working",
             }),
             loaded: true,
+            repository: Some(2),
+            stage: "workspace",
         };
-        let value = as_json(Event::Rail(rail));
+        let value = as_json(Event::Rail(Box::new(rail)));
         assert_eq!(value["type"], "rail");
         assert_eq!(value["needsYou"], 2);
         assert_eq!(value["projects"][0]["needsYou"], 2);
@@ -276,6 +396,41 @@ mod tests {
         assert_eq!(repo["checkouts"][0]["git"], "clean");
         assert_eq!(value["shown"]["pane"], 4);
         assert_eq!(value["loaded"], true);
+    }
+
+    #[test]
+    fn the_index_names_its_rows_and_moves_in_camel_case() {
+        let features = Features {
+            repository: "argus".into(),
+            layout: "board",
+            loaded: true,
+            active: 1,
+            rows: vec![FeatureRow {
+                slug: "trim".into(),
+                number: 7,
+                title: "Trim".into(),
+                standing: "active",
+                group: "active",
+                tasks_done: 3,
+                tasks_total: 7,
+                decided: 2,
+                open: 1,
+                branch: Some("main".into()),
+                agent: Some(Agent { pane: 4, title: "claude".into(), status: "working", needs_you: false }),
+                after: vec![],
+                held: None,
+                peeked: true,
+                moves: vec![Move { to: "done", label: "Done".into(), disabled: Some("when every task is done".into()) }],
+            }],
+            ..Features::default()
+        };
+        let value = as_json(Event::Features(Box::new(features)));
+        assert_eq!(value["type"], "features");
+        assert_eq!(value["showFolded"], false);
+        let row = &value["rows"][0];
+        assert_eq!((row["tasksDone"].clone(), row["tasksTotal"].clone()), (json!(3), json!(7)));
+        assert_eq!(row["agent"]["needsYou"], false);
+        assert_eq!(row["moves"][0]["disabled"], "when every task is done");
     }
 
     #[test]

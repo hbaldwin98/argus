@@ -1,0 +1,380 @@
+//! What the Feature stage's index shows from a repository's board: its
+//! rows, the places a person may move each, and the peek at the one under
+//! the cursor.
+//!
+//! How a feature stands is `argus_protocol::standing`'s to say, so this
+//! window files a feature under the heading the terminal client does; this
+//! only turns those rows into what the page draws.
+
+use argus_protocol::standing::{self, FeatureRow, Standing};
+use argus_protocol::{DecisionBoard, Feature, PaneInfo, ProjectInfo, TaskList, TaskState};
+
+use crate::page::{self, Agent, Features, Line, Link, Move, Peek};
+
+/// The repository the index is about and how it is shown.
+pub struct Index<'a> {
+    pub repository: &'a str,
+    pub board: Option<&'a DecisionBoard>,
+    pub tree: &'a [ProjectInfo],
+    pub layout: Layout,
+    pub show_folded: bool,
+    /// The feature under the cursor, and its tasks once they arrived.
+    pub peek: Option<&'a str>,
+    pub peek_tasks: Option<&'a TaskList>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Layout {
+    #[default]
+    List,
+    Board,
+}
+
+impl Layout {
+    pub fn word(self) -> &'static str {
+        match self {
+            Layout::List => "list",
+            Layout::Board => "board",
+        }
+    }
+
+    pub fn from_word(word: &str) -> Option<Layout> {
+        match word {
+            "list" => Some(Layout::List),
+            "board" => Some(Layout::Board),
+            _ => None,
+        }
+    }
+}
+
+pub fn build(index: &Index) -> Features {
+    let mut features = Features {
+        repository: index.repository.to_string(),
+        layout: index.layout.word(),
+        show_folded: index.show_folded,
+        loaded: index.board.is_some(),
+        ..Features::default()
+    };
+    let Some(board) = index.board else {
+        return features;
+    };
+    let rows = standing::feature_rows(board, index.tree);
+    for row in &rows {
+        match row.standing.group() {
+            Standing::Active => features.active += 1,
+            Standing::Queued => features.queued += 1,
+            Standing::Done => features.done += 1,
+            Standing::Held => features.held += 1,
+            Standing::Archived => features.archived += 1,
+            Standing::New => {}
+        }
+    }
+    features.rows = rows
+        .iter()
+        .map(|row| {
+            let feature = board.features.iter().find(|f| f.slug == row.slug);
+            page_row(row, feature, index)
+        })
+        .collect();
+    features.peek = index
+        .peek
+        .and_then(|slug| rows.iter().find(|row| row.slug == slug))
+        .and_then(|row| {
+            let feature = board.features.iter().find(|f| f.slug == row.slug)?;
+            Some(peek(row, feature, board, index))
+        });
+    features
+}
+
+/// The slug of the feature the index would put the cursor on: the peeked
+/// one while it is still listed, else the first listed.
+pub fn settle_peek(board: &DecisionBoard, tree: &[ProjectInfo], peek: Option<&str>, show_folded: bool) -> Option<String> {
+    let listed: Vec<FeatureRow> = standing::feature_rows(board, tree)
+        .into_iter()
+        .filter(|row| show_folded || !row.standing.folded())
+        .collect();
+    if let Some(slug) = peek {
+        if listed.iter().any(|row| row.slug == slug) {
+            return Some(slug.to_string());
+        }
+    }
+    listed.first().map(|row| row.slug.clone())
+}
+
+fn page_row(row: &FeatureRow, feature: Option<&Feature>, index: &Index) -> page::FeatureRow {
+    let agent = feature.and_then(|f| loudest_agent(&standing::panes_on(f, index.tree)));
+    page::FeatureRow {
+        slug: row.slug.clone(),
+        number: row.number,
+        title: row.title.clone(),
+        standing: word(row.standing),
+        group: word(row.standing.group()),
+        tasks_done: row.tasks.done,
+        tasks_total: row.tasks.total(),
+        decided: row.decided,
+        open: row.open,
+        branch: row.branch.clone(),
+        agent,
+        after: row.after.clone(),
+        held: feature.and_then(|f| f.held.clone()),
+        peeked: index.peek == Some(row.slug.as_str()),
+        moves: moves(row),
+    }
+}
+
+fn loudest_agent(panes: &[&PaneInfo]) -> Option<Agent> {
+    let pane = panes.iter().max_by_key(|pane| pane.loudest_state().status.urgency())?;
+    let status = pane.loudest_state().status;
+    Some(Agent {
+        pane: pane.id.0,
+        title: pane.title.clone(),
+        status: status.word(),
+        needs_you: status.needs_you(),
+    })
+}
+
+/// The board's places as a card's Move to… menu offers them. Queued,
+/// Active and Done follow the work, so they are listed with why they
+/// cannot be chosen; Held and Archived are a person's to set, and each
+/// becomes its undoing once it is where the feature is.
+fn moves(row: &FeatureRow) -> Vec<Move> {
+    let here = row.standing.group();
+    let derived = |place: Standing, label: &str, reason: String| Move {
+        to: word(place),
+        label: label.into(),
+        disabled: Some(if here == place { "here now".into() } else { reason }),
+    };
+    let left = row.tasks.total() - row.tasks.done;
+    let mut moves = vec![
+        derived(Standing::Queued, "Queued", "follows the work".into()),
+        derived(Standing::Active, "Active", "when a task starts or an agent arrives".into()),
+        derived(
+            Standing::Done,
+            "Done",
+            match left {
+                0 if row.tasks.total() == 0 => "when it has tasks and every one is done".into(),
+                1 => "when its last task is done".into(),
+                n => format!("when its {n} open tasks are done"),
+            },
+        ),
+    ];
+    moves.push(match here {
+        Standing::Held => Move { to: "unhold", label: "Lift the hold".into(), disabled: None },
+        _ => Move { to: "held", label: "Held…".into(), disabled: None },
+    });
+    moves.push(match here {
+        Standing::Archived => Move { to: "reopen", label: "Reopen".into(), disabled: None },
+        _ => Move { to: "archived", label: "Archived".into(), disabled: None },
+    });
+    moves
+}
+
+fn peek(row: &FeatureRow, feature: &Feature, board: &DecisionBoard, index: &Index) -> Peek {
+    let scoped = board.scoped(Some(&feature.slug));
+    let decisions = scoped.tree_rows();
+    let panes = standing::panes_on(feature, index.tree);
+
+    let mut needs_you: Vec<Line> = decisions
+        .iter()
+        .filter(|row| row.decision.open() && !row.decision.withdrawn())
+        .map(|row| Line { label: row.label(), text: row.decision.chose.clone(), aside: None })
+        .collect();
+    needs_you.extend(
+        panes
+            .iter()
+            .filter(|pane| pane.loudest_state().status.needs_you())
+            .map(|pane| Line {
+                label: "◆".into(),
+                text: pane.title.clone(),
+                aside: Some(pane.loudest_state().status.word().into()),
+            }),
+    );
+
+    let tasks = index.peek_tasks.map(TaskList::tree_rows).unwrap_or_default();
+    let leaf = |row: &&argus_protocol::TaskTreeRow<'_>| !row.has_children;
+    let in_flight = tasks
+        .iter()
+        .filter(leaf)
+        .filter(|row| row.task.state == TaskState::Doing)
+        .map(|row| Line {
+            label: row.label(),
+            text: row.task.title.clone(),
+            aside: row
+                .task
+                .claimed_pane
+                .and_then(|id| panes.iter().find(|pane| pane.id == id))
+                .map(|pane| pane.title.clone()),
+        })
+        .collect();
+    let next_up = tasks
+        .iter()
+        .filter(leaf)
+        .find(|row| row.task.state == TaskState::Todo)
+        .map(|row| Line { label: row.label(), text: row.task.title.clone(), aside: None });
+    let last_decided = decisions
+        .iter()
+        .filter(|row| row.decision.stands())
+        .max_by_key(|row| (row.decision.at, row.decision.id))
+        .map(|row| Line { label: row.label(), text: row.decision.chose.clone(), aside: None });
+
+    Peek {
+        slug: feature.slug.clone(),
+        number: feature.number,
+        title: feature.title.clone(),
+        standing: word(row.standing),
+        branch: row.branch.clone(),
+        brief: feature.body.clone(),
+        held: feature.held.clone(),
+        links: feature
+            .links
+            .iter()
+            .map(|link| Link { tracker: link.tracker.clone(), key: link.key.clone(), url: link.url.clone() })
+            .collect(),
+        needs_you,
+        in_flight,
+        next_up,
+        last_decided,
+        pane: row.pane.map(|pane| pane.0),
+    }
+}
+
+fn word(standing: Standing) -> &'static str {
+    match standing {
+        Standing::New => "new",
+        Standing::Queued => "queued",
+        Standing::Active => "active",
+        Standing::Done => "done",
+        Standing::Held => "held",
+        Standing::Archived => "archived",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fixtures;
+
+    fn index<'a>(board: &'a DecisionBoard, tree: &'a [ProjectInfo], peek: Option<&'a str>) -> Index<'a> {
+        Index {
+            repository: "argus",
+            board: Some(board),
+            tree,
+            layout: Layout::Board,
+            show_folded: false,
+            peek,
+            peek_tasks: None,
+        }
+    }
+
+    #[test]
+    fn rows_come_grouped_and_counted_with_held_and_archived_included() {
+        let board = fixtures::board();
+        let tree = fixtures::feature_tree();
+        let features = build(&index(&board, &tree, None));
+        let order: Vec<_> = features.rows.iter().map(|r| (r.number, r.group)).collect();
+        assert_eq!(order, [(7, "active"), (8, "queued"), (10, "queued"), (6, "done"), (5, "held"), (4, "archived")]);
+        assert_eq!(
+            (features.active, features.queued, features.done, features.held, features.archived),
+            (1, 2, 1, 1, 1)
+        );
+        assert_eq!(features.rows[2].standing, "new");
+        assert_eq!(features.rows[1].after, [7]);
+        assert_eq!(features.rows[4].held.as_deref(), Some("until the bump lands"));
+    }
+
+    #[test]
+    fn the_active_feature_names_its_agent() {
+        let board = fixtures::board();
+        let tree = fixtures::feature_tree();
+        let features = build(&index(&board, &tree, None));
+        let agent = features.rows[0].agent.as_ref().unwrap();
+        assert_eq!((agent.title.as_str(), agent.status, agent.needs_you), ("claude", "working", false));
+    }
+
+    #[test]
+    fn derived_places_cannot_be_chosen_and_say_why() {
+        let board = fixtures::board();
+        let tree = fixtures::feature_tree();
+        let features = build(&index(&board, &tree, None));
+        let active = &features.rows[0].moves;
+        let places: Vec<_> = active.iter().map(|m| (m.to, m.disabled.as_deref())).collect();
+        assert_eq!(
+            places,
+            [
+                ("queued", Some("follows the work")),
+                ("active", Some("here now")),
+                ("done", Some("when its 4 open tasks are done")),
+                ("held", None),
+                ("archived", None),
+            ]
+        );
+        let held: Vec<_> = features.rows[4].moves.iter().map(|m| m.to).collect();
+        assert!(held.contains(&"unhold") && !held.contains(&"held"));
+        let archived: Vec<_> = features.rows[5].moves.iter().map(|m| m.to).collect();
+        assert!(archived.contains(&"reopen") && !archived.contains(&"archived"));
+    }
+
+    #[test]
+    fn the_peek_says_what_needs_you_what_is_in_flight_and_what_is_next() {
+        let board = fixtures::board();
+        let tree = fixtures::feature_tree();
+        let tasks = fixtures::tasks("trim");
+        let mut idx = index(&board, &tree, Some("trim"));
+        idx.peek_tasks = Some(&tasks);
+        let peek = build(&idx).peek.unwrap();
+        assert_eq!(peek.number, 7);
+        let needs: Vec<_> = peek.needs_you.iter().map(|l| l.label.as_str()).collect();
+        assert_eq!(needs, ["D2"], "the open question");
+        assert_eq!(peek.in_flight[0].label, "1.2");
+        assert_eq!(peek.in_flight[0].aside.as_deref(), Some("claude"));
+        assert_eq!(peek.next_up.as_ref().map(|l| l.label.as_str()), Some("2"));
+        assert_eq!(peek.last_decided.as_ref().map(|l| l.label.as_str()), Some("D1"));
+        assert_eq!(peek.links[0].key, "ENG-88");
+    }
+
+    #[test]
+    fn the_cursor_stays_on_its_feature_while_listed_and_else_takes_the_first() {
+        let board = fixtures::board();
+        let tree = fixtures::feature_tree();
+        assert_eq!(settle_peek(&board, &tree, Some("bump"), false).as_deref(), Some("bump"));
+        assert_eq!(settle_peek(&board, &tree, Some("mouse"), false).as_deref(), Some("trim"), "held is folded");
+        assert_eq!(settle_peek(&board, &tree, Some("mouse"), true).as_deref(), Some("mouse"));
+        assert_eq!(settle_peek(&board, &tree, None, false).as_deref(), Some("trim"));
+    }
+
+    #[test]
+    fn a_board_not_yet_arrived_is_not_loaded() {
+        let tree = fixtures::feature_tree();
+        let empty = DecisionBoard::default();
+        let mut idx = index(&empty, &tree, None);
+        idx.board = None;
+        let features = build(&idx);
+        assert!(!features.loaded && features.rows.is_empty());
+    }
+
+    #[test]
+    #[ignore]
+    fn dump_feature_index() {
+        let board = fixtures::board();
+        let tree = fixtures::feature_tree();
+        let tasks = fixtures::tasks("trim");
+        let mut idx = index(&board, &tree, Some("trim"));
+        idx.peek_tasks = Some(&tasks);
+        let f = build(&idx);
+        println!("Features in {}  {} active · {} queued · {} done", f.repository, f.active, f.queued, f.done);
+        let mut group = "";
+        for r in &f.rows {
+            if r.group != group {
+                group = r.group;
+                println!("  {}", group.to_uppercase());
+            }
+            let agent = r.agent.as_ref().map(|a| format!(" ◆ {} {}", a.title, a.status)).unwrap_or_default();
+            println!("    #{} {}  {}/{}  {}{}", r.number, r.title, r.tasks_done, r.tasks_total, r.branch.clone().unwrap_or_default(), agent);
+        }
+        let p = f.peek.unwrap();
+        println!("peek #{} {}: needs you {:?}, in flight {:?}, next {:?}", p.number, p.title,
+            p.needs_you.iter().map(|l| &l.label).collect::<Vec<_>>(),
+            p.in_flight.iter().map(|l| &l.label).collect::<Vec<_>>(),
+            p.next_up.map(|l| l.label));
+    }
+}

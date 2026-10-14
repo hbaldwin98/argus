@@ -44,6 +44,9 @@ pub fn build(tree: &[ProjectInfo], choices: &Choices, loaded: bool) -> Rail {
         working: all().filter(|s| *s == PaneStatus::Working).count(),
         shown: choices.shown.and_then(|pane| shown(tree, pane)),
         loaded,
+        // The session's to say.
+        repository: None,
+        stage: "workspace",
     }
 }
 

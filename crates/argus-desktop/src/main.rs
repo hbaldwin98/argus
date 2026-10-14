@@ -13,6 +13,8 @@
 
 mod commands;
 mod daemon;
+mod feature_stage;
+mod features;
 #[cfg(test)]
 mod fixtures;
 mod keys;
@@ -21,6 +23,7 @@ mod page;
 mod rail;
 mod screen;
 mod session;
+mod settings;
 mod shared;
 
 use std::sync::Arc;
@@ -45,7 +48,7 @@ fn main() {
     };
     tauri::async_runtime::set(runtime.handle().clone());
 
-    let shared = Arc::new(Shared::default());
+    let shared = Arc::new(Shared::new(settings::load()));
     let built = tauri::Builder::default()
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
@@ -59,6 +62,14 @@ fn main() {
             commands::focus,
             commands::select_project,
             commands::toggle_repository,
+            commands::choose_repository,
+            commands::show_features,
+            commands::peek,
+            commands::set_layout,
+            commands::toggle_folded,
+            commands::hold,
+            commands::archive,
+            commands::go_to_pane,
             commands::reconnect,
         ])
         .on_page_load(|webview, payload| {

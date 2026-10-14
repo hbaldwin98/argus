@@ -19,10 +19,11 @@
     </nav>
     <main class="stage">
       <div class="tabs" role="tablist" aria-label="Stage">
-        <button class="tab on" role="tab" aria-selected="true">Workspace<span class="kbd">1</span></button>
-        <button class="tab" role="tab" aria-selected="false" disabled title="Not in this build yet">Feature<span class="kbd">2</span></button>
+        <button class="tab on" role="tab" aria-selected="true" id="tab-workspace">Workspace<span class="kbd">1</span></button>
+        <button class="tab" role="tab" aria-selected="false" id="tab-feature">Feature<span class="kbd">2</span></button>
         <button class="tab" role="tab" aria-selected="false" disabled title="Not in this build yet">Checkouts<span class="kbd">3</span></button>
       </div>
+      <div class="fstage" id="fstage" hidden></div>
       <div class="head" id="head" hidden></div>
       <div class="stage-body" id="body">
         <div class="terminal" id="terminal" hidden>
@@ -31,11 +32,12 @@
           <textarea id="input" aria-label="Type into the pane" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
         </div>
         <div class="empty" id="empty"></div>
-        <div class="notice" id="notice" role="status" hidden></div>
       </div>
     </main>
   </div>
   <footer class="bar" id="bar"></footer>
+  <div class="notice" id="notice" role="status" hidden></div>
+  <div class="layer" id="layer"></div>
   <div class="overlay" id="stopped" hidden>
     <section class="card" aria-labelledby="stopped-title">
       <div class="type-title" id="stopped-title">argusd was stopped</div>

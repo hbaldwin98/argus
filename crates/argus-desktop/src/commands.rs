@@ -10,6 +10,7 @@ use argus_protocol::{CheckoutId, PaneId, ProjectId, RepositoryId};
 use tauri::ipc::Channel;
 use tauri::State;
 
+use crate::features::Layout;
 use crate::keys::PageKey;
 use crate::page::Event;
 use crate::shared::Shared;
@@ -75,6 +76,58 @@ pub async fn select_project(shared: State<'_, Arc<Shared>>, project: u64) -> Ans
 #[tauri::command]
 pub async fn toggle_repository(shared: State<'_, Arc<Shared>>, repository: u64) -> Answer {
     shared.act(|s| s.toggle_repository(RepositoryId(repository)));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn choose_repository(shared: State<'_, Arc<Shared>>, repository: u64) -> Answer {
+    shared.act(|s| s.choose_repository(RepositoryId(repository)));
+    Ok(())
+}
+
+/// `open` true shows the Feature stage, false goes back to the Workspace.
+#[tauri::command]
+pub async fn show_features(shared: State<'_, Arc<Shared>>, open: bool) -> Answer {
+    shared.act(|s| s.show_features(open));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn peek(shared: State<'_, Arc<Shared>>, slug: String) -> Answer {
+    shared.act(|s| s.peek(&slug));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_layout(shared: State<'_, Arc<Shared>>, layout: String) -> Answer {
+    let layout = Layout::from_word(&layout).ok_or_else(|| format!("no layout called {layout}"))?;
+    shared.act(|s| s.set_layout(layout));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn toggle_folded(shared: State<'_, Arc<Shared>>) -> Answer {
+    shared.act(|s| s.toggle_folded());
+    Ok(())
+}
+
+/// Holds a feature for `reason`, or lifts its hold when there is none.
+#[tauri::command]
+pub async fn hold(shared: State<'_, Arc<Shared>>, slug: String, reason: Option<String>) -> Answer {
+    shared.act(|s| s.hold(&slug, reason));
+    Ok(())
+}
+
+/// Archives a feature, accepting it, or reopens it with `archived` false.
+#[tauri::command]
+pub async fn archive(shared: State<'_, Arc<Shared>>, slug: String, archived: bool) -> Answer {
+    shared.act(|s| s.archive(&slug, archived));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn go_to_pane(shared: State<'_, Arc<Shared>>, pane: u64) -> Answer {
+    shared.act(|s| s.go_to_pane(PaneId(pane)));
     Ok(())
 }
 

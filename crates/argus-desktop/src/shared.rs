@@ -14,8 +14,8 @@ use tokio::sync::{mpsc, Notify};
 
 use crate::page::Event;
 use crate::session::Session;
+use crate::settings::{self, Settings};
 
-#[derive(Default)]
 pub struct Shared {
     session: Mutex<Session>,
     /// The connection's way out; `None` between connections, when what the
@@ -27,6 +27,15 @@ pub struct Shared {
 }
 
 impl Shared {
+    pub fn new(settings: Settings) -> Shared {
+        Shared {
+            session: Mutex::new(Session::new(settings)),
+            out: Mutex::new(None),
+            page: Mutex::new(None),
+            reconnect: Notify::new(),
+        }
+    }
+
     /// Changes the session, sends what the change asks of the daemon, and
     /// tells the page what it changed.
     pub fn act(&self, change: impl FnOnce(&mut Session) -> Vec<ClientMsg>) {
@@ -35,6 +44,9 @@ impl Shared {
         self.send(msgs);
         let events = session.events(now());
         self.publish(events);
+        if let Some(settings) = session.take_settings() {
+            settings::save(&settings);
+        }
     }
 
     /// A connection is up: what the page asks goes over `out` from now on.
