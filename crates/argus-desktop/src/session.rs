@@ -404,22 +404,23 @@ impl Session {
         self.finish()
     }
 
-    /// A picture off the clipboard, sent as a file: the pane's process
-    /// reads the daemon's disk, not this machine's clipboard. The daemon
-    /// keeps it and pastes its path, the one form every harness takes an
-    /// image in.
-    pub fn paste_image(&mut self, png: Vec<u8>) -> Vec<ClientMsg> {
+    /// A file off the clipboard — a picture, or one a file manager copied —
+    /// sent whole: the pane's process reads the daemon's disk, not this
+    /// machine's. The daemon keeps it and pastes its path, the one form
+    /// every harness takes an image in.
+    pub fn paste_file(&mut self, name: String, bytes: Vec<u8>) -> Vec<ClientMsg> {
         let Some(pane) = self.shown else {
             return self.finish();
         };
         let note = if !self.daemon.as_ref().is_some_and(|d| d.can(PASTE_FILE)) {
-            "argusd predates pasting images; `argus server restart` updates it".to_string()
-        } else if png.len() > paste::PASTE_FILE_MAX {
-            format!("the picture is too large to paste ({} MB)", png.len() >> 20)
+            "argusd predates pasting files; `argus server restart` updates it".to_string()
+        } else if bytes.len() > paste::PASTE_FILE_MAX {
+            format!("{name} is too large to paste ({} MB)", bytes.len() >> 20)
         } else {
             self.live();
-            self.out.push(ClientMsg::PasteFile { pane, name: "clipboard.png".into(), bytes: png });
-            "pasted an image".to_string()
+            let said = format!("pasted {name}");
+            self.out.push(ClientMsg::PasteFile { pane, name, bytes });
+            said
         };
         self.note(note)
     }
@@ -1140,10 +1141,10 @@ mod tests {
     }
 
     #[test]
-    fn a_pasted_picture_crosses_as_a_file_to_a_daemon_that_takes_one() {
+    fn a_pasted_file_crosses_whole_to_a_daemon_that_takes_one() {
         let mut s = session(Hello::this_build());
         s.select(PaneId(2));
-        let sent = s.paste_image(vec![1, 2, 3]);
+        let sent = s.paste_file("clipboard.png".into(), vec![1, 2, 3]);
         assert!(sent.iter().any(|m| matches!(m,
             ClientMsg::PasteFile { pane: PaneId(2), name, bytes } if name == "clipboard.png" && bytes == &[1, 2, 3]
         )));
@@ -1151,7 +1152,7 @@ mod tests {
         let mut old = session(without_focus());
         old.select(PaneId(2));
         old.events(0);
-        assert!(old.paste_image(vec![1]).is_empty());
+        assert!(old.paste_file("shot.png".into(), vec![1]).is_empty());
         assert!(old.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("predates"))));
     }
 

@@ -71,7 +71,18 @@ pub async fn paste_clipboard(shared: State<'_, Arc<Shared>>) -> Answer {
     // A picture first, as the terminal client does: a screenshot copied
     // from some apps carries a text form too, and the picture is the point.
     if let Some(png) = clipboard::read_image() {
-        shared.act(|s| s.paste_image(png));
+        shared.act(|s| s.paste_file("clipboard.png".into(), png));
+        return Ok(());
+    }
+    let files = clipboard::read_files();
+    if !files.is_empty() {
+        for path in files {
+            let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
+            match std::fs::read(&path) {
+                Ok(bytes) => shared.act(|s| s.paste_file(name, bytes)),
+                Err(e) => shared.act(|s| s.note(format!("could not read {name}: {e}"))),
+            }
+        }
         return Ok(());
     }
     match clipboard::read() {

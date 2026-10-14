@@ -1,5 +1,5 @@
-//! The desktop clipboard: what a dragged selection copies to, and the text
-//! or picture the paste key reads.
+//! The desktop clipboard: what a dragged selection copies to, and the
+//! picture, files or text the paste key reads.
 
 /// The clipboard's text, or `None` when there is none to read.
 pub fn read() -> Option<String> {
@@ -12,6 +12,14 @@ pub fn read() -> Option<String> {
 pub fn read_image() -> Option<Vec<u8>> {
     let image = arboard::Clipboard::new().ok()?.get_image().ok()?;
     encode_png(image.width, image.height, &image.bytes).ok()
+}
+
+/// The files a file manager copied, which is no picture and no text: an
+/// image copied in Explorer is its path. Empty when there are none.
+pub fn read_files() -> Vec<std::path::PathBuf> {
+    arboard::Clipboard::new()
+        .and_then(|mut clipboard| clipboard.get().file_list())
+        .unwrap_or_default()
 }
 
 pub fn write(text: &str) -> Result<(), String> {
