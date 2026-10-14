@@ -88,7 +88,7 @@ fn d_on_a_branch_row_offers_to_delete_the_branch_itself() {
 
     h.key(KeyCode::Char('D'));
     match &h.app.prompt {
-        Some(Prompt::ConfirmRemove { target, label }) => {
+        Some(Prompt::ConfirmRemove { target, label, .. }) => {
             assert_eq!(
                 *target,
                 RemoveTarget::Branch {
@@ -126,7 +126,7 @@ fn an_unmerged_branch_comes_back_as_the_harder_question() {
     });
 
     match &h.app.prompt {
-        Some(Prompt::ConfirmRemove { target, label }) => {
+        Some(Prompt::ConfirmRemove { target, label, .. }) => {
             assert_eq!(
                 *target,
                 RemoveTarget::Branch {
@@ -387,4 +387,30 @@ fn a_branch_that_gets_a_checkout_stops_being_a_row_of_its_own() {
     assert_eq!(h.app.checkout_row_count(), 3);
     assert_eq!(h.app.sel_checkout, 2, "clamped onto the row that is left");
     assert_eq!(h.app.current_branch_row(), Some("hotfix/tls"));
+}
+
+#[test]
+fn the_harder_question_names_the_commits_it_would_lose() {
+    let mut h = harness_on_a_branch_row();
+    h.key(KeyCode::Char('D'));
+    h.key(KeyCode::Char('y'));
+    h.sent();
+    let commit = argus_protocol::CommitInfo {
+        oid: "4ee7ec0aaaa".into(),
+        short: "4ee7ec0".into(),
+        summary: "Pin the TLS roots".into(),
+        author: "t".into(),
+        time: 0,
+    };
+
+    h.app.on_server_msg(ServerMsg::BranchNotMerged {
+        checkout: CheckoutId(10),
+        branch: "hotfix/tls".to_string(),
+        commits: vec![commit.clone()],
+    });
+
+    match &h.app.prompt {
+        Some(Prompt::ConfirmRemove { lost, .. }) => assert_eq!(lost, &[commit]),
+        _ => panic!("expected the forced-delete confirmation"),
+    }
 }

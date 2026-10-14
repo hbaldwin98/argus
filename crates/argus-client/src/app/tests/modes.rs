@@ -17,6 +17,7 @@ fn the_mode_follows_what_claims_the_keys_first() {
     h.app.prompt = Some(Prompt::ConfirmRemove {
         target: RemoveTarget::Project(ProjectId(1)),
         label: "argus".to_string(),
+        lost: Vec::new(),
     });
     assert_eq!(h.app.mode(), Mode::Prompt, "a question outranks the window under it");
     h.app.prompt = None;

@@ -6,7 +6,6 @@ use argus_protocol::column::{local_name, CheckoutRow};
 use argus_protocol::{CheckoutInfo, DecisionBoard, GitStatus, PaneKind, RepositoryInfo};
 
 use crate::page::{CheckoutDetail, Checkouts, CheckoutsRow, LastCommit, Running};
-use crate::rail::ago;
 
 /// What the table is asked to show besides the repository itself.
 pub struct View<'a> {
@@ -26,7 +25,7 @@ pub fn last_commit(commit: &argus_protocol::CommitInfo, now: u64) -> LastCommit 
     LastCommit {
         short: commit.short.clone(),
         summary: commit.summary.clone(),
-        ago: ago(u64::try_from(commit.time).ok(), now),
+        ago: argus_protocol::ago(u64::try_from(commit.time).ok(), now),
     }
 }
 

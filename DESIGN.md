@@ -179,6 +179,7 @@ live in this crate and a contract written twice drifts in silence.
 | `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses |
 | `cell`, `framing`, `transport` | a screen cell, a frame, and the endpoint they travel over |
 | `damage` | what changed on a pane's screen, as runs of cells and regions that scrolled |
+| `ago` | how long ago something happened, as every client says it |
 | `column` | the order a repository's checkouts column lists its rows: the main branch first, then the checkouts, then the branches without one while they are shown |
 | `keys` | the bytes a key press is to a pane's child, decided once so every client types the same thing |
 | `mouse` | the bytes a mouse event is to a pane's child that asked for them, decided once so every client reports the mouse the same way |

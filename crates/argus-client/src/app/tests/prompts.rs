@@ -470,7 +470,7 @@ fn removing_a_linked_worktree_asks_first_then_sends() {
     h.sent();
     h.key(KeyCode::Char('D'));
     match &h.app.prompt {
-        Some(Prompt::ConfirmRemove { target, label }) => {
+        Some(Prompt::ConfirmRemove { target, label, .. }) => {
             assert_eq!(*target, RemoveTarget::Checkout(CheckoutId(11)));
             assert_eq!(label, "feat", "the confirmation names what it will delete");
         }
@@ -493,7 +493,7 @@ fn removing_a_project_asks_first_then_sends() {
     let mut h = Harness::new();
     h.key(KeyCode::Char('D'));
     match &h.app.prompt {
-        Some(Prompt::ConfirmRemove { target, label }) => {
+        Some(Prompt::ConfirmRemove { target, label, .. }) => {
             assert_eq!(*target, RemoveTarget::Project(ProjectId(1)));
             assert_eq!(label, "argus");
         }
@@ -515,7 +515,7 @@ fn removing_a_repository_asks_first_then_sends() {
     h.sent();
     h.key(KeyCode::Char('D'));
     match &h.app.prompt {
-        Some(Prompt::ConfirmRemove { target, label }) => {
+        Some(Prompt::ConfirmRemove { target, label, .. }) => {
             assert_eq!(*target, RemoveTarget::Repository(RepositoryId(5)));
             assert_eq!(label, "orion");
         }

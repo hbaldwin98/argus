@@ -310,7 +310,11 @@ impl App {
             // Straight back into the same popup with the harder question,
             // rather than an alert the user would have to answer by
             // finding the row again.
-            ServerMsg::BranchNotMerged { checkout, branch, .. } => {
+            ServerMsg::BranchNotMerged {
+                checkout,
+                branch,
+                commits,
+            } => {
                 self.prompt = Some(Prompt::ConfirmRemove {
                     target: RemoveTarget::Branch {
                         checkout,
@@ -318,6 +322,7 @@ impl App {
                         force: true,
                     },
                     label: branch,
+                    lost: commits,
                 });
             }
             ServerMsg::Error { message } => {

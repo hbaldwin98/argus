@@ -109,6 +109,7 @@ pub(super) fn render_checkouts(f: &mut Frame, app: &mut App, area: Rect, th: The
     let Some(repo) = app.current_repository() else {
         return;
     };
+    let now = argus_protocol::ago::now();
     for (drawn, sel) in indices
         .iter()
         .copied()
@@ -117,6 +118,9 @@ pub(super) fn render_checkouts(f: &mut Frame, app: &mut App, area: Rect, th: The
         .enumerate()
     {
         let selected = app.sel_checkout == sel;
+        // What was last committed on a checkout, said on the row's third
+        // line where the path is not.
+        let mut last = None;
         let (branch_label, state, state_color, pane_summary, path) = match rows.get(sel).copied() {
             Some(CheckoutRow::Checkout(i)) => {
                 let checkout = &repo.checkouts[i];
@@ -146,6 +150,10 @@ pub(super) fn render_checkouts(f: &mut Frame, app: &mut App, area: Rect, th: The
                         if agents == 1 { "" } else { "s" }
                     )
                 };
+                last = git.and_then(|g| g.last_commit.as_ref()).map(|c| {
+                    let when = argus_protocol::ago(u64::try_from(c.time).ok(), now);
+                    format!("{}  {} · {when}", c.short, c.summary)
+                });
                 (
                     checkout.name.clone(),
                     state,
@@ -154,13 +162,16 @@ pub(super) fn render_checkouts(f: &mut Frame, app: &mut App, area: Rect, th: The
                     elide_head(&checkout.path, path_width),
                 )
             }
-            Some(CheckoutRow::Branch(i)) => (
-                repo.branches.get(i).cloned().unwrap_or_default(),
-                "no checkout".into(),
-                th.dim,
-                "—".into(),
-                "—".into(),
-            ),
+            Some(CheckoutRow::Branch(i)) => {
+                let branch = repo.branches.get(i).cloned().unwrap_or_default();
+                // How far ahead of main, where the daemon counted it.
+                let state = match repo.unmerged.get(&branch) {
+                    Some(0) => "merged".to_string(),
+                    Some(n) => format!("↑{n} unmerged"),
+                    None => "no checkout".to_string(),
+                };
+                (branch, state, th.dim, "—".into(), "—".into())
+            }
             Some(CheckoutRow::Remote(i)) => (
                 repo.remote_branches
                     .get(i)
@@ -249,6 +260,22 @@ pub(super) fn render_checkouts(f: &mut Frame, app: &mut App, area: Rect, th: The
                     ..row
                 },
             );
+        }
+        if wide && row.height >= 3 {
+            if let Some(last) = &last {
+                let room = usize::from(row.width.saturating_sub(4));
+                f.render_widget(
+                    Paragraph::new(Line::styled(
+                        format!("  {}", ellipsize_text(last, room)),
+                        style.fg(th.dim),
+                    )),
+                    Rect {
+                        y: row.y + 2,
+                        height: 1,
+                        ..row
+                    },
+                );
+            }
         }
         if !wide && row.height >= 3 && path != "—" {
             f.render_widget(

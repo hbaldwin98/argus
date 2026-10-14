@@ -8,7 +8,7 @@
 
 use std::collections::HashSet;
 
-use argus_protocol::{
+use argus_protocol::{ago, 
     CheckoutInfo, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId, ProjectInfo, RepositoryId,
 };
 
@@ -163,19 +163,6 @@ fn statuses(project: &ProjectInfo) -> impl Iterator<Item = PaneStatus> + '_ {
 
 /// How long ago, the largest unit that fits: `5m`, `2h`, `3d`, `2w`; a
 /// dash for never.
-pub(crate) fn ago(then: Option<u64>, now: u64) -> String {
-    let Some(then) = then else {
-        return "—".into();
-    };
-    let secs = now.saturating_sub(then);
-    match secs {
-        0..=3599 => format!("{}m", (secs / 60).max(1)),
-        3600..=86_399 => format!("{}h", secs / 3600),
-        86_400..=604_799 => format!("{}d", secs / 86_400),
-        _ => format!("{}w", secs / 604_800),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

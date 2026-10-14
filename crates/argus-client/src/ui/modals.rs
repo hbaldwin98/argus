@@ -3,6 +3,9 @@
 
 use super::*;
 
+/// Commits a forced branch delete names before it asks.
+const LOST_SHOWN: usize = 6;
+
 /// Rows a fuzzy picker will show at once. Past this it scrolls, so a
 /// 5000-file list is still a modal and not a wall.
 pub(super) const PICKER_ROWS: usize = 12;
@@ -315,17 +318,36 @@ pub(super) fn render_prompt(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                 false,
             )
         }
-        Prompt::ConfirmRemove { target, label } => {
+        Prompt::ConfirmRemove {
+            target,
+            label,
+            lost,
+        } => {
             let (title, detail) = target.wording();
+            let mut lines = vec![Line::from(vec![
+                Span::styled(
+                    label.clone(),
+                    Style::default().fg(th.text).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(detail, Style::default().fg(th.muted)),
+            ])];
+            // What a yes gives up, a few lines of it: the prompt is a
+            // question, not a log.
+            for commit in lost.iter().take(LOST_SHOWN) {
+                lines.push(Line::from(vec![
+                    Span::styled(format!("  {} ", commit.short), Style::default().fg(th.dim)),
+                    Span::styled(commit.summary.clone(), Style::default().fg(th.muted)),
+                ]));
+            }
+            if lost.len() > LOST_SHOWN {
+                lines.push(Line::styled(
+                    format!("  and {} more", lost.len() - LOST_SHOWN),
+                    Style::default().fg(th.dim),
+                ));
+            }
             (
                 title,
-                vec![Line::from(vec![
-                    Span::styled(
-                        label.clone(),
-                        Style::default().fg(th.text).add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(detail, Style::default().fg(th.muted)),
-                ])],
+                lines,
                 "y/enter remove   n/esc cancel",
                 true,
             )

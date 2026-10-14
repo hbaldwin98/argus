@@ -8,6 +8,7 @@
 //! cannot.
 
 pub mod adr;
+pub mod ago;
 pub mod artifacts;
 pub mod capture;
 pub mod cell;
@@ -38,6 +39,7 @@ pub mod tracker_links;
 pub mod transport;
 pub mod tree;
 
+pub use ago::ago;
 pub use artifacts::ArtifactScope;
 pub use cell::{
     Cell, CellSpan, Color, Cursor, CursorShape, MouseEncoding, MouseMode, MouseTracking,

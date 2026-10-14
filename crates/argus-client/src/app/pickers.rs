@@ -279,7 +279,11 @@ impl App {
             }
             _ => return,
         };
-        self.prompt = Some(Prompt::ConfirmRemove { target, label });
+        self.prompt = Some(Prompt::ConfirmRemove {
+            target,
+            label,
+            lost: Vec::new(),
+        });
     }
 
     pub(super) fn open_picker(&mut self) {

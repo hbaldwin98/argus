@@ -359,6 +359,9 @@ pub enum Prompt {
     ConfirmRemove {
         target: RemoveTarget,
         label: String,
+        /// The commits a forced branch delete gives up, as the daemon named
+        /// them when it refused the first.
+        lost: Vec<argus_protocol::CommitInfo>,
     },
     Comment {
         anchor: ReviewAnchor,

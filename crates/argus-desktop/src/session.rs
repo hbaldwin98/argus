@@ -208,10 +208,7 @@ impl Session {
                 }
             }
             ServerMsg::BranchNotMerged { checkout, branch, commits } => {
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map_or(0, |d| d.as_secs());
-                self.checkouts.refused(checkout, branch, &commits, now);
+                self.checkouts.refused(checkout, branch, &commits, argus_protocol::ago::now());
             }
             ServerMsg::Clipboard { pane, text } if Some(pane) == self.shown => {
                 self.passing.push(Event::Clipboard { text });
