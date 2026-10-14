@@ -11,6 +11,12 @@ fn rail_lines(app: &mut App, width: u16, height: u16) -> Vec<String> {
     text.iter().map(|line| line.chars().take(rail).collect()).collect()
 }
 
+/// A row with its card's right side taken off, so what ends the row is what
+/// the row says.
+fn unboxed(line: &str) -> &str {
+    line.trim_end().trim_end_matches('│').trim_end()
+}
+
 /// The fixture's project with `quiet` more repositories that have nothing
 /// running, after the active `orion`.
 fn with_quiet_repositories(quiet: u64) -> App {
@@ -186,17 +192,19 @@ fn repository_rail_expands_active_branches_and_panes_after_click() {
     let text = rail_lines(&mut app, 120, 30);
     let at = |start: &str| text.iter().position(|line| line.starts_with(start));
 
-    // A checkout four columns in, its panes six, and no elbows drawn.
-    let master = at("    master").unwrap_or_else(|| panic!("{}", text.join("\n")));
+    // The checkout and its panes boxed in one card, and no elbows drawn.
+    let master = at(" │ master").unwrap_or_else(|| panic!("{}", text.join("\n")));
+    assert!(text[master - 1].starts_with(" ╭─"), "{}", text.join("\n"));
     // A working agent shows the spinner in place of its still mark.
     let agent: Vec<char> = text[master + 1].chars().collect();
     assert!(
-        agent[..6].iter().all(|c| *c == ' ') && agent[6] != ' ' && agent[6] != '◆',
+        agent[..3] == [' ', '│', ' '] && agent[3] != ' ' && agent[3] != '◆',
         "{}",
         text[master + 1]
     );
     assert!(text[master + 1].contains(" claude"), "{}", text[master + 1]);
-    assert_eq!(at("      › shell"), Some(master + 2), "{}", text.join("\n"));
+    assert_eq!(at(" │ › shell"), Some(master + 2), "{}", text.join("\n"));
+    assert!(text[master + 3].starts_with(" ╰─"), "{}", text.join("\n"));
     assert!(!text.join("\n").contains('└'), "{}", text.join("\n"));
 }
 
@@ -219,7 +227,8 @@ fn the_rails_checkout_row_shows_ahead_and_staged_while_dirty() {
     let text = rail_lines(&mut app, 120, 30);
 
     assert!(
-        text.iter().any(|line| line.starts_with("    master ↑2 +2 !1")),
+        text.iter()
+            .any(|line| line.starts_with(" │ master ") && unboxed(line).ends_with(" ↑2 +2 !1")),
         "{}",
         text.join("\n")
     );
@@ -235,10 +244,14 @@ fn current_pane_is_highlighted_in_an_expanded_repository() {
 
     let row = text
         .iter()
-        .position(|line| line.starts_with("▌     ") && line.contains(" claude"))
+        .position(|line| line.contains(" claude"))
         .unwrap_or_else(|| panic!("{}", text.join("\n")));
-    let bg = |y: usize| buf.cell((1, y as u16)).map(|c| c.bg);
+    let bg = |y: usize| buf.cell((3, y as u16)).map(|c| c.bg);
     assert_eq!(bg(row), Some(th.surface_focus));
+    // The band runs between the card's sides, not over them.
+    let side = buf.cell((1, row as u16)).unwrap();
+    assert_eq!(side.symbol(), "│");
+    assert_ne!(side.bg, th.surface_focus);
     // One highlight: the selected repository and the rest of what it holds
     // are told by the bar and the bold name, not by a band behind them.
     for other in [row - 2, row - 1, row + 1] {
@@ -248,6 +261,36 @@ fn current_pane_is_highlighted_in_an_expanded_repository() {
             text[other]
         );
     }
+}
+
+#[test]
+fn a_checkouts_card_is_edged_in_what_it_is_doing() {
+    let mut app = command_center();
+    app.choose_rail_row(crate::app::RailRow::Repository(0));
+    let th = app.theme;
+    let edge = |app: &mut App| {
+        let buf = draw_at(app, 120, 30);
+        let rail = app.layout.rail.inner;
+        let corner = (rail.y..rail.bottom())
+            .filter_map(|y| buf.cell((rail.x + 1, y)))
+            .find(|cell| cell.symbol() == "╭")
+            .unwrap_or_else(|| panic!("no card:\n{}", lines(&buf).join("\n")));
+        corner.fg
+    };
+    let set = |app: &mut App, agent, shell| {
+        let panes = &mut app.tree[0].repositories[0].checkouts[0].panes;
+        (panes[0].status, panes[1].status) = (agent, shell);
+    };
+
+    set(&mut app, PaneStatus::Idle, PaneStatus::Idle);
+    assert_eq!(edge(&mut app), th.edge, "nothing to watch");
+    set(&mut app, PaneStatus::Working, PaneStatus::Idle);
+    assert_eq!(edge(&mut app), th.ok);
+    set(&mut app, PaneStatus::Working, PaneStatus::Waiting);
+    assert_eq!(edge(&mut app), th.warn, "the loudest state wins");
+
+    app.choose_rail_row(crate::app::RailRow::Checkout(0, 0));
+    assert_eq!(edge(&mut app), th.accent, "the cursor is in it");
 }
 
 #[test]
@@ -269,7 +312,7 @@ fn clicking_a_repository_collapses_the_one_open_before_it() {
     click(&mut app, x, y);
     let text = rail_lines(&mut app, 120, 30);
     let lists = |text: &[String], branch: &str| {
-        text.iter().any(|line| line.starts_with(&format!("    {branch}")))
+        text.iter().any(|line| line.starts_with(&format!(" │ {branch}")))
     };
     assert!(lists(&text, "master") && !lists(&text, "trunk"), "{}", text.join("\n"));
 
@@ -291,7 +334,7 @@ fn clicking_a_pane_in_the_rail_keeps_keys_on_the_rail_so_x_closes_it() {
     click(&mut app, x, y);
     let row = rail_lines(&mut app, 120, 30)
         .iter()
-        .position(|line| line.starts_with("      ") && line.contains(" claude"))
+        .position(|line| line.starts_with(" │ ") && line.contains(" claude"))
         .expect("pane row") as u16;
     click(&mut app, x, row);
 
@@ -419,7 +462,7 @@ fn working_agent_row(app: &mut App) -> Option<String> {
     let buf = draw_at(app, 140, 40);
     let rail = app.layout.rail.inner;
     (rail.y..rail.bottom()).map(|y| (y, row_text(&buf, y, rail))).find_map(|(y, row)| {
-        let glyph = buf.cell((rail.x + 6, y))?;
+        let glyph = buf.cell((rail.x + 3, y))?;
         let working = row.contains(" claude") && glyph.symbol() != "◆" && glyph.fg == th.ok;
         working.then_some(row)
     })
@@ -437,13 +480,13 @@ fn an_open_repository_lists_a_panes_children_under_it_and_the_cursor_steps_over_
 
     let agent = text
         .iter()
-        .position(|line| line.starts_with("      ") && line.contains(" claude"))
+        .position(|line| line.starts_with(" │ ") && line.contains(" claude"))
         .unwrap();
     assert!(!text[agent].contains('◆'), "the child's work is the agent's: {}", text[agent]);
     // Two columns further in than its pane, and working is not a state
     // that asks to be spelled out.
-    assert_eq!(text[agent + 1].trim_end(), "        ⤷ codex review", "{}", text.join("\n"));
-    assert!(text[agent + 2].starts_with("      › shell"), "{}", text.join("\n"));
+    assert_eq!(unboxed(&text[agent + 1]), " │   ⤷ codex review", "{}", text.join("\n"));
+    assert!(text[agent + 2].starts_with(" │ › shell"), "{}", text.join("\n"));
 
     // A click on the child lands on its agent; the keys step past it.
     click(&mut app, list.x + 12, agent as u16 + 1);
@@ -491,7 +534,7 @@ fn a_pane_row_counts_the_messages_queued_for_it_before_its_status() {
     let text = rail_lines(&mut app, 120, 30);
 
     let agent = text.iter().find(|line| line.contains(" claude")).unwrap();
-    assert!(agent.trim_end().ends_with(" ✉2 NEEDS YOU"), "{agent}");
+    assert!(unboxed(agent).ends_with(" ✉2 NEEDS YOU"), "{agent}");
     let shell = text.iter().find(|line| line.contains("› shell")).unwrap();
     assert!(!shell.contains('✉'), "nothing queued, nothing said: {shell}");
 }
@@ -505,7 +548,7 @@ fn the_queued_badge_takes_its_width_from_the_title_and_leaves_the_status_in_plac
         let text = rail_lines(app, 120, 30);
         let row = text.iter().find(|line| line.contains(" claude")).unwrap();
         assert!(row.contains("NEEDS YOU"), "{row}");
-        row.trim_end().chars().count()
+        unboxed(row).chars().count()
     };
 
     let bare = status_column(&mut app);
@@ -532,7 +575,7 @@ fn a_pane_row_writes_its_status_word_only_when_it_needs_you() {
         let y = (rail.y..rail.bottom())
             .find(|y| row_text(&buf, *y, rail).contains(" claude"))
             .expect("the agent's row");
-        (row_text(&buf, y, rail), buf.cell((rail.x + 6, y)).map(|c| c.fg))
+        (row_text(&buf, y, rail), buf.cell((rail.x + 3, y)).map(|c| c.fg))
     };
 
     for status in quiet {
@@ -542,7 +585,7 @@ fn a_pane_row_writes_its_status_word_only_when_it_needs_you() {
     }
     for (status, word) in loud {
         let (row, _) = agent_row(status);
-        assert!(row.trim_end().ends_with(&format!(" {word}")), "{status:?}: {row}");
+        assert!(unboxed(&row).ends_with(&format!(" {word}")), "{status:?}: {row}");
     }
 }
 
@@ -552,9 +595,9 @@ fn a_child_row_writes_its_status_word_only_when_it_needs_you() {
     app.focus = Focus::Panes;
     let child_row = |app: &mut App| {
         let text = rail_lines(app, 120, 30);
-        text.iter().find(|line| line.contains("⤷ codex review")).unwrap().trim_end().to_string()
+        unboxed(text.iter().find(|line| line.contains("⤷ codex review")).unwrap()).to_string()
     };
-    assert_eq!(child_row(&mut app), "        ⤷ codex review");
+    assert_eq!(child_row(&mut app), " │   ⤷ codex review");
 
     app.tree[0].repositories[0].checkouts[0].panes[0].children[0].status = PaneStatus::Waiting;
     assert!(child_row(&mut app).ends_with(" NEEDS YOU"), "{}", child_row(&mut app));

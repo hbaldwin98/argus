@@ -341,10 +341,13 @@ A workspace is daemon-wide scope, not a navigation column. Switching it changes 
 client. Panes in other workspaces continue to run. The production TUI projects the selected
 project's repositories into the stable rail and gives the selected pane's terminal the
 remaining stage. Repository rows are ordered active-first, the quiet ones folded behind their line,
-and stay collapsed until chosen; the one open repository shows its checkouts with panes running and
-those panes, indented under it without connecting glyphs, with the pane being viewed marked in
-place. Only the cursor's row and the pane being viewed are filled; the selected repository is told
-by its bar and bold name. Checkout and pane identity remain the same indices and IDs used by the daemon
+and stay collapsed until chosen; the one open repository shows a card for each checkout with panes
+running: a box whose top row is the branch with its git state at the right, and whose rows under it
+are those panes and their children. The card's border carries the checkout's state: the accent while
+the cursor or the stage is in it, else the colour of its loudest state from working up, and the
+rule's colour while everything in it is idle or done. A click on a card's border lands on its
+checkout. Only the cursor's row and the pane being viewed are filled, between the card's sides; the
+selected repository is told by its bar and bold name. Checkout and pane identity remain the same indices and IDs used by the daemon
 tree. While typing in a pane, `Ctrl-Space`, `f` lets its terminal take the main content area;
 repeating the chord restores the shell. The command band remains visible in both layouts.
 

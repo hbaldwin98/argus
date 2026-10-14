@@ -19,7 +19,7 @@ fn production_shell_matches_the_designs_four_regions() {
         assert!(text.contains(landmark), "missing {landmark}:\n{text}");
     }
     assert!(
-        !text.lines().any(|line| line.starts_with("    master")),
+        !text.lines().any(|line| line.starts_with(" │ master")),
         "repositories expand only after a click:\n{text}"
     );
     assert_eq!(app.layout.rail.outer.x, 0);
