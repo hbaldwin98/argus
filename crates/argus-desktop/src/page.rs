@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::keymap::Group;
+use crate::keymap::{Action, Command, Group};
 
 /// One message down the page's channel.
 #[derive(Debug, Clone, Serialize)]
@@ -33,9 +33,16 @@ pub enum Event {
     /// Something the daemon said that passes: a refused request's reason.
     /// The page shows it a while and lets it go.
     Notice { text: String },
-    /// Every binding, grouped as the shortcuts sheet lists them, sent once
-    /// a page loads: the page dispatches from it outside a pane.
-    Keymap { groups: Vec<Group> },
+    /// Every binding, grouped as the shortcuts sheet lists them, and the
+    /// palette's commands, sent once a page loads: the page dispatches from
+    /// it outside a pane.
+    Keymap { groups: Vec<Group>, commands: Vec<Command> },
+    /// What the palette can go to, whenever it changes while open; `open`
+    /// false once it closes.
+    Palette(Box<Palette>),
+    /// A key pressed in a pane, or a command chosen in the palette, for
+    /// something only the page draws: the palette or the shortcuts sheet.
+    Run { action: Action },
 }
 
 /// The connection, as the status bar and the empty stage show it.
@@ -303,6 +310,59 @@ pub struct Line {
     pub text: String,
     /// Said under it in small type: the agent and branch, a state.
     pub aside: Option<String>,
+}
+
+/// What the command palette can go to while it is open.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Palette {
+    pub open: bool,
+    /// Every pane of the project.
+    pub panes: Vec<PalettePane>,
+    /// Every checkout of the project, those of closed repositories too.
+    pub checkouts: Vec<PaletteCheckout>,
+    /// The features of the repository the Feature stage reads.
+    pub features: Vec<PaletteFeature>,
+    /// Whether that repository's board has arrived.
+    pub features_loaded: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PalettePane {
+    pub id: u64,
+    pub title: String,
+    pub agent: bool,
+    #[cfg_attr(test, ts(type = "\"idle\" | \"working\" | \"waiting\" | \"needs-review\" | \"done\" | \"failed\" | \"exited\""))]
+    pub status: &'static str,
+    /// `repository / checkout`.
+    pub place: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PaletteCheckout {
+    pub id: u64,
+    pub name: String,
+    pub repository: String,
+    pub branch: String,
+    /// `GitStatus::summary`, or `None` outside git.
+    pub git: Option<String>,
+    pub clean: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PaletteFeature {
+    pub slug: String,
+    pub number: i64,
+    pub title: String,
+    #[cfg_attr(test, ts(type = "\"new\" | \"queued\" | \"active\" | \"done\" | \"held\" | \"archived\""))]
+    pub standing: &'static str,
 }
 
 /// The rows of a pane's screen that changed since the last frame.
@@ -759,5 +819,20 @@ mod tests {
         assert_eq!(as_json(event), json!({"type": "clipboard", "text": "copied"}));
         let event = Event::Notice { text: "no such pane".into() };
         assert_eq!(as_json(event), json!({"type": "notice", "text": "no such pane"}));
+    }
+
+    #[test]
+    fn the_palette_and_a_run_name_their_fields_in_camel_case() {
+        let palette = Palette {
+            open: true,
+            panes: vec![PalettePane { id: 4, title: "claude".into(), agent: true, status: "waiting", place: "argus / main".into() }],
+            features_loaded: true,
+            ..Palette::default()
+        };
+        let value = as_json(Event::Palette(Box::new(palette)));
+        assert_eq!(value["type"], "palette");
+        assert_eq!(value["featuresLoaded"], true);
+        assert_eq!(value["panes"][0]["place"], "argus / main");
+        assert_eq!(as_json(Event::Run { action: Action::Shortcuts }), json!({"type": "run", "action": "shortcuts"}));
     }
 }

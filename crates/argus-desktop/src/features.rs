@@ -238,7 +238,7 @@ fn peek(row: &FeatureRow, feature: &Feature, board: &DecisionBoard, index: &Inde
     }
 }
 
-fn word(standing: Standing) -> &'static str {
+pub fn word(standing: Standing) -> &'static str {
     match standing {
         Standing::New => "new",
         Standing::Queued => "queued",

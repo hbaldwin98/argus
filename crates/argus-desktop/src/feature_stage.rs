@@ -166,6 +166,14 @@ impl FeatureStage {
         self.ask_tasks(scope, out);
     }
 
+    /// How the scope's index is laid out, as remembered for it.
+    pub fn layout(&self, scope: Option<&Scope>) -> Layout {
+        scope
+            .and_then(|scope| self.settings.layouts.get(&scope.key))
+            .and_then(|word| Layout::from_word(word))
+            .unwrap_or_default()
+    }
+
     pub fn set_layout(&mut self, layout: Layout, scope: Option<&Scope>) {
         let Some(scope) = scope else {
             return;
@@ -229,10 +237,7 @@ impl FeatureStage {
     }
 
     fn index(&self, scope: Option<&Scope>, tree: &[ProjectInfo]) -> page::Features {
-        let layout = scope
-            .and_then(|scope| self.settings.layouts.get(&scope.key))
-            .and_then(|word| Layout::from_word(word))
-            .unwrap_or_default();
+        let layout = self.layout(scope);
         features::build(&Index {
             repository: scope.map_or("", |scope| scope.repository_name.as_str()),
             board: self.board.as_ref(),

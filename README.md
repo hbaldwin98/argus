@@ -214,6 +214,11 @@ Feature stage takes `j`/`k`, Home/End, `v`, `z`, `/`, and on the feature under t
 `h`, `A` and `g`. `Ctrl-V` (`Cmd-V` on a Mac), `Ctrl-Shift-V` and `Alt-V` paste, and
 Shift-PageUp/PageDown page through the history.
 
+`Ctrl-K` (from a pane, the leader and `k`) opens the palette: one search over the window's commands,
+the project's panes and checkouts and the chosen repository's features, each with its key or its
+status beside it. A leading `>` searches only commands, `#` only features. `?` (from a pane, the
+leader and `?`) opens the shortcuts sheet, every key grouped by where it works.
+
 ## Install on `PATH`
 
 ### Release archive

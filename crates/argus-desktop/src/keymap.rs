@@ -56,6 +56,8 @@ pub enum Place {
     Review,
     /// The history dialog while it is open, which holds the keys.
     History,
+    /// The palette's search field while it is open, which holds the keys.
+    Palette,
 }
 
 /// What a binding does. The page runs those of the places it dispatches,
@@ -114,6 +116,10 @@ pub enum Action {
     Fold,
     /// The commit under the cursor as a review.
     AsReview,
+    /// Open the command palette.
+    Palette,
+    /// Open the shortcuts sheet, or close it.
+    Shortcuts,
 }
 
 #[derive(Debug, Serialize)]
@@ -136,6 +142,20 @@ pub struct Group {
     pub place: Place,
     pub title: &'static str,
     pub bindings: Vec<&'static Binding>,
+}
+
+/// A command the palette lists: what it runs, what it is called there, and
+/// the keys that run it outside the palette, from the binding in `place`.
+/// A command with no `place` acts where no key reaches: on the pane on
+/// screen's checkout, which only a picked rail row has keys for.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Command {
+    pub action: Action,
+    pub label: &'static str,
+    pub place: Option<Place>,
+    pub chords: &'static [Chord],
 }
 
 impl Chord {
@@ -188,6 +208,7 @@ impl Place {
             Place::Start => "A checkout's + menu",
             Place::Review => "Review",
             Place::History => "History",
+            Place::Palette => "Palette",
         }
     }
 }
@@ -216,6 +237,8 @@ pub static BINDINGS: &[Binding] = &[
     bind(Anywhere, &[Chord::key("2")], Feature, "Feature"),
     bind(Anywhere, &[Chord::key("3")], Action::Checkouts, "Checkouts"),
     bind(Anywhere, &[Chord::key("Escape")], CloseLayer, "close the menu or dialog"),
+    bind(Anywhere, &[Chord::key("k").ctrl()], Action::Palette, "search actions, panes, features and checkouts"),
+    bind(Anywhere, &[Chord::key("?")], Shortcuts, "these shortcuts"),
     bind(Pane, &[LEADER.after_leader()], Leader, "send ctrl-space to the program"),
     bind(Pane, &[Chord::key("f").after_leader()], Fill, "fill the window with the pane, and back"),
     bind(Pane, &[Chord::key("1").after_leader()], Workspace, "Workspace"),
@@ -225,6 +248,8 @@ pub static BINDINGS: &[Binding] = &[
     bind(Pane, PASTE, Paste, "paste"),
     bind(Pane, &[Chord::key("PageUp").shift()], PageUp, "back through the history"),
     bind(Pane, &[Chord::key("PageDown").shift()], PageDown, "forward to the live screen"),
+    bind(Pane, &[Chord::key("k").ctrl().after_leader(), Chord::key("k").after_leader()], Action::Palette, "search actions, panes, features and checkouts"),
+    bind(Pane, &[Chord::key("?").after_leader()], Shortcuts, "these shortcuts"),
     bind(Rail, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next checkout or pane"),
     bind(Rail, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous checkout or pane"),
     bind(Rail, &[Chord::key("s"), Chord::key("S")], StartShell, "start a shell on its checkout"),
@@ -280,9 +305,33 @@ pub static BINDINGS: &[Binding] = &[
     bind(History, &[Chord::key("h"), Chord::key("ArrowLeft")], Fold, "fold it"),
     bind(History, &[Chord::key("Enter")], Choose, "open a commit, or a file as a review"),
     bind(History, &[Chord::key("o"), Chord::key("O")], AsReview, "open as a review"),
+    bind(Place::Palette, &[Chord::key("ArrowDown")], Next, "next result"),
+    bind(Place::Palette, &[Chord::key("ArrowUp")], Previous, "previous result"),
+    bind(Place::Palette, &[Chord::key("Enter")], Choose, "run it, or go to it"),
+    bind(Place::Palette, &[Chord::key("Escape")], CloseLayer, "close the palette"),
 ];
 
-const ORDER: [Place; 9] = [Anywhere, Pane, Rail, Place::Feature, Card, CheckoutsTable, Start, Review, History];
+/// What the palette offers to run, in its order, each with the place whose
+/// binding it shows as its key.
+static COMMANDS: &[(Action, Option<Place>, &str)] = &[
+    (Workspace, Some(Anywhere), "Go to the Workspace"),
+    (Action::Feature, Some(Anywhere), "Go to the Feature stage"),
+    (Action::Checkouts, Some(Anywhere), "Go to the Checkouts stage"),
+    (Shortcuts, Some(Anywhere), "Show the keyboard shortcuts"),
+    (Fill, Some(Pane), "Fill the window with the pane, and back"),
+    (Close, Some(Pane), "Close the pane, ending its program"),
+    (StartShell, None, "Start a shell on this checkout"),
+    (StartAgent, None, "Start the default agent on this checkout"),
+    (OpenReview, Some(CheckoutsTable), "Review this checkout's changes"),
+    (OpenHistory, Some(CheckoutsTable), "Read this checkout's history"),
+    (Fetch, Some(CheckoutsTable), "Fetch this checkout"),
+    (Pull, Some(CheckoutsTable), "Pull this checkout"),
+    (Branches, Some(CheckoutsTable), "Show or hide the branches no checkout is on"),
+    (Layout, Some(Place::Feature), "Show the features as a list or a board"),
+    (Folded, Some(Place::Feature), "Show held and archived features, or fold them"),
+];
+
+const ORDER: [Place; 10] = [Anywhere, Pane, Rail, Place::Feature, Card, CheckoutsTable, Start, Review, History, Place::Palette];
 
 /// The table as the sheet lists it: a group per place, in the sheet's order.
 pub fn groups() -> Vec<Group> {
@@ -294,6 +343,26 @@ pub fn groups() -> Vec<Group> {
             bindings: BINDINGS.iter().filter(|b| b.place == place).collect(),
         })
         .collect()
+}
+
+/// The palette's commands, each with the keys of its binding.
+pub fn commands() -> Vec<Command> {
+    COMMANDS
+        .iter()
+        .map(|&(action, place, label)| Command {
+            action,
+            label,
+            place,
+            chords: place
+                .and_then(|place| BINDINGS.iter().find(|b| b.place == place && b.action == action))
+                .map_or(&[], |b| b.chords),
+        })
+        .collect()
+}
+
+/// Whether the palette lists `action` as a command.
+pub fn is_command(action: Action) -> bool {
+    COMMANDS.iter().any(|&(a, _, _)| a == action)
 }
 
 pub fn is_leader(page: &PageKey) -> bool {
@@ -335,17 +404,83 @@ mod tests {
         let titles: Vec<_> = groups.iter().map(|g| g.title).collect();
         assert_eq!(
             titles,
-            ["Anywhere", "In a pane", "Rail", "Feature", "Board card", "Checkouts", "A checkout's + menu", "Review", "History"]
+            ["Anywhere", "In a pane", "Rail", "Feature", "Board card", "Checkouts", "A checkout's + menu", "Review", "History", "Palette"]
         );
+    }
+
+    /// The sheet is the groups as they cross to the page, so a key is on
+    /// it exactly when it crossed: each chord of each binding, under the
+    /// heading of the place it works in.
+    #[test]
+    fn every_bound_key_appears_in_the_sheet() {
+        let sheet = serde_json::to_value(groups()).unwrap();
+        let sheet = sheet.as_array().unwrap();
+        for binding in BINDINGS {
+            let heading = sheet
+                .iter()
+                .find(|g| g["title"] == binding.place.title())
+                .unwrap_or_else(|| panic!("no heading for {}", binding.label));
+            for chord in binding.chords {
+                let chord = serde_json::to_value(chord).unwrap();
+                let listed = heading["bindings"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|b| b["label"] == binding.label && b["chords"].as_array().unwrap().contains(&chord));
+                assert!(listed, "{chord} for {} is missing from {}", binding.label, heading["title"]);
+            }
+        }
+    }
+
+    #[test]
+    fn every_command_with_a_place_shows_a_key_bound_there() {
+        for command in commands() {
+            if command.place.is_some() {
+                assert!(!command.chords.is_empty(), "{} has no key in its place", command.label);
+            }
+        }
+        let labels: Vec<_> = commands().iter().map(|c| c.label).collect();
+        for (i, label) in labels.iter().enumerate() {
+            assert!(!labels[i + 1..].contains(label), "{label} is listed twice");
+        }
+    }
+
+    /// Ctrl-K and ? reach the palette and the sheet wherever the page has
+    /// the keys; in a pane they are the program's until the leader.
+    #[test]
+    fn the_palette_and_the_sheet_open_from_anywhere_and_after_the_leader() {
+        let anywhere = |key: PageKey| {
+            BINDINGS
+                .iter()
+                .filter(|b| b.place == Anywhere)
+                .find(|b| b.chords.iter().any(|c| c.matches(&key)))
+                .map(|b| b.action)
+        };
+        let ctrl_k = PageKey { ctrl: true, ..page("k") };
+        assert_eq!(anywhere(ctrl_k.clone()), Some(Action::Palette));
+        assert_eq!(anywhere(PageKey { shift: true, ..page("?") }), Some(Shortcuts));
+        assert_eq!(in_pane(&ctrl_k, false), None, "a shell's kill-line");
+        assert_eq!(in_pane(&ctrl_k, true), Some(Action::Palette));
+        assert_eq!(in_pane(&page("?"), false), None);
+        assert_eq!(in_pane(&page("?"), true), Some(Shortcuts));
     }
 
     /// The page hears Anywhere, Feature and Card together, so a key may
     /// be bound once among them; a pane's keys are a table of their own,
-    /// and an open + menu hears only its own and Anywhere's.
+    /// and an open + menu hears only its own and Anywhere's. The palette's
+    /// field hears only its own: the rest are typed into it.
     #[test]
     fn no_key_is_bound_twice_where_it_is_heard() {
-        let heard_together: [&[Place]; 7] =
-            [&[Anywhere, Place::Feature, Card], &[Pane], &[Anywhere, Rail], &[Anywhere, CheckoutsTable], &[Anywhere, Start], &[Anywhere, Review], &[Anywhere, History]];
+        let heard_together: [&[Place]; 8] = [
+            &[Anywhere, Place::Feature, Card],
+            &[Pane],
+            &[Anywhere, Rail],
+            &[Anywhere, CheckoutsTable],
+            &[Anywhere, Start],
+            &[Anywhere, Review],
+            &[Anywhere, History],
+            &[Place::Palette],
+        ];
         for places in heard_together {
             let chords: Vec<&Chord> = BINDINGS
                 .iter()

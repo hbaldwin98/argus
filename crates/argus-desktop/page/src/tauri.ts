@@ -61,6 +61,10 @@ interface Commands {
   hold: { slug: string; reason: string | null };
   archive: { slug: string; archived: boolean };
   go_to_pane: { pane: number };
+  palette: { open: boolean };
+  command: { action: Action };
+  go_to_checkout: { checkout: number };
+  go_to_feature: { slug: string };
   reconnect: None;
 }
 

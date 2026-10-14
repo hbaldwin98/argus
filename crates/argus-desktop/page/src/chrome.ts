@@ -5,6 +5,8 @@ import type { Action } from './bindings/Action';
 import { drawCheckouts } from './checkouts.js';
 import { $, el, ghosts, icon, type Child } from './dom.js';
 import { drawFeatures } from './features.js';
+import { chordsFor, keycaps } from './keys.js';
+import { openPalette } from './palette.js';
 import { screen } from './screen.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
@@ -455,6 +457,22 @@ function drawBar(): void {
     left.push(el('span', { class: 'actions' }, dot('var(--fg-faint)'), 'Stopped'));
 
     right.push(el('button', { class: 'btn sm', onclick: reconnect }, 'Reconnect'));
+  }
+  // The palette's key, from the keymap, where the eye looks for help.
+  const palette = chordsFor('palette', 'anywhere');
+  if (palette.length) {
+    right.unshift(
+      el(
+        'button',
+        {
+          class: 'hint',
+          title: 'Search actions, panes, features and checkouts',
+          onclick: openPalette,
+        },
+        keycaps(palette),
+        'Commands',
+      ),
+    );
   }
   $('bar').replaceChildren(...left, el('span', { class: 'grow' }), ...right);
 }
