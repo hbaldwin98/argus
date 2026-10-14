@@ -197,9 +197,7 @@ mod tests {
                 ..Default::default()
             },
             background: false,
-            has_transcript: false,
             since: Some(1_700_000_000),
-            queued: Vec::new(),
             live: false,
         }
     }

@@ -280,8 +280,8 @@ pub(super) fn strip_herdr_context(
 /// The variables a Claude Code session sets for what it runs, naming that
 /// session. A daemon started from inside one would hand them on to every
 /// pane, and a Claude agent there reads them as being that session's child
-/// — one that saves no transcript, which is what Argus reads its
-/// conversation from. What a person sets to configure Claude Code
+/// — one that saves no transcript, which is what Argus reads its context
+/// and token telemetry from. What a person sets to configure Claude Code
 /// (`CLAUDE_CODE_USE_BEDROCK` and the like) is not among them.
 const CLAUDE_SESSION_MARKERS: &[&str] = &[
     "CLAUDECODE",

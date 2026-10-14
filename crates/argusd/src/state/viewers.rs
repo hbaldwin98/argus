@@ -84,6 +84,14 @@ impl Daemon {
         viewers.applied.remove(&pane);
     }
 
+    /// Whether any record of a pane's size is held, for a test to check
+    /// that a gone pane left none.
+    #[cfg(test)]
+    pub(super) fn holds_pane_size(&self, pane: PaneId) -> bool {
+        let viewers = self.viewers.lock().unwrap();
+        viewers.wanted.contains_key(&pane) || viewers.applied.contains_key(&pane)
+    }
+
     /// Hands out the identity a connection uses to claim pane sizes.
     pub fn new_viewer(&self) -> ViewerId {
         ViewerId(

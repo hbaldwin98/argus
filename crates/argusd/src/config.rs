@@ -154,13 +154,6 @@ pub struct HarnessConfig {
     /// Optional skill directory relative to the checkout; absent keeps the compact fallback.
     #[serde(default)]
     pub skill_dir: Option<String>,
-    /// Which built-in reader this CLI's transcript is written for, if any:
-    /// `"claude"`.
-    #[serde(default)]
-    pub transcript: Option<crate::harness::transcript::Dialect>,
-    /// What interrupts this CLI's agent, when it is not Esc.
-    #[serde(default)]
-    pub interrupt: Option<String>,
 }
 
 /// A bare status is the common case; the table form is for an event that
@@ -254,8 +247,6 @@ impl From<HarnessConfig> for crate::harness::Harness {
             rule_file: c.rule_file.map(PathBuf::from),
             skill_dir: c.skill_dir.map(PathBuf::from),
             settings_version: None,
-            transcript: c.transcript,
-            interrupt: c.interrupt,
         }
     }
 }
@@ -468,6 +459,28 @@ live = true
         );
         assert_eq!(cfg.agents[0].name, "codex");
         assert_eq!(cfg.agents[0].cmd, ["codex"]);
+    }
+
+    #[test]
+    fn a_harness_block_that_still_sets_transcript_or_interrupt_loads_as_if_it_did_not() {
+        // `transcript` named the reader for a conversation a client could
+        // follow, and `interrupt` the key a client's stop typed; both went
+        // with what used them. The file is written by hand, so the old keys
+        // are read past rather than refused.
+        let cfg = parse(
+            r#"
+[[harness]]
+name = "herdr"
+resume = ["--continue"]
+transcript = "claude"
+interrupt = "\u0003"
+"#,
+        );
+        let herdr = harnesses(cfg.harnesses)
+            .into_iter()
+            .find(|h| h.name == "herdr")
+            .expect("a configured harness joins the built-ins");
+        assert_eq!(herdr.resume, ["--continue"]);
     }
 
     #[test]

@@ -9,10 +9,9 @@
 //! watchers that keep the tree level with the disk, `panel` for the rows
 //! the user adds and removes, `workspaces` for which scope is open,
 //! `hook_server` for the
-//! loopback receiver, `session` for what survives a restart,
-//! `conversation` for what a client is shown of a pane's conversation,
-//! `outbox` for what a person says to an agent and the way it reaches it,
-//! and `tree` for finding your way around.
+//! loopback receiver, `session` for what survives a restart, `inbox` for
+//! the way what Argus says reaches an agent, and `tree` for finding your
+//! way around.
 //!
 //! The type and its locking are one thing; only which file a concern is
 //! read in is split.
@@ -31,7 +30,6 @@ use tokio::sync::broadcast;
 mod agents;
 mod board_parts;
 mod build;
-mod conversation;
 mod decisions;
 mod features;
 mod diagrams;
@@ -39,7 +37,7 @@ mod tasks;
 mod tracker_map;
 mod git_ops;
 mod hook_server;
-mod outbox;
+mod inbox;
 mod panel;
 mod panes;
 mod session;
@@ -91,15 +89,12 @@ struct Pane {
     /// Live only: model, context, spend and tool, as the harness last
     /// reported them. Not persisted; a restored agent reports afresh.
     telemetry: argus_protocol::AgentTelemetry,
-    /// The pane's conversation as a client is shown it, and the clients
-    /// following it. See `conversation`.
-    conversation: conversation::Conversation,
     /// When `status` last changed, for a client to say how long the pane
-    /// has been where it is, and for the outbox to tell a turn has passed.
+    /// has been where it is.
     status_since: std::time::SystemTime,
-    /// What is said to its agent: the queue, and the inbox it may go
-    /// through instead. See `outbox`.
-    speaking: outbox::Speaking,
+    /// The inbox what is said to its agent goes through instead of its
+    /// terminal, while its harness's adapter holds one open. See `inbox`.
+    inbox: inbox::Inbox,
     /// A hook won the race with session restoration, so saved metadata must
     /// not overwrite what the newly started process already reported.
     restore_status_reported: bool,
@@ -127,9 +122,8 @@ impl Pane {
             children: Vec::new(),
             background: false,
             telemetry: Default::default(),
-            conversation: conversation::Conversation::new(id),
             status_since: std::time::SystemTime::now(),
-            speaking: Default::default(),
+            inbox: None,
             restore_status_reported: false,
             restore_title_reported: false,
             resumed: None,
@@ -364,9 +358,6 @@ pub struct Daemon {
     /// A tick whenever a client's view changes or goes, for the
     /// connections watching the focus to read it again.
     views_tx: broadcast::Sender<()>,
-    /// The task typing queued messages, once anything has been queued, and
-    /// the id the next message gets.
-    outbox: StdMutex<outbox::Outbox>,
     /// Names each inbox connection, so a stale one closing cannot close
     /// the one that replaced it.
     next_inbox: std::sync::atomic::AtomicU64,
@@ -433,14 +424,12 @@ fn project_info(p: &Project, used: &HashMap<PathBuf, u64>) -> ProjectInfo {
                                         .collect(),
                                     telemetry: pane.telemetry.clone(),
                                     background: pane.background,
-                                    has_transcript: pane.conversation.offered(),
                                     since: pane
                                         .status_since
                                         .duration_since(std::time::UNIX_EPOCH)
                                         .ok()
                                         .map(|d| d.as_secs()),
-                                    queued: pane.speaking.queued.iter().cloned().collect(),
-                                    live: pane.speaking.inbox.is_some(),
+                                    live: pane.inbox.is_some(),
                                 })
                                 .collect(),
                             git,

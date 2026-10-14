@@ -28,7 +28,6 @@ pub mod paths;
 pub mod review;
 pub mod tasks;
 pub mod tracker_links;
-pub mod transcript;
 pub mod transport;
 pub mod tree;
 
@@ -57,14 +56,14 @@ pub use focus::{Focus, FocusCheckout, FocusPane, FocusProject, FocusRepository, 
 pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
 pub use held_tree::{transitions, HeldTree, Transition};
 pub use hello::{
-    Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, OUTBOX, PASTE_FILE,
-    PANE_TELEMETRY, PROTOCOL, TRANSCRIPTS,
+    Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
+    PANE_TELEMETRY, PROTOCOL,
 };
 pub use hook::{
     endpoint_url, feature_url, pane_path, pane_url, parse_pane_path, parse_pane_url,
     parse_request_target, requested_feature, requested_scope, Endpoint, PaneUrl, Report, ARTIFACT_SCOPE_VAR, CONTEXT_COMMAND, HELPER_VAR,
     BACKGROUND_HEADER, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG, PANE_VAR, SESSION_HEADER,
-    SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, TRANSCRIPT_HEADER, URL_VAR,
+    SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };
 pub use ids::{CheckoutId, IdGen, PaneId, ProjectId, RepositoryId, WorkspaceId};
 pub use inbox::InboxItem;
@@ -75,7 +74,7 @@ pub use memory::{
     DEFAULT_PACKET_MAX_ITEMS, MAX_ARTIFACT_TEXT_BYTES, MAX_WORK_CONTEXT_BRIEF_BYTES,
     MAX_WORK_CONTEXT_TITLE_BYTES,
 };
-pub use message::{ClientMsg, Created, DirEntry, DirListing, Sent, ServerMsg, MAX_SEND_BYTES};
+pub use message::{ClientMsg, Created, DirEntry, DirListing, ServerMsg};
 pub use paths::{config_dir, instance_name};
 pub use review::{
     ChangeKind, CommitFile, CommitInfo, DiffLine, FileDiff, HighlightKind, HighlightSpan, Hunk,
@@ -92,8 +91,7 @@ pub use tracker_links::{
     checked_map, LinkWrite, MapChange, MapDraft, TrackerLink, TrackerMap, MAX_FEATURE_LINKS,
     MAX_LINK_KEY_BYTES, MAX_LINK_TRACKER_BYTES, MAX_LINK_URL_BYTES, MAX_TRACKER_MAP_BYTES,
 };
-pub use transcript::{Body, Choice, Draft, Earlier, Entry, Push, ToolState, Update, MAX_PUSH_BYTES};
 pub use tree::{
     AgentTelemetry, CheckoutInfo, ChildAgentInfo, GitStatus, PaneInfo, PaneKind, PaneState, PaneStatus,
-    ProjectInfo, QueuedMessage, RepositoryInfo, WorkspaceInfo,
+    ProjectInfo, RepositoryInfo, WorkspaceInfo,
 };

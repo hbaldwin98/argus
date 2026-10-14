@@ -92,7 +92,7 @@ use argus_protocol::{
     Report, TrackerMap,
     ReviewComment, TaskAction, TaskList, TaskPlace, TaskState, TaskWrite, ARTIFACT_SCOPE_VAR,
     CONTEXT_COMMAND, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
-    BACKGROUND_HEADER, SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, TRANSCRIPT_HEADER, URL_VAR,
+    BACKGROUND_HEADER, SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(2);
@@ -102,13 +102,11 @@ mod context;
 mod inbox;
 mod installed;
 mod telemetry;
-mod transcript;
 mod transport;
 
 use board::*;
 use installed::*;
 use telemetry::*;
-use transcript::*;
 use transport::*;
 
 fn main() {
@@ -160,7 +158,6 @@ const NAMED_HANDLERS: &[(&str, NamedHandler)] = &[
     ("decisions", decisions),
     ("decide", decide),
     ("telemetry", telemetry),
-    ("transcript", transcript),
     ("inbox", inbox::inbox),
 ];
 
@@ -260,12 +257,11 @@ mod tests {
             "127.0.0.1:4242",
             "tok",
             Some("s-1"),
-            None,
             false,
             "",
         );
         assert!(tagged.contains("\r\nX-Argus-Session: s-1\r\n"), "{tagged}");
-        let untagged = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", None, None, false, "");
+        let untagged = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", None, false, "");
         assert!(!untagged.contains("X-Argus-Session"), "{untagged}");
         assert!(untagged.contains("\r\nContent-Length: 0\r\n"), "{untagged}");
     }
@@ -282,8 +278,7 @@ mod tests {
             "127.0.0.1:4242",
             "tok",
             Some("s-1"),
-            Some("/home/u/.claude/projects/p/s-1.jsonl"),
-            false,
+            true,
             "hi",
         );
         let (head, body) = req
@@ -295,44 +290,6 @@ mod tests {
             assert!(!line.is_empty(), "blank header line: {req:?}");
         }
         assert!(head.contains("\r\nContent-Length: 2\r\n"), "{req:?}");
-    }
-
-    #[test]
-    fn a_report_names_the_file_its_conversation_is_written_to() {
-        let path = "/home/u/.claude/projects/p/s-1.jsonl";
-        let named = request("/pane/1/status/working", "127.0.0.1:4242", "tok", None, Some(path), false, "");
-        assert!(named.contains(&format!("\r\n{TRANSCRIPT_HEADER}: {path}\r\n")), "{named}");
-        // A path that would break the header into two lines is not sent.
-        let forged = request(
-            "/pane/1/status/working",
-            "127.0.0.1:4242",
-            "tok",
-            None,
-            Some("/tmp/x\r\nAuthorization: Bearer other"),
-            false,
-            "",
-        );
-        assert!(!forged.contains(TRANSCRIPT_HEADER), "{forged}");
-    }
-
-    #[test]
-    fn transcript_flags_become_entries_in_order() {
-        let push = from_flags(&["--prompt", "fix it", "--id", "r1", "--reply", "done", "--turn-end"]);
-        assert!(!push.fresh);
-        let bodies: Vec<_> = push
-            .updates
-            .iter()
-            .map(|u| match u {
-                argus_protocol::Update::Upsert(e) => (e.id.starts_with("hook-") || e.id == "r1", e.body.clone()),
-                other => panic!("{other:?}"),
-            })
-            .collect();
-        assert_eq!(bodies[0].1, argus_protocol::Body::Prompt { text: "fix it".into() });
-        assert_eq!(bodies[1].1, argus_protocol::Body::Reply { text: "done".into() });
-        assert!(matches!(&push.updates[1], argus_protocol::Update::Upsert(e) if e.id == "r1"));
-        assert_eq!(bodies[2].1, argus_protocol::Body::TurnEnd { millis: None });
-        assert!(bodies.iter().all(|(named, _)| *named));
-        assert!(from_flags(&["--fresh"]).fresh);
     }
 
     #[test]
@@ -614,9 +571,9 @@ mod tests {
         assert!(!leaves_a_workflow_running(shell));
         assert!(!leaves_a_workflow_running(r#"{"hook_event_name":"Stop"}"#));
 
-        let said = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", Some("s"), None, true, "");
+        let said = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", Some("s"), true, "");
         assert!(said.contains(&format!("\r\n{BACKGROUND_HEADER}: workflow\r\n")), "{said}");
-        let unsaid = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", Some("s"), None, false, "");
+        let unsaid = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", Some("s"), false, "");
         assert!(!unsaid.contains(BACKGROUND_HEADER), "{unsaid}");
     }
 

@@ -334,12 +334,6 @@ impl App {
             // Sent only to a client watching the focus, which this is not.
             ServerMsg::Focus(_) => {}
             ServerMsg::Stopping => self.should_quit = true,
-            // The terminal client never watches a conversation, since it
-            // shows the pane itself, and never queues a message, so these
-            // answer requests it does not make.
-            ServerMsg::Transcript { .. }
-            | ServerMsg::EarlierTranscript { .. }
-            | ServerMsg::Sent { .. } => {}
         }
     }
 

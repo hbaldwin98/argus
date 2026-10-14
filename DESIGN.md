@@ -135,7 +135,6 @@ live in this crate and a contract written twice drifts in silence.
 | `hello` | what each side of a connection can take, said before anything else, and how a client's greeting went |
 | `focus` | where the person is working: the view a client reports, and the focus the daemon makes of it and `argus focus` prints |
 | `inbox` | what the daemon tells a harness's plugin over its inbox |
-| `transcript` | a pane's conversation as entries, and the updates that keep a copy of it current |
 | `tree` | what a client renders, which pane state outranks which, and what a row standing for several shows |
 | `held_tree` | a client's copy of the tree: every pane in it, telemetry applied to it between trees, and which panes changed state from the copy before |
 | `hook` | the pane API's URLs, environment, headers and flags — `argus-hook` builds what the daemon parses |
@@ -166,8 +165,7 @@ to the type or its locking.
 | `state/workspaces` | which scope is open, daemon-wide |
 | `state/hook_server` | the loopback receiver agents report to |
 | `state/session` | what survives a daemon restart |
-| `state/conversation` | what a client is shown of a pane's conversation — its files, pushed entries and draft merged into one — and the clients following it |
-| `state/outbox` | what is said to an agent and the way it reaches it: through its harness's inbox when one is open, typed now, or held until the agent is back at its prompt |
+| `state/inbox` | how what Argus says to an agent reaches it: through its harness's inbox when one is open, typed into its terminal otherwise |
 | `state/tree` | finding your way around the tree |
 | `state/features`, `state/tasks`, `state/decisions`, `state/diagrams`, `state/tracker_map` | a checkout's feature board, translated between client ids and store keys |
 | `state/board_parts` | which feature a task or diagram request lands in, which rows it may touch, and who hears of the change |
@@ -178,7 +176,6 @@ to the type or its locking.
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
 | `harness/plugin_dir` | the plugin folder a harness loads from outside the checkout — Claude Code's mod — and the variable that points a pane at it |
-| `harness/transcript`, `harness/transcript/claude`, `harness/transcript/codex`, `harness/transcript/cursor`, `harness/transcript/pi` | what a harness's own transcript says, read one line at a time into entries, and how each harness writes its own |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
 | `store/boards`, `store/reviews` | the feature boards and the review comments, as stored |
 | `store/capture` | a whole note written down as a feature, in one transaction |
@@ -267,8 +264,8 @@ state and is never sent to the daemon: two people attached to one daemon are not
 reading the same thing.
 
 There are three views: Workspace, Feature, and Checkouts. The panes have no view of their own:
-the rail lists them, each with its status glyph and its queued count on its row, and the status
-written out as a word only when it is one that needs a person. Review, history, settings, briefs,
+the rail lists them, each with its status glyph on its row, and the status written out as a word
+only when it is one that needs a person. Review, history, settings, briefs,
 and editors remain overlays because they are temporary work over the current surface. The command
 center is the only presentation, and the one the client's tests draw: the five-column spine it
 replaced, with its folding columns and draggable gutters, is gone rather than kept compiled beside
@@ -728,82 +725,18 @@ it: `ServerMsg::PaneTelemetry`, the one pane's record, to a client that greeted 
 tree taken before a report cannot land after it and wind the numbers back, and one that falls behind
 the records is sent the tree, which holds them all.
 
-A pane's conversation is read from the transcript its harness already writes; Argus stores none.
-Any report may carry `X-Argus-Transcript` naming the file, and `argus-hook` adds it to every report
-the installed form makes when the event's JSON has a `transcript_path` (Claude Code, Codex, Cursor).
-pi's extension sends it too, from `getSessionFile()`. The daemon takes it only from the pane's own
-session, after the report itself is applied, so a session claim that makes a new conversation the
-pane's own lands first. It keeps the files a pane's conversation has lived in, oldest first;
-`PaneInfo::has_transcript` says whether there is one. The harness names a dialect
-(`transcript = "claude"`, `"codex"`, `"cursor"` or `"pi"`). Claude Code writes a record per finished
-content block. Codex is read from its `item_completed` events — its own items, the person's message,
-the agent's, a command with its output, a file change — and not from the raw model exchange beside
-them, which carries injected instructions and the script its tools run in. Cursor writes messages
-with no ids, times or tool results, so its tool calls show as done, and its hidden reasoning as a
-`[REDACTED]` that is dropped. pi writes provider messages with each tool result naming its call.
-`harness/transcript` reads one JSON line at a time into the harness-neutral entries of
-`argus_protocol::transcript`: prompts, replies, thinking, tool calls and results, notices, turn
-ends and dividers. An entry is named after its file and byte offset, or after the harness's own id
-for a tool call, so reading a line again replaces rather than repeats it. Text is clipped before it
-leaves the daemon, and a harness's bookkeeping records, subagent sidechains and what the CLI adds
-on the person's behalf are left out.
-
-A harness whose conversation is no file Argus can read pushes it instead: `POST
-/pane/<id>/transcript` with an `argus_protocol::transcript::Push` — entries in Argus's own shape,
-and `fresh` to start the conversation over — up to 256 KiB a request, every text clipped on
-arrival. `argus-hook transcript` sends one from flags (`--prompt`, `--reply`, `--notice`,
-`--turn-end`, `--id`, `--fresh`) or as JSON on stdin. Pushed entries come only from the pane's own
-session and are kept in memory, the latest 500, since there is nothing to read them back from.
-opencode keeps its conversation in its own database, so its plugin replays the whole session
-through opencode's own server whenever the pane's conversation starts or changes, in parts that fit
-the limit, then pushes each part as it changes — at most every quarter second per entry, which
-makes a streaming reply arrive as it grows — and a turn's end on `session.idle`. A daemon that
-restarts relaunches opencode, whose plugin replays again.
-
-A client that greeted with `transcripts` sends `WatchTranscript` and is answered with a fresh
-`Transcript` — the last megabyte of the current file — and then every update after it. One task per
-watched pane polls the file's length four times a second while anyone watches: a harness appends
-many small writes per turn, so a filesystem watcher would report each one only for the length to be
-read anyway. Following starts at a line boundary fixed when the first watcher joins, before any tail
-is read, so a tail and the stream after it can overlap but never leave a gap. A connection that
-falls behind is sent the tail again. When the pane moves to a new file the watchers are sent a
-divider and that file's tail below what they hold. `EarlierTranscript` pages back a megabyte at a
-time, and across into the file before, until the start. The terminal client never watches.
-
-A client that greeted with `outbox` can say something to an agent with `SendToAgent`, answered with
-`Sent` to that client alone. Typing into a pane is typing into whatever has the agent's keyboard,
-and a dialog that has it takes the text as its answer, so a message waits in the pane's queue —
-`PaneInfo::queued`, counted on the pane's rail row in the TUI (`✉2`) — until the agent is at its prompt: idle, done,
-failed or wanting a review, and so for 300 ms, since a turn's last hook can arrive just before its
-prompt is drawn. Codex's and Cursor's approval prompts report as working, so they hold a message
-too. One message goes out per turn: the next waits until the pane has been busy and come back, or
-two seconds for a harness that reports nothing. A pane whose harness reports is typed into only once
-it has reported: a new pane reads as idle before its harness has said anything, and Claude Code's
-folder-trust dialog took a queued message as its answer. Every one of these rules is one pure
-decision in `state/outbox`. A message is typed as one paste and, 150 ms later, Enter, since Claude
-Code reads an Enter that arrives with a paste as part of it. `now`
-types it straight away, which is how a person steers an agent mid-turn. One task does the typing,
-started by the first message queued, and wakes whenever the tree changes and four times a second
-while anything waits. The queue is not persisted, and an exited agent's queue is dropped.
-`CancelQueued` takes a waiting message back, which the TUI sends for `u` on the pane's rail row,
-and the row's count changes when the tree says so. `Interrupt` types the harness's interrupt key: Esc,
-unless a `[[harness]]` block sets `interrupt`, and never Ctrl-C, which pressed twice quits most of
-these CLIs.
-
-A harness whose own interface can take what a person says gets it that way instead of as typing.
-A plugin running inside the agent opens `GET /pane/<id>/inbox`, which the pane API holds open as
-server-sent events of `argus_protocol::InboxItem`: a message (with `steer` for mid-turn), an
-interrupt, or the answer to a question. Only the pane's own session may open it, the newest
-connection replaces an older one, and it closes the moment the plugin's end of the socket does, so
-nothing is handed to a plugin that has gone. An adapter opens an inbox only once it can act on
-what it is told, so an open inbox decides the route alone. `PaneInfo::live` says one is open. While it is,
-`SendToAgent` goes straight to it — the harness waits or steers as it does, and nothing is typed,
-so nothing needs holding in the outbox — `Interrupt` goes to it instead of the interrupt key, and
-`Answer` reaches it; a pane without one takes answers on its screen. opencode's plugin turns these
-into `session.promptAsync`, `session.abort` and its permission response, and posts each permission
-it asks for as a `Question` entry (allow once, always allow, reject) that it marks answered when
-opencode says it was, from any surface. pi's extension turns messages into `sendUserMessage`,
-following up or steering while a turn runs, and interrupts into `abort`.
+What Argus has to say to an agent on its own account — a review comment's one-line notification —
+goes through the agent's harness when the harness can take it, and is typed into its terminal
+otherwise. Typing is typing into whatever has the agent's keyboard, and a dialog that has it takes
+the text as its answer; a harness's own interface queues a message for the end of the turn and
+lets nothing land in a dialog. So a plugin running inside the agent opens `GET /pane/<id>/inbox`,
+which the pane API holds open as server-sent events of `argus_protocol::InboxItem`, a message for
+the agent, with a heartbeat every fifteen seconds so either side notices the other going. Only the
+pane's own session may open it, the newest connection replaces an older one, and it closes the
+moment the plugin's end of the socket does, so nothing is handed to a plugin that has gone. An
+adapter opens an inbox only once it can act on what it is told, so an open inbox decides the route
+alone, in `state/inbox`; `PaneInfo::live` says one is open. opencode's plugin turns a message into
+`session.promptAsync`, and pi's extension into `sendUserMessage`, as a follow-up while a turn runs.
 
 Claude Code's adapter is a mod: a plugin of function hooks that runs inside the session (2.1.287
 and later). Its source ships in the daemon (`harness/claude-mod`), and `harness/plugin_dir` writes
@@ -814,26 +747,12 @@ named. Nothing is written into the checkout, so nothing there needs sweeping. A 
 streaming HTTP — `$.http.fetch` answers once the body is read — but reads a child's output as it
 comes, so it runs `argus-hook inbox <session>`, which holds the inbox and prints one item a line,
 and opens it again whenever it closes, as whatever the session is by then. A message becomes
-`$.prompt.submit` as the person's own words, which Claude Code holds until the session is idle; a
-steer while a turn runs becomes a user row `$.session.append` adds, which the turn reads at its
-next step, with a toast so the person at the terminal sees it; an interrupt becomes `$.turn.abort`
-of the main loop's running turn. Claude Code's own dialogs are still answered on its screen. A
-Claude Code without mods ignores the variable, opens no inbox, and is typed into as before.
-
-Anything Argus says on its own account goes the same way: a review comment's notification is a
-message to the inbox when one is open, and typed in otherwise.
-
-Claude Code writes a reply to its transcript only as each block finishes, so the mod drafts it as
-it streams. Its `turn.step` hook sees the main loop's reply stream as it arrives, text and thinking
-a piece at a time, and posts it as `Draft` changes — started, added to, done — to `POST
-/pane/<id>/draft`, gathered for 100 ms. A subagent's steps are not the pane's reply and are passed
-by. The posts go out one at a time from a loop the session started, holding the session's own `$`:
-when a turn is interrupted its step's hook is abandoned, and a post made through it never lands,
-so the turn's `turn.complete`, which fires for an aborted turn too, is what ends a draft cut off
-mid-block. The daemon takes a draft only from the pane's own session, sends it to watchers as
-`Update::Draft`, and holds it on the pane so a watcher arriving mid-reply gets the draft so far. A
-draft is never stored; the finished block arrives from the transcript file and a watcher drops the
-draft for it.
+`$.prompt.submit` as the person's own words, which Claude Code holds until the session is idle.
+Claude Code's own dialogs are still answered on its screen. A Claude Code without mods ignores the
+variable, opens no inbox, and is typed into as before. The mod's other half is telemetry: it posts
+the session's usage after each of the main loop's steps and turns, from a loop the session
+started that holds the session's own `$`, since a step's hook is abandoned when its turn is
+interrupted and a post made through it would never land.
 
 The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
 /pane/<id>/status/<working|idle|waiting|needs-review|done|failed>` with an optional body as the note,
@@ -894,8 +813,8 @@ A workflow outlives the turn that started it: Claude's `Stop` fires with the wor
 as running in `background_tasks`. The installed form says so on the report that ends the turn, with
 an `X-Argus-Background` header, and the daemon records it as the pane's `background` flag in the
 same edit as the status, so no client is shown the turn ending before it is shown what the turn
-left running. The pane's own status is idle, because an agent at its prompt can be typed to and the
-outbox holds a message for a working one; its row and header chip read as working, because
+left running. The pane's own status is idle, because an agent at its prompt can be typed to; its
+row and header chip read as working, because
 `background` is one of the states they take the loudest of. Every later report from the pane's own
 agent restates the flag, so the turn Claude wakes the session for with a `<task-notification>`
 prompt — never taken as a title — ends it when its own `Stop` lists nothing. A child cannot set the

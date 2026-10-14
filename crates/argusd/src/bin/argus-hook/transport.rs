@@ -93,17 +93,6 @@ pub(super) fn named_feature<'a>(
     Ok((Some(slug), left))
 }
 
-/// The pane base a URL names, or `None` for one not on the loopback
-/// listener.
-/// The file the harness says this event's conversation is written to. Set
-/// once, by the installed hook form, and carried on every report it makes,
-/// since whichever of them arrives is the one the daemon can take it from.
-static TRANSCRIPT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-
-pub(super) fn name_transcript(path: &str) {
-    let _ = TRANSCRIPT.set(path.to_string());
-}
-
 /// Whether this event's conversation left work running behind its turn.
 /// Set once, by the installed hook form, and carried on the reports it
 /// makes: the status report is the one the daemon reads it from.
@@ -113,6 +102,8 @@ pub(super) fn name_background_work() {
     let _ = BACKGROUND.set(());
 }
 
+/// The pane base a URL names, or `None` for one not on the loopback
+/// listener.
 pub(super) fn pane_base(url: &str) -> Option<String> {
     parse_pane_url(url).map(|url| url.base())
 }
@@ -134,9 +125,8 @@ pub(super) fn post_as(url: &str, token: &str, body: &str, session: Option<&str>)
     let mut stream = TcpStream::connect_timeout(&addr, TIMEOUT).ok()?;
     stream.set_write_timeout(Some(TIMEOUT)).ok()?;
 
-    let transcript = TRANSCRIPT.get().map(String::as_str);
     let background = BACKGROUND.get().is_some();
-    let req = request(path, authority, token, session, transcript, background, body);
+    let req = request(path, authority, token, session, background, body);
     stream.write_all(req.as_bytes()).ok()?;
     // The daemon's reply is deliberately not read: nothing here acts on it,
     // and not waiting keeps the agent's turn from stalling on a slow answer.
@@ -154,7 +144,7 @@ pub(super) fn post_response(url: &str, token: &str, body: &str) -> Option<(u16, 
     stream.set_write_timeout(Some(TIMEOUT)).ok()?;
     stream.set_read_timeout(Some(TIMEOUT)).ok()?;
     stream
-        .write_all(request(path, authority, token, None, None, false, body).as_bytes())
+        .write_all(request(path, authority, token, None, false, body).as_bytes())
         .ok()?;
 
     let mut response = String::new();
@@ -174,17 +164,11 @@ pub(super) fn request(
     authority: &str,
     token: &str,
     session: Option<&str>,
-    transcript: Option<&str>,
     background: bool,
     body: &str,
 ) -> String {
     let session = match session.filter(|id| !id.is_empty()) {
         Some(id) => format!("{SESSION_HEADER}: {id}\r\n"),
-        None => String::new(),
-    };
-    // A header value is one line; a path that is not has no business here.
-    let transcript = match transcript.filter(|p| !p.is_empty() && !p.chars().any(char::is_control)) {
-        Some(path) => format!("{TRANSCRIPT_HEADER}: {path}\r\n"),
         None => String::new(),
     };
     let background = match background {
@@ -196,7 +180,6 @@ pub(super) fn request(
     req.push_str(&format!("Host: {authority}\r\n"));
     req.push_str(&format!("Authorization: Bearer {token}\r\n"));
     req.push_str(&session);
-    req.push_str(&transcript);
     req.push_str(&background);
     req.push_str(&format!("Content-Length: {}\r\n", body.len()));
     req.push_str("Connection: close\r\n\r\n");

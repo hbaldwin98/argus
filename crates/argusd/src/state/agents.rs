@@ -111,7 +111,6 @@ impl<'a> PaneOrPending<'a> {
     fn set_status(&mut self, status: PaneStatus, note: Option<String>) -> bool {
         let changed = match self {
             Self::Live(p) => {
-                p.speaking.heard = true;
                 if p.status != status {
                     p.status_since = std::time::SystemTime::now();
                 }

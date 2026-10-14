@@ -21,7 +21,7 @@ pub struct PluginDir {
     pub files: &'static [(&'static str, &'static str)],
 }
 
-/// Claude Code's mod: the pane's inbox and its reply as it streams, from
+/// Claude Code's mod: the pane's inbox and its usage telemetry, from
 /// inside the session (`claude-mod/hooks/register.ts`).
 pub fn claude_mod() -> PluginDir {
     PluginDir {

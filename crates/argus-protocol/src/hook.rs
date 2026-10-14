@@ -57,12 +57,6 @@ pub const CONTEXT_COMMAND: &str = "context";
 /// pane's environment and would otherwise rewrite its parent's row.
 pub const SESSION_HEADER: &str = "X-Argus-Session";
 
-/// Names the file the reporting conversation is written to, when the
-/// harness says. Rides on whatever report a hook is already making rather
-/// than costing a request of its own, and is taken only from the session
-/// that owns the pane, for the reason [`SESSION_HEADER`] exists.
-pub const TRANSCRIPT_HEADER: &str = "X-Argus-Transcript";
-
 /// Says the reporting conversation left work running that outlives its turn
 /// — a Claude Code workflow still going after `Stop`. Rides on the status
 /// report itself, so the turn ending and what it left behind arrive as one
@@ -170,15 +164,9 @@ pub enum Endpoint {
     TrackerMap,
     /// A partial [`crate::AgentTelemetry`] report, as JSON.
     Telemetry,
-    /// A [`crate::transcript::Push`]: conversation entries from a harness
-    /// whose transcript is not a file Argus can read.
-    Transcript,
     /// `GET`, held open: the [`crate::InboxItem`]s for the agent, as
     /// server-sent events.
     Inbox,
-    /// [`crate::Draft`] changes, as a JSON list: what the agent is writing
-    /// now, from a plugin that sees its reply stream.
-    Draft,
 }
 
 impl Endpoint {
@@ -204,9 +192,7 @@ impl Endpoint {
             Endpoint::Diagrams => Cow::Borrowed("diagrams"),
             Endpoint::TrackerMap => Cow::Borrowed("tracker-map"),
             Endpoint::Telemetry => Cow::Borrowed("telemetry"),
-            Endpoint::Transcript => Cow::Borrowed("transcript"),
             Endpoint::Inbox => Cow::Borrowed("inbox"),
-            Endpoint::Draft => Cow::Borrowed("draft"),
         }
     }
 }
@@ -245,9 +231,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "diagrams" => Endpoint::Diagrams,
         "tracker-map" => Endpoint::TrackerMap,
         "telemetry" => Endpoint::Telemetry,
-        "transcript" => Endpoint::Transcript,
         "inbox" => Endpoint::Inbox,
-        "draft" => Endpoint::Draft,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -367,9 +351,7 @@ mod tests {
             Endpoint::Tasks,
             Endpoint::Diagrams,
             Endpoint::Telemetry,
-            Endpoint::Transcript,
             Endpoint::Inbox,
-            Endpoint::Draft,
             Endpoint::TrackerMap,
         ];
         all.extend(Report::ALL.into_iter().map(Endpoint::Status));

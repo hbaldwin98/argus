@@ -594,13 +594,9 @@ fn dump_frame() {
 #[test]
 #[ignore]
 fn dump_rail_busy() {
-    use argus_protocol::{ChildAgentInfo, QueuedMessage};
+    use argus_protocol::ChildAgentInfo;
 
     let mut waiting = pane_info(100, PaneKind::Agent, "fix login flow", PaneStatus::Waiting);
-    waiting.queued = vec![
-        QueuedMessage { id: 1, text: "first".into() },
-        QueuedMessage { id: 2, text: "second".into() },
-    ];
     waiting.children.push(ChildAgentInfo {
         label: "codex review".into(),
         status: PaneStatus::Working,

@@ -460,7 +460,6 @@ location. Typing filters the folders in the current directory.
 | `S` | Open settings |
 | `t` | Choose a theme for this client process |
 | `x` | Kill the selected pane |
-| `u` | On a pane row, take back the newest message queued for it |
 | `q` | Detach the client |
 
 ### Views

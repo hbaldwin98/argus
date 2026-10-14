@@ -51,8 +51,6 @@ fn flat_harness() -> Harness {
         rule_file: None,
         skill_dir: None,
         settings_version: None,
-        transcript: None,
-        interrupt: None,
     }
 }
 
@@ -844,93 +842,6 @@ process.stdout.write(JSON.stringify(reports));
     );
 }
 
-#[test]
-fn the_opencode_plugin_replays_its_conversation_then_streams_what_follows() {
-    let dir = tempfile::tempdir().unwrap();
-    let plugin = dir.path().join("argus-status.mjs");
-    let runner = dir.path().join("runner.mjs");
-    std::fs::write(&plugin, Harness::opencode().plugin.unwrap().source).unwrap();
-    std::fs::write(
-        &runner,
-        r#"
-import { pathToFileURL } from "node:url";
-
-const pushes = [];
-globalThis.fetch = async (url, init) => {
-  if (url.endsWith("/transcript")) pushes.push({ session: init.headers["X-Argus-Session"], ...JSON.parse(init.body) });
-};
-const client = {
-  session: {
-    messages: async ({ path }) => ({
-      data: path.id !== "root" ? [] : [
-        { info: { id: "m1", role: "user" }, parts: [{ id: "p1", type: "text", text: "fix the build" }] },
-        { info: { id: "m2", role: "assistant" }, parts: [
-          { id: "p2", type: "tool", tool: "bash", state: { status: "completed", input: { command: "cargo build" }, output: "ok", title: "cargo build" } },
-        ] },
-      ],
-    }),
-  },
-};
-const { ArgusStatus } = await import(pathToFileURL(process.argv[2]));
-const hooks = await ArgusStatus({ client });
-const event = (type, properties) => hooks.event({ event: { type, properties } });
-await event("session.created", { info: { id: "root" } });
-await event("message.updated", { info: { id: "m3", role: "assistant", sessionID: "root" } });
-await event("message.part.updated", { part: { id: "p3", messageID: "m3", sessionID: "root", type: "text", text: "Build" } });
-await event("message.part.updated", { part: { id: "p3", messageID: "m3", sessionID: "root", type: "text", text: "Build fixed." } });
-await event("session.created", { info: { id: "child", parentID: "root" } });
-await event("message.part.updated", { part: { id: "c1", messageID: "c", sessionID: "child", type: "text", text: "subagent" } });
-await new Promise((resolve) => setTimeout(resolve, 400));
-process.stdout.write(JSON.stringify(pushes));
-"#,
-    )
-    .unwrap();
-
-    let output = match std::process::Command::new("node")
-        .arg(&runner)
-        .arg(&plugin)
-        .env("ARGUS_HOOK_URL", "http://127.0.0.1/pane/1")
-        .env("ARGUS_HOOK_TOKEN", "test-token")
-        .output()
-    {
-        Ok(output) => output,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
-        Err(e) => panic!("could not run opencode plugin test: {e}"),
-    };
-    assert!(output.status.success(), "node failed: {}", String::from_utf8_lossy(&output.stderr));
-    let pushes: Vec<argus_protocol::Push> = serde_json::from_slice::<Vec<Value>>(&output.stdout)
-        .unwrap()
-        .into_iter()
-        .map(|mut p| {
-            assert_eq!(p["session"], "root", "sent as the pane's own conversation");
-            p.as_object_mut().unwrap().remove("session");
-            serde_json::from_value(p).expect("a push the daemon reads")
-        })
-        .collect();
-
-    let described = |push: &argus_protocol::Push| -> Vec<String> {
-        push.updates
-            .iter()
-            .map(|u| match u {
-                argus_protocol::Update::Upsert(e) => format!("{}: {:?}", e.id, e.body),
-                other => format!("{other:?}"),
-            })
-            .collect()
-    };
-    assert_eq!(pushes.len(), 2, "{pushes:?}");
-    assert!(pushes[0].fresh, "a replay starts the conversation over");
-    let replay = described(&pushes[0]);
-    assert!(replay[0].starts_with("p1: Prompt"), "{replay:?}");
-    assert!(replay[1].starts_with("p2: ToolCall") && replay[1].contains("Done"), "{replay:?}");
-    assert!(replay[2].starts_with("p2.result: ToolResult"), "{replay:?}");
-    assert!(!pushes[1].fresh);
-    assert_eq!(
-        described(&pushes[1]),
-        ["p3: Reply { text: \"Build fixed.\" }"],
-        "the streamed reply is sent once, as it stood, and the child's parts not at all"
-    );
-}
-
 /// Runs `script` under node with a plugin's source beside it, returning
 /// what it printed; `None` when node is not installed.
 fn run_node(plugin_source: &str, script: &str) -> Option<Value> {
@@ -976,70 +887,48 @@ const stubFetch = (items) => async (url, init) => {
 "#;
 
 #[test]
-fn the_opencode_plugin_takes_messages_interrupts_and_answers_through_opencode() {
+fn the_opencode_plugin_takes_messages_through_opencode() {
     let script = format!(
         r#"
 import {{ pathToFileURL }} from "node:url";
 {INBOX_STUB}
 globalThis.fetch = stubFetch([
-  {{ Message: {{ text: "also run clippy", steer: false }} }},
-  "Interrupt",
-  {{ Answer: {{ question: "perm_1", choice: "once" }} }},
+  {{ Message: {{ text: "also run clippy" }} }},
 ]);
 const calls = [];
 const client = {{
   session: {{
-    messages: async () => ({{ data: [] }}),
     promptAsync: async (args) => calls.push(["prompt", args]),
-    abort: async (args) => calls.push(["abort", args]),
   }},
-  postSessionIdPermissionsPermissionId: async (args) => calls.push(["permission", args]),
 }};
 const {{ ArgusStatus }} = await import(pathToFileURL(process.argv[2]));
 const hooks = await ArgusStatus({{ client }});
 const event = (type, properties) => hooks.event({{ event: {{ type, properties }} }});
 await event("session.created", {{ info: {{ id: "root" }} }});
-await event("permission.updated", {{ id: "perm_1", sessionID: "root", title: "Run cargo test?" }});
-await event("permission.replied", {{ sessionID: "root", permissionID: "perm_1", response: "once" }});
+await event("session.status", {{ sessionID: "root", status: {{ type: "busy" }} }});
 await new Promise((resolve) => setTimeout(resolve, 400));
-const questions = sent
-  .filter((s) => s.url.endsWith("/transcript"))
-  .flatMap((s) => JSON.parse(s.body).updates)
-  .filter((u) => u.Upsert?.body?.Question)
-  .map((u) => u.Upsert);
-process.stdout.write(JSON.stringify({{ calls, questions }}));
+process.stdout.write(JSON.stringify(calls));
 "#
     );
-    let Some(result) = run_node(Harness::opencode().plugin.unwrap().source, &script) else {
+    let Some(calls) = run_node(Harness::opencode().plugin.unwrap().source, &script) else {
         return;
     };
     assert_eq!(
-        result["calls"],
+        calls,
         json!([
             ["prompt", { "path": { "id": "root" }, "body": { "parts": [{ "type": "text", "text": "also run clippy" }] } }],
-            ["abort", { "path": { "id": "root" } }],
-            ["permission", { "path": { "id": "root", "permissionID": "perm_1" }, "body": { "response": "once" } }],
         ])
     );
-    // The permission was posed as a question, and shown answered once it
-    // was; the two coalesce into the answered one within a push.
-    let question = result["questions"].as_array().unwrap().last().unwrap().clone();
-    assert_eq!(question["id"], "perm_1");
-    assert_eq!(question["body"]["Question"]["prompt"], "Run cargo test?");
-    assert_eq!(question["body"]["Question"]["answered"], "once");
-    let push: argus_protocol::Update = serde_json::from_value(json!({ "Upsert": question })).unwrap();
-    assert!(matches!(push, argus_protocol::Update::Upsert(_)), "a question the daemon reads");
 }
 
 #[test]
-fn the_pi_extension_takes_messages_and_interrupts_through_pi() {
+fn the_pi_extension_takes_messages_through_pi() {
     let script = format!(
         r#"
 import {{ pathToFileURL }} from "node:url";
 {INBOX_STUB}
 globalThis.fetch = stubFetch([
-  {{ Message: {{ text: "steer left", steer: true }} }},
-  "Interrupt",
+  {{ Message: {{ text: "look at line 4" }} }},
 ]);
 const calls = [];
 const handlers = new Map();
@@ -1052,7 +941,6 @@ install(pi);
 const ctx = {{
   sessionManager: {{ getSessionId: () => "pi-session" }},
   isIdle: () => false,
-  abort: () => calls.push(["abort"]),
 }};
 await handlers.get("session_start")({{}}, ctx);
 await new Promise((resolve) => setTimeout(resolve, 300));
@@ -1064,7 +952,7 @@ process.stdout.write(JSON.stringify(calls));
     };
     assert_eq!(
         calls,
-        json!([["send", "steer left", { "deliverAs": "steer" }], ["abort"]])
+        json!([["send", "look at line 4", { "deliverAs": "followUp" }]])
     );
 }
 
@@ -1165,55 +1053,6 @@ fn pi_installs_its_project_extension_and_native_skill() {
     assert!(!extension.exists());
     assert!(!skill.exists());
     assert!(std::fs::read_dir(dir.path()).unwrap().next().is_none());
-}
-
-#[test]
-fn the_pi_extension_names_its_session_file_on_every_report() {
-    let dir = tempfile::tempdir().unwrap();
-    let extension = dir.path().join("argus-status.mjs");
-    let runner = dir.path().join("runner.mjs");
-    std::fs::write(&extension, Harness::pi().plugin.unwrap().source).unwrap();
-    std::fs::write(
-        &runner,
-        r#"
-import { pathToFileURL } from "node:url";
-
-const transcripts = [];
-globalThis.fetch = async (url, init) => {
-  if (url.endsWith("/inbox")) return { ok: false };
-  transcripts.push(init.headers["X-Argus-Transcript"] ?? null);
-};
-const handlers = new Map();
-const { default: install } = await import(pathToFileURL(process.argv[2]));
-install({ on(name, handler) { handlers.set(name, handler); } });
-const ctx = {
-  sessionManager: { getSessionId: () => "pi-session", getSessionFile: () => "/home/u/.pi/agent/sessions/s.jsonl" },
-  isIdle: () => false,
-};
-await handlers.get("session_start")({}, ctx);
-await handlers.get("input")({ text: "go" }, ctx);
-process.stdout.write(JSON.stringify(transcripts));
-"#,
-    )
-    .unwrap();
-
-    let output = match std::process::Command::new("node")
-        .arg(&runner)
-        .arg(&extension)
-        .env("ARGUS_HOOK_URL", "http://127.0.0.1/pane/5")
-        .env("ARGUS_HOOK_TOKEN", "test-token")
-        .output()
-    {
-        Ok(output) => output,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
-        Err(e) => panic!("could not run pi extension test: {e}"),
-    };
-    assert!(output.status.success(), "node failed: {}", String::from_utf8_lossy(&output.stderr));
-    let transcripts: Vec<Option<String>> = serde_json::from_slice(&output.stdout).unwrap();
-    assert!(!transcripts.is_empty());
-    for transcript in transcripts {
-        assert_eq!(transcript.as_deref(), Some("/home/u/.pi/agent/sessions/s.jsonl"));
-    }
 }
 
 #[test]

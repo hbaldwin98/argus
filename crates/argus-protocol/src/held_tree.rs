@@ -97,9 +97,7 @@ mod tests {
             children: Vec::new(),
             telemetry: AgentTelemetry::default(),
             background: false,
-            has_transcript: false,
             since: None,
-            queued: Vec::new(),
             live: false,
         }
     }

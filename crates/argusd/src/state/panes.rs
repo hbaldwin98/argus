@@ -238,7 +238,6 @@ impl Daemon {
                 let mut pane = Pane::new(id, PaneKind::Agent, title, runtime);
                 pane.restore_status_reported = pending.status.is_some();
                 pane.restore_title_reported = restore_title_reported;
-                pane.speaking.heard = pane.restore_status_reported;
                 if let Some((status, note)) = pending.status {
                     pane.status = status;
                     pane.note = note;
@@ -403,8 +402,8 @@ impl Daemon {
     /// Everything a pane leaves behind outside the tree, let go of once it
     /// has been taken out. Every removal comes through here, so a table
     /// keyed by pane cannot be forgotten by one path and not another. What
-    /// the pane holds itself, its conversation's followers among them, ends
-    /// as it is dropped here.
+    /// the pane holds itself, its inbox among them, ends as it is dropped
+    /// here.
     ///
     /// Called without `inner` held: each table has its own lock. The
     /// checkout's managed hooks are not a pane's and stay with the caller;

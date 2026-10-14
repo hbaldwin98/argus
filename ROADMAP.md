@@ -139,9 +139,12 @@ up durable artifacts, and later agents receive the relevant subset without brows
 Terminal pages, the installable page and Web Push — landed here with the daemon-wide tree it
 followed every agent by, and with the live channels a pane got only while it was connected: Codex's
 app-server, which Argus joined as a second client, and the tee, a loopback proxy that read a live
-Claude pane's reply off its API traffic. All of it was later removed. The terminal client carries
-the role, on this machine or another through `argus --host`: the pane is the conversation, the
-status bar (and the bell, when it is on) says when an agent needs someone, and a review comment
+Claude pane's reply off its API traffic. So did what the phone alone read and sent: conversation
+following, which read each harness's transcript, took pushed entries and drafted replies, and the
+outbox, which held a message until its agent was back at its prompt, cancelled one, interrupted an
+agent and answered its harness's questions. All of it was later removed. The terminal client
+carries the role, on this machine or another through `argus --host`: the pane is the conversation,
+the status bar (and the bell, when it is on) says when an agent needs someone, and a review comment
 reaches an agent through its harness's inbox.
 
 ## Open Decisions

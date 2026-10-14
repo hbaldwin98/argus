@@ -122,10 +122,6 @@ fn each_command_center_view_lists_its_own_keys() {
     let rail = lines(&draw_at(&mut app, 200, 60)).join("\n");
     assert!(rail.contains("x closes it"), "{rail}");
     assert!(
-        rail.contains("take back the newest message queued for the agent"),
-        "{rail}"
-    );
-    assert!(
         rail.contains("checkouts — branches and worktrees"),
         "{rail}"
     );

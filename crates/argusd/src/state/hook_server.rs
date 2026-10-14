@@ -57,7 +57,6 @@ impl Daemon {
 }
 
 const MAX_BODY: usize = 4096;
-const MAX_DRAFT_BODY: usize = 64 * 1024;
 /// Diagram adds carry Mermaid source in JSON; allow room for encoding overhead.
 const MAX_DIAGRAM_HOOK_BODY: usize = MAX_DIAGRAM_BODY_BYTES + 4096;
 
@@ -77,9 +76,6 @@ fn max_hook_body(endpoint: Option<(PaneId, Endpoint)>) -> usize {
         // Room for a map at its bound, as UTF-8 that the server refuses
         // past it in words rather than as a body cut off.
         Some((_, Endpoint::TrackerMap)) => argus_protocol::MAX_TRACKER_MAP_BYTES + 1024,
-        Some((_, Endpoint::Transcript)) => argus_protocol::MAX_PUSH_BYTES,
-        // A tenth of a second of a reply, or more after a stall.
-        Some((_, Endpoint::Draft)) => MAX_DRAFT_BODY,
         _ => MAX_BODY,
     }
 }
@@ -251,20 +247,6 @@ async fn handle_hook_request(
                 }
                 Err(refusal) => refusal,
             },
-            Some((pane, Endpoint::Transcript)) => match decode(&body, "transcript push") {
-                Ok(push) => {
-                    daemon.report_pushed(pane, reporter.as_deref(), push);
-                    HookResponse::empty(200, "OK")
-                }
-                Err(refusal) => refusal,
-            },
-            Some((pane, Endpoint::Draft)) => match decode(&body, "draft") {
-                Ok(changes) => {
-                    daemon.report_draft(pane, reporter.as_deref(), changes);
-                    HookResponse::empty(200, "OK")
-                }
-                Err(refusal) => refusal,
-            },
             Some((pane, Endpoint::Tasks)) => {
                 tasks_response(&daemon, pane, reporter.as_deref(), &body, filing)
             }
@@ -281,12 +263,6 @@ async fn handle_hook_request(
             _ => HookResponse::empty(200, "OK"),
         }
     };
-    // Any report may name the conversation's file. Taken after the report
-    // itself, so a session claim that makes this conversation the pane's
-    // own is in place before the file is judged by who sent it.
-    if let (true, Some((pane, _)), Some(transcript)) = (authorized, endpoint, &headers.transcript) {
-        daemon.report_transcript(pane, reporter.as_deref(), transcript);
-    }
     wr.write_all(&response.bytes()).await?;
     Ok(())
 }
@@ -347,8 +323,6 @@ struct HookHeaders {
     content_length: usize,
     /// The conversation the report comes from.
     reporter: Option<String>,
-    /// The file that conversation is written to, when the harness said.
-    transcript: Option<String>,
     /// Whether that conversation left work running behind its turn.
     background: bool,
 }
@@ -363,7 +337,6 @@ async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
         authorized: false,
         content_length: 0,
         reporter: None,
-        transcript: None,
         background: false,
     };
     loop {
@@ -378,8 +351,6 @@ async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
             headers.content_length = v.parse().unwrap_or(0);
         } else if let Some(v) = strip_header(&line, argus_protocol::SESSION_HEADER) {
             headers.reporter = valid_session_id(v);
-        } else if let Some(v) = strip_header(&line, argus_protocol::TRANSCRIPT_HEADER) {
-            headers.transcript = Some(v.to_string()).filter(|v| !v.is_empty());
         } else if let Some(v) = strip_header(&line, argus_protocol::BACKGROUND_HEADER) {
             headers.background = !v.is_empty();
         }

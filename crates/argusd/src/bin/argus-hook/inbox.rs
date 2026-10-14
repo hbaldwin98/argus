@@ -80,9 +80,9 @@ mod tests {
                 .get_mut()
                 .write_all(
                     b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n\
-                      data: {\"Message\":{\"text\":\"hi\",\"steer\":false}}\n\n\
+                      data: {\"Message\":{\"text\":\"hi\"}}\n\n\
                       : still here\n\n\
-                      data: \"Interrupt\"\n\n",
+                      data: {\"Message\":{\"text\":\"and this\"}}\n\n",
                 )
                 .unwrap();
             head
@@ -97,7 +97,7 @@ mod tests {
         assert!(head.contains("\r\nX-Argus-Session: s-1\r\n"), "{head}");
         assert_eq!(
             String::from_utf8(out).unwrap(),
-            "{\"Message\":{\"text\":\"hi\",\"steer\":false}}\n\"Interrupt\"\n"
+            "{\"Message\":{\"text\":\"hi\"}}\n{\"Message\":{\"text\":\"and this\"}}\n"
         );
     }
 

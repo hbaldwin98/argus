@@ -320,11 +320,6 @@ fn on_checkouts(app: &App) -> bool {
     app.focus == Focus::Checkouts
 }
 
-/// A pane row and nothing looser: what the key acts on is that row's pane.
-fn on_pane_row(app: &App) -> bool {
-    app.focus == Focus::Panes
-}
-
 /// The pane rows, and anywhere else that leaves the keys with the rail.
 fn on_panes(app: &App) -> bool {
     !matches!(
@@ -435,13 +430,6 @@ const RAIL: Keymap = Keymap {
                     .hints(&[Hint::new("D rm", 0).when(on_projects)]),
                 Binding::new("x", "close the pane", &[(&[Char('x')], App::kill_selected)])
                     .hints(&[Hint::new("x close", 1).when(on_panes)]),
-                Binding::new(
-                    "u",
-                    "take back the newest message queued for the agent",
-                    &[(&[Char('u')], App::unqueue_selected)],
-                )
-                .when(on_pane_row)
-                .help_only(),
             ],
         },
         &Group {

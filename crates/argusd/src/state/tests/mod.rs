@@ -2,11 +2,10 @@
 //! over the fixtures they all build a daemon from.
 
 mod branches;
-mod conversation;
 mod hook_lifecycle;
+mod inbox;
 mod lifecycle;
 mod pane_api;
-mod outbox;
 mod pastes;
 mod reconcile;
 mod reload;

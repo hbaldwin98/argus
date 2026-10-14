@@ -17,16 +17,15 @@ fn running_claude(dir: &std::path::Path, restart: crate::config::Restart) -> Arc
     Daemon::new(config)
 }
 
-/// Watches `pane`'s conversation, as a client would, and checks the pane
-/// holds what its removal has to let go of.
-fn watched(d: &Arc<Daemon>, pane: PaneId) -> tokio::sync::broadcast::Receiver<ServerMsg> {
-    let watching = d.watch_transcript(pane);
-    assert!(d.transcript_watched(pane));
-    watching
+/// Shows `pane` at a size, as a client would, and checks the pane holds
+/// what its removal has to let go of.
+fn shown(d: &Arc<Daemon>, pane: PaneId) {
+    d.resize_pane(d.new_viewer(), pane, 30, 100).unwrap();
+    assert!(d.holds_pane_size(pane));
 }
 
 fn assert_nothing_left_of(d: &Daemon, pane: PaneId) {
-    assert!(!d.transcript_watched(pane), "the watch of a gone pane ends");
+    assert!(!d.holds_pane_size(pane), "the sizes asked of a gone pane are forgotten");
 }
 
 #[tokio::test]
@@ -34,7 +33,7 @@ async fn closing_a_pane_leaves_nothing_of_it_behind() {
     let dir = tempfile::tempdir().unwrap();
     let d = running_claude(dir.path(), Default::default());
     let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-    let _watching = watched(&d, pane);
+    shown(&d, pane);
 
     d.close_pane(pane).unwrap();
 
@@ -44,7 +43,7 @@ async fn closing_a_pane_leaves_nothing_of_it_behind() {
 #[tokio::test]
 async fn closing_a_pane_marks_its_repository_as_used_then() {
     let dir = tempfile::tempdir().unwrap();
-    let (d, _reader) = live_claude(dir.path(), Default::default());
+    let d = running_claude(dir.path(), Default::default());
     let last_used = |d: &Daemon| d.snapshot()[0].repositories[0].last_used;
     let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
     assert_eq!(last_used(&d), None, "starting a pane is not what is recorded");
@@ -59,7 +58,7 @@ async fn a_restarted_agent_leaves_nothing_of_its_old_pane_behind() {
     let dir = tempfile::tempdir().unwrap();
     let d = running_claude(dir.path(), crate::config::Restart::Always);
     let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
-    let _watching = watched(&d, pane);
+    shown(&d, pane);
 
     d.mark_pane_exited(pane, Some(0));
 
@@ -77,7 +76,7 @@ async fn a_failed_resume_leaves_nothing_of_its_old_pane_behind() {
     let pane = d
         .start_agent(only_checkout(&d), "claude", Start::Resuming, None)
         .unwrap();
-    let _watching = watched(&d, pane);
+    shown(&d, pane);
 
     d.mark_pane_exited(pane, Some(1));
 
@@ -97,7 +96,7 @@ async fn a_deleted_worktree_leaves_nothing_of_its_panes_behind() {
     d.reconcile_worktrees_with(|_| vec![dir.path().to_path_buf(), worktree.clone()]);
     let checkout = d.checkout_at(&worktree).expect("the worktree joined the tree");
     let pane = d.spawn_agent(checkout, "claude").unwrap();
-    let _watching = watched(&d, pane);
+    shown(&d, pane);
 
     d.reconcile_worktrees_with(|_| vec![dir.path().to_path_buf()]);
 

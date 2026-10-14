@@ -276,15 +276,9 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                 let shown = pane.loudest_state().status;
                 let color = status_color(shown, th);
                 let still = if pane.kind == PaneKind::Agent { "◆" } else { "›" };
-                // Messages a client left for the agent's prompt. This row is
-                // the only place the count shows, and `u` takes one back.
-                let queued = match pane.queued.len() {
-                    0 => String::new(),
-                    n => format!(" ✉{n}"),
-                };
                 let word = status_word(shown);
                 let title_width = width.saturating_sub(
-                    8 + queued.chars().count() + word.chars().count() + RIGHT_PAD,
+                    8 + word.chars().count() + RIGHT_PAD,
                 );
                 Line::from(vec![
                     Span::styled(
@@ -301,7 +295,6 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                             .fg(if selected { th.text } else { th.muted })
                             .add_modifier(bold_when(selected)),
                     ),
-                    Span::styled(queued, Style::default().fg(th.warn)),
                     Span::styled(word, Style::default().fg(color)),
                 ])
             }

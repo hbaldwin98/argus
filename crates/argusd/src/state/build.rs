@@ -140,7 +140,6 @@ impl Daemon {
             viewers: StdMutex::new(Viewers::default()),
             views_tx,
             next_viewer: std::sync::atomic::AtomicU64::new(0),
-            outbox: StdMutex::new(Default::default()),
             next_inbox: std::sync::atomic::AtomicU64::new(0),
             plugin_root: std::sync::OnceLock::new(),
             paste_root: std::sync::OnceLock::new(),

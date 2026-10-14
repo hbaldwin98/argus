@@ -11,9 +11,6 @@ pub(super) fn installed_hook(url: &str, rest: &[&str]) {
     let inherited_token = env_token();
     let (url, token) = routed_hook(url, token, &inherited_url, &inherited_token);
     let session = key.and_then(|key| raw.as_deref().and_then(|raw| json_string(raw, key)));
-    if let Some(path) = raw.as_deref().and_then(|raw| json_string(raw, "transcript_path")) {
-        name_transcript(&path);
-    }
     // Claude Code fires the session's own hooks for the agents it runs
     // inside the session. Their tool calls are not the pane's turn and
     // their numbers are not its telemetry, so they report nothing.

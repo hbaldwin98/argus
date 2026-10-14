@@ -197,38 +197,20 @@ pub struct PaneInfo {
     /// exposes a different subset of them.
     #[serde(default)]
     pub telemetry: AgentTelemetry,
-    /// Whether the daemon knows where this agent's conversation is written,
-    /// so a client can offer it. False for a harness that keeps none, and
-    /// until the first report that names the file. Not `transcript`: a
-    /// daemon from before sends a list under that name.
-    #[serde(default)]
-    pub has_transcript: bool,
     /// When the pane's status last changed, in seconds since the Unix
     /// epoch by the daemon's clock. `None` from a daemon that does not say.
     #[serde(default)]
     pub since: Option<u64>,
-    /// Messages waiting to be typed into this agent once it is idle,
-    /// oldest first. See `ClientMsg::SendToAgent`.
-    #[serde(default)]
-    pub queued: Vec<QueuedMessage>,
     /// Whether a plugin inside the agent holds the pane's inbox open, so
-    /// what is said to it goes through the harness rather than being typed,
-    /// and its questions can be answered.
+    /// what is said to it goes through the harness rather than being typed.
     #[serde(default)]
     pub live: bool,
     // No transcript. It rode here once, up to 200 events a pane in every
     // tree every client was sent, and no client read it. A daemon from
     // before still sends the field, and the derive ignores a field it does
-    // not know.
-}
-
-/// A message a client asked to have typed into an agent, waiting for the
-/// agent to be idle.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct QueuedMessage {
-    /// Unique among the daemon's queued messages for as long as it runs.
-    pub id: u64,
-    pub text: String,
+    // not know. `has_transcript` and `queued` went the same way with
+    // conversation following and the outbox; both were read with a
+    // default, so a client from before does without them.
 }
 
 /// Harness-neutral telemetry for one agent pane.
@@ -453,9 +435,7 @@ mod tests {
                 .collect(),
             telemetry: AgentTelemetry::default(),
             background: false,
-            has_transcript: false,
             since: None,
-            queued: Vec::new(),
             live: false,
         }
     }

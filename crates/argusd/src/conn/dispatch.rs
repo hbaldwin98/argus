@@ -41,50 +41,6 @@ fn dispatch_pane(
             daemon.release_pane_size(viewer, pane);
             Ok(())
         }
-        ClientMsg::WatchTranscript { pane } => {
-            subs.watch_transcript(pane, daemon.clone(), out_tx.clone());
-            Ok(())
-        }
-        ClientMsg::UnwatchTranscript { pane } => {
-            subs.unwatch_transcript(pane);
-            Ok(())
-        }
-        // Reads a file, so it leaves the message loop.
-        ClientMsg::EarlierTranscript { pane, before } => {
-            let daemon = daemon.clone();
-            let out = out_tx.clone();
-            tokio::spawn(async move {
-                let read = move || daemon.earlier_transcript(pane, before);
-                if let Ok(page) = tokio::task::spawn_blocking(read).await {
-                    let _ = out.send(page);
-                }
-            });
-            Ok(())
-        }
-        ClientMsg::SendToAgent {
-            pane,
-            text,
-            now,
-            request_id,
-        } => {
-            let sent = daemon.send_to_agent(pane, &text, now);
-            let _ = out_tx.send(ServerMsg::Sent {
-                request_id,
-                pane,
-                sent,
-            });
-            Ok(())
-        }
-        ClientMsg::CancelQueued { pane, id } => {
-            daemon.cancel_queued(pane, id);
-            Ok(())
-        }
-        ClientMsg::Interrupt { pane } => daemon.interrupt(pane),
-        ClientMsg::Answer {
-            pane,
-            question,
-            choice,
-        } => daemon.answer(pane, question, choice),
         ClientMsg::Input { pane, bytes } => daemon.write_pane(pane, &bytes),
         ClientMsg::Paste { pane, text } => daemon.paste_pane(pane, &text),
         ClientMsg::PasteFile { pane, name, bytes } => {

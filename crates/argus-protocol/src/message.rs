@@ -17,7 +17,6 @@ use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
 use crate::diagrams::{DiagramAction, DiagramList};
 use crate::tasks::{TaskAction, TaskList};
 use crate::tracker_links::{LinkWrite, MapChange};
-use crate::transcript::{Earlier, Update};
 use crate::tree::{AgentTelemetry, ProjectInfo, WorkspaceInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -431,48 +430,6 @@ pub enum ClientMsg {
     Restart,
     /// Ask the daemon to stop cleanly without starting a replacement.
     Stop,
-    /// Start following a pane's conversation. Answered with a fresh
-    /// [`ServerMsg::Transcript`], then updates. Only to a daemon that listed
-    /// `TRANSCRIPTS`.
-    WatchTranscript {
-        pane: PaneId,
-    },
-    /// Stop following a pane's conversation.
-    UnwatchTranscript {
-        pane: PaneId,
-    },
-    /// Ask for the part of a conversation before `before`, which a
-    /// [`ServerMsg::Transcript`] or an earlier answer handed out.
-    EarlierTranscript {
-        pane: PaneId,
-        before: Earlier,
-    },
-    /// Say `text` to an agent: typed as one paste and Enter once the agent
-    /// is idle, or straight away with `now`, which is how a person steers
-    /// one mid-turn. Answered with [`ServerMsg::Sent`] to this client. Only
-    /// to a daemon that listed `OUTBOX`.
-    SendToAgent {
-        pane: PaneId,
-        text: String,
-        now: bool,
-        request_id: u64,
-    },
-    /// Take back a message still waiting to be typed.
-    CancelQueued {
-        pane: PaneId,
-        id: u64,
-    },
-    /// Interrupt what the agent is doing, with its harness's own key.
-    Interrupt {
-        pane: PaneId,
-    },
-    /// Answer a question the agent's harness posed in its transcript
-    /// (`Body::Question`), by the question's entry id and a choice's id.
-    Answer {
-        pane: PaneId,
-        question: String,
-        choice: String,
-    },
     /// What this client is showing, sent whenever that changes and again
     /// when its terminal regains focus. Only to a daemon that listed
     /// `FOCUS`.
@@ -503,33 +460,6 @@ pub enum ServerMsg {
     PaneTelemetry {
         pane: PaneId,
         telemetry: AgentTelemetry,
-    },
-    /// Updates to a watched pane's conversation.
-    ///
-    /// `fresh` says to drop whatever is held for the pane first: the answer
-    /// to a watch, and what a client that fell behind is sent instead of the
-    /// updates it missed. `earlier` is where to ask for what came before;
-    /// `None` means the start of the conversation is held.
-    Transcript {
-        pane: PaneId,
-        fresh: bool,
-        earlier: Option<Earlier>,
-        updates: Vec<Update>,
-    },
-    /// The answer to [`ClientMsg::EarlierTranscript`]: what came before
-    /// `before`, oldest first, to go ahead of what is held.
-    EarlierTranscript {
-        pane: PaneId,
-        before: Earlier,
-        earlier: Option<Earlier>,
-        updates: Vec<Update>,
-    },
-    /// What became of a [`ClientMsg::SendToAgent`], to the client that
-    /// sent it.
-    Sent {
-        request_id: u64,
-        pane: PaneId,
-        sent: Sent,
     },
     /// Names of the configured agent templates, sent once on connect.
     Templates(Vec<String>),
@@ -726,21 +656,6 @@ pub enum ServerMsg {
 }
 
 /// What a creating request made.
-/// The most one message to an agent may hold. A prompt, not a document:
-/// a document belongs in a file the agent is pointed at.
-pub const MAX_SEND_BYTES: usize = 16 * 1024;
-
-/// What became of a message to an agent.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Sent {
-    /// Typed into the agent's terminal.
-    Typed,
-    /// Waiting for the agent to be idle, under this id.
-    Queued { id: u64 },
-    /// Not taken, and why.
-    Refused { reason: String },
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Created {
     Pane(PaneId),
