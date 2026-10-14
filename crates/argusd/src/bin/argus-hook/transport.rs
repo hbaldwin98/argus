@@ -102,6 +102,19 @@ pub(super) fn name_background_work() {
     let _ = BACKGROUND.set(());
 }
 
+/// The directory this event's conversation is working in, set the same
+/// way and carried on the same reports. The daemon follows a turn that
+/// ends in another worktree, so the agent never has to say it moved.
+static DIRECTORY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+pub(super) fn name_directory(directory: &str) {
+    // A line break would end the header and start one the daemon would
+    // read as the agent's; no real directory has one.
+    if !directory.is_empty() && !directory.contains(['\r', '\n']) {
+        let _ = DIRECTORY.set(directory.to_string());
+    }
+}
+
 /// The pane base a URL names, or `None` for one not on the loopback
 /// listener.
 pub(super) fn pane_base(url: &str) -> Option<String> {
@@ -126,7 +139,8 @@ pub(super) fn post_as(url: &str, token: &str, body: &str, session: Option<&str>)
     stream.set_write_timeout(Some(TIMEOUT)).ok()?;
 
     let background = BACKGROUND.get().is_some();
-    let req = request(path, authority, token, session, background, body);
+    let directory = DIRECTORY.get().map(String::as_str);
+    let req = request(path, authority, token, session, background, directory, body);
     stream.write_all(req.as_bytes()).ok()?;
     // The daemon's reply is deliberately not read: nothing here acts on it,
     // and not waiting keeps the agent's turn from stalling on a slow answer.
@@ -144,7 +158,7 @@ pub(super) fn post_response(url: &str, token: &str, body: &str) -> Option<(u16, 
     stream.set_write_timeout(Some(TIMEOUT)).ok()?;
     stream.set_read_timeout(Some(TIMEOUT)).ok()?;
     stream
-        .write_all(request(path, authority, token, None, false, body).as_bytes())
+        .write_all(request(path, authority, token, None, false, None, body).as_bytes())
         .ok()?;
 
     let mut response = String::new();
@@ -165,6 +179,7 @@ pub(super) fn request(
     token: &str,
     session: Option<&str>,
     background: bool,
+    directory: Option<&str>,
     body: &str,
 ) -> String {
     let session = match session.filter(|id| !id.is_empty()) {
@@ -175,12 +190,17 @@ pub(super) fn request(
         true => format!("{BACKGROUND_HEADER}: workflow\r\n"),
         false => String::new(),
     };
+    let directory = match directory {
+        Some(directory) => format!("{DIRECTORY_HEADER}: {directory}\r\n"),
+        None => String::new(),
+    };
     let mut req = String::new();
     req.push_str(&format!("POST {path} HTTP/1.1\r\n"));
     req.push_str(&format!("Host: {authority}\r\n"));
     req.push_str(&format!("Authorization: Bearer {token}\r\n"));
     req.push_str(&session);
     req.push_str(&background);
+    req.push_str(&directory);
     req.push_str(&format!("Content-Length: {}\r\n", body.len()));
     req.push_str("Connection: close\r\n\r\n");
     req.push_str(body);

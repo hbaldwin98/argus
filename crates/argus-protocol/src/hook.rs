@@ -63,6 +63,11 @@ pub const SESSION_HEADER: &str = "X-Argus-Session";
 /// fact rather than two reports that could land in either order.
 pub const BACKGROUND_HEADER: &str = "X-Argus-Background";
 
+/// The directory the reporting conversation is working in, as its harness
+/// said on the hook. A turn that ends inside another worktree is how the
+/// daemon learns the agent moved there without the agent having to say so.
+pub const DIRECTORY_HEADER: &str = "X-Argus-Directory";
+
 /// Flags a managed hook command carries. The installer writes them into a
 /// harness's settings file and the helper parses them back out.
 ///

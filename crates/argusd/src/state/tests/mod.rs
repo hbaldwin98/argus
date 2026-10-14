@@ -2,6 +2,7 @@
 //! over the fixtures they all build a daemon from.
 
 mod branches;
+mod follow;
 mod hook_lifecycle;
 mod inbox;
 mod lifecycle;

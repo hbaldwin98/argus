@@ -55,9 +55,11 @@ task done. Reporting failures must not block the user's task.
 ## Checkout
 
 Other agents may share the checkout, so do not switch its branch in place. For
-another branch, create a linked worktree, continue there, and run
-`"$ARGUS_HOOK" checkout` from the new directory. Resolve this skill from the new
-checkout afterwards.
+another branch, create a linked worktree and continue there. When a turn ends
+with your working directory inside it, the pane follows you. To move it sooner,
+or if your harness does not report its directory, run `"$ARGUS_HOOK" checkout`
+from the new directory; it says whether the pane moved. Resolve this skill from
+the new checkout afterwards.
 
 ## Shared work
 

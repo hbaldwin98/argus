@@ -32,6 +32,7 @@ mod board_parts;
 mod build;
 mod decisions;
 mod features;
+mod follow;
 mod diagrams;
 mod tasks;
 mod tracker_map;
@@ -86,6 +87,9 @@ struct Pane {
     /// Whether the agent's last turn ended with work still running behind
     /// it. Said by the report that ended the turn, and by each one since.
     background: bool,
+    /// Where the agent's last turn ended, as its harness reported it. Live
+    /// only; the row follows the agent when this changes. See `follow`.
+    directory: Option<PathBuf>,
     /// Live only: model, context, spend and tool, as the harness last
     /// reported them. Not persisted; a restored agent reports afresh.
     telemetry: argus_protocol::AgentTelemetry,
@@ -121,6 +125,7 @@ impl Pane {
             harness_session_id: None,
             children: Vec::new(),
             background: false,
+            directory: None,
             telemetry: Default::default(),
             status_since: std::time::SystemTime::now(),
             inbox: None,

@@ -92,8 +92,8 @@ impl Harness {
         let mut text = format!(
             "When ARGUS_HOOK is set you are in an Argus pane: name it with \
              `\"$ARGUS_HOOK\" title \"<a few words>\"` once you understand the task, and \
-             load the argus skill at `{}` before reporting status or changing features, \
-             tasks, decisions, or diagrams.",
+             load the argus skill at `{}` before reporting status or changing the feature \
+             board. Switch branches only in a linked worktree.",
             dir.join("SKILL.md").display()
         );
         // Only a context event puts the pane's context after these words.

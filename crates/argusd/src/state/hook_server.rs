@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use argus_protocol::{parse_request_target, Endpoint, PaneId, MAX_DIAGRAM_BODY_BYTES};
+use argus_protocol::{parse_request_target, Endpoint, PaneId, Report, MAX_DIAGRAM_BODY_BYTES};
 
 use super::Daemon;
 
@@ -200,6 +200,16 @@ async fn handle_hook_request(
                     Some(note),
                     headers.background,
                 );
+                // A turn's end, not its tool calls: an agent that steps into
+                // another worktree to look at something has not moved there.
+                if let (Report::Idle, Some(directory)) = (report, headers.directory.clone()) {
+                    let daemon = daemon.clone();
+                    let reporter = reporter.clone();
+                    let _ = tokio::task::spawn_blocking(move || {
+                        daemon.follow_agent_directory(pane, reporter.as_deref(), &directory)
+                    })
+                    .await;
+                }
                 HookResponse::empty(200, "OK")
             }
             Some((pane, Endpoint::Title)) => {
@@ -214,10 +224,15 @@ async fn handle_hook_request(
                 if daemon.child_of(pane, reporter.as_deref()).is_none() =>
             {
                 let destination = PathBuf::from(String::from_utf8_lossy(&body).trim());
-                if let Err(error) = daemon.move_agent_to_checkout(pane, &destination) {
-                    tracing::warn!("pane {} could not move checkout: {error}", pane.0);
+                let daemon = daemon.clone();
+                let moved =
+                    tokio::task::spawn_blocking(move || daemon.move_agent_into(pane, &destination))
+                        .await
+                        .unwrap_or_else(|error| Err(error.into()));
+                match moved {
+                    Ok(()) => HookResponse::empty(200, "OK"),
+                    Err(error) => HookResponse::text(409, "Conflict", error.to_string()),
                 }
-                HookResponse::empty(200, "OK")
             }
             Some((pane, Endpoint::Session)) => {
                 daemon.set_pane_session_id(pane, &String::from_utf8_lossy(&body));
@@ -325,6 +340,8 @@ struct HookHeaders {
     reporter: Option<String>,
     /// Whether that conversation left work running behind its turn.
     background: bool,
+    /// Where that conversation is working.
+    directory: Option<PathBuf>,
 }
 
 async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
@@ -338,6 +355,7 @@ async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
         content_length: 0,
         reporter: None,
         background: false,
+        directory: None,
     };
     loop {
         let mut line = String::new();
@@ -353,6 +371,8 @@ async fn read_hook_headers<R: tokio::io::AsyncBufRead + Unpin>(
             headers.reporter = valid_session_id(v);
         } else if let Some(v) = strip_header(&line, argus_protocol::BACKGROUND_HEADER) {
             headers.background = !v.is_empty();
+        } else if let Some(v) = strip_header(&line, argus_protocol::DIRECTORY_HEADER) {
+            headers.directory = (!v.is_empty()).then(|| PathBuf::from(v));
         }
     }
     Ok(headers)

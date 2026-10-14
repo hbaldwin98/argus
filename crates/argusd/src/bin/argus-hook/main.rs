@@ -92,7 +92,7 @@ use argus_protocol::{
     Report, TrackerMap,
     ReviewComment, TaskAction, TaskList, TaskPlace, TaskState, TaskWrite, ARTIFACT_SCOPE_VAR,
     CONTEXT_COMMAND, INSTRUCTIONS_COMMAND, INSTRUCTIONS_VAR, NOTE_FLAG, OWNS_SESSION_FLAG,
-    BACKGROUND_HEADER, SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
+    BACKGROUND_HEADER, DIRECTORY_HEADER, SESSION_HEADER, SESSION_KEY_FLAG, TITLE_FLAG, TOKEN_VAR, URL_VAR,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(2);
@@ -216,12 +216,14 @@ fn status(rest: &[&str]) {
 }
 
 fn checkout(rest: &[&str]) {
-    if let Some(path) = reported_checkout(rest) {
-        let _ = post(
-            &endpoint_url(&env_url(), Endpoint::Checkout),
-            &env_token(),
-            &path.to_string_lossy(),
-        );
+    // Said aloud either way: a move that silently failed left agents
+    // believing their row had followed them.
+    let Some(path) = reported_checkout(rest) else { return };
+    let url = endpoint_url(&env_url(), Endpoint::Checkout);
+    match post_response(&url, &env_token(), &path.to_string_lossy()) {
+        Some((200, _)) => println!("This pane now belongs to {}.", path.display()),
+        Some((_, refusal)) => println!("Not moved: {refusal}"),
+        None => println!("Not moved: the Argus daemon did not answer."),
     }
 }
 
@@ -258,10 +260,12 @@ mod tests {
             "tok",
             Some("s-1"),
             false,
+            None,
             "",
         );
         assert!(tagged.contains("\r\nX-Argus-Session: s-1\r\n"), "{tagged}");
-        let untagged = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", None, false, "");
+        let untagged =
+            request("/pane/1/status/idle", "127.0.0.1:4242", "tok", None, false, None, "");
         assert!(!untagged.contains("X-Argus-Session"), "{untagged}");
         assert!(untagged.contains("\r\nContent-Length: 0\r\n"), "{untagged}");
     }
@@ -279,6 +283,7 @@ mod tests {
             "tok",
             Some("s-1"),
             true,
+            Some("C:\\work\\repo"),
             "hi",
         );
         let (head, body) = req
@@ -571,10 +576,32 @@ mod tests {
         assert!(!leaves_a_workflow_running(shell));
         assert!(!leaves_a_workflow_running(r#"{"hook_event_name":"Stop"}"#));
 
-        let said = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", Some("s"), true, "");
+        let said =
+            request("/pane/1/status/idle", "127.0.0.1:4242", "tok", Some("s"), true, None, "");
         assert!(said.contains(&format!("\r\n{BACKGROUND_HEADER}: workflow\r\n")), "{said}");
-        let unsaid = request("/pane/1/status/idle", "127.0.0.1:4242", "tok", Some("s"), false, "");
+        let unsaid =
+            request("/pane/1/status/idle", "127.0.0.1:4242", "tok", Some("s"), false, None, "");
         assert!(!unsaid.contains(BACKGROUND_HEADER), "{unsaid}");
+    }
+
+    #[test]
+    fn a_report_says_which_directory_the_conversation_is_in() {
+        // Claude Code's Stop names the session's directory, which follows
+        // it into a worktree; the daemon moves the row from that.
+        let stop = r#"{"session_id":"s","hook_event_name":"Stop",
+            "cwd":"C:\\work\\repo\\.argus\\worktrees\\feat"}"#;
+        let directory = json_string(stop, "cwd").unwrap();
+        assert_eq!(directory, "C:\\work\\repo\\.argus\\worktrees\\feat");
+        let said = request(
+            "/pane/1/status/idle",
+            "127.0.0.1:4242",
+            "tok",
+            Some("s"),
+            false,
+            Some(&directory),
+            "",
+        );
+        assert!(said.contains(&format!("\r\n{DIRECTORY_HEADER}: {directory}\r\n")), "{said}");
     }
 
     #[test]

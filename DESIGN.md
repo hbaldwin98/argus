@@ -207,6 +207,7 @@ to the type or its locking.
 | `state/build` | turning what the config declares into the tree the daemon runs on |
 | `state/panes` | a pane's lifecycle: spawned, restarted, written to, and retired — the one way out of the tree every removal takes |
 | `state/agents` | what an agent reports about itself, and what it is told |
+| `state/follow` | which checkout an agent pane belongs to: the one its agent works in, moved to when the agent says so or a turn ends in another worktree |
 | `state/viewers` | what each client is showing: the one pty size reconciled out of what they all ask for, and the view of the client the person was last at |
 | `state/git_ops` | the writes to Git |
 | `state/sync` | the polls and watchers that keep the tree level with the disk |
@@ -840,12 +841,26 @@ interrupted and a post made through it would never land.
 The daemon's loopback receiver is a small pane API rather than a hook endpoint: `POST
 /pane/<id>/status/<working|idle|waiting|needs-review|done|failed>` with an optional body as the note,
 `POST /pane/<id>/title`, `POST /pane/<id>/session` with a validated harness session ID, and `POST
-`/pane/<id>/checkout` with a known checkout path.
+`/pane/<id>/checkout` with a directory inside a checkout of the pane's project.
 `POST /pane/<id>/comments` requires a live agent source and returns the newest 100 durable review
 comments for that pane's checkout as JSON, oldest first. The checkout comes from the pane rather
 than request input, so callers cannot select another checkout through this endpoint.
 The checkout endpoint changes affiliation only: the agent runs `argus-hook checkout` from the directory it has
-already moved to. The status is named in the URL rather than the harness's event name, because the
+already moved to, the innermost checkout holding that directory takes the row, and a worktree made
+since the last poll is looked for before the move is refused. The refusal is the answer's body,
+and the helper prints it, because a move that failed in silence left agents believing the row had
+followed them.
+
+The row also follows without being told, since an agent that has to remember to report a move
+mostly does not. The installed hook form carries the event's `cwd` on every report as
+`X-Argus-Directory`. When a turn ends — an `idle` report from the pane's own session — in a
+directory other than the one the last turn ended in, the daemon moves the row into the innermost
+checkout of the agent's repository holding it (`state/follow`), discovering a new worktree the same
+way. A tool call's directory is not followed, because an agent that steps into another worktree to
+read it has not moved there. Neither is another repository's, nor a directory already followed,
+so a row moved by hand is not pulled back by an agent that stayed where it was. Claude Code's `Stop`
+names the session's directory, which follows `EnterWorktree` and a `cd` within the checkout; Codex
+reports no turn end, so its agents still say they moved. The status is named in the URL rather than the harness's event name, because the
 installer already resolved that — which is what makes a new harness config instead of a match arm. Managed
 blocks are generally per-boot: they name an ephemeral port and a per-boot token, so they are swept from every
 configured checkout at startup and removed when the last agent pane in a checkout goes away, along
@@ -950,8 +965,10 @@ references in the new checkout. Removing the marker makes a replacement file use
 
 Titles arriving from a model are flattened to one line and cut to 48 characters. Neither a rename,
 status report, nor checkout move can touch a pane that has exited. A renamed row keeps showing its
-template on its second line. The skill directs agents to use linked worktrees for branch changes,
-since switching a shared checkout in place changes files and HEAD for every pane using it.
+template on its second line. The bootstrap and the skill direct agents to use linked worktrees for
+branch changes, since switching a shared checkout in place changes files and HEAD for every pane
+using it. The bootstrap says it because the skill is read only before reporting or touching the
+board, which is not when an agent makes a worktree.
 
 ## Session restore
 

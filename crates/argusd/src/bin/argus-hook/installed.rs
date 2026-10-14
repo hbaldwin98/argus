@@ -18,6 +18,9 @@ pub(super) fn installed_hook(url: &str, rest: &[&str]) {
         if raw.as_deref().is_some_and(leaves_a_workflow_running) {
             name_background_work();
         }
+        if let Some(directory) = raw.as_deref().and_then(|raw| json_string(raw, "cwd")) {
+            name_directory(&directory);
+        }
         let _ = post_as(&url, &token, &note, session.as_deref());
         if rest.contains(&OWNS_SESSION_FLAG) {
             post_session_id(&url, &token, session.as_deref());
