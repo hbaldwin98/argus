@@ -392,27 +392,46 @@ fn echo(text: &str) -> Spawn {
     }
 }
 
+/// What the helper exits with when the job refuses it memory. An exit code
+/// of its own, because the default answer to a failed allocation is an abort,
+/// and on Windows an abort hands the process to crash reporting: the limit
+/// held and the process still outlived the test's patience.
+#[cfg(windows)]
+const JOB_MEMORY_REFUSED: i32 = 86;
+
 #[cfg(windows)]
 #[test]
 fn job_memory_limit_helper() {
+    use std::io::Read;
+
     if std::env::var_os("ARGUS_JOB_MEMORY_TEST").is_none() {
         return;
     }
 
-    // Give the parent time to assign this process to the job before it
-    // starts committing memory. The total allocation stays host-safe if
-    // containment is broken; success then makes the parent test fail.
-    std::thread::sleep(Duration::from_millis(500));
-    let mut allocations = Vec::new();
+    // The parent closes this pipe only once the process is in the job, so
+    // nothing is committed before the limit applies.
+    let mut gate = Vec::new();
+    std::io::stdin().read_to_end(&mut gate).unwrap();
+
+    // The total stays host-safe if containment is broken; finishing then
+    // exits zero, which the parent test reads as an escape.
+    const BLOCK: usize = 32 * 1024 * 1024;
+    let mut blocks: Vec<Vec<u8>> = Vec::with_capacity(8);
     for _ in 0..8 {
-        allocations.push(vec![0xa5; 32 * 1024 * 1024]);
+        let mut block: Vec<u8> = Vec::new();
+        if block.try_reserve_exact(BLOCK).is_err() {
+            std::process::exit(JOB_MEMORY_REFUSED);
+        }
+        block.resize(BLOCK, 0xa5);
+        blocks.push(block);
     }
-    std::hint::black_box(allocations);
+    std::hint::black_box(blocks);
 }
 
 #[cfg(windows)]
 #[test]
 fn a_job_stops_a_process_that_exceeds_its_memory_limit() {
+    use std::io::Read;
     use std::os::windows::io::AsRawHandle;
     use std::process::{Command, Stdio};
 
@@ -423,8 +442,9 @@ fn a_job_stops_a_process_that_exceeds_its_memory_limit() {
             "--nocapture",
         ])
         .env("ARGUS_JOB_MEMORY_TEST", "1")
+        .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
     let job = ProcessJob::new(JobLimits {
@@ -433,8 +453,19 @@ fn a_job_stops_a_process_that_exceeds_its_memory_limit() {
     })
     .unwrap();
     job.assign(AsRawHandle::as_raw_handle(&child)).unwrap();
+    drop(child.stdin.take());
 
-    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    // What the helper said on its way out is the only record of a failure
+    // that happens on a CI runner and nowhere else.
+    let said = |child: &mut std::process::Child| {
+        let mut text = String::new();
+        if let Some(mut stderr) = child.stderr.take() {
+            let _ = stderr.read_to_string(&mut text);
+        }
+        text
+    };
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
     let status = loop {
         if let Some(status) = child.try_wait().unwrap() {
             break status;
@@ -442,14 +473,19 @@ fn a_job_stops_a_process_that_exceeds_its_memory_limit() {
         if std::time::Instant::now() >= deadline {
             job.terminate().unwrap();
             let _ = child.wait();
-            panic!("memory-limited process did not exit");
+            panic!(
+                "memory-limited process did not exit; it said: {}",
+                said(&mut child)
+            );
         }
         std::thread::sleep(Duration::from_millis(20));
     };
 
-    assert!(
-        !status.success(),
-        "a process that committed 256 MiB escaped a 128 MiB job limit"
+    assert_eq!(
+        status.code(),
+        Some(JOB_MEMORY_REFUSED),
+        "a process asking for 256 MiB under a 128 MiB job limit was not refused; it said: {}",
+        said(&mut child)
     );
 }
 
