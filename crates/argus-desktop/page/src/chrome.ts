@@ -316,7 +316,7 @@ export function startAction(action: Action): boolean {
 function drawHead(): void {
   const shown = state.rail.shown;
   const head = $('head');
-  head.hidden = !shown || state.rail.stage === 'feature';
+  head.hidden = !shown || state.rail.stage !== 'workspace';
   if (!shown) return;
   head.replaceChildren(
     el(

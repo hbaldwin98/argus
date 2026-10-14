@@ -136,7 +136,7 @@ function actions(row: CheckoutsRow): Child {
   const soon = (label: string, key: string): HTMLElement =>
     el(
       'button',
-      { class: 'btn sm', disabled: true, title: 'Not in this window yet' },
+      { class: 'btn sm soon', disabled: true, title: 'Not in this window yet' },
       `${label} `,
       keycap(key),
     );
@@ -200,10 +200,10 @@ function tableRow(row: CheckoutsRow, selected: boolean): HTMLElement {
       row.git !== null && el('span', { class: `git${row.clean ? ' clean' : ''}` }, row.git),
       row.note && el('span', { class: 'meta' }, row.note),
     ),
-    el('td', null, running(row)),
+    el('td', { class: 'col-running' }, running(row)),
     el(
       'td',
-      { class: `mono${row.viewed ? ' fg-accent' : ''}` },
+      { class: `col-feature mono${row.viewed ? ' fg-accent' : ''}` },
       row.feature === null ? el('span', { class: 'fg-faint' }, '—') : `#${row.feature}`,
     ),
     el('td', { class: 'row-actions' }, selected && actions(row)),
@@ -231,7 +231,9 @@ function table(c: Checkouts): HTMLElement {
         el(
           'tr',
           null,
-          ['Checkout', 'Branch', 'Git', 'Running', 'Feature'].map((name) => el('th', null, name)),
+          ['Checkout', 'Branch', 'Git', 'Running', 'Feature'].map((name) =>
+            el('th', { class: `col-${name.toLowerCase()}` }, name),
+          ),
           el('th', null, el('span', { class: 'sr-only' }, 'Actions')),
         ),
       ),

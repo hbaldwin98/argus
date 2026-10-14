@@ -238,7 +238,7 @@ export function startAction(action) {
 function drawHead() {
     const shown = state.rail.shown;
     const head = $('head');
-    head.hidden = !shown || state.rail.stage === 'feature';
+    head.hidden = !shown || state.rail.stage !== 'workspace';
     if (!shown)
         return;
     head.replaceChildren(el('span', { class: 'crumbs' }, el('span', null, shown.repository), el('span', { class: 'fg-faint' }, '/'), el('span', { class: 'mono fg-ref' }, shown.branch || shown.checkout), el('span', { class: 'fg-faint' }, '/')), el('span', { class: `glyph${shown.agent ? '' : ' sh'}` }, shown.agent ? '◆' : '›'), el('span', { class: 'type-heading head-title' }, shown.title), el('span', { class: `pill ${shown.status}` }, shown.status), el('span', { class: 'grow' }), el('span', { class: 'meta mono', id: 'size' }, screen.sizeLabel()), closeButton(shown.pane, shown.title));

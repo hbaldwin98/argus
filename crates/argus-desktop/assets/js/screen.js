@@ -257,7 +257,11 @@ function makeScreen() {
     function report() {
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
-            if (terminal.hidden)
+            // A hidden terminal, or one inside another stage's hidden body, has
+            // no room to report: measuring it would size the pane to one cell,
+            // and the pane takes the size of the client last in use. The resize
+            // observer reports again once it is laid out.
+            if (terminal.hidden || !terminal.clientWidth || !terminal.clientHeight)
                 return;
             const style = getComputedStyle(terminal);
             const w = terminal.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
