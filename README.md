@@ -276,6 +276,7 @@ The directory may contain:
 | --- | --- |
 | `projects.toml` | Workspaces, projects, repositories, agent templates, and harnesses. Yours to edit; Argus only reads it |
 | `client.toml` | Editor, theme, layout, pane-view, and notification preferences |
+| `desktop.json` | The desktop window's own: each repository's feature layout, and whether it chimes when an agent needs you |
 | `runtime.db` | Everything Argus writes: panes to relaunch, projects and repositories added or removed from the TUI, workspaces created at runtime, and the last workspace open |
 
 The daemon watches `projects.toml` and reloads project and agent-template changes. Existing panes

@@ -94,6 +94,7 @@ fn main() {
             commands::peek,
             commands::set_layout,
             commands::toggle_folded,
+            commands::set_chime,
             commands::hold,
             commands::archive,
             commands::go_to_pane,

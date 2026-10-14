@@ -33,6 +33,8 @@ pub enum Event {
     /// Something the daemon said that passes: a refused request's reason.
     /// The page shows it a while and lets it go.
     Notice { text: String },
+    /// An agent came to need the person somewhere they are not looking.
+    Chime,
     /// Every binding, grouped as the shortcuts sheet lists them, sent once
     /// a page loads: the page dispatches from it outside a pane.
     Keymap { groups: Vec<Group> },
@@ -49,6 +51,8 @@ pub struct Status {
     /// What stays true while this connection lasts and the person should
     /// know: the daemon is another build, or speaks another protocol.
     pub alarm: Option<String>,
+    /// Whether the window chimes, for the status bar's switch.
+    pub chime: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -622,10 +626,11 @@ mod tests {
             connection: Connection::Stopped,
             detail: Some("argusd not found".into()),
             alarm: None,
+            chime: true,
         });
         assert_eq!(
             as_json(event),
-            json!({"type": "status", "connection": "stopped", "detail": "argusd not found", "alarm": null})
+            json!({"type": "status", "connection": "stopped", "detail": "argusd not found", "alarm": null, "chime": true})
         );
     }
 

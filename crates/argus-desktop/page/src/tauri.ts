@@ -58,6 +58,7 @@ interface Commands {
   peek: { slug: string };
   set_layout: { layout: 'list' | 'board' };
   toggle_folded: None;
+  set_chime: { on: boolean };
   hold: { slug: string; reason: string | null };
   archive: { slug: string; archived: boolean };
   go_to_pane: { pane: number };

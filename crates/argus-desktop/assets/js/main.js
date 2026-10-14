@@ -1,6 +1,7 @@
 // The desktop window's page: it draws what Rust sends and reports what the
 // person does. It decides nothing about the daemon — the model is the
 // window's `session` — so each event replaces what the page held.
+import { chime, listen as listenForSound } from './chime.js';
 import { closeStart, drawChrome, drawHeading, notice, railPicked, reconnect, unpickRail, } from './chrome.js';
 import { drawCheckouts } from './checkouts.js';
 import { $ } from './dom.js';
@@ -63,12 +64,16 @@ function receive(event) {
             state.features = event;
             drawFeatures();
             break;
+        case 'chime':
+            chime();
+            break;
         case 'keymap':
             state.keymap = event.groups;
             break;
     }
 }
 listenToInput();
+listenForSound();
 listenToKeys();
 listenToFeatures();
 document.addEventListener('click', (e) => {

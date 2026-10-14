@@ -276,6 +276,12 @@ pub async fn set_layout(shared: State<'_, Arc<Shared>>, layout: String) -> Answe
 }
 
 #[tauri::command]
+pub async fn set_chime(shared: State<'_, Arc<Shared>>, on: bool) -> Answer {
+    shared.act(|s| s.set_chime(on));
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn toggle_folded(shared: State<'_, Arc<Shared>>) -> Answer {
     shared.act(|s| s.toggle_folded());
     Ok(())
