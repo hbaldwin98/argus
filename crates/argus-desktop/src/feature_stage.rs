@@ -166,6 +166,18 @@ impl FeatureStage {
         self.ask_tasks(scope, out);
     }
 
+    /// Puts the cursor on a feature the index may be folding away, showing
+    /// the folded ones first: a peek on a row the index hides would be
+    /// moved off it by the next board's `settle_peek`.
+    pub fn reveal(&mut self, slug: &str, scope: Option<&Scope>, tree: &[ProjectInfo], out: &mut Vec<ClientMsg>) {
+        let folded = self.board.as_ref().is_some_and(|board| features::is_folded(board, tree, slug));
+        if folded && !self.show_folded {
+            self.show_folded = true;
+            self.changed = true;
+        }
+        self.peek(slug, scope, out);
+    }
+
     /// How the scope's index is laid out, as remembered for it.
     pub fn layout(&self, scope: Option<&Scope>) -> Layout {
         scope
@@ -394,6 +406,22 @@ mod tests {
         assert!(stage.peek_tasks.is_none(), "trim's tasks are not bump's");
         stage.receive_tasks(fixtures::tasks("bump"), Some(&scope()));
         assert!(stage.peek_tasks.is_some());
+    }
+
+    #[test]
+    fn an_archived_feature_revealed_is_listed_and_stays_peeked_past_the_next_board() {
+        let (mut stage, _) = loaded();
+        let mut out = Vec::new();
+        stage.reveal("old", Some(&scope()), &fixtures::feature_tree(), &mut out);
+        assert_eq!(names(&out), ["tasks old"]);
+        stage.receive_board(fixtures::board(), Some(&scope()), &fixtures::feature_tree(), &mut out);
+        assert_eq!(stage.peeked(), Some("old"));
+        assert!(stage.everything(Some(&scope()), &fixtures::feature_tree()).show_folded, "the index lists it");
+
+        let (mut stage, _) = loaded();
+        stage.reveal("bump", Some(&scope()), &fixtures::feature_tree(), &mut out);
+        assert_eq!(stage.peeked(), Some("bump"));
+        assert!(!stage.show_folded, "a listed feature leaves the folded ones folded");
     }
 
     #[test]

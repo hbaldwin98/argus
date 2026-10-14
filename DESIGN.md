@@ -60,21 +60,22 @@ the window's, one nothing binds is dropped, and a second leader sends one throug
 pane, the leader and `k`) opens the palette, one fuzzy search over the table's commands and the
 panes, checkouts and features Rust lists while it is open (`palette`), `>` narrowing it to commands
 and `#` to features; a command chosen is a call that `session` runs where its key would, the
-checkout ones on the Checkouts stage's row or else the pane on screen's checkout. `?` (in a pane,
-the leader and `?`) opens the shortcuts sheet, which is the table's groups drawn whole, opening with
-the rule that a pane has every key but the leader. Both are drawn over everything, a review
-included, and a pane's leader key reaches them as a `Run` event, since only the page draws them.
-The leader and
-`f` fill the window with the pane, putting the rail, the tabs and the stage header away until the
-same keys again. The Feature stage has them while it is open, and another pane brings them back
-for good. Rust holds the model (`session`); the page draws what it is sent
-and reports gestures. It is TypeScript in `crates/argus-desktop/page/src`, one module per subject
-(`chrome`, `screen`, `input`, `keymap`, `palette`, `shortcuts`, `features`, `chime`, with `keys`, `dom`, `state` and `tauri` beneath them), compiled
-into `assets/js` and committed, so building the crate needs no Node. The events it reads are
-`page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
-either committed output differs from what its source makes. Its webview keeps its storage
-under the instance's config directory, so a dev window never shares it with the installed one, and
-it logs to `argus-desktop.log` beside the config, keeping the previous run's.
+checkout ones on the Checkouts stage's row or else the pane on screen's checkout. A stage hides the
+pane, so from one the pane commands find nothing on screen, and a held or archived feature chosen
+unfolds the Feature index to it. `?` (in a pane, the leader and `?`) opens the shortcuts sheet,
+which is the table's groups drawn whole, opening with the rule that a pane has every key but the
+leader. Both are drawn over everything, a review included, and a pane's leader key reaches them as a
+`Run` event, since only the page draws them. The leader and `f` fill the window with the pane,
+putting the rail, the tabs and the stage header away until the same keys again. The Feature stage
+has them while it is open, and another pane brings them back for good. Rust holds the model
+(`session`); the page draws what it is sent and reports gestures. It is TypeScript in
+`crates/argus-desktop/page/src`, one module per subject (`chrome`, `screen`, `input`, `keymap`,
+`palette`, `shortcuts`, `features`, `chime`, with `keys`, `dom`, `state` and `tauri` beneath them),
+compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
+are `page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
+either committed output differs from what its source makes. Its webview keeps its storage under the
+instance's config directory, so a dev window never shares it with the installed one, and it logs to
+`argus-desktop.log` beside the config, keeping the previous run's.
 
 The daemon is started with its stderr on the null device, since it shares no console with the
 client and anything it printed would either land in the middle of the TUI or open a console window

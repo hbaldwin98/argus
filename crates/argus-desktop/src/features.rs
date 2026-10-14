@@ -101,6 +101,11 @@ pub fn settle_peek(board: &DecisionBoard, tree: &[ProjectInfo], peek: Option<&st
     listed.first().map(|row| row.slug.clone())
 }
 
+/// Whether the index lists `slug` only with held and archived features shown.
+pub fn is_folded(board: &DecisionBoard, tree: &[ProjectInfo], slug: &str) -> bool {
+    standing::feature_rows(board, tree).iter().any(|row| row.slug == slug && row.standing.folded())
+}
+
 fn page_row(row: &FeatureRow, feature: Option<&Feature>, index: &Index) -> page::FeatureRow {
     let agent = feature.and_then(|f| loudest_agent(&standing::panes_on(f, index.tree)));
     page::FeatureRow {

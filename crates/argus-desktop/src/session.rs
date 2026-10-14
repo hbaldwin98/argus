@@ -1069,11 +1069,12 @@ impl Session {
         self.finish()
     }
 
-    /// A feature chosen in the palette: the Feature stage opens on it.
+    /// A feature chosen in the palette: the Feature stage opens on it, with
+    /// held and archived features shown if it is one of them.
     pub fn go_to_feature(&mut self, slug: &str) -> Vec<ClientMsg> {
         self.open_features(true);
         let scope = self.scope();
-        self.features.peek(slug, scope.as_ref(), &mut self.out);
+        self.features.reveal(slug, scope.as_ref(), &self.tree, &mut self.out);
         self.finish()
     }
 
@@ -1090,8 +1091,13 @@ impl Session {
     /// in. It needs no chime, as the terminal client rings for no pane
     /// being typed in.
     fn watched(&self) -> Option<PaneId> {
-        let on_screen = !self.features.is_open() && !self.checkouts.is_open();
-        self.shown.filter(|_| self.focused && on_screen)
+        self.on_screen().filter(|_| self.focused)
+    }
+
+    /// The shown pane while the Workspace is up. A stage keeps `shown` to
+    /// come back to, but hides the pane and takes its keys away.
+    fn on_screen(&self) -> Option<PaneId> {
+        self.shown.filter(|_| !self.features.is_open() && !self.checkouts.is_open())
     }
 
     pub fn set_chime(&mut self, on: bool) -> Vec<ClientMsg> {
@@ -1112,7 +1118,7 @@ impl Session {
         }
         match action {
             Action::Workspace | Action::Feature | Action::Checkouts | Action::Shortcuts => self.run(action),
-            Action::Fill | Action::Close if self.shown.is_none() => {
+            Action::Fill | Action::Close if self.on_screen().is_none() => {
                 self.passing.push(Event::Notice { text: "no pane is on screen".into() });
             }
             Action::Fill | Action::Close => self.run(action),
@@ -1167,7 +1173,7 @@ impl Session {
     }
 
     fn shown_checkout(&self) -> Option<CheckoutId> {
-        let pane = self.shown?;
+        let pane = self.on_screen()?;
         self.tree
             .iter()
             .flat_map(|p| &p.repositories)
@@ -1325,7 +1331,6 @@ impl Session {
             screen.refresh();
         }
         let mut events = vec![Event::Keymap { groups: keymap::groups(), commands: keymap::commands() }];
-
         events.append(&mut self.events(now));
         if !events.iter().any(|e| matches!(e, Event::Features(_))) {
             let scope = self.scope();
@@ -2176,6 +2181,29 @@ mod tests {
         }
     }
 
+    /// A stage hides the pane it will come back to, so the palette's pane
+    /// and checkout commands find none on screen there.
+    #[test]
+    fn a_stage_leaves_no_pane_on_screen_for_the_palettes_commands() {
+        for stage in ["feature", "checkouts"] {
+            let mut s = session(without_focus());
+            s.select(PaneId(1));
+            if stage == "feature" {
+                s.show_features(true);
+            } else {
+                s.show_checkouts(true);
+            }
+            s.events(0);
+            let sent = s.command(Action::Close);
+            assert!(!sent.iter().any(|m| matches!(m, ClientMsg::Kill { .. })), "{stage}: {sent:?}");
+            assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text == "no pane is on screen")));
+        }
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        s.show_features(true);
+        assert!(!s.command(Action::Fetch).iter().any(|m| matches!(m, ClientMsg::Fetch { .. })));
+    }
+
     #[test]
     fn an_action_the_palette_does_not_list_is_refused() {
         let mut s = session(without_focus());
@@ -2247,4 +2275,3 @@ mod tests {
         assert_eq!(s.checkouts.selected_key(), Some("c101"));
     }
 }
-
