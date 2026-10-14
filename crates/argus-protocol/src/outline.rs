@@ -8,7 +8,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use argus_protocol::{DecisionTreeRow, TaskState, TaskTreeRow};
+use crate::decisions::DecisionTreeRow;
+use crate::tasks::{TaskState, TaskTreeRow};
 
 /// What a row of the outline is, by the id a write would name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -213,7 +214,8 @@ impl<'a> Outline<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use argus_protocol::{Decision, DecisionBoard, DecisionState, Task, TaskList};
+    use crate::decisions::{Decision, DecisionBoard, DecisionState};
+    use crate::tasks::{Task, TaskList};
 
     fn task(id: i64, parent: Option<i64>, state: TaskState) -> Task {
         Task {

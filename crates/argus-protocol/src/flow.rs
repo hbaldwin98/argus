@@ -7,7 +7,7 @@
 //! What binds a step is said in the source too, as a Mermaid comment on
 //! its line or the line after it — `%% decision #12 task #31` — so it is
 //! written with the flow, travels with it, and the renderer skips it.
-//! Binding a step from the TUI is writing that comment into the source.
+//! Binding a step from a client is writing that comment into the source.
 
 /// One line of a flow that a reader steps through.
 #[derive(Debug, Clone, PartialEq, Eq)]

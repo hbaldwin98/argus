@@ -11,13 +11,12 @@
 use std::collections::HashSet;
 
 use argus_protocol::{
-    Decision, DecisionTreeRow, Feature, FeatureState, PaneId, PaneInfo, PaneKind, PaneStatus,
-    SequenceDiagram, Task, TaskCounts, TaskState, TaskTreeRow,
+    Decision, DecisionTreeRow, Feature, PaneInfo, SequenceDiagram, Task, TaskTreeRow,
 };
 
 use super::*;
-use crate::flow::FlowRow;
-use crate::outline::{Outline, WorkRef};
+use argus_protocol::flow::FlowRow;
+use argus_protocol::outline::{Outline, WorkRef};
 
 /// One way of reading the open feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -51,59 +50,7 @@ impl Lens {
     }
 }
 
-/// How a feature stands.
-///
-/// Read off what Argus observes — the panes on its checkouts and the state
-/// of its tasks — except for the two a person sets: a hold, which carries
-/// its reason, and the archive, which is acceptance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Standing {
-    /// Nothing in it yet: no brief, no tasks, no decisions.
-    New,
-    /// Written down and not started, or after a feature still open.
-    Queued,
-    Active,
-    /// Every task done, and nobody has archived it.
-    Done,
-    Held,
-    Archived,
-}
-
-impl Standing {
-    pub fn label(self) -> &'static str {
-        match self {
-            Standing::New => "NEW",
-            Standing::Queued => "QUEUED",
-            Standing::Active => "ACTIVE",
-            Standing::Done => "DONE",
-            Standing::Held => "HELD",
-            Standing::Archived => "ARCHIVED",
-        }
-    }
-
-    /// The heading it is listed under. A new feature is queued work: it
-    /// differs only in what its own page offers.
-    pub fn group(self) -> Standing {
-        match self {
-            Standing::New => Standing::Queued,
-            other => other,
-        }
-    }
-
-    /// Out of the way until asked for: neither is work to pick up.
-    pub fn folded(self) -> bool {
-        matches!(self, Standing::Held | Standing::Archived)
-    }
-}
-
-/// The order the index lists its groups in.
-pub const GROUPS: [Standing; 5] = [
-    Standing::Active,
-    Standing::Queued,
-    Standing::Done,
-    Standing::Held,
-    Standing::Archived,
-];
+pub use argus_protocol::standing::{FeatureRow, Standing, GROUPS};
 
 /// What a click on the stage landed on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,27 +64,6 @@ pub enum FeatureHit {
     Row(usize),
 }
 
-/// One feature as the index lists it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureRow {
-    pub slug: String,
-    pub number: i64,
-    pub title: String,
-    pub standing: Standing,
-    /// Set when an agent on this feature has stopped for a person.
-    pub attention: Option<PaneStatus>,
-    pub tasks: TaskCounts,
-    /// Decisions that stand, and questions still open.
-    pub decided: usize,
-    pub open: usize,
-    /// The branch it is being worked on, or was cut on.
-    pub branch: Option<String>,
-    /// The agent pane a person would go to: the loudest on its checkouts.
-    pub pane: Option<PaneId>,
-    /// The numbers of the features it comes after that are still open.
-    pub after: Vec<i64>,
-}
-
 impl App {
     // ---- the features -------------------------------------------------
 
@@ -147,78 +73,15 @@ impl App {
         let Some(board) = self.board.as_ref() else {
             return Vec::new();
         };
-        let mut rows: Vec<FeatureRow> = board
-            .features
-            .iter()
-            .map(|feature| self.feature_row(feature, board))
+        argus_protocol::standing::feature_rows(board, &self.tree)
+            .into_iter()
             .filter(|row| self.show_folded_features || !row.standing.folded())
-            .collect();
-        let place = |row: &FeatureRow| {
-            GROUPS
-                .iter()
-                .position(|group| *group == row.standing.group())
-        };
-        rows.sort_by_key(place);
-        rows
-    }
-
-    fn feature_row(&self, feature: &Feature, board: &argus_protocol::DecisionBoard) -> FeatureRow {
-        let (decided, open) = board.standing_for(Some(&feature.slug));
-        let panes = self.panes_on(feature);
-        let loudest = panes
-            .iter()
-            .max_by_key(|pane| pane.loudest_state().status.urgency());
-        let waiting: Vec<&str> = feature.waiting_on(&board.features).collect();
-        let started = feature.tasks.doing + feature.tasks.done > 0 || !panes.is_empty();
-        let empty = feature.tasks.total() == 0 && decided + open == 0 && feature.body.trim().is_empty();
-        let standing = if feature.state == FeatureState::Done {
-            Standing::Archived
-        } else if feature.held.is_some() {
-            Standing::Held
-        } else if feature.tasks.all_done() {
-            Standing::Done
-        } else if !waiting.is_empty() {
-            Standing::Queued
-        } else if started {
-            Standing::Active
-        } else if empty {
-            Standing::New
-        } else {
-            Standing::Queued
-        };
-        let worked_on = checkouts_in(&self.tree)
-            .find(|checkout| feature.checkouts.iter().any(|path| path == &checkout.path))
-            .map(|checkout| checkout.name.clone());
-        FeatureRow {
-            slug: feature.slug.clone(),
-            number: feature.number,
-            title: feature.title.clone(),
-            standing,
-            attention: loudest
-                .map(|pane| pane.loudest_state().status)
-                .filter(|status| status.needs_you()),
-            tasks: feature.tasks,
-            decided,
-            open,
-            branch: worked_on.or_else(|| feature.origin_branch.clone()),
-            pane: loudest.map(|pane| pane.id),
-            after: board
-                .features
-                .iter()
-                .filter(|other| waiting.contains(&other.slug.as_str()))
-                .map(|other| other.number)
-                .collect(),
-        }
+            .collect()
     }
 
     /// The live agent panes on the checkouts this feature is worked in.
     pub fn panes_on(&self, feature: &Feature) -> Vec<&PaneInfo> {
-        checkouts_in(&self.tree)
-            .filter(|checkout| feature.checkouts.iter().any(|path| path == &checkout.path))
-            .flat_map(|checkout| checkout.panes.iter())
-            .filter(|pane| pane.kind == PaneKind::Agent)
-            .filter(|pane| !matches!(pane.status, PaneStatus::Exited { .. }))
-            .collect()
+        argus_protocol::standing::panes_on(feature, &self.tree)
     }
 
     pub fn current_feature_row(&self) -> Option<FeatureRow> {
@@ -531,12 +394,12 @@ impl App {
     /// The selected flow, read as rows.
     pub fn flow_rows(&self) -> Vec<FlowRow> {
         self.selected_diagram()
-            .map(|diagram| crate::flow::rows(&diagram.body))
+            .map(|diagram| argus_protocol::flow::rows(&diagram.body))
             .unwrap_or_default()
     }
 
     /// The selected flow's steps, which is what the cursor moves over.
-    pub fn flow_steps(&self) -> Vec<crate::flow::Step> {
+    pub fn flow_steps(&self) -> Vec<argus_protocol::flow::Step> {
         self.flow_rows()
             .into_iter()
             .filter_map(|row| match row {
@@ -624,17 +487,7 @@ impl App {
     /// The task that comes next under a feature: the one being done, else
     /// the first not done.
     pub fn next_task(&self) -> Option<TaskTreeRow<'_>> {
-        let rows = self.feature_task_rows();
-        let leaf = |row: &&TaskTreeRow<'_>| !row.has_children;
-        let doing = rows
-            .iter()
-            .filter(leaf)
-            .find(|row| row.task.state == TaskState::Doing);
-        let todo = rows
-            .iter()
-            .filter(leaf)
-            .find(|row| row.task.state == TaskState::Todo);
-        doing.or(todo).cloned()
+        argus_protocol::standing::next_task(&self.feature_task_rows())
     }
 
     /// The task ids the outline has folded, for a renderer that marks them.
@@ -654,11 +507,4 @@ mod tests {
         assert_eq!(digits, ['1', '2', '3']);
     }
 
-    #[test]
-    fn held_and_archived_features_are_the_ones_folded_away() {
-        let folded: Vec<Standing> = GROUPS.into_iter().filter(|s| s.folded()).collect();
-
-        assert_eq!(folded, [Standing::Held, Standing::Archived]);
-        assert_eq!(Standing::New.group(), Standing::Queued);
-    }
 }

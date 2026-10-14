@@ -11,7 +11,7 @@ fn indent(depth: usize) -> Span<'static> {
 fn task_line(
     app: &App,
     outline: &Outline<'_>,
-    at: &crate::outline::WorkRow,
+    at: &argus_protocol::outline::WorkRow,
     selected: bool,
     width: u16,
     th: Theme,
@@ -62,7 +62,7 @@ fn task_line(
 
 fn decision_line(
     outline: &Outline<'_>,
-    at: &crate::outline::WorkRow,
+    at: &argus_protocol::outline::WorkRow,
     selected: bool,
     width: u16,
     th: Theme,

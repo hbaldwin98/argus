@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::app::{Lens, Standing};
-use crate::outline::WorkRef;
+use argus_protocol::outline::WorkRef;
 use argus_protocol::{
     ClientMsg, DecisionChange, DecisionState, FeatureState, MapChange, TaskAction, TaskState,
     TrackerLink,

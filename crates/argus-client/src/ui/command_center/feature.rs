@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::app::{FeatureHit, FeatureRow, Lens, Standing};
-use crate::outline::{Outline, WorkRef};
+use argus_protocol::outline::{Outline, WorkRef};
 use argus_protocol::{Decision, DecisionState, DecisionTreeRow, Task, TaskTreeRow};
 
 mod capture;

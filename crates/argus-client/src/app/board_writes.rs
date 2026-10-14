@@ -12,7 +12,7 @@ use argus_protocol::{
 
 use super::*;
 use crate::browser::Opened;
-use crate::outline::WorkRef;
+use argus_protocol::outline::WorkRef;
 
 /// A line being typed at the foot of the stage.
 ///
@@ -878,7 +878,7 @@ impl App {
         let Some(flow) = self.feature_diagrams().iter().find(|flow| flow.id == diagram).cloned() else {
             return;
         };
-        let Some(body) = crate::flow::bind(&flow.body, step, id) else {
+        let Some(body) = argus_protocol::flow::bind(&flow.body, step, id) else {
             return self.report(format!("step {step} is already bound by {named}"));
         };
         let Some((project, checkout, feature)) = self.board_target() else {

@@ -161,6 +161,9 @@ live in this crate and a contract written twice drifts in silence.
 | `tracker_links` | how a repository's work reaches the team's trackers: which tickets a feature is linked to, how a ticket's tracker and key are read out of its URL, and the board's tracker map and its draft |
 | `capture` | how one note reads as a feature: its title, brief, tasks and decisions |
 | `adr` | how a decision reads as a record somebody can paste or correct |
+| `outline` | how a feature's tasks and the decisions raised under them read as one outline: what binds a task, what carries a decision out, what an open one holds up |
+| `flow` | the steps a sequence diagram's source says, in the order it says them |
+| `standing` | how a feature stands on the index — Active, Queued, Done, Held or Archived — what a row of the index says, and which task comes next |
 | `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
 
 `argusd` owns PTYs, Git, and everything that outlives a client. Its state is one `Daemon` type
@@ -241,8 +244,6 @@ result of a request; `ui` is a pure function of it.
 | `ui/review`, `ui/history`, `ui/status`, `ui/overlay`, `ui/modals`, `ui/term` | one drawn surface each |
 | `review`, `history`, `brief`, `dirpicker` | the view state behind each overlay |
 | `diagram` | the Mermaid sequence-diagram view and its responsive overlay layout |
-| `flow` | the steps a sequence diagram's source says, in the order it says them |
-| `outline` | how a feature's tasks and the decisions raised under them read as one outline: what binds a task, what carries a decision out, what an open one holds up |
 | `grid`, `selection`, `pty_input`, `pty_input/mouse`, `paste`, `clipboard`, `fuzzy` | a pane's screen, its selected text, and the input primitives |
 | `pty_input/keys` | a terminal key event as the protocol's key, and the leader chord that is never sent |
 | `dropped` | a file dropped on the terminal, recognized in what it pasted |
