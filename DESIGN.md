@@ -993,7 +993,9 @@ seconds, on a blocking-pool thread, the daemon then refreshes:
 - branch or detached-HEAD state;
 - dirty state and changed-file count, including untracked files, with how many paths are staged
   and how many unstaged counted apart — a path staged and then edited again is in both;
-- ahead/behind against the tracking branch;
+- ahead/behind against the tracking branch, and that branch's name;
+- the commit HEAD is on;
+- for each branch no checkout is on, how many of its commits the main branch lacks;
 - linked worktrees added or removed outside Argus.
 
 The first of those ticks is immediate, overlapping session restore, so dirty counts follow by the
@@ -1049,8 +1051,8 @@ daemon says which checkout it made, Enter switches the primary checkout to it, `
 deletes it — `git branch -d` in the primary checkout, so the deletion is local, never pushed, and
 refused while the branch holds commits nothing else does. That refusal is the one the user has an
 answer to, so it comes back as a second confirmation rather than an alert: an unmerged branch is
-reported as such, the popup reopens asking whether to delete it anyway, and yes reruns the deletion
-as `git branch -D`. Every other refusal is still an error, because forcing would not have helped
+reported as such, with up to twenty of the commits no other branch or remote reaches, the popup
+reopens asking whether to delete it anyway, and yes reruns the deletion as `git branch -D`. Every other refusal is still an error, because forcing would not have helped
 it. The main branch is refused outright, and so is a remote-only row: deleting one of those would
 be a push, which nothing in this column does.
 A remote-only row answers to the local name it would take, so Enter and `n` name `feature` and let

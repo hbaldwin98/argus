@@ -163,7 +163,7 @@ fn statuses(project: &ProjectInfo) -> impl Iterator<Item = PaneStatus> + '_ {
 
 /// How long ago, the largest unit that fits: `5m`, `2h`, `3d`, `2w`; a
 /// dash for never.
-fn ago(then: Option<u64>, now: u64) -> String {
+pub(crate) fn ago(then: Option<u64>, now: u64) -> String {
     let Some(then) = then else {
         return "—".into();
     };
@@ -277,6 +277,8 @@ mod tests {
             unstaged: 1,
             ahead: 0,
             behind: 1,
+            upstream: None,
+            last_commit: None,
         });
         let row = super::checkout(&co, None);
         assert_eq!((row.branch.as_str(), row.git.as_deref(), row.clean), ("detached", Some("↓1 !1"), false));

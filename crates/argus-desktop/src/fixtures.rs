@@ -17,6 +17,7 @@ pub fn repository(id: u64, name: &str, last_used: Option<u64>, checkouts: Vec<Ch
         branches: Vec::new(),
         default_branch: None,
         remote_branches: Vec::new(),
+        unmerged: Default::default(),
         last_used,
     }
 }
@@ -35,6 +36,8 @@ pub fn checkout(id: u64, name: &str, primary: bool, panes: Vec<PaneInfo>) -> Che
             unstaged: 0,
             ahead: 0,
             behind: 0,
+            upstream: None,
+            last_commit: None,
         }),
         primary,
     }

@@ -6,7 +6,7 @@
 use argus_protocol::column::{local_name, CheckoutRow};
 use argus_protocol::{CheckoutId, DecisionBoard, PaneId, RepositoryInfo};
 
-use crate::checkouts::{self, View};
+use crate::checkouts::{self, last_commit, View};
 use crate::page::{self, Confirm};
 
 #[derive(Default)]
@@ -141,10 +141,12 @@ impl CheckoutsStage {
         }
     }
 
-    /// Git refused to delete `branch`: ask whether to force it.
-    pub fn refused(&mut self, checkout: CheckoutId, branch: String) {
+    /// Git refused to delete `branch`: ask whether to force it, naming the
+    /// commits a yes gives up.
+    pub fn refused(&mut self, checkout: CheckoutId, branch: String, commits: &[argus_protocol::CommitInfo], now: u64) {
+        let commits = commits.iter().map(|c| last_commit(c, now)).collect();
         self.confirm = Some((
-            Confirm::Force { branch: branch.clone() },
+            Confirm::Force { branch: branch.clone(), commits },
             Deleting::Branch { checkout, branch, force: true },
         ));
     }
@@ -184,8 +186,8 @@ impl CheckoutsStage {
     }
 
     /// The table, if it differs from what the page was last sent.
-    pub fn take(&mut self, repo: Option<&RepositoryInfo>, board: Option<&DecisionBoard>, viewed: Option<&str>) -> Option<page::Checkouts> {
-        let table = self.table(repo, board, viewed);
+    pub fn take(&mut self, repo: Option<&RepositoryInfo>, board: Option<&DecisionBoard>, viewed: Option<&str>, now: u64) -> Option<page::Checkouts> {
+        let table = self.table(repo, board, viewed, now);
         (self.sent.as_ref() != Some(&table)).then(|| {
             self.sent = Some(table.clone());
             table
@@ -193,13 +195,13 @@ impl CheckoutsStage {
     }
 
     /// The table whatever was sent before: the page reloaded.
-    pub fn everything(&mut self, repo: Option<&RepositoryInfo>, board: Option<&DecisionBoard>, viewed: Option<&str>) -> page::Checkouts {
-        let table = self.table(repo, board, viewed);
+    pub fn everything(&mut self, repo: Option<&RepositoryInfo>, board: Option<&DecisionBoard>, viewed: Option<&str>, now: u64) -> page::Checkouts {
+        let table = self.table(repo, board, viewed, now);
         self.sent = Some(table.clone());
         table
     }
 
-    fn table(&self, repo: Option<&RepositoryInfo>, board: Option<&DecisionBoard>, viewed: Option<&str>) -> page::Checkouts {
+    fn table(&self, repo: Option<&RepositoryInfo>, board: Option<&DecisionBoard>, viewed: Option<&str>, now: u64) -> page::Checkouts {
         let Some(repo) = repo else {
             return page::Checkouts {
                 branches_shown: self.branches_shown,
@@ -214,6 +216,7 @@ impl CheckoutsStage {
             selected: self.selected.as_deref(),
             board,
             viewed,
+            now,
         });
         table.confirm = self.confirm.as_ref().map(|(question, _)| question.clone());
         table
@@ -283,8 +286,11 @@ mod tests {
         let first = stage.delete(&repo()).unwrap();
         assert_eq!(first, Some(Deleting::Branch { checkout: CheckoutId(100), branch: "old".into(), force: false }));
 
-        stage.refused(CheckoutId(100), "old".into());
-        assert_eq!(stage.take(Some(&repo()), None, None).unwrap().confirm, Some(Confirm::Force { branch: "old".into() }));
+        stage.refused(CheckoutId(100), "old".into(), &[], 0);
+        assert_eq!(
+            stage.take(Some(&repo()), None, None, 0).unwrap().confirm,
+            Some(Confirm::Force { branch: "old".into(), commits: Vec::new() })
+        );
         assert_eq!(stage.answer(true), Some(Deleting::Branch { checkout: CheckoutId(100), branch: "old".into(), force: true }));
         assert_eq!(stage.answer(true), None, "a question is answered once");
     }
@@ -329,9 +335,9 @@ mod tests {
     #[test]
     fn an_unchanged_table_is_not_sent_again() {
         let mut stage = CheckoutsStage::default();
-        assert!(stage.take(Some(&repo()), None, None).is_some());
-        assert!(stage.take(Some(&repo()), None, None).is_none());
+        assert!(stage.take(Some(&repo()), None, None, 0).is_some());
+        assert!(stage.take(Some(&repo()), None, None, 0).is_none());
         stage.toggle_branches();
-        assert!(stage.take(Some(&repo()), None, None).is_some());
+        assert!(stage.take(Some(&repo()), None, None, 0).is_some());
     }
 }

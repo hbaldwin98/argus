@@ -147,6 +147,8 @@ pub(super) fn status_on(branch: &str) -> GitStatus {
         unstaged: 0,
         ahead: 0,
         behind: 0,
+        upstream: None,
+        last_commit: None,
     }
 }
 

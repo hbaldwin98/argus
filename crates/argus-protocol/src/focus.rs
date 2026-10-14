@@ -216,6 +216,8 @@ mod tests {
                 unstaged: 1,
                 ahead: 0,
                 behind: 0,
+                upstream: None,
+                last_commit: None,
             }),
             primary: branch == "main",
         }
@@ -238,6 +240,7 @@ mod tests {
                 branches: Vec::new(),
                 default_branch: None,
                 remote_branches: Vec::new(),
+                unmerged: Default::default(),
                 last_used: None,
             }],
         }]

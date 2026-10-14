@@ -5,8 +5,8 @@
  */
 export type CheckoutDetail = { name: string, path: string, 
 /**
- * How far it is from its upstream: `1 behind`, `in sync`; `None`
- * when git has not been read.
+ * Its upstream and how far it is from it: `origin/main · 1 behind`;
+ * `None` when git has not been read.
  */
 upstream: string | null, 
 /**

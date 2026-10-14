@@ -3,9 +3,10 @@
 //! and §9 M2. Mutating operations (`worktree add`/`remove`) live next to the
 //! daemon state they update, in `state.rs`, not here.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use argus_protocol::GitStatus;
+use argus_protocol::{CommitInfo, GitStatus};
 
 use crate::paths::same_path;
 
@@ -53,6 +54,8 @@ pub fn status(path: &Path) -> Option<GitStatus> {
     }
 
     let (ahead, behind) = ahead_behind(&repo, head.as_ref()).unwrap_or((0, 0));
+    let upstream = branch.as_deref().and_then(|name| upstream_of(&repo, name));
+    let last_commit = head.as_ref().and_then(|h| h.peel_to_commit().ok()).map(|c| commit_info(&c));
 
     Some(GitStatus {
         branch,
@@ -62,6 +65,8 @@ pub fn status(path: &Path) -> Option<GitStatus> {
         unstaged,
         ahead,
         behind,
+        upstream,
+        last_commit,
     })
 }
 
@@ -83,6 +88,8 @@ pub fn head(path: &Path) -> Option<GitStatus> {
         unstaged: 0,
         ahead: 0,
         behind: 0,
+        upstream: None,
+        last_commit: None,
     })
 }
 
@@ -490,6 +497,85 @@ fn look(dir: &Path) -> Site {
 /// what libgit2 needs; asking the filesystem is cheaper than asking it.
 fn is_git_dir(dir: &Path) -> bool {
     dir.join("HEAD").is_file() && dir.join("objects").is_dir() && dir.join("refs").is_dir()
+}
+
+/// A commit as every client shows it.
+pub fn commit_info(commit: &git2::Commit<'_>) -> CommitInfo {
+    let oid = commit.id().to_string();
+    CommitInfo {
+        short: oid.chars().take(7).collect(),
+        oid,
+        summary: commit.summary().ok().flatten().unwrap_or("").to_string(),
+        author: commit.author().name().unwrap_or("").to_string(),
+        time: commit.time().seconds(),
+    }
+}
+
+/// The branch `branch` tracks, as `origin/main`.
+fn upstream_of(repo: &git2::Repository, branch: &str) -> Option<String> {
+    let local = repo.find_branch(branch, git2::BranchType::Local).ok()?;
+    let upstream = local.upstream().ok()?;
+    upstream.name().ok().flatten().map(str::to_owned)
+}
+
+/// For each of `branches`, how many of its commits `main` does not have:
+/// zero for one already merged. `main` is read locally, else as its
+/// remote-tracking branch; with neither there is nothing to count against,
+/// and the map is empty rather than full of guesses.
+pub fn unmerged(path: &Path, branches: &[String], main: &str) -> BTreeMap<String, usize> {
+    let Ok(repo) = git2::Repository::open(path) else {
+        return BTreeMap::new();
+    };
+    let main_oid = branch_oid(&repo, main, git2::BranchType::Local)
+        .or_else(|| {
+            let remote = remote_branch_for(path, main)?;
+            branch_oid(&repo, &remote, git2::BranchType::Remote)
+        });
+    let Some(main_oid) = main_oid else {
+        return BTreeMap::new();
+    };
+    branches
+        .iter()
+        .filter_map(|b| {
+            let oid = branch_oid(&repo, b, git2::BranchType::Local)?;
+            let (ahead, _) = repo.graph_ahead_behind(oid, main_oid).ok()?;
+            Some((b.clone(), ahead))
+        })
+        .collect()
+}
+
+/// The commits on `branch` that no other branch or remote-tracking branch
+/// reaches, newest first and at most `limit`: what deleting it would lose.
+pub fn only_on(path: &Path, branch: &str, limit: usize) -> Vec<CommitInfo> {
+    let only = || -> Option<Vec<CommitInfo>> {
+        let repo = git2::Repository::open(path).ok()?;
+        let tip = branch_oid(&repo, branch, git2::BranchType::Local)?;
+        let mut walk = repo.revwalk().ok()?;
+        walk.push(tip).ok()?;
+        // Pushed commits are not lost, so a remote's copy of this very
+        // branch is hidden too; only the local branch itself is walked.
+        for (other, kind) in repo.branches(None).ok()?.flatten() {
+            let name = other.name().ok().flatten().unwrap_or_default();
+            if kind == git2::BranchType::Local && name == branch {
+                continue;
+            }
+            if let Some(oid) = other.get().target() {
+                let _ = walk.hide(oid);
+            }
+        }
+        Some(
+            walk.flatten()
+                .take(limit)
+                .filter_map(|oid| repo.find_commit(oid).ok())
+                .map(|c| commit_info(&c))
+                .collect(),
+        )
+    };
+    only().unwrap_or_default()
+}
+
+fn branch_oid(repo: &git2::Repository, name: &str, kind: git2::BranchType) -> Option<git2::Oid> {
+    repo.find_branch(name, kind).ok()?.get().target()
 }
 
 fn ahead_behind(repo: &git2::Repository, head: Option<&git2::Reference>) -> Option<(usize, usize)> {

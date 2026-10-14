@@ -88,16 +88,24 @@ function tableRow(row, selected) {
             el('b', null, row.name),
             ' ',
             el('span', { class: 'meta' }, row.primary ? 'primary' : 'worktree'),
-        ]), el('td', { class: 'mono fg-ref' }, row.branch), el('td', null, row.git !== null && el('span', { class: `git${row.clean ? ' clean' : ''}` }, row.git), row.note && el('span', { class: 'meta' }, row.note)), el('td', { class: 'col-running' }, running(row)), el('td', { class: `col-feature mono${row.viewed ? ' fg-accent' : ''}` }, row.feature === null ? el('span', { class: 'fg-faint' }, '—') : `#${row.feature}`), el('td', { class: 'row-actions' }, selected && actions(row)));
+        ]), el('td', { class: 'mono fg-ref' }, row.branch), el('td', null, row.git !== null && el('span', { class: `git${row.clean ? ' clean' : ''}` }, row.git), row.note && el('span', { class: 'meta' }, row.note)), el('td', { class: 'col-running' }, running(row)), el('td', { class: `col-feature mono${row.viewed ? ' fg-accent' : ''}` }, row.feature === null ? el('span', { class: 'fg-faint' }, '—') : `#${row.feature}`), el('td', { class: 'col-last' }, row.last && commitLine(row.last)), el('td', { class: 'row-actions' }, selected && actions(row)));
+}
+function commitLine(commit) {
+    return [
+        el('span', { class: 'mono fg-faint' }, commit.short),
+        ' ',
+        el('span', { class: 'fg-muted' }, commit.summary),
+        el('span', { class: 'fg-faint' }, ` · ${commit.ago}`),
+    ];
 }
 function group(label) {
-    return el('tr', { class: 'group' }, el('td', { colspan: '6' }, label));
+    return el('tr', { class: 'group' }, el('td', { colspan: '7' }, label));
 }
 function table(c) {
     const checkouts = c.rows.filter((row) => row.checkout !== null);
     const branches = c.rows.filter((row) => row.checkout === null);
     const rows = (list) => list.map((row) => tableRow(row, row.key === c.selected));
-    return el('div', { class: 'ctable-wrap' }, el('table', { class: 'ctable', 'aria-label': `Checkouts in ${c.repository}` }, el('thead', null, el('tr', null, ['Checkout', 'Branch', 'Git', 'Running', 'Feature'].map((name) => el('th', { class: `col-${name.toLowerCase()}` }, name)), el('th', null, el('span', { class: 'sr-only' }, 'Actions')))), el('tbody', null, checkouts.length > 0 && [group('Checkouts'), rows(checkouts)], branches.length > 0 && [group('Branches without a checkout'), rows(branches)])));
+    return el('div', { class: 'ctable-wrap' }, el('table', { class: 'ctable', 'aria-label': `Checkouts in ${c.repository}` }, el('thead', null, el('tr', null, ['Checkout', 'Branch', 'Git', 'Running', 'Feature', 'Last commit'].map((name) => el('th', { class: `col-${name.split(' ')[0]?.toLowerCase()}` }, name)), el('th', null, el('span', { class: 'sr-only' }, 'Actions')))), el('tbody', null, checkouts.length > 0 && [group('Checkouts'), rows(checkouts)], branches.length > 0 && [group('Branches without a checkout'), rows(branches)])));
 }
 function stack(label, value) {
     return el('div', { class: 'stack-2' }, el('span', { class: 'mlabel' }, label), el('span', { class: 'meta' }, value));
@@ -158,6 +166,8 @@ function confirmDialog(question) {
     const body = force
         ? [
             el('div', { class: 'fg-muted' }, 'It has commits no other branch has.'),
+            question.commits.length > 0 &&
+                el('div', { class: 'commits' }, question.commits.map((commit) => el('div', null, commitLine(commit)))),
             el('div', { class: 'meta' }, 'Local only: nothing is pushed.'),
         ]
         : [el('div', { class: 'fg-muted' }, 'Its panes end; its directory and branch are deleted.')];

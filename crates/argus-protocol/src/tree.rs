@@ -318,6 +318,14 @@ pub struct GitStatus {
     /// no upstream configured.
     pub ahead: usize,
     pub behind: usize,
+    /// The tracking branch, as `origin/main`; `None` when there is none, and
+    /// from a daemon that does not say.
+    #[serde(default)]
+    pub upstream: Option<String>,
+    /// The commit HEAD is on: what was last done here. `None` for a
+    /// repository with no commits yet, and from a daemon that does not say.
+    #[serde(default)]
+    pub last_commit: Option<crate::CommitInfo>,
 }
 
 impl GitStatus {
@@ -402,6 +410,11 @@ pub struct RepositoryInfo {
     /// here yet, and can be had by switching to it or giving it a worktree.
     #[serde(default)]
     pub remote_branches: Vec<String>,
+    /// For each of `branches`, how many of its commits the main branch does
+    /// not have: zero for one already merged. A branch missing from it has
+    /// not been counted — no main branch, or a daemon that does not say.
+    #[serde(default)]
+    pub unmerged: std::collections::BTreeMap<String, usize>,
     /// When a pane last closed in any of its checkouts, in seconds since the
     /// Unix epoch by the daemon's clock: the moment it last went quiet, which
     /// is what orders the repositories with nothing running. `None` for one
@@ -627,6 +640,8 @@ mod tests {
             unstaged,
             ahead,
             behind,
+            upstream: None,
+            last_commit: None,
         }
     }
 
@@ -662,6 +677,7 @@ mod tests {
             branches: Vec::new(),
             default_branch: None,
             remote_branches: Vec::new(),
+            unmerged: Default::default(),
             last_used,
         }
     }
@@ -702,6 +718,7 @@ mod tests {
         };
         let bytes = rmp_serde::to_vec_named(&older).unwrap();
         let read: GitStatus = rmp_serde::from_slice(&bytes).unwrap();
+        assert!(read.upstream.is_none() && read.last_commit.is_none());
         assert_eq!((read.changed_files, read.ahead), (2, 1));
         assert_eq!((read.staged, read.unstaged), (0, 0));
     }

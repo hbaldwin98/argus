@@ -373,6 +373,8 @@ fn a_selected_branch_row_is_followed_into_the_checkout_that_takes_it() {
         unstaged: 0,
         ahead: 0,
         behind: 0,
+        upstream: None,
+        last_commit: None,
     });
     t[0].repositories[0].checkouts.push(c);
     h.app.on_server_msg(ServerMsg::Tree(t));

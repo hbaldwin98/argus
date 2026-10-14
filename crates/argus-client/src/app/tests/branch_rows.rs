@@ -122,6 +122,7 @@ fn an_unmerged_branch_comes_back_as_the_harder_question() {
     h.app.on_server_msg(ServerMsg::BranchNotMerged {
         checkout: CheckoutId(10),
         branch: "hotfix/tls".to_string(),
+        commits: Vec::new(),
     });
 
     match &h.app.prompt {
@@ -157,6 +158,7 @@ fn the_harder_question_can_still_be_declined() {
     h.app.on_server_msg(ServerMsg::BranchNotMerged {
         checkout: CheckoutId(10),
         branch: "hotfix/tls".to_string(),
+        commits: Vec::new(),
     });
     h.sent();
 

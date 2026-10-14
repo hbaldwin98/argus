@@ -207,7 +207,12 @@ impl Session {
                     _ => {}
                 }
             }
-            ServerMsg::BranchNotMerged { checkout, branch } => self.checkouts.refused(checkout, branch),
+            ServerMsg::BranchNotMerged { checkout, branch, commits } => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_secs());
+                self.checkouts.refused(checkout, branch, &commits, now);
+            }
             ServerMsg::Clipboard { pane, text } if Some(pane) == self.shown => {
                 self.passing.push(Event::Clipboard { text });
             }
@@ -897,7 +902,7 @@ impl Session {
         }
         if self.checkouts.is_open() {
             let repo = self.chosen_repository().cloned();
-            if let Some(table) = self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked()) {
+            if let Some(table) = self.checkouts.take(repo.as_ref(), self.features.board(), self.features.peeked(), now) {
                 events.push(Event::Checkouts(Box::new(table)));
             }
         }
@@ -921,7 +926,7 @@ impl Session {
         }
         if !events.iter().any(|e| matches!(e, Event::Checkouts(_))) {
             let repo = self.chosen_repository().cloned();
-            let table = self.checkouts.everything(repo.as_ref(), self.features.board(), self.features.peeked());
+            let table = self.checkouts.everything(repo.as_ref(), self.features.board(), self.features.peeked(), now);
             events.push(Event::Checkouts(Box::new(table)));
         }
         events
@@ -1611,12 +1616,12 @@ mod tests {
         let mut s = session(without_focus());
         s.show_checkouts(true);
         s.events(0);
-        s.receive(ServerMsg::BranchNotMerged { checkout: CheckoutId(100), branch: "spike".into() });
+        s.receive(ServerMsg::BranchNotMerged { checkout: CheckoutId(100), branch: "spike".into(), commits: Vec::new() });
         let asked = s.events(0).into_iter().find_map(|e| match e {
             Event::Checkouts(table) => table.confirm,
             _ => None,
         });
-        assert_eq!(asked, Some(crate::page::Confirm::Force { branch: "spike".into() }));
+        assert_eq!(asked, Some(crate::page::Confirm::Force { branch: "spike".into(), commits: Vec::new() }));
         let sent = s.answer_checkouts(true);
         assert!(matches!(
             sent.as_slice(),

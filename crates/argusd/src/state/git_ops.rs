@@ -112,7 +112,9 @@ impl Daemon {
             .await?;
         if !output.status.success() {
             if !force && is_unmerged(&path, &branch).await {
-                return Ok(BranchDeletion::NotMerged);
+                // A screenful: the dialog shows what would go, not a log.
+                let commits = crate::git::only_on(&path, &branch, 20);
+                return Ok(BranchDeletion::NotMerged(commits));
             }
             anyhow::bail!("{}", String::from_utf8_lossy(&output.stderr).trim());
         }
@@ -402,10 +404,11 @@ impl Daemon {
 /// What `delete_branch` did, for the one refusal that is worth telling
 /// apart: an unmerged branch is a question to put back to the user, not a
 /// failure.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum BranchDeletion {
     Deleted,
-    NotMerged,
+    /// Refused, with the commits only the branch holds.
+    NotMerged(Vec<argus_protocol::CommitInfo>),
 }
 
 /// Whether `git branch -d` refused because the branch holds commits

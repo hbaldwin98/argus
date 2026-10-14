@@ -230,6 +230,7 @@ mod tests {
                 branches: Vec::new(),
                 default_branch: None,
                 remote_branches: Vec::new(),
+                unmerged: Default::default(),
                 last_used: None,
                 checkouts: vec![CheckoutInfo {
                     id: CheckoutId(3),
@@ -244,6 +245,8 @@ mod tests {
                         unstaged: 2,
                         ahead: 1,
                         behind: 2,
+                        upstream: None,
+                        last_commit: None,
                     }),
                     panes: vec![PaneInfo {
                         id: PaneId(4),

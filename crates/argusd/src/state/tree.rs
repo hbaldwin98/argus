@@ -249,6 +249,7 @@ pub(super) fn new_repository(ids: &mut IdGen, path: PathBuf, discovered: bool) -
         branches: Vec::new(),
         default_branch: None,
         remote_branches: Vec::new(),
+        unmerged: Default::default(),
         checkouts: vec![Checkout {
             id: CheckoutId(ids.alloc()),
             name,

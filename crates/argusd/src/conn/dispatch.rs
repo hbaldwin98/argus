@@ -371,8 +371,12 @@ fn dispatch_git(
             tokio::spawn(async move {
                 let msg = match daemon.delete_branch(checkout, &branch, force).await {
                     Ok(BranchDeletion::Deleted) => return,
-                    Ok(BranchDeletion::NotMerged) => {
-                        ServerMsg::BranchNotMerged { checkout, branch }
+                    Ok(BranchDeletion::NotMerged(commits)) => {
+                        ServerMsg::BranchNotMerged {
+                            checkout,
+                            branch,
+                            commits,
+                        }
                     }
                     Err(error) => ServerMsg::Error {
                         message: error.to_string(),

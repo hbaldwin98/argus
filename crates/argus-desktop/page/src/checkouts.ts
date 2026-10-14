@@ -7,6 +7,7 @@ import type { Action } from './bindings/Action';
 import type { Checkouts } from './bindings/Checkouts';
 import type { Confirm } from './bindings/Confirm';
 import type { CheckoutsRow } from './bindings/CheckoutsRow';
+import type { LastCommit } from './bindings/LastCommit';
 import { startMenu, toggleStart } from './chrome.js';
 import { $, el, ghosts, icon, type Child } from './dom.js';
 import { closeLayer } from './features.js';
@@ -193,12 +194,22 @@ function tableRow(row: CheckoutsRow, selected: boolean): HTMLElement {
       { class: `col-feature mono${row.viewed ? ' fg-accent' : ''}` },
       row.feature === null ? el('span', { class: 'fg-faint' }, '—') : `#${row.feature}`,
     ),
+    el('td', { class: 'col-last' }, row.last && commitLine(row.last)),
     el('td', { class: 'row-actions' }, selected && actions(row)),
   );
 }
 
+function commitLine(commit: LastCommit): Child {
+  return [
+    el('span', { class: 'mono fg-faint' }, commit.short),
+    ' ',
+    el('span', { class: 'fg-muted' }, commit.summary),
+    el('span', { class: 'fg-faint' }, ` · ${commit.ago}`),
+  ];
+}
+
 function group(label: string): HTMLElement {
-  return el('tr', { class: 'group' }, el('td', { colspan: '6' }, label));
+  return el('tr', { class: 'group' }, el('td', { colspan: '7' }, label));
 }
 
 function table(c: Checkouts): HTMLElement {
@@ -218,8 +229,8 @@ function table(c: Checkouts): HTMLElement {
         el(
           'tr',
           null,
-          ['Checkout', 'Branch', 'Git', 'Running', 'Feature'].map((name) =>
-            el('th', { class: `col-${name.toLowerCase()}` }, name),
+          ['Checkout', 'Branch', 'Git', 'Running', 'Feature', 'Last commit'].map((name) =>
+            el('th', { class: `col-${name.split(' ')[0]?.toLowerCase()}` }, name),
           ),
           el('th', null, el('span', { class: 'sr-only' }, 'Actions')),
         ),
@@ -331,6 +342,12 @@ function confirmDialog(question: Confirm): HTMLElement {
   const body = force
     ? [
         el('div', { class: 'fg-muted' }, 'It has commits no other branch has.'),
+        question.commits.length > 0 &&
+          el(
+            'div',
+            { class: 'commits' },
+            question.commits.map((commit) => el('div', null, commitLine(commit))),
+          ),
         el('div', { class: 'meta' }, 'Local only: nothing is pushed.'),
       ]
     : [el('div', { class: 'fg-muted' }, 'Its panes end; its directory and branch are deleted.')];

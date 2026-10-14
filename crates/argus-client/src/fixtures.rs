@@ -46,6 +46,7 @@ pub(crate) fn repository(id: u64, name: &str, checkouts: Vec<CheckoutInfo>) -> R
         branches: Vec::new(),
         default_branch: None,
         remote_branches: Vec::new(),
+        unmerged: Default::default(),
         last_used: None,
     }
 }

@@ -350,8 +350,9 @@ pub struct Checkouts {
 pub enum Confirm {
     /// Removing a worktree: its panes end, its directory and its branch go.
     Remove { name: String, branch: String },
-    /// Git refused `branch -d`: the branch holds commits nothing else has.
-    Force { branch: String },
+    /// Git refused `branch -d`: the branch holds commits nothing else has,
+    /// which are what a yes gives up.
+    Force { branch: String, commits: Vec<LastCommit> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -370,8 +371,11 @@ pub struct CheckoutsRow {
     /// The compact git state, as on the rail; a branch row has none.
     pub git: Option<String>,
     pub clean: bool,
-    /// Said beside the git state: `remote only` for what a fetch turned up.
+    /// Said beside the git state: `remote only` for what a fetch turned up,
+    /// `merged` for a branch main already has.
     pub note: Option<&'static str>,
+    /// What was last committed here; a branch row has none.
+    pub last: Option<LastCommit>,
     pub running: Vec<Running>,
     /// The number of the feature this checkout is on, when the board says.
     pub feature: Option<i64>,
@@ -387,6 +391,16 @@ pub struct Running {
     pub status: &'static str,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct LastCommit {
+    pub short: String,
+    pub summary: String,
+    /// How long ago, as the rail says it: `2h`.
+    pub ago: String,
+}
+
 /// The selected checkout, said in full along the stage's foot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
@@ -394,8 +408,8 @@ pub struct Running {
 pub struct CheckoutDetail {
     pub name: String,
     pub path: String,
-    /// How far it is from its upstream: `1 behind`, `in sync`; `None`
-    /// when git has not been read.
+    /// Its upstream and how far it is from it: `origin/main · 1 behind`;
+    /// `None` when git has not been read.
     pub upstream: Option<String>,
     /// `1 unstaged file`, `3 staged · 2 unstaged files`, `no changes`.
     pub changes: Option<String>,

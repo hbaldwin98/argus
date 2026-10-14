@@ -78,6 +78,8 @@ mod tests {
                 unstaged: 0,
                 ahead: 0,
                 behind: 0,
+                upstream: None,
+                last_commit: None,
             }),
             primary: id == 1,
         }
@@ -91,6 +93,7 @@ mod tests {
             branches: branches.iter().map(|b| b.to_string()).collect(),
             default_branch: Some(default.into()),
             remote_branches: vec!["origin/transcripts".into()],
+            unmerged: Default::default(),
             last_used: None,
         }
     }

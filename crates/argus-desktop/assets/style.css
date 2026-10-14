@@ -1777,6 +1777,22 @@ body.filled .head {
 .ctable th:nth-child(5) {
   width: 70px;
 }
+.ctable .col-last {
+  max-width: 0;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.commits {
+  font-size: var(--fs-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  padding: var(--sp-8) var(--sp-12);
+  max-height: 200px;
+  overflow: auto;
+  white-space: nowrap;
+}
 .ctable tr.group td {
   height: 30px;
   border-bottom: 0;
@@ -1837,7 +1853,8 @@ body.filled .head {
   container-type: inline-size;
 }
 @container (max-width: 980px) {
-  .ctable .soon {
+  .ctable .soon,
+  .ctable .col-last {
     display: none;
   }
 }

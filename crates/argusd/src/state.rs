@@ -220,6 +220,9 @@ struct Repository {
     /// the same refresh. Only a fetch changes these, but reading them costs
     /// what reading the local ones costs, so they ride along.
     remote_branches: Vec<String>,
+    /// How far each of `branches` is ahead of the main branch, counted on
+    /// the same refresh: walking history is git I/O like the rest.
+    unmerged: std::collections::BTreeMap<String, usize>,
 }
 
 impl Repository {
@@ -390,6 +393,7 @@ fn project_info(p: &Project, used: &HashMap<PathBuf, u64>) -> ProjectInfo {
                 branches: r.branches.clone(),
                 default_branch: r.default_branch.clone(),
                 remote_branches: r.remote_branches.clone(),
+                unmerged: r.unmerged.clone(),
                 last_used: r.primary_path().and_then(|path| used.get(path).copied()),
                 checkouts: r
                     .checkouts

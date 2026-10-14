@@ -147,7 +147,11 @@ async fn a_branch_holding_commits_nothing_else_has_is_put_back_to_the_user() {
         .await
         .unwrap();
 
-    assert_eq!(outcome, BranchDeletion::NotMerged);
+    let BranchDeletion::NotMerged(commits) = outcome else {
+        panic!("{outcome:?}");
+    };
+    let summaries: Vec<&str> = commits.iter().map(|c| c.summary.as_str()).collect();
+    assert_eq!(summaries, ["work"], "the refusal names what would be lost");
     assert!(
         git2::Repository::open(dir.path())
             .unwrap()
@@ -168,7 +172,7 @@ async fn forcing_deletes_the_unmerged_branch() {
         .await
         .unwrap();
 
-    assert_eq!(outcome, BranchDeletion::Deleted);
+    assert!(matches!(outcome, BranchDeletion::Deleted), "{outcome:?}");
     assert!(
         git2::Repository::open(dir.path())
             .unwrap()
@@ -802,4 +806,30 @@ async fn a_terminal_editor_pane_has_no_harness_session() {
         .map(|pane| (pane.kind, pane.harness_session_id.clone()));
     assert_eq!(stored, Some((PaneKind::Editor, None)));
     d.close_pane(pane).unwrap();
+}
+
+#[test]
+fn a_branch_without_a_checkout_says_how_far_it_is_ahead_of_main() {
+    let (dir, d) = daemon_on_a_repo();
+    commit_on_a_branch(dir.path(), "spike");
+    let main = crate::git::default_branch(dir.path()).expect("the repo has a main branch");
+    let repo = git2::Repository::open(dir.path()).unwrap();
+    let head = repo.head().unwrap().peel_to_commit().unwrap();
+    repo.branch("merged", &head, false).unwrap();
+    d.refresh_branches();
+
+    let snapshot = d.snapshot();
+    let unmerged = &snapshot[0].repositories[0].unmerged;
+    assert_eq!(unmerged.get("spike"), Some(&1), "against {main}");
+    assert_eq!(unmerged.get("merged"), Some(&0));
+}
+
+#[test]
+fn a_checkouts_status_carries_its_last_commit() {
+    let dir = tempfile::tempdir().unwrap();
+    init_repo(dir.path());
+    let status = crate::git::status(dir.path()).unwrap();
+    let last = status.last_commit.expect("HEAD has a commit");
+    assert_eq!(last.short.len(), 7);
+    assert!(status.upstream.is_none(), "a repo with no remote tracks nothing");
 }

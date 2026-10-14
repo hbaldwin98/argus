@@ -5,7 +5,8 @@
 use argus_protocol::column::{local_name, CheckoutRow};
 use argus_protocol::{CheckoutInfo, DecisionBoard, GitStatus, PaneKind, RepositoryInfo};
 
-use crate::page::{CheckoutDetail, Checkouts, CheckoutsRow, Running};
+use crate::page::{CheckoutDetail, Checkouts, CheckoutsRow, LastCommit, Running};
+use crate::rail::ago;
 
 /// What the table is asked to show besides the repository itself.
 pub struct View<'a> {
@@ -16,6 +17,17 @@ pub struct View<'a> {
     pub board: Option<&'a DecisionBoard>,
     /// The feature the Feature stage has under its cursor.
     pub viewed: Option<&'a str>,
+    /// Seconds since the epoch, for how long ago a commit was.
+    pub now: u64,
+}
+
+/// A commit as a row or a dialog says it.
+pub fn last_commit(commit: &argus_protocol::CommitInfo, now: u64) -> LastCommit {
+    LastCommit {
+        short: commit.short.clone(),
+        summary: commit.summary.clone(),
+        ago: ago(u64::try_from(commit.time).ok(), now),
+    }
 }
 
 /// The key a row is chosen by: stable while rows come and go around it.
@@ -91,6 +103,7 @@ fn row_of(repo: &RepositoryInfo, row: CheckoutRow, view: &View) -> Option<Checko
                 git: c.git.as_ref().map(GitStatus::summary),
                 clean: c.git.as_ref().is_some_and(|g| !g.dirty),
                 note: None,
+                last: c.git.as_ref().and_then(|g| g.last_commit.as_ref()).map(|commit| last_commit(commit, view.now)),
                 running: c
                     .listed_panes()
                     .map(|p| Running { agent: p.kind == PaneKind::Agent, status: p.loudest_state().status.word() })
@@ -105,15 +118,24 @@ fn row_of(repo: &RepositoryInfo, row: CheckoutRow, view: &View) -> Option<Checko
             let local = if remote { local_name(&name).unwrap_or(&name) } else { &name };
             let (feature, viewed) =
                 feature(features.iter().find(|f| f.origin_branch.as_deref() == Some(local)));
+            // How far ahead of main, where the daemon counted it: a
+            // remote-only branch has no local commits to count.
+            let ahead = if remote { None } else { repo.unmerged.get(&name).copied() };
             CheckoutsRow {
                 key,
                 checkout: None,
                 name: None,
                 primary: false,
+                git: ahead.filter(|n| *n > 0).map(|n| format!("↑{n}")),
                 branch: name,
-                git: None,
                 clean: false,
-                note: remote.then_some("remote only"),
+                note: match (remote, ahead) {
+                    (true, _) => Some("remote only"),
+                    (false, Some(0)) => Some("merged"),
+                    (false, Some(_)) => Some("unmerged"),
+                    (false, None) => None,
+                },
+                last: None,
                 running: Vec::new(),
                 feature,
                 viewed,
@@ -142,11 +164,18 @@ fn detail(c: &CheckoutInfo) -> CheckoutDetail {
     CheckoutDetail {
         name: c.name.clone(),
         path: c.path.clone(),
-        upstream: c.git.as_ref().map(|g| match (g.ahead, g.behind) {
-            (0, 0) => "in sync".to_string(),
-            (a, 0) => format!("{a} ahead"),
-            (0, b) => format!("{b} behind"),
-            (a, b) => format!("{a} ahead · {b} behind"),
+        upstream: c.git.as_ref().map(|g| {
+            let distance = match (g.ahead, g.behind) {
+                (0, 0) => "in sync".to_string(),
+                (a, 0) => format!("{a} ahead"),
+                (0, b) => format!("{b} behind"),
+                (a, b) => format!("{a} ahead · {b} behind"),
+            };
+            match &g.upstream {
+                Some(upstream) => format!("{upstream} · {distance}"),
+                None if g.ahead == 0 && g.behind == 0 => "none".to_string(),
+                None => distance,
+            }
         }),
         changes: c.git.as_ref().map(changes),
     }
@@ -169,7 +198,7 @@ mod tests {
     use crate::fixtures::{checkout, repository};
 
     fn view<'a>(branches_shown: bool, filter: &'a str, selected: Option<&'a str>) -> View<'a> {
-        View { branches_shown, filter, selected, board: None, viewed: None }
+        View { branches_shown, filter, selected, board: None, viewed: None, now: 0 }
     }
 
     fn repo() -> RepositoryInfo {
@@ -213,5 +242,16 @@ mod tests {
         let table = build(&repo(), &view(true, "", Some("c101")));
         assert_eq!(table.detail.as_ref().map(|d| d.name.as_str()), Some("desktop"));
         assert!(build(&repo(), &view(true, "", Some("bold"))).detail.is_none());
+    }
+
+    #[test]
+    fn a_branch_row_says_whether_main_has_it() {
+        let mut repo = repo();
+        repo.branches = vec!["spike".into(), "done".into()];
+        repo.unmerged = [("spike".to_string(), 3), ("done".to_string(), 0)].into();
+        let table = build(&repo, &view(true, "", None));
+        let row = |key: &str| table.rows.iter().find(|r| r.key == key).unwrap().clone();
+        assert_eq!((row("bspike").git.as_deref(), row("bspike").note), (Some("↑3"), Some("unmerged")));
+        assert_eq!((row("bdone").git, row("bdone").note), (None, Some("merged")));
     }
 }

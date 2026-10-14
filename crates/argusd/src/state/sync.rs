@@ -27,6 +27,7 @@ struct BranchState {
     free: Vec<String>,
     default: Option<String>,
     remote: Vec<String>,
+    unmerged: std::collections::BTreeMap<String, usize>,
 }
 
 impl Daemon {
@@ -374,14 +375,23 @@ impl Daemon {
 
         let listed: Vec<BranchState> = repositories
             .into_iter()
-            .map(|(id, path, occupied)| BranchState {
-                id,
-                free: crate::browse::branches(&path)
+            .map(|(id, path, occupied)| {
+                let free: Vec<String> = crate::browse::branches(&path)
                     .into_iter()
                     .filter(|b| !occupied.contains(b))
-                    .collect(),
-                default: crate::git::default_branch(&path),
-                remote: crate::git::remote_branches(&path),
+                    .collect();
+                let default = crate::git::default_branch(&path);
+                let unmerged = default
+                    .as_deref()
+                    .map(|main| crate::git::unmerged(&path, &free, main))
+                    .unwrap_or_default();
+                BranchState {
+                    id,
+                    free,
+                    default,
+                    remote: crate::git::remote_branches(&path),
+                    unmerged,
+                }
             })
             .collect();
 
@@ -391,6 +401,7 @@ impl Daemon {
                 r.branches = state.free;
                 r.default_branch = state.default;
                 r.remote_branches = state.remote;
+                r.unmerged = state.unmerged;
             }
         }
     }

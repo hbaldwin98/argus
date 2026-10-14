@@ -81,7 +81,7 @@ pub fn list_commits(path: &Path) -> anyhow::Result<Vec<CommitInfo>> {
         let commit = repo
             .find_commit(oid)
             .with_context(|| format!("could not load commit {oid}"))?;
-        commits.push(commit_info(&commit));
+        commits.push(crate::git::commit_info(&commit));
     }
     Ok(commits)
 }
@@ -120,19 +120,8 @@ pub fn generate_commit(path: &Path, rev: &str) -> anyhow::Result<GeneratedReview
     highlight_files(&repo, old, new_tree.id(), &mut files);
     Ok(GeneratedReview {
         files,
-        commit: Some(commit_info(&commit)),
+        commit: Some(crate::git::commit_info(&commit)),
     })
-}
-
-fn commit_info(commit: &git2::Commit<'_>) -> CommitInfo {
-    let oid = commit.id().to_string();
-    CommitInfo {
-        short: oid.chars().take(7).collect(),
-        oid,
-        summary: commit.summary().ok().flatten().unwrap_or("").to_string(),
-        author: commit.author().name().unwrap_or("").to_string(),
-        time: commit.time().seconds(),
-    }
 }
 
 fn commit_files(

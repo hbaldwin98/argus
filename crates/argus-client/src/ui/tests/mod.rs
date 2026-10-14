@@ -616,6 +616,8 @@ pub(super) fn git(
         unstaged: changed,
         ahead,
         behind,
+        upstream: None,
+        last_commit: None,
     }
 }
 

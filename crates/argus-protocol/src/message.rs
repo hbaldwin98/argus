@@ -625,6 +625,10 @@ pub enum ServerMsg {
     BranchNotMerged {
         checkout: CheckoutId,
         branch: String,
+        /// The commits that would stop being reachable, newest first and at
+        /// most a screenful: what the person is being asked to give up.
+        #[serde(default)]
+        commits: Vec<crate::CommitInfo>,
     },
     Error {
         message: String,
