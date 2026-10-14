@@ -302,6 +302,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `keys` | a key the page reports, as the protocol's key |
 | `clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
 | `logging` | where the window's own diagnostics go |
+| `title_bar` | the native title bar's colour, tinted to the page's chrome on Windows 11 |
 | `fixtures` | the tree builders the test modules share |
 
 ## Views

@@ -29,12 +29,13 @@ mod screen;
 mod session;
 mod settings;
 mod shared;
+mod title_bar;
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use tauri::webview::PageLoadEvent;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 use shared::Shared;
 
@@ -115,7 +116,7 @@ fn main() {
 }
 
 fn open_window(app: &mut tauri::App) -> tauri::Result<()> {
-    WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+    let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Argus")
         .inner_size(1200.0, 800.0)
         .min_inner_size(720.0, 480.0)
@@ -125,6 +126,13 @@ fn open_window(app: &mut tauri::App) -> tauri::Result<()> {
         // Tauri's own handler would swallow drops the page will want.
         .disable_drag_drop_handler()
         .build()?;
+    title_bar::paint(&window);
+    let painted = window.clone();
+    window.on_window_event(move |event| {
+        if let WindowEvent::ThemeChanged(_) = event {
+            title_bar::paint(&painted);
+        }
+    });
     Ok(())
 }
 

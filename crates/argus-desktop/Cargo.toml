@@ -24,6 +24,10 @@ png = "0.18"
 # The version alacritty uses, so a cell's width here is the daemon's.
 unicode-width = "0.2"
 
+# The title bar's colour, set through DWM.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Graphics_Dwm"] }
+
 # A Linux desktop is as likely Wayland as X11 now, as the terminal client
 # found.
 [target.'cfg(target_os = "linux")'.dependencies]
