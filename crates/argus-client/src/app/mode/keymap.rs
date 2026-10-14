@@ -705,7 +705,7 @@ const FEATURE: Keymap = Keymap {
                 .written(),
                 Binding::new(
                     "d",
-                    "a decision, raised under the task the cursor is on",
+                    "a decision, raised under the task the cursor is on; on a flow, the one binding the step",
                     &[(&[Char('d')], App::begin_decision)],
                 )
                 .when(in_a_feature)
@@ -743,7 +743,7 @@ const FEATURE: Keymap = Keymap {
                 .written(),
                 Binding::new(
                     "e",
-                    "rewrite it: the brief, this task's title, this decision's record",
+                    "rewrite it: the brief, this task's title, this decision's record, a flow's source",
                     &[(&[Char('e')], App::edit_in_feature)],
                 )
                 .written(),

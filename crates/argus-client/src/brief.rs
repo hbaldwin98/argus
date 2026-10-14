@@ -39,6 +39,13 @@ pub enum BriefTarget {
         feature: String,
         id: i64,
     },
+    /// A sequence diagram's Mermaid source, saved as the flow recorded
+    /// again under the title the window carries.
+    Diagram {
+        project: ProjectId,
+        feature: String,
+        id: i64,
+    },
     /// A note being written down as a feature, or into one that exists.
     /// Sent whole when the person says so, never on leaving insert mode.
     Capture {

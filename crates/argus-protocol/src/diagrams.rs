@@ -49,6 +49,9 @@ impl DiagramWrite {
 pub enum DiagramAction {
     List,
     Add(DiagramWrite),
+    /// The diagram's title and source replaced whole: a flow is edited as
+    /// its Mermaid, so there is no smaller change to name.
+    Rewrite { id: i64, write: DiagramWrite },
     Remove { id: i64 },
 }
 

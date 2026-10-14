@@ -1424,6 +1424,23 @@ async fn diagrams_belong_to_the_feature_the_checkout_is_on() {
     let list = d
         .part_action_for_agent(
             agent,
+            Some("sess-2"),
+            DiagramAction::Rewrite {
+                id,
+                write: DiagramWrite {
+                    title: "list, add and rewrite".into(),
+                    body: "sequenceDiagram\n    Hook->>Daemon: POST /diagrams %% decision #1".into(),
+                },
+            },
+            ArtifactScope::default(),
+        )
+        .unwrap();
+    assert_eq!(list.diagrams.len(), 1, "a rewrite replaces the flow in place");
+    assert_eq!((list.diagrams[0].id, list.diagrams[0].title.as_str()), (id, "list, add and rewrite"));
+
+    let list = d
+        .part_action_for_agent(
+            agent,
             None,
             DiagramAction::Remove { id },
             ArtifactScope::default(),

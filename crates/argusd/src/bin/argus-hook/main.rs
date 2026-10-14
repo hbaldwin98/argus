@@ -31,6 +31,7 @@
 //! argus-hook task note 12 "bounded; refusal next"    # where the work stands
 //! argus-hook diagram                                 # sequence diagrams on this feature
 //! argus-hook diagram add "open overlay" --stdin      # Mermaid source on stdin
+//! argus-hook diagram rewrite 3 "open overlay" --stdin  # replaces #3's source
 //! argus-hook diagram drop 3                          # removes diagram #3
 //! argus-hook telemetry --model gpt-5 --context 42000 --window 272000 --cost 0.12 --tool shell
 //! argus-hook context                           # comments, and the feature by name

@@ -66,10 +66,13 @@ that names neither is an ordinary comment.
 ```sh
 "$ARGUS_HOOK" diagram
 "$ARGUS_HOOK" diagram add "open overlay from Feature view" --stdin
+"$ARGUS_HOOK" diagram rewrite <id> "open overlay from Feature view" --stdin
 "$ARGUS_HOOK" diagram drop <id>
 ```
 
-For `add`, put the full Mermaid source on standard input (heredoc or pipe).
+For `add` and `rewrite`, put the full Mermaid source on standard input (heredoc
+or pipe); `rewrite` replaces a diagram's title and source in place, so correct a
+flow or bind its steps with it rather than adding a second copy.
 Read the list first so you know existing ids before dropping one.
 
 Do **not** append diagram source to the feature brief with `feature note`;

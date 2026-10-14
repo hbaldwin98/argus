@@ -95,6 +95,22 @@ impl App {
                     text: argus_protocol::DecisionText::from_markdown(&body),
                 },
             },
+            BriefTarget::Diagram {
+                project,
+                feature,
+                id,
+            } => ClientMsg::SequenceDiagram {
+                project,
+                checkout: checkout.expect("a diagram belongs to the selected checkout"),
+                feature,
+                action: argus_protocol::DiagramAction::Rewrite {
+                    id,
+                    write: argus_protocol::DiagramWrite {
+                        title: view.title.clone(),
+                        body,
+                    },
+                },
+            },
             // A note is sent whole by its own key, and is never the brief
             // overlay's to save.
             BriefTarget::Capture { .. } => return,

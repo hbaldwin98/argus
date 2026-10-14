@@ -180,8 +180,8 @@ pub(super) fn render_status(f: &mut Frame, app: &App, area: Rect, th: Theme) {
                     "j/k  d decision  tab  1 work  esc",
                 ][..],
                 Lens::Flows => &[
-                    "j/k step  h/l flow  a new flow  enter open  x drop  1 work  2 record  esc up",
-                    "j/k step  h/l flow  enter open  1 work  2 record  esc up",
+                    "j/k step  h/l flow  d bind a decision  e edit  a new flow  enter open  x drop  1 work  2 record  esc up",
+                    "j/k step  h/l flow  d bind  e edit  enter open  1 work  2 record  esc up",
                     "j/k  h/l flow  enter  esc",
                 ][..],
             },

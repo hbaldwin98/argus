@@ -1761,7 +1761,7 @@ fn a_rename_leaves_the_slug_the_work_points_at() {
 }
 
 #[test]
-fn sequence_diagrams_are_stored_per_feature_and_removed_with_the_row() {
+fn sequence_diagrams_are_stored_per_feature_rewritten_in_place_and_removed_with_the_row() {
     let s = store();
     s.add_feature("argus", &feature("the pty"), None, None, 1, None)
         .unwrap();
@@ -1774,6 +1774,15 @@ fn sequence_diagrams_are_stored_per_feature_and_removed_with_the_row() {
         .unwrap()
         .id;
     assert_eq!(s.sequence_diagrams("argus", "the-pty").unwrap().len(), 1);
+    let rewrite = DiagramWrite {
+        title: "resize, refused".into(),
+        body: "sequenceDiagram\n    Client->>Daemon: resize\n    Daemon-->>Client: no".into(),
+    };
+    s.rewrite_sequence_diagram("argus", "the-pty", id, &rewrite, 2, Some("sess-2")).unwrap();
+    let stored = &s.sequence_diagrams("argus", "the-pty").unwrap()[0];
+    assert_eq!((stored.id, stored.title.as_str(), stored.at), (id, "resize, refused", 2));
+    assert!(stored.body.ends_with("no"));
+    assert!(s.rewrite_sequence_diagram("argus", "the-pty", id + 1, &rewrite, 3, None).is_err());
     s.remove_sequence_diagram("argus", "the-pty", id).unwrap();
     assert!(s.sequence_diagrams("argus", "the-pty").unwrap().is_empty());
 }

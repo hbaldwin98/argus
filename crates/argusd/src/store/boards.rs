@@ -1237,6 +1237,28 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    /// Replaces a diagram's title and source, and files it as written now
+    /// by whoever wrote it: a rewrite is the flow recorded again.
+    pub fn rewrite_sequence_diagram(
+        &self,
+        project: &str,
+        feature: &str,
+        id: i64,
+        write: &argus_protocol::DiagramWrite,
+        at: i64,
+        session: Option<&str>,
+    ) -> Result<()> {
+        let changed = self.conn().execute(
+            "UPDATE sequence_diagram SET title = ?4, body = ?5, at = ?6, session = ?7
+             WHERE project = ?1 AND feature = ?2 AND id = ?3",
+            rusqlite::params![project, feature, id, write.title, write.body, at, session],
+        )?;
+        if changed == 0 {
+            anyhow::bail!("there is no diagram {id} under feature {feature}");
+        }
+        Ok(())
+    }
+
     pub fn remove_sequence_diagram(&self, project: &str, feature: &str, id: i64) -> Result<()> {
         let changed = self.conn().execute(
             "DELETE FROM sequence_diagram WHERE project = ?1 AND feature = ?2 AND id = ?3",

@@ -553,11 +553,11 @@ inherited from whichever workspace the TUI currently shows.
 | `a` | A new feature written as one note; inside one, a root task, or a flow on the flows lens |
 | `i` | Write more of the open feature as one note |
 | `s` | A subtask under the selected task, or a sub-decision under the selected decision |
-| `d` | A decision, raised under the task the cursor is on. Start it with `?` to leave it open |
+| `d` | A decision, raised under the task the cursor is on. Start it with `?` to leave it open. Flows: name the decision binding the step, `D2.1` or `#id` |
 | `u` / `o` / `y` | Supersede the decision, answer an open one in words, copy it as ADR markdown |
 | `c` / `n` | A done-when criterion for the selected task, or a note on it |
 | Space | Mark the task done or not; in the detail, check a criterion off |
-| `e` | Rewrite it: the brief, the task's title, the decision's record |
+| `e` | Rewrite it: the brief, the task's title, the decision's record, the flow's Mermaid source |
 | `h` / `l` | Work: fold or unfold the task. Flows: the flow before or after |
 | `H` / `L`, `J` / `K`, `>` / `<` | Move the task along todo, doing, done; among its siblings; in or out a level |
 | `g` | Go to the pane working the task or the feature |
@@ -573,7 +573,10 @@ a `-` line is a task and an indented one a subtask, a `?` line an open decision 
 indented beneath, and a `!` line a decision already made with the reason beneath. `Ctrl-S` creates
 it, Tab and Shift-Tab indent, Escape throws it away.
 
-On the flows lens `Enter` opens the selected Mermaid sequence diagram whole. `j`/`k`
+On the flows lens each step names the decisions and tasks bound to it, the selected step is lit in
+the diagram, and the decisions binding it are listed under the steps with the tasks that carry
+them out. A binding is a Mermaid comment under the step's message, `%% decision #4 task #9`, which
+`d` writes for you. `Enter` opens the selected Mermaid sequence diagram whole. `j`/`k`
 scroll vertically and `h`/`l` (or the arrows) pan horizontally when the diagram is wider than the
 overlay; `q` or Escape closes it.
 

@@ -22,7 +22,7 @@ impl FeaturePart for DiagramAction {
     fn id(&self) -> Option<i64> {
         match self {
             DiagramAction::List | DiagramAction::Add(_) => None,
-            DiagramAction::Remove { id } => Some(*id),
+            DiagramAction::Rewrite { id, .. } | DiagramAction::Remove { id } => Some(*id),
         }
     }
 
@@ -47,6 +47,10 @@ impl FeaturePart for DiagramAction {
             DiagramAction::Add(write) => {
                 let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
                 store.add_sequence_diagram(key, feature, &write, at, by.session)?;
+            }
+            DiagramAction::Rewrite { id, write } => {
+                let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
+                store.rewrite_sequence_diagram(key, feature, id, &write, at, by.session)?;
             }
             DiagramAction::Remove { id } => store.remove_sequence_diagram(key, feature, id)?,
         }

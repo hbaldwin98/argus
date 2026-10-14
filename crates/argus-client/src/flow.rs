@@ -7,6 +7,7 @@
 //! What binds a step is said in the source too, as a Mermaid comment on
 //! its line or the line after it — `%% decision #12 task #31` — so it is
 //! written with the flow, travels with it, and the renderer skips it.
+//! Binding a step from the TUI is writing that comment into the source.
 
 /// One line of a flow that a reader steps through.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,6 +32,8 @@ pub struct Step {
     pub decisions: Vec<i64>,
     /// The tasks that carry it out, by id, beyond those its decisions name.
     pub tasks: Vec<i64>,
+    /// Which line of the source says it, counted from zero.
+    pub line: usize,
 }
 
 impl Step {
@@ -54,7 +57,7 @@ pub fn rows(source: &str) -> Vec<FlowRow> {
     let mut rows = Vec::new();
     let mut number = 0;
     let mut under_step = false;
-    for line in source.lines().map(str::trim) {
+    for (at, line) in source.lines().map(str::trim).enumerate() {
         let (line, comment) = line.split_once("%%").unwrap_or((line, ""));
         let line = line.trim();
         let (decisions, tasks) = named_in(comment);
@@ -105,10 +108,30 @@ pub fn rows(source: &str) -> Vec<FlowRow> {
             text: text.trim().to_string(),
             decisions,
             tasks,
+            line: at,
         }));
         under_step = true;
     }
     rows
+}
+
+/// The source with step `number` bound to `decision`: a comment line
+/// under the step's message, indented as it is. `None` when there is no
+/// such step or it is already bound to that decision.
+pub fn bind(source: &str, number: usize, decision: i64) -> Option<String> {
+    let step = rows(source).into_iter().find_map(|row| match row {
+        FlowRow::Step(step) if step.number == number => Some(step),
+        _ => None,
+    })?;
+    if step.decisions.contains(&decision) {
+        return None;
+    }
+    let mut lines: Vec<&str> = source.lines().collect();
+    let said = lines[step.line];
+    let indent = &said[..said.len() - said.trim_start().len()];
+    let comment = format!("{indent}%% decision #{decision}");
+    lines.insert(step.line + 1, &comment);
+    Some(lines.join("\n"))
 }
 
 /// The decisions and tasks a comment names, as `decision #12 task #31
@@ -227,6 +250,18 @@ mod tests {
             ],
             "a comment under any other line binds nothing"
         );
+    }
+
+    #[test]
+    fn binding_a_step_writes_a_comment_under_its_message_once() {
+        let bound = bind(SOURCE, 2, 7).unwrap();
+
+        assert!(bound.contains("    hook->>argusd: brief request\n    %% decision #7\n"), "{bound}");
+        let FlowRow::Step(step) = &rows(&bound)[1] else { panic!("{bound}") };
+        assert_eq!(step.decisions, [7]);
+        assert_eq!(rows(&bound).len(), rows(SOURCE).len(), "the comment is not a row");
+        assert_eq!(bind(&bound, 2, 7), None, "already bound");
+        assert_eq!(bind(SOURCE, 9, 7), None, "no step 9");
     }
 
     #[test]

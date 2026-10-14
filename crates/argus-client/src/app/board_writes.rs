@@ -42,6 +42,8 @@ pub enum LineEdit {
     },
     /// The answer to the open decision with this id.
     Resolve(i64),
+    /// The decision that binds step `step` of the diagram with this id.
+    BindStep { diagram: i64, step: usize },
 }
 
 impl LineInput {
@@ -62,6 +64,7 @@ impl LineInput {
             LineEdit::Decision { under: Some(_), .. } => "sub-decision (? open, ~ rejected)",
             LineEdit::Decision { .. } => "decision (? if it is still open)",
             LineEdit::Resolve(_) => "decided",
+            LineEdit::BindStep { .. } => "bound by decision (D2.1, or #id)",
         }
     }
 }
@@ -179,6 +182,7 @@ impl App {
                 answer: text,
                 because: None,
             }),
+            LineEdit::BindStep { diagram, step } => self.bind_step(diagram, step, &text),
             LineEdit::Decision {
                 under,
                 task,
@@ -414,6 +418,9 @@ impl App {
         if !self.feature_open {
             return self.open_feature_brief();
         }
+        if self.lens == Lens::Flows {
+            return self.open_diagram_source();
+        }
         match self.selected_work() {
             Some(WorkRef::Task(id)) => {
                 let title = self.selected_task().map(|task| task.title.clone());
@@ -554,6 +561,9 @@ impl App {
         if self.feature_slug().is_none() {
             return;
         }
+        if self.lens == Lens::Flows {
+            return self.begin_step_binding();
+        }
         let task = match self.selected_work() {
             Some(WorkRef::Task(id)) => Some(id),
             Some(WorkRef::Decision(id)) if self.lens == Lens::Work => {
@@ -682,6 +692,79 @@ impl App {
                 title: format!("flow {n}"),
                 body: Self::DEFAULT_DIAGRAM_SOURCE.to_string(),
             }),
+        });
+    }
+
+    /// `e` on the flows lens: the selected flow's Mermaid, in the editor.
+    /// Steps, participants and branches are all lines of it, so it is the
+    /// one editor a flow has.
+    fn open_diagram_source(&mut self) {
+        let (Some((project, _, feature)), Some(diagram)) = (self.board_target(), self.selected_diagram())
+        else {
+            return self.report("no flow selected");
+        };
+        let view = BriefView::new(
+            BriefTarget::Diagram {
+                project,
+                feature,
+                id: diagram.id,
+            },
+            diagram.title.clone(),
+            &diagram.body,
+        );
+        self.open_brief(view);
+    }
+
+    /// `d` on the flows lens: asks which decision binds the selected step.
+    fn begin_step_binding(&mut self) {
+        let (Some(diagram), Some(step)) = (self.selected_diagram(), self.flow_steps().get(self.step_sel).cloned())
+        else {
+            return self.report("no step selected");
+        };
+        let what = LineEdit::BindStep {
+            diagram: diagram.id,
+            step: step.number,
+        };
+        self.begin_line(what, String::new());
+    }
+
+    /// Writes the binding into the flow's source and sends the flow back:
+    /// a decision named as a reader calls it, `D2.1`, or by its id, `#4`.
+    fn bind_step(&mut self, diagram: i64, step: usize, named: &str) {
+        let named = named.trim();
+        let id = match named.strip_prefix('#') {
+            Some(id) => id.parse::<i64>().ok().filter(|id| self.outline().decision(*id).is_some()),
+            None => {
+                let label = format!("D{}", named.trim_start_matches(['D', 'd']));
+                self.board_rows()
+                    .iter()
+                    .find(|row| row.label() == label)
+                    .map(|row| row.decision.id)
+            }
+        };
+        let Some(id) = id else {
+            return self.report(format!("no decision {named} on this feature"));
+        };
+        let Some(flow) = self.feature_diagrams().iter().find(|flow| flow.id == diagram).cloned() else {
+            return;
+        };
+        let Some(body) = crate::flow::bind(&flow.body, step, id) else {
+            return self.report(format!("step {step} is already bound by {named}"));
+        };
+        let Some((project, checkout, feature)) = self.board_target() else {
+            return;
+        };
+        let _ = self.out.send(ClientMsg::SequenceDiagram {
+            project,
+            checkout,
+            feature,
+            action: argus_protocol::DiagramAction::Rewrite {
+                id: diagram,
+                write: argus_protocol::DiagramWrite {
+                    title: flow.title,
+                    body,
+                },
+            },
         });
     }
 

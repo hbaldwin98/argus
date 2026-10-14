@@ -58,7 +58,8 @@ fn step_line(step: &Step, selected: bool, route_width: usize, outline: &Outline<
 
 /// What stands behind the selected step: the decisions that bind it, and
 /// the tasks that carry it out — those its decisions are carried out by
-/// and those it names itself. Nothing when nothing binds it.
+/// and those it names itself — or, when nothing does, the key that binds
+/// one.
 fn bindings(step: &Step, outline: &Outline<'_>, width: u16, th: Theme) -> Vec<Line<'static>> {
     let decisions: Vec<_> = step.decisions.iter().filter_map(|id| outline.decision(*id)).collect();
     let mut tasks: Vec<i64> = Vec::new();
@@ -75,6 +76,13 @@ fn bindings(step: &Step, outline: &Outline<'_>, width: u16, th: Theme) -> Vec<Li
     let tasks: Vec<_> = tasks.iter().filter_map(|id| outline.task(*id)).collect();
 
     let mut lines = Vec::new();
+    if decisions.is_empty() && tasks.is_empty() {
+        lines.push(Line::from(span(
+            format!("  nothing binds step {} — d names the decision that does", step.number),
+            th.dim,
+        )));
+        return lines;
+    }
     if !decisions.is_empty() {
         lines.push(heading(&format!("STEP {} IS BOUND BY", step.number), false, "", width, th));
         lines.extend(decisions.iter().map(|decision| decision_ref(decision, width, th)));

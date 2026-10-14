@@ -536,7 +536,8 @@ pub(super) fn diagram(rest: &[&str]) {
     let _ = writeln!(out, "{}", diagram_message(rest, &env_url(), &env_token()));
 }
 
-/// `diagram`, `diagram add <title> --stdin`, `diagram drop <id>`.
+/// `diagram`, `diagram add <title> --stdin`, `diagram rewrite <id> <title>
+/// --stdin`, `diagram drop <id>`.
 pub(super) fn diagram_message(rest: &[&str], base_url: &str, token: &str) -> String {
     match rest.first().copied() {
         None | Some("list") => write_diagram(DiagramAction::List, base_url, token),
@@ -547,12 +548,22 @@ pub(super) fn diagram_message(rest: &[&str], base_url: &str, token: &str) -> Str
             };
             write_diagram(DiagramAction::Add(write), base_url, token)
         }
+        Some("rewrite") => {
+            let Some(id) = rest.get(1).and_then(|id| id.parse::<i64>().ok()) else {
+                return "could not change diagram: rewrite wants the number `diagram` prints".to_string();
+            };
+            let write = match parse_diagram_add_args(&rest[2..]) {
+                Ok(write) => write,
+                Err(message) => return format!("could not change diagram: {message}"),
+            };
+            write_diagram(DiagramAction::Rewrite { id, write }, base_url, token)
+        }
         Some("drop") => match rest.get(1).and_then(|id| id.parse::<i64>().ok()) {
             Some(id) => write_diagram(DiagramAction::Remove { id }, base_url, token),
             None => "could not change diagram: drop wants the number `diagram` prints".to_string(),
         },
         Some(other) => format!(
-            "could not change diagram: `{other}` is not one of add, drop"
+            "could not change diagram: `{other}` is not one of add, rewrite, drop"
         ),
     }
 }
@@ -1659,6 +1670,14 @@ mod tests {
             "{read}"
         );
         assert!(format_feature_list(&board).contains("  #7 queue — The queue"));
+    }
+
+    #[test]
+    fn diagram_rewrite_names_the_diagram_before_anything_is_sent() {
+        let said = diagram_message(&["rewrite", "flow", "--stdin"], "http://127.0.0.1:1", "t");
+        assert!(said.contains("rewrite wants the number"), "{said}");
+        let said = diagram_message(&["rename", "3"], "http://127.0.0.1:1", "t");
+        assert!(said.contains("not one of add, rewrite, drop"), "{said}");
     }
 
     #[test]

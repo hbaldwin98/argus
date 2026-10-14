@@ -672,6 +672,67 @@ fn a_step_names_what_binds_it_and_the_selected_one_says_what_carries_it_out() {
 }
 
 #[test]
+fn d_binds_the_selected_step_by_the_decision_a_reader_names() {
+    let (mut app, mut rx) = reading();
+    press(&mut app, '3');
+    assert!(screen(&mut app).contains("nothing binds step 1"));
+
+    press(&mut app, 'd');
+    assert!(screen(&mut app).contains("bound by decision (D2.1, or #id)"));
+    type_in(&mut app, "D3");
+    key(&mut app, KeyCode::Enter);
+
+    let msgs = sent(&mut rx);
+    let [ClientMsg::SequenceDiagram { action: argus_protocol::DiagramAction::Rewrite { id: 1, write }, .. }] =
+        msgs.as_slice()
+    else {
+        panic!("{msgs:?}");
+    };
+    assert_eq!(write.title, "Brief on demand");
+    assert!(write.body.contains("agent->>hook: ask for the brief\n    %% decision #6\n"), "{}", write.body);
+}
+
+#[test]
+fn a_binding_that_names_no_decision_says_so_and_sends_nothing() {
+    let (mut app, mut rx) = reading();
+    press(&mut app, '3');
+    press(&mut app, 'j');
+
+    press(&mut app, 'd');
+    type_in(&mut app, "D9");
+    key(&mut app, KeyCode::Enter);
+    assert_eq!(app.status, "no decision D9 on this feature");
+    press(&mut app, 'd');
+    type_in(&mut app, "#4");
+    key(&mut app, KeyCode::Enter);
+    assert_eq!(app.status, "step 2 is already bound by #4");
+
+    assert!(sent(&mut rx).is_empty());
+}
+
+#[test]
+fn e_opens_a_flow_as_its_mermaid_and_saving_records_it_again() {
+    let (mut app, mut rx) = reading();
+    press(&mut app, '3');
+
+    press(&mut app, 'e');
+    let body = app.brief.as_ref().expect("the source is open").body();
+    assert!(body.starts_with("sequenceDiagram\n    participant agent"), "{body}");
+    press(&mut app, 'o');
+    type_in(&mut app, "agent->>agent: think");
+    key(&mut app, KeyCode::Esc);
+
+    let msgs = sent(&mut rx);
+    let [ClientMsg::SequenceDiagram { action: argus_protocol::DiagramAction::Rewrite { id: 1, write }, .. }] =
+        msgs.as_slice()
+    else {
+        panic!("{msgs:?}");
+    };
+    assert_eq!(write.title, "Brief on demand");
+    assert!(write.body.contains("agent->>agent: think"), "{}", write.body);
+}
+
+#[test]
 fn the_selected_step_is_lit_where_the_diagram_draws_it() {
     let (mut app, _rx) = reading();
     press(&mut app, '3');

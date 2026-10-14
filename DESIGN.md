@@ -1520,8 +1520,12 @@ visual noise. The rendered grid is recalculated against the overlay's current in
 resize; when the natural diagram is still wider than the panel, `h`/`l` or the left/right arrows
 pan it horizontally, while `j`/`k` scroll vertically. `q` and Escape close the overlay.
 
-A flow is written by an agent (`argus-hook diagram`) or added as a skeleton with `a`; there is no
-step editor, and `DiagramAction` has no update, so changing one means recording it again.
+A flow is written by an agent (`argus-hook diagram`) or added as a skeleton with `a`. Changing one
+is `DiagramAction::Rewrite`, its title and source replaced whole (`argus-hook diagram rewrite`):
+`e` opens the source in the editor, since steps, participants and branches are all lines of it
+and there is no smaller editor a flow needs. `d` binds the selected step to a decision named as a
+reader calls it, `D2.1`, or by `#id`, by writing the comment under the step's message and sending
+the flow back; the lens changes when the daemon's list does.
 
 ### What a feature row says
 
