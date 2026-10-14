@@ -1548,6 +1548,8 @@ button:focus-visible,
 }
 .filter {
   width: 220px;
+  min-width: 120px;
+  flex-shrink: 1;
 }
 .index-head.on-board .filter {
   width: 200px;
@@ -1556,8 +1558,9 @@ button:focus-visible,
   width: 0;
 }
 
-/* Columns keep the canvas's fixed widths; a window too narrow for them
- * scrolls the board sideways rather than squeezing the cards. */
+/* The canvas's 270px columns are what its 1440px artboard leaves them, not a
+ * fixed size: they share the window from that basis, and only below their
+ * floor does the board scroll sideways rather than crush the cards. */
 .board {
   flex: 1;
   min-height: 0;
@@ -1569,10 +1572,13 @@ button:focus-visible,
 }
 .board .kcol {
   overflow-y: auto;
+  width: auto;
+  flex: 1 1 270px;
+  min-width: 180px;
 }
 .board .side {
-  flex: 0 0 236px;
-  min-width: 0;
+  flex: 0 1 236px;
+  min-width: 180px;
 }
 .side {
   display: flex;
