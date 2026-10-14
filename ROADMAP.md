@@ -147,13 +147,20 @@ carries the role, on this machine or another through `argus --host`: the pane is
 the status bar (and the bell, when it is on) says when an agent needs someone, and a review comment
 reaches an agent through its harness's inbox.
 
-## P10: Desktop Client — planned
+## P10: Desktop Client — first slice landed
 
-A Tauri desktop app as a second renderer of the daemon beside the terminal client. Nothing is built
-yet; [`DESKTOP.md`](DESKTOP.md) is the plan for its first slice: the shared key encoder in
-`argus-protocol`, `argus bridge` exiting when its daemon hangs up, `argus desktop`, and an
-`argus-desktop` binary that reaches the daemon through `argus bridge` and shows the rail and one live
-pane. Parity with the terminal client's stages, review and feature board comes after it.
+A Tauri desktop app as a second renderer of the daemon beside the terminal client
+([`DESKTOP.md`](DESKTOP.md) is the plan). Landed: the shared key encoder in `argus-protocol`,
+`argus bridge` exiting when its daemon hangs up, `argus desktop`, and the `argus-desktop` window. It
+reaches the daemon through `argus bridge` and shows the rail and one live pane that takes keys,
+pastes and resizes, starts a shell from a checkout's `+`, and waits for Reconnect after a stop.
+
+Remaining: the Feature stage and trackers (HUN-172, HUN-173); recent sessions (HUN-174, after the
+transcript readers of HUN-169); the parity issues under HUN-181 — checkouts, review and history, the
+command palette and shortcuts, settings and notifications, projects, feature editing, starting an
+agent, mouse, selection and scrollback, the full transcript; several panes at once; remote hosts
+through `ssh … argus bridge`; and packaging as .app, .msi and AppImage with signing and updates,
+which no issue tracks yet.
 
 ## Open Decisions
 

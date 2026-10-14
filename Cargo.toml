@@ -4,6 +4,15 @@ members = [
     "crates/argus-protocol",
     "crates/argusd",
     "crates/argus-client",
+    "crates/argus-desktop",
+]
+# The desktop window links WebKitGTK on Linux and brings ~250 crates of its
+# own, so a plain `cargo build` or `cargo test` leaves it out; `--workspace`
+# or `-p argus-desktop` builds it.
+default-members = [
+    "crates/argus-protocol",
+    "crates/argusd",
+    "crates/argus-client",
 ]
 
 [workspace.package]

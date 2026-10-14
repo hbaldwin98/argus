@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Argus</title>
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<div class="app">
+  <div class="split">
+    <nav class="rail" aria-label="Projects">
+      <div class="brand">
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" class="fg-accent"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.6"></circle><circle cx="8" cy="8" r="2.2" fill="currentColor"></circle></svg>
+        <span class="wordmark">Argus</span>
+      </div>
+      <div class="projmenu" id="heading"></div>
+      <div class="rail-list" id="rail"></div>
+    </nav>
+    <main class="stage">
+      <div class="tabs" role="tablist" aria-label="Stage">
+        <button class="tab on" role="tab" aria-selected="true">Workspace<span class="kbd">1</span></button>
+        <button class="tab" role="tab" aria-selected="false" disabled title="Not in this build yet">Feature<span class="kbd">2</span></button>
+        <button class="tab" role="tab" aria-selected="false" disabled title="Not in this build yet">Checkouts<span class="kbd">3</span></button>
+      </div>
+      <div class="head" id="head" hidden></div>
+      <div class="stage-body" id="body">
+        <div class="terminal" id="terminal" hidden>
+          <canvas id="text" aria-hidden="true"></canvas>
+          <canvas id="cursor" aria-hidden="true"></canvas>
+          <textarea id="input" aria-label="Type into the pane" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+        </div>
+        <div class="empty" id="empty"></div>
+        <div class="notice" id="notice" role="status" hidden></div>
+      </div>
+    </main>
+  </div>
+  <footer class="bar" id="bar"></footer>
+  <div class="overlay" id="stopped" hidden>
+    <section class="card" aria-labelledby="stopped-title">
+      <div class="type-title" id="stopped-title">argusd was stopped</div>
+      <div class="fg-muted">Someone ran <span class="fg mono">argus server stop</span>, so this window will not start it again on its own. Its panes ended with it; what you see is the last tree it sent.</div>
+      <button class="btn primary start" id="reconnect">Reconnect</button>
+      <div class="meta">Reconnecting starts argusd through <span class="mono">argus bridge</span>, the same way the terminal client does.</div>
+    </section>
+  </div>
+</div>
+</body>
+</html>

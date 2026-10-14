@@ -6,11 +6,12 @@ Argus is a terminal workspace for running shells and AI command-line agents acro
 One persistent daemon owns the processes and PTYs; the TUI can detach and reconnect without stopping
 them.
 
-The workspace builds three executables:
+The workspace builds four executables:
 
 - `argus`: the terminal client.
 - `argusd`: the daemon that owns panes, Git state, and session restore.
 - `argus-hook`: a helper that lets agent harnesses report status and pane titles.
+- `argus-desktop`: a desktop window onto the same daemon, opened with `argus desktop`.
 
 ## Features
 
@@ -76,6 +77,18 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 2. Install Visual Studio 2022 Build Tools with **Desktop development with C++**.
 3. Install Rust from [rustup.rs](https://rustup.rs/) using the default MSVC toolchain.
 4. Run the following commands from PowerShell or Windows Terminal.
+
+The desktop window is a webview. On Linux, building it needs WebKitGTK's development files, and
+running it needs WebKitGTK itself:
+
+```sh
+sudo apt install libwebkit2gtk-4.1-dev libdbus-1-dev   # to build
+sudo apt install libwebkit2gtk-4.1-0                   # to run
+```
+
+macOS and Windows need nothing extra; Windows uses the WebView2 runtime it ships with. A plain
+`cargo build` or `cargo test` leaves the desktop crate out, so the terminal client and the daemon
+build without WebKitGTK; `--workspace` or `-p argus-desktop` builds it.
 
 libgit2 is built from vendored source, and Argus reads repositories only locally — fetching and
 pulling go through the `git` on `PATH` — so neither OpenSSL nor a system libgit2 is required.
@@ -178,8 +191,10 @@ argus desktop
 
 It starts `argus-desktop` from beside `argus`, or from `PATH`, detached so closing the terminal
 leaves the window open, and returns at once. The window reaches the same daemon through
-`argus bridge`, so it shows what the terminal client shows. The desktop app is still being built
-(see `DESKTOP.md`); until it ships, the command says it cannot find `argus-desktop`.
+`argus bridge`, so it shows what the terminal client shows: the rail of projects, repositories,
+checkouts and panes, and one live pane that takes keys, pastes and resizes. `+` on a checkout starts
+a shell. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
+again. The rest of the terminal client's surfaces are still to come; `DESKTOP.md` has the plan.
 
 ## Install on `PATH`
 
@@ -207,11 +222,12 @@ not ship them. The daemon loads libraries only from its own directory and System
 
 ### Build from source
 
-Install both packages so all three executables share Cargo's binary directory:
+Install the packages so the executables share Cargo's binary directory:
 
 ```sh
 cargo install --locked --path crates/argusd
 cargo install --locked --path crates/argus-client
+cargo install --locked --path crates/argus-desktop   # optional: the desktop window
 argus
 ```
 
@@ -434,6 +450,15 @@ cargo build -q -p argus -p argusd
 ARGUS_INSTANCE=dev target/debug/argus               # opens this checkout's Argus
 ARGUS_INSTANCE=dev target/debug/argus server stop   # ends this checkout's daemon
 ```
+
+For the desktop window, build it too and open it the same way:
+
+```sh
+cargo build -q -p argus -p argusd -p argus-desktop
+ARGUS_INSTANCE=dev target/debug/argus desktop
+```
+
+`scripts/reload.sh` installs only the daemon and the terminal client.
 
 Both forms set `ARGUS_INSTANCE=dev`, so the worktree daemon listens on its own
 endpoint under its own slice of the config directory and the installed Argus

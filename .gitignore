@@ -9,3 +9,5 @@
 .cursor/hooks.json
 .cursor/rules/argus.mdc
 cov.xml
+# tauri-build writes its schemas here on every build.
+crates/argus-desktop/gen/

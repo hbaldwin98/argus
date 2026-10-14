@@ -11,8 +11,9 @@ Argus is a terminal workspace built around one navigation spine:
 Project -> Repository -> Checkout -> Agent, shell, or editor
 ```
 
-A workspace scopes the visible projects without adding another column. Argus is not a general
-tmux replacement, a GUI, an agent host, a Git porcelain, or a project tracker. Teams may already
+A workspace scopes the visible projects without adding another column. Argus is terminal-first. The
+desktop window is another renderer of the same daemon and never holds state the terminal client
+lacks. Argus is not a general tmux replacement, an agent host, a Git porcelain, or a project tracker. Teams may already
 plan work in Jira, Linear, GitHub Issues, or somewhere else; Argus runs existing command-line
 harnesses and makes their checkouts, state, review work, and accumulated understanding visible.
 
@@ -21,7 +22,7 @@ switched between as a tab. Review and durable work context need the full area ra
 narrow navigation column beside a pane. Switching views never stops a pane, and the spine is always
 one keystroke away — what a view replaces is the screen, never the running work.
 
-The target budgets are sub-16 ms client frames, less than 50 MiB client RSS with twelve active
+The target budgets, for the terminal client, are sub-16 ms client frames, less than 50 MiB client RSS with twelve active
 panes, about 1.5 MiB resident per idle pane, and less than 30 ms to first paint against a warm
 daemon.
 

@@ -7,7 +7,7 @@ keyboard input, paste and resize, and can open a shell on a checkout. Parity wit
 (Workspace / Feature / Checkouts), review, the feature board, history, pickers, mouse forwarding,
 selection and scrollback come later and are listed on the roadmap, not built now.
 
-This is a plan, not a description of the code: nothing here is built yet. [`DESIGN.md`](DESIGN.md)
+This slice is built (HUN-171); what follows is the plan it was built from. [`DESIGN.md`](DESIGN.md)
 is current behavior, [`TARGET.md`](TARGET.md) the intended product, and [`ROADMAP.md`](ROADMAP.md)
 orders the gap. The findings this plan rests on are under "Findings" at the end.
 
@@ -59,7 +59,7 @@ recent sessions need.
 - **`argus desktop`** (HUN-180, done) — `crates/argus-client/src/desktop.rs` starts `argus-desktop`
   from beside `argus`, else from PATH, detached, and says where to get it when it is missing. The
   daemon and the window are started by one module, `sibling`, rather than two copies of the detach.
-- **CI and release packaging** land in the same commit as the crate, not before: a release cut
+- **CI and release packaging** (HUN-180, landed with the crate) land in the same commit as the crate, not before: a release cut
   while `argus-desktop` does not exist would fail to copy it, and nothing needs WebKitGTK until the
   crate links it. In `.github/workflows/ci.yml` and `release.yml`, a step before building that runs
   only on Linux (`if: runner.os == 'Linux'`):

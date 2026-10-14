@@ -51,6 +51,14 @@ jobs:
           rustup default stable
           rustup component add clippy
 
+      # The desktop crate links WebKitGTK on Linux; nothing else needs it,
+      # and macOS and Windows bring their own webview.
+      - name: Install WebKitGTK
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libdbus-1-dev pkg-config
+
       # Nearly all of a run is compiling dependencies that did not change,
       # most of them vendored C: libgit2, SQLite, the tree-sitter grammars.
       # Only main saves, so a pull request or a tag reads main's cache and

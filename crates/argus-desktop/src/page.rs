@@ -1,0 +1,288 @@
+//! What the page and the window's Rust say to each other.
+//!
+//! Everything here crosses into `assets/app.js` as JSON, so a field's name
+//! is a contract with the script that reads it: the tests pin each shape.
+//! Rust sends events down one channel; the page's calls are in `commands`.
+
+use serde::Serialize;
+
+/// One message down the page's channel.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum Event {
+    Status(Status),
+    Rail(Rail),
+    Frame(Frame),
+    /// Text a pane's child put on the clipboard (OSC 52).
+    Clipboard { text: String },
+    /// Something the daemon said that passes: a refused request's reason.
+    /// The page shows it a while and lets it go.
+    Notice { text: String },
+}
+
+/// The connection, as the status bar and the empty stage show it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Status {
+    pub connection: Connection,
+    /// What the last failed try said: `argus bridge`'s own last words.
+    pub detail: Option<String>,
+    /// What stays true while this connection lasts and the person should
+    /// know: the daemon is another build, or speaks another protocol.
+    pub alarm: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Connection {
+    Connecting,
+    Connected,
+    /// Someone ran `argus server stop`: nothing reconnects until the
+    /// person asks.
+    Stopped,
+}
+
+/// Everything the rail, the stage header and the status bar's counts draw.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Rail {
+    /// Every project, for the switcher.
+    pub projects: Vec<ProjectChoice>,
+    /// The project the rail lists.
+    pub project: Option<Project>,
+    /// Agents across every project: stalled on a person, and working.
+    pub needs_you: usize,
+    pub working: usize,
+    /// The pane on screen, for the stage's header.
+    pub shown: Option<Shown>,
+    /// Whether the daemon has sent a tree yet, so the page can tell "no
+    /// projects" from "not heard yet".
+    pub loaded: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectChoice {
+    pub id: u64,
+    pub name: String,
+    pub needs_you: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Project {
+    pub id: u64,
+    pub name: String,
+    pub needs_you: usize,
+    pub repositories: Vec<Repository>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Repository {
+    pub id: u64,
+    pub name: String,
+    /// Nothing running in it.
+    pub quiet: bool,
+    /// The first quiet repository after active ones: a rule goes above it.
+    pub divider: bool,
+    pub open: bool,
+    /// Listed panes across its checkouts.
+    pub panes: usize,
+    /// The loudest status word beneath it, for its dot.
+    pub status: Option<&'static str>,
+    /// How long since it was last used, for a quiet one: `2h`, `3d`.
+    pub used: Option<String>,
+    /// Empty while closed.
+    pub checkouts: Vec<Checkout>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Checkout {
+    pub id: u64,
+    pub name: String,
+    /// The branch, `detached`, or empty when the path is not a git checkout.
+    pub branch: String,
+    /// `GitStatus::summary`, or `None` outside git.
+    pub git: Option<String>,
+    pub clean: bool,
+    pub panes: Vec<Pane>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Pane {
+    pub id: u64,
+    pub agent: bool,
+    pub title: String,
+    /// The loudest status word the row stands for, its children's included.
+    pub status: &'static str,
+    pub note: Option<String>,
+    pub on: bool,
+}
+
+/// The pane on screen, as the stage's header names it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Shown {
+    pub pane: u64,
+    pub repository: String,
+    pub checkout: String,
+    pub branch: String,
+    pub agent: bool,
+    pub title: String,
+    pub status: &'static str,
+}
+
+/// The rows of a pane's screen that changed since the last frame.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Frame {
+    pub pane: u64,
+    pub rows: u16,
+    pub cols: u16,
+    /// Every row is in `lines`; anything the page held is stale.
+    pub full: bool,
+    pub cursor: FrameCursor,
+    pub alternate_screen: bool,
+    /// `[row, segments]`, each row cleared before its segments are drawn.
+    pub lines: Vec<(u16, Vec<Segment>)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrameCursor {
+    pub row: u16,
+    pub col: u16,
+    pub visible: bool,
+    /// `block`, `underline` or `bar`; `block` for a child that asked for
+    /// nothing.
+    pub shape: &'static str,
+}
+
+/// A stretch of one style along a row: `[col, cells, fg, bg, flags]`, an
+/// array because a busy screen sends thousands. `cells` holds a string per
+/// cell, since a cell may carry combining marks the page must not split.
+/// Colours are packed as on the wire — `0` the default, `1 << 24 | index`,
+/// `2 << 24 | rgb` — so a theme switch is a repaint the page does alone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Segment(pub u16, pub Vec<String>, pub u32, pub u32, pub u8);
+
+pub const BOLD: u8 = 1;
+pub const ITALIC: u8 = 2;
+pub const UNDERLINE: u8 = 4;
+pub const REVERSE: u8 = 8;
+/// One cell twice as wide as the rest; its spacer is not sent.
+pub const WIDE: u8 = 16;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn as_json(event: Event) -> serde_json::Value {
+        serde_json::to_value(event).unwrap()
+    }
+
+    #[test]
+    fn a_status_names_its_connection_and_what_was_said() {
+        let event = Event::Status(Status {
+            connection: Connection::Stopped,
+            detail: Some("argusd not found".into()),
+            alarm: None,
+        });
+        assert_eq!(
+            as_json(event),
+            json!({"type": "status", "connection": "stopped", "detail": "argusd not found", "alarm": null})
+        );
+    }
+
+    #[test]
+    fn a_frame_sends_segments_as_arrays() {
+        let event = Event::Frame(Frame {
+            pane: 4,
+            rows: 2,
+            cols: 10,
+            full: true,
+            cursor: FrameCursor { row: 1, col: 2, visible: true, shape: "bar" },
+            alternate_screen: false,
+            lines: vec![(0, vec![Segment(3, vec!["h".into(), "i".into()], 0, 1 << 24 | 4, BOLD)])],
+        });
+        assert_eq!(
+            as_json(event),
+            json!({
+                "type": "frame", "pane": 4, "rows": 2, "cols": 10, "full": true,
+                "cursor": {"row": 1, "col": 2, "visible": true, "shape": "bar"},
+                "alternateScreen": false,
+                "lines": [[0, [[3, ["h", "i"], 0, 16777220, 1]]]]
+            })
+        );
+    }
+
+    #[test]
+    fn the_rail_names_its_rows_in_camel_case() {
+        let rail = Rail {
+            projects: vec![ProjectChoice { id: 1, name: "src".into(), needs_you: 2 }],
+            project: Some(Project {
+                id: 1,
+                name: "src".into(),
+                needs_you: 2,
+                repositories: vec![Repository {
+                    id: 2,
+                    name: "argus".into(),
+                    quiet: false,
+                    divider: false,
+                    open: true,
+                    panes: 1,
+                    status: Some("working"),
+                    used: None,
+                    checkouts: vec![Checkout {
+                        id: 3,
+                        name: "main".into(),
+                        branch: "main".into(),
+                        git: Some("clean".into()),
+                        clean: true,
+                        panes: vec![Pane {
+                            id: 4,
+                            agent: true,
+                            title: "claude".into(),
+                            status: "working",
+                            note: None,
+                            on: true,
+                        }],
+                    }],
+                }],
+            }),
+            needs_you: 2,
+            working: 1,
+            shown: Some(Shown {
+                pane: 4,
+                repository: "argus".into(),
+                checkout: "main".into(),
+                branch: "main".into(),
+                agent: true,
+                title: "claude".into(),
+                status: "working",
+            }),
+            loaded: true,
+        };
+        let value = as_json(Event::Rail(rail));
+        assert_eq!(value["type"], "rail");
+        assert_eq!(value["needsYou"], 2);
+        assert_eq!(value["projects"][0]["needsYou"], 2);
+        let repo = &value["project"]["repositories"][0];
+        assert_eq!(repo["checkouts"][0]["panes"][0]["status"], "working");
+        assert_eq!(repo["checkouts"][0]["git"], "clean");
+        assert_eq!(value["shown"]["pane"], 4);
+        assert_eq!(value["loaded"], true);
+    }
+
+    #[test]
+    fn a_clipboard_and_a_notice_carry_their_text() {
+        let event = Event::Clipboard { text: "copied".into() };
+        assert_eq!(as_json(event), json!({"type": "clipboard", "text": "copied"}));
+        let event = Event::Notice { text: "no such pane".into() };
+        assert_eq!(as_json(event), json!({"type": "notice", "text": "no such pane"}));
+    }
+}

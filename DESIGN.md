@@ -6,11 +6,12 @@ checkouts. This document describes the code as it exists today. Desired behavior
 
 ## Process model
 
-Argus has three binaries:
+Argus has four binaries:
 
 - `argus`: the ratatui/crossterm client.
 - `argusd`: the daemon that owns PTYs, terminal state, Git state, and runtime persistence.
 - `argus-hook`: the helper managed hooks run, and the command an agent runs to report on itself.
+- `argus-desktop`: a desktop window, a second view of the same daemon, drawn in a webview.
 
 The client starts the daemon lazily when it cannot connect. On Unix the daemon process calls
 `setsid`; on Windows it starts in a detached process group. Closing the client does not stop the
@@ -28,6 +29,20 @@ the replacement restores non-exited panes from the runtime session store.
 every connected client to exit so their reconnect loops cannot launch a replacement, removes
 managed hooks, and releases the endpoint. The next ordinary `argus` launch starts the daemon and
 restores non-exited panes from the runtime session store.
+
+The desktop window (`argus-desktop`, opened by `argus desktop`) never opens the daemon's endpoint
+and never starts `argusd` itself. It runs `argus bridge` beside its own executable, or from `PATH`,
+and speaks the protocol over the child's stdin and stdout, as `argus --host` does over ssh, so
+connect-or-start lives only in the terminal client. It greets like any client, keeps the last tree
+on screen while it tries again every two seconds, and shows what the bridge printed when a try
+fails. After `Stopping` it does not reconnect until the person presses Reconnect: a client never
+starts again a daemon somebody stopped. It shows one pane at a time; the daemon sizes a pane to the
+smallest of its viewers, so a window and a terminal client on one pane share the smaller size. It
+reports its view only while it has focus, so a window in the background never takes the focus from
+a terminal client being typed in. Rust holds the model (`session`); the page is plain JavaScript
+with no build step, drawing what it is sent and reporting gestures. Its webview keeps its storage
+under the instance's config directory, so a dev window never shares it with the installed one, and
+it logs to `argus-desktop.log` beside the config, keeping the previous run's.
 
 The daemon is started with its stderr on the null device, since it shares no console with the
 client and anything it printed would either land in the middle of the TUI or open a console window
@@ -235,6 +250,23 @@ result of a request; `ui` is a pure function of it.
 | `motion` | animation arithmetic: how far along a transition is at a given instant |
 | `settings`, `theme`, `backend`, `herdr`, `profile` | preferences, palette, the ratatui backend, and what is reported outward |
 | `fixtures` | the tree builders every test module shares |
+
+`argus-desktop` is the desktop window. It holds what it was sent and draws it; everything it knows
+of a pane, a checkout or the daemon came from the protocol, and the page only draws and reports.
+
+| module | answers |
+| --- | --- |
+| `main` | startup: the runtime, the window, and running until it closes |
+| `daemon` | reaching this machine's daemon through `argus bridge`: starting the bridge, greeting, and connecting again when it goes |
+| `session` | what this window holds of the daemon — the tree, the pane on screen, the connection's state — and what each message and gesture changes |
+| `screen` | a pane's screen as the page draws it: the grid the daemon's damage lands on, and the rows changed since the last frame |
+| `rail` | what the rail lists from the tree, and what a row says |
+| `page` | what the page and the window's Rust say to each other |
+| `commands` | the calls the page makes, handed to the session |
+| `shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
+| `keys` | a key the page reports, as the protocol's key |
+| `logging` | where the window's own diagnostics go |
+| `fixtures` | the tree builders the test modules share |
 
 ## Views
 

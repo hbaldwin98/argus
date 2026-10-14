@@ -1,0 +1,23 @@
+[package]
+name = "argus-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+argus-protocol = { workspace = true }
+# No `common-controls-v6`: it links TaskDialogIndirect, whose manifest only
+# the [[bin]] gets, so the bin's test harness fails to start on MSVC.
+tauri = { version = "2.12.3", default-features = false, features = ["wry", "compression", "x11", "dbus", "custom-protocol"] }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+# The version alacritty uses, so a cell's width here is the daemon's.
+unicode-width = "0.2"
+
+[build-dependencies]
+tauri-build = "2.7.2"
