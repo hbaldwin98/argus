@@ -347,7 +347,8 @@ The rail's cursor is not stored: it is the selection read at the depth focus nam
 cannot leave the two disagreeing. Checkouts with nothing running, and branches no checkout is on,
 are not rail rows; the Checkouts stage draws every one, and there `n`, `D`, `s`, `a`, `F`, `P`,
 `R`/Tab, `H` and Enter act on the row its table has selected — Enter opens a checkout in the workspace, or switches
-the primary checkout to a branch.
+the primary checkout to a branch. The table keeps no scroll position apart from that
+selection, so `j`/`k` and the wheel both move the row and the table follows it.
 
 The status bar's keymaps are written as tiers and the widest that fits is drawn, so a narrow bar
 shows fewer keys rather than one cut mid-word. A card or table holding more rows than it can show

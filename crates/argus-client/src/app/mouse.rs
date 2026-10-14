@@ -128,15 +128,22 @@ impl App {
                 return;
             }
             if self.view == View::Checkouts {
-                if matches!(ev.kind, MouseEventKind::Down(MouseButton::Left)) {
-                    if let Some(checkout) =
-                        crate::ui::command_center_checkout_at(self, ev.column, ev.row)
-                    {
-                        self.sel_checkout = checkout;
-                        self.sel_pane = 0;
-                        self.focus = Focus::Checkouts;
-                        self.clamp();
+                match ev.kind {
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        if let Some(checkout) =
+                            crate::ui::command_center_checkout_at(self, ev.column, ev.row)
+                        {
+                            self.sel_checkout = checkout;
+                            self.sel_pane = 0;
+                            self.focus = Focus::Checkouts;
+                            self.clamp();
+                        }
                     }
+                    // The table has no scroll position of its own: it shows
+                    // wherever the selection is, so the wheel moves that.
+                    MouseEventKind::ScrollUp => self.step_checkout_table(-1),
+                    MouseEventKind::ScrollDown => self.step_checkout_table(1),
+                    _ => {}
                 }
                 return;
             }

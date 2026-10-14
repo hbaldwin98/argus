@@ -95,6 +95,51 @@ fn a_long_checkouts_table_scrolls_with_the_selection() {
 }
 
 #[test]
+fn the_wheel_over_a_long_checkouts_table_reaches_the_rows_below_the_fold() {
+    // The bug: the stage took clicks and dropped the wheel, so with a mouse
+    // the rows past the last one drawn could not be reached at all.
+    use crossterm::event::{KeyModifiers, MouseEvent, MouseEventKind};
+
+    let mut app = command_center();
+    {
+        let r = &mut app.tree[0].repositories[0];
+        r.checkouts = (0..12)
+            .map(|i| argus_protocol::CheckoutInfo {
+                id: argus_protocol::CheckoutId(20 + i),
+                name: format!("branch-{i:02}"),
+                path: format!("/repo/wt-{i}"),
+                primary: i == 0,
+                git: None,
+                panes: Vec::new(),
+            })
+            .collect();
+    }
+    app.open_view(View::Checkouts);
+    draw_at(&mut app, 120, 24);
+    let rows = app.layout.checkouts.inner;
+    let wheel = |kind| MouseEvent {
+        kind,
+        column: rows.x + 4,
+        row: rows.y + 1,
+        modifiers: KeyModifiers::NONE,
+    };
+
+    for _ in 0..11 {
+        app.on_mouse(wheel(MouseEventKind::ScrollDown));
+    }
+    let text = lines(&draw_at(&mut app, 120, 24)).join("\n");
+    assert!(app.layout.checkouts.first > 0, "the table follows the wheel");
+    assert!(text.contains("branch-11"), "{text}");
+
+    for _ in 0..11 {
+        app.on_mouse(wheel(MouseEventKind::ScrollUp));
+    }
+    let text = lines(&draw_at(&mut app, 120, 24)).join("\n");
+    assert_eq!(app.layout.checkouts.first, 0);
+    assert!(text.contains("branch-00"), "{text}");
+}
+
+#[test]
 fn slash_filters_checkouts_by_branch_name() {
     let mut app = command_center();
     {
