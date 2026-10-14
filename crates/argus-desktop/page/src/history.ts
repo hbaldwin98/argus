@@ -78,8 +78,12 @@ function diff(h: HistoryPage): HTMLElement {
   );
 }
 
-/** Rust filters the rows; the field only says what it says. */
+/**
+ * Rust filters the rows; the field only says what it says. Its text is its
+ * own once drawn: an echo that lands after the next letter would drop it.
+ */
 function filterField(filter: string): HTMLElement {
+  const live = document.getElementById('history-filter');
   const field = el('input', {
     class: 'field filter',
     id: 'history-filter',
@@ -96,7 +100,7 @@ function filterField(filter: string): HTMLElement {
       }
     },
   });
-  field.value = filter;
+  field.value = live instanceof HTMLInputElement ? live.value : filter;
   return field;
 }
 

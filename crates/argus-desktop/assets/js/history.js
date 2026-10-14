@@ -42,8 +42,12 @@ function diff(h) {
             onclick: () => call('history_action', { action: 'asReview', row: null }),
         }, 'Open as a review ', keycap('O'))), el('div', { class: 'dbody', id: 'history-body' }, body));
 }
-/** Rust filters the rows; the field only says what it says. */
+/**
+ * Rust filters the rows; the field only says what it says. Its text is its
+ * own once drawn: an echo that lands after the next letter would drop it.
+ */
 function filterField(filter) {
+    const live = document.getElementById('history-filter');
     const field = el('input', {
         class: 'field filter',
         id: 'history-filter',
@@ -61,7 +65,7 @@ function filterField(filter) {
             }
         },
     });
-    field.value = filter;
+    field.value = live instanceof HTMLInputElement ? live.value : filter;
     return field;
 }
 /** `/`: the filter field takes the keys. */

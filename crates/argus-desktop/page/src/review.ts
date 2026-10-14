@@ -101,8 +101,13 @@ function jump(gesture: Commands['review_jump']['gesture']): void {
   call('review_jump', { gesture });
 }
 
-/** The Ctrl-P field: its keys are its own, and Rust says what matches. */
+/**
+ * The Ctrl-P field: its keys are its own, and Rust says what matches. The
+ * text is the field's own once it is open: Rust's echo of a letter can
+ * land after the next is typed, and putting it back would drop that one.
+ */
 function jumpField(query: string): HTMLElement {
+  const live = document.getElementById('review-jump');
   const field = el('input', {
     class: 'field',
     id: 'review-jump',
@@ -127,7 +132,7 @@ function jumpField(query: string): HTMLElement {
       e.preventDefault();
     },
   });
-  field.value = query;
+  field.value = live instanceof HTMLInputElement ? live.value : query;
   return field;
 }
 
