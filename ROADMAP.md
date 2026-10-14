@@ -162,6 +162,14 @@ agent, mouse, selection and scrollback, the full transcript; several panes at on
 through `ssh … argus bridge`; and packaging as .app, .msi and AppImage with signing and updates,
 which no issue tracks yet.
 
+Extension views (HUN-191): a tab an outside process adds — running dev servers, a repository's
+containers — whose rows it publishes and whose actions come back to it. The daemon owns them rather
+than the window, so they work under `--host` and the terminal client can draw them too: the
+extension `PUT`s a declarative view to the pane API and holds its actions open as server-sent
+events, the daemon launches each from config and restarts it, and clients that listed `views` in
+`Hello` are sent the view. No extension-supplied HTML: a declarative view is one renderer per
+client and a contract the protocol can check.
+
 ## Open Decisions
 
 - True child-process reattachment versus guaranteed termination plus harness resume.
