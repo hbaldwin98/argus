@@ -1,0 +1,3 @@
+# This repository is hand-formatted on purpose: rustfmt would reflow most of
+# its files. Turning it off here makes `cargo fmt` and format-on-save no-ops.
+disable_all_formatting = true
