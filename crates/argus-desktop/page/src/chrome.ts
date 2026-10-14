@@ -175,19 +175,24 @@ function drawRail(): void {
       for (const pane of co.panes) {
         rows.push(
           el(
-            'button',
-            {
-              class: `pane${pane.on ? ' on' : ''} ${pane.status}`,
-              title: pane.note,
-              'aria-current': pane.on ? 'true' : null,
-              onclick: () => {
-                call('select', { pane: pane.id });
-                $('input').focus();
+            'div',
+            { class: 'pane-row' },
+            el(
+              'button',
+              {
+                class: `pane${pane.on ? ' on' : ''} ${pane.status}`,
+                title: pane.note,
+                'aria-current': pane.on ? 'true' : null,
+                onclick: () => {
+                  call('select', { pane: pane.id });
+                  $('input').focus();
+                },
               },
-            },
-            el('span', { class: `glyph${pane.agent ? '' : ' sh'}` }, pane.agent ? '◆' : '›'),
-            el('span', { class: 'ttl' }, pane.title),
-            el('span', { class: `st ${pane.status}` }, pane.status),
+              el('span', { class: `glyph${pane.agent ? '' : ' sh'}` }, pane.agent ? '◆' : '›'),
+              el('span', { class: 'ttl' }, pane.title),
+              el('span', { class: `st ${pane.status}` }, pane.status),
+            ),
+            closeButton(pane.id, pane.title),
           ),
         );
       }
@@ -215,6 +220,21 @@ function drawHead(): void {
     el('span', { class: `pill ${shown.status}` }, shown.status),
     el('span', { class: 'grow' }),
     el('span', { class: 'meta mono', id: 'size' }, screen.sizeLabel()),
+    closeButton(shown.pane, shown.title),
+  );
+}
+
+/** Ends the pane's program; the rail drops it when the daemon's tree does. */
+function closeButton(pane: number, title: string): HTMLElement {
+  return el(
+    'button',
+    {
+      class: 'icon close',
+      title: 'Close',
+      'aria-label': `Close ${title}`,
+      onclick: () => call('close', { pane }),
+    },
+    icon('close'),
   );
 }
 

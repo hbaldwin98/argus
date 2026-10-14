@@ -124,7 +124,7 @@ function drawRail() {
                 onclick: () => call('spawn_shell', { checkout: co.id }),
             }, icon('plus'))));
             for (const pane of co.panes) {
-                rows.push(el('button', {
+                rows.push(el('div', { class: 'pane-row' }, el('button', {
                     class: `pane${pane.on ? ' on' : ''} ${pane.status}`,
                     title: pane.note,
                     'aria-current': pane.on ? 'true' : null,
@@ -132,7 +132,7 @@ function drawRail() {
                         call('select', { pane: pane.id });
                         $('input').focus();
                     },
-                }, el('span', { class: `glyph${pane.agent ? '' : ' sh'}` }, pane.agent ? '◆' : '›'), el('span', { class: 'ttl' }, pane.title), el('span', { class: `st ${pane.status}` }, pane.status)));
+                }, el('span', { class: `glyph${pane.agent ? '' : ' sh'}` }, pane.agent ? '◆' : '›'), el('span', { class: 'ttl' }, pane.title), el('span', { class: `st ${pane.status}` }, pane.status)), closeButton(pane.id, pane.title)));
             }
         }
     }
@@ -144,7 +144,16 @@ function drawHead() {
     head.hidden = !shown || state.rail.stage === 'feature';
     if (!shown)
         return;
-    head.replaceChildren(el('span', { class: 'crumbs' }, el('span', null, shown.repository), el('span', { class: 'fg-faint' }, '/'), el('span', { class: 'mono fg-ref' }, shown.branch || shown.checkout), el('span', { class: 'fg-faint' }, '/')), el('span', { class: `glyph${shown.agent ? '' : ' sh'}` }, shown.agent ? '◆' : '›'), el('span', { class: 'type-heading head-title' }, shown.title), el('span', { class: `pill ${shown.status}` }, shown.status), el('span', { class: 'grow' }), el('span', { class: 'meta mono', id: 'size' }, screen.sizeLabel()));
+    head.replaceChildren(el('span', { class: 'crumbs' }, el('span', null, shown.repository), el('span', { class: 'fg-faint' }, '/'), el('span', { class: 'mono fg-ref' }, shown.branch || shown.checkout), el('span', { class: 'fg-faint' }, '/')), el('span', { class: `glyph${shown.agent ? '' : ' sh'}` }, shown.agent ? '◆' : '›'), el('span', { class: 'type-heading head-title' }, shown.title), el('span', { class: `pill ${shown.status}` }, shown.status), el('span', { class: 'grow' }), el('span', { class: 'meta mono', id: 'size' }, screen.sizeLabel()), closeButton(shown.pane, shown.title));
+}
+/** Ends the pane's program; the rail drops it when the daemon's tree does. */
+function closeButton(pane, title) {
+    return el('button', {
+        class: 'icon close',
+        title: 'Close',
+        'aria-label': `Close ${title}`,
+        onclick: () => call('close', { pane }),
+    }, icon('close'));
 }
 function dot(colour) {
     const node = el('span', { class: 'dot' });

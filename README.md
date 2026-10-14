@@ -193,12 +193,12 @@ It starts `argus-desktop` from beside `argus`, or from `PATH`, detached so closi
 leaves the window open, and returns at once. The window reaches the same daemon through
 `argus bridge`, so it shows what the terminal client shows: the rail of projects, repositories,
 checkouts and panes, and one live pane that takes keys, pastes and resizes. `+` on a checkout starts
-a shell. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
+a shell, and `×` on a pane, shown while it is pointed at and in the stage header, closes it. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
 again. The rest of the terminal client's surfaces are still to come; `DESKTOP.md` has the plan.
 
 Its keys are the terminal client's where the two share a surface. In a pane every key goes to the
 program except the leader, `Ctrl-Space`: after it, `f` fills the window with the pane and again
-gives the rail back, `1` and `2` open the Workspace and the Feature stage, and a second
+gives the rail back, `x` closes the pane, `1` and `2` open the Workspace and the Feature stage, and a second
 `Ctrl-Space` sends one to the program. Outside a pane `1` and `2` open them directly, and the
 Feature stage takes `j`/`k`, Home/End, `v`, `z`, `/`, and on the feature under the cursor `m`,
 `h`, `A` and `g`. `Ctrl-V` (`Cmd-V` on a Mac), `Ctrl-Shift-V` and `Alt-V` paste, and

@@ -352,6 +352,11 @@ impl Session {
                 self.filled = !self.filled;
                 self.rail_changed = true;
             }
+            Action::Close => {
+                if let Some(pane) = self.shown {
+                    self.kill(pane);
+                }
+            }
             Action::Workspace => self.open_features(false),
             Action::Feature => self.open_features(true),
             // A screen less a line, so the line at the edge stays in view.
@@ -530,6 +535,19 @@ impl Session {
             self.out.push(ClientMsg::SpawnShell { checkout, request_id: self.last_request });
         }
         self.finish()
+    }
+
+    /// Ends a pane's program and removes it. The pane stays on screen until
+    /// a tree without it arrives, so a refused close leaves it showing.
+    pub fn close(&mut self, pane: PaneId) -> Vec<ClientMsg> {
+        self.kill(pane);
+        self.finish()
+    }
+
+    fn kill(&mut self, pane: PaneId) {
+        if self.project_of(pane).is_some() {
+            self.out.push(ClientMsg::Kill { pane });
+        }
     }
 
     /// The window gained or lost focus. Only a focused window's view takes
@@ -910,6 +928,34 @@ mod tests {
         let mut grown = tree();
         grown[0].repositories[0].checkouts[0].panes.push(pane(7, PaneKind::Shell, "zsh", PaneStatus::Idle));
         assert_eq!(names(&s.receive(with_tree(grown))), ["subscribe 7"]);
+    }
+
+    #[test]
+    fn closing_asks_the_daemon_and_the_pane_stays_until_the_tree_drops_it() {
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        assert_eq!(names(&s.close(PaneId(1))), ["Kill { pane: PaneId(1) }"]);
+        assert_eq!(s.shown, Some(PaneId(1)), "nothing is predicted");
+        let mut gone = tree();
+        gone[0].repositories[0].checkouts[0].panes.remove(0);
+        s.receive(with_tree(gone));
+        assert_eq!(s.shown, None);
+    }
+
+    #[test]
+    fn a_pane_not_in_the_tree_cannot_be_closed() {
+        let mut s = session(without_focus());
+        assert!(s.close(PaneId(99)).is_empty());
+    }
+
+    #[test]
+    fn the_leader_and_x_close_the_shown_pane() {
+        let mut s = session(without_focus());
+        s.select(PaneId(1));
+        let leader = PageKey { key: " ".into(), ctrl: true, ..PageKey::default() };
+        s.key(&leader);
+        let x = PageKey { key: "x".into(), ..PageKey::default() };
+        assert_eq!(names(&s.key(&x)), ["Kill { pane: PaneId(1) }"]);
     }
 
     #[test]

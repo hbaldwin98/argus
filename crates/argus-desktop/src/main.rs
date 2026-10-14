@@ -65,6 +65,7 @@ fn main() {
             commands::wheel,
             commands::mouse,
             commands::spawn_shell,
+            commands::close,
             commands::focus,
             commands::select_project,
             commands::toggle_repository,

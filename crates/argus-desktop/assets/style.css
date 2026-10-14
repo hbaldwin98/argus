@@ -1333,6 +1333,30 @@ button:focus-visible,
 .pane .st {
   flex: none;
 }
+/* The close button sits over the status word, shown while the row is
+   pointed at or holds the keyboard, so the rail stays a list of panes. */
+.pane-row {
+  position: relative;
+}
+.pane-row .close {
+  position: absolute;
+  right: var(--sp-8);
+  top: 50%;
+  transform: translateY(-50%);
+  visibility: hidden;
+}
+.pane-row:hover .close,
+.pane-row:focus-within .close {
+  visibility: visible;
+}
+.pane-row:hover .st,
+.pane-row:focus-within .st {
+  visibility: hidden;
+}
+.close:hover {
+  color: var(--fg);
+  background: var(--fill);
+}
 .co .icon {
   margin-left: var(--sp-2);
 }

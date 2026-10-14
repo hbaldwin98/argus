@@ -59,6 +59,7 @@ pub enum Action {
     /// The leader itself, sent to the program.
     Leader,
     Fill,
+    Close,
     Paste,
     PageUp,
     PageDown,
@@ -172,6 +173,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Pane, &[Chord::key("f").after_leader()], Fill, "fill the window with the pane, and back"),
     bind(Pane, &[Chord::key("1").after_leader()], Workspace, "Workspace"),
     bind(Pane, &[Chord::key("2").after_leader()], Feature, "Feature"),
+    bind(Pane, &[Chord::key("x").after_leader()], Close, "close the pane, ending its program"),
     bind(Pane, PASTE, Paste, "paste; a picture or a copied file pastes as a file"),
     bind(Pane, &[Chord::key("PageUp").shift()], PageUp, "back through the history"),
     bind(Pane, &[Chord::key("PageDown").shift()], PageDown, "forward to the live screen"),
@@ -278,6 +280,8 @@ mod tests {
         assert_eq!(in_pane(&page("f"), false), None);
         assert_eq!(in_pane(&page("f"), true), Some(Fill));
         assert_eq!(in_pane(&page("2"), true), Some(Action::Feature));
+        assert_eq!(in_pane(&page("x"), true), Some(Close));
+        assert_eq!(in_pane(&page("x"), false), None, "an x is typed");
         assert_eq!(in_pane(&page("j"), true), None, "the Feature stage's key is not a pane's");
     }
 

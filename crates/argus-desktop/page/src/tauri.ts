@@ -27,6 +27,7 @@ interface Commands {
   mouse: { gesture: PageMouse; button: number; at: [number, number] };
   copy: { from: [number, number]; to: [number, number] };
   spawn_shell: { checkout: number };
+  close: { pane: number };
   focus: { focused: boolean };
   select_project: { project: number };
   toggle_repository: { repository: number };

@@ -124,6 +124,12 @@ pub async fn spawn_shell(shared: State<'_, Arc<Shared>>, checkout: u64) -> Answe
 }
 
 #[tauri::command]
+pub async fn close(shared: State<'_, Arc<Shared>>, pane: u64) -> Answer {
+    shared.act(|s| s.close(PaneId(pane)));
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn focus(shared: State<'_, Arc<Shared>>, focused: bool) -> Answer {
     shared.act(|s| s.focus(focused));
     Ok(())
