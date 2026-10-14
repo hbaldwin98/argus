@@ -29,7 +29,7 @@ use crate::keys::{self, PageKey};
 use crate::page::{Connection, Event, PageMouse, Status};
 use crate::settings::Settings;
 use crate::rail::{self, Choices};
-use crate::checkouts_stage::{CheckoutsStage, Opened};
+use crate::checkouts_stage::{CheckoutsStage, Deleting, Opened};
 use crate::screen::Screen;
 
 /// Lines one wheel notch moves a parked view, as terminals scroll for one
@@ -196,11 +196,18 @@ impl Session {
                     return;
                 };
                 self.asked.remove(at);
-                if let Some(Created::Pane(pane)) = created {
-                    self.made = Some(pane);
-                    self.show_made();
+                match created {
+                    Some(Created::Pane(pane)) => {
+                        self.made = Some(pane);
+                        self.show_made();
+                    }
+                    // A worktree made from the Checkouts stage is the row it
+                    // lands on.
+                    Some(Created::Checkout(checkout)) => self.checkouts.select(format!("c{}", checkout.0)),
+                    _ => {}
                 }
             }
+            ServerMsg::BranchNotMerged { checkout, branch } => self.checkouts.refused(checkout, branch),
             ServerMsg::Clipboard { pane, text } if Some(pane) == self.shown => {
                 self.passing.push(Event::Clipboard { text });
             }
@@ -550,14 +557,20 @@ impl Session {
             .flat_map(|r| &r.checkouts)
             .any(|c| c.id == checkout);
         if exists {
-            self.last_request = self.last_request.wrapping_add(1).max(1);
-            if self.asked.len() == MAX_ASKED {
-                self.asked.remove(0);
-            }
-            self.asked.push(self.last_request);
-            self.out.push(ask(self.last_request));
+            let request_id = self.next_request();
+            self.out.push(ask(request_id));
         }
         self.finish()
+    }
+
+    /// Names a request whose answer this window waits for.
+    fn next_request(&mut self) -> u64 {
+        self.last_request = self.last_request.wrapping_add(1).max(1);
+        if self.asked.len() == MAX_ASKED {
+            self.asked.remove(0);
+        }
+        self.asked.push(self.last_request);
+        self.last_request
     }
 
     /// Ends a pane's program and removes it. The pane stays on screen until
@@ -704,6 +717,30 @@ impl Session {
         }
     }
 
+    /// The answer to the stage's question: a yes does what it asked about.
+    pub fn answer_checkouts(&mut self, yes: bool) -> Vec<ClientMsg> {
+        if let Some(deleting) = self.checkouts.answer(yes) {
+            self.out.push(deletion(deleting));
+        }
+        self.finish()
+    }
+
+    /// A worktree for the selected row: `name` is the new branch for a
+    /// checkout row, and unused for a branch row, which brings its own.
+    pub fn new_worktree(&mut self, name: Option<String>) -> Vec<ClientMsg> {
+        let Some(repo) = self.chosen_repository().cloned() else {
+            return self.finish();
+        };
+        match self.checkouts.new_worktree(&repo, name) {
+            Ok((checkout, branch)) => {
+                let request_id = self.next_request();
+                self.out.push(ClientMsg::CreateWorktree { checkout, branch, request_id });
+            }
+            Err(text) => self.passing.push(Event::Notice { text: text.to_owned() }),
+        }
+        self.finish()
+    }
+
     pub fn select_checkout_row(&mut self, key: String) -> Vec<ClientMsg> {
         self.checkouts.select(key);
         self.finish()
@@ -743,6 +780,11 @@ impl Session {
                     });
                 }
             }
+            Action::Delete => match self.checkouts.delete(&repo) {
+                Ok(Some(deleting)) => self.out.push(deletion(deleting)),
+                Ok(None) => {}
+                Err(text) => self.passing.push(Event::Notice { text }),
+            },
             Action::StartShell | Action::StartAgent => {
                 let Some(checkout) = self.checkouts.checkout(&repo) else {
                     return self.note("a branch has no directory to start in yet: give it a worktree first");
@@ -933,6 +975,13 @@ impl Session {
 
 /// What to say of a daemon from another build than this window, as the
 /// terminal client says it.
+fn deletion(deleting: Deleting) -> ClientMsg {
+    match deleting {
+        Deleting::Branch { checkout, branch, force } => ClientMsg::DeleteBranch { checkout, branch, force },
+        Deleting::Checkout(checkout) => ClientMsg::RemoveCheckout { checkout },
+    }
+}
+
 fn another_build(daemon: &Hello) -> Option<String> {
     let ours = env!("CARGO_PKG_VERSION");
     (daemon.version != ours).then(|| {
@@ -1555,5 +1604,37 @@ mod tests {
         s.select_checkout_row("c100".into());
         assert!(matches!(s.checkouts_action(Action::Pull).as_slice(), [ClientMsg::Pull { checkout: CheckoutId(100) }]));
         assert!(matches!(s.checkouts_action(Action::Fetch).as_slice(), [ClientMsg::Fetch { checkout: CheckoutId(100) }]));
+    }
+
+    #[test]
+    fn a_refused_branch_delete_is_asked_about_and_a_yes_forces_it() {
+        let mut s = session(without_focus());
+        s.show_checkouts(true);
+        s.events(0);
+        s.receive(ServerMsg::BranchNotMerged { checkout: CheckoutId(100), branch: "spike".into() });
+        let asked = s.events(0).into_iter().find_map(|e| match e {
+            Event::Checkouts(table) => table.confirm,
+            _ => None,
+        });
+        assert_eq!(asked, Some(crate::page::Confirm::Force { branch: "spike".into() }));
+        let sent = s.answer_checkouts(true);
+        assert!(matches!(
+            sent.as_slice(),
+            [ClientMsg::DeleteBranch { checkout: CheckoutId(100), branch, force: true }] if branch == "spike"
+        ));
+    }
+
+    #[test]
+    fn a_new_worktree_is_the_row_selected_once_made() {
+        let mut s = session(without_focus());
+        s.show_checkouts(true);
+        s.select_checkout_row("c100".into());
+        let sent = s.new_worktree(Some("spike".into()));
+        let Some(ClientMsg::CreateWorktree { checkout, branch, request_id }) = sent.first() else {
+            panic!("{sent:?}");
+        };
+        assert_eq!((*checkout, branch.as_str()), (CheckoutId(100), "spike"));
+        s.receive(ServerMsg::Created { request_id: *request_id, created: Some(Created::Checkout(CheckoutId(200))) });
+        assert_eq!(s.checkouts.selected_key(), Some("c200"));
     }
 }

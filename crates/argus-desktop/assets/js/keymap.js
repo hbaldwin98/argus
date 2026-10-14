@@ -1,7 +1,7 @@
 // The keys pressed outside a pane, looked up in the keymap Rust sends
 // (`src/keymap.rs`) and run here. A pane's keys go to Rust whole, and its
 // leader is dispatched there.
-import { checkoutsAction } from './checkouts.js';
+import { answerNo, checkoutsAction } from './checkouts.js';
 import { startAction, startOpen } from './chrome.js';
 import { $ } from './dom.js';
 import { closeLayer, featureAction } from './features.js';
@@ -31,6 +31,9 @@ export function actionFor(places, e) {
 function run(action) {
     const layerOpen = $('layer').childElementCount > 0;
     if (action === 'closeLayer') {
+        // A question the stage asked is answered no, not only put away.
+        if (answerNo())
+            return true;
         if (layerOpen)
             closeLayer();
         return layerOpen;

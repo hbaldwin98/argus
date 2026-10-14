@@ -78,6 +78,8 @@ fn main() {
             commands::select_checkout_row,
             commands::filter_checkouts,
             commands::checkouts_action,
+            commands::answer_checkouts,
+            commands::new_worktree,
             commands::peek,
             commands::set_layout,
             commands::toggle_folded,

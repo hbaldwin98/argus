@@ -339,6 +339,19 @@ pub struct Checkouts {
     /// The selected row's `key`.
     pub selected: Option<String>,
     pub detail: Option<CheckoutDetail>,
+    /// A question the stage is waiting on an answer to.
+    pub confirm: Option<Confirm>,
+}
+
+/// What the stage asks before doing something that cannot be taken back.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum Confirm {
+    /// Removing a worktree: its panes end, its directory and its branch go.
+    Remove { name: String, branch: String },
+    /// Git refused `branch -d`: the branch holds commits nothing else has.
+    Force { branch: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

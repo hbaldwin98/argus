@@ -39,6 +39,8 @@ interface Commands {
   select_checkout_row: { key: string };
   filter_checkouts: { filter: string };
   checkouts_action: { action: Action };
+  answer_checkouts: { yes: boolean };
+  new_worktree: { name: string | null };
   peek: { slug: string };
   set_layout: { layout: 'list' | 'board' };
   toggle_folded: None;

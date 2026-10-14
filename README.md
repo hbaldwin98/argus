@@ -198,7 +198,9 @@ default; the arrows and Enter for the rest), and `×` on a pane, shown while it 
 the stage header, closes it. The Checkouts tab (`3`) lists the chosen repository's checkouts, and
 with `B` the branches without one: Enter opens a checkout on its first pane or switches the primary
 checkout to a branch, `F` fetches, `P` pulls, and `S`/`A` start a shell or the default agent in the
-selected checkout. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
+selected checkout. `N` gives a branch row a worktree, or a checkout a new branch in one; `D`
+deletes a branch row (asking again, before `git branch -D`, when git refuses an unmerged one) or
+removes a worktree once asked. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
 again. The rest of the terminal client's surfaces are still to come; `DESKTOP.md` has the plan.
 
 Its keys are the terminal client's where the two share a surface. In a pane every key goes to the

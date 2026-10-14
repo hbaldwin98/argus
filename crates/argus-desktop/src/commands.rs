@@ -188,6 +188,20 @@ pub async fn filter_checkouts(shared: State<'_, Arc<Shared>>, filter: String) ->
     Ok(())
 }
 
+/// The answer to the Checkouts stage's question.
+#[tauri::command]
+pub async fn answer_checkouts(shared: State<'_, Arc<Shared>>, yes: bool) -> Answer {
+    shared.act(|s| s.answer_checkouts(yes));
+    Ok(())
+}
+
+/// A worktree for the selected row, on the new branch `name` for a checkout.
+#[tauri::command]
+pub async fn new_worktree(shared: State<'_, Arc<Shared>>, name: Option<String>) -> Answer {
+    shared.act(|s| s.new_worktree(name));
+    Ok(())
+}
+
 /// A key or button of the Checkouts stage, acting on its selected row.
 #[tauri::command]
 pub async fn checkouts_action(shared: State<'_, Arc<Shared>>, action: Action) -> Answer {

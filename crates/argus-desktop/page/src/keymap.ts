@@ -5,7 +5,7 @@
 import type { Action } from './bindings/Action';
 import type { Chord } from './bindings/Chord';
 import type { Place } from './bindings/Place';
-import { checkoutsAction } from './checkouts.js';
+import { answerNo, checkoutsAction } from './checkouts.js';
 import { startAction, startOpen } from './chrome.js';
 import { $ } from './dom.js';
 import { closeLayer, featureAction } from './features.js';
@@ -38,6 +38,8 @@ export function actionFor(places: Place[], e: KeyboardEvent): Action | null {
 function run(action: Action): boolean {
   const layerOpen = $('layer').childElementCount > 0;
   if (action === 'closeLayer') {
+    // A question the stage asked is answered no, not only put away.
+    if (answerNo()) return true;
     if (layerOpen) closeLayer();
     return layerOpen;
   }

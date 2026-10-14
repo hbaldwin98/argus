@@ -67,6 +67,8 @@ pub fn build(repo: &RepositoryInfo, view: &View) -> Checkouts {
             Some(CheckoutRow::Checkout(i)) => repo.checkouts.get(i).map(detail),
             _ => None,
         },
+        // The stage's to say.
+        confirm: None,
     }
 }
 

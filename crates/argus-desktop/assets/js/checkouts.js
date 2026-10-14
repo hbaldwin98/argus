@@ -4,6 +4,7 @@
 // (`src/checkouts.rs`); the page draws them and reports what is chosen.
 import { startMenu, toggleStart } from './chrome.js';
 import { $, el, icon } from './dom.js';
+import { closeLayer } from './features.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 function keycap(key) {
@@ -31,11 +32,11 @@ function head(c) {
     });
     filter.value = c.filter;
     const branches = `${c.branches} branch${c.branches === 1 ? '' : 'es'} without one`;
-    return el('div', { class: 'fhead index-head' }, el('div', { class: 'crumbs' }, el('span', { class: 'fg' }, 'Checkouts'), el('span', { class: 'grow' }), el('span', { class: 'meta' }, keycap('Enter'), ' open · ', keycap('B'), ' branches · ', keycap('F'), ' fetch · ', keycap('P'), ' pull')), el('div', { class: 'actions index-tools' }, el('span', { class: 'type-title' }, `Checkouts in ${c.repository}`), el('span', { class: 'meta' }, `${c.checkouts} checkout${c.checkouts === 1 ? '' : 's'} · ${branches}`, c.main && [' · main is ', el('span', { class: 'mono fg-ref' }, c.main)]), el('span', { class: 'grow' }), filter, el('button', {
+    return el('div', { class: 'fhead index-head' }, el('div', { class: 'crumbs' }, el('span', { class: 'fg' }, 'Checkouts'), el('span', { class: 'grow' }), el('span', { class: 'meta' }, keycap('Enter'), ' open · ', keycap('B'), ' branches · ', keycap('N'), ' worktree · ', keycap('F'), ' fetch · ', keycap('D'), ' delete')), el('div', { class: 'actions index-tools' }, el('span', { class: 'type-title' }, `Checkouts in ${c.repository}`), el('span', { class: 'meta' }, `${c.checkouts} checkout${c.checkouts === 1 ? '' : 's'} · ${branches}`, c.main && [' · main is ', el('span', { class: 'mono fg-ref' }, c.main)]), el('span', { class: 'grow' }), filter, el('button', {
         class: 'btn',
         'aria-pressed': String(c.branchesShown),
         onclick: () => call('checkouts_action', { action: 'branches' }),
-    }, 'Branches ', keycap('B')), el('button', { class: 'btn', onclick: () => call('checkouts_action', { action: 'fetch' }) }, 'Fetch all ', keycap('F'))));
+    }, 'Branches ', keycap('B')), el('button', { class: 'btn', onclick: () => call('checkouts_action', { action: 'fetch' }) }, 'Fetch all ', keycap('F')), el('button', { class: 'btn primary', onclick: () => checkoutsAction('newWorktree') }, 'New worktree')));
 }
 function running(row) {
     if (!row.running.length)
@@ -48,8 +49,13 @@ function running(row) {
 }
 function actions(row) {
     const open = el('button', { class: 'btn sm', onclick: () => call('checkouts_action', { action: 'choose' }) }, 'Open');
-    if (row.checkout === null)
-        return open;
+    if (row.checkout === null) {
+        return [
+            open,
+            el('button', { class: 'btn sm', onclick: () => checkoutsAction('newWorktree') }, 'New worktree ', keycap('N')),
+            el('button', { class: 'btn sm danger', onclick: () => call('checkouts_action', { action: 'delete' }) }, 'Delete ', keycap('D')),
+        ];
+    }
     const checkout = row.checkout;
     const soon = (label, key) => el('button', { class: 'btn sm', disabled: true, title: 'Not in this window yet' }, `${label} `, keycap(key));
     const hot = state.start?.checkout === checkout && state.start.from === 'table';
@@ -104,6 +110,94 @@ function detail(c) {
         d.changes && stack('Changes', d.changes),
     ], el('span', { class: 'grow' }), el('span', { class: 'meta cnote' }, 'A branch row opens by switching the primary checkout to it. Fetch and pull run in the selected checkout, or the primary one for a branch.'));
 }
+// ---- New worktree and the questions before deleting ----------------------
+/** A new branch off the selected checkout, in a worktree of its own. */
+function nameDialog(from) {
+    const name = el('input', {
+        class: 'field mono',
+        id: 'worktree-name',
+        placeholder: 'desktop-checkouts',
+    });
+    const make = () => {
+        call('new_worktree', { name: name.value });
+        closeLayer();
+    };
+    name.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter')
+            make();
+        if (e.key === 'Escape')
+            closeLayer();
+    });
+    $('layer').replaceChildren(el('div', {
+        class: 'scrim',
+        onclick: (e) => {
+            if (e.target === e.currentTarget)
+                closeLayer();
+        },
+    }, el('section', {
+        class: 'dialog hold-dialog',
+        role: 'dialog',
+        'aria-modal': 'true',
+        'aria-labelledby': 'worktree-title',
+    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title', id: 'worktree-title' }, 'New worktree')), el('div', { class: 'dbody' }, el('label', { class: 'label', for: 'worktree-name' }, 'Branch'), name, el('div', { class: 'meta' }, 'A new branch off ', el('span', { class: 'mono' }, from), ', in a directory of its own.')), el('div', { class: 'dfoot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', onclick: closeLayer }, 'Cancel'), el('button', { class: 'btn primary', onclick: make }, 'Create')))));
+    name.focus();
+}
+/** Says no to the stage's question, as Escape or a click outside does. */
+export function answerNo() {
+    if (!state.checkouts?.confirm)
+        return false;
+    call('answer_checkouts', { yes: false });
+    closeLayer();
+    return true;
+}
+function confirmDialog(question) {
+    const force = question.kind === 'force';
+    const title = force
+        ? ['Delete ', el('span', { class: 'mono' }, question.branch), ' anyway?']
+        : ['Remove ', el('span', { class: 'mono' }, question.name), '?'];
+    const body = force
+        ? [
+            el('div', { class: 'fg-muted' }, 'Git refused the first delete: this branch has commits that no other branch has.'),
+            el('div', { class: 'meta' }, 'Delete anyway runs ', el('span', { class: 'mono' }, `git branch -D ${question.branch}`), ' in the primary checkout. It is local: nothing is pushed, and origin keeps whatever it has.'),
+        ]
+        : [
+            el('div', { class: 'fg-muted' }, 'Every pane in it ends, its directory is removed, and its branch is deleted.'),
+            el('div', { class: 'meta' }, 'Like deleting a branch, it is local: nothing is pushed.'),
+        ];
+    return el('div', {
+        class: 'scrim',
+        id: 'checkouts-confirm',
+        onclick: (e) => {
+            if (e.target === e.currentTarget)
+                answerNo();
+        },
+    }, el('section', {
+        class: 'dialog confirm-dialog',
+        role: 'alertdialog',
+        'aria-modal': 'true',
+        'aria-labelledby': 'confirm-title',
+    }, el('div', { class: 'dhead' }, el('div', { class: 'type-title', id: 'confirm-title' }, title)), el('div', { class: 'dbody' }, body), el('div', { class: 'dfoot' }, el('span', { class: 'grow' }), el('button', { class: 'btn', id: 'confirm-keep', onclick: answerNo }, force ? 'Keep the branch' : 'Keep it'), el('button', {
+        class: 'btn danger',
+        onclick: () => {
+            call('answer_checkouts', { yes: true });
+            closeLayer();
+        },
+    }, force ? 'Delete anyway' : 'Remove'))));
+}
+/** The stage's question over everything, while there is one. */
+function drawConfirm(c) {
+    const layer = $('layer');
+    const shown = document.getElementById('checkouts-confirm');
+    if (!c.confirm) {
+        if (shown)
+            closeLayer();
+        return;
+    }
+    if (shown)
+        return;
+    layer.replaceChildren(confirmDialog(c.confirm));
+    document.getElementById('confirm-keep')?.focus();
+}
 export function drawCheckouts() {
     if (state.rail.stage !== 'checkouts')
         return;
@@ -118,6 +212,7 @@ export function drawCheckouts() {
         ? table(c)
         : empty(el('div', { class: 'fg-muted' }, c.filter ? `Nothing matches “${c.filter}”.` : 'No checkouts.'));
     stage.replaceChildren(head(c), body, detail(c));
+    drawConfirm(c);
     stage.querySelector('tr.on')?.scrollIntoView({ block: 'nearest' });
     // Redrawn as each letter arrives: the filter keeps the keys and the caret.
     if (filterHad) {
@@ -132,6 +227,14 @@ export function drawCheckouts() {
 export function checkoutsAction(action) {
     if (action === 'filter') {
         $('checkouts-filter').focus();
+        return true;
+    }
+    if (action === 'newWorktree') {
+        const row = state.checkouts?.rows.find((r) => r.key === state.checkouts?.selected);
+        if (row && row.checkout !== null)
+            nameDialog(row.branch || (row.name ?? ''));
+        else
+            call('new_worktree', { name: null });
         return true;
     }
     call('checkouts_action', { action });

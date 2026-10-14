@@ -88,6 +88,8 @@ pub enum Action {
     Branches,
     Fetch,
     Pull,
+    NewWorktree,
+    Delete,
 }
 
 #[derive(Debug, Serialize)]
@@ -216,6 +218,8 @@ pub static BINDINGS: &[Binding] = &[
     bind(CheckoutsTable, &[Chord::key("/")], Filter, "filter by checkout or branch"),
     bind(CheckoutsTable, &[Chord::key("f"), Chord::key("F")], Fetch, "fetch every remote and prune"),
     bind(CheckoutsTable, &[Chord::key("p"), Chord::key("P")], Pull, "pull the checkout, fast-forward only"),
+    bind(CheckoutsTable, &[Chord::key("n"), Chord::key("N")], NewWorktree, "a new worktree: a branch row's, or a new branch off the checkout"),
+    bind(CheckoutsTable, &[Chord::key("D")], Delete, "delete the branch, or remove the worktree"),
     bind(CheckoutsTable, &[Chord::key("s"), Chord::key("S")], StartShell, "start a shell in the checkout"),
     bind(CheckoutsTable, &[Chord::key("a"), Chord::key("A")], StartAgent, "start the default agent in the checkout"),
     bind(Start, &[Chord::key("s"), Chord::key("S")], StartShell, "start a shell"),
