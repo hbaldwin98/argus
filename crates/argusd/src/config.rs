@@ -154,6 +154,51 @@ pub struct HarnessConfig {
     /// Optional skill directory relative to the checkout; absent keeps the compact fallback.
     #[serde(default)]
     pub skill_dir: Option<String>,
+    /// Where the CLI keeps a session's transcript, for previewing it.
+    /// Absent means it keeps none Argus can read.
+    #[serde(default)]
+    pub transcript: Option<TranscriptConfig>,
+}
+
+/// `transcript = "claude"` for a CLI that writes a known format where that
+/// format's own harness keeps it — the form older configs wrote — or
+/// `transcript = { format = "neutral", path = "~/.herdr/{session_id}.jsonl" }`
+/// to say where. A table without `format` is the neutral format, and one
+/// without `path` the format's own place.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum TranscriptConfig {
+    Format(String),
+    Located {
+        #[serde(default)]
+        format: Option<String>,
+        #[serde(default)]
+        path: Option<String>,
+    },
+}
+
+impl TranscriptConfig {
+    /// What the block names, or `None` when it names a format this build
+    /// has no reader for, or the neutral format with nowhere to find it.
+    /// Either is said in the log rather than refused, so the rest of the
+    /// harness still loads.
+    fn source(self, harness: &str) -> Option<crate::harness::transcript::Source> {
+        use crate::harness::transcript::{Format, Source};
+        let (format, path) = match self {
+            TranscriptConfig::Format(format) => (format, None),
+            TranscriptConfig::Located { format, path } => (format.unwrap_or_else(|| "neutral".into()), path),
+        };
+        let Some(format) = Format::named(&format) else {
+            tracing::warn!(harness, format, "transcript format not known; its sessions show no transcript");
+            return None;
+        };
+        let paths = path.map_or_else(|| format.default_paths(), |path| vec![path]);
+        if paths.is_empty() {
+            tracing::warn!(harness, "transcript format has no place of its own; name a path");
+            return None;
+        }
+        Some(Source { format, paths })
+    }
 }
 
 /// A bare status is the common case; the table form is for an event that
@@ -224,6 +269,7 @@ fn default_shape() -> crate::harness::Shape {
 
 impl From<HarnessConfig> for crate::harness::Harness {
     fn from(c: HarnessConfig) -> Self {
+        let transcript = c.transcript.and_then(|t| t.source(&c.name));
         crate::harness::Harness {
             name: c.name,
             settings: c.settings.map(PathBuf::from),
@@ -247,6 +293,7 @@ impl From<HarnessConfig> for crate::harness::Harness {
             rule_file: c.rule_file.map(PathBuf::from),
             skill_dir: c.skill_dir.map(PathBuf::from),
             settings_version: None,
+            transcript,
         }
     }
 }
@@ -429,6 +476,7 @@ pub fn expand_home(path: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::harness::transcript::{Format, Source};
 
     fn parse(raw: &str) -> ConfigFile {
         toml::from_str(raw).expect("the test config should parse")
@@ -462,11 +510,11 @@ live = true
     }
 
     #[test]
-    fn a_harness_block_that_still_sets_transcript_or_interrupt_loads_as_if_it_did_not() {
-        // `transcript` named the reader for a conversation a client could
-        // follow, and `interrupt` the key a client's stop typed; both went
-        // with what used them. The file is written by hand, so the old keys
-        // are read past rather than refused.
+    fn an_older_harness_block_naming_a_transcript_format_reads_it_where_that_format_lives() {
+        // `transcript = "claude"` once named the reader for a conversation
+        // a client followed; it still names the format, and a preview finds
+        // the file where Claude Code keeps it. `interrupt` went with the
+        // outbox and is read past rather than refused.
         let cfg = parse(
             r#"
 [[harness]]
@@ -481,6 +529,40 @@ interrupt = "\u0003"
             .find(|h| h.name == "herdr")
             .expect("a configured harness joins the built-ins");
         assert_eq!(herdr.resume, ["--continue"]);
+        assert_eq!(herdr.transcript, Some(Source::of(Format::Claude)));
+    }
+
+    fn transcript_of(block: &str) -> Option<Source> {
+        let cfg = parse(&format!("[[harness]]\nname = \"herdr\"\n{block}\n"));
+        let harness: crate::harness::Harness = cfg.harnesses.into_iter().next().unwrap().into();
+        harness.transcript
+    }
+
+    #[test]
+    fn a_harness_block_may_say_where_its_transcript_is_and_in_what_format() {
+        assert_eq!(
+            transcript_of(r#"transcript = { format = "codex", path = "~/.herdr/{session_id}.jsonl" }"#),
+            Some(Source { format: Format::Codex, paths: vec!["~/.herdr/{session_id}.jsonl".into()] })
+        );
+        assert_eq!(
+            transcript_of(r#"transcript = { path = "{checkout}/.herdr/{session_id}.jsonl" }"#),
+            Some(Source {
+                format: Format::Neutral,
+                paths: vec!["{checkout}/.herdr/{session_id}.jsonl".into()],
+            })
+        );
+        assert_eq!(transcript_of(r#"transcript = { format = "pi" }"#), Some(Source::of(Format::Pi)));
+    }
+
+    #[test]
+    fn a_harness_naming_no_readable_transcript_still_loads_without_one() {
+        assert_eq!(transcript_of(""), None);
+        // Neutral has no place of its own, and this build reads no
+        // `opencode` format; the rest of the block still counts.
+        assert_eq!(transcript_of(r#"transcript = "neutral""#), None);
+        assert_eq!(transcript_of(r#"transcript = "opencode""#), None);
+        let cfg = parse("[[harness]]\nname = \"herdr\"\nresume = [\"-c\"]\ntranscript = \"opencode\"\n");
+        assert_eq!(cfg.harnesses[0].resume, ["-c"]);
     }
 
     #[test]

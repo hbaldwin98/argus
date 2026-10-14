@@ -38,6 +38,7 @@ pub mod review_view;
 pub mod standing;
 pub mod tasks;
 pub mod tracker_links;
+pub mod transcript;
 pub mod transport;
 pub mod tree;
 

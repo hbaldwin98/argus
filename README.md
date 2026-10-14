@@ -389,6 +389,7 @@ shape = "flat" # use "matcher" for Claude Code-style nesting
 context_event = "session_start"
 resume = ["--continue"] # appended to the agent command when a pane is restored
 resume_id = ["--resume", "{session_id}"] # exact resume when identity was captured
+transcript = { format = "neutral", path = "~/.herdr/sessions/{session_id}.jsonl" } # for session previews
 
 [harness.events]
 turn_start = "working"
@@ -412,7 +413,13 @@ Set `session_id` to the top-level stdin JSON key containing its stable conversat
 `resume_id` is an argv template; every `{session_id}` placeholder is replaced without invoking a
 shell. `resume` remains the broad fallback for session records created before identity capture.
 Omit `settings` for an environment-only harness. Omit `resume` for a CLI that cannot be asked to
-continue its last conversation; its panes still come back, just empty. A block that reuses a
+continue its last conversation; its panes still come back, just empty.
+`transcript` says where the CLI keeps a session's transcript, for previewing a past session:
+`format` is `claude`, `codex`, `cursor`, `pi`, or `neutral` (one JSON object per line,
+`{"kind":"user"|"agent","text":"…"}`, `{"kind":"tool","tool":"…","summary":"…"}` or
+`{"kind":"title","text":"…"}`), and `path` a template with `~`, `{session_id}`, `{checkout}` and
+`*`. `transcript = "claude"` alone reads Claude Code's format where Claude Code keeps it. Omit it
+and the CLI's sessions are listed without a transcript (DESIGN.md, "Transcripts"). A block that reuses a
 built-in name replaces it outright, including a plugin module and resume arguments the built-in
 shipped.
 

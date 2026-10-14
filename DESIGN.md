@@ -195,6 +195,7 @@ live in this crate and a contract written twice drifts in silence.
 | `flow` | the steps a sequence diagram's source says, in the order it says them |
 | `standing` | how a feature stands on the index — Active, Queued, Done, Held or Archived — what a row of the index says, and which task comes next |
 | `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
+| `transcript` | what a past session said, in one shape whichever harness wrote it — its turns, replies and tool calls, its title and times — and whether its harness keeps a transcript at all |
 
 `argusd` owns PTYs, Git, and everything that outlives a client. Its state is one `Daemon` type
 behind a small set of mutexes; the split below is which file a concern is *read* in, not a change
@@ -225,6 +226,9 @@ to the type or its locking.
 | `harness`, `harness/install`, `harness/hooks` | what a CLI is, what gets written into a checkout for it, and the command lines in it |
 | `harness/skill` | the skill package an agent receives and the short message that leads it there |
 | `harness/plugin_dir` | the plugin folder a harness loads from outside the checkout — Claude Code's mod — and the variable that points a pane at it |
+| `harness/transcript` | reading a session's transcript file, in its harness's format, into the protocol's transcript |
+| `harness/transcript/locate` | where a session's transcript is on disk, from its harness's path templates |
+| `harness/transcript/claude`, `harness/transcript/codex`, `harness/transcript/cursor`, `harness/transcript/pi`, `harness/transcript/neutral` | one transcript format each: which of its records are a turn, a reply or a tool call, and what they say of the session |
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
 | `store/boards`, `store/reviews` | the feature boards and the review comments, as stored |
 | `store/capture` | a whole note written down as a feature, in one transaction |
@@ -990,6 +994,43 @@ This is relaunch, not process reattachment. PIDs are not stored. Captured IDs ar
 and control-free, and enter the child command as argv rather than shell interpolation. Exited panes
 are omitted. Each recording replaces the pane table in one transaction, because the tree is the
 truth and the table follows it: a pane that closed has no row to update.
+
+## Transcripts
+
+A past session can be previewed from the transcript its harness keeps. Argus never stores one and
+never follows one as it grows: `harness/transcript` reads the harness's own file whole, when asked,
+into `argus_protocol::transcript::Transcript` — the person's turns, the agent's replies and the tools
+it ran, each with the time the harness wrote, plus the session's title (the one the harness gave it,
+else the first prompt that is not a slash or shell command), its first and last times, its turn
+count and the directory it ran in. Thinking, tool output and the harness's own bookkeeping are left
+out. Text is clipped to 8 KiB and a session keeps its newest 500 entries, saying how many older ones
+it left out. A line that is not JSON, or a record a reader does not know, is skipped.
+
+A harness's `transcript` names a format and where its files are, as path templates: `~` is the
+home directory, `{session_id}` the identity its hooks captured, `{checkout}` the pane's checkout,
+and `*` any run of characters within one component; where several files match, the newest wins. A
+session id that holds a separator, `*`, `:` or `..` names nothing. The built-ins:
+
+| harness | format | where |
+| --- | --- | --- |
+| `claude` | `claude` | `~/.claude/projects/*/{session_id}.jsonl` |
+| `codex` | `codex` | `~/.codex/sessions/*/*/*/rollout-*-{session_id}.jsonl` |
+| `agent` | `cursor` | `~/.cursor/projects/*/agent-transcripts/{session_id}.jsonl`, or in a directory of the same name |
+| `pi` | `pi` | `~/.pi/agent/sessions/*/*_{session_id}.jsonl` |
+
+OpenCode, AGY and `generic` keep none Argus reads, so their sessions are listed from what Argus
+recorded — title, times, checkout — and the preview says there is no transcript
+(`Conversation::NoTranscript`); a transcript a harness names but that is not on disk is `Missing`.
+
+A `[[harness]]` block sets `transcript = "claude"` (a known format where its own harness keeps it —
+the form older configs wrote, for a wrapper around that CLI) or `transcript = { format = "…", path =
+"…" }`. A table without `format` is the neutral format: one JSON object per line, each a
+`transcript::Entry` as `{"kind":"user","text":"…","at":"…"}`, `{"kind":"agent",…}` or
+`{"kind":"tool","tool":"…","summary":"…","failed":true}` — `at`, `summary` and `failed` optional —
+or `{"kind":"title","text":"…"}` naming the session. It is what `argus-hook` would write for a
+harness that reports its turns, and the serde shape of the protocol's entry, so it cannot drift from
+what a client is sent. An unknown format, or the neutral one with no `path`, is logged and the
+block loads without a transcript.
 
 ## Git and checkouts
 

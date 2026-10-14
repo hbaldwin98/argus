@@ -51,6 +51,7 @@ fn flat_harness() -> Harness {
         rule_file: None,
         skill_dir: None,
         settings_version: None,
+        transcript: None,
     }
 }
 
