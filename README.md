@@ -192,8 +192,10 @@ argus desktop
 It starts `argus-desktop` from beside `argus`, or from `PATH`, detached so closing the terminal
 leaves the window open, and returns at once. The window reaches the same daemon through
 `argus bridge`, so it shows what the terminal client shows: the rail of projects, repositories,
-checkouts and panes, and one live pane that takes keys, pastes and resizes. `+` on a checkout starts
-a shell, and `×` on a pane, shown while it is pointed at and in the stage header, closes it. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
+checkouts and panes, and one live pane that takes keys, pastes and resizes. `+` on a checkout opens a menu
+that starts a shell (`S`) or an agent from one of the daemon's templates (`A` for the first, the
+default; the arrows and Enter for the rest), and `×` on a pane, shown while it is pointed at and in
+the stage header, closes it. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
 again. The rest of the terminal client's surfaces are still to come; `DESKTOP.md` has the plan.
 
 Its keys are the terminal client's where the two share a surface. In a pane every key goes to the

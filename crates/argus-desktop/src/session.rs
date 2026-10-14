@@ -63,6 +63,8 @@ pub struct Session {
     last_request: u64,
     /// Spawns asked for and not yet answered.
     asked: Vec<u64>,
+    /// The agent templates the daemon offers, the first its default.
+    templates: Vec<String>,
     /// A pane the daemon made for us that no tree has carried yet.
     made: Option<PaneId>,
     focused: bool,
@@ -103,6 +105,7 @@ impl Session {
             sized: None,
             last_request: 0,
             asked: Vec::new(),
+            templates: Vec::new(),
             made: None,
             focused: true,
             leader: false,
@@ -217,6 +220,10 @@ impl Session {
             ServerMsg::Decisions(board) => {
                 let scope = self.scope();
                 self.features.receive_board(*board, scope.as_ref(), &self.tree, &mut self.out);
+            }
+            ServerMsg::Templates(names) => {
+                self.templates = names;
+                self.rail_changed = true;
             }
             ServerMsg::Tasks(list) => {
                 let scope = self.scope();
@@ -520,6 +527,19 @@ impl Session {
 
     /// Asks for a shell on a checkout, shown once it exists.
     pub fn spawn_shell(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
+        self.spawn(checkout, |request_id| ClientMsg::SpawnShell { checkout, request_id })
+    }
+
+    /// Asks for an agent from one of the daemon's templates on a checkout,
+    /// shown once it exists as a shell is.
+    pub fn spawn_agent(&mut self, checkout: CheckoutId, template: String) -> Vec<ClientMsg> {
+        if !self.templates.contains(&template) {
+            return self.note(format!("argusd has no agent template called {template}"));
+        }
+        self.spawn(checkout, |request_id| ClientMsg::SpawnAgent { checkout, template, request_id })
+    }
+
+    fn spawn(&mut self, checkout: CheckoutId, ask: impl FnOnce(u64) -> ClientMsg) -> Vec<ClientMsg> {
         let exists = self
             .tree
             .iter()
@@ -532,7 +552,7 @@ impl Session {
                 self.asked.remove(0);
             }
             self.asked.push(self.last_request);
-            self.out.push(ClientMsg::SpawnShell { checkout, request_id: self.last_request });
+            self.out.push(ask(self.last_request));
         }
         self.finish()
     }
@@ -786,6 +806,7 @@ impl Session {
         rail.repository = self.chosen_repository().map(|r| r.id.0);
         rail.stage = if self.features.is_open() { "feature" } else { "workspace" };
         rail.filled = self.filled && !self.features.is_open() && self.shown.is_some();
+        rail.templates = self.templates.clone();
         rail
     }
 
@@ -1367,5 +1388,32 @@ mod tests {
         let down = b"\x1b[<2;4;2M".to_vec();
         assert_eq!(names(&s.mouse(PageMouse::Down, 2, (1, 3))), [format!("input 2 {down:?}")]);
         assert!(s.mouse(PageMouse::Drag, 0, (1, 4)).is_empty(), "no motion asked for");
+    }
+
+    #[test]
+    fn the_rail_offers_the_daemons_templates_as_agents() {
+        let mut s = session(without_focus());
+        s.receive(ServerMsg::Templates(vec!["claude".into(), "codex".into()]));
+        let Some(Event::Rail(rail)) = s.events(0).into_iter().find(|e| matches!(e, Event::Rail(_))) else {
+            panic!("the rail is drawn again");
+        };
+        assert_eq!(rail.templates, ["claude", "codex"]);
+    }
+
+    #[test]
+    fn an_agent_is_asked_of_a_template_the_daemon_has_and_shown_once_made() {
+        let mut s = session(without_focus());
+        s.receive(ServerMsg::Templates(vec!["claude".into()]));
+        let sent = s.spawn_agent(CheckoutId(100), "claude".into());
+        let Some(ClientMsg::SpawnAgent { checkout, template, request_id }) = sent.first() else {
+            panic!("{sent:?}");
+        };
+        assert_eq!((*checkout, template.as_str()), (CheckoutId(100), "claude"));
+        s.receive(ServerMsg::Created { request_id: *request_id, created: Some(Created::Pane(PaneId(2))) });
+        assert_eq!(s.shown, Some(PaneId(2)));
+
+        s.events(0);
+        assert!(s.spawn_agent(CheckoutId(100), "nobody".into()).is_empty());
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text.contains("nobody"))));
     }
 }

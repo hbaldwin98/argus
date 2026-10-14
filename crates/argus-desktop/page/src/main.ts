@@ -3,7 +3,7 @@
 // window's `session` — so each event replaces what the page held.
 
 import type { Event } from './bindings/Event';
-import { drawChrome, drawHeading, notice, reconnect } from './chrome.js';
+import { closeStart, drawChrome, drawHeading, notice, reconnect } from './chrome.js';
 import { $ } from './dom.js';
 import { drawFeatures, listen as listenToFeatures } from './features.js';
 import { listen as listenToInput } from './input.js';
@@ -56,6 +56,8 @@ listenToKeys();
 listenToFeatures();
 
 document.addEventListener('click', (e) => {
+  // A click anywhere but its own items closes a checkout's + menu.
+  closeStart();
   if (state.menuOpen && e.target instanceof Node && !$('heading').contains(e.target)) {
     state.menuOpen = false;
     drawHeading();

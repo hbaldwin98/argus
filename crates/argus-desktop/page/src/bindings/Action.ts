@@ -4,4 +4,4 @@
  * What a binding does. The page runs those of the places it dispatches,
  * `session` those of a pane.
  */
-export type Action = "workspace" | "feature" | "closeLayer" | "leader" | "fill" | "close" | "paste" | "pageUp" | "pageDown" | "next" | "previous" | "first" | "last" | "layout" | "folded" | "filter" | "move" | "hold" | "archive" | "goToPane";
+export type Action = "workspace" | "feature" | "closeLayer" | "leader" | "fill" | "close" | "paste" | "pageUp" | "pageDown" | "next" | "previous" | "first" | "last" | "layout" | "folded" | "filter" | "move" | "hold" | "archive" | "goToPane" | "startShell" | "startAgent" | "choose";

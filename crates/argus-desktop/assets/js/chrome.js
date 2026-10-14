@@ -118,11 +118,16 @@ function drawRail() {
         }, el('span', { class: 'chev' }, icon(repo.open ? 'down' : 'right')), statusDot, el('span', { class: 'rname ttl' }, repo.name), el('span', { class: 'cnt' }, repo.used ?? (repo.panes || '')))));
         for (const co of repo.checkouts) {
             rows.push(el('div', { class: 'co' }, el('span', { class: 'name', title: co.branch || null }, co.name), el('span', null, co.kind), co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git), el('button', {
-                class: 'icon',
-                title: 'Start a shell',
-                'aria-label': `Start a shell on ${repo.name} ${co.name}`,
-                onclick: () => call('spawn_shell', { checkout: co.id }),
-            }, icon('plus'))));
+                class: `icon${state.start?.checkout === co.id ? ' hot' : ''}`,
+                title: 'Start a shell or an agent',
+                'aria-label': `Start a shell or an agent on ${repo.name} ${co.name}`,
+                'aria-expanded': String(state.start?.checkout === co.id),
+                onclick: (e) => {
+                    e.stopPropagation();
+                    state.start = state.start?.checkout === co.id ? null : { checkout: co.id, at: 0 };
+                    drawRail();
+                },
+            }, icon('plus')), state.start?.checkout === co.id && startMenu(`${repo.name} ${co.name}`, co.id)));
             for (const pane of co.panes) {
                 rows.push(el('div', { class: 'pane-row' }, el('button', {
                     class: `pane${pane.on ? ' on' : ''} ${pane.status}`,
@@ -137,6 +142,82 @@ function drawRail() {
         }
     }
     rail.replaceChildren(...rows);
+}
+// ---- A checkout's + menu ---------------------------------------------------
+// What the + menu offers, in its order: a shell, then each of the daemon's
+// agent templates, the first its default.
+function starts() {
+    return [
+        { label: 'Shell', agent: null },
+        ...state.rail.templates.map((name) => ({ label: `Agent · ${name}`, agent: name })),
+    ];
+}
+function start(checkout, agent) {
+    closeStart();
+    if (agent === null)
+        call('spawn_shell', { checkout });
+    else
+        call('spawn_agent', { checkout, template: agent });
+}
+function startMenu(name, checkout) {
+    const items = starts();
+    const at = state.start?.at ?? 0;
+    return el('div', { class: 'menu', role: 'menu', 'aria-label': `Start on ${name}` }, items.flatMap((item, i) => [
+        i === 1 && el('div', { class: 'msep' }),
+        el('button', {
+            class: `mi${i === at ? ' on' : ''}`,
+            role: 'menuitem',
+            onclick: (e) => {
+                e.stopPropagation();
+                start(checkout, item.agent);
+            },
+        }, el('span', { class: `glyph${item.agent ? '' : ' sh'}` }, item.agent ? '◆' : '›'), el('span', { class: 'grow' }, item.label), i === 0 && el('span', { class: 'kbd' }, 'S'), i === 1 && el('span', { class: 'kbd' }, 'A')),
+    ]));
+}
+export function startOpen() {
+    return state.start !== null;
+}
+export function closeStart() {
+    if (!state.start)
+        return;
+    state.start = null;
+    drawRail();
+}
+/** Runs an open + menu's `action`, saying whether it took it. */
+export function startAction(action) {
+    const open = state.start;
+    if (!open)
+        return false;
+    const items = starts();
+    switch (action) {
+        case 'closeLayer':
+            closeStart();
+            return true;
+        case 'startShell':
+            start(open.checkout, null);
+            return true;
+        case 'startAgent': {
+            const agent = state.rail.templates[0];
+            if (agent)
+                start(open.checkout, agent);
+            else
+                notice('argusd offers no agent to start');
+            return true;
+        }
+        case 'next':
+        case 'previous':
+            open.at = (open.at + (action === 'next' ? 1 : items.length - 1)) % items.length;
+            drawRail();
+            return true;
+        case 'choose': {
+            const item = items[open.at];
+            if (item)
+                start(open.checkout, item.agent);
+            return true;
+        }
+        default:
+            return false;
+    }
 }
 function drawHead() {
     const shown = state.rail.shown;

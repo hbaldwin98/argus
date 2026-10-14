@@ -48,6 +48,7 @@ pub fn build(tree: &[ProjectInfo], choices: &Choices, loaded: bool) -> Rail {
         repository: None,
         stage: "workspace",
         filled: false,
+        templates: Vec::new(),
     }
 }
 

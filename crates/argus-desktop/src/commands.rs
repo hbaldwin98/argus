@@ -117,6 +117,13 @@ pub async fn copy(shared: State<'_, Arc<Shared>>, from: (u16, u16), to: (u16, u1
     Ok(())
 }
 
+/// Starts an agent from the daemon's `template` on a checkout.
+#[tauri::command]
+pub async fn spawn_agent(shared: State<'_, Arc<Shared>>, checkout: u64, template: String) -> Answer {
+    shared.act(|s| s.spawn_agent(CheckoutId(checkout), template));
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn spawn_shell(shared: State<'_, Arc<Shared>>, checkout: u64) -> Answer {
     shared.act(|s| s.spawn_shell(CheckoutId(checkout)));

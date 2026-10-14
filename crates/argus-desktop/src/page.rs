@@ -80,6 +80,9 @@ pub struct Rail {
     /// The pane fills the window: the rail and the stage's chrome are put
     /// away until the leader and `f` again.
     pub filled: bool,
+    /// The agents a checkout's + offers beside a shell: the daemon's
+    /// templates, the first its default.
+    pub templates: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -465,6 +468,7 @@ mod tests {
             repository: Some(2),
             stage: "workspace",
             filled: false,
+            templates: vec!["claude".into()],
         };
         let value = as_json(Event::Rail(Box::new(rail)));
         assert_eq!(value["type"], "rail");

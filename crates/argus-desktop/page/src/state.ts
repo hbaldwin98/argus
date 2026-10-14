@@ -14,6 +14,8 @@ export const state: {
   keymap: Group[];
   /** The project switcher's menu. */
   menuOpen: boolean;
+  /** The checkout whose + menu is open, and its highlighted item. */
+  start: { checkout: number; at: number } | null;
   /** What the index's filter says. */
   filter: string;
   /** Whether the board's archived column is unfolded. */
@@ -30,10 +32,12 @@ export const state: {
     repository: null,
     stage: 'workspace',
     filled: false,
+    templates: [],
   },
   features: null,
   keymap: [],
   menuOpen: false,
+  start: null,
   filter: '',
   archivedOpen: false,
 };

@@ -12,10 +12,12 @@ export const state = {
         repository: null,
         stage: 'workspace',
         filled: false,
+        templates: [],
     },
     features: null,
     keymap: [],
     menuOpen: false,
+    start: null,
     filter: '',
     archivedOpen: false,
 };

@@ -4,4 +4,4 @@
  * Where a binding works: the shortcuts sheet's groups, in its order. Rail
  * and Review join them when those surfaces take keys.
  */
-export type Place = "anywhere" | "pane" | "feature" | "card";
+export type Place = "anywhere" | "pane" | "feature" | "card" | "start";

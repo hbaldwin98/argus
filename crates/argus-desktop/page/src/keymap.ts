@@ -5,6 +5,7 @@
 import type { Action } from './bindings/Action';
 import type { Chord } from './bindings/Chord';
 import type { Place } from './bindings/Place';
+import { startAction, startOpen } from './chrome.js';
 import { $ } from './dom.js';
 import { closeLayer, featureAction } from './features.js';
 import { state } from './state.js';
@@ -58,6 +59,12 @@ export function listen(): void {
     const typing =
       e.target instanceof Element && e.target.closest('input, textarea, [contenteditable]');
     if (typing) return;
+    // An open + menu holds the keys until it closes.
+    if (startOpen()) {
+      const action = actionFor(['anywhere', 'start'], e);
+      if (action && startAction(action)) e.preventDefault();
+      return;
+    }
     const places: Place[] =
       state.rail.stage === 'feature' ? ['anywhere', 'feature', 'card'] : ['anywhere'];
     const action = actionFor(places, e);

@@ -45,6 +45,8 @@ pub enum Place {
     Feature,
     /// The feature under the cursor, in the list or on the board.
     Card,
+    /// A checkout's + menu while it is open, which holds the keys.
+    Start,
 }
 
 /// What a binding does. The page runs those of the places it dispatches,
@@ -74,6 +76,11 @@ pub enum Action {
     Hold,
     Archive,
     GoToPane,
+    StartShell,
+    /// The daemon's default agent: its first template.
+    StartAgent,
+    /// What the highlighted item of a menu does.
+    Choose,
 }
 
 #[derive(Debug, Serialize)]
@@ -143,6 +150,7 @@ impl Place {
             Place::Pane => "In a pane",
             Place::Feature => "Feature",
             Place::Card => "Board card",
+            Place::Start => "A checkout's + menu",
         }
     }
 }
@@ -163,7 +171,7 @@ const fn bind(place: Place, chords: &'static [Chord], action: Action, label: &'s
 }
 
 use Action::*;
-use Place::{Anywhere, Card, Pane};
+use Place::{Anywhere, Card, Pane, Start};
 
 pub static BINDINGS: &[Binding] = &[
     bind(Anywhere, &[Chord::key("1")], Workspace, "Workspace"),
@@ -188,9 +196,14 @@ pub static BINDINGS: &[Binding] = &[
     bind(Card, &[Chord::key("h"), Chord::key("H")], Hold, "hold, or lift its hold"),
     bind(Card, &[Chord::key("A")], Archive, "archive, or reopen"),
     bind(Card, &[Chord::key("g"), Chord::key("G")], GoToPane, "go to its agent's pane"),
+    bind(Start, &[Chord::key("s"), Chord::key("S")], StartShell, "start a shell"),
+    bind(Start, &[Chord::key("a"), Chord::key("A")], StartAgent, "start the default agent"),
+    bind(Start, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next item"),
+    bind(Start, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous item"),
+    bind(Start, &[Chord::key("Enter")], Choose, "start the highlighted one"),
 ];
 
-const ORDER: [Place; 4] = [Anywhere, Pane, Place::Feature, Card];
+const ORDER: [Place; 5] = [Anywhere, Pane, Place::Feature, Card, Start];
 
 /// The table as the sheet lists it: a group per place, in the sheet's order.
 pub fn groups() -> Vec<Group> {
@@ -241,14 +254,15 @@ mod tests {
         assert_eq!(listed, BINDINGS.len());
         assert!(groups.iter().all(|g| !g.bindings.is_empty()), "an empty heading");
         let titles: Vec<_> = groups.iter().map(|g| g.title).collect();
-        assert_eq!(titles, ["Anywhere", "In a pane", "Feature", "Board card"]);
+        assert_eq!(titles, ["Anywhere", "In a pane", "Feature", "Board card", "A checkout's + menu"]);
     }
 
     /// The page hears Anywhere, Feature and Card together, so a key may
-    /// be bound once among them; a pane's keys are a table of their own.
+    /// be bound once among them; a pane's keys are a table of their own,
+    /// and an open + menu hears only its own and Anywhere's.
     #[test]
     fn no_key_is_bound_twice_where_it_is_heard() {
-        let heard_together: [&[Place]; 2] = [&[Anywhere, Place::Feature, Card], &[Pane]];
+        let heard_together: [&[Place]; 3] = [&[Anywhere, Place::Feature, Card], &[Pane], &[Anywhere, Start]];
         for places in heard_together {
             let chords: Vec<&Chord> = BINDINGS
                 .iter()

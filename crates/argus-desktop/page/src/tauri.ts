@@ -28,6 +28,7 @@ interface Commands {
   copy: { from: [number, number]; to: [number, number] };
   spawn_shell: { checkout: number };
   close: { pane: number };
+  spawn_agent: { checkout: number; template: string };
   focus: { focused: boolean };
   select_project: { project: number };
   toggle_repository: { repository: number };

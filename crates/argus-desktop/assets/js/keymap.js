@@ -1,6 +1,7 @@
 // The keys pressed outside a pane, looked up in the keymap Rust sends
 // (`src/keymap.rs`) and run here. A pane's keys go to Rust whole, and its
 // leader is dispatched there.
+import { startAction, startOpen } from './chrome.js';
 import { $ } from './dom.js';
 import { closeLayer, featureAction } from './features.js';
 import { state } from './state.js';
@@ -52,6 +53,13 @@ export function listen() {
         const typing = e.target instanceof Element && e.target.closest('input, textarea, [contenteditable]');
         if (typing)
             return;
+        // An open + menu holds the keys until it closes.
+        if (startOpen()) {
+            const action = actionFor(['anywhere', 'start'], e);
+            if (action && startAction(action))
+                e.preventDefault();
+            return;
+        }
         const places = state.rail.stage === 'feature' ? ['anywhere', 'feature', 'card'] : ['anywhere'];
         const action = actionFor(places, e);
         if (action && run(action))
