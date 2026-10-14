@@ -56,6 +56,13 @@ pub async fn paste(shared: State<'_, Arc<Shared>>, text: String) -> Answer {
     Ok(())
 }
 
+/// The wheel over the pane, in lines: negative up into the history.
+#[tauri::command]
+pub async fn scroll(shared: State<'_, Arc<Shared>>, lines: i32) -> Answer {
+    shared.act(|s| s.scroll(lines));
+    Ok(())
+}
+
 /// The paste key: the clipboard is read here, not by the page, so a paste
 /// needs no permission from the webview.
 #[tauri::command]

@@ -22,6 +22,7 @@ interface Commands {
   text: { text: string };
   paste: { text: string };
   paste_clipboard: None;
+  scroll: { lines: number };
   copy: { from: [number, number]; to: [number, number] };
   spawn_shell: { checkout: number };
   focus: { focused: boolean };

@@ -4,6 +4,7 @@
 
 import type { Frame } from './bindings/Frame';
 import type { FrameCursor } from './bindings/FrameCursor';
+import type { Parked } from './bindings/Parked';
 import type { Segment } from './bindings/Segment';
 import { $ } from './dom.js';
 import { call } from './tauri.js';
@@ -60,6 +61,7 @@ function makeScreen() {
   // A drag across the pane, `[row, col]` at each end. Only drawn here; the
   // text it covers is read from Rust's grid when the drag ends.
   let selection: { anchor: Cell; head: Cell } | null = null;
+  let parked: Parked | null = null;
 
   function measure(): void {
     const css = getComputedStyle(document.documentElement);
@@ -210,12 +212,16 @@ function makeScreen() {
       mirror = Array.from({ length: f.rows }, (): Segment[] => []);
     }
     const resized = f.rows !== rows || f.cols !== cols;
+    const moved = f.parked?.offset !== parked?.offset || f.parked?.depth !== parked?.depth;
     rows = f.rows;
     cols = f.cols;
+    parked = f.parked;
     if (resized) {
       mirror.length = rows;
       for (let row = 0; row < rows; row++) mirror[row] ??= [];
       size();
+    }
+    if (resized || moved) {
       const label = document.getElementById('size');
       if (label) label.textContent = sizeLabel();
     }
@@ -244,8 +250,12 @@ function makeScreen() {
     drawCursor();
   }
 
+  // A parked view leads with how far back it is: otherwise it looks like
+  // a pane gone quiet.
   function sizeLabel(): string {
-    return cols ? `${cols} × ${rows}` : '';
+    if (!cols) return '';
+    const back = parked ? `↑ ${parked.offset}/${parked.depth} · ` : '';
+    return `${back}${cols} × ${rows}`;
   }
 
   // The room the terminal has, in cells. The daemon sizes a pane to the

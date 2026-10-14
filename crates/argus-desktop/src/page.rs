@@ -296,6 +296,17 @@ pub struct Frame {
     pub alternate_screen: bool,
     /// `[row, segments]`, each row cleared before its segments are drawn.
     pub lines: Vec<(u16, Vec<Segment>)>,
+    /// Set while the view is parked above the live screen.
+    pub parked: Option<Parked>,
+}
+
+/// How far up a parked view is, and how far back the history goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Parked {
+    pub offset: u32,
+    pub depth: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -359,6 +370,7 @@ mod tests {
             cursor: FrameCursor { row: 1, col: 2, visible: true, shape: "bar" },
             alternate_screen: false,
             lines: vec![(0, vec![Segment(3, vec!["h".into(), "i".into()], 0, 1 << 24 | 4, BOLD)])],
+            parked: Some(Parked { offset: 120, depth: 4000 }),
         });
         assert_eq!(
             as_json(event),
@@ -366,7 +378,8 @@ mod tests {
                 "type": "frame", "pane": 4, "rows": 2, "cols": 10, "full": true,
                 "cursor": {"row": 1, "col": 2, "visible": true, "shape": "bar"},
                 "alternateScreen": false,
-                "lines": [[0, [[3, ["h", "i"], 0, 16777220, 1]]]]
+                "lines": [[0, [[3, ["h", "i"], 0, 16777220, 1]]]],
+                "parked": {"offset": 120, "depth": 4000}
             })
         );
     }

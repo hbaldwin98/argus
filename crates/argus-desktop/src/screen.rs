@@ -1,6 +1,12 @@
 //! A pane's screen as the page draws it: the grid the daemon's damage lands
 //! on, and the rows changed since the last frame.
 //!
+//! A view parked above the live screen is drawn from rows the daemon read
+//! out of the pane's history, while damage keeps landing on the live grid
+//! underneath, so returning to the bottom is immediate. The parked rows are
+//! not re-read as output arrives: they are what the person scrolled up to
+//! read, and would otherwise move out from under them.
+//!
 //! The grid is decoded with the protocol's own `grid_from_runs`,
 //! `Scroll::apply` and `CellRun::apply`, never a copy in the page, so this
 //! window reads damage exactly as the terminal client does.
@@ -8,7 +14,16 @@
 use argus_protocol::{grid_from_runs, Cell, Color, Cursor, CursorShape, PaneId, ServerMsg, BLANK};
 use unicode_width::UnicodeWidthChar;
 
-use crate::page::{Frame, FrameCursor, Segment, BOLD, ITALIC, REVERSE, UNDERLINE, WIDE};
+use crate::page::{Frame, FrameCursor, Parked, Segment, BOLD, ITALIC, REVERSE, UNDERLINE, WIDE};
+
+/// A view above the live screen: how far up, how far the history goes,
+/// the daemon's number for its first line, and the rows there.
+struct View {
+    offset: u32,
+    depth: u32,
+    top: Option<u64>,
+    grid: Vec<Vec<Cell>>,
+}
 
 pub struct Screen {
     pane: PaneId,
@@ -25,6 +40,7 @@ pub struct Screen {
     /// Whether the daemon has sent the grid yet; damage before it has
     /// nothing to land on.
     received: bool,
+    parked: Option<View>,
 }
 
 impl Screen {
@@ -40,6 +56,7 @@ impl Screen {
             full: false,
             cursor_moved: false,
             received: false,
+            parked: None,
         }
     }
 
@@ -99,10 +116,84 @@ impl Screen {
         self.full = true;
     }
 
-    /// What changed since the last frame, or `None` when nothing did.
+    pub fn rows(&self) -> u16 {
+        self.rows
+    }
+
+    pub fn alternate_screen(&self) -> bool {
+        self.alternate_screen
+    }
+
+    /// How far up the view is parked, how deep the history was last said
+    /// to go, and the number of its first line; `None` while live.
+    pub fn parked(&self) -> Option<(u32, u32, Option<u64>)> {
+        self.parked.as_ref().map(|view| (view.offset, view.depth, view.top))
+    }
+
+    /// Parks the view `offset` lines up. Until the daemon's rows arrive it
+    /// shows what it showed, so the pane never blanks for a frame.
+    pub fn park(&mut self, offset: u32, top: Option<u64>) {
+        match &mut self.parked {
+            Some(view) => {
+                view.offset = offset;
+                view.top = top;
+            }
+            None => {
+                self.parked = Some(View { offset, depth: 0, top, grid: self.grid.clone() });
+                self.full = true;
+            }
+        }
+    }
+
+    /// Back on the live screen, drawn whole: whatever arrived while parked
+    /// is already on it.
+    pub fn unpark(&mut self) {
+        if self.parked.take().is_some() {
+            self.full = true;
+        }
+    }
+
+    /// The rows the daemon read from the history. Taken only while parked:
+    /// an answer arriving after the view went back to live is stale and
+    /// must not pull it up again. False when the daemon reached nothing
+    /// behind the live screen, which leaves the view live.
+    pub fn scrolled(&mut self, offset: u32, depth: u32, top: Option<u64>, mut grid: Vec<Vec<Cell>>) -> bool {
+        let Some(view) = &mut self.parked else {
+            return true;
+        };
+        if offset == 0 {
+            self.unpark();
+            return false;
+        }
+        grid.resize(self.rows as usize, vec![Cell::default(); self.cols as usize]);
+        *view = View { offset, depth, top, grid };
+        self.full = true;
+        true
+    }
+
+    /// What changed since the last frame, or `None` when nothing did. A
+    /// parked view sends only its own rows, and only when they change.
     pub fn take_frame(&mut self) -> Option<Frame> {
         if !self.received {
             return None;
+        }
+        if let Some(view) = &self.parked {
+            if !self.full {
+                return None;
+            }
+            self.full = false;
+            self.cursor_moved = false;
+            self.dirty.fill(false);
+            return Some(Frame {
+                pane: self.pane.0,
+                rows: self.rows,
+                cols: self.cols,
+                full: true,
+                cursor: FrameCursor { row: 0, col: 0, visible: false, shape: "block" },
+                alternate_screen: self.alternate_screen,
+                lines: (0..self.rows).map(|row| (row, segments(&view.grid[row as usize]))).collect(),
+                parked: Some(Parked { offset: view.offset, depth: view.depth.max(view.offset) }),
+            });
         }
         let any_row = self.full || self.dirty.iter().any(|d| *d);
         if !any_row && !self.cursor_moved {
@@ -129,6 +220,7 @@ impl Screen {
             },
             alternate_screen: self.alternate_screen,
             lines,
+            parked: None,
         })
     }
 
@@ -137,9 +229,10 @@ impl Screen {
     /// trailing blanks dropped, rows joined by newlines.
     pub fn text(&self, a: (u16, u16), b: (u16, u16)) -> String {
         let (start, end) = if a <= b { (a, b) } else { (b, a) };
-        let last = (end.0 as usize).min(self.grid.len().saturating_sub(1));
+        let grid = self.parked.as_ref().map_or(&self.grid, |view| &view.grid);
+        let last = (end.0 as usize).min(grid.len().saturating_sub(1));
         let mut lines = Vec::new();
-        for (index, row) in self.grid.iter().enumerate().take(last + 1).skip(start.0 as usize) {
+        for (index, row) in grid.iter().enumerate().take(last + 1).skip(start.0 as usize) {
             let from = if index == start.0 as usize { start.1 as usize } else { 0 };
             let to = if index == end.0 as usize { end.1 as usize + 1 } else { row.len() };
             let mut line = String::new();
@@ -459,4 +552,27 @@ ijkl");
         });
         assert_eq!(screen.text((0, 0), (0, 5)), "a日b");
     }
+
+    #[test]
+    fn a_parked_view_draws_its_history_and_holds_still_under_live_output() {
+        let mut screen = Screen::new(PANE);
+        screen.apply(&rows(Cursor::default(), &["live"], 8));
+        screen.take_frame();
+        screen.park(3, None);
+        screen.scrolled(3, 40, Some(7), vec![row("old", 8)]);
+        let frame = screen.take_frame().unwrap();
+        assert_eq!(frame.parked, Some(Parked { offset: 3, depth: 40 }));
+        assert!(!frame.cursor.visible);
+        assert_eq!(frame.lines[0].1[0].1.concat(), "old");
+        assert_eq!(screen.text((0, 0), (0, 7)), "old");
+
+        screen.apply(&damage(None, vec![CellRun::encode(0, 0, &row("x", 1))], Cursor::default()));
+        assert!(screen.take_frame().is_none(), "the parked rows do not move");
+
+        screen.unpark();
+        let frame = screen.take_frame().unwrap();
+        assert!(frame.full && frame.parked.is_none());
+        assert_eq!(frame.lines[0].1[0].1.concat(), "xive");
+    }
 }
+

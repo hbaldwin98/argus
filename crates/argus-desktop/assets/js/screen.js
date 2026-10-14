@@ -43,6 +43,7 @@ function makeScreen() {
     // A drag across the pane, `[row, col]` at each end. Only drawn here; the
     // text it covers is read from Rust's grid when the drag ends.
     let selection = null;
+    let parked = null;
     function measure() {
         const css = getComputedStyle(document.documentElement);
         fontFamily = css.getPropertyValue('--font-mono').trim() || 'monospace';
@@ -198,13 +199,17 @@ function makeScreen() {
             mirror = Array.from({ length: f.rows }, () => []);
         }
         const resized = f.rows !== rows || f.cols !== cols;
+        const moved = f.parked?.offset !== parked?.offset || f.parked?.depth !== parked?.depth;
         rows = f.rows;
         cols = f.cols;
+        parked = f.parked;
         if (resized) {
             mirror.length = rows;
             for (let row = 0; row < rows; row++)
                 mirror[row] ??= [];
             size();
+        }
+        if (resized || moved) {
             const label = document.getElementById('size');
             if (label)
                 label.textContent = sizeLabel();
@@ -235,8 +240,13 @@ function makeScreen() {
         selection = next;
         drawCursor();
     }
+    // A parked view leads with how far back it is: otherwise it looks like
+    // a pane gone quiet.
     function sizeLabel() {
-        return cols ? `${cols} × ${rows}` : '';
+        if (!cols)
+            return '';
+        const back = parked ? `↑ ${parked.offset}/${parked.depth} · ` : '';
+        return `${back}${cols} × ${rows}`;
     }
     // The room the terminal has, in cells. The daemon sizes a pane to the
     // client the person was last at, so the grid that comes back may differ.

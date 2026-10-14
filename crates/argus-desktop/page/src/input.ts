@@ -89,6 +89,22 @@ export function listen(): void {
     anchor = null;
   });
 
+  // Three lines a notch, as terminals send for one detent; a touchpad's
+  // small deltas add up until they make a line.
+  let wheel = 0;
+  $('terminal').addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      wheel += e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY : (e.deltaY * 3) / 100;
+      const lines = Math.trunc(wheel);
+      if (!lines) return;
+      wheel -= lines;
+      call('scroll', { lines });
+    },
+    { passive: false },
+  );
+
   window.addEventListener('focus', () => {
     call('focus', { focused: true });
     screen.drawCursor();

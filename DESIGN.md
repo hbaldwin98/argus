@@ -39,7 +39,10 @@ fails. After `Stopping` it does not reconnect until the person presses Reconnect
 starts again a daemon somebody stopped. It shows one pane at a time; the daemon sizes a pane to the
 client the person was last at, so a window and a terminal client on one pane each fill while in use.
 A drag across the pane selects and letting go copies; the text is read from the window's grid in Rust,
-and the clipboard is written and read there too (Ctrl-V, Ctrl-Shift-V, Alt-V), not by the page. It
+and the clipboard is written and read there too (Ctrl-V, Ctrl-Shift-V, Alt-V), not by the page.
+The wheel and Shift-PageUp/PageDown park the view in the pane's history exactly as the terminal
+client's do (the parked rows held in `screen`, asked further by line, typing back to live, cursor
+keys to a full-screen child); the stage header leads its size with how far back the view is. It
 reports its view only while it has focus, so a window in the background never takes the focus from
 a terminal client being typed in. Rust holds the model (`session`); the page draws what it is sent
 and reports gestures. It is TypeScript in `crates/argus-desktop/page/src`, one module per subject

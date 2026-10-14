@@ -14,9 +14,10 @@
 
 use std::collections::HashSet;
 
+use argus_protocol::keys::{Key, KeyCode, Mods};
 use argus_protocol::{
-    CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo, RepositoryId,
-    ServerMsg, View, FOCUS,
+    Cell, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
+    RepositoryId, ServerMsg, View, FOCUS,
 };
 
 use crate::feature_stage::{FeatureStage, Scope};
@@ -184,6 +185,12 @@ impl Session {
             ServerMsg::Clipboard { pane, text } if Some(pane) == self.shown => {
                 self.passing.push(Event::Clipboard { text });
             }
+            ServerMsg::ScrollbackRows { pane, offset, depth, cells } => {
+                self.scrolled(pane, offset, depth, None, cells);
+            }
+            ServerMsg::ScrollbackRuns { pane, offset, depth, rows, cols, runs, top } => {
+                self.scrolled(pane, offset, depth, top, argus_protocol::grid_from_runs(rows, cols, &runs));
+            }
             ServerMsg::Error { message } => self.passing.push(Event::Notice { text: message }),
             ServerMsg::Hello(hello) => {
                 // A greeting that arrived after the window stopped waiting.
@@ -297,9 +304,60 @@ impl Session {
     }
 
     pub fn key(&mut self, key: &PageKey) -> Vec<ClientMsg> {
-        let bytes = keys::to_key(key).map(|k| argus_protocol::keys::encode(&k)).unwrap_or_default();
+        let key = keys::to_key(key);
+        // Shift-PageUp and Shift-PageDown page the view, leaving the child
+        // its own unshifted paging keys, as in the terminal client.
+        if let Some(Key { code: code @ (KeyCode::PageUp | KeyCode::PageDown), mods }) = key {
+            if mods == Mods::SHIFT {
+                let height = self.screen.as_ref().map_or(2, |screen| screen.rows()).max(2) as i32 - 1;
+                self.scroll_by(if code == KeyCode::PageUp { -height } else { height });
+                return self.finish();
+            }
+        }
+        let bytes = key.map(|k| argus_protocol::keys::encode(&k)).unwrap_or_default();
         self.input(bytes);
         self.finish()
+    }
+
+    /// The wheel over the pane: `lines` up when negative, down toward the
+    /// live screen when positive. The normal screen has history behind it,
+    /// so the view moves; a full-screen child keeps none, so it is sent
+    /// cursor keys instead, as xterm's alternate scroll does.
+    pub fn scroll(&mut self, lines: i32) -> Vec<ClientMsg> {
+        let alternate = self.screen.as_ref().is_some_and(|screen| screen.alternate_screen());
+        if alternate && self.screen.as_ref().is_some_and(|screen| screen.parked().is_none()) {
+            let code = if lines < 0 { KeyCode::Up } else { KeyCode::Down };
+            let bytes = argus_protocol::keys::encode(&Key::new(code, Mods::NONE));
+            self.input(bytes.repeat(lines.unsigned_abs() as usize));
+        } else {
+            self.scroll_by(lines);
+        }
+        self.finish()
+    }
+
+    fn scroll_by(&mut self, lines: i32) {
+        let (Some(pane), Some(screen)) = (self.shown, &mut self.screen) else {
+            return;
+        };
+        let (offset, depth, top) = screen.parked().unwrap_or((0, 0, None));
+        // A view never parked has not heard how deep the history goes, so
+        // its first request up is unbounded and the daemon's clamp decides.
+        let ceiling = if screen.parked().is_some() { i64::from(depth) } else { i64::MAX };
+        let want = (i64::from(offset) - i64::from(lines)).clamp(0, ceiling);
+        // Clamped at either end, a run of notches asks for the same place
+        // over and over; only a move is worth a round trip.
+        if want == i64::from(offset) {
+            return;
+        }
+        if want == 0 {
+            screen.unpark();
+            return;
+        }
+        // Asked by line, so the view moves from the text on screen however
+        // far output has pushed it back since.
+        let top = top.map(|top| top.saturating_add_signed(i64::from(offset) - want));
+        screen.park(want as u32, top);
+        self.out.push(ClientMsg::Scrollback { pane, offset: want as u32, top });
     }
 
     /// Text an input method composed, typed as it stands.
@@ -308,8 +366,11 @@ impl Session {
         self.finish()
     }
 
+    /// Typing returns the view to the live screen: the child's echo lands
+    /// there, and a parked view is not where input can be seen.
     fn input(&mut self, bytes: Vec<u8>) {
         if let (Some(pane), false) = (self.shown, bytes.is_empty()) {
+            self.live();
             self.out.push(ClientMsg::Input { pane, bytes });
         }
     }
@@ -317,9 +378,25 @@ impl Session {
     /// A paste, as one event: the daemon brackets it only if the child asked.
     pub fn paste(&mut self, text: String) -> Vec<ClientMsg> {
         if let (Some(pane), false) = (self.shown, text.is_empty()) {
+            self.live();
             self.out.push(ClientMsg::Paste { pane, text });
         }
         self.finish()
+    }
+
+    fn live(&mut self) {
+        if let Some(screen) = &mut self.screen {
+            screen.unpark();
+        }
+    }
+
+    fn scrolled(&mut self, pane: PaneId, offset: u32, depth: u32, top: Option<u64>, grid: Vec<Vec<Cell>>) {
+        let Some(screen) = self.screen.as_mut().filter(|_| Some(pane) == self.shown) else {
+            return;
+        };
+        if !screen.scrolled(offset, depth, top, grid) {
+            self.passing.push(Event::Notice { text: "nothing further back".into() });
+        }
     }
 
     /// The shown pane's text between two cells; empty with no pane.
@@ -896,5 +973,109 @@ mod tests {
         assert!(s.is_stopped());
         s.connected(None, None, Vec::new());
         assert!(!s.is_stopped());
+    }
+
+    /// A session showing pane 2, whose screen of `rows` has arrived.
+    fn showing(rows: u16, alternate_screen: bool) -> Session {
+        let mut s = session(without_focus());
+        s.select(PaneId(2));
+        s.receive(ServerMsg::PaneRows {
+            pane: PaneId(2),
+            rows,
+            cols: 10,
+            runs: Vec::new(),
+            cursor: argus_protocol::Cursor::default(),
+            mouse: argus_protocol::MouseTracking::default(),
+            alternate_screen,
+        });
+        s
+    }
+
+    fn history(offset: u32, depth: u32, top: Option<u64>) -> ServerMsg {
+        ServerMsg::ScrollbackRuns { pane: PaneId(2), offset, depth, rows: 5, cols: 10, runs: Vec::new(), top }
+    }
+
+    fn scrollback(msgs: &[ClientMsg]) -> Vec<(u32, Option<u64>)> {
+        msgs.iter()
+            .filter_map(|m| match m {
+                ClientMsg::Scrollback { offset, top, .. } => Some((*offset, *top)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_wheel_parks_the_view_and_asks_further_up_by_line() {
+        let mut s = showing(5, false);
+        assert_eq!(scrollback(&s.scroll(-3)), [(3, None)]);
+        s.receive(history(3, 50, Some(100)));
+        assert_eq!(scrollback(&s.scroll(-3)), [(6, Some(97))]);
+        assert_eq!(scrollback(&s.scroll(2)), [(4, Some(99))]);
+    }
+
+    #[test]
+    fn scrolling_stops_at_the_depth_the_daemon_gave() {
+        let mut s = showing(5, false);
+        s.scroll(-3);
+        s.receive(history(3, 4, Some(10)));
+        assert_eq!(scrollback(&s.scroll(-3)), [(4, Some(9))]);
+        s.receive(history(4, 4, Some(9)));
+        assert!(scrollback(&s.scroll(-3)).is_empty(), "already at the top");
+    }
+
+    #[test]
+    fn scrolling_down_to_the_bottom_is_live_without_asking() {
+        let mut s = showing(5, false);
+        s.scroll(-3);
+        s.receive(history(3, 50, Some(100)));
+        assert!(scrollback(&s.scroll(10)).is_empty());
+        assert!(s.screen.as_ref().unwrap().parked().is_none());
+    }
+
+    #[test]
+    fn typing_or_pasting_returns_the_view_to_the_live_screen() {
+        let mut s = showing(5, false);
+        s.scroll(-3);
+        s.key(&PageKey { key: "a".into(), ..PageKey::default() });
+        assert!(s.screen.as_ref().unwrap().parked().is_none());
+
+        s.scroll(-3);
+        s.paste("x".into());
+        assert!(s.screen.as_ref().unwrap().parked().is_none());
+    }
+
+    #[test]
+    fn shift_page_up_pages_by_a_screen_less_a_line() {
+        let mut s = showing(5, false);
+        let page_up = PageKey { key: "PageUp".into(), shift: true, ..PageKey::default() };
+        assert_eq!(scrollback(&s.key(&page_up)), [(4, None)]);
+        let plain = PageKey { key: "PageUp".into(), ..PageKey::default() };
+        assert_eq!(names(&s.key(&plain)), ["input 2 [27, 91, 53, 126]"], "the child's own key");
+    }
+
+    #[test]
+    fn the_wheel_over_a_full_screen_child_is_cursor_keys() {
+        let mut s = showing(5, true);
+        assert_eq!(names(&s.scroll(-2)), ["input 2 [27, 91, 65, 27, 91, 65]"]);
+        assert_eq!(names(&s.scroll(1)), ["input 2 [27, 91, 66]"]);
+    }
+
+    #[test]
+    fn a_history_with_nothing_behind_the_screen_leaves_it_live_and_says_so() {
+        let mut s = showing(5, false);
+        s.events(0);
+        s.scroll(-3);
+        s.receive(history(0, 0, None));
+        assert!(s.screen.as_ref().unwrap().parked().is_none());
+        assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text == "nothing further back")));
+    }
+
+    #[test]
+    fn a_late_answer_does_not_pull_a_live_view_up() {
+        let mut s = showing(5, false);
+        s.scroll(-3);
+        s.key(&PageKey { key: "a".into(), ..PageKey::default() });
+        s.receive(history(3, 50, Some(100)));
+        assert!(s.screen.as_ref().unwrap().parked().is_none());
     }
 }
