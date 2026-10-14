@@ -9,9 +9,21 @@ use tokio::io::{AsyncRead, AsyncWrite};
 
 /// `argus bridge`: connects to this machine's daemon, starting it if
 /// nothing is listening, and carries it on stdin and stdout.
+///
+/// Exits the process the moment `pipe` returns rather than returning to
+/// `main`: `tokio::io::stdin()` reads on a blocking thread the runtime
+/// cannot cancel, so when the daemon goes away first, dropping the runtime
+/// waits on a read of stdin that may never end, and the bridge outlives
+/// its daemon until the far side happens to type or hang up.
 pub async fn run() -> anyhow::Result<()> {
     let daemon = crate::launch::ensure_daemon_and_connect().await?;
-    pipe(daemon, tokio::io::stdin(), tokio::io::stdout()).await
+    let carried = pipe(daemon, tokio::io::stdin(), tokio::io::stdout()).await;
+    if let Err(err) = carried {
+        // The same line `main` would print for an error it returned.
+        eprintln!("Error: {err:?}");
+        std::process::exit(1);
+    }
+    std::process::exit(0);
 }
 
 /// Carries `input` to the daemon and the daemon to `output` until either

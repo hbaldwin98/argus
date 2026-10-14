@@ -11,6 +11,13 @@ This is a plan, not a description of the code: nothing here is built yet. [`DESI
 is current behavior, [`TARGET.md`](TARGET.md) the intended product, and [`ROADMAP.md`](ROADMAP.md)
 orders the gap. The findings this plan rests on are under "Findings" at the end.
 
+The screens are drawn on the Design canvas https://claude.ai/artifact/5ad3wYLWu28Y6fqP5aoyBV, page
+"Desktop client": one artboard per surface, titled by section ("Feature · …", "Tracker · …"). The
+work is tracked in Linear project "Argus" (team HUN): HUN-170 is the foundation below, HUN-171 this
+MVP, HUN-172 to HUN-174 the feature stage, trackers and recent sessions, and HUN-181 the rest of
+parity with the TUI. HUN-169 brings back the transcript readers `d4ee2a1` deleted, read-only, which
+recent sessions need.
+
 ## Principles that decide the design
 
 1. **One way to start a daemon.** The desktop binary never connects to the socket itself and never
@@ -46,11 +53,9 @@ orders the gap. The findings this plan rests on are under "Findings" at the end.
   `pty_input/keys.rs` keeps only what is the TUI's: `is_leader` and the crossterm → `Key`
   translation. Update both DESIGN tables (`keys` row in protocol; `pty_input/keys` row reworded).
   Protocol is a lib crate: no new dependencies.
-- **`argus bridge` must exit when the daemon hangs up.** `tokio::io::stdin()` is a blocking read
-  that keeps the runtime alive (see Findings), so today a bridge whose daemon
-  went away lingers until its parent writes. Fix in `bridge.rs`: when `pipe` returns, end the
-  process at once (`std::process::exit` with 0 on a clean end, after printing an error otherwise),
-  with a comment saying why. Keep the existing tests passing.
+- **`argus bridge` exits when the daemon hangs up** (HUN-179, done). `tokio::io::stdin()` is a
+  blocking read that keeps the runtime alive (see Findings), so `bridge.rs` ends the process the
+  moment `pipe` returns instead of returning to `main`.
 - **`argus desktop`** — a TUI subcommand (`crates/argus-client/src/desktop.rs`, "the `argus
   desktop` command: opening the desktop window beside this terminal client") that starts
   `argus-desktop` from beside the `argus` executable (falling back to PATH), detached so closing
@@ -64,6 +69,10 @@ orders the gap. The findings this plan rests on are under "Findings" at the end.
   with a comment saying why (the desktop crate links WebKitGTK). `release.yml` packages
   `argus-desktop` beside the other three binaries in both the Unix `cp` list and the Windows
   `Copy-Item` list.
+- **Workspace layout.** `crates/argus-desktop` is a workspace member but not one of its
+  `default-members`, so a plain `cargo build` or `cargo test` of the TUI and daemon on Linux needs
+  neither WebKitGTK nor the ~256 crates Tauri adds. `--workspace` (CI's test and clippy) still
+  builds it.
 
 ## The crate: `crates/argus-desktop` (package and binary `argus-desktop`)
 
@@ -74,12 +83,13 @@ and a `.gitignore` entry for `crates/argus-desktop/gen/` (tauri-build writes sch
 Capabilities: the page uses only app commands and one `Channel`, which need no capability; add a
 `capabilities/` file only if the build or runtime demonstrably needs one (verify, and say).
 
-`Cargo.toml`: the workspace `[package]` shape; `tauri = { version = "2.12.1", default-features =
+`Cargo.toml`: the workspace `[package]` shape; `tauri = { version = "2.12.3", default-features =
 false, features = ["wry", "compression", "x11", "dbus", "custom-protocol"] }` (no
-`common-controls-v6` — see Findings for why on Windows); `tauri-build = "2.7.1"` as the
-build dependency; keep `tauri-macros` and `tauri-codegen` at 2.7.1 in the lock (`cargo update -p
-tauri-macros --precise 2.7.1`, same for `tauri-codegen`) — every Tauri crate in the lock must be at
-least two weeks old (today is 2026-10-14). Workspace deps: argus-protocol, tokio, serde,
+`common-controls-v6` — see Findings for why on Windows); `tauri-build = "2.7.2"` as the
+build dependency, which 2.12.3 requires, as it does `tauri-macros` ~2.7.2. Not 2.12.1: it stops
+delivering a `Channel`'s messages after its handler throws once. Every Tauri crate in the lock must
+be at least two weeks old; 2.12.3 and the 2.7.2 crates were published on 2026-10-10, so the crate
+is added on or after 2026-10-24. Workspace deps: argus-protocol, tokio, serde,
 serde_json, anyhow, tracing, tracing-subscriber; `unicode-width = "0.2"` (the lock's 0.2.2 is the
 one alacritty uses, so widths match the daemon exactly). `tauri.conf.json`: no `version` (it falls
 back to Cargo's, so the release bump stays in Cargo.toml), `productName` "Argus", identifier
@@ -208,17 +218,29 @@ previous channel; Rust sends status + rail at once, and a full frame if a pane i
 
 ### The page (`assets/`)
 
-- `index.html`: rail on the left (fixed width, scrolls), stage on the right: a header line (the
-  pane's title, status word, checkout/branch), the terminal area (a text canvas and a cursor
-  overlay canvas stacked), and a one-line status bar at the bottom (connection state, notes,
-  a Reconnect button when stopped). A hidden, focusable `<textarea>` takes keyboard input and IME.
-- `style.css`: Catppuccin Mocha by default, Latte under `prefers-color-scheme: light`, as CSS
-  custom properties; the ANSI-16 palette and screen bg/fg from the removed phone client's `style.css` (`git show 20dbb14:crates/argus-web/assets/style.css`). System
+The canvas's "Workspace and connection" row is what this slice draws; the "Design system" row
+documents the tokens.
+
+- `index.html`: rail on the left (fixed width, scrolls), stage on the right. Above the rail a brand
+  row, above the stage the tabs Workspace / Feature / Checkouts (`1`/`2`/`3`; only Workspace works in
+  this slice, the others are shown disabled). The brand row and the tab bar are both `--header-h`
+  (47px) tall so their bottom borders line up. The Workspace stage has a header line (the pane's
+  title, status word, checkout/branch) and the terminal area (a text canvas and a cursor overlay
+  canvas stacked). A one-line status bar runs along the bottom: on the left the agents that need
+  you and the ones working, on the right `Ctrl K` and the connection, with a Reconnect button when
+  stopped. A hidden, focusable `<textarea>` takes keyboard input and IME.
+- `style.css` is the design tokens (HUN-171 lists them): the Catppuccin palette, Mocha by default
+  and Latte under `prefers-color-scheme: light`; then semantic tokens over it (`--bg-*`, `--fill`,
+  `--line*`, `--fg*`, `--accent`, `--ref`, `--ok`, `--attention`, `--danger`, `--changed`,
+  `--info`); then fixed scales for type, space (`--sp-2…44`), radius, shadow and sizes. Components
+  use the semantic tokens and the scales, never a palette colour or a bare length. The ANSI-16
+  palette and screen bg/fg come from the removed phone client's `style.css` (`git show 20dbb14:crates/argus-web/assets/style.css`). System
   monospace stack (`ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace`).
   Status words get colours (`waiting`/`needs-review`/`failed` loud, `working` accent, `idle`/`done`
   quiet, `exited` dim).
-- `app.js`: `const { invoke, Channel } = window.__TAURI__.core`. Wrap `onmessage` in try/catch
-  (Tauri 2.12.1 stops delivering after a handler throws). Renderer: measure
+- `app.js`: `const { invoke, Channel } = window.__TAURI__.core`. Wrap `onmessage` in try/catch, so
+  one bad message is logged rather than ending the stream (2.12.1 stopped delivering after a
+  handler threw; 2.12.3 fixes it, the try/catch stays). Renderer: measure
   the cell from the font (`measureText('M'.repeat(100))`, `fontBoundingBoxAscent/Descent`), device
   pixels, `ResizeObserver` + devicePixelRatio change → capacity rows/cols → debounced (≈50 ms)
   `resize`; draw the grid's own rows×cols and pad the rest; per dirty row: clear, fill non-default
@@ -232,11 +254,15 @@ previous channel; Rust sends status + rail at once, and a full frame if a pane i
   the paste chord (Cmd+V on macOS, Ctrl+Shift+V elsewhere), which is left to the browser so the
   `paste` event fires → `paste{text}`. `compositionend` → `text{text}`. Modifier-only keydowns are
   not sent. Click on the terminal focuses the textarea; window `focus`/`blur` → `focus`.
-- Rail: project heading (name, count of panes that need you), repository, checkout row (name,
-  branch or "detached", git summary like the TUI's `git_state`: `↑a ↓b +staged !unstaged`, or
-  `clean`), and pane rows (`◆` agent / `›` shell, title, loudest status word; a working pane
-  animates subtly). Clicking a pane row → `select`; a small "+ shell" control on a checkout row →
-  `spawnShell`. The selected row is highlighted. Keyboard navigation of the rail is not in scope.
+- Rail: the same rail as the TUI's, on every stage. A project heading (name, a project switcher,
+  "N need you"); its repositories, the active ones first and the quiet ones after a bare divider
+  with no label; under each repository its checkout rows (name, branch or "detached", git summary
+  like the TUI's `git_state`: `↑a ↓b +staged !unstaged`, or `clean`), and under each checkout its
+  pane rows (`◆` agent / `›` shell, title, loudest status word; a working pane animates subtly).
+  Features are not in the rail; the Feature stage opens on their index. Clicking a pane row →
+  `select`; a checkout row's `+` menu offers Shell → `spawnShell` (Agent · each harness comes with
+  HUN-188). The clock button each repository row will carry for recent sessions is HUN-174. The
+  selected row is highlighted. Keyboard navigation of the rail is not in scope.
 - Empty states: "Connecting to argusd…", "No projects — run `argus init` in a repository", "Pick a
   pane on the left".
 
@@ -281,18 +307,45 @@ previous channel; Rust sends status + rail at once, and a full frame if a pane i
   lacks; it is still not an agent host, Git porcelain or tracker. Note the client budgets apply to
   the terminal client.
 - ROADMAP.md: a new item for the desktop client: what landed (this slice) and what remains (the
-  three stages, review, feature board, history, pickers and modals, mouse forwarding and selection,
-  scrollback, several panes, remote hosts through `ssh … argus bridge`, packaging as .app/.msi/
-  AppImage with signing and updates).
+  feature stage and trackers, HUN-172/173; recent sessions, HUN-174; the parity issues under
+  HUN-181 — checkouts, review and history, palette and shortcuts, settings and notifications,
+  projects, feature editing, starting an agent, mouse, selection and scrollback, the full transcript;
+  remote hosts through `ssh … argus bridge`; packaging as .app/.msi/AppImage with signing and
+  updates, which no issue tracks yet).
+
+## Decided for later slices
+
+Settled while drawing the canvas, so the issues that build them start from here.
+
+- **Feature index** (HUN-172): List or Board (`V`), remembered per repository. Board columns are
+  Queued → Active → Done, then Archived and Held, with column headers of one fixed height. Queued,
+  Active and Done are derived from the work (DESIGN.md has no hand-dragged columns), so no card is
+  dragged between them. A card may be dragged into Held, which asks a reason and sends
+  `HoldFeature`, or into Archived, which sends `MoveFeature`. Every drag has a keyboard path: `M`
+  "Move to…" on a card, the derived columns shown disabled with the reason.
+- **Expanded sequence diagram** (HUN-172): Expand (`F`) on the Flows lens fills the window, with
+  zoom, Fit and a steps panel. Dragging a step or a lifeline rewrites the flow's Mermaid and sends
+  the existing `DiagramAction::Rewrite`; no new protocol.
+- **Recent sessions** (HUN-174): a dialog per repository, opened from the clock on its rail row,
+  with previews read from transcripts and "Resume in a new pane" from the harness's `resume_id`
+  template. A harness without one (such as `generic`) offers only the transcript. It needs the
+  transcript readers back (HUN-169), including a way for the generic harness to name its transcript
+  (HUN-176).
+
+Still open: splits (two panes side by side) or one pane at a time; side panels or dialogs for
+reconcile and sessions; the settings' Connection section and whether desktop settings share
+`client.toml`; whether the "argusd was stopped" card centres in the window or in the stage; and
+release packaging (.app/.msi/AppImage, signing, updates), which no issue tracks.
 
 ## Findings
 
 Checked on 2026-10-14 against this repository and a throwaway Tauri probe built and run under Xvfb
 on Ubuntu 24.04 (rustc 1.97). Windows and macOS were not built.
 
-- **Versions.** `tauri` 2.12.1 and `tauri-build` 2.7.1 are the newest releases at least two weeks
-  old; their MSRV is 1.90. 2.12.1 stops delivering a `Channel`'s messages after its `onmessage`
-  handler throws once (fixed in 2.12.3), hence the try/catch. The 3.0 alphas need Rust 1.95+ and are
+- **Versions.** The probe used `tauri` 2.12.1 and `tauri-build` 2.7.1; their MSRV is 1.90, as is
+  2.12.3's. 2.12.1 stops delivering a `Channel`'s messages after its `onmessage` handler throws
+  once, fixed in 2.12.3 (with tauri-build, tauri-macros and tauri-codegen 2.7.2, all published
+  2026-10-10). The 3.0 alphas need Rust 1.95+ and are
   not used. The crate adds about 256 packages to `Cargo.lock`; a clean release build of the probe
   took 2.5 minutes without LTO.
 - **No tauri-cli, no JS build.** `cargo build`/`test`/`clippy` work with `build.rs` calling
@@ -313,9 +366,9 @@ on Ubuntu 24.04 (rustc 1.97). Windows and macOS were not built.
   `run_return` to clean up. Synchronous commands run on the UI thread.
 - **Linux CI.** `libwebkit2gtk-4.1-dev libdbus-1-dev pkg-config` on ubuntu-22.04 and its arm image.
   macOS needs nothing.
-- **`argus bridge` lingers.** `tokio::io::stdin()` is a blocking read that cannot be cancelled, so
-  when the daemon hangs up the bridge does not exit until its parent writes or closes stdin. The ssh
-  path has the same problem today. Hence the fix under "Foundation".
+- **`argus bridge` lingered.** `tokio::io::stdin()` is a blocking read that cannot be cancelled, so
+  when the daemon hung up the bridge did not exit until its parent wrote or closed stdin; the ssh
+  path had the same problem. Fixed under "Foundation".
 - **The screen on the wire.** Cells carry only bold, italic, underline and reverse; dim, strike,
   hidden and hyperlinks are dropped by the daemon. There is no width flag, but the lock has one
   `unicode-width`, shared with alacritty, so a width computed in Rust matches the daemon. Scroll is
