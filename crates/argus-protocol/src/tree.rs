@@ -401,6 +401,12 @@ pub struct RepositoryInfo {
     /// here yet, and can be had by switching to it or giving it a worktree.
     #[serde(default)]
     pub remote_branches: Vec<String>,
+    /// When a pane last closed in any of its checkouts, in seconds since the
+    /// Unix epoch by the daemon's clock: the moment it last went quiet, which
+    /// is what orders the repositories with nothing running. `None` for one
+    /// never used, and from a daemon that does not say.
+    #[serde(default)]
+    pub last_used: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

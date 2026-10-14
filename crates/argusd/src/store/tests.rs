@@ -324,6 +324,18 @@ fn exclusions_can_be_rewritten_wholesale() {
 }
 
 #[test]
+fn a_repository_keeps_only_the_last_time_it_was_used() {
+    let s = store();
+    s.set_repository_used(Path::new("/a"), 10).unwrap();
+    s.set_repository_used(Path::new("/a"), 30).unwrap();
+    s.set_repository_used(Path::new("/b"), 20).unwrap();
+    let used = s.repositories_used().unwrap();
+    assert_eq!(used.len(), 2);
+    assert_eq!(used[Path::new("/a")], 30);
+    assert_eq!(used[Path::new("/b")], 20);
+}
+
+#[test]
 fn the_open_workspace_is_remembered() {
     let s = store();
     assert_eq!(s.open_workspace().unwrap(), None);

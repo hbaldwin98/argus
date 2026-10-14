@@ -68,7 +68,6 @@ pub(crate) use command_center::{
     checkout_at as command_center_checkout_at,
     feature_hit_at as command_center_feature_hit_at,
     project_header_at as command_center_project_header_at,
-    quiet_fold_at as command_center_quiet_fold_at,
     rail_target_at as command_center_rail_target_at,
     sidebar_contains as command_center_sidebar_contains,
     SIDEBAR_MIN_WIDTH as RAIL_MIN_WIDTH,

@@ -458,3 +458,12 @@ CREATE TABLE sequence_diagram (
 );
 CREATE INDEX sequence_diagram_feature ON sequence_diagram (project, feature, id);
 "#;
+
+/// When each repository last went quiet, keyed by its primary checkout's
+/// path like the other repository tables. One row a repository, overwritten.
+pub(super) const SCHEMA_V22: &str = r#"
+CREATE TABLE repo_used (
+    path TEXT PRIMARY KEY,
+    at   INTEGER NOT NULL
+) WITHOUT ROWID;
+"#;

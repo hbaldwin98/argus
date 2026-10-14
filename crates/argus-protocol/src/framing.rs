@@ -230,6 +230,7 @@ mod tests {
                 branches: Vec::new(),
                 default_branch: None,
                 remote_branches: Vec::new(),
+                last_used: None,
                 checkouts: vec![CheckoutInfo {
                     id: CheckoutId(3),
                     name: "master".to_string(),

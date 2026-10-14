@@ -240,7 +240,7 @@ to the type or its locking.
 | `store`, `store/schema`, `store/legacy` | `runtime.db`, its tables, and the files it replaced |
 | `store/boards`, `store/reviews` | the feature boards and the review comments, as stored |
 | `store/capture` | a whole note written down as a feature, in one transaction |
-| `store/panel`, `store/session` | runtime changes to the panel, and the panes to bring back after a restart |
+| `store/panel`, `store/session` | runtime changes to the panel and when each repository was last used, and the panes to bring back after a restart |
 | `git`, `diff`, `browse`, `highlight` | the read-only questions asked of a repository |
 | `gitignore` | the repository-local excludes for generated Argus files |
 | `config` | `projects.toml`, which is read and never written |
@@ -263,7 +263,7 @@ result of a request; `ui` is a pure function of it.
 | `app` | the model: the tree, the selection, and which modal is up |
 | `app/rows`, `app/layout`, `app/modal` | naming a row independently of its index, where the last frame put things, and the layers that float over it |
 | `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |
-| `app/rail` | what the rail lists, in what order, which repositories fold away as quiet, which one is open, and what choosing a row does |
+| `app/rail` | what the rail lists, in what order, which repositories are open, and what choosing a row does |
 | `app/mode` | which mode has the keys — the one answer key dispatch, the status bar and `?` all match on |
 | `app/mode/keymap` | what each mode's keys are, said once: the keys, what `?` and the bar call them, and what they run |
 | `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
@@ -276,7 +276,7 @@ result of a request; `ui` is a pure function of it.
 | `ui` | the frame, and where the cursor goes on it |
 | `ui/card` | a card and the rows in it: its frame, one row, and how a list longer than the card scrolls |
 | `ui/command_center` | the HTML-specified shell: where the rail and stage go, the stage heading, the first-run state, and the status vocabulary they share |
-| `ui/command_center/rail` | drawing the rail — its heading, the rows `app/rail` lists, and the line the quiet repositories fold behind — and which row a click lands on |
+| `ui/command_center/rail` | drawing the rail — its heading, the rows `app/rail` lists, and the divider between the active repositories and the quiet ones — and which row a click lands on |
 | `ui/command_center/workspace`, `ui/command_center/feature`, `ui/command_center/checkouts` | one stage each, with the hit-test that shares its layout |
 | `ui/command_center/feature/index`, `ui/command_center/feature/work`, `ui/command_center/feature/record`, `ui/command_center/feature/flows`, `ui/command_center/feature/capture` | what fills the Feature stage's frame: the index of features, each of the three lenses, and the note a feature is written as |
 | `ui/text` | fitting text to a width |
@@ -323,11 +323,10 @@ The rail is stable across all three surfaces. Its heading is one row: the select
 which of the projects it is when there are several, and at the right edge how many of its agents
 need a person, written only when some do. Under one rule it lists that project's repositories, each
 a status glyph, a name and the bare count of the panes running in it. A repository with nothing
-running is quiet, and while any other is active the quiet ones fold away behind one dim line,
-`+ N quiet`, so the rail's height goes to what is happening; `z` or a click on the line toggles the
-fold, and open it reads `− N quiet` above the repositories it revealed. The selected repository is
-listed whatever the fold says, and a project with nothing active at all is listed whole, having
-nothing to fold behind. The fold is this client's own state, like the open view. An agent is listed
+running is quiet and drawn dim. Every repository is listed: the active ones first, in tree order,
+then a rule, then the quiet ones, the most recently used first — the daemon records when a pane last
+closed in each, so the one just left is nearest to hand, and one never used comes last. A project
+with nothing active has nothing to divide and draws no rule. An agent is listed
 once, on its pane's row under its checkout: the rail has no second roll-up of agents. `o` or a click
 on the heading switches projects through a picker. Selecting a repository
 changes the existing daemon-tree selection; the rail owns no parallel workspace model. Workspace
@@ -361,26 +360,24 @@ Workspace scope -> Project -> Repository -> Checkout -> Pane
 A workspace is daemon-wide scope, not a navigation column. Switching it changes every attached
 client. Panes in other workspaces continue to run. The production TUI projects the selected
 project's repositories into the stable rail and gives the selected pane's terminal the
-remaining stage. Repository rows are ordered active-first, the quiet ones folded behind their line,
-and stay collapsed until chosen; the one open repository shows a card for each checkout with panes
-running, and for its primary checkout even with none, so there is always a checkout to start a shell
-or an agent in from the rail: a box whose top row is the branch with its git state at the right, and whose rows under it
-are those panes and their children. The card's border carries the checkout's state: the accent while
-the cursor or the stage is in it, else the colour of its loudest state from working up, and the
-rule's colour while everything in it is idle or done. A click on a card's border lands on its
-checkout. Only the cursor's row and the pane being viewed are filled, between the card's sides; the
-selected repository is told by its bar and bold name. Checkout and pane identity remain the same indices and IDs used by the daemon
+remaining stage. Repository rows are ordered active-first, the quiet ones under their rule,
+and stay collapsed until chosen. Any number can be open at once, each showing its checkouts with
+panes running — and its primary checkout even with none, so there is always somewhere to start a
+shell or an agent from the rail — and those panes, indented under it without connecting glyphs,
+with the pane being viewed marked in place. Which are open is this client's own state, like the
+open view. Only the cursor's row and the pane being viewed are filled; the selected repository is told
+by its bar and bold name. Checkout and pane identity remain the same indices and IDs used by the daemon
 tree. While typing in a pane, `Ctrl-Space`, `f` lets its terminal take the main content area;
 repeating the chord restores the shell. The command band remains visible in both layouts.
 
 The keys walk the rows the rail draws, in the order it draws them, so anything a click reaches the
 keys reach too. `j`/`k` and the wheel step through the project heading, the repositories, and the
 open repository's checkouts and panes; `l`/Enter opens a repository and moves into it, goes to a
-checkout's first pane, or types into a pane; `h`/Escape climbs to the row above. Stepping past a
-repository does not open it — walking the list would otherwise unfold every row it crossed — and
-opening one closes the last. The quiet fold's line is drawn but is not one of those rows: the cursor
-steps over it, `z` works it from anywhere on the rail, and closing it under a cursor that is on a
-quiet repository leaves that one listed. On the project heading `n` adds a project and `D` removes this one.
+checkout's first pane, or types into a pane; `h`/Escape climbs to the row above, folding an open
+repository first when the cursor is on it. Stepping past a repository does not open it — walking
+the list would otherwise unfold every row it crossed — and opening one leaves the others open; a
+click on an open repository folds it. The rule between active and quiet is drawn but is not one of
+those rows: the cursor steps over it and a click on it lands nowhere. On the project heading `n` adds a project and `D` removes this one.
 The rail's cursor is not stored: it is the selection read at the depth focus names, so a new tree
 cannot leave the two disagreeing. Checkouts with nothing running, and branches no checkout is on,
 are not rail rows; the Checkouts stage draws every one, and there `n`, `D`, `s`, `a`, `F`, `P`,
@@ -472,7 +469,7 @@ Configuration uses `ARGUS_CONFIG_DIR` when set and the platform config directory
 - `client.toml` stores theme, editor, and client layout settings.
 - `runtime.db` holds everything Argus writes: panes to relaunch, projects and repositories added
   from the TUI, projects and repositories removed from the panel, workspaces created at runtime,
-  and the daemon-wide selected workspace.
+  when each repository last had a pane close in it, and the daemon-wide selected workspace.
 - `argusd.log` is the running daemon's log, and `argusd.log.1` the run before it.
 
 ## Runtime storage

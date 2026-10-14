@@ -117,6 +117,10 @@ impl Daemon {
                 ids,
                 open,
                 excluded,
+                used: store.repositories_used().unwrap_or_else(|e| {
+                    tracing::warn!("could not read when repositories were used: {e}");
+                    HashMap::new()
+                }),
             }),
             starting_agents: StdMutex::new(HashMap::new()),
             workspaces_tx,

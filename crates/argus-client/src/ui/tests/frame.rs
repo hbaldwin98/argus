@@ -589,8 +589,8 @@ fn dump_frame() {
 }
 
 /// The rail with enough in it to judge: about eight repositories, two of
-/// them active and one open over two checkouts, drawn with the quiet ones
-/// folded and then shown.
+/// them active and one open over two checkouts, the quiet ones under the
+/// divider in the order they were last used.
 #[test]
 #[ignore]
 fn dump_rail_busy() {
@@ -643,8 +643,9 @@ fn dump_rail_busy() {
         ),
     ];
     let quiet = ["atlas", "courier", "dotfiles", "hermes", "ledger", "satellite"];
-    repositories.extend(quiet.iter().zip(20..).map(|(name, id)| {
-        repository(id, name, vec![checkout(id + 20, "main", true, vec![])])
+    repositories.extend(quiet.iter().zip(20..).map(|(name, id)| argus_protocol::RepositoryInfo {
+        last_used: Some(id * 7 % 5),
+        ..repository(id, name, vec![checkout(id + 20, "main", true, vec![])])
     }));
 
     let mut app = app_with_tree();
@@ -654,12 +655,8 @@ fn dump_rail_busy() {
         project(5, "notes", vec![]),
     ];
     app.choose_rail_row(crate::app::RailRow::Repository(0));
-    for open in [false, true] {
-        app.quiet_open = open;
-        println!("fold {}:", if open { "open" } else { "closed" });
-        for line in lines(&draw_at(&mut app, 100, 30)) {
-            println!("|{line}");
-        }
+    for line in lines(&draw_at(&mut app, 100, 30)) {
+        println!("|{line}");
     }
 }
 

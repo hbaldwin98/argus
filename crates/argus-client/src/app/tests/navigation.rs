@@ -4,16 +4,8 @@
 use super::*;
 
 /// The fixture with a second, quiet repository listed first in the tree,
-/// so the rail's active-first order and the tree's order differ. The fold
-/// is open: closed, `atlas` is no row at all and there is no order to walk.
+/// so the rail's active-first order and the tree's order differ.
 fn quiet_repository_first() -> Harness {
-    let mut h = quiet_repository_folded();
-    h.app.quiet_open = true;
-    h
-}
-
-/// The same tree as the client first shows it, `atlas` folded away.
-fn quiet_repository_folded() -> Harness {
     let mut h = Harness::new();
     let mut t = tree();
     t[0].repositories
@@ -49,7 +41,8 @@ fn l_descends_and_h_ascends_through_every_column() {
     h.leader();
     h.key(KeyCode::Esc);
     assert_eq!(h.app.focus, Focus::Panes);
-    for expected in [Focus::Checkouts, Focus::Repositories, Focus::Projects] {
+    // On the open repository the first `h` folds it, and the next climbs.
+    for expected in [Focus::Checkouts, Focus::Repositories, Focus::Repositories, Focus::Projects] {
         h.key(KeyCode::Char('h'));
         assert_eq!(h.app.focus, expected);
     }
@@ -99,35 +92,47 @@ fn j_and_k_walk_the_rows_in_the_order_the_rail_draws_them() {
 }
 
 #[test]
-fn quiet_repositories_are_not_rail_rows_while_another_repository_is_active() {
-    let h = quiet_repository_folded();
-    assert_eq!(h.app.rail_rows(), [RailRow::Project, RailRow::Repository(1)]);
-    assert_eq!(
-        h.app.quiet_fold(),
-        Some(QuietFold { open: false, count: 1, above: None }),
-        "one trailing line stands for `atlas`"
-    );
-}
-
-#[test]
-fn the_selected_repository_is_a_rail_row_with_the_fold_closed() {
-    // The cursor and the Checkouts stage both read the selection, so it is
-    // never a row the rail does not draw.
-    let mut h = quiet_repository_first();
-    h.keys("jj"); // onto `atlas`
-    h.key(KeyCode::Char('z'));
-
-    assert!(!h.app.quiet_open);
-    assert_eq!(h.app.rail_cursor(), Some(RailRow::Repository(0)));
+fn quiet_repositories_are_listed_under_a_divider_after_the_active_ones() {
+    let h = quiet_repository_first();
     assert_eq!(
         h.app.rail_rows(),
         [RailRow::Project, RailRow::Repository(1), RailRow::Repository(0)]
     );
-    assert_eq!(h.app.quiet_fold(), None, "nothing is left hidden to count");
+    assert_eq!(h.app.rail_divider_above(), Some(0), "`atlas`, the first quiet one");
 }
 
 #[test]
-fn nothing_folds_when_no_repository_is_active() {
+fn quiet_repositories_are_ordered_by_when_they_were_last_used() {
+    let mut h = Harness::new();
+    let mut t = tree();
+    let quiet = |id, name: &str, last_used| RepositoryInfo {
+        last_used,
+        ..repository(id, name, vec![checkout(id * 10, "main", true, vec![])])
+    };
+    t[0].repositories.extend([
+        quiet(7, "never", None),
+        quiet(8, "older", Some(100)),
+        quiet(9, "newest", Some(300)),
+        quiet(6, "newer", Some(200)),
+    ]);
+    h.app.on_server_msg(ServerMsg::Tree(t));
+
+    // `orion` is busy and stays on top in tree order; the never used last.
+    assert_eq!(
+        h.app.rail_rows(),
+        [
+            RailRow::Project,
+            RailRow::Repository(0),
+            RailRow::Repository(3),
+            RailRow::Repository(4),
+            RailRow::Repository(2),
+            RailRow::Repository(1),
+        ]
+    );
+}
+
+#[test]
+fn nothing_is_divided_when_no_repository_is_active() {
     let mut h = Harness::new();
     let mut t = tree();
     t[0].repositories[0].checkouts[0].panes.clear();
@@ -139,60 +144,7 @@ fn nothing_folds_when_no_repository_is_active() {
         h.app.rail_rows(),
         [RailRow::Project, RailRow::Repository(0), RailRow::Repository(1)]
     );
-    assert_eq!(h.app.quiet_fold(), None);
-    h.key(KeyCode::Char('z'));
-    assert!(!h.app.quiet_open, "with no line to show it, `z` changes nothing");
-}
-
-#[test]
-fn z_closes_a_fold_whose_line_has_gone() {
-    let mut h = Harness::new();
-    let mut t = tree();
-    t[0].repositories[0].checkouts[0].panes.clear();
-    t[0].repositories
-        .push(repository(7, "atlas", vec![checkout(30, "main", true, vec![])]));
-    h.app.on_server_msg(ServerMsg::Tree(t));
-    h.app.quiet_open = true;
-
-    assert_eq!(h.app.quiet_fold(), None, "nothing is active, so no line is drawn");
-    h.key(KeyCode::Char('z'));
-    assert!(!h.app.quiet_open, "or the next repository to go quiet arrives revealed");
-}
-
-#[test]
-fn z_opens_the_fold_above_the_quiet_repositories_and_closes_it_again() {
-    let mut h = quiet_repository_folded();
-    h.key(KeyCode::Char('j'));
-    h.sent();
-    h.key(KeyCode::Char('z'));
-
-    assert_eq!(
-        h.app.rail_rows(),
-        [RailRow::Project, RailRow::Repository(1), RailRow::Repository(0)]
-    );
-    assert_eq!(
-        h.app.quiet_fold(),
-        Some(QuietFold { open: true, count: 1, above: Some(0) })
-    );
-    assert!(h.sent().is_empty(), "the fold is this client's own state");
-
-    h.key(KeyCode::Char('z'));
-    assert_eq!(h.app.rail_rows(), [RailRow::Project, RailRow::Repository(1)]);
-}
-
-#[test]
-fn j_and_k_never_stop_on_the_fold_line() {
-    // Closed, the line trails the list and the cursor stops above it.
-    let mut h = quiet_repository_folded();
-    h.keys("jjjj");
-    assert_eq!(h.app.rail_cursor(), Some(RailRow::Repository(1)), "`orion`, the last row");
-
-    // Open, the line sits between `orion` and `atlas`: one step crosses it.
-    h.key(KeyCode::Char('z'));
-    h.key(KeyCode::Char('j'));
-    assert_eq!(h.app.rail_cursor(), Some(RailRow::Repository(0)));
-    h.key(KeyCode::Char('k'));
-    assert_eq!(h.app.rail_cursor(), Some(RailRow::Repository(1)));
+    assert_eq!(h.app.rail_divider_above(), None);
 }
 
 #[test]
@@ -209,23 +161,35 @@ fn stepping_past_a_repository_does_not_open_it() {
     let mut h = quiet_repository_first();
     h.keys("jj");
     assert_eq!(h.app.rail_cursor(), Some(RailRow::Repository(0)));
-    assert_eq!(h.app.open_repository(), None, "only choosing a row opens it");
+    assert!(!h.app.is_repository_open(RepositoryId(7)), "only choosing a row opens it");
 }
 
 #[test]
-fn one_repository_is_open_at_a_time() {
+fn opening_a_repository_leaves_the_others_open() {
     let mut h = quiet_repository_first();
     h.keys("jl"); // `orion`, opened
-    assert_eq!(h.app.open_repository(), Some(RepositoryId(5)));
+    assert!(h.app.is_repository_open(RepositoryId(5)));
     // Up to `orion`, down past its checkout and two panes to `atlas`, and
     // open that.
     h.keys("hjjjjl");
     assert_eq!(h.app.current_repository().map(|r| r.id), Some(RepositoryId(7)));
-    assert_eq!(h.app.open_repository(), Some(RepositoryId(7)));
-    assert!(
-        !h.app.rail_rows().iter().any(|row| matches!(row, RailRow::Pane(_))),
-        "`orion` closed as `atlas` opened"
-    );
+    assert!(h.app.is_repository_open(RepositoryId(7)));
+    assert!(h.app.is_repository_open(RepositoryId(5)), "`orion` stays open");
+    assert!(h.app.rail_rows().iter().any(|row| matches!(row, RailRow::Pane(_))));
+}
+
+#[test]
+fn h_on_an_open_repository_folds_it_before_climbing() {
+    let mut h = quiet_repository_first();
+    h.keys("jlh"); // `orion`, opened, back to its row
+    assert_eq!(h.app.rail_cursor(), Some(RailRow::Repository(1)));
+    assert!(h.app.is_repository_open(RepositoryId(5)));
+
+    h.key(KeyCode::Char('h'));
+    assert!(!h.app.is_repository_open(RepositoryId(5)));
+    assert_eq!(h.app.rail_cursor(), Some(RailRow::Repository(1)), "the cursor stays");
+    h.key(KeyCode::Char('h'));
+    assert_eq!(h.app.rail_cursor(), Some(RailRow::Project));
 }
 
 #[test]
@@ -244,9 +208,8 @@ fn switching_projects_opens_the_repository_the_rail_lists_first() {
     h.key(KeyCode::Enter);
 
     assert_eq!(h.app.current_project().map(|p| p.id), Some(ProjectId(2)));
-    assert_eq!(
-        h.app.open_repository(),
-        Some(RepositoryId(8)),
+    assert!(
+        h.app.is_repository_open(RepositoryId(8)),
         "the busy repository, drawn on top, not the tree's first"
     );
     assert_eq!(h.app.current_repository().map(|r| r.id), Some(RepositoryId(8)));

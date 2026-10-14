@@ -205,6 +205,16 @@ pub(super) fn checkout_has_agent(projects: &[Project], path: &std::path::Path) -
         .any(|c| c.panes.iter().any(|p| p.kind == PaneKind::Agent))
 }
 
+/// The primary checkout's path of the repository holding a pane.
+pub(super) fn repository_path_of_pane(projects: &[Project], id: PaneId) -> Option<PathBuf> {
+    projects
+        .iter()
+        .flat_map(|p| p.repositories.iter())
+        .find(|r| r.checkouts.iter().any(|c| c.panes.iter().any(|p| p.id == id)))
+        .and_then(|r| r.primary_path())
+        .map(std::path::Path::to_path_buf)
+}
+
 /// Removes a pane from whichever checkout holds it, returning it along with
 /// that checkout's path — which the caller can't look up afterwards, the
 /// pane being gone by then.

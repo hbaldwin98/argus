@@ -36,7 +36,7 @@ use layout::in_rect;
 pub use layout::{Focus, Layout, Panel};
 pub use modal::{Help, Overlay, Picker, PickerKind, Prompt, RemoveTarget, Setting};
 pub use mode::{Mode, OverlayMode};
-pub use rail::{QuietFold, RailRow};
+pub use rail::RailRow;
 pub use rows::{CheckoutAnchor, CheckoutRow, PaneLocation};
 pub use board_writes::LineInput;
 pub use feature::{FeatureHit, FeatureRow, Lens, Standing, GROUPS};
@@ -277,15 +277,11 @@ pub struct App {
     /// While true, printable keys edit [`checkout_filter`] rather than
     /// firing navigation bindings.
     pub checkout_filtering: bool,
-    /// The repository whose checkouts and panes the rail shows, as the
-    /// operator last opened one. A selection alone does not open a
-    /// repository: the rail stays useful as an index until asked for more.
-    /// Read through [`App::open_repository`].
-    opened_repository: Option<RepositoryId>,
-    /// Whether the fold over the repositories with nothing running is open. This
-    /// client's own, like which view is open: two people on one daemon are
-    /// not necessarily reading the same list.
-    pub quiet_open: bool,
+    /// The repositories whose checkouts and panes the rail shows, as the
+    /// operator opened them. A selection alone does not open a repository:
+    /// the rail stays useful as an index until asked for more. Read through
+    /// [`App::is_repository_open`].
+    opened_repositories: std::collections::HashSet<RepositoryId>,
     pub picker: Option<Picker>,
     /// The directory browser, up in place of a prompt when a project or a
     /// repository is being added.
@@ -483,8 +479,7 @@ impl App {
             show_branches: false,
             checkout_filter: String::new(),
             checkout_filtering: false,
-            opened_repository: None,
-            quiet_open: false,
+            opened_repositories: std::collections::HashSet::new(),
             picker: None,
             dir_picker: None,
             overlay: None,

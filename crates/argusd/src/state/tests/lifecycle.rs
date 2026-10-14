@@ -53,6 +53,19 @@ async fn closing_a_pane_leaves_nothing_of_it_behind() {
 }
 
 #[tokio::test]
+async fn closing_a_pane_marks_its_repository_as_used_then() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, _reader) = live_claude(dir.path(), Default::default());
+    let last_used = |d: &Daemon| d.snapshot()[0].repositories[0].last_used;
+    let pane = d.spawn_agent(only_checkout(&d), "claude").unwrap();
+    assert_eq!(last_used(&d), None, "starting a pane is not what is recorded");
+
+    d.close_pane(pane).unwrap();
+
+    assert!(last_used(&d).is_some_and(|at| at > 0));
+}
+
+#[tokio::test]
 async fn a_restarted_agent_leaves_nothing_of_its_old_pane_behind() {
     let dir = tempfile::tempdir().unwrap();
     let (d, _reader) = live_claude(dir.path(), crate::config::Restart::Always);

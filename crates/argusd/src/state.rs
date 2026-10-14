@@ -237,6 +237,14 @@ struct Repository {
     remote_branches: Vec<String>,
 }
 
+impl Repository {
+    /// The configured working directory, which is what names a repository
+    /// in the store.
+    fn primary_path(&self) -> Option<&std::path::Path> {
+        self.checkouts.iter().find(|c| c.primary).map(|c| c.path.as_path())
+    }
+}
+
 struct Project {
     id: ProjectId,
     name: String,
@@ -298,6 +306,11 @@ struct Inner {
     /// them again every ten seconds, so without this the row would come
     /// straight back (see [`crate::store::Store::excluded_repos`]).
     excluded: Vec<PathBuf>,
+    /// When each repository last had a pane close in it, by its primary
+    /// checkout's path, in seconds since the Unix epoch. Kept apart from
+    /// `Repository` because a scan rebuilds those, and persisted so the
+    /// rail's quiet repositories keep their order across a restart.
+    used: HashMap<PathBuf, u64>,
 }
 
 pub struct Daemon {
@@ -383,7 +396,7 @@ pub struct Daemon {
 }
 
 /// A project as clients are shown it.
-fn project_info(p: &Project) -> ProjectInfo {
+fn project_info(p: &Project, used: &HashMap<PathBuf, u64>) -> ProjectInfo {
     ProjectInfo {
         id: p.id,
         name: p.name.clone(),
@@ -397,6 +410,7 @@ fn project_info(p: &Project) -> ProjectInfo {
                 branches: r.branches.clone(),
                 default_branch: r.default_branch.clone(),
                 remote_branches: r.remote_branches.clone(),
+                last_used: r.primary_path().and_then(|path| used.get(path).copied()),
                 checkouts: r
                     .checkouts
                     .iter()
@@ -486,7 +500,7 @@ impl Daemon {
             .projects
             .iter()
             .filter(|p| p.workspace == open)
-            .map(project_info)
+            .map(|p| project_info(p, &inner.used))
             .collect()
     }
 
@@ -505,7 +519,7 @@ impl Daemon {
                     .projects
                     .iter()
                     .filter(|p| p.workspace == w.id)
-                    .map(project_info)
+                    .map(|p| project_info(p, &inner.used))
                     .collect(),
             })
             .collect()

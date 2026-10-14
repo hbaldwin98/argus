@@ -90,8 +90,6 @@ impl App {
                 MouseEventKind::Down(MouseButton::Left) => {
                     if crate::ui::command_center_project_header_at(self, ev.column, ev.row) {
                         self.choose_rail_row(RailRow::Project);
-                    } else if crate::ui::command_center_quiet_fold_at(self, ev.column, ev.row) {
-                        self.toggle_quiet_fold();
                     } else if let Some(row) =
                         crate::ui::command_center_rail_target_at(self, ev.column, ev.row)
                     {

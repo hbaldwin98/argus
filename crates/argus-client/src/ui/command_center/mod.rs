@@ -18,7 +18,7 @@ pub(crate) use checkouts::checkout_at;
 use checkouts::render_checkouts;
 pub(crate) use feature::feature_hit_at;
 use feature::render_feature_stage;
-pub(crate) use rail::{project_header_at, quiet_fold_at, rail_target_at, sidebar_contains};
+pub(crate) use rail::{project_header_at, rail_target_at, sidebar_contains};
 use rail::render_sidebar;
 use workspace::render_workspace;
 

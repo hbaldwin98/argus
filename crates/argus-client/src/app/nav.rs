@@ -365,11 +365,12 @@ impl App {
         }
         self.sel_project = location.project;
         self.sel_repository = location.repository;
-        self.opened_repository = self
+        let repository = self
             .tree
             .get(location.project)
             .and_then(|project| project.repositories.get(location.repository))
             .map(|repository| repository.id);
+        self.opened_repositories.extend(repository);
         let Some(row) = self.checkout_row_of(location.checkout) else {
             return false;
         };

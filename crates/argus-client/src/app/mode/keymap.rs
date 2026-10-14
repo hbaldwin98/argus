@@ -325,12 +325,6 @@ fn on_pane_row(app: &App) -> bool {
     app.focus == Focus::Panes
 }
 
-/// A repository row while the rail has quiet repositories to fold: the
-/// rows `z` shows and hides are the ones beside the cursor there.
-fn beside_the_quiet_fold(app: &App) -> bool {
-    on_repositories(app) && app.quiet_fold().is_some()
-}
-
 /// The pane rows, and anywhere else that leaves the keys with the rail.
 fn on_panes(app: &App) -> bool {
     !matches!(
@@ -367,7 +361,7 @@ const RAIL: Keymap = Keymap {
                 .hints(&[Hint::new("l open", 2)]),
                 Binding::new(
                     "h  esc",
-                    "up to the row it hangs under",
+                    "up to the row it hangs under; on an open repository, fold it",
                     &[(&[Char('h'), Left, Esc], App::ascend)],
                 )
                 .help_only(),
@@ -459,13 +453,7 @@ const RAIL: Keymap = Keymap {
                     &[(&[Char('o')], App::open_project_picker)],
                 )
                 .hints(&[Hint::new("o switch", 1).when(on_projects)]),
-                Binding::new(
-                    "z  click + N quiet",
-                    "show or fold the repositories with nothing running",
-                    &[(&[Char('z')], App::toggle_quiet_fold)],
-                )
-                .hints(&[Hint::new("z quiet", 0).when(beside_the_quiet_fold)]),
-                Binding::note("click repo", "open it; the one open before folds away"),
+                Binding::note("click repo", "open it, or fold it when it is open"),
                 Binding::note("click pane", "show it, keys stay here — x closes it"),
                 Binding::note("enter  click", "type into the pane shown"),
                 Binding::note("wheel", "move along the rail"),

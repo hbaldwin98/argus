@@ -428,8 +428,17 @@ impl Daemon {
     /// and removes it from the tree entirely, so a closed pane actually
     /// disappears instead of lingering as a dead row the user can't clear.
     pub fn close_pane(&self, pane: PaneId) -> anyhow::Result<()> {
-        let (removed, orphaned_checkout) = {
+        let (removed, orphaned_checkout, used) = {
             let mut inner = self.inner.lock().unwrap();
+            // Closing is what makes a repository quiet, so its time is when
+            // it was last used; a replacement in place never comes here.
+            let used = repository_path_of_pane(&inner.projects, pane).map(|path| {
+                let at = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_secs());
+                inner.used.insert(path.clone(), at);
+                (path, at)
+            });
             let taken = remove_pane_with_checkout(&mut inner.projects, pane);
             // Managed hooks belong to the checkout, not the pane, so they
             // come out only once the last agent there is gone — closing one
@@ -438,10 +447,15 @@ impl Daemon {
                 .as_ref()
                 .map(|(_, path)| path.clone())
                 .filter(|path| !checkout_has_agent(&inner.projects, path));
-            (taken.map(|(p, _)| p), orphaned)
+            (taken.map(|(p, _)| p), orphaned, used)
         };
         let removed = removed.ok_or_else(|| anyhow::anyhow!("no such pane"))?;
         self.retire_pane(removed);
+        if let Some((path, at)) = used {
+            if let Err(e) = self.store.set_repository_used(&path, at) {
+                tracing::warn!("could not record {} as used: {e}", path.display());
+            }
+        }
         // Only here: a restart or failed resume has an agent about to take
         // the seat, which would write the hooks straight back, and a
         // vanished worktree has no directory to take them out of.

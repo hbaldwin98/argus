@@ -1,5 +1,5 @@
-//! What the rail lists, in what order, which repositories fold away as
-//! quiet, which one is open, and what choosing a row does.
+//! What the rail lists, in what order, which repositories are open, and
+//! what choosing a row does.
 //!
 //! The renderer draws these rows, a click lands on one of them, and `j`/`k`
 //! walk them — so the order on screen is the order the cursor moves in,
@@ -24,97 +24,50 @@ pub enum RailRow {
     Pane(PaneLocation),
 }
 
-/// The line drawn for the quiet repositories. Not a [`RailRow`]: it is a
-/// lid over rows rather than somewhere to be, so the cursor never stops on
-/// it; `z` and a click work it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct QuietFold {
-    pub open: bool,
-    /// Closed, how many repositories it hides; open, how many it revealed.
-    pub count: usize,
-    /// The repository row it is drawn above, open; closed it trails the list.
-    pub above: Option<usize>,
-}
-
 impl App {
-    /// The repositories the rail lists, the ones with anything running
-    /// first: what is active is what the rail is for. The quiet ones fold
-    /// away behind [`QuietFold`]'s line while there is an active one to
-    /// fold behind, all but the selected one — the cursor and the Checkouts
-    /// stage both read `sel_repository`, so hiding it would leave them on a
-    /// row nobody can see.
+    /// The repositories the rail lists: the ones with anything running
+    /// first, in tree order, since what is active is what the rail is for;
+    /// then the quiet ones, the most recently used first, so the one just
+    /// left is the one nearest to hand.
     fn rail_repositories(&self) -> Vec<usize> {
         let (mut listed, quiet) = self.repositories_by_activity();
-        let folds = !listed.is_empty() && !self.quiet_open;
-        listed.extend(
-            quiet
-                .into_iter()
-                .filter(|index| !folds || *index == self.sel_repository),
-        );
+        listed.extend(quiet);
         listed
     }
 
-    /// The open project's repositories as (active, quiet), each in tree
-    /// order. A repository is quiet when no checkout of it has a listed pane.
+    /// The open project's repositories as (active, quiet): the active in
+    /// tree order, the quiet most recently used first, the never used last.
+    /// A repository is quiet when no checkout of it has a listed pane.
     fn repositories_by_activity(&self) -> (Vec<usize>, Vec<usize>) {
         let Some(project) = self.current_project() else {
             return (Vec::new(), Vec::new());
         };
-        (0..project.repositories.len()).partition(|index| {
-            project.repositories[*index]
-                .checkouts
-                .iter()
-                .any(|checkout| checkout.listed_panes().next().is_some())
-        })
+        let (active, mut quiet): (Vec<usize>, Vec<usize>) =
+            (0..project.repositories.len()).partition(|index| {
+                project.repositories[*index]
+                    .checkouts
+                    .iter()
+                    .any(|checkout| checkout.listed_panes().next().is_some())
+            });
+        quiet.sort_by_key(|index| std::cmp::Reverse(project.repositories[*index].last_used));
+        (active, quiet)
     }
 
-    /// The line that stands for the quiet repositories, when there is one
-    /// to draw: none while nothing is active, since the list is then the
-    /// whole project, and none while it would count zero.
-    pub fn quiet_fold(&self) -> Option<QuietFold> {
+    /// The quiet repository the divider is drawn above: the first of them,
+    /// while there are active ones for it to divide them from.
+    pub fn rail_divider_above(&self) -> Option<usize> {
         let (active, quiet) = self.repositories_by_activity();
-        if active.is_empty() {
-            return None;
-        }
-        let fold = if self.quiet_open {
-            QuietFold {
-                open: true,
-                count: quiet.len(),
-                above: quiet.first().copied(),
-            }
-        } else {
-            QuietFold {
-                open: false,
-                count: quiet.iter().filter(|index| **index != self.sel_repository).count(),
-                above: None,
-            }
-        };
-        (fold.count > 0).then_some(fold)
+        quiet.first().copied().filter(|_| !active.is_empty())
     }
 
-    /// `z`, or a click on the fold's line. Without a line there is nothing
-    /// to show for an opening, and a fold opened unseen would surprise
-    /// whoever next watched a repository go quiet. Closing needs no line:
-    /// the one it was opened under may be gone since, every repository
-    /// having gone active or quiet together.
-    pub(crate) fn toggle_quiet_fold(&mut self) {
-        if self.quiet_open {
-            self.quiet_open = false;
-            return;
-        }
-        self.quiet_open = self.quiet_fold().is_some();
-    }
-
-    /// The one repository the rail shows open: the one the operator opened,
+    /// Whether the rail shows a repository open: one the operator opened,
     /// or the one holding the pane the keys are in when that is somewhere
     /// else — a terminal being typed into is never hidden under a closed row.
-    pub fn open_repository(&self) -> Option<RepositoryId> {
+    pub fn is_repository_open(&self, id: RepositoryId) -> bool {
         let in_pane = self.view == View::Workspace
             && matches!(self.focus, Focus::Panes | Focus::PaneContent);
-        match self.current_repository() {
-            Some(current) if in_pane => Some(current.id),
-            _ => self.opened_repository,
-        }
+        let holds_the_pane = in_pane && self.current_repository().is_some_and(|r| r.id == id);
+        holds_the_pane || self.opened_repositories.contains(&id)
     }
 
     /// Every row the rail draws, in the order the cursor walks them.
@@ -122,12 +75,11 @@ impl App {
         let Some(project) = self.current_project() else {
             return Vec::new();
         };
-        let open = self.open_repository();
         let mut rows = vec![RailRow::Project];
         for repository in self.rail_repositories() {
             rows.push(RailRow::Repository(repository));
             let repo = &project.repositories[repository];
-            if Some(repo.id) != open {
+            if !self.is_repository_open(repo.id) {
                 continue;
             }
             for (checkout, item) in repo.checkouts.iter().enumerate() {
@@ -183,7 +135,8 @@ impl App {
     }
 
     /// What choosing a row does, by click: the project heading switches
-    /// projects, a repository opens, and a pane takes the stage. The keys
+    /// projects, a repository opens or, open already, folds, and a pane
+    /// takes the stage. The keys
     /// stay on the rail, which is what lets a bare `x` close the pane just
     /// clicked; the terminal itself takes typing.
     pub(crate) fn choose_rail_row(&mut self, row: RailRow) {
@@ -191,7 +144,9 @@ impl App {
             RailRow::Project => self.open_project_picker(),
             RailRow::Repository(_) => {
                 self.put_rail_cursor(row);
-                self.open_selected_repository();
+                if !self.fold_selected_repository() {
+                    self.open_selected_repository();
+                }
             }
             RailRow::Checkout(..) => self.put_rail_cursor(row),
             RailRow::Pane(location) => {
@@ -248,8 +203,12 @@ impl App {
         }
     }
 
-    /// `h`/Esc: up to the row this one hangs under.
+    /// `h`/Esc: up to the row this one hangs under. On an open repository
+    /// it folds that first, since nothing else closes one from the keys.
     pub(super) fn leave_rail_row(&mut self) {
+        if self.focus == Focus::Repositories && self.fold_selected_repository() {
+            return;
+        }
         self.focus = match self.focus {
             Focus::Panes => Focus::Checkouts,
             Focus::Checkouts => Focus::Repositories,
@@ -286,15 +245,25 @@ impl App {
         self.clamp();
     }
 
+    /// Opening one leaves the others as they are: several can be watched
+    /// at once, and each folds only when asked.
     fn open_selected_repository(&mut self) {
-        self.opened_repository = self.current_repository().map(|r| r.id);
+        if let Some(id) = self.current_repository().map(|r| r.id) {
+            self.opened_repositories.insert(id);
+        }
+    }
+
+    /// Folds the selected repository if it is open, saying whether it was.
+    fn fold_selected_repository(&mut self) -> bool {
+        self.current_repository()
+            .map(|r| r.id)
+            .is_some_and(|id| self.opened_repositories.remove(&id))
     }
 
     /// After switching projects: the selection starts on the first
     /// repository the rail lists, open, since that is the row on top.
     pub(super) fn start_on_first_rail_repository(&mut self) {
         let Some(first) = self.rail_repositories().first().copied() else {
-            self.opened_repository = None;
             return;
         };
         self.sel_repository = first;

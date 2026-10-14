@@ -121,6 +121,26 @@ impl Store {
         Ok(())
     }
 
+    // ---- when repositories were last used ----------------------------
+
+    pub fn set_repository_used(&self, path: &Path, at: u64) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO repo_used (path, at) VALUES (?1, ?2)
+             ON CONFLICT(path) DO UPDATE SET at = excluded.at",
+            rusqlite::params![path_text(path), at as i64],
+        )?;
+        Ok(())
+    }
+
+    pub fn repositories_used(&self) -> Result<HashMap<PathBuf, u64>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare("SELECT path, at FROM repo_used")?;
+        let rows = stmt.query_map([], |r| {
+            Ok((PathBuf::from(r.get::<_, String>(0)?), r.get::<_, i64>(1)? as u64))
+        })?;
+        Ok(rows.collect::<rusqlite::Result<HashMap<_, _>>>()?)
+    }
+
     // ---- workspaces ---------------------------------------------------
 
     /// Declaring a workspace is what makes an empty one exist at all: a
