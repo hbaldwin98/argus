@@ -476,7 +476,13 @@ From any checkout or `.argus/worktrees/*` worktree:
 .\scripts\dev.ps1 -Stop    # ends this checkout's daemon
 ```
 
-The script sets `ARGUS_INSTANCE=dev`, so the worktree daemon listens on its own
+```sh
+cargo build -q -p argus -p argusd
+ARGUS_INSTANCE=dev target/debug/argus               # opens this checkout's Argus
+ARGUS_INSTANCE=dev target/debug/argus server stop   # ends this checkout's daemon
+```
+
+Both forms set `ARGUS_INSTANCE=dev`, so the worktree daemon listens on its own
 endpoint under its own slice of the config directory and the installed Argus
 keeps running, untouched. The daemon outlives the client, so the next launch
 connects instantly and a rebuild only pays for what changed.
@@ -735,9 +741,9 @@ Hook files are checkout-wide, but handlers use or rebase to the valid pane-speci
 
 ## Development
 
-GitHub Actions runs check, tests, and clippy on Linux x86_64, macOS arm64, and Windows x86_64 for
-pull requests and pushes to `main`. The workflow intentionally omits rustfmt until the existing
-workspace-wide formatting drift is resolved.
+GitHub Actions runs tests and clippy on Linux x86_64, macOS arm64, and Windows x86_64 for
+pull requests and pushes to `main`. The sources are hand-formatted, so rustfmt is disabled in
+`rustfmt.toml` and `cargo fmt` changes nothing.
 
 To make CI mandatory, create a branch ruleset for `main` under **Settings > Rules > Rulesets** and
 require the `Linux x86_64`, `macOS arm64`, and `Windows x86_64` status checks. A workflow reports
@@ -749,15 +755,10 @@ Useful checks from the repository root:
 cargo check --workspace --all-targets --locked
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo fmt --all -- --check
 ```
 
 Some tests launch real PTYs and Git processes. `cargo test` can finish all assertions while a spawned
 test process briefly delays command teardown.
-
-The repository currently has pre-existing rustfmt drift, so `cargo fmt --all -- --check` may report
-files unrelated to a change. Avoid applying a workspace-wide format pass in an otherwise focused
-patch.
 
 ## Publishing a Release
 
@@ -773,8 +774,10 @@ git tag -a v0.1.0 -m "Argus 0.1.0"
 git push origin v0.1.0
 ```
 
-The release workflow builds five native packages, generates SHA-256 checksums, and creates a GitHub
-Release with generated notes. A mismatched tag fails before any packages are built.
+The release workflow runs the CI workflow's full matrix (Linux, macOS, and Windows) against the
+tag, then builds five native packages, generates SHA-256 checksums, and creates a GitHub Release
+with generated notes. A mismatched tag or a failure on any CI platform stops the release before any
+packages are built.
 
 ## License
 
