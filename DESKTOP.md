@@ -84,10 +84,9 @@ Capabilities: the page uses only app commands and one `Channel`, which need no c
 `Cargo.toml`: the workspace `[package]` shape; `tauri = { version = "2.12.3", default-features =
 false, features = ["wry", "compression", "x11", "dbus", "custom-protocol"] }` (no
 `common-controls-v6` — see Findings for why on Windows); `tauri-build = "2.7.2"` as the
-build dependency, which 2.12.3 requires, as it does `tauri-macros` ~2.7.2. Not 2.12.1: it stops
-delivering a `Channel`'s messages after its handler throws once. Every Tauri crate in the lock must
-be at least two weeks old; 2.12.3 and the 2.7.2 crates were published on 2026-10-10, so the crate
-is added on or after 2026-10-24. Workspace deps: argus-protocol, tokio, serde,
+build dependency, which 2.12.3 requires, as it does `tauri-macros` ~2.7.2. These are the newest
+stable releases, and the crate takes whatever is newest when it is added, as every dependency here
+does; the 3.0 alphas are pre-releases and are not used. Workspace deps: argus-protocol, tokio, serde,
 serde_json, anyhow, tracing, tracing-subscriber; `unicode-width = "0.2"` (the lock's 0.2.2 is the
 one alacritty uses, so widths match the daemon exactly). `tauri.conf.json`: no `version` (it falls
 back to Cargo's, so the release bump stays in Cargo.toml), `productName` "Argus", identifier
