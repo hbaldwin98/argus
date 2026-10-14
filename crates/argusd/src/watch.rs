@@ -92,8 +92,11 @@ pub fn file(path: &Path, on_change: impl Fn() + Send + 'static) -> Option<impl W
     let dir = path.parent()?.to_path_buf();
     let file = path.to_path_buf();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        // Opening and reading are reported too, and a reload reads the
+        // file: woken by its own read, it would never stop reloading.
         if let Ok(event) = res {
-            if concerns(&event.paths, &file) {
+            let read = matches!(event.kind, notify::EventKind::Access(_));
+            if !read && concerns(&event.paths, &file) {
                 on_change();
             }
         }
@@ -156,6 +159,30 @@ mod tests {
             !paths.contains(&git_dir.join("objects")),
             "objects is the one directory this must never watch"
         );
+    }
+
+    #[test]
+    fn reading_the_watched_file_does_not_wake_the_reload() {
+        // A reload reads the file. Were a read a wakeup, the first edit
+        // would start a reload that wakes the next, four times a second
+        // for as long as the daemon ran.
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("projects.toml");
+        std::fs::write(&config, "# before").unwrap();
+        let woke = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = woke.clone();
+        let _watch = file(&config, move || {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        })
+        .unwrap();
+
+        let _ = std::fs::read_to_string(&config).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert_eq!(woke.load(std::sync::atomic::Ordering::SeqCst), 0, "a read is not a change");
+
+        std::fs::write(&config, "# after").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(woke.load(std::sync::atomic::Ordering::SeqCst) > 0, "a write is");
     }
 
     #[test]
