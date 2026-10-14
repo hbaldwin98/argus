@@ -15,6 +15,9 @@ const GROUPS = ['Commands', 'Panes', 'Features', 'Checkouts'];
 const SHOWN = 6;
 let query = '';
 let at = 0;
+/** The highlighted result's `key`: a list Rust rebuilds while the palette
+ *  is open can move it, and Enter runs what is highlighted. */
+let held = null;
 let results = [];
 /** What had the keys before the palette, to give them back to. */
 let before = null;
@@ -26,7 +29,7 @@ export function openPalette() {
         return;
     before = document.activeElement;
     query = '';
-    at = 0;
+    top();
     const field = el('input', {
         class: 'field palette-field',
         placeholder: 'Search, or > for commands, # for features',
@@ -36,7 +39,7 @@ export function openPalette() {
     });
     field.addEventListener('input', () => {
         query = field.value;
-        at = 0;
+        top();
         drawResults();
     });
     field.addEventListener('keydown', (e) => {
@@ -47,7 +50,7 @@ export function openPalette() {
         if (action === 'next' || action === 'previous') {
             const count = results.length;
             if (count)
-                at = (at + (action === 'next' ? 1 : count - 1)) % count;
+                highlight((at + (action === 'next' ? 1 : count - 1)) % count);
             drawResults();
         }
         else if (action === 'choose') {
@@ -85,6 +88,16 @@ export function drawPalette() {
     if (paletteOpen())
         drawResults();
 }
+/** Highlights whatever ranks first once the results are drawn. */
+function top() {
+    at = 0;
+    held = null;
+}
+/** Highlights the `i`th result. */
+function highlight(i) {
+    at = i;
+    held = results[i]?.key ?? null;
+}
 function choose(result) {
     closePalette();
     result.choose();
@@ -95,6 +108,7 @@ function commandResult(command) {
         : null;
     return {
         group: 'Commands',
+        key: `command ${command.action}`,
         text: command.label,
         aside: command.chords.length
             ? el('span', { class: 'aside' }, place && el('span', { class: 'fg-faint' }, place), keycaps(command.chords))
@@ -111,6 +125,7 @@ function everything() {
         ...state.commands.map(commandResult),
         ...(palette?.panes ?? []).map((pane) => ({
             group: 'Panes',
+            key: `pane ${pane.id}`,
             text: pane.title,
             detail: pane.place,
             aside: word(pane.status, `st ${pane.status}`),
@@ -121,12 +136,14 @@ function everything() {
         })),
         ...(palette?.features ?? []).map((feature) => ({
             group: 'Features',
+            key: `feature ${feature.slug}`,
             text: `#${feature.number} ${feature.title}`,
             aside: word(feature.standing, 'st fg-faint'),
             choose: () => call('go_to_feature', { slug: feature.slug }),
         })),
         ...(palette?.checkouts ?? []).map((checkout) => ({
             group: 'Checkouts',
+            key: `checkout ${checkout.id}`,
             text: `${checkout.repository} / ${checkout.name}`,
             detail: checkout.branch || undefined,
             aside: checkout.git ? word(checkout.git, `git${checkout.clean ? ' clean' : ''}`) : null,
@@ -194,6 +211,7 @@ function drawResults() {
         .map((r) => ({ r, m: fuzzy(needle, only === 'Features' ? r.text.slice(1) : r.text) }))
         .filter((x) => x.m !== null);
     const rows = [];
+    const buttons = [];
     results = [];
     for (const group of GROUPS) {
         let members = scored.filter((x) => x.r.group === group);
@@ -209,27 +227,31 @@ function drawResults() {
             results.push(r);
             // A feature's hits were counted past its `#`.
             const hits = only === 'Features' ? m.hits.map((h) => h + 1) : m.hits;
-            rows.push(el('button', {
-                class: `mi palette-row${i === at ? ' on' : ''}`,
+            const button = el('button', {
+                class: 'mi palette-row',
                 role: 'option',
-                'aria-selected': String(i === at),
+                'aria-selected': 'false',
                 onmousedown: (e) => e.preventDefault(),
                 onclick: () => choose(r),
                 onmousemove: () => {
                     if (at === i)
                         return;
-                    at = i;
+                    highlight(i);
                     drawResults();
                 },
-            }, el('span', { class: 'grow ttl' }, marked(r.text, hits)), r.detail && el('span', { class: 'meta mono' }, r.detail), r.aside));
+            }, el('span', { class: 'grow ttl' }, marked(r.text, hits)), r.detail && el('span', { class: 'meta mono' }, r.detail), r.aside);
+            buttons.push(button);
+            rows.push(button);
         }
     }
     if (!results.length) {
         const loading = only === 'Features' && !state.palette?.featuresLoaded;
         rows.push(el('div', { class: 'palette-empty meta' }, loading ? 'Reading the features…' : 'No match.'));
     }
-    if (at >= results.length)
-        at = Math.max(0, results.length - 1);
+    const kept = results.findIndex((r) => r.key === held);
+    highlight(kept >= 0 ? kept : Math.min(at, Math.max(0, results.length - 1)));
+    buttons[at]?.classList.add('on');
+    buttons[at]?.setAttribute('aria-selected', 'true');
     list.replaceChildren(...rows);
     list.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
 }

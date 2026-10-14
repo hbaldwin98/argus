@@ -15,6 +15,8 @@ import { call } from './tauri.js';
 
 interface Result {
   group: 'Commands' | 'Panes' | 'Features' | 'Checkouts';
+  /** Which result this is, the same across a rebuild. */
+  key: string;
   /** What the search matches and the row shows. */
   text: string;
   detail?: string;
@@ -29,6 +31,9 @@ const SHOWN = 6;
 
 let query = '';
 let at = 0;
+/** The highlighted result's `key`: a list Rust rebuilds while the palette
+ *  is open can move it, and Enter runs what is highlighted. */
+let held: string | null = null;
 let results: Result[] = [];
 /** What had the keys before the palette, to give them back to. */
 let before: Element | null = null;
@@ -41,7 +46,7 @@ export function openPalette(): void {
   if (paletteOpen()) return;
   before = document.activeElement;
   query = '';
-  at = 0;
+  top();
   const field = el('input', {
     class: 'field palette-field',
     placeholder: 'Search, or > for commands, # for features',
@@ -51,7 +56,7 @@ export function openPalette(): void {
   });
   field.addEventListener('input', () => {
     query = field.value;
-    at = 0;
+    top();
     drawResults();
   });
   field.addEventListener('keydown', (e) => {
@@ -60,7 +65,7 @@ export function openPalette(): void {
     e.preventDefault();
     if (action === 'next' || action === 'previous') {
       const count = results.length;
-      if (count) at = (at + (action === 'next' ? 1 : count - 1)) % count;
+      if (count) highlight((at + (action === 'next' ? 1 : count - 1)) % count);
       drawResults();
     } else if (action === 'choose') {
       const chosen = results[at];
@@ -105,6 +110,18 @@ export function drawPalette(): void {
   if (paletteOpen()) drawResults();
 }
 
+/** Highlights whatever ranks first once the results are drawn. */
+function top(): void {
+  at = 0;
+  held = null;
+}
+
+/** Highlights the `i`th result. */
+function highlight(i: number): void {
+  at = i;
+  held = results[i]?.key ?? null;
+}
+
 function choose(result: Result): void {
   closePalette();
   result.choose();
@@ -117,6 +134,7 @@ function commandResult(command: Command): Result {
       : null;
   return {
     group: 'Commands',
+    key: `command ${command.action}`,
     text: command.label,
     aside: command.chords.length
       ? el(
@@ -140,6 +158,7 @@ function everything(): Result[] {
     ...state.commands.map(commandResult),
     ...(palette?.panes ?? []).map((pane): Result => ({
       group: 'Panes',
+      key: `pane ${pane.id}`,
       text: pane.title,
       detail: pane.place,
       aside: word(pane.status, `st ${pane.status}`),
@@ -150,12 +169,14 @@ function everything(): Result[] {
     })),
     ...(palette?.features ?? []).map((feature): Result => ({
       group: 'Features',
+      key: `feature ${feature.slug}`,
       text: `#${feature.number} ${feature.title}`,
       aside: word(feature.standing, 'st fg-faint'),
       choose: () => call('go_to_feature', { slug: feature.slug }),
     })),
     ...(palette?.checkouts ?? []).map((checkout): Result => ({
       group: 'Checkouts',
+      key: `checkout ${checkout.id}`,
       text: `${checkout.repository} / ${checkout.name}`,
       detail: checkout.branch || undefined,
       aside: checkout.git ? word(checkout.git, `git${checkout.clean ? ' clean' : ''}`) : null,
@@ -214,6 +235,7 @@ function drawResults(): void {
     .map((r) => ({ r, m: fuzzy(needle, only === 'Features' ? r.text.slice(1) : r.text) }))
     .filter((x): x is { r: Result; m: { score: number; hits: number[] } } => x.m !== null);
   const rows: HTMLElement[] = [];
+  const buttons: HTMLElement[] = [];
   results = [];
   for (const group of GROUPS) {
     let members = scored.filter((x) => x.r.group === group);
@@ -226,26 +248,26 @@ function drawResults(): void {
       results.push(r);
       // A feature's hits were counted past its `#`.
       const hits = only === 'Features' ? m.hits.map((h) => h + 1) : m.hits;
-      rows.push(
-        el(
-          'button',
-          {
-            class: `mi palette-row${i === at ? ' on' : ''}`,
-            role: 'option',
-            'aria-selected': String(i === at),
-            onmousedown: (e: MouseEvent) => e.preventDefault(),
-            onclick: () => choose(r),
-            onmousemove: () => {
-              if (at === i) return;
-              at = i;
-              drawResults();
-            },
+      const button = el(
+        'button',
+        {
+          class: 'mi palette-row',
+          role: 'option',
+          'aria-selected': 'false',
+          onmousedown: (e: MouseEvent) => e.preventDefault(),
+          onclick: () => choose(r),
+          onmousemove: () => {
+            if (at === i) return;
+            highlight(i);
+            drawResults();
           },
-          el('span', { class: 'grow ttl' }, marked(r.text, hits)),
-          r.detail && el('span', { class: 'meta mono' }, r.detail),
-          r.aside,
-        ),
+        },
+        el('span', { class: 'grow ttl' }, marked(r.text, hits)),
+        r.detail && el('span', { class: 'meta mono' }, r.detail),
+        r.aside,
       );
+      buttons.push(button);
+      rows.push(button);
     }
   }
   if (!results.length) {
@@ -254,7 +276,10 @@ function drawResults(): void {
       el('div', { class: 'palette-empty meta' }, loading ? 'Reading the features…' : 'No match.'),
     );
   }
-  if (at >= results.length) at = Math.max(0, results.length - 1);
+  const kept = results.findIndex((r) => r.key === held);
+  highlight(kept >= 0 ? kept : Math.min(at, Math.max(0, results.length - 1)));
+  buttons[at]?.classList.add('on');
+  buttons[at]?.setAttribute('aria-selected', 'true');
   list.replaceChildren(...rows);
   list.querySelector('.on')?.scrollIntoView({ block: 'nearest' });
 }
