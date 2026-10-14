@@ -27,7 +27,7 @@ use crate::features::Layout;
 use crate::keymap::{self, Action};
 use crate::keys::{self, PageKey};
 use crate::page::{Connection, Event, PageMouse, Status};
-use crate::settings::Settings;
+use crate::settings::{ReviewLayout, Settings};
 use crate::rail::{self, Choices};
 use crate::checkouts_stage::{CheckoutsStage, Deleting, Opened};
 use crate::history::{HistoryDialog, Then};
@@ -75,8 +75,16 @@ pub struct Session {
     review_sent: Option<crate::page::ReviewPage>,
     history: Option<HistoryDialog>,
     history_sent: Option<crate::page::HistoryPage>,
+    /// The side and layout a review opens on, as last chosen.
+    review_layout: ReviewLayout,
+    review_layout_changed: bool,
+    /// An editor asked for from the review: its pane leaves the stages
+    /// when it is shown, since E was pressed to look at it.
+    editor: Option<u64>,
     /// A pane the daemon made for us that no tree has carried yet.
     made: Option<PaneId>,
+    /// The made pane is that editor's.
+    made_editor: bool,
     focused: bool,
     /// The leader was pressed in the pane: the next key is the window's.
     leader: bool,
@@ -101,6 +109,7 @@ impl Default for Session {
 impl Session {
     pub fn new(settings: Settings) -> Session {
         let chime = settings.chime;
+        let review_layout = settings.review;
         Session {
             tree: Vec::new(),
             loaded: false,
@@ -124,7 +133,11 @@ impl Session {
             review_sent: None,
             history: None,
             history_sent: None,
+            review_layout,
+            review_layout_changed: false,
+            editor: None,
             made: None,
+            made_editor: false,
             focused: true,
             leader: false,
             filled: false,
@@ -215,6 +228,7 @@ impl Session {
                 self.asked.remove(at);
                 match created {
                     Some(Created::Pane(pane)) => {
+                        self.made_editor = self.editor.take_if(|id| *id == request_id).is_some();
                         self.made = Some(pane);
                         self.show_made();
                     }
@@ -338,6 +352,9 @@ impl Session {
         };
         if self.project_of(pane).is_some() {
             self.made = None;
+            if std::mem::take(&mut self.made_editor) {
+                self.leave_stages();
+            }
             self.show(pane);
         }
     }
@@ -444,6 +461,11 @@ impl Session {
             Action::Workspace => self.leave_stages(),
             Action::Feature => self.open_features(true),
             Action::Checkouts => self.open_checkouts(true),
+            Action::OpenReview => {
+                if let Some(checkout) = self.view().checkout {
+                    self.review_checkout(checkout);
+                }
+            }
             // A screen less a line, so the line at the edge stays in view.
             Action::PageUp => self.scroll_by(-page(self)),
             Action::PageDown => self.scroll_by(page(self)),
@@ -797,18 +819,30 @@ impl Session {
 
     /// Opens the review of a checkout's working changes.
     pub fn open_review(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
+        self.review_checkout(checkout);
+        self.finish()
+    }
+
+    fn review_checkout(&mut self, checkout: CheckoutId) {
         let Some(info) = self.checkout_info(checkout).cloned() else {
-            return self.finish();
+            return;
         };
-        let mut ids = Vec::new();
-        let (dialog, msgs) = ReviewDialog::working(&info, || {
-            let id = self.fresh_id();
-            ids.push(id);
-            id
-        });
+        let layout = self.review_layout;
+        let (dialog, msgs) = ReviewDialog::working(&info, layout, || self.fresh_id());
         self.review = Some(dialog);
         self.out.extend(msgs);
-        self.finish()
+    }
+
+    /// What the review on screen has the person choosing, kept as the
+    /// side and layout the next one opens on.
+    fn remember_review_layout(&mut self) {
+        let Some(chosen) = self.review.as_ref().map(ReviewDialog::chosen) else {
+            return;
+        };
+        if chosen != self.review_layout {
+            self.review_layout = chosen;
+            self.review_layout_changed = true;
+        }
     }
 
     pub fn open_history(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
@@ -851,7 +885,7 @@ impl Session {
             // The history gives way to the review of the commit.
             Then::Review(commit) => {
                 if let Some(info) = self.checkout_info(dialog.checkout()).cloned() {
-                    let (review, msg) = ReviewDialog::of_commit(&info, commit, self.fresh_id());
+                    let (review, msg) = ReviewDialog::of_commit(&info, commit, self.review_layout, self.fresh_id());
                     self.review = Some(review);
                     self.out.push(msg);
                 }
@@ -880,9 +914,54 @@ impl Session {
                     self.passing.push(Event::Notice { text: text.into() });
                 }
             }
+            Action::Filter => dialog.open_jump(),
+            Action::OpenEditor => {
+                let target = dialog.editor_target();
+                self.open_editor(target);
+            }
             Action::CloseLayer => self.review = None,
             _ => {}
         }
+        self.remember_review_layout();
+        self.finish()
+    }
+
+    /// `E`: the file at the cursor in the person's editor. The review gives
+    /// way to it, as the terminal client's does; the daemon decides whether
+    /// the editor is a pane or brings its own window.
+    fn open_editor(&mut self, target: Option<(CheckoutId, String, Option<u32>)>) {
+        let Some((checkout, path, line)) = target else {
+            self.passing.push(Event::Notice { text: "no file to open".into() });
+            return;
+        };
+        self.review = None;
+        let request_id = self.next_request();
+        self.editor = Some(request_id);
+        self.out.push(ClientMsg::OpenInEditor { checkout, path, line, external: false, command: None, request_id });
+    }
+
+    /// A letter, a step, Enter or Escape in the review's jump field.
+    pub fn review_jump(&mut self, gesture: ReviewJumpGesture) -> Vec<ClientMsg> {
+        if let Some(dialog) = &mut self.review {
+            match gesture {
+                ReviewJumpGesture::Query { text } => dialog.type_jump(text),
+                ReviewJumpGesture::Step { by } => dialog.step_jump(by),
+                ReviewJumpGesture::Choose => dialog.choose_jump(),
+                ReviewJumpGesture::Close => dialog.close_jump(),
+            }
+        }
+        self.finish()
+    }
+
+    /// What the history's filter field says now.
+    pub fn filter_history(&mut self, filter: String) -> Vec<ClientMsg> {
+        let Some(mut dialog) = self.history.take() else {
+            return self.finish();
+        };
+        if let Then::Ask(msg) = dialog.set_filter(filter, || self.fresh_id()) {
+            self.out.push(*msg);
+        }
+        self.history = Some(dialog);
         self.finish()
     }
 
@@ -897,6 +976,7 @@ impl Session {
                 ReviewClick::Recipient { pane } => dialog.choose_recipient(PaneId(pane)),
             }
         }
+        self.remember_review_layout();
         self.finish()
     }
 
@@ -1060,12 +1140,14 @@ impl Session {
     /// The settings, when a change asks for them to be saved.
     pub fn take_settings(&mut self) -> Option<Settings> {
         let chime_changed = std::mem::take(&mut self.chime_changed);
+        let layout_changed = std::mem::take(&mut self.review_layout_changed);
         let mut settings = match self.features.take_settings() {
             Some(settings) => settings,
-            None if chime_changed => self.features.settings().clone(),
+            None if chime_changed || layout_changed => self.features.settings().clone(),
             None => return None,
         };
         settings.chime = self.chime;
+        settings.review = self.review_layout;
         Some(settings)
     }
 
@@ -1260,8 +1342,6 @@ impl Session {
     }
 }
 
-/// What to say of a daemon from another build than this window, as the
-/// terminal client says it.
 /// What a click in the review dialog landed on.
 #[derive(Debug, Clone, Copy, serde::Deserialize)]
 #[serde(rename_all = "camelCase", tag = "on")]
@@ -1272,6 +1352,17 @@ pub enum ReviewClick {
     Recipient { pane: u64 },
 }
 
+/// What was done in the review's jump field: a letter typed, a match
+/// stepped to, Enter, or Escape.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum ReviewJumpGesture {
+    Query { text: String },
+    Step { by: isize },
+    Choose,
+    Close,
+}
+
 fn deletion(deleting: Deleting) -> ClientMsg {
     match deleting {
         Deleting::Branch { checkout, branch, force } => ClientMsg::DeleteBranch { checkout, branch, force },
@@ -1279,6 +1370,8 @@ fn deletion(deleting: Deleting) -> ClientMsg {
     }
 }
 
+/// What to say of a daemon from another build than this window, as the
+/// terminal client says it.
 fn another_build(daemon: &Hello) -> Option<String> {
     let ours = env!("CARGO_PKG_VERSION");
     (daemon.version != ours).then(|| {
@@ -1431,6 +1524,109 @@ mod tests {
         s.key(&leader);
         let x = PageKey { key: "x".into(), ..PageKey::default() };
         assert_eq!(names(&s.key(&x)), ["Kill { pane: PaneId(1) }"]);
+    }
+
+    fn leader_then(s: &mut Session, key: &str) -> Vec<ClientMsg> {
+        s.key(&PageKey { key: " ".into(), ctrl: true, ..PageKey::default() });
+        s.key(&PageKey { key: key.into(), ..PageKey::default() })
+    }
+
+    fn reviews(msgs: &[ClientMsg]) -> Vec<(CheckoutId, argus_protocol::ReviewBase)> {
+        msgs.iter()
+            .filter_map(|m| match m {
+                ClientMsg::Review { checkout, base, .. } => Some((*checkout, *base)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_leader_and_tab_review_the_shown_panes_checkout() {
+        let mut s = session(without_focus());
+        assert!(reviews(&leader_then(&mut s, "Tab")).is_empty(), "no pane, no checkout");
+        s.select(PaneId(3));
+        let sent = leader_then(&mut s, "Tab");
+        assert_eq!(reviews(&sent).len(), 2, "both sides of checkout 200: {:?}", names(&sent));
+        assert!(reviews(&sent).iter().all(|(c, _)| *c == CheckoutId(200)));
+        assert!(s.review.is_some());
+    }
+
+    #[test]
+    fn the_review_side_and_layout_are_saved_and_the_next_review_opens_on_them() {
+        let mut s = session(without_focus());
+        s.open_review(CheckoutId(100));
+        s.review_action(Action::Side);
+        assert_eq!(s.take_settings().map(|t| t.review), Some(ReviewLayout { staged: true, split: false }));
+        s.review_click(ReviewClick::Side { staged: true });
+        assert!(s.take_settings().is_none(), "nothing changed");
+        s.review_action(Action::Split);
+        s.review_action(Action::CloseLayer);
+        assert_eq!(s.take_settings().map(|t| t.review), Some(ReviewLayout { staged: true, split: true }));
+        s.open_review(CheckoutId(100));
+        let page = s.review.as_ref().unwrap().page(None);
+        assert_eq!((page.base, page.split), ("staged", true));
+    }
+
+    #[test]
+    fn a_window_opens_reviews_on_the_layout_it_was_saved_with() {
+        let settings = Settings { review: ReviewLayout { staged: true, split: true }, ..Settings::default() };
+        let mut s = Session::new(settings);
+        s.connected(Some(without_focus()), None, vec![with_tree(tree())]);
+        s.open_review(CheckoutId(100));
+        assert_eq!(s.review.as_ref().unwrap().page(None).base, "staged");
+    }
+
+    fn reviewed(base: argus_protocol::ReviewBase, request_id: u64) -> ServerMsg {
+        use argus_protocol::{ChangeKind, DiffLine, FileDiff, Hunk, LineKind, Review};
+        ServerMsg::Review(Review {
+            request_id,
+            checkout: CheckoutId(100),
+            base,
+            files: vec![FileDiff {
+                path: "src/brief.rs".into(),
+                old_path: None,
+                kind: ChangeKind::Modified,
+                hunks: vec![Hunk {
+                    header: "@@ -1 +1 @@".into(),
+                    lines: vec![DiffLine { kind: LineKind::Added, old_lineno: None, new_lineno: Some(4), text: "x".into(), spans: Vec::new() }],
+                }],
+                note: None,
+            }],
+            commit: None,
+        })
+    }
+
+    #[test]
+    fn e_in_the_review_opens_the_cursors_line_and_its_pane_leaves_the_stage() {
+        let mut s = session(without_focus());
+        s.show_checkouts(true);
+        let sent = s.open_review(CheckoutId(100));
+        let [ClientMsg::Review { request_id: unstaged, .. }, ..] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        s.receive(reviewed(argus_protocol::ReviewBase::Unstaged, *unstaged));
+        s.review_action(Action::Next);
+        let sent = s.review_action(Action::OpenEditor);
+        let [ClientMsg::OpenInEditor { checkout, path, line, external: false, command: None, request_id }] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        assert_eq!((*checkout, path.as_str(), *line), (CheckoutId(100), "src/brief.rs", Some(4)));
+        assert!(s.review.is_none(), "the review gives way");
+        assert!(s.checkouts.is_open(), "nothing predicted");
+        s.receive(ServerMsg::Created { request_id: *request_id, created: Some(Created::Pane(PaneId(9))) });
+        let mut grown = tree();
+        grown[0].repositories[0].checkouts[0].panes.push(pane(9, PaneKind::Editor, "brief.rs", PaneStatus::Idle));
+        s.receive(with_tree(grown));
+        assert_eq!(s.shown, Some(PaneId(9)));
+        assert!(!s.checkouts.is_open(), "the editor is on screen");
+    }
+
+    #[test]
+    fn e_with_nothing_read_opens_nothing() {
+        let mut s = session(without_focus());
+        s.open_review(CheckoutId(100));
+        assert!(s.review_action(Action::OpenEditor).is_empty());
+        assert!(s.review.is_some());
     }
 
     #[test]

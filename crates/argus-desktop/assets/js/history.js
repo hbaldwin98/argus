@@ -42,6 +42,32 @@ function diff(h) {
             onclick: () => call('history_action', { action: 'asReview', row: null }),
         }, 'Open as a review ', keycap('O'))), el('div', { class: 'dbody', id: 'history-body' }, body));
 }
+/** Rust filters the rows; the field only says what it says. */
+function filterField(filter) {
+    const field = el('input', {
+        class: 'field filter',
+        id: 'history-filter',
+        placeholder: 'Filter commits',
+        'aria-label': 'Filter commits by subject, hash or author',
+        oninput: (e) => {
+            if (e.target instanceof HTMLInputElement)
+                call('filter_history', { filter: e.target.value });
+        },
+        onkeydown: (e) => {
+            // The list has the keys back, filtered.
+            if (e.key === 'Escape' || e.key === 'Enter') {
+                e.preventDefault();
+                e.target.blur();
+            }
+        },
+    });
+    field.value = filter;
+    return field;
+}
+/** `/`: the filter field takes the keys. */
+export function focusHistoryFilter() {
+    document.getElementById('history-filter')?.focus();
+}
 export function drawHistory() {
     const h = state.history;
     const host = $('history');
@@ -50,6 +76,7 @@ export function drawHistory() {
         host.replaceChildren();
         return;
     }
+    const filterHad = document.activeElement?.id === 'history-filter';
     const scrolled = ['history-list', 'history-body'].map((id) => document.getElementById(id)?.scrollTop ?? 0);
     host.hidden = false;
     let list;
@@ -64,17 +91,23 @@ export function drawHistory() {
         role: 'dialog',
         'aria-modal': 'true',
         'aria-labelledby': 'history-title',
-    }, el('div', { class: 'dhead review-head' }, el('div', { class: 'type-title', id: 'history-title' }, 'History · ', h.name, ' ', el('span', { class: 'mono fg-ref' }, h.branch)), el('span', { class: 'meta' }, 'newest 100 on HEAD'), el('span', { class: 'grow' }), el('button', {
+    }, el('div', { class: 'dhead review-head' }, el('div', { class: 'type-title', id: 'history-title' }, 'History · ', h.name, ' ', el('span', { class: 'mono fg-ref' }, h.branch)), el('span', { class: 'meta' }, 'newest 100 on HEAD'), el('span', { class: 'grow' }), filterField(h.filter), el('button', {
         class: 'icon',
         'aria-label': 'Close the history',
         onclick: () => call('history_action', { action: 'closeLayer', row: null }),
-    }, icon('close'))), el('div', { class: 'review-split' }, el('aside', { class: 'history-list', id: 'history-list', 'aria-label': 'Commits' }, list), diff(h)), el('div', { class: 'dfoot meta' }, keycap('J'), keycap('K'), ' move · ', keycap('L'), ' open · ', keycap('H'), ' fold · ', keycap('Enter'), ' file as a review · ', keycap('Esc'), ' close'))));
+    }, icon('close'))), el('div', { class: 'review-split' }, el('aside', { class: 'history-list', id: 'history-list', 'aria-label': 'Commits' }, list), diff(h)), el('div', { class: 'dfoot meta' }, keycap('J'), keycap('K'), ' move · ', keycap('L'), ' open · ', keycap('H'), ' fold · ', keycap('Enter'), ' file as a review · ', keycap('/'), ' filter · ', keycap('Esc'), ' close'))));
     ['history-list', 'history-body'].forEach((id, i) => {
         const node = document.getElementById(id);
         if (node)
             node.scrollTop = scrolled[i] ?? 0;
     });
     host.querySelector('.hrow.on')?.scrollIntoView({ block: 'nearest' });
+    // Redrawn as each letter arrives: the filter keeps the keys and the caret.
+    const field = document.getElementById('history-filter');
+    if (filterHad && field instanceof HTMLInputElement) {
+        field.focus();
+        field.setSelectionRange(field.value.length, field.value.length);
+    }
 }
 export function historyOpen() {
     return state.history?.open === true;

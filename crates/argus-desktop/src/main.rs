@@ -20,6 +20,7 @@ mod feature_stage;
 mod features;
 #[cfg(test)]
 mod fixtures;
+mod fuzzy;
 mod keymap;
 mod history;
 mod keys;
@@ -89,8 +90,10 @@ fn main() {
             commands::review_click,
             commands::review_refresh,
             commands::review_comment,
+            commands::review_jump,
             commands::open_history,
             commands::history_action,
+            commands::filter_history,
             commands::peek,
             commands::set_layout,
             commands::toggle_folded,

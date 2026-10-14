@@ -1,8 +1,9 @@
 //! What the review dialog holds — the checkout, its unstaged and staged
 //! sides, the diff on screen and the lines picked, and who a comment goes
-//! to — and what its gestures ask of the daemon. The rows, the cursor and
-//! what a comment anchors to are `argus_protocol::review_view`'s, so a
-//! comment written here means what one written in the terminal client does.
+//! to, and the file being jumped to — and what its gestures ask of the
+//! daemon. The rows, the cursor and what a comment anchors to are
+//! `argus_protocol::review_view`'s, so a comment written here means what
+//! one written in the terminal client does.
 
 use argus_protocol::review_view::{marker, ReviewView, Row};
 use argus_protocol::{
@@ -10,7 +11,9 @@ use argus_protocol::{
     ReviewBase,
 };
 
-use crate::page::{DiffRow, DiffSide, Recipient, ReviewFile, ReviewPage};
+use crate::fuzzy;
+use crate::page::{DiffRow, DiffSide, Recipient, ReviewFile, ReviewJump, ReviewPage};
+use crate::settings::ReviewLayout;
 
 pub struct ReviewDialog {
     checkout: CheckoutId,
@@ -29,13 +32,34 @@ pub struct ReviewDialog {
     failed: Option<String>,
     composing: bool,
     recipient: Option<PaneId>,
+    /// The side and layout the person chose, which the next review opens
+    /// on. Not always the side on screen: one that gave way from an empty
+    /// side was not chosen.
+    chosen: ReviewLayout,
+    /// Whether the side on screen is settled: until both sides are read
+    /// and nobody has picked one, an empty side may still give way.
+    settled: bool,
+    jump: Option<Jump>,
+}
+
+/// The Ctrl-P field: what is typed, and which of its matches is lit.
+#[derive(Default)]
+struct Jump {
+    query: String,
+    at: usize,
 }
 
 impl ReviewDialog {
-    /// A review of `checkout`'s working changes, unstaged first. Both sides
-    /// are asked for at once so the toggle can say how many files each has.
-    pub fn working(checkout: &CheckoutInfo, mut id: impl FnMut() -> u64) -> (ReviewDialog, Vec<ClientMsg>) {
-        let mut dialog = ReviewDialog::new(checkout, ReviewBase::Unstaged, None);
+    /// A review of `checkout`'s working changes, on the side and in the
+    /// layout last chosen. Both sides are asked for at once so the toggle
+    /// can say how many files each has, and an empty one can give way.
+    pub fn working(
+        checkout: &CheckoutInfo,
+        layout: ReviewLayout,
+        mut id: impl FnMut() -> u64,
+    ) -> (ReviewDialog, Vec<ClientMsg>) {
+        let base = if layout.staged { ReviewBase::Staged } else { ReviewBase::Unstaged };
+        let mut dialog = ReviewDialog::new(checkout, base, None, layout);
         let msgs = [ReviewBase::Unstaged, ReviewBase::Staged]
             .into_iter()
             .map(|base| dialog.ask(base, id()))
@@ -45,13 +69,13 @@ impl ReviewDialog {
 
     /// One commit against its first parent, where a comment records the
     /// commit it was made on.
-    pub fn of_commit(checkout: &CheckoutInfo, commit: String, id: u64) -> (ReviewDialog, ClientMsg) {
-        let mut dialog = ReviewDialog::new(checkout, ReviewBase::Commit, Some(commit));
+    pub fn of_commit(checkout: &CheckoutInfo, commit: String, layout: ReviewLayout, id: u64) -> (ReviewDialog, ClientMsg) {
+        let mut dialog = ReviewDialog::new(checkout, ReviewBase::Commit, Some(commit), layout);
         let msg = dialog.ask(ReviewBase::Commit, id);
         (dialog, msg)
     }
 
-    fn new(checkout: &CheckoutInfo, base: ReviewBase, commit: Option<String>) -> ReviewDialog {
+    fn new(checkout: &CheckoutInfo, base: ReviewBase, commit: Option<String>, layout: ReviewLayout) -> ReviewDialog {
         let recipient = agents(checkout).first().map(|r| PaneId(r.pane));
         ReviewDialog {
             checkout: checkout.id,
@@ -59,7 +83,7 @@ impl ReviewDialog {
             branch: checkout.git.as_ref().and_then(|g| g.branch.clone()).unwrap_or_default(),
             base,
             commit,
-            split: false,
+            split: layout.split,
             unstaged: None,
             staged: None,
             of_commit: None,
@@ -67,7 +91,14 @@ impl ReviewDialog {
             failed: None,
             composing: false,
             recipient,
+            chosen: layout,
+            settled: base == ReviewBase::Commit,
+            jump: None,
         }
+    }
+
+    pub fn chosen(&self) -> ReviewLayout {
+        self.chosen
     }
 
     pub fn checkout(&self) -> CheckoutId {
@@ -105,7 +136,25 @@ impl ReviewDialog {
             }
         }
         *self.side_mut(base) = Some(view);
+        self.settle();
         true
+    }
+
+    /// Never opens on an empty side: once both are read, a side with
+    /// nothing on it gives way to one with something, as the terminal
+    /// client's review does.
+    fn settle(&mut self) {
+        if self.settled {
+            return;
+        }
+        let other = self.base.next();
+        let (Some(here), Some(there)) = (self.side(self.base), self.side(other)) else {
+            return;
+        };
+        if here.review.files.is_empty() && !there.review.files.is_empty() {
+            self.base = other;
+        }
+        self.settled = true;
     }
 
     pub fn failed(&mut self, request_id: u64, message: String) -> bool {
@@ -140,8 +189,7 @@ impl ReviewDialog {
     /// `b`: the other side of the working changes. A commit has one.
     pub fn switch_side(&mut self) {
         if self.base != ReviewBase::Commit {
-            self.base = self.base.next();
-            self.composing = false;
+            self.show_side(self.base.next() == ReviewBase::Staged);
         }
     }
 
@@ -149,12 +197,18 @@ impl ReviewDialog {
         if self.base != ReviewBase::Commit {
             self.base = if staged { ReviewBase::Staged } else { ReviewBase::Unstaged };
             self.composing = false;
+            self.settled = true;
+            self.chosen.staged = staged;
+            if let Some(jump) = &mut self.jump {
+                jump.at = 0;
+            }
         }
     }
 
     /// `s`: both sides of a change side by side, or stacked.
     pub fn toggle_split(&mut self) {
         self.split = !self.split;
+        self.chosen.split = self.split;
         let split = self.split;
         for view in [&mut self.unstaged, &mut self.staged, &mut self.of_commit].into_iter().flatten() {
             view.set_split(split);
@@ -184,6 +238,7 @@ impl ReviewDialog {
     }
 
     pub fn open_file(&mut self, file: usize) {
+        self.jump = None;
         if let Some(view) = self.view_mut() {
             view.jump_to_file(file);
         }
@@ -204,6 +259,56 @@ impl ReviewDialog {
             view.mark = None;
         }
         view.sel = row;
+    }
+
+    /// Ctrl-P: the field over the file list, which jumps to the file typed.
+    pub fn open_jump(&mut self) {
+        self.jump = Some(Jump::default());
+    }
+
+    pub fn type_jump(&mut self, query: String) {
+        if let Some(jump) = &mut self.jump {
+            jump.query = query;
+            jump.at = 0;
+        }
+    }
+
+    pub fn step_jump(&mut self, by: isize) {
+        let last = self.jump_matches().len().saturating_sub(1);
+        if let Some(jump) = &mut self.jump {
+            jump.at = jump.at.saturating_add_signed(by).min(last);
+        }
+    }
+
+    /// Enter in the field: the lit match opens and the field closes.
+    pub fn choose_jump(&mut self) {
+        let file = self.jump.as_ref().and_then(|j| self.jump_matches().get(j.at).copied());
+        self.jump = None;
+        if let Some(file) = file {
+            self.open_file(file);
+        }
+    }
+
+    pub fn close_jump(&mut self) {
+        self.jump = None;
+    }
+
+    fn jump_matches(&self) -> Vec<usize> {
+        match (&self.jump, self.side(self.base)) {
+            (Some(jump), Some(view)) => fuzzy::paths(&jump.query, view.review.files.iter().map(|f| f.path.as_str())),
+            _ => Vec::new(),
+        }
+    }
+
+    /// `E`: where the editor opens — at the picked lines' first, else the
+    /// cursor's line, else the top of the file on screen.
+    pub fn editor_target(&self) -> Option<(CheckoutId, String, Option<u32>)> {
+        let view = self.side(self.base)?;
+        if let Some(anchor) = view.anchor() {
+            return Some((self.checkout, anchor.path.clone(), anchor.preferred_start()));
+        }
+        let file = view.rows.get(view.sel)?.file();
+        Some((self.checkout, view.review.files.get(file)?.path.clone(), None))
     }
 
     /// `v`: starts a range at the cursor, or lets it go.
@@ -303,6 +408,10 @@ impl ReviewDialog {
             composing: self.composing,
             recipients,
             recipient,
+            jump: self.jump.as_ref().map(|j| {
+                let matches = self.jump_matches();
+                ReviewJump { query: j.query.clone(), at: matches.get(j.at).copied(), matches }
+            }),
         }
     }
 }
@@ -469,12 +578,120 @@ mod tests {
     }
 
     fn dialog() -> (ReviewDialog, Vec<ClientMsg>) {
+        remembering(ReviewLayout::default())
+    }
+
+    fn remembering(layout: ReviewLayout) -> (ReviewDialog, Vec<ClientMsg>) {
         let co = checkout(100, "main", true, vec![pane(7, PaneKind::Agent, "claude", PaneStatus::Working)]);
         let mut ids = 0;
-        ReviewDialog::working(&co, || {
+        ReviewDialog::working(&co, layout, || {
             ids += 1;
             ids
         })
+    }
+
+    fn nothing(request_id: u64, base: ReviewBase) -> Review {
+        Review { files: Vec::new(), ..diff(request_id, base) }
+    }
+
+    fn files(request_id: u64, paths: &[&str]) -> Review {
+        let mut review = diff(request_id, ReviewBase::Unstaged);
+        let one = review.files.remove(0);
+        review.files = paths.iter().map(|p| FileDiff { path: (*p).into(), ..one.clone() }).collect();
+        review
+    }
+
+    #[test]
+    fn a_review_opens_on_the_side_and_layout_last_chosen() {
+        let (mut d, _) = remembering(ReviewLayout { staged: true, split: true });
+        d.receive(diff(1, ReviewBase::Unstaged));
+        d.receive(diff(2, ReviewBase::Staged));
+        let page = d.page(None);
+        assert_eq!((page.base, page.split), ("staged", true));
+        assert_eq!(page.rows[1].kind, "pair", "split rows");
+    }
+
+    #[test]
+    fn an_empty_side_gives_way_to_the_other_once_both_are_read() {
+        let (mut d, _) = remembering(ReviewLayout { staged: true, split: false });
+        d.receive(nothing(2, ReviewBase::Staged));
+        assert_eq!(d.page(None).base, "staged", "the other side may be empty too");
+        d.receive(diff(1, ReviewBase::Unstaged));
+        assert_eq!(d.page(None).base, "unstaged");
+        assert!(d.chosen().staged, "giving way is not choosing");
+    }
+
+    #[test]
+    fn both_sides_empty_stays_on_the_remembered_one() {
+        let (mut d, _) = remembering(ReviewLayout { staged: true, split: false });
+        d.receive(nothing(1, ReviewBase::Unstaged));
+        d.receive(nothing(2, ReviewBase::Staged));
+        assert_eq!(d.page(None).empty.as_deref(), Some("Nothing staged in main."));
+    }
+
+    #[test]
+    fn a_side_picked_before_both_are_read_stays_picked() {
+        let (mut d, _) = dialog();
+        d.show_side(true);
+        d.receive(nothing(2, ReviewBase::Staged));
+        d.receive(diff(1, ReviewBase::Unstaged));
+        assert_eq!(d.page(None).base, "staged");
+    }
+
+    #[test]
+    fn the_side_and_layout_picked_are_what_is_remembered() {
+        let (mut d, _) = dialog();
+        d.switch_side();
+        d.toggle_split();
+        assert_eq!(d.chosen(), ReviewLayout { staged: true, split: true });
+    }
+
+    #[test]
+    fn a_commits_review_keeps_the_remembered_side_and_takes_the_layout() {
+        let co = checkout(100, "main", true, Vec::new());
+        let (mut d, _) = ReviewDialog::of_commit(&co, "aaaa1".into(), ReviewLayout { staged: true, split: false }, 1);
+        d.switch_side();
+        d.toggle_split();
+        assert_eq!(d.chosen(), ReviewLayout { staged: true, split: true });
+    }
+
+    #[test]
+    fn the_jump_field_opens_the_best_match_on_enter() {
+        let (mut d, _) = dialog();
+        d.receive(files(1, &["docs/prereview.md", "src/review.rs", "README.md"]));
+        d.open_jump();
+        assert_eq!(d.page(None).jump.unwrap().matches, [0, 1, 2], "everything, before a letter");
+        d.type_jump("rev".into());
+        let jump = d.page(None).jump.unwrap();
+        assert_eq!((jump.matches, jump.at), (vec![1, 0], Some(1)));
+        d.step_jump(5);
+        assert_eq!(d.page(None).jump.unwrap().at, Some(0), "held at the last match");
+        d.choose_jump();
+        let page = d.page(None);
+        assert!(page.jump.is_none());
+        assert_eq!(page.file, Some(0));
+    }
+
+    #[test]
+    fn the_jump_field_with_no_match_opens_nothing() {
+        let (mut d, _) = dialog();
+        d.receive(files(1, &["src/app.rs", "README.md"]));
+        d.jump_file(true);
+        d.open_jump();
+        d.type_jump("zzz".into());
+        assert_eq!(d.page(None).jump.unwrap().at, None);
+        d.choose_jump();
+        assert_eq!(d.page(None).file, Some(1), "where it was");
+    }
+
+    #[test]
+    fn the_editor_opens_at_the_cursors_line_of_its_file() {
+        let (mut d, _) = dialog();
+        assert_eq!(d.editor_target(), None, "nothing read yet");
+        d.receive(diff(1, ReviewBase::Unstaged));
+        d.move_by(1);
+        d.move_by(1);
+        assert_eq!(d.editor_target(), Some((CheckoutId(100), "src/brief.rs".into(), Some(2))));
     }
 
     #[test]
@@ -513,7 +730,7 @@ mod tests {
     #[test]
     fn a_comment_needs_an_agent_and_words() {
         let co = checkout(100, "main", true, Vec::new());
-        let (mut d, _) = ReviewDialog::working(&co, || 1);
+        let (mut d, _) = ReviewDialog::working(&co, ReviewLayout::default(), || 1);
         d.receive(diff(1, ReviewBase::Unstaged));
         assert_eq!(d.compose(), Err("no agent in this checkout to send it to"));
         let (mut d, _) = dialog();
@@ -524,9 +741,7 @@ mod tests {
     #[test]
     fn an_empty_side_says_so_rather_than_drawing_nothing() {
         let (mut d, _) = dialog();
-        let mut nothing = diff(2, ReviewBase::Staged);
-        nothing.files.clear();
-        d.receive(nothing);
+        d.receive(nothing(2, ReviewBase::Staged));
         d.switch_side();
         assert_eq!(d.page(None).empty.as_deref(), Some("Nothing staged in main."));
     }

@@ -141,6 +141,7 @@ dependencies = [
  "anyhow",
  "arboard",
  "argus-protocol",
+ "nucleo-matcher",
  "png 0.18.1",
  "serde",
  "serde_json",

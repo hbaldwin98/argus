@@ -9,7 +9,7 @@ import type { DiffSide } from './bindings/DiffSide';
 import type { ReviewPage } from './bindings/ReviewPage';
 import { $, el, ghosts, icon, type Child } from './dom.js';
 import { state } from './state.js';
-import { call } from './tauri.js';
+import { call, type Commands } from './tauri.js';
 
 function keycap(key: string): HTMLElement {
   return el('span', { class: 'kbd' }, key);
@@ -97,27 +97,70 @@ function click(target: Click): void {
   call('review_click', { target });
 }
 
+function jump(gesture: Commands['review_jump']['gesture']): void {
+  call('review_jump', { gesture });
+}
+
+/** The Ctrl-P field: its keys are its own, and Rust says what matches. */
+function jumpField(query: string): HTMLElement {
+  const field = el('input', {
+    class: 'field',
+    id: 'review-jump',
+    placeholder: 'Jump to a file',
+    'aria-label': 'Jump to a file',
+    oninput: (e: Event) => {
+      if (e.target instanceof HTMLInputElement) jump({ on: 'query', text: e.target.value });
+    },
+    onkeydown: (e: KeyboardEvent) => {
+      // Ctrl-N and Ctrl-P step as in fzf, and must not reach the webview,
+      // where Ctrl-P prints.
+      const down = e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n');
+      const up = e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p');
+      const step = down ? 1 : up ? -1 : 0;
+      if (step) jump({ on: 'step', by: step });
+      else if (e.key === 'Enter') jump({ on: 'choose' });
+      else if (e.key === 'Escape') {
+        // The field closes, not the dialog under it.
+        e.stopPropagation();
+        jump({ on: 'close' });
+      } else return;
+      e.preventDefault();
+    },
+  });
+  field.value = query;
+  return field;
+}
+
 function files(r: ReviewPage): HTMLElement {
+  const order = r.jump ? r.jump.matches : r.files.map((_, i) => i);
+  const lit = r.jump ? r.jump.at : r.file;
   return el(
     'aside',
     { class: 'review-files', 'aria-label': 'Changed files' },
-    el('div', { class: 'mlabel' }, 'Changed files'),
+    r.jump ? jumpField(r.jump.query) : el('div', { class: 'mlabel' }, 'Changed files'),
     el(
       'div',
       { class: 'review-file-list' },
-      r.files.map((f, i) =>
-        el(
-          'button',
-          {
-            class: `rfile${i === r.file ? ' on' : ''}`,
-            title: f.path,
-            onclick: () => click({ on: 'file', file: i }),
-          },
-          el('span', { class: 'rname' }, el('span', { class: 'fg-faint' }, f.dir), f.name),
-          el('span', { class: 'fg-ok' }, `+${f.added}`),
-          el('span', { class: 'fg-danger' }, `−${f.removed}`),
-        ),
-      ),
+      order.map((i) => {
+        const f = r.files[i];
+        return (
+          f &&
+          el(
+            'button',
+            {
+              class: `rfile${i === lit ? ' on' : ''}`,
+              title: f.path,
+              onclick: () => click({ on: 'file', file: i }),
+            },
+            el('span', { class: 'rname' }, el('span', { class: 'fg-faint' }, f.dir), f.name),
+            el('span', { class: 'fg-ok' }, `+${f.added}`),
+            el('span', { class: 'fg-danger' }, `−${f.removed}`),
+          )
+        );
+      }),
+      r.jump &&
+        r.jump.matches.length === 0 &&
+        el('div', { class: 'meta' }, `No file matches “${r.jump.query}”.`),
     ),
   );
 }
@@ -314,6 +357,10 @@ export function drawReview(): void {
           ' side · ',
           keycap('S'),
           ' split · ',
+          keycap('Ctrl P'),
+          ' jump · ',
+          keycap('E'),
+          ' editor · ',
           keycap('Esc'),
           ' close',
         ),
@@ -325,10 +372,20 @@ export function drawReview(): void {
     if (node) node.scrollTop = scrolled[i] ?? 0;
   });
   host.querySelector('.drow.cursor')?.scrollIntoView({ block: 'nearest' });
+  host.querySelector('.rfile.on')?.scrollIntoView({ block: 'nearest' });
+  // The jump field is redrawn as each letter arrives, and keeps the keys
+  // and the caret while it is open.
+  const field = document.getElementById('review-jump');
   const box = document.getElementById('review-comment');
-  if (box instanceof HTMLTextAreaElement && (typing || r.composing)) {
-    box.focus();
-    box.setSelectionRange(box.value.length, box.value.length);
+  const keys =
+    field instanceof HTMLInputElement
+      ? field
+      : box instanceof HTMLTextAreaElement && (typing || r.composing)
+        ? box
+        : null;
+  if (keys) {
+    keys.focus();
+    keys.setSelectionRange(keys.value.length, keys.value.length);
   }
 }
 

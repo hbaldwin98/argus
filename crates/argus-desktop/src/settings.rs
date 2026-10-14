@@ -1,5 +1,6 @@
 //! What the window remembers between runs: how each repository's feature
-//! index is laid out, and whether an agent coming to need you chimes.
+//! index is laid out, whether an agent coming to need you chimes, and the
+//! side and layout a review opens on.
 //!
 //! Its own file beside the config, `desktop.json`, rather than a section
 //! of the terminal client's `client.toml`: whether the two clients share
@@ -22,11 +23,24 @@ pub struct Settings {
     /// they are least likely to see an agent finish.
     #[serde(default = "on")]
     pub chime: bool,
+    /// The review's side and layout as last chosen, which the next review
+    /// opens on: as in the terminal client, a setting rather than a choice
+    /// made again on each visit.
+    #[serde(default)]
+    pub review: ReviewLayout,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewLayout {
+    #[serde(default)]
+    pub staged: bool,
+    #[serde(default)]
+    pub split: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { layouts: BTreeMap::new(), chime: true }
+        Settings { layouts: BTreeMap::new(), chime: true, review: ReviewLayout::default() }
     }
 }
 
@@ -84,6 +98,7 @@ mod tests {
         let mut settings = Settings::default();
         settings.layouts.insert("/src/argus".into(), "board".into());
         settings.chime = false;
+        settings.review = ReviewLayout { staged: true, split: true };
         save_to(&path, &settings).unwrap();
         assert_eq!(load_from(&path), settings);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
@@ -106,6 +121,7 @@ mod tests {
         std::fs::write(&path, br#"{ "layouts": { "/src/argus": "board" } }"#).unwrap();
         let settings = load_from(&path);
         assert!(settings.chime);
+        assert_eq!(settings.review, ReviewLayout::default(), "unstaged and unified, as before");
         assert_eq!(settings.layouts["/src/argus"], "board");
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }

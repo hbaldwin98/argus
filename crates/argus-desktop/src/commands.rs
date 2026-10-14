@@ -15,7 +15,7 @@ use crate::features::Layout;
 use crate::keymap::Action;
 use crate::keys::PageKey;
 use crate::page::{Event, PageMouse};
-use crate::session::ReviewClick;
+use crate::session::{ReviewClick, ReviewJumpGesture};
 use crate::shared::Shared;
 
 type Answer = Result<(), String>;
@@ -209,6 +209,12 @@ pub async fn review_click(shared: State<'_, Arc<Shared>>, target: ReviewClick) -
 }
 
 #[tauri::command]
+pub async fn review_jump(shared: State<'_, Arc<Shared>>, gesture: ReviewJumpGesture) -> Answer {
+    shared.act(|s| s.review_jump(gesture));
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn open_history(shared: State<'_, Arc<Shared>>, checkout: u64) -> Answer {
     shared.act(|s| s.open_history(CheckoutId(checkout)));
     Ok(())
@@ -218,6 +224,12 @@ pub async fn open_history(shared: State<'_, Arc<Shared>>, checkout: u64) -> Answ
 #[tauri::command]
 pub async fn history_action(shared: State<'_, Arc<Shared>>, action: Action, row: Option<usize>) -> Answer {
     shared.act(|s| s.history_action(action, row));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn filter_history(shared: State<'_, Arc<Shared>>, filter: String) -> Answer {
+    shared.act(|s| s.filter_history(filter));
     Ok(())
 }
 

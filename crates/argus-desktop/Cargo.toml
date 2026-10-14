@@ -23,6 +23,9 @@ arboard = { version = "3", default-features = false, features = ["image-data"] }
 png = "0.18"
 # The version alacritty uses, so a cell's width here is the daemon's.
 unicode-width = "0.2"
+# The terminal client's matcher, so the review's jump field finds what its
+# file picker does.
+nucleo-matcher = "0.3"
 
 # The title bar's colour, set through DWM.
 [target.'cfg(windows)'.dependencies]

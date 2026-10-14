@@ -293,13 +293,14 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `session` | what this window holds of the daemon — the tree, the pane on screen, the connection's state — and what each message and gesture changes |
 | `screen` | a pane's screen as the page draws it: the grid the daemon's damage lands on, and the rows changed since the last frame |
 | `rail` | what the rail lists from the tree, and what a row says |
-| `review` | what the review dialog holds — a checkout's unstaged and staged sides, the diff on screen, the lines picked and who a comment goes to — and what its gestures ask of the daemon |
-| `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, and each opened commit's diff — and what its gestures ask of the daemon |
+| `review` | what the review dialog holds — a checkout's unstaged and staged sides, the diff on screen, the lines picked, who a comment goes to and the file being jumped to — and what its gestures ask of the daemon |
+| `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff — and what its gestures ask of the daemon |
+| `fuzzy` | which paths a typed query matches, best first: the review's jump field |
 | `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row — and what its keys and buttons ask of the daemon |
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks, each repository's layout — and what its messages and gestures change |
 | `features` | what the Feature stage's index shows from a board: its rows, the places a person may move each, and the peek |
-| `settings` | what the window remembers between runs: each repository's index layout, and whether it chimes |
+| `settings` | what the window remembers between runs: each repository's index layout, whether it chimes, and the side and layout a review opens on |
 | `page` | what the page and the window's Rust say to each other |
 | `commands` | the calls the page makes, handed to the session |
 | `shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |
