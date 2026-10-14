@@ -306,6 +306,12 @@ function makeScreen() {
   measure();
   readPalette();
   window.addEventListener('load', rescale);
+  // A canvas never asks for a web font, and `load` does not wait for one
+  // nothing has used, so the grid would be measured in the fallback face.
+  const faces = ['', '700 ', 'italic ', 'italic 700 '];
+  void Promise.all(faces.map((face) => document.fonts.load(`${face}${FONT_SIZE}px ${fontFamily}`)))
+    .catch(() => {})
+    .then(rescale);
   new ResizeObserver(report).observe(terminal);
   watchScale();
   matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {

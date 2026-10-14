@@ -127,6 +127,38 @@
   --fg-on-accent: #ffffff;
 }
 
+/* Bundled, not left to the system: the terminal grid is measured in this
+   face, and a machine without it would size every pane in a fallback.
+   The terminal draws bold and italic, so all four faces ship (fonts/OFL.txt). */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('fonts/JetBrainsMono-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url('fonts/JetBrainsMono-Bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url('fonts/JetBrainsMono-Italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: italic;
+  font-weight: 700;
+  font-display: block;
+  src: url('fonts/JetBrainsMono-BoldItalic.woff2') format('woff2');
+}
+
 :root {
   --font-ui: system-ui, -apple-system, 'Segoe UI', Ubuntu, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
@@ -379,6 +411,11 @@
   border-color: var(--accent);
   color: var(--fg-on-accent);
 }
+.btn.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--fg-on-accent);
+}
 .btn.sm {
   height: var(--control-h-sm);
   padding: 0 var(--sp-8);
@@ -563,6 +600,17 @@
 }
 .mi.on {
   background: var(--bg-selected);
+}
+.mi[disabled] {
+  color: var(--fg-faint);
+  cursor: default;
+}
+.mlabel {
+  font: var(--type-label);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  padding: var(--sp-6) var(--sp-8) var(--sp-2);
 }
 .msep {
   height: 1px;
@@ -1295,9 +1343,6 @@ button:focus-visible,
   color: var(--fg-faint);
   cursor: default;
 }
-.tab[disabled] .kbd {
-  opacity: 0.6;
-}
 .bar .actions {
   align-items: center;
 }
@@ -1612,7 +1657,7 @@ button:focus-visible,
   }
 }
 .btn[disabled] {
-  opacity: 0.5;
+  color: var(--fg-faint);
   cursor: default;
 }
 .board .kcol {
