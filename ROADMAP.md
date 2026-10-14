@@ -162,13 +162,16 @@ agent, mouse, selection and scrollback, the full transcript; several panes at on
 through `ssh … argus bridge`; and packaging as .app, .msi and AppImage with signing and updates,
 which no issue tracks yet.
 
-Extension views (HUN-191): a tab an outside process adds — running dev servers, a repository's
-containers — whose rows it publishes and whose actions come back to it. The daemon owns them rather
-than the window, so they work under `--host` and the terminal client can draw them too: the
-extension `PUT`s a declarative view to the pane API and holds its actions open as server-sent
-events, the daemon launches each from config and restarts it, and clients that listed `views` in
-`Hello` are sent the view. No extension-supplied HTML: a declarative view is one renderer per
-client and a contract the protocol can check.
+Extensions (HUN-191): an outside process adds to the interface — a tab of rows it publishes
+(running dev servers, a repository's containers), commands with keys that join the keymap, the
+shortcuts sheet and the palette, dialogs (confirm, prompt, pick, form) raised over the current
+surface, and notices — and what the person does comes back to it. The daemon owns them rather than
+the window, so they work under `--host` and the terminal client can draw them too: the extension
+publishes to the pane API and holds its events open as server-sent events, the daemon launches
+each from config and restarts it, and only clients that listed extensions in `Hello` are sent them.
+A dialog goes to the client the focus names, so one window asks. An extension's key never shadows a
+built-in one; a conflict is refused when it registers. Everything is declarative, never
+extension-supplied HTML: one renderer per surface per client, and a contract the protocol checks.
 
 ## Open Decisions
 
