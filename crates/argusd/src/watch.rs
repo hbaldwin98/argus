@@ -175,6 +175,10 @@ mod tests {
             counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         })
         .unwrap();
+        // FSEvents hands over what happened shortly before the watch
+        // started, so the write that made the file can still arrive.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        woke.store(0, std::sync::atomic::Ordering::SeqCst);
 
         let _ = std::fs::read_to_string(&config).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(300));
