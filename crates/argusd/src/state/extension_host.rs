@@ -214,7 +214,7 @@ mod tests {
         let d = daemon();
         let host = d.start_extensions_waiting(vec![extension("sleeper", &["sleep", "30"])], None, Duration::from_millis(10));
         assert!(starts_reach(&host, 1).await);
-        let view: argus_protocol::ExtView = serde_json::from_str(r#"{"name":"v","title":"V"}"#).unwrap();
+        let view: argus_protocol::ExtView = serde_json::from_str(r#"{"name":"v","title":"V","columns":[{"title":"x"}]}"#).unwrap();
         for _ in 0..100 {
             if d.publish_views("sleeper", vec![view.clone()]).is_ok() {
                 break;

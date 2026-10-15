@@ -513,7 +513,7 @@ It speaks JSON to these endpoints under its URL:
 
 | Request | Body | Answer |
 | --- | --- | --- |
-| `PUT view` | a view, or a list of them: `name`, `title`, `scope` (`"global"`, `{"repository": id}`, `{"checkout": id}`), `columns`, `rows` (`key`, `cells`, `status`), `actions` (`id`, `label`, `key`, `view_wide`, `confirm`) | the action keys refused |
+| `PUT view` | a view, or a list of them: `name`, `title`, `scope` (`"global"`, `{"repository": id}`, `{"checkout": id}`), `columns` (`{"title", "numeric"}`), `rows` (`key`, `cells` — one value each, as in an agent's view table, `{"kind": "text", "text": "web"}` — and `status`, a chip `{"label", "tone"}`), `actions` (`id`, `label`, `key`, `view_wide`, `confirm`) | the action keys refused |
 | `PUT commands` | a list: `name`, `title`, `key` (`{"key": "d", "ctrl": true}`), `scope` (`"anywhere"`, `{"view": name}`, `"checkout"`, `"pane"`) | the command keys refused |
 | `POST dialog` | `title`, `kind` (`{"confirm": {"message"}}`, `{"prompt": {"message", "initial"}}`, `{"pick": {"message", "items": [{"key", "label"}]}}`, `{"form": {"fields": [{"name", "label", "initial"}]}}`), and `answers`, the id of the command it answers | `{"dialog": id}` |
 | `POST notice` | one line of text | |

@@ -12,21 +12,22 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::agent_view::{self, Chip, Column, Value, MAX_TABLE_ROWS, MAX_VIEW_ID_BYTES, MAX_VIEW_TITLE_BYTES};
 use crate::focus::Focus;
-use crate::hook::Report;
 use crate::ids::{CheckoutId, RepositoryId};
 
 /// The longest an extension's name may be. It names the extension in a URL
 /// and on a tab, so it is kept to something a person would type.
 pub const MAX_EXTENSION_NAME: usize = 32;
 
-/// How many views, rows, commands and dialog items one extension may hold.
-/// A bound rather than trust: the daemon forwards every one to every
+/// How many views, commands, actions and dialog items one extension may
+/// hold. A bound rather than trust: the daemon forwards every one to every
 /// client, and a runaway loop in an extension should cost it its view rather
-/// than every client its memory.
+/// than every client its memory. A view's rows are bounded as an agent
+/// view's table is (`agent_view::MAX_TABLE_ROWS`), for the same reason.
 pub const MAX_VIEWS: usize = 16;
-pub const MAX_ROWS: usize = 2000;
 pub const MAX_COMMANDS: usize = 64;
+pub const MAX_ACTIONS: usize = 32;
 pub const MAX_ITEMS: usize = 500;
 
 /// Whether `name` may name an extension: lowercase letters, digits and
@@ -39,9 +40,11 @@ pub fn is_extension_name(name: &str) -> bool {
         && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-/// One tab an extension publishes: a table of rows, and what can be done to
-/// them.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One view an extension publishes: a table in the agent views' vocabulary
+/// — `Column`s, and cells that are `Value`s — so the window draws it with
+/// the renderers an agent's table uses, and what only an extension adds: a
+/// scope, a key per row, and actions on them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExtView {
     /// The extension that published it. Filled by the daemon from the URL
     /// it was put to, whatever the body said, so one extension cannot
@@ -54,12 +57,59 @@ pub struct ExtView {
     pub title: String,
     #[serde(default)]
     pub scope: ExtScope,
-    #[serde(default)]
-    pub columns: Vec<String>,
+    pub columns: Vec<Column>,
     #[serde(default)]
     pub rows: Vec<ExtRow>,
     #[serde(default)]
     pub actions: Vec<ExtAction>,
+}
+
+impl ExtView {
+    /// The view if it keeps every limit, or what is wrong with it named by
+    /// its path (`rows[3][1]`), so the extension can find and fix it — the
+    /// way an agent's view is checked.
+    pub fn checked(self) -> Result<ExtView, String> {
+        let name = self.name.trim();
+        if name.is_empty() {
+            return Err("name: a view needs a name".into());
+        }
+        if name.len() > MAX_VIEW_ID_BYTES {
+            return Err(format!("name: at most {MAX_VIEW_ID_BYTES} bytes"));
+        }
+        if self.title.trim().is_empty() || self.title.len() > MAX_VIEW_TITLE_BYTES {
+            return Err(format!("title: a view needs one, of at most {MAX_VIEW_TITLE_BYTES} bytes"));
+        }
+        if self.columns.is_empty() {
+            return Err("columns: a view needs a column".into());
+        }
+        if self.rows.len() > MAX_TABLE_ROWS {
+            return Err(format!("rows: at most {MAX_TABLE_ROWS}; show the ones that matter"));
+        }
+        for (r, row) in self.rows.iter().enumerate() {
+            if row.key.is_empty() || self.rows[..r].iter().any(|other| other.key == row.key) {
+                return Err(format!("rows[{r}].key: each row needs a key of its own, not {:?}", row.key));
+            }
+            if row.cells.len() != self.columns.len() {
+                return Err(format!(
+                    "rows[{r}] has {} cells, the view has {} columns",
+                    row.cells.len(),
+                    self.columns.len()
+                ));
+            }
+            for (c, cell) in row.cells.iter().enumerate() {
+                agent_view::value_ok(cell, &format!("rows[{r}][{c}]"))?;
+            }
+        }
+        if self.actions.len() > MAX_ACTIONS {
+            return Err(format!("actions: at most {MAX_ACTIONS}"));
+        }
+        for (a, action) in self.actions.iter().enumerate() {
+            if action.id.is_empty() || self.actions[..a].iter().any(|other| other.id == action.id) {
+                return Err(format!("actions[{a}].id: each action needs an id of its own, not {:?}", action.id));
+            }
+        }
+        Ok(ExtView { name: name.to_string(), ..self })
+    }
 }
 
 /// Where a view's tab shows: always, or only while a repository or a
@@ -73,17 +123,19 @@ pub enum ExtScope {
     Checkout(CheckoutId),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExtRow {
     /// Names the row in an action sent back, so an action means the row it
     /// was taken on however the rows were reordered since.
     pub key: String,
     /// One per column, in their order.
+    pub cells: Vec<Value>,
+    /// What state the row's thing is in, in the extension's own words with a
+    /// tone. Not the pane API's status words: those say where an agent's
+    /// turn is, and a container or a dev server is `running`, `exited` or
+    /// `restarting` — the extension knows the word, Argus only the meaning.
     #[serde(default)]
-    pub cells: Vec<String>,
-    /// Drawn as a pane's status is, in the pane API's words.
-    #[serde(default)]
-    pub status: Option<Report>,
+    pub status: Option<Chip>,
 }
 
 /// Something the person can do in a view.
@@ -92,7 +144,8 @@ pub struct ExtAction {
     /// Names the action in what is sent back.
     pub id: String,
     pub label: String,
-    /// One character, heard only while the view is the stage up.
+    /// One character, heard while its view is out in the side panel and
+    /// the panel has the keys.
     #[serde(default)]
     pub key: Option<String>,
     /// Acts on the view rather than on its selected row.
@@ -321,30 +374,58 @@ mod tests {
         let json = r#"{
             "name": "containers", "title": "Containers",
             "scope": {"repository": 4},
-            "columns": ["name", "state"],
-            "rows": [{"key": "web", "cells": ["web", "up"], "status": "working"}],
+            "columns": [{"title": "Name"}, {"title": "CPU", "numeric": true}],
+            "rows": [{"key": "web",
+                      "cells": [{"kind": "text", "text": "web"}, {"kind": "number", "number": 3.5, "unit": "%"}],
+                      "status": {"label": "running", "tone": "good"}}],
             "actions": [{"id": "restart", "label": "Restart", "key": "r", "confirm": "Restart web?"}]
         }"#;
         let view: ExtView = serde_json::from_str(json).unwrap();
+        let view = view.checked().unwrap();
         assert_eq!(view.scope, ExtScope::Repository(RepositoryId(4)));
-        assert_eq!(view.rows[0].status, Some(Report::Working));
+        assert_eq!(view.rows[0].status.as_ref().unwrap().tone, agent_view::Tone::Good);
+        assert!(view.columns[1].numeric);
         assert!(!view.actions[0].view_wide);
         assert_eq!(view.extension, "", "the daemon names it");
-        let bare: ExtView = serde_json::from_str(r#"{"name":"a","title":"A"}"#).unwrap();
+        let bare: ExtView = serde_json::from_str(r#"{"name":"a","title":"A","columns":[{"title":"x"}]}"#).unwrap();
         assert_eq!(bare.scope, ExtScope::Global);
     }
 
-    #[test]
-    fn a_view_survives_the_daemons_wire() {
-        let view = ExtView {
+    fn text(t: &str) -> Value {
+        Value::Text { text: t.into() }
+    }
+
+    fn containers(rows: Vec<ExtRow>) -> ExtView {
+        ExtView {
             extension: "docker".into(),
             name: "containers".into(),
             title: "Containers".into(),
             scope: ExtScope::Checkout(CheckoutId(9)),
-            columns: vec!["name".into()],
-            rows: vec![ExtRow { key: "web".into(), cells: vec!["web".into()], status: None }],
+            columns: vec![Column { title: "Name".into(), numeric: false }],
+            rows,
             actions: vec![],
-        };
+        }
+    }
+
+    fn row(key: &str, cells: Vec<Value>) -> ExtRow {
+        ExtRow { key: key.into(), cells, status: None }
+    }
+
+    #[test]
+    fn a_view_that_breaks_a_limit_is_refused_by_the_path_to_what_broke_it() {
+        let short = containers(vec![row("web", vec![])]);
+        assert_eq!(short.checked().unwrap_err(), "rows[0] has 0 cells, the view has 1 columns");
+        let twice = containers(vec![row("web", vec![text("a")]), row("web", vec![text("b")])]);
+        assert!(twice.checked().unwrap_err().starts_with("rows[1].key"));
+        let link = Value::Link { label: "x".into(), url: "file:///etc/passwd".into() };
+        assert!(containers(vec![row("web", vec![link])]).checked().unwrap_err().starts_with("rows[0][0]"));
+        let many = containers((0..=MAX_TABLE_ROWS).map(|i| row(&i.to_string(), vec![text("a")])).collect());
+        assert!(many.checked().unwrap_err().starts_with("rows: at most"));
+    }
+
+    #[test]
+    fn a_view_survives_the_daemons_wire() {
+        let view = containers(vec![row("web", vec![text("web")])]);
         let bytes = rmp_serde::to_vec_named(&view).unwrap();
         assert_eq!(rmp_serde::from_slice::<ExtView>(&bytes).unwrap(), view);
         let dialog = ExtDialog {

@@ -1005,7 +1005,8 @@ mod tests {
         client
     }
 
-    const CONTAINERS: &str = r#"{"name": "containers", "title": "Containers", "rows": [{"key": "web"}]}"#;
+    const CONTAINERS: &str = r#"{"name": "containers", "title": "Containers", "columns": [{"title": "Name"}],
+        "rows": [{"key": "web", "cells": [{"kind": "text", "text": "web"}]}]}"#;
 
     #[tokio::test]
     async fn a_client_that_takes_extensions_is_sent_their_views_on_greeting_and_on_each_change() {

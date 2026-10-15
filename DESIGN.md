@@ -2095,10 +2095,16 @@ a change to them takes a daemon restart.
 
 Everything an extension says is declarative, in `argus_protocol::extensions`' types as JSON:
 
-- `PUT /extension/<name>/view` — one view or a list, replacing every view it had. A view is a
-  named table (columns, rows each with a key, cells and a status in the pane API's words) with its
-  actions, each per-row or view-wide, with an optional one-character key and an optional question
-  asked first; its scope is global, a repository's or a checkout's (by the daemon's ids, which a
+- `PUT /extension/<name>/view` — one view or a list, replacing every view it had, or none of them
+  when one breaks a limit (`ExtView::checked`, refused with a `409` naming the path,
+  `views[1].rows[3][0]`). A view is a named table in the agent views' vocabulary — `Column`s, and
+  cells that are `Value`s, held to the limits an agent's table keeps (200 rows, web links only) — so
+  the window draws it with the same renderers; and what only an extension adds: a key per row, a
+  status per row as a `Chip`, and actions, each per-row or view-wide, with an optional
+  one-character key and an optional question asked first. A row's status is a chip rather than the
+  pane API's status words because those say where an agent's turn is, and an extension's rows are
+  containers and servers whose states only it can name; it picks the word and a `Tone` for what it
+  means. Its scope is global, a repository's or a checkout's (by the daemon's ids, which a
   command's context carries).
 - `PUT /extension/<name>/commands` — its commands, each with a title, an optional key and where
   the key is heard: anywhere (and through the leader from a pane), in one of its views, on a

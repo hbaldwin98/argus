@@ -307,8 +307,9 @@ async fn handle_hook_request(
     Ok(())
 }
 
-/// Room for a view at its bound of rows, each a handful of short cells.
-const MAX_EXTENSION_BODY: usize = 1024 * 1024;
+/// Room for a few views each as large as an agent's may be; past it the
+/// extension is dumping, not choosing what to show.
+const MAX_EXTENSION_BODY: usize = 4 * argus_protocol::MAX_VIEW_BYTES;
 
 /// One request to an extension's half of the pane API, from reading its
 /// body to writing the answer; the event stream is held open.

@@ -310,7 +310,7 @@ fn block_ok(block: &Block, path: &str, depth: usize) -> Result<(), String> {
     }
 }
 
-fn value_ok(value: &Value, path: &str) -> Result<(), String> {
+pub(crate) fn value_ok(value: &Value, path: &str) -> Result<(), String> {
     let url = match value {
         Value::Link { url, .. } => Some(url),
         Value::Ticket { url, .. } => url.as_ref(),

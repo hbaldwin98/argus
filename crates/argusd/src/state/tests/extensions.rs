@@ -87,8 +87,9 @@ async fn listening(d: &Daemon, name: &str) {
 
 const CONTAINERS: &str = r#"{
     "name": "containers", "title": "Containers",
-    "columns": ["name", "state"],
-    "rows": [{"key": "web", "cells": ["web", "up"], "status": "working"}],
+    "columns": [{"title": "Name"}, {"title": "State"}],
+    "rows": [{"key": "web", "cells": [{"kind": "text", "text": "web"}, {"kind": "text", "text": "up"}],
+              "status": {"label": "running", "tone": "good"}}],
     "actions": [
         {"id": "restart", "label": "Restart", "key": "r", "confirm": "Restart it?"},
         {"id": "refresh", "label": "Refresh", "view_wide": true}
@@ -162,7 +163,8 @@ async fn an_action_reaches_the_extensions_event_stream_and_the_view_stays_as_pub
         ExtEvent::Action { view: "containers".into(), action: "refresh".into(), row: None },
         "a view-wide action names no row"
     );
-    assert_eq!(d.extension_views()[0].rows[0].cells, ["web", "up"], "nothing predicted");
+    let up = argus_protocol::Value::Text { text: "up".into() };
+    assert_eq!(d.extension_views()[0].rows[0].cells[1], up, "nothing predicted");
 
     assert!(d.extension_action("docker", "containers", Some("db".into()), "restart").is_err(), "no such row");
     assert!(d.extension_action("docker", "containers", None, "restart").is_err(), "a row action needs a row");
@@ -176,6 +178,17 @@ async fn an_action_for_an_extension_not_listening_is_refused_in_words() {
     d.publish_views("docker", vec![view(CONTAINERS)]).unwrap();
     let refused = d.extension_action("docker", "containers", Some("web".into()), "restart").unwrap_err();
     assert!(refused.to_string().contains("not listening"), "{refused}");
+}
+
+#[tokio::test]
+async fn a_view_that_breaks_a_limit_is_refused_whole_by_its_path() {
+    let d = served();
+    let token = d.admit_extension("docker");
+    let bad = CONTAINERS.replace(r#"{"kind": "text", "text": "up"}"#, r#"{"kind": "link", "label": "x", "url": "file:///x"}"#);
+    let (code, body) = request(&d, "PUT", "docker", ExtEndpoint::View, &token, &bad).await;
+    assert_eq!(code, 409);
+    assert!(body.starts_with("views[0].rows[0][1]"), "{body}");
+    assert!(d.extension_views().is_empty());
 }
 
 #[tokio::test]

@@ -14,7 +14,7 @@
 use std::collections::{BTreeMap, HashSet, VecDeque};
 
 use argus_protocol::extension_keys::{action_key_refusal, command_key_refusal};
-use argus_protocol::extensions::{MAX_COMMANDS, MAX_ITEMS, MAX_ROWS, MAX_VIEWS};
+use argus_protocol::extensions::{MAX_COMMANDS, MAX_ITEMS, MAX_VIEWS};
 use argus_protocol::{
     CommandScope, ExtAnswer, ExtCommand, ExtDialog, ExtDialogKind, ExtEvent, ExtPane, ExtView, Refusals,
     Refused,
@@ -145,22 +145,24 @@ impl Daemon {
         registry.extensions.values().flat_map(|e| e.commands.iter().cloned()).collect()
     }
 
-    /// Replaces every view `name` publishes. An action key the view's
-    /// stage keeps, or one already taken in the view, is dropped from the
-    /// action and said in the answer; the action is kept.
-    pub fn publish_views(&self, name: &str, mut views: Vec<ExtView>) -> anyhow::Result<Refusals> {
+    /// Replaces every view `name` publishes, or none of them when one breaks
+    /// a limit, which is refused by its path (`views[1].rows[3][0]`). An
+    /// action key the view keeps, or one already taken in the view, is
+    /// dropped from the action and said in the answer; the action is kept.
+    pub fn publish_views(&self, name: &str, views: Vec<ExtView>) -> anyhow::Result<Refusals> {
         if views.len() > MAX_VIEWS {
-            anyhow::bail!("at most {MAX_VIEWS} views");
+            anyhow::bail!("views: at most {MAX_VIEWS}");
         }
+        let mut checked: Vec<ExtView> = Vec::with_capacity(views.len());
+        for (i, view) in views.into_iter().enumerate() {
+            let view = view.checked().map_err(|e| anyhow::anyhow!("views[{i}].{e}"))?;
+            if checked.iter().any(|v| v.name == view.name) {
+                anyhow::bail!("views[{i}].name: {:?} is another view's", view.name);
+            }
+            checked.push(view);
+        }
+        let mut views = checked;
         let mut refusals = Refusals::default();
-        for (i, view) in views.iter().enumerate() {
-            if view.name.is_empty() || views[..i].iter().any(|v| v.name == view.name) {
-                anyhow::bail!("each view needs a name of its own, not {:?}", view.name);
-            }
-            if view.rows.len() > MAX_ROWS {
-                anyhow::bail!("{} has more than {MAX_ROWS} rows", view.name);
-            }
-        }
         let mut registry = self.extensions.lock().unwrap();
         let extension = registry.get(name)?;
         for view in &mut views {
