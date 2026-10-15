@@ -262,7 +262,7 @@ live in this crate and a contract written twice drifts in silence.
 | `capture` | how one note reads as a feature — its title, brief, tasks and decisions — and what writing it down asks of the daemon |
 | `adr` | how a decision reads as a record somebody can paste or correct |
 | `outline` | how a feature's tasks and the decisions raised under them read as one outline: what binds a task, what carries a decision out, what an open one holds up |
-| `flow` | the steps a sequence diagram's source says, in the order it says them, and the lifelines they run between |
+| `flow` | the steps a sequence diagram's source says, in the order it says them, and the lifelines they run between, and the source rewritten to bind a step, move it, or move a lifeline |
 | `board_follower` | how a client follows one repository's board: when it asks for the board and the feature's lists, which pushes it keeps, and where the cursor lands on a feature, task or diagram when one is replaced |
 | `standing` | how a feature stands on the index — Active, Queued, Done, Held or Archived — what a row of the index says, and which task comes next |
 | `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |

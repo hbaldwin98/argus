@@ -7,7 +7,8 @@
 //! What binds a step is said in the source too, as a Mermaid comment on
 //! its line or the line after it — `%% decision #12 task #31` — so it is
 //! written with the flow, travels with it, and the renderer skips it.
-//! Binding a step from a client is writing that comment into the source.
+//! Binding a step from a client is writing that comment into the source,
+//! and dragging a step or a lifeline is rewriting the lines that say them.
 
 /// One line of a flow that a reader steps through.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,6 +133,112 @@ pub fn bind(source: &str, number: usize, decision: i64) -> Option<String> {
     let comment = format!("{indent}%% decision #{decision}");
     lines.insert(step.line + 1, &comment);
     Some(lines.join("\n"))
+}
+
+/// The name and label a `participant` or `actor` line declares.
+fn declared(line: &str) -> Option<(&str, &str)> {
+    let line = line.split_once("%%").map_or(line, |(said, _)| said).trim();
+    let rest = line.strip_prefix("participant ").or_else(|| line.strip_prefix("actor "))?.trim();
+    match rest.split_once(" as ") {
+        Some((name, label)) => Some((name.trim(), label.trim())),
+        None => Some((rest, rest)),
+    }
+}
+
+/// The source with step `number` moved to where step `to` is, the comments
+/// binding it going with it and its indent becoming the place's: a step
+/// dragged into an `alt` belongs to that branch. `None` when either step is
+/// not there, or it would not move.
+pub fn move_step(source: &str, number: usize, to: usize) -> Option<String> {
+    let steps: Vec<Step> = rows(source)
+        .into_iter()
+        .filter_map(|row| match row {
+            FlowRow::Step(step) => Some(step),
+            FlowRow::Branch { .. } => None,
+        })
+        .collect();
+    let moving = steps.iter().find(|s| s.number == number)?;
+    let target = steps.iter().find(|s| s.number == to)?;
+    if number == to {
+        return None;
+    }
+    let lines: Vec<&str> = source.lines().collect();
+    // The comment lines straight under a step bind it, so they are its.
+    let block_end = |at: usize| {
+        let mut end = at + 1;
+        while lines.get(end).is_some_and(|line| line.trim_start().starts_with("%%")) {
+            end += 1;
+        }
+        end
+    };
+    let (from, from_end) = (moving.line, block_end(moving.line));
+    let said = lines[target.line];
+    let indent = &said[..said.len() - said.trim_start().len()];
+    let block: Vec<String> = lines[from..from_end].iter().map(|line| format!("{indent}{}", line.trim_start())).collect();
+    let place = if to > number { block_end(target.line) } else { target.line };
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    for (at, line) in lines.iter().enumerate() {
+        if at == place {
+            out.extend(block.iter().cloned());
+        }
+        if !(from..from_end).contains(&at) {
+            out.push(line.to_string());
+        }
+    }
+    if place == lines.len() {
+        out.extend(block);
+    }
+    Some(out.join("\n"))
+}
+
+/// The source with participant `name`'s lifeline moved to place `to`,
+/// counted from zero: every participant is declared, in the new order,
+/// where the first declaration was — or under the header when none was —
+/// since declaring is how Mermaid is told the order. `None` when there is
+/// no such participant, or it is there already.
+pub fn move_participant(source: &str, name: &str, to: usize) -> Option<String> {
+    let mut order = participants(source);
+    let at = order.iter().position(|p| p.id == name)?;
+    let to = to.min(order.len() - 1);
+    if at == to {
+        return None;
+    }
+    let moved = order.remove(at);
+    order.insert(to, moved);
+
+    let lines: Vec<&str> = source.lines().collect();
+    let declarations: Vec<usize> = (0..lines.len()).filter(|&at| declared(lines[at]).is_some()).collect();
+    let spelled = |name: &str| {
+        declarations
+            .iter()
+            .map(|&at| lines[at])
+            .find(|line| declared(line).is_some_and(|(n, _)| n == name))
+            .map(|line| line.trim().to_string())
+            .unwrap_or_else(|| format!("participant {name}"))
+    };
+    let indent_of = |line: &str| line[..line.len() - line.trim_start().len()].to_string();
+    let (place, indent) = match declarations.first() {
+        Some(&first) => (first, indent_of(lines[first])),
+        None => {
+            let header = lines.iter().position(|line| line.trim() == "sequenceDiagram").map_or(0, |at| at + 1);
+            let indent = lines.iter().skip(header).find(|line| !line.trim().is_empty()).map_or("    ".to_string(), |line| indent_of(line));
+            (header, indent)
+        }
+    };
+    let declared_now: Vec<String> = order.iter().map(|p| format!("{indent}{}", spelled(&p.id))).collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len() + order.len());
+    for (at, line) in lines.iter().enumerate() {
+        if at == place {
+            out.extend(declared_now.iter().cloned());
+        }
+        if !declarations.contains(&at) {
+            out.push(line.to_string());
+        }
+    }
+    if place >= lines.len() {
+        out.extend(declared_now);
+    }
+    Some(out.join("\n"))
 }
 
 /// The decisions and tasks a comment names, as `decision #12 task #31
@@ -319,6 +426,53 @@ mod tests {
         assert_eq!(rows(&bound).len(), rows(SOURCE).len(), "the comment is not a row");
         assert_eq!(bind(&bound, 2, 7), None, "already bound");
         assert_eq!(bind(SOURCE, 9, 7), None, "no step 9");
+    }
+
+    fn said(source: &str) -> Vec<String> {
+        rows(source)
+            .iter()
+            .map(|row| match row {
+                FlowRow::Step(step) => format!("{} {}", step.route(), step.text),
+                FlowRow::Branch { kind, .. } => kind.clone(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_step_moved_down_lands_after_its_target_with_its_binding_comment() {
+        let source = "sequenceDiagram\n    a->>b: one\n    %% decision #4\n    b->>c: two\n    c-->>a: three";
+        let moved = move_step(source, 1, 2).unwrap();
+        assert_eq!(said(&moved), ["b → c two", "a → b one", "c ⇢ a three"]);
+        let FlowRow::Step(step) = &rows(&moved)[1] else { panic!("{moved}") };
+        assert_eq!(step.decisions, [4], "the comment went with it");
+        let back = move_step(&moved, 2, 1).unwrap();
+        assert_eq!(back, source, "moved up again it is where it was");
+        assert_eq!(move_step(source, 3, 3), None);
+        assert_eq!(move_step(source, 9, 1), None);
+    }
+
+    #[test]
+    fn a_step_dragged_into_a_branch_takes_the_branchs_indent() {
+        let moved = move_step(SOURCE, 1, 6).unwrap();
+        assert!(moved.contains("        argusd-->>hook: refused\n        agent->>hook: ask for the brief\n    end"), "{moved}");
+        assert_eq!(said(&moved).last().unwrap(), "agent → hook ask for the brief");
+    }
+
+    #[test]
+    fn a_lifeline_moved_declares_everyone_in_the_new_order() {
+        let moved = move_participant(SOURCE, "argusd", 0).unwrap();
+        assert!(
+            moved.starts_with("sequenceDiagram\n    participant argusd\n    participant agent\n    participant hook as argus-hook\n    agent->>hook"),
+            "{moved}"
+        );
+        let names: Vec<String> = participants(&moved).into_iter().map(|p| p.id).collect();
+        assert_eq!(names, ["argusd", "agent", "hook"]);
+        assert_eq!(said(&moved), said(SOURCE), "the steps are untouched");
+        assert_eq!(move_participant(SOURCE, "agent", 0), None, "already first");
+        assert_eq!(move_participant(SOURCE, "nobody", 0), None);
+
+        let bare = move_participant("sequenceDiagram\n  a->>b: hi", "b", 0).unwrap();
+        assert_eq!(bare, "sequenceDiagram\n  participant b\n  participant a\n  a->>b: hi");
     }
 
     #[test]
