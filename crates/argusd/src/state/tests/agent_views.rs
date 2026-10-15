@@ -224,3 +224,85 @@ fn a_view_change_round_trips_as_the_agent_writes_it() {
     let json = serde_json::to_string(&ViewChange::Show { view: view.clone() }).unwrap();
     assert_eq!(serde_json::from_str::<ViewChange>(&json).unwrap(), ViewChange::Show { view });
 }
+
+fn show_refreshing(id: &str, every: Option<u32>) -> String {
+    let view = serde_json::json!({
+        "id": id,
+        "title": "t",
+        "refresh_every": every,
+        "blocks": [{"kind": "markdown", "text": "hello"}],
+    });
+    serde_json::json!({"action": "show", "view": view}).to_string()
+}
+
+fn refreshing(d: &Daemon, pane: PaneId, id: &str) -> bool {
+    d.agent_views.lock().unwrap().is_refreshing(pane, id)
+}
+
+#[tokio::test]
+async fn a_view_with_an_interval_is_refreshed_until_it_is_shown_without_one_or_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = agent(dir.path());
+    post_agent_hook(&d, pane, Endpoint::View, &show_refreshing("a", Some(60))).await;
+    post_agent_hook(&d, pane, Endpoint::View, &show_refreshing("b", None)).await;
+    assert!(refreshing(&d, pane, "a"));
+    assert!(!refreshing(&d, pane, "b"));
+
+    // Shown again with an interval it still has one, and one only.
+    post_agent_hook(&d, pane, Endpoint::View, &show_refreshing("a", Some(120))).await;
+    assert!(refreshing(&d, pane, "a"));
+    post_agent_hook(&d, pane, Endpoint::View, &show_refreshing("a", None)).await;
+    assert!(!refreshing(&d, pane, "a"));
+
+    post_agent_hook(&d, pane, Endpoint::View, &show_refreshing("a", Some(60))).await;
+    d.close_view(pane, "a");
+    assert!(!refreshing(&d, pane, "a"));
+
+    post_agent_hook(&d, pane, Endpoint::View, &show_refreshing("c", Some(60))).await;
+    let _ = d.close_pane(pane);
+    assert!(!refreshing(&d, pane, "c"));
+}
+
+#[tokio::test]
+async fn a_patch_keeps_the_views_refresh_interval() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = agent(dir.path());
+    post_agent_hook(&d, pane, Endpoint::View, &show_refreshing("a", Some(60))).await;
+    let patch = serde_json::json!({
+        "action": "patch", "id": "a", "path": "blocks[0]", "block": {"kind": "markdown", "text": "newer"},
+    });
+    let response = text(&post_agent_hook(&d, pane, Endpoint::View, &patch.to_string()).await);
+    assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
+    assert!(refreshing(&d, pane, "a"));
+    let bad = serde_json::json!({
+        "action": "patch", "id": "a", "path": "blocks[3]", "block": {"kind": "markdown", "text": "x"},
+    });
+    let response = text(&post_agent_hook(&d, pane, Endpoint::View, &bad.to_string()).await);
+    assert!(response.starts_with("HTTP/1.1 409") && response.contains("blocks[3]"), "{response}");
+    let _ = d.close_pane(pane);
+}
+
+#[tokio::test]
+async fn the_refresh_timer_asks_the_agent_each_interval_until_the_view_goes() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = agent(dir.path());
+    d.set_pane_session_id(pane, "s1");
+    post_agent_hook(&d, pane, Endpoint::View, &show_refreshing("a", None)).await;
+    let (_, mut inbox) = super::inbox::open_inbox(&d, pane, "s1").await;
+
+    // The shortest interval the protocol allows is a minute, so the loop
+    // itself is run at a pace a test can wait for.
+    let timer = tokio::spawn(super::views::keep_refreshing(
+        Arc::downgrade(&d),
+        pane,
+        "a".into(),
+        Duration::from_millis(50),
+    ));
+    for _ in 0..2 {
+        let argus_protocol::InboxItem::Message { text } = super::inbox::next_item(&mut inbox).await;
+        assert!(text.contains("`a`") && text.contains("view show --stdin"), "{text}");
+    }
+    d.close_view(pane, "a");
+    tokio::time::timeout(Duration::from_secs(5), timer).await.expect("the timer ends").unwrap();
+    let _ = d.close_pane(pane);
+}

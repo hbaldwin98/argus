@@ -1213,6 +1213,14 @@ pub struct PageView {
     /// page draws: Mermaid is parsed once, in Rust, as the Flows lens
     /// reads it.
     pub diagrams: Vec<PageDiagram>,
+    /// The paths, under the view as the page names blocks (`2`, `1.0.3`),
+    /// of the blocks that changed when the view came again, for the page
+    /// to mark: once, for a view in front of the person as it changed,
+    /// and until opened for one that was not.
+    pub changed: Vec<String>,
+    /// It changed while the person was not looking, and they have not
+    /// opened it since.
+    pub unseen: bool,
 }
 
 /// A diagram block, read.

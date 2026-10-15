@@ -5024,4 +5024,37 @@ body.resizing:has(.brief-sash.held) {
 
 /* Agent views: live updates (a block changed since it was seen). */
 
+/* One wash that fades, so a block that moved is found without being read
+   for; a view changed out of sight draws the same wash when it is opened. */
+.vchanged {
+  border-radius: var(--r-sm);
+  animation: vchanged 2.4s ease-out 1;
+}
+
+@keyframes vchanged {
+  from {
+    background: color-mix(in srgb, var(--changed) 28%, transparent);
+    box-shadow: 0 0 0 var(--sp-4) color-mix(in srgb, var(--changed) 28%, transparent);
+  }
+  to {
+    background: transparent;
+    box-shadow: 0 0 0 var(--sp-4) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vchanged {
+    animation: none;
+  }
+}
+
+/* A view changed since the person last had it in front of them. */
+.vpanel-tab .vnew {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--changed);
+  flex: none;
+}
+
 /* Agent views: the panel (copy, filter, row details, pop-out, feature views). */

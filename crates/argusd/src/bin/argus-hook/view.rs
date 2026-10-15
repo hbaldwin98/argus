@@ -8,7 +8,7 @@
 
 use std::io::{Read, Write};
 
-use argus_protocol::{AgentView, Endpoint, ViewChange};
+use argus_protocol::{AgentView, Block, Endpoint, ViewChange};
 
 use super::*;
 
@@ -17,7 +17,7 @@ pub(super) fn view(rest: &[&str]) {
     let _ = writeln!(out, "{}", view_message(rest, &env_url(), &env_token(), std::io::stdin()));
 }
 
-/// `view show --stdin`, `view close <id>`.
+/// `view show --stdin`, `view patch <id> <path> --stdin`, `view close <id>`.
 pub(super) fn view_message(
     rest: &[&str],
     base_url: &str,
@@ -38,11 +38,28 @@ pub(super) fn view_message(
             (ViewChange::Show { view }, done)
         }
         ["show", ..] => return "could not show the view: show wants --stdin with the view's JSON".into(),
+        ["patch", id, path, "--stdin"] if !id.trim().is_empty() && !path.trim().is_empty() => {
+            let mut body = String::new();
+            if let Err(e) = stdin.read_to_string(&mut body) {
+                return format!("could not patch the view: {e}");
+            }
+            let block: Block = match serde_json::from_str(&body) {
+                Ok(block) => block,
+                Err(e) => return format!("could not patch the view: not a block: {e}"),
+            };
+            let done = format!("patched: {id} {path}");
+            (ViewChange::Patch { id: id.to_string(), path: path.to_string(), block }, done)
+        }
+        ["patch", ..] => {
+            return "could not patch the view: patch wants the view's id, the block's path and --stdin with \
+                    the block's JSON"
+                .into()
+        }
         ["close", id] if !id.trim().is_empty() => {
             (ViewChange::Close { id: id.to_string() }, format!("closed: {id}"))
         }
         ["close", ..] => return "could not close the view: close wants the view's id".into(),
-        _ => return "view: use `view show --stdin` or `view close <id>`".into(),
+        _ => return "view: use `view show --stdin`, `view patch <id> <path> --stdin` or `view close <id>`".into(),
     };
     let Ok(body) = serde_json::to_string(&change) else {
         return "could not change the view: unencodable".into();
@@ -126,11 +143,38 @@ mod tests {
     }
 
     #[test]
+    fn patching_a_view_sends_the_path_and_the_block() {
+        let (base, server) = answering("200 OK", "");
+        let block = r#"{"kind":"markdown","text":"newer"}"#;
+        let args = ["patch", "eng-1", "blocks[1].columns[0][2]", "--stdin"];
+        let said = view_message(&args, &base, "t", Cursor::new(block));
+        assert_eq!(said, "patched: eng-1 blocks[1].columns[0][2]");
+        let request = server.join().unwrap();
+        assert!(request.starts_with("POST /pane/1/view"), "{request}");
+        assert!(request.contains(r#""action":"patch""#), "{request}");
+        assert!(request.contains(r#""path":"blocks[1].columns[0][2]""#), "{request}");
+        assert!(request.contains(r#""text":"newer""#), "{request}");
+    }
+
+    #[test]
+    fn the_daemons_refusal_of_a_patch_is_the_answer() {
+        let (base, server) = answering("409 Conflict", "blocks[7]: blocks[7] is out of range, there are 3 blocks");
+        let block = r#"{"kind":"markdown","text":"x"}"#;
+        let said = view_message(&["patch", "eng-1", "blocks[7]", "--stdin"], &base, "t", Cursor::new(block));
+        server.join().unwrap();
+        assert!(said.starts_with("could not change the view: blocks[7]: "), "{said}");
+    }
+
+    #[test]
     fn a_malformed_command_is_refused_before_the_daemon_is_asked() {
         for (args, stdin) in [
             (&["show"][..], VIEW),
             (&["show", "--stdin"], "not json"),
             (&["show", "--stdin"], r#"{"id":"x"}"#),
+            (&["patch", "eng-1", "blocks[0]"], r#"{"kind":"divider"}"#),
+            (&["patch", "eng-1", "--stdin"], r#"{"kind":"divider"}"#),
+            (&["patch", " ", "blocks[0]", "--stdin"], r#"{"kind":"divider"}"#),
+            (&["patch", "eng-1", "blocks[0]", "--stdin"], "not json"),
             (&["close"], ""),
             (&["close", " "], ""),
             (&[], ""),

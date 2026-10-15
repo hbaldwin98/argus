@@ -8,7 +8,12 @@
 use argus_protocol::{
     AgentView, PaneId, ServerMsg, ShownView, ViewChange, MAX_VIEWS_PER_PANE, MAX_VIEW_BYTES,
 };
+use std::collections::HashMap;
+use std::sync::{Arc, Weak};
+use std::time::Duration;
+
 use tokio::sync::broadcast;
+use tokio::task::AbortHandle;
 
 use super::*;
 
@@ -17,6 +22,10 @@ use super::*;
 #[derive(Default)]
 pub(super) struct Views {
     shown: Vec<ShownView>,
+    /// The task asking each view's agent to refresh it, for the views shown
+    /// with a `refresh_every`. Whatever removes a view removes its task
+    /// here, so a timer never outlives what it refreshes.
+    timers: HashMap<(PaneId, String), AbortHandle>,
 }
 
 impl Views {
@@ -39,25 +48,51 @@ impl Views {
             return None;
         }
         let oldest = self.shown.iter().position(|v| v.pane == pane)?;
-        Some(self.shown.remove(oldest).view.id)
+        let id = self.shown.remove(oldest).view.id;
+        self.keep_timer(pane, &id, None);
+        Some(id)
+    }
+
+    /// Replaces the view's refresh task with `timer`, stopping the old one.
+    /// Showing a view again restarts the clock with whatever interval it
+    /// now has, or none.
+    fn keep_timer(&mut self, pane: PaneId, id: &str, timer: Option<AbortHandle>) {
+        let old = match timer {
+            Some(timer) => self.timers.insert((pane, id.to_string()), timer),
+            None => self.timers.remove(&(pane, id.to_string())),
+        };
+        if let Some(old) = old {
+            old.abort();
+        }
     }
 
     fn close(&mut self, pane: PaneId, id: &str) -> bool {
         let before = self.shown.len();
         self.shown.retain(|v| !(v.pane == pane && v.view.id == id));
+        self.keep_timer(pane, id, None);
         self.shown.len() != before
     }
 
     /// The ids the pane had, oldest first.
     fn drop_pane(&mut self, pane: PaneId) -> Vec<String> {
         let ids = self.shown.iter().filter(|v| v.pane == pane).map(|v| v.view.id.clone());
-        let ids = ids.collect();
+        let ids: Vec<String> = ids.collect();
         self.shown.retain(|v| v.pane != pane);
+        for id in &ids {
+            self.keep_timer(pane, id, None);
+        }
         ids
     }
 
     fn get(&self, pane: PaneId, id: &str) -> Option<&ShownView> {
         self.shown.iter().find(|v| v.pane == pane && v.view.id == id)
+    }
+
+    /// Whether the view is being asked to refresh, for the tests of what
+    /// stops a timer.
+    #[cfg(test)]
+    pub(super) fn is_refreshing(&self, pane: PaneId, id: &str) -> bool {
+        self.timers.contains_key(&(pane, id.to_string()))
     }
 }
 
@@ -73,7 +108,7 @@ impl Daemon {
     /// does not have is not an error: the person may have closed it first,
     /// and the agent's aim, that it be gone, is met.
     pub fn change_view_for_agent(
-        &self,
+        self: &Arc<Self>,
         pane: PaneId,
         change: ViewChange,
     ) -> anyhow::Result<()> {
@@ -93,13 +128,14 @@ impl Daemon {
         }
     }
 
-    fn show_view(&self, pane: PaneId, view: AgentView) -> anyhow::Result<()> {
+    fn show_view(self: &Arc<Self>, pane: PaneId, view: AgentView) -> anyhow::Result<()> {
         let view = view.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
         // The body limit bounds what was sent; a view that serialises
         // larger than it, from defaults filled in that the sender never
         // wrote, is as much a dump as one that was sent so.
         let size = serde_json::to_vec(&view).map_or(0, |bytes| bytes.len());
         anyhow::ensure!(size <= MAX_VIEW_BYTES, "a view is at most {MAX_VIEW_BYTES} bytes");
+        let (id, every) = (view.id.clone(), view.refresh_every);
         let shown = ShownView {
             pane,
             at: super::decisions::now(),
@@ -114,6 +150,13 @@ impl Daemon {
             let _ = self.agent_views_tx.send(ServerMsg::ViewClosed { pane, id });
         }
         let _ = self.agent_views_tx.send(ServerMsg::ViewShown(Box::new(shown)));
+        // Always replaced, so showing the view again restarts the clock at
+        // its new interval, or stops it when the new view has none.
+        let timer = every.and_then(|secs| {
+            let task = keep_refreshing(Arc::downgrade(self), pane, id.clone(), Duration::from_secs(secs.into()));
+            tokio::runtime::Handle::try_current().ok().map(|rt| rt.spawn(task).abort_handle())
+        });
+        views.keep_timer(pane, &id, timer);
         Ok(())
     }
 
@@ -135,12 +178,13 @@ impl Daemon {
     /// Asks the agent that showed a view to look again. The view stays as
     /// it is until the agent shows it anew, so an agent that does not
     /// answer leaves the person looking at what was true when it was read.
-    /// A view that is not held is ignored.
-    pub fn refresh_view(&self, pane: PaneId, id: &str) {
+    /// A view that is not held is ignored, and `false` says so.
+    pub fn refresh_view(&self, pane: PaneId, id: &str) -> bool {
         let Some(shown) = self.agent_views.lock().unwrap().get(pane, id).cloned() else {
-            return;
+            return false;
         };
         self.notify(pane, &refresh_request(&shown.view));
+        true
     }
 
     /// Tells the agent that showed a view which of its actions the person
@@ -154,6 +198,24 @@ impl Daemon {
         let mut views = self.agent_views.lock().unwrap();
         for id in views.drop_pane(pane) {
             let _ = self.agent_views_tx.send(ServerMsg::ViewClosed { pane, id });
+        }
+    }
+}
+
+/// Asks for a view to be refreshed every `every`, the first time one
+/// interval after it was shown, for as long as it is held. The daemon is
+/// held weakly so that a timer never keeps it alive; `Views` aborts the
+/// task when the view goes, and the loop also ends on its own should the
+/// view be gone first. A delayed tick is not made up, so an agent that was
+/// busy is asked once, not once per tick it missed.
+pub(super) async fn keep_refreshing(daemon: Weak<Daemon>, pane: PaneId, id: String, every: Duration) {
+    let mut ticks = tokio::time::interval_at(tokio::time::Instant::now() + every, every);
+    ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        ticks.tick().await;
+        let Some(daemon) = daemon.upgrade() else { return };
+        if !daemon.refresh_view(pane, &id) {
+            return;
         }
     }
 }
@@ -246,6 +308,73 @@ mod tests {
         assert_eq!(views.drop_pane(PaneId(1)), ["a", "b"]);
         assert_eq!(ids(&views, 2), ["x"]);
         assert!(views.drop_pane(PaneId(1)).is_empty());
+    }
+
+    /// A task that never ends on its own, standing for a refresh timer.
+    fn pending_timer() -> AbortHandle {
+        tokio::spawn(std::future::pending::<()>()).abort_handle()
+    }
+
+    async fn stopped(timer: &AbortHandle) -> bool {
+        for _ in 0..50 {
+            if timer.is_finished() {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        false
+    }
+
+    #[tokio::test]
+    async fn replacing_a_timer_stops_the_old_one() {
+        let mut views = Views::default();
+        let (old, new) = (pending_timer(), pending_timer());
+        views.keep_timer(PaneId(1), "a", Some(old.clone()));
+        views.keep_timer(PaneId(1), "a", Some(new.clone()));
+        assert!(stopped(&old).await);
+        assert!(!new.is_finished());
+        views.keep_timer(PaneId(1), "a", None);
+        assert!(stopped(&new).await);
+        assert!(!views.is_refreshing(PaneId(1), "a"));
+    }
+
+    #[tokio::test]
+    async fn closing_a_view_stops_its_timer_and_no_other() {
+        let mut views = Views::default();
+        let (a, b) = (pending_timer(), pending_timer());
+        views.show(shown(1, "a"));
+        views.show(shown(1, "b"));
+        views.keep_timer(PaneId(1), "a", Some(a.clone()));
+        views.keep_timer(PaneId(1), "b", Some(b.clone()));
+        views.close(PaneId(1), "a");
+        assert!(stopped(&a).await);
+        assert!(!b.is_finished() && views.is_refreshing(PaneId(1), "b"));
+    }
+
+    #[tokio::test]
+    async fn a_ninth_view_stops_the_timer_of_the_one_it_displaces() {
+        let mut views = Views::default();
+        let oldest = pending_timer();
+        views.show(shown(1, "v0"));
+        views.keep_timer(PaneId(1), "v0", Some(oldest.clone()));
+        for n in 1..=MAX_VIEWS_PER_PANE {
+            views.show(shown(1, &format!("v{n}")));
+        }
+        assert!(stopped(&oldest).await);
+        assert!(!views.is_refreshing(PaneId(1), "v0"));
+    }
+
+    #[tokio::test]
+    async fn a_pane_going_stops_the_timers_of_its_views() {
+        let mut views = Views::default();
+        let (mine, other) = (pending_timer(), pending_timer());
+        views.show(shown(1, "a"));
+        views.show(shown(2, "a"));
+        views.keep_timer(PaneId(1), "a", Some(mine.clone()));
+        views.keep_timer(PaneId(2), "a", Some(other.clone()));
+        views.drop_pane(PaneId(1));
+        assert!(stopped(&mine).await);
+        assert!(!other.is_finished());
     }
 
     #[test]

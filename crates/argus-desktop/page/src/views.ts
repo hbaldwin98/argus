@@ -73,6 +73,7 @@ function tabs(views: readonly PageView[], open: PageView | null): HTMLElement {
           onclick: () => call('open_view', { pane: v.pane, id: v.view.id }),
         },
         v.refreshing && el('span', { class: 'vspin', 'aria-label': 'refreshing' }),
+        v.unseen && el('span', { class: 'vnew', role: 'img', 'aria-label': 'changed' }),
         el('span', { class: 'ttl' }, v.view.title),
       ),
     ),
@@ -167,7 +168,13 @@ function body(v: PageView): HTMLElement {
   return el(
     'div',
     { class: 'vpanel-body', 'data-for': key(v) },
-    blocks(v.view.blocks, { pane: v.pane, id: v.view.id, path: key(v), drawn }),
+    blocks(v.view.blocks, {
+      pane: v.pane,
+      id: v.view.id,
+      path: key(v),
+      drawn,
+      changed: new Set(v.changed),
+    }),
   );
 }
 

@@ -16,6 +16,9 @@ export interface ViewCtx {
   /** The block's path under the view, `pane/id.2.0`. */
   path: string;
   drawn: Drawn;
+  /** The paths, under the view (`2`, `1.0.3`), of the blocks that changed
+   *  since the person saw them; those are drawn marked. */
+  changed?: ReadonlySet<string>;
 }
 
 /** The context of the block at `index` under `ctx`. */
