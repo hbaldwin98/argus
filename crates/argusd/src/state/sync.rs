@@ -427,9 +427,12 @@ impl Daemon {
     /// Argus — a bare `git worktree add`/`remove` from a shell — still
     /// shows up, or disappears, without going through `create_worktree` /
     /// `remove_checkout`. Runs on the same blocking-pool tick as the git
-    /// status poll (§4 Level 2, §11 worktree auto-discovery).
+    /// status poll (§4 Level 2, §11 worktree auto-discovery). A removed
+    /// worktree's live panes are kept, under the primary checkout; see
+    /// `follow::adopt_orphans`.
     pub(super) fn reconcile_worktrees(&self) {
         let mut orphaned_panes: Vec<Pane> = Vec::new();
+        let mut adopted = Vec::new();
         {
             let mut guard = self.inner.lock().unwrap();
             let Inner { projects, ids, .. } = &mut *guard;
@@ -474,7 +477,10 @@ impl Daemon {
                                 .iter()
                                 .any(|path| same_path(path, &repository.checkouts[i].path));
                         if gone {
-                            orphaned_panes.extend(repository.checkouts.remove(i).panes);
+                            let checkout = repository.checkouts.remove(i);
+                            let (exited, moved) = follow::adopt_orphans(repository, checkout);
+                            orphaned_panes.extend(exited);
+                            adopted.extend(moved);
                         } else {
                             i += 1;
                         }
@@ -485,6 +491,7 @@ impl Daemon {
         for pane in orphaned_panes {
             self.retire_pane(pane);
         }
+        self.settle_adopted(adopted);
         self.ensure_local_ignores();
     }
 

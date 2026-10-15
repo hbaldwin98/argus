@@ -1,7 +1,9 @@
-//! Which checkout an agent pane belongs to: the one its agent is working
+//! Which checkout a pane belongs to: for an agent, the one it is working
 //! in. The row follows the agent — when it says it moved, and when its turn
 //! ends in a directory inside another worktree of its repository — because
-//! an agent that has to be told to report a move mostly never does.
+//! an agent that has to be told to report a move mostly never does. A live
+//! pane whose worktree is removed outside Argus belongs to the primary
+//! checkout from then on.
 
 use std::path::{Path, PathBuf};
 
@@ -193,7 +195,15 @@ impl Daemon {
             }
         }
 
-        let found = template.as_deref().and_then(|name| {
+        self.install_hooks_for(pane, template.as_deref(), &target_path);
+        self.broadcast_tree();
+        Ok(())
+    }
+
+    /// Writes the managed hooks of the pane's template into the checkout it
+    /// now belongs to, so its next report reaches the daemon from there.
+    fn install_hooks_for(&self, pane: PaneId, template: Option<&str>, target: &Path) {
+        let found = template.and_then(|name| {
             self.templates
                 .lock()
                 .unwrap()
@@ -201,23 +211,72 @@ impl Daemon {
                 .find(|template| template.name == name)
                 .cloned()
         });
-        if let Some(template) = found.as_ref() {
-            let harness = self.harness_for(template);
-            let port = self.hook_port.load(std::sync::atomic::Ordering::Relaxed);
-            if port != 0 {
-                if let Err(error) = harness.install(&target_path, pane, port, &self.hook_token) {
-                    tracing::warn!(
-                        "failed to install {} hooks in {}: {error}",
-                        harness.name,
-                        target_path.display()
-                    );
-                }
-            }
+        let Some(template) = found else {
+            return;
+        };
+        let harness = self.harness_for(&template);
+        let port = self.hook_port.load(std::sync::atomic::Ordering::Relaxed);
+        if port == 0 {
+            return;
         }
-
-        self.broadcast_tree();
-        Ok(())
+        if let Err(error) = harness.install(target, pane, port, &self.hook_token) {
+            tracing::warn!(
+                "failed to install {} hooks in {}: {error}",
+                harness.name,
+                target.display()
+            );
+        }
     }
+
+    /// Gives the agents [`adopt_orphans`] moved the hooks of their new
+    /// checkout. Nothing is taken out of the old one: it is gone.
+    pub(super) fn settle_adopted(&self, adopted: Vec<Adopted>) {
+        for agent in adopted {
+            self.install_hooks_for(agent.pane, agent.template.as_deref(), &agent.home);
+        }
+    }
+}
+
+/// An agent pane [`adopt_orphans`] moved, and where to.
+pub(super) struct Adopted {
+    pane: PaneId,
+    template: Option<String>,
+    home: PathBuf,
+}
+
+/// Takes the panes of a linked worktree Git no longer lists: a pane whose
+/// process still runs moves to the repository's primary checkout, and one
+/// that has exited is handed back to be retired.
+///
+/// Removing the worktree is the usual last step of finishing a branch, and
+/// the agent that finished it is usually standing in it — often it ran the
+/// `git worktree remove` itself. Killing its pane for that ended the
+/// session mid-command. The process keeps running in a directory that no
+/// longer exists, so the primary checkout is not where it works, only the
+/// nearest row that still is a checkout: the person can see it, read what
+/// it said, and close it when they choose. Shells move as well, for the
+/// same reason.
+pub(super) fn adopt_orphans(repository: &mut Repository, gone: Checkout) -> (Vec<Pane>, Vec<Adopted>) {
+    let Some(home) = repository.checkouts.iter_mut().find(|c| c.primary) else {
+        return (gone.panes, Vec::new());
+    };
+    let mut retired = Vec::new();
+    let mut adopted = Vec::new();
+    for pane in gone.panes {
+        if matches!(pane.status, PaneStatus::Exited { .. }) {
+            retired.push(pane);
+            continue;
+        }
+        if pane.kind == PaneKind::Agent {
+            adopted.push(Adopted {
+                pane: pane.id,
+                template: pane.template.clone(),
+                home: home.path.clone(),
+            });
+        }
+        home.panes.push(pane);
+    }
+    (retired, adopted)
 }
 
 /// How far from its own checkout a pane may be moved.

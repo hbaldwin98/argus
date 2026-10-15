@@ -2,7 +2,8 @@
 //! starts and runs until the test says it exits, with the code it says,
 //! and time moves only when the test moves it. For the tests about what
 //! the daemon does with an exit or a duration, which a real process makes
-//! a race against the test.
+//! a race against the test. Its Git reads can be scripted too, and go to
+//! the disk until they are.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -12,30 +13,34 @@ use super::*;
 use crate::state::clock::Clock;
 use crate::state::processes::{Keyboard, OnExit, Process, Processes};
 
-/// A daemon over [`ScriptedProcesses`] and a [`ManualClock`]. Derefs to
-/// the daemon, so a test reads the same as one over real processes.
+/// A daemon over [`ScriptedProcesses`], [`ScriptedGit`] and a
+/// [`ManualClock`]. Derefs to the daemon, so a test reads the same as one
+/// over real processes.
 pub(in crate::state) struct ScriptedDaemon {
     daemon: Arc<Daemon>,
     pub processes: Arc<ScriptedProcesses>,
+    pub git: Arc<ScriptedGit>,
     pub clock: Arc<ManualClock>,
 }
 
 impl ScriptedDaemon {
     pub fn new(config: ConfigFile) -> Self {
         let processes = Arc::new(ScriptedProcesses::default());
+        let git = Arc::new(ScriptedGit::default());
         let clock = Arc::new(ManualClock::new());
         let store = crate::store::Store::in_memory()
             .expect("an in-memory runtime store needs nothing that can fail");
         let daemon = Daemon::with_ports(
             config,
             store,
-            Arc::new(crate::state::git_reads::SystemGit),
+            git.clone(),
             processes.clone(),
             clock.clone(),
         );
         Self {
             daemon,
             processes,
+            git,
             clock,
         }
     }

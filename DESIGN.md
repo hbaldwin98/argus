@@ -231,7 +231,7 @@ to the type or its locking.
 | `state/processes` | starting a pane's process and driving it once it runs: the port every pane is started through, a pty in a running daemon and a scripted process in tests |
 | `state/clock` | what time it is for the durations the daemon decides on — a resume's grace, a restart loop's window, a quiet child's age |
 | `state/agents` | what an agent reports about itself, and what it is told |
-| `state/follow` | which checkout an agent pane belongs to: the one its agent works in, moved to when the agent says so or a status report says its turn ended in another worktree |
+| `state/follow` | which checkout a pane belongs to: the one its agent works in, moved to when the agent says so or a status report says its turn ended in another worktree, and the primary checkout once its worktree is removed outside Argus |
 | `state/viewers` | what each client is showing: the one pty size reconciled out of what they all ask for, and the view of the client the person was last at |
 | `state/git_ops` | the writes to Git |
 | `state/git_reads` | the port the tree's reads of Git go through — status, HEAD, worktrees, a root's repositories — so a test can script what Git answers |
@@ -1127,6 +1127,15 @@ seconds, on a blocking-pool thread, the daemon then refreshes:
 The first of those ticks is immediate, overlapping session restore, so dirty counts follow by the
 time the tree has been on screen a moment.
 
+A worktree that stops being listed leaves the tree, but a pane in it whose process is still running
+does not die with it: it moves to the repository's primary checkout (`state/follow`), and an
+agent's managed hooks are written there so its reports keep arriving. Removing a worktree is the
+usual last step of finishing a branch, and the agent that finished it is usually standing in it,
+often having run `git worktree remove` itself; killing its pane ended the session mid-command, with
+nothing to tell the user why. The process keeps a working directory that no longer exists, so the
+primary checkout is only the nearest row that still is one, where the person can read the pane
+and close it. A pane whose process has already exited is retired with the worktree, as before.
+
 The rail's checkout rows and the Checkouts stage draw that state the same way, as parts rather
 than a first match: `↑2 ↓1 +3 !4` is two ahead, one behind, three staged, four unstaged, and
 `clean` stands in for the last two. A dirty checkout therefore still says it has unpushed commits.
@@ -1226,7 +1235,9 @@ refused before it reaches a command line. Removing a worktree decides what git w
 locked worktree, a path that is not a linked worktree of this repository — before killing the
 checkout's panes, because the panes have to die first for the directory to be deletable on Windows
 and a refusal afterwards would cost them for nothing. A registration whose directory is already
-gone is pruned instead.
+gone is pruned instead. Unlike a removal made outside Argus, this one still closes the
+checkout's live panes: the confirmation names them, and a process left standing in the directory
+would keep Windows from deleting it.
 
 Switching a checkout follows Git's rules: uncommitted changes that do not conflict move across the
 switch, while a conflicting switch is refused and Git's reason is shown to the user. A worktree is

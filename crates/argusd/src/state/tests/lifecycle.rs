@@ -1,6 +1,6 @@
 //! What a pane leaves behind when it leaves the tree: nothing, whichever
 //! way it went — closed, restarted, replaced after a failed resume, or
-//! taken with a worktree deleted underneath it.
+//! exited and then taken with a worktree deleted underneath it.
 
 use super::*;
 
@@ -81,21 +81,24 @@ async fn a_failed_resume_leaves_nothing_of_its_old_pane_behind() {
     close_all(&d);
 }
 
+/// Only an exited pane goes with its worktree; a live one moves to the
+/// primary checkout instead, which `reconcile` covers.
 #[tokio::test]
-async fn a_deleted_worktree_leaves_nothing_of_its_panes_behind() {
+async fn a_deleted_worktree_leaves_nothing_of_its_exited_panes_behind() {
     let dir = tempfile::tempdir().unwrap();
     let worktree = dir.path().join("wt");
     std::fs::create_dir(&worktree).unwrap();
-    let (d, git) = Daemon::scripted(running_claude_config(dir.path()));
+    let d = running_claude(dir.path(), Default::default());
     let (primary, listed) = (dir.path().to_path_buf(), worktree.clone());
-    git.lists_worktrees(move |_| vec![primary.clone(), listed.clone()]);
+    d.git.lists_worktrees(move |_| vec![primary.clone(), listed.clone()]);
     d.reconcile_worktrees();
     let checkout = d.checkout_at(&worktree).expect("the worktree joined the tree");
     let pane = d.spawn_agent(checkout, "claude").unwrap();
     shown(&d, pane);
+    d.exit(pane, Some(0));
 
     let primary = dir.path().to_path_buf();
-    git.lists_worktrees(move |_| vec![primary.clone()]);
+    d.git.lists_worktrees(move |_| vec![primary.clone()]);
     d.reconcile_worktrees();
 
     assert!(d.checkout_at(&worktree).is_none(), "the worktree left the tree");

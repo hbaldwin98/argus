@@ -110,6 +110,80 @@ fn reconcile_drops_a_worktree_removed_outside_argus() {
     assert_eq!(checkout_paths(&d), vec!["/repo".to_string()]);
 }
 
+/// A scripted daemon over `primary` with a linked worktree beside it that
+/// Git lists and the tree has discovered.
+fn primary_with_a_worktree(primary: &std::path::Path) -> (ScriptedDaemon, PathBuf, CheckoutId) {
+    let worktree = primary.join(".argus").join("worktrees").join("feat");
+    std::fs::create_dir_all(&worktree).unwrap();
+    let d = ScriptedDaemon::new(fake_claude_config(primary));
+    let listed = vec![primary.to_path_buf(), worktree.clone()];
+    d.git.lists_worktrees(move |_| listed.clone());
+    d.reconcile_worktrees();
+    let checkout = d.snapshot()[0].repositories[0]
+        .checkouts
+        .iter()
+        .find(|c| !c.primary)
+        .map(|c| c.id)
+        .expect("the worktree was discovered");
+    (d, worktree, checkout)
+}
+
+/// The worktree is removed outside Argus — by the agent standing in it,
+/// in the case this guards — and the next poll no longer lists it.
+fn remove_outside_argus(d: &ScriptedDaemon, primary: &std::path::Path, worktree: &std::path::Path) {
+    std::fs::remove_dir_all(worktree).unwrap();
+    let listed = vec![primary.to_path_buf()];
+    d.git.lists_worktrees(move |_| listed.clone());
+    d.reconcile_worktrees();
+}
+
+fn pane_ids_in(d: &Daemon, path: &str) -> Vec<PaneId> {
+    d.snapshot()[0].repositories[0]
+        .checkouts
+        .iter()
+        .filter(|c| c.path == path)
+        .flat_map(|c| c.panes.iter().map(|p| p.id))
+        .collect()
+}
+
+/// The bug: an agent ran `git worktree remove` on the worktree its pane sat
+/// in, and the next poll killed it mid-command.
+#[tokio::test]
+async fn a_live_pane_outlives_its_worktree_under_the_primary_checkout() {
+    let primary = tempfile::tempdir().unwrap();
+    let (d, worktree, checkout) = primary_with_a_worktree(primary.path());
+    d.start_hook_server().unwrap();
+    let agent = d.spawn_agent(checkout, "claude").unwrap();
+    let shell = d.spawn_shell(checkout).unwrap();
+
+    remove_outside_argus(&d, primary.path(), &worktree);
+
+    let home = primary.path().to_string_lossy().to_string();
+    assert_eq!(checkout_paths(&d), vec![home.clone()], "the worktree's row is gone");
+    assert_eq!(pane_ids_in(&d, &home), vec![agent, shell], "and its panes moved home");
+    assert!(!d.processes.killed(agent), "the agent was left running");
+    assert!(!d.processes.killed(shell), "and so was the shell");
+    assert!(
+        settings_of(primary.path()).exists(),
+        "the agent reports from its new checkout's hooks"
+    );
+    let _ = d.close_pane(agent);
+    let _ = d.close_pane(shell);
+}
+
+#[tokio::test]
+async fn an_exited_pane_goes_with_its_worktree() {
+    let primary = tempfile::tempdir().unwrap();
+    let (d, worktree, checkout) = primary_with_a_worktree(primary.path());
+    let exited = d.spawn_shell(checkout).unwrap();
+    d.exit(exited, Some(0));
+
+    remove_outside_argus(&d, primary.path(), &worktree);
+
+    assert!(pane_ids_in(&d, &primary.path().to_string_lossy()).is_empty());
+    assert!(d.processes.killed(exited), "retired as before, its session with it");
+}
+
 #[test]
 fn an_empty_listing_never_wipes_the_tree() {
     // `git::list_worktrees` returns empty when the path isn't a repo or
