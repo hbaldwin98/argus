@@ -3,11 +3,10 @@
 //!
 //! Slow work leaves the message loop through the helper that fits its
 //! shape:
-//! - `spawn_reporting`: an async git write with nothing to answer but a
-//!   refusal.
+//! - `spawn_reporting`: async subprocess work whose refusal is reported
+//!   as an Error; any answer is sent from inside the task.
 //! - `spawn_pane`: a blocking spawn, answered with `Created::Pane`.
-//! - `answered`/`answer_created`: answering a named request; request id 0
-//!   is an old client, which is never answered.
+//! - `answered`/`answer_created`: answering a named request.
 //! - `reply_with`: a blocking read of one checkout.
 //! - `ReviewLane`: one review at a time, a newer one replacing an older
 //!   one per side.

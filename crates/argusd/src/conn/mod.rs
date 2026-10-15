@@ -93,7 +93,8 @@ where
             }
             msg = client_rx.recv() => {
                 let Some(cmsg) = msg else { break };
-                if let dispatch::Outcome::Shutdown(reason) = dispatch::dispatch(cmsg, &daemon, &out_tx, &mut conn) {
+                let outcome = dispatch::dispatch(cmsg, &daemon, &out_tx, &mut conn);
+                if let dispatch::Outcome::Shutdown(reason) = outcome {
                     // The writer owns the other end of this signal and
                     // sends it only after the acknowledgement frame is
                     // flushed to the client.

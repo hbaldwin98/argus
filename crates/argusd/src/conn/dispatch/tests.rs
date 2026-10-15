@@ -732,8 +732,6 @@ fn a_description_of_the_extensions_is_answered_to_the_client_that_asked() {
 
 #[test]
 fn a_view_and_the_watches_take_effect_through_dispatch() {
-    // These were once caught by the loop before dispatch, and dispatch
-    // panicked on any it was handed.
     let dir = tempfile::tempdir().unwrap();
     let mut h = Harness::new(dir.path());
 
@@ -778,4 +776,47 @@ fn a_greeting_without_extensions_is_sent_none_of_theirs() {
     h.send(ClientMsg::Hello(hello));
 
     assert!(matches!(h.replies().as_slice(), [ServerMsg::Hello(_), ServerMsg::Consoles(_)]));
+}
+
+#[test]
+fn a_greeting_without_consoles_is_sent_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(dir.path());
+    let hello = argus_protocol::Hello::this_build().without(argus_protocol::CONSOLES);
+
+    h.send(ClientMsg::Hello(hello));
+
+    assert!(matches!(
+        h.replies().as_slice(),
+        [ServerMsg::Hello(_), ServerMsg::ExtensionViews(_), ServerMsg::ExtensionCommands(_)]
+    ));
+}
+
+/// Whether a dialog raised now finds a client to put it to.
+fn askable(h: &Harness) -> bool {
+    let dialog = argus_protocol::ExtDialog {
+        title: "t".into(),
+        kind: argus_protocol::ExtDialogKind::Prompt { message: "m".into(), initial: String::new() },
+        answers: None,
+    };
+    h.daemon.raise_dialog("docker", dialog).is_ok()
+}
+
+#[test]
+fn only_a_greeting_that_takes_extensions_and_dialogs_is_put_a_dialog() {
+    use argus_protocol::{Hello, EXTENSIONS, EXTENSION_DIALOGS};
+    let cases = [
+        (Hello::this_build(), true),
+        (Hello::this_build().without(EXTENSION_DIALOGS), false),
+        (Hello::this_build().without(EXTENSIONS), false),
+    ];
+    for (hello, asks) in cases {
+        let dir = tempfile::tempdir().unwrap();
+        let mut h = Harness::new(dir.path());
+        h.daemon.admit_extension("docker");
+
+        h.send(ClientMsg::Hello(hello.clone()));
+
+        assert_eq!(askable(&h), asks, "{hello:?}");
+    }
 }
