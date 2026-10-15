@@ -401,10 +401,15 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `transcript_reader` | the full-transcript reader: the person's turns as a jump list and the one it is on, what find looks for and the match it is on, and the page it draws |
 | `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row, the question waiting on the person — and which of its keys and buttons are the `column_verbs` it sends |
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail |
-| `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks, whether it is opened and the outline row under its cursor, each repository's layout — and what its messages and gestures change |
-| `features` | what the Feature stage's index shows from a board: its rows, the places a person may move each, and the peek |
-| `feature_view` | what a feature opened from the index shows: its tasks and decisions as `outline` reads them, and the task or decision under the cursor in full |
-| `feature_edits` | what an edit to an open feature asks of the daemon: each gesture as the message the terminal client sends for it, checked against the protocol's bounds |
+| `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks and flows, whether it is opened, the lens it is read through and each lens's cursor, each repository's layout — and what its messages and gestures change |
+| `features` | what the Feature stage's index shows from a board: its rows and a card's footer, the places a person may move each, and the peek with the features it may come after |
+| `feature_view` | what a feature opened from the index shows: its header — how it stands, its branch, agent, brief, progress and tickets — and the lens it is read through |
+| `work_lens` | the Work lens: tasks and decisions as `outline` reads them, with each task's tracker key, and the task or decision under the cursor in full |
+| `record_lens` | the Record lens: every decision in the order it was made, and a decision read as its record — what replaced it, what was turned down, and the ADR it copies as |
+| `flows_lens` | the Flows lens: a feature's flows, the one under the cursor as steps, and the step under the cursor with what binds it and what carries it out |
+| `sequence` | a flow's source as the sequence diagram the page draws: its lifelines in order, each step as an arrow between two of them, and the frames a branch draws |
+| `feature_edits` | what an edit to an open feature asks of the daemon: each gesture as the message the terminal client sends for it — a drag on a flow as its source rewritten — checked against the protocol's bounds |
+
 | `capture_note` | a new feature being written as one note: what it reads as by `capture`'s grammar, and whether the board holds the feature it was sent as yet |
 | `settings` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, the side and layout a review opens on, whether the console is docked and its height, and the Settings dialog's choices |
 | `page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call` |

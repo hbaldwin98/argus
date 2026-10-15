@@ -331,6 +331,7 @@ impl Session {
                 self.views.closed(pane, &id);
                 self.rail_changed = true;
             }
+            ServerMsg::SequenceDiagrams(list) => self.features.receive_diagrams(*list),
             // The tree that follows says what closed and what stopping
             // ends; the rest answers requests this window does not make yet.
             _ => {}
@@ -502,6 +503,23 @@ impl Session {
             Call::OpenFeature { slug } => self.open_feature(slug.as_deref()),
             Call::SelectWork { at } => {
                 self.features.select(at);
+                self.finish()
+            }
+            Call::SetLens { lens } => {
+                self.features.set_lens(lens);
+                self.finish()
+            }
+            Call::SelectDecision { id } => {
+                self.features.select_decision(id);
+                self.finish()
+            }
+            Call::SelectStep { diagram, step } => {
+                self.features.select_step(diagram, step);
+                self.finish()
+            }
+            Call::Wait { slug, on, waits } => {
+                let scope = self.scope();
+                self.features.wait(&slug, &on, waits, scope.as_ref(), &mut self.out);
                 self.finish()
             }
             Call::EditFeature { edit } => self.edit_feature(edit),
@@ -1930,7 +1948,7 @@ impl Session {
             events.push(Event::Rail(Box::new(self.rail(now))));
         }
         let scope = self.scope();
-        if let Some(features) = self.features.take(scope.as_ref(), &self.tree) {
+        if let Some(features) = self.features.take(scope.as_ref(), &self.tree, now) {
             events.push(Event::Features(Box::new(features)));
         }
         events.extend(self.dialogs.take(&self.tree, now));
@@ -1985,7 +2003,7 @@ impl Session {
         events.append(&mut self.events(now));
         if !events.iter().any(|e| matches!(e, Event::Features(_))) {
             let scope = self.scope();
-            events.push(Event::Features(Box::new(self.features.everything(scope.as_ref(), &self.tree))));
+            events.push(Event::Features(Box::new(self.features.everything(scope.as_ref(), &self.tree, now))));
         }
         if !events.iter().any(|e| matches!(e, Event::Checkouts(_))) {
             let repo = self.chosen_repository().cloned();
@@ -2574,6 +2592,35 @@ mod tests {
         assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { .. })));
     }
 
+    /// A drag on the diagram sends the flow rewritten, and the Flows lens
+    /// draws the new order only once the daemon pushes the list back.
+    #[test]
+    fn a_dragged_step_shows_when_the_pushed_flows_say_so() {
+        let mut s = session(without_focus());
+        s.show_features(true);
+        s.receive(ServerMsg::Decisions(Box::new(crate::fixtures::board())));
+        s.call(Call::OpenFeature { slug: Some("trim".into()) });
+        s.call(Call::SetLens { lens: crate::page::Lens::Flows });
+        s.receive(ServerMsg::SequenceDiagrams(Box::new(crate::fixtures::diagrams("trim"))));
+        let first = |events: &[Event]| {
+            events.iter().find_map(|e| match e {
+                Event::Features(f) => f.open.as_ref()?.flows.as_ref()?.flow.as_ref()?.rows.first().map(|r| r.text.clone()),
+                _ => None,
+            })
+        };
+        assert_eq!(first(&s.events(0)).as_deref(), Some("ask for the brief"));
+
+        let sent = s.call(Call::EditFeature { edit: FeatureEdit::MoveStep { diagram: 11, step: 1, to: 2 } });
+        let Some(ClientMsg::SequenceDiagram { action: argus_protocol::DiagramAction::Rewrite { write, .. }, .. }) = sent.last() else {
+            panic!("{:?}", names(&sent));
+        };
+        assert_eq!(first(&s.events(0)), None, "nothing changed here yet");
+        let mut pushed = crate::fixtures::diagrams("trim");
+        pushed.diagrams[0].body = write.body.clone();
+        s.receive(ServerMsg::SequenceDiagrams(Box::new(pushed)));
+        assert_eq!(first(&s.events(0)).as_deref(), Some("brief request"));
+    }
+
     #[test]
     fn a_pane_on_screen_chooses_its_repository_until_another_is_chosen() {
         let mut tree = tree();
@@ -3071,7 +3118,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 84] = [
+    const CALLS: [&str; 88] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -3131,6 +3178,10 @@ mod tests {
         r#"{"call":"capture","gesture":{"on":"discard"}}"#,
         r#"{"call":"open_feature","slug":"trim"}"#,
         r#"{"call":"select_work","at":{"kind":"decision","id":2}}"#,
+        r#"{"call":"set_lens","lens":"flows"}"#,
+        r#"{"call":"select_decision","id":2}"#,
+        r#"{"call":"select_step","diagram":11,"step":null}"#,
+        r#"{"call":"wait","slug":"bump","on":"trim","waits":true}"#,
         r#"{"call":"edit_feature","edit":{"on":"take","id":2,"option":0}}"#,
         r#"{"call":"go_to_pane","pane":1}"#,
         r#"{"call":"palette","open":true}"#,

@@ -14,4 +14,8 @@ state: "todo" | "doing" | "done" | "open" | "accepted" | "rejected" | "withdrawn
 /**
  * The open decision holding this task up.
  */
-waitsOn: string | null, on: boolean, };
+waitsOn: string | null, 
+/**
+ * A task's key in the team's tracker.
+ */
+key: string | null, on: boolean, };

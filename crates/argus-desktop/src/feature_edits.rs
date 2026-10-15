@@ -7,10 +7,11 @@
 //! checks it again. Nothing here changes what the window shows: the pushed
 //! board and tasks do, so a refused edit leaves the feature as it is.
 
+use argus_protocol::flow;
 use argus_protocol::{
     checked_task_body, checked_task_line, ClientMsg, DecisionBoard, DecisionChange, DecisionState,
-    DecisionText, DecisionWrite, FeatureAction, TaskAction, TaskList, TaskWrite, MAX_CRITERION_BYTES,
-    MAX_FEATURE_BODY_BYTES,
+    DecisionText, DecisionWrite, DiagramAction, DiagramList, DiagramWrite, FeatureAction, SequenceDiagram,
+    TaskAction, TaskList, TaskWrite, MAX_CRITERION_BYTES, MAX_FEATURE_BODY_BYTES,
 };
 
 use crate::feature_stage::Scope;
@@ -22,7 +23,12 @@ pub struct Target<'a> {
     pub slug: &'a str,
     pub board: &'a DecisionBoard,
     pub tasks: Option<&'a TaskList>,
+    pub diagrams: Option<&'a DiagramList>,
 }
+
+/// What a flow added from the desktop starts as: the terminal client's
+/// skeleton, two lifelines and a request answered, to be edited.
+const SKELETON: &str = "sequenceDiagram\n    participant Client\n    participant Daemon\n    Client->>Daemon: request\n    Daemon-->>Client: response";
 
 /// The messages `edit` sends — none when it changes nothing — or why it
 /// cannot be sent.
@@ -38,6 +44,24 @@ pub fn messages(edit: FeatureEdit, target: &Target) -> Result<Vec<ClientMsg>, St
         checkout: target.scope.checkout,
         feature: target.slug.to_string(),
         change,
+    };
+    let diagram = |action| ClientMsg::SequenceDiagram {
+        project: target.scope.project,
+        checkout: target.scope.checkout,
+        feature: target.slug.to_string(),
+        action,
+    };
+    // A drag or a binding is the flow's source rewritten and sent back
+    // whole; `None` from the rewrite is a gesture that changes nothing.
+    let rewritten = |id: i64, rewrite: &dyn Fn(&str) -> Option<String>| -> Result<Vec<ClientMsg>, String> {
+        let flow = flow_of(target, id)?;
+        Ok(match rewrite(&flow.body) {
+            Some(body) => {
+                let write = DiagramWrite { title: flow.title.clone(), body }.checked()?;
+                vec![diagram(DiagramAction::Rewrite { id, write })]
+            }
+            None => Vec::new(),
+        })
     };
     Ok(match edit {
         FeatureEdit::Brief { body } => {
@@ -105,7 +129,42 @@ pub fn messages(edit: FeatureEdit, target: &Target) -> Result<Vec<ClientMsg>, St
         FeatureEdit::Withdraw { id, withdrawn } => {
             vec![change(if withdrawn { DecisionChange::Withdraw { id } } else { DecisionChange::Restore { id } })]
         }
+        FeatureEdit::Supersede { id, line } => {
+            target.board.decisions.iter().find(|d| d.id == id).ok_or("that decision is gone")?;
+            let (state, chose) = DecisionState::typed(&line);
+            let write = DecisionWrite { chose: chose.to_string(), supersedes: Some(id), state, ..DecisionWrite::default() };
+            vec![ClientMsg::Decide {
+                project: target.scope.project,
+                checkout: target.scope.checkout,
+                feature: target.slug.to_string(),
+                write: write.checked()?,
+            }]
+        }
+        FeatureEdit::AddFlow { title } => {
+            vec![diagram(DiagramAction::Add(DiagramWrite { title: title.trim().to_string(), body: SKELETON.into() }.checked()?))]
+        }
+        FeatureEdit::Flow { id, title, source } => {
+            let flow = flow_of(target, id)?;
+            let write = DiagramWrite { title: title.trim().to_string(), body: source }.checked()?;
+            if write.title == flow.title && write.body == flow.body {
+                return Ok(Vec::new());
+            }
+            vec![diagram(DiagramAction::Rewrite { id, write })]
+        }
+        FeatureEdit::BindStep { diagram: id, step, decision } => {
+            target.board.decisions.iter().find(|d| d.id == decision).ok_or("that decision is gone")?;
+            rewritten(id, &|body| flow::bind(body, step, decision))?
+        }
+        FeatureEdit::MoveStep { diagram: id, step, to } => rewritten(id, &|body| flow::move_step(body, step, to))?,
+        FeatureEdit::MoveParticipant { diagram: id, name, to } => {
+            rewritten(id, &|body| flow::move_participant(body, &name, to))?
+        }
     })
+}
+
+fn flow_of<'a>(target: &Target<'a>, id: i64) -> Result<&'a SequenceDiagram, String> {
+    let gone = || "that flow is gone".to_string();
+    target.diagrams.and_then(|list| list.diagrams.iter().find(|d| d.id == id)).ok_or_else(gone)
 }
 
 fn open_decision<'a>(target: &Target<'a>, id: i64) -> Result<&'a argus_protocol::Decision, String> {
@@ -137,8 +196,74 @@ mod tests {
         let mut board = fixtures::board();
         board.decisions[1].options = vec!["Every standing decision".into(), "Only the binding ones".into()];
         let tasks = fixtures::tasks("trim");
+        let diagrams = fixtures::diagrams("trim");
         let scope = scope();
-        messages(edit, &Target { scope: &scope, slug: "trim", board: &board, tasks: Some(&tasks) })
+        messages(edit, &Target { scope: &scope, slug: "trim", board: &board, tasks: Some(&tasks), diagrams: Some(&diagrams) })
+    }
+
+    /// The source a flow edit sends back for flow 11.
+    fn rewritten(edit: FeatureEdit) -> String {
+        let ClientMsg::SequenceDiagram { action: DiagramAction::Rewrite { id: 11, write }, .. } = one(edit) else {
+            panic!("not flow 11 rewritten");
+        };
+        assert_eq!(write.title, "Asking for the brief", "the title stays");
+        write.body
+    }
+
+    fn steps(source: &str) -> Vec<String> {
+        flow::rows(source)
+            .into_iter()
+            .filter_map(|row| match row {
+                flow::FlowRow::Step(step) => Some(step.text),
+                flow::FlowRow::Branch { .. } => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn dragging_a_step_rewrites_the_flow_and_sends_it_back_whole() {
+        let body = rewritten(FeatureEdit::MoveStep { diagram: 11, step: 1, to: 3 });
+        assert_eq!(steps(&body)[..3], ["brief request", "find the pane's feature", "ask for the brief"]);
+        assert!(send(FeatureEdit::MoveStep { diagram: 11, step: 2, to: 2 }).unwrap().is_empty(), "a drop where it was");
+        assert!(send(FeatureEdit::MoveStep { diagram: 99, step: 1, to: 2 }).is_err());
+    }
+
+    #[test]
+    fn dragging_a_lifeline_declares_the_new_order() {
+        let body = rewritten(FeatureEdit::MoveParticipant { diagram: 11, name: "argusd".into(), to: 0 });
+        let order: Vec<_> = flow::participants(&body).into_iter().map(|p| p.id).collect();
+        assert_eq!(order, ["argusd", "agent", "hook"]);
+    }
+
+    #[test]
+    fn binding_a_step_writes_the_decision_under_it() {
+        let body = rewritten(FeatureEdit::BindStep { diagram: 11, step: 1, decision: 2 });
+        assert!(body.contains("agent->>hook: ask for the brief\n    %% decision #2"), "{body}");
+        assert!(send(FeatureEdit::BindStep { diagram: 11, step: 2, decision: 1 }).unwrap().is_empty(), "already bound");
+        assert!(send(FeatureEdit::BindStep { diagram: 11, step: 1, decision: 99 }).is_err());
+    }
+
+    #[test]
+    fn a_flow_is_added_from_a_skeleton_and_edited_as_its_source() {
+        let ClientMsg::SequenceDiagram { action: DiagramAction::Add(write), .. } = one(FeatureEdit::AddFlow { title: " Retry ".into() })
+        else {
+            panic!();
+        };
+        assert_eq!((write.title.as_str(), steps(&write.body).len()), ("Retry", 2));
+        assert!(send(FeatureEdit::AddFlow { title: " ".into() }).is_err());
+        let same = FeatureEdit::Flow { id: 11, title: "Asking for the brief".into(), source: fixtures::FLOW.into() };
+        assert!(send(same).unwrap().is_empty());
+        let body = rewritten(FeatureEdit::Flow { id: 11, title: "Asking for the brief".into(), source: "sequenceDiagram\n    a->>b: x".into() });
+        assert_eq!(steps(&body), ["x"]);
+    }
+
+    #[test]
+    fn superseding_records_a_decision_that_takes_the_old_ones_place() {
+        let ClientMsg::Decide { write, .. } = one(FeatureEdit::Supersede { id: 1, line: "Link it instead".into() }) else {
+            panic!();
+        };
+        assert_eq!((write.chose.as_str(), write.supersedes, write.state), ("Link it instead", Some(1), DecisionState::Accepted));
+        assert!(send(FeatureEdit::Supersede { id: 99, line: "x".into() }).is_err());
     }
 
     fn one(edit: FeatureEdit) -> ClientMsg {

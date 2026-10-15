@@ -123,6 +123,15 @@ pub enum Call {
     OpenFeature { slug: Option<String> },
     /// Puts the open feature's cursor on a row of its outline.
     SelectWork { at: WorkAt },
+    /// Reads the open feature through another lens.
+    SetLens { lens: Lens },
+    /// Puts the Record lens's cursor on a decision.
+    SelectDecision { id: i64 },
+    /// Puts the Flows lens's cursor on a flow, and on a step of it by its
+    /// place among the steps, counted from zero; `None` keeps the step.
+    SelectStep { diagram: i64, step: Option<usize> },
+    /// Says `slug` comes after `on`, or with `waits` false takes that back.
+    Wait { slug: String, on: String, waits: bool },
     /// An edit to the open feature, sent to the daemon as it stands.
     EditFeature { edit: FeatureEdit },
     /// Leaves the Feature stage for a pane working a feature.
@@ -238,6 +247,30 @@ pub enum FeatureEdit {
     /// Withdraws a decision, or restores one withdrawn. Never removed: a
     /// withdrawn decision stays on the record.
     Withdraw { id: i64, withdrawn: bool },
+    /// A decision typed on one line that takes `id`'s place in the tree.
+    Supersede { id: i64, line: String },
+    /// A new flow under `title`, from a skeleton to be edited.
+    AddFlow { title: String },
+    /// A flow's title and Mermaid source, whole.
+    Flow { id: i64, title: String, source: String },
+    /// Binds step `step` of a flow, numbered from one, to a decision.
+    BindStep { diagram: i64, step: usize, decision: i64 },
+    /// Moves step `step` to where step `to` is, both numbered from one.
+    MoveStep { diagram: i64, step: usize, to: usize },
+    /// Moves a participant's lifeline to place `to`, counted from zero.
+    MoveParticipant { diagram: i64, name: String, to: usize },
+}
+
+/// How an open feature is read: as work, as a record of its decisions, or
+/// as its flows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub enum Lens {
+    #[default]
+    Work,
+    Record,
+    Flows,
 }
 
 /// What a click in the review dialog landed on.
@@ -787,6 +820,25 @@ pub struct FeatureRow {
     pub peeked: bool,
     /// Where a person may move it by hand, with why the rest are not.
     pub moves: Vec<Move>,
+    /// How it came to stand where it does, and how long ago it last
+    /// changed: a card's footer.
+    pub footer: String,
+    /// The task that comes next, once its tasks are known: the peeked
+    /// feature's.
+    pub next: Option<Line>,
+}
+
+/// A feature another may come after, as the peek's After… menu offers it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct AfterChoice {
+    pub slug: String,
+    pub number: i64,
+    pub title: String,
+    /// The peeked feature comes after it already; choosing it takes that
+    /// back.
+    pub waits: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -835,6 +887,8 @@ pub struct Peek {
     pub last_decided: Option<Line>,
     /// The agent pane to go to.
     pub pane: Option<u64>,
+    /// The open features it may come after, and those it does.
+    pub after: Vec<AfterChoice>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -956,12 +1010,145 @@ pub struct FeatureView {
     pub tasks_total: usize,
     pub decided: usize,
     pub open: usize,
+    pub lens: Lens,
     /// Whether its tasks have arrived; until then the outline says so.
     pub loaded: bool,
+    /// The Work lens: the outline, and the row under its cursor, whichever
+    /// it is. The other lenses' keys move along it too, so it is always
+    /// sent.
     pub rows: Vec<WorkRow>,
-    /// The row under the cursor, whichever it is.
     pub task: Option<TaskDetail>,
     pub decision: Option<DecisionDetail>,
+    /// The Record lens, while it is the one read.
+    pub record: Option<RecordLens>,
+    /// The Flows lens, while it is the one read.
+    pub flows: Option<FlowsLens>,
+}
+
+/// Every decision of a feature in the order it was made, and the one under
+/// the cursor as its record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct RecordLens {
+    pub rows: Vec<RecordRow>,
+    pub decision: Option<DecisionDetail>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct RecordRow {
+    pub id: i64,
+    pub label: String,
+    pub depth: usize,
+    pub text: String,
+    #[cfg_attr(test, ts(type = "\"open\" | \"accepted\" | \"rejected\" | \"withdrawn\" | \"superseded\""))]
+    pub state: &'static str,
+    pub on: bool,
+}
+
+/// A feature's flows, the one under the cursor read as steps, and the
+/// diagram drawn from them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct FlowsLens {
+    /// Whether the feature's flows have arrived.
+    pub loaded: bool,
+    pub flows: Vec<FlowItem>,
+    pub flow: Option<FlowDetail>,
+    /// The decisions a step can be bound to, by what a reader calls them.
+    pub decisions: Vec<Line>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct FlowItem {
+    pub id: i64,
+    pub title: String,
+    /// `6 steps · 1 branch`.
+    pub summary: String,
+    pub on: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct FlowDetail {
+    pub id: i64,
+    pub title: String,
+    /// The Mermaid it is stored as, for Edit source.
+    pub source: String,
+    /// Its steps, with each `else`, `opt` and `loop` between them.
+    pub rows: Vec<StepRow>,
+    /// The step under the cursor, read whole.
+    pub step: Option<StepDetail>,
+    pub diagram: Sequence,
+}
+
+/// A line of the steps list: a step, or where the flow branches.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct StepRow {
+    /// One-based; `None` on a branch.
+    pub number: Option<usize>,
+    /// `hook → argusd` on a step; `else`, `opt` or `loop` on a branch.
+    pub route: String,
+    pub text: String,
+    /// What binds it: `D2`, `task 1.2`.
+    pub tags: Vec<String>,
+    pub on: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct StepDetail {
+    pub number: usize,
+    pub route: String,
+    pub text: String,
+    /// Who it runs between, as the diagram calls them.
+    pub participants: Vec<String>,
+    pub bound_by: Vec<Line>,
+    /// The tasks its decisions are carried out by, and those it names.
+    pub carried_out_by: Vec<Line>,
+}
+
+/// A flow as the page draws it: lifelines left to right, then what runs
+/// down them in order.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Sequence {
+    pub lifelines: Vec<Lifeline>,
+    pub items: Vec<SequenceItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct Lifeline {
+    /// What the source calls it, which a drag names.
+    pub name: String,
+    pub label: String,
+}
+
+/// One thing down the lifelines.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum SequenceItem {
+    /// A step: an arrow between two lifelines, or a lifeline to itself
+    /// when `from` and `to` are one. `reply` is dashed.
+    Message { step: usize, from: usize, to: usize, reply: bool, text: String, on: bool },
+    /// A frame opens: `alt`, `opt`, `loop`, `par`, `critical`, `break`.
+    Open { frame: String, label: String },
+    /// The frame's next arm: `else` or `and`.
+    Arm { label: String },
+    Close,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -979,6 +1166,8 @@ pub struct WorkRow {
     pub state: &'static str,
     /// The open decision holding this task up.
     pub waits_on: Option<String>,
+    /// A task's key in the team's tracker.
+    pub key: Option<String>,
     pub on: bool,
 }
 
@@ -1038,6 +1227,14 @@ pub struct DecisionDetail {
     pub carried_out_by: Vec<Line>,
     /// The record as it is edited: every section, the empty ones too.
     pub document: String,
+    /// The decision that took its place, by its label.
+    pub superseded_by: Option<String>,
+    /// `by you` or `by an agent`.
+    pub by: &'static str,
+    /// The answers turned down under it, each with why.
+    pub considered: Vec<Line>,
+    /// The record as it is copied out, as ADR markdown.
+    pub adr: String,
 }
 
 /// The note a new feature is written as, and what the daemon's own reading
@@ -1795,6 +1992,8 @@ mod tests {
                 held: None,
                 peeked: true,
                 moves: vec![Move { to: "done", label: "Done".into(), disabled: Some("when every task is done".into()) }],
+                footer: "claude is on it · 2h ago".into(),
+                next: None,
             }],
             ..Features::default()
         };

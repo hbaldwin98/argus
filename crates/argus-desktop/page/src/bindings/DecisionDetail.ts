@@ -28,4 +28,20 @@ carriedOutBy: Array<Line>,
 /**
  * The record as it is edited: every section, the empty ones too.
  */
-document: string, };
+document: string, 
+/**
+ * The decision that took its place, by its label.
+ */
+supersededBy: string | null, 
+/**
+ * `by you` or `by an agent`.
+ */
+by: string, 
+/**
+ * The answers turned down under it, each with why.
+ */
+considered: Array<Line>, 
+/**
+ * The record as it is copied out, as ADR markdown.
+ */
+adr: string, };

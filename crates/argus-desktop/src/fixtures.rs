@@ -159,3 +159,64 @@ pub fn tasks(feature: &str) -> argus_protocol::TaskList {
         ],
     }
 }
+
+/// [`board`] with `trim` opened up: its open question raised under task 4
+/// and its made decision under task 1, the question offering two answers
+/// and the decision costing a request.
+pub fn open_board() -> argus_protocol::DecisionBoard {
+    use argus_protocol::{Consequence, DecisionState};
+    let mut board = board();
+    for decision in &mut board.decisions {
+        decision.task = Some(if decision.state == DecisionState::Open { 4 } else { 1 });
+    }
+    board.decisions[1].options = vec!["Every standing decision".into(), "Only the binding ones".into()];
+    board.decisions[0].consequences = vec![Consequence { gain: false, text: "one more request".into() }];
+    board
+}
+
+/// [`tasks`] of `trim`, task 3 with one criterion checked off and a note
+/// an agent left.
+pub fn open_tasks() -> argus_protocol::TaskList {
+    use argus_protocol::{Criterion, TaskNote};
+    let mut tasks = tasks("trim");
+    tasks.tasks[2].criteria = vec![
+        Criterion { text: "The route answers".into(), done: true },
+        Criterion { text: "A test covers it".into(), done: false },
+    ];
+    tasks.tasks[2].notes = vec![TaskNote { text: "wiring it now".into(), session: Some("s".into()), ..TaskNote::default() }];
+    tasks
+}
+
+/// The source of `trim`'s first flow: the hook asks the daemon for a
+/// brief, which answers it or refuses, its second step bound to decision 1.
+pub const FLOW: &str = "sequenceDiagram
+    participant agent
+    participant hook as argus-hook
+    agent->>hook: ask for the brief
+    hook->>argusd: brief request
+    %% decision #1
+    argusd->>argusd: find the pane's feature
+    alt the pane has a feature
+        argusd-->>hook: the brief
+    else it has none
+        argusd-->>hook: refused
+    end";
+
+/// A feature's flows: [`FLOW`], and a short second.
+pub fn diagrams(feature: &str) -> argus_protocol::DiagramList {
+    use argus_protocol::SequenceDiagram;
+    let diagram = |id: i64, title: &str, body: &str| SequenceDiagram {
+        id,
+        feature: feature.into(),
+        title: title.into(),
+        body: body.into(),
+        at: id,
+        session: None,
+    };
+    argus_protocol::DiagramList {
+        repositories: Vec::new(),
+        project_name: "src".into(),
+        feature: Some(feature.into()),
+        diagrams: vec![diagram(11, "Asking for the brief", FLOW), diagram(12, "Capping", "sequenceDiagram\n    a->>b: cap")],
+    }
+}

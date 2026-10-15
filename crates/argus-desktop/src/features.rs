@@ -8,12 +8,13 @@
 //! the index is `feature_view`'s.
 
 use argus_protocol::standing::{self, FeatureRow, Standing};
-use argus_protocol::{DecisionBoard, Feature, PaneInfo, ProjectInfo, TaskList, TaskState};
+use argus_protocol::{DecisionBoard, DiagramList, Feature, FeatureState, PaneInfo, ProjectInfo, TaskList, TaskState};
 
 use argus_protocol::outline::WorkRef;
 
 use crate::feature_view::{self, Opened};
-use crate::page::{self, Agent, Features, Line, Link, Move, Peek};
+use crate::flows_lens::FlowCursor;
+use crate::page::{self, AfterChoice, Agent, Features, Lens, Line, Link, Move, Peek};
 
 /// The repository the index is about and how it is shown.
 pub struct Index<'a> {
@@ -22,12 +23,20 @@ pub struct Index<'a> {
     pub tree: &'a [ProjectInfo],
     pub layout: Layout,
     pub show_folded: bool,
-    /// The feature under the cursor, and its tasks once they arrived.
+    /// The feature under the cursor, and its tasks and flows once they
+    /// arrived.
     pub peek: Option<&'a str>,
     pub peek_tasks: Option<&'a TaskList>,
-    /// Whether the peeked feature is opened, and the row its cursor is on.
+    pub peek_diagrams: Option<&'a DiagramList>,
+    /// Whether the peeked feature is opened, the lens it is read through,
+    /// and where each lens's cursor is.
     pub opened: bool,
-    pub cursor: Option<WorkRef>,
+    pub lens: Lens,
+    pub work: Option<WorkRef>,
+    pub record: Option<i64>,
+    pub flow: FlowCursor,
+    /// Seconds since the epoch, for how long ago a card last changed.
+    pub now: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
@@ -102,8 +111,12 @@ pub fn build(index: &Index) -> Features {
                 row,
                 board,
                 tasks: index.peek_tasks,
+                diagrams: index.peek_diagrams,
                 tree: index.tree,
-                cursor: index.cursor,
+                lens: index.lens,
+                work: index.work,
+                record: index.record,
+                flow: index.flow,
             })
         });
     features
@@ -116,6 +129,12 @@ pub fn is_folded(board: &DecisionBoard, tree: &[ProjectInfo], slug: &str) -> boo
 
 fn page_row(row: &FeatureRow, feature: Option<&Feature>, index: &Index) -> page::FeatureRow {
     let agent = feature.and_then(|f| loudest_agent(&standing::panes_on(f, index.tree)));
+    let peeked = index.peek == Some(row.slug.as_str());
+    let footer = footer(row, feature, agent.as_ref(), index);
+    let next = index
+        .peek_tasks
+        .filter(|_| peeked)
+        .and_then(|list| standing::next_task(&list.tree_rows()).map(|task| Line { label: task.label(), text: task.task.title.clone(), aside: None }));
     page::FeatureRow {
         slug: row.slug.clone(),
         number: row.number,
@@ -130,9 +149,43 @@ fn page_row(row: &FeatureRow, feature: Option<&Feature>, index: &Index) -> page:
         agent,
         after: row.after.clone(),
         held: feature.and_then(|f| f.held.clone()),
-        peeked: index.peek == Some(row.slug.as_str()),
+        peeked,
         moves: moves(row),
+        footer,
+        next,
     }
+}
+
+/// A card's footer: how it came to stand where it does, read off the same
+/// things its standing is, and how long ago the feature or a decision on
+/// it last changed — the board keeps no history of moves, so that is the
+/// latest moment it can name.
+fn footer(row: &FeatureRow, feature: Option<&Feature>, agent: Option<&Agent>, index: &Index) -> String {
+    let how = match row.standing {
+        Standing::Archived => "accepted".to_string(),
+        Standing::Held => "held".to_string(),
+        Standing::Done => "every task done".to_string(),
+        Standing::Active => match agent {
+            Some(agent) => format!("{} is on it", agent.title),
+            None => "a task started".to_string(),
+        },
+        Standing::Queued if !row.after.is_empty() => {
+            let after: Vec<String> = row.after.iter().map(|n| format!("#{n}")).collect();
+            format!("after {}", after.join(", "))
+        }
+        Standing::Queued => "written down".to_string(),
+        Standing::New => "written down, nothing in it yet".to_string(),
+    };
+    let decided = index
+        .board
+        .into_iter()
+        .flat_map(|board| board.decisions.iter())
+        .filter(|d| d.feature.as_deref() == Some(row.slug.as_str()))
+        .map(|d| d.at);
+    let Some(last) = feature.map(|f| f.at).into_iter().chain(decided).max().filter(|at| *at > 0) else {
+        return how;
+    };
+    format!("{how} · {} ago", argus_protocol::ago::ago(Some(last as u64), index.now))
 }
 
 pub fn loudest_agent(panes: &[&PaneInfo]) -> Option<Agent> {
@@ -248,7 +301,22 @@ fn peek(row: &FeatureRow, feature: &Feature, board: &DecisionBoard, index: &Inde
         next_up,
         last_decided,
         pane: row.pane.map(|pane| pane.0),
+        after: after_choices(feature, board),
     }
+}
+
+/// What a feature may come after, as the terminal client's `w` offers it:
+/// the other open features, and any it already waits on, which choosing
+/// takes back.
+fn after_choices(feature: &Feature, board: &DecisionBoard) -> Vec<AfterChoice> {
+    board
+        .features
+        .iter()
+        .filter(|other| other.slug != feature.slug)
+        .map(|other| (other, feature.waits_on.contains(&other.slug)))
+        .filter(|(other, waits)| *waits || other.state != FeatureState::Done)
+        .map(|(other, waits)| AfterChoice { slug: other.slug.clone(), number: other.number, title: other.title.clone(), waits })
+        .collect()
 }
 
 pub fn word(standing: Standing) -> &'static str {
@@ -276,9 +344,56 @@ mod tests {
             show_folded: false,
             peek,
             peek_tasks: None,
+            peek_diagrams: None,
             opened: false,
-            cursor: None,
+            lens: Lens::Work,
+            work: None,
+            record: None,
+            flow: FlowCursor::default(),
+            now: 3 * 86_400 + 60,
         }
+    }
+
+    #[test]
+    fn a_card_says_how_it_came_to_stand_there_and_how_long_ago_it_changed() {
+        let board = fixtures::board();
+        let tree = fixtures::feature_tree();
+        let features = build(&index(&board, &tree, None));
+        let footers: Vec<_> = features.rows.iter().map(|r| (r.number, r.footer.as_str())).collect();
+        assert_eq!(
+            footers,
+            [
+                (7, "claude is on it · 3d ago"),
+                (8, "after #7 · 3d ago"),
+                (10, "written down, nothing in it yet · 3d ago"),
+                (6, "every task done · 3d ago"),
+                (5, "held · 3d ago"),
+                (4, "accepted · 3d ago"),
+            ]
+        );
+    }
+
+    #[test]
+    fn only_the_peeked_row_says_what_comes_next_once_its_tasks_arrive() {
+        let board = fixtures::board();
+        let tree = fixtures::feature_tree();
+        let tasks = fixtures::tasks("trim");
+        let mut idx = index(&board, &tree, Some("trim"));
+        assert!(build(&idx).rows[0].next.is_none(), "not yet arrived");
+        idx.peek_tasks = Some(&tasks);
+        let features = build(&idx);
+        let next = features.rows[0].next.as_ref().unwrap();
+        assert_eq!((next.label.as_str(), next.text.as_str()), ("1.2", "The hook reads the brief"), "the one being done");
+        assert!(features.rows[1..].iter().all(|r| r.next.is_none()));
+    }
+
+    #[test]
+    fn a_feature_may_come_after_the_open_ones_and_takes_back_one_it_waits_on() {
+        let board = fixtures::board();
+        let tree = fixtures::feature_tree();
+        let peek = build(&index(&board, &tree, Some("bump"))).peek.unwrap();
+        let offered: Vec<_> = peek.after.iter().map(|c| (c.number, c.waits)).collect();
+        assert_eq!(offered, [(5, false), (6, false), (7, true), (10, false)], "not #4, accepted, nor itself");
     }
 
     #[test]
@@ -356,8 +471,10 @@ mod tests {
         idx.peek_tasks = Some(&tasks);
         assert!(build(&idx).open.is_none(), "peeked, not opened");
         idx.opened = true;
+        idx.lens = Lens::Record;
         let open = build(&idx).open.unwrap();
-        assert_eq!((open.number, open.rows.len()), (7, 6));
+        assert_eq!((open.number, open.rows.len(), open.lens), (7, 6, Lens::Record));
+        assert!(open.record.is_some());
     }
 
     #[test]

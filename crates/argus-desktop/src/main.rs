@@ -28,6 +28,7 @@ mod feature_edits;
 mod feature_stage;
 mod feature_view;
 mod features;
+mod flows_lens;
 #[cfg(test)]
 mod fixtures;
 mod keymap;
@@ -39,10 +40,12 @@ mod opener;
 mod page;
 mod palette;
 mod preferences;
+mod record_lens;
 mod rail;
 mod review;
 mod screen;
 mod sent;
+mod sequence;
 mod session;
 mod sessions;
 mod sessions_dialog;
@@ -53,6 +56,7 @@ mod switcher;
 mod shared;
 mod transcript_reader;
 mod window_frame;
+mod work_lens;
 
 use std::sync::Arc;
 use std::time::Duration;
