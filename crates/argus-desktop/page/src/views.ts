@@ -3,6 +3,7 @@
 // edge that brings it back. Rust holds the views and which one is open;
 // the panel draws them and says what was pressed.
 
+import type { Link } from './bindings/Link';
 import type { PageView } from './bindings/PageView';
 import type { ViewsPage } from './bindings/ViewsPage';
 import { blocks } from './blocks.js';
@@ -129,7 +130,22 @@ function header(v: PageView): HTMLElement {
 }
 
 function body(v: PageView): HTMLElement {
-  return el('div', { class: 'vpanel-body', 'data-for': key(v) }, blocks(v.view.blocks, key(v)));
+  const drawn = (source: string) => v.diagrams.find((d) => d.source === source);
+  return el(
+    'div',
+    { class: 'vpanel-body', 'data-for': key(v) },
+    blocks(v.view.blocks, key(v), drawn),
+  );
+}
+
+/** The newest view of a ticket, matched by its URL or its tracker and key. */
+export function viewOf(link: Link): PageView | undefined {
+  return shown.views.find(
+    (v) =>
+      v.subject !== null &&
+      (v.subject.url === link.url ||
+        (v.subject.tracker === link.tracker && v.subject.key === link.key)),
+  );
 }
 
 /** Brings the newest view out, from the tab at the window's edge. */

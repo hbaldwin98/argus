@@ -124,6 +124,8 @@ function receive(event: Event): void {
       break;
     case 'views':
       drawViews(event);
+      // A ticket link says when a view of it waits.
+      drawFeatures();
       break;
     case 'chime':
       chime();

@@ -14,7 +14,7 @@ use argus_protocol::standing::{self, FeatureRow};
 use argus_protocol::{Decision, DecisionBoard, DecisionText, DecisionTreeRow, Feature, ProjectInfo, TaskList, TaskTreeRow};
 
 use crate::features::{loudest_agent, word};
-use crate::page::{Criterion, DecisionDetail, FeatureView, Line, TaskDetail, WorkAt, WorkRow};
+use crate::page::{Criterion, DecisionDetail, FeatureView, Line, Link, TaskDetail, WorkAt, WorkRow};
 
 pub struct Opened<'a> {
     pub feature: &'a Feature,
@@ -89,6 +89,11 @@ pub fn build(opened: &Opened) -> FeatureView {
         branch: row.branch.clone(),
         agent: loudest_agent(&standing::panes_on(feature, tree)),
         brief: feature.body.clone(),
+        links: feature
+            .links
+            .iter()
+            .map(|link| Link { tracker: link.tracker.clone(), key: link.key.clone(), url: link.url.clone() })
+            .collect(),
         tasks_done: row.tasks.done,
         tasks_total: row.tasks.total(),
         decided: row.decided,

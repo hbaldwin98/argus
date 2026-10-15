@@ -249,6 +249,15 @@ function paneRow(checkout: number, pane: RailPane): HTMLElement {
       },
       el('span', { class: `sdot ${pane.status}`, 'aria-hidden': 'true' }),
       el('span', { class: 'ttl' }, pane.title),
+      pane.views > 0 &&
+        el(
+          'span',
+          {
+            class: 'pane-views',
+            title: `${pane.views} ${pane.views === 1 ? 'view' : 'views'} from this agent`,
+          },
+          `${pane.views}`,
+        ),
       el(
         'span',
         { class: `st ${pane.status}` },

@@ -95,6 +95,9 @@ function run(action: Action): boolean {
     case 'newConsole':
       call('console', { gesture: { on: 'spawn' } });
       return true;
+    case 'views':
+      call('toggle_views', {});
+      return true;
     default:
       if (state.rail.stage === 'checkouts') return checkoutsAction(action);
       return workOpen() ? workAction(action) : featureAction(action);
@@ -129,6 +132,7 @@ function notTheirs(action: Action): boolean {
     action === 'compose' ||
     action === 'console' ||
     action === 'toggleConsole' ||
+    action === 'views' ||
     action === 'palette' ||
     action === 'settings'
   );

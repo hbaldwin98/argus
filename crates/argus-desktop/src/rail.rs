@@ -121,6 +121,8 @@ fn checkout(checkout: &CheckoutInfo, shown: Option<PaneId>) -> page::Checkout {
                 status: pane.loudest_state().status.word(),
                 note: pane.loudest_state().note.map(str::to_owned),
                 on: Some(pane.id) == shown,
+                // The session counts them; the tree knows nothing of views.
+                views: 0,
             })
             .collect(),
     }

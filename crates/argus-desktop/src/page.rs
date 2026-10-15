@@ -151,6 +151,8 @@ pub enum Call {
     OpenView { pane: u64, id: String },
     /// Puts the side panel away; the views stay.
     HideViews,
+    /// Puts the side panel away, or brings out the newest view.
+    ToggleViews,
     /// Asks the agent that showed a view to read it again.
     RefreshView { pane: u64, id: String },
     /// Closes a view for every client.
@@ -618,6 +620,8 @@ pub struct Pane {
     pub status: &'static str,
     pub note: Option<String>,
     pub on: bool,
+    /// How many views its agent has shown that are still up.
+    pub views: usize,
 }
 
 /// Which stage is up. One at a time: opening one puts the others away, and
@@ -866,6 +870,48 @@ pub struct PageView {
     /// The ticket it is of, if the agent named one.
     pub subject: Option<Link>,
     pub view: argus_protocol::AgentView,
+    /// Each diagram block's source read as lifelines and steps, which the
+    /// page draws: Mermaid is parsed once, in Rust, as the Flows lens
+    /// reads it.
+    pub diagrams: Vec<PageDiagram>,
+}
+
+/// A diagram block, read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PageDiagram {
+    /// The block's source, which is how the page finds this.
+    pub source: String,
+    pub participants: Vec<PageParticipant>,
+    pub rows: Vec<FlowLine>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PageParticipant {
+    pub id: String,
+    pub label: String,
+    pub actor: bool,
+}
+
+/// One row of a flow: a message, or where it forks or repeats.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum FlowLine {
+    Step {
+        number: usize,
+        from: String,
+        /// `None` when a participant talks to itself.
+        to: Option<String>,
+        /// Dashed: an answer rather than a request.
+        reply: bool,
+        text: String,
+    },
+    /// `else`, `opt`, `loop` and the like, and what it says about when.
+    Branch { word: String, when: String },
 }
 
 /// A labelled line: `D3 How much history…`, `2.2 argus-hook reads…`.
@@ -894,6 +940,8 @@ pub struct FeatureView {
     pub branch: Option<String>,
     pub agent: Option<Agent>,
     pub brief: String,
+    /// Its tickets in the team's trackers.
+    pub links: Vec<Link>,
     pub tasks_done: usize,
     pub tasks_total: usize,
     pub decided: usize,
@@ -1645,6 +1693,7 @@ mod tests {
                             status: "working",
                             note: None,
                             on: true,
+                            views: 0,
                         }],
                     }],
                 }],

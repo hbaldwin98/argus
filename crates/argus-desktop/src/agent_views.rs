@@ -10,7 +10,10 @@ use std::collections::HashSet;
 
 use argus_protocol::{ClientMsg, PaneId, ShownView};
 
-use crate::page::{Link, PageView, ViewRef, ViewsPage};
+use argus_protocol::flow::{self, FlowRow};
+use argus_protocol::Block;
+
+use crate::page::{FlowLine, Link, PageDiagram, PageParticipant, PageView, ViewRef, ViewsPage};
 use crate::sent::Sent;
 
 #[derive(Default)]
@@ -62,6 +65,19 @@ impl AgentViews {
         self.open = None;
     }
 
+    /// The panel away if it is out, else the newest view in it.
+    pub fn toggle(&mut self) {
+        self.open = match (&self.open, self.views.first()) {
+            (None, Some(newest)) => Some((newest.pane, newest.view.id.clone())),
+            _ => None,
+        };
+    }
+
+    /// How many views a pane's agent has up, for its row on the rail.
+    pub fn count(&self, pane: PaneId) -> usize {
+        self.views.iter().filter(|v| v.pane == pane).count()
+    }
+
     pub fn refresh(&mut self, pane: PaneId, id: String, out: &mut Vec<ClientMsg>) {
         if self.find(pane, &id).is_some() {
             out.push(ClientMsg::RefreshView { pane, id: id.clone() });
@@ -104,10 +120,47 @@ impl AgentViews {
                     refreshing: self.refreshing.contains(&(v.pane, v.view.id.clone())),
                     subject: v.subject.as_ref().map(|l| Link { tracker: l.tracker.clone(), key: l.key.clone(), url: l.url.clone() }),
                     view: v.view.clone(),
+                    diagrams: diagrams(&v.view.blocks),
                 })
                 .collect(),
             open: self.open.as_ref().map(|(pane, id)| ViewRef { pane: pane.0, id: id.clone() }),
         }
+    }
+}
+
+/// Every diagram block a view holds, however deep, read once each.
+fn diagrams(blocks: &[Block]) -> Vec<PageDiagram> {
+    let mut found = Vec::new();
+    collect(blocks, &mut found);
+    found
+}
+
+fn collect(blocks: &[Block], found: &mut Vec<PageDiagram>) {
+    for block in blocks {
+        match block {
+            Block::Diagram { source } if !found.iter().any(|d| &d.source == source) => found.push(read(source)),
+            Block::Section { blocks, .. } => collect(blocks, found),
+            Block::Columns { columns } => columns.iter().for_each(|c| collect(c, found)),
+            Block::Tabs { tabs } => tabs.iter().for_each(|t| collect(&t.blocks, found)),
+            _ => {}
+        }
+    }
+}
+
+fn read(source: &str) -> PageDiagram {
+    PageDiagram {
+        source: source.to_string(),
+        participants: flow::participants(source)
+            .into_iter()
+            .map(|p| PageParticipant { id: p.id, label: p.label, actor: p.actor })
+            .collect(),
+        rows: flow::rows(source)
+            .into_iter()
+            .map(|row| match row {
+                FlowRow::Step(s) => FlowLine::Step { number: s.number, from: s.from, to: s.to, reply: s.reply, text: s.text },
+                FlowRow::Branch { kind, when } => FlowLine::Branch { word: kind, when },
+            })
+            .collect(),
     }
 }
 
@@ -150,6 +203,36 @@ mod tests {
         // A second from the same pane does not take the panel from the first.
         views.shown(shown(1, "queries"), Some(PaneId(1)));
         assert_eq!(views.page(|_| None).open, Some(ViewRef { pane: 1, id: "ci".into() }));
+    }
+
+    #[test]
+    fn a_diagram_anywhere_in_a_view_reaches_the_page_read() {
+        let mut view = shown(1, "flow");
+        let source = "sequenceDiagram\n    participant hook as argus-hook\n    hook->>argusd: view show\n    argusd-->>hook: shown".to_string();
+        view.view.blocks = vec![Block::Tabs {
+            tabs: vec![argus_protocol::Tab { title: "Flow".into(), blocks: vec![Block::Diagram { source: source.clone() }] }],
+        }];
+        let mut views = AgentViews::default();
+        views.shown(view, None);
+        let page = views.page(|_| None);
+        let drawn = &page.views[0].diagrams[0];
+        assert_eq!(drawn.source, source);
+        assert_eq!(drawn.participants.iter().map(|p| p.label.as_str()).collect::<Vec<_>>(), ["argus-hook", "argusd"]);
+        assert!(matches!(&drawn.rows[1], FlowLine::Step { reply: true, number: 2, .. }));
+    }
+
+    #[test]
+    fn the_toggle_brings_out_the_newest_and_puts_it_away() {
+        let mut views = AgentViews::default();
+        views.toggle();
+        assert_eq!(views.page(|_| None).open, None);
+        views.shown(shown(1, "old"), None);
+        views.shown(shown(2, "new"), None);
+        views.toggle();
+        assert_eq!(views.page(|_| None).open, Some(ViewRef { pane: 2, id: "new".into() }));
+        assert_eq!(views.count(PaneId(1)), 1);
+        views.toggle();
+        assert_eq!(views.page(|_| None).open, None);
     }
 
     #[test]

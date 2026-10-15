@@ -4,6 +4,7 @@
 // the form closes; what the feature says changes only when the daemon's
 // pushed board and tasks do, so a refused edit leaves it as it was.
 import { $, el } from './dom.js';
+import { ticketLinks } from './tickets.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
@@ -159,7 +160,7 @@ function head(view) {
             ? el('div', { class: 'fg-muted prose' }, view.brief)
             : el('div', { class: 'fg-faint' }, 'No brief yet.'), el('button', { class: 'btn sm', onclick: () => begin({ what: 'brief', text: view.brief }) }, 'Edit brief'));
     }
-    return el('div', { class: 'fhead' }, el('div', { class: 'crumbs' }, el('button', { class: 'crumb', onclick: closeFeature }, 'Features'), el('span', { class: 'fg-faint' }, '›'), el('span', { class: 'fg' }, `#${view.number}`), el('span', { class: 'grow' }), el('span', { class: 'meta' }, el('span', { class: 'kbd' }, 'Esc'), ' back to features')), el('div', { class: 'actions head-row' }, el('span', { class: 'type-title' }, el('span', { class: 'mono fg-accent' }, `#${view.number}`), ' ', view.title), el('span', { class: `pill ${view.standing === 'active' ? 'fg-attention' : ''}` }, view.standing), el('span', { class: 'grow' }), el('span', { class: 'meta' }, view.branch && ['branch ', el('span', { class: 'mono fg-ref' }, view.branch)], view.branch && view.agent && ' · ', view.agent && [
+    return el('div', { class: 'fhead' }, el('div', { class: 'crumbs' }, el('button', { class: 'crumb', onclick: closeFeature }, 'Features'), el('span', { class: 'fg-faint' }, '›'), el('span', { class: 'fg' }, `#${view.number}`), el('span', { class: 'grow' }), el('span', { class: 'meta' }, el('span', { class: 'kbd' }, 'Esc'), ' back to features')), el('div', { class: 'actions head-row' }, el('span', { class: 'type-title' }, el('span', { class: 'mono fg-accent' }, `#${view.number}`), ' ', view.title), el('span', { class: `pill ${view.standing === 'active' ? 'fg-attention' : ''}` }, view.standing), el('span', { class: 'grow' }), ticketLinks(view.links), el('span', { class: 'meta' }, view.branch && ['branch ', el('span', { class: 'mono fg-ref' }, view.branch)], view.branch && view.agent && ' · ', view.agent && [
         el('span', { class: 'glyph' }, '◆'),
         ` ${view.agent.title} `,
         el('span', { class: `st ${view.agent.status}` }, view.agent.status),

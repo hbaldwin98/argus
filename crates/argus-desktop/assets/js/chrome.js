@@ -187,7 +187,11 @@ function paneRow(checkout, pane) {
             pickRail(checkout, pane.id);
             call('select', { pane: pane.id });
         },
-    }, el('span', { class: `sdot ${pane.status}`, 'aria-hidden': 'true' }), el('span', { class: 'ttl' }, pane.title), el('span', { class: `st ${pane.status}` }, word ?? el('span', { class: 'sr-only' }, pane.status))), closeButton(pane.id, pane.title));
+    }, el('span', { class: `sdot ${pane.status}`, 'aria-hidden': 'true' }), el('span', { class: 'ttl' }, pane.title), pane.views > 0 &&
+        el('span', {
+            class: 'pane-views',
+            title: `${pane.views} ${pane.views === 1 ? 'view' : 'views'} from this agent`,
+        }, `${pane.views}`), el('span', { class: `st ${pane.status}` }, word ?? el('span', { class: 'sr-only' }, pane.status))), closeButton(pane.id, pane.title));
 }
 // ---- The rail's picked row -------------------------------------------------
 function pickRail(checkout, pane) {

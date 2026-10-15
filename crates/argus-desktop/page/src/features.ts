@@ -15,6 +15,7 @@ import type { Peek } from './bindings/Peek';
 import { captureOpen, drawCapture, openCapture } from './capture.js';
 import { notice } from './chrome.js';
 import { $, el, ghosts, icon, type Child } from './dom.js';
+import { ticketLinks } from './tickets.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
@@ -389,20 +390,7 @@ function peekPanel(peek: Peek | null): HTMLElement {
       peek.held && el('div', { class: 'fg-attention' }, `held: “${peek.held}”`),
       peek.brief && el('div', { class: 'fg-muted peek-brief' }, peek.brief),
     ),
-    peek.links.length > 0 &&
-      el(
-        'div',
-        { class: 'actions' },
-        peek.links.map((link) =>
-          el(
-            'span',
-            { class: 'track', title: link.url },
-            link.tracker,
-            ' ',
-            el('b', null, link.key),
-          ),
-        ),
-      ),
+    ticketLinks(peek.links),
     lines('Needs you', peek.needsYou, '?', NEEDS_YOU),
     lines('In flight', peek.inFlight, '◐', IN_FLIGHT),
     lines('Next up', peek.nextUp ? [peek.nextUp] : [], '○', NEXT_UP),

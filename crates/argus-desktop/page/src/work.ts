@@ -12,6 +12,7 @@ import type { Line } from './bindings/Line';
 import type { TaskDetail } from './bindings/TaskDetail';
 import type { WorkRow } from './bindings/WorkRow';
 import { $, el, type Child } from './dom.js';
+import { ticketLinks } from './tickets.js';
 import { actionFor } from './keymap.js';
 import { state, type Editing } from './state.js';
 import { call } from './tauri.js';
@@ -231,6 +232,7 @@ function head(view: FeatureView): HTMLElement {
         view.standing,
       ),
       el('span', { class: 'grow' }),
+      ticketLinks(view.links),
       el(
         'span',
         { class: 'meta' },

@@ -318,8 +318,14 @@ impl Session {
                 self.rail_changed = true;
             }
             ServerMsg::Tasks(list) => self.features.receive_tasks(*list),
-            ServerMsg::ViewShown(view) => self.views.shown(*view, self.shown.pane()),
-            ServerMsg::ViewClosed { pane, id } => self.views.closed(pane, &id),
+            ServerMsg::ViewShown(view) => {
+                self.views.shown(*view, self.shown.pane());
+                self.rail_changed = true;
+            }
+            ServerMsg::ViewClosed { pane, id } => {
+                self.views.closed(pane, &id);
+                self.rail_changed = true;
+            }
             // The tree that follows says what closed and what stopping
             // ends; the rest answers requests this window does not make yet.
             _ => {}
@@ -517,6 +523,10 @@ impl Session {
                 self.views.hide();
                 self.finish()
             }
+            Call::ToggleViews => {
+                self.views.toggle();
+                self.finish()
+            }
             Call::RefreshView { pane, id } => {
                 self.views.refresh(PaneId(pane), id, &mut self.out);
                 self.finish()
@@ -617,6 +627,7 @@ impl Session {
             Action::Compose => self.go(Stage::Composer),
             Action::Console => self.open_console_tab(),
             Action::ToggleConsole => self.toggle_console(),
+            Action::Views => self.views.toggle(),
             Action::ConsoleFullscreen => self.toggle_console_fullscreen(),
             Action::NewConsole => self.spawn_console(Made::ShowConsole),
             Action::SplitConsole => self.toggle_split(),
@@ -1709,6 +1720,7 @@ impl Session {
             | Action::Settings
             | Action::Console
             | Action::ToggleConsole
+            | Action::Views
             | Action::ConsoleFullscreen
             | Action::NewConsole
             | Action::SplitConsole
@@ -1991,6 +2003,10 @@ impl Session {
         rail.filled = self.shown.filled() && self.stage == Stage::Workspace && self.on_screen().is_some() && !self.console_showing();
         rail.templates = self.agents.offered();
         rail.workspaces = self.switcher.workspaces();
+        let panes = rail.project.iter_mut().flat_map(|p| &mut p.repositories).flat_map(|r| &mut r.checkouts);
+        for pane in panes.flat_map(|c| &mut c.panes) {
+            pane.views = self.views.count(PaneId(pane.id));
+        }
         rail.removing = self.switcher.removing(&self.tree);
         if let Some(shown) = &mut rail.shown {
             shown.resumed = self.sessions.resumed_from(PaneId(shown.pane)).cloned();
@@ -3035,7 +3051,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 81] = [
+    const CALLS: [&str; 82] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -3114,6 +3130,7 @@ mod tests {
         r#"{"call":"snap_layouts"}"#,
         r#"{"call":"open_view","pane":1,"id":"ci"}"#,
         r#"{"call":"hide_views"}"#,
+        r#"{"call":"toggle_views"}"#,
         r#"{"call":"refresh_view","pane":1,"id":"ci"}"#,
         r#"{"call":"close_view","pane":1,"id":"ci"}"#,
         r#"{"call":"open_url","url":"https://example.com"}"#,

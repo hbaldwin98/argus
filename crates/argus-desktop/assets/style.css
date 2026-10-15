@@ -3957,3 +3957,154 @@ body.console-fullscreen #bar {
   max-height: 360px;
   overflow: auto;
 }
+
+.vdiagram {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6);
+  min-width: 0;
+}
+
+.vd-scroll {
+  overflow-x: auto;
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+
+.vd-scroll svg {
+  display: block;
+  max-width: none;
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+.vd-box {
+  fill: var(--bg-surface);
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.vd-name {
+  fill: var(--fg);
+  font-weight: 600;
+}
+
+.vd-actor {
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.vd-life {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.vd-msg {
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 1.4;
+}
+
+.vd-reply {
+  stroke-dasharray: 5 4;
+}
+
+.vd-head {
+  fill: var(--fg-muted);
+  stroke: none;
+}
+
+.vd-head-open {
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.vd-label {
+  fill: var(--fg);
+}
+
+.vd-num-dot {
+  fill: var(--fill);
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.vd-num {
+  fill: var(--fg);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.vd-branch {
+  fill: var(--fill);
+  fill-opacity: 0.5;
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.vd-tab {
+  fill: var(--bg-chrome);
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.vd-branch-word {
+  fill: var(--fg-faint);
+  font-weight: 600;
+}
+
+.vd-branch-when {
+  fill: var(--fg-muted);
+  font-style: italic;
+}
+
+.vd-empty {
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+
+.vd-source summary {
+  color: var(--fg-faint);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.vd-source pre {
+  margin: var(--sp-6) 0 0;
+  padding: var(--sp-6);
+  overflow-x: auto;
+  background: var(--bg-sunken);
+  border-radius: var(--r-sm);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+/* A ticket link a view waits on: it opens the view. */
+.track.viewed {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+.tickets {
+  gap: var(--sp-6);
+}
+.pane-views {
+  flex: none;
+  min-width: 16px;
+  box-sizing: border-box;
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-align: center;
+}

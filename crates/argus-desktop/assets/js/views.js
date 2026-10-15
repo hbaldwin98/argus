@@ -66,7 +66,14 @@ function header(v) {
     }, 'Close')));
 }
 function body(v) {
-    return el('div', { class: 'vpanel-body', 'data-for': key(v) }, blocks(v.view.blocks, key(v)));
+    const drawn = (source) => v.diagrams.find((d) => d.source === source);
+    return el('div', { class: 'vpanel-body', 'data-for': key(v) }, blocks(v.view.blocks, key(v), drawn));
+}
+/** The newest view of a ticket, matched by its URL or its tracker and key. */
+export function viewOf(link) {
+    return shown.views.find((v) => v.subject !== null &&
+        (v.subject.url === link.url ||
+            (v.subject.tracker === link.tracker && v.subject.key === link.key)));
 }
 /** Brings the newest view out, from the tab at the window's edge. */
 export function openNewestView() {

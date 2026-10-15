@@ -4,6 +4,7 @@
 // outlives a redraw: a view that comes again keeps the tab being read.
 import { callout } from './callout.js';
 import { code } from './code.js';
+import { diagram } from './diagram.js';
 import { el } from './dom.js';
 import { fields } from './fields.js';
 import { list } from './list.js';
@@ -12,17 +13,17 @@ import { stats } from './stats.js';
 import { table } from './table.js';
 /** The tab chosen in each tabs block, by the view and the block's path. */
 const chosenTabs = new Map();
-export function blocks(all, path) {
-    return el('div', { class: 'vblocks' }, all.map((block, i) => one(block, `${path}.${i}`)));
+export function blocks(all, path, drawn) {
+    return el('div', { class: 'vblocks' }, all.map((block, i) => one(block, `${path}.${i}`, drawn)));
 }
-function one(block, path) {
+function one(block, path, drawn) {
     switch (block.kind) {
         case 'section':
-            return el('section', { class: 'vsection' }, el('div', { class: 'label' }, block.heading), blocks(block.blocks, path));
+            return el('section', { class: 'vsection' }, el('div', { class: 'label' }, block.heading), blocks(block.blocks, path, drawn));
         case 'columns':
-            return el('div', { class: 'vcolumns' }, block.columns.map((column, i) => blocks(column, `${path}.${i}`)));
+            return el('div', { class: 'vcolumns' }, block.columns.map((column, i) => blocks(column, `${path}.${i}`, drawn)));
         case 'tabs':
-            return tabs(block, path);
+            return tabs(block, path, drawn);
         case 'markdown':
             return markdown(block.text);
         case 'fields':
@@ -35,15 +36,17 @@ function one(block, path) {
             return stats(block.stats);
         case 'code':
             return code(block.lang, block.text);
-        // The desktop has no diagram renderer yet; the source is still what
-        // the agent meant, and readable.
-        case 'diagram':
-            return code('mermaid', block.source);
+        // Read in Rust with the rest of the view; a source it could not read
+        // is still what the agent meant, and readable.
+        case 'diagram': {
+            const read = drawn(block.source);
+            return read ? diagram(read) : code('mermaid', block.source);
+        }
         case 'callout':
             return callout(block.tone, block.text);
     }
 }
-function tabs(block, path) {
+function tabs(block, path, drawn) {
     const chosen = Math.min(chosenTabs.get(path) ?? 0, block.tabs.length - 1);
     const body = el('div', { class: 'vtabs-body', role: 'tabpanel' });
     const buttons = block.tabs.map((tab, i) => el('button', {
@@ -60,7 +63,7 @@ function tabs(block, path) {
             b.setAttribute('aria-selected', String(i === j));
         });
         const tab = block.tabs[i];
-        body.replaceChildren(tab ? blocks(tab.blocks, `${path}.${i}`) : '');
+        body.replaceChildren(tab ? blocks(tab.blocks, `${path}.${i}`, drawn) : '');
     };
     pick(chosen);
     return el('div', { class: 'vtabs' }, el('div', { class: 'lens vtabs-bar', role: 'tablist' }, buttons), body);

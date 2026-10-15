@@ -159,6 +159,45 @@ fn named_in(comment: &str) -> (Vec<i64>, Vec<i64>) {
     (decisions, tasks)
 }
 
+/// One lifeline of a flow.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Participant {
+    /// What the steps call it.
+    pub id: String,
+    /// What it is drawn as: its alias when `participant x as y` gives one.
+    pub label: String,
+    /// Declared with `actor`: a person rather than a part of the system.
+    pub actor: bool,
+}
+
+/// The lifelines a flow draws, left to right: those declared, in the order
+/// the source declares them, then any a step names that was not, in the
+/// order they first appear, as Mermaid places them.
+pub fn participants(source: &str) -> Vec<Participant> {
+    let mut all: Vec<Participant> = Vec::new();
+    for line in source.lines().map(str::trim) {
+        let line = line.split_once("%%").map_or(line, |(line, _)| line).trim();
+        let (word, rest) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
+        if word != "participant" && word != "actor" {
+            continue;
+        }
+        let (id, label) = rest.split_once(" as ").unwrap_or((rest, rest));
+        let (id, label) = (id.trim(), label.trim());
+        if !id.is_empty() && !all.iter().any(|p| p.id == id) {
+            all.push(Participant { id: id.to_string(), label: label.to_string(), actor: word == "actor" });
+        }
+    }
+    for row in rows(source) {
+        let FlowRow::Step(step) = row else { continue };
+        for id in std::iter::once(&step.from).chain(step.to.as_ref()) {
+            if !all.iter().any(|p| &p.id == id) {
+                all.push(Participant { id: id.clone(), label: id.clone(), actor: false });
+            }
+        }
+    }
+    all
+}
+
 /// How many steps and branches a flow has, as its row in the list says.
 pub fn summary(rows: &[FlowRow]) -> String {
     let steps = rows.iter().filter(|row| matches!(row, FlowRow::Step(_))).count();
@@ -190,6 +229,24 @@ mod tests {
     else the pane has no feature
         argusd-->>hook: refused
     end";
+
+    #[test]
+    fn lifelines_are_those_declared_then_those_steps_name_in_the_order_they_come() {
+        let lifelines: Vec<(String, String)> =
+            participants(SOURCE).into_iter().map(|p| (p.id, p.label)).collect();
+        assert_eq!(
+            lifelines,
+            [
+                ("agent".to_string(), "agent".to_string()),
+                ("hook".to_string(), "argus-hook".to_string()),
+                ("argusd".to_string(), "argusd".to_string()),
+            ]
+        );
+        let person = participants("sequenceDiagram
+    actor you
+    you->>argus: open");
+        assert!(person[0].actor && !person[1].actor);
+    }
 
     #[test]
     fn a_flow_reads_as_numbered_steps_with_its_branch_between_them() {

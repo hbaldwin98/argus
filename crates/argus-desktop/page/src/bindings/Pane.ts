@@ -4,4 +4,8 @@ export type Pane = { id: number, agent: boolean, title: string,
 /**
  * The loudest status word the row stands for, its children's included.
  */
-status: "idle" | "working" | "waiting" | "needs-review" | "done" | "failed" | "exited", note: string | null, on: boolean, };
+status: "idle" | "working" | "waiting" | "needs-review" | "done" | "failed" | "exited", note: string | null, on: boolean, 
+/**
+ * How many views its agent has shown that are still up.
+ */
+views: number, };

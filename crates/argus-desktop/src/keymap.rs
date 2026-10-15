@@ -199,6 +199,8 @@ pub enum Action {
     ZoomIn,
     ZoomOut,
     ZoomReset,
+    /// Show the views agents showed, or put them away.
+    Views,
 }
 
 #[derive(Debug, Serialize)]
@@ -346,6 +348,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Anywhere, &[Chord::key("k").ctrl()], Action::Palette, "search actions, panes, features and checkouts"),
     bind(Anywhere, &[Chord::key("?")], Shortcuts, "these shortcuts"),
     bind(Anywhere, &[Chord::key(",").ctrl()], Action::Settings, "settings"),
+    bind(Anywhere, &[Chord::key(".").ctrl()], Views, "show or hide the views agents showed"),
     bind(Pane, &[LEADER.after_leader()], Leader, "send ctrl-space to the program"),
     bind(Pane, &[Chord::key("f").after_leader()], Fill, "fill the window with the pane, and back"),
     bind(Pane, &[Chord::key("1").after_leader()], Workspace, "Workspace"),
@@ -368,6 +371,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Window, ZOOM_IN, ZoomIn, "larger"),
     bind(Window, ZOOM_OUT, ZoomOut, "smaller"),
     bind(Window, ZOOM_RESET, ZoomReset, "the usual size"),
+    bind(Pane, &[Chord::key("v").after_leader()], Views, "show or hide the views agents showed"),
     bind(Rail, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next checkout or pane"),
     bind(Rail, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous checkout or pane"),
     bind(Rail, &[Chord::key("s"), Chord::key("S")], StartShell, "start a shell on its checkout"),

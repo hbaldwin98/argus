@@ -123,7 +123,8 @@ has them while it is open, and another pane brings them back for good. Rust hold
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `screen`, `input`, `keymap`,
 `palette`, `shortcuts`, `settings`, `features`, `work`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views`, with `keys`, `dom`, `state`,
 `clock` and `tauri` beneath them, and a view's blocks drawn by `blocks` through one module per kind —
-`markdown`, `fields`, `values`, `chip`, `table`, `list`, `stats`, `callout`, `code` — and `viewlink`),
+`markdown`, `fields`, `values`, `chip`, `table`, `list`, `stats`, `callout`, `code`, `diagram` — with `viewlink`, and
+`tickets` for a feature's ticket links),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
 either committed output differs from what its source makes. Its webview keeps its storage under the
@@ -259,7 +260,7 @@ live in this crate and a contract written twice drifts in silence.
 | `capture` | how one note reads as a feature — its title, brief, tasks and decisions — and what writing it down asks of the daemon |
 | `adr` | how a decision reads as a record somebody can paste or correct |
 | `outline` | how a feature's tasks and the decisions raised under them read as one outline: what binds a task, what carries a decision out, what an open one holds up |
-| `flow` | the steps a sequence diagram's source says, in the order it says them |
+| `flow` | the steps a sequence diagram's source says, in the order it says them, and the lifelines they run between |
 | `board_follower` | how a client follows one repository's board: when it asks for the board and the feature's lists, which pushes it keeps, and where the cursor lands on a feature, task or diagram when one is replaced |
 | `standing` | how a feature stands on the index — Active, Queued, Done, Held or Archived — what a row of the index says, and which task comes next |
 | `artifacts`, `memory` | how shared work is bounded when read or written, and the working memory an agent receives for one request |
@@ -1897,8 +1898,14 @@ the pane shrinks to fit rather than being covered. It opens by itself only when 
 on screen and the panel is not already showing one; otherwise a tab at the window's edge counts the
 views waiting and brings the newest out. The panel has a tab per view, newest first, says who read it
 and how long ago, and offers Refresh, which waits for the agent to show it again, and Close, which
-takes it down for every client. Every string is drawn as text, Markdown included; a link opens
-through `opener` in the system's browser and only when it is `http` or `https`.
+takes it down for every client. Ctrl-. (in a pane, the leader and `v`) puts the panel away or brings
+the newest view out. A pane's row on the rail counts the views its agent has up. A feature's ticket
+links, in the index's peek and the open feature's heading, open the ticket in the browser, or, when a
+view of that ticket waits, carry a dot and open the view instead; the page matches them by URL, or by
+tracker and key. A diagram block is read in Rust, as the Flows lens reads a flow (`flow::rows` and
+`flow::participants`), and drawn by the page as an SVG sequence diagram, its source a disclosure
+away. Every string is drawn as text, Markdown included; a link opens through `opener` in the
+system's browser and only when it is `http` or `https`.
 
 `m` transfers the selected feature's active checkout association to another checkout in the same
 repository over `FeatureAction::Transfer`, sent on the source checkout's board. The daemon validates both runtime ids, removes the
