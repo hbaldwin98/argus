@@ -601,6 +601,7 @@ impl Session {
             Call::Docks { gesture } => self.dock_gesture(gesture),
             Call::PasteClipboard
             | Call::Copy { .. }
+            | Call::CopyText { .. }
             | Call::Reconnect
             | Call::Minimize
             | Call::ToggleMaximize
@@ -3763,7 +3764,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 109] = [
+    const CALLS: [&str; 110] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -3872,6 +3873,7 @@ mod tests {
         r#"{"call":"open_reconcile"}"#,
         r#"{"call":"reconcile","gesture":{"on":"action","action":"tick"}}"#,
         r#"{"call":"open_url","url":"https://example.com"}"#,
+        r#"{"call":"copy_text","text":"ab"}"#,
         r#"{"call":"rename_pane","pane":1,"title":"the pty deadlock"}"#,
     ];
 
