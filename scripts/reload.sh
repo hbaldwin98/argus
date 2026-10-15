@@ -13,13 +13,23 @@
 #     An agent running this from inside Argus is killed before it can report,
 #     so under ARGUS_PANE the restart is scheduled detached, after a delay
 #     long enough to say where its result will be. Outside a pane it runs
-#     directly and is confirmed here.
+#     directly and is confirmed here. On Windows a pane's processes are in a
+#     job that ends them all when the pane goes, which no setsid escapes, so
+#     the restart is started through WMI, whose processes are not the pane's.
+#
+# The binaries all go into one directory and the restart runs the `argus` in
+# it: `argus server restart` starts the `argusd` beside itself, so a second
+# copy elsewhere on PATH is how a reload ends up running the old daemon.
+# Each binary being replaced is moved aside first, since Windows will not
+# overwrite one that is running.
 #
 # Nothing is installed but Argus itself: a missing prerequisite is reported
 # and the script stops.
 #
 # Environment:
 #   ARGUS_CONFIG_DIR, ARGUS_INSTANCE   as the product reads them (paths.rs)
+#   ARGUS_INSTALL_DIR                  where the binaries go; by default
+#                                      cargo's bin directory, as below
 #   CARGO_INSTALL_ROOT, CARGO_HOME     as `cargo install` reads them
 #   ARGUS_RELOAD_DELAY                 seconds before a detached restart (20)
 set -euo pipefail
@@ -72,23 +82,37 @@ case "$(uname -s)" in
     MINGW* | MSYS* | CYGWIN*) exe=".exe" ;;
 esac
 
-# `cargo install` also honours `install.root` in a cargo config file, which
-# is not read here; the newer-than-stamp check after the install catches that
-# case, where older binaries may already sit in this directory.
 install_root=${CARGO_INSTALL_ROOT:-${CARGO_HOME:-$HOME/.cargo}}
-bin_dir="$install_root/bin"
+bin_dir=${ARGUS_INSTALL_DIR:-$install_root/bin}
 argus_bin="$bin_dir/argus$exe"
+
+# The desktop window links WebKitGTK on Linux, which a machine that only
+# runs the terminal client need not have; it is left out there rather than
+# failing the reload.
+names="argus argusd argus-hook"
+crates="argusd argus-client"
+if [ "$(uname -s)" != Linux ] || pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
+    names="$names argus-desktop"
+    crates="$crates argus-desktop"
+else
+    echo "reload: no WebKitGTK development files, so the desktop window is left as it is"
+fi
 
 # Everything that can be refused is refused before anything is touched.
 command -v cargo >/dev/null 2>&1 || die "cargo is not on PATH"
 [ -d "$config_dir" ] || die "no config directory at $config_dir; has Argus run here?"
+[ -d "$bin_dir" ] || die "no install directory at $bin_dir"
 [ -f "$repo_root/crates/argusd/Cargo.toml" ] || die "$repo_root is not an Argus checkout"
 case "$delay" in
     '' | *[!0-9]*) die "ARGUS_RELOAD_DELAY must be whole seconds, got '$delay'" ;;
 esac
 
 detach=""
-if [ -n "${ARGUS_PANE:-}" ]; then
+if [ -n "${ARGUS_PANE:-}" ] && [ -n "$exe" ]; then
+    command -v powershell.exe >/dev/null 2>&1 || die "powershell.exe is not on PATH; it is needed to restart from inside a pane"
+    command -v cygpath >/dev/null 2>&1 || die "cygpath is not on PATH; it is needed to restart from inside a pane"
+    detach="wmi"
+elif [ -n "${ARGUS_PANE:-}" ]; then
     command -v nohup >/dev/null 2>&1 || die "nohup is not on PATH; it is needed to restart from inside a pane"
     if command -v setsid >/dev/null 2>&1; then
         detach="setsid"
@@ -135,7 +159,7 @@ backup_store() {
     fi
 }
 
-for name in argus argusd argus-hook; do
+for name in $names; do
     if [ -f "$bin_dir/$name$exe" ]; then
         cp -p "$bin_dir/$name$exe" "$backup_dir/"
     else
@@ -143,18 +167,30 @@ for name in argus argusd argus-hook; do
     fi
 done
 
-# --force so an up-to-date install is still rewritten: the stamp check below
-# reads a binary's age as proof that this run put it there.
-stamp="$backup_dir/.stamp"
-touch "$stamp"
-for crate in argusd argus-client; do
-    cargo install --locked --force --path "$repo_root/crates/$crate" ||
-        die "installing $crate failed; binaries may be half replaced, the old ones are in $backup_dir"
+# Built into a stage of its own and then placed, so a failed build replaces
+# nothing, and `install.root` in a cargo config file cannot send the
+# binaries somewhere the restart does not look.
+stage=$(mktemp -d)
+trap 'rm -rf "$stage"' EXIT
+for crate in $crates; do
+    cargo install --locked --force --root "$stage" --path "$repo_root/crates/$crate" ||
+        die "building $crate failed; nothing was replaced"
 done
 
-for name in argus argusd argus-hook; do
-    [ "$bin_dir/$name$exe" -nt "$stamp" ] ||
-        die "cargo did not install $name into $bin_dir; set CARGO_INSTALL_ROOT to where it did"
+for name in $names; do
+    built="$stage/bin/$name$exe"
+    [ -f "$built" ] || die "cargo built no $name; nothing was replaced"
+done
+for name in $names; do
+    placed="$bin_dir/$name$exe"
+    if [ -e "$placed" ]; then
+        rm -f "$placed.old"
+        mv "$placed" "$placed.old" ||
+            die "could not move $placed aside; binaries may be half replaced, the old ones are in $backup_dir"
+    fi
+    cp "$stage/bin/$name$exe" "$placed" ||
+        die "could not place $name in $bin_dir; binaries may be half replaced, the old ones are in $backup_dir"
+    echo "reload: placed $placed"
 done
 
 # Taken after the build, which the daemon keeps writing through, so a restore
@@ -189,7 +225,19 @@ job='sleep "$1"
 echo "argus server restart exited $?"
 pgrep -l argusd 2>/dev/null || true'
 
-if [ "$detach" = "setsid" ]; then
+if [ "$detach" = "wmi" ]; then
+    # cmd rather than sh: what WMI starts has none of Git Bash's PATH.
+    # `ping` waits where `timeout` refuses a console it cannot read.
+    out_w=$(cygpath -w "$restart_out")
+    argus_w=$(cygpath -w "$argus_bin")
+    command_line="cmd.exe /c \"ping -n $((delay + 1)) 127.0.0.1 >nul & \"$argus_w\" server restart >\"$out_w\" 2>&1 && (echo argus server restart exited 0)>>\"$out_w\" || (echo argus server restart failed)>>\"$out_w\"\""
+    ARGUS_RELOAD_COMMAND=$command_line powershell.exe -NoProfile -NonInteractive -Command '
+        $startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }
+        $made = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+            CommandLine = $env:ARGUS_RELOAD_COMMAND; ProcessStartupInformation = $startup }
+        if ($made.ReturnValue -ne 0) { Write-Error "Win32_Process.Create returned $($made.ReturnValue)"; exit 1 }
+    ' || die "could not schedule the restart; run \`$argus_bin server restart\` outside Argus"
+elif [ "$detach" = "setsid" ]; then
     setsid nohup sh -c "$job" reload "$delay" "$argus_bin" >"$restart_out" 2>&1 </dev/null &
 else
     perl -MPOSIX -e 'POSIX::setsid() != -1 or die "setsid: $!"; exec @ARGV' \
