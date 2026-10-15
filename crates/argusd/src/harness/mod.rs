@@ -48,6 +48,10 @@ mod hooks;
 mod install;
 pub mod plugin_dir;
 mod skill;
+// Read by the session previews of HUN-174; until a message asks for one,
+// only the tests do.
+#[cfg_attr(not(test), allow(dead_code))]
+pub mod transcript;
 
 use hooks::*;
 pub use hooks::{env, helper_path};
@@ -172,6 +176,11 @@ pub struct Harness {
     pub skill_dir: Option<PathBuf>,
     /// Top-level `version` some settings files require (Cursor's hooks.json).
     pub settings_version: Option<u64>,
+    /// Where the CLI keeps a session's transcript and in which format, for
+    /// previewing a past session. `None` for one that keeps none Argus can
+    /// read, which is `Conversation::NoTranscript` rather than an error.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub transcript: Option<transcript::Source>,
 }
 
 impl Event {
@@ -249,6 +258,7 @@ impl Harness {
             rule_file: None,
             skill_dir: None,
             settings_version: None,
+            transcript: None,
         }
     }
 
@@ -289,6 +299,7 @@ impl Harness {
             rule_file: None,
             skill_dir: Some(PathBuf::from(".claude/skills/argus")),
             settings_version: None,
+            transcript: Some(transcript::Source::of(transcript::Format::Claude)),
         }
     }
 
@@ -321,6 +332,7 @@ impl Harness {
             rule_file: None,
             skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: None,
+            transcript: Some(transcript::Source::of(transcript::Format::Codex)),
         }
     }
 
@@ -354,6 +366,7 @@ impl Harness {
             rule_file: None,
             skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: None,
+            transcript: None,
         }
     }
 
@@ -383,6 +396,7 @@ impl Harness {
             rule_file: None,
             skill_dir: Some(PathBuf::from(".pi/skills/argus")),
             settings_version: None,
+            transcript: Some(transcript::Source::of(transcript::Format::Pi)),
         }
     }
 
@@ -413,6 +427,7 @@ impl Harness {
             rule_file: Some(PathBuf::from(".agents").join("rules").join("argus.md")),
             skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: None,
+            transcript: None,
         }
     }
 
@@ -456,6 +471,7 @@ impl Harness {
             rule_file: Some(PathBuf::from(".cursor").join("rules").join("argus.mdc")),
             skill_dir: Some(PathBuf::from(".agents/skills/argus")),
             settings_version: Some(1),
+            transcript: Some(transcript::Source::of(transcript::Format::Cursor)),
         }
     }
 

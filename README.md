@@ -389,6 +389,7 @@ shape = "flat" # use "matcher" for Claude Code-style nesting
 context_event = "session_start"
 resume = ["--continue"] # appended to the agent command when a pane is restored
 resume_id = ["--resume", "{session_id}"] # exact resume when identity was captured
+transcript = { format = "neutral", path = "~/.herdr/sessions/{session_id}.jsonl" } # for session previews
 
 [harness.events]
 turn_start = "working"
@@ -415,6 +416,11 @@ Omit `settings` for an environment-only harness. Omit `resume` for a CLI that ca
 continue its last conversation; its panes still come back, just empty. A block that reuses a
 built-in name replaces it outright, including a plugin module and resume arguments the built-in
 shipped.
+`transcript` says where the CLI keeps a session's transcript and in which format: `format` is
+`claude`, `codex`, `cursor`, `pi` or `neutral`, and `path` a template with `~`, `{session_id}`,
+`{checkout}` and `*`. `transcript = "claude"` alone reads Claude Code's format where Claude Code
+keeps it. The key is accepted ahead of the session previews that will read it (HUN-174); the
+neutral format and the templates are spelled out in DESIGN.md, "Transcripts".
 
 ### `client.toml`
 
