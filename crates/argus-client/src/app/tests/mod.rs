@@ -1,6 +1,7 @@
 //! The client model's tests, one file per thing the operator does, over
 //! the fixtures they all build an app from.
 
+mod agent_views;
 mod branch_rows;
 mod brief_editing;
 mod consoles;
@@ -327,6 +328,7 @@ pub(super) fn laid_out(h: &mut Harness) {
         },
         consoles: Panel::default(),
         checkouts: Panel::default(),
+        agent_views: Panel::default(),
         terminal: panel(48, 20),
         features: Panel::default(),
         feature_lenses: Default::default(),

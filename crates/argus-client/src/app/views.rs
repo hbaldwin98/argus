@@ -26,17 +26,26 @@ pub enum View {
     /// The selected repository's checkouts and worktrees as an operational
     /// table.
     Checkouts,
+    /// What agents showed the person, drawn as text. The stage sits beside
+    /// the rail like the others; the richer blocks are the desktop's.
+    AgentViews,
 }
 
 impl View {
     /// Every top-level surface, in the order shown by the design document.
-    pub const ALL: [View; 3] = [View::Workspace, View::Feature, View::Checkouts];
+    pub const ALL: [View; 4] = [
+        View::Workspace,
+        View::Feature,
+        View::Checkouts,
+        View::AgentViews,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             View::Workspace => "workspace",
             View::Feature => "feature",
             View::Checkouts => "checkouts",
+            View::AgentViews => "views",
         }
     }
 
@@ -167,12 +176,13 @@ mod tests {
         }
         assert_eq!(View::from_digit('1'), Some(View::Workspace));
         assert_eq!(View::from_digit('3'), Some(View::Checkouts));
+        assert_eq!(View::from_digit('4'), Some(View::AgentViews));
     }
 
     #[test]
     fn a_digit_no_view_sits_on_opens_nothing() {
         assert_eq!(View::from_digit('0'), None);
-        assert_eq!(View::from_digit('4'), None);
+        assert_eq!(View::from_digit('5'), None);
         assert_eq!(View::from_digit('x'), None);
     }
 }

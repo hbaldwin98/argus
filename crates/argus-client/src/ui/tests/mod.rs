@@ -2,6 +2,7 @@
 //! asserted on as text. One file per thing being drawn, over the
 //! fixtures they all build an app from.
 
+mod agent_views;
 mod brief;
 mod browser;
 mod command_center;

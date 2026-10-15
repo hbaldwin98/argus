@@ -38,6 +38,8 @@ use argus_protocol::review_view::{ReviewView, Row};
 use crate::theme::Theme;
 use argus_protocol::CursorShape;
 
+mod agent_blocks;
+mod agent_values;
 mod card;
 mod command_center;
 mod help;
@@ -51,6 +53,8 @@ mod term;
 mod text;
 mod views;
 
+use agent_blocks::block_lines;
+use agent_values::{chip_span, duration_text, one_line};
 use card::*;
 use command_center::*;
 use help::*;
@@ -65,6 +69,7 @@ use text::*;
 use views::*;
 
 pub(crate) use command_center::{
+    agent_view_at as command_center_agent_view_at,
     checkout_at as command_center_checkout_at,
     feature_hit_at as command_center_feature_hit_at,
     project_header_at as command_center_project_header_at,
@@ -226,6 +231,7 @@ fn forget_rail_and_stages(app: &mut App) {
     app.layout.rail = Panel::default();
     app.layout.consoles = Panel::default();
     app.layout.checkouts = Panel::default();
+    app.layout.agent_views = Panel::default();
 }
 
 /// The selected pane's terminal given the whole content area, while it is

@@ -50,6 +50,10 @@ pub struct Layout {
     pub consoles: Panel,
     /// The Checkouts stage's table.
     pub checkouts: Panel,
+    /// The Views stage's list of views, one row each; `first` is the index
+    /// of the view drawn on the first row. Zero-sized while another stage
+    /// is open.
+    pub agent_views: Panel,
     /// The selected pane's terminal: the Workspace stage, or the whole
     /// content area while the pane is fullscreen.
     pub terminal: Panel,

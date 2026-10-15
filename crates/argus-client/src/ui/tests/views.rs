@@ -51,8 +51,8 @@ fn the_digit_three_opens_checkouts() {
     press(&mut app, '3');
     assert_eq!(app.view, View::Checkouts);
 
-    // The strip ends at three: a fourth digit is not a view.
-    press(&mut app, '4');
+    // The strip ends at four: a fifth digit is not a view.
+    press(&mut app, '5');
     assert_eq!(app.view, View::Checkouts);
 }
 
