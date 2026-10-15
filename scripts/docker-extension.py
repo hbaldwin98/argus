@@ -11,8 +11,9 @@ token it publishes with:
     command = ["python3", "/path/to/argus/scripts/docker-extension.py"]
 
 On Windows the command is usually ["python", ...]. It uses only the
-standard library and the `docker` CLI. The view shows in the desktop
-window's views panel, beside the views agents show.
+standard library and the `docker` CLI. The view opens as a page of its
+own from the desktop window's sidebar, under Extensions; it can be docked
+in the side panel instead, beside the views agents show.
 """
 
 import json
@@ -84,6 +85,8 @@ def view(listed, title="Containers"):
     return {
         "name": "containers",
         "title": title,
+        "place": "stage",
+        "icon": "box",
         "columns": [{"title": "Name"}, {"title": "Image"}, {"title": "Status"}, {"title": "Ports"}],
         "rows": rows[:200],
         "actions": [
