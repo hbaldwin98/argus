@@ -135,7 +135,9 @@ A field, a table cell: `{ "kind": ..., ... }`.
 These open things in Argus rather than a browser, read against your pane:
 `path` `{ "path", "line" }` (relative to the checkout's root, with no `..`;
 opens in the person's editor), `commit` `{ "sha", "title" }` (opens History),
-`feature` `{ "number" }`, `pane` `{ "pane", "label" }` (focuses it).
+`feature` `{ "number" }`, `pane` `{ "pane", "label" }` (focuses it), and
+`view` `{ "id", "label" }`, which opens the saved view `id` beside this one (see
+"Saved views, links and embeds" below).
 
 ## A ticket
 
@@ -151,3 +153,94 @@ Copy values verbatim; never paraphrase a ticket's text. Map its parts:
 
 Linear has no free-form custom fields: label groups, estimate, cycle, project
 and milestone are its equivalents.
+
+## Saved views, links and embeds
+
+A view you `show` goes when you or the daemon do. One you want kept — a summary
+of the repository's dependencies, an architecture map, a view of a ticket that
+others will open — is **saved**: it is a record in Argus's store with a scope, so
+the person finds it in the Views section whenever they come back, and any agent
+can rebuild it.
+
+```sh
+"$ARGUS_HOOK" view save --stdin <<'EOF'
+{
+  "scope": { "kind": "repository" },
+  "features": [12],
+  "recipe": "List the workspace crates from Cargo.toml, then each one's direct dependencies from `cargo tree --depth 1`.",
+  "sources": [
+    { "kind": "file", "path": "Cargo.toml" },
+    { "kind": "commit", "sha": "a41c9e2" },
+    { "kind": "url", "url": "https://crates.io/crates/serde" },
+    { "kind": "note", "text": "ignore dev-dependencies" }
+  ],
+  "view": { "id": "deps", "title": "Dependencies", "blocks": [ ... ] }
+}
+EOF
+"$ARGUS_HOOK" view saved           # id, scope, current or stale, title
+"$ARGUS_HOOK" view get deps        # the stored JSON, to refresh from
+"$ARGUS_HOOK" view stale deps      # say it is out of date
+"$ARGUS_HOOK" view delete deps
+```
+
+`save` prints `saved: <id>, <n> blocks`, or the refusal with the path of the
+part at fault. The view inside is checked exactly as `show` checks it, and its
+`id` is the saved view's name: unique across the whole store, up to 64 bytes,
+with no control characters and no space around it. **Saving the same id again
+replaces the view in place; there are no versions.** A refresh is that: read
+what the view was built from, then `save` it again with the same id.
+
+- `scope` is where the person looks for it: `{"kind": "repository"}` (the default;
+  your pane's repository), `{"kind": "feature", "number": 12}` (one of its
+  features) or `{"kind": "global"}` (belongs to no repository). An id already
+  used by a view in another scope is refused; choose another or delete it.
+- `features` are numbers of features of your repository to attach it to too. A
+  save replaces the attachments for this repository only. Naming a feature the
+  repository does not have is refused.
+- `recipe` (at most 4096 bytes) is how to build it again, in your words, for the
+  agent that is asked to refresh it, which may not be you. `sources` (at most 32)
+  say what it was built from: `file` (relative to the checkout, no `..`),
+  `commit` (a hex id), `url` (`http` or `https`; Argus does not fetch it, you
+  read it) and `note`. Keep both current when you change how you build it.
+- Argus records when it was saved and the commit your checkout was on. A view is
+  marked **stale** when the person or you say so (`view stale`), or when that
+  checkout has since moved to another commit. Argus does not diff the files in
+  `sources`; judge for yourself when you read `view saved`, and refresh what is
+  stale when you are asked to, or when you are working on what it shows. A save
+  clears the mark.
+- At most 500 views are kept; past that a save is refused until one is deleted.
+- You can list, read, mark and delete the views of your own repository and the
+  global ones, not another repository's.
+
+`get` prints the record you can edit and `save` again: `id`, `scope`, `features`,
+`recipe`, `sources`, `built_at`, `built_commit`, `stale` and the `view`. The
+fields Argus fills in are ignored on the way back in.
+
+When the person presses Refresh on a saved view and you are the agent that last
+saved it, you are told on one line, with its recipe and sources:
+
+```
+Refresh the saved view `deps` ("Dependencies"). Recipe: List the workspace crates ... Sources: file Cargo.toml; url https://crates.io/crates/serde. Read them again with your own tools, then save it anew with `argus-hook view save --stdin`, same id `deps`; `argus-hook view get deps` prints it as it is.
+```
+
+Buttons in a saved view work as they do in a shown one, and are told to the agent
+that last saved it. After a daemon restart nobody is remembered as that agent
+until one saves it again.
+
+### Links
+
+Any element can open another saved view, which the person follows into a new
+column beside this one — so you can build a trail of views, an overview that
+links to a view per component. Link to a view by its id; it need not be saved
+yet (it is drawn as missing until it is).
+
+- As a value (a field, a table cell, a row item, a list of values): `{ "kind": "view", "id": "deps", "label": "Dependencies" }`.
+- On an element drawn from plain text, add `"opens": "deps"` to: `section`, `card`, `details`, a `list` item, a `stats` entry, a `tree` node, a `graph` node, a `timeline` event, a `checklist` item, a `board` card.
+
+### Embeds
+
+`{ "kind": "embed", "view": "deps" }` draws that saved view's blocks right there,
+in a bordered frame with its title. Only the id is stored, so the embedded view
+stays as current as the last save of it, and a view cannot embed itself. The
+reader follows an embed three views deep and draws a line instead past that, or
+where the view is not saved.
