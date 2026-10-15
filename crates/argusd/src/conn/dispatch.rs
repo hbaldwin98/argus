@@ -533,7 +533,7 @@ fn dispatch_review(
                 Some(rev) => crate::diff::generate_commit(&path, rev),
                 None => crate::diff::generate(&path, base),
             };
-            reviews.submit(generate, move |generated| {
+            reviews.submit(base, generate, move |generated| {
                 let message = match generated {
                     Ok(Ok(generated)) => ServerMsg::Review(argus_protocol::Review {
                         request_id,

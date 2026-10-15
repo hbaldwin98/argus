@@ -425,6 +425,7 @@ async fn a_new_review_replaces_an_older_queued_review() {
     let (release, held) = std::sync::mpsc::channel::<()>();
     let (started, mut generating) = tokio::sync::mpsc::unbounded_channel::<()>();
     other.submit(
+        ReviewBase::Unstaged,
         move || {
             let _ = started.send(());
             let _ = held.recv();
@@ -459,6 +460,39 @@ async fn a_new_review_replaces_an_older_queued_review() {
             .is_err(),
         "the replaced review should not run"
     );
+}
+
+/// A review opens by asking for both of its sides at once; the second must
+/// not cancel the first, or the dialog waits on it forever.
+#[tokio::test]
+async fn both_sides_asked_together_are_both_answered() {
+    let dir = tempfile::tempdir().unwrap();
+    git2::Repository::init(dir.path()).unwrap();
+    std::fs::write(dir.path().join("a.txt"), "one\n").unwrap();
+    let mut h = Harness::new(dir.path());
+    let checkout = h.checkout();
+    for (request_id, base) in [(1, ReviewBase::Unstaged), (2, ReviewBase::Staged)] {
+        h.send(ClientMsg::Review {
+            request_id,
+            checkout,
+            base,
+            commit: None,
+        });
+    }
+
+    let mut answered = Vec::new();
+    for _ in 0..2 {
+        let reply = tokio::time::timeout(std::time::Duration::from_secs(5), h.rx.recv())
+            .await
+            .expect("each side should be answered")
+            .expect("channel open");
+        match reply {
+            ServerMsg::Review(r) => answered.push((r.request_id, r.base)),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    answered.sort_by_key(|(id, _)| *id);
+    assert_eq!(answered, [(1, ReviewBase::Unstaged), (2, ReviewBase::Staged)]);
 }
 
 #[tokio::test]
