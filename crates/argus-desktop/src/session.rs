@@ -11,7 +11,8 @@
 //! the status bar (`status`), the pane on screen (`shown`), the agents
 //! offered (`agents`), the review and history (`dialogs`), the two stages
 //! (`feature_stage`, `checkouts_stage`), a repository's past agent
-//! sessions (`sessions`), and what the daemon is making
+//! sessions (`sessions`) and the dialog listing them (`sessions_dialog`),
+//! and what the daemon is making
 //! (`argus_protocol::awaited`). The session says which of them a message
 //! or gesture is for, and what one of them changing means for the rest.
 //!
@@ -44,6 +45,7 @@ use crate::palette;
 use crate::rail::{self, Choices};
 use crate::sent::Sent;
 use crate::sessions::Sessions;
+use crate::sessions_dialog::{SessionsDialog, Then as SessionsThen};
 use crate::settings::Settings;
 use crate::shown::ShownPane;
 use crate::status::StatusBar;
@@ -60,6 +62,9 @@ enum Made {
     ShowOverStages,
     /// Select the new worktree's row in the Checkouts stage.
     SelectRow,
+    /// Show the pane a session was resumed in, putting the sessions
+    /// dialog away with whichever stage is up.
+    Resumed,
 }
 
 pub struct Session {
@@ -80,6 +85,9 @@ pub struct Session {
     agents: Agents,
     dialogs: Dialogs,
     sessions: Sessions,
+    /// The recent-sessions dialog, while open.
+    recent: Option<SessionsDialog>,
+    recent_sent: Sent<page::SessionsPage>,
     /// The command palette is open, so what it can go to is sent.
     palette: bool,
     palette_sent: Sent<page::Palette>,
@@ -116,6 +124,8 @@ impl Session {
             agents: Agents::new(settings.last_agent),
             dialogs: Dialogs::new(settings.review),
             sessions: Sessions::default(),
+            recent: None,
+            recent_sent: Sent::default(),
             palette: false,
             palette_sent: Sent::default(),
             focused: true,
@@ -159,6 +169,13 @@ impl Session {
         self.sessions = Sessions::default();
         for msg in opening {
             self.apply(msg);
+        }
+        // An open sessions dialog asks this daemon again, or says it cannot.
+        if let Some(repository) = self.recent.as_ref().map(SessionsDialog::repository) {
+            let asked = self.ask_sessions(repository);
+            if let Some(dialog) = &mut self.recent {
+                dialog.reasked(asked);
+            }
         }
         self.shown.reconnected(&mut self.out);
         self.finish()
@@ -246,6 +263,10 @@ impl Session {
                 (Created::Pane(pane), Made::Show | Made::ShowOverStages) => {
                     self.show_made(pane, then == Made::ShowOverStages);
                 }
+                (Created::Pane(pane), Made::Resumed) => {
+                    self.recent = None;
+                    self.show_made(pane, true);
+                }
                 // A worktree made from the Checkouts stage is the row it
                 // lands on.
                 (Created::Checkout(checkout), Made::SelectRow) => self.checkouts.select(format!("c{}", checkout.0)),
@@ -314,6 +335,10 @@ impl Session {
             Call::OpenHistory { checkout } => self.open_history(CheckoutId(checkout)),
             Call::HistoryAction { action, row } => self.history_action(action, row),
             Call::FilterHistory { filter } => self.filter_history(filter),
+            Call::OpenSessions { repository } => self.open_sessions(RepositoryId(repository)),
+            Call::SessionsAction { action, row } => self.sessions_action(action, row),
+            Call::SearchSessions { search } => self.search_sessions(search),
+            Call::FilterSessions { harness, checkout } => self.filter_sessions(harness, checkout),
             Call::Peek { slug } => self.peek(&slug),
             Call::SetLayout { layout } => self.set_layout(layout),
             Call::ToggleFolded => self.toggle_folded(),
@@ -904,32 +929,105 @@ impl Session {
 
     // ---- A repository's sessions --------------------------------------------
 
-    // The page asks through these once session previews (HUN-174) draw
-    // them; until then only the tests do.
+    /// Opens a repository's recent agent sessions, asking the daemon for
+    /// them and for how each harness resumes one.
+    fn open_sessions(&mut self, repository: RepositoryId) -> Vec<ClientMsg> {
+        let name = self
+            .current_project()
+            .and_then(|p| p.repositories.iter().find(|r| r.id == repository))
+            .map(|r| r.name.clone());
+        let Some(name) = name else {
+            return self.finish();
+        };
+        let asked = self.ask_sessions(repository);
+        self.recent = Some(SessionsDialog::new(repository, name, !asked));
+        self.finish()
+    }
 
-    /// Asks for a repository's agent sessions, when the daemon can say.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn list_sessions(&mut self, repository: RepositoryId) -> Vec<ClientMsg> {
-        let request_id = self.awaited.name();
-        if let Some(msg) = self.sessions.list(&self.status, repository, request_id) {
-            self.out.push(msg);
+    /// Whether the daemon was asked: one that cannot list sessions is not.
+    fn ask_sessions(&mut self, repository: RepositoryId) -> bool {
+        let (list, resumes) = (self.awaited.name(), self.awaited.name());
+        let Some(msg) = self.sessions.list(&self.status, repository, list) else {
+            return false;
+        };
+        self.out.push(msg);
+        self.out.extend(self.sessions.ask_resumes(&self.status, resumes));
+        true
+    }
+
+    /// A key or click of the sessions dialog; `row` is a clicked row.
+    fn sessions_action(&mut self, action: Action, row: Option<usize>) -> Vec<ClientMsg> {
+        let Some(dialog) = &mut self.recent else {
+            return self.finish();
+        };
+        let (sessions, tree) = (&self.sessions, self.tree.as_slice());
+        let then = match (action, row) {
+            (_, Some(row)) => {
+                dialog.select_row(row, sessions, tree);
+                SessionsThen::Nothing
+            }
+            (Action::Next | Action::Previous, _) => {
+                dialog.move_by(if action == Action::Next { 1 } else { -1 }, sessions, tree);
+                SessionsThen::Nothing
+            }
+            (Action::First | Action::Last, _) => {
+                dialog.ends(action == Action::Last, sessions, tree);
+                SessionsThen::Nothing
+            }
+            (Action::FilterHarness, _) => {
+                dialog.cycle_harness(sessions);
+                SessionsThen::Nothing
+            }
+            (Action::FilterCheckout, _) => {
+                dialog.cycle_checkout(sessions, tree);
+                SessionsThen::Nothing
+            }
+            (Action::Transcript, _) => {
+                dialog.toggle_full();
+                SessionsThen::Nothing
+            }
+            (Action::Choose, _) => dialog.choose(sessions, tree),
+            (Action::Resume, _) => dialog.resume(sessions, tree),
+            (Action::CloseLayer, _) => {
+                self.recent = None;
+                SessionsThen::Nothing
+            }
+            _ => SessionsThen::Nothing,
+        };
+        match then {
+            SessionsThen::Nothing => {}
+            SessionsThen::Say(text) => self.passing.push(Event::Notice { text }),
+            // Only a pane the tree still holds: the listing may be older
+            // than the pane's end.
+            SessionsThen::GoTo(pane) if self.project_of(pane).is_some() => {
+                self.recent = None;
+                self.leave_stages();
+                self.show(pane);
+            }
+            SessionsThen::GoTo(_) => self.passing.push(Event::Notice { text: "that session's pane has ended".into() }),
+            // The dialog stays up until the pane is made and the tree
+            // holds it, so a refused resume leaves it where it was.
+            SessionsThen::Resume { checkout, harness, session_id } => {
+                let request_id = self.awaited.ask(Made::Resumed);
+                self.out.push(ClientMsg::ResumeSession { request_id, checkout, harness, session_id });
+            }
         }
         self.finish()
     }
 
-    /// Asks what one listed session said.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn read_session(&mut self, session: &argus_protocol::sessions::Session) -> Vec<ClientMsg> {
-        let request_id = self.awaited.name();
-        if let Some(msg) = self.sessions.read(&self.status, session, request_id) {
-            self.out.push(msg);
+    /// What the sessions dialog's search field says now.
+    fn search_sessions(&mut self, search: String) -> Vec<ClientMsg> {
+        if let Some(dialog) = &mut self.recent {
+            dialog.set_search(search);
         }
         self.finish()
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn sessions(&self) -> &Sessions {
-        &self.sessions
+    fn filter_sessions(&mut self, harness: Option<String>, checkout: Option<String>) -> Vec<ClientMsg> {
+        if let Some(dialog) = &mut self.recent {
+            dialog.set_filters(harness, checkout);
+        }
+        self.finish()
     }
 
     // ---- The command palette ------------------------------------------------
@@ -1010,6 +1108,15 @@ impl Session {
             Action::Fetch | Action::Pull | Action::OpenReview | Action::OpenHistory | Action::StartShell | Action::StartAgent => {
                 self.on_this_checkout(action);
             }
+            // The repository the rail has chosen, as the Feature stage
+            // reads; its sessions span every one of its checkouts.
+            Action::OpenSessions => match self.chosen_repository().map(|r| r.id) {
+                Some(repository) => {
+                    let sent = self.open_sessions(repository);
+                    self.out.extend(sent);
+                }
+                None => self.passing.push(Event::Notice { text: "no repository to list the sessions of".into() }),
+            },
             _ => return false,
         }
         true
@@ -1104,6 +1211,12 @@ impl Session {
 
     /// The messages this change sends, with the view when it changed.
     fn finish(&mut self) -> Vec<ClientMsg> {
+        // The session under the dialog's cursor is read once it is there,
+        // however the cursor got there: a key, a filter, or the listing.
+        if let Some(wanted) = self.recent.as_ref().and_then(|d| d.wants_read(&self.sessions, &self.tree)).cloned() {
+            let request_id = self.awaited.name();
+            self.out.extend(self.sessions.read(&self.status, &wanted, request_id));
+        }
         let reads_board = matches!(self.stage, Stage::Feature | Stage::Checkouts) || self.palette;
         self.features.set_board_wanted(reads_board);
         // Whatever changed may have changed which board the stage reads.
@@ -1146,6 +1259,10 @@ impl Session {
             events.push(Event::Features(Box::new(features)));
         }
         events.extend(self.dialogs.take(&self.tree, now));
+        let recent = self.recent.as_ref().map(|d| d.page(&self.sessions, &self.tree, now));
+        if let Some(page) = self.recent_sent.take(recent) {
+            events.push(Event::Sessions(Box::new(page)));
+        }
         let listing = self.palette.then(|| palette::build(self.current_project(), self.features.board(), &self.tree));
         if let Some(listing) = self.palette_sent.take(listing) {
             events.push(Event::Palette(Box::new(listing)));
@@ -1165,6 +1282,7 @@ impl Session {
     pub fn everything(&mut self, now: u64) -> Vec<Event> {
         self.status.resend();
         self.dialogs.reload();
+        self.recent_sent.forget();
         // A page that has just loaded has no palette open.
         self.palette = false;
         self.palette_sent.forget();
@@ -2104,7 +2222,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 52] = [
+    const CALLS: [&str; 56] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -2140,6 +2258,10 @@ mod tests {
         r#"{"call":"open_history","checkout":100}"#,
         r#"{"call":"history_action","action":"next","row":null}"#,
         r#"{"call":"filter_history","filter":"fix"}"#,
+        r#"{"call":"open_sessions","repository":10}"#,
+        r#"{"call":"sessions_action","action":"next","row":null}"#,
+        r#"{"call":"search_sessions","search":"fix"}"#,
+        r#"{"call":"filter_sessions","harness":"claude","checkout":null}"#,
         r#"{"call":"peek","slug":"trim"}"#,
         r#"{"call":"set_layout","layout":"board"}"#,
         r#"{"call":"toggle_folded"}"#,
@@ -2275,32 +2397,119 @@ mod tests {
         assert_eq!(s.checkouts.selected_key(), Some("c101"));
     }
 
-    #[test]
-    fn a_repositorys_sessions_are_held_once_the_daemon_answers() {
-        let mut s = session(Hello::this_build());
-        let sent = s.list_sessions(RepositoryId(10));
-        let [ClientMsg::ListSessions { request_id, repository: RepositoryId(10) }] = sent.as_slice() else {
-            panic!("{sent:?}");
-        };
-        let listed = argus_protocol::sessions::Session {
+    fn listed_session(id: &str, pane: Option<u64>) -> argus_protocol::sessions::Session {
+        argus_protocol::sessions::Session {
             harness: "claude".into(),
-            session_id: "s1".into(),
+            session_id: id.into(),
             checkout: CheckoutId(100),
             removed_worktree: None,
-            title: None,
+            title: Some(format!("{id} work")),
             started: None,
             ended: None,
             modified: None,
             turns: None,
-            pane: Some(PaneId(1)),
-        };
-        s.receive(ServerMsg::Sessions { request_id: *request_id, repository: RepositoryId(10), sessions: vec![listed.clone()] });
-        assert_eq!(s.sessions().listed(RepositoryId(10)), Some(&[listed.clone()][..]));
-        assert!(matches!(s.read_session(&listed).as_slice(), [ClientMsg::ReadSession { .. }]));
+            pane: pane.map(PaneId),
+        }
+    }
 
-        // A reconnect forgets what the last daemon said.
-        s.connected(Some(without_focus()), None, Vec::new());
-        assert!(s.sessions().listed(RepositoryId(10)).is_none());
-        assert!(s.list_sessions(RepositoryId(10)).is_empty(), "not asked of a daemon that cannot say");
+    /// A session whose sessions dialog is open on `argus` and has heard
+    /// the listing — a live session on pane 1, then an ended one — and
+    /// that claude resumes by id.
+    fn listing_sessions() -> Session {
+        let mut s = session(Hello::this_build());
+        let sent = s.call(Call::OpenSessions { repository: 10 });
+        let [ClientMsg::ListSessions { request_id: list, repository: RepositoryId(10) }, ClientMsg::ListResumes { request_id: resumes }] =
+            sent.as_slice()
+        else {
+            panic!("{sent:?}");
+        };
+        let (list, resumes) = (*list, *resumes);
+        let argv = vec!["claude".to_string(), "--resume".into(), "{session_id}".into()];
+        s.receive(ServerMsg::Resumes { request_id: resumes, resumes: vec![("claude".into(), argv)] });
+        let read = s.receive(ServerMsg::Sessions {
+            request_id: list,
+            repository: RepositoryId(10),
+            sessions: vec![listed_session("ended", None), listed_session("live", Some(1))],
+        });
+        assert!(
+            matches!(read.as_slice(), [ClientMsg::ReadSession { session_id, .. }] if session_id == "live"),
+            "the session under the cursor is read once listed: {read:?}"
+        );
+        s
+    }
+
+    fn sessions_page(s: &mut Session) -> Option<page::SessionsPage> {
+        s.events(0).into_iter().find_map(|e| match e {
+            Event::Sessions(page) => Some(*page),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn the_sessions_dialog_lists_live_sessions_first_and_reads_the_one_chosen() {
+        let mut s = listing_sessions();
+        let page = sessions_page(&mut s).expect("the dialog is sent");
+        assert!(page.open);
+        assert_eq!(page.rows.iter().map(|r| r.title.as_str()).collect::<Vec<_>>(), ["live work", "ended work"]);
+        let sent = s.call(Call::SessionsAction { action: Action::Next, row: None });
+        assert!(matches!(sent.as_slice(), [ClientMsg::ReadSession { session_id, .. }] if session_id == "ended"), "{sent:?}");
+        s.call(Call::SessionsAction { action: Action::CloseLayer, row: None });
+        assert!(sessions_page(&mut s).is_some_and(|p| !p.open), "its closing is sent once");
+    }
+
+    #[test]
+    fn a_live_session_chosen_goes_to_its_pane() {
+        let mut s = listing_sessions();
+        s.call(Call::SessionsAction { action: Action::Choose, row: None });
+        assert_eq!(s.shown.pane(), Some(PaneId(1)));
+        assert!(s.recent.is_none(), "the dialog gave way to the pane");
+    }
+
+    #[test]
+    fn a_resumed_session_is_shown_only_once_made_and_in_the_tree() {
+        let mut s = listing_sessions();
+        s.call(Call::SessionsAction { action: Action::Next, row: None });
+        let sent = s.call(Call::SessionsAction { action: Action::Resume, row: None });
+        let [ClientMsg::ResumeSession { request_id, checkout: CheckoutId(100), harness, session_id }] = sent.as_slice() else {
+            panic!("{sent:?}");
+        };
+        assert_eq!((harness.as_str(), session_id.as_str()), ("claude", "ended"));
+        assert!(s.recent.is_some(), "nothing is predicted");
+        s.receive(ServerMsg::Created { request_id: *request_id, created: Some(Created::Pane(PaneId(9))) });
+        assert!(s.recent.is_some() && s.shown.pane().is_none(), "made, but not in a tree yet");
+        let mut grown = tree();
+        grown[0].repositories[0].checkouts[0].panes.push(pane(9, PaneKind::Agent, "claude", PaneStatus::Working));
+        s.receive(with_tree(grown));
+        assert_eq!(s.shown.pane(), Some(PaneId(9)));
+        assert!(s.recent.is_none());
+    }
+
+    #[test]
+    fn a_refused_resume_leaves_the_dialog_up() {
+        let mut s = listing_sessions();
+        s.call(Call::SessionsAction { action: Action::Next, row: None });
+        let sent = s.call(Call::SessionsAction { action: Action::Resume, row: None });
+        let [ClientMsg::ResumeSession { request_id, .. }] = sent.as_slice() else {
+            panic!("{sent:?}");
+        };
+        s.receive(ServerMsg::Created { request_id: *request_id, created: None });
+        assert!(s.recent.is_some() && s.shown.pane().is_none());
+    }
+
+    #[test]
+    fn a_daemon_that_cannot_list_sessions_is_not_asked_and_the_dialog_says_so() {
+        let mut s = session(without_focus());
+        assert!(s.call(Call::OpenSessions { repository: 10 }).is_empty());
+        let page = sessions_page(&mut s).expect("the dialog opens");
+        assert!(page.empty.is_some_and(|e| e.contains("cannot list sessions")));
+        assert!(s.call(Call::OpenSessions { repository: 99 }).is_empty(), "no such repository");
+    }
+
+    #[test]
+    fn a_reconnect_asks_the_new_daemon_for_the_open_dialogs_sessions() {
+        let mut s = listing_sessions();
+        let sent = s.connected(Some(Hello::this_build()), None, vec![with_tree(tree())]);
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::ListSessions { repository: RepositoryId(10), .. })), "{sent:?}");
+        assert!(sessions_page(&mut s).is_some_and(|p| p.loading), "what the last daemon said is gone");
     }
 }

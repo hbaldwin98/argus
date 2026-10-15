@@ -211,7 +211,13 @@ removes a worktree once asked. `R` opens the checkout's review: its unstaged
 and staged changes beside the diff, where `v` picks lines, `c` comments to the checkout's agent,
 `Ctrl-P` jumps to a file by name and `E` opens the line in your editor. It opens on the side and
 layout last chosen, unless that side has nothing and the other does. `H` opens its history:
-commits unfolding to their files, filtered with `/`, and any of them opened as a review. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
+commits unfolding to their files, filtered with `/`, and any of them opened as a review. The clock
+on a repository's rail row opens its recent agent sessions across every checkout, live ones first:
+`j`/`k` move, `/` searches, `H` and `C` step the harness and checkout filters, and the transcript
+of the one under the cursor shows beside the list (`O` gives it the whole dialog). Enter goes to a
+live session's pane, and on an ended one resumes it in a new pane (`R`), by the command the footer
+names; a session from a removed worktree, or from a harness that cannot resume by id, offers only
+its transcript. After `argus server stop` it waits for its Reconnect button rather than starting the daemon
 again. The rest of the terminal client's surfaces are still to come; `DESKTOP.md` has the plan.
 
 Its keys are the terminal client's where the two share a surface. In a pane every key goes to the
@@ -434,7 +440,7 @@ shipped.
 `claude`, `codex`, `cursor`, `pi` or `neutral`, and `path` a template with `~`, `{session_id}`,
 `{checkout}`, `{project}` and `*`. `transcript = "claude"` alone reads Claude Code's format where
 Claude Code keeps it. The daemon lists a repository's sessions from these files and reads one when
-asked, ahead of the session previews that will show them (HUN-174); the neutral format and the
+asked, for the desktop window's recent-sessions dialog; the neutral format and the
 templates are spelled out in DESIGN.md, "Transcripts".
 
 ### `client.toml`

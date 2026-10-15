@@ -8,6 +8,7 @@ import type { Place } from './bindings/Place';
 import { answerNo, checkoutsAction } from './checkouts.js';
 import { focusHistoryFilter, historyOpen } from './history.js';
 import { reviewOpen } from './review.js';
+import { focusSessionsSearch, sessionsOpen } from './sessions.js';
 import { railAction, railPicked, startAction, startOpen } from './chrome.js';
 import { $ } from './dom.js';
 import { closeLayer, featureAction } from './features.js';
@@ -81,7 +82,7 @@ export function runOver(action: Action): void {
   }
 }
 
-/** The keys a review or history dialog does not answer, open over it. */
+/** The keys a dialog does not answer, open over it. */
 function notTheirs(action: Action): boolean {
   return (
     action === 'workspace' ||
@@ -108,8 +109,8 @@ export function listen(): void {
       }
       return;
     }
-    // The review and history dialogs hold the keys while open, all but
-    // the sheet's, which lists theirs; Rust runs the rest.
+    // The review, history and sessions dialogs hold the keys while open,
+    // all but the sheet's, which lists theirs; Rust runs the rest.
     if (reviewOpen()) {
       const action = actionFor(['anywhere', 'review'], e);
       if (action === 'shortcuts') {
@@ -130,6 +131,18 @@ export function listen(): void {
         e.preventDefault();
         if (action === 'filter') focusHistoryFilter();
         else call('history_action', { action, row: null });
+      }
+      return;
+    }
+    if (sessionsOpen()) {
+      const action = actionFor(['anywhere', 'sessions'], e);
+      if (action === 'shortcuts') {
+        e.preventDefault();
+        openSheet();
+      } else if (action && !notTheirs(action)) {
+        e.preventDefault();
+        if (action === 'filter') focusSessionsSearch();
+        else call('sessions_action', { action, row: null });
       }
       return;
     }

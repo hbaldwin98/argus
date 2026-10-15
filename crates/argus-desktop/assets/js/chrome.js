@@ -167,7 +167,12 @@ function repoRow(repo) {
         'aria-expanded': String(repo.open),
         'aria-current': chosen ? 'true' : null,
         onclick: () => call('choose_repository', { repository: repo.id }),
-    }, el('span', { class: 'chev' }, icon(repo.open ? 'down' : 'right')), el('span', { class: 'rname ttl' }, repo.name), statusDot, el('span', { class: 'cnt' }, repo.used ?? (repo.panes || ''))));
+    }, el('span', { class: 'chev' }, icon(repo.open ? 'down' : 'right')), el('span', { class: 'rname ttl' }, repo.name), statusDot, el('span', { class: 'cnt' }, repo.used ?? (repo.panes || ''))), el('button', {
+        class: 'icon',
+        title: 'Recent agent sessions',
+        'aria-label': `Recent agent sessions in ${repo.name}`,
+        onclick: () => call('open_sessions', { repository: repo.id }),
+    }, icon('clock')));
 }
 function checkoutRow(repository, co) {
     const picked = state.railPick?.checkout === co.id && state.railPick.pane === null;

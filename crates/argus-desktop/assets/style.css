@@ -778,6 +778,16 @@
   height: 20px;
   visibility: hidden;
 }
+.repo .icon {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  visibility: hidden;
+}
+.repo:hover .icon,
+.repo:focus-within .icon {
+  visibility: visible;
+}
 .co:hover .icon,
 .co:focus-within .icon,
 .co.picked .icon,
@@ -2500,4 +2510,76 @@ body.filled .rail {
   .history-list {
     width: 360px;
   }
+}
+
+/* ---- The recent-sessions dialog ---------------------------------------- */
+
+.shead {
+  padding: var(--sp-8) var(--sp-8) var(--sp-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.srow.removed {
+  opacity: 0.5;
+}
+.sdot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--fg-faint);
+}
+.sdot.live {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+.scheckout {
+  max-width: 120px;
+}
+.scommand {
+  max-width: 420px;
+  padding: var(--sp-2) var(--sp-6);
+  border-radius: var(--r-sm);
+  background: var(--bg-sunken);
+  color: var(--fg);
+}
+.dbody.transcript {
+  padding: var(--sp-12) var(--sp-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-8);
+}
+.tearlier {
+  text-align: center;
+}
+.tline.user,
+.tline.agent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.ttext {
+  font-family: var(--font-ui);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+}
+.tline.user .ttext {
+  padding: var(--sp-6) var(--sp-8);
+  border-left: 3px solid var(--accent);
+  background: var(--bg-surface);
+}
+.tline.tool {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  color: var(--fg-muted);
+  min-width: 0;
+}
+.ttool {
+  flex: none;
+  color: var(--fg-faint);
+}
+.tline.tool.failed .ttool {
+  color: var(--danger);
 }

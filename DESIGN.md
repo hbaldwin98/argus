@@ -76,7 +76,8 @@ putting the sidebar away until the same keys again. The Feature stage
 has them while it is open, and another pane brings them back for good. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `screen`, `input`, `keymap`,
-`palette`, `shortcuts`, `features`, `chime`, with `keys`, `dom`, `state` and `tauri` beneath them),
+`palette`, `shortcuts`, `features`, `checkouts`, `review`, `history`, `sessions`, `chime`, with `keys`, `dom`, `state`
+and `tauri` beneath them),
 compiled into `assets/js` and committed, so building the crate needs no Node. The events it reads
 are `page.rs`'s types, written as TypeScript by `cargo test` into `page/src/bindings`; CI fails when
 either committed output differs from what its source makes. Its webview keeps its storage under the
@@ -241,7 +242,7 @@ to the type or its locking.
 | `state/workspaces` | which scope is open, daemon-wide |
 | `state/hook_server` | the loopback receiver agents report to |
 | `state/session` | what survives a daemon restart |
-| `state/sessions` | a repository's agent sessions: its harnesses' transcripts for its checkouts joined to the agent panes running them, and what one session said |
+| `state/sessions` | a repository's agent sessions: its harnesses' transcripts for its checkouts joined to the agent panes running them, what one session said, and reopening one by its id |
 | `state/inbox` | how what Argus says to an agent reaches it: through its harness's inbox when one is open, typed into its terminal otherwise |
 | `state/tree` | finding your way around the tree |
 | `state/features` | which feature a checkout is on, and the one path a change to a feature takes, with who asked as a parameter |
@@ -335,7 +336,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `rail` | what the rail lists from the tree, and what a row says |
 | `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, the comment box and who it is addressed to, the file being jumped to — and the page it draws |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff — and what its gestures ask of the daemon |
-| `sessions` | what the window has asked of a repository's agent sessions — the list, and what one said — and what it holds of the answers |
+| `sessions` | what the window has asked of a repository's agent sessions — the list, what one said, and how each harness resumes one — and what it holds of the answers |
+| `sessions_dialog` | what the recent-sessions dialog holds — whose sessions, the search and the harness and checkout filters, the session under the cursor, whether its transcript fills the dialog — and what each session offers: its pane, a resume by the exact command named, or only its transcript |
 | `checkouts_stage` | what the Checkouts stage holds — whether branch rows show, the filter, the selected row, the question waiting on the person — and which of its keys and buttons are the `column_verbs` it sends |
 | `checkouts` | what the Checkouts stage lists from the chosen repository: its rows, what each says, and the selected checkout's detail |
 | `feature_stage` | what the Feature stage holds — the repository's board, the feature under the cursor and its tasks, each repository's layout — and what its messages and gestures change |
@@ -1069,7 +1071,7 @@ truth and the table follows it: a pane that closed has no row to update.
 ## Transcripts
 
 The daemon lists a repository's past sessions and reads one's transcript from the files their
-harnesses keep, for the session previews HUN-174 adds. Argus never stores a transcript and never
+harnesses keep, for the desktop window's recent-sessions dialog. Argus never stores a transcript and never
 follows one as it grows: `harness/transcript` reads the harness's own file whole, when asked,
 into `argus_protocol::transcript::Transcript` — the person's turns, the agent's replies and the tools
 it ran, each with the time the harness wrote, plus the session's title (the one the harness gave it,
@@ -1108,7 +1110,7 @@ whose name only begins with a checkout's or the worktree root's, which is a dire
 directory that is still there is the deepest checkout holding it, compared canonically; one that
 is gone is a removed worktree of the repository when it was under the worktree root or a tool's
 `.<tool>/worktrees` in a checkout, and is listed under the primary checkout with
-`removed_worktree` naming it, for HUN-174 to show as past. Only the newest 300 such files are
+`removed_worktree` naming it, for a client to show as past. Only the newest 300 such files are
 opened at all, so a repository's Codex sessions older than the last 300 Codex sessions anywhere
 are not listed. Cursor's transcripts record no directory, so its sessions from a removed worktree
 are not listed. Where the id in a file name is ambiguous (`rollout-<time>-<id>`), the id
@@ -1123,6 +1125,27 @@ checkout, title, times, the file's modification time it is ordered by, and the a
 it now, matched by the session id a hook reported; such a session is listed under the harness the
 pane started with. A running agent whose session no transcript lists, from a harness that keeps
 none or has not written it yet, is listed first, with its pane's title.
+
+`ClientMsg::ListResumes` asks how each harness reopens one exact session, and is answered at once
+with `ServerMsg::Resumes`: for each harness some agent template runs whose `resume_id` is set, the
+first such template's `cmd` with the `resume_id` after it, `{session_id}` left unfilled. A client
+fills in the id to name the command before it runs it. `ClientMsg::ResumeSession` starts that same
+template on a checkout with the id, answered with `Created` like any spawn; a harness no template
+can resume is refused. Unlike a restore, a resumed session is the person's own start: it is held to
+a project's one-agent rule, and a CLI that refuses the id exits where the person can read why
+rather than being replaced by a fresh conversation. Both go only to a daemon that listed
+`sessions`.
+
+The desktop window shows them from a clock button on each repository's rail row, or the palette's
+"Recent agent sessions of this repository": a dialog of the repository's sessions across every
+checkout, live ones first, then the rest newest first, each with its harness, checkout, turn count
+and age, those from a removed worktree dimmed. Search and the harness and checkout menus narrow it.
+The session under the cursor is read when the cursor lands on it, and its turns, replies and tool
+calls fill the preview; a harness that keeps no transcript, or one gone missing, is said in its
+place. Enter on a live session goes to its pane. On an ended one it resumes the session in a new
+pane on its checkout, by the command the footer names, and the pane is shown only once `Created`
+has named it and the tree holds it, so a refused resume leaves the dialog up. A session from a
+removed worktree, or from a harness with no `resume_id`, offers only its full transcript.
 
 A `[[harness]]` block sets `transcript = "claude"` (a known format where its own harness keeps it —
 the form older configs wrote, for a wrapper around that CLI) or `transcript = { format = "…", path =

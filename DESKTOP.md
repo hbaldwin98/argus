@@ -258,7 +258,7 @@ documents the tokens.
   pane rows (`◆` agent / `›` shell, title, loudest status word; a working pane animates subtly).
   Features are not in the rail; the Feature stage opens on their index. Clicking a pane row →
   `select`; a checkout row's `+` menu offers Shell → `spawnShell` (Agent · each harness comes with
-  HUN-188). The clock button each repository row will carry for recent sessions is HUN-174. The
+  HUN-188). The clock button on each repository row opens its recent sessions (HUN-174). The
   selected row is highlighted. Keyboard navigation of the rail is not in scope.
 - Empty states: "Connecting to argusd…", "No projects — run `argus init` in a repository", "Pick a
   pane on the left".

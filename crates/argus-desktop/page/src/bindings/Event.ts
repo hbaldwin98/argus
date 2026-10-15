@@ -9,9 +9,10 @@ import type { HistoryPage } from "./HistoryPage";
 import type { Palette } from "./Palette";
 import type { Rail } from "./Rail";
 import type { ReviewPage } from "./ReviewPage";
+import type { SessionsPage } from "./SessionsPage";
 import type { Status } from "./Status";
 
 /**
  * One message down the page's channel.
  */
-export type Event = { "type": "status" } & Status | { "type": "rail" } & Rail | { "type": "frame" } & Frame | { "type": "features" } & Features | { "type": "checkouts" } & Checkouts | { "type": "review" } & ReviewPage | { "type": "history" } & HistoryPage | { "type": "clipboard", text: string, } | { "type": "notice", text: string, } | { "type": "chime" } | { "type": "keymap", groups: Array<Group>, commands: Array<Command>, } | { "type": "palette" } & Palette | { "type": "run", action: Action, };
+export type Event = { "type": "status" } & Status | { "type": "rail" } & Rail | { "type": "frame" } & Frame | { "type": "features" } & Features | { "type": "checkouts" } & Checkouts | { "type": "review" } & ReviewPage | { "type": "history" } & HistoryPage | { "type": "sessions" } & SessionsPage | { "type": "clipboard", text: string, } | { "type": "notice", text: string, } | { "type": "chime" } | { "type": "keymap", groups: Array<Group>, commands: Array<Command>, } | { "type": "palette" } & Palette | { "type": "run", action: Action, };

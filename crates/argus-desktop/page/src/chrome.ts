@@ -218,6 +218,16 @@ function repoRow(repo: RailRepository): HTMLElement {
       statusDot,
       el('span', { class: 'cnt' }, repo.used ?? (repo.panes || '')),
     ),
+    el(
+      'button',
+      {
+        class: 'icon',
+        title: 'Recent agent sessions',
+        'aria-label': `Recent agent sessions in ${repo.name}`,
+        onclick: () => call('open_sessions', { repository: repo.id }),
+      },
+      icon('clock'),
+    ),
   );
 }
 

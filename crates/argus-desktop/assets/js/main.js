@@ -8,6 +8,7 @@ import { clearComposer, focusComposer } from './compose.js';
 import { $ } from './dom.js';
 import { drawHistory, historyOpen } from './history.js';
 import { drawReview, reviewOpen } from './review.js';
+import { drawSessions, sessionsOpen } from './sessions.js';
 import { drawFeatures, listen as listenToFeatures } from './features.js';
 import { listen as listenToInput } from './input.js';
 import { listen as listenToKeys, runOver } from './keymap.js';
@@ -22,7 +23,7 @@ let paneHadKeys = false;
  *  gives them back once no dialog is left open. */
 function dialogKeys() {
     const input = $('input');
-    if (reviewOpen() || historyOpen()) {
+    if (reviewOpen() || historyOpen() || sessionsOpen()) {
         if (document.activeElement === input) {
             paneHadKeys = true;
             input.blur();
@@ -79,6 +80,11 @@ function receive(event) {
         case 'history':
             state.history = event;
             drawHistory();
+            dialogKeys();
+            break;
+        case 'sessions':
+            state.sessions = event;
+            drawSessions();
             dialogKeys();
             break;
         case 'review':

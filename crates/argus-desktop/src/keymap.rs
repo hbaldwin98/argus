@@ -56,6 +56,8 @@ pub enum Place {
     Review,
     /// The history dialog while it is open, which holds the keys.
     History,
+    /// The recent-sessions dialog while it is open, which holds the keys.
+    Sessions,
     /// The palette's search field while it is open, which holds the keys.
     Palette,
 }
@@ -120,6 +122,16 @@ pub enum Action {
     AsReview,
     /// The file at the cursor in the person's editor.
     OpenEditor,
+    /// Open the chosen repository's recent agent sessions.
+    OpenSessions,
+    /// Resume the session under the cursor in a new pane.
+    Resume,
+    /// The transcript fills the dialog, or gives the list back.
+    Transcript,
+    /// Filter by the next harness the listing holds.
+    FilterHarness,
+    /// Filter by the next checkout the listing holds.
+    FilterCheckout,
     /// Open the command palette.
     Palette,
     /// Open the shortcuts sheet, or close it.
@@ -210,6 +222,7 @@ impl Place {
             Place::Start => "A checkout's + menu",
             Place::Review => "Review",
             Place::History => "History",
+            Place::Sessions => "Recent sessions",
             Place::Palette => "Palette",
         }
     }
@@ -231,7 +244,7 @@ const fn bind(place: Place, chords: &'static [Chord], action: Action, label: &'s
 }
 
 use Action::*;
-use Place::{Anywhere, Card, History, Pane, Rail, Review, Start};
+use Place::{Anywhere, Card, History, Pane, Rail, Review, Sessions, Start};
 use Place::Checkouts as CheckoutsTable;
 
 pub static BINDINGS: &[Binding] = &[
@@ -313,6 +326,16 @@ pub static BINDINGS: &[Binding] = &[
     bind(History, &[Chord::key("Enter")], Choose, "open a commit, or a file as a review"),
     bind(History, &[Chord::key("o"), Chord::key("O")], AsReview, "open as a review"),
     bind(History, &[Chord::key("/")], Filter, "filter commits"),
+    bind(Sessions, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next session"),
+    bind(Sessions, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous session"),
+    bind(Sessions, &[Chord::key("Home")], First, "first session"),
+    bind(Sessions, &[Chord::key("End")], Last, "last session"),
+    bind(Sessions, &[Chord::key("Enter")], Choose, "go to its pane, resume it, or read it whole"),
+    bind(Sessions, &[Chord::key("r"), Chord::key("R")], Resume, "resume in a new pane"),
+    bind(Sessions, &[Chord::key("o"), Chord::key("O")], Transcript, "open the full transcript, and back"),
+    bind(Sessions, &[Chord::key("/")], Filter, "search sessions"),
+    bind(Sessions, &[Chord::key("h"), Chord::key("H")], FilterHarness, "filter by the next harness"),
+    bind(Sessions, &[Chord::key("c"), Chord::key("C")], FilterCheckout, "filter by the next checkout"),
     bind(Place::Palette, &[Chord::key("ArrowDown")], Next, "next result"),
     bind(Place::Palette, &[Chord::key("ArrowUp")], Previous, "previous result"),
     bind(Place::Palette, &[Chord::key("Enter")], Choose, "run it, or go to it"),
@@ -333,6 +356,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (StartAgent, Some(CheckoutsTable), "Start the default agent on this checkout"),
     (OpenReview, Some(CheckoutsTable), "Review this checkout's changes"),
     (OpenHistory, Some(CheckoutsTable), "Read this checkout's history"),
+    (OpenSessions, None, "Recent agent sessions of this repository"),
     (Fetch, Some(CheckoutsTable), "Fetch this checkout"),
     (Pull, Some(CheckoutsTable), "Pull this checkout"),
     (Branches, Some(CheckoutsTable), "Show or hide the branches no checkout is on"),
@@ -340,7 +364,8 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (Folded, Some(Place::Feature), "Show held and archived features, or fold them"),
 ];
 
-const ORDER: [Place; 10] = [Anywhere, Pane, Rail, Place::Feature, Card, CheckoutsTable, Start, Review, History, Place::Palette];
+const ORDER: [Place; 11] =
+    [Anywhere, Pane, Rail, Place::Feature, Card, CheckoutsTable, Start, Review, History, Sessions, Place::Palette];
 
 /// The table as the sheet lists it: a group per place, in the sheet's order.
 pub fn groups() -> Vec<Group> {
@@ -413,7 +438,19 @@ mod tests {
         let titles: Vec<_> = groups.iter().map(|g| g.title).collect();
         assert_eq!(
             titles,
-            ["Anywhere", "In a pane", "Rail", "Feature", "Board card", "Checkouts", "A checkout's + menu", "Review", "History", "Palette"]
+            [
+                "Anywhere",
+                "In a pane",
+                "Rail",
+                "Feature",
+                "Board card",
+                "Checkouts",
+                "A checkout's + menu",
+                "Review",
+                "History",
+                "Recent sessions",
+                "Palette"
+            ]
         );
     }
 
@@ -480,7 +517,7 @@ mod tests {
     /// field hears only its own: the rest are typed into it.
     #[test]
     fn no_key_is_bound_twice_where_it_is_heard() {
-        let heard_together: [&[Place]; 8] = [
+        let heard_together: [&[Place]; 9] = [
             &[Anywhere, Place::Feature, Card],
             &[Pane],
             &[Anywhere, Rail],
@@ -488,6 +525,7 @@ mod tests {
             &[Anywhere, Start],
             &[Anywhere, Review],
             &[Anywhere, History],
+            &[Anywhere, Sessions],
             &[Place::Palette],
         ];
         for places in heard_together {
@@ -519,6 +557,46 @@ mod tests {
         assert_eq!(rail("Enter"), Some(Choose));
         assert_eq!(rail("j"), Some(Next));
         assert_eq!(rail("ArrowUp"), Some(Previous));
+    }
+
+    /// The sessions dialog's keys reach the page in its own group, each
+    /// under the action the page sends back, so dispatch, the palette and
+    /// the sheet all read them from here.
+    #[test]
+    fn the_sessions_dialogs_keys_are_listed_in_its_group() {
+        let groups = groups();
+        let group = groups.iter().find(|g| g.place == Sessions).expect("a Recent sessions heading");
+        let action = |key: &str| {
+            group.bindings.iter().find(|b| b.chords.iter().any(|c| c.matches(&page(key)))).map(|b| b.action)
+        };
+        let expected = [
+            ("j", Next),
+            ("ArrowDown", Next),
+            ("k", Previous),
+            ("ArrowUp", Previous),
+            ("Home", First),
+            ("End", Last),
+            ("Enter", Choose),
+            ("r", Resume),
+            ("R", Resume),
+            ("o", Transcript),
+            ("O", Transcript),
+            ("/", Filter),
+            ("h", FilterHarness),
+            ("H", FilterHarness),
+            ("c", FilterCheckout),
+            ("C", FilterCheckout),
+        ];
+        for (key, wanted) in expected {
+            assert_eq!(action(key), Some(wanted), "{key}");
+        }
+        assert_eq!(group.bindings.len(), 10);
+        let escape = groups.iter().find(|g| g.place == Anywhere).unwrap();
+        assert!(
+            escape.bindings.iter().any(|b| b.action == CloseLayer && b.chords.iter().any(|c| c.matches(&page("Escape")))),
+            "Escape closes it, as every dialog"
+        );
+        assert!(commands().iter().any(|c| c.action == OpenSessions), "the palette opens it");
     }
 
     #[test]

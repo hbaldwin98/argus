@@ -81,6 +81,16 @@ pub enum Call {
     /// A key of the history dialog, or with `row` a click on a row.
     HistoryAction { action: Action, row: Option<usize> },
     FilterHistory { filter: String },
+    /// Opens a repository's recent agent sessions.
+    OpenSessions { repository: u64 },
+    /// A key or button of the sessions dialog, or with `row` a click on a
+    /// row.
+    SessionsAction { action: Action, row: Option<usize> },
+    /// What the sessions dialog's search field says now.
+    SearchSessions { search: String },
+    /// The harness and checkout the sessions dialog's menus are set to;
+    /// `None` is all of them.
+    FilterSessions { harness: Option<String>, checkout: Option<String> },
     Peek { slug: String },
     SetLayout { layout: Layout },
     ToggleFolded,
@@ -152,6 +162,9 @@ pub enum Event {
     /// The history dialog, whole, whenever it changes; `open` false once
     /// it closes.
     History(Box<HistoryPage>),
+    /// The recent-sessions dialog, whole, whenever it changes; `open`
+    /// false once it closes.
+    Sessions(Box<SessionsPage>),
     /// Text a pane's child put on the clipboard (OSC 52).
     Clipboard { text: String },
     /// Something the daemon said that passes: a refused request's reason.
@@ -733,6 +746,94 @@ pub struct HistoryRowView {
     pub added: usize,
     pub removed: usize,
     pub on: bool,
+}
+
+/// The recent-sessions dialog: one repository's agent sessions, live ones
+/// first, and what the one under the cursor said.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SessionsPage {
+    pub open: bool,
+    pub repository: String,
+    /// What the search field says; the rows are the sessions it matches.
+    pub search: String,
+    /// The harnesses and the checkouts the listing holds, for the menus,
+    /// and what each menu is set to; `None` is all.
+    pub harnesses: Vec<String>,
+    pub harness: Option<String>,
+    pub checkouts: Vec<String>,
+    pub checkout: Option<String>,
+    pub loading: bool,
+    /// Why there are no rows: none yet, none matching, or a daemon that
+    /// cannot list them.
+    pub empty: Option<String>,
+    pub rows: Vec<SessionRowView>,
+    pub preview: Option<SessionPreview>,
+    /// The transcript fills the dialog, the list put away.
+    pub full: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRowView {
+    /// What a click on it sends back.
+    pub row: usize,
+    pub title: String,
+    pub harness: String,
+    /// Its checkout, or the removed worktree it ran in.
+    pub checkout: String,
+    /// Running in a pane now.
+    pub live: bool,
+    pub turns: Option<u32>,
+    /// How long since its transcript was written: `2h`, or `—`.
+    pub ago: String,
+    /// It ran in a worktree since removed: drawn dimmed.
+    pub removed: bool,
+    pub on: bool,
+}
+
+/// The session under the cursor: what it said, and what can be done with it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct SessionPreview {
+    pub title: String,
+    pub harness: String,
+    pub checkout: String,
+    pub session_id: String,
+    /// When its transcript starts, as the harness wrote it.
+    pub started: Option<String>,
+    /// What it said has been asked for and not yet read.
+    pub loading: bool,
+    /// Said in place of the transcript: none kept, or one gone missing.
+    pub notice: Option<String>,
+    /// Oldest first.
+    pub entries: Vec<TranscriptLine>,
+    /// How many older entries the daemon left out.
+    pub earlier: u32,
+    /// `go` to its pane, `resume` in a new one, or only its `transcript`.
+    #[cfg_attr(test, ts(type = "\"go\" | \"resume\" | \"transcript\""))]
+    pub offer: &'static str,
+    /// The exact command a resume runs, as the footer names it.
+    pub command: Option<String>,
+    /// Why it cannot be resumed, when it offers only its transcript.
+    pub why: Option<String>,
+}
+
+/// One thing said or done in a session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptLine {
+    #[cfg_attr(test, ts(type = "\"user\" | \"agent\" | \"tool\""))]
+    pub kind: &'static str,
+    /// A turn's or reply's text, or a tool call's one-line summary.
+    pub text: String,
+    /// The tool's name; empty for a turn or a reply.
+    pub tool: String,
+    pub failed: bool,
 }
 
 /// A row of the diff: a hunk header, a note, a line, or in split view a

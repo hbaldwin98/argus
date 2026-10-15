@@ -24,6 +24,7 @@ export const state = {
     checkouts: null,
     review: null,
     history: null,
+    sessions: null,
     reviewDraft: '',
     filter: '',
     archivedOpen: false,

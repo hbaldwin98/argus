@@ -1,8 +1,8 @@
 //! What the window has asked of a repository's agent sessions — the list,
-//! and what one of them said — and what it holds of the answers. Only the
-//! latest of each is wanted: an answer to a request since replaced is
-//! dropped. Asked only of a daemon that listed `SESSIONS`, since an older
-//! one hangs up on a message it does not know.
+//! what one of them said, and how each harness resumes one — and what it
+//! holds of the answers. Only the latest of each is wanted: an answer to a
+//! request since replaced is dropped. Asked only of a daemon that listed
+//! `SESSIONS`, since an older one hangs up on a message it does not know.
 
 use argus_protocol::sessions::Session;
 use argus_protocol::transcript::Conversation;
@@ -14,8 +14,13 @@ use crate::status::StatusBar;
 pub struct Sessions {
     listing: Option<u64>,
     listed: Option<(RepositoryId, Vec<Session>)>,
-    reading: Option<u64>,
+    /// The read asked for, and the session it is of.
+    reading: Option<(u64, String)>,
     read: Option<(String, Conversation)>,
+    resuming: Option<u64>,
+    /// Each harness that resumes a session by id, with the argv it would
+    /// run, `{session_id}` unfilled; `None` until the daemon has said.
+    resumes: Option<Vec<(String, Vec<String>)>>,
 }
 
 impl Sessions {
@@ -31,13 +36,21 @@ impl Sessions {
     /// daemon cannot take it.
     pub fn read(&mut self, status: &StatusBar, session: &Session, request_id: u64) -> Option<ClientMsg> {
         status.daemon_can(SESSIONS).then_some(())?;
-        self.reading = Some(request_id);
+        self.reading = Some((request_id, session.session_id.clone()));
         Some(ClientMsg::ReadSession {
             request_id,
             checkout: session.checkout,
             harness: session.harness.clone(),
             session_id: session.session_id.clone(),
         })
+    }
+
+    /// The request for how each harness resumes a session, or `None` when
+    /// the daemon cannot take it.
+    pub fn ask_resumes(&mut self, status: &StatusBar, request_id: u64) -> Option<ClientMsg> {
+        status.daemon_can(SESSIONS).then_some(())?;
+        self.resuming = Some(request_id);
+        Some(ClientMsg::ListResumes { request_id })
     }
 
     /// Takes an answer to a request still wanted; any other message is
@@ -51,8 +64,15 @@ impl Sessions {
                 None
             }
             ServerMsg::SessionTranscript { request_id, session_id, conversation } => {
-                if self.reading == Some(request_id) {
+                if self.reading.as_ref().is_some_and(|(asked, _)| *asked == request_id) {
+                    self.reading = None;
                     self.read = Some((session_id, *conversation));
+                }
+                None
+            }
+            ServerMsg::Resumes { request_id, resumes } => {
+                if self.resuming == Some(request_id) {
+                    self.resumes = Some(resumes);
                 }
                 None
             }
@@ -60,15 +80,24 @@ impl Sessions {
         }
     }
 
-    // Read by the page once session previews (HUN-174) draw them.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn listed(&self, repository: RepositoryId) -> Option<&[Session]> {
         self.listed.as_ref().filter(|(r, _)| *r == repository).map(|(_, s)| s.as_slice())
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
     pub fn transcript(&self, session_id: &str) -> Option<&Conversation> {
         self.read.as_ref().filter(|(id, _)| id == session_id).map(|(_, c)| c)
+    }
+
+    /// Whether what `session_id` said has been asked for and not answered.
+    pub fn reading(&self, session_id: &str) -> bool {
+        self.reading.as_ref().is_some_and(|(_, id)| id == session_id)
+    }
+
+    /// The argv that resumes `session_id` under `harness`, or `None` when
+    /// the daemon named no way to, or has not said yet.
+    pub fn resume_command(&self, harness: &str, session_id: &str) -> Option<Vec<String>> {
+        let (_, argv) = self.resumes.as_ref()?.iter().find(|(name, _)| name == harness)?;
+        Some(argv.iter().map(|arg| arg.replace("{session_id}", session_id)).collect())
     }
 }
 
@@ -158,8 +187,25 @@ mod tests {
             session_id: "s1".into(),
             conversation: Box::new(conversation.clone()),
         };
+        assert!(sessions.reading("s1"));
         sessions.receive(over_the_wire(&answer).await);
         assert_eq!(sessions.transcript("s1"), Some(&conversation));
+        assert!(!sessions.reading("s1"), "answered");
         assert!(sessions.receive(ServerMsg::Restarting).is_some(), "not its to take");
+    }
+
+    #[tokio::test]
+    async fn a_resume_command_fills_the_session_id_into_its_harness_argv() {
+        let hello = daemon(&[SESSIONS]);
+        let mut sessions = Sessions::default();
+        assert!(sessions.ask_resumes(&daemon(&[]), 1).is_none());
+        let asked = sessions.ask_resumes(&hello, 2);
+        assert!(matches!(asked, Some(ClientMsg::ListResumes { request_id: 2 })));
+        assert_eq!(sessions.resume_command("claude", "s1"), None, "not said yet");
+        let argv = vec!["claude".to_string(), "--resume".to_string(), "{session_id}".to_string()];
+        let answer = ServerMsg::Resumes { request_id: 2, resumes: vec![("claude".into(), argv)] };
+        sessions.receive(over_the_wire(&answer).await);
+        assert_eq!(sessions.resume_command("claude", "s1").unwrap(), ["claude", "--resume", "s1"]);
+        assert_eq!(sessions.resume_command("generic", "s1"), None);
     }
 }

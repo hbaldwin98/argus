@@ -8,6 +8,7 @@ import type { Group } from './bindings/Group';
 import type { Rail } from './bindings/Rail';
 import type { ReviewPage } from './bindings/ReviewPage';
 import type { HistoryPage } from './bindings/HistoryPage';
+import type { SessionsPage } from './bindings/SessionsPage';
 import type { Palette } from './bindings/Palette';
 import type { Status } from './bindings/Status';
 
@@ -32,6 +33,7 @@ export const state: {
   checkouts: Checkouts | null;
   review: ReviewPage | null;
   history: HistoryPage | null;
+  sessions: SessionsPage | null;
   /** The comment being written, kept across the dialog's redraws. */
   reviewDraft: string;
   /** What the index's filter says. */
@@ -67,6 +69,7 @@ export const state: {
   checkouts: null,
   review: null,
   history: null,
+  sessions: null,
   reviewDraft: '',
   filter: '',
   archivedOpen: false,

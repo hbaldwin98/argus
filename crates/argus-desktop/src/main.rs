@@ -34,6 +34,7 @@ mod screen;
 mod sent;
 mod session;
 mod sessions;
+mod sessions_dialog;
 mod settings;
 mod shown;
 mod status;
