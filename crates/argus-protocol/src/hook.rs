@@ -173,6 +173,9 @@ pub enum Endpoint {
     /// `GET`, held open: the [`crate::InboxItem`]s for the agent, as
     /// server-sent events.
     Inbox,
+    /// A [`crate::ViewChange`]: a view to show in the desktop, or one to
+    /// close.
+    View,
 }
 
 impl Endpoint {
@@ -199,6 +202,7 @@ impl Endpoint {
             Endpoint::TrackerMap => Cow::Borrowed("tracker-map"),
             Endpoint::Telemetry => Cow::Borrowed("telemetry"),
             Endpoint::Inbox => Cow::Borrowed("inbox"),
+            Endpoint::View => Cow::Borrowed("view"),
         }
     }
 }
@@ -238,6 +242,7 @@ pub fn parse_pane_path(path: &str) -> Option<(PaneId, Endpoint)> {
         "tracker-map" => Endpoint::TrackerMap,
         "telemetry" => Endpoint::Telemetry,
         "inbox" => Endpoint::Inbox,
+        "view" => Endpoint::View,
         _ => return None,
     };
     if parts.next().is_some() {
@@ -358,6 +363,7 @@ mod tests {
             Endpoint::Diagrams,
             Endpoint::Telemetry,
             Endpoint::Inbox,
+            Endpoint::View,
             Endpoint::TrackerMap,
         ];
         all.extend(Report::ALL.into_iter().map(Endpoint::Status));

@@ -147,6 +147,14 @@ pub enum Call {
     /// A hover over the strip's maximize button, for Windows 11's snap
     /// layouts.
     SnapLayouts,
+    /// Opens a view an agent showed in the side panel.
+    OpenView { pane: u64, id: String },
+    /// Puts the side panel away; the views stay.
+    HideViews,
+    /// Asks the agent that showed a view to read it again.
+    RefreshView { pane: u64, id: String },
+    /// Closes a view for every client.
+    CloseView { pane: u64, id: String },
 }
 
 /// One choice made in the Settings dialog.
@@ -357,6 +365,9 @@ pub enum Event {
     /// Something the daemon said that passes: a refused request's reason.
     /// The page shows it a while and lets it go.
     Notice { text: String },
+    /// The views agents showed, whole, whenever one comes, goes or is
+    /// opened.
+    Views(Box<ViewsPage>),
     /// An agent came to need the person somewhere they are not looking.
     Chime,
     /// The Settings dialog's choices, whenever one changes: the page draws
@@ -816,6 +827,42 @@ pub struct Link {
     pub tracker: String,
     pub key: String,
     pub url: String,
+}
+
+/// The views agents showed, and the one open in the side panel.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ViewsPage {
+    /// Newest first.
+    pub views: Vec<PageView>,
+    /// The pane and id of the view in the side panel, if it is out.
+    pub open: Option<ViewRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct ViewRef {
+    pub pane: u64,
+    pub id: String,
+}
+
+/// One view, with what the daemon says of it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase")]
+pub struct PageView {
+    pub pane: u64,
+    /// The title of the pane whose agent showed it.
+    pub from: String,
+    /// When the daemon received it, in Unix seconds.
+    pub at: i64,
+    /// A refresh was asked for and the agent has not shown it again yet.
+    pub refreshing: bool,
+    /// The ticket it is of, if the agent named one.
+    pub subject: Option<Link>,
+    pub view: argus_protocol::AgentView,
 }
 
 /// A labelled line: `D3 How much history…`, `2.2 argus-hook reads…`.

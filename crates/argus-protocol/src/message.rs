@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::agent_view::ShownView;
 use crate::cell::{Cell, CellSpan, Cursor, MouseTracking};
 use crate::damage::{CellRun, Scroll};
 use crate::decisions::{DecisionBoard, DecisionChange, DecisionWrite};
@@ -420,6 +421,15 @@ pub enum ClientMsg {
     /// [`ServerMsg::Focus`] now and another each time it changes. Only to a
     /// daemon that listed `FOCUS`.
     WatchFocus,
+    /// Start being sent the views agents show: every one shown now, and
+    /// each one shown or closed after. Only to a daemon that listed
+    /// `AGENT_VIEWS`; a client that never asks is never sent one.
+    WatchViews,
+    /// The person closed a view.
+    CloseView { pane: PaneId, id: String },
+    /// Ask the agent that showed a view to read it again and show it anew.
+    /// The view stays as it is until it does.
+    RefreshView { pane: PaneId, id: String },
     /// This client's greeting: the first message it sends, and the only one
     /// it sends before knowing the daemon can take more than the floor. A
     /// daemon from before the handshake hangs up on it, which is how the
@@ -659,6 +669,12 @@ pub enum ServerMsg {
     /// [`ClientMsg::WatchFocus`]: what the most recently active client is
     /// showing, or `None` while no client reports a view.
     Focus(Option<Box<Focus>>),
+    /// A view an agent showed, to a client that sent
+    /// [`ClientMsg::WatchViews`]; it replaces one with the same pane and id.
+    ViewShown(Box<ShownView>),
+    /// A view is gone: closed by its agent or a person, pushed out by a
+    /// newer one, or its pane ended.
+    ViewClosed { pane: PaneId, id: String },
     /// The daemon accepted a restart request and will exit after this frame
     /// reaches the client.
     Restarting,

@@ -13,6 +13,12 @@ compact_str = { workspace = true }
 directories = { workspace = true }
 thiserror = { workspace = true }
 nucleo-matcher = "0.3"
+# Writes the view types as TypeScript for the desktop page, which turns it
+# on in its test builds only.
+ts-rs = { version = "12.0.1", optional = true }
+
+[features]
+ts = ["dep:ts-rs"]
 
 [dev-dependencies]
 serde_json = { workspace = true }

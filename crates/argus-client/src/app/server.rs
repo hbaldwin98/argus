@@ -291,6 +291,8 @@ impl App {
             ServerMsg::Restarting => {}
             // Sent only to a client watching the focus, which this is not.
             ServerMsg::Focus(_) => {}
+            // Views are the desktop's; this client never sends WatchViews.
+            ServerMsg::ViewShown(_) | ServerMsg::ViewClosed { .. } => {}
             ServerMsg::Stopping => self.should_quit = true,
         }
     }

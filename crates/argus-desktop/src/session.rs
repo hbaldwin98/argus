@@ -498,7 +498,11 @@ impl Session {
             | Call::ToggleMaximize
             | Call::CloseWindow
             | Call::DragWindow
-            | Call::SnapLayouts => self.finish(),
+            | Call::SnapLayouts
+            | Call::OpenView { .. }
+            | Call::HideViews
+            | Call::RefreshView { .. }
+            | Call::CloseView { .. } => self.finish(),
         }
     }
 
@@ -2978,7 +2982,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 76] = [
+    const CALLS: [&str; 80] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -3055,6 +3059,10 @@ mod tests {
         r#"{"call":"close_window"}"#,
         r#"{"call":"drag_window"}"#,
         r#"{"call":"snap_layouts"}"#,
+        r#"{"call":"open_view","pane":1,"id":"ci"}"#,
+        r#"{"call":"hide_views"}"#,
+        r#"{"call":"refresh_view","pane":1,"id":"ci"}"#,
+        r#"{"call":"close_view","pane":1,"id":"ci"}"#,
     ];
 
     /// Each call reads as the page writes it and goes through the session,

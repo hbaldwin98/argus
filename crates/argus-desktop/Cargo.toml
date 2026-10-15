@@ -46,6 +46,7 @@ arboard = { version = "3", default-features = false, features = ["image-data", "
 [dev-dependencies]
 # Writes page.rs's types as TypeScript for the page, in test builds only.
 ts-rs = "12.0.1"
+argus-protocol = { workspace = true, features = ["ts"] }
 
 [build-dependencies]
 tauri-build = "2.7.2"

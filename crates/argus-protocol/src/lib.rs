@@ -8,6 +8,7 @@
 //! cannot.
 
 pub mod adr;
+pub mod agent_view;
 pub mod ago;
 pub mod artifacts;
 pub mod awaited;
@@ -50,6 +51,10 @@ pub mod transport;
 pub mod tree;
 
 pub use ago::ago;
+pub use agent_view::{
+    AgentView, Block, Chip, Column, Field, Item, ShownView, Stat, Tab, Tone, Value, ViewChange, MAX_BLOCK_DEPTH,
+    MAX_TABLE_ROWS, MAX_VIEWS_PER_PANE, MAX_VIEW_BYTES, MAX_VIEW_ID_BYTES, MAX_VIEW_TITLE_BYTES,
+};
 pub use artifacts::ArtifactScope;
 pub use board_follower::{BoardFollower, BoardScope, Received};
 pub use cell::{
