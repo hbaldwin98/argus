@@ -88,6 +88,29 @@ pub(super) fn wrap(text: &str, width: u16) -> Vec<String> {
     rows
 }
 
+/// Text on one line: a value that holds a newline would otherwise break the
+/// row it sits in.
+pub(super) fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Prose onto rows `width` cells wide: [`wrap`] for each paragraph, with
+/// the runs of whitespace inside it collapsed and the paragraph breaks
+/// kept, which is what text an agent wrote needs and a typed field does not.
+pub(super) fn wrap_words(text: &str, width: usize) -> Vec<String> {
+    let width = width.clamp(1, u16::MAX as usize) as u16;
+    let mut rows: Vec<String> = Vec::new();
+    for paragraph in text.lines() {
+        for row in wrap(&one_line(paragraph), width) {
+            rows.push(row.trim_end().to_string());
+        }
+    }
+    if rows.is_empty() {
+        rows.push(String::new());
+    }
+    rows
+}
+
 pub(super) fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
@@ -106,5 +129,25 @@ pub(super) fn plural(n: usize, noun: &str) -> String {
         format!("{n} {stem}ies")
     } else {
         format!("{n} {noun}s")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prose_wraps_on_words_and_keeps_its_paragraphs() {
+        assert_eq!(wrap_words("one  two three\n\nfour", 9), vec!["one two", "three", "", "four"]);
+    }
+
+    #[test]
+    fn a_word_longer_than_the_row_is_broken_where_it_must_be() {
+        assert_eq!(wrap_words("abcdefg", 3), vec!["abc", "def", "g"]);
+    }
+
+    #[test]
+    fn empty_prose_is_still_one_row() {
+        assert_eq!(wrap_words("", 5), vec![String::new()]);
     }
 }

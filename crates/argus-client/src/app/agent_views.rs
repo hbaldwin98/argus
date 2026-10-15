@@ -51,13 +51,18 @@ impl AgentViews {
     }
 
     /// A view came; one with the same pane and id is replaced by it. The
-    /// scroll stays when it is the open view that was shown again, which is
-    /// what a refresh is.
+    /// scroll stays only when the view being read is still the same (pane,
+    /// id) — a refresh. A newer view taking the default-open place is a
+    /// different page, and reading it from the middle would be wrong.
     pub fn shown(&mut self, view: ShownView) {
         let key = (view.pane, view.view.id.clone());
+        let before = self.opened().map(|v| (v.pane, v.view.id.clone()));
         self.views
             .retain(|v| (v.pane, v.view.id.as_str()) != (key.0, key.1.as_str()));
         self.views.insert(0, view);
+        if self.opened().map(|v| (v.pane, v.view.id.clone())) != before {
+            self.scroll = 0;
+        }
     }
 
     pub fn closed(&mut self, pane: PaneId, id: &str) {
@@ -138,5 +143,50 @@ impl App {
             .flat_map(|c| &c.panes)
             .find(|p| p.id == pane)
             .map(|p| p.title.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn view(pane: u64, id: &str) -> ShownView {
+        ShownView {
+            pane: PaneId(pane),
+            at: 0,
+            subject: None,
+            view: serde_json::from_value(serde_json::json!({ "id": id, "title": id, "blocks": [] })).unwrap(),
+        }
+    }
+
+    #[test]
+    fn a_refresh_of_the_open_view_keeps_its_scroll() {
+        let mut views = AgentViews::default();
+        views.shown(view(1, "run"));
+        views.scroll = 12;
+        views.shown(view(1, "run"));
+        assert_eq!(views.scroll, 12);
+    }
+
+    #[test]
+    fn a_newer_view_taking_the_default_place_starts_at_the_top() {
+        let mut views = AgentViews::default();
+        views.shown(view(1, "run"));
+        views.scroll = 12;
+        views.shown(view(1, "ticket"));
+        assert_eq!(views.opened().unwrap().view.id, "ticket");
+        assert_eq!(views.scroll, 0);
+    }
+
+    #[test]
+    fn a_newer_view_does_not_move_a_view_chosen_to_read() {
+        let mut views = AgentViews::default();
+        views.shown(view(1, "run"));
+        views.shown(view(1, "ticket"));
+        views.choose(1);
+        views.scroll = 12;
+        views.shown(view(2, "other"));
+        assert_eq!(views.opened().unwrap().view.id, "run");
+        assert_eq!(views.scroll, 12);
     }
 }

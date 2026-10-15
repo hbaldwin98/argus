@@ -1,38 +1,11 @@
-//! What an agent view's values and tones read as in a terminal: a tone as
-//! one of the theme's roles, and each kind of value as styled text.
-//!
-//! The agent chooses a meaning and never a colour, so the one table from
-//! [`Tone`] to a [`Theme`] role lives here and every block draws through it.
+//! What each kind of agent view value reads as in a terminal: styled text
+//! on one line, or wrapped lines for a long text.
 
-use argus_protocol::{Chip, Tone, Value};
+use argus_protocol::Value;
 
+use super::agent_tone::{chip_span, tone_color};
+use super::text::{one_line, wrap_words};
 use super::*;
-
-/// The theme role a tone stands for. `Info` is the quiet one: it says
-/// "worth reading" without asking for anything.
-pub(super) fn tone_color(tone: Tone, th: Theme) -> Color {
-    match tone {
-        Tone::Neutral => th.text,
-        Tone::Good => th.ok,
-        Tone::Warn => th.warn,
-        Tone::Bad => th.err,
-        Tone::Active => th.accent,
-        Tone::Info => th.muted,
-    }
-}
-
-pub(super) fn chip_span(chip: &Chip, th: Theme) -> Span<'static> {
-    Span::styled(
-        format!("[{}]", one_line(&chip.label)),
-        Style::default().fg(tone_color(chip.tone, th)),
-    )
-}
-
-/// Text on one line: a value that holds a newline would otherwise break the
-/// row it sits in.
-pub(super) fn one_line(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
 
 /// A number as a person writes it: whole when it is whole.
 pub(super) fn number_text(number: f64) -> String {
@@ -198,52 +171,4 @@ pub(super) fn value_lines(value: &Value, width: usize, th: Theme) -> Vec<Vec<Spa
             .collect();
     }
     vec![ellipsize_spans(value_spans(value, th), width)]
-}
-
-/// Words onto lines `width` cells wide, a word longer than a line broken
-/// where it must be. Paragraph breaks in `text` are kept.
-pub(super) fn wrap_words(text: &str, width: usize) -> Vec<String> {
-    let width = width.max(1);
-    let mut lines = Vec::new();
-    for paragraph in text.lines() {
-        let mut line = String::new();
-        let mut used = 0;
-        for word in paragraph.split_whitespace() {
-            let mut word: Vec<char> = word.chars().collect();
-            let len = |w: &[char]| w.iter().map(|c| Span::raw(c.to_string()).width()).sum::<usize>();
-            while len(&word) > width {
-                if used > 0 {
-                    lines.push(std::mem::take(&mut line));
-                    used = 0;
-                }
-                let mut take = 0;
-                let mut cells = 0;
-                for c in &word {
-                    let w = Span::raw(c.to_string()).width();
-                    if cells + w > width && take > 0 {
-                        break;
-                    }
-                    cells += w;
-                    take += 1;
-                }
-                lines.push(word.drain(..take).collect());
-            }
-            let cells = len(&word);
-            if used > 0 && used + 1 + cells > width {
-                lines.push(std::mem::take(&mut line));
-                used = 0;
-            }
-            if used > 0 {
-                line.push(' ');
-                used += 1;
-            }
-            line.extend(word);
-            used += cells;
-        }
-        lines.push(line);
-    }
-    if lines.is_empty() {
-        lines.push(String::new());
-    }
-    lines
 }
