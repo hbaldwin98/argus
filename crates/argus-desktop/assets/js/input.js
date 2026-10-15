@@ -1,12 +1,25 @@
 // The pane's keys, text and pastes, taken by a hidden text area so input
-// methods and the clipboard work as they do anywhere else, and the
-// window's focus, which says whether this window's view is the person's.
+// methods and the clipboard work as they do anywhere else; the mouse over
+// each screen; and the window's focus, which says whether this window's
+// view is the person's.
 import { $ } from './dom.js';
 import { actionFor } from './keymap.js';
-import { screen } from './screen.js';
+import { screen, screens } from './screen.js';
+import { state } from './state.js';
 import { call } from './tauri.js';
 const MODIFIERS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock']);
 const MAC = /Macintosh|Mac OS X/.test(navigator.userAgent);
+function drawCursors() {
+    for (const s of screens)
+        s.drawCursor();
+}
+/** Whether `s` is the side with the keys: the first, unless the console
+ *  says its second has them. */
+function keyed(s) {
+    const page = state.console;
+    const second = page?.beside != null && page.typing === page.beside;
+    return s === screen ? !second : second;
+}
 export function listen() {
     const input = $('input');
     if (!(input instanceof HTMLTextAreaElement))
@@ -21,7 +34,8 @@ export function listen() {
             return;
         if (MODIFIERS.has(e.key))
             return;
-        screen.select(null);
+        for (const s of screens)
+            s.select(null);
         // Every other key goes to Rust, which dispatches it from the keymap:
         // the leader and the paste chord are the window's, the rest the
         // pane's. No webview accelerator (F5, Ctrl+F, Ctrl+R) fires behind the
@@ -53,11 +67,14 @@ export function listen() {
         if (text)
             call('paste', { text });
     });
-    input.addEventListener('focus', () => screen.drawCursor());
-    input.addEventListener('blur', () => screen.drawCursor());
+    input.addEventListener('focus', drawCursors);
+    input.addEventListener('blur', drawCursors);
     // A drag selects, and letting go copies, as in the terminal client. A
     // child that asked for the mouse gets its presses, drags and moves
     // instead, as Rust encodes them for its mode; Shift-drag still selects.
+    // Rust sends these to the pane with the keys, which a press on the
+    // other side of a split hands over first.
+    let on = screen;
     let anchor = null;
     let moved = false;
     let held = null;
@@ -67,47 +84,72 @@ export function listen() {
         call('mouse', { gesture, button, at });
     };
     const moving = (at) => !last || last[0] !== at[0] || last[1] !== at[1];
-    $('terminal').addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        input.focus();
-        const at = screen.cellAt(e.clientX, e.clientY);
-        if (screen.takesMouse() && !e.shiftKey) {
-            held = e.button;
-            report('down', e.button, at);
-            return;
-        }
-        if (e.button !== 0)
-            return;
-        anchor = at;
-        moved = false;
-        screen.select(null);
-    });
-    $('terminal').addEventListener('contextmenu', (e) => e.preventDefault());
-    $('terminal').addEventListener('mousemove', (e) => {
-        if (anchor || held !== null || !screen.takesMouse())
-            return;
-        const at = screen.cellAt(e.clientX, e.clientY);
-        if (moving(at))
-            report('move', 0, at);
-    });
+    for (const s of screens) {
+        s.terminal.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            input.focus();
+            const pane = s.pane();
+            if (!keyed(s) && pane !== null)
+                call('console', { gesture: { on: 'select', pane } });
+            for (const other of screens)
+                if (other !== s)
+                    other.select(null);
+            on = s;
+            const at = s.cellAt(e.clientX, e.clientY);
+            if (s.takesMouse() && !e.shiftKey) {
+                held = e.button;
+                report('down', e.button, at);
+                return;
+            }
+            if (e.button !== 0)
+                return;
+            anchor = at;
+            moved = false;
+            s.select(null);
+        });
+        s.terminal.addEventListener('contextmenu', (e) => e.preventDefault());
+        s.terminal.addEventListener('mousemove', (e) => {
+            if (anchor || held !== null || !s.takesMouse() || !keyed(s))
+                return;
+            const at = s.cellAt(e.clientX, e.clientY);
+            if (moving(at))
+                report('move', 0, at);
+        });
+        // Rust decides what a notch is to the pane, and scrolls the one under
+        // the pointer whichever side has the keys. A notch of a physical wheel
+        // is 100 pixels or 3 lines; a touchpad's small deltas add up to one.
+        let wheel = 0;
+        s.terminal.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const pane = s.pane();
+            if (pane === null)
+                return;
+            wheel += e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY / 3 : e.deltaY / 100;
+            const notches = Math.trunc(wheel);
+            if (!notches)
+                return;
+            wheel -= notches;
+            call('wheel', { pane, notches, at: s.cellAt(e.clientX, e.clientY) });
+        }, { passive: false });
+    }
     window.addEventListener('mousemove', (e) => {
         if (held !== null) {
-            const at = screen.cellAt(e.clientX, e.clientY);
+            const at = on.cellAt(e.clientX, e.clientY);
             if (moving(at))
                 report('drag', held, at);
             return;
         }
         if (!anchor)
             return;
-        const head = screen.cellAt(e.clientX, e.clientY);
+        const head = on.cellAt(e.clientX, e.clientY);
         moved ||= head[0] !== anchor[0] || head[1] !== anchor[1];
         if (moved)
-            screen.select({ anchor, head });
+            on.select({ anchor, head });
     });
     window.addEventListener('mouseup', (e) => {
         if (held !== null) {
             if (e.button === held) {
-                report('up', held, screen.cellAt(e.clientX, e.clientY));
+                report('up', held, on.cellAt(e.clientX, e.clientY));
                 held = null;
             }
             return;
@@ -115,32 +157,15 @@ export function listen() {
         if (!anchor)
             return;
         if (moved)
-            call('copy', { from: anchor, to: screen.cellAt(e.clientX, e.clientY) });
+            call('copy', { from: anchor, to: on.cellAt(e.clientX, e.clientY) });
         anchor = null;
     });
-    // Rust decides what a notch is to the pane. A notch of a physical wheel
-    // is 100 pixels or 3 lines; a touchpad's small deltas add up to one.
-    let wheel = 0;
-    $('terminal').addEventListener('wheel', (e) => {
-        e.preventDefault();
-        wheel += e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY / 3 : e.deltaY / 100;
-        const notches = Math.trunc(wheel);
-        if (!notches)
-            return;
-        wheel -= notches;
-        call('wheel', { notches, at: screen.cellAt(e.clientX, e.clientY) });
-    }, { passive: false });
     window.addEventListener('focus', () => {
         call('focus', { focused: true });
-        screen.drawCursor();
+        drawCursors();
     });
     window.addEventListener('blur', () => {
         call('focus', { focused: false });
-        screen.drawCursor();
-    });
-    // A pane appearing after the empty stage needs its room reported.
-    new MutationObserver(() => screen.report()).observe($('terminal'), {
-        attributes: true,
-        attributeFilter: ['hidden'],
+        drawCursors();
     });
 }

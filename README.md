@@ -248,10 +248,12 @@ window shows the same ones, since they are the daemon's. `4` (from a pane, the l
 Console in the sidebar, gives it the stage; `` ` `` (from a pane, the leader and `` ` ``), or the `›_`
 beside the connection, shows it docked under the Workspace, Feature and Checkouts stages or hides it,
 and its sash sets its height; the leader and `z` fills the window with it, all but the sidebar's
-projects. A tab per console, `+` for another and a tab's `✕` to end one. One pane is on screen at a
-time, so a console typed in takes the screen from the Workspace's pane, and choosing that pane takes
-it back. Whether it is docked and its height are kept in `desktop.json`; the consoles last as long
-as the daemon.
+projects. A tab per console, `+` for another and a tab's `✕` to end one. A console typed in takes
+the screen from the Workspace's pane, and choosing that pane takes it back. The split button (from
+a pane, the leader and `\`) shows two consoles side by side; a click on a side's header or screen
+(from a pane, the leader and `o`) gives it the keys, a tab picked replaces the side with the keys,
+and a side's `✕` takes it out of the split, its console staying a tab. Whether it is docked and its
+height are kept in `desktop.json`; the split lasts the run, and the consoles as long as the daemon.
 
 `Ctrl-K` (from a pane, the leader and `k`) opens the palette: one search over the window's commands,
 the project's panes and checkouts and the chosen repository's features, each with its key or its

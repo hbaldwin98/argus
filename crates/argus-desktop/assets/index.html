@@ -64,9 +64,6 @@
       <div class="nstage" id="nstage" hidden></div>
       <div class="stage-body" id="body">
         <div class="terminal" id="terminal" hidden>
-          <div class="term-skeleton" id="term-skeleton" hidden></div>
-          <canvas id="text" aria-hidden="true"></canvas>
-          <canvas id="cursor" aria-hidden="true"></canvas>
           <textarea id="input" aria-label="Type into the pane" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
         </div>
         <div class="empty" id="empty"></div>
@@ -75,6 +72,13 @@
       <section class="console" id="console" aria-label="Console" hidden>
         <div class="chead" id="console-head"></div>
         <div class="cbody" id="console-body">
+          <div class="cside" id="console-first" hidden>
+            <div class="thead" id="console-first-head" hidden></div>
+          </div>
+          <div class="cside" id="console-second" hidden>
+            <div class="thead" id="console-second-head"></div>
+            <div class="terminal" id="terminal-beside"></div>
+          </div>
           <div class="empty" id="console-empty"></div>
         </div>
       </section>

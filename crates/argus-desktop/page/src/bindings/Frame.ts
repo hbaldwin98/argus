@@ -2,11 +2,17 @@
 import type { FrameCursor } from "./FrameCursor";
 import type { Parked } from "./Parked";
 import type { Segment } from "./Segment";
+import type { Side } from "./Side";
 
 /**
  * The rows of a pane's screen that changed since the last frame.
  */
-export type Frame = { pane: number, rows: number, cols: number, 
+export type Frame = { pane: number, 
+/**
+ * The side drawing it, so a frame is never drawn in the other
+ * side's canvas while the page has yet to hear the pane moved.
+ */
+side: Side, rows: number, cols: number, 
 /**
  * Every row is in `lines`; anything the page held is stale.
  */

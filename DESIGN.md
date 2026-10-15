@@ -102,10 +102,19 @@ tab's close ending it. It is docked under the Workspace, Feature and Checkouts s
 to resize it, fills the stage as the Console, fills all but the sidebar's projects fullscreen (the
 leader and `z`; the nav and the sidebar's foot are put away, the strip stays for the window's
 buttons), or is hidden, a `›_` in the sidebar's foot and `` ` `` (the leader and `` ` ``) showing it
-again. One pane is on screen at a time, so the one canvas and its text area move between the
-Workspace and the console: a console shown takes them, the Workspace's pane coming back when the
-console hides or that pane is chosen. Whether it is docked and its height are saved in
-`desktop.json`; fullscreen and the tab chosen are the run's. The Feature stage
+again. The window's canvas and its text area move between the Workspace and the console: a
+console shown takes them, the Workspace's pane coming back when the console hides or that pane is
+chosen. The console splits in two side by side (its split button, the leader and `\`, or the
+palette), the second side showing the first tab on neither side, or a console asked for when every
+one is shown. Each side is its own screen (`shown` keeps a subscription, a `Screen`, a room and a
+size request per side, and every frame names its side), one of them has the keys, and the view the
+window reports names that one, so the daemon's sizing and the chime follow it. A press on a side's
+header or screen, or the leader and `o`, gives that side the keys; a tab picked replaces the side
+with them; the wheel scrolls the side under it. A side's `✕`, the split button again (keeping the
+side with the keys), or a side's console ending puts the split away, the other side filling the
+console. A checkout's pane on the canvas leaves the split waiting for the console's return. Whether
+it is docked and its height are saved in `desktop.json`; fullscreen, the split and the tabs chosen
+are the run's, since the consoles end with the daemon. The Feature stage
 has them while it is open, and another pane brings them back for good. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `screen`, `input`, `keymap`,
@@ -367,8 +376,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `preferences` | the Settings dialog's choices as the window holds them: each change the page makes, held to what this machine can draw, and whether the page has heard them and the file has kept them |
 | `notifications` | the system notification an agent coming to need you raises: whether a tree's changes raise one, what it says, and handing it to the system |
 | `backdrop` | what shows through the window where its background is see-through: the backdrops this machine can draw, and putting the chosen one on the live window |
-| `shown` | the pane the window shows: its subscription and size on this connection, its view, whether it fills the window, and whether the leader waits on the next key |
-| `console` | where the console is — docked, the Console stage, fullscreen or hidden — how tall it is docked, the daemon's consoles and the tab chosen, and the page it draws |
+| `shown` | the panes the window shows — one, or one per side of the console's split — each side's subscription, size and view on this connection, which side has the keys, whether the pane fills the window, and whether the leader waits on the next key |
+| `console` | where the console is — docked, the Console stage, fullscreen or hidden — how tall it is docked, the daemon's consoles and the tab chosen for each side of a split, and the page it draws |
 | `agents` | which agents the window offers to start: the daemon's templates, the one last started first while the daemon still offers it |
 | `dialogs` | the review and history dialogs as the window holds them: which is open, the daemon's answers routed to the one that asked, the layout the next review opens on, and what the page last heard of each |
 | `sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once |

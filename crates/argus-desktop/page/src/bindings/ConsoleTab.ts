@@ -2,6 +2,6 @@
 
 export type ConsoleTab = { pane: number, title: string, status: "idle" | "working" | "waiting" | "needs-review" | "done" | "failed" | "exited", 
 /**
- * The tab chosen: the one shown when the console has the canvas.
+ * The tab chosen for one side: shown when the console has the canvas.
  */
 on: boolean, };

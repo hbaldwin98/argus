@@ -1,12 +1,16 @@
-// A pane's screen on a canvas: the rows Rust sends, drawn in the theme's
-// colours, and the room the terminal has reported back as rows and columns.
+// A pane's screen in its container: the rows Rust sends, drawn in the
+// theme's colours on canvases of its own, and the room the container has
+// reported back as rows and columns. There is one screen per side Rust
+// draws on: the window's canvas, which moves between the Workspace and the
+// console's first side, and the console's second side while it is split.
 // The rows are mirrored only so a theme or scale change can repaint them.
 
 import type { Frame } from './bindings/Frame';
 import type { FrameCursor } from './bindings/FrameCursor';
 import type { Parked } from './bindings/Parked';
 import type { Segment } from './bindings/Segment';
-import { $, ghosts } from './dom.js';
+import type { Side } from './bindings/Side';
+import { $, el, ghosts } from './dom.js';
 import { call } from './tauri.js';
 
 // The terminal's type, as the design system's --type-mono gives it.
@@ -37,18 +41,20 @@ function clamp(n: number, most: number): number {
   return Math.max(0, Math.min(most - 1, n));
 }
 
-function canvas(id: string): [HTMLCanvasElement, CanvasRenderingContext2D] {
-  const node = $(id);
-  if (!(node instanceof HTMLCanvasElement)) throw new Error(`#${id} is not a canvas`);
+function canvas(): [HTMLCanvasElement, CanvasRenderingContext2D] {
+  const node = el('canvas', { 'aria-hidden': 'true' });
   const context = node.getContext('2d');
-  if (!context) throw new Error(`#${id} draws nothing`);
+  if (!context) throw new Error('a canvas that draws nothing');
   return [node, context];
 }
 
-function makeScreen() {
-  const [text, tctx] = canvas('text');
-  const [cursorCanvas, cctx] = canvas('cursor');
-  const terminal = $('terminal');
+function makeScreen(terminal: HTMLElement, side: Side) {
+  const [text, tctx] = canvas();
+  const [cursorCanvas, cctx] = canvas();
+  // Bars stand in for a pane until its first screen arrives.
+  const waiting = el('div', { class: 'term-skeleton', hidden: true });
+  waiting.replaceChildren(ghosts([[0.55], [0.8], [0.7], [0.85], [0.4], [0.75], [0.6]]));
+  terminal.prepend(waiting, text, cursorCanvas);
 
   let pane: number | null = null;
   let rows = 0;
@@ -63,6 +69,9 @@ function makeScreen() {
   let selection: { anchor: Cell; head: Cell } | null = null;
   let parked: Parked | null = null;
   let mouse = false;
+  // Whether this side has the keys: the other side of a split draws its
+  // cursor hollow, as an unfocused window does.
+  let keyed = true;
 
   function measure(): void {
     const css = getComputedStyle(document.documentElement);
@@ -179,7 +188,7 @@ function makeScreen() {
     if (!cursor.visible || cursor.row >= rows || cursor.col >= cols) return;
     const x = cursor.col * cell.w;
     const y = cursor.row * cell.h;
-    const focused = document.activeElement === $('input') && document.hasFocus();
+    const focused = keyed && document.activeElement === $('input') && document.hasFocus();
     cctx.fillStyle = palette.fg;
     cctx.strokeStyle = palette.fg;
     if (cursor.shape === 'bar') {
@@ -202,9 +211,6 @@ function makeScreen() {
     drawCursor();
   }
 
-  // Bars stand in for a pane until its first screen arrives.
-  const waiting = $('term-skeleton');
-  waiting.replaceChildren(ghosts([[0.55], [0.8], [0.7], [0.85], [0.4], [0.75], [0.6]]));
   function expect(next: number | null): void {
     waiting.hidden = next === null || next === pane;
   }
@@ -231,7 +237,8 @@ function makeScreen() {
       for (let row = 0; row < rows; row++) mirror[row] ??= [];
       size();
     }
-    if (resized || moved) {
+    // The Workspace's header names the first side's size.
+    if ((resized || moved) && side === 'first') {
       const label = document.getElementById('size');
       if (label) label.textContent = sizeLabel();
     }
@@ -268,7 +275,7 @@ function makeScreen() {
     return `${back}${cols} × ${rows}`;
   }
 
-  // The room the terminal has, in cells. The daemon sizes a pane to the
+  // The room the side has, in cells. The daemon sizes a pane to the
   // client the person was last at, so the grid that comes back may differ.
   let sent: { rows: number; cols: number } | null = null;
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -291,7 +298,7 @@ function makeScreen() {
       };
       if (sent && sent.rows === next.rows && sent.cols === next.cols) return;
       sent = next;
-      call('resize', next);
+      call('resize', { side, ...next });
     }, 50);
   }
 
@@ -327,6 +334,8 @@ function makeScreen() {
     .catch(() => {})
     .then(rescale);
   new ResizeObserver(report).observe(terminal);
+  // A side appearing after it was hidden needs its room reported.
+  new MutationObserver(report).observe(terminal, { attributes: true, attributeFilter: ['hidden'] });
   watchScale();
   matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
     readPalette();
@@ -345,7 +354,38 @@ function makeScreen() {
     repaint();
   }
 
-  return { frame, drawCursor, report, sizeLabel, cellAt, select, takesMouse, expect, retheme };
+  /** Whether this side has the keys, which its cursor shows. */
+  function key(on: boolean): void {
+    if (keyed === on) return;
+    keyed = on;
+    drawCursor();
+  }
+
+  return {
+    terminal,
+    pane: (): number | null => pane,
+    frame,
+    drawCursor,
+    report,
+    sizeLabel,
+    cellAt,
+    select,
+    takesMouse,
+    expect,
+    retheme,
+    key,
+  };
 }
 
-export const screen = makeScreen();
+export type Screen = ReturnType<typeof makeScreen>;
+
+/** The window's canvas: the Workspace's pane, or the console's first side. */
+export const screen = makeScreen($('terminal'), 'first');
+/** The console's second side, while it is split. */
+export const beside = makeScreen($('terminal-beside'), 'second');
+export const screens: readonly Screen[] = [screen, beside];
+
+/** A frame goes to the side Rust says draws it. */
+export function drawFrame(f: Frame): void {
+  (f.side === 'second' ? beside : screen).frame(f);
+}

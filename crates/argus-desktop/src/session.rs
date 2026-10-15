@@ -8,7 +8,7 @@
 //! many things changed in between, the page hears each once.
 //!
 //! Each subject keeps its own state and what the page last heard of it —
-//! the status bar (`status`), the pane on screen (`shown`), the agents
+//! the status bar (`status`), the panes on screen (`shown`), the agents
 //! offered (`agents`), the review and history (`dialogs`), the two stages
 //! (`feature_stage`, `checkouts_stage`) and the note a new feature is
 //! written as (`capture_note`), a repository's past agent
@@ -40,7 +40,7 @@ use crate::add_project::AddProject;
 use crate::agents::Agents;
 use crate::capture_note::CaptureNote;
 use crate::checkouts_stage::{CheckoutsStage, Opened};
-use crate::console::Console;
+use crate::console::{Console, OnScreen};
 use crate::dialogs::Dialogs;
 use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
@@ -49,7 +49,7 @@ use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::page::{
     self, AddProjectGesture, Call, CaptureGesture, ConsoleGesture, ConsolePlace, Event, FeatureEdit, PageMouse,
-    ReviewClick, ReviewJumpGesture, SettingChange, Stage,
+    ReviewClick, ReviewJumpGesture, SettingChange, Side, Stage,
 };
 use crate::palette;
 use crate::preferences::Chosen;
@@ -81,6 +81,8 @@ enum Made {
     SelectProject,
     /// Show the new console in the console, which shows itself for it.
     ShowConsole,
+    /// Show the new console on the second side of the split asked for.
+    ShowBeside,
 }
 
 pub struct Session {
@@ -103,7 +105,7 @@ pub struct Session {
     console: Console,
     console_sent: Sent<page::ConsolePage>,
     /// The Workspace's pane while the console has the canvas, to give it
-    /// back to: only one pane is on screen at a time.
+    /// back to: the canvas is the Workspace's or the console's.
     workspace_pane: Option<PaneId>,
     awaited: Awaited<Made>,
     agents: Agents,
@@ -331,26 +333,35 @@ impl Session {
         }
         // A pane that is gone is gone from the daemon's subscriptions too.
         // A console is not in the tree, and is let go by `take_consoles`.
-        if self.shown.pane().is_some_and(|pane| self.project_of(pane).is_none() && !self.console.holds(pane)) {
-            self.shown.gone();
+        for pane in self.ended() {
+            self.shown.gone(pane, &mut self.out);
         }
         self.settle_made();
     }
 
     /// The daemon's consoles, after its greeting and after every tree. A
-    /// console on screen that ended hands the canvas to the tab chosen in
-    /// its place, or back to the Workspace's pane when none is left.
+    /// console on screen that ended hands its side to what the console
+    /// chose in its place — the other side of a split, or another tab — or
+    /// the canvas back to the Workspace's pane when none is left.
     fn take_consoles(&mut self, panes: Vec<argus_protocol::PaneInfo>) {
         self.console.receive(panes);
-        let ended = self.shown.pane().filter(|&pane| self.project_of(pane).is_none() && !self.console.holds(pane));
-        if ended.is_some() {
-            self.shown.gone();
+        let ended = self.ended();
+        if !ended.is_empty() {
+            for pane in ended {
+                self.shown.gone(pane, &mut self.out);
+            }
             match self.console.chosen() {
-                Some(next) => self.show_console(next),
+                Some(_) => self.console_on_screen(None),
                 None => self.give_back(),
             }
         }
         self.settle_made();
+    }
+
+    /// The panes on screen that neither the tree nor the consoles hold.
+    fn ended(&self) -> Vec<PaneId> {
+        let held = |pane: PaneId| self.project_of(pane).is_some() || self.console.holds(pane);
+        self.shown.panes().into_iter().filter(|&pane| !held(pane)).collect()
     }
 
     /// Acts on whatever the daemon made that the tree, or the consoles
@@ -377,6 +388,7 @@ impl Session {
                     self.choose_project(project);
                 }
                 (Created::Pane(pane), Made::ShowConsole) => self.show_console(pane),
+                (Created::Pane(pane), Made::ShowBeside) => self.show_beside(pane),
                 _ => {}
             }
         }
@@ -410,11 +422,11 @@ impl Session {
     pub fn call(&mut self, call: Call) -> Vec<ClientMsg> {
         match call {
             Call::Select { pane } => self.select(PaneId(pane)),
-            Call::Resize { rows, cols } => self.resize(rows, cols),
+            Call::Resize { side, rows, cols } => self.resize(side, rows, cols),
             Call::Key { key } => self.key(&key),
             Call::Text { text } => self.text(&text),
             Call::Paste { text } => self.paste(text),
-            Call::Wheel { notches, at } => self.wheel(notches, at),
+            Call::Wheel { pane, notches, at } => self.wheel(PaneId(pane), notches, at),
             Call::Mouse { gesture, button, at } => self.mouse(gesture, button, at),
             Call::SpawnShell { checkout } => self.spawn_shell(CheckoutId(checkout)),
             Call::SpawnAgent { checkout, template } => self.spawn_agent(CheckoutId(checkout), template),
@@ -521,8 +533,8 @@ impl Session {
         self.rail_changed = true;
     }
 
-    fn resize(&mut self, rows: u16, cols: u16) -> Vec<ClientMsg> {
-        self.shown.resize(rows, cols, &mut self.out);
+    fn resize(&mut self, side: Side, rows: u16, cols: u16) -> Vec<ClientMsg> {
+        self.shown.resize(side, rows, cols, &mut self.out);
         self.finish()
     }
 
@@ -572,7 +584,9 @@ impl Session {
             Action::Console => self.open_console_tab(),
             Action::ToggleConsole => self.toggle_console(),
             Action::ConsoleFullscreen => self.toggle_console_fullscreen(),
-            Action::NewConsole => self.spawn_console(),
+            Action::NewConsole => self.spawn_console(Made::ShowConsole),
+            Action::SplitConsole => self.toggle_split(),
+            Action::OtherSide => self.other_side(),
             Action::OpenReview => {
                 if let Some(checkout) = self.view().checkout {
                     self.review_checkout(checkout);
@@ -587,11 +601,14 @@ impl Session {
         }
     }
 
-    /// The wheel over the pane, `notches` up when negative, at the cell
-    /// `at` under the pointer, decided as the terminal client decides it
-    /// (`PaneView::wheel`).
-    fn wheel(&mut self, notches: i32, at: (u16, u16)) -> Vec<ClientMsg> {
-        self.on_view(|view| view.wheel(notches, at));
+    /// The wheel over `pane`, `notches` up when negative, at the cell `at`
+    /// under the pointer, decided as the terminal client decides it
+    /// (`PaneView::wheel`). It scrolls the side it is over without taking
+    /// the keys there, as a click would.
+    fn wheel(&mut self, pane: PaneId, notches: i32, at: (u16, u16)) -> Vec<ClientMsg> {
+        if let Some(effect) = self.shown.gesture_on(pane, |view| view.wheel(notches, at)) {
+            self.take(effect);
+        }
         self.finish()
     }
 
@@ -903,13 +920,15 @@ impl Session {
             ConsoleGesture::Fullscreen => self.toggle_console_fullscreen(),
             ConsoleGesture::Hide => self.hide_console(),
             ConsoleGesture::Select { pane } => self.show_console(PaneId(pane)),
-            ConsoleGesture::Spawn => self.spawn_console(),
+            ConsoleGesture::Spawn => self.spawn_console(Made::ShowConsole),
             ConsoleGesture::Close { pane } => {
                 if self.console.holds(PaneId(pane)) {
                     self.out.push(ClientMsg::Kill { pane: PaneId(pane) });
                 }
             }
             ConsoleGesture::Height { height } => self.console.set_height(height),
+            ConsoleGesture::Split => self.toggle_split(),
+            ConsoleGesture::CloseSide { pane } => self.close_side(PaneId(pane)),
         }
         self.finish()
     }
@@ -920,23 +939,122 @@ impl Session {
         self.shown.pane().is_some_and(|pane| self.console.holds(pane))
     }
 
-    /// Puts a console on the canvas, showing the console docked if it was
-    /// hidden: a console asked for is one the person means to type into.
-    fn show_console(&mut self, pane: PaneId) {
-        if !self.console.choose(pane) {
-            return;
-        }
+    /// A hidden console is shown docked for a console asked for: one the
+    /// person means to type into.
+    fn reveal_console(&mut self) {
         if self.console.place(self.stage) == ConsolePlace::Hidden {
             self.console.set_docked(true);
             if self.stage == Stage::Composer {
                 self.stage = Stage::Workspace;
             }
         }
-        let workspace = self.shown.pane().filter(|&shown| self.project_of(shown).is_some());
-        if self.shown.show(pane, &mut self.out) && workspace.is_some() {
+    }
+
+    /// Puts a console on screen with the keys. One already on a side of
+    /// the split takes the keys there; another takes the place of the side
+    /// with the keys, as picking a file in a split editor does.
+    fn show_console(&mut self, pane: PaneId) {
+        if !self.console.holds(pane) {
+            return;
+        }
+        self.reveal_console();
+        let showing = self.console_showing();
+        if !(showing && self.shown.focus(pane)) {
+            if showing && self.shown.keys() == Side::Second {
+                self.console.set_beside(pane);
+            } else if self.console.beside() != Some(pane) {
+                self.console.choose(pane);
+            }
+            self.console_on_screen(Some(pane));
+        }
+        self.rail_changed = true;
+    }
+
+    /// Whatever the console has chosen goes on screen: its tab on the
+    /// first side and the split's on the second. `keys` takes the keys, or
+    /// else the pane that had them if it is still there, or else the first.
+    fn console_on_screen(&mut self, keys: Option<PaneId>) {
+        let Some(first) = self.console.chosen() else {
+            return;
+        };
+        let keys = keys.or(self.shown.pane());
+        let workspace = self.shown.on(Side::First).filter(|&pane| self.project_of(pane).is_some());
+        let moved = self.shown.show_on(Side::First, first, &mut self.out);
+        match self.console.beside() {
+            Some(second) => {
+                self.shown.show_on(Side::Second, second, &mut self.out);
+            }
+            None => self.shown.close(Side::Second, &mut self.out),
+        }
+        if !keys.is_some_and(|pane| self.shown.focus(pane)) {
+            self.shown.focus(first);
+        }
+        if moved && workspace.is_some() {
             self.workspace_pane = workspace;
         }
         self.rail_changed = true;
+    }
+
+    /// Splits the console: its second side shows the first tab on neither
+    /// side, or a new console when every one is shown, and takes the keys.
+    /// Split already, the split goes away and the side with the keys fills
+    /// the console. The split is the run's, never `desktop.json`'s.
+    fn toggle_split(&mut self) {
+        if let (Some(first), Some(second)) = (self.console.chosen(), self.console.beside()) {
+            let keyed = self.shown.pane().filter(|_| self.console_showing());
+            self.close_side(if keyed == Some(second) { first } else { second });
+            return;
+        }
+        if self.console.chosen().is_none() {
+            // Nothing to split beside: the first console is asked for, and
+            // the split waits for the person to ask again.
+            self.console_takes();
+            return;
+        }
+        self.reveal_console();
+        match self.console.unshown() {
+            Some(other) => self.show_beside(other),
+            None => {
+                self.console_on_screen(None);
+                self.spawn_console(Made::ShowBeside);
+            }
+        }
+    }
+
+    fn show_beside(&mut self, pane: PaneId) {
+        if self.console.set_beside(pane) {
+            self.reveal_console();
+            self.console_on_screen(Some(pane));
+        }
+    }
+
+    /// A split side's close: that side leaves the split and the other
+    /// fills the console. Its console stays a tab, and the daemon keeps it.
+    fn close_side(&mut self, pane: PaneId) {
+        let (Some(first), Some(second)) = (self.console.chosen(), self.console.beside()) else {
+            return;
+        };
+        let keep = match pane {
+            _ if pane == first => second,
+            _ if pane == second => first,
+            _ => return,
+        };
+        self.console.unsplit(keep);
+        if self.console_showing() {
+            self.console_on_screen(Some(keep));
+        }
+        self.rail_changed = true;
+    }
+
+    /// The other side of the split takes the keys.
+    fn other_side(&mut self) {
+        if !self.console_showing() {
+            return;
+        }
+        if let Some(other) = self.shown.on(crate::shown::other(self.shown.keys())) {
+            self.shown.focus(other);
+            self.rail_changed = true;
+        }
     }
 
     /// The canvas goes back to the Workspace's pane, or to nothing when it
@@ -951,24 +1069,28 @@ impl Session {
         self.rail_changed = true;
     }
 
-    /// The console takes the canvas: its chosen tab, or a new console when
-    /// there is none yet.
+    /// The console takes the canvas: its chosen tabs, or a new console
+    /// when there is none yet.
     fn console_takes(&mut self) {
         match self.console.chosen() {
-            Some(pane) => self.show_console(pane),
-            None => self.spawn_console(),
+            Some(_) => {
+                self.reveal_console();
+                self.console_on_screen(None);
+            }
+            None => self.spawn_console(Made::ShowConsole),
         }
     }
 
-    /// Asks the daemon for a console, shown once the daemon says it exists.
-    fn spawn_console(&mut self) {
+    /// Asks the daemon for a console, shown as `then` says once the daemon
+    /// says it exists.
+    fn spawn_console(&mut self, then: Made) {
         if !self.status.daemon_can(CONSOLES) {
             self.passing.push(Event::Notice {
                 text: "argusd is too old to start a console: run `argus server restart`".into(),
             });
             return;
         }
-        let request_id = self.awaited.ask(Made::ShowConsole);
+        let request_id = self.awaited.ask(then);
         self.out.push(ClientMsg::SpawnConsole { request_id });
     }
 
@@ -1533,7 +1655,9 @@ impl Session {
             | Action::Console
             | Action::ToggleConsole
             | Action::ConsoleFullscreen
-            | Action::NewConsole => self.run(action),
+            | Action::NewConsole
+            | Action::SplitConsole
+            | Action::OtherSide => self.run(action),
             Action::Fill | Action::Close if self.on_screen().is_none() => {
                 self.passing.push(Event::Notice { text: "no pane is on screen".into() });
             }
@@ -1710,7 +1834,7 @@ impl Session {
         }
         // Before the rail, so the page knows which pane the canvas is for
         // when the rail says the Workspace has none.
-        let console = self.console.page(self.stage, self.shown.pane(), self.status.daemon_can(CONSOLES));
+        let console = self.console.page(self.stage, self.console_on_canvas(), self.status.daemon_can(CONSOLES));
         if let Some(page) = self.console_sent.take(Some(console)) {
             events.push(Event::Console(Box::new(page)));
         }
@@ -1778,8 +1902,17 @@ impl Session {
         events
     }
 
-    pub fn take_frame(&mut self) -> Option<Event> {
-        self.shown.take_frame().map(Event::Frame)
+    /// Each side's changed rows, as a frame naming its pane.
+    pub fn take_frames(&mut self) -> Vec<Event> {
+        self.shown.take_frames().into_iter().map(Event::Frame).collect()
+    }
+
+    fn console_on_canvas(&self) -> OnScreen {
+        OnScreen {
+            first: self.shown.on(Side::First),
+            second: self.shown.on(Side::Second),
+            keys: self.shown.pane(),
+        }
     }
 
     fn rail(&self, now: u64) -> page::Rail {
@@ -1871,7 +2004,7 @@ mod tests {
     #[test]
     fn selecting_subscribes_then_sizes_and_another_unsubscribes_the_first() {
         let mut s = session(without_focus());
-        s.resize(30, 100);
+        s.resize(Side::First, 30, 100);
         assert_eq!(names(&s.select(PaneId(1))), ["subscribe 1", "resize 1 30x100"]);
         assert_eq!(names(&s.select(PaneId(1))), Vec::<String>::new(), "already shown");
         assert_eq!(
@@ -1890,7 +2023,7 @@ mod tests {
     #[test]
     fn a_reconnect_subscribes_the_shown_pane_again_at_its_size() {
         let mut s = session(without_focus());
-        s.resize(30, 100);
+        s.resize(Side::First, 30, 100);
         s.select(PaneId(1));
         s.connecting(None);
         let sent = s.connected(Some(without_focus()), None, vec![with_tree(tree())]);
@@ -2075,7 +2208,7 @@ mod tests {
         let mut gone = tree();
         gone[0].repositories[0].checkouts[0].panes.remove(0);
         assert!(s.receive(with_tree(gone)).is_empty());
-        assert!(s.take_frame().is_none());
+        assert!(s.take_frames().is_empty());
         assert!(s.key(&PageKey { key: "a".into(), ..PageKey::default() }).is_empty());
     }
 
@@ -2388,16 +2521,16 @@ mod tests {
     #[test]
     fn the_wheel_parks_the_view_and_asks_further_up_by_line() {
         let mut s = showing(5, false);
-        assert_eq!(scrollback(&s.wheel(-1, (0, 0))), [(3, None)]);
+        assert_eq!(scrollback(&s.wheel(PaneId(2), -1, (0, 0))), [(3, None)]);
         s.receive(history(3, 50, Some(100)));
-        assert_eq!(scrollback(&s.wheel(-1, (0, 0))), [(6, Some(97))]);
-        assert_eq!(scrollback(&s.wheel(1, (0, 0))), [(3, Some(100))]);
+        assert_eq!(scrollback(&s.wheel(PaneId(2), -1, (0, 0))), [(6, Some(97))]);
+        assert_eq!(scrollback(&s.wheel(PaneId(2), 1, (0, 0))), [(3, Some(100))]);
     }
 
     #[test]
     fn a_resize_re_reads_the_parked_rows_at_the_new_width() {
         let mut s = showing(5, false);
-        s.wheel(-1, (0, 0));
+        s.wheel(PaneId(2), -1, (0, 0));
         s.receive(history(3, 50, Some(100)));
         let resized = s.receive(ServerMsg::PaneRows {
             pane: PaneId(2),
@@ -2414,11 +2547,11 @@ mod tests {
     #[test]
     fn typing_or_pasting_returns_the_view_to_the_live_screen() {
         let mut s = showing(5, false);
-        s.wheel(-1, (0, 0));
+        s.wheel(PaneId(2), -1, (0, 0));
         s.key(&PageKey { key: "a".into(), ..PageKey::default() });
         assert!(s.shown.view().unwrap().parked().is_none());
 
-        s.wheel(-1, (0, 0));
+        s.wheel(PaneId(2), -1, (0, 0));
         s.paste("x".into());
         assert!(s.shown.view().unwrap().parked().is_none());
     }
@@ -2507,15 +2640,15 @@ mod tests {
     #[test]
     fn the_wheel_over_a_full_screen_child_is_cursor_keys() {
         let mut s = showing(5, true);
-        assert_eq!(names(&s.wheel(-2, (0, 0))), ["input 2 [27, 91, 65, 27, 91, 65]"]);
-        assert_eq!(names(&s.wheel(1, (0, 0))), ["input 2 [27, 91, 66]"]);
+        assert_eq!(names(&s.wheel(PaneId(2), -2, (0, 0))), ["input 2 [27, 91, 65, 27, 91, 65]"]);
+        assert_eq!(names(&s.wheel(PaneId(2), 1, (0, 0))), ["input 2 [27, 91, 66]"]);
     }
 
     #[test]
     fn a_history_with_nothing_behind_the_screen_leaves_it_live_and_says_so() {
         let mut s = showing(5, false);
         s.events(0);
-        s.wheel(-1, (0, 0));
+        s.wheel(PaneId(2), -1, (0, 0));
         s.receive(history(0, 0, None));
         assert!(s.shown.view().unwrap().parked().is_none());
         assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text == "nothing further back")));
@@ -2810,14 +2943,14 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 73] = [
+    const CALLS: [&str; 75] = [
         r#"{"call":"select","pane":1}"#,
-        r#"{"call":"resize","rows":30,"cols":100}"#,
+        r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
         r#"{"call":"text","text":"é"}"#,
         r#"{"call":"paste","text":"ls"}"#,
         r#"{"call":"paste_clipboard"}"#,
-        r#"{"call":"wheel","notches":-1,"at":[0,0]}"#,
+        r#"{"call":"wheel","pane":1,"notches":-1,"at":[0,0]}"#,
         r#"{"call":"mouse","gesture":"down","button":0,"at":[1,3]}"#,
         r#"{"call":"copy","from":[0,0],"to":[0,4]}"#,
         r#"{"call":"spawn_shell","checkout":100}"#,
@@ -2878,6 +3011,8 @@ mod tests {
         r#"{"call":"console","gesture":{"on":"tab"}}"#,
         r#"{"call":"console","gesture":{"on":"height","height":300}}"#,
         r#"{"call":"console","gesture":{"on":"close","pane":1}}"#,
+        r#"{"call":"console","gesture":{"on":"split"}}"#,
+        r#"{"call":"console","gesture":{"on":"closeSide","pane":1}}"#,
         r#"{"call":"reconnect"}"#,
         r#"{"call":"minimize"}"#,
         r#"{"call":"toggle_maximize"}"#,
@@ -3254,7 +3389,7 @@ mod tests {
     /// consoles 8 and 9.
     fn with_consoles() -> Session {
         let mut s = session(Hello::this_build());
-        s.resize(30, 100);
+        s.resize(Side::First, 30, 100);
         s.select(PaneId(1));
         s.receive(consoles(&[8, 9]));
         s
@@ -3267,7 +3402,7 @@ mod tests {
                 Event::Console(page) => Some(*page),
                 _ => None,
             })
-            .unwrap_or_else(|| s.console.page(s.stage, s.shown.pane(), s.status.daemon_can(CONSOLES)))
+            .unwrap_or_else(|| s.console.page(s.stage, s.console_on_canvas(), s.status.daemon_can(CONSOLES)))
     }
 
     fn console(s: &mut Session, gesture: ConsoleGesture) -> Vec<String> {
@@ -3408,6 +3543,165 @@ mod tests {
         again.connected(Some(Hello::this_build()), None, vec![with_tree(tree())]);
         let page = console_page(&mut again);
         assert_eq!((page.place, page.height), (ConsolePlace::Docked, 333));
+    }
+
+    // ---- The split ---------------------------------------------------------
+
+    /// `with_consoles` with the console docked on 8 and split beside it on
+    /// 9, each side's room reported.
+    fn split() -> Session {
+        let mut s = with_consoles();
+        console(&mut s, ConsoleGesture::Toggle);
+        s.resize(Side::First, 30, 50);
+        s.resize(Side::Second, 30, 49);
+        console(&mut s, ConsoleGesture::Split);
+        s
+    }
+
+    fn sides(s: &mut Session) -> (Option<u64>, Option<u64>, Option<u64>) {
+        let page = console_page(s);
+        (page.showing, page.beside, page.typing)
+    }
+
+    fn typed(s: &mut Session) -> Vec<String> {
+        names(&s.key(&press("a")))
+    }
+
+    #[test]
+    fn a_split_shows_the_next_console_beside_the_chosen_one_with_the_keys() {
+        let mut s = with_consoles();
+        console(&mut s, ConsoleGesture::Toggle);
+        s.resize(Side::Second, 30, 49);
+        let sent = console(&mut s, ConsoleGesture::Split);
+        assert_eq!(sent[..2], ["subscribe 9", "resize 9 30x49"], "8 stays subscribed on the first side");
+        assert_eq!(sides(&mut s), (Some(8), Some(9), Some(9)));
+        let page = console_page(&mut s);
+        assert_eq!(page.tabs.iter().map(|t| (t.pane, t.on)).collect::<Vec<_>>(), [(8, true), (9, true)]);
+        assert_eq!(typed(&mut s), ["input 9 [97]"]);
+    }
+
+    #[test]
+    fn a_split_from_the_workspace_or_with_one_console_brings_the_console_and_asks_for_another() {
+        let mut s = session(Hello::this_build());
+        s.select(PaneId(1));
+        s.receive(consoles(&[8]));
+        let sent = s.call(Call::Command { action: Action::SplitConsole });
+        assert_eq!(names(&sent)[..2], ["unsubscribe 1", "subscribe 8"], "the console takes the canvas first");
+        let [.., ClientMsg::SpawnConsole { request_id }, _] = sent.as_slice() else {
+            panic!("{:?}", names(&sent));
+        };
+        let request_id = *request_id;
+        assert_eq!(sides(&mut s), (Some(8), None, Some(8)), "nothing predicted");
+        s.receive(ServerMsg::Created { request_id, created: Some(Created::Pane(PaneId(10))) });
+        assert_eq!(names(&s.receive(consoles(&[8, 10])))[..1], ["subscribe 10"]);
+        assert_eq!(sides(&mut s), (Some(8), Some(10), Some(10)), "the new one beside, with the keys");
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Docked);
+    }
+
+    #[test]
+    fn the_keys_follow_the_side_clicked_and_a_tab_replaces_the_side_with_them() {
+        let mut s = split();
+        assert!(console(&mut s, ConsoleGesture::Select { pane: 8 }).iter().all(|m| m.starts_with("view")), "nothing subscribed");
+        assert_eq!(sides(&mut s), (Some(8), Some(9), Some(8)));
+        assert_eq!(typed(&mut s), ["input 8 [97]"]);
+        leader_then(&mut s, "o");
+        assert_eq!(sides(&mut s), (Some(8), Some(9), Some(9)), "the leader and o: the other side");
+
+        s.receive(consoles(&[8, 9, 10]));
+        let sent = console(&mut s, ConsoleGesture::Select { pane: 10 });
+        assert_eq!(sent[..3], ["unsubscribe 9", "subscribe 10", "resize 10 30x49"]);
+        assert_eq!(sides(&mut s), (Some(8), Some(10), Some(10)));
+    }
+
+    #[test]
+    fn closing_a_side_leaves_the_other_filling_the_console_and_both_stay_tabs() {
+        let mut s = split();
+        let sent = console(&mut s, ConsoleGesture::CloseSide { pane: 8 });
+        assert_eq!(sent[..2], ["unsubscribe 8", "resize 9 30x50"], "9 moves over at the first side's size");
+        assert_eq!(sides(&mut s), (Some(9), None, Some(9)));
+        assert_eq!(console_page(&mut s).tabs.len(), 2, "the daemon keeps both");
+
+        console(&mut s, ConsoleGesture::Split);
+        assert_eq!(sides(&mut s), (Some(9), Some(8), Some(8)));
+        console(&mut s, ConsoleGesture::Select { pane: 9 });
+        assert_eq!(console(&mut s, ConsoleGesture::Split)[..1], ["unsubscribe 8"], "the split's button keeps the side with the keys");
+        assert_eq!(sides(&mut s), (Some(9), None, Some(9)));
+    }
+
+    #[test]
+    fn a_split_sides_console_ending_closes_the_split() {
+        let mut s = split();
+        assert!(names(&s.receive(consoles(&[8]))).iter().all(|m| !m.starts_with("unsubscribe")), "the daemon let 9 go");
+        assert_eq!(sides(&mut s), (Some(8), None, Some(8)));
+        assert_eq!(typed(&mut s), ["input 8 [97]"]);
+
+        let mut s = split();
+        let sent = s.receive(consoles(&[9]));
+        assert_eq!(names(&sent)[..1], ["resize 9 30x50"], "the second side's moves over");
+        assert_eq!(sides(&mut s), (Some(9), None, Some(9)));
+    }
+
+    #[test]
+    fn the_view_reported_names_the_side_with_the_keys() {
+        let mut s = split();
+        assert_eq!(s.view().pane, Some(PaneId(9)));
+        let sent = console(&mut s, ConsoleGesture::Select { pane: 8 });
+        assert_eq!(sent, ["view Some(8) true"]);
+        s.focus(false);
+        assert_eq!(s.watched(), None, "an away window watches nothing");
+        s.focus(true);
+        assert_eq!(s.watched(), Some(PaneId(8)), "the side with the keys is the one looked at");
+    }
+
+    #[test]
+    fn each_side_asks_its_own_size() {
+        let mut s = split();
+        assert_eq!(names(&s.resize(Side::Second, 40, 60)), ["resize 9 40x60"]);
+        assert_eq!(names(&s.resize(Side::First, 40, 61)), ["resize 8 40x61"]);
+        assert!(s.resize(Side::First, 40, 61).is_empty(), "unchanged");
+    }
+
+    #[test]
+    fn the_wheel_scrolls_the_side_under_it_without_taking_the_keys() {
+        let mut s = split();
+        for pane in [8, 9] {
+            s.receive(ServerMsg::PaneRows {
+                pane: PaneId(pane),
+                rows: 5,
+                cols: 10,
+                runs: Vec::new(),
+                cursor: argus_protocol::Cursor::default(),
+                mouse: argus_protocol::MouseTracking::default(),
+                alternate_screen: false,
+            });
+        }
+        let sent = s.wheel(PaneId(8), -1, (0, 0));
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::Scrollback { pane: PaneId(8), .. })), "{:?}", names(&sent));
+        assert_eq!(s.shown.pane(), Some(PaneId(9)));
+        let frames: Vec<_> = s
+            .take_frames()
+            .into_iter()
+            .filter_map(|e| match e {
+                Event::Frame(frame) => Some((frame.pane, frame.side)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(frames, [(8, Side::First), (9, Side::Second)], "a frame per side, naming it");
+    }
+
+    #[test]
+    fn the_split_waits_out_a_pane_on_the_canvas_and_a_hidden_console() {
+        let mut s = split();
+        s.select(PaneId(2));
+        assert_eq!(s.shown.panes(), [PaneId(2)], "a checkout's pane takes the canvas alone");
+        assert_eq!(sides(&mut s), (None, None, None));
+        let sent = console(&mut s, ConsoleGesture::Select { pane: 9 });
+        assert_eq!(sent[..3], ["unsubscribe 2", "subscribe 8", "resize 8 30x50"]);
+        assert_eq!(sides(&mut s), (Some(8), Some(9), Some(9)), "the split comes back, the tab picked with the keys");
+        console(&mut s, ConsoleGesture::Hide);
+        leader_then(&mut s, "`");
+        assert_eq!(sides(&mut s), (Some(8), Some(9), Some(8)));
+        assert!(s.take_settings().is_some_and(|saved| saved.console.docked), "docked is kept, the split is not in it");
     }
 
     #[test]

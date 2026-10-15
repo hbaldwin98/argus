@@ -7,7 +7,7 @@
 // keeps its hold while the choices come back.
 import { $, el, icon } from './dom.js';
 import { actionFor } from './keymap.js';
-import { screen } from './screen.js';
+import { screens } from './screen.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 /** Each flavour's own colours for its card: base, mantle, accent, text. */
@@ -55,7 +55,8 @@ export function applyLook() {
     else
         root.dataset.theme = chosen.theme;
     root.style.setProperty('--see', String(chosen.opacity / 100));
-    screen.retheme();
+    for (const s of screens)
+        s.retheme();
 }
 /** The dialog's controls, kept to be updated in place. */
 let controls = null;

@@ -178,6 +178,10 @@ pub enum Action {
     ConsoleFullscreen,
     /// A new console: a shell in the home directory.
     NewConsole,
+    /// Split the console in two, or put the split away.
+    SplitConsole,
+    /// The split's other side takes the keys.
+    OtherSide,
 }
 
 #[derive(Debug, Serialize)]
@@ -313,6 +317,8 @@ pub static BINDINGS: &[Binding] = &[
     bind(Pane, &[Chord::key("4").after_leader()], Action::Console, "Console"),
     bind(Pane, &[Chord::key("`").after_leader()], ToggleConsole, "show or hide the console"),
     bind(Pane, &[Chord::key("z").after_leader()], ConsoleFullscreen, "the console fills the window, and back"),
+    bind(Pane, &[Chord::key("\\").after_leader()], SplitConsole, "split the console in two, and back"),
+    bind(Pane, &[Chord::key("o").after_leader()], OtherSide, "the keys to the split's other side"),
     bind(Pane, &[Chord::key("n").after_leader()], Compose, "start a shell or an agent"),
     bind(Pane, &[Chord::key("Tab").after_leader()], OpenReview, "review the pane's checkout"),
     bind(Pane, PASTE, Paste, "paste"),
@@ -427,6 +433,8 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (ToggleConsole, Some(Anywhere), "Show or hide the console"),
     (ConsoleFullscreen, Some(Pane), "Console fullscreen beside the sidebar, and back"),
     (NewConsole, None, "Start a console shell in the home directory"),
+    (SplitConsole, Some(Pane), "Split the console in two, and back"),
+    (OtherSide, Some(Pane), "Give the keys to the split console's other side"),
     (Compose, Some(Anywhere), "Start a shell or an agent…"),
     (Shortcuts, Some(Anywhere), "Show the keyboard shortcuts"),
     (Action::Settings, Some(Anywhere), "Open the settings"),
@@ -824,7 +832,7 @@ mod tests {
     /// The console is the fourth stage's key, and from a pane its show,
     /// hide and fullscreen go through the leader like every window key.
     #[test]
-    fn the_console_opens_with_4_and_shows_hides_and_fills_after_the_leader() {
+    fn the_console_opens_with_4_and_shows_hides_fills_and_splits_after_the_leader() {
         let anywhere = |key: &str| {
             BINDINGS
                 .iter()
@@ -837,10 +845,12 @@ mod tests {
         assert_eq!(in_pane(&page("4"), true), Some(Action::Console));
         assert_eq!(in_pane(&page("`"), true), Some(ToggleConsole));
         assert_eq!(in_pane(&page("z"), true), Some(ConsoleFullscreen));
-        for key in ["4", "`", "z"] {
+        assert_eq!(in_pane(&page("\\"), true), Some(SplitConsole));
+        assert_eq!(in_pane(&page("o"), true), Some(OtherSide));
+        for key in ["4", "`", "z", "\\", "o"] {
             assert_eq!(in_pane(&page(key), false), None, "{key} is typed");
         }
-        for action in [Action::Console, ToggleConsole, ConsoleFullscreen, NewConsole] {
+        for action in [Action::Console, ToggleConsole, ConsoleFullscreen, NewConsole, SplitConsole, OtherSide] {
             assert!(is_command(action), "{action:?} is in the palette");
         }
     }
