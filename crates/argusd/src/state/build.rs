@@ -152,6 +152,7 @@ impl Daemon {
                 workspaces,
                 projects,
                 consoles: Vec::new(),
+                extension_consoles: Vec::new(),
                 ids,
                 open,
                 excluded,

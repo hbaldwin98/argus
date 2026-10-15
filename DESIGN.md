@@ -342,6 +342,7 @@ to the type or its locking.
 | `state/workspaces` | which scope is open, daemon-wide |
 | `state/hook_server` | the loopback receiver agents report to and extensions publish through |
 | `state/extensions` | what the running extensions publish — views, commands, open dialogs — which client a dialog is put to, and what the person does with them on its way back |
+| `state/extension_consoles` | the consoles extensions' views run: started when a view is published, kept while it asks for the same run, ended with the view or the extension, and their ending recorded on the view |
 | `state/extension_host` | running the configured extensions: each started with its own URL and token, started again when it exits, stopped with the daemon |
 | `state/session` | what survives a daemon restart |
 | `state/sessions` | a repository's agent sessions: its harnesses' transcripts for its checkouts joined to the agent panes running them, what one session said, and reopening one by its id |
