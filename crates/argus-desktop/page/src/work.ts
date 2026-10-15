@@ -183,7 +183,9 @@ export function drawWork(): void {
     const side = outline(view);
     body = el('div', { class: 'split' }, side, outlineSash(side), detail(view));
   }
+  const scrolled = scrollOffsets(stage);
   stage.replaceChildren(head(view), body);
+  restoreScroll(stage, scrolled);
   drawExpanded();
   const again = focused?.id ? document.getElementById(focused.id) : null;
   if (again instanceof HTMLInputElement || again instanceof HTMLTextAreaElement) {
@@ -196,7 +198,34 @@ export function drawWork(): void {
       first.setSelectionRange(first.value.length, first.value.length);
     }
   }
-  stage.querySelector('.wrow.on, .rrow.on, .steprow.on')?.scrollIntoView({ block: 'nearest' });
+  // Only a moved cursor is brought into view: every pushed tree redraws, and
+  // pulling the row back each time undoes the person's own scrolling.
+  const on = stage.querySelector('.wrow.on, .rrow.on, .steprow.on');
+  const cursor = on ? `${view.number}/${view.lens}/${on.textContent}` : null;
+  if (on && cursor !== lastCursor) on.scrollIntoView({ block: 'nearest' });
+  lastCursor = cursor;
+}
+
+let lastCursor: string | null = null;
+
+/** Where each scrolled box under `root` stands, keyed by its classes. */
+function scrollOffsets(root: HTMLElement): [string, number][] {
+  return [...root.querySelectorAll<HTMLElement>('*')]
+    .filter((node) => node.scrollTop > 0)
+    .map((node) => [node.className, node.scrollTop]);
+}
+
+/** Puts each redrawn box back where its predecessor of the same classes stood. */
+function restoreScroll(root: HTMLElement, offsets: [string, number][]): void {
+  if (!offsets.length) return;
+  const nodes = [...root.querySelectorAll<HTMLElement>('*')];
+  for (const [classes, top] of offsets) {
+    const at = nodes.findIndex((node) => node.className === classes);
+    const node = nodes[at];
+    if (!node) continue;
+    node.scrollTop = top;
+    nodes.splice(0, at + 1);
+  }
 }
 
 /** Whether the form being written is still about something on screen. */

@@ -2231,7 +2231,7 @@ select option::checkmark {
 }
 .wrow {
   display: grid;
-  grid-template-columns: 18px 44px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(44px, max-content) minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-6);
   min-height: var(--control-h);
@@ -4367,9 +4367,14 @@ body.resizing:has(.brief-sash.held) {
 .struck {
   text-decoration: line-through;
 }
+.rrow > :nth-child(3) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .rrow {
   display: grid;
-  grid-template-columns: 18px 52px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(52px, max-content) minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-6);
   min-height: var(--control-h);
