@@ -73,6 +73,7 @@ function tabs(views: readonly PageView[], open: PageView | null): HTMLElement {
           onclick: () => call('open_view', { pane: v.pane, id: v.view.id }),
         },
         v.refreshing && el('span', { class: 'vspin', 'aria-label': 'refreshing' }),
+        v.unseen && el('span', { class: 'vnew', role: 'img', 'aria-label': 'changed' }),
         el('span', { class: 'ttl' }, v.view.title),
       ),
     ),
@@ -173,6 +174,7 @@ function body(v: PageView): HTMLElement {
       path: key(v),
       drawn,
       pressed: v.pressed,
+      changed: new Set(v.changed),
     }),
   );
 }

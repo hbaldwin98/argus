@@ -2553,7 +2553,8 @@ impl Session {
             events.push(Event::ExtensionDialog(Box::new(page)));
         }
         let tree = &self.tree;
-        if let Some(page) = self.views.take(|pane| tree.panes().find(|p| p.id == pane).map(|p| p.title.clone())) {
+        let views_out = self.docks.dock_out(&Panel::Views);
+        if let Some(page) = self.views.take(views_out, |pane| tree.panes().find(|p| p.id == pane).map(|p| p.title.clone())) {
             events.push(Event::Views(Box::new(page)));
         }
         events.append(&mut self.passing);

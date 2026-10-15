@@ -33,4 +33,16 @@ subject: Link | null, view: AgentView,
  * page draws: Mermaid is parsed once, in Rust, as the Flows lens
  * reads it.
  */
-diagrams: Array<PageDiagram>, };
+diagrams: Array<PageDiagram>, 
+/**
+ * The paths, under the view as the page names blocks (`2`, `1.0.3`),
+ * of the blocks that changed when the view came again, for the page
+ * to mark: once, for a view in front of the person as it changed,
+ * and until opened for one that was not.
+ */
+changed: Array<string>, 
+/**
+ * It changed while the person was not looking, and they have not
+ * opened it since.
+ */
+unseen: boolean, };

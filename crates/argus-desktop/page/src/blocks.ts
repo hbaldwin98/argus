@@ -42,6 +42,16 @@ export function blocks(all: readonly Block[], ctx: ViewCtx): HTMLElement {
 }
 
 function one(block: Block, ctx: ViewCtx): HTMLElement {
+  const drawn = draw(block, ctx);
+  // The path under the view is what follows `pane/id.` in the context's;
+  // an id may hold dots itself, so the prefix is measured, not searched.
+  if (ctx.changed?.size && ctx.changed.has(ctx.path.slice(`${ctx.pane}/${ctx.id}.`.length))) {
+    drawn.classList.add('vchanged');
+  }
+  return drawn;
+}
+
+function draw(block: Block, ctx: ViewCtx): HTMLElement {
   switch (block.kind) {
     case 'section':
       return el(

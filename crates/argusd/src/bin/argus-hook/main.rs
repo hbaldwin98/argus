@@ -39,7 +39,8 @@
 //! argus-hook reconcile propose --stdin               # its lines as JSON, all unticked
 //! argus-hook reconcile report --failed 1 "403"       # the ticked lines are carried out
 //! argus-hook view show --stdin                       # shows the person a view, as JSON on stdin
-//! argus-hook view close eng-1                        # takes it down
+//! argus-hook view patch eng-1 'blocks[2]' --stdin       # replaces one block, as JSON on stdin
+//! argus-hook view close eng-1                       # takes it down
 //! argus-hook telemetry --model gpt-5 --context 42000 --window 272000 --cost 0.12 --tool shell
 //! argus-hook transcript ~/.herdr/s1.jsonl user "tidy the notes"   # a neutral transcript line
 //! argus-hook transcript ~/.herdr/s1.jsonl tool shell "npm run lint" --failed
