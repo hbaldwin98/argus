@@ -737,7 +737,8 @@ harness manages
 `UserPromptSubmit`, `Stop`, `Notification`, `SessionStart`, and tool entries in
 `<checkout>/.claude/settings.local.json`; its SessionStart hook captures top-level `session_id`.
 Subagents and a dynamic workflow's agents run inside the pane's session and are not listed as rows;
-a pane whose turn ended with a workflow still running reads as working until the workflow finishes.
+a pane whose turn ended with a workflow or background subagent still running reads as working until
+it finishes.
 Codex uses `<checkout>/.codex/hooks.json` with its required command-string handler shape. Its handler
 reads pane routing from the process environment, keeping its trust-sensitive content stable across
 pane starts and daemon restarts. OpenCode's

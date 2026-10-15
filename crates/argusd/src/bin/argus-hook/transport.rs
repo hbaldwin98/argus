@@ -187,7 +187,7 @@ pub(super) fn request(
         None => String::new(),
     };
     let background = match background {
-        true => format!("{BACKGROUND_HEADER}: workflow\r\n"),
+        true => format!("{BACKGROUND_HEADER}: agents\r\n"),
         false => String::new(),
     };
     let directory = match directory {

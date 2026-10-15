@@ -58,7 +58,8 @@ pub const CONTEXT_COMMAND: &str = "context";
 pub const SESSION_HEADER: &str = "X-Argus-Session";
 
 /// Says the reporting conversation left work running that outlives its turn
-/// — a Claude Code workflow still going after `Stop`. Rides on the status
+/// — a Claude Code workflow or background subagent still going after
+/// `Stop`. Rides on the status
 /// report itself, so the turn ending and what it left behind arrive as one
 /// fact rather than two reports that could land in either order.
 pub const BACKGROUND_HEADER: &str = "X-Argus-Background";

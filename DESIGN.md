@@ -943,8 +943,8 @@ and a workflow can run dozens of agents, which listed as rows bury the pane they
 `SubagentStart` or `SubagentStop` entry is written, and the ones an earlier version wrote are
 removed on the next install.
 
-A workflow outlives the turn that started it: Claude's `Stop` fires with the workflow still listed
-as running in `background_tasks`. The installed form says so on the report that ends the turn, with
+A workflow, or a subagent run in the background, outlives the turn that started it: Claude's `Stop`
+fires with it still listed as running in `background_tasks`, typed `workflow` or `subagent`. The installed form says so on the report that ends the turn, with
 an `X-Argus-Background` header, and the daemon records it as the pane's `background` flag in the
 same edit as the status, so no client is shown the turn ending before it is shown what the turn
 left running. The pane's own status is idle, because an agent at its prompt can be typed to; its
@@ -952,7 +952,7 @@ row and header chip read as working, because
 `background` is one of the states they take the loudest of. Every later report from the pane's own
 agent restates the flag, so the turn Claude wakes the session for with a `<task-notification>`
 prompt — never taken as a title — ends it when its own `Stop` lists nothing. A child cannot set the
-flag, and the pane exiting or a new session taking it over clears it. Only workflows count as work
+flag, and the pane exiting or a new session taking it over clears it. Only agents count as work
 left running: a background shell can run as long as the session does.
 
 Agents name their own rows, and the daemon names them first. A prompt-submit

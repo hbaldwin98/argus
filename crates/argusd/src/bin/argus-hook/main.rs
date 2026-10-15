@@ -561,24 +561,28 @@ mod tests {
     }
 
     #[test]
-    fn a_turn_ending_mid_workflow_says_what_it_left_running() {
+    fn a_turn_ending_with_agents_in_flight_says_what_it_left_running() {
         // Recorded from Claude Code 2.1.287: Stop lists the background work
         // still in flight, and the wake-up turn's Stop lists none.
         let stop = r#"{"session_id":"s","hook_event_name":"Stop","background_tasks":[
             {"id":"b1","type":"shell","status":"running","description":"npm run dev"},
             {"id":"w1","type":"workflow","status":"completed","name":"old"},
             {"id":"w2","type":"workflow","status":"running","name":"probe"}]}"#;
-        assert!(leaves_a_workflow_running(stop));
+        assert!(leaves_an_agent_running(stop));
         // A background shell can outlive every turn the session takes.
         let shell = r#"{"hook_event_name":"Stop","background_tasks":[
             {"id":"b1","type":"shell","status":"running"},
             {"id":"w1","type":"workflow","status":"completed"}]}"#;
-        assert!(!leaves_a_workflow_running(shell));
-        assert!(!leaves_a_workflow_running(r#"{"hook_event_name":"Stop"}"#));
+        assert!(!leaves_an_agent_running(shell));
+        assert!(!leaves_an_agent_running(r#"{"hook_event_name":"Stop"}"#));
+        // An Agent call run in the background is listed as a subagent.
+        let subagent = r#"{"hook_event_name":"Stop","background_tasks":[
+            {"id":"a1","type":"subagent","status":"running","agent_type":"Explore"}]}"#;
+        assert!(leaves_an_agent_running(subagent));
 
         let said =
             request("/pane/1/status/idle", "127.0.0.1:4242", "tok", Some("s"), true, None, "");
-        assert!(said.contains(&format!("\r\n{BACKGROUND_HEADER}: workflow\r\n")), "{said}");
+        assert!(said.contains(&format!("\r\n{BACKGROUND_HEADER}: agents\r\n")), "{said}");
         let unsaid =
             request("/pane/1/status/idle", "127.0.0.1:4242", "tok", Some("s"), false, None, "");
         assert!(!unsaid.contains(BACKGROUND_HEADER), "{unsaid}");

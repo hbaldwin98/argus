@@ -15,7 +15,7 @@ pub(super) fn installed_hook(url: &str, rest: &[&str]) {
     // inside the session. Their tool calls are not the pane's turn and
     // their numbers are not its telemetry, so they report nothing.
     if !raw.as_deref().is_some_and(from_an_inner_agent) {
-        if raw.as_deref().is_some_and(leaves_a_workflow_running) {
+        if raw.as_deref().is_some_and(leaves_an_agent_running) {
             name_background_work();
         }
         if let Some(directory) = raw.as_deref().and_then(|raw| json_string(raw, "cwd")) {
@@ -51,16 +51,17 @@ pub(super) fn from_an_inner_agent(raw: &str) -> bool {
     agent.is_some_and(|id| !id.is_empty())
 }
 
-/// Whether an event lists a workflow still going in the background, as
-/// Claude Code's `Stop` does when the turn ends before the workflow it
-/// started. Only workflows count: a background shell can run for as long
-/// as the session does, and would keep the pane reading as working forever.
-pub(super) fn leaves_a_workflow_running(raw: &str) -> bool {
+/// Whether an event lists a workflow or a background subagent still going,
+/// as Claude Code's `Stop` does when the turn ends before the work it
+/// started. Only agents count: a background shell can run for as long as
+/// the session does, and would keep the pane reading as working forever.
+pub(super) fn leaves_an_agent_running(raw: &str) -> bool {
     let event = json_value(raw);
     let tasks = event.as_ref().and_then(|v| v.get("background_tasks")?.as_array());
     tasks.into_iter().flatten().any(|task| {
         let field = |key: &str| task.get(key).and_then(serde_json::Value::as_str);
-        field("type") == Some("workflow") && matches!(field("status"), Some("running" | "pending"))
+        matches!(field("type"), Some("workflow" | "subagent"))
+            && matches!(field("status"), Some("running" | "pending"))
     })
 }
 
