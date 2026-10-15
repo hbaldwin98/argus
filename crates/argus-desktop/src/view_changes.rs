@@ -115,35 +115,10 @@ fn diff_block(old: &Block, new: &Block, path: &str, found: &mut Vec<String>) {
     }
 }
 
-/// The block's own content, with the blocks inside it set aside: each is
-/// replaced by a divider, and a list of dividers is then emptied, so a
+/// The block's own content, with the blocks inside it set aside, so a
 /// container that gained or lost a block still has the shell it had.
-/// `Block::children_mut` hands out slices, which cannot be shortened, so
-/// the lengths are masked in the block's JSON rather than cleared in it.
 fn shell(block: &Block) -> serde_json::Value {
-    let mut bare = block.clone();
-    for (_, list) in bare.children_mut() {
-        list.fill(Block::Divider);
-    }
-    let mut json = serde_json::to_value(&bare).unwrap_or_default();
-    mask(&mut json);
-    json
-}
-
-fn mask(json: &mut serde_json::Value) {
-    use serde_json::Value;
-    match json {
-        Value::Array(items) => {
-            let divider = |v: &Value| v.get("kind").and_then(Value::as_str) == Some("divider");
-            if !items.is_empty() && items.iter().all(divider) {
-                items.clear();
-            } else {
-                items.iter_mut().for_each(mask);
-            }
-        }
-        Value::Object(map) => map.values_mut().for_each(mask),
-        _ => {}
-    }
+    serde_json::to_value(block.without_children()).unwrap_or_default()
 }
 
 #[cfg(test)]

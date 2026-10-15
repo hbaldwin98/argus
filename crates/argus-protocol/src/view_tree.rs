@@ -109,11 +109,40 @@ impl Block {
     pub fn nested(&self) -> Vec<&[Block]> {
         self.children().into_iter().map(|(_, blocks)| blocks).collect()
     }
+
+    /// The block with every list of blocks inside it emptied, its own
+    /// content kept: a section's heading, a column per column, a tab's
+    /// title, a table's rows. What a container is, apart from what it holds.
+    pub fn without_children(&self) -> Block {
+        let mut bare = self.clone();
+        match &mut bare {
+            Block::Section { blocks, .. } | Block::Card { blocks, .. } | Block::Details { blocks, .. } => blocks.clear(),
+            Block::Columns { columns } => columns.iter_mut().for_each(Vec::clear),
+            Block::Tabs { tabs } => tabs.iter_mut().for_each(|tab| tab.blocks.clear()),
+            Block::Grid { items, .. } => items.clear(),
+            Block::Table { details, .. } => details.iter_mut().flatten().for_each(Vec::clear),
+            _ => {}
+        }
+        debug_assert!(bare.children().iter().all(|(_, list)| list.is_empty()), "a container kind left out");
+        bare
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_block_without_children_keeps_its_own_content() {
+        let tabs = Block::Tabs {
+            tabs: vec![Tab { title: "Log".into(), blocks: vec![Block::Divider] }],
+        };
+        let Block::Tabs { tabs: bare } = tabs.without_children() else { panic!() };
+        assert_eq!((bare[0].title.as_str(), bare[0].blocks.len()), ("Log", 0));
+        let grid = Block::Grid { min: Default::default(), items: vec![Block::Divider, Block::Divider] };
+        assert!(grid.without_children().children().is_empty());
+        assert_eq!(Block::Divider.without_children(), Block::Divider);
+    }
     use crate::agent_view::Tab;
 
     fn md(text: &str) -> Block {
