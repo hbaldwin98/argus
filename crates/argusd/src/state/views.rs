@@ -201,6 +201,7 @@ impl Daemon {
         let Some(action) = find_action(&shown.view, &press.action) else {
             return;
         };
+        let press = offered(&shown.view, press);
         self.notify(pane, &press_request(&shown.view, action, &press));
     }
 
@@ -278,6 +279,51 @@ fn find_in<'a>(blocks: &'a [Block], id: &str) -> Option<&'a ViewAction> {
     None
 }
 
+/// The press with only what the view offered for its action: row keys of
+/// a table that carries the action, and the answers of the form it
+/// submits. A client could send anything; the agent hears only what its
+/// own view could have produced.
+fn offered(view: &AgentView, mut press: ViewPress) -> ViewPress {
+    let mut keys = std::collections::HashSet::new();
+    let mut fields = None;
+    collect_offers(&view.blocks, &press.action, &mut keys, &mut fields);
+    press.rows.retain(|row| keys.contains(row.as_str()));
+    match fields {
+        Some((form, names)) if press.form.as_deref() == Some(form) => {
+            press.answers.retain(|a| names.contains(a.name.as_str()));
+        }
+        _ => {
+            press.form = None;
+            press.answers.clear();
+        }
+    }
+    press
+}
+
+type FormFields<'a> = Option<(&'a str, std::collections::HashSet<&'a str>)>;
+
+fn collect_offers<'a>(
+    blocks: &'a [Block],
+    action: &str,
+    keys: &mut std::collections::HashSet<&'a str>,
+    fields: &mut FormFields<'a>,
+) {
+    for block in blocks {
+        match block {
+            Block::Table { row_keys, actions, .. } if actions.iter().any(|a| a.id == action) => {
+                keys.extend(row_keys.iter().map(String::as_str));
+            }
+            Block::Form { id, fields: form, submit } if submit.id == action && fields.is_none() => {
+                *fields = Some((id.as_str(), form.iter().map(|f| f.name.as_str()).collect()));
+            }
+            _ => {}
+        }
+        for inner in block.nested() {
+            collect_offers(inner, action, keys, fields);
+        }
+    }
+}
+
 /// Control characters made spaces, since the request may be typed into a
 /// terminal where a newline sends it early and an escape does worse.
 fn plain(text: &str) -> String {
@@ -335,6 +381,52 @@ fn press_request(view: &AgentView, action: &ViewAction, press: &ViewPress) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_press_carries_only_the_rows_and_answers_its_view_offered() {
+        use argus_protocol::{Answer, Column, FormField, FormInput, RowSelect};
+        let act = |id: &str| ViewAction { id: id.into(), label: id.into(), tone: Default::default(), confirm: None };
+        let view = AgentView {
+            id: "v".into(),
+            title: "v".into(),
+            blocks: vec![
+                Block::Table {
+                    columns: vec![Column { title: "c".into(), numeric: false, optional: false }],
+                    rows: vec![vec![argus_protocol::Value::Empty]],
+                    sorted_by: None,
+                    total: None,
+                    row_keys: vec!["r1".into()],
+                    select: RowSelect::Many,
+                    actions: vec![act("rerun")],
+                    details: Vec::new(),
+                },
+                Block::Form {
+                    id: "deploy".into(),
+                    fields: vec![FormField {
+                        name: "branch".into(),
+                        label: "Branch".into(),
+                        input: FormInput::Toggle { default: false },
+                    }],
+                    submit: act("go"),
+                },
+            ],
+            ..Default::default()
+        };
+        let answer = |name: &str| Answer { name: name.into(), value: AnswerValue::Bool(true) };
+        let press = |action: &str| ViewPress {
+            view: "v".into(),
+            action: action.into(),
+            rows: vec!["r1".into(), "made-up".into()],
+            form: Some("deploy".into()),
+            answers: vec![answer("branch"), answer("extra")],
+        };
+        let rerun = offered(&view, press("rerun"));
+        assert_eq!(rerun.rows, ["r1"]);
+        assert!(rerun.form.is_none() && rerun.answers.is_empty());
+        let go = offered(&view, press("go"));
+        assert!(go.rows.is_empty());
+        assert_eq!(go.answers, [answer("branch")]);
+    }
 
     fn action(id: &str) -> ViewAction {
         ViewAction { id: id.into(), label: format!("label {id}"), tone: Default::default(), confirm: None }

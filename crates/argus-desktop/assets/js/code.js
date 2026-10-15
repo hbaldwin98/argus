@@ -1,6 +1,7 @@
-// A code block with its language in a header. Plain text: the page cannot
-// write the clipboard, so there is no copy button, and no highlighter here.
+// A code block with its language and a Copy button in a header. Plain
+// text: no highlighter here.
+import { copyButton } from './copy.js';
 import { el } from './dom.js';
 export function code(lang, text) {
-    return el('div', { class: 'vcode' }, lang ? el('div', { class: 'vcode-hd' }, lang) : null, el('pre', { class: 'vcode-bd' }, text));
+    return el('div', { class: 'vcode' }, el('div', { class: 'vcode-hd' }, el('span', { class: 'vcode-lang' }, lang), copyButton('Copy', () => text)), el('pre', { class: 'vcode-bd' }, text));
 }

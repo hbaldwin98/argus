@@ -33,6 +33,15 @@ export function blocks(all, ctx) {
     return el('div', { class: 'vblocks' }, all.map((block, i) => one(block, at(ctx, i))));
 }
 function one(block, ctx) {
+    const drawn = draw(block, ctx);
+    // The path under the view is what follows `pane/id.` in the context's;
+    // an id may hold dots itself, so the prefix is measured, not searched.
+    if (ctx.changed?.size && ctx.changed.has(ctx.path.slice(`${ctx.pane}/${ctx.id}.`.length))) {
+        drawn.classList.add('vchanged');
+    }
+    return drawn;
+}
+function draw(block, ctx) {
     switch (block.kind) {
         case 'section':
             return el('section', { class: 'vsection' }, el('div', { class: 'label' }, block.heading), blocks(block.blocks, ctx));
@@ -87,9 +96,9 @@ function one(block, ctx) {
         case 'checklist':
             return checklist(block);
         case 'log':
-            return log(block);
+            return log(block, ctx);
         case 'board':
-            return board(block);
+            return board(block, ctx);
         case 'form':
             return form(block, ctx);
     }

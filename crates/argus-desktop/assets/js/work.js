@@ -11,7 +11,7 @@ import { closeExpanded, diagramAction, drawExpanded } from './sequence.js';
 import { $, el } from './dom.js';
 import { dragEdge } from './edge.js';
 import { flowsAction, flowsLens } from './flows.js';
-import { ticketLink } from './tickets.js';
+import { featureViewLink, ticketLink } from './tickets.js';
 import { actionFor } from './keymap.js';
 import { recordAction, recordLens } from './record.js';
 import { state } from './state.js';
@@ -266,7 +266,7 @@ function tickets(view) {
         proposed: 'a proposal waits',
         carrying: 'being carried out',
     };
-    return el('span', { class: 'chips', id: 'feature-tickets', 'aria-label': 'Linked tickets' }, view.links.map(ticketLink), view.links.length > 0 &&
+    return el('span', { class: 'chips', id: 'feature-tickets', 'aria-label': 'Linked tickets' }, view.links.map(ticketLink), view.views.map(featureViewLink), view.links.length > 0 &&
         el('span', { class: 'meta' }, view.reconciled ?? 'never reconciled', view.changes !== null &&
             view.changes > 0 &&
             el('span', { class: 'fg-changed' }, ` · ${view.changes} change${view.changes === 1 ? '' : 's'} since`)), el('button', {

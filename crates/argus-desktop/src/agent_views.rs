@@ -291,13 +291,14 @@ fn inner_lists(block: &Block) -> Vec<(String, &[Block])> {
         Block::Section { blocks, .. } | Block::Card { blocks, .. } | Block::Details { blocks, .. } => {
             vec![(String::new(), blocks)]
         }
-        Block::Grid { items, .. } => vec![(String::new(), items)],
+        // The page draws each grid item as a list of one, under its index.
+        Block::Grid { items, .. } => items.chunks(1).enumerate().map(|(i, item)| (i.to_string(), item)).collect(),
         Block::Columns { columns } => columns.iter().enumerate().map(|(i, c)| (i.to_string(), c.as_slice())).collect(),
         Block::Tabs { tabs } => tabs.iter().enumerate().map(|(i, t)| (i.to_string(), t.blocks.as_slice())).collect(),
         Block::Table { details, .. } => details
             .iter()
             .enumerate()
-            .filter_map(|(i, d)| d.as_ref().map(|d| (i.to_string(), d.as_slice())))
+            .filter_map(|(i, d)| d.as_ref().map(|d| (format!("d{i}"), d.as_slice())))
             .collect(),
         _ => Vec::new(),
     }
@@ -553,6 +554,23 @@ mod tests {
 
     fn changed(before: Vec<Block>, after: Vec<Block>) -> Vec<String> {
         changed_blocks(&before, &after)
+    }
+
+    #[test]
+    fn a_change_is_named_by_the_path_the_page_draws_it_at() {
+        let grid = |b| Block::Grid { min: argus_protocol::GridMin::Md, items: vec![md("a"), b] };
+        assert_eq!(changed(vec![grid(md("b"))], vec![grid(md("B"))]), ["0.1.0"]);
+        let table = |b| Block::Table {
+            columns: vec![argus_protocol::Column { title: "c".into(), numeric: false, optional: false }],
+            rows: vec![vec![argus_protocol::Value::Empty], vec![argus_protocol::Value::Empty]],
+            sorted_by: None,
+            total: None,
+            row_keys: Vec::new(),
+            select: argus_protocol::RowSelect::None,
+            actions: Vec::new(),
+            details: vec![None, Some(vec![b])],
+        };
+        assert_eq!(changed(vec![table(md("x"))], vec![table(md("y"))]), ["0.d1.0"]);
     }
 
     #[test]

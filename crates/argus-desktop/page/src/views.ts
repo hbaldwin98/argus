@@ -7,6 +7,7 @@
 import type { Link } from './bindings/Link';
 import type { PageView } from './bindings/PageView';
 import type { ViewsPage } from './bindings/ViewsPage';
+import { actionButton } from './actions.js';
 import { blocks } from './blocks.js';
 import { chip } from './chip.js';
 import { DOCK_ICON, dockOf, moveItems } from './docks.js';
@@ -16,6 +17,7 @@ import { openMenu } from './menu.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 import { ago } from './values.js';
+import type { ViewCtx } from './viewctx.js';
 import { viewLink } from './viewlink.js';
 
 let shown: ViewsPage = { views: [], open: null, popped: null };
@@ -156,6 +158,7 @@ function header(v: PageView, popped: boolean): HTMLElement {
       el(
         'span',
         { class: 'vpanel-acts' },
+        v.view.actions.map((a) => actionButton(a, ctxOf(v))),
         el(
           'button',
           {
@@ -194,20 +197,20 @@ function header(v: PageView, popped: boolean): HTMLElement {
   );
 }
 
+/** What the view's blocks, and the buttons in its header, are drawn with. */
+function ctxOf(v: PageView): ViewCtx {
+  return {
+    pane: v.pane,
+    id: v.view.id,
+    path: key(v),
+    drawn: (source: string) => v.diagrams.find((d) => d.source === source),
+    pressed: v.pressed,
+    changed: new Set(v.changed),
+  };
+}
+
 function body(v: PageView): HTMLElement {
-  const drawn = (source: string) => v.diagrams.find((d) => d.source === source);
-  return el(
-    'div',
-    { class: 'vpanel-body', 'data-for': key(v) },
-    blocks(v.view.blocks, {
-      pane: v.pane,
-      id: v.view.id,
-      path: key(v),
-      drawn,
-      pressed: v.pressed,
-      changed: new Set(v.changed),
-    }),
-  );
+  return el('div', { class: 'vpanel-body', 'data-for': key(v) }, blocks(v.view.blocks, ctxOf(v)));
 }
 
 /** The newest view of a ticket, matched by its URL or its tracker and key. */

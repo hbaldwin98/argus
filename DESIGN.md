@@ -163,7 +163,7 @@ docks keeps its console docked at the bottom as tall as it was, its views panel'
 right dock's, and each extension view where the person had put it. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `docks`, `drag`, `screen`, `input`, `keymap`,
-`palette`, `shortcuts`, `settings`, `font_picker` (a font field and the installed families under it), `menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views`, `extension_views`, `dialogs` (an extension's question), with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
+`palette`, `shortcuts`, `settings`, `font_picker` (a font field and the installed families under it), `menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views` (the agents' views panel, with one module per block kind: `blocks`, `card`, `grid`, `details`, `row`, `chart`, `progress`, `timeline`, `tree`, `graph` and `graph_layout`, `patch` (a diff block), `matrix`, `checklist`, `log`, `board`, `form`, `actions`, `refs`, `table`, `table_memory`, `cell_text`, `copy`, `viewctx`), `extension_views`, `dialogs` (an extension's question), with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
 `clock` and `tauri` beneath them, and a view's blocks drawn by `blocks` through one module per kind —
 `markdown`, `fields`, `values`, `chip`, `table`, `list`, `stats`, `callout`, `code`, `diagram` — with `viewlink`, and
 `tickets` for a feature's ticket links),
@@ -1995,8 +1995,12 @@ only while it is under way, and keeps nothing read from a tracker after it.
 
 An agent can show the person what it read from a tracker, or from anywhere else it can reach, as a
 view. It writes an `AgentView` as JSON — an id, a title, an optional status chip, an optional
-subject URL, and blocks of text, fields, tables, lists, stats, code, Mermaid and callouts, which it
-translates from what its own tools returned — and runs `argus-hook view show --stdin`, which posts
+subject URL, and blocks, which it translates from what its own tools returned. The blocks are
+meant to compose almost anything: text, fields, tables, lists, stats, code, Mermaid and callouts;
+containers (sections, columns, tabs, cards, grids, details that fold, rows of values and buttons);
+shapes a table flattens badly (charts, progress, timelines, trees, graphs, diffs, matrices,
+checklists, logs, boards); and forms. Values add progress, durations, inline code and references
+that point into Argus rather than out of it — a path, a commit, a feature, a pane — and runs `argus-hook view show --stdin`, which posts
 it to the pane API's `view` endpoint; `view close <id>` takes one down. Argus still talks to no
 tracker, and the page draws strings as text, never as markup. The daemon checks every limit in
 `AgentView::checked` (256 KiB of JSON, 200 table rows, four levels of nesting, and an `http` or
@@ -2013,8 +2017,22 @@ to the agent, not a read by Argus: `ClientMsg::RefreshView` sends the agent a me
 harness's inbox or typed in as a review comment is, asking it to read the source again and show the
 view anew with the same id, and the view stays as it is until it does.
 
+A view can offer buttons (`ViewAction`) on itself, a card, a row, a table's selected rows, or as a
+form's submit. Argus runs nothing for one: `ClientMsg::PressView` (under `VIEW_ACTIONS`) is relayed
+to the agent as one line, as a refresh is, naming the action, the selected row keys and a form's
+answers as JSON. The daemon relays it only when the held view offers that action id, and keeps only
+the row keys of a table that carries it and the answers of the form it submits, so the agent hears
+nothing its own view could not have produced. The pressed button waits until the agent shows the
+view again. `ViewChange::Patch` (`argus-hook view patch <id> <path> --stdin`) replaces one block
+by the path refusals name blocks by (`view_patch`), and the daemon shows the whole view anew, so a
+progress bar or a log tail moves without the view being sent again. A view's `refresh_every` (at
+least a minute) has the daemon ask its agent for a refresh that often while the view is held; showing
+it again restarts the timer, and closing it or losing its pane stops it. A view's `feature` offers
+it from that feature's header too; nothing about it is stored.
+
 The desktop window watches views when the daemon offers them (`AGENT_VIEWS`); the terminal client
-never asks. The views are a panel in a dock (see the docks above), the right one until it is
+watches them too and draws a text subset in a fourth stage, `views` (`4`), beside the rail, with a
+muted "open in the desktop" line for the kinds text cannot carry. The views are a panel in a dock (see the docks above), the right one until it is
 moved, beside the stage, so the rail and the stage stay in sight and the pane shrinks to fit rather
 than being covered. It comes out by itself only when a view comes from the pane on screen and its
 dock is not already showing something; otherwise a button in the title strip counts the views
@@ -2022,7 +2040,16 @@ waiting and brings the newest out. The panel has a tab per view, newest first, s
 until one is chosen and the next newest when the one chosen closes, says who read it and how long
 ago, and offers Refresh, which waits for the agent to show it again, and Close, which takes it down
 for every client. Ctrl-. (in a pane, the leader and `v`) puts the panel away or brings
-the newest view out. A pane's row on the rail counts the views its agent has up. A feature's ticket
+the newest view out. A pane's row on the rail counts the views its agent has up. When a view is shown
+again the window names the blocks whose content changed (`agent_views`): they flash once when the
+person is looking at that view, and otherwise stay marked, with a dot on its tab, until it is opened.
+What the page alone remembers about a view — a chosen tab, an open details or tree node, a table's
+selection, opened rows and filter, a form's draft — is kept by block path across those redraws. Pop
+out opens a view as a stage page, and Dock puts it back. A reference value opens in the window and
+never a browser (`view_refs`): a path in the person's editor, a commit in History, a feature in the
+Feature stage, a pane focused; each is read against the pane that showed the view, or the checkout
+on screen for an extension's table, and a path that is absolute or climbs out of the checkout stays
+plain text. Copy, on a code block or a table as TSV, goes through Rust's clipboard. A feature's ticket
 links, in the index's peek and the open feature's heading, open the ticket in the browser, or, when a
 view of that ticket waits, carry a dot and open the view instead; the page matches them by URL, or by
 tracker and key. An open feature's header lists its tickets with their roles, when it was last reconciled and by whom,

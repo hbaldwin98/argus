@@ -24,6 +24,19 @@ export function ticketLink(link) {
         },
     }, link.tracker, ' ', el('b', null, link.key), view && el('span', { class: 'vdot', 'aria-label': 'a view of it waits' }));
 }
+/** A view an agent showed that names the feature, drawn like a ticket with
+ *  a view waiting: it opens that view in the views' panel. */
+export function featureViewLink(link) {
+    return el('button', {
+        class: 'track viewed',
+        type: 'button',
+        title: 'A view an agent showed of this feature',
+        onclick: (event) => {
+            event.stopPropagation();
+            call('open_view', { pane: link.pane, id: link.id });
+        },
+    }, el('b', null, link.title), el('span', { class: 'vdot', 'aria-hidden': 'true' }));
+}
 export function ticketLinks(links) {
     return links.length > 0 && el('span', { class: 'actions tickets' }, links.map(ticketLink));
 }

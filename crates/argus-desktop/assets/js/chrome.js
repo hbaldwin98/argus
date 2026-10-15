@@ -26,6 +26,7 @@ export function drawChrome() {
     $('fstage').hidden = stage !== 'feature';
     $('cstage').hidden = stage !== 'checkouts';
     $('xstage').hidden = stage !== 'extension';
+    $('vstage').hidden = stage !== 'view';
     $('body').hidden = stage !== 'workspace';
     drawFeatures();
     drawCheckouts();
@@ -74,6 +75,7 @@ const STAGE_NAME = {
     new: 'New',
     console: 'Console',
     extension: 'Extensions',
+    view: 'View',
 };
 /** The repository the Feature and Checkouts stages read. */
 function chosenRepository() {
