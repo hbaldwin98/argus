@@ -4,7 +4,7 @@
 //! request since replaced is dropped. Asked only of a daemon that listed
 //! `SESSIONS`, since an older one hangs up on a message it does not know.
 
-use argus_protocol::sessions::Session;
+use argus_protocol::sessions::{is_plain_session_id, Resume, Session};
 use argus_protocol::transcript::Conversation;
 use argus_protocol::{ClientMsg, RepositoryId, ServerMsg, SESSIONS};
 
@@ -20,7 +20,7 @@ pub struct Sessions {
     resuming: Option<u64>,
     /// Each harness that resumes a session by id, with the argv it would
     /// run, `{session_id}` unfilled; `None` until the daemon has said.
-    resumes: Option<Vec<(String, Vec<String>)>>,
+    resumes: Option<Vec<Resume>>,
 }
 
 impl Sessions {
@@ -94,10 +94,11 @@ impl Sessions {
     }
 
     /// The argv that resumes `session_id` under `harness`, or `None` when
-    /// the daemon named no way to, or has not said yet.
+    /// the daemon named no way to, has not said yet, or would refuse the id.
     pub fn resume_command(&self, harness: &str, session_id: &str) -> Option<Vec<String>> {
-        let (_, argv) = self.resumes.as_ref()?.iter().find(|(name, _)| name == harness)?;
-        Some(argv.iter().map(|arg| arg.replace("{session_id}", session_id)).collect())
+        is_plain_session_id(session_id).then_some(())?;
+        let resume = self.resumes.as_ref()?.iter().find(|r| r.harness == harness)?;
+        Some(resume.argv.iter().map(|arg| arg.replace("{session_id}", session_id)).collect())
     }
 }
 
@@ -203,9 +204,10 @@ mod tests {
         assert!(matches!(asked, Some(ClientMsg::ListResumes { request_id: 2 })));
         assert_eq!(sessions.resume_command("claude", "s1"), None, "not said yet");
         let argv = vec!["claude".to_string(), "--resume".to_string(), "{session_id}".to_string()];
-        let answer = ServerMsg::Resumes { request_id: 2, resumes: vec![("claude".into(), argv)] };
+        let answer = ServerMsg::Resumes { request_id: 2, resumes: vec![Resume { harness: "claude".into(), argv }] };
         sessions.receive(over_the_wire(&answer).await);
         assert_eq!(sessions.resume_command("claude", "s1").unwrap(), ["claude", "--resume", "s1"]);
         assert_eq!(sessions.resume_command("generic", "s1"), None);
+        assert_eq!(sessions.resume_command("claude", "s1 & calc"), None, "never offered to the daemon");
     }
 }

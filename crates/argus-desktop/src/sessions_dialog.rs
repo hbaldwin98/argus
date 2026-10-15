@@ -412,6 +412,7 @@ mod tests {
     use super::*;
     use crate::fixtures::{checkout, project, repository};
     use crate::status::StatusBar;
+    use argus_protocol::sessions::Resume;
     use argus_protocol::transcript::Transcript;
     use argus_protocol::{ClientMsg, Hello, ServerMsg, SESSIONS};
 
@@ -458,7 +459,7 @@ mod tests {
         sessions.ask_resumes(&status, 2);
         sessions.receive(ServerMsg::Sessions { request_id: 1, repository: RepositoryId(10), sessions: listing });
         let argv = vec!["claude".to_string(), "--model".into(), "opus 4".into(), "--resume".into(), "{session_id}".into()];
-        sessions.receive(ServerMsg::Resumes { request_id: 2, resumes: vec![("claude".into(), argv)] });
+        sessions.receive(ServerMsg::Resumes { request_id: 2, resumes: vec![Resume { harness: "claude".into(), argv }] });
         sessions
     }
 

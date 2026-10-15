@@ -6,7 +6,7 @@
 //! read after it is let go: a listing opens a hundred transcripts, and
 //! every keystroke waits on that lock.
 
-use argus_protocol::sessions::{Session, MAX_SESSIONS};
+use argus_protocol::sessions::{is_plain_session_id, Resume, Session, MAX_SESSIONS};
 use argus_protocol::transcript::Conversation;
 
 use super::*;
@@ -94,16 +94,16 @@ impl Daemon {
     /// `resume_id` after, `{session_id}` left for the client to fill. The
     /// client names the command before it is run, and `resume_session`
     /// starts the same template, so what it names is what runs.
-    pub fn resumes(&self) -> Vec<(String, Vec<String>)> {
+    pub fn resumes(&self) -> Vec<Resume> {
         let templates = self.templates.lock().unwrap().clone();
-        let mut resumes: Vec<(String, Vec<String>)> = Vec::new();
+        let mut resumes: Vec<Resume> = Vec::new();
         for template in &templates {
             let harness = self.harness_for(template);
-            if harness.resume_id.is_empty() || resumes.iter().any(|(name, _)| *name == harness.name) {
+            if harness.resume_id.is_empty() || resumes.iter().any(|r| r.harness == harness.name) {
                 continue;
             }
-            let command = template.cmd.iter().chain(&harness.resume_id).cloned().collect();
-            resumes.push((harness.name.to_string(), command));
+            let argv = template.cmd.iter().chain(&harness.resume_id).cloned().collect();
+            resumes.push(Resume { harness: harness.name.to_string(), argv });
         }
         resumes
     }
@@ -116,6 +116,9 @@ impl Daemon {
         harness: &str,
         session_id: &str,
     ) -> anyhow::Result<PaneId> {
+        if !is_plain_session_id(session_id) {
+            anyhow::bail!("{session_id:?} is not a session id Argus will put on a command line");
+        }
         let template = {
             let templates = self.templates.lock().unwrap();
             templates

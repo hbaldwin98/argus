@@ -1131,7 +1131,9 @@ with `ServerMsg::Resumes`: for each harness some agent template runs whose `resu
 first such template's `cmd` with the `resume_id` after it, `{session_id}` left unfilled. A client
 fills in the id to name the command before it runs it. `ClientMsg::ResumeSession` starts that same
 template on a checkout with the id, answered with `Created` like any spawn; a harness no template
-can resume is refused. Unlike a restore, a resumed session is the person's own start: it is held to
+can resume is refused, and so is an id that is not plain (`sessions::is_plain_session_id`: letters,
+digits, `-`, `_` and `.`), because on Windows an agent runs through `cmd.exe /C`, which reads `&`, `|`,
+`%` and quotes in its arguments as its own. Unlike a restore, a resumed session is the person's own start: it is held to
 a project's one-agent rule, and a CLI that refuses the id exits where the person can read why
 rather than being replaced by a fresh conversation. Both go only to a daemon that listed
 `sessions`.

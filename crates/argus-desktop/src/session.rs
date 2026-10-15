@@ -2425,7 +2425,7 @@ mod tests {
         };
         let (list, resumes) = (*list, *resumes);
         let argv = vec!["claude".to_string(), "--resume".into(), "{session_id}".into()];
-        s.receive(ServerMsg::Resumes { request_id: resumes, resumes: vec![("claude".into(), argv)] });
+        s.receive(ServerMsg::Resumes { request_id: resumes, resumes: vec![argus_protocol::sessions::Resume { harness: "claude".into(), argv }] });
         let read = s.receive(ServerMsg::Sessions {
             request_id: list,
             repository: RepositoryId(10),

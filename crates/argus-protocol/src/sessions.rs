@@ -51,9 +51,40 @@ pub struct Session {
     pub pane: Option<PaneId>,
 }
 
+/// How a harness reopens one exact session: the argv of the first agent
+/// template that runs it, with its `resume_id` after, and `{session_id}`
+/// left for the client to fill in, so the command a person is shown is
+/// the one that runs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Resume {
+    pub harness: String,
+    pub argv: Vec<String>,
+}
+
+/// Whether `id` may be put into a resume command. On Windows an agent runs
+/// through `cmd.exe /C`, which reads `&`, `|`, `^`, `%` and quotes in its
+/// arguments as its own; an id a client sent, or one read off a file
+/// name, must not reach it with any. Every harness Argus knows names its
+/// sessions with letters, digits, `-` and `_` (UUIDs and the like).
+pub fn is_plain_session_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 128
+        && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        && !id.starts_with(['.', '-'])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_plain_session_id_may_reach_a_command_line() {
+        assert!(is_plain_session_id("3f2a9c1e-5b7d-4e8a-9c21-7d4e5f6a8b90"));
+        assert!(is_plain_session_id("rollout_2026.10.14"));
+        for id in ["", "x & calc", "a|b", "%PATH%", "\"q\"", "a b", "../x", "-flag", ".hidden"] {
+            assert!(!is_plain_session_id(id), "{id:?}");
+        }
+    }
 
     #[test]
     fn a_session_written_with_only_its_identity_still_reads() {

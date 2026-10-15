@@ -482,7 +482,7 @@ async fn subscribing_twice_to_one_pane_does_not_double_up() {
 }
 
 #[tokio::test]
-async fn the_resumes_name_each_harness_command_and_one_without_is_refused() {
+async fn the_resumes_name_each_harness_command_and_one_it_cannot_take_is_refused() {
     // The default templates: claude's resumes by id, and what the client
     // is told is the command that would run.
     let dir = tempfile::tempdir().unwrap();
@@ -494,9 +494,9 @@ async fn the_resumes_name_each_harness_command_and_one_without_is_refused() {
         _ => None,
     });
     let resumes = resumes.expect("the resumes are answered at once");
-    let (_, claude) = resumes.iter().find(|(harness, _)| harness == "claude").expect("claude resumes");
-    assert!(claude.ends_with(&["--resume".to_string(), "{session_id}".to_string()]), "{claude:?}");
-    assert!(!resumes.iter().any(|(harness, _)| harness == "generic"), "generic has no resume_id");
+    let claude = resumes.iter().find(|r| r.harness == "claude").expect("claude resumes");
+    assert!(claude.argv.ends_with(&["--resume".to_string(), "{session_id}".to_string()]), "{claude:?}");
+    assert!(!resumes.iter().any(|r| r.harness == "generic"), "generic has no resume_id");
 
     h.send(ClientMsg::ResumeSession {
         request_id: 6,
@@ -510,6 +510,21 @@ async fn the_resumes_name_each_harness_command_and_one_without_is_refused() {
     assert!(matches!(answer, Some(ServerMsg::Created { request_id: 6, created: None })), "{answer:?}");
     let error = h.error().await;
     assert!(error.contains("no agent template can resume a generic session"), "{error}");
+
+    // On Windows an agent runs through `cmd.exe /C`, so an id is never
+    // put on its command line with anything cmd would read.
+    h.send(ClientMsg::ResumeSession {
+        request_id: 7,
+        checkout,
+        harness: "claude".into(),
+        session_id: "s1 & calc".into(),
+    });
+    let answer = tokio::time::timeout(std::time::Duration::from_secs(5), h.rx.recv())
+        .await
+        .expect("an answer should arrive");
+    assert!(matches!(answer, Some(ServerMsg::Created { request_id: 7, created: None })), "{answer:?}");
+    let error = h.error().await;
+    assert!(error.contains("not a session id"), "{error}");
 }
 
 #[tokio::test]

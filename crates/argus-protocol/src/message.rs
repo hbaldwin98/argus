@@ -14,7 +14,7 @@ use crate::hello::Hello;
 use crate::ids::{CheckoutId, PaneId, ProjectId, RepositoryId, WorkspaceId};
 use crate::review::{CommitFile, CommitInfo, Review, ReviewAnchor, ReviewBase};
 use crate::diagrams::{DiagramAction, DiagramList};
-use crate::sessions::Session;
+use crate::sessions::{Resume, Session};
 use crate::transcript::Conversation;
 use crate::tasks::{TaskAction, TaskList};
 use crate::tracker_links::MapChange;
@@ -579,7 +579,7 @@ pub enum ServerMsg {
     /// `{session_id}` left to fill. A harness not named cannot.
     Resumes {
         request_id: u64,
-        resumes: Vec<(String, Vec<String>)>,
+        resumes: Vec<Resume>,
     },
     /// A pane's process exited.
     PaneClosed {
