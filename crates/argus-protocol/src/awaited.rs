@@ -93,12 +93,11 @@ impl<Then> Awaited<Then> {
 /// counts, editors included: one made is to be found whether or not its
 /// checkout lists it.
 pub fn holds(tree: &[ProjectInfo], created: Created) -> bool {
-    let repositories = || tree.iter().flat_map(|p| &p.repositories);
     match created {
         Created::Pane(id) => tree.panes().any(|p| p.id == id),
-        Created::Checkout(id) => repositories().flat_map(|r| &r.checkouts).any(|c| c.id == id),
+        Created::Checkout(id) => tree.checkout(id).is_some(),
         Created::Project(id) => tree.iter().any(|p| p.id == id),
-        Created::Repository(id) => repositories().any(|r| r.id == id),
+        Created::Repository(id) => tree.iter().flat_map(|p| &p.repositories).any(|r| r.id == id),
     }
 }
 

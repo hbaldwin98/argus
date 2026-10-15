@@ -13,7 +13,7 @@
 
 use argus_protocol::sessions::Session;
 use argus_protocol::transcript::Conversation;
-use argus_protocol::{CheckoutId, PaneId, ProjectInfo, RepositoryId};
+use argus_protocol::{CheckoutId, HeldTree, PaneId, ProjectInfo, RepositoryId};
 
 use crate::keymap::Action;
 use crate::page::{Resumed, SessionPreview, SessionRowView, SessionsPage, TranscriptLine};
@@ -434,11 +434,7 @@ fn place(session: &Session, tree: &[ProjectInfo]) -> String {
     if let Some(path) = &session.removed_worktree {
         return path.rsplit(['/', '\\']).find(|part| !part.is_empty()).unwrap_or(path).to_owned();
     }
-    tree.iter()
-        .flat_map(|p| &p.repositories)
-        .flat_map(|r| &r.checkouts)
-        .find(|c| c.id == session.checkout)
-        .map_or_else(|| "?".into(), |c| c.name.clone())
+    tree.checkout(session.checkout).map_or_else(|| "?".into(), |c| c.name.clone())
 }
 
 /// Each harness the listing holds, in its order.

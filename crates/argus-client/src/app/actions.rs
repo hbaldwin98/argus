@@ -289,7 +289,7 @@ impl App {
             self.report("review is no longer open");
             return;
         };
-        let checkout = checkouts_in(&self.tree).find(|c| c.id == session.checkout());
+        let checkout = self.tree.checkout(session.checkout());
         match session.comment(checkout, to, &body) {
             Ok(Comment::Send(msg)) => {
                 let _ = self.out.send(*msg);

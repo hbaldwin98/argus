@@ -64,14 +64,6 @@ mod server;
 mod showing;
 mod views;
 
-/// The tree flattened to its checkouts. Written once because several
-/// questions are this plus a `find`; its panes are [`HeldTree::panes`].
-fn checkouts_in(tree: &[ProjectInfo]) -> impl Iterator<Item = &CheckoutInfo> {
-    tree.iter()
-        .flat_map(|project| project.repositories.iter())
-        .flat_map(|repository| repository.checkouts.iter())
-}
-
 fn state_word(status: PaneStatus) -> &'static str {
     match status {
         PaneStatus::Idle => "idle",
