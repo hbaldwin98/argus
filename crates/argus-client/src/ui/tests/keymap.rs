@@ -47,15 +47,7 @@ fn modes() -> Vec<(&'static str, Vec<App>)> {
         reading(Lens::Record, false),
         reading(Lens::Flows, false),
     ];
-    let mut from_history = app_with_review();
-    from_history.review.as_mut().unwrap().review.commit = Some(argus_protocol::CommitInfo {
-        oid: "a".repeat(40),
-        short: "aaaaaaa".to_string(),
-        summary: "Wake a pane's pump on the byte".to_string(),
-        author: "hunt".to_string(),
-        time: 0,
-    });
-    from_history.history = app_with_history().history;
+    let from_history = app_with_commit_review();
     let overlay = |overlay: Overlay| {
         let mut app = app_with_tree();
         app.overlay = Some(overlay);

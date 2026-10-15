@@ -8,7 +8,7 @@ use super::*;
 /// The diff itself. The window around it is drawn by `render_overlay`,
 /// which owns the border and the title.
 pub(super) fn render_review(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
-    let Some(view) = app.review.as_mut() else {
+    let Some(view) = app.review_view_mut() else {
         return;
     };
     view.scroll_into_view(area.height as usize);

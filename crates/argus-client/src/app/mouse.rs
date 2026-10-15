@@ -207,7 +207,7 @@ impl App {
         if matches!(ev.kind, MouseEventKind::Down(MouseButton::Left))
             && in_rect(self.layout.terminal.outer, ev.column, ev.row)
         {
-            if self.review.is_some() {
+            if self.review_view().is_some() {
                 self.focus = Focus::Review;
             } else if self.current_pane().is_some() {
                 self.focus = Focus::PaneContent;

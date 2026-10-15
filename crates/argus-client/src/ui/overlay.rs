@@ -39,7 +39,7 @@ pub(super) fn render_overlay(
     let title = match overlay {
         Overlay::Pane { title, .. } => format!("{title}  ·  ctrl-space esc / F12 to close"),
         Overlay::Settings { .. } => "settings".to_string(),
-        Overlay::Review => match app.review.as_ref() {
+        Overlay::Review => match app.review_view() {
             Some(v) => match &v.review.commit {
                 Some(c) => format!("review · {}  {}", c.short, c.summary),
                 None => format!("review · {}", v.review.base.label()),

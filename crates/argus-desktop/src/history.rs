@@ -34,8 +34,9 @@ pub struct HistoryDialog {
 pub enum Then {
     Nothing,
     Ask(Box<ClientMsg>),
-    /// Open this commit as a review, where comments record it.
-    Review(String),
+    /// Open this commit as a review, where comments record it, on the file
+    /// the cursor was on when it was on one.
+    Review { commit: String, file: Option<String> },
 }
 
 impl HistoryDialog {
@@ -191,7 +192,10 @@ impl HistoryDialog {
     /// The commit under the cursor, as a review.
     pub fn as_review(&self) -> Then {
         match self.view.as_ref().filter(|_| self.cursor_shown()).and_then(HistoryView::selected_oid) {
-            Some(oid) => Then::Review(oid.to_owned()),
+            Some(oid) => Then::Review {
+                commit: oid.to_owned(),
+                file: self.view.as_ref().and_then(HistoryView::selected_file).map(|f| f.path.clone()),
+            },
             None => Then::Nothing,
         }
     }
@@ -355,7 +359,7 @@ mod tests {
         d.set_filter("fix".into(), || 1);
         d.receive_commits(5, vec![commit("aaaa1", "Other"), commit("bbbb2", "Fix one"), commit("cccc3", "Fix two")]);
         assert!(d.page(0).rows[0].on, "the first match is lit");
-        assert!(matches!(d.as_review(), Then::Review(oid) if oid == "bbbb2"));
+        assert!(matches!(d.as_review(), Then::Review { commit, .. } if commit == "bbbb2"));
         d.move_by(1, || 1);
         assert!(d.page(0).rows[1].on, "j steps to the second match, not past it");
     }
@@ -430,6 +434,9 @@ mod tests {
         });
         let page = d.page(0);
         assert_eq!(page.diff.len(), 2, "its hunk and its line");
-        assert!(matches!(d.choose(), Then::Review(oid) if oid == "aaaa1"));
+        assert!(matches!(
+            d.choose(),
+            Then::Review { commit, file } if commit == "aaaa1" && file.as_deref() == Some("DESKTOP.md")
+        ));
     }
 }

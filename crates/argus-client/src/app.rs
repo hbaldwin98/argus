@@ -13,7 +13,7 @@
 //! back, and `showing` for what the daemon is told this client shows.
 
 use argus_protocol::{
-    CheckoutId, CheckoutInfo, ClientMsg, HeldTree, PaneId, PaneInfo, PaneKind, PaneState,
+    CheckoutId, CheckoutInfo, ClientMsg, HeldTree, PaneId, PaneInfo, PaneState,
     PaneStatus, ProjectId, ProjectInfo, RepositoryId, RepositoryInfo, ReviewAnchor, ServerMsg,
     WorkspaceId, WorkspaceInfo,
 };
@@ -27,6 +27,7 @@ use argus_protocol::fuzzy::Fuzzy;
 use argus_protocol::pane_view::PaneView;
 use argus_protocol::history_view::{Drill, HistoryView};
 use crate::pty_input::{encode_key, encode_mouse, is_leader};
+use argus_protocol::review_session::{Comment, ReviewSession};
 use argus_protocol::review_view::ReviewView;
 use crate::selection::TerminalSelection;
 use crate::theme::Theme;
@@ -67,12 +68,6 @@ fn checkouts_in(tree: &[ProjectInfo]) -> impl Iterator<Item = &CheckoutInfo> {
     tree.iter()
         .flat_map(|project| project.repositories.iter())
         .flat_map(|repository| repository.checkouts.iter())
-}
-
-/// An agent pane that can still be spoken to: a shell has nothing to hear
-/// a review comment, and an exited agent no longer has anywhere to put it.
-fn is_live_agent_pane(pane: &PaneInfo) -> bool {
-    pane.kind == PaneKind::Agent && !matches!(pane.status, PaneStatus::Exited { .. })
 }
 
 fn state_word(status: PaneStatus) -> &'static str {
@@ -143,13 +138,6 @@ impl<K: PartialEq + Copy> Outstanding<K> {
             self.wanted = None;
         }
         wanted
-    }
-
-    /// Puts a review up directly for a fixture that hands back a fixed id,
-    /// without disturbing the counter a real request would advance.
-    #[cfg(test)]
-    fn want_for_test(&mut self, key: K, id: u64) {
-        self.wanted = Some((key, id));
     }
 }
 
@@ -277,7 +265,9 @@ pub struct App {
     /// False for an app that must not write to the user's config — every
     /// test, and anything constructed with [`App::new`].
     persist_settings: bool,
-    pub review: Option<ReviewView>,
+    /// The review asked for or on screen; what it holds and asks is the
+    /// session's, shared with the desktop window.
+    pub review: Option<ReviewSession>,
     pub history: Option<HistoryView>,
     /// The feature or task brief being read or written, if one is open.
     pub brief: Option<BriefView>,
@@ -334,21 +324,18 @@ pub struct App {
     /// what makes the view swallow keys — a view whose `x` deletes a row
     /// while you are typing a title with an x in it is not usable.
     pub line: Option<LineInput>,
-    /// What the outstanding request was for; a diff for anything else is
+    /// The id the next review request goes out with; the session matches
+    /// its answers.
+    next_review_request: u64,
+    /// What the outstanding request was for; a list for anything else is
     /// stale and dropped.
-    review_request: Outstanding<CheckoutId>,
     history_request: Outstanding<CheckoutId>,
-    /// Jump here once a commit review lands, when Enter was on a file row.
-    pending_history_file: Option<String>,
     /// Same, for a branch or file list.
     list_wanted: Option<CheckoutId>,
     next_browse_request: u64,
     /// Sticky across reopens, so `b` is a setting rather than a per-visit
     /// choice.
     pub review_base: ReviewBase,
-    /// The side a review was first asked for, while the other side is being
-    /// tried because that one came back empty.
-    review_fallback: Option<ReviewBase>,
     /// Where closing a review or history puts the keys: back on the
     /// Checkouts stage when it was opened from there, else the rail.
     review_return: Focus,
@@ -387,6 +374,15 @@ pub struct App {
 }
 
 impl App {
+    /// The diff on screen, once its side has arrived.
+    pub fn review_view(&self) -> Option<&ReviewView> {
+        self.review.as_ref().and_then(ReviewSession::view)
+    }
+
+    pub fn review_view_mut(&mut self) -> Option<&mut ReviewView> {
+        self.review.as_mut().and_then(ReviewSession::view_mut)
+    }
+
     /// Defaults, and nothing written to disk — an app that cannot touch
     /// the user's real preferences. `main` uses [`App::with_settings`].
     #[cfg(test)]
@@ -491,13 +487,11 @@ impl App {
             diagram_sel: 0,
             diagram: None,
             line: None,
-            review_request: Outstanding::new(),
+            next_review_request: 1,
             history_request: Outstanding::new(),
-            pending_history_file: None,
             list_wanted: None,
             next_browse_request: 1,
             review_base: ReviewBase::Unstaged,
-            review_fallback: None,
             review_return: Focus::Checkouts,
             review_split,
             prompt: None,

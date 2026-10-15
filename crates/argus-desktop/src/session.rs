@@ -283,9 +283,9 @@ impl Session {
                 }
                 self.passing.push(Event::Notice { text: message });
             }
-            ServerMsg::ReviewFailed { request_id, message, .. } => {
+            ServerMsg::ReviewFailed { request_id, checkout, message } => {
                 if let Some(dialog) = &mut self.review {
-                    dialog.failed(request_id, message);
+                    dialog.failed(checkout, request_id, message);
                 }
             }
             ServerMsg::ReviewCommentSaved { id, delivered } => {
@@ -942,9 +942,9 @@ impl Session {
                 self.out.push(*msg);
             }
             // The history gives way to the review of the commit.
-            Then::Review(commit) => {
+            Then::Review { commit, file } => {
                 if let Some(info) = self.checkout_info(dialog.checkout()).cloned() {
-                    let (review, msg) = ReviewDialog::of_commit(&info, commit, self.review_layout, self.fresh_id());
+                    let (review, msg) = ReviewDialog::of_commit(&info, commit, file, self.review_layout, self.fresh_id());
                     self.review = Some(review);
                     self.out.push(msg);
                 }
@@ -955,9 +955,18 @@ impl Session {
 
     /// A key or button of the review dialog.
     pub fn review_action(&mut self, action: Action) -> Vec<ClientMsg> {
+        let info = self.review.as_ref().and_then(|d| self.checkout_info(d.checkout())).cloned();
         let Some(dialog) = &mut self.review else {
             return self.finish();
         };
+        let refused = match action {
+            Action::Side => dialog.switch_side().err(),
+            Action::Comment => dialog.compose(info.as_ref()).err().map(str::to_owned),
+            _ => None,
+        };
+        if let Some(text) = refused {
+            self.passing.push(Event::Notice { text });
+        }
         match action {
             Action::Next => dialog.move_by(1),
             Action::Previous => dialog.move_by(-1),
@@ -966,13 +975,7 @@ impl Session {
             Action::NextFile => dialog.jump_file(true),
             Action::PreviousFile => dialog.jump_file(false),
             Action::Pick => dialog.toggle_pick(),
-            Action::Side => dialog.switch_side(),
             Action::Split => dialog.toggle_split(),
-            Action::Comment => {
-                if let Err(text) = dialog.compose() {
-                    self.passing.push(Event::Notice { text: text.into() });
-                }
-            }
             Action::Filter => dialog.open_jump(),
             Action::OpenEditor => {
                 let target = dialog.editor_target();
@@ -1031,7 +1034,11 @@ impl Session {
             match target {
                 ReviewClick::File { file } => dialog.open_file(file),
                 ReviewClick::Row { row, extend } => dialog.select_row(row, extend),
-                ReviewClick::Side { staged } => dialog.show_side(staged),
+                ReviewClick::Side { staged } => {
+                    if let Err(text) = dialog.show_side(staged) {
+                        self.passing.push(Event::Notice { text });
+                    }
+                }
                 ReviewClick::Recipient { pane } => dialog.choose_recipient(PaneId(pane)),
             }
         }
@@ -1050,12 +1057,13 @@ impl Session {
     }
 
     pub fn review_comment(&mut self, body: Option<String>) -> Vec<ClientMsg> {
+        let info = self.review.as_ref().and_then(|d| self.checkout_info(d.checkout())).cloned();
         let Some(dialog) = &mut self.review else {
             return self.finish();
         };
         match body {
             None => dialog.cancel_comment(),
-            Some(body) => match dialog.comment(body) {
+            Some(body) => match dialog.comment(info.as_ref(), &body) {
                 Ok(msg) => self.out.push(msg),
                 Err(text) => self.passing.push(Event::Notice { text: text.into() }),
             },

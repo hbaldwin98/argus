@@ -37,6 +37,7 @@ pub mod pane_view;
 pub mod paste;
 pub mod paths;
 pub mod review;
+pub mod review_session;
 pub mod review_view;
 pub mod standing;
 pub mod tasks;

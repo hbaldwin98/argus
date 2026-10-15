@@ -258,7 +258,7 @@ fn f_in_the_review_jumps_the_cursor_to_the_chosen_file() {
     h.keys("other");
     h.key(KeyCode::Enter);
 
-    let a = h.app.review.as_ref().unwrap().anchor().unwrap();
+    let a = h.app.review_view().unwrap().anchor().unwrap();
     assert_eq!(a.path, "src/other.rs");
     assert!(h.app.picker.is_none());
 }

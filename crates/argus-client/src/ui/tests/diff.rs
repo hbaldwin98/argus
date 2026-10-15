@@ -136,8 +136,8 @@ fn added_and_removed_lines_are_washed_whether_or_not_they_are_selected() {
 fn the_selected_line_is_washed_so_a_range_reads_as_one_block() {
     let mut app = app_with_review();
     let th = app.theme;
-    app.review.as_mut().unwrap().toggle_mark();
-    app.review.as_mut().unwrap().move_by(1);
+    app.review_view_mut().unwrap().toggle_mark();
+    app.review_view_mut().unwrap().move_by(1);
     let buf = draw(&mut app);
     assert_eq!(bg_of(&buf, "unchanged"), Some(th.sel_bg));
     // Selecting a removed line brightens its wash rather than replacing
@@ -152,7 +152,7 @@ fn the_selected_line_is_washed_so_a_range_reads_as_one_block() {
 fn a_highlight_span_colours_only_the_run_it_covers() {
     let mut app = app_with_review();
     {
-        let view = app.review.as_mut().unwrap();
+        let view = app.review_view_mut().unwrap();
         let line = &mut view.review.files[0].hunks[0].lines[0];
         line.text = "let x = 1".to_string();
         line.spans = vec![argus_protocol::HighlightSpan {
@@ -178,7 +178,7 @@ fn a_highlight_span_colours_only_the_run_it_covers() {
 fn a_span_that_overruns_its_line_is_dropped_rather_than_sliced() {
     let mut app = app_with_review();
     {
-        let view = app.review.as_mut().unwrap();
+        let view = app.review_view_mut().unwrap();
         let line = &mut view.review.files[0].hunks[0].lines[0];
         line.text = "short".to_string();
         line.spans = vec![argus_protocol::HighlightSpan {
@@ -195,7 +195,7 @@ fn a_span_that_overruns_its_line_is_dropped_rather_than_sliced() {
 #[test]
 fn a_diff_taller_than_the_column_scrolls_to_keep_the_cursor_visible() {
     let mut app = app_with_review();
-    app.review.as_mut().unwrap().bottom_of_diff();
+    app.review_view_mut().unwrap().bottom_of_diff();
     let out = lines(&draw_at(&mut app, 100, 10)).join("\n");
     assert!(
         out.contains("+arrived"),
