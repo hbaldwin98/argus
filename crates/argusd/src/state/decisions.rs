@@ -20,6 +20,7 @@
 
 use argus_protocol::{Decision, DecisionBoard, DecisionChange, DecisionWrite};
 
+use super::asker::Asker;
 use super::board_address::BoardAddress;
 use super::features::Filing;
 use super::*;
@@ -179,34 +180,16 @@ impl Daemon {
     ) -> anyhow::Result<Decision> {
         let filing = filing.into();
         let address = self.address_for_agent(pane_id, filing.scope)?;
-        let key = address.key.as_str();
-        let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-        // Refused rather than filed loose: a decision nobody can find
-        // again is the pile this scoping exists to end.
-        let feature = self
-            .feature_for_agent(&address, &filing)?
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "this checkout is not on a feature yet — open one with \
-                 `argus-hook feature open \"<title>\"`, or point it at an \
-                 existing one with `argus-hook feature <slug>`"
-                )
-            })?;
-        let checkout = address.checkout()?.to_string_lossy().to_string();
-        let id = self.store.add_decision(
-            key,
-            &write,
-            Some(feature.as_str()),
-            now(),
+        let feature = self.feature_for_agent(&address, &filing)?;
+        let by = Asker::Agent {
+            pane: pane_id,
             session,
-            Some(checkout.as_str()),
-        )?;
-        self.recorded(&address, id)
+        };
+        self.add_decision(&address, by, feature.as_deref(), write)
     }
 
     /// Records a decision from the feature view, under the feature it
-    /// names. A person's decision has no session and no checkout: it was
-    /// made looking at the board, not from inside a working tree.
+    /// names.
     pub fn decide_for_client(
         &self,
         project: ProjectId,
@@ -215,16 +198,51 @@ impl Daemon {
         write: DecisionWrite,
     ) -> anyhow::Result<()> {
         let address = self.address_for_client(project, checkout)?;
+        self.add_decision(&address, Asker::Person, Some(feature), write)
+            .map(drop)
+    }
+
+    /// Appends one decision under `feature` and answers with it as the
+    /// board now holds it. An agent's is attributed to its session and the
+    /// checkout it was made in; a person's to neither, since it was made
+    /// looking at the board, not from inside a working tree.
+    fn add_decision(
+        &self,
+        address: &BoardAddress,
+        by: Asker<'_>,
+        feature: Option<&str>,
+        write: DecisionWrite,
+    ) -> anyhow::Result<Decision> {
+        let key = address.key.as_str();
         let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
+        // Refused rather than filed loose: a decision nobody can find
+        // again is the pile this scoping exists to end.
+        let feature = feature.ok_or_else(|| {
+            anyhow::anyhow!(
+                "this checkout is not on a feature yet — open one with \
+                 `argus-hook feature open \"<title>\"`, or point it at an \
+                 existing one with `argus-hook feature <slug>`"
+            )
+        })?;
         // The store files a decision under whatever slug it is handed, so
-        // a feature removed since the view last drew it is refused here.
-        if !self.store.features(&address.key)?.iter().any(|f| f.slug == feature) {
+        // a feature removed since the asker last read the board is refused
+        // here.
+        if !self.store.features(key)?.iter().any(|f| f.slug == feature) {
             anyhow::bail!("there is no feature {feature} on this project");
         }
-        let id = self
-            .store
-            .add_decision(&address.key, &write, Some(feature), now(), None, None)?;
-        self.recorded(&address, id).map(|_| ())
+        let checkout = match by {
+            Asker::Person => None,
+            Asker::Agent { .. } => Some(address.checkout()?.to_string_lossy().to_string()),
+        };
+        let id = self.store.add_decision(
+            key,
+            &write,
+            Some(feature),
+            now(),
+            by.session(),
+            checkout.as_deref(),
+        )?;
+        self.recorded(address, id)
     }
 
     /// The decision just written, read back rather than assembled from the

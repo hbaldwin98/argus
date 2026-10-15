@@ -10,8 +10,17 @@
 use argus_protocol::reconcile::{checked_ask, checked_text, seen, Stage, MAX_FAILURE_BYTES};
 use argus_protocol::{Feature, Reconcile, ReconcileAction, ReconcileChange, Reconciled};
 
-use super::asker::pane_label;
+use super::asker::{pane_label, Asker};
+use super::board_address::BoardAddress;
 use super::*;
+
+/// One turn of a reconcile, in whichever vocabulary it was asked in: an
+/// agent's read, proposal or report, or the person's ask, ticked lines or
+/// turning down.
+enum Turn {
+    Agent(ReconcileChange),
+    Person(ReconcileAction),
+}
 
 impl Daemon {
     /// An agent's read, proposal or report, answered with the feature as it
@@ -24,16 +33,50 @@ impl Daemon {
     ) -> anyhow::Result<Feature> {
         let filing = filing.into();
         let address = self.address_for_agent(pane_id, filing.scope)?;
-        let key = address.key.as_str();
         let Some(slug) = self.feature_for_agent(&address, &filing)? else {
             anyhow::bail!("this checkout is on no feature; name one with --feature <slug>");
         };
-        let (under_way, _) = self.store.reconcile(key, &slug)?;
-        let by = pane_label(pane_id);
-        match change {
-            ReconcileChange::Read => {}
-            ReconcileChange::Propose { proposal } => {
-                if under_way.as_ref().is_some_and(|r| r.stage() == Stage::Carrying) {
+        let by = Asker::Agent {
+            pane: pane_id,
+            session: None,
+        };
+        self.apply_reconcile(&address, by, &slug, Turn::Agent(change))
+    }
+
+    /// The person's ask, ticked lines or turning down, from the view.
+    pub fn reconcile_for_client(
+        &self,
+        project: ProjectId,
+        checkout: CheckoutId,
+        slug: &str,
+        action: ReconcileAction,
+    ) -> anyhow::Result<()> {
+        let address = self.address_for_client(project, checkout)?;
+        self.apply_reconcile(&address, Asker::Person, slug, Turn::Person(action))
+            .map(drop)
+    }
+
+    /// Takes one turn of `slug`'s reconcile and pushes the board, answering
+    /// with the feature as it then stands.
+    ///
+    /// Who may take which turn is this match, side by side: an agent
+    /// reads, proposes and reports; the person asks an agent, ticks the
+    /// lines it may carry out and turns a proposal down.
+    fn apply_reconcile(
+        &self,
+        address: &BoardAddress,
+        by: Asker<'_>,
+        slug: &str,
+        turn: Turn,
+    ) -> anyhow::Result<Feature> {
+        let key = address.key.as_str();
+        let feature = self.reconciled_feature(key, slug)?;
+        let (under_way, _) = self.store.reconcile(key, slug)?;
+        let carrying = under_way.as_ref().is_some_and(|r| r.stage() == Stage::Carrying);
+        match (by, turn) {
+            (Asker::Agent { .. }, Turn::Agent(ReconcileChange::Read)) => {}
+            (Asker::Agent { pane, .. }, Turn::Agent(ReconcileChange::Propose { proposal })) => {
+                if carrying {
                     anyhow::bail!(
                         "the person's ticked lines are being carried out; report on them before proposing again"
                     );
@@ -47,17 +90,17 @@ impl Daemon {
                 };
                 let reconcile = Reconcile {
                     asked,
-                    pane: pane_id,
-                    by,
+                    pane,
+                    by: pane_label(pane),
                     at: super::decisions::now(),
                     proposed: true,
                     lines: proposal.lines,
                     noticed: proposal.noticed,
                     carrying: Vec::new(),
                 };
-                self.store.set_reconcile(key, &slug, Some(&reconcile))?;
+                self.store.set_reconcile(key, slug, Some(&reconcile))?;
             }
-            ReconcileChange::Report { failed } => {
+            (Asker::Agent { pane, .. }, Turn::Agent(ReconcileChange::Report { failed })) => {
                 let Some(mut left) = under_way.filter(|r| r.stage() == Stage::Carrying) else {
                     anyhow::bail!("nothing was ticked for you to carry out on {slug}");
                 };
@@ -88,43 +131,15 @@ impl Daemon {
                 left.at = super::decisions::now();
                 let left = (!left.lines.is_empty()).then_some(left);
                 let decisions = self.store.decisions(key)?;
-                let filed: Vec<_> = decisions.iter().filter(|d| d.feature.as_deref() == Some(slug.as_str())).collect();
+                let filed: Vec<_> = decisions.iter().filter(|d| d.feature.as_deref() == Some(slug)).collect();
                 let reconciled = Reconciled {
                     at: super::decisions::now(),
-                    by,
-                    seen: seen(&self.store.tasks(key, &slug)?, &filed),
+                    by: pane_label(pane),
+                    seen: seen(&self.store.tasks(key, slug)?, &filed),
                 };
-                self.store.finish_reconcile(key, &slug, left.as_ref(), &reconciled)?;
+                self.store.finish_reconcile(key, slug, left.as_ref(), &reconciled)?;
             }
-        }
-        self.broadcast_decisions(&address, self.store.decisions(key)?);
-        self.store
-            .features(key)?
-            .into_iter()
-            .find(|f| f.slug == slug)
-            .ok_or_else(|| anyhow::anyhow!("there is no feature {slug}"))
-    }
-
-    /// The person's ask, ticked lines or turning down, from the view.
-    pub fn reconcile_for_client(
-        &self,
-        project: ProjectId,
-        checkout: CheckoutId,
-        slug: &str,
-        action: ReconcileAction,
-    ) -> anyhow::Result<()> {
-        let address = self.address_for_client(project, checkout)?;
-        let key = address.key.as_str();
-        let feature = self
-            .store
-            .features(key)?
-            .into_iter()
-            .find(|f| f.slug == slug)
-            .ok_or_else(|| anyhow::anyhow!("there is no feature {slug}"))?;
-        let under_way = feature.reconcile.clone();
-        let carrying = under_way.as_ref().is_some_and(|r| r.stage() == Stage::Carrying);
-        match action {
-            ReconcileAction::Ask { pane, ask } => {
+            (Asker::Person, Turn::Person(ReconcileAction::Ask { pane, ask })) => {
                 if carrying {
                     anyhow::bail!("the ticked lines are still being carried out");
                 }
@@ -150,7 +165,7 @@ impl Daemon {
                 };
                 self.store.set_reconcile(key, slug, Some(&reconcile))?;
             }
-            ReconcileAction::CarryOut { ticked } => {
+            (Asker::Person, Turn::Person(ReconcileAction::CarryOut { ticked })) => {
                 let Some(mut reconcile) = under_way.filter(|r| r.stage() == Stage::Proposed) else {
                     anyhow::bail!("no proposal waits on {slug}");
                 };
@@ -171,15 +186,29 @@ impl Daemon {
                 }
                 self.store.set_reconcile(key, slug, Some(&reconcile))?;
             }
-            ReconcileAction::Discard => {
+            (Asker::Person, Turn::Person(ReconcileAction::Discard)) => {
                 if under_way.is_none() {
                     anyhow::bail!("no reconcile is under way on {slug}");
                 }
                 self.store.set_reconcile(key, slug, None)?;
             }
+            (Asker::Person, Turn::Agent(_)) => {
+                anyhow::bail!("an agent reads, proposes and reports on a reconcile")
+            }
+            (Asker::Agent { .. }, Turn::Person(_)) => {
+                anyhow::bail!("the person asks for a reconcile and ticks its lines")
+            }
         }
-        self.broadcast_decisions(&address, self.store.decisions(key)?);
-        Ok(())
+        self.broadcast_decisions(address, self.store.decisions(key)?);
+        self.reconciled_feature(key, slug)
+    }
+
+    fn reconciled_feature(&self, key: &str, slug: &str) -> anyhow::Result<Feature> {
+        self.store
+            .features(key)?
+            .into_iter()
+            .find(|f| f.slug == slug)
+            .ok_or_else(|| anyhow::anyhow!("there is no feature {slug}"))
     }
 }
 
