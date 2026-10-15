@@ -5,7 +5,7 @@
 import { toneClass } from './chip.js';
 import { el } from './dom.js';
 import { clip, layout } from './graph_layout.js';
-import { openSaved, savedView } from './savedlink.js';
+import { openSaved, opensMark } from './savedlink.js';
 const SVG = 'http://www.w3.org/2000/svg';
 const NAMED = 6;
 let instances = 0;
@@ -80,23 +80,16 @@ export function graph(block, ctx) {
         const g = svgEl('g', {}, `vg-node ${toneClass(n.tone)}`);
         const opens = n.opens;
         if (opens != null) {
-            // Reachable by keyboard as a link is: focusable, Enter or Space follows.
-            const open = () => openSaved(opens, ctx);
+            // A click on the box follows it; the keyboard has the buttons under
+            // the graph, since a key is read only through the keymap.
             g.setAttribute('class', `vg-node vg-opens ${toneClass(n.tone)}`);
-            g.setAttribute('role', 'link');
-            g.setAttribute('tabindex', '0');
-            g.setAttribute('aria-label', `${n.label}: open ${savedView(opens)?.view.title ?? opens}`);
-            g.addEventListener('click', open);
-            g.addEventListener('keydown', (event) => {
-                if (event.key !== 'Enter' && event.key !== ' ')
-                    return;
-                event.preventDefault();
-                open();
-            });
+            g.addEventListener('click', () => openSaved(opens, ctx));
         }
         g.appendChild(svgEl('rect', { x: p.x, y: p.y, width: p.w, height: p.h, rx: 6 }, 'vg-box'));
         g.appendChild(text(p.x + p.w / 2, p.y + p.h / 2, n.label, 'vg-name'));
         svg.appendChild(g);
     });
-    return el('div', { class: 'vg' }, svg);
+    const links = block.nodes.filter((n) => n.opens != null);
+    return el('div', { class: 'vg' }, svg, links.length > 0 &&
+        el('div', { class: 'vg-links' }, links.map((n) => el('span', null, n.label, opensMark(n.opens, ctx)))));
 }

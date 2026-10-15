@@ -149,7 +149,8 @@ move no stage.
 The docks (`docks`) are the stage's left, right and bottom edges; the sidebar keeps the window's
 own left edge, so the left dock is between it and the stage, and the bottom dock is under the stage
 alone. A panel is the console (at the bottom until moved), the views agents showed (on the right),
-or one extension's view (where its extension's `place` says, the first time it opens). A panel the
+or one extension's view (where its extension's `place` says, the first time it opens), or a saved view
+(on the right, the first time it opens). A panel the
 person placed stays placed whether or not it shows or even exists, so hidden and shown again it
 comes back where it was put, and an extension's view gone with its extension finds its place again
 when it comes back; an extension's view may instead be a page on the stage, which the console and
@@ -2135,6 +2136,26 @@ view it left onto a trail, which `Backspace` or `h` pops. Choosing a view from t
 trail over. Nothing is predicted: a refresh or a stale mark is a request, and the view changes when
 the daemon sends it saved again. The terminal does not draw tree, graph, timeline or board blocks,
 so a link in one of them is reached by the link list alone.
+
+The desktop window holds the saved views (`saved_views`) and gives each one a panel, `saved:<id>`
+in `desktop.json`, docked on the right the first time it opens and moved like any other; it has no
+page on the stage, since its columns want a dock. A panel is a trail of columns side by side,
+scrolling sideways, each one saved view under its own header: the title, the scope, a stale chip,
+when it was built and at which commit, and Refresh, Mark stale, Delete (asked first) and Details
+(the recipe, the sources and the attached features). Following a link in a column puts its target
+in the column after it and drops the columns that were after; a column closes by itself (the first
+closes the panel and takes its tab from the docks) or pops out into a panel of its own. A link
+followed in an agent's view or an extension's table has no column, so it brings out an open panel
+showing the view, else opens it as the first column of one. A view the daemon does not hold is not
+opened, and one deleted takes its panel with it. Every `Value::View` and every `opens` draws as
+something to press, reachable by keyboard; one whose view is not saved yet is dimmed. `Block::Embed`
+draws the held view's blocks in a frame with its title and an Open link, a cycle, the depth cap and a
+missing view being a line saying so, as the terminal draws them. A press inside a saved view goes
+as `PressSavedView`, and a reference in one is read against the checkout on screen. The sidebar
+lists them under Views, grouped by scope, filtered to those about the chosen repository and open
+feature or all, a stale one marked; the Feature stage lists those scoped or attached to the open
+feature beside its tickets. Nothing is predicted: refreshing, marking and deleting are requests,
+and the column changes when the daemon sends the view saved again or gone.
 
 A view can offer buttons (`ViewAction`) on itself, a card, a row, a table's selected rows, or as a
 form's submit. Argus runs nothing for one: `ClientMsg::PressView` (under `VIEW_ACTIONS`) is relayed

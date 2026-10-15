@@ -531,6 +531,16 @@ right-click moves it to another dock. Any panel can also be dragged by its tab o
 extension's view from the sidebar, to an edge of the stage to dock it there, or onto the stage to
 open it as a page. The palette's **Go to …** opens one too.
 
+Views an agent saved (`argus-hook view save`) are listed under **Views** in the sidebar, grouped by
+scope and filtered to those about the chosen repository and open feature (**Here**) or all of them,
+a stale one marked. One opens as a panel docked on the right, which is moved and dragged like the
+others. A link in a view (a `view` value, or an arrow beside a heading, card, list item and the
+like) opens its target as a new column beside the one it was followed in, and a panel of several
+scrolls sideways; a column's `✕` closes it and its pop-out button makes it a panel of its own. A
+column's header offers **Refresh** (asks the agent that saved it to build it again), **Mark stale**,
+**Delete** and **Details**: what it was built from. The Feature stage lists the saved views scoped or
+attached to the open feature beside its tickets.
+
 ### `client.toml`
 
 ```toml

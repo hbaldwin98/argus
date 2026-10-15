@@ -5997,9 +5997,12 @@ button.vtree-chev:focus-visible {
 .vg-opens {
   cursor: pointer;
 }
-.vg-opens:focus-visible .vg-box {
-  stroke: var(--accent);
-  stroke-width: 2px;
+.vg-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4) var(--sp-12);
+  margin-top: var(--sp-6);
+  font-size: var(--fs-sm);
 }
 
 /* A saved view drawn inside another. */
