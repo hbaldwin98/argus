@@ -4631,6 +4631,10 @@ body.resizing:has(.brief-sash.held) {
   display: flex;
   flex-direction: column;
   gap: var(--sp-8);
+  padding: var(--sp-12) var(--sp-16);
+  font-family: var(--font-ui);
+  line-height: 1.5;
+  background: var(--bg-surface);
 }
 .ext-dialog.unasked:not(:focus-within) {
   opacity: 0.92;
