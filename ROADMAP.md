@@ -147,30 +147,35 @@ carries the role, on this machine or another through `argus --host`: the pane is
 the status bar (and the bell, when it is on) says when an agent needs someone, and a review comment
 reaches an agent through its harness's inbox.
 
-## P10: Desktop Client — first slice landed
+## P10: Desktop Client — at parity with the terminal client
 
 A Tauri desktop app as a second renderer of the daemon beside the terminal client
-([`DESKTOP.md`](DESKTOP.md) is the plan). Landed: the shared key encoder in `argus-protocol`,
-`argus bridge` exiting when its daemon hangs up, `argus desktop`, and the `argus-desktop` window. It
-reaches the daemon through `argus bridge` and shows the rail and one live pane that takes keys,
-pastes and resizes, starts a shell from a checkout's `+`, and waits for Reconnect after a stop.
+([`DESKTOP.md`](DESKTOP.md) is the plan). It reaches the daemon through `argus bridge`, and the
+parity issues under HUN-181 have landed: checkouts, review and history, the command palette and
+shortcuts, settings and notifications, projects, feature editing, starting an agent, mouse,
+selection and scrollback, the full transcript, and console shells that belong to no checkout. The
+Feature stage reads a feature through its Work, Record and Flows lenses, lays the index out as a
+list or a board, and draws a flow's sequence diagram, whose steps and lifelines a drag reorders by
+rewriting its Mermaid (HUN-172). A feature's tickets carry their role, and a reconcile with them
+is proposed by an agent and carried out only as far as the person ticks it (HUN-173).
 
-Remaining: the Feature stage and trackers (HUN-172, HUN-173); the parity
-issues under HUN-181 — checkouts, review and history, the command palette and shortcuts, settings
-and notifications, projects, feature editing, starting an agent, mouse, selection and scrollback,
-the full transcript; several panes at once; remote hosts through `ssh … argus bridge`; and
-packaging as .app, .msi and AppImage with signing and updates, which no issue tracks yet.
+Agent views (HUN-216) are data an agent read with its own tools, handed to the window as a fixed
+set of blocks it draws: never markup, and never kept in the store.
 
-Extensions (HUN-191): an outside process adds to the interface — a tab of rows it publishes
-(running dev servers, a repository's containers), commands with keys that join the keymap, the
-shortcuts sheet and the palette, dialogs (confirm, prompt, pick, form) raised over the current
-surface, and notices — and what the person does comes back to it. The daemon owns them rather than
-the window, so they work under `--host` and the terminal client can draw them too: the extension
-publishes to the pane API and holds its events open as server-sent events, the daemon launches
-each from config and restarts it, and only clients that listed extensions in `Hello` are sent them.
-A dialog goes to the client the focus names, so one window asks. An extension's key never shadows a
-built-in one; a conflict is refused when it registers. Everything is declarative, never
-extension-supplied HTML: one renderer per surface per client, and a contract the protocol checks.
+Remaining: several panes at once; remote hosts through `ssh … argus bridge`; and packaging as
+.app, .msi and AppImage with signing and updates, which no issue tracks yet.
+
+Extensions (HUN-191) landed for the daemon and the desktop window. An outside process publishes
+views of rows (running dev servers, a repository's containers) in the agent views' vocabulary,
+which the window lists under Extensions in its sidebar and opens as a page or docked beside the
+stage; registers commands with keys that join the keymap, the shortcuts sheet and the palette;
+raises dialogs (confirm, prompt, pick, form) over the current surface; and posts notices. What the
+person does comes back to it. The daemon owns extensions rather than the window, so they work
+under `--host`: an extension publishes to the pane API and holds its events open as server-sent
+events, the daemon launches each from config with a token of its own and restarts it, and only
+clients that listed extensions in `Hello` are sent them. A dialog goes to the client the focus
+names, so one window asks. An extension's key never shadows a built-in one; a conflict is refused
+when it registers. Remaining: the terminal client drawing them (HUN-217).
 
 ## Open Decisions
 
