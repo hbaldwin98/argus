@@ -65,6 +65,9 @@ pub enum Place {
     Checkouts,
     /// A checkout's + menu while it is open, which holds the keys.
     Start,
+    /// A menu over the stage, a right-click's or a button's, while it is
+    /// open; Enter is its focused item's own.
+    Menu,
     /// The review dialog while it is open, which holds the keys.
     Review,
     /// The review's jump-to-a-file field, which holds every other key.
@@ -342,6 +345,7 @@ impl Place {
             Place::Writing => "Writing in a field",
             Place::Checkouts => "Checkouts",
             Place::Start => "A checkout's + menu",
+            Place::Menu => "A menu",
             Place::Review => "Review",
             Place::Jump => "Jumping to a file",
             Place::History => "History",
@@ -391,7 +395,7 @@ const fn bind(place: Place, chords: &'static [Chord], action: Action, label: &'s
 }
 
 use Action::*;
-use Place::{Anywhere, Card, Diagram, History, Jump, Outline, Pane, Rail, Review, Sessions, Start, Window, Writing};
+use Place::{Anywhere, Card, Diagram, History, Jump, Menu, Outline, Pane, Rail, Review, Sessions, Start, Window, Writing};
 use Place::Checkouts as CheckoutsTable;
 
 pub static BINDINGS: &[Binding] = &[
@@ -508,6 +512,8 @@ pub static BINDINGS: &[Binding] = &[
     bind(Start, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next item"),
     bind(Start, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous item"),
     bind(Start, &[Chord::key("Enter")], Choose, "start the highlighted one"),
+    bind(Menu, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next item"),
+    bind(Menu, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous item"),
     bind(Review, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next line"),
     bind(Review, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous line"),
     bind(Review, &[Chord::key("Home")], First, "first line"),
@@ -619,7 +625,7 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (TrackerMap, Some(Outline), "Edit the repository's tracker map…"),
 ];
 
-const ORDER: [Place; 21] = [
+const ORDER: [Place; 22] = [
     Anywhere,
     Pane,
     Window,
@@ -631,6 +637,7 @@ const ORDER: [Place; 21] = [
     Writing,
     CheckoutsTable,
     Start,
+    Menu,
     Review,
     Jump,
     History,
@@ -726,6 +733,7 @@ mod tests {
                 "Writing in a field",
                 "Checkouts",
                 "A checkout's + menu",
+                "A menu",
                 "Review",
                 "Jumping to a file",
                 "History",
@@ -822,7 +830,7 @@ mod tests {
     #[test]
     fn no_key_is_bound_twice_where_it_is_heard() {
         let lens = |b: &&Binding| b.place == Outline && matches!(b.action, WorkLens | Action::RecordLens | Action::FlowsLens);
-        let heard_together: [&[Place]; 18] = [
+        let heard_together: [&[Place]; 19] = [
             &[Anywhere, Place::Feature, Card],
             &[Anywhere, Outline],
             &[Anywhere, Diagram],
@@ -831,6 +839,7 @@ mod tests {
             &[Anywhere, Rail],
             &[Anywhere, CheckoutsTable],
             &[Anywhere, Start],
+            &[Anywhere, Menu],
             &[Anywhere, Review],
             &[Anywhere, History],
             &[Anywhere, Sessions],

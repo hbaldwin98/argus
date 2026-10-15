@@ -46,6 +46,8 @@ pub enum Call {
     /// Starts an agent from the daemon's `template` on a checkout.
     SpawnAgent { checkout: u64, template: String },
     Close { pane: u64 },
+    /// A pane or console named from its menu.
+    RenamePane { pane: u64, title: String },
     /// The window gained or lost focus.
     Focus { focused: bool },
     SelectProject { project: u64 },

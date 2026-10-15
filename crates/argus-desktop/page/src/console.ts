@@ -7,8 +7,11 @@
 // and reports what was pressed.
 
 import type { ConsoleGesture } from './bindings/ConsoleGesture';
+import type { ConsoleTab } from './bindings/ConsoleTab';
 import { $, el, icon } from './dom.js';
 import { chordsFor, presses } from './keys.js';
+import { contextMenu, type MenuItem } from './menu.js';
+import { renameDialog } from './rename.js';
 import { type Screen, beside, consoleScreen, screen } from './screen.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
@@ -27,6 +30,29 @@ function titled(
     .map((chord) => presses(chord).join(' '))
     .join(', ');
   return keys ? `${words} (${keys})` : words;
+}
+
+/** What a console's tab or split side offers; `side` adds taking it out
+ *  of the split. */
+function tabMenu(tab: ConsoleTab, side: boolean): MenuItem[] {
+  const others = state.console?.tabs.filter((t) => t.pane !== tab.pane) ?? [];
+  return [
+    { heading: tab.title },
+    { label: 'Rename…', run: () => renameDialog(tab.pane, tab.title) },
+    side && {
+      label: 'Take out of the split',
+      run: () => gesture({ on: 'closeSide', pane: tab.pane }),
+    },
+    'sep',
+    { label: 'Close', danger: true, run: () => gesture({ on: 'close', pane: tab.pane }) },
+    others.length > 0 && {
+      label: 'Close the others',
+      danger: true,
+      run: () => {
+        for (const t of others) gesture({ on: 'close', pane: t.pane });
+      },
+    },
+  ].filter((item): item is MenuItem => !!item);
 }
 
 const PLACES = ['hidden', 'docked', 'tab', 'fullscreen'] as const;
@@ -60,7 +86,10 @@ function drawHead(): void {
       page.tabs.map((tab) =>
         el(
           'div',
-          { class: `ctab${tab.on ? ' on' : ''}${onScreen(tab.pane) ? ' live' : ''}` },
+          {
+            class: `ctab${tab.on ? ' on' : ''}${onScreen(tab.pane) ? ' live' : ''}`,
+            oncontextmenu: contextMenu(tab.title, () => tabMenu(tab, false)),
+          },
           el(
             'button',
             {
@@ -176,6 +205,7 @@ function drawSideHead(id: string, pane: number | null): void {
         class: 'thead-pick',
         title: page.typing === tab.pane ? tab.title : `Type in ${tab.title}`,
         onclick: () => gesture({ on: 'select', pane: tab.pane }),
+        oncontextmenu: contextMenu(tab.title, () => tabMenu(tab, true)),
       },
       el('span', { class: 'glyph sh' }, '›'),
       el('span', { class: 'ttl' }, tab.title),

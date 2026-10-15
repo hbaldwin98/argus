@@ -96,6 +96,7 @@ fn dispatch_pane(
             spawn_pane(out_tx, request_id, move || daemon.spawn_console())
         }
         ClientMsg::Kill { pane } => daemon.close_pane(pane),
+        ClientMsg::RenamePane { pane, title } => daemon.rename_pane(pane, &title),
         ClientMsg::CloseView { pane, id } => {
             daemon.close_view(pane, &id);
             Ok(())

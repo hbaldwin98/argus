@@ -35,6 +35,7 @@ use argus_protocol::paste;
 use argus_protocol::{
     transitions, CheckoutId, ClientMsg, Created, ExtPlace, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
     RepositoryId, ServerMsg, View, WorkspaceId, ADD_PROJECT, AGENT_VIEWS, CONSOLES, FOCUS, PASTE_FILE,
+    RENAME_PANE,
 };
 
 use crate::add_project::AddProject;
@@ -514,6 +515,7 @@ impl Session {
             Call::SpawnShell { checkout } => self.spawn_shell(CheckoutId(checkout)),
             Call::SpawnAgent { checkout, template } => self.spawn_agent(CheckoutId(checkout), template),
             Call::Close { pane } => self.close(PaneId(pane)),
+            Call::RenamePane { pane, title } => self.rename(PaneId(pane), title),
             Call::Focus { focused } => self.focus(focused),
             Call::SelectProject { project } => self.select_project(ProjectId(project)),
             Call::OpenWorkspace { workspace } => self.open_workspace(WorkspaceId(workspace)),
@@ -1041,6 +1043,18 @@ impl Session {
     /// a tree without it arrives, so a refused close leaves it showing.
     fn close(&mut self, pane: PaneId) -> Vec<ClientMsg> {
         self.kill(pane);
+        self.finish()
+    }
+
+    /// Names a pane; like a close, the panel shows the name once a tree
+    /// carrying it comes back.
+    fn rename(&mut self, pane: PaneId, title: String) -> Vec<ClientMsg> {
+        if !self.status.daemon_can(RENAME_PANE) {
+            return self.note("argusd is too old to rename panes: run `argus server restart`");
+        }
+        if self.project_of(pane).is_some() || self.console.holds(pane) {
+            self.out.push(ClientMsg::RenamePane { pane, title });
+        }
         self.finish()
     }
 
@@ -2600,6 +2614,23 @@ mod tests {
     }
 
     #[test]
+    fn a_rename_is_asked_of_the_daemon_and_not_shown_before_it_answers() {
+        let mut s = session(Hello::this_build());
+        let sent = s.rename(PaneId(1), "the pty deadlock".into());
+        assert!(matches!(
+            sent.as_slice(),
+            [ClientMsg::RenamePane { pane: PaneId(1), title }] if title == "the pty deadlock"
+        ));
+        assert!(s.rename(PaneId(99), "nowhere".into()).is_empty());
+    }
+
+    #[test]
+    fn a_daemon_without_rename_is_not_sent_one() {
+        let mut s = session(without_focus());
+        assert!(s.rename(PaneId(1), "the pty deadlock".into()).is_empty());
+    }
+
+    #[test]
     fn the_leader_and_x_close_the_shown_pane() {
         let mut s = session(without_focus());
         s.select(PaneId(1));
@@ -3566,7 +3597,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 101] = [
+    const CALLS: [&str; 102] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -3668,6 +3699,7 @@ mod tests {
         r#"{"call":"open_reconcile"}"#,
         r#"{"call":"reconcile","gesture":{"on":"action","action":"tick"}}"#,
         r#"{"call":"open_url","url":"https://example.com"}"#,
+        r#"{"call":"rename_pane","pane":1,"title":"the pty deadlock"}"#,
     ];
 
     /// Each call reads as the page writes it and goes through the session,

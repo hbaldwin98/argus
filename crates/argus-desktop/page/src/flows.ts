@@ -8,7 +8,7 @@ import type { Action } from './bindings/Action';
 import type { FeatureView } from './bindings/FeatureView';
 import type { FlowDetail } from './bindings/FlowDetail';
 import type { StepRow } from './bindings/StepRow';
-import { closeLayer } from './features.js';
+import { closeLayer, placeMenu } from './menu.js';
 import {
   clickable,
   drawSequence,
@@ -17,7 +17,7 @@ import {
   openExpanded,
   sourceForm,
 } from './sequence.js';
-import { $, el, icon, type Child } from './dom.js';
+import { el, icon, type Child } from './dom.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 import { begin, edit, field, formButtons, keycap, lineList, titled } from './work.js';
@@ -270,13 +270,10 @@ export function bindMenu(flow: FlowDetail, at: { clientX: number; clientY: numbe
       );
     }),
   );
-  $('layer').replaceChildren(menu);
-  const box = menu.getBoundingClientRect();
-  const x = at?.clientX ?? window.innerWidth / 2 - box.width / 2;
-  const y = at?.clientY ?? window.innerHeight / 3;
-  menu.style.left = `${Math.min(x, window.innerWidth - box.width - 8)}px`;
-  menu.style.top = `${Math.min(y, window.innerHeight - box.height - 8)}px`;
-  menu.querySelector<HTMLElement>('.mi:not([disabled])')?.focus();
+  placeMenu(menu, {
+    x: at?.clientX ?? window.innerWidth / 2 - 140,
+    y: at?.clientY ?? window.innerHeight / 3,
+  });
 }
 
 /** Runs a Flows lens binding, saying whether it had anything to do. */

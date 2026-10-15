@@ -115,6 +115,12 @@ pub enum ClientMsg {
     Kill {
         pane: PaneId,
     },
+    /// A person naming a pane or a console. It is the pane's own title, so
+    /// its agent may still retitle it with `argus-hook title`.
+    RenamePane {
+        pane: PaneId,
+        title: String,
+    },
     /// `git worktree add` a new checkout in `base`'s project, branched off
     /// `base`'s current HEAD, and add it to the tree.
     CreateWorktree {

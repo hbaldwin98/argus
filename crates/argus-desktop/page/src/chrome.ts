@@ -11,7 +11,9 @@ import { $, el, ghosts, icon, type Child } from './dom.js';
 import { drawExtensionNav, drawExtensionPage, extensionPageTitle } from './extension_views.js';
 import { drawFeatures } from './features.js';
 import { chordsFor, keycaps, presses } from './keys.js';
+import { contextMenu, type MenuItem } from './menu.js';
 import { drawHeading, drawRemoving } from './projects.js';
+import { renameDialog } from './rename.js';
 import { screen } from './screen.js';
 import { openSettings } from './settings.js';
 import { dragEdge } from './edge.js';
@@ -149,7 +151,28 @@ function repoRow(repo: RailRepository): HTMLElement {
   const chosen = repo.id === state.rail.repository;
   return el(
     'div',
-    { class: `repo${repo.quiet ? ' quiet' : ''}${chosen ? ' sel' : ''}` },
+    {
+      class: `repo${repo.quiet ? ' quiet' : ''}${chosen ? ' sel' : ''}`,
+      oncontextmenu: contextMenu(repo.name, () => [
+        { heading: repo.name },
+        {
+          label: 'Features',
+          run: () => {
+            if (!chosen) call('choose_repository', { repository: repo.id });
+            call('show_features', { open: true });
+          },
+        },
+        {
+          label: 'Recent agent sessions',
+          run: () => call('open_sessions', { repository: repo.id }),
+        },
+        'sep',
+        {
+          label: repo.open ? 'Collapse' : 'Expand',
+          run: () => call('toggle_repository', { repository: repo.id }),
+        },
+      ]),
+    },
     el(
       'button',
       {
@@ -186,6 +209,7 @@ function checkoutRow(repository: string, co: RailCheckout): HTMLElement {
       class: `co${picked ? ' picked' : ''}${open ? ' hot' : ''}`,
       title: co.branch ? `${where} on ${co.branch}` : where,
       onclick: () => pickRail(co.id, null),
+      oncontextmenu: contextMenu(`${repository} ${co.name}`, () => checkoutMenu(co)),
     },
     icon('branch'),
     el('span', { class: 'name ttl' }, co.name),
@@ -210,12 +234,60 @@ function checkoutRow(repository: string, co: RailCheckout): HTMLElement {
   );
 }
 
+function checkoutMenu(co: RailCheckout): MenuItem[] {
+  return [
+    { heading: co.branch || co.name },
+    ...starts().map((item) => ({
+      label: item.agent ? `New agent · ${item.agent}` : 'New shell',
+      run: () => start(co.id, item.agent),
+    })),
+    'sep',
+    { label: 'Review changes', run: () => call('open_review', { checkout: co.id }) },
+    { label: 'History', run: () => call('open_history', { checkout: co.id }) },
+    { label: 'Show in Checkouts', run: () => call('go_to_checkout', { checkout: co.id }) },
+    ...(co.kind === 'worktree'
+      ? ([
+          'sep',
+          {
+            label: 'Remove worktree…',
+            danger: true,
+            run: () => call('remove_checkout', { checkout: co.id }),
+          },
+        ] as MenuItem[])
+      : []),
+  ];
+}
+
+/** What a pane's row, its tab or the stage's header offers. */
+export function paneMenu(pane: number, title: string, first: MenuItem[] = []): MenuItem[] {
+  return [
+    { heading: title },
+    ...first,
+    { label: 'Rename…', run: () => renameDialog(pane, title) },
+    'sep',
+    { label: 'Close', danger: true, run: () => call('close', { pane }) },
+  ];
+}
+
 function paneRow(checkout: number, pane: RailPane): HTMLElement {
   const word = PANE_WORD[pane.status];
   const picked = state.railPick?.pane === pane.id;
   return el(
     'div',
-    { class: 'pane-row' },
+    {
+      class: 'pane-row',
+      oncontextmenu: contextMenu(pane.title, () =>
+        paneMenu(pane.id, pane.title, [
+          {
+            label: 'Show',
+            run: () => {
+              pickRail(checkout, pane.id);
+              call('select', { pane: pane.id });
+            },
+          },
+        ]),
+      ),
+    },
     el(
       'button',
       {
@@ -470,7 +542,14 @@ function drawHead(): void {
       el('span', { class: 'fg-faint' }, '/'),
     ),
     el('span', { class: `glyph${shown.agent ? '' : ' sh'}` }, shown.agent ? '◆' : '›'),
-    el('span', { class: 'type-heading head-title' }, shown.title),
+    el(
+      'span',
+      {
+        class: 'type-heading head-title',
+        oncontextmenu: contextMenu(shown.title, () => paneMenu(shown.pane, shown.title)),
+      },
+      shown.title,
+    ),
     el('span', { class: `pill ${shown.status}` }, shown.status),
     shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '',
     el('span', { class: 'grow' }),

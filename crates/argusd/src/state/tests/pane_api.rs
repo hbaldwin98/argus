@@ -50,6 +50,35 @@ async fn an_agent_can_rename_its_own_row() {
 }
 
 #[tokio::test]
+async fn a_person_can_rename_a_pane_but_not_to_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (d, pane) = daemon_with_an_agent(dir.path()).await;
+
+    d.rename_pane(pane, "  the pty\n deadlock ").unwrap();
+    assert_eq!(pane_info(&d, pane).title, "the pty deadlock");
+    assert!(d.rename_pane(pane, "   ").is_err());
+    assert_eq!(pane_info(&d, pane).title, "the pty deadlock");
+    assert!(d.rename_pane(PaneId(9999), "nowhere").is_err());
+
+    d.close_pane(pane).unwrap();
+}
+
+#[tokio::test]
+async fn a_console_can_be_renamed() {
+    let dir = tempfile::tempdir().unwrap();
+    with_temp_config(|_| {
+        let d = daemon_for_restore(dir.path());
+        let console = d.spawn_console().unwrap();
+
+        d.rename_pane(console, "logs").unwrap();
+        let titles: Vec<_> = d.consoles().into_iter().map(|p| p.title).collect();
+        assert_eq!(titles, ["logs"]);
+
+        close_consoles(&d);
+    });
+}
+
+#[tokio::test]
 async fn an_agent_spawned_inside_a_pane_reports_as_a_child_of_it() {
     // The bug: a CLI started from inside a pane inherits that pane's
     // hook URL and token, so every turn it takes used to overwrite the

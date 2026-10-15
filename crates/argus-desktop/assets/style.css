@@ -692,6 +692,14 @@
   color: var(--fg-faint);
   cursor: default;
 }
+.mi.danger:not([disabled]) {
+  color: var(--danger);
+}
+.mi:focus-visible,
+.mi:not([disabled]):hover {
+  background: var(--fill);
+  outline: none;
+}
 .mlabel {
   font: var(--type-label);
   letter-spacing: 0.07em;

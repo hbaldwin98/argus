@@ -3,9 +3,9 @@
 // the sequence diagram drawn on the right (`sequence.ts`), which expands
 // over the window. A binding, a step's text and a flow's source are each
 // sent as the flow rewritten, and show when the daemon's pushed flows do.
-import { closeLayer } from './features.js';
+import { closeLayer, placeMenu } from './menu.js';
 import { clickable, drawSequence, editSource, editStep, openExpanded, sourceForm, } from './sequence.js';
-import { $, el, icon } from './dom.js';
+import { el, icon } from './dom.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 import { begin, edit, field, formButtons, keycap, lineList, titled } from './work.js';
@@ -127,13 +127,10 @@ export function bindMenu(flow, at) {
             },
         }, el('span', { class: 'mono fg-ref' }, decision.label), el('span', { class: 'grow' }, decision.text), bound && el('span', { class: 'meta' }, 'bound'));
     }));
-    $('layer').replaceChildren(menu);
-    const box = menu.getBoundingClientRect();
-    const x = at?.clientX ?? window.innerWidth / 2 - box.width / 2;
-    const y = at?.clientY ?? window.innerHeight / 3;
-    menu.style.left = `${Math.min(x, window.innerWidth - box.width - 8)}px`;
-    menu.style.top = `${Math.min(y, window.innerHeight - box.height - 8)}px`;
-    menu.querySelector('.mi:not([disabled])')?.focus();
+    placeMenu(menu, {
+        x: at?.clientX ?? window.innerWidth / 2 - 140,
+        y: at?.clientY ?? window.innerHeight / 3,
+    });
 }
 /** Runs a Flows lens binding, saying whether it had anything to do. */
 export function flowsAction(view, action) {

@@ -16,6 +16,7 @@ import { captureOpen, drawCapture, openCapture } from './capture.js';
 import { notice } from './chrome.js';
 import { closeExpanded } from './sequence.js';
 import { $, el, ghosts, icon, type Child } from './dom.js';
+import { closeLayer, placeMenu } from './menu.js';
 import { ticketLinks } from './tickets.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
@@ -466,11 +467,7 @@ function afterMenu(peek: Peek, x: number, y: number): void {
       ),
     ),
   );
-  $('layer').replaceChildren(menu);
-  const box = menu.getBoundingClientRect();
-  menu.style.left = `${Math.min(x, window.innerWidth - box.width - 8)}px`;
-  menu.style.top = `${Math.min(y, window.innerHeight - box.height - 8)}px`;
-  menu.querySelector<HTMLElement>('.mi')?.focus();
+  placeMenu(menu, { x, y });
 }
 
 function moveButtons(row: FeatureRow): HTMLElement[] {
@@ -585,6 +582,9 @@ function card(row: FeatureRow): HTMLElement {
       'data-slug': row.slug,
       onclick: () => {
         if (!drag.justDropped) call('peek', { slug: row.slug });
+      },
+      ondblclick: () => {
+        if (!drag.justDropped) call('open_feature', { slug: row.slug });
       },
       oncontextmenu: (e: MouseEvent) => {
         e.preventDefault();
@@ -752,10 +752,6 @@ function drop(row: FeatureRow, group: Group): void {
 
 // ---- Menus and the hold dialog --------------------------------------------
 
-export function closeLayer(): void {
-  $('layer').replaceChildren();
-}
-
 function moveMenu(row: FeatureRow, x: number, y: number): void {
   const agent = row.agent;
   const menu = el(
@@ -801,11 +797,7 @@ function moveMenu(row: FeatureRow, x: number, y: number): void {
       ),
     ),
   );
-  $('layer').replaceChildren(menu);
-  const box = menu.getBoundingClientRect();
-  menu.style.left = `${Math.min(x, window.innerWidth - box.width - 8)}px`;
-  menu.style.top = `${Math.min(y, window.innerHeight - box.height - 8)}px`;
-  menu.querySelector<HTMLElement>('.mi:not([disabled])')?.focus();
+  placeMenu(menu, { x, y });
 }
 
 function holdDialog(row: FeatureRow): void {
@@ -937,11 +929,4 @@ export function featureAction(action: Action): boolean {
 export function listen(): void {
   document.addEventListener('pointermove', onPointerMove);
   document.addEventListener('pointerup', onPointerUp);
-
-  document.addEventListener('mousedown', (e) => {
-    const layer = $('layer');
-    if (layer.querySelector('.menu') && e.target instanceof Node && !layer.contains(e.target)) {
-      closeLayer();
-    }
-  });
 }

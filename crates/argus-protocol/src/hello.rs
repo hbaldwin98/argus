@@ -37,6 +37,7 @@ pub const CAPABILITIES: &[&str] = &[
     EXTENSION_DIALOGS,
     AGENT_VIEWS,
     DESCRIBE_EXTENSIONS,
+    RENAME_PANE,
 ];
 
 /// `ServerMsg::PaneTelemetry` in place of a whole tree when an agent
@@ -94,6 +95,10 @@ pub const EXTENSION_DIALOGS: &str = "extension-dialogs";
 /// extension is and publishes, for `argus extension list` and `show`.
 /// Apart from [`EXTENSIONS`] because a client asking need draw none of it.
 pub const DESCRIBE_EXTENSIONS: &str = "describe-extensions";
+
+/// `ClientMsg::RenamePane`: a person naming a pane or a console from a
+/// client.
+pub const RENAME_PANE: &str = "rename-pane";
 
 /// One side's greeting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

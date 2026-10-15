@@ -10,7 +10,7 @@ import type { CheckoutsRow } from './bindings/CheckoutsRow';
 import type { LastCommit } from './bindings/LastCommit';
 import { startMenu, toggleStart } from './chrome.js';
 import { $, el, ghosts, icon, type Child } from './dom.js';
-import { closeLayer } from './features.js';
+import { closeLayer } from './menu.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';

@@ -9,6 +9,7 @@ import { captureOpen, drawCapture, openCapture } from './capture.js';
 import { notice } from './chrome.js';
 import { closeExpanded } from './sequence.js';
 import { $, el, ghosts, icon } from './dom.js';
+import { closeLayer, placeMenu } from './menu.js';
 import { ticketLinks } from './tickets.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
@@ -253,11 +254,7 @@ function afterMenu(peek, x, y) {
             call('wait', { slug: peek.slug, on: choice.slug, waits: !choice.waits });
         },
     }, el('span', { class: choice.waits ? 'fg-ok' : 'fg-faint' }, choice.waits ? '✓' : ' '), el('span', { class: 'mono fg-faint' }, `#${choice.number}`), el('span', { class: 'grow' }, choice.title), choice.waits && el('span', { class: 'meta' }, 'take back'))));
-    $('layer').replaceChildren(menu);
-    const box = menu.getBoundingClientRect();
-    menu.style.left = `${Math.min(x, window.innerWidth - box.width - 8)}px`;
-    menu.style.top = `${Math.min(y, window.innerHeight - box.height - 8)}px`;
-    menu.querySelector('.mi')?.focus();
+    placeMenu(menu, { x, y });
 }
 function moveButtons(row) {
     return [
@@ -320,6 +317,10 @@ function card(row) {
         onclick: () => {
             if (!drag.justDropped)
                 call('peek', { slug: row.slug });
+        },
+        ondblclick: () => {
+            if (!drag.justDropped)
+                call('open_feature', { slug: row.slug });
         },
         oncontextmenu: (e) => {
             e.preventDefault();
@@ -458,9 +459,6 @@ function drop(row, group) {
     notice(`${GROUP_LABEL[group]} follows the work${move?.disabled ? `: ${move.disabled}` : ''}.`);
 }
 // ---- Menus and the hold dialog --------------------------------------------
-export function closeLayer() {
-    $('layer').replaceChildren();
-}
 function moveMenu(row, x, y) {
     const agent = row.agent;
     const menu = el('div', { class: 'menu', role: 'menu', 'aria-label': `#${row.number} ${row.title}` }, el('div', { class: 'mlabel' }, `#${row.number} ${row.title}`), agent &&
@@ -487,11 +485,7 @@ function moveMenu(row, x, y) {
                 call('archive', { slug: row.slug, archived: false });
         },
     }, move.disabled === 'here now' && el('span', { class: 'fg-ok' }, '✓'), move.label, el('span', { class: 'grow' }), move.disabled ? el('span', { class: 'meta' }, move.disabled) : moveKey(move.to))));
-    $('layer').replaceChildren(menu);
-    const box = menu.getBoundingClientRect();
-    menu.style.left = `${Math.min(x, window.innerWidth - box.width - 8)}px`;
-    menu.style.top = `${Math.min(y, window.innerHeight - box.height - 8)}px`;
-    menu.querySelector('.mi:not([disabled])')?.focus();
+    placeMenu(menu, { x, y });
 }
 function holdDialog(row) {
     const reason = el('input', {
@@ -600,10 +594,4 @@ export function featureAction(action) {
 export function listen() {
     document.addEventListener('pointermove', onPointerMove);
     document.addEventListener('pointerup', onPointerUp);
-    document.addEventListener('mousedown', (e) => {
-        const layer = $('layer');
-        if (layer.querySelector('.menu') && e.target instanceof Node && !layer.contains(e.target)) {
-            closeLayer();
-        }
-    });
 }

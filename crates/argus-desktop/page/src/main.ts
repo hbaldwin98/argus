@@ -26,6 +26,7 @@ import { drawSettings } from './settings.js';
 import { drawFeatures, listen as listenToFeatures } from './features.js';
 import { listen as listenToInput } from './input.js';
 import { listen as listenToKeys, runOver } from './keymap.js';
+import { listen as listenToMenus } from './menu.js';
 import { listen as listenToFrame } from './frame.js';
 import { drawPalette, openPalette } from './palette.js';
 import { addProjectOpen, drawAddProject, drawHeading } from './projects.js';
@@ -190,6 +191,7 @@ listenForSound();
 listenToKeys();
 listenToFeatures();
 listenToConsole();
+listenToMenus();
 listenToRailEdge();
 listenToViewsEdge();
 

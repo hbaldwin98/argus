@@ -10,7 +10,7 @@ import type { ExtTable } from './bindings/ExtTable';
 import type { ExtTableAction } from './bindings/ExtTableAction';
 import type { Value } from './bindings/Value';
 import { $, el, icon, type IconName } from './dom.js';
-import { closeLayer } from './features.js';
+import { closeLayer } from './menu.js';
 import { keycaps } from './keys.js';
 import { state } from './state.js';
 import { table, type TableBlock } from './table.js';

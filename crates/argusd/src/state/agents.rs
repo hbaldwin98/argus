@@ -536,6 +536,33 @@ impl Daemon {
         });
     }
 
+    /// A person naming a pane from a client. A console is no agent's, so
+    /// it is looked for apart from the tree.
+    pub fn rename_pane(&self, pane: PaneId, title: &str) -> anyhow::Result<()> {
+        let title = clean_title(title);
+        if title.is_empty() {
+            anyhow::bail!("a pane needs a name");
+        }
+        let mut found = false;
+        self.edit_pane(pane, |p| {
+            found = true;
+            p.set_title(title.clone())
+        });
+        if found {
+            return Ok(());
+        }
+        let changed = {
+            let mut inner = self.inner.lock().unwrap();
+            let console = inner.consoles.iter_mut().find(|p| p.id == pane);
+            let console = console.ok_or_else(|| anyhow::anyhow!("no such pane"))?;
+            std::mem::replace(&mut console.title, title.clone()) != title
+        };
+        if changed {
+            self.broadcast_tree();
+        }
+        Ok(())
+    }
+
     /// The reporting session, when it is not the one that owns the pane.
     /// A report with no session at all is the pane's own: only a harness
     /// event carries one, and `argus-hook status` typed by hand has none.

@@ -6,7 +6,7 @@
 // holds all of it (`src/extension_views.rs`, `src/extension_keys.rs`); a
 // row changes only when its extension publishes it again.
 import { $, el, icon } from './dom.js';
-import { closeLayer } from './features.js';
+import { closeLayer } from './menu.js';
 import { keycaps } from './keys.js';
 import { state } from './state.js';
 import { table } from './table.js';
