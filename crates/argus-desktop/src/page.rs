@@ -9,6 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::docks::{Dock, DocksLayout, Panel};
 use crate::features::Layout;
 use crate::keymap::{Action, Command, Group};
 use crate::keys::PageKey;
@@ -144,8 +145,10 @@ pub enum Call {
     Command { action: Action },
     GoToCheckout { checkout: u64 },
     GoToFeature { slug: String },
-    /// A gesture on the console: its tabs, its buttons, its sash.
+    /// A gesture on the console: its tabs and its buttons.
     Console { gesture: ConsoleGesture },
+    /// A gesture on the docks: a panel moved, a sash let go.
+    Docks { gesture: DockGesture },
     /// Heard only while the daemon is stopped.
     Reconnect,
     Minimize,
@@ -412,7 +415,7 @@ pub enum ConsoleGesture {
     Toggle,
     /// The Console stage: the console fills the stage.
     Tab,
-    /// Docked under the stage, from the Console stage or fullscreen.
+    /// In its dock, from hidden, the Console stage or fullscreen.
     Dock,
     /// Fullscreen beside the sidebar, or back to where it was.
     Fullscreen,
@@ -424,14 +427,24 @@ pub enum ConsoleGesture {
     Spawn,
     /// A tab's close: the daemon ends that console.
     Close { pane: u64 },
-    /// The sash let go at `height` CSS pixels.
-    Height { height: u32 },
     /// Splits the console in two, or puts the split away keeping the side
     /// with the keys.
     Split,
     /// A split side's close: that side leaves the split, its console stays
     /// a tab.
     CloseSide { pane: u64 },
+}
+
+/// What was done to the docks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(export))]
+#[serde(rename_all = "camelCase", tag = "on")]
+pub enum DockGesture {
+    /// The panel goes to `dock`, shown there.
+    Move { panel: Panel, dock: Dock },
+    /// A dock's sash let go at `size` CSS pixels: the bottom's height, or
+    /// a side's width.
+    Size { dock: Dock, size: u32 },
 }
 
 /// A screen the window draws a pane on: the Workspace's, and the console's
@@ -491,6 +504,9 @@ pub enum Event {
     AddProject(Box<AddProjectPage>),
     /// The console, whole, whenever it changes.
     Console(Box<ConsolePage>),
+    /// Which dock holds each panel, which tab each shows, whether it is
+    /// open and how big, whole, whenever it changes.
+    Docks(Box<DocksLayout>),
     /// Text a pane's child put on the clipboard (OSC 52).
     Clipboard { text: String },
     /// Something the daemon said that passes: a refused request's reason.
@@ -796,7 +812,7 @@ pub enum ConsolePlace {
     /// Only the sidebar's foot says it is there.
     #[default]
     Hidden,
-    /// Under the Workspace, Feature or Checkouts stage.
+    /// In its dock beside the Workspace, Feature or Checkouts stage.
     Docked,
     /// The Console stage.
     Tab,
@@ -811,8 +827,6 @@ pub enum ConsolePlace {
 #[serde(rename_all = "camelCase")]
 pub struct ConsolePage {
     pub place: ConsolePlace,
-    /// Docked, in CSS pixels.
-    pub height: u32,
     /// A tab per console the daemon holds, in the order they were started.
     pub tabs: Vec<ConsoleTab>,
     /// The console whose screen the window's canvas is drawing, on the

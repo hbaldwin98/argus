@@ -106,8 +106,10 @@ window's version of the terminal client's bell, beside its chime. The leader and
 putting the sidebar away until the same keys again. The console (`console`) is a fourth place in
 the nav, keyed 4 (in a pane, the leader and 4): the daemon's consoles (`ServerMsg::Consoles`) as
 tabs, `+` asking for one (`SpawnConsole`) that appears once the daemon's consoles hold it, and a
-tab's close ending it. It is docked under the Workspace, Feature and Checkouts stages with a sash
-to resize it, fills the stage as the Console, fills all but the sidebar's projects fullscreen (the
+tab's close ending it. It is docked beside the Workspace, Feature and Checkouts stages — at the
+bottom until it is moved, by its head's dock menu or the palette's Dock the console on the left, on
+the right or at the bottom — with a sash to resize it, fills the stage as the Console, fills all but
+the sidebar's projects fullscreen (the
 leader and `z`; the nav and the sidebar's foot are put away, the strip stays for the window's
 buttons), or is hidden, a `›_` in the sidebar's foot and `` ` `` (the leader and `` ` ``) showing it
 again. The Workspace's pane and the console each have a screen of their own, so a docked console
@@ -124,9 +126,17 @@ gives it the keys, and the leader and `o` hands them to the next one drawn; a ta
 the console's side with them; the wheel scrolls the side under it. A side's `✕`, the split button
 again (keeping the side with the keys), or a side's console ending puts the split away, the other
 side filling the console, and keys a console held that ended go to the console's other side, or
-else to the Workspace's pane. Whether
-it is docked and its height are saved in `desktop.json`; fullscreen, the split and the tabs chosen
-are the run's, since a restarted daemon's consoles are new shells under new ids. The Feature stage
+else to the Workspace's pane. Where it is docked, whether it shows, and the dock's size are saved
+in `desktop.json`; fullscreen, the split and the tabs chosen are the run's, since a restarted
+daemon's consoles are new shells under new ids. The docks (`docks`) are the stage's left, right and
+bottom edges; the sidebar keeps the window's own left edge, so the left dock is between it and the
+stage, and the bottom dock is under the stage alone. Each panel — the console, for now — is in
+exactly one dock whether or not it shows, so hidden and shown again it comes back where it was put;
+a dock shows one of its tabs at a time, is open or closed, and is as wide or tall as its sash left
+it. The Console stage and fullscreen take a panel out of its dock without moving it, and leaving
+them puts it back. A panel moved to a dock is shown there, out of fullscreen and the Console stage,
+and the dock it left shows the tab before it, or closes once empty. A `desktop.json` from before
+the docks keeps its console docked at the bottom, as tall as it was. The Feature stage
 has them while it is open, and another pane brings them back for good. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
 `crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `screen`, `input`, `keymap`,
@@ -403,7 +413,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `notifications` | the system notification an agent coming to need you raises: whether a tree's changes raise one, what it says, and handing it to the system |
 | `backdrop` | what shows through the window where its background is see-through: the backdrops this machine can draw, and putting the chosen one on the live window |
 | `shown` | the panes the window shows — the Workspace's, and one per side of the console — each side's subscription, size and view on this connection, which side has the keys, whether the Workspace's pane fills the window, and whether the leader waits on the next key |
-| `console` | where the console is — docked, the Console stage, fullscreen or hidden — how tall it is docked, the daemon's consoles and the tab chosen for each side of a split, and the page it draws |
+| `console` | where the console is — docked, the Console stage, fullscreen or hidden — the daemon's consoles and the tab chosen for each side of a split, and the page it draws |
+| `docks` | where each panel sits: which dock — left, right or bottom — holds it among its tabs, which tab each dock shows, whether it is open and how big, and whether that changed since it was saved |
 | `agents` | which agents the window offers to start: the daemon's templates, the one last started first while the daemon still offers it |
 | `dialogs` | the review and history dialogs as the window holds them: which is open, the daemon's answers routed to the one that asked, the layout the next review opens on, and what the page last heard of each |
 | `sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once |
@@ -429,7 +440,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `feature_edits` | what an edit to an open feature asks of the daemon: each gesture as the message the terminal client sends for it — a drag on a flow as its source rewritten — checked against the protocol's bounds |
 
 | `capture_note` | a new feature being written as one note: what it reads as by `capture`'s grammar, and whether the board holds the feature it was sent as yet |
-| `settings` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, the side and layout a review opens on, whether the console is docked and its height, and the Settings dialog's choices |
+| `settings` | what the window remembers between runs: each repository's index layout, the agent it last started, whether it chimes, the side and layout a review opens on, where each panel is docked and how big each dock is, and the Settings dialog's choices |
 | `page` | what the page and the window's Rust say to each other: the events down its channel, and every call it makes as one `Call` |
 | `commands` | the two commands the page invokes — `connect` for its channel, and `call` for every `page::Call` — and which part of the window answers each call |
 | `shared` | what the page's calls, the daemon's messages and the frame tick share, and the order their effects leave in |

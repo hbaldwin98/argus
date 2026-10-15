@@ -62,31 +62,42 @@
           <button class="winbtn shut" id="win-close" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor"></path></svg></button>
         </div>
       </div>
-      <div class="fstage" id="fstage" hidden></div>
-      <div class="fstage cstage" id="cstage" hidden></div>
-      <div class="fstage xstage" id="xstage" hidden></div>
-      <div class="nstage" id="nstage" hidden></div>
-      <div class="stage-body" id="body">
-        <div class="terminal" id="terminal" hidden>
-          <textarea id="input" aria-label="Type into the pane" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+      <div class="work" id="work">
+        <div class="dock dock-left" id="dock-left" hidden>
+          <div class="dock-sash" id="dock-left-sash" role="separator" aria-orientation="vertical" aria-label="Resize the left dock"></div>
         </div>
-        <div class="empty" id="empty"></div>
+        <div class="center" id="center">
+          <div class="fstage" id="fstage" hidden></div>
+          <div class="fstage cstage" id="cstage" hidden></div>
+          <div class="fstage xstage" id="xstage" hidden></div>
+          <div class="nstage" id="nstage" hidden></div>
+          <div class="stage-body" id="body">
+            <div class="terminal" id="terminal" hidden>
+              <textarea id="input" aria-label="Type into the pane" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+            </div>
+            <div class="empty" id="empty"></div>
+          </div>
+          <div class="sash" id="dock-bottom-sash" role="separator" aria-orientation="horizontal" aria-label="Resize the bottom dock" hidden><span></span></div>
+          <div class="dock dock-bottom" id="dock-bottom" hidden></div>
+          <section class="console" id="console" aria-label="Console" hidden>
+            <div class="chead" id="console-head"></div>
+            <div class="cbody" id="console-body">
+              <div class="cside" id="console-first" hidden>
+                <div class="thead" id="console-first-head" hidden></div>
+                <div class="terminal" id="terminal-console"></div>
+              </div>
+              <div class="cside" id="console-second" hidden>
+                <div class="thead" id="console-second-head"></div>
+                <div class="terminal" id="terminal-beside"></div>
+              </div>
+              <div class="empty" id="console-empty"></div>
+            </div>
+          </section>
+        </div>
+        <div class="dock dock-right" id="dock-right" hidden>
+          <div class="dock-sash" id="dock-right-sash" role="separator" aria-orientation="vertical" aria-label="Resize the right dock"></div>
+        </div>
       </div>
-      <div class="sash" id="console-sash" role="separator" aria-orientation="horizontal" aria-label="Resize the console" hidden><span></span></div>
-      <section class="console" id="console" aria-label="Console" hidden>
-        <div class="chead" id="console-head"></div>
-        <div class="cbody" id="console-body">
-          <div class="cside" id="console-first" hidden>
-            <div class="thead" id="console-first-head" hidden></div>
-            <div class="terminal" id="terminal-console"></div>
-          </div>
-          <div class="cside" id="console-second" hidden>
-            <div class="thead" id="console-second-head"></div>
-            <div class="terminal" id="terminal-beside"></div>
-          </div>
-          <div class="empty" id="console-empty"></div>
-        </div>
-      </section>
     </main>
     <aside class="vpanel" id="views" aria-label="Views agents showed" hidden>
       <div class="views-sash" id="views-sash" role="separator" aria-orientation="vertical" aria-label="Resize the views" title="Drag to resize; double-click for the usual width"></div>

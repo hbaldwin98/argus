@@ -14,7 +14,7 @@ import {
   unpickRail,
 } from './chrome.js';
 import { drawCheckouts } from './checkouts.js';
-import { listen as listenToConsole } from './console.js';
+import { drawDocks, listen as listenToDocks } from './docks.js';
 import { clearComposer, focusComposer } from './compose.js';
 import { $ } from './dom.js';
 import { drawHistory, historyOpen } from './history.js';
@@ -67,6 +67,10 @@ function receive(event: Event): void {
     case 'status':
       state.status = event;
       drawChrome();
+      break;
+    case 'docks':
+      state.docks = event;
+      drawDocks();
       break;
     case 'console': {
       const before = state.console?.typing ?? null;
@@ -190,7 +194,7 @@ listenToInput();
 listenForSound();
 listenToKeys();
 listenToFeatures();
-listenToConsole();
+listenToDocks();
 listenToMenus();
 listenToRailEdge();
 listenToViewsEdge();

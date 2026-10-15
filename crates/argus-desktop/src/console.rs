@@ -1,16 +1,15 @@
 //! The console: shells that belong to no checkout, as the window holds
-//! them — where it is (docked under a stage, the Console stage, fullscreen
-//! beside the sidebar, or hidden), how tall it is docked, the daemon's
-//! consoles, the tab chosen for each side of a split — and the page it
-//! draws.
+//! them — where it is (docked, the Console stage, fullscreen beside the
+//! sidebar, or hidden), the daemon's consoles, the tab chosen for each side
+//! of a split — and the page it draws.
 //!
 //! The consoles are the daemon's `ServerMsg::Consoles`, never predicted: a
 //! tab appears once the daemon says the console exists and goes once it
-//! says it ended. Whether it is docked and its height are remembered in
-//! `desktop.json`; fullscreen, the split and the tabs chosen last as long
-//! as the run: a daemon restarted brings its consoles back as new shells
-//! under new ids, so a split kept for the next run would not find its two.
-//! Which panes are
+//! says it ended. Which dock it is in, whether that dock shows it, and how
+//! big it is are `docks`'s, remembered in `desktop.json`; fullscreen, the
+//! split and the tabs chosen last as long as the run: a daemon restarted
+//! brings its consoles back as new shells under new ids, so a split kept
+//! for the next run would not find its two. Which panes are
 //! on screen, and which has the keys, is `shown`'s, and the session
 //! decides when they move here; this module only says what the console
 //! would show.
@@ -18,13 +17,8 @@
 use argus_protocol::{PaneId, PaneInfo};
 
 use crate::page::{ConsolePage, ConsolePlace, ConsoleTab, Stage};
-use crate::settings::ConsoleLayout;
 
-/// The sash stops short of a console too short for a prompt, and of one
-/// that leaves the stage above no room.
-pub const MIN_HEIGHT: u32 = 120;
-pub const MAX_HEIGHT: u32 = 1200;
-
+#[derive(Default)]
 pub struct Console {
     panes: Vec<PaneInfo>,
     /// The tab on the first side, the only one when it is not split.
@@ -32,11 +26,7 @@ pub struct Console {
     /// The tab on the second side while it is split: never `chosen`, and
     /// never without it.
     beside: Option<PaneId>,
-    docked: bool,
-    height: u32,
     fullscreen: bool,
-    /// The file has not kept the layout since it changed.
-    unsaved: bool,
 }
 
 /// What the console's sides are drawing and which has the keys, as
@@ -49,18 +39,6 @@ pub struct OnScreen {
 }
 
 impl Console {
-    pub fn new(layout: ConsoleLayout) -> Console {
-        Console {
-            panes: Vec::new(),
-            chosen: None,
-            beside: None,
-            docked: layout.docked,
-            height: layout.height.clamp(MIN_HEIGHT, MAX_HEIGHT),
-            fullscreen: false,
-            unsaved: false,
-        }
-    }
-
     /// The daemon's consoles, whole. A side's tab that ended takes the
     /// split with it, the other side filling the console; a lone tab that
     /// ended falls back to the one started before it, as closing a tab in
@@ -139,23 +117,17 @@ impl Console {
         self.beside = None;
     }
 
-    /// Where the console is with `stage` up. Fullscreen covers whichever
-    /// stage is up, and leaving it shows that stage as it was; docked is
-    /// under the three stages that read a project, not the composer.
-    pub fn place(&self, stage: Stage) -> ConsolePlace {
+    /// Where the console is with `stage` up, `docked` while its dock shows
+    /// it. Fullscreen covers whichever stage is up, and leaving it shows
+    /// that stage as it was; docked is beside the three stages that read a
+    /// project, not the composer.
+    pub fn place(&self, stage: Stage, docked: bool) -> ConsolePlace {
         match stage {
             _ if self.fullscreen => ConsolePlace::Fullscreen,
             Stage::Console => ConsolePlace::Tab,
             Stage::Composer => ConsolePlace::Hidden,
-            _ if self.docked => ConsolePlace::Docked,
+            _ if docked => ConsolePlace::Docked,
             _ => ConsolePlace::Hidden,
-        }
-    }
-
-    pub fn set_docked(&mut self, docked: bool) {
-        if self.docked != docked {
-            self.docked = docked;
-            self.unsaved = true;
         }
     }
 
@@ -167,32 +139,14 @@ impl Console {
         self.fullscreen = fullscreen;
     }
 
-    pub fn set_height(&mut self, height: u32) {
-        let height = height.clamp(MIN_HEIGHT, MAX_HEIGHT);
-        if self.height != height {
-            self.height = height;
-            self.unsaved = true;
-        }
-    }
-
-    pub fn layout(&self) -> ConsoleLayout {
-        ConsoleLayout { docked: self.docked, height: self.height }
-    }
-
-    /// Whether the layout changed since last asked, so it is saved.
-    pub fn take_unsaved(&mut self) -> bool {
-        std::mem::take(&mut self.unsaved)
-    }
-
     /// `on_screen` is what the window's sides draw; only the consoles
     /// among them are the console's to name.
-    pub fn page(&self, stage: Stage, on_screen: OnScreen, can_spawn: bool) -> ConsolePage {
+    pub fn page(&self, place: ConsolePlace, on_screen: OnScreen, can_spawn: bool) -> ConsolePage {
         let ours = |pane: Option<PaneId>| pane.filter(|pane| self.holds(*pane)).map(|pane| pane.0);
         let showing = ours(on_screen.first);
         let beside = showing.and(ours(on_screen.second));
         ConsolePage {
-            place: self.place(stage),
-            height: self.height,
+            place,
             tabs: self
                 .panes
                 .iter()
@@ -222,7 +176,7 @@ mod tests {
     }
 
     fn hidden() -> Console {
-        Console::new(ConsoleLayout::default())
+        Console::default()
     }
 
     fn alone(pane: u64) -> OnScreen {
@@ -273,33 +227,17 @@ mod tests {
     #[test]
     fn the_place_follows_the_stage_unless_fullscreen() {
         let mut console = hidden();
-        assert_eq!(console.place(Stage::Workspace), ConsolePlace::Hidden);
-        assert_eq!(console.place(Stage::Console), ConsolePlace::Tab);
-        console.set_docked(true);
+        assert_eq!(console.place(Stage::Workspace, false), ConsolePlace::Hidden);
+        assert_eq!(console.place(Stage::Console, false), ConsolePlace::Tab);
         for stage in [Stage::Workspace, Stage::Feature, Stage::Checkouts] {
-            assert_eq!(console.place(stage), ConsolePlace::Docked, "{stage:?}");
+            assert_eq!(console.place(stage, true), ConsolePlace::Docked, "{stage:?}");
         }
-        assert_eq!(console.place(Stage::Composer), ConsolePlace::Hidden, "the composer is not one of the three");
+        assert_eq!(console.place(Stage::Composer, true), ConsolePlace::Hidden, "the composer is not one of the three");
         console.set_fullscreen(true);
-        assert_eq!(console.place(Stage::Feature), ConsolePlace::Fullscreen);
+        assert_eq!(console.place(Stage::Feature, true), ConsolePlace::Fullscreen);
+        assert_eq!(console.place(Stage::Feature, false), ConsolePlace::Fullscreen, "from hidden too");
         console.set_fullscreen(false);
-        assert_eq!(console.place(Stage::Feature), ConsolePlace::Docked, "back where it was");
-    }
-
-    #[test]
-    fn the_docked_layout_is_saved_once_and_held_to_the_sashs_bounds() {
-        let mut console = Console::new(ConsoleLayout { docked: false, height: 9 });
-        assert_eq!(console.layout().height, MIN_HEIGHT, "a hand-edited file too");
-        console.set_docked(true);
-        console.set_height(10_000);
-        assert_eq!(console.layout(), ConsoleLayout { docked: true, height: MAX_HEIGHT });
-        assert!(console.take_unsaved());
-        assert!(!console.take_unsaved());
-        console.set_fullscreen(true);
-        console.set_height(MAX_HEIGHT);
-        console.receive(shells(&[5, 6]));
-        console.set_beside(PaneId(6));
-        assert!(!console.take_unsaved(), "fullscreen, the split and an unchanged height are not kept");
+        assert_eq!(console.place(Stage::Feature, true), ConsolePlace::Docked, "back where it was");
     }
 
     #[test]
@@ -307,11 +245,11 @@ mod tests {
         let mut console = hidden();
         console.receive(shells(&[5, 6]));
         console.choose(PaneId(6));
-        let page = console.page(Stage::Console, alone(6), true);
+        let page = console.page(ConsolePlace::Tab, alone(6), true);
         assert_eq!(page.place, ConsolePlace::Tab);
         assert_eq!(page.tabs.iter().map(|t| (t.pane, t.on)).collect::<Vec<_>>(), [(5, false), (6, true)]);
         assert_eq!((page.showing, page.beside, page.typing), (Some(6), None, Some(6)));
-        let page = console.page(Stage::Console, alone(1), true);
+        let page = console.page(ConsolePlace::Tab, alone(1), true);
         assert_eq!((page.showing, page.typing), (None, None), "a checkout's pane");
     }
 
@@ -321,7 +259,7 @@ mod tests {
         console.receive(shells(&[5, 6, 7]));
         console.set_beside(PaneId(7));
         let on_screen = OnScreen { first: Some(PaneId(5)), second: Some(PaneId(7)), keys: Some(PaneId(7)) };
-        let page = console.page(Stage::Console, on_screen, true);
+        let page = console.page(ConsolePlace::Tab, on_screen, true);
         assert_eq!((page.showing, page.beside, page.typing), (Some(5), Some(7), Some(7)));
         assert_eq!(page.tabs.iter().filter(|t| t.on).map(|t| t.pane).collect::<Vec<_>>(), [5, 7], "a tab per side");
     }
@@ -331,7 +269,7 @@ mod tests {
     fn dump_console() {
         // The repo's dump-test convention, as text: there is no screen to
         // render a webview to here.
-        let mut console = Console::new(ConsoleLayout { docked: true, height: 280 });
+        let mut console = hidden();
         let mut panes = shells(&[5, 6, 7]);
         panes[1].title = "cargo test".into();
         panes[2].status = PaneStatus::Working;
@@ -346,24 +284,25 @@ mod tests {
         };
         for stage in [Stage::Workspace, Stage::Console, Stage::Composer] {
             // A hidden console lets its panes go: the session closes its sides.
-            let on_screen = if console.place(stage) == ConsolePlace::Hidden { OnScreen::default() } else { alone(6) };
-            let page = console.page(stage, on_screen, true);
-            println!("{stage:?} stage: console {:?}, {}px", page.place, page.height);
+            let place = console.place(stage, true);
+            let on_screen = if place == ConsolePlace::Hidden { OnScreen::default() } else { alone(6) };
+            let page = console.page(place, on_screen, true);
+            println!("{stage:?} stage: console {:?}", page.place);
             if page.place == ConsolePlace::Hidden {
                 println!("  sidebar foot: ›_ {} consoles", page.tabs.len());
                 continue;
             }
             println!("  ›_ Console  {}  +   [|] split", tabs(&page));
-            let under = if page.place == ConsolePlace::Docked { ", under the Workspace's pane" } else { "" };
+            let under = if page.place == ConsolePlace::Docked { ", in its dock beside the Workspace's pane" } else { "" };
             println!("  screen: {}", page.showing.map_or("none".into(), |p| format!("console {p}{under}")));
         }
         console.set_fullscreen(true);
-        println!("fullscreen: {:?}", console.page(Stage::Feature, OnScreen::default(), true).place);
+        println!("fullscreen: {:?}", console.place(Stage::Feature, true));
 
         console.set_fullscreen(false);
         console.set_beside(PaneId(7));
         let on_screen = OnScreen { first: Some(PaneId(6)), second: Some(PaneId(7)), keys: Some(PaneId(7)) };
-        let page = console.page(Stage::Console, on_screen, true);
+        let page = console.page(ConsolePlace::Tab, on_screen, true);
         println!("split, Console stage: console {:?}", page.place);
         println!("  ›_ Console  {}  +   [|] split (on)", tabs(&page));
         let side = |pane: Option<u64>| {

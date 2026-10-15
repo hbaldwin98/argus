@@ -1,16 +1,17 @@
-// The console: a tab per console the daemon holds, its buttons, the sash
-// it is resized by while docked, and its sides — a screen of its own on
-// the first, under the Workspace's, and the second beside it while it is
-// split, each headed by its console. Rust decides where the console is,
-// which panes its sides draw and which has the keys (`src/console.rs`);
+// The console: a tab per console the daemon holds, its buttons, and its
+// sides — a screen of its own on the first, beside the Workspace's, and the
+// second beside it while it is split, each headed by its console. Rust
+// decides where the console is, which panes its sides draw and which has
+// the keys (`src/console.rs`), and which dock holds it (`src/docks.rs`);
 // this draws that, puts the keys' text area in the screen that has them,
 // and reports what was pressed.
 
 import type { ConsoleGesture } from './bindings/ConsoleGesture';
 import type { ConsoleTab } from './bindings/ConsoleTab';
+import { DOCK_ICON, dockOf, dockWords, drawDocks, moveItems } from './docks.js';
 import { $, el, icon } from './dom.js';
 import { chordsFor, presses } from './keys.js';
-import { contextMenu, type MenuItem } from './menu.js';
+import { contextMenu, type MenuItem, openMenu } from './menu.js';
 import { renameDialog } from './rename.js';
 import { type Screen, beside, consoleScreen, screen } from './screen.js';
 import { state } from './state.js';
@@ -62,8 +63,7 @@ export function drawConsole(): void {
   const place = page?.place ?? 'hidden';
   for (const p of PLACES) document.body.classList.toggle(`console-${p}`, place === p);
   $('console').hidden = place === 'hidden';
-  $('console-sash').hidden = place !== 'docked';
-  if (page) $('console').style.height = place === 'docked' ? `${page.height}px` : '';
+  drawDocks();
   drawHead();
   placeTerminal();
 }
@@ -76,6 +76,7 @@ function drawHead(): void {
   }
   const docked = page.place === 'docked';
   const full = page.place === 'fullscreen';
+  const dock = dockOf('console');
   const split = page.beside !== null;
   const onScreen = (pane: number): boolean => pane === page.showing || pane === page.beside;
   $('console-head').replaceChildren(
@@ -156,12 +157,29 @@ function drawHead(): void {
           'button',
           {
             class: 'icon',
-            title: 'Dock under the stage',
-            'aria-label': 'Dock under the stage',
+            title: dockWords(dock),
+            'aria-label': dockWords(dock),
             onclick: () => gesture({ on: 'dock' }),
           },
-          icon('down'),
+          icon(DOCK_ICON[dock]),
         ),
+    el(
+      'button',
+      {
+        class: 'icon',
+        title: 'Move to another dock',
+        'aria-label': 'Move to another dock',
+        'aria-haspopup': 'menu',
+        onclick: (e: MouseEvent) => {
+          const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          openMenu('Dock the console', moveItems('console', docked), {
+            x: box.left,
+            y: box.bottom + 4,
+          });
+        },
+      },
+      icon('down'),
+    ),
     el(
       'button',
       {
@@ -287,32 +305,4 @@ export function placeTerminal(): void {
           'Type in the console',
         ),
   );
-}
-
-/** The sash: the console follows the pointer while it is held, and its
- *  height is reported once it is let go, for Rust to keep and send back. */
-export function listen(): void {
-  const sash = $('console-sash');
-  sash.addEventListener('mousedown', (e) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    const stage = $('console').parentElement;
-    if (!stage) return;
-    const bottom = stage.getBoundingClientRect().bottom;
-    let height = $('console').offsetHeight;
-    const move = (m: MouseEvent): void => {
-      height = Math.round(bottom - m.clientY);
-      $('console').style.height = `${height}px`;
-    };
-    const up = (): void => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-      // Drawn from what Rust keeps, which may hold it to its bounds and
-      // so send nothing new.
-      drawConsole();
-      gesture({ on: 'height', height: Math.max(0, height) });
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  });
 }

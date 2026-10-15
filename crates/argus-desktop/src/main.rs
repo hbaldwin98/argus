@@ -23,6 +23,7 @@ mod commands;
 mod console;
 mod daemon;
 mod dialogs;
+mod docks;
 mod dragged_width;
 mod extension_dialog;
 mod extension_keys;

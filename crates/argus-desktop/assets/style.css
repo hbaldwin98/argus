@@ -2419,29 +2419,96 @@ body.filled .rail {
   display: none;
 }
 
-/* ---- The console ------------------------------------------------------- */
+/* ---- The docks --------------------------------------------------------- */
 
-/* Docked under the Workspace, Feature or Checkouts stage, as tall as its
-   sash leaves it; the Console stage and fullscreen give it the stage. */
-.console {
+/* Under the strip: the stage between the left and right docks, and the
+   bottom dock under the stage alone. */
+.work {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.center {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+/* A dock holds the panel it shows, as wide or tall as its sash leaves it,
+   and never so big the stage has no room. */
+.dock {
   flex: none;
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
+  position: relative;
+  background: var(--bg-sunken);
+}
+.dock[hidden] {
+  display: none;
+}
+.dock-left,
+.dock-right {
+  max-width: calc(100% - 240px);
+}
+.dock-bottom {
+  max-height: calc(100% - 120px);
   border-top: 1px solid var(--line);
+}
+.dock-left {
+  border-right: 1px solid var(--line);
+}
+.dock-right {
+  border-left: 1px solid var(--line);
+}
+.dock > .console {
+  flex: 1;
+}
+/* A side dock's edge, dragged as the views panel's is. */
+.dock-sash {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 4;
+  cursor: col-resize;
+}
+.dock-left .dock-sash {
+  right: -3px;
+}
+.dock-right .dock-sash {
+  left: -3px;
+}
+.dock-sash:hover,
+.dock-sash.held {
+  box-shadow: inset 3px 0 0 -1px var(--accent);
+}
+
+/* ---- The console ------------------------------------------------------- */
+
+/* In its dock, filling it; the Console stage and fullscreen give it the
+   stage. */
+.console {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   background: var(--bg-sunken);
 }
 body.console-tab .console,
 body.console-fullscreen .console {
   flex: 1;
-  border-top: 0;
 }
 /* Fullscreen keeps the sidebar's projects and the strip's window buttons;
-   the stages, their nav and the sidebar's foot are put away. */
+   the stages, the docks, their nav and the sidebar's foot are put away. */
 body.console-fullscreen #body,
 body.console-fullscreen #fstage,
 body.console-fullscreen #cstage,
 body.console-fullscreen #nstage,
+body.console-fullscreen .dock,
+body.console-fullscreen .sash,
 body.console-fullscreen .navs,
 body.console-fullscreen #bar {
   display: none;
@@ -3328,6 +3395,7 @@ body.console-fullscreen #bar {
   background: var(--see-surface);
 }
 .stage-body,
+.dock,
 .console,
 .board {
   background: var(--see-sunken);

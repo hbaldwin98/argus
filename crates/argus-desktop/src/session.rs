@@ -47,6 +47,7 @@ use crate::agents::Agents;
 use crate::capture_note::CaptureNote;
 use crate::checkouts_stage::{CheckoutsStage, Opened};
 use crate::console::{Console, OnScreen};
+use crate::docks::{Dock, Docks, DocksLayout, Panel};
 use crate::dialogs::Dialogs;
 use crate::feature_stage::{FeatureStage, Scope};
 use crate::features::Layout;
@@ -56,7 +57,7 @@ use crate::reconcile_dialog::{self, ReconcileDialog};
 use crate::notifications::{self, Alert, Looking};
 use crate::keys::{self, PageKey};
 use crate::page::{
-    self, AddProjectGesture, Call, CaptureGesture, ConsoleGesture, ConsolePlace, Event, FeatureEdit, PageMouse,
+    self, AddProjectGesture, Call, CaptureGesture, ConsoleGesture, ConsolePlace, DockGesture, Event, FeatureEdit, PageMouse,
     ReviewClick, ReviewJumpGesture, SettingChange, Side, Stage,
 };
 use crate::palette;
@@ -114,6 +115,8 @@ pub struct Session {
     shown: ShownPane,
     console: Console,
     console_sent: Sent<page::ConsolePage>,
+    docks: Docks,
+    docks_sent: Sent<DocksLayout>,
     awaited: Awaited<Made>,
     agents: Agents,
     views: AgentViews,
@@ -193,8 +196,10 @@ impl Session {
             capture_sent: Sent::default(),
             checkouts: CheckoutsStage::default(),
             shown: ShownPane::default(),
-            console: Console::new(settings.console),
+            console: Console::default(),
             console_sent: Sent::default(),
+            docks: Docks::new(settings.docks),
+            docks_sent: Sent::default(),
             awaited: Awaited::default(),
             agents: Agents::new(settings.last_agent),
             views: AgentViews::default(),
@@ -590,6 +595,7 @@ impl Session {
             Call::GoToCheckout { checkout } => self.go_to_checkout(CheckoutId(checkout)),
             Call::GoToFeature { slug } => self.go_to_feature(&slug),
             Call::Console { gesture } => self.console_gesture(gesture),
+            Call::Docks { gesture } => self.dock_gesture(gesture),
             Call::PasteClipboard
             | Call::Copy { .. }
             | Call::Reconnect
@@ -887,6 +893,9 @@ impl Session {
             Action::ConsoleFullscreen => self.toggle_console_fullscreen(),
             Action::NewConsole => self.spawn_console(Made::ShowConsole),
             Action::SplitConsole => self.toggle_split(),
+            Action::DockLeft => self.move_panel(Panel::Console, Dock::Left),
+            Action::DockRight => self.move_panel(Panel::Console, Dock::Right),
+            Action::DockBottom => self.move_panel(Panel::Console, Dock::Bottom),
             Action::OtherSide => self.other_side(),
             Action::OpenReview => {
                 if let Some(checkout) = self.view().checkout {
@@ -1412,11 +1421,32 @@ impl Session {
                     self.out.push(ClientMsg::Kill { pane: PaneId(pane) });
                 }
             }
-            ConsoleGesture::Height { height } => self.console.set_height(height),
             ConsoleGesture::Split => self.toggle_split(),
             ConsoleGesture::CloseSide { pane } => self.close_side(PaneId(pane)),
         }
         self.finish()
+    }
+
+    fn dock_gesture(&mut self, gesture: DockGesture) -> Vec<ClientMsg> {
+        match gesture {
+            DockGesture::Move { panel, dock } => self.move_panel(panel, dock),
+            DockGesture::Size { dock, size } => self.docks.set_size(dock, size),
+        }
+        self.finish()
+    }
+
+    /// The panel goes to `dock` and is shown there, as if shown from its
+    /// key: out of fullscreen or the Console stage.
+    fn move_panel(&mut self, panel: Panel, dock: Dock) {
+        self.docks.move_to(panel, dock);
+        match panel {
+            Panel::Console => self.dock_console(),
+        }
+    }
+
+    /// Where the console is with the stage up now.
+    fn console_place(&self) -> ConsolePlace {
+        self.console.place(self.stage, self.docks.shows(Panel::Console))
     }
 
     /// Whether the keys are a console's rather than the Workspace's pane's.
@@ -1432,8 +1462,8 @@ impl Session {
     /// A hidden console is shown docked for a console asked for: one the
     /// person means to type into.
     fn reveal_console(&mut self) {
-        if self.console.place(self.stage) == ConsolePlace::Hidden {
-            self.console.set_docked(true);
+        if self.console_place() == ConsolePlace::Hidden {
+            self.docks.show(Panel::Console);
             if self.stage == Stage::Composer {
                 self.stage = Stage::Workspace;
             }
@@ -1558,7 +1588,7 @@ impl Session {
                 !matches!(self.stage, Stage::Feature | Stage::Checkouts | Stage::Console | Stage::Extension)
                     && !self.console.fullscreen()
             }
-            Side::First | Side::Second => self.console.place(self.stage) != ConsolePlace::Hidden,
+            Side::First | Side::Second => self.console_place() != ConsolePlace::Hidden,
         }
     }
 
@@ -1596,17 +1626,17 @@ impl Session {
     }
 
     fn toggle_console(&mut self) {
-        match self.console.place(self.stage) {
+        match self.console_place() {
             ConsolePlace::Hidden => self.dock_console(),
             _ => self.hide_console(),
         }
     }
 
-    /// Docked under the stage: from hidden, from the Console stage, or out
-    /// of fullscreen.
+    /// In its dock: from hidden, from the Console stage, or out of
+    /// fullscreen.
     fn dock_console(&mut self) {
         self.console.set_fullscreen(false);
-        self.console.set_docked(true);
+        self.docks.show(Panel::Console);
         if matches!(self.stage, Stage::Console | Stage::Composer) {
             self.go(Stage::Workspace);
         }
@@ -1617,7 +1647,7 @@ impl Session {
     /// `finish` settles it.
     fn hide_console(&mut self) {
         self.console.set_fullscreen(false);
-        self.console.set_docked(false);
+        self.docks.hide(Panel::Console);
         if self.stage == Stage::Console {
             self.go(Stage::Workspace);
         }
@@ -1635,8 +1665,8 @@ impl Session {
         if self.console.fullscreen() {
             self.console.set_fullscreen(false);
         } else {
-            if self.console.place(self.stage) == ConsolePlace::Hidden {
-                self.console.set_docked(true);
+            if self.console_place() == ConsolePlace::Hidden {
+                self.docks.show(Panel::Console);
                 if self.stage == Stage::Composer {
                     self.go(Stage::Workspace);
                 }
@@ -1651,7 +1681,7 @@ impl Session {
     /// however it came to be hidden: its key, the composer, or leaving the
     /// Console stage.
     fn settle_console(&mut self) {
-        if self.console.place(self.stage) == ConsolePlace::Hidden && self.console_on() {
+        if self.console_place() == ConsolePlace::Hidden && self.console_on() {
             self.shown.close(Side::Second, &mut self.out);
             self.shown.close(Side::First, &mut self.out);
             self.give_back();
@@ -2180,6 +2210,9 @@ impl Session {
             | Action::ConsoleFullscreen
             | Action::NewConsole
             | Action::SplitConsole
+            | Action::DockLeft
+            | Action::DockRight
+            | Action::DockBottom
             | Action::OtherSide => self.run(action),
             Action::Fill | Action::Close if self.on_screen().is_none() => {
                 self.passing.push(Event::Notice { text: "no pane is on screen".into() });
@@ -2263,19 +2296,20 @@ impl Session {
         let agent = self.agents.take_changed();
         let chime = self.status.take_chime_changed();
         let review = self.dialogs.take_layout_changed();
-        let console = self.console.take_unsaved();
+        let docks = self.docks.take_unsaved();
         let rail = self.rail_width.take_unsaved()
             | self.views_width.take_unsaved()
             | self.outline_width.take_unsaved()
             | self.brief_height.take_unsaved()
             | self.extension_views.take_unsaved();
         let chosen = self.choices.take_unsaved();
-        (layouts || agent || chime || review || console || rail || chosen).then(|| Settings {
+        (layouts || agent || chime || review || docks || rail || chosen).then(|| Settings {
             layouts: self.features.layouts().clone(),
             last_agent: self.agents.last().cloned(),
             chime: self.status.chimes(),
             review: self.dialogs.layout(),
-            console: self.console.layout(),
+            docks: self.docks.layout().clone(),
+            console: None,
             rail_width: self.rail_width.get(),
             views_width: self.views_width.get(),
             outline_width: self.outline_width.get(),
@@ -2374,7 +2408,10 @@ impl Session {
         }
         // Before the rail, so the page knows which side has the keys when
         // the rail says which pane the Workspace shows.
-        let console = self.console.page(self.stage, self.console_sides(), self.status.daemon_can(CONSOLES));
+        if let Some(page) = self.docks_sent.take(Some(self.docks.layout().clone())) {
+            events.push(Event::Docks(Box::new(page)));
+        }
+        let console = self.console.page(self.console_place(), self.console_sides(), self.status.daemon_can(CONSOLES));
         if let Some(page) = self.console_sent.take(Some(console)) {
             events.push(Event::Console(Box::new(page)));
         }
@@ -2448,6 +2485,7 @@ impl Session {
         self.adding_sent.forget();
         self.capture_sent.forget();
         self.console_sent.forget();
+        self.docks_sent.forget();
         self.views.forget();
         self.extensions_sent.forget();
         self.extension_dialog_sent.forget();
@@ -2845,14 +2883,21 @@ mod tests {
         assert!(
             matches!(
                 first.as_slice(),
-                [Event::Status(_), Event::Settings(_), Event::Console(_), Event::Rail(_), Event::Features(_)]
+                [
+                    Event::Status(_),
+                    Event::Settings(_),
+                    Event::Docks(_),
+                    Event::Console(_),
+                    Event::Rail(_),
+                    Event::Features(_)
+                ]
             ),
             "{first:?}"
         );
         assert!(s.events(0).is_empty());
         s.toggle_repository(RepositoryId(10));
         assert!(matches!(s.events(0).as_slice(), [Event::Rail(_)]));
-        assert_eq!(s.everything(0).len(), 7, "a fresh page hears it all, the keymap first");
+        assert_eq!(s.everything(0).len(), 8, "a fresh page hears it all, the keymap first");
     }
 
     #[test]
@@ -3634,7 +3679,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 105] = [
+    const CALLS: [&str; 106] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -3705,7 +3750,8 @@ mod tests {
         r#"{"call":"go_to_checkout","checkout":100}"#,
         r#"{"call":"go_to_feature","slug":"trim"}"#,
         r#"{"call":"console","gesture":{"on":"tab"}}"#,
-        r#"{"call":"console","gesture":{"on":"height","height":300}}"#,
+        r#"{"call":"docks","gesture":{"on":"size","dock":"bottom","size":300}}"#,
+        r#"{"call":"docks","gesture":{"on":"move","panel":"console","dock":"right"}}"#,
         r#"{"call":"console","gesture":{"on":"close","pane":1}}"#,
         r#"{"call":"console","gesture":{"on":"split"}}"#,
         r#"{"call":"console","gesture":{"on":"closeSide","pane":1}}"#,
@@ -4186,7 +4232,7 @@ mod tests {
                 Event::Console(page) => Some(*page),
                 _ => None,
             })
-            .unwrap_or_else(|| s.console.page(s.stage, s.console_sides(), s.status.daemon_can(CONSOLES)))
+            .unwrap_or_else(|| s.console.page(s.console_place(), s.console_sides(), s.status.daemon_can(CONSOLES)))
     }
 
     fn console(s: &mut Session, gesture: ConsoleGesture) -> Vec<String> {
@@ -4326,21 +4372,63 @@ mod tests {
         assert_eq!(s.shown.pane(), Some(PaneId(1)), "the last one gives the keys back");
     }
 
+    fn docks(s: &mut Session, gesture: DockGesture) -> Vec<String> {
+        names(&s.call(Call::Docks { gesture }))
+    }
+
+    fn docks_page(s: &mut Session) -> Option<DocksLayout> {
+        s.events(0).into_iter().find_map(|e| match e {
+            Event::Docks(page) => Some(*page),
+            _ => None,
+        })
+    }
+
     #[test]
     fn the_docked_console_and_its_height_are_saved() {
         let mut s = with_consoles();
         s.take_settings();
         console(&mut s, ConsoleGesture::Toggle);
-        console(&mut s, ConsoleGesture::Height { height: 333 });
+        docks(&mut s, DockGesture::Size { dock: Dock::Bottom, size: 333 });
         let saved = s.take_settings().expect("saved");
-        assert_eq!(saved.console, crate::settings::ConsoleLayout { docked: true, height: 333 });
+        let bottom = saved.docks.dock(Dock::Bottom);
+        assert_eq!((bottom.open, bottom.active, bottom.size), (true, Some(Panel::Console), 333));
         console(&mut s, ConsoleGesture::Fullscreen);
         assert!(s.take_settings().is_none(), "fullscreen lasts the run");
 
         let mut again = Session::new(saved);
         again.connected(Some(Hello::this_build()), None, vec![with_tree(tree())]);
-        let page = console_page(&mut again);
-        assert_eq!((page.place, page.height), (ConsolePlace::Docked, 333));
+        assert_eq!(docks_page(&mut again).map(|d| d.bottom.size), Some(333));
+        assert_eq!(console_page(&mut again).place, ConsolePlace::Docked);
+    }
+
+    #[test]
+    fn the_console_moved_to_the_right_is_shown_there_with_the_keys_and_stays_there() {
+        let mut s = with_consoles();
+        s.events(0);
+        s.take_settings();
+        console(&mut s, ConsoleGesture::Tab);
+        docks(&mut s, DockGesture::Move { panel: Panel::Console, dock: Dock::Right });
+        let page = docks_page(&mut s).expect("the docks changed");
+        assert_eq!((page.right.open, &page.right.tabs[..], &page.bottom.tabs[..]), (true, &[Panel::Console][..], &[][..]));
+        assert_eq!(s.stage, Stage::Workspace, "out of the Console stage, beside the Workspace");
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Docked);
+        assert_eq!(sides(&mut s), (Some(8), None, Some(8)), "the console has the keys");
+
+        // Hidden and shown again, it comes back on the right, not home.
+        console(&mut s, ConsoleGesture::Hide);
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Hidden);
+        console(&mut s, ConsoleGesture::Toggle);
+        assert_eq!(s.docks.dock_of(Panel::Console), Dock::Right);
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Docked);
+
+        let saved = s.take_settings().expect("saved");
+        assert_eq!(Docks::new(saved.docks).dock_of(Panel::Console), Dock::Right, "across runs");
+
+        // The palette moves it as the menu does, out of fullscreen too.
+        console(&mut s, ConsoleGesture::Fullscreen);
+        s.call(Call::Command { action: Action::DockLeft });
+        assert_eq!(s.docks.dock_of(Panel::Console), Dock::Left);
+        assert_eq!(console_page(&mut s).place, ConsolePlace::Docked);
     }
 
     #[test]
@@ -4538,7 +4626,8 @@ mod tests {
         console(&mut s, ConsoleGesture::Hide);
         leader_then(&mut s, "`");
         assert_eq!(sides(&mut s), (Some(8), Some(9), Some(8)));
-        assert!(s.take_settings().is_some_and(|saved| saved.console.docked), "docked is kept, the split is not in it");
+        let saved = s.take_settings().expect("saved");
+        assert!(saved.docks.dock(Dock::Bottom).open, "docked is kept, the split is not in it");
     }
 
     #[test]

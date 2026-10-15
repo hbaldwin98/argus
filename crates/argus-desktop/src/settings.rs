@@ -1,8 +1,8 @@
 //! What the window remembers between runs: how each repository's feature
 //! index is laid out, which agent it last started, whether an agent coming
-//! to need you chimes, the side and layout a review opens on, whether the
-//! console is docked and how tall, where each extension view opens, and
-//! what the Settings dialog sets.
+//! to need you chimes, the side and layout a review opens on, where each
+//! panel is docked and how big each dock is, where each extension view
+//! opens, and what the Settings dialog sets.
 //!
 //! Its own file beside the config, `desktop.json`, rather than a section
 //! of the terminal client's `client.toml` (DESIGN.md §Configuration says
@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::docks::{Dock, DockLayout, DocksLayout, Panel};
 use crate::features::Layout;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,11 +40,17 @@ pub struct Settings {
     /// made again on each visit.
     #[serde(default)]
     pub review: ReviewLayout,
-    /// Whether the console is docked under the stages, and how tall: kept
-    /// here rather than in the webview's storage, which every window of
-    /// one instance shares and no other file of the window's is in.
+    /// Which dock holds each panel, which tab each dock shows, whether it
+    /// is open, and how big: kept here rather than in the webview's
+    /// storage, which every window of one instance shares and no other file
+    /// of the window's is in.
     #[serde(default)]
-    pub console: ConsoleLayout,
+    pub docks: DocksLayout,
+    /// Whether the console was docked under the stages, and how tall, as a
+    /// file from before the docks says: read once into `docks`, never
+    /// written.
+    #[serde(default, skip_serializing)]
+    pub console: Option<ConsoleLayout>,
     /// The rail's width as the person dragged it, in CSS pixels; absent
     /// until they do.
     #[serde(default)]
@@ -218,23 +225,29 @@ pub struct ExtensionsLayout {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConsoleLayout {
-    /// Hidden until first shown: a window that never opens a console is
-    /// not given one.
     #[serde(default)]
     pub docked: bool,
-    /// In CSS pixels, held by `console` to what the stage leaves room for.
     #[serde(default = "console_height")]
     pub height: u32,
 }
 
-impl Default for ConsoleLayout {
-    fn default() -> Self {
-        ConsoleLayout { docked: false, height: console_height() }
-    }
-}
-
 fn console_height() -> u32 {
     280
+}
+
+/// The console docked under the stages is the bottom dock showing it.
+impl From<ConsoleLayout> for DocksLayout {
+    fn from(older: ConsoleLayout) -> DocksLayout {
+        let bottom = DockLayout {
+            tabs: vec![Panel::Console],
+            active: Some(Panel::Console),
+            open: older.docked,
+            size: older.height,
+        };
+        let mut docks = DocksLayout::default();
+        *docks.dock_mut(Dock::Bottom) = bottom;
+        docks
+    }
 }
 
 impl Default for Settings {
@@ -244,7 +257,8 @@ impl Default for Settings {
             last_agent: None,
             chime: true,
             review: ReviewLayout::default(),
-            console: ConsoleLayout::default(),
+            docks: DocksLayout::default(),
+            console: None,
             rail_width: None,
             views_width: None,
             outline_width: None,
@@ -278,10 +292,16 @@ pub fn save(settings: &Settings) {
 }
 
 fn load_from(path: &Path) -> Settings {
-    std::fs::read(path)
+    let mut settings: Settings = std::fs::read(path)
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    // Only a file from before the docks names the console, or one an older
+    // window wrote since, which kept no docks.
+    if let Some(older) = settings.console.take() {
+        settings.docks = older.into();
+    }
+    settings
 }
 
 fn save_to(path: &Path, settings: &Settings) -> std::io::Result<()> {
@@ -311,7 +331,7 @@ mod tests {
         settings.last_agent = Some("codex".into());
         settings.chime = false;
         settings.review = ReviewLayout { staged: true, split: true };
-        settings.console = ConsoleLayout { docked: true, height: 412 };
+        settings.docks = ConsoleLayout { docked: true, height: 412 }.into();
         settings.preferences = Preferences {
             theme: Theme::Frappe,
             opacity: 70,
@@ -349,8 +369,22 @@ mod tests {
         assert_eq!(loaded.last_agent, None);
         assert!(loaded.chime);
         assert_eq!(loaded.review, ReviewLayout::default(), "unstaged and unified, as before");
-        assert_eq!(loaded.console, ConsoleLayout { docked: false, height: 280 }, "no console until one is asked for");
+        assert_eq!(loaded.docks, DocksLayout::default(), "no console until one is asked for");
         assert_eq!(loaded.preferences, Preferences::default());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_file_from_before_the_docks_keeps_its_console_docked_under_the_stages() {
+        let path = scratch("console");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, br#"{ "console": { "docked": true, "height": 412 } }"#).unwrap();
+        let loaded = load_from(&path);
+        assert_eq!(loaded.console, None, "read once, never written");
+        let bottom = loaded.docks.dock(Dock::Bottom);
+        assert_eq!((bottom.open, bottom.active, bottom.size), (true, Some(Panel::Console), 412));
+        let json = serde_json::to_value(&loaded).unwrap();
+        assert!(json.get("console").is_none());
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

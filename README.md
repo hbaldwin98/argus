@@ -250,15 +250,17 @@ Shift-PageUp/PageDown page through the history.
 The console is shells that belong to no checkout: each starts in your home directory, and every
 window shows the same ones, since they are the daemon's. `4` (from a pane, the leader and `4`), or
 Console in the sidebar, gives it the stage; `` ` `` (from a pane, the leader and `` ` ``), or the `›_`
-beside the connection, shows it docked under the Workspace, Feature and Checkouts stages or hides it,
-and its sash sets its height; the leader and `z` fills the window with it, all but the sidebar's
+beside the connection, shows it docked beside the Workspace, Feature and Checkouts stages or hides
+it, and its sash sets its size. It docks at the bottom until moved: the chevron in its head, or the
+palette's Dock the console on the left, on the right or at the bottom, moves it to that edge of the
+stage. The leader and `z` fills the window with it, all but the sidebar's
 projects. A tab per console, `+` for another and a tab's `✕` to end one. Docked, the console sits
-under the Workspace's pane with both on screen, so an agent and a shell are side by side: a click
+beside the Workspace's pane with both on screen, so an agent and a shell are side by side: a click
 on either, or the pane chosen on the rail, gives it the keys, and from a pane the leader and `o`
 hands them to the next one on screen. The split button (from a pane, the leader and `\`) shows two
 consoles side by side; a click on a side's header or screen gives it the keys, a tab picked replaces
-the side with the keys, and a side's `✕` takes it out of the split, its console staying a tab. Whether it is docked and its
-height are kept in `desktop.json`; the split lasts the run. A daemon restarted starts as many
+the side with the keys, and a side's `✕` takes it out of the split, its console staying a tab. Where it is docked, whether it
+shows, and its size are kept in `desktop.json`; the split lasts the run. A daemon restarted starts as many
 consoles again as were running, each a fresh shell in the home directory.
 
 `Ctrl-K` (from a pane, the leader and `k`) opens the palette: one search over the window's commands,

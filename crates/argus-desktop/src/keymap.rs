@@ -226,6 +226,10 @@ pub enum Action {
     NewConsole,
     /// Split the console in two, or put the split away.
     SplitConsole,
+    /// Dock the console against the stage's left, right or bottom edge.
+    DockLeft,
+    DockRight,
+    DockBottom,
     /// The split's other side takes the keys.
     OtherSide,
     /// The whole window larger or smaller, the panes' text with the rest,
@@ -600,6 +604,9 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (ConsoleFullscreen, Some(Pane), "Console fullscreen beside the sidebar, and back"),
     (NewConsole, None, "Start a console shell in the home directory"),
     (SplitConsole, Some(Pane), "Split the console in two, and back"),
+    (DockLeft, None, "Dock the console on the left"),
+    (DockRight, None, "Dock the console on the right"),
+    (DockBottom, None, "Dock the console at the bottom"),
     (OtherSide, Some(Pane), "Give the keys to the next pane on screen"),
     (Compose, Some(Anywhere), "Start a shell or an agent…"),
     (Shortcuts, Some(Anywhere), "Show the keyboard shortcuts"),
