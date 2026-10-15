@@ -127,11 +127,21 @@ function run(action: Action): boolean {
     case 'newConsole':
       call('console', { gesture: { on: 'spawn' } });
       return true;
+    case 'extensionPage':
+    case 'extensionDock':
+      call('extension_mode', { page: action === 'extensionPage' });
+      return true;
     case 'views':
       call('toggle_views', {});
       return true;
     default:
       if (state.rail.stage === 'checkouts') return checkoutsAction(action);
+      if (state.rail.stage === 'extension') {
+        const moves =
+          action === 'next' || action === 'previous' || action === 'first' || action === 'last';
+        if (moves) call('extension_key', { action });
+        return moves;
+      }
       return workOpen() ? workAction(action) : featureAction(action);
   }
 }
@@ -256,7 +266,8 @@ export function listen(): void {
     if (extensionViewFocused() && $('layer').childElementCount === 0) {
       const action = actionFor(['extension'], e);
       const id = action ? null : extensionActionFor(e);
-      if (action) call('extension_key', { action });
+      if (action === 'extensionPage' || action === 'extensionDock') run(action);
+      else if (action) call('extension_key', { action });
       else if (id) call('extension_action', { action: id });
       if (action || id) {
         e.preventDefault();
@@ -287,14 +298,25 @@ export function listen(): void {
         ? feature
         : state.rail.stage === 'checkouts'
           ? ['anywhere', 'checkouts']
-          : ['anywhere'];
+          : state.rail.stage === 'extension'
+            ? ['anywhere', 'extension']
+            : ['anywhere'];
     const action = actionFor(places, e);
     if (action && run(action)) e.preventDefault();
     else if (!action && $('layer').childElementCount === 0) {
-      extensionCommand(
-        e,
-        state.rail.stage === 'checkouts' ? ['anywhere', 'checkout'] : ['anywhere'],
-      );
+      // A page's own action keys, then its commands, then the rest.
+      const page = state.rail.stage === 'extension';
+      const id = page ? extensionActionFor(e) : null;
+      if (id) {
+        e.preventDefault();
+        call('extension_action', { action: id });
+      } else {
+        const checkouts = state.rail.stage === 'checkouts';
+        extensionCommand(
+          e,
+          page ? ['view', 'anywhere'] : checkouts ? ['anywhere', 'checkout'] : ['anywhere'],
+        );
+      }
     }
   });
 }

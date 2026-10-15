@@ -8,6 +8,7 @@ import { clock } from './clock.js';
 import { drawComposer } from './compose.js';
 import { drawConsole } from './console.js';
 import { $, el, ghosts, icon, type Child } from './dom.js';
+import { drawExtensionNav, drawExtensionPage, extensionPageTitle } from './extension_views.js';
 import { drawFeatures } from './features.js';
 import { chordsFor, keycaps, presses } from './keys.js';
 import { drawHeading, drawRemoving } from './projects.js';
@@ -27,9 +28,11 @@ export function drawChrome(): void {
   const stage = state.rail.stage;
   $('fstage').hidden = stage !== 'feature';
   $('cstage').hidden = stage !== 'checkouts';
+  $('xstage').hidden = stage !== 'extension';
   $('body').hidden = stage !== 'workspace';
   drawFeatures();
   drawCheckouts();
+  drawExtensionPage();
   drawComposer();
   drawConsole();
   drawNav();
@@ -46,7 +49,8 @@ export function drawChrome(): void {
 }
 
 /** The sidebar's way between stages, each with its key from the keymap,
- *  and Search with the palette's. */
+ *  and Search with the palette's; then the extensions' views, a fold of
+ *  their own after the built-in stages. */
 function drawNav(): void {
   const stage = state.rail.stage;
   for (const [name, action] of [
@@ -63,6 +67,7 @@ function drawNav(): void {
     $(`nav-${name}-keys`).replaceChildren(keycaps(chordsFor(action, 'anywhere')));
   }
   $('nav-search-keys').replaceChildren(keycaps(chordsFor('palette', 'anywhere')));
+  drawExtensionNav();
 }
 
 const STAGE_NAME = {
@@ -70,6 +75,7 @@ const STAGE_NAME = {
   checkouts: 'Checkouts',
   new: 'New',
   console: 'Console',
+  extension: 'Extensions',
 } as const;
 
 /** The repository the Feature and Checkouts stages read. */
@@ -437,9 +443,13 @@ function drawHead(): void {
   const stage = state.console?.place === 'fullscreen' ? 'console' : state.rail.stage;
   const head = $('head');
   if (stage !== 'workspace') {
-    const repository = stage === 'console' ? null : chosenRepository();
+    const repository = stage === 'console' || stage === 'extension' ? null : chosenRepository();
     head.replaceChildren(
-      el('span', { class: 'type-heading' }, STAGE_NAME[stage]),
+      el(
+        'span',
+        { class: 'type-heading' },
+        stage === 'extension' ? extensionPageTitle() : STAGE_NAME[stage],
+      ),
       repository
         ? el('span', { class: 'crumbs' }, el('span', { class: 'fg-faint' }, '·'), repository)
         : '',

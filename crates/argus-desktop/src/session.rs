@@ -33,7 +33,7 @@ use argus_protocol::mouse::{self, MouseButton, MouseEvent, MouseKind};
 use argus_protocol::pane_view::{Effect, PaneView};
 use argus_protocol::paste;
 use argus_protocol::{
-    transitions, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
+    transitions, CheckoutId, ClientMsg, Created, ExtPlace, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
     RepositoryId, ServerMsg, View, WorkspaceId, ADD_PROJECT, AGENT_VIEWS, CONSOLES, FOCUS, PASTE_FILE,
 };
 
@@ -120,6 +120,9 @@ pub struct Session {
     /// What the extensions publish: their views, the one out in the side
     /// panel in place of an agent's, their commands and their dialogs.
     extension_views: ExtensionViews,
+    /// The stage an extension's page opened over, to go back to when it
+    /// docks or goes.
+    before_page: Option<Stage>,
     extension_keys: ExtensionKeys,
     extensions_sent: Sent<page::ExtensionsPage>,
     extension_dialogs: ExtensionDialogs,
@@ -185,7 +188,8 @@ impl Session {
             awaited: Awaited::default(),
             agents: Agents::new(settings.last_agent),
             views: AgentViews::default(),
-            extension_views: ExtensionViews::default(),
+            extension_views: ExtensionViews::new(settings.extensions),
+            before_page: None,
             extension_keys: ExtensionKeys::default(),
             extensions_sent: Sent::default(),
             extension_dialogs: ExtensionDialogs::default(),
@@ -347,7 +351,7 @@ impl Session {
             ServerMsg::ViewShown(view) => {
                 // An extension's view out in the panel is not taken from
                 // under the person by an agent's arriving.
-                let on_screen = self.shown.pane().filter(|_| !self.extension_views.is_open());
+                let on_screen = self.shown.pane().filter(|_| !self.extension_docked());
                 self.views.shown(*view, on_screen);
                 self.rail_changed = true;
             }
@@ -572,12 +576,12 @@ impl Session {
             | Call::SnapLayouts
             | Call::OpenUrl { .. } => self.finish(),
             Call::OpenView { pane, id } => {
-                self.extension_views.hide();
+                self.hide_docked_extension();
                 self.views.open(PaneId(pane), id);
                 self.finish()
             }
             Call::HideViews => {
-                self.extension_views.hide();
+                self.hide_docked_extension();
                 self.views.hide();
                 self.finish()
             }
@@ -614,6 +618,14 @@ impl Session {
             }
             Call::ExtensionCommand { extension, command, checkout, pane } => {
                 self.extension_command(&extension, &command, checkout.map(CheckoutId), pane.map(PaneId));
+                self.finish()
+            }
+            Call::ExtensionMode { page } => {
+                self.extension_mode(page);
+                self.finish()
+            }
+            Call::ToggleExtensions => {
+                self.extension_views.toggle_listed();
                 self.finish()
             }
             Call::AnswerDialog { dialog, answer } => {
@@ -726,6 +738,8 @@ impl Session {
             Action::Console => self.open_console_tab(),
             Action::ToggleConsole => self.toggle_console(),
             Action::Views => self.toggle_views(),
+            Action::ExtensionPage => self.extension_mode(true),
+            Action::ExtensionDock => self.extension_mode(false),
             Action::ConsoleFullscreen => self.toggle_console_fullscreen(),
             Action::NewConsole => self.spawn_console(Made::ShowConsole),
             Action::SplitConsole => self.toggle_split(),
@@ -1070,7 +1084,7 @@ impl Session {
     /// The side panel away, whichever kind of view it shows, or the newest
     /// agent's view out.
     fn toggle_views(&mut self) {
-        if self.extension_views.is_open() {
+        if self.extension_docked() {
             self.extension_views.hide();
             self.views.hide();
         } else {
@@ -1078,14 +1092,87 @@ impl Session {
         }
     }
 
+    /// Whether an extension's view is docked in the side panel, in an
+    /// agent's view's place.
+    fn extension_docked(&self) -> bool {
+        self.extension_views.open_mode() == Some(ExtPlace::Panel)
+    }
+
+    /// An agent's view takes the panel: a docked extension view gives it
+    /// up, and one open as a page stays where it is.
+    fn hide_docked_extension(&mut self) {
+        if self.extension_docked() {
+            self.extension_views.hide();
+        }
+    }
+
+    /// Opens an extension's view where it opens: a page over the stage up,
+    /// or docked in the side panel in an agent's view's place.
     fn open_extension_view(&mut self, extension: &str, view: &str) -> Vec<ClientMsg> {
         let here = self.here();
-        if self.extension_views.open(extension, view, &here) {
-            self.views.hide();
-        } else {
-            self.passing.push(Event::Notice { text: format!("{extension} shows no {view} here") });
+        match self.extension_views.open(extension, view, &here) {
+            Some(ExtPlace::Stage) => self.show_extension_page(),
+            Some(ExtPlace::Panel) => {
+                self.leave_extension_page();
+                self.views.hide();
+            }
+            None => self.passing.push(Event::Notice { text: format!("{extension} shows no {view} here") }),
         }
         self.finish()
+    }
+
+    fn show_extension_page(&mut self) {
+        if self.stage != Stage::Extension {
+            self.before_page = Some(self.stage);
+            self.go(Stage::Extension);
+        }
+    }
+
+    /// Back to the stage the page opened over, or the Workspace.
+    fn leave_extension_page(&mut self) {
+        if self.stage == Stage::Extension {
+            let back = self.before_page.take().unwrap_or(Stage::Workspace);
+            self.go(back);
+        }
+    }
+
+    /// Moves the view open to a page, or docks it, and remembers it there.
+    fn extension_mode(&mut self, page: bool) {
+        let mode = if page { ExtPlace::Stage } else { ExtPlace::Panel };
+        if !self.extension_views.set_mode(mode) {
+            self.passing.push(Event::Notice { text: "no extension view is open".into() });
+            return;
+        }
+        if page {
+            self.show_extension_page();
+        } else {
+            self.leave_extension_page();
+            self.views.hide();
+        }
+    }
+
+    /// Keeps the extension view open level with what the daemon publishes
+    /// and where the person went: one taken away, or out of scope where the
+    /// person now is, closes, and a page of it goes back to the stage it
+    /// opened over saying so; a page the person left for another stage
+    /// closes; and the extension stage is never up with no page on it.
+    fn settle_extension(&mut self) {
+        let shown = self.extension_views.shown(&self.here()).map(|v| self.extension_views.mode_of(v));
+        let paged = self.stage == Stage::Extension;
+        match shown {
+            None if self.extension_views.is_open() => {
+                if paged {
+                    if let Some((extension, title)) = self.extension_views.open_title() {
+                        self.passing.push(Event::Notice { text: format!("{extension}: {title} is no longer shown here") });
+                    }
+                }
+                self.extension_views.hide();
+                self.leave_extension_page();
+            }
+            Some(ExtPlace::Stage) if !paged => self.extension_views.hide(),
+            Some(ExtPlace::Stage) => {}
+            _ => self.leave_extension_page(),
+        }
     }
 
     /// One of the view's actions; the view changes when its extension
@@ -1138,6 +1225,7 @@ impl Session {
         page::ExtensionsPage {
             views: self.extension_views.tabs(&here),
             open: self.extension_views.table(&here),
+            listed: self.extension_views.listed(),
             commands: self.extension_keys.page(),
             groups: self.extension_keys.groups(self.extension_views.views()),
         }
@@ -1855,7 +1943,8 @@ impl Session {
         let visible = if self.console.holds(pane) {
             self.console.place(self.stage) != ConsolePlace::Hidden
         } else {
-            !matches!(self.stage, Stage::Feature | Stage::Checkouts | Stage::Console) && !self.console.fullscreen()
+            !matches!(self.stage, Stage::Feature | Stage::Checkouts | Stage::Console | Stage::Extension)
+                && !self.console.fullscreen()
         };
         visible.then_some(pane)
     }
@@ -1909,6 +1998,8 @@ impl Session {
             | Action::Console
             | Action::ToggleConsole
             | Action::Views
+            | Action::ExtensionPage
+            | Action::ExtensionDock
             | Action::ConsoleFullscreen
             | Action::NewConsole
             | Action::SplitConsole
@@ -1993,7 +2084,7 @@ impl Session {
         let chime = self.status.take_chime_changed();
         let review = self.dialogs.take_layout_changed();
         let console = self.console.take_unsaved();
-        let rail = self.rail_width.take_unsaved() | self.views_width.take_unsaved();
+        let rail = self.rail_width.take_unsaved() | self.views_width.take_unsaved() | self.extension_views.take_unsaved();
         let chosen = self.choices.take_unsaved();
         (layouts || agent || chime || review || console || rail || chosen).then(|| Settings {
             layouts: self.features.layouts().clone(),
@@ -2003,6 +2094,7 @@ impl Session {
             console: self.console.layout(),
             rail_width: self.rail_width.get(),
             views_width: self.views_width.get(),
+            extensions: self.extension_views.layout(),
             preferences: self.choices.get().clone(),
         })
     }
@@ -2050,11 +2142,7 @@ impl Session {
     /// The messages this change sends, with the view when it changed.
     fn finish(&mut self) -> Vec<ClientMsg> {
         self.settle_console();
-        // A view taken away, or out of scope where the person now is, is
-        // put away; the panel is the agents' again.
-        if self.extension_views.is_open() && self.extension_views.shown(&self.here()).is_none() {
-            self.extension_views.hide();
-        }
+        self.settle_extension();
         // The session under the dialog's cursor is read once it is there,
         // however the cursor got there: a key, a filter, or the listing.
         if let Some(wanted) = self.recent.as_ref().and_then(|d| d.wants_read(&self.sessions, &self.tree)).cloned() {
@@ -3287,7 +3375,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 95] = [
+    const CALLS: [&str; 97] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -3369,6 +3457,8 @@ mod tests {
         r#"{"call":"answer_extension","yes":false}"#,
         r#"{"call":"extension_command","extension":"docker","command":"up","checkout":100,"pane":null}"#,
         r#"{"call":"answer_dialog","dialog":3,"answer":{"picked":"web"}}"#,
+        r#"{"call":"extension_mode","page":true}"#,
+        r#"{"call":"toggle_extensions"}"#,
         r#"{"call":"reconnect"}"#,
         r#"{"call":"minimize"}"#,
         r#"{"call":"toggle_maximize"}"#,
@@ -4281,5 +4371,98 @@ mod tests {
         let mut s = session(Hello::this_build());
         s.receive(ServerMsg::ExtensionNotice { extension: "docker".into(), text: "web restarted".into() });
         assert!(s.events(0).iter().any(|e| matches!(e, Event::Notice { text } if text == "docker: web restarted")));
+    }
+
+    /// One view per scope: everywhere, in repository 10 (argus), and in
+    /// repository 20 (api); the first asks for a page.
+    fn scoped() -> ServerMsg {
+        let json = r#"[
+            {"extension": "docker", "name": "containers", "title": "Containers", "place": "stage", "icon": "box",
+             "columns": [{"title": "Name"}], "rows": [{"key": "web", "cells": [{"kind": "text", "text": "web"}]}]},
+            {"extension": "docker", "name": "argus", "title": "Argus images", "scope": {"repository": 10},
+             "columns": [{"title": "Tag"}]},
+            {"extension": "docker", "name": "api", "title": "API images", "scope": {"repository": 20},
+             "columns": [{"title": "Tag"}]}
+        ]"#;
+        ServerMsg::ExtensionViews(serde_json::from_str(json).unwrap())
+    }
+
+    fn listed(s: &mut Session) -> Vec<String> {
+        s.extensions_page().views.into_iter().map(|t| t.view).collect()
+    }
+
+    fn notices(s: &mut Session) -> Vec<String> {
+        s.events(0)
+            .into_iter()
+            .filter_map(|e| match e {
+                Event::Notice { text } => Some(text),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_sidebars_extensions_list_the_views_whose_scope_is_where_the_person_is() {
+        let mut s = session(Hello::this_build());
+        s.receive(scoped());
+        assert_eq!(listed(&mut s), ["containers", "argus"], "the chosen repository's");
+        s.choose_repository(RepositoryId(20));
+        s.select_project(ProjectId(2));
+        assert_eq!(listed(&mut s), ["containers", "api"], "and the next's once it is chosen");
+        s.receive(ServerMsg::ExtensionViews(Vec::new()));
+        assert!(listed(&mut s).is_empty(), "gone with the extension");
+    }
+
+    #[test]
+    fn a_view_opens_as_its_extension_says_and_where_the_person_moved_it_after() {
+        let mut s = session(Hello::this_build());
+        s.call(Call::ShowCheckouts { open: true });
+        s.receive(scoped());
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
+        assert_eq!(s.stage, Stage::Extension, "a page, as it asked");
+        assert!(s.extensions_page().open.is_some_and(|t| t.page));
+
+        s.call(Call::ExtensionMode { page: false });
+        assert_eq!(s.stage, Stage::Checkouts, "docking goes back to the stage it opened over");
+        assert!(s.extensions_page().open.is_some_and(|t| !t.page));
+        assert!(s.take_settings().is_some_and(|saved| saved.extensions.modes["docker/containers"] == ExtPlace::Panel));
+
+        s.receive(scoped());
+        s.call(Call::HideViews);
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
+        assert_eq!(s.stage, Stage::Checkouts, "docked again after its extension republished");
+        assert!(s.extensions_page().open.is_some());
+    }
+
+    #[test]
+    fn a_page_whose_view_goes_falls_back_saying_so_and_a_docked_one_just_closes() {
+        let mut s = session(Hello::this_build());
+        s.receive(scoped());
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
+        s.events(0);
+        s.receive(ServerMsg::ExtensionViews(Vec::new()));
+        assert_eq!(s.stage, Stage::Workspace);
+        assert!(notices(&mut s).iter().any(|n| n.contains("Containers")), "said");
+
+        s.receive(scoped());
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "argus".into() });
+        assert!(s.extensions_page().open.is_some_and(|t| !t.page));
+        s.events(0);
+        s.receive(ServerMsg::ExtensionViews(Vec::new()));
+        assert!(s.extensions_page().open.is_none());
+        assert_eq!(s.stage, Stage::Workspace);
+    }
+
+    #[test]
+    fn leaving_a_page_for_another_stage_closes_it_and_the_fold_is_remembered() {
+        let mut s = session(Hello::this_build());
+        s.receive(scoped());
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "containers".into() });
+        s.call(Call::ShowFeatures { open: true });
+        assert!(s.extensions_page().open.is_none());
+        assert!(!s.extensions_page().listed);
+        s.call(Call::ToggleExtensions);
+        assert!(s.extensions_page().listed);
+        assert!(s.take_settings().is_some_and(|saved| saved.extensions.open));
     }
 }

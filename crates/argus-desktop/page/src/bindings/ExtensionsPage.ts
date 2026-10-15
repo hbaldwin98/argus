@@ -9,11 +9,21 @@ import type { ExtTable } from "./ExtTable";
  * the person is, the one out in the side panel, their commands, and their
  * keys as the sheet lists them.
  */
-export type ExtensionsPage = { views: Array<ExtTab>, 
+export type ExtensionsPage = { 
 /**
- * The view out in the side panel, which takes it from the agents'.
+ * Every view listed where the person is: the sidebar's Extensions,
+ * and the panel's tabs for those that open docked.
  */
-open: ExtTable | null, commands: Array<ExtCommandPage>, 
+views: Array<ExtTab>, 
+/**
+ * The view open: docked in the side panel, which takes it from the
+ * agents', or as a page of its own.
+ */
+open: ExtTable | null, 
+/**
+ * Whether the sidebar's Extensions are unfolded.
+ */
+listed: boolean, commands: Array<ExtCommandPage>, 
 /**
  * A heading of the sheet per extension.
  */

@@ -186,6 +186,11 @@ pub enum Call {
     /// The answer to an extension's dialog, or `None` when it was put
     /// away without one.
     AnswerDialog { dialog: u64, answer: Option<argus_protocol::ExtAnswer> },
+    /// The extension view open, moved to a page of its own or docked in
+    /// the side panel, where it opens from then on.
+    ExtensionMode { page: bool },
+    /// The sidebar's Extensions unfolded, or folded.
+    ToggleExtensions,
     /// A link in a view, for the system's opener; Rust opens only an
     /// `http` or `https` one.
     OpenUrl { url: String },
@@ -704,6 +709,8 @@ pub enum Stage {
     Composer,
     /// The console fills the stage.
     Console,
+    /// An extension's view, open as a page.
+    Extension,
 }
 
 /// Where the console is.
@@ -1816,9 +1823,14 @@ pub const WIDE: u8 = 16;
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionsPage {
+    /// Every view listed where the person is: the sidebar's Extensions,
+    /// and the panel's tabs for those that open docked.
     pub views: Vec<ExtTab>,
-    /// The view out in the side panel, which takes it from the agents'.
+    /// The view open: docked in the side panel, which takes it from the
+    /// agents', or as a page of its own.
     pub open: Option<ExtTable>,
+    /// Whether the sidebar's Extensions are unfolded.
+    pub listed: bool,
     pub commands: Vec<ExtCommandPage>,
     /// A heading of the sheet per extension.
     pub groups: Vec<ExtGroup>,
@@ -1831,6 +1843,12 @@ pub struct ExtTab {
     pub extension: String,
     pub view: String,
     pub title: String,
+    /// One of `EXT_ICONS`, or a name the page draws as its generic icon.
+    pub icon: Option<String>,
+    /// It opens as a page rather than docked.
+    pub page: bool,
+    /// It is the one open.
+    pub on: bool,
 }
 
 /// An extension's view as the panel draws it: its table, the row selected,
@@ -1842,6 +1860,8 @@ pub struct ExtTable {
     pub extension: String,
     pub view: String,
     pub title: String,
+    /// Open as a page, filling the stage, rather than docked.
+    pub page: bool,
     pub columns: Vec<argus_protocol::Column>,
     pub rows: Vec<ExtTableRow>,
     pub actions: Vec<ExtTableAction>,

@@ -81,9 +81,12 @@ impl ExtensionKeys {
     /// and its views' action keys.
     pub fn groups(&self, views: &[ExtView]) -> Vec<ExtGroup> {
         let mut groups: Vec<ExtGroup> = Vec::new();
-        let mut add = |extension: &str, binding: ExtBinding| match groups.iter_mut().find(|g| g.title == extension) {
-            Some(group) => group.bindings.push(binding),
-            None => groups.push(ExtGroup { title: extension.to_string(), bindings: vec![binding] }),
+        let mut add = |extension: &str, binding: ExtBinding| {
+            let title = format!("Extensions · {extension}");
+            match groups.iter_mut().find(|g| g.title == title) {
+                Some(group) => group.bindings.push(binding),
+                None => groups.push(ExtGroup { title, bindings: vec![binding] }),
+            }
         };
         for command in &self.commands {
             let Some(press) = &command.key else { continue };
@@ -96,6 +99,10 @@ impl ExtensionKeys {
             add(&command.extension, ExtBinding { label, chords });
         }
         for view in views {
+            // A view has no key of its own, the digits being the built-in
+            // stages'; the sheet says where it is reached.
+            let label = format!("Go to {} (the sidebar's Extensions, or the palette)", view.title);
+            add(&view.extension, ExtBinding { label, chords: Vec::new() });
             for action in &view.actions {
                 let Some(key) = &action.key else { continue };
                 let label = format!("{} (in {})", action.label, view.title);
@@ -146,7 +153,13 @@ mod tests {
         let groups = keys.groups(&views);
         assert_eq!(groups.len(), 1);
         let labels: Vec<&str> = groups[0].bindings.iter().map(|b| b.label.as_str()).collect();
-        assert_eq!(labels, ["Compose up", "Shell in (on a pane)", "Prune (in containers)", "Restart (in Containers)"]);
+        assert_eq!(labels, [
+            "Compose up",
+            "Shell in (on a pane)",
+            "Prune (in containers)",
+            "Go to Containers (the sidebar's Extensions, or the palette)",
+            "Restart (in Containers)"
+        ]);
         assert!(groups[0].bindings[0].chords[1].leader, "and through the leader from a pane");
         assert_eq!(keys.page().len(), 4, "a command with no key is still the palette's");
     }

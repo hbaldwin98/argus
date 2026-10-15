@@ -51,13 +51,13 @@ pub const KEPT: &[Kept] = &[
     key("O"), key("P"), key("R"), key("S"), key("V"), key("X"), key("Y"),
     ctrl(" "), ctrl("n"), ctrl("k"), ctrl(","), ctrl("p"), ctrl("f"), ctrl("v"), ctrl("V"), alt("v"),
     ctrl("="), ctrl("+"), ctrl("-"), ctrl("0"), ctrl("Enter"), ctrl("."),
-    key("+"), key("="), key("-"), key("J"), key("K"), key("L"), key("."), key("u"), key("U"),
+    key("+"), key("="), key("-"), key("J"), key("K"), key("L"), key("."), key("u"), key("U"), key(">"), key("<"),
 ];
 
 /// The keys a view's own stage keeps for moving through its rows,
 /// filtering them and leaving: an action's key cannot be one of them, nor a
 /// key [`KEPT`] holds without a modifier.
-pub const STAGE_KEYS: &[&str] = &["j", "k", "h", "l", "g", "G", "q", "/", "?", "`", " "];
+pub const STAGE_KEYS: &[&str] = &["j", "k", "h", "l", "g", "G", "q", "/", "?", "`", " ", ">", "<"];
 
 impl Kept {
     fn is(&self, press: &ExtKey) -> bool {
@@ -100,7 +100,7 @@ pub fn action_key_refusal(key: &str) -> Option<String> {
         return Some(format!("{key} opens a stage"));
     }
     if STAGE_KEYS.contains(&key) {
-        return Some(format!("{key} moves through the view, or leaves it"));
+        return Some(format!("{key} is the view's own: it moves, filters, docks or opens it as a page"));
     }
     None
 }

@@ -228,6 +228,10 @@ pub enum Action {
     ZoomReset,
     /// Show the views agents showed, or put them away.
     Views,
+    /// The extension view open as a page of its own.
+    ExtensionPage,
+    /// The extension view open docked in the side panel.
+    ExtensionDock,
 }
 
 #[derive(Debug, Serialize)]
@@ -530,6 +534,8 @@ pub static BINDINGS: &[Binding] = &[
     bind(Place::Extension, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous row"),
     bind(Place::Extension, &[Chord::key("Home")], First, "first row"),
     bind(Place::Extension, &[Chord::key("End")], Last, "last row"),
+    bind(Place::Extension, &[Chord::key(">")], ExtensionPage, "open it as a page"),
+    bind(Place::Extension, &[Chord::key("<")], ExtensionDock, "dock it to the side panel"),
 ];
 
 /// What the palette offers to run, in its order, each with the place whose
@@ -563,6 +569,8 @@ static COMMANDS: &[(Action, Option<Place>, &str)] = &[
     (Layout, Some(Place::Feature), "Show the features as a list or a board"),
     (Folded, Some(Place::Feature), "Show held and archived features, or fold them"),
     (NewFeature, Some(Place::Feature), "Write a new feature as one note"),
+    (ExtensionPage, Some(Place::Extension), "Open the extension view as a page"),
+    (ExtensionDock, Some(Place::Extension), "Dock the extension view to the side panel"),
 ];
 
 const ORDER: [Place; 19] = [

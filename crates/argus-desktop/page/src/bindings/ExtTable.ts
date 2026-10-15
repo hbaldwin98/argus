@@ -8,7 +8,11 @@ import type { ExtTableRow } from "./ExtTableRow";
  * An extension's view as the panel draws it: its table, the row selected,
  * and what can be done.
  */
-export type ExtTable = { extension: string, view: string, title: string, columns: Array<Column>, rows: Array<ExtTableRow>, actions: Array<ExtTableAction>, 
+export type ExtTable = { extension: string, view: string, title: string, 
+/**
+ * Open as a page, filling the stage, rather than docked.
+ */
+page: boolean, columns: Array<Column>, rows: Array<ExtTableRow>, actions: Array<ExtTableAction>, 
 /**
  * The selected row's key.
  */

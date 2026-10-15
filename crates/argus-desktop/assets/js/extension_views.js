@@ -1,10 +1,11 @@
-// What the running extensions put in the window beside the agents' views:
-// their views as tabs of the side panel, the one out drawn with the agent
-// table's renderer plus its selected row and actions, the question an action
-// asks first, their commands in the palette and their keys on the sheet.
-// Rust holds all of it (`src/extension_views.rs`, `src/extension_keys.rs`);
-// a row changes only when its extension publishes it again.
-import { $, el } from './dom.js';
+// What the running extensions put in the window: their views under the
+// sidebar's Extensions, the one open drawn with the agent table's renderer
+// plus its selected row and actions — docked in the side panel beside the
+// agents' views, or as a page of its own — the question an action asks
+// first, their commands in the palette and their keys on the sheet. Rust
+// holds all of it (`src/extension_views.rs`, `src/extension_keys.rs`); a
+// row changes only when its extension publishes it again.
+import { $, el, icon } from './dom.js';
 import { closeLayer } from './features.js';
 import { keycaps } from './keys.js';
 import { state } from './state.js';
@@ -13,28 +14,69 @@ import { call } from './tauri.js';
 function keycap(key) {
     return el('span', { class: 'kbd' }, key);
 }
-/** The panel's tabs for the extensions' views listed where the person is. */
+/** The icon an extension named, drawn by the page; a name it does not draw
+ *  is the generic one, and an extension never sends an image. */
+const ICONS = {
+    box: 'box',
+    server: 'server',
+    database: 'database',
+    globe: 'globe',
+    list: 'list',
+    rocket: 'rocket',
+    terminal: 'console',
+    gear: 'gear',
+};
+function viewIcon(name) {
+    return icon((name !== null && ICONS[name]) || 'puzzle');
+}
+/** The sidebar's Extensions: a fold after the built-in stages listing
+ *  every view whose scope is where the person is. Nothing listed, it is
+ *  not drawn, as the rail's fold of quiet repositories is not. */
+export function drawExtensionNav() {
+    const page = state.extensions;
+    const views = page?.views ?? [];
+    const holder = $('nav-extensions');
+    if (views.length === 0) {
+        holder.replaceChildren();
+        return;
+    }
+    const listed = page?.listed ?? false;
+    holder.replaceChildren(el('button', {
+        class: 'nav nav-fold',
+        type: 'button',
+        'aria-expanded': String(listed),
+        onclick: () => call('toggle_extensions', {}),
+    }, el('span', { class: 'ic' }, icon(listed ? 'down' : 'right')), el('span', { class: 'grow' }, 'Extensions'), el('span', { class: 'meta' }, String(views.length))), 
+    // Folded, the views are kept but hidden, so a fold is one redraw.
+    el('div', { class: 'nav-nest', role: 'group', 'aria-label': 'Extensions', hidden: !listed }, views.map((v) => el('button', {
+        class: `nav nav-sub${v.on ? ' on' : ''}`,
+        type: 'button',
+        title: `${v.title} · from ${v.extension}${v.page ? '' : ', docked'}`,
+        'aria-current': v.on ? 'page' : null,
+        onclick: () => call('open_extension_view', { extension: v.extension, view: v.view }),
+    }, el('span', { class: 'ic' }, viewIcon(v.icon)), el('span', { class: 'grow ttl' }, v.title), el('span', { class: 'meta' }, v.extension)))));
+}
+/** The panel's tabs for the extension views that open docked. */
 export function extensionTabs() {
-    const open = state.extensions?.open ?? null;
-    return (state.extensions?.views ?? []).map((v) => {
-        const on = open !== null && open.extension === v.extension && open.view === v.view;
-        return el('button', {
-            class: `vpanel-tab${on ? ' on' : ''}`,
-            role: 'tab',
-            type: 'button',
-            'aria-selected': String(on),
-            title: `${v.title} · from ${v.extension}`,
-            onclick: () => call('open_extension_view', { extension: v.extension, view: v.view }),
-        }, el('span', { class: 'ttl' }, v.title));
-    });
+    return (state.extensions?.views ?? [])
+        .filter((v) => !v.page)
+        .map((v) => el('button', {
+        class: `vpanel-tab${v.on ? ' on' : ''}`,
+        role: 'tab',
+        type: 'button',
+        'aria-selected': String(v.on),
+        title: `${v.title} · from ${v.extension}`,
+        onclick: () => call('open_extension_view', { extension: v.extension, view: v.view }),
+    }, el('span', { class: 'ttl' }, v.title)));
 }
-/** How many extension views are listed here, for the launcher's count. */
+/** How many docked extension views are listed here, for the launcher. */
 export function extensionViewCount() {
-    return state.extensions?.views.length ?? 0;
+    return (state.extensions?.views ?? []).filter((v) => !v.page).length;
 }
-/** Brings the first extension view out, for a launcher with no agent's. */
+/** Brings the first docked extension view out, for a launcher with no
+ *  agent's. */
 export function openFirstExtensionView() {
-    const first = state.extensions?.views[0];
+    const first = (state.extensions?.views ?? []).find((v) => !v.page);
     if (!first)
         return false;
     call('open_extension_view', { extension: first.extension, view: first.view });
@@ -50,9 +92,17 @@ function actionButton(action, kind) {
         },
     }, action.label, action.key && [' ', keycap(action.key)]);
 }
+/** Moves the view to a page or docks it, named with its key. */
+function modeButton(page) {
+    const label = page ? 'Open as page' : 'Dock to side panel';
+    const chord = state.keymap
+        .find((g) => g.place === 'extension')
+        ?.bindings.find((b) => b.action === (page ? 'extensionPage' : 'extensionDock'))?.chords;
+    return el('button', { class: 'btn sm', type: 'button', onclick: () => call('extension_mode', { page }) }, label, chord && [' ', keycaps(chord)]);
+}
 function header(view) {
     const wide = view.actions.filter((a) => a.viewWide);
-    return el('div', { class: 'vpanel-head' }, el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading' }, view.title)), el('div', { class: 'vpanel-meta' }, el('span', { class: 'meta' }, `from ${view.extension}`), el('span', { class: 'grow' }), wide.map((action) => actionButton(action, 'btn sm'))));
+    return el('div', { class: 'vpanel-head' }, el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading' }, view.title)), el('div', { class: 'vpanel-meta' }, el('span', { class: 'meta' }, `from ${view.extension}`), el('span', { class: 'grow' }), wide.map((action) => actionButton(action, 'btn sm')), modeButton(!view.page)));
 }
 /** The view as an agent's table block: a row's status, when any has one,
  *  leads it as a chip. */
@@ -80,13 +130,34 @@ function body(view) {
         trailing: perRow.length ? () => perRow.map((a) => actionButton(a, 'btn sm')) : null,
     }));
 }
-/** The header and body of the extension view out, or nothing when an
+/** The header and body of the extension view docked, or nothing when an
  *  agent's view has the panel. */
 export function extensionPanel() {
     const view = state.extensions?.open;
-    if (!view)
+    if (!view || view.page)
         return null;
     return [header(view), body(view)];
+}
+/** The extension view open as a page, filling the stage. */
+export function drawExtensionPage() {
+    if (state.rail.stage !== 'extension')
+        return;
+    const view = state.extensions?.open;
+    const page = $('xstage');
+    if (!view || !view.page) {
+        page.replaceChildren();
+        return;
+    }
+    const had = extensionViewFocused();
+    page.replaceChildren(el('div', { class: 'xpage' }, header(view), body(view)));
+    // A page has the keys the moment it is up, and keeps them across redraws.
+    if (had || document.activeElement === document.body)
+        document.getElementById('extension-view')?.focus();
+}
+/** The title of the extension view open as a page, for the strip. */
+export function extensionPageTitle() {
+    const view = state.extensions?.open;
+    return view?.page ? view.title : 'Extensions';
 }
 /** Whether the extension view out has the keys. */
 export function extensionViewFocused() {
@@ -156,6 +227,14 @@ export function extensionResults() {
     if (!page)
         return [];
     return [
+        ...page.views.map((v) => ({
+            group: 'Commands',
+            key: `extension go ${v.extension} ${v.view}`,
+            text: `Go to ${v.title}`,
+            detail: v.extension,
+            aside: null,
+            choose: () => call('open_extension_view', { extension: v.extension, view: v.view }),
+        })),
         ...page.commands.map((c) => ({
             group: 'Commands',
             key: `extension ${c.extension} ${c.command}`,
@@ -163,14 +242,6 @@ export function extensionResults() {
             detail: c.extension,
             aside: c.chords.length ? keycaps(c.chords) : null,
             choose: () => runExtensionCommand(c.extension, c.command),
-        })),
-        ...page.views.map((v) => ({
-            group: 'Commands',
-            key: `extension view ${v.extension} ${v.view}`,
-            text: `Show ${v.title}`,
-            detail: v.extension,
-            aside: null,
-            choose: () => call('open_extension_view', { extension: v.extension, view: v.view }),
         })),
     ];
 }

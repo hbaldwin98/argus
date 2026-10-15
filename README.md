@@ -525,6 +525,12 @@ on the shortcuts sheet — or one another extension took first, is refused: the 
 kept without it, and the reason is in the answer and on the status bar. `scripts/docker-extension.py`
 is a small example.
 
+In the desktop window, every view an extension publishes is listed under **Extensions** in the
+sidebar, after Workspace, Features, Checkouts and Console, while its scope matches. A view opens as
+a page of its own or docked in the side panel beside agents' views — where its `place` says, until
+you move it with **Open as page** or **Dock to side panel** (`>` and `<` while the view has the
+keys), which the window remembers per view. The palette's **Go to …** opens one too.
+
 ### `client.toml`
 
 ```toml

@@ -128,6 +128,7 @@ function receive(event) {
             break;
         case 'extensions':
             state.extensions = event;
+            drawChrome();
             drawViews();
             drawExtensionConfirm();
             break;

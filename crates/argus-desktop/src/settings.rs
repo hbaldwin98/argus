@@ -1,7 +1,8 @@
 //! What the window remembers between runs: how each repository's feature
 //! index is laid out, which agent it last started, whether an agent coming
 //! to need you chimes, the side and layout a review opens on, whether the
-//! console is docked and how tall, and what the Settings dialog sets.
+//! console is docked and how tall, where each extension view opens, and
+//! what the Settings dialog sets.
 //!
 //! Its own file beside the config, `desktop.json`, rather than a section
 //! of the terminal client's `client.toml` (DESIGN.md §Configuration says
@@ -50,6 +51,10 @@ pub struct Settings {
     /// The views panel's width as the person dragged it, likewise.
     #[serde(default)]
     pub views_width: Option<u32>,
+    /// Whether the sidebar's Extensions are unfolded, and where the person
+    /// chose each extension's view opens.
+    #[serde(default)]
+    pub extensions: ExtensionsLayout,
     /// What the Settings dialog sets, flat in the file beside the rest.
     #[serde(flatten)]
     pub preferences: Preferences,
@@ -187,6 +192,17 @@ pub struct ReviewLayout {
     pub split: bool,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExtensionsLayout {
+    #[serde(default)]
+    pub open: bool,
+    /// Docked or a page, by `extension/view`: the person's choice, which
+    /// outlives the extension republishing, or restarting, and the window
+    /// closing. A view not here opens where its extension says.
+    #[serde(default)]
+    pub modes: BTreeMap<String, argus_protocol::ExtPlace>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConsoleLayout {
     /// Hidden until first shown: a window that never opens a console is
@@ -218,6 +234,7 @@ impl Default for Settings {
             console: ConsoleLayout::default(),
             rail_width: None,
             views_width: None,
+            extensions: ExtensionsLayout::default(),
             preferences: Preferences::default(),
         }
     }

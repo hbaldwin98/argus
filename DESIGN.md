@@ -424,7 +424,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `keys` | a key the page reports, as the protocol's key |
 | `clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
 | `agent_views` | which views agents showed, as the window holds them, which one is out in the side panel, and which wait on a refresh |
-| `extension_views` | which extension views the window holds, which are listed where the person is, the one out in the side panel in an agent view's place, its selected row and the question an action waits on |
+| `extension_views` | which extension views the window holds, which are listed under the sidebar's Extensions where the person is, the one open — docked in the side panel or as a page — with its selected row and the question an action waits on, and where the person chose each view opens |
 | `extension_keys` | the extensions' commands and keys as the window's: where each key is heard, what the palette lists, and a heading of the shortcuts sheet per extension |
 | `extension_dialog` | the questions extensions put to this window: the one open, those waiting behind it, and the answer or cancellation each sends back |
 | `opener` | handing a link in a view to the system's opener, and only an `http` or `https` one |
@@ -2148,18 +2148,29 @@ that listed `extension-dialogs`. Only that client may answer it, in its own kind
 and a dialog nobody answered is withdrawn, its extension told it was cancelled, when that client
 goes.
 
-The desktop window draws extensions where it draws agents' views rather than in a stage of its own:
-an extension's view is one more tab of the side panel (`extension_views`), listed while its scope
-holds — a repository's while the rail reads that repository, a checkout's while its pane is on
-screen or it is that repository's own — and counted on the launcher at the window's edge with the
-agents' views. Brought out, it takes the panel's body from an agent's view and gives it back when
-an agent's is chosen, and an agent's view arriving never takes the panel from it. It is drawn by
-the agent table's renderer (`table.ts`, `values.ts`), a row's status leading it as a chip, with
-the selected row marked and its actions at its end, view-wide actions in the panel's header. A
-click in it gives it the keys: `j`/`k` move the row, and each action's key runs it. An action that
-asks first asks in the dialog the Checkouts stage asks before a removal in, and an action is sent
-as it stands — the table changes when the extension publishes again. A view taken away, or out of
-scope where the person now is, is put away. Commands (`extension_keys`) are in the palette with
+The desktop window lists every extension view whose scope holds — a repository's while the rail
+reads that repository, as the Checkouts stage does, a checkout's while its pane is on screen or it
+is that repository's own — under Extensions, a fold in the sidebar after the built-in stages, each
+with its title and icon (`extension_views`). Nothing listed, the fold is not drawn, as the rail's
+fold of quiet repositories is not; whether it is unfolded is kept in `desktop.json`. A view opens
+either docked in the side panel the agents' views open in or as a page filling the stage
+(`Stage::Extension`), wherever its extension's `place` says until the person moves it: the
+panel's header offers Open as page and a page's Dock to side panel, also the keymap's
+`ExtensionPage` and `ExtensionDock` (`>` and `<` while the view has the keys), and the choice is
+kept per view in `desktop.json`, across its extension republishing or restarting. Docking goes back
+to the stage the page opened over. A view has no digit, the digits being the built-in stages': it is
+reached from the sidebar, its Tab and Enter included, from the palette's Go to, and the shortcuts
+sheet says so under its extension's heading. Docked, it is a tab of the side panel and counted on
+the launcher at the window's edge with the agents' views; it takes the panel's body from an agent's
+view and gives it back when an agent's is chosen, and an agent's view arriving never takes the
+panel from it. Either way it is drawn by the agent table's renderer (`table.ts`, `values.ts`), a
+row's status leading it as a chip, with the selected row marked and its actions at its end,
+view-wide actions in its header. A page has the keys while it is up; docked, a click in it gives
+it them: `j`/`k` move the row, and each action's key runs it. An action that asks first asks in the
+dialog the Checkouts stage asks before a removal in, and an action is sent as it stands — the table
+changes when the extension publishes again. A view taken away, or out of scope where the person now
+is, closes: a page of it goes back to the stage it opened over and says so, and a page left for
+another stage closes. Commands (`extension_keys`) are in the palette with
 their keys, and on the shortcuts sheet under a heading per extension beside the keymap's: a command
 heard anywhere runs from wherever the page has the keys and, through the leader, from a pane; one
 on a checkout from the Checkouts stage or a checkout picked on the rail; one on a pane from a pane
