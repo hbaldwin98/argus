@@ -5947,8 +5947,10 @@ button.vtree-chev:focus-visible {
 
 /* ---- Saved views: a panel of columns, links, embeds, the sidebar list --- */
 
-/* The panel's columns sit side by side and scroll sideways: following a
-   link adds one on the right, and each keeps its own header and scroll. */
+/* The panel's columns sit side by side and share its width, scrolling
+   sideways only once they cannot fit at their least: following a link
+   adds one on the right, closing one gives its room back, and each keeps
+   its own header and scroll. */
 .saved-panel {
   flex: 1;
   min-width: 0;
@@ -5968,10 +5970,10 @@ button.vtree-chev:focus-visible {
   overflow-y: hidden;
 }
 .saved-col {
-  flex: none;
+  flex: 1 0 min(420px, 100%);
   display: flex;
   flex-direction: column;
-  width: min(420px, 100%);
+  min-width: 0;
   min-height: 0;
   border-right: 1px solid var(--line);
 }

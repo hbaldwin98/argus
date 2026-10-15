@@ -2140,7 +2140,7 @@ so a link in one of them is reached by the link list alone.
 The desktop window holds the saved views (`saved_views`) and gives each one a panel, `saved:<id>`
 in `desktop.json`, docked on the right the first time it opens and moved like any other; it has no
 page on the stage, since its columns want a dock. A panel is a trail of columns side by side,
-scrolling sideways, each one saved view under its own header: the title, the scope, a stale chip,
+sharing its width and scrolling sideways once they no longer fit, each one saved view under its own header: the title, the scope, a stale chip,
 when it was built and at which commit, and Refresh, Mark stale, Delete (asked first) and Details
 (the recipe, the sources and the attached features). Following a link in a column puts its target
 in the column after it and drops the columns that were after; a column closes by itself (the first
