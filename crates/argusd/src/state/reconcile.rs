@@ -10,6 +10,7 @@
 use argus_protocol::reconcile::{checked_ask, checked_text, seen, Stage, MAX_FAILURE_BYTES};
 use argus_protocol::{Feature, Reconcile, ReconcileAction, ReconcileChange, Reconciled};
 
+use super::asker::pane_label;
 use super::*;
 
 impl Daemon {
@@ -28,7 +29,7 @@ impl Daemon {
             anyhow::bail!("this checkout is on no feature; name one with --feature <slug>");
         };
         let (under_way, _) = self.store.reconcile(key, &slug)?;
-        let by = format!("pane #{}", pane_id.0);
+        let by = pane_label(pane_id);
         match change {
             ReconcileChange::Read => {}
             ReconcileChange::Propose { proposal } => {
@@ -130,17 +131,17 @@ impl Daemon {
                 let ask = checked_ask(&ask).map_err(|e| anyhow::anyhow!("{e}"))?;
                 let agent = self
                     .address_for_agent(pane, argus_protocol::ArtifactScope::RepositoryBranch)
-                    .map_err(|_| anyhow::anyhow!("pane #{} is not a live agent", pane.0))?;
+                    .map_err(|_| anyhow::anyhow!("{} is not a live agent", pane_label(pane)))?;
                 if agent.key != key {
-                    anyhow::bail!("pane #{} works in another repository", pane.0);
+                    anyhow::bail!("{} works in another repository", pane_label(pane));
                 }
                 if !self.notify(pane, &ask_message(&feature, &ask)) {
-                    anyhow::bail!("pane #{} could not be told", pane.0);
+                    anyhow::bail!("{} could not be told", pane_label(pane));
                 }
                 let reconcile = Reconcile {
                     asked: ask,
                     pane,
-                    by: format!("pane #{}", pane.0),
+                    by: pane_label(pane),
                     at: super::decisions::now(),
                     proposed: false,
                     lines: Vec::new(),

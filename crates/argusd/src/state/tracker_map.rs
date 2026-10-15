@@ -7,6 +7,7 @@
 
 use argus_protocol::{checked_map, ArtifactScope, MapChange, PaneId, ProjectId, TrackerMap};
 
+use super::asker::pane_label;
 use super::*;
 
 impl Daemon {
@@ -25,7 +26,7 @@ impl Daemon {
         }
 
         let body = checked_map(draft).map_err(|e| anyhow::anyhow!("{e}"))?;
-        let by = format!("pane #{}", pane_id.0);
+        let by = pane_label(pane_id);
         self.store.draft_tracker_map(key, &body, &by, super::decisions::now())?;
         self.broadcast_decisions(&address, self.store.decisions(key)?);
         self.store.tracker_map(key)

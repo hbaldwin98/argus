@@ -20,6 +20,7 @@ use argus_protocol::{
     FeatureState, PaneId, ProjectId,
 };
 
+use super::asker::Asker;
 use super::board_address::BoardAddress;
 use super::*;
 
@@ -137,11 +138,11 @@ impl Daemon {
     ) -> anyhow::Result<FeatureBoard> {
         let filing = filing.into();
         let address = self.address_for_agent(pane_id, filing.scope)?;
-        let by = FeatureActor::Agent {
+        let by = Asker::Agent {
+            pane: pane_id,
             session,
-            filing: &filing,
         };
-        let about = self.apply_feature(&address, &by, action)?;
+        let about = self.apply_feature(&address, by, filing.feature.as_deref(), action)?;
         self.feature_board(&address, about.as_deref())
     }
 
@@ -156,11 +157,12 @@ impl Daemon {
         action: FeatureAction,
     ) -> anyhow::Result<()> {
         let address = self.address_for_client(project, checkout)?;
-        self.apply_feature(&address, &FeatureActor::Person, action).map(drop)
+        self.apply_feature(&address, Asker::Person, None, action).map(drop)
     }
 
     /// Applies one change to the board `address` names and pushes it to
-    /// every client. Answers with the feature the change was about when
+    /// every client. `named` is the feature an agent's request names, if
+    /// it names one. Answers with the feature the change was about when
     /// the asker could not have named it: the one an append resolved.
     ///
     /// Every rule that differs by who asked is an arm of this match, so
@@ -177,7 +179,8 @@ impl Daemon {
     fn apply_feature(
         &self,
         address: &BoardAddress,
-        by: &FeatureActor<'_>,
+        by: Asker<'_>,
+        named: Option<&str>,
         action: FeatureAction,
     ) -> anyhow::Result<Option<String>> {
         let key = address.key.as_str();
@@ -191,10 +194,10 @@ impl Daemon {
                     // point at it: whichever agent picks it up says so
                     // with `argus-hook feature use`, and that is when it
                     // gains a home.
-                    FeatureActor::Person => {
+                    Asker::Person => {
                         self.store.add_feature(key, &write, None, None, at, None)?;
                     }
-                    FeatureActor::Agent { session, .. } => {
+                    Asker::Agent { session, .. } => {
                         let path = address.checkout()?;
                         let checkout = path.to_string_lossy();
                         let feature = self.store.add_feature(
@@ -203,7 +206,7 @@ impl Daemon {
                             Some(&checkout),
                             self.branch_of(path).as_deref(),
                             at,
-                            *session,
+                            session,
                         )?;
                         self.store.set_artifact_feature_scope(path, key, &feature.slug)?;
                     }
@@ -213,7 +216,7 @@ impl Daemon {
             // it: this is the moment a feature somebody wrote down gains a
             // place where work on it can be seen happening.
             FeatureAction::Select { slug } => {
-                let FeatureActor::Agent { .. } = by else {
+                let Asker::Agent { .. } = by else {
                     anyhow::bail!("a person moves a feature between checkouts with a transfer");
                 };
                 self.store
@@ -226,11 +229,10 @@ impl Daemon {
             // decisions, and a paragraph added mid-task belongs where it
             // is being read.
             FeatureAction::Append { text } => {
-                let FeatureActor::Agent { filing, .. } = by else {
+                let Asker::Agent { .. } = by else {
                     anyhow::bail!("a person rewrites a brief whole");
                 };
                 let features = self.store.features(key)?;
-                let named = filing.feature.as_deref();
                 let Some(slug) = self.board_feature(address, &features, named)? else {
                     anyhow::bail!("this checkout is not on a feature yet");
                 };
@@ -249,7 +251,7 @@ impl Daemon {
             FeatureAction::Retitle { slug, title } => self.store.rename_feature(key, &slug, &title)?,
             FeatureAction::Rewrite { slug, body } => self.store.set_feature_body(key, &slug, &body)?,
             FeatureAction::Drop { slug } => {
-                if let FeatureActor::Agent { .. } = by {
+                if let Asker::Agent { .. } = by {
                     self.refuse_dropping_work(key, &slug)?;
                 }
                 self.store.remove_feature(key, &slug)?;
@@ -270,7 +272,7 @@ impl Daemon {
                 self.store.unlink_feature(key, &slug, &ticket)?
             }
             FeatureAction::Transfer { slug, to } => {
-                let FeatureActor::Person = by else {
+                let Asker::Person = by else {
                     anyhow::bail!("an agent takes a feature up with `argus-hook feature use`");
                 };
                 let (source, destination) = self.transfer_paths(address, to)?;
@@ -280,7 +282,7 @@ impl Daemon {
             // A new feature is opened as a person's `Open` is, for the same
             // reason: a note is work not yet started.
             FeatureAction::Capture { into, capture } => {
-                let FeatureActor::Person = by else {
+                let Asker::Person = by else {
                     anyhow::bail!("a note is captured from the feature view");
                 };
                 let capture = capture
@@ -311,12 +313,12 @@ impl Daemon {
         slug: &str,
         state: FeatureState,
         detail: Option<String>,
-        by: &FeatureActor<'_>,
+        by: Asker<'_>,
         at: i64,
     ) -> anyhow::Result<()> {
         let (actor, session) = match by {
-            FeatureActor::Person => (Actor::Human, None),
-            FeatureActor::Agent { session, .. } => {
+            Asker::Person => (Actor::Human, None),
+            Asker::Agent { session, .. } => {
                 if detail.is_some() {
                     anyhow::bail!("what was said about a move is the person's to say");
                 }
@@ -417,15 +419,3 @@ impl Daemon {
     }
 }
 
-/// Who is changing a feature. Where they are looking from is the board's
-/// address.
-enum FeatureActor<'a> {
-    /// A person at a client.
-    Person,
-    /// An agent: the conversation it is, and the feature its request
-    /// names, if it names one.
-    Agent {
-        session: Option<&'a str>,
-        filing: &'a Filing,
-    },
-}

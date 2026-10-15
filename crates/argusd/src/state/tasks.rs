@@ -16,7 +16,8 @@
 
 use argus_protocol::{TaskAction, TaskList, TaskPlace};
 
-use super::board_parts::{Author, BoardTarget, FeaturePart};
+use super::asker::Asker;
+use super::board_parts::{BoardTarget, FeaturePart};
 use super::*;
 use crate::store::Store;
 
@@ -68,16 +69,16 @@ impl FeaturePart for TaskAction {
         key: &str,
         feature: &str,
         at: i64,
-        by: Author<'_>,
+        by: Asker<'_>,
     ) -> anyhow::Result<()> {
         match self {
             TaskAction::List => {}
             TaskAction::Add(write) => {
                 let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-                store.add_task(key, feature, &write, at, by.session)?;
+                store.add_task(key, feature, &write, at, by.session())?;
             }
             TaskAction::Move { id, state } => {
-                store.move_task(key, id, state, by.session, by.pane)?
+                store.move_task(key, id, state, by.session(), by.pane())?
             }
             TaskAction::Retitle { id, title } => store.retitle_task(key, id, &title)?,
             TaskAction::SetBody { id, body } => store.set_task_body(key, id, body)?,
@@ -94,7 +95,7 @@ impl FeaturePart for TaskAction {
                 store.remove_task_criterion(key, id, index)?
             }
             TaskAction::Note { id, text } => {
-                store.add_task_note(key, id, &text, at, by.session, by.pane)?
+                store.add_task_note(key, id, &text, at, by.session(), by.pane())?
             }
         }
         Ok(())

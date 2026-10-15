@@ -9,18 +9,10 @@
 
 use argus_protocol::{PaneId, ProjectId};
 
+use super::asker::Asker;
 use super::board_address::BoardAddress;
 use super::*;
 use crate::store::Store;
-
-/// Who is asking for a change. An agent is the conversation it is and the
-/// pane it asked through; a person at a client is neither, which is what
-/// lets a claim or a note say whose it is without a flag for it.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct Author<'a> {
-    pub session: Option<&'a str>,
-    pub pane: Option<PaneId>,
-}
 
 /// One kind of row filed under a feature, spoken to through the action
 /// that changes it.
@@ -51,7 +43,7 @@ pub trait FeaturePart: Sized {
         key: &str,
         feature: &str,
         at: i64,
-        by: Author<'_>,
+        by: Asker<'_>,
     ) -> anyhow::Result<()>;
     /// Names the repositories whose board this is, as a push does: a read
     /// answered without them would be dropped by a client that keeps only
@@ -104,9 +96,9 @@ impl Daemon {
             address: &address,
             feature,
         };
-        let by = Author {
+        let by = Asker::Agent {
+            pane: pane_id,
             session,
-            pane: Some(pane_id),
         };
         self.apply_part(&target, action, by)
     }
@@ -125,7 +117,7 @@ impl Daemon {
             address: &address,
             feature: feature.to_string(),
         };
-        self.apply_part(&target, action, Author::default())
+        self.apply_part(&target, action, Asker::Person)
     }
 
     /// Applies one change and answers with the list afterwards. Every
@@ -134,7 +126,7 @@ impl Daemon {
         &self,
         target: &BoardTarget<'_>,
         action: P,
-        by: Author<'_>,
+        by: Asker<'_>,
     ) -> anyhow::Result<P::List> {
         if let Some(id) = action.id() {
             self.guard_part::<P>(target, id)?;

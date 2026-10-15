@@ -3,7 +3,8 @@
 
 use argus_protocol::{DiagramAction, DiagramList};
 
-use super::board_parts::{Author, BoardTarget, FeaturePart};
+use super::asker::Asker;
+use super::board_parts::{BoardTarget, FeaturePart};
 use super::*;
 use crate::store::Store;
 
@@ -40,17 +41,17 @@ impl FeaturePart for DiagramAction {
         key: &str,
         feature: &str,
         at: i64,
-        by: Author<'_>,
+        by: Asker<'_>,
     ) -> anyhow::Result<()> {
         match self {
             DiagramAction::List => {}
             DiagramAction::Add(write) => {
                 let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-                store.add_sequence_diagram(key, feature, &write, at, by.session)?;
+                store.add_sequence_diagram(key, feature, &write, at, by.session())?;
             }
             DiagramAction::Rewrite { id, write } => {
                 let write = write.checked().map_err(|e| anyhow::anyhow!("{e}"))?;
-                store.rewrite_sequence_diagram(key, feature, id, &write, at, by.session)?;
+                store.rewrite_sequence_diagram(key, feature, id, &write, at, by.session())?;
             }
             DiagramAction::Remove { id } => store.remove_sequence_diagram(key, feature, id)?,
         }
