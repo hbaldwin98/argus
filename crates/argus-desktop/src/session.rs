@@ -36,7 +36,7 @@ use argus_protocol::paste;
 use argus_protocol::{
     transitions, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
     RepositoryId, ServerMsg, View, WorkspaceId, ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, CONSOLES, FOCUS, PASTE_FILE,
-    RENAME_PANE,
+    RENAME_PANE, SAVED_VIEWS,
 };
 
 use crate::add_project::{AddProject, AddProjectGesture, Adding};
@@ -64,6 +64,7 @@ use crate::palette;
 use crate::preferences::Chosen;
 use crate::reconcile_dialog::ReconcileGesture;
 use crate::rail::{self, Choices};
+use crate::saved_views::{Closed, SavedColumn, SavedViews, Whereabouts};
 use crate::dragged_width::{self, DraggedWidth};
 use crate::sent::Sent;
 use crate::sessions::Sessions;
@@ -122,6 +123,8 @@ pub struct Session {
     awaited: Awaited<Made>,
     agents: Agents,
     views: AgentViews,
+    /// The views agents saved, and the columns of each panel showing them.
+    saved: SavedViews,
     /// What the extensions publish: their views, the one out in the side
     /// panel in place of an agent's, their commands and their dialogs.
     extension_views: ExtensionViews,
@@ -196,6 +199,7 @@ impl Session {
             awaited: Awaited::default(),
             agents: Agents::new(settings.last_agent),
             views: AgentViews::default(),
+            saved: SavedViews::default(),
             extension_views: ExtensionViews::new(settings.extensions),
             over: PageOver::default(),
             opening_feature: PendingFeature::default(),
@@ -279,6 +283,11 @@ impl Session {
         if self.status.daemon_can(AGENT_VIEWS) {
             self.views.connected(&mut self.out);
         }
+        if self.status.daemon_can(SAVED_VIEWS) {
+            self.saved.connected(&mut self.out);
+        } else {
+            self.saved.clear();
+        }
         self.finish()
     }
 
@@ -361,6 +370,18 @@ impl Session {
                 if self.views.shown(*view, self.shown.pane(), self.docks.dock_out(&Panel::Views)) {
                     self.docks.show(&Panel::Views);
                 }
+            }
+            ServerMsg::SavedViews(views) => self.saved.receive_all(views),
+            ServerMsg::SavedViewChanged(view) => self.saved.changed(*view),
+            ServerMsg::SavedViewRemoved { id } => {
+                self.saved.removed(&id);
+                self.docks.forget(&Panel::Saved(id));
+            }
+            // What was asked of the view did not happen, so the person is
+            // told why and nothing waits on it.
+            ServerMsg::SavedViewFailed { id, reason } => {
+                let text = self.saved.failed(&id, &reason);
+                self.passing.push(Event::Notice { text });
             }
             ServerMsg::ExtensionViews(views) => self.extension_views.receive(views),
             ServerMsg::ExtensionCommands(commands) => self.extension_keys.receive(commands),
@@ -608,6 +629,39 @@ impl Session {
                 self.finish()
             }
             Call::OpenRef { pane, reference } => self.open_ref(pane.map(PaneId), reference),
+            Call::OpenSavedView { id, from } => self.open_saved(id, from),
+            Call::CloseSavedColumn { panel, column } => {
+                if let Panel::Saved(owner) = panel {
+                    if self.saved.close_column(&owner, column) == Closed::Panel {
+                        self.docks.forget(&Panel::Saved(owner));
+                    }
+                }
+                self.finish()
+            }
+            Call::PopOutSavedColumn { panel, column } => {
+                if let Panel::Saved(owner) = panel {
+                    if let Some(id) = self.saved.pop_out(&owner, column) {
+                        self.show_saved(id);
+                    }
+                }
+                self.finish()
+            }
+            Call::RefreshSavedView { id } => {
+                self.saved.refresh(id, &mut self.out);
+                self.finish()
+            }
+            Call::MarkSavedViewStale { id } => {
+                self.saved.mark_stale(id, &mut self.out);
+                self.finish()
+            }
+            Call::DeleteSavedView { id } => {
+                self.saved.delete(id, &mut self.out);
+                self.finish()
+            }
+            Call::PressSavedView { id, press } => {
+                self.saved.press(id, press, &mut self.out);
+                self.finish()
+            }
             Call::HideViews => {
                 self.docks.hide(&Panel::Views);
                 self.finish()
@@ -1253,6 +1307,50 @@ impl Session {
         self.finish()
     }
 
+    /// Opens the saved view `id` where a link to it was followed, or in a
+    /// panel of its own: a link followed in a saved panel's column gives
+    /// the target the column after it; one followed in an agent's view or
+    /// an extension's table brings out an open panel showing it, else
+    /// opens it as a first column. A view the daemon does not hold is said
+    /// so, since there is nothing to open.
+    fn open_saved(&mut self, id: String, from: Option<SavedColumn>) -> Vec<ClientMsg> {
+        if self.saved.get(&id).is_none() {
+            self.passing.push(Event::Notice { text: format!("no saved view {id}") });
+            return self.finish();
+        }
+        match from {
+            Some(SavedColumn { panel: Panel::Saved(owner), column }) if self.saved.follow(&owner, column, id.clone()) => {
+                self.show_saved(owner);
+            }
+            _ => {
+                let showing = self.saved.showing(&id);
+                let placed = showing.iter().find(|panel| self.docks.place_of(&Panel::Saved((*panel).clone())).is_some());
+                self.show_saved(placed.cloned().unwrap_or(id));
+            }
+        }
+        self.finish()
+    }
+
+    /// Brings out the saved panel named `owner`, placing it on the right
+    /// the first time and starting its trail if it has none.
+    fn show_saved(&mut self, owner: String) {
+        self.saved.open(&owner);
+        let panel = Panel::Saved(owner);
+        self.docks.place(&panel, Place::Dock(Dock::Right));
+        self.docks.show(&panel);
+    }
+
+    /// Where the person is, for the saved views listed as here.
+    fn whereabouts(&self) -> Whereabouts {
+        let feature = self.opened_feature_number();
+        Whereabouts { repository: self.chosen_repository().map(|r| r.id), feature }
+    }
+
+    fn opened_feature_number(&self) -> Option<i64> {
+        let slug = self.features.opened().filter(|_| self.stage == Stage::Feature)?;
+        self.features.board()?.features.iter().find(|f| f.slug == slug).map(|f| f.number)
+    }
+
     /// Reveals the feature a reference named, once the board of its
     /// repository is here to say which one is numbered so. The person going
     /// elsewhere meanwhile abandons it.
@@ -1527,7 +1625,7 @@ impl Session {
                 self.docks.move_to(panel, dock);
                 self.dock_console();
             }
-            Panel::Views => self.docks.move_to(panel, dock),
+            Panel::Views | Panel::Saved(_) => self.docks.move_to(panel, dock),
             Panel::Extension(_) => {
                 self.extension_views.touch(panel);
                 self.dock_extension(panel, Some(dock));
@@ -1558,6 +1656,7 @@ impl Session {
             present.push(Panel::Views);
         }
         present.extend(self.extension_views.present(&self.here()));
+        present.extend(self.saved.present());
         present
     }
 
@@ -2523,11 +2622,12 @@ impl Session {
         self.docks.set_present(present);
         // Inline, not a method: `take` borrows the docks mutably while the
         // titles read the extension views.
-        let (views, here) = (&self.extension_views, self.here());
+        let (views, here, saved) = (&self.extension_views, self.here(), &self.saved);
         events.extend(self.docks.take(|panel| match panel {
             Panel::Console => "Console".into(),
             Panel::Views => "Views".into(),
             Panel::Extension(_) => views.get(panel, &here).map(|v| v.title.clone()).unwrap_or_default(),
+            Panel::Saved(id) => saved.title(id),
         }));
         events.extend(self.console.take(self.console_place(), self.console_sides(), self.status.daemon_can(CONSOLES)));
         if let Some(rail) = self.rail_sent.take(Some(self.rail(now))) {
@@ -2563,8 +2663,26 @@ impl Session {
         if let Some(page) = self.views.take(views_out, can_press, |pane| tree.panes().find(|p| p.id == pane).map(|p| p.title.clone())) {
             events.push(Event::Views(Box::new(page)));
         }
+        let placed = self.placed_saved();
+        let (whereabouts, can_press) = (self.whereabouts(), self.status.daemon_can(SAVED_VIEWS));
+        if let Some(page) = self.saved.take(whereabouts, &self.tree, &placed, can_press) {
+            events.push(Event::SavedViews(Box::new(page)));
+        }
         events.append(&mut self.passing);
         events
+    }
+
+    /// The saved views' panels the docks hold, by the id each is named with.
+    fn placed_saved(&self) -> Vec<String> {
+        let layout = self.docks.layout();
+        [&layout.left, &layout.right, &layout.bottom]
+            .into_iter()
+            .flat_map(|dock| &dock.tabs)
+            .filter_map(|panel| match panel {
+                Panel::Saved(id) => Some(id.clone()),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Everything, for a page that has just loaded and holds nothing; the
@@ -2581,6 +2699,7 @@ impl Session {
         self.docks.reload();
         self.checkouts.reload();
         self.views.forget();
+        self.saved.forget();
         self.extensions_sent.forget();
         self.extension_dialogs.reload();
         // A page that has just loaded has no palette open.
@@ -3885,7 +4004,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 113] = [
+    const CALLS: [&str; 121] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
@@ -3992,6 +4111,14 @@ mod tests {
         r#"{"call":"refresh_view","pane":1,"id":"ci"}"#,
         r#"{"call":"press_view","pane":1,"press":{"view":"ci","action":"rerun","rows":[],"form":null,"answers":[]}}"#,
         r#"{"call":"close_view","pane":1,"id":"ci"}"#,
+        r#"{"call":"open_saved_view","id":"plan","from":null}"#,
+        r#"{"call":"open_saved_view","id":"plan","from":{"panel":"saved:plan","column":0}}"#,
+        r#"{"call":"close_saved_column","panel":"saved:plan","column":1}"#,
+        r#"{"call":"pop_out_saved_column","panel":"saved:plan","column":1}"#,
+        r#"{"call":"refresh_saved_view","id":"plan"}"#,
+        r#"{"call":"mark_saved_view_stale","id":"plan"}"#,
+        r#"{"call":"delete_saved_view","id":"plan"}"#,
+        r#"{"call":"press_saved_view","id":"plan","press":{"view":"plan","action":"rerun","rows":[],"form":null,"answers":[]}}"#,
         r#"{"call":"open_link","map":false}"#,
         r#"{"call":"link","gesture":{"on":"fields","url":"https://linear.app/a/issue/ENG-1/x","role":"the work"}}"#,
         r#"{"call":"open_reconcile"}"#,
@@ -5383,5 +5510,166 @@ mod tests {
         s.call(Call::ToggleExtensions);
         assert!(s.extensions_page().listed);
         assert!(s.take_settings().is_some_and(|saved| saved.extensions.open));
+    }
+
+    // ---- Saved views --------------------------------------------------------
+
+    fn saved_view(id: &str) -> argus_protocol::SavedView {
+        serde_json::from_value(serde_json::json!({
+            "id": id,
+            "scope": {"kind": "repository", "repository": 10},
+            "built_at": 100,
+            "view": {"id": id, "title": format!("Title of {id}"), "blocks": []},
+        }))
+        .unwrap()
+    }
+
+    fn with_saved(ids: &[&str]) -> Session {
+        let mut s = session(Hello::this_build());
+        s.receive(ServerMsg::SavedViews(ids.iter().map(|id| saved_view(id)).collect()));
+        s
+    }
+
+    fn saved_page(s: &mut Session) -> Option<crate::saved_views::SavedViewsPage> {
+        // Asked again for what it holds, not only for a change.
+        s.saved.forget();
+        s.events(0).into_iter().find_map(|e| match e {
+            Event::SavedViews(page) => Some(*page),
+            _ => None,
+        })
+    }
+
+    fn saved_panel(id: &str) -> Panel {
+        Panel::Saved(id.into())
+    }
+
+    fn open_saved(s: &mut Session, id: &str) {
+        s.call(Call::OpenSavedView { id: id.into(), from: None });
+    }
+
+    fn follow(s: &mut Session, owner: &str, column: usize, id: &str) {
+        s.call(Call::OpenSavedView { id: id.into(), from: Some(SavedColumn { panel: saved_panel(owner), column }) });
+    }
+
+    fn columns(s: &mut Session, owner: &str) -> Vec<String> {
+        saved_page(s).and_then(|p| p.panels.into_iter().find(|p| p.panel == saved_panel(owner))).map(|p| p.columns).unwrap_or_default()
+    }
+
+    #[test]
+    fn saved_views_are_watched_only_from_a_daemon_that_lists_them() {
+        let mut s = Session::default();
+        let sent = s.connected(Some(Hello::this_build()), None, vec![with_tree(tree())]);
+        assert!(sent.iter().any(|m| matches!(m, ClientMsg::WatchSavedViews)));
+        let mut old = Session::default();
+        let sent = old.connected(Some(Hello { capabilities: vec![AGENT_VIEWS.to_string()], ..Hello::this_build() }), None, vec![with_tree(tree())]);
+        assert!(!sent.iter().any(|m| matches!(m, ClientMsg::WatchSavedViews)));
+        let sent = old.call(Call::RefreshSavedView { id: "plan".into() });
+        assert!(sent.is_empty(), "nothing to refresh on a daemon that keeps none");
+    }
+
+    #[test]
+    fn opening_a_saved_view_docks_it_on_the_right_and_the_file_keeps_the_place() {
+        let mut s = with_saved(&["plan"]);
+        assert!(!s.docks.shows(&saved_panel("plan")), "listed, not opened");
+        open_saved(&mut s, "plan");
+        assert_eq!(s.docks.place_of(&saved_panel("plan")), Some(Place::Dock(Dock::Right)));
+        assert!(s.docks.shows(&saved_panel("plan")));
+        let page = docks_page(&mut s).unwrap();
+        assert!(page.right.tabs.iter().any(|t| t.panel == saved_panel("plan") && t.title == "Title of plan"));
+        let saved = s.take_settings().expect("saved").docks.unwrap();
+        assert!(saved.right.tabs.contains(&saved_panel("plan")));
+        assert!(Docks::new(saved).dock_of(&saved_panel("plan")).is_some(), "across runs");
+    }
+
+    #[test]
+    fn a_saved_view_the_daemon_does_not_hold_is_not_opened() {
+        let mut s = with_saved(&["plan"]);
+        open_saved(&mut s, "ghost");
+        assert_eq!(s.docks.place_of(&saved_panel("ghost")), None);
+        assert_eq!(notices(&mut s), ["no saved view ghost"]);
+    }
+
+    #[test]
+    fn following_a_link_in_a_column_puts_the_target_after_it_and_drops_what_followed() {
+        let mut s = with_saved(&["a", "b", "c", "d"]);
+        open_saved(&mut s, "a");
+        follow(&mut s, "a", 0, "b");
+        follow(&mut s, "a", 1, "c");
+        assert_eq!(columns(&mut s, "a"), ["a", "b", "c"]);
+        follow(&mut s, "a", 0, "d");
+        assert_eq!(columns(&mut s, "a"), ["a", "d"]);
+        assert_eq!(s.docks.place_of(&saved_panel("b")), None, "a column is not a panel");
+    }
+
+    #[test]
+    fn a_link_from_an_agents_view_or_an_extension_cell_opens_a_panel_or_brings_out_the_one_showing_it() {
+        let mut s = with_saved(&["a", "b"]);
+        // The page sends the same call from both, with no column.
+        let call: Call = serde_json::from_str(r#"{"call": "open_saved_view", "id": "b", "from": null}"#).unwrap();
+        s.call(call);
+        assert_eq!(columns(&mut s, "b"), ["b"], "its own first column");
+        open_saved(&mut s, "a");
+        follow(&mut s, "a", 0, "b");
+        docks(&mut s, DockGesture::Hide { panel: saved_panel("a") });
+        docks(&mut s, DockGesture::Hide { panel: saved_panel("b") });
+        open_saved(&mut s, "b");
+        assert!(s.docks.shows(&saved_panel("b")), "the panel named for it comes first");
+        assert_eq!(columns(&mut s, "a"), ["a", "b"], "and the other is left as it was");
+        let followed: Call = serde_json::from_str(r#"{"call": "open_saved_view", "id": "b", "from": {"panel": "saved:a", "column": 0}}"#).unwrap();
+        assert!(matches!(followed, Call::OpenSavedView { from: Some(SavedColumn { column: 0, .. }), .. }));
+    }
+
+    #[test]
+    fn popping_a_column_out_makes_it_a_panel_of_its_own_and_leaves_the_rest() {
+        let mut s = with_saved(&["a", "b", "c"]);
+        open_saved(&mut s, "a");
+        follow(&mut s, "a", 0, "b");
+        follow(&mut s, "a", 1, "c");
+        s.call(Call::PopOutSavedColumn { panel: saved_panel("a"), column: 1 });
+        assert_eq!(columns(&mut s, "a"), ["a", "c"]);
+        assert_eq!(columns(&mut s, "b"), ["b"]);
+        assert!(s.docks.shows(&saved_panel("b")));
+        s.call(Call::PopOutSavedColumn { panel: saved_panel("a"), column: 0 });
+        assert_eq!(columns(&mut s, "a"), ["a", "c"], "the first column is the panel already");
+    }
+
+    #[test]
+    fn closing_a_column_leaves_the_panel_and_closing_the_first_takes_it_from_the_docks() {
+        let mut s = with_saved(&["a", "b"]);
+        open_saved(&mut s, "a");
+        follow(&mut s, "a", 0, "b");
+        s.call(Call::CloseSavedColumn { panel: saved_panel("a"), column: 1 });
+        assert_eq!(columns(&mut s, "a"), ["a"]);
+        assert!(s.docks.shows(&saved_panel("a")));
+        s.call(Call::CloseSavedColumn { panel: saved_panel("a"), column: 0 });
+        assert_eq!(s.docks.place_of(&saved_panel("a")), None);
+        assert!(!s.take_settings().unwrap().docks.unwrap().right.tabs.contains(&saved_panel("a")));
+    }
+
+    #[test]
+    fn a_deleted_view_takes_its_panel_with_it_and_a_refusal_is_said() {
+        let mut s = with_saved(&["a", "b"]);
+        open_saved(&mut s, "a");
+        follow(&mut s, "a", 0, "b");
+        s.receive(ServerMsg::SavedViewRemoved { id: "b".into() });
+        assert_eq!(columns(&mut s, "a"), ["a"]);
+        s.receive(ServerMsg::SavedViewRemoved { id: "a".into() });
+        assert_eq!(s.docks.place_of(&saved_panel("a")), None);
+        assert!(saved_page(&mut s).unwrap().views.is_empty());
+        let mut s = with_saved(&["a"]);
+        let sent = s.call(Call::RefreshSavedView { id: "a".into() });
+        assert!(matches!(&sent[..], [ClientMsg::RefreshSavedView { id }] if id == "a"));
+        assert!(saved_page(&mut s).unwrap().views[0].refreshing);
+        s.receive(ServerMsg::SavedViewFailed { id: "a".into(), reason: "no agent runs it".into() });
+        assert_eq!(notices(&mut s), ["Title of a: no agent runs it"]);
+        assert!(!saved_page(&mut s).unwrap().views[0].refreshing);
+    }
+
+    #[test]
+    fn the_header_actions_go_to_the_daemon_by_id() {
+        let mut s = with_saved(&["a"]);
+        assert!(matches!(&s.call(Call::MarkSavedViewStale { id: "a".into() })[..], [ClientMsg::MarkSavedViewStale { id }] if id == "a"));
+        assert!(matches!(&s.call(Call::DeleteSavedView { id: "a".into() })[..], [ClientMsg::DeleteSavedView { id }] if id == "a"));
+        assert!(s.call(Call::DeleteSavedView { id: "nope".into() }).is_empty());
     }
 }

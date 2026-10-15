@@ -51,19 +51,24 @@ pub enum Dock {
 
 const DOCKS: [Dock; 3] = [Dock::Left, Dock::Right, Dock::Bottom];
 
-/// What can be docked: the console, the views agents showed, and each
-/// extension's view by its extension and name. Named in the file and to
-/// the page as one string — `console`, `views`, `extension:docker/images`
-/// — since an extension's view is any of an open-ended set.
+/// What can be docked: the console, the views agents showed, each
+/// extension's view by its extension and name, and each saved view by its
+/// id. Named in the file and to the page as one string — `console`,
+/// `views`, `extension:docker/images`, `saved:release-plan` — since the
+/// last two are any of an open-ended set.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export, type = "string"))]
 pub enum Panel {
     Console,
     Views,
     Extension(String),
+    /// A saved view's panel, named by the view it opened with; the columns
+    /// that follow it are `saved_views`'.
+    Saved(String),
 }
 
 const EXTENSION: &str = "extension:";
+const SAVED: &str = "saved:";
 
 impl Panel {
     pub fn extension(extension: &str, view: &str) -> Panel {
@@ -79,13 +84,20 @@ impl Panel {
     }
 
     /// Where a panel goes before the person moves it; an extension's view
-    /// goes where its extension says, the first time it opens.
+    /// goes where its extension says, and a saved view's to the right, the
+    /// first time it opens.
     fn home(&self) -> Option<Dock> {
         match self {
             Panel::Console => Some(Dock::Bottom),
             Panel::Views => Some(Dock::Right),
-            Panel::Extension(_) => None,
+            Panel::Extension(_) | Panel::Saved(_) => None,
         }
+    }
+
+    /// Whether the panel can be a page on the stage. A saved view's columns
+    /// scroll sideways in a dock; the stage has no use for them.
+    fn has_page(&self) -> bool {
+        matches!(self, Panel::Extension(_))
     }
 }
 
@@ -95,6 +107,7 @@ impl fmt::Display for Panel {
             Panel::Console => f.write_str("console"),
             Panel::Views => f.write_str("views"),
             Panel::Extension(key) => write!(f, "{EXTENSION}{key}"),
+            Panel::Saved(id) => write!(f, "{SAVED}{id}"),
         }
     }
 }
@@ -116,10 +129,11 @@ impl Panel {
         match name {
             "console" => Ok(Panel::Console),
             "views" => Ok(Panel::Views),
-            _ => match name.strip_prefix(EXTENSION) {
-                Some(key) if key.split_once('/').is_some_and(|(e, v)| !e.is_empty() && !v.is_empty()) => {
+            _ => match (name.strip_prefix(EXTENSION), name.strip_prefix(SAVED)) {
+                (Some(key), _) if key.split_once('/').is_some_and(|(e, v)| !e.is_empty() && !v.is_empty()) => {
                     Ok(Panel::Extension(key.to_string()))
                 }
+                (_, Some(id)) if !id.is_empty() => Ok(Panel::Saved(id.to_string())),
                 _ => Err(format!("no panel is called {name:?}")),
             },
         }
@@ -286,7 +300,7 @@ impl Docks {
             d.size = d.size.clamp(bounds.min, bounds.max);
         }
         layout.staged.retain(|panel| {
-            let first = !placed.contains(panel) && panel.home().is_none();
+            let first = !placed.contains(panel) && panel.has_page();
             placed.push(panel.clone());
             first
         });
@@ -389,14 +403,23 @@ impl Docks {
         self.show(panel);
     }
 
-    /// Makes the panel a page of its own, out of any dock. The console and
-    /// the views have a home dock and no page.
+    /// Makes the panel a page of its own, out of any dock. Only an
+    /// extension's view has a page: the console and the views have a home
+    /// dock, and a saved view's columns want one.
     pub fn stage(&mut self, panel: &Panel) {
-        if panel.home().is_none() && self.place_of(panel) != Some(Place::Stage) {
+        if panel.has_page() && self.place_of(panel) != Some(Place::Stage) {
             self.change(|layout| {
                 layout.lift(panel);
                 layout.staged.push(panel.clone());
             });
+        }
+    }
+
+    /// Takes the panel out of wherever it is placed, for good: a saved
+    /// view the person closed or the daemon deleted keeps no place.
+    pub fn forget(&mut self, panel: &Panel) {
+        if self.place_of(panel).is_some() {
+            self.change(|layout| layout.lift(panel));
         }
     }
 
@@ -554,6 +577,38 @@ mod tests {
         docks.hide(&Panel::Console);
         docks.set_present(vec![]);
         assert!(!docks.take_unsaved(), "the same size, a panel hidden already, and what exists are not kept");
+    }
+
+    fn plan() -> Panel {
+        Panel::Saved("release-plan".into())
+    }
+
+    #[test]
+    fn a_saved_views_panel_is_placed_once_docked_and_never_a_page() {
+        let mut docks = docks();
+        docks.set_present(vec![Panel::Console, plan()]);
+        assert_eq!(docks.place_of(&plan()), None, "a saved view waits to be opened");
+        docks.place(&plan(), Place::Dock(Dock::Right));
+        docks.show(&plan());
+        assert!(docks.shows(&plan()));
+        docks.stage(&plan());
+        assert_eq!(docks.place_of(&plan()), Some(Place::Dock(Dock::Right)), "it has no page");
+        docks.forget(&plan());
+        assert_eq!(docks.place_of(&plan()), None);
+        assert_eq!(docks.layout().right.active, Some(Panel::Views), "the dock shows the tab before it");
+    }
+
+    #[test]
+    fn a_saved_views_panel_is_kept_with_its_place_in_the_file_and_one_with_no_id_is_refused() {
+        let mut docks = docks();
+        docks.place(&plan(), Place::Dock(Dock::Left));
+        let json = serde_json::to_value(docks.layout()).unwrap();
+        assert_eq!(json["left"]["tabs"], serde_json::json!(["saved:release-plan"]));
+        let again = Docks::new(serde_json::from_value(json).unwrap());
+        assert_eq!(again.dock_of(&plan()), Some(Dock::Left), "across runs");
+        assert!(serde_json::from_str::<Panel>(r#""saved:""#).is_err());
+        let staged = Docks::new(DocksLayout { staged: vec![plan()], ..DocksLayout::default() });
+        assert_eq!(staged.place_of(&plan()), None, "a hand-edited page of one is dropped");
     }
 
     #[test]

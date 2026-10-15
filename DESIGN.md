@@ -498,6 +498,7 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `keys` | a key the page reports, as the protocol's key |
 | `clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
 | `agent_views` | which views agents showed, as the window holds them, which one their panel shows, which is open as a page, which name a feature, and which wait on a refresh |
+| `saved_views` | the views agents saved as the window holds them, grouped by scope and told apart as here or elsewhere; each saved panel's trail of columns — a link followed keeps the columns up to it, a column closed or popped out into a panel of its own — and which saved views wait on a refresh or a press |
 | `view_changes` | what changed in an agent's view since the person last had it in front of them, named by the paths the page draws the blocks at, and whether each change flashes now or waits unseen |
 | `view_refs` | where a reference in an agent's view points — the checkout, repository or pane it names — found from the pane that showed the view, which paths it refuses, and a feature it named waiting on its board |
 | `page_over` | which stage a page, an agent's view or an extension's, opened over, so that docking or closing it goes back there |

@@ -51,6 +51,7 @@ mod reconcile_dialog;
 mod record_lens;
 mod rail;
 mod review;
+mod saved_views;
 mod screen;
 mod sent;
 mod sequence;

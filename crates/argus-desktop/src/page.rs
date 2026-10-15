@@ -26,6 +26,7 @@ use crate::keys::PageKey;
 use crate::link_dialog::{LinkGesture, LinkPage};
 use crate::reconcile_dialog::{ReconcileGesture, ReconcilePage};
 use crate::sessions_dialog::{SessionPreview, SessionsPage};
+use crate::saved_views::{SavedColumn, SavedViewsPage};
 use crate::settings::{Backdrop, EditorMode, Preferences, Theme};
 
 /// Something the page asks of the window. It answers nothing: what a call
@@ -208,6 +209,21 @@ pub enum Call {
     PressView { pane: u64, press: argus_protocol::ViewPress },
     /// Closes a view for every client.
     CloseView { pane: u64, id: String },
+    /// Opens the saved view `id`. `from` is the column a link to it was
+    /// followed in, which gets it as the column after; without one it is
+    /// the first column of a saved panel, an open one showing it brought
+    /// out instead.
+    OpenSavedView { id: String, from: Option<SavedColumn> },
+    /// Closes a column of a saved panel; the first closes the panel.
+    CloseSavedColumn { panel: Panel, column: usize },
+    /// Takes a column out of a saved panel's trail to be a panel of its own.
+    PopOutSavedColumn { panel: Panel, column: usize },
+    /// Asks the agent that last saved a view to build it again.
+    RefreshSavedView { id: String },
+    MarkSavedViewStale { id: String },
+    DeleteSavedView { id: String },
+    /// A press of an action an agent put in a saved view.
+    PressSavedView { id: String, press: argus_protocol::ViewPress },
     /// Brings an extension's view out where it is: its dock, or a page.
     OpenExtensionView { extension: String, view: String },
     /// A row picked in the view `panel` names; the calls after it are on
@@ -413,6 +429,9 @@ pub enum Event {
     /// The views agents showed, whole, whenever one comes, goes or is
     /// opened.
     Views(Box<ViewsPage>),
+    /// The saved views and the columns of the panels showing them, whole,
+    /// whenever one changes.
+    SavedViews(Box<SavedViewsPage>),
     /// The link dialog, whole, whenever it changes; `open` false once it
     /// closes.
     Link(Box<LinkPage>),

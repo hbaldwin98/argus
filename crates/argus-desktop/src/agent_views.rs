@@ -250,7 +250,7 @@ impl AgentViews {
 }
 
 /// Every diagram block a view holds, however deep, read once each.
-fn diagrams(blocks: &[Block]) -> Vec<PageDiagram> {
+pub(crate) fn diagrams(blocks: &[Block]) -> Vec<PageDiagram> {
     let mut found = Vec::new();
     collect(blocks, &mut found);
     found
