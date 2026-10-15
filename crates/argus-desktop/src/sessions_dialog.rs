@@ -638,6 +638,37 @@ mod tests {
     }
 
     #[test]
+    fn a_session_with_no_transcript_still_shows_its_title_time_and_checkout_and_says_why_it_is_bare() {
+        let mut status = StatusBar::new(false);
+        status.connected(Some(Hello { capabilities: vec![SESSIONS.into()], ..Hello::this_build() }), None);
+        // What the daemon saw of a generic agent's session, its pane gone.
+        let seen = Session {
+            started: Some("2026-10-14T09:00:00Z".into()),
+            ended: Some("2026-10-14T09:20:00Z".into()),
+            turns: None,
+            ..session("plain", "generic", 101)
+        };
+        let mut sessions = held(vec![seen]);
+        let d = dialog();
+        let wanted = d.wants_read(&sessions, &tree()).cloned().expect("read like any other");
+        let Some(ClientMsg::ReadSession { request_id, .. }) = sessions.read(&status, &wanted, 5) else {
+            panic!("asked");
+        };
+        sessions.receive(ServerMsg::SessionTranscript {
+            request_id,
+            session_id: "plain".into(),
+            conversation: Box::new(Conversation::NoTranscript),
+        });
+        let page = d.page(&sessions, &tree(), 0);
+        assert_eq!((page.rows[0].title.as_str(), page.rows[0].checkout.as_str()), ("plain work", "spike"));
+        let preview = page.preview.unwrap();
+        assert_eq!((preview.title.as_str(), preview.checkout.as_str()), ("plain work", "spike"));
+        assert_eq!(preview.started.as_deref(), Some("2026-10-14T09:00:00Z"));
+        assert!(preview.entries.is_empty() && !preview.loading);
+        assert_eq!(preview.notice.as_deref(), Some("generic keeps no transcript Argus can read."));
+    }
+
+    #[test]
     fn a_daemon_that_cannot_list_sessions_is_said_to_and_not_waited_on() {
         let page = SessionsDialog::new(RepositoryId(10), "argus".into(), true).page(&Sessions::default(), &tree(), 0);
         assert!(!page.loading && page.empty.is_some_and(|e| e.contains("cannot list sessions")));

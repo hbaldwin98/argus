@@ -441,7 +441,12 @@ shipped.
 `{checkout}`, `{project}` and `*`. `transcript = "claude"` alone reads Claude Code's format where
 Claude Code keeps it. The daemon lists a repository's sessions from these files and reads one when
 asked, for the desktop window's recent-sessions dialog; the neutral format and the
-templates are spelled out in DESIGN.md, "Transcripts".
+templates are spelled out in DESIGN.md, "Transcripts". A CLI that keeps no transcript can have its
+hooks write the neutral one with `argus-hook transcript FILE user|agent|title TEXT` or
+`argus-hook transcript FILE tool NAME SUMMARY [--failed]` (`--stdin` reads the text from stdin), with
+`path` naming the same file. A harness with no `transcript` still lists its sessions, from what Argus
+saw of their panes — title, checkout, and when it first and last saw them — and its preview says it
+keeps no transcript.
 
 ### `client.toml`
 

@@ -467,3 +467,19 @@ CREATE TABLE repo_used (
     at   INTEGER NOT NULL
 ) WITHOUT ROWID;
 "#;
+
+/// The sessions Argus saw agents run under a harness that keeps no
+/// transcript, so one still lists after its pane is gone. Keyed by the
+/// harness's own id like a resume is; times are seconds since the epoch.
+pub(super) const SCHEMA_V23: &str = r#"
+CREATE TABLE seen_session (
+    harness       TEXT    NOT NULL,
+    session_id    TEXT    NOT NULL,
+    checkout_path TEXT    NOT NULL,
+    title         TEXT    NOT NULL,
+    started       INTEGER NOT NULL,
+    ended         INTEGER NOT NULL,
+    PRIMARY KEY (harness, session_id)
+) WITHOUT ROWID;
+CREATE INDEX seen_session_ended ON seen_session (ended);
+"#;
