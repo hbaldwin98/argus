@@ -135,6 +135,31 @@ pub fn bind(source: &str, number: usize, decision: i64) -> Option<String> {
     Some(lines.join("\n"))
 }
 
+/// The source with step `number` saying `text`, its arrow and the comment
+/// on its line kept. `None` when there is no such step or it says that
+/// already.
+pub fn retext(source: &str, number: usize, text: &str) -> Option<String> {
+    let step = rows(source).into_iter().find_map(|row| match row {
+        FlowRow::Step(step) if step.number == number => Some(step),
+        _ => None,
+    })?;
+    let text = text.trim();
+    if text == step.text {
+        return None;
+    }
+    let mut lines: Vec<String> = source.lines().map(str::to_string).collect();
+    let said = &lines[step.line];
+    let (message, comment) = match said.split_once("%%") {
+        Some((message, comment)) => (message, format!(" %%{comment}")),
+        None => (said.as_str(), String::new()),
+    };
+    // The route is everything up to the first colon after the arrow, so a
+    // colon in the old text does not survive into the new.
+    let route = message.split_once(':').map_or(message, |(route, _)| route).trim_end();
+    lines[step.line] = format!("{route}: {text}{comment}");
+    Some(lines.join("\n"))
+}
+
 /// The name and label a `participant` or `actor` line declares.
 fn declared(line: &str) -> Option<(&str, &str)> {
     let line = line.split_once("%%").map_or(line, |(said, _)| said).trim();
@@ -449,6 +474,17 @@ mod tests {
         assert_eq!(back, source, "moved up again it is where it was");
         assert_eq!(move_step(source, 3, 3), None);
         assert_eq!(move_step(source, 9, 1), None);
+    }
+
+    #[test]
+    fn a_step_retold_keeps_its_arrow_its_indent_and_its_binding() {
+        let source = "sequenceDiagram\n    a->>b: ask: twice %% decision #3\n    b-->>a: answer";
+        let told = retext(source, 1, " ask once ").unwrap();
+        assert_eq!(told, "sequenceDiagram\n    a->>b: ask once %% decision #3\n    b-->>a: answer");
+        let FlowRow::Step(step) = &rows(&told)[0] else { panic!() };
+        assert_eq!((step.text.as_str(), &step.decisions[..]), ("ask once", &[3][..]));
+        assert_eq!(retext(source, 2, "answer"), None, "says it already");
+        assert_eq!(retext(source, 3, "x"), None);
     }
 
     #[test]

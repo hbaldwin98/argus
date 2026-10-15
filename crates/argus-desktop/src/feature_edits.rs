@@ -155,6 +155,12 @@ pub fn messages(edit: FeatureEdit, target: &Target) -> Result<Vec<ClientMsg>, St
             target.board.decisions.iter().find(|d| d.id == decision).ok_or("that decision is gone")?;
             rewritten(id, &|body| flow::bind(body, step, decision))?
         }
+        FeatureEdit::StepText { diagram: id, step, text } => {
+            if text.trim().is_empty() {
+                return Err("a step has to say what is asked or answered".into());
+            }
+            rewritten(id, &|body| flow::retext(body, step, &text))?
+        }
         FeatureEdit::MoveStep { diagram: id, step, to } => rewritten(id, &|body| flow::move_step(body, step, to))?,
         FeatureEdit::MoveParticipant { diagram: id, name, to } => {
             rewritten(id, &|body| flow::move_participant(body, &name, to))?
@@ -226,6 +232,14 @@ mod tests {
         assert_eq!(steps(&body)[..3], ["brief request", "find the pane's feature", "ask for the brief"]);
         assert!(send(FeatureEdit::MoveStep { diagram: 11, step: 2, to: 2 }).unwrap().is_empty(), "a drop where it was");
         assert!(send(FeatureEdit::MoveStep { diagram: 99, step: 1, to: 2 }).is_err());
+    }
+
+    #[test]
+    fn a_step_edited_says_its_new_text_and_an_empty_one_is_refused() {
+        let body = rewritten(FeatureEdit::StepText { diagram: 11, step: 2, text: "the brief, please".into() });
+        assert_eq!(steps(&body)[1], "the brief, please");
+        assert!(body.contains("the brief, please\n    %% decision #1"), "its binding stays: {body}");
+        assert!(send(FeatureEdit::StepText { diagram: 11, step: 2, text: " ".into() }).is_err());
     }
 
     #[test]

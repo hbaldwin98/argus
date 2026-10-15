@@ -255,6 +255,8 @@ pub enum FeatureEdit {
     Flow { id: i64, title: String, source: String },
     /// Binds step `step` of a flow, numbered from one, to a decision.
     BindStep { diagram: i64, step: usize, decision: i64 },
+    /// What step `step`, numbered from one, says.
+    StepText { diagram: i64, step: usize, text: String },
     /// Moves step `step` to where step `to` is, both numbered from one.
     MoveStep { diagram: i64, step: usize, to: usize },
     /// Moves a participant's lifeline to place `to`, counted from zero.
