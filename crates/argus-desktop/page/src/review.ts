@@ -308,7 +308,9 @@ function diff(r: ReviewPage): HTMLElement {
         el('span', { class: 'grow' }),
         r.pick && el('span', { class: 'meta' }, `${r.pick} picked`),
       ),
-    el('div', { class: `dbody${r.split ? ' split' : ''}`, id: 'review-body' }, body),
+    // Not `split`: that class is the app's flex-row layout, and would lay
+    // every diff row side by side.
+    el('div', { class: `dbody${r.split ? ' paired' : ''}`, id: 'review-body' }, body),
   );
 }
 

@@ -3157,10 +3157,10 @@ body.console-fullscreen #bar {
   display: grid;
   grid-template-columns: 44px 44px 16px 1fr;
 }
-.dbody.split .dside {
+.dbody.paired .dside {
   grid-template-columns: 44px 16px 1fr;
 }
-.dbody.split .dside + .dside {
+.dbody.paired .dside + .dside {
   border-left: 1px solid var(--line);
 }
 .dno {
