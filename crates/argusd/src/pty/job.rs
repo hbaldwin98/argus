@@ -19,7 +19,7 @@ pub(super) struct JobLimits {
 }
 
 #[cfg(windows)]
-pub(super) struct ProcessJob {
+pub(crate) struct ProcessJob {
     handle: OwnedHandle,
 }
 
@@ -47,7 +47,7 @@ impl ProcessJob {
     /// the pane: `scripts/reload.sh` schedules the restart that replaces
     /// this daemon from inside one, and the old daemon's exit closing the
     /// job must not take that restart down with it.
-    pub(super) fn shell() -> anyhow::Result<Self> {
+    pub(crate) fn shell() -> anyhow::Result<Self> {
         use windows_sys::Win32::System::JobObjects::{
             JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
             JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK,
@@ -89,7 +89,7 @@ impl ProcessJob {
         Ok(Self { handle })
     }
 
-    pub(super) fn assign(&self, process: RawHandle) -> anyhow::Result<()> {
+    pub(crate) fn assign(&self, process: RawHandle) -> anyhow::Result<()> {
         use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
 
         let assigned =

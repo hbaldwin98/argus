@@ -91,6 +91,12 @@ impl Daemon {
             match self.launch_command(&config, &token, logs.as_deref()).spawn() {
                 Ok(mut child) => {
                     tracing::info!("extension {} started", config.name);
+                    // Held for as long as it runs: a daemon killed outright
+                    // closes the job, and the extension goes with it rather
+                    // than calling a port nobody listens on. On Unix it is
+                    // its own process, and exits when its stream closes.
+                    #[cfg(windows)]
+                    let _job = contain(&child);
                     tokio::select! {
                         status = child.wait() => {
                             tracing::warn!("extension {} exited: {status:?}", config.name);
@@ -152,6 +158,15 @@ impl Daemon {
         command.creation_flags(0x0800_0000);
         command
     }
+}
+
+/// A job that ends the extension when the daemon's last handle to it
+/// closes, or nothing when one cannot be made: the extension still runs.
+#[cfg(windows)]
+fn contain(child: &tokio::process::Child) -> Option<crate::pty::ProcessJob> {
+    let job = crate::pty::ProcessJob::shell().ok()?;
+    job.assign(child.raw_handle()?).ok()?;
+    Some(job)
 }
 
 #[cfg(test)]

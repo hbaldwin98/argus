@@ -2090,7 +2090,9 @@ after its hook server binds (`state/extension_host`), handing it `ARGUS_HOOK_URL
 (`http://127.0.0.1:<port>/extension/<name>`), `ARGUS_HOOK_TOKEN` and `ARGUS_EXTENSION`; its output
 goes to `extension-<name>.log` beside `argusd.log`. One that exits is started again after a wait
 that doubles from a second to a minute, back to a second once one has run a minute, and all are
-ended when the daemon stops. The extension's token is its own, minted when it starts and bound to
+ended when the daemon stops. On Windows each runs in a job object the daemon holds, so a daemon
+killed outright takes its extensions with it; elsewhere an extension notices its event stream is
+gone, as `scripts/docker-extension.py` does, and exits. The extension's token is its own, minted when it starts and bound to
 its name, so only an extension the daemon started may publish, and one cannot speak as another; a
 pane's per-boot token is refused there. While one is down, everything it published is taken off
 every client: its tabs, its keys and commands, and its open dialogs. The blocks are read at start;

@@ -28,6 +28,8 @@ mod job;
 mod vt;
 
 use job::*;
+#[cfg(windows)]
+pub(crate) use job::ProcessJob;
 pub use vt::Scrolled;
 use vt::*;
 
