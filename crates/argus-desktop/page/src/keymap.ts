@@ -4,6 +4,7 @@
 
 import type { Action } from './bindings/Action';
 import type { Chord } from './bindings/Chord';
+import type { ExtTable } from './bindings/ExtTable';
 import type { Place } from './bindings/Place';
 import { captureOpen, discardCapture } from './capture.js';
 import { answerNo, checkoutsAction } from './checkouts.js';
@@ -16,7 +17,12 @@ import { focusTranscriptFind } from './transcript.js';
 import { railAction, railPicked, startAction, startOpen } from './chrome.js';
 import { extensionDialogFocused } from './dialogs.js';
 import { $ } from './dom.js';
-import { answerExtensionNo, extensionViewFocused, runExtensionCommand } from './extension_views.js';
+import {
+  answerExtensionNo,
+  focusedExtension,
+  pagedExtension,
+  runExtensionCommand,
+} from './extension_views.js';
 import { expandedOpen } from './sequence.js';
 import { featureAction } from './features.js';
 import { closeLayer } from './menu.js';
@@ -54,9 +60,9 @@ export function actionFor(places: Place[], e: KeyboardEvent): Action | null {
 
 /** The id of the action on the extension view out whose key `e` is: one
  *  character, typed with no modifier but its own shift. */
-function extensionActionFor(e: KeyboardEvent): string | null {
+function extensionActionFor(e: KeyboardEvent, view: ExtTable | null): string | null {
   if (e.ctrlKey || e.altKey || e.metaKey) return null;
-  const actions = state.extensions?.open?.actions ?? [];
+  const actions = view?.actions ?? [];
   return actions.find((action) => action.key !== null && action.key === e.key)?.id ?? null;
 }
 
@@ -66,7 +72,7 @@ type Scope = 'anywhere' | 'view' | 'checkout' | 'pane';
  *  `scopes`, saying whether there was one. The daemon refused any key the
  *  keymap holds, so none of these shadows one of the window's own. */
 function extensionCommand(e: KeyboardEvent, scopes: Scope[]): boolean {
-  const view = state.extensions?.open?.view ?? null;
+  const view = (focusedExtension() ?? pagedExtension())?.view ?? null;
   const command = (state.extensions?.commands ?? []).find(
     (c) =>
       scopes.includes(c.scope) &&
@@ -131,9 +137,14 @@ function run(action: Action): boolean {
       call('console', { gesture: { on: 'spawn' } });
       return true;
     case 'extensionPage':
-    case 'extensionDock':
-      call('extension_mode', { page: action === 'extensionPage' });
+    case 'extensionDock': {
+      // The view with the keys, else the page; the palette's is the one
+      // last used, which Rust knows.
+      const view = focusedExtension() ?? pagedExtension();
+      if (view) call('extension_mode', { panel: view.panel, page: action === 'extensionPage' });
+      else call('command', { action });
       return true;
+    }
     case 'views':
       call('toggle_views', {});
       return true;
@@ -146,7 +157,8 @@ function run(action: Action): boolean {
           action === 'first' ||
           action === 'last' ||
           action === 'choose';
-        if (moves) call('extension_key', { action });
+        const page = pagedExtension();
+        if (moves && page) call('extension_key', { panel: page.panel, action });
         return moves;
       }
       return workOpen() ? workAction(action) : featureAction(action);
@@ -284,12 +296,13 @@ export function listen(): void {
       return;
     }
     // An extension's view clicked holds its own keys and its actions'.
-    if (extensionViewFocused() && $('layer').childElementCount === 0) {
+    const focused = focusedExtension();
+    if (focused && $('layer').childElementCount === 0) {
       const action = actionFor(['extension'], e);
-      const id = action ? null : extensionActionFor(e);
+      const id = action ? null : extensionActionFor(e, focused);
       if (action === 'extensionPage' || action === 'extensionDock') run(action);
-      else if (action) call('extension_key', { action });
-      else if (id) call('extension_action', { action: id });
+      else if (action) call('extension_key', { panel: focused.panel, action });
+      else if (id) call('extension_action', { panel: focused.panel, action: id });
       if (action || id) {
         e.preventDefault();
         return;
@@ -326,11 +339,11 @@ export function listen(): void {
     if (action && run(action)) e.preventDefault();
     else if (!action && $('layer').childElementCount === 0) {
       // A page's own action keys, then its commands, then the rest.
-      const page = state.rail.stage === 'extension';
-      const id = page ? extensionActionFor(e) : null;
-      if (id) {
+      const page = pagedExtension();
+      const id = page ? extensionActionFor(e, page) : null;
+      if (page && id) {
         e.preventDefault();
-        call('extension_action', { action: id });
+        call('extension_action', { panel: page.panel, action: id });
       } else {
         const checkouts = state.rail.stage === 'checkouts';
         extensionCommand(

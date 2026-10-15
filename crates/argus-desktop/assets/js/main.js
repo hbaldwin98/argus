@@ -23,9 +23,9 @@ import { addProjectOpen, drawAddProject, drawHeading } from './projects.js';
 import { drawFrame, screen } from './screen.js';
 import { state } from './state.js';
 import { call, connect } from './tauri.js';
-import { drawViews, listenToViewsEdge, openNewestView } from './views.js';
+import { drawViews, openNewestView } from './views.js';
 import { drawExtensionDialog } from './dialogs.js';
-import { drawExtensionConfirm } from './extension_views.js';
+import { drawExtensionConfirm, drawExtensionPanels } from './extension_views.js';
 /** Whether the pane had the keys when a dialog opened over it. */
 let paneHadKeys = false;
 /** A dialog opened from a pane (leader-Tab) takes the keys from it, and
@@ -58,6 +58,7 @@ function receive(event) {
         case 'docks':
             state.docks = event;
             drawDocks();
+            drawViews();
             break;
         case 'console': {
             const before = state.console?.typing ?? null;
@@ -147,8 +148,8 @@ function receive(event) {
             break;
         case 'extensions':
             state.extensions = event;
+            drawExtensionPanels();
             drawChrome();
-            drawViews();
             drawExtensionConfirm();
             break;
         case 'extensionDialog':
@@ -188,7 +189,6 @@ listenToFeatures();
 listenToDocks();
 listenToMenus();
 listenToRailEdge();
-listenToViewsEdge();
 document.addEventListener('click', (e) => {
     // A click anywhere but its own items closes a checkout's + menu.
     closeStart();

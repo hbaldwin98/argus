@@ -1,18 +1,18 @@
 //! Which extension views the window holds, which are listed where the person
-//! is, the one open — docked in the side panel or as a page — with its
-//! selected row and the question an action waits on, where the person chose
-//! each view opens, and what its gestures send.
+//! is, each one's selected row, the question an action waits on, the view
+//! open as a page, and what their gestures send.
 //!
 //! The daemon owns the views. Like an agent's view, one changes only when
 //! its extension publishes it again: an action is sent as it stands, and
 //! nothing here moves until the extension answers with a new view. Where a
-//! view opens is the window's own: the extension's `place` is only where it
-//! opens until the person moves it.
+//! view is — which dock, or a page — is `docks`'s; the extension's `place`
+//! is only where it goes the first time it opens.
 
 use std::collections::BTreeMap;
 
 use argus_protocol::{CheckoutId, ClientMsg, ExtPlace, ExtScope, ExtView, RepositoryId};
 
+use crate::docks::{Dock, Panel, Place};
 use crate::page::{ExtConfirm, ExtTab, ExtTable, ExtTableAction, ExtTableRow};
 use crate::settings::ExtensionsLayout;
 
@@ -33,52 +33,56 @@ impl Here {
     }
 }
 
-/// The view open, by its extension and its name, and what the person did
-/// to it there.
-struct Opened {
+/// Where an extension says its view goes the first time it opens.
+pub fn first_place(place: ExtPlace) -> Place {
+    match place {
+        ExtPlace::Panel | ExtPlace::Right => Place::Dock(Dock::Right),
+        ExtPlace::Left => Place::Dock(Dock::Left),
+        ExtPlace::Bottom => Place::Dock(Dock::Bottom),
+        ExtPlace::Stage => Place::Stage,
+    }
+}
+
+/// The view open as a page, and its title when it opened, to say what went
+/// once it has gone.
+struct Paged {
+    panel: Panel,
     extension: String,
-    view: String,
-    /// Its title when it opened, to say what went once it has gone.
     title: String,
-    selected: Option<String>,
-    /// An action waiting on a yes, and what the yes sends.
-    confirm: Option<(ExtConfirm, ClientMsg)>,
 }
 
 #[derive(Default)]
 pub struct ExtensionViews {
     views: Vec<ExtView>,
-    open: Option<Opened>,
-    /// Docked or a page, by `extension/view`, as the person chose.
-    modes: BTreeMap<String, ExtPlace>,
+    /// Each view's selected row, while one is chosen.
+    selected: BTreeMap<Panel, String>,
+    /// An action waiting on a yes: the view it was taken in, the question,
+    /// and what the yes sends.
+    confirm: Option<(Panel, ExtConfirm, ClientMsg)>,
+    page: Option<Paged>,
+    /// The view last opened or used, which the palette's page and dock
+    /// commands move.
+    last: Option<Panel>,
     /// Whether the sidebar's Extensions are unfolded.
     listed: bool,
     unsaved: bool,
 }
 
-fn key(extension: &str, view: &str) -> String {
-    format!("{extension}/{view}")
-}
-
 impl ExtensionViews {
     pub fn new(layout: ExtensionsLayout) -> ExtensionViews {
-        ExtensionViews { modes: layout.modes, listed: layout.open, ..ExtensionViews::default() }
+        ExtensionViews { listed: layout.open, ..ExtensionViews::default() }
     }
 
     pub fn receive(&mut self, views: Vec<ExtView>) {
         self.views = views;
         // A question about a row the extension has since taken away, or a
         // view it no longer publishes, is no longer one to answer.
-        let still = self.open.as_ref().and_then(|open| {
-            let (_, ClientMsg::ExtensionAction { extension, view, row, .. }) = open.confirm.as_ref()? else {
-                return None;
-            };
-            Some(self.find(extension, view).is_some_and(|v| row.as_ref().is_none_or(|row| v.rows.iter().any(|r| &r.key == row))))
+        let still = self.confirm.as_ref().is_none_or(|(_, _, msg)| {
+            let ClientMsg::ExtensionAction { extension, view, row, .. } = msg else { return false };
+            self.find(extension, view).is_some_and(|v| row.as_ref().is_none_or(|row| v.rows.iter().any(|r| &r.key == row)))
         });
-        if still == Some(false) {
-            if let Some(open) = &mut self.open {
-                open.confirm = None;
-            }
+        if !still {
+            self.confirm = None;
         }
     }
 
@@ -92,115 +96,89 @@ impl ExtensionViews {
         self.views.iter().find(|v| v.extension == extension && v.name == view)
     }
 
+    /// The view `panel` names, while it is published and in scope here.
+    pub fn get(&self, panel: &Panel, here: &Here) -> Option<&ExtView> {
+        let (extension, view) = panel.extension_view()?;
+        self.find(extension, view).filter(|v| here.holds(v.scope))
+    }
+
     pub fn views(&self) -> &[ExtView] {
         &self.views
     }
 
-    /// Where `view` opens: where the person last put it, else where its
-    /// extension says.
-    pub fn mode_of(&self, view: &ExtView) -> ExtPlace {
-        self.modes.get(&key(&view.extension, &view.name)).copied().unwrap_or(view.place)
+    /// The panel of every view listed here, for the docks to show.
+    pub fn present(&self, here: &Here) -> impl Iterator<Item = Panel> + '_ {
+        let here = *here;
+        self.views.iter().filter(move |v| here.holds(v.scope)).map(|v| Panel::extension(&v.extension, &v.name))
     }
 
-    /// Opens `view` where it opens, from its first row when it was not the
-    /// one open already: that place, or `None` when there is no such view
-    /// here.
-    pub fn open(&mut self, extension: &str, view: &str, here: &Here) -> Option<ExtPlace> {
-        let found = self.find(extension, view).filter(|v| here.holds(v.scope))?;
-        let (mode, title) = (self.mode_of(found), found.title.clone());
-        let same = self.open.as_ref().is_some_and(|o| o.extension == extension && o.view == view);
-        if !same {
-            self.open = Some(Opened {
-                extension: extension.to_string(),
-                view: view.to_string(),
-                title,
-                selected: None,
-                confirm: None,
-            });
-        }
-        Some(mode)
+    /// The view last opened or used, which the palette's commands move.
+    pub fn last(&self) -> Option<&Panel> {
+        self.last.as_ref()
     }
 
-    /// Moves the view open to `mode`, and remembers it there. Says whether
-    /// a view was open to move.
-    pub fn set_mode(&mut self, mode: ExtPlace) -> bool {
-        let Some(open) = &self.open else { return false };
-        let at = key(&open.extension, &open.view);
-        if self.modes.get(&at) != Some(&mode) {
-            self.modes.insert(at, mode);
-            self.unsaved = true;
-        }
-        true
+    pub fn touch(&mut self, panel: &Panel) {
+        self.last = Some(panel.clone());
     }
 
-    /// Where the view open is, while it is still published.
-    pub fn open_mode(&self) -> Option<ExtPlace> {
-        let open = self.open.as_ref()?;
-        self.find(&open.extension, &open.view).map(|v| self.mode_of(v))
+    /// Puts `panel` on the stage as a page, or takes the page away.
+    pub fn set_page(&mut self, panel: Option<&Panel>) {
+        self.page = panel.and_then(|panel| {
+            let (extension, name) = panel.extension_view()?;
+            let title = self.find(extension, name).map(|v| v.title.clone()).unwrap_or_default();
+            Some(Paged { panel: panel.clone(), extension: extension.to_string(), title })
+        });
     }
 
-    /// What the view open was called and who published it, to say it went.
-    pub fn open_title(&self) -> Option<(String, String)> {
-        self.open.as_ref().map(|o| (o.extension.clone(), o.title.clone()))
+    pub fn page(&self) -> Option<&Panel> {
+        self.page.as_ref().map(|p| &p.panel)
     }
 
-    pub fn hide(&mut self) {
-        self.open = None;
+    /// What the page was called and who published it, to say it went.
+    pub fn page_title(&self) -> Option<(String, String)> {
+        self.page.as_ref().map(|p| (p.extension.clone(), p.title.clone()))
     }
 
-    pub fn is_open(&self) -> bool {
-        self.open.is_some()
-    }
-
-    /// The view open, while it is still published and in scope.
-    pub fn shown(&self, here: &Here) -> Option<&ExtView> {
-        let open = self.open.as_ref()?;
-        self.find(&open.extension, &open.view).filter(|v| here.holds(v.scope))
-    }
-
-    pub fn select(&mut self, key: String) {
-        if let Some(open) = &mut self.open {
-            open.selected = Some(key);
-        }
+    pub fn select(&mut self, panel: &Panel, key: String) {
+        self.selected.insert(panel.clone(), key);
     }
 
     /// The selected row's key: the one chosen while the view holds it,
     /// else the first.
-    fn selected_in(&self, view: &ExtView) -> Option<String> {
-        let chosen = self.open.as_ref().and_then(|o| o.selected.as_ref());
+    fn selected_in(&self, panel: &Panel, view: &ExtView) -> Option<String> {
+        let chosen = self.selected.get(panel);
         view.rows.iter().find(|r| Some(&r.key) == chosen).or(view.rows.first()).map(|r| r.key.clone())
     }
 
     /// Moves the selection `by` rows, held at either end.
-    pub fn step(&mut self, here: &Here, by: isize) {
-        let Some(view) = self.shown(here) else { return };
-        let current = self.selected_in(view);
+    pub fn step(&mut self, panel: &Panel, here: &Here, by: isize) {
+        let Some(view) = self.get(panel, here) else { return };
+        let current = self.selected_in(panel, view);
         let at = view.rows.iter().position(|r| Some(&r.key) == current.as_ref()).unwrap_or(0);
         let next = at.saturating_add_signed(by).min(view.rows.len().saturating_sub(1));
-        let row = view.rows.get(next).map(|r| r.key.clone());
-        if let Some(row) = row {
-            self.select(row);
+        if let Some(row) = view.rows.get(next).map(|r| r.key.clone()) {
+            self.select(panel, row);
         }
     }
 
     /// The first row, or the last.
-    pub fn select_end(&mut self, here: &Here, last: bool) {
-        let Some(view) = self.shown(here) else { return };
+    pub fn select_end(&mut self, panel: &Panel, here: &Here, last: bool) {
+        let Some(view) = self.get(panel, here) else { return };
         let row = if last { view.rows.last() } else { view.rows.first() };
         if let Some(row) = row.map(|r| r.key.clone()) {
-            self.select(row);
+            self.select(panel, row);
         }
     }
 
-    /// The action `id` of the view open, on its selected row unless it is
+    /// The action `id` of the view, on its selected row unless it is
     /// view-wide: what to send now, or nothing when it asks first.
-    pub fn act(&mut self, here: &Here, id: &str) -> Result<Option<ClientMsg>, String> {
-        let view = self.shown(here).ok_or("no extension's view is open")?;
+    pub fn act(&mut self, panel: &Panel, here: &Here, id: &str) -> Result<Option<ClientMsg>, String> {
+        let view = self.get(panel, here).ok_or("that extension's view is not shown here")?;
         let action = view.actions.iter().find(|a| a.id == id).ok_or_else(|| format!("{} offers no {id}", view.title))?;
         let row = if action.view_wide {
             None
         } else {
-            Some(self.selected_in(view).ok_or_else(|| format!("{} needs a row", action.label))?)
+            Some(self.selected_in(panel, view).ok_or_else(|| format!("{} needs a row", action.label))?)
         };
         let msg = ClientMsg::ExtensionAction {
             extension: view.extension.clone(),
@@ -208,25 +186,33 @@ impl ExtensionViews {
             row,
             action: action.id.clone(),
         };
-        let question = action.confirm.clone().map(|question| ExtConfirm { label: action.label.clone(), question });
-        match (question, &mut self.open) {
-            (Some(confirm), Some(open)) => {
-                open.confirm = Some((confirm, msg));
+        let question = action.confirm.clone().map(|question| ExtConfirm {
+            extension: view.extension.clone(),
+            label: action.label.clone(),
+            question,
+        });
+        match question {
+            Some(confirm) => {
+                self.confirm = Some((panel.clone(), confirm, msg));
                 Ok(None)
             }
-            _ => Ok(Some(msg)),
+            None => Ok(Some(msg)),
         }
     }
 
-    /// The id of the view open's default row action, when it names one.
-    pub fn default_action(&self, here: &Here) -> Option<String> {
-        self.shown(here)?.default.clone()
+    /// The id of the view's default row action, when it names one.
+    pub fn default_action(&self, panel: &Panel, here: &Here) -> Option<String> {
+        self.get(panel, here)?.default.clone()
     }
 
     /// The person answered the question: a yes is what it asked about.
     pub fn answer(&mut self, yes: bool) -> Option<ClientMsg> {
-        let (_, msg) = self.open.as_mut()?.confirm.take()?;
+        let (_, _, msg) = self.confirm.take()?;
         yes.then_some(msg)
+    }
+
+    pub fn confirm(&self) -> Option<ExtConfirm> {
+        self.confirm.as_ref().map(|(_, confirm, _)| confirm.clone())
     }
 
     pub fn toggle_listed(&mut self) {
@@ -244,35 +230,38 @@ impl ExtensionViews {
     }
 
     pub fn layout(&self) -> ExtensionsLayout {
-        ExtensionsLayout { open: self.listed, modes: self.modes.clone() }
+        ExtensionsLayout { open: self.listed, modes: BTreeMap::new() }
     }
 
-    /// The views listed here, each saying where it opens and whether it is
-    /// the one open.
-    pub fn tabs(&self, here: &Here) -> Vec<ExtTab> {
-        let open = self.shown(here).map(|v| (v.extension.as_str(), v.name.as_str()));
+    /// The views listed here, each saying whether it opens as a page and
+    /// whether it is on screen, as `on` says.
+    pub fn tabs(&self, here: &Here, page: impl Fn(&Panel) -> bool, on: impl Fn(&Panel) -> bool) -> Vec<ExtTab> {
         self.views
             .iter()
             .filter(|v| here.holds(v.scope))
-            .map(|v| ExtTab {
-                extension: v.extension.clone(),
-                view: v.name.clone(),
-                title: v.title.clone(),
-                icon: v.icon.clone(),
-                page: self.mode_of(v) == ExtPlace::Stage,
-                on: open == Some((v.extension.as_str(), v.name.as_str())),
+            .map(|v| {
+                let panel = Panel::extension(&v.extension, &v.name);
+                ExtTab {
+                    extension: v.extension.clone(),
+                    view: v.name.clone(),
+                    title: v.title.clone(),
+                    icon: v.icon.clone(),
+                    page: page(&panel),
+                    on: on(&panel),
+                }
             })
             .collect()
     }
 
-    /// The view open, as the panel or the page draws it.
-    pub fn table(&self, here: &Here) -> Option<ExtTable> {
-        let view = self.shown(here)?;
+    /// The view `panel` names, as its dock or the page draws it.
+    pub fn table(&self, panel: &Panel, here: &Here, page: bool) -> Option<ExtTable> {
+        let view = self.get(panel, here)?;
         Some(ExtTable {
+            panel: panel.clone(),
             extension: view.extension.clone(),
             view: view.name.clone(),
             title: view.title.clone(),
-            page: self.mode_of(view) == ExtPlace::Stage,
+            page,
             columns: view.columns.clone(),
             rows: view
                 .rows
@@ -284,8 +273,7 @@ impl ExtensionViews {
                 .iter()
                 .map(|a| ExtTableAction { id: a.id.clone(), label: a.label.clone(), key: a.key.clone(), view_wide: a.view_wide })
                 .collect(),
-            selected: self.selected_in(view),
-            confirm: self.open.as_ref().and_then(|o| o.confirm.as_ref()).map(|(c, _)| c.clone()),
+            selected: self.selected_in(panel, view),
             default: view.default.clone(),
         })
     }
@@ -305,7 +293,9 @@ mod tests {
                          {"id": "logs", "label": "Logs", "key": "o"},
                          {"id": "prune", "label": "Prune", "view_wide": true}]},
             {"extension": "docker", "name": "images", "title": "Images", "scope": {"repository": 4},
-             "columns": [{"title": "Tag"}]}
+             "columns": [{"title": "Tag"}],
+             "rows": [{"key": "a", "cells": [{"kind": "text", "text": "a"}]},
+                      {"key": "b", "cells": [{"kind": "text", "text": "b"}]}]}
         ]"#;
         serde_json::from_str(json).unwrap()
     }
@@ -316,63 +306,73 @@ mod tests {
         (views, Here::default())
     }
 
-    #[test]
-    fn a_scoped_view_is_listed_only_where_its_scope_is() {
-        let (views, nowhere) = held();
-        assert_eq!(views.tabs(&nowhere).len(), 1);
-        let here = Here { repository: Some(RepositoryId(4)), checkout: None };
-        let names: Vec<String> = views.tabs(&here).into_iter().map(|t| t.view).collect();
-        assert_eq!(names, ["containers", "images"]);
+    fn containers() -> Panel {
+        Panel::extension("docker", "containers")
+    }
+
+    fn images() -> Panel {
+        Panel::extension("docker", "images")
     }
 
     #[test]
-    fn a_view_opens_where_its_extension_says_until_the_person_moves_it() {
-        let (mut views, here) = held();
+    fn a_scoped_view_is_listed_only_where_its_scope_is() {
+        let (views, nowhere) = held();
+        assert_eq!(views.tabs(&nowhere, |_| false, |_| false).len(), 1);
+        let here = Here { repository: Some(RepositoryId(4)), checkout: None };
+        let names: Vec<String> = views.tabs(&here, |_| false, |_| false).into_iter().map(|t| t.view).collect();
+        assert_eq!(names, ["containers", "images"]);
+        assert_eq!(views.present(&here).collect::<Vec<_>>(), [containers(), images()]);
+    }
+
+    #[test]
+    fn a_view_goes_where_its_extension_says_the_first_time() {
+        let (views, here) = held();
+        assert_eq!(first_place(views.get(&containers(), &here).unwrap().place), Place::Stage);
         let repo = Here { repository: Some(RepositoryId(4)), checkout: None };
-        assert_eq!(views.open("docker", "images", &repo), Some(ExtPlace::Panel), "the default");
-        assert_eq!(views.open("docker", "containers", &here), Some(ExtPlace::Stage), "as it asked");
-        assert!(views.set_mode(ExtPlace::Panel));
-        assert!(views.take_unsaved());
-        views.receive(published());
-        assert_eq!(views.open_mode(), Some(ExtPlace::Panel), "kept across a republish");
-        let again = ExtensionViews::new(views.layout());
-        let mut again = again;
-        again.receive(published());
-        assert_eq!(again.open("docker", "containers", &here), Some(ExtPlace::Panel), "and across runs");
+        assert_eq!(first_place(views.get(&images(), &repo).unwrap().place), Place::Dock(Dock::Right), "the default");
+        assert_eq!(first_place(ExtPlace::Bottom), Place::Dock(Dock::Bottom));
     }
 
     #[test]
     fn an_action_on_the_selected_row_is_sent_as_it_stands() {
         let (mut views, here) = held();
-        assert!(views.open("docker", "containers", &here).is_some());
-        views.step(&here, 1);
-        let sent = views.act(&here, "logs").unwrap().unwrap();
+        views.step(&containers(), &here, 1);
+        let sent = views.act(&containers(), &here, "logs").unwrap().unwrap();
         assert!(matches!(
             sent,
             ClientMsg::ExtensionAction { ref row, ref action, .. } if row.as_deref() == Some("db") && action == "logs"
         ));
-        let wide = views.act(&here, "prune").unwrap().unwrap();
+        let wide = views.act(&containers(), &here, "prune").unwrap().unwrap();
         assert!(matches!(wide, ClientMsg::ExtensionAction { row: None, .. }));
-        assert_eq!(views.table(&here).unwrap().rows.len(), 2, "nothing predicted");
+        assert_eq!(views.table(&containers(), &here, false).unwrap().rows.len(), 2, "nothing predicted");
+    }
+
+    #[test]
+    fn each_view_keeps_its_own_selected_row() {
+        let (mut views, _) = held();
+        let repo = Here { repository: Some(RepositoryId(4)), checkout: None };
+        views.step(&containers(), &repo, 1);
+        views.select_end(&images(), &repo, true);
+        assert_eq!(views.table(&containers(), &repo, false).unwrap().selected.as_deref(), Some("db"));
+        assert_eq!(views.table(&images(), &repo, false).unwrap().selected.as_deref(), Some("b"));
     }
 
     #[test]
     fn an_action_that_asks_first_waits_for_a_yes() {
         let (mut views, here) = held();
-        views.open("docker", "containers", &here);
-        assert!(views.act(&here, "restart").unwrap().is_none());
-        assert_eq!(views.table(&here).unwrap().confirm.unwrap().question, "Restart it?");
+        assert!(views.act(&containers(), &here, "restart").unwrap().is_none());
+        let asked = views.confirm().unwrap();
+        assert_eq!((asked.question.as_str(), asked.extension.as_str()), ("Restart it?", "docker"));
         assert!(views.answer(false).is_none());
-        assert!(views.table(&here).unwrap().confirm.is_none());
-        views.act(&here, "restart").unwrap();
+        assert!(views.confirm().is_none());
+        views.act(&containers(), &here, "restart").unwrap();
         assert!(matches!(views.answer(true), Some(ClientMsg::ExtensionAction { .. })));
     }
 
     #[test]
     fn a_question_about_a_row_since_taken_away_is_dropped() {
         let (mut views, here) = held();
-        views.open("docker", "containers", &here);
-        views.act(&here, "restart").unwrap();
+        views.act(&containers(), &here, "restart").unwrap();
         let mut republished = published();
         republished[0].rows.remove(0);
         views.receive(republished);
@@ -382,11 +382,12 @@ mod tests {
     #[test]
     fn a_view_out_of_scope_or_gone_is_not_shown() {
         let (mut views, here) = held();
-        assert!(views.open("docker", "images", &here).is_none(), "out of scope");
-        assert!(views.open("docker", "containers", &here).is_some());
+        assert!(views.get(&images(), &here).is_none(), "out of scope");
+        assert!(views.get(&containers(), &here).is_some());
+        views.set_page(Some(&containers()));
         views.receive(Vec::new());
-        assert!(views.shown(&here).is_none());
-        assert_eq!(views.open_mode(), None);
-        assert!(views.act(&here, "logs").is_err());
+        assert!(views.table(&containers(), &here, true).is_none());
+        assert_eq!(views.page_title(), Some(("docker".into(), "Containers".into())), "to say what went");
+        assert!(views.act(&containers(), &here, "logs").is_err());
     }
 }

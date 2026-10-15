@@ -3,7 +3,7 @@ import type { PageView } from "./PageView";
 import type { ViewRef } from "./ViewRef";
 
 /**
- * The views agents showed, and the one open in the side panel.
+ * The views agents showed, and the one their panel shows.
  */
 export type ViewsPage = { 
 /**
@@ -11,6 +11,7 @@ export type ViewsPage = {
  */
 views: Array<PageView>, 
 /**
- * The pane and id of the view in the side panel, if it is out.
+ * The pane and id of the view the panel shows: the one chosen, else
+ * the newest.
  */
 open: ViewRef | null, };

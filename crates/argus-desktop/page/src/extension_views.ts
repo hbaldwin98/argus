@@ -1,16 +1,19 @@
 // What the running extensions put in the window: their views under the
-// sidebar's Extensions, the one open drawn with the agent table's renderer
-// plus its selected row and actions — docked in the side panel beside the
-// agents' views, or as a page of its own — the question an action asks
-// first, their commands in the palette and their keys on the sheet. Rust
-// holds all of it (`src/extension_views.rs`, `src/extension_keys.rs`); a
-// row changes only when its extension publishes it again.
+// sidebar's Extensions, each one on screen drawn with the agent table's
+// renderer plus its selected row and actions — in its dock, or as a page
+// of its own — the question an action asks first, their commands in the
+// palette and their keys on the sheet. Rust holds all of it
+// (`src/extension_views.rs`, `src/extension_keys.rs`), and `docks` puts a
+// docked view's element in its dock; a row changes only when its
+// extension publishes it again.
 
 import type { ExtTable } from './bindings/ExtTable';
 import type { ExtTableAction } from './bindings/ExtTableAction';
+import type { Panel } from './bindings/Panel';
 import type { Value } from './bindings/Value';
+import { DOCK_ICON, dockOf, moveItems } from './docks.js';
 import { $, el, icon, type IconName } from './dom.js';
-import { closeLayer } from './menu.js';
+import { closeLayer, openMenu } from './menu.js';
 import { keycaps } from './keys.js';
 import { state } from './state.js';
 import { table, type TableBlock } from './table.js';
@@ -87,41 +90,7 @@ export function drawExtensionNav(): void {
   );
 }
 
-/** The panel's tabs for the extension views that open docked. */
-export function extensionTabs(): HTMLElement[] {
-  return (state.extensions?.views ?? [])
-    .filter((v) => !v.page)
-    .map((v) =>
-      el(
-        'button',
-        {
-          class: `vpanel-tab${v.on ? ' on' : ''}`,
-          role: 'tab',
-          type: 'button',
-          'aria-selected': String(v.on),
-          title: `${v.title} · from ${v.extension}`,
-          onclick: () => call('open_extension_view', { extension: v.extension, view: v.view }),
-        },
-        el('span', { class: 'ttl' }, v.title),
-      ),
-    );
-}
-
-/** How many docked extension views are listed here, for the launcher. */
-export function extensionViewCount(): number {
-  return (state.extensions?.views ?? []).filter((v) => !v.page).length;
-}
-
-/** Brings the first docked extension view out, for a launcher with no
- *  agent's. */
-export function openFirstExtensionView(): boolean {
-  const first = (state.extensions?.views ?? []).find((v) => !v.page);
-  if (!first) return false;
-  call('open_extension_view', { extension: first.extension, view: first.view });
-  return true;
-}
-
-function actionButton(action: ExtTableAction, kind: string): HTMLElement {
+function actionButton(view: ExtTable, action: ExtTableAction, kind: string): HTMLElement {
   return el(
     'button',
     {
@@ -129,7 +98,7 @@ function actionButton(action: ExtTableAction, kind: string): HTMLElement {
       type: 'button',
       onclick: (e: MouseEvent) => {
         e.stopPropagation();
-        call('extension_action', { action: action.id });
+        call('extension_action', { panel: view.panel, action: action.id });
       },
     },
     action.label,
@@ -137,17 +106,41 @@ function actionButton(action: ExtTableAction, kind: string): HTMLElement {
   );
 }
 
-/** Moves the view to a page or docks it, named with its key. */
-function modeButton(page: boolean): HTMLElement {
-  const label = page ? 'Open as page' : 'Dock to side panel';
+/** Moves the view to a page or back into its dock, named with its key. */
+function modeButton(view: ExtTable, page: boolean): HTMLElement {
+  const label = page ? 'Open as page' : 'Dock';
   const chord = state.keymap
     .find((g) => g.place === 'extension')
     ?.bindings.find((b) => b.action === (page ? 'extensionPage' : 'extensionDock'))?.chords;
   return el(
     'button',
-    { class: 'btn sm', type: 'button', onclick: () => call('extension_mode', { page }) },
+    {
+      class: 'btn sm',
+      type: 'button',
+      onclick: () => call('extension_mode', { panel: view.panel, page }),
+    },
     label,
     chord && [' ', keycaps(chord)],
+  );
+}
+
+/** The dock menu, as the console's head has it. */
+function moveButton(view: ExtTable): HTMLElement {
+  const dock = dockOf(view.panel);
+  return el(
+    'button',
+    {
+      class: 'icon',
+      type: 'button',
+      title: 'Move to another dock',
+      'aria-label': 'Move to another dock',
+      'aria-haspopup': 'menu',
+      onclick: (e: MouseEvent) => {
+        const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        openMenu(view.title, moveItems(view.panel, !view.page), { x: box.left, y: box.bottom + 4 });
+      },
+    },
+    icon(dock ? DOCK_ICON[dock] : 'down'),
   );
 }
 
@@ -156,7 +149,24 @@ function header(view: ExtTable): HTMLElement {
   return el(
     'div',
     { class: 'vpanel-head' },
-    el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading' }, view.title)),
+    el(
+      'div',
+      { class: 'vpanel-title' },
+      el('span', { class: 'type-heading grow' }, view.title),
+      moveButton(view),
+      !view.page &&
+        el(
+          'button',
+          {
+            class: 'icon',
+            type: 'button',
+            title: 'Hide',
+            'aria-label': `Hide ${view.title}`,
+            onclick: () => call('docks', { gesture: { on: 'hide', panel: view.panel } }),
+          },
+          icon('close'),
+        ),
+    ),
     el(
       'div',
       { class: 'vpanel-meta' },
@@ -164,8 +174,8 @@ function header(view: ExtTable): HTMLElement {
       el(
         'span',
         { class: 'vpanel-acts' },
-        wide.map((action) => actionButton(action, 'btn sm')),
-        modeButton(!view.page),
+        wide.map((action) => actionButton(view, action, 'btn sm')),
+        modeButton(view, !view.page),
       ),
     ),
   );
@@ -191,63 +201,113 @@ function asBlock(view: ExtTable): TableBlock {
 
 function body(view: ExtTable): HTMLElement {
   const perRow = view.actions.filter((a) => !a.viewWide);
-  const key = `extension ${view.extension}/${view.view}`;
   return el(
     'div',
     // Focusable, so a click in it gives the view the keys the sheet lists
     // under it, and a key pressed anywhere else is not the view's.
-    { class: 'vpanel-body ext-body', 'data-for': key, tabindex: '0', id: 'extension-view' },
+    {
+      class: 'vpanel-body ext-body',
+      'data-for': view.panel,
+      'data-panel': view.panel,
+      tabindex: '0',
+    },
     table(asBlock(view), {
       keys: view.rows.map((row) => row.key),
       selected: view.selected,
-      select: (row) => call('select_extension_row', { key: row }),
+      select: (row) => call('select_extension_row', { panel: view.panel, key: row }),
       // The row rides along, so the default is taken on the row clicked
       // whether or not its select has landed yet.
-      activate: view.default ? (row) => call('extension_default', { row }) : null,
-      trailing: perRow.length ? () => perRow.map((a) => actionButton(a, 'btn sm')) : null,
+      activate: view.default
+        ? (row) => call('extension_default', { panel: view.panel, row })
+        : null,
+      trailing: perRow.length ? () => perRow.map((a) => actionButton(view, a, 'btn sm')) : null,
     }),
   );
 }
 
-/** The header and body of the extension view docked, or nothing when an
- *  agent's view has the panel. */
-export function extensionPanel(): HTMLElement[] | null {
-  const view = state.extensions?.open;
-  if (!view || view.page) return null;
-  return [header(view), body(view)];
+/** Each docked view's element, kept across redraws so `docks` can move it
+ *  between its dock and the parked ones. */
+const elements = new Map<Panel, HTMLElement>();
+
+function tableOf(panel: Panel): ExtTable | null {
+  return state.extensions?.tables.find((t) => t.panel === panel) ?? null;
+}
+
+/** Whether the view is the page on the stage rather than in its dock. */
+export function extensionOnStage(panel: Panel): boolean {
+  return state.rail.stage === 'extension' && tableOf(panel)?.page === true;
+}
+
+/** The element a docked view is drawn in, for `docks` to place. */
+export function extensionElement(panel: Panel): HTMLElement {
+  let section = elements.get(panel);
+  if (!section) {
+    section = el('section', { class: 'vpanel', 'aria-label': panel });
+    elements.set(panel, section);
+  }
+  return section;
+}
+
+/** Draws every docked view on screen into its element, keeping the keys a
+ *  click in one gave it. */
+export function drawExtensionPanels(): void {
+  const focused = focusedExtension()?.panel ?? null;
+  for (const view of state.extensions?.tables ?? []) {
+    if (view.page) continue;
+    extensionElement(view.panel).replaceChildren(header(view), body(view));
+  }
+  if (focused) refocus(focused);
+}
+
+function refocus(panel: Panel): void {
+  document.querySelector<HTMLElement>(`.ext-body[data-panel="${CSS.escape(panel)}"]`)?.focus();
 }
 
 /** The extension view open as a page, filling the stage. */
 export function drawExtensionPage(): void {
   if (state.rail.stage !== 'extension') return;
-  const view = state.extensions?.open;
+  const view = state.extensions?.tables.find((t) => t.page) ?? null;
   const page = $('xstage');
-  if (!view || !view.page) {
+  if (!view) {
     page.replaceChildren();
     return;
   }
-  const had = extensionViewFocused();
+  const had = focusedExtension()?.panel === view.panel;
   page.replaceChildren(el('div', { class: 'xpage' }, header(view), body(view)));
   // A page has the keys the moment it is up, and keeps them across redraws.
-  if (had || document.activeElement === document.body)
-    document.getElementById('extension-view')?.focus();
+  if (had || document.activeElement === document.body) refocus(view.panel);
 }
 
 /** The title of the extension view open as a page, for the strip. */
 export function extensionPageTitle(): string {
-  const view = state.extensions?.open;
-  return view?.page ? view.title : 'Extensions';
+  return state.extensions?.tables.find((t) => t.page)?.title ?? 'Extensions';
 }
 
-/** Whether the extension view out has the keys. */
+/** The extension view with the keys, if one has them. */
+export function focusedExtension(): ExtTable | null {
+  const active = document.activeElement;
+  const panel =
+    active instanceof HTMLElement
+      ? active.closest<HTMLElement>('.ext-body')?.dataset.panel
+      : undefined;
+  return panel === undefined ? null : tableOf(panel);
+}
+
+/** Whether an extension's view has the keys. */
 export function extensionViewFocused(): boolean {
-  const view = document.getElementById('extension-view');
-  return view !== null && view.contains(document.activeElement);
+  return focusedExtension() !== null;
+}
+
+/** The view the stage's keys move: the page, while one is up. */
+export function pagedExtension(): ExtTable | null {
+  return state.rail.stage === 'extension'
+    ? (state.extensions?.tables.find((t) => t.page) ?? null)
+    : null;
 }
 
 /** Says no to the action's question, as Escape or a click outside does. */
 export function answerExtensionNo(): boolean {
-  if (!state.extensions?.open?.confirm) return false;
+  if (!state.extensions?.confirm) return false;
   call('answer_extension', { yes: false });
   closeLayer();
   return true;
@@ -256,10 +316,9 @@ export function answerExtensionNo(): boolean {
 /** The action's question, in the same dialog the Checkouts stage asks
  *  before a removal in. */
 export function drawExtensionConfirm(): void {
-  const view = state.extensions?.open ?? null;
+  const question = state.extensions?.confirm ?? null;
   const shown = document.getElementById('extension-confirm');
-  const question = view?.confirm ?? null;
-  if (!view || !question) {
+  if (!question) {
     if (shown) closeLayer();
     return;
   }
@@ -291,7 +350,7 @@ export function drawExtensionConfirm(): void {
         el(
           'div',
           { class: 'dfoot' },
-          el('span', { class: 'meta' }, `from ${view.extension}`),
+          el('span', { class: 'meta' }, `from ${question.extension}`),
           el('span', { class: 'grow' }),
           el(
             'button',

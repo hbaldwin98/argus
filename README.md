@@ -522,10 +522,12 @@ argus extension show docker   # one of them: its own guide, its commands and its
 machine's. `scripts/docker-extension.py` is a fuller example.
 
 In the desktop window, every view an extension publishes is listed under **Extensions** in the
-sidebar, after Workspace, Features, Checkouts and Console, while its scope matches. A view opens as
-a page of its own or docked in the side panel beside agents' views — where its `place` says, until
-you move it with **Open as page** or **Dock to side panel** (`>` and `<` while the view has the
-keys), which the window remembers per view. The palette's **Go to …** opens one too.
+sidebar, after Workspace, Features, Checkouts and Console, while its scope matches. A view opens
+docked on the left, the right or the bottom of the stage, or as a page of its own — where its
+`place` says, until you move it with its header's dock menu, **Open as page** or **Dock** (`>` and
+`<` while the view has the keys), which the window remembers per view. A dock holding several
+panels — the console, the agents' views, extension views — shows a tab for each, and a tab's
+right-click moves it to another dock. The palette's **Go to …** opens one too.
 
 ### `client.toml`
 

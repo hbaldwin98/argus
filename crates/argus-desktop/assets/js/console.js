@@ -66,7 +66,7 @@ function drawHead() {
     }
     const docked = page.place === 'docked';
     const full = page.place === 'fullscreen';
-    const dock = dockOf('console');
+    const dock = dockOf('console') ?? 'bottom';
     const split = page.beside !== null;
     const onScreen = (pane) => pane === page.showing || pane === page.beside;
     $('console-head').replaceChildren(el('span', { class: 'label' }, 'Console'), el('div', { class: 'ctabs', role: 'tablist' }, page.tabs.map((tab) => el('div', {

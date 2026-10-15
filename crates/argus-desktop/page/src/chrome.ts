@@ -18,7 +18,6 @@ import { screen } from './screen.js';
 import { openSettings } from './settings.js';
 import { dragEdge } from './edge.js';
 import { state } from './state.js';
-import { viewsWidth } from './views.js';
 import { featureEdges } from './work.js';
 import { call } from './tauri.js';
 
@@ -27,7 +26,6 @@ const LOUD = new Set(['waiting', 'needs-review', 'failed']);
 export function drawChrome(): void {
   const stopped = state.status.connection === 'stopped';
   railWidth(state.rail.width);
-  viewsWidth(state.rail.viewsWidth);
   featureEdges(state.rail.outlineWidth, state.rail.briefHeight);
   const stage = state.rail.stage;
   $('fstage').hidden = stage !== 'feature';

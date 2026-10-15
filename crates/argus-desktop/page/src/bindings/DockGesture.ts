@@ -5,4 +5,4 @@ import type { Panel } from "./Panel";
 /**
  * What was done to the docks.
  */
-export type DockGesture = { "on": "move", panel: Panel, dock: Dock, } | { "on": "size", dock: Dock, size: number, };
+export type DockGesture = { "on": "move", panel: Panel, dock: Dock, } | { "on": "show", panel: Panel, } | { "on": "hide", panel: Panel, } | { "on": "size", dock: Dock, size: number, };

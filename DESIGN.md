@@ -128,18 +128,28 @@ again (keeping the side with the keys), or a side's console ending puts the spli
 side filling the console, and keys a console held that ended go to the console's other side, or
 else to the Workspace's pane. Where it is docked, whether it shows, and the dock's size are saved
 in `desktop.json`; fullscreen, the split and the tabs chosen are the run's, since a restarted
-daemon's consoles are new shells under new ids. The docks (`docks`) are the stage's left, right and
-bottom edges; the sidebar keeps the window's own left edge, so the left dock is between it and the
-stage, and the bottom dock is under the stage alone. Each panel — the console, for now — is in
-exactly one dock whether or not it shows, so hidden and shown again it comes back where it was put;
-a dock shows one of its tabs at a time, is open or closed, and is as wide or tall as its sash left
-it. The Console stage and fullscreen take a panel out of its dock without moving it, and leaving
-them puts it back. A panel moved to a dock is shown there, out of fullscreen and the Console stage,
-and the dock it left shows the tab before it, or closes once empty. A `desktop.json` from before
-the docks keeps its console docked at the bottom, as tall as it was. The Feature stage
-has them while it is open, and another pane brings them back for good. Rust holds the model
+daemon's consoles are new shells under new ids. The Feature stage
+has them while it is open, and another pane brings them back for good.
+
+The docks (`docks`) are the stage's left, right and bottom edges; the sidebar keeps the window's
+own left edge, so the left dock is between it and the stage, and the bottom dock is under the stage
+alone. A panel is the console (at the bottom until moved), the views agents showed (on the right),
+or one extension's view (where its extension's `place` says, the first time it opens). A panel the
+person placed stays placed whether or not it shows or even exists, so hidden and shown again it
+comes back where it was put, and an extension's view gone with its extension finds its place again
+when it comes back; an extension's view may instead be a page on the stage, which the console and
+the views never are. A dock shows one of the panels in it that exist now, is open or closed, and is
+as wide or tall as its sash left it; holding more than one, it draws a tab per panel over them, a
+tab's right-click offering the other docks. Each panel's own header has the same dock menu. So
+several panels are on screen at once, one per dock — a console on the left, the agents' views on
+the right, an extension's table at the bottom — with only the keys moving between them. The Console
+stage and fullscreen take the console out of its dock without moving it, and leaving them puts it
+back. A panel moved to a dock is shown there, out of fullscreen, the Console stage or the page, and
+the dock it left shows the tab before it, or closes once empty. A `desktop.json` from before the
+docks keeps its console docked at the bottom as tall as it was, its views panel's width as the
+right dock's, and each extension view where the person had put it. Rust holds the model
 (`session`); the page draws what it is sent and reports gestures. It is TypeScript in
-`crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `screen`, `input`, `keymap`,
+`crates/argus-desktop/page/src`, one module per subject (`chrome`, `frame`, `compose`, `console`, `docks`, `screen`, `input`, `keymap`,
 `palette`, `shortcuts`, `settings`, `menu` (menus over the stage, and what a right-click opens), `rename`, `features`, `work`, `record`, `flows`, `sequence`, `capture`, `checkouts`, `review`, `history`, `sessions`, `transcript`, `projects`, `chime`, `views`, `extension_views`, `dialogs` (an extension's question), with `keys`, `dom`, `state`, `edge` (a side column's edge, dragged),
 `clock` and `tauri` beneath them, and a view's blocks drawn by `blocks` through one module per kind —
 `markdown`, `fields`, `values`, `chip`, `table`, `list`, `stats`, `callout`, `code`, `diagram` — with `viewlink`, and
@@ -414,13 +424,13 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `backdrop` | what shows through the window where its background is see-through: the backdrops this machine can draw, and putting the chosen one on the live window |
 | `shown` | the panes the window shows — the Workspace's, and one per side of the console — each side's subscription, size and view on this connection, which side has the keys, whether the Workspace's pane fills the window, and whether the leader waits on the next key |
 | `console` | where the console is — docked, the Console stage, fullscreen or hidden — the daemon's consoles and the tab chosen for each side of a split, and the page it draws |
-| `docks` | where each panel sits: which dock — left, right or bottom — holds it among its tabs, which tab each dock shows, whether it is open and how big, and whether that changed since it was saved |
+| `docks` | where each panel sits: which dock — left, right or bottom — holds it among its tabs, or whether it is a page; which tab each dock shows of the panels that exist, whether it is open and how big, and whether that changed since it was saved |
 | `agents` | which agents the window offers to start: the daemon's templates, the one last started first while the daemon still offers it |
 | `dialogs` | the review and history dialogs as the window holds them: which is open, the daemon's answers routed to the one that asked, the layout the next review opens on, and what the page last heard of each |
 | `sent` | what the page was last sent of something it draws only while open, so it hears each change once and a closing once |
 | `screen` | a pane's screen as the page draws it: the rows of its view changed since the last frame, as styled segments |
 | `rail` | what the rail lists from the tree, and what a row says |
-| `dragged_width` | how wide the person dragged a side column — the rail, the views panel — held to its bounds, and whether that changed since it was saved |
+| `dragged_width` | how wide the person dragged a side column — the rail, an open feature's outline — held to its bounds, and whether that changed since it was saved |
 | `review` | what the review dialog holds beyond its `review_session` — the side and layout chosen, the comment box and who it is addressed to, the file being jumped to — and the page it draws |
 | `history` | what the history dialog holds — a checkout's newest commits, the ones unfolded to their files, the filter over them, and each opened commit's diff — and what its gestures ask of the daemon |
 | `sessions` | what the window has asked of a repository's agent sessions — the list, what one said, and how each harness resumes one — and what it holds of the answers, among them what each pane it resumed a session in was resumed from |
@@ -448,8 +458,8 @@ of a pane, a checkout or the daemon came from the protocol, and the page only dr
 | `palette` | what the command palette can go to: the project's panes and checkouts, and the chosen repository's features |
 | `keys` | a key the page reports, as the protocol's key |
 | `clipboard` | the desktop clipboard's text: what a dragged selection copies to, and what the paste key reads |
-| `agent_views` | which views agents showed, as the window holds them, which one is out in the side panel, and which wait on a refresh |
-| `extension_views` | which extension views the window holds, which are listed under the sidebar's Extensions where the person is, the one open — docked in the side panel or as a page — with its selected row and the question an action waits on, and where the person chose each view opens |
+| `agent_views` | which views agents showed, as the window holds them, which one their panel shows, and which wait on a refresh |
+| `extension_views` | which extension views the window holds, which are listed under the sidebar's Extensions where the person is, each one's selected row, the question an action waits on, and the one open as a page |
 | `extension_keys` | the extensions' commands and keys as the window's: where each key is heard, what the palette lists, and a heading of the shortcuts sheet per extension |
 | `extension_dialog` | the questions extensions put to this window: the one open, those waiting behind it, and the answer or cancellation each sends back |
 | `opener` | handing a link in a view to the system's opener, and only an `http` or `https` one |
@@ -1976,13 +1986,14 @@ harness's inbox or typed in as a review comment is, asking it to read the source
 view anew with the same id, and the view stays as it is until it does.
 
 The desktop window watches views when the daemon offers them (`AGENT_VIEWS`); the terminal client
-never asks. A view opens in a side panel beside the stage, so the rail and the stage stay in sight and
-the pane shrinks to fit rather than being covered. It opens by itself only when it comes from the pane
-on screen and the panel is not already showing one; otherwise a button in the title strip counts the
-views waiting and brings the newest out. The panel has a tab per view, newest first, says who read it
-and how long ago, and offers Refresh, which waits for the agent to show it again, and Close, which
-takes it down for every client. Its left edge drags it wider or narrower, between 360 and 1200 pixels, kept
-like the rail's width, and a double-click gives back the usual one. Ctrl-. (in a pane, the leader and `v`) puts the panel away or brings
+never asks. The views are a panel in a dock (see the docks above), the right one until it is
+moved, beside the stage, so the rail and the stage stay in sight and the pane shrinks to fit rather
+than being covered. It comes out by itself only when a view comes from the pane on screen and its
+dock is not already showing something; otherwise a button in the title strip counts the views
+waiting and brings the newest out. The panel has a tab per view, newest first, shows the newest
+until one is chosen and the next newest when the one chosen closes, says who read it and how long
+ago, and offers Refresh, which waits for the agent to show it again, and Close, which takes it down
+for every client. Ctrl-. (in a pane, the leader and `v`) puts the panel away or brings
 the newest view out. A pane's row on the rail counts the views its agent has up. A feature's ticket
 links, in the index's peek and the open feature's heading, open the ticket in the browser, or, when a
 view of that ticket waits, carry a dot and open the view instead; the page matches them by URL, or by
@@ -2222,27 +2233,29 @@ The desktop window lists every extension view whose scope holds — a repository
 reads that repository, as the Checkouts stage does, a checkout's while its pane is on screen or it
 is that repository's own — under Extensions, a fold in the sidebar after the built-in stages, each
 with its title and icon (`extension_views`). Nothing listed, the fold is not drawn, as the rail's
-fold of quiet repositories is not; whether it is unfolded is kept in `desktop.json`. A view opens
-either docked in the side panel the agents' views open in or as a page filling the stage
-(`Stage::Extension`), wherever its extension's `place` says until the person moves it: the
-panel's header offers Open as page and a page's Dock to side panel, also the keymap's
-`ExtensionPage` and `ExtensionDock` (`>` and `<` while the view has the keys), and the choice is
-kept per view in `desktop.json`, across its extension republishing or restarting. Docking goes back
-to the stage the page opened over. A view has no digit, the digits being the built-in stages': it is
-reached from the sidebar, its Tab and Enter included, from the palette's Go to, and the shortcuts
-sheet says so under its extension's heading. Docked, it is a tab of the side panel and counted on
-the launcher in the title strip with the agents' views; it takes the panel's body from an agent's
-view and gives it back when an agent's is chosen, and an agent's view arriving never takes the
-panel from it. Either way it is drawn by the agent table's renderer (`table.ts`, `values.ts`), a
+fold of quiet repositories is not; whether it is unfolded is kept in `desktop.json`. Each view is
+a panel of its own (see the docks): it opens in its dock, or as a page filling the stage
+(`Stage::Extension`), wherever its extension's `place` (`left`, `right` — or `panel`, the same —
+`bottom` or `stage`) says the first time and wherever the person put it after: a docked view's
+header offers Open as page and its dock menu, a page's Dock, also the keymap's `ExtensionPage` and
+`ExtensionDock` (`>` and `<` while the view has the keys, from the palette on the view last used),
+and the docks keep the choice in `desktop.json`, across its extension republishing or restarting.
+Docking goes back to the stage the page opened over. A view has no digit, the digits being the
+built-in stages': it is reached from the sidebar, its Tab and Enter included, from the palette's Go
+to, and the shortcuts sheet says so under its extension's heading. Docked beside the agents' views
+it is another tab of their dock, and an agent's view arriving never takes the dock from it; in a
+dock of its own both are on screen, and a page beside views docked elsewhere too, each keeping its
+own selected row. Either way it is drawn by the agent table's renderer (`table.ts`, `values.ts`), a
 row's status leading it as a chip, with the selected row marked and its actions on a wrapping line
 under it, view-wide actions in its header, and a column marked optional dropped when the table is
 narrow. A double-click on a row, or Enter on the selected one, sends the view's `default` action
 for it. A page has the keys while it is up; docked, a click in it gives
-it them: `j`/`k` move the row, and each action's key runs it. An action that asks first asks in the
+it them: `j`/`k` move the row, and each action's key runs it; each call the page makes about a
+view names it, since several may be on screen at once. An action that asks first asks in the
 dialog the Checkouts stage asks before a removal in, and an action is sent as it stands — the table
 changes when the extension publishes again. A view taken away, or out of scope where the person now
-is, closes: a page of it goes back to the stage it opened over and says so, and a page left for
-another stage closes. Commands (`extension_keys`) are in the palette with
+is, closes: a page of it goes back to the stage it opened over and says so, a docked one is only no
+longer drawn, keeping its dock, and a page left for another stage closes. Commands (`extension_keys`) are in the palette with
 their keys, and on the shortcuts sheet under a heading per extension beside the keymap's: a command
 heard anywhere runs from wherever the page has the keys and, through the leader, from a pane; one
 on a checkout from the Checkouts stage or a checkout picked on the rail; one on a pane from a pane

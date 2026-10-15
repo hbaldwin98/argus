@@ -65,6 +65,8 @@
       <div class="work" id="work">
         <div class="dock dock-left" id="dock-left" hidden>
           <div class="dock-sash" id="dock-left-sash" role="separator" aria-orientation="vertical" aria-label="Resize the left dock"></div>
+          <div class="dock-tabs" id="dock-left-tabs" role="tablist" aria-label="Left dock" hidden></div>
+          <div class="dock-body" id="dock-left-body"></div>
         </div>
         <div class="center" id="center">
           <div class="fstage" id="fstage" hidden></div>
@@ -78,7 +80,10 @@
             <div class="empty" id="empty"></div>
           </div>
           <div class="sash" id="dock-bottom-sash" role="separator" aria-orientation="horizontal" aria-label="Resize the bottom dock" hidden><span></span></div>
-          <div class="dock dock-bottom" id="dock-bottom" hidden></div>
+          <div class="dock dock-bottom" id="dock-bottom" hidden>
+            <div class="dock-tabs" id="dock-bottom-tabs" role="tablist" aria-label="Bottom dock" hidden></div>
+            <div class="dock-body" id="dock-bottom-body"></div>
+          </div>
           <section class="console" id="console" aria-label="Console" hidden>
             <div class="chead" id="console-head"></div>
             <div class="cbody" id="console-body">
@@ -96,13 +101,16 @@
         </div>
         <div class="dock dock-right" id="dock-right" hidden>
           <div class="dock-sash" id="dock-right-sash" role="separator" aria-orientation="vertical" aria-label="Resize the right dock"></div>
+          <div class="dock-tabs" id="dock-right-tabs" role="tablist" aria-label="Right dock" hidden></div>
+          <div class="dock-body" id="dock-right-body"></div>
         </div>
       </div>
     </main>
-    <aside class="vpanel" id="views" aria-label="Views agents showed" hidden>
-      <div class="views-sash" id="views-sash" role="separator" aria-orientation="vertical" aria-label="Resize the views" title="Drag to resize; double-click for the usual width"></div>
-      <div class="vpanel-inner" id="views-inner"></div>
-    </aside>
+    <div class="parked" id="parked">
+      <section class="vpanel" id="views" aria-label="Views agents showed">
+        <div class="vpanel-inner" id="views-inner"></div>
+      </section>
+    </div>
   </div>
   <div class="notice" id="notice" role="status" hidden></div>
   <div class="review-layer" id="history" hidden></div>

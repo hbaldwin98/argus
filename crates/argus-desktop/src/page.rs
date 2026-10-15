@@ -9,7 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::docks::{Dock, DocksLayout, Panel};
+use crate::docks::{Dock, DocksPage, Panel};
 use crate::features::Layout;
 use crate::keymap::{Action, Command, Group};
 use crate::keys::PageKey;
@@ -161,17 +161,15 @@ pub enum Call {
     /// A hover over the strip's maximize button, for Windows 11's snap
     /// layouts.
     SnapLayouts,
-    /// Opens a view an agent showed in the side panel.
+    /// Opens a view an agent showed, in the views' dock.
     OpenView { pane: u64, id: String },
-    /// Puts the side panel away; the views stay.
+    /// Puts the views away; they stay.
     HideViews,
-    /// Puts the side panel away, or brings out the newest view.
+    /// Puts the views away, or brings out the newest.
     ToggleViews,
     /// Where a drag of the rail's edge was let go, in CSS pixels; `None`
     /// to go back to its own width.
     RailWidth { width: Option<u32> },
-    /// The same, for the views panel's edge.
-    ViewsWidth { width: Option<u32> },
     /// The same, for the edge between an open feature's outline and detail.
     OutlineWidth { width: Option<u32> },
     /// The same, for the edge under an open feature's brief.
@@ -180,15 +178,17 @@ pub enum Call {
     RefreshView { pane: u64, id: String },
     /// Closes a view for every client.
     CloseView { pane: u64, id: String },
-    /// Brings an extension's view out in the side panel.
+    /// Brings an extension's view out where it is: its dock, or a page.
     OpenExtensionView { extension: String, view: String },
-    SelectExtensionRow { key: String },
+    /// A row picked in the view `panel` names; the calls after it are on
+    /// that view too, since several may be on screen at once.
+    SelectExtensionRow { panel: Panel, key: String },
     /// One of the view's actions, by its id, on its selected row.
-    ExtensionAction { action: String },
+    ExtensionAction { panel: Panel, action: String },
     /// The view's default action on `row`, selected first: a double-click.
-    ExtensionDefault { row: String },
+    ExtensionDefault { panel: Panel, row: String },
     /// A key of the view's own, moving its selection.
-    ExtensionKey { action: Action },
+    ExtensionKey { panel: Panel, action: Action },
     /// The answer to the question an action asked first.
     AnswerExtension { yes: bool },
     /// An extension's command, by its key or from the palette; `checkout`
@@ -197,9 +197,9 @@ pub enum Call {
     /// The answer to an extension's dialog, or `None` when it was put
     /// away without one.
     AnswerDialog { dialog: u64, answer: Option<argus_protocol::ExtAnswer> },
-    /// The extension view open, moved to a page of its own or docked in
-    /// the side panel, where it opens from then on.
-    ExtensionMode { page: bool },
+    /// An extension's view moved to a page of its own, or back into a
+    /// dock, where it opens from then on.
+    ExtensionMode { panel: Panel, page: bool },
     /// The sidebar's Extensions unfolded, or folded.
     ToggleExtensions,
     /// A link in a view, for the system's opener; Rust opens only an
@@ -436,12 +436,16 @@ pub enum ConsoleGesture {
 }
 
 /// What was done to the docks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase", tag = "on")]
 pub enum DockGesture {
     /// The panel goes to `dock`, shown there.
     Move { panel: Panel, dock: Dock },
+    /// A dock's tab picked: its panel on screen there.
+    Show { panel: Panel },
+    /// A panel's close: its dock closes, and the panel stays in it.
+    Hide { panel: Panel },
     /// A dock's sash let go at `size` CSS pixels: the bottom's height, or
     /// a side's width.
     Size { dock: Dock, size: u32 },
@@ -504,9 +508,9 @@ pub enum Event {
     AddProject(Box<AddProjectPage>),
     /// The console, whole, whenever it changes.
     Console(Box<ConsolePage>),
-    /// Which dock holds each panel, which tab each shows, whether it is
-    /// open and how big, whole, whenever it changes.
-    Docks(Box<DocksLayout>),
+    /// Each dock's tabs, the one it shows and how big it is, whole,
+    /// whenever it changes.
+    Docks(Box<DocksPage>),
     /// Text a pane's child put on the clipboard (OSC 52).
     Clipboard { text: String },
     /// Something the daemon said that passes: a refused request's reason.
@@ -626,8 +630,6 @@ pub struct Rail {
     /// The width the person dragged the rail to, in CSS pixels; `None`
     /// leaves the page's own.
     pub width: Option<u32>,
-    /// The width the person dragged the views panel to, likewise.
-    pub views_width: Option<u32>,
     /// An open feature's outline width and brief height, likewise.
     pub outline_width: Option<u32>,
     pub brief_height: Option<u32>,
@@ -1150,14 +1152,15 @@ pub struct AgentChoice {
     pub chosen: bool,
 }
 
-/// The views agents showed, and the one open in the side panel.
+/// The views agents showed, and the one their panel shows.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct ViewsPage {
     /// Newest first.
     pub views: Vec<PageView>,
-    /// The pane and id of the view in the side panel, if it is out.
+    /// The pane and id of the view the panel shows: the one chosen, else
+    /// the newest.
     pub open: Option<ViewRef>,
 }
 
@@ -2048,18 +2051,19 @@ pub const REVERSE: u8 = 8;
 pub const WIDE: u8 = 16;
 
 /// What the running extensions put in the window: the views listed where
-/// the person is, the one out in the side panel, their commands, and their
+/// the person is, those on screen, their commands, and their
 /// keys as the sheet lists them.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionsPage {
-    /// Every view listed where the person is: the sidebar's Extensions,
-    /// and the panel's tabs for those that open docked.
+    /// Every view listed where the person is, for the sidebar's
+    /// Extensions.
     pub views: Vec<ExtTab>,
-    /// The view open: docked in the side panel, which takes it from the
-    /// agents', or as a page of its own.
-    pub open: Option<ExtTable>,
+    /// Every view on screen: the one its dock shows, and the page.
+    pub tables: Vec<ExtTable>,
+    /// The question an action asks before it is sent.
+    pub confirm: Option<ExtConfirm>,
     /// Whether the sidebar's Extensions are unfolded.
     pub listed: bool,
     pub commands: Vec<ExtCommandPage>,
@@ -2078,7 +2082,7 @@ pub struct ExtTab {
     pub icon: Option<String>,
     /// It opens as a page rather than docked.
     pub page: bool,
-    /// It is the one open.
+    /// It is on screen, docked or as the page.
     pub on: bool,
 }
 
@@ -2088,6 +2092,7 @@ pub struct ExtTab {
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct ExtTable {
+    pub panel: Panel,
     pub extension: String,
     pub view: String,
     pub title: String,
@@ -2098,8 +2103,6 @@ pub struct ExtTable {
     pub actions: Vec<ExtTableAction>,
     /// The selected row's key.
     pub selected: Option<String>,
-    /// The question an action asks before it is sent.
-    pub confirm: Option<ExtConfirm>,
     /// The row action a double-click or Enter on a row takes.
     pub default: Option<String>,
 }
@@ -2127,6 +2130,8 @@ pub struct ExtTableAction {
 #[cfg_attr(test, derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct ExtConfirm {
+    /// The extension that asks.
+    pub extension: String,
     /// The action's label, for the yes button.
     pub label: String,
     pub question: String,
@@ -2335,7 +2340,6 @@ mod tests {
             workspaces: vec![WorkspaceChoice { id: 7, name: "personal".into(), open: true, projects: 1, panes: 1 }],
             removing: Some(Removing { project: 1, name: "src".into(), repositories: 1, panes: 0 }),
             width: Some(320),
-            views_width: None,
             outline_width: None,
             brief_height: None,
         };

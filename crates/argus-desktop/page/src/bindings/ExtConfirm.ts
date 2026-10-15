@@ -2,6 +2,10 @@
 
 export type ExtConfirm = { 
 /**
+ * The extension that asks.
+ */
+extension: string, 
+/**
  * The action's label, for the yes button.
  */
 label: string, question: string, };

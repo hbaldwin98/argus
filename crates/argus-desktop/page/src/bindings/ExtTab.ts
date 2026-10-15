@@ -10,6 +10,6 @@ icon: string | null,
  */
 page: boolean, 
 /**
- * It is the one open.
+ * It is on screen, docked or as the page.
  */
 on: boolean, };

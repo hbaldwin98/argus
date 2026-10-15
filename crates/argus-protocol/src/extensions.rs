@@ -75,10 +75,10 @@ pub struct ExtView {
     pub title: String,
     #[serde(default)]
     pub scope: ExtScope,
-    /// Where the desktop window first opens it: docked in the side panel
-    /// beside the agents' views, or as a page of its own. Only a default:
-    /// the person may move any view between the two, and the window keeps
-    /// their choice.
+    /// Where the desktop window first opens it: docked against one edge of
+    /// the stage, or as a page of its own. Only a default: the person may
+    /// move any view to another dock or a page, and the window keeps their
+    /// choice.
     #[serde(default)]
     pub place: ExtPlace,
     /// One of [`EXT_ICONS`], by name, for its entry in the sidebar. A name
@@ -164,9 +164,16 @@ impl ExtView {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExtPlace {
-    /// Docked in the side panel the agents' views open in, beside the stage.
+    /// Docked on the right, where the agents' views open: the place before
+    /// there were docks, kept so an older extension opens where it did.
     #[default]
     Panel,
+    /// Docked against the stage's left edge, between it and the sidebar.
+    Left,
+    /// Docked against the stage's right edge; the same as `Panel`.
+    Right,
+    /// Docked under the stage.
+    Bottom,
     /// A page of its own, filling the stage.
     Stage,
 }
@@ -594,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    fn a_view_is_the_side_panels_unless_it_asks_for_a_stage() {
+    fn a_view_docks_on_the_right_unless_it_asks_for_another_dock_or_a_stage() {
         let bare: ExtView = serde_json::from_str(r#"{"name":"a","title":"A","columns":[{"title":"x"}]}"#).unwrap();
         assert_eq!((bare.place, bare.icon), (ExtPlace::Panel, None), "an older publisher keeps its place");
         let staged: ExtView =
@@ -602,6 +609,9 @@ mod tests {
                 .unwrap();
         assert_eq!(staged.place, ExtPlace::Stage);
         assert!(staged.checked().is_ok());
+        let docked: ExtView =
+            serde_json::from_str(r#"{"name":"a","title":"A","place":"bottom","columns":[{"title":"x"}]}"#).unwrap();
+        assert_eq!(docked.place, ExtPlace::Bottom);
     }
 
     #[test]

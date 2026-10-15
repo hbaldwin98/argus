@@ -1,10 +1,10 @@
-//! Which views agents showed, as this window holds them, and the one out in
-//! the side panel.
+//! Which views agents showed, as this window holds them, and the one their
+//! panel shows.
 //!
 //! The daemon owns the views: a person closing one or asking for a refresh
 //! sends the request and changes nothing here until the daemon says it
-//! changed. Only which one is open, and that a refresh is pending, are the
-//! window's own.
+//! changed. Only which one is chosen, and that a refresh is pending, are
+//! the window's own; whether the panel is on screen is `docks`'s.
 
 use std::collections::HashSet;
 
@@ -20,6 +20,7 @@ use crate::sent::Sent;
 pub struct AgentViews {
     /// Newest first.
     views: Vec<ShownView>,
+    /// The view the panel shows; the newest while none is chosen.
     open: Option<(PaneId, String)>,
     refreshing: HashSet<(PaneId, String)>,
     sent: Sent<ViewsPage>,
@@ -34,17 +35,20 @@ impl AgentViews {
         out.push(ClientMsg::WatchViews);
     }
 
-    /// A view came. It opens by itself only when its pane is the one on
-    /// screen and nothing else is open: the person is watching that agent,
-    /// and anywhere else it would take the panel from under them.
-    pub fn shown(&mut self, view: ShownView, on_screen: Option<PaneId>) {
+    /// A view came. It comes out by itself, saying so, only when its pane
+    /// is the one on screen and the panel is not out already: the person is
+    /// watching that agent, and anywhere else it would take the panel from
+    /// under them.
+    pub fn shown(&mut self, view: ShownView, on_screen: Option<PaneId>, out: bool) -> bool {
         let key = (view.pane, view.view.id.clone());
         self.refreshing.remove(&key);
         self.views.retain(|v| (v.pane, v.view.id.as_str()) != (key.0, key.1.as_str()));
-        if self.open.is_none() && on_screen == Some(view.pane) {
+        let comes_out = !out && on_screen == Some(view.pane);
+        if comes_out {
             self.open = Some(key);
         }
         self.views.insert(0, view);
+        comes_out
     }
 
     pub fn closed(&mut self, pane: PaneId, id: &str) {
@@ -55,22 +59,17 @@ impl AgentViews {
         }
     }
 
-    pub fn open(&mut self, pane: PaneId, id: String) {
-        if self.find(pane, &id).is_some() {
+    /// Chooses a view, saying whether the window holds it.
+    pub fn open(&mut self, pane: PaneId, id: String) -> bool {
+        let held = self.find(pane, &id).is_some();
+        if held {
             self.open = Some((pane, id));
         }
+        held
     }
 
-    pub fn hide(&mut self) {
-        self.open = None;
-    }
-
-    /// The panel away if it is out, else the newest view in it.
-    pub fn toggle(&mut self) {
-        self.open = match (&self.open, self.views.first()) {
-            (None, Some(newest)) => Some((newest.pane, newest.view.id.clone())),
-            _ => None,
-        };
+    pub fn is_empty(&self) -> bool {
+        self.views.is_empty()
     }
 
     /// How many views a pane's agent has up, for its row on the rail.
@@ -123,7 +122,11 @@ impl AgentViews {
                     diagrams: diagrams(&v.view.blocks),
                 })
                 .collect(),
-            open: self.open.as_ref().map(|(pane, id)| ViewRef { pane: pane.0, id: id.clone() }),
+            open: self
+                .open
+                .clone()
+                .or_else(|| self.views.first().map(|v| (v.pane, v.view.id.clone())))
+                .map(|(pane, id)| ViewRef { pane: pane.0, id }),
         }
     }
 }
@@ -186,7 +189,7 @@ mod tests {
     fn the_page_hears_of_views_only_once_there_have_been_some() {
         let mut views = AgentViews::default();
         assert_eq!(views.take(|_| None), None);
-        views.shown(shown(1, "ci"), None);
+        views.shown(shown(1, "ci"), None, false);
         assert_eq!(views.take(|_| None).unwrap().views.len(), 1);
         views.closed(PaneId(1), "ci");
         assert_eq!(views.take(|_| None), Some(ViewsPage::default()));
@@ -194,14 +197,13 @@ mod tests {
     }
 
     #[test]
-    fn a_view_from_the_pane_on_screen_opens_and_one_from_elsewhere_waits() {
+    fn a_view_from_the_pane_on_screen_comes_out_and_one_from_elsewhere_waits() {
         let mut views = AgentViews::default();
-        views.shown(shown(2, "elsewhere"), Some(PaneId(1)));
-        assert_eq!(views.page(|_| None).open, None);
-        views.shown(shown(1, "ci"), Some(PaneId(1)));
+        assert!(!views.shown(shown(2, "elsewhere"), Some(PaneId(1)), false));
+        assert!(views.shown(shown(1, "ci"), Some(PaneId(1)), false));
         assert_eq!(views.page(|_| None).open, Some(ViewRef { pane: 1, id: "ci".into() }));
-        // A second from the same pane does not take the panel from the first.
-        views.shown(shown(1, "queries"), Some(PaneId(1)));
+        // A second, the panel out, does not take it from the first.
+        assert!(!views.shown(shown(1, "queries"), Some(PaneId(1)), true));
         assert_eq!(views.page(|_| None).open, Some(ViewRef { pane: 1, id: "ci".into() }));
     }
 
@@ -213,7 +215,7 @@ mod tests {
             tabs: vec![argus_protocol::Tab { title: "Flow".into(), blocks: vec![Block::Diagram { source: source.clone() }] }],
         }];
         let mut views = AgentViews::default();
-        views.shown(view, None);
+        views.shown(view, None, false);
         let page = views.page(|_| None);
         let drawn = &page.views[0].diagrams[0];
         assert_eq!(drawn.source, source);
@@ -222,32 +224,32 @@ mod tests {
     }
 
     #[test]
-    fn the_toggle_brings_out_the_newest_and_puts_it_away() {
+    fn the_newest_is_shown_until_one_is_chosen_and_after_the_one_chosen_closes() {
         let mut views = AgentViews::default();
-        views.toggle();
         assert_eq!(views.page(|_| None).open, None);
-        views.shown(shown(1, "old"), None);
-        views.shown(shown(2, "new"), None);
-        views.toggle();
+        views.shown(shown(1, "old"), None, false);
+        views.shown(shown(2, "new"), None, false);
         assert_eq!(views.page(|_| None).open, Some(ViewRef { pane: 2, id: "new".into() }));
+        assert!(views.open(PaneId(1), "old".into()));
+        assert_eq!(views.page(|_| None).open, Some(ViewRef { pane: 1, id: "old".into() }));
         assert_eq!(views.count(PaneId(1)), 1);
-        views.toggle();
-        assert_eq!(views.page(|_| None).open, None);
+        views.closed(PaneId(1), "old");
+        assert_eq!(views.page(|_| None).open, Some(ViewRef { pane: 2, id: "new".into() }));
     }
 
     #[test]
     fn a_view_shown_again_replaces_its_old_self_at_the_top() {
         let mut views = AgentViews::default();
-        views.shown(shown(1, "a"), None);
-        views.shown(shown(1, "b"), None);
-        views.shown(shown(1, "a"), None);
+        views.shown(shown(1, "a"), None, false);
+        views.shown(shown(1, "b"), None, false);
+        views.shown(shown(1, "a"), None, false);
         assert_eq!(ids(&mut views), ["a", "b"]);
     }
 
     #[test]
     fn closing_asks_the_daemon_and_waits_for_it() {
         let mut views = AgentViews::default();
-        views.shown(shown(1, "ci"), Some(PaneId(1)));
+        views.shown(shown(1, "ci"), Some(PaneId(1)), false);
         let mut out = Vec::new();
         views.close(PaneId(1), "ci".into(), &mut out);
         assert!(matches!(&out[..], [ClientMsg::CloseView { pane: PaneId(1), id }] if id == "ci"));
@@ -261,19 +263,19 @@ mod tests {
     #[test]
     fn a_refresh_is_pending_until_the_view_comes_again() {
         let mut views = AgentViews::default();
-        views.shown(shown(1, "ci"), None);
+        views.shown(shown(1, "ci"), None, false);
         let mut out = Vec::new();
         views.refresh(PaneId(1), "ci".into(), &mut out);
         assert!(matches!(&out[..], [ClientMsg::RefreshView { .. }]));
         assert!(views.page(|_| None).views[0].refreshing);
-        views.shown(shown(1, "ci"), None);
+        views.shown(shown(1, "ci"), None, false);
         assert!(!views.page(|_| None).views[0].refreshing);
     }
 
     #[test]
     fn a_reconnect_watches_again_and_drops_what_the_daemon_will_replay() {
         let mut views = AgentViews::default();
-        views.shown(shown(1, "ci"), None);
+        views.shown(shown(1, "ci"), None, false);
         let mut out = Vec::new();
         views.connected(&mut out);
         assert!(matches!(&out[..], [ClientMsg::WatchViews]));
@@ -286,7 +288,7 @@ mod tests {
         let mut out = Vec::new();
         views.refresh(PaneId(1), "gone".into(), &mut out);
         views.close(PaneId(1), "gone".into(), &mut out);
-        views.open(PaneId(1), "gone".into());
+        assert!(!views.open(PaneId(1), "gone".into()));
         assert!(out.is_empty());
         assert_eq!(views.page(|_| None).open, None);
     }

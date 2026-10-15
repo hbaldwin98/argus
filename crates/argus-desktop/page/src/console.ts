@@ -76,7 +76,7 @@ function drawHead(): void {
   }
   const docked = page.place === 'docked';
   const full = page.place === 'fullscreen';
-  const dock = dockOf('console');
+  const dock = dockOf('console') ?? 'bottom';
   const split = page.beside !== null;
   const onScreen = (pane: number): boolean => pane === page.showing || pane === page.beside;
   $('console-head').replaceChildren(

@@ -6,7 +6,7 @@ import type { CapturePage } from './bindings/CapturePage';
 import type { Checkouts } from './bindings/Checkouts';
 import type { Command } from './bindings/Command';
 import type { ConsolePage } from './bindings/ConsolePage';
-import type { DocksLayout } from './bindings/DocksLayout';
+import type { DocksPage } from './bindings/DocksPage';
 import type { ExtensionsPage } from './bindings/ExtensionsPage';
 import type { Features } from './bindings/Features';
 import type { Group } from './bindings/Group';
@@ -72,8 +72,8 @@ export const state: {
   settings: SettingsPage | null;
   /** Where the console is, its tabs, and whether the canvas is its. */
   console: ConsolePage | null;
-  /** Which dock holds each panel, which it shows, and how big it is. */
-  docks: DocksLayout | null;
+  /** Each dock's tabs, the one it shows, and how big it is. */
+  docks: DocksPage | null;
   /** What the extensions put in the window: views, commands, keys. */
   extensions: ExtensionsPage | null;
   /** The comment being written, kept across the dialog's redraws. */
@@ -101,7 +101,6 @@ export const state: {
     workspaces: [],
     removing: null,
     width: null,
-    viewsWidth: null,
     outlineWidth: null,
     briefHeight: null,
   },
