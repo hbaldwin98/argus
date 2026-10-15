@@ -43,6 +43,9 @@ pub enum Call {
     /// A drag across the pane, `from` and `to` as `[row, col]`: the cells
     /// between them go on the clipboard.
     Copy { from: (u16, u16), to: (u16, u16) },
+    /// Text a view offers to copy (a code block, a table as TSV): written
+    /// to the clipboard by Rust, so the webview is never granted it.
+    CopyText { text: String },
     SpawnShell { checkout: u64 },
     /// Starts an agent from the daemon's `template` on a checkout.
     SpawnAgent { checkout: u64, template: String },

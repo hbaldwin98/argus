@@ -5744,3 +5744,62 @@ button.vtree-chev:focus-visible {
 /* Agent views: live updates (a block changed since it was seen). */
 
 /* Agent views: the panel (copy, filter, row details, pop-out, feature views). */
+.vcode-hd {
+  justify-content: space-between;
+  gap: var(--sp-8);
+}
+.vcode-hd .vcopy {
+  margin-left: auto;
+}
+.vtable-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-8);
+  padding: var(--sp-4) 0 var(--sp-8);
+  font: var(--type-small);
+  color: var(--fg-muted);
+}
+.vtable-bar-gap {
+  flex: 1;
+}
+.vtable-filter {
+  min-width: 140px;
+  padding: var(--sp-4) var(--sp-8);
+  color: var(--fg);
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font: inherit;
+}
+.vtable-filter:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+.vtable-table th.vtable-pick,
+.vtable-table td.vtable-pick,
+.vtable-table th.vtable-open,
+.vtable-table td.vtable-open {
+  width: 1%;
+  padding: 0 var(--sp-8);
+}
+.vtable-chev {
+  display: inline-flex;
+  padding: var(--sp-4);
+  color: var(--fg-muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.vtable-chev svg {
+  transition: transform 0.12s;
+}
+.vtable-chev.open svg {
+  transform: rotate(90deg);
+}
+.vtable-table tr.vtable-detail > td {
+  height: auto;
+  padding: var(--sp-8) var(--sp-12);
+  white-space: normal;
+  background: var(--bg-sunken);
+}

@@ -38,6 +38,7 @@ pub async fn call(shared: State<'_, Arc<Shared>>, window: WebviewWindow, call: C
         Call::Key { key } if shared.read(|s| s.pastes(&key)) => paste_clipboard(&shared),
         Call::PasteClipboard => paste_clipboard(&shared),
         Call::Copy { from, to } => copy(&shared, from, to),
+        Call::CopyText { text } => copy_text(&shared, &text),
         Call::Reconnect => shared.ask_reconnect(),
         Call::Minimize => return window_frame::minimize(&window),
         Call::ToggleMaximize => return window_frame::toggle_maximize(&window),
@@ -101,6 +102,12 @@ fn paste_clipboard(shared: &Shared) {
     match clipboard::read() {
         Some(text) => shared.act(|s| s.paste(text)),
         None => shared.act(|s| s.note("nothing on the clipboard to paste")),
+    }
+}
+
+fn copy_text(shared: &Shared, text: &str) {
+    if let Err(e) = clipboard::write(text) {
+        shared.act(|s| s.note(format!("could not copy: {e}")));
     }
 }
 
