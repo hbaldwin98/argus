@@ -67,7 +67,8 @@ enum PaneOrPending<'a> {
 
 impl<'a> PaneOrPending<'a> {
     /// `None` when the pane is in neither store, or has already exited —
-    /// nothing said after exit should resurrect a row.
+    /// nothing said after exit should resurrect a row. Only
+    /// [`Daemon::edit_pane`] calls this, so that rule holds for every edit.
     fn find(
         projects: &'a mut [Project],
         starting: &'a mut HashMap<PaneId, PendingStart>,
@@ -94,15 +95,56 @@ impl<'a> PaneOrPending<'a> {
         }
     }
 
+    /// Whether `reporter` is a session running inside this pane rather than
+    /// the one that owns it. A pane that has claimed no session yet has no
+    /// children: whoever reports first is its own agent.
+    fn is_child(&self, reporter: &str) -> bool {
+        self.harness_session_id().is_some_and(|owner| owner != reporter)
+    }
+
+    fn children(&mut self) -> &mut Vec<ChildAgent> {
+        match self {
+            Self::Live(p) => &mut p.children,
+            Self::Pending(p) => &mut p.children,
+        }
+    }
+
+    /// Edits the child running as `session`, listing it if it is new. Always
+    /// a change: hearing from a child at all is news about its row.
+    fn edit_child(&mut self, session: &str, edit: impl FnOnce(&mut ChildAgent)) -> bool {
+        let children = self.children();
+        match children.iter_mut().find(|c| c.session_id == session) {
+            Some(child) => {
+                child.at = std::time::Instant::now();
+                edit(child)
+            }
+            None => {
+                let mut child = ChildAgent {
+                    session_id: session.to_string(),
+                    label: None,
+                    status: PaneStatus::Working,
+                    note: None,
+                    at: std::time::Instant::now(),
+                };
+                edit(&mut child);
+                children.push(child);
+                if children.len() > MAX_CHILDREN {
+                    children.remove(0);
+                }
+            }
+        }
+        // A child that has gone idle is no longer something running
+        // under this row, so it stops being listed under it.
+        children.retain(|c| !matches!(c.status, PaneStatus::Idle | PaneStatus::Exited { .. }));
+        true
+    }
+
     /// The turn that spawned any children is over once a pane goes idle, so
     /// anything still listed under it has finished without saying so. A
     /// background agent outliving the turn is not lost by this: its next
     /// report lists it again.
     fn clear_children_on_idle(&mut self, status: PaneStatus) -> bool {
-        let children = match self {
-            Self::Live(p) => &mut p.children,
-            Self::Pending(p) => &mut p.children,
-        };
+        let children = self.children();
         if status == PaneStatus::Idle && !children.is_empty() {
             children.clear();
             true
@@ -210,6 +252,36 @@ pub(super) fn clean_title(raw: &str) -> String {
         Some((i, _)) => format!("{}…", flat[..i].trim_end()),
         None => flat,
     }
+}
+
+/// A status report from the pane's own agent, applied unless it is stale.
+fn own_status(
+    p: &mut PaneOrPending<'_>,
+    restoring: bool,
+    status: PaneStatus,
+    note: Option<String>,
+    background: bool,
+) -> bool {
+    if is_stale_report(p.status(), status) {
+        return false;
+    }
+    if restoring {
+        p.restore_status_reported();
+    }
+    // A note explains one state; the report that leaves that state takes
+    // it away with it, so a stale "waiting for the db password" can't sit
+    // under a working row.
+    let note = note.map(|n| clean_title(&n)).filter(|n| !n.is_empty());
+    // One edit, so no client is shown the turn ended before it is shown
+    // what the turn left running.
+    p.set_background(background) | p.set_status(status, note)
+}
+
+fn own_title(p: &mut PaneOrPending<'_>, restoring: bool, title: String) -> bool {
+    if restoring {
+        p.restore_title_reported();
+    }
+    p.set_title(title)
 }
 
 impl Daemon {
@@ -370,6 +442,25 @@ impl Daemon {
         ))
     }
 
+    /// The one way to edit an agent's row, live in the tree or still in
+    /// the pre-spawn mailbox. Both locks are taken in insertion's order and
+    /// held across finding the pane, deciding and writing, so nothing — an
+    /// exit, the pane entering the tree, another report — lands between a
+    /// decision and the edit it led to. `edit` says whether anything a
+    /// client is shown changed, and the tree goes out only if it did.
+    fn edit_pane(&self, pane: PaneId, edit: impl FnOnce(&mut PaneOrPending<'_>) -> bool) -> bool {
+        let changed = {
+            let mut starting = self.starting_agents.lock().unwrap();
+            let mut inner = self.inner.lock().unwrap();
+            PaneOrPending::find(&mut inner.projects, &mut starting, pane)
+                .is_some_and(|mut p| edit(&mut p))
+        };
+        if changed {
+            self.broadcast_tree();
+        }
+        changed
+    }
+
     /// Applies a hook report to whichever agent sent it.
     ///
     /// Every report a harness makes carries the session it came from, so a
@@ -389,10 +480,17 @@ impl Daemon {
         note: Option<String>,
         background: bool,
     ) {
-        match self.child_of(pane, reporter) {
-            Some(session) => self.set_child_status(pane, &session, status, note),
-            None => self.set_pane_hook_status(pane, status, note, background),
-        }
+        let restoring = self.restoring.load(std::sync::atomic::Ordering::Relaxed);
+        self.edit_pane(pane, |p| match reporter.filter(|r| p.is_child(r)) {
+            Some(session) => {
+                let note = note.map(|n| clean_title(&n)).filter(|n| !n.is_empty());
+                p.edit_child(session, |child| {
+                    child.status = status;
+                    child.note = note;
+                })
+            }
+            None => own_status(p, restoring, status, note, background),
+        });
     }
 
     /// Merges a telemetry report into the pane's own. A nested agent's
@@ -424,16 +522,28 @@ impl Daemon {
         }
     }
 
+    /// Renames a pane, or the child that reported. The daemon does this
+    /// from a prompt-submit event so a column of agents is not four rows
+    /// all called "claude"; the agent can still refine it with
+    /// `argus-hook title`.
     pub(super) fn report_pane_title(&self, pane: PaneId, reporter: Option<&str>, title: &str) {
-        match self.child_of(pane, reporter) {
-            Some(session) => self.set_child_label(pane, &session, title),
-            None => self.set_pane_title(pane, title),
+        let title = clean_title(title);
+        if title.is_empty() {
+            return;
         }
+        let restoring = self.restoring.load(std::sync::atomic::Ordering::Relaxed);
+        self.edit_pane(pane, |p| match reporter.filter(|r| p.is_child(r)) {
+            Some(session) => p.edit_child(session, |child| child.label = Some(title)),
+            None => own_title(p, restoring, title),
+        });
     }
 
     /// The reporting session, when it is not the one that owns the pane.
     /// A report with no session at all is the pane's own: only a harness
     /// event carries one, and `argus-hook status` typed by hand has none.
+    ///
+    /// For a caller that only reads. One that edits the row decides inside
+    /// [`Self::edit_pane`] instead, where ownership cannot change under it.
     pub(super) fn child_of(&self, pane: PaneId, reporter: Option<&str>) -> Option<String> {
         let reporter = reporter?;
         // Match insertion's lock order so ownership cannot change between
@@ -448,67 +558,6 @@ impl Daemon {
                     .and_then(|pending| pending.harness_session_id.as_deref())
             })?;
         (owner != reporter).then(|| reporter.to_string())
-    }
-
-    fn with_child(&self, pane: PaneId, session: &str, edit: impl FnOnce(&mut ChildAgent)) {
-        {
-            let mut starting = self.starting_agents.lock().unwrap();
-            let mut inner = self.inner.lock().unwrap();
-            let children = match find_pane(&mut inner.projects, pane) {
-                Some(p) if matches!(p.status, PaneStatus::Exited { .. }) => return,
-                Some(p) => &mut p.children,
-                None => match starting.get_mut(&pane) {
-                    Some(pending) => &mut pending.children,
-                    None => return,
-                },
-            };
-            match children.iter_mut().find(|c| c.session_id == session) {
-                Some(child) => {
-                    child.at = std::time::Instant::now();
-                    edit(child)
-                }
-                None => {
-                    let mut child = ChildAgent {
-                        session_id: session.to_string(),
-                        label: None,
-                        status: PaneStatus::Working,
-                        note: None,
-                        at: std::time::Instant::now(),
-                    };
-                    edit(&mut child);
-                    children.push(child);
-                    if children.len() > MAX_CHILDREN {
-                        children.remove(0);
-                    }
-                }
-            }
-            // A child that has gone idle is no longer something running
-            // under this row, so it stops being listed under it.
-            children.retain(|c| !matches!(c.status, PaneStatus::Idle | PaneStatus::Exited { .. }));
-        }
-        self.broadcast_tree();
-    }
-
-    fn set_child_status(
-        &self,
-        pane: PaneId,
-        session: &str,
-        status: PaneStatus,
-        note: Option<String>,
-    ) {
-        let note = note.map(|n| clean_title(&n)).filter(|n| !n.is_empty());
-        self.with_child(pane, session, |child| {
-            child.status = status;
-            child.note = note;
-        });
-    }
-
-    fn set_child_label(&self, pane: PaneId, session: &str, title: &str) {
-        let label = clean_title(title);
-        if label.is_empty() {
-            return;
-        }
-        self.with_child(pane, session, |child| child.label = Some(label));
     }
 
     /// Forgets children that have gone quiet. A child says so when it
@@ -532,64 +581,6 @@ impl Daemon {
         }
     }
 
-    pub(super) fn set_pane_hook_status(
-        &self,
-        pane: PaneId,
-        status: PaneStatus,
-        note: Option<String>,
-        background: bool,
-    ) {
-        let changed = {
-            let mut starting = self.starting_agents.lock().unwrap();
-            let mut inner = self.inner.lock().unwrap();
-            match PaneOrPending::find(&mut inner.projects, &mut starting, pane) {
-                Some(mut p) if !is_stale_report(p.status(), status) => {
-                    if self.restoring.load(std::sync::atomic::Ordering::Relaxed) {
-                        p.restore_status_reported();
-                    }
-                    // A note explains one state; the report that leaves that
-                    // state takes it away with it, so a stale "waiting for
-                    // the db password" can't sit under a working row.
-                    let note = note.map(|n| clean_title(&n)).filter(|n| !n.is_empty());
-                    // One edit, so no client is shown the turn ended
-                    // before it is shown what the turn left running.
-                    p.set_background(background) | p.set_status(status, note)
-                }
-                _ => false,
-            }
-        };
-        if changed {
-            self.broadcast_tree();
-        }
-    }
-
-    /// Renames a pane. The daemon does this from a prompt-submit event so
-    /// a column of agents is not four rows all called "claude"; the agent
-    /// can still refine it with `argus-hook title`. Ignored for a pane that
-    /// has exited — a rename racing a crash shouldn't relabel a dead row.
-    pub(super) fn set_pane_title(&self, pane: PaneId, title: &str) {
-        let title = clean_title(title);
-        if title.is_empty() {
-            return;
-        }
-        let changed = {
-            let mut starting = self.starting_agents.lock().unwrap();
-            let mut inner = self.inner.lock().unwrap();
-            match PaneOrPending::find(&mut inner.projects, &mut starting, pane) {
-                Some(mut p) => {
-                    if self.restoring.load(std::sync::atomic::Ordering::Relaxed) {
-                        p.restore_title_reported();
-                    }
-                    p.set_title(title)
-                }
-                None => false,
-            }
-        };
-        if changed {
-            self.broadcast_tree();
-        }
-    }
-
     /// Records the conversation Argus would resume this pane with.
     ///
     /// A claim from a session that is not the pane's current owner is only
@@ -597,34 +588,19 @@ impl Daemon {
     /// over (`/clear`, a resume) is idle at that moment, whereas a CLI
     /// spawned from inside a turn arrives mid-work. The latter is listed as
     /// a child instead, which is what keeps a nested agent from stealing the
-    /// identity the row resumes from.
+    /// identity the row resumes from. Owner, status and the claim are read
+    /// and written in one hold of the locks: decided apart, the parent could
+    /// start a turn between the check and the write and lose its row.
     pub(super) fn set_pane_session_id(&self, pane: PaneId, raw: &str) {
         let Some(session_id) = valid_session_id(raw) else {
             return;
         };
-        if self.child_of(pane, Some(&session_id)).is_some() {
-            let working = {
-                let mut starting = self.starting_agents.lock().unwrap();
-                let mut inner = self.inner.lock().unwrap();
-                PaneOrPending::find(&mut inner.projects, &mut starting, pane)
-                    .map(|p| p.status())
-                    == Some(PaneStatus::Working)
-            };
-            if working {
-                self.with_child(pane, &session_id, |_| {});
-                return;
+        self.edit_pane(pane, |p| {
+            if p.is_child(&session_id) && p.status() == PaneStatus::Working {
+                p.edit_child(&session_id, |_| {})
+            } else {
+                p.set_session_id(session_id)
             }
-        }
-        let changed = {
-            let mut starting = self.starting_agents.lock().unwrap();
-            let mut inner = self.inner.lock().unwrap();
-            match PaneOrPending::find(&mut inner.projects, &mut starting, pane) {
-                Some(mut p) => p.set_session_id(session_id),
-                None => false,
-            }
-        };
-        if changed {
-            self.broadcast_tree();
-        }
+        });
     }
 }
