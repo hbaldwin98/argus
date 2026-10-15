@@ -4917,6 +4917,30 @@ body.resizing:has(.brief-sash.held) {
   display: flex;
   flex-direction: column;
 }
+/* An extension's console view: its terminal fills the body, under a strip
+   that says it is starting or how it ended. */
+.vpanel-body.ext-console {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+.ext-console > .terminal {
+  min-height: 0;
+}
+.ext-strip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  padding: var(--sp-6) var(--sp-16);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-surface);
+}
+.ext-strip[hidden] {
+  display: none;
+}
+
 /* ---- The tracker dialogs ----------------------------------------------- */
 
 .tracker-dialog {

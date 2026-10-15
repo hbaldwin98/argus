@@ -13,7 +13,7 @@ import { $, el, icon } from './dom.js';
 import { chordsFor, presses } from './keys.js';
 import { contextMenu, type MenuItem, openMenu } from './menu.js';
 import { renameDialog } from './rename.js';
-import { type Screen, beside, consoleScreen, screen } from './screen.js';
+import { type Screen, beside, consoleScreen, keyedViewScreen, screen, screens } from './screen.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
 
@@ -242,9 +242,12 @@ function drawSideHead(id: string, pane: number | null): void {
   );
 }
 
-/** The screen with the keys: a console side the console says is typed
- *  in, else the Workspace's. */
+/** The screen with the keys: an extension's console view Rust says has
+ *  them, or a console side the console says is typed in, else the
+ *  Workspace's. */
 export function keyedScreen(): Screen {
+  const view = keyedViewScreen();
+  if (view) return view;
   const page = state.console;
   if (page?.typing == null) return screen;
   if (page.typing === page.beside) return beside;
@@ -265,7 +268,7 @@ export function placeTerminal(): void {
   consoleScreen.expect(inConsole ? (page?.showing ?? null) : null);
   beside.expect(split ? (page?.beside ?? null) : null);
   const keyed = keyedScreen();
-  for (const s of [screen, consoleScreen, beside]) s.key(s === keyed);
+  for (const s of screens) s.key(s === keyed);
   const input = $('input');
   if (input.parentElement !== keyed.terminal) {
     const hadKeys = document.activeElement === input;

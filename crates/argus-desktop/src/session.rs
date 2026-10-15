@@ -531,6 +531,7 @@ impl Session {
         match call {
             Call::Select { pane } => self.select(PaneId(pane)),
             Call::Resize { side, rows, cols } => self.resize(side, rows, cols),
+            Call::FocusView { pane } => self.focus_view(PaneId(pane)),
             Call::Key { key } => self.key(&key),
             Call::Text { text } => self.text(&text),
             Call::Paste { text } => self.paste(text),
@@ -859,6 +860,20 @@ impl Session {
 
     fn resize(&mut self, side: Side, rows: u16, cols: u16) -> Vec<ClientMsg> {
         self.shown.resize(side, rows, cols, &mut self.out);
+        // A view's screen is made by the page when it hears of the view, and
+        // reports its room once it exists: it has none of the rows yet, and
+        // may have been sent a frame before it was there to draw it.
+        if matches!(side, Side::View(_)) {
+            self.shown.refresh_side(side);
+        }
+        self.finish()
+    }
+
+    /// A press on an extension console's screen gives it the keys.
+    fn focus_view(&mut self, pane: PaneId) -> Vec<ClientMsg> {
+        if self.shown.focus(pane) {
+            self.rail_changed = true;
+        }
         self.finish()
     }
 
@@ -1381,6 +1396,25 @@ impl Session {
         if let Some(stage) = self.over.open_extension(self.stage) {
             self.go(stage);
         }
+        self.key_page_console();
+    }
+
+    /// A page that is a console has the keys the moment it is up, as a
+    /// table page does: the Workspace's pane is hidden behind it, and keys
+    /// typed into the page would otherwise go there. A console still
+    /// waiting for its pane is clicked into once it has one.
+    fn key_page_console(&mut self) {
+        self.settle_view_consoles();
+        let page = self.extension_views.page().cloned().filter(|_| self.stage == Stage::Extension);
+        let name = page.and_then(|panel| match panel {
+            Panel::Extension(name) => Some(name),
+            _ => None,
+        });
+        let pane = name.and_then(|name| self.shown.view_side(&name)).and_then(|side| self.shown.on(side));
+        if let Some(pane) = pane {
+            self.shown.focus(pane);
+            self.rail_changed = true;
+        }
     }
 
     /// Back to the stage the page opened over, or the Workspace.
@@ -1505,11 +1539,32 @@ impl Session {
         self.out.push(ClientMsg::ExtensionCommand { extension: extension.into(), command: command.into(), context });
     }
 
+    /// Whether an extension's view is on screen: shown in its dock, or the
+    /// page the stage is up on.
+    fn extension_on(&self, panel: &Panel) -> bool {
+        self.docks.shows(panel) || (self.stage == Stage::Extension && self.extension_views.page() == Some(panel))
+    }
+
+    /// Gives each console view on screen a screen of its own, and takes it
+    /// away with the view, as the daemon's views say.
+    fn settle_view_consoles(&mut self) {
+        let wanted = self.extension_views.consoles_on(&self.here(), |panel| self.extension_on(panel));
+        self.shown.sync_views(&wanted, &mut self.out);
+    }
+
     fn extensions_page(&self) -> page::ExtensionsPage {
         let here = self.here();
         let docks = &self.docks;
         let page = self.extension_views.page().filter(|_| self.stage == Stage::Extension);
-        let on = |panel: &Panel| docks.shows(panel) || page == Some(panel);
+        let on = |panel: &Panel| self.extension_on(panel);
+        let with_screen = |mut table: page::ExtTable| {
+            if let (Some(console), Panel::Extension(name)) = (&mut table.console, &table.panel) {
+                let side = self.shown.view_side(name);
+                console.side = side;
+                console.keyed = side.is_some_and(|side| side == self.shown.keys());
+            }
+            table
+        };
         page::ExtensionsPage {
             views: self.extension_views.tabs(&here, |panel| docks.place_of(panel) == Some(Place::Stage), on),
             tables: self
@@ -1517,6 +1572,7 @@ impl Session {
                 .present(&here)
                 .filter(|panel| on(panel))
                 .filter_map(|panel| self.extension_views.table(&panel, &here, page == Some(&panel)))
+                .map(with_screen)
                 .collect(),
             confirm: self.extension_views.confirm(),
             listed: self.extension_views.listed(),
@@ -1618,8 +1674,10 @@ impl Session {
     }
 
     /// Whether the keys are a console's rather than the Workspace's pane's.
+    /// An extension's console view is neither: its keys leave the console's
+    /// own choices (fullscreen, the split) alone.
     fn console_typing(&self) -> bool {
-        self.shown.keys() != Side::Workspace
+        matches!(self.shown.keys(), Side::First | Side::Second)
     }
 
     /// Whether the console's sides are on screen.
@@ -1735,8 +1793,8 @@ impl Session {
     /// The next pane on screen takes the keys, in the order they are
     /// drawn: the Workspace's, then the console's sides.
     fn other_side(&mut self) {
-        let visible: Vec<PaneId> = [Side::Workspace, Side::First, Side::Second]
-            .into_iter()
+        let sides = [Side::Workspace, Side::First, Side::Second].into_iter().chain(self.shown.view_sides());
+        let visible: Vec<PaneId> = sides
             .filter(|&side| self.side_visible(side))
             .filter_map(|side| self.shown.on(side))
             .collect();
@@ -1757,6 +1815,8 @@ impl Session {
                     && !self.console.fullscreen()
             }
             Side::First | Side::Second => self.console_place() != ConsolePlace::Hidden,
+            // A view's screen is kept only while its view is on screen.
+            Side::View(_) => true,
         }
     }
 
@@ -2533,6 +2593,7 @@ impl Session {
         self.settle_console();
         self.settle_extension();
         self.settle_view_page();
+        self.settle_view_consoles();
         // The session under the dialog's cursor is read once it is there,
         // however the cursor got there: a key, a filter, or the listing.
         if let Some(wanted) = self.recent.as_ref().and_then(|d| d.wants_read(&self.sessions, &self.tree)).cloned() {
@@ -3854,8 +3915,9 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 112] = [
+    const CALLS: [&str; 113] = [
         r#"{"call":"select","pane":1}"#,
+        r#"{"call":"focus_view","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
         r#"{"call":"text","text":"é"}"#,
@@ -5211,6 +5273,108 @@ mod tests {
         s.receive(ServerMsg::ExtensionViews(Vec::new()));
         assert!(tables(&mut s).is_empty());
         assert_eq!(s.stage, Stage::Workspace);
+    }
+
+    /// The `docker/dev` view, a console, published running in `pane` or
+    /// still waiting for one, and ended when `ended`.
+    fn console_view(pane: Option<u64>, ended: bool) -> ServerMsg {
+        let pane = pane.map_or("null".to_string(), |p| p.to_string());
+        let ended = if ended { r#"{"code": 3}"# } else { "null" };
+        let json = format!(
+            r#"[{{"extension": "docker", "name": "dev", "title": "Dev", "place": "bottom",
+                "console": {{"command": ["sh"], "pane": {pane}, "ended": {ended}}},
+                "actions": [{{"id": "restart", "label": "Restart", "view_wide": true}}]}}]"#
+        );
+        ServerMsg::ExtensionViews(serde_json::from_str(&json).unwrap())
+    }
+
+    fn dev_console(s: &mut Session) -> page::ExtTableConsole {
+        s.extensions_page().tables.into_iter().find(|t| t.view == "dev").and_then(|t| t.console).expect("on screen")
+    }
+
+    #[test]
+    fn a_console_view_on_screen_is_a_screen_of_its_own_that_follows_its_pane() {
+        let mut s = session(Hello::this_build());
+
+        s.select(PaneId(1));
+        s.receive(console_view(None, false));
+        assert!(s.shown.view_side("docker/dev").is_none(), "off screen: nothing subscribed");
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "dev".into() });
+        let console = dev_console(&mut s);
+        assert_eq!((console.pane, console.keyed), (None, false), "starting");
+        let side = console.side.expect("a screen waits for its pane");
+        assert!(matches!(side, Side::View(_)));
+        assert!(names(&s.resize(side, 12, 70)).is_empty(), "nothing to size yet");
+
+        assert_eq!(names(&s.receive(console_view(Some(30), false))), ["subscribe 30", "resize 30 12x70"]);
+        let sent = s.receive(console_view(Some(31), false));
+        assert_eq!(names(&sent), ["unsubscribe 30", "subscribe 31", "resize 31 12x70"], "ended and run again: a new pane");
+        assert_eq!(s.shown.on(side), Some(PaneId(31)));
+        assert!(s.ended().is_empty(), "held by its view, not the tree");
+
+        let ended = {
+            s.receive(console_view(Some(31), true));
+            dev_console(&mut s).ended
+        };
+        assert_eq!(ended.map(|e| e.code), Some(Some(3)), "the last screen stays with how it ended");
+        assert_eq!(s.shown.on(side), Some(PaneId(31)));
+    }
+
+    #[test]
+    fn a_console_view_takes_the_keys_when_pressed_and_types_into_its_pane() {
+        let mut s = session(Hello::this_build());
+        s.select(PaneId(1));
+        s.receive(console_view(Some(30), false));
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "dev".into() });
+        assert_eq!(s.shown.pane(), Some(PaneId(1)), "showing it does not take the keys");
+        s.call(Call::FocusView { pane: 30 });
+        assert!(dev_console(&mut s).keyed);
+        assert!(!s.console_typing(), "the console's own choices stay the console's");
+        let key = r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#;
+        let sent = s.call(serde_json::from_str(key).unwrap());
+        assert!(names(&sent).iter().any(|m| m.starts_with("input 30")), "{:?}", names(&sent));
+        let killed = s.command(Action::Close);
+        assert!(!killed.iter().any(|m| matches!(m, ClientMsg::Kill { .. })), "the extension owns its lifetime");
+    }
+
+    #[test]
+    fn a_console_view_hidden_or_gone_lets_its_pane_go_and_hands_back_the_keys() {
+        let mut s = session(Hello::this_build());
+        s.select(PaneId(1));
+        s.receive(console_view(Some(30), false));
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "dev".into() });
+        s.call(Call::FocusView { pane: 30 });
+        let sent = docks(&mut s, DockGesture::Hide { panel: panel("dev") });
+        assert_eq!(sent[..1], ["unsubscribe 30"]);
+        assert_eq!(s.shown.pane(), Some(PaneId(1)));
+
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "dev".into() });
+        assert_eq!(names(&s.receive(ServerMsg::ExtensionViews(Vec::new())))[..1], ["unsubscribe 30"]);
+    }
+
+    #[test]
+    fn a_console_view_on_the_stage_is_a_page_and_the_table_has_no_rows() {
+        let mut s = session(Hello::this_build());
+        s.receive(console_view(Some(30), false));
+        s.call(Call::ExtensionMode { panel: panel("dev"), page: true });
+        assert_eq!(s.stage, Stage::Extension);
+        let table = s.extensions_page().tables.remove(0);
+        assert!(table.page && table.rows.is_empty() && table.columns.is_empty() && table.selected.is_none());
+        assert_eq!(s.shown.pane(), Some(PaneId(30)), "a page has the keys the moment it is up");
+        assert!(table.console.as_ref().unwrap().keyed);
+        assert_eq!(table.actions.iter().map(|a| a.view_wide).collect::<Vec<_>>(), [true], "Restart rides along");
+        assert_eq!(s.shown.on(table.console.unwrap().side.unwrap()), Some(PaneId(30)));
+        assert!(s.call(Call::ExtensionKey { panel: panel("dev"), action: Action::Next }).is_empty());
+    }
+
+    #[test]
+    fn a_reconnect_drops_a_console_views_screen_until_the_new_daemon_names_its_pane() {
+        let mut s = session(Hello::this_build());
+        s.receive(console_view(Some(30), false));
+        s.call(Call::OpenExtensionView { extension: "docker".into(), view: "dev".into() });
+        let again = s.connected(Some(Hello::this_build()), None, vec![with_tree(tree())]);
+        assert!(!names(&again).contains(&"subscribe 30".to_string()), "the old daemon's pane: {:?}", names(&again));
+        assert_eq!(names(&s.receive(console_view(Some(5), false)))[..1], ["subscribe 5"]);
     }
 
     #[test]

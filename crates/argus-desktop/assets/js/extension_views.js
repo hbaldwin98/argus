@@ -11,6 +11,7 @@ import { $, el, icon } from './dom.js';
 import { draggable } from './drag.js';
 import { closeLayer, openMenu } from './menu.js';
 import { keycaps } from './keys.js';
+import { bindView, keyView, screen, viewScreen } from './screen.js';
 import { state } from './state.js';
 import { table } from './table.js';
 import { call } from './tauri.js';
@@ -99,7 +100,8 @@ function moveButton(view) {
     }, icon(dock ? DOCK_ICON[dock] : 'down'));
 }
 function header(view) {
-    const wide = view.actions.filter((a) => a.viewWide);
+    // An ended console's actions are in the strip beside how it ended.
+    const wide = view.actions.filter((a) => a.viewWide && !view.console?.ended);
     const head = el('div', { class: 'vpanel-head' }, el('div', { class: 'vpanel-title' }, el('span', { class: 'type-heading grow' }, view.title), moveButton(view), !view.page &&
         el('button', {
             class: 'icon',
@@ -130,7 +132,77 @@ function asBlock(view) {
         total: null,
     };
 }
+const consoles = new Map();
+function endedWords(end) {
+    return end.code === null ? 'Ended by a signal' : `Ended (exit ${end.code})`;
+}
+/** The view as a terminal on the screen Rust gave it, under a strip that
+ *  says it is starting or has ended and offers the view's own actions. */
+function consoleBody(view, info) {
+    let c = consoles.get(view.panel);
+    if (!c) {
+        const terminal = el('div', { class: 'terminal ext-term' });
+        const strip = el('div', { class: 'ext-strip', hidden: true });
+        const shell = el('div', { class: 'vpanel-body ext-console' }, strip, terminal);
+        c = { body: shell, strip, screen: viewScreen(terminal) };
+        consoles.set(view.panel, c);
+    }
+    bindView(c.screen, info.side);
+    c.screen.expect(info.pane);
+    c.strip.hidden = info.pane !== null && info.ended === null;
+    c.strip.replaceChildren(...(info.pane === null
+        ? [el('span', { class: 'fg-muted' }, 'Starting…')]
+        : info.ended
+            ? [
+                el('span', { class: 'fg-muted grow' }, endedWords(info.ended)),
+                ...view.actions.filter((a) => a.viewWide).map((a) => actionButton(view, a, 'btn sm')),
+            ]
+            : []));
+    return c.body;
+}
+/** Keeps the keys' text area out of what is about to be thrown away: it
+ *  sits in a console view's terminal while that has the keys, and the page
+ *  looks it up by id. `placeTerminal` puts it where it belongs after. */
+function rescueInput(from) {
+    const input = document.getElementById('input');
+    if (input && from.contains(input))
+        screen.terminal.append(input);
+}
+/** Puts a view's header and body in `parent`. A console's body stays where
+ *  it is when it is there already, and only the header is replaced. */
+function place(parent, head, content) {
+    if (content.parentElement === parent && parent.lastElementChild === content) {
+        parent.firstElementChild?.replaceWith(head);
+    }
+    else {
+        rescueInput(parent);
+        parent.replaceChildren(head, content);
+    }
+}
+/** The console view with the keys is the screen Rust's keys go through, and
+ *  a view newly given them takes the text area's focus. */
+let keyedPanel = null;
+function syncKeyedConsole() {
+    const keyed = state.extensions?.tables.find((t) => t.console?.keyed) ?? null;
+    const c = keyed ? (consoles.get(keyed.panel) ?? null) : null;
+    keyView(c?.screen ?? null);
+    const next = c && keyed ? keyed.panel : null;
+    const fresh = next !== null && next !== keyedPanel;
+    keyedPanel = next;
+    // A body moved from a dock to the stage left the focus on the page.
+    if (next !== null && (fresh || document.activeElement === document.body))
+        $('input').focus();
+}
+/** A console view that is no longer on screen draws nowhere. */
+function releaseConsoles() {
+    const on = new Set(state.extensions?.tables.filter((t) => t.console).map((t) => t.panel));
+    for (const [panel, c] of consoles)
+        if (!on.has(panel))
+            bindView(c.screen, null);
+}
 function body(view) {
+    if (view.console)
+        return consoleBody(view, view.console);
     const perRow = view.actions.filter((a) => !a.viewWide);
     return el('div', 
     // Focusable, so a click in it gives the view the keys the sheet lists
@@ -178,8 +250,10 @@ export function drawExtensionPanels() {
     for (const view of state.extensions?.tables ?? []) {
         if (view.page)
             continue;
-        extensionElement(view.panel).replaceChildren(header(view), body(view));
+        place(extensionElement(view.panel), header(view), body(view));
     }
+    releaseConsoles();
+    syncKeyedConsole();
     if (focused)
         refocus(focused);
 }
@@ -193,11 +267,23 @@ export function drawExtensionPage() {
     const view = state.extensions?.tables.find((t) => t.page) ?? null;
     const page = $('xstage');
     if (!view) {
+        rescueInput(page);
         page.replaceChildren();
         return;
     }
     const had = focusedExtension()?.panel === view.panel;
-    page.replaceChildren(el('div', { class: 'xpage' }, header(view), body(view)));
+    const wrap = page.firstElementChild;
+    const content = body(view);
+    if (wrap instanceof HTMLElement &&
+        wrap.classList.contains('xpage') &&
+        content.parentElement === wrap) {
+        place(wrap, header(view), content);
+    }
+    else {
+        rescueInput(page);
+        page.replaceChildren(el('div', { class: 'xpage' }, header(view), content));
+    }
+    syncKeyedConsole();
     // A page has the keys the moment it is up, and keeps them across redraws.
     if (had || document.activeElement === document.body)
         refocus(view.panel);

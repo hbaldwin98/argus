@@ -6,7 +6,7 @@
 import { keyedScreen } from './console.js';
 import { $ } from './dom.js';
 import { actionFor } from './keymap.js';
-import { type Screen, screen, screens } from './screen.js';
+import { type Screen, screen, screens, watchScreens } from './screen.js';
 import { call } from './tauri.js';
 
 const MODIFIERS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock']);
@@ -86,13 +86,15 @@ export function listen(): void {
   };
   const moving = (at: [number, number]): boolean => !last || last[0] !== at[0] || last[1] !== at[1];
 
-  for (const s of screens) {
+  const attach = (s: Screen): void => {
     s.terminal.addEventListener('mousedown', (e) => {
       e.preventDefault();
       input.focus();
       const pane = s.pane();
       if (!keyed(s) && pane !== null) {
+        const side = s.side();
         if (s === screen) call('select', { pane });
+        else if (typeof side === 'object' && side !== null) call('focus_view', { pane });
         else call('console', { gesture: { on: 'select', pane } });
       }
       for (const other of screens) if (other !== s) other.select(null);
@@ -132,7 +134,8 @@ export function listen(): void {
       },
       { passive: false },
     );
-  }
+  };
+  watchScreens(attach);
   window.addEventListener('mousemove', (e) => {
     if (held !== null) {
       const at = on.cellAt(e.clientX, e.clientY);
