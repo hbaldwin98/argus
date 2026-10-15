@@ -440,6 +440,7 @@ pub static BINDINGS: &[Binding] = &[
     bind(Rail, &[Chord::key("x"), Chord::key("X")], Close, "close the pane, or remove the checkout"),
     bind(Rail, &[Chord::key("Enter")], Choose, "open the checkout's + menu, or type into the pane"),
     bind(Rail, &[Chord::key("r"), Chord::key("R")], OpenReview, "review its checkout's changes"),
+    bind(Rail, &[Chord::key("z")], Fold, "fold its checkout's panes away, or unfold them"),
     bind(Place::Feature, &[Chord::key("j"), Chord::key("ArrowDown")], Next, "next feature"),
     bind(Place::Feature, &[Chord::key("k"), Chord::key("ArrowUp")], Previous, "previous feature"),
     bind(Place::Feature, &[Chord::key("Home")], First, "first feature"),
@@ -882,6 +883,7 @@ mod tests {
         assert_eq!(rail("x"), Some(Close));
         assert_eq!(rail("Enter"), Some(Choose));
         assert_eq!(rail("R"), Some(OpenReview));
+        assert_eq!(rail("z"), Some(Fold));
         assert_eq!(rail("j"), Some(Next));
         assert_eq!(rail("ArrowUp"), Some(Previous));
     }

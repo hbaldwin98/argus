@@ -881,6 +881,35 @@
 .co .name {
   font-family: var(--font-mono);
 }
+/* In the row's left padding, so folding does not shift its branch. */
+.cofold {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--sp-16);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--fg-faint);
+  cursor: pointer;
+}
+.cofold:hover {
+  color: var(--fg);
+}
+.cofolded {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-4);
+  font-family: var(--font-mono);
+}
+.git ~ .cofolded {
+  margin-left: 0;
+}
 .co .icon {
   width: 20px;
   height: 20px;

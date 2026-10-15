@@ -171,13 +171,33 @@ function checkoutRow(repository, co) {
     const picked = state.railPick?.checkout === co.id && state.railPick.pane === null;
     const open = railStart(co.id);
     const where = co.kind === 'main' ? 'main checkout' : 'worktree';
+    // Folded, the row speaks for the panes it hides: how many, and the
+    // loudest of them, so one needing a person is not put out of sight.
+    const colour = co.open ? null : statusColour(co.status);
+    const hiddenDot = colour ? el('span', { class: 'rdot' }) : null;
+    if (hiddenDot && colour)
+        hiddenDot.style.background = colour;
     return el('div', {
         class: `co${picked ? ' picked' : ''}${open ? ' hot' : ''}`,
         title: co.branch ? `${where} on ${co.branch}` : where,
         onclick: () => pickRail(co.id, null),
         oncontextmenu: contextMenu(`${repository} ${co.name}`, () => checkoutMenu(co)),
-    }, icon('branch'), el('span', { class: 'name ttl' }, co.name), co.shared !== null &&
-        el('span', { class: 'shared', title: `shared by ${co.shared} agents` }, `⚠${co.shared}`), co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git), el('button', {
+    }, co.count > 0 &&
+        el('button', {
+            class: 'cofold',
+            title: co.open ? 'Fold its panes away' : 'Show its panes',
+            'aria-label': `${co.open ? 'Fold' : 'Unfold'} ${repository} ${co.name}`,
+            'aria-expanded': String(co.open),
+            onclick: (e) => {
+                e.stopPropagation();
+                foldCheckout(co.id);
+            },
+        }, icon(co.open ? 'down' : 'right')), icon('branch'), el('span', { class: 'name ttl' }, co.name), co.shared !== null &&
+        el('span', { class: 'shared', title: `shared by ${co.shared} agents` }, `⚠${co.shared}`), co.git != null && el('span', { class: `git${co.clean ? ' clean' : ''}` }, co.git), !co.open &&
+        el('span', {
+            class: 'cofolded',
+            title: `${co.count} ${co.count === 1 ? 'pane' : 'panes'} folded away`,
+        }, hiddenDot, `${co.count}`), el('button', {
         class: `icon${open ? ' hot' : ''}`,
         title: 'Start a shell or an agent',
         'aria-label': `Start a shell or an agent on ${repository} ${co.name}`,
@@ -199,6 +219,9 @@ function checkoutMenu(co) {
         { label: 'Review changes', run: () => call('open_review', { checkout: co.id }) },
         { label: 'History', run: () => call('open_history', { checkout: co.id }) },
         { label: 'Show in Checkouts', run: () => call('go_to_checkout', { checkout: co.id }) },
+        ...(co.count > 0
+            ? [{ label: co.open ? 'Collapse' : 'Expand', run: () => foldCheckout(co.id) }]
+            : []),
         ...(co.kind === 'worktree'
             ? [
                 'sep',
@@ -257,6 +280,14 @@ function pickRail(checkout, pane) {
     $('input').blur();
     drawRail();
 }
+/** Folds a checkout's panes away or back. A pane picked under it gives
+ *  the pick to the checkout, since its row is about to go. */
+function foldCheckout(checkout) {
+    if (state.railPick?.checkout === checkout && state.railPick.pane !== null) {
+        state.railPick = { checkout, pane: null };
+    }
+    call('toggle_checkout', { checkout });
+}
 export function railPicked() {
     return state.railPick !== null;
 }
@@ -311,6 +342,9 @@ export function railAction(action) {
         }
         case 'openReview':
             call('open_review', { checkout: pick.checkout });
+            return true;
+        case 'fold':
+            foldCheckout(pick.checkout);
             return true;
         case 'close':
             // On a checkout, the Checkouts stage opens on it and asks first.

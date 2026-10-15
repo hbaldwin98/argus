@@ -223,6 +223,47 @@ fn the_rails_checkout_row_shows_ahead_and_staged_while_dirty() {
 }
 
 #[test]
+fn a_folded_checkout_counts_the_panes_it_hides() {
+    use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+
+    let mut app = command_center();
+    app.tree[0].repositories[0].checkouts[0].panes[1].status = PaneStatus::Waiting;
+    draw_at(&mut app, 120, 30);
+    let click = |app: &mut App, row: u16| {
+        app.on_mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: app.layout.rail.inner.x + 2,
+            row,
+            modifiers: KeyModifiers::NONE,
+        })
+    };
+    let repository = app.layout.rail.inner.y;
+    click(&mut app, repository);
+    draw_at(&mut app, 120, 30);
+    // The first click picks the checkout, the second folds it.
+    click(&mut app, repository + 1);
+    click(&mut app, repository + 1);
+    let th = app.theme;
+    let buf = draw_at(&mut app, 120, 30);
+    let text = rail_lines(&mut app, 120, 30);
+
+    let row = text
+        .iter()
+        .position(|line| line.starts_with("▌ ▸ master"))
+        .unwrap_or_else(|| panic!("{}", text.join("
+")));
+    let master = text[row].trim_end();
+    assert!(master.ends_with(" 2"), "{master:?}");
+    assert!(!text.join("
+").contains("shell"), "{}", text.join("
+"));
+    // The loudest of what it hides colours the count.
+    let count = (master.chars().count() - 1) as u16;
+    let fg = buf.cell((count, row as u16)).map(|c| c.fg);
+    assert_eq!(fg, Some(status_color(PaneStatus::Waiting, th)));
+}
+
+#[test]
 fn current_pane_is_highlighted_in_an_expanded_repository() {
     let mut app = command_center();
     app.focus = Focus::PaneContent;

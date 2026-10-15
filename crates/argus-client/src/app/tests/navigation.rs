@@ -193,6 +193,67 @@ fn h_on_an_open_repository_folds_it_before_climbing() {
 }
 
 #[test]
+fn z_folds_a_checkouts_panes_off_the_rail_and_back() {
+    let mut h = Harness::new();
+    h.keys("jl"); // `orion`, opened, onto `master`
+    assert_eq!(h.app.rail_cursor(), Some(RailRow::Checkout(0, 0)));
+
+    h.key(KeyCode::Char('z'));
+    assert!(!h.app.is_checkout_open(CheckoutId(10)));
+    assert_eq!(
+        h.app.rail_rows(),
+        [RailRow::Project, RailRow::Repository(0), RailRow::Checkout(0, 0)],
+        "the checkout keeps its row"
+    );
+    h.key(KeyCode::Char('z'));
+    assert!(h.app.is_checkout_open(CheckoutId(10)));
+    assert!(h.app.rail_rows().iter().any(|row| matches!(row, RailRow::Pane(_))));
+}
+
+#[test]
+fn z_on_a_pane_folds_its_checkout_and_climbs_to_it() {
+    let mut h = Harness::new();
+    h.keys("jljj"); // the second pane under `master`
+    assert!(matches!(h.app.rail_cursor(), Some(RailRow::Pane(_))));
+
+    h.key(KeyCode::Char('z'));
+    assert_eq!(h.app.rail_cursor(), Some(RailRow::Checkout(0, 0)));
+    assert!(!h.app.is_checkout_open(CheckoutId(10)));
+}
+
+#[test]
+fn h_climbs_out_of_a_checkout_without_folding_it() {
+    let mut h = Harness::new();
+    h.keys("jlh");
+    assert_eq!(h.app.rail_cursor(), Some(RailRow::Repository(0)));
+    assert!(h.app.is_checkout_open(CheckoutId(10)));
+}
+
+#[test]
+fn entering_a_folded_checkout_unfolds_it_onto_its_first_pane() {
+    let mut h = Harness::new();
+    h.keys("jlzl");
+    assert!(h.app.is_checkout_open(CheckoutId(10)));
+    assert!(matches!(h.app.rail_cursor(), Some(RailRow::Pane(p)) if p.pane == 0));
+}
+
+#[test]
+fn the_pane_being_typed_into_is_never_folded_out_of_sight() {
+    let mut h = Harness::new();
+    h.keys("jlz");
+    h.app.focus = Focus::PaneContent;
+    assert!(h.app.is_checkout_open(CheckoutId(10)), "it holds the pane the keys are in");
+    h.app.focus = Focus::Checkouts;
+    assert!(!h.app.is_checkout_open(CheckoutId(10)), "folded again once the keys leave");
+
+    // Going to one of its panes from elsewhere unfolds it for good.
+    let location = PaneLocation { project: 0, repository: 0, checkout: 0, pane: 1 };
+    h.app.select_pane_location(location);
+    h.app.focus = Focus::Checkouts;
+    assert!(h.app.is_checkout_open(CheckoutId(10)));
+}
+
+#[test]
 fn switching_projects_opens_the_repository_the_rail_lists_first() {
     let mut h = Harness::new();
     let mut t = tree();

@@ -279,13 +279,28 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                 let branch = git.and_then(|g| g.branch.as_deref()).unwrap_or(&item.name);
                 let state = git.map(GitStatus::summary).unwrap_or_default();
                 let dirty = git.is_some_and(|g| g.dirty);
-                let branch_width =
-                    width.saturating_sub(5 + state.chars().count() + RIGHT_PAD);
+                // Folded, the row speaks for the panes it hides: how many,
+                // and the loudest of them, so one needing a person is not
+                // put out of sight with the rest.
+                let panes = item.listed_panes().count();
+                let folded = panes > 0 && !app.is_checkout_open(item.id);
+                let loudest = PaneStatus::loudest(item.statuses()).filter(|_| folded);
+                let hidden = if folded {
+                    format!(" {} {panes}", loudest.map_or("·", |status| status_glyph(app, status, "●")))
+                } else {
+                    String::new()
+                };
+                let branch_width = width.saturating_sub(
+                    5 + state.chars().count() + hidden.chars().count() + RIGHT_PAD,
+                );
+                let lead = match (on_cursor, folded) {
+                    (true, true) => "▌ ▸ ",
+                    (false, true) => "  ▸ ",
+                    (true, false) => "▌   ",
+                    (false, false) => "    ",
+                };
                 Line::from(vec![
-                    Span::styled(
-                        if on_cursor { "▌   " } else { "    " },
-                        Style::default().fg(th.accent),
-                    ),
+                    Span::styled(lead, Style::default().fg(th.accent)),
                     Span::styled(
                         ellipsize_text(branch, branch_width),
                         Style::default().fg(th.syntax.function),
@@ -293,6 +308,10 @@ fn render_repositories(f: &mut Frame, app: &mut App, area: Rect, th: Theme) {
                     Span::styled(
                         format!(" {state}"),
                         Style::default().fg(if dirty { th.warn } else { th.ok }),
+                    ),
+                    Span::styled(
+                        hidden,
+                        Style::default().fg(loudest.map_or(th.dim, |s| status_color(s, th))),
                     ),
                 ])
             }

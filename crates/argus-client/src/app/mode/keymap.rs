@@ -370,6 +370,12 @@ const RAIL: Keymap = Keymap {
                 )
                 .help_only(),
                 Binding::new(
+                    "z",
+                    "fold a repository or a checkout, hiding what runs in it, or unfold it",
+                    &[(&[Char('z')], App::toggle_rail_fold)],
+                )
+                .hints(&[Hint::new("z fold", 0).when(|app| on_checkouts(app) || on_tree_pane(app))]),
+                Binding::new(
                     "N",
                     "jump to whatever needs attention",
                     &[(&[Char('N')], App::jump_to_next_attention)],
@@ -464,6 +470,7 @@ const RAIL: Keymap = Keymap {
                 )
                 .hints(&[Hint::new("o switch", 1).when(on_projects)]),
                 Binding::note("click repo", "open it, or fold it when it is open"),
+                Binding::note("click checkout", "pick it; again, fold or unfold it"),
                 Binding::note("click pane", "show it, keys stay here — x closes it"),
                 Binding::note("enter  click", "type into the pane shown"),
                 Binding::note("wheel", "move along the rail"),

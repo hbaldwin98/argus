@@ -19,4 +19,13 @@ git: string | null, clean: boolean,
 /**
  * `CheckoutInfo::shared_by`: how many agents share it, when several do.
  */
-shared: number | null, panes: Array<Pane>, };
+shared: number | null, 
+/**
+ * False once the person folded it: `panes` is then empty, and `count`
+ * and `status` speak for the ones hidden.
+ */
+open: boolean, count: number, 
+/**
+ * The loudest status word of its panes, folded or not.
+ */
+status: string | null, panes: Array<Pane>, };

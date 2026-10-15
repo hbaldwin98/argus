@@ -350,6 +350,15 @@ impl App {
             .and_then(|project| project.repositories.get(location.repository))
             .map(|repository| repository.id);
         self.opened_repositories.extend(repository);
+        let checkout = self
+            .tree
+            .get(location.project)
+            .and_then(|project| project.repositories.get(location.repository))
+            .and_then(|repository| repository.checkouts.get(location.checkout))
+            .map(|checkout| checkout.id);
+        if let Some(checkout) = checkout {
+            self.folded_checkouts.remove(&checkout);
+        }
         let Some(row) = self.checkout_row_of(location.checkout) else {
             return false;
         };

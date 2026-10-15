@@ -61,6 +61,8 @@ pub enum Call {
     /// A gesture in the add-a-project dialog.
     AddProject { gesture: AddProjectGesture },
     ToggleRepository { repository: u64 },
+    /// Folds a checkout's panes off the rail, or unfolds them.
+    ToggleCheckout { checkout: u64 },
     ChooseRepository { repository: u64 },
     /// `open` true shows the Feature stage, false goes back to the Workspace.
     ShowFeatures { open: bool },
@@ -750,6 +752,12 @@ pub struct Checkout {
     pub clean: bool,
     /// `CheckoutInfo::shared_by`: how many agents share it, when several do.
     pub shared: Option<usize>,
+    /// False once the person folded it: `panes` is then empty, and `count`
+    /// and `status` speak for the ones hidden.
+    pub open: bool,
+    pub count: usize,
+    /// The loudest status word of its panes, folded or not.
+    pub status: Option<&'static str>,
     pub panes: Vec<Pane>,
 }
 
@@ -2289,6 +2297,9 @@ mod tests {
                         git: Some("clean".into()),
                         clean: true,
                         shared: None,
+                        open: true,
+                        count: 1,
+                        status: Some("working"),
                         panes: vec![Pane {
                             id: 4,
                             agent: true,

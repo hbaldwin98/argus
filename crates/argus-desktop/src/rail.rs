@@ -3,13 +3,14 @@
 //! The same rail as the terminal client's: the project heading, its
 //! repositories with the active ones first and the quiet ones after a rule
 //! (`ProjectInfo::repositories_by_activity`), each open repository's
-//! checkouts with their git state (`GitStatus::summary`), and their panes.
+//! checkouts with their git state (`GitStatus::summary`), and the panes of
+//! those not folded.
 //! Features are not in it; the Feature stage opens on their index.
 
 use std::collections::HashSet;
 
 use argus_protocol::{ago, 
-    CheckoutInfo, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId, ProjectInfo, RepositoryId,
+    CheckoutId, CheckoutInfo, PaneId, PaneInfo, PaneKind, PaneStatus, ProjectId, ProjectInfo, RepositoryId,
 };
 
 use crate::page::{self, Rail};
@@ -21,6 +22,8 @@ pub struct Choices<'a> {
     /// Repositories opened or closed against their default: an active one
     /// is open until closed, a quiet one closed until opened.
     pub toggled: &'a HashSet<RepositoryId>,
+    /// Checkouts folded, their panes off the rail.
+    pub folded: &'a HashSet<CheckoutId>,
     /// Seconds since the Unix epoch, for how long ago a quiet one was used.
     pub now: u64,
 }
@@ -88,7 +91,7 @@ fn build_project(project: &ProjectInfo, choices: &Choices) -> page::Project {
                     repo.checkouts
                         .iter()
                         .filter(|c| c.primary || c.listed_panes().next().is_some())
-                        .map(|c| checkout(c, choices.shown))
+                        .map(|c| checkout(c, choices))
                         .collect()
                 } else {
                     Vec::new()
@@ -107,7 +110,11 @@ fn build_project(project: &ProjectInfo, choices: &Choices) -> page::Project {
 /// A checkout row: one with panes running in it, or the repository's
 /// primary one even when empty, so there is always somewhere to start a
 /// shell. The terminal client's rail lists the same ones.
-fn checkout(checkout: &CheckoutInfo, shown: Option<PaneId>) -> page::Checkout {
+fn checkout(checkout: &CheckoutInfo, choices: &Choices) -> page::Checkout {
+    let shown = choices.shown;
+    // As with a repository, the pane on screen is never folded away.
+    let holds_shown = checkout.listed_panes().any(|p| Some(p.id) == shown);
+    let open = holds_shown || !choices.folded.contains(&checkout.id);
     page::Checkout {
         id: checkout.id.0,
         name: checkout.name.clone(),
@@ -116,8 +123,12 @@ fn checkout(checkout: &CheckoutInfo, shown: Option<PaneId>) -> page::Checkout {
         git: checkout.git.as_ref().map(|g| g.summary()),
         clean: checkout.git.as_ref().is_some_and(|g| !g.dirty),
         shared: checkout.shared_by(),
+        open,
+        count: checkout.listed_panes().count(),
+        status: PaneStatus::loudest(checkout.statuses()).map(PaneStatus::word),
         panes: checkout
             .listed_panes()
+            .filter(|_| open)
             .map(|pane| page::Pane {
                 id: pane.id.0,
                 agent: pane.kind == PaneKind::Agent,
@@ -182,7 +193,8 @@ mod tests {
     use argus_protocol::GitStatus;
 
     fn choices(toggled: &HashSet<RepositoryId>) -> Choices<'_> {
-        Choices { project: Some(ProjectId(1)), shown: None, toggled, now: 10_000 }
+        static NONE_FOLDED: std::sync::LazyLock<HashSet<CheckoutId>> = std::sync::LazyLock::new(HashSet::new);
+        Choices { project: Some(ProjectId(1)), shown: None, toggled, folded: &NONE_FOLDED, now: 10_000 }
     }
 
     fn busy() -> Vec<ProjectInfo> {
@@ -238,6 +250,27 @@ mod tests {
     }
 
     #[test]
+    fn a_folded_checkout_keeps_its_row_and_counts_what_it_hides() {
+        let toggled = HashSet::new();
+        let folded = HashSet::from([CheckoutId(112)]);
+        let rail = build(&busy(), &Choices { folded: &folded, ..choices(&toggled) }, true);
+        let argus = &rail.project.unwrap().repositories[0];
+        let tracker = &argus.checkouts[1];
+        assert!(!tracker.open && tracker.panes.is_empty());
+        assert_eq!((tracker.count, tracker.status), (1, Some("needs-review")));
+        assert!(argus.checkouts[0].open && argus.checkouts[0].panes.len() == 2, "the others stay as they were");
+    }
+
+    #[test]
+    fn the_checkout_holding_the_shown_pane_stays_unfolded() {
+        let toggled = HashSet::new();
+        let folded = HashSet::from([CheckoutId(112)]);
+        let rail = build(&busy(), &Choices { folded: &folded, shown: Some(PaneId(4)), ..choices(&toggled) }, true);
+        let tracker = &rail.project.unwrap().repositories[0].checkouts[1];
+        assert!(tracker.open && tracker.panes[0].on);
+    }
+
+    #[test]
     fn the_repository_holding_the_shown_pane_stays_open() {
         let toggled = HashSet::from([RepositoryId(11)]);
         let mut choices = choices(&toggled);
@@ -279,10 +312,10 @@ mod tests {
             upstream: None,
             last_commit: None,
         });
-        let row = super::checkout(&co, None);
+        let row = super::checkout(&co, &choices(&HashSet::new()));
         assert_eq!((row.branch.as_str(), row.git.as_deref(), row.clean), ("detached", Some("↓1 !1"), false));
         co.git = None;
-        let row = super::checkout(&co, None);
+        let row = super::checkout(&co, &choices(&HashSet::new()));
         assert_eq!((row.branch.as_str(), row.git, row.clean), ("", None, false));
     }
 
@@ -292,15 +325,15 @@ mod tests {
             pane(1, PaneKind::Agent, "Trim context", PaneStatus::Working),
             pane(2, PaneKind::Shell, "zsh", PaneStatus::Idle),
         ]);
-        assert_eq!(super::checkout(&co, None).shared, None, "one agent and a shell share nothing");
+        assert_eq!(super::checkout(&co, &choices(&HashSet::new())).shared, None, "one agent and a shell share nothing");
         co.panes.push(pane(3, PaneKind::Agent, "Tracker", PaneStatus::Idle));
-        assert_eq!(super::checkout(&co, None).shared, Some(2));
+        assert_eq!(super::checkout(&co, &choices(&HashSet::new())).shared, Some(2));
     }
 
     #[test]
     fn a_checkout_says_whether_it_is_the_main_one_or_a_worktree() {
-        assert_eq!(super::checkout(&checkout(1, "argus", true, vec![]), None).kind, "main");
-        assert_eq!(super::checkout(&checkout(2, "tracker-links", false, vec![]), None).kind, "worktree");
+        assert_eq!(super::checkout(&checkout(1, "argus", true, vec![]), &choices(&HashSet::new())).kind, "main");
+        assert_eq!(super::checkout(&checkout(2, "tracker-links", false, vec![]), &choices(&HashSet::new())).kind, "worktree");
     }
 
     #[test]

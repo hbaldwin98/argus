@@ -105,6 +105,8 @@ pub struct Session {
     /// stage reads.
     repository: Option<RepositoryId>,
     toggled: HashSet<RepositoryId>,
+    /// Checkouts the person folded; open is the default.
+    folded: HashSet<CheckoutId>,
     stage: Stage,
     features: FeatureStage,
     /// The note a new feature is being written as, while open.
@@ -183,6 +185,7 @@ impl Session {
             project: None,
             repository: None,
             toggled: HashSet::new(),
+            folded: HashSet::new(),
             stage: Stage::Workspace,
             features: {
                 let mut stage = FeatureStage::new(settings.layouts);
@@ -528,6 +531,7 @@ impl Session {
             Call::OpenAddProject => self.open_add_project(),
             Call::AddProject { gesture } => self.add_project(gesture),
             Call::ToggleRepository { repository } => self.toggle_repository(RepositoryId(repository)),
+            Call::ToggleCheckout { checkout } => self.toggle_checkout(CheckoutId(checkout)),
             Call::ChooseRepository { repository } => self.choose_repository(RepositoryId(repository)),
             Call::ShowFeatures { open } => self.show_features(open),
             Call::ShowCheckouts { open } => self.show_checkouts(open),
@@ -1163,6 +1167,14 @@ impl Session {
     fn toggle_repository(&mut self, repository: RepositoryId) -> Vec<ClientMsg> {
         if !self.toggled.remove(&repository) {
             self.toggled.insert(repository);
+        }
+        self.rail_changed = true;
+        self.finish()
+    }
+
+    fn toggle_checkout(&mut self, checkout: CheckoutId) -> Vec<ClientMsg> {
+        if !self.folded.remove(&checkout) {
+            self.folded.insert(checkout);
         }
         self.rail_changed = true;
         self.finish()
@@ -2488,6 +2500,7 @@ impl Session {
             project: self.project,
             shown: self.shown.on(Side::Workspace),
             toggled: &self.toggled,
+            folded: &self.folded,
             now,
         };
         let mut rail = rail::build(&self.tree, &choices, self.loaded);
@@ -3634,7 +3647,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 105] = [
+    const CALLS: [&str; 106] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -3656,6 +3669,7 @@ mod tests {
         r#"{"call":"add_project","gesture":{"on":"fields","name":"work","skip":"vendor","folder":""}}"#,
         r#"{"call":"add_project","gesture":{"on":"close"}}"#,
         r#"{"call":"toggle_repository","repository":10}"#,
+        r#"{"call":"toggle_checkout","checkout":100}"#,
         r#"{"call":"choose_repository","repository":10}"#,
         r#"{"call":"show_features","open":true}"#,
         r#"{"call":"show_checkouts","open":true}"#,

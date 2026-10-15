@@ -1,5 +1,5 @@
-//! What the rail lists, in what order, which repositories are open, and
-//! what choosing a row does.
+//! What the rail lists, in what order, which repositories are open and
+//! which checkouts folded, and what choosing a row does.
 //!
 //! The consoles come last, after every repository: they belong to no
 //! project, so they are the same rows whichever project the rail is on.
@@ -65,6 +65,15 @@ impl App {
         holds_the_pane || self.opened_repositories.contains(&id)
     }
 
+    /// Whether the rail lists a checkout's panes: unless the operator
+    /// folded it, and always while it holds the pane the keys are in.
+    pub fn is_checkout_open(&self, id: CheckoutId) -> bool {
+        let in_pane = self.view == View::Workspace
+            && matches!(self.focus, Focus::Panes | Focus::PaneContent);
+        let holds_the_pane = in_pane && self.current_checkout().is_some_and(|c| c.id == id);
+        holds_the_pane || !self.folded_checkouts.contains(&id)
+    }
+
     /// Every row the rail draws, in the order the cursor walks them.
     pub fn rail_rows(&self) -> Vec<RailRow> {
         let mut rows = self.tree_rail_rows();
@@ -89,6 +98,9 @@ impl App {
                     continue;
                 }
                 rows.push(RailRow::Checkout(repository, checkout));
+                if !self.is_checkout_open(item.id) {
+                    continue;
+                }
                 rows.extend((0..panes).map(|pane| {
                     RailRow::Pane(PaneLocation {
                         project: self.sel_project,
@@ -139,8 +151,9 @@ impl App {
     }
 
     /// What choosing a row does, by click: the project heading switches
-    /// projects, a repository opens or, open already, folds, and a pane
-    /// takes the stage. The keys
+    /// projects, a repository opens or, open already, folds, a checkout
+    /// already under the cursor folds or unfolds — the first click picks
+    /// it, for `s` and `a` to act on — and a pane takes the stage. The keys
     /// stay on the rail, which is what lets a bare `x` close the pane just
     /// clicked; the terminal itself takes typing.
     pub(crate) fn choose_rail_row(&mut self, row: RailRow) {
@@ -152,7 +165,15 @@ impl App {
                     self.open_selected_repository();
                 }
             }
-            RailRow::Checkout(..) => self.put_rail_cursor(row),
+            RailRow::Checkout(..) => {
+                if self.rail_cursor() == Some(row) {
+                    if !self.fold_selected_checkout() {
+                        self.unfold_selected_checkout();
+                    }
+                } else {
+                    self.put_rail_cursor(row);
+                }
+            }
             RailRow::Pane(location) => {
                 self.select_pane_location(location);
                 self.open_view(View::Workspace);
@@ -167,8 +188,8 @@ impl App {
     }
 
     /// `l`/Enter: into the row the cursor is on. A repository opens and the
-    /// cursor goes to what it holds; a checkout goes to its first pane; a
-    /// pane takes the keys.
+    /// cursor goes to what it holds; a checkout unfolds and goes to its
+    /// first pane; a pane takes the keys.
     pub(super) fn enter_rail_row(&mut self) {
         let Some(cursor) = self.rail_cursor() else {
             // A branch with no directory, picked in the Checkouts stage,
@@ -194,6 +215,7 @@ impl App {
                 }
             }
             RailRow::Checkout(repository, checkout) => {
+                self.unfold_selected_checkout();
                 let pane = PaneLocation {
                     project: self.sel_project,
                     repository,
@@ -276,6 +298,47 @@ impl App {
         self.current_repository()
             .map(|r| r.id)
             .is_some_and(|id| self.opened_repositories.remove(&id))
+    }
+
+    /// `z`: folds the row under the cursor, or unfolds it. On a pane that
+    /// is its checkout, and the cursor goes up to it, since the pane's row
+    /// is about to leave the rail. A checkout folds apart from `h`, which
+    /// would otherwise put one away on every climb out of it.
+    pub(super) fn toggle_rail_fold(&mut self) {
+        match self.rail_cursor() {
+            Some(RailRow::Repository(_)) => {
+                if !self.fold_selected_repository() {
+                    self.open_selected_repository();
+                }
+            }
+            Some(RailRow::Checkout(..)) => {
+                if !self.fold_selected_checkout() {
+                    self.unfold_selected_checkout();
+                }
+            }
+            Some(RailRow::Pane(location)) => {
+                self.put_rail_cursor(RailRow::Checkout(location.repository, location.checkout));
+                self.fold_selected_checkout();
+            }
+            _ => {}
+        }
+    }
+
+    /// Folds the checkout under the cursor if it shows panes, saying
+    /// whether it did: one with none has nothing to put away.
+    fn fold_selected_checkout(&mut self) -> bool {
+        let Some(checkout) = self.current_checkout() else {
+            return false;
+        };
+        let id = checkout.id;
+        let showing = checkout.listed_panes().next().is_some() && self.is_checkout_open(id);
+        showing && self.folded_checkouts.insert(id)
+    }
+
+    fn unfold_selected_checkout(&mut self) {
+        if let Some(id) = self.current_checkout().map(|c| c.id) {
+            self.folded_checkouts.remove(&id);
+        }
     }
 
     /// After switching projects: the selection starts on the first

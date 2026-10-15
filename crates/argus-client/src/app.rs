@@ -264,6 +264,10 @@ pub struct App {
     /// the rail stays useful as an index until asked for more. Read through
     /// [`App::is_repository_open`].
     opened_repositories: std::collections::HashSet<RepositoryId>,
+    /// The checkouts the operator folded, their panes off the rail. Open is
+    /// the default, the other way from repositories: a checkout is listed
+    /// because something runs in it. Read through [`App::is_checkout_open`].
+    folded_checkouts: std::collections::HashSet<CheckoutId>,
     pub picker: Option<Picker>,
     /// The directory browser, up in place of a prompt when a project or a
     /// repository is being added.
@@ -468,6 +472,7 @@ impl App {
             checkout_filter: String::new(),
             checkout_filtering: false,
             opened_repositories: std::collections::HashSet::new(),
+            folded_checkouts: std::collections::HashSet::new(),
             picker: None,
             dir_picker: None,
             overlay: None,

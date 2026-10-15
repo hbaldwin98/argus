@@ -604,8 +604,9 @@ location. Typing filters the folders in the current directory.
 | Key | Action |
 | --- | --- |
 | `j` / `k`, arrows | Move along the rail — the project, its repositories, the open repositories' checkouts and panes, then the consoles at its foot — in the order it is drawn |
-| `l`, Right, Enter | Open the repository and move into it, go to the checkout's first pane, or type into the pane or console |
+| `l`, Right, Enter | Open the repository and move into it, go to the checkout's first pane (unfolding it), or type into the pane or console |
 | `h`, Left, Escape | Up to the row this one hangs under; on an open repository, fold it first |
+| `z` | Fold the repository or checkout under the cursor — on a pane, its checkout — or unfold it. A folded checkout keeps its row, with how many panes it hides coloured by the loudest of them; a second click on a checkout does the same, and in the desktop window so do the chevron at its left and its context menu |
 | `s` | Start a shell — on a branch row, in a new worktree for that branch; on a console, another console |
 | `c` | Start a console: a shell in your home directory that belongs to no checkout, listed under *consoles* at the foot of the rail once the daemon runs it, and typed into straight away. A daemon from before consoles draws no such section, and `c` says to restart it |
 | `a` | Choose and start an agent — on a branch row, in a new worktree for that branch |

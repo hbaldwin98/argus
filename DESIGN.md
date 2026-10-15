@@ -356,7 +356,7 @@ result of a request; `ui` is a pure function of it.
 | `app` | the model: the tree, the selection, and which modal is up |
 | `app/rows`, `app/layout`, `app/modal` | naming a row independently of its index, where the last frame put things, and the layers that float over it |
 | `app/nav`, `app/input`, `app/mouse`, `app/scroll` | what the operator's gestures mean |
-| `app/rail` | what the rail lists, in what order, which repositories are open, and what choosing a row does |
+| `app/rail` | what the rail lists, in what order, which repositories are open and which checkouts folded, and what choosing a row does |
 | `app/mode` | which mode has the keys — the one answer key dispatch, the status bar and `?` all match on |
 | `app/mode/keymap` | what each mode's keys are, said once: the keys, what `?` and the bar call them, and what they run |
 | `app/actions`, `app/pickers` | what is asked of the daemon, and the modal layers that ask it |
@@ -512,7 +512,16 @@ open repository's checkouts and panes; `l`/Enter opens a repository and moves in
 checkout's first pane, or types into a pane; `h`/Escape climbs to the row above, folding an open
 repository first when the cursor is on it. Stepping past a repository does not open it — walking
 the list would otherwise unfold every row it crossed — and opening one leaves the others open; a
-click on an open repository folds it. The rule between active and quiet is drawn but is not one of
+click on an open repository folds it. A checkout folds too, by `z` (on a pane, its checkout's, the
+cursor going up to it) or a second click on it, and `z` on a repository is its fold as well: the
+checkout keeps its row, saying how many panes it hides, coloured by the loudest, so one waiting on
+a person is not put out of sight with the rest. Checkouts start unfolded, the other way from
+repositories, since one is listed only because something runs in it, and `l`/Enter on a folded one
+unfolds it. `h` does not fold a checkout, or every climb out of one would put it away. The checkout
+holding the pane being typed into is never folded, and going to a pane from elsewhere unfolds its
+checkout. Which are folded is this client's own state; the desktop window keeps its own the same
+way, with a chevron in the row's left margin, Collapse in its menu, and `z` on a picked row, its
+shown pane keeping its checkout unfolded as it keeps its repository open. The rule between active and quiet is drawn but is not one of
 those rows: the cursor steps over it and a click on it lands nowhere. On the project heading `n` adds a project and `D` removes this one.
 The rail's cursor is not stored: it is the selection read at the depth focus names, so a new tree
 cannot leave the two disagreeing. Checkouts with nothing running, and branches no checkout is on,
