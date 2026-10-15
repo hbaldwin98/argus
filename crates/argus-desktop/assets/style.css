@@ -1465,6 +1465,32 @@ body {
   height: 100%;
   margin: 0;
 }
+/* Every webview Tauri uses (WebView2, WebKitGTK, WKWebView) honours the
+ * -webkit- pseudo-elements, so one rule themes them all. Chromium drops
+ * these for any element given `scrollbar-color` or `scrollbar-width`, so
+ * neither is set anywhere. The transparent border insets the thumb to a
+ * slim pill without narrowing the area a pointer can grab. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: var(--r-pill);
+  min-height: var(--sp-24);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--fg-faint);
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--accent);
+}
 /* The background opacity setting. The window is always transparent, and
  * `--see` (0 to 1, from `settings.ts`) is the alpha of its large fills and
  * of nothing else, so text, borders and controls stay solid while the
