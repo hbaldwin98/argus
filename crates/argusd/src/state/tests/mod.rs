@@ -11,8 +11,10 @@ mod pastes;
 mod reconcile;
 mod reload;
 mod restore;
+mod scripted;
 
 use super::*;
+use scripted::ScriptedDaemon;
 use crate::config::ProjectConfig;
 use argus_protocol::{parse_pane_path, Endpoint, ReviewAnchor, ReviewBase};
 use super::agents::clean_title;
@@ -79,12 +81,13 @@ pub(super) fn pane_size(d: &Daemon, pane: PaneId) -> (u16, u16) {
     (rows, cols)
 }
 
-/// A daemon whose one agent template has a restart policy.
+/// A daemon whose one agent template has a restart policy, over scripted
+/// panes.
 pub(super) fn daemon_with_a_restarting_agent(
     dir: &std::path::Path,
     restart: crate::config::Restart,
-) -> Arc<Daemon> {
-    Daemon::new(ConfigFile {
+) -> ScriptedDaemon {
+    ScriptedDaemon::new(ConfigFile {
         workspaces: Vec::new(),
         projects: vec![ProjectConfig {
             name: "proj".to_string(),
@@ -284,11 +287,12 @@ pub(super) fn with_temp_config<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
 
 // --- managed hook lifecycle ---------------------------------------------
 
-/// A daemon whose single checkout is `dir`, with a "claude" template
-/// that is really just `echo` — enough to exercise the hook-install path
-/// (which keys off the template *name*) without launching a real agent.
-pub(super) fn daemon_with_fake_claude(dir: &std::path::Path) -> Arc<Daemon> {
-    Daemon::new(fake_claude_config(dir))
+/// A daemon whose single checkout is `dir`, with a "claude" template whose
+/// panes are scripted — enough to exercise the hook-install path (which
+/// keys off the template *name*) without launching a real agent, and a
+/// pane runs until the test says it exits.
+pub(super) fn daemon_with_fake_claude(dir: &std::path::Path) -> ScriptedDaemon {
+    ScriptedDaemon::new(fake_claude_config(dir))
 }
 
 /// A daemon whose claude template stays running until closed. A pane that
@@ -326,8 +330,8 @@ pub(super) fn fake_claude_config(dir: &std::path::Path) -> ConfigFile {
 }
 
 /// The same fake agent, in a project that allows one per checkout.
-pub(super) fn daemon_with_an_exclusive_project(dir: &std::path::Path) -> Arc<Daemon> {
-    Daemon::new(ConfigFile {
+pub(super) fn daemon_with_an_exclusive_project(dir: &std::path::Path) -> ScriptedDaemon {
+    ScriptedDaemon::new(ConfigFile {
         workspaces: Vec::new(),
         projects: vec![ProjectConfig {
             name: "proj".to_string(),

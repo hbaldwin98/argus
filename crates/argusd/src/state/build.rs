@@ -24,6 +24,22 @@ impl Daemon {
     }
 
     pub fn with_store(config: ConfigFile, store: crate::store::Store) -> Arc<Self> {
+        Self::with_ports(
+            config,
+            store,
+            Arc::new(processes::Pty),
+            Arc::new(clock::SystemClock),
+        )
+    }
+
+    /// A daemon over the processes and clock it is handed: the pty and the
+    /// system's for a real one, scripted ones for a test.
+    pub(super) fn with_ports(
+        config: ConfigFile,
+        store: crate::store::Store,
+        processes: Arc<dyn processes::Processes>,
+        clock: Arc<dyn clock::Clock>,
+    ) -> Arc<Self> {
         let mut ids = IdGen::default();
 
         // What the user declared, plus what they did to the panel while it
@@ -144,6 +160,8 @@ impl Daemon {
             next_inbox: std::sync::atomic::AtomicU64::new(0),
             plugin_root: std::sync::OnceLock::new(),
             paste_root: std::sync::OnceLock::new(),
+            processes,
+            clock,
         });
         // Checkout rows are named after the branch occupying them, and that
         // name now comes from the cache. Reading HEAD is enough for a name;

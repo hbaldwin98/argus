@@ -31,9 +31,12 @@ impl Daemon {
         };
 
         let daemon = self.clone();
-        let runtime = PaneRuntime::spawn(id, &path, pty::Spawn::DefaultShell, move |code| {
-            daemon.mark_pane_exited(id, code);
-        })?;
+        let runtime = self.processes.start(
+            id,
+            &path,
+            pty::Spawn::DefaultShell,
+            Box::new(move |code| daemon.mark_pane_exited(id, code)),
+        )?;
 
         {
             let mut inner = self.inner.lock().unwrap();
@@ -95,7 +98,7 @@ impl Daemon {
             PaneId(inner.ids.alloc())
         };
         let daemon = self.clone();
-        let runtime = PaneRuntime::spawn(
+        let runtime = self.processes.start(
             id,
             &path,
             pty::Spawn::Program {
@@ -104,7 +107,7 @@ impl Daemon {
                 env: Vec::new(),
                 resource_policy: pty::ResourcePolicy::Unrestricted,
             },
-            move |code| daemon.mark_pane_exited(id, code),
+            Box::new(move |code| daemon.mark_pane_exited(id, code)),
         )?;
 
         {
@@ -237,9 +240,12 @@ impl Daemon {
         };
 
         let daemon = self.clone();
-        let runtime = match PaneRuntime::spawn(id, &path, spec, move |code| {
-            daemon.mark_pane_exited(id, code);
-        }) {
+        let runtime = match self.processes.start(
+            id,
+            &path,
+            spec,
+            Box::new(move |code| daemon.mark_pane_exited(id, code)),
+        ) {
             Ok(runtime) => runtime,
             Err(error) => {
                 self.starting_agents.lock().unwrap().remove(&id);
@@ -270,7 +276,7 @@ impl Daemon {
                 pane.resumed = resuming.then(|| Resumed {
                     checkout,
                     template: template.name.clone(),
-                    at: std::time::Instant::now(),
+                    at: self.clock.now(),
                 });
                 c.panes.push(pane);
             }
@@ -321,7 +327,9 @@ impl Daemon {
                     (
                         p.resumed
                             .take()
-                            .filter(|r| nothing_to_resume(code, r.at.elapsed())),
+                            .filter(|r| {
+                                nothing_to_resume(code, self.clock.now().saturating_duration_since(r.at))
+                            }),
                         restart,
                     )
                 }
@@ -391,7 +399,7 @@ impl Daemon {
 
         let mut attempts = self.restart_attempts.lock().unwrap();
         let key = (checkout, template.to_string());
-        let now = std::time::Instant::now();
+        let now = self.clock.now();
         let attempt = attempts.entry(key).or_insert((0, now));
         if now.duration_since(attempt.1) > WINDOW {
             *attempt = (0, now);
@@ -532,7 +540,7 @@ impl Daemon {
 
     /// A handle to a live pane's keyboard, held without the tree lock so it
     /// can outlast the lookup that found it.
-    pub(super) fn pane_input(&self, pane: PaneId) -> Option<pty::PaneInput> {
+    pub(super) fn pane_input(&self, pane: PaneId) -> Option<Arc<dyn processes::Keyboard>> {
         let inner = self.inner.lock().unwrap();
         let pane = find_pane_ref(&inner.projects, pane)?;
         (!matches!(pane.status, PaneStatus::Exited { .. })).then(|| pane.runtime.input())

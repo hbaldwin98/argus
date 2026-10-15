@@ -111,11 +111,16 @@ impl<'a> PaneOrPending<'a> {
 
     /// Edits the child running as `session`, listing it if it is new. Always
     /// a change: hearing from a child at all is news about its row.
-    fn edit_child(&mut self, session: &str, edit: impl FnOnce(&mut ChildAgent)) -> bool {
+    fn edit_child(
+        &mut self,
+        now: std::time::Instant,
+        session: &str,
+        edit: impl FnOnce(&mut ChildAgent),
+    ) -> bool {
         let children = self.children();
         match children.iter_mut().find(|c| c.session_id == session) {
             Some(child) => {
-                child.at = std::time::Instant::now();
+                child.at = now;
                 edit(child)
             }
             None => {
@@ -124,7 +129,7 @@ impl<'a> PaneOrPending<'a> {
                     label: None,
                     status: PaneStatus::Working,
                     note: None,
-                    at: std::time::Instant::now(),
+                    at: now,
                 };
                 edit(&mut child);
                 children.push(child);
@@ -481,10 +486,11 @@ impl Daemon {
         background: bool,
     ) {
         let restoring = self.restoring.load(std::sync::atomic::Ordering::Relaxed);
+        let now = self.clock.now();
         self.edit_pane(pane, |p| match reporter.filter(|r| p.is_child(r)) {
             Some(session) => {
                 let note = note.map(|n| clean_title(&n)).filter(|n| !n.is_empty());
-                p.edit_child(session, |child| {
+                p.edit_child(now, session, |child| {
                     child.status = status;
                     child.note = note;
                 })
@@ -532,8 +538,9 @@ impl Daemon {
             return;
         }
         let restoring = self.restoring.load(std::sync::atomic::Ordering::Relaxed);
+        let now = self.clock.now();
         self.edit_pane(pane, |p| match reporter.filter(|r| p.is_child(r)) {
-            Some(session) => p.edit_child(session, |child| child.label = Some(title)),
+            Some(session) => p.edit_child(now, session, |child| child.label = Some(title)),
             None => own_title(p, restoring, title),
         });
     }
@@ -566,12 +573,13 @@ impl Daemon {
     /// mid-turn — otherwise its row would sit there claiming to be working
     /// for as long as the parent kept going.
     pub(super) fn drop_silent_children(&self) {
+        let now = self.clock.now();
         let changed = {
             let mut inner = self.inner.lock().unwrap();
             let mut changed = false;
             for p in panes_mut(&mut inner.projects) {
                 let before = p.children.len();
-                p.children.retain(|c| c.at.elapsed() < CHILD_SILENCE);
+                p.children.retain(|c| now.saturating_duration_since(c.at) < CHILD_SILENCE);
                 changed |= p.children.len() != before;
             }
             changed
@@ -595,9 +603,10 @@ impl Daemon {
         let Some(session_id) = valid_session_id(raw) else {
             return;
         };
+        let now = self.clock.now();
         self.edit_pane(pane, |p| {
             if p.is_child(&session_id) && p.status() == PaneStatus::Working {
-                p.edit_child(&session_id, |_| {})
+                p.edit_child(now, &session_id, |_| {})
             } else {
                 p.set_session_id(session_id)
             }

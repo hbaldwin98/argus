@@ -494,7 +494,7 @@ async fn a_resume_with_nothing_behind_it_comes_back_as_a_fresh_agent() {
         .start_agent(only_checkout(&d), "claude", Start::Resuming, None, None)
         .unwrap();
 
-    d.mark_pane_exited(pane, Some(1));
+    d.exit(pane, Some(1));
 
     let panes = d
         .snapshot()
@@ -512,6 +512,26 @@ async fn a_resume_with_nothing_behind_it_comes_back_as_a_fresh_agent() {
 }
 
 #[tokio::test]
+async fn a_resumed_agent_that_ran_past_the_grace_is_left_where_it_ended() {
+    // Up that long, it was the conversation; its failure is the agent's,
+    // and the row stays for the operator to read.
+    let dir = tempfile::tempdir().unwrap();
+    let d = daemon_with_fake_claude(dir.path());
+    let pane = d
+        .start_agent(only_checkout(&d), "claude", Start::Resuming, None, None)
+        .unwrap();
+
+    d.advance(RESUME_GRACE);
+    d.exit(pane, Some(1));
+
+    let panes = panes_of(&d);
+    assert_eq!(panes.len(), 1);
+    assert_eq!(panes[0].id, pane);
+    assert_eq!(panes[0].status, PaneStatus::Exited { code: Some(1) });
+    close_all(&d);
+}
+
+#[tokio::test]
 async fn an_agent_that_starts_and_fails_again_is_left_alone() {
     // One retry, never a loop: the replacement is a plain agent, so its
     // own failure is just a failure.
@@ -521,7 +541,7 @@ async fn an_agent_that_starts_and_fails_again_is_left_alone() {
         .start_agent(only_checkout(&d), "claude", Start::Resuming, None, None)
         .unwrap();
 
-    d.mark_pane_exited(pane, Some(1));
+    d.exit(pane, Some(1));
     let replacement = d
         .snapshot()
         .remove(0)
@@ -531,7 +551,7 @@ async fn an_agent_that_starts_and_fails_again_is_left_alone() {
         .remove(0)
         .panes[0]
         .id;
-    d.mark_pane_exited(replacement, Some(1));
+    d.exit(replacement, Some(1));
 
     let panes = d
         .snapshot()
@@ -556,7 +576,7 @@ async fn quitting_a_restored_agent_leaves_it_quit() {
         .start_agent(only_checkout(&d), "claude", Start::Resuming, None, None)
         .unwrap();
 
-    d.mark_pane_exited(pane, Some(0));
+    d.exit(pane, Some(0));
 
     let panes = d
         .snapshot()

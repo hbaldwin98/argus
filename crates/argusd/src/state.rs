@@ -30,6 +30,7 @@ use tokio::sync::broadcast;
 mod agents;
 mod board_parts;
 mod build;
+mod clock;
 mod decisions;
 mod features;
 mod follow;
@@ -41,6 +42,7 @@ mod hook_server;
 mod inbox;
 mod panel;
 mod panes;
+mod processes;
 mod session;
 mod sync;
 mod tree;
@@ -58,7 +60,7 @@ use tree::*;
 
 use crate::config::{self, AgentConfig, ConfigFile};
 use crate::paths::same_path;
-use crate::pty::{self, PaneRuntime};
+use crate::pty;
 
 struct Pane {
     id: PaneId,
@@ -106,14 +108,14 @@ struct Pane {
     /// Set while this pane is a conversation Argus asked a CLI to reopen,
     /// and it is too early to be sure it could. See [`Resumed`].
     resumed: Option<Resumed>,
-    runtime: PaneRuntime,
+    runtime: Box<dyn processes::Process>,
 }
 
 impl Pane {
     /// A pane as it enters the tree, before anything has been heard from
     /// it. Every default lives here, so a new field is added in one place
     /// and a start that knows more sets only what it knows.
-    fn new(id: PaneId, kind: PaneKind, title: String, runtime: PaneRuntime) -> Self {
+    fn new(id: PaneId, kind: PaneKind, title: String, runtime: Box<dyn processes::Process>) -> Self {
         Self {
             id,
             kind,
@@ -381,6 +383,11 @@ pub struct Daemon {
     /// Where a file pasted into a pane is kept (see `pastes`); unset until
     /// `main` names it, so a daemon built in a test takes no files.
     paste_root: std::sync::OnceLock<std::path::PathBuf>,
+    /// What every pane's process is started through: a pty, unless a test
+    /// is scripting when each one exits.
+    processes: Arc<dyn processes::Processes>,
+    /// Where the durations the daemon decides on are read from.
+    clock: Arc<dyn clock::Clock>,
 }
 
 /// A project as clients are shown it.
