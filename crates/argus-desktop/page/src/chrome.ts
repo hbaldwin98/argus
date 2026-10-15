@@ -2,7 +2,9 @@
 // words, the sidebar's foot, the empty stage, and notices that pass.
 
 import type { Action } from './bindings/Action';
+import type { Resumed } from './bindings/Resumed';
 import { drawCheckouts } from './checkouts.js';
+import { clock } from './clock.js';
 import { drawComposer } from './compose.js';
 import { drawConsole } from './console.js';
 import { $, el, ghosts, icon, type Child } from './dom.js';
@@ -475,10 +477,19 @@ function drawHead(): void {
     el('span', { class: `glyph${shown.agent ? '' : ' sh'}` }, shown.agent ? '◆' : '›'),
     el('span', { class: 'type-heading head-title' }, shown.title),
     el('span', { class: `pill ${shown.status}` }, shown.status),
+    shown.resumed ? el('span', { class: 'meta ellipsis' }, resumedFrom(shown.resumed)) : '',
     el('span', { class: 'grow' }),
     el('span', { class: 'meta mono', id: 'size' }, screen.sizeLabel()),
     closeButton(shown.pane, shown.title),
   );
+}
+
+/** What a pane this window resumed a session in was resumed from. */
+function resumedFrom(from: Resumed): string {
+  const at = clock(from.at);
+  const turns =
+    from.turns === null ? null : `${from.turns} turn${from.turns === 1 ? '' : 's'} before`;
+  return [at ? `resumed from ${at}` : 'resumed', turns].filter((part) => part).join(' · ');
 }
 
 /** Ends the pane's program; the rail drops it when the daemon's tree does. */

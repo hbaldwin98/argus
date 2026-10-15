@@ -1,18 +1,19 @@
 // The recent-sessions dialog: a repository's agent sessions, live ones
 // first, beside what the one under the cursor said, with the way to go to
-// it, resume it, or read it whole. Rust holds the list, the filters and
-// what each session offers (`src/sessions_dialog.rs`); the page draws them
-// and says what was pressed.
+// it, resume it, or read it whole in the reader `transcript` draws in
+// place of the list. Rust holds the list, the filters and what each
+// session offers (`src/sessions_dialog.rs`); the page draws them and says
+// what was pressed.
 
 import type { Action } from './bindings/Action';
 import type { SessionPreview } from './bindings/SessionPreview';
 import type { SessionRowView } from './bindings/SessionRowView';
 import type { SessionsPage } from './bindings/SessionsPage';
-import type { TranscriptLine } from './bindings/TranscriptLine';
 import { $, el, ghosts, icon, type Child } from './dom.js';
 import { actionFor } from './keymap.js';
 import { state } from './state.js';
 import { call } from './tauri.js';
+import { drawReader, placeReader, said } from './transcript.js';
 
 function keycap(key: string): HTMLElement {
   return el('span', { class: 'kbd' }, key);
@@ -55,24 +56,6 @@ function list(s: SessionsPage): Child {
   ];
 }
 
-function line(l: TranscriptLine): HTMLElement {
-  if (l.kind === 'tool') {
-    return el(
-      'div',
-      { class: `tline tool${l.failed ? ' failed' : ''}` },
-      el('span', { class: 'ttool' }, l.tool),
-      el('span', { class: 'mono ellipsis' }, l.text),
-      l.failed && el('span', { class: 'fg-danger' }, 'failed'),
-    );
-  }
-  return el(
-    'div',
-    { class: `tline ${l.kind}` },
-    el('div', { class: 'twho meta' }, l.kind === 'user' ? 'You' : 'Agent'),
-    el('div', { class: 'ttext' }, l.text),
-  );
-}
-
 function transcript(p: SessionPreview): Child {
   if (p.loading) return ghosts([[0.5], [0.9], [0.8], [0.4], [0.85], [0.6]]);
   if (p.notice) return el('div', { class: 'review-empty fg-muted' }, p.notice);
@@ -83,7 +66,7 @@ function transcript(p: SessionPreview): Child {
         { class: 'meta tearlier' },
         `${p.earlier} earlier entr${p.earlier === 1 ? 'y' : 'ies'} not shown`,
       ),
-    p.entries.map(line),
+    p.entries.map((l) => said(l)),
   ];
 }
 
@@ -111,21 +94,38 @@ function preview(s: SessionsPage): HTMLElement {
   );
 }
 
+/** The reader, for a session whose harness keeps a transcript to open. */
+function readButton(p: SessionPreview): Child {
+  return (
+    p.readable &&
+    el(
+      'button',
+      { class: 'btn sm', onclick: () => act('transcript') },
+      'Open full transcript ',
+      keycap('O'),
+    )
+  );
+}
+
 /** What the session under the cursor offers, named in full. */
 function offer(p: SessionPreview | null): Child {
   if (!p) return null;
   if (p.offer === 'go') {
-    return el(
-      'button',
-      { class: 'btn sm primary', onclick: () => act('choose') },
-      'Go to its pane ',
-      el('span', { class: 'kbd on-accent' }, 'Enter'),
-    );
+    return [
+      readButton(p),
+      el(
+        'button',
+        { class: 'btn sm primary', onclick: () => act('choose') },
+        'Go to its pane ',
+        el('span', { class: 'kbd on-accent' }, 'Enter'),
+      ),
+    ];
   }
   if (p.offer === 'resume') {
     return [
       el('span', { class: 'meta' }, 'runs'),
       el('code', { class: 'mono scommand ellipsis', title: p.command }, p.command),
+      readButton(p),
       el(
         'button',
         { class: 'btn sm primary', onclick: () => act('resume') },
@@ -136,12 +136,7 @@ function offer(p: SessionPreview | null): Child {
   }
   return [
     p.why && el('span', { class: 'meta ellipsis' }, `Not resumable: ${p.why}`),
-    el(
-      'button',
-      { class: 'btn sm', onclick: () => act('transcript') },
-      'Open full transcript ',
-      keycap('O'),
-    ),
+    readButton(p),
   ];
 }
 
@@ -213,10 +208,24 @@ export function drawSessions(): void {
     return;
   }
   const searchHad = document.activeElement?.id === 'sessions-search';
-  const scrolled = ['sessions-list', 'sessions-body'].map(
+  const findHad = document.activeElement?.id === 'transcript-find';
+  const scrolled = ['sessions-list', 'sessions-body', 'reader-body'].map(
     (id) => document.getElementById(id)?.scrollTop ?? 0,
   );
   host.hidden = false;
+  if (s.reader) {
+    host.replaceChildren(el('div', { class: 'scrim' }, drawReader(s.reader)));
+    placeReader(s.reader, scrolled[2] ?? 0);
+    drawnRead = null;
+    // Redrawn as each letter arrives: the find keeps the keys and the caret.
+    const field = document.getElementById('transcript-find');
+    if (findHad && field instanceof HTMLInputElement) {
+      field.focus();
+      field.setSelectionRange(field.value.length, field.value.length);
+    }
+    return;
+  }
+  placeReader(null, 0);
   host.replaceChildren(
     el(
       'div',
@@ -256,12 +265,11 @@ export function drawSessions(): void {
         el(
           'div',
           { class: 'review-split' },
-          !s.full &&
-            el(
-              'aside',
-              { class: 'history-list', id: 'sessions-list', 'aria-label': 'Sessions' },
-              list(s),
-            ),
+          el(
+            'aside',
+            { class: 'history-list', id: 'sessions-list', 'aria-label': 'Sessions' },
+            list(s),
+          ),
           preview(s),
         ),
         el(
@@ -276,7 +284,7 @@ export function drawSessions(): void {
           keycap('C'),
           ' harness, checkout · ',
           keycap('O'),
-          s.full ? ' list · ' : ' whole · ',
+          ' whole · ',
           keycap('Esc'),
           ' close',
           el('span', { class: 'grow' }),
@@ -306,4 +314,9 @@ export function drawSessions(): void {
 
 export function sessionsOpen(): boolean {
   return state.sessions?.open === true;
+}
+
+/** The full transcript is open in place of the list, and holds its keys. */
+export function readerOpen(): boolean {
+  return sessionsOpen() && state.sessions?.reader != null;
 }

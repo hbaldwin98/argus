@@ -9,7 +9,8 @@ import { captureOpen, discardCapture } from './capture.js';
 import { answerNo, checkoutsAction } from './checkouts.js';
 import { focusHistoryFilter, historyOpen } from './history.js';
 import { reviewOpen } from './review.js';
-import { focusSessionsSearch, sessionsOpen } from './sessions.js';
+import { focusSessionsSearch, readerOpen, sessionsOpen } from './sessions.js';
+import { focusTranscriptFind } from './transcript.js';
 import { railAction, railPicked, startAction, startOpen } from './chrome.js';
 import { $ } from './dom.js';
 import { closeLayer, featureAction } from './features.js';
@@ -178,15 +179,19 @@ export function listen(): void {
       }
       return;
     }
+    // The full transcript, open in place of the list, holds its own.
     if (sessionsOpen()) {
-      const action = actionFor(['anywhere', 'sessions'], e);
+      const reading = readerOpen();
+      const action = actionFor(['anywhere', reading ? 'transcript' : 'sessions'], e);
       if (action === 'shortcuts') {
         e.preventDefault();
         openSheet();
       } else if (action && !notTheirs(action)) {
         e.preventDefault();
-        if (action === 'filter') focusSessionsSearch();
-        else call('sessions_action', { action, row: null });
+        if (action === 'filter') {
+          if (reading) focusTranscriptFind();
+          else focusSessionsSearch();
+        } else call('sessions_action', { action, row: null });
       }
       return;
     }

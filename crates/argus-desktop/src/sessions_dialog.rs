@@ -1,20 +1,24 @@
 //! What the recent-sessions dialog holds — whose sessions it lists, the
 //! search and the harness and checkout filters over them, the session
-//! under the cursor and whether its transcript fills the dialog — and what
-//! it draws and offers of them.
+//! under the cursor and whether its full transcript is open in place of
+//! the list — and what it draws and offers of them.
 //!
 //! Live sessions are listed first and go to their pane. An ended one
 //! resumes in a new pane by the command the footer names, unless its
 //! worktree is gone or its harness cannot resume one by id: then its
-//! transcript is all there is to open. The sessions, what they said and
-//! the resume commands are the daemon's, held by `sessions`.
+//! transcript is all there is to open. A session whose harness keeps no
+//! transcript, or whose transcript is missing, is listed and previewed but
+//! has nothing to open. The sessions, what they said and the resume
+//! commands are the daemon's, held by `sessions`.
 
 use argus_protocol::sessions::Session;
-use argus_protocol::transcript::{Conversation, Entry};
+use argus_protocol::transcript::Conversation;
 use argus_protocol::{CheckoutId, PaneId, ProjectInfo, RepositoryId};
 
-use crate::page::{SessionPreview, SessionRowView, SessionsPage, TranscriptLine};
-use crate::sessions::Sessions;
+use crate::keymap::Action;
+use crate::page::{Resumed, SessionPreview, SessionRowView, SessionsPage, TranscriptLine};
+use crate::sessions::{self, Sessions};
+use crate::transcript_reader::{self, TranscriptReader};
 
 pub struct SessionsDialog {
     repository: RepositoryId,
@@ -31,8 +35,9 @@ pub struct SessionsDialog {
     harness: Option<String>,
     /// A checkout's name, or a removed worktree's, as the rows say it.
     checkout: Option<String>,
-    /// The transcript fills the dialog, the list put away.
-    full: bool,
+    /// The full transcript of the session under the cursor, open in place
+    /// of the list, which holds the keys until it closes.
+    reader: Option<TranscriptReader>,
 }
 
 /// What a gesture in the dialog comes to.
@@ -41,8 +46,11 @@ pub enum Then {
     Nothing,
     /// Go to the pane the session is running in.
     GoTo(PaneId),
-    /// Resume the session in a new agent pane.
-    Resume { checkout: CheckoutId, harness: String, session_id: String },
+    /// Resume the session in a new agent pane, which will say it was
+    /// resumed `from`.
+    Resume { checkout: CheckoutId, harness: String, session_id: String, from: Resumed },
+    /// Put the session's id on the clipboard.
+    Copy(String),
     /// Why the key did nothing, for the person to hear.
     Say(String),
 }
@@ -66,7 +74,7 @@ impl SessionsDialog {
             search: String::new(),
             harness: None,
             checkout: None,
-            full: false,
+            reader: None,
         }
     }
 
@@ -75,8 +83,11 @@ impl SessionsDialog {
     }
 
     /// Another daemon answered, and was asked again unless it cannot say.
+    /// Its listing may not hold the session being read, so the list is
+    /// shown again.
     pub fn reasked(&mut self, asked: bool) {
         self.unsupported = !asked;
+        self.reader = None;
     }
 
     fn listed<'a>(&self, sessions: &'a Sessions) -> &'a [Session] {
@@ -124,8 +135,13 @@ impl SessionsDialog {
             .or_else(|| shown.first().copied())
     }
 
+    /// The session the dialog acts on: the one read whole while it is
+    /// open, else the one under the cursor.
     fn selected<'a>(&self, sessions: &'a Sessions, tree: &[ProjectInfo]) -> Option<&'a Session> {
         let listed = self.listed(sessions);
+        if let Some(reader) = &self.reader {
+            return listed.iter().find(|s| s.session_id == reader.session_id());
+        }
         let shown = self.shown(listed, tree);
         self.cursor(listed, &shown).map(|i| &listed[i])
     }
@@ -179,9 +195,72 @@ impl SessionsDialog {
         self.checkout = next(&options, self.checkout.as_ref());
     }
 
-    /// `o`: the transcript fills the dialog, or gives the list back.
-    pub fn toggle_full(&mut self) {
-        self.full = !self.full;
+    pub fn reading(&self) -> bool {
+        self.reader.is_some()
+    }
+
+    /// `o`: the full transcript of the session under the cursor, in place
+    /// of the list, unless there is none to open.
+    pub fn open_reader(&mut self, sessions: &Sessions, tree: &[ProjectInfo]) -> Then {
+        let Some(session) = self.selected(sessions, tree) else {
+            return Then::Nothing;
+        };
+        if let Some(why) = unreadable(session, sessions.transcript(&session.session_id)) {
+            return Then::Say(why);
+        }
+        self.on = Some(session.session_id.clone());
+        self.reader = Some(TranscriptReader::new(session.session_id.clone()));
+        Then::Nothing
+    }
+
+    /// Escape in the reader: the list again, the cursor where it was.
+    pub fn close_reader(&mut self) -> bool {
+        self.reader.take().is_some()
+    }
+
+    /// A key of the full transcript, or with `row` a click on one of the
+    /// person's turns.
+    pub fn reader_action(&mut self, action: Action, row: Option<usize>, sessions: &Sessions, tree: &[ProjectInfo]) -> Then {
+        let lines = self.reader_lines(sessions);
+        let Some(reader) = &mut self.reader else {
+            return Then::Nothing;
+        };
+        match (action, row) {
+            (_, Some(turn)) => reader.jump(turn, &lines),
+            (Action::Next | Action::Previous, _) => reader.move_turn(if action == Action::Next { 1 } else { -1 }, &lines),
+            (Action::First | Action::Last, _) => reader.ends(action == Action::Last, &lines),
+            (Action::NextMatch | Action::PreviousMatch, _) => {
+                reader.move_match(if action == Action::NextMatch { 1 } else { -1 }, &lines);
+            }
+            (Action::CopyId, _) => return Then::Copy(reader.session_id().to_owned()),
+            (Action::Resume, _) => return self.resume(sessions, tree),
+            // Only its pane: the reader is already what Enter opens of an
+            // ended session, and resuming one is said by its own key.
+            (Action::Choose, _) => {
+                return match self.selected(sessions, tree).map(|s| offer(s, sessions, tree)) {
+                    Some(Offer::Go(pane)) => Then::GoTo(pane),
+                    _ => Then::Nothing,
+                };
+            }
+            _ => {}
+        }
+        Then::Nothing
+    }
+
+    /// What the full transcript's find field says now.
+    pub fn find(&mut self, find: String, sessions: &Sessions) {
+        let lines = self.reader_lines(sessions);
+        if let Some(reader) = &mut self.reader {
+            reader.set_find(find, &lines);
+        }
+    }
+
+    /// What the session read whole said, as the reader draws it.
+    fn reader_lines(&self, sessions: &Sessions) -> Vec<TranscriptLine> {
+        match self.reader.as_ref().and_then(|r| sessions.transcript(r.session_id())) {
+            Some(Conversation::Read(transcript)) => transcript.entries.iter().filter_map(transcript_reader::line).collect(),
+            _ => Vec::new(),
+        }
     }
 
     /// The read the session under the cursor wants: what it said, asked
@@ -201,10 +280,7 @@ impl SessionsDialog {
         match offer(session, sessions, tree) {
             Offer::Go(pane) => Then::GoTo(pane),
             Offer::Resume(_) => resume(session),
-            Offer::Read(_) => {
-                self.full = !self.full;
-                Then::Nothing
-            }
+            Offer::Read(_) => self.open_reader(sessions, tree),
         }
     }
 
@@ -228,7 +304,6 @@ impl SessionsDialog {
             search: self.search.clone(),
             harness: self.harness.clone(),
             checkout: self.checkout.clone(),
-            full: self.full,
             ..SessionsPage::default()
         };
         if self.unsupported {
@@ -267,7 +342,11 @@ impl SessionsDialog {
         } else {
             None
         };
-        page.preview = cursor.map(|i| preview(&listed[i], sessions, tree));
+        let preview = cursor.map(|i| preview(&listed[i], sessions, tree));
+        match (self.reader.as_ref().zip(self.selected(sessions, tree)), preview) {
+            (Some((reader, session)), Some(preview)) => page.reader = Some(reader.page(session, &self.name, preview)),
+            (_, preview) => page.preview = preview,
+        }
         page
     }
 }
@@ -277,6 +356,17 @@ fn resume(session: &Session) -> Then {
         checkout: session.checkout,
         harness: session.harness.clone(),
         session_id: session.session_id.clone(),
+        from: sessions::resumed_from(session),
+    }
+}
+
+/// Why `session` has no full transcript to open, once its read says so: a
+/// harness that keeps none lists its sessions but cannot show them.
+fn unreadable(session: &Session, read: Option<&Conversation>) -> Option<String> {
+    match read? {
+        Conversation::NoTranscript => Some(format!("{} keeps no transcript Argus can read", session.harness)),
+        Conversation::Missing => Some("its transcript is missing: moved, cleaned up, or never written".into()),
+        Conversation::Read(_) => None,
     }
 }
 
@@ -306,7 +396,7 @@ fn preview(session: &Session, sessions: &Sessions, tree: &[ProjectInfo]) -> Sess
             (Vec::new(), 0, Some("Its transcript is missing: moved, cleaned up, or never written.".into()))
         }
         Some(Conversation::Read(transcript)) => {
-            let lines: Vec<TranscriptLine> = transcript.entries.iter().filter_map(line).collect();
+            let lines: Vec<TranscriptLine> = transcript.entries.iter().filter_map(transcript_reader::line).collect();
             let notice = lines.is_empty().then(|| "Nothing was said in it yet.".to_owned());
             (lines, transcript.earlier, notice)
         }
@@ -329,18 +419,8 @@ fn preview(session: &Session, sessions: &Sessions, tree: &[ProjectInfo]) -> Sess
         offer,
         command,
         why,
+        readable: unreadable(session, conversation).is_none(),
     }
-}
-
-fn line(entry: &Entry) -> Option<TranscriptLine> {
-    let (kind, text, tool, failed) = match entry {
-        Entry::User { text, .. } => ("user", text.clone(), String::new(), false),
-        Entry::Agent { text, .. } => ("agent", text.clone(), String::new(), false),
-        Entry::Tool { tool, summary, failed, .. } => ("tool", summary.clone(), tool.clone(), *failed),
-        // A kind from a newer daemon: passed over, not shown as nothing.
-        Entry::Unknown => return None,
-    };
-    Some(TranscriptLine { kind, text, tool, failed })
 }
 
 fn title(session: &Session) -> String {
@@ -413,7 +493,7 @@ mod tests {
     use crate::fixtures::{checkout, project, repository};
     use crate::status::StatusBar;
     use argus_protocol::sessions::Resume;
-    use argus_protocol::transcript::Transcript;
+    use argus_protocol::transcript::{Entry, Transcript};
     use argus_protocol::{ClientMsg, Hello, ServerMsg, SESSIONS};
 
     fn tree() -> Vec<ProjectInfo> {
@@ -565,7 +645,8 @@ mod tests {
         let preview = d.page(&sessions, &tree(), 0).preview.unwrap();
         assert_eq!(preview.offer, "resume");
         assert_eq!(preview.command.as_deref(), Some("claude --model \"opus 4\" --resume old"));
-        let resumed = Then::Resume { checkout: CheckoutId(100), harness: "claude".into(), session_id: "old".into() };
+        let from = Resumed { at: Some("1970-01-01T00:16:40Z".into()), turns: Some(2) };
+        let resumed = Then::Resume { checkout: CheckoutId(100), harness: "claude".into(), session_id: "old".into(), from };
         assert_eq!(d.resume(&sessions, &tree()), resumed);
         assert_eq!(d.choose(&sessions, &tree()), resumed);
     }
@@ -580,8 +661,8 @@ mod tests {
             assert_eq!((preview.offer, preview.command, preview.why.as_deref()), ("transcript", None, Some(why)));
             assert_eq!(d.resume(&sessions, &tree()), Then::Say(format!("it cannot be resumed: {why}")));
             assert_eq!(d.choose(&sessions, &tree()), Then::Nothing, "Enter opens the transcript whole");
-            assert!(d.page(&sessions, &tree(), 0).full);
-            d.toggle_full();
+            assert!(d.page(&sessions, &tree(), 0).reader.is_some());
+            assert!(d.close_reader());
         }
     }
 
@@ -686,6 +767,116 @@ mod tests {
         assert_eq!(page.preview.unwrap().why.as_deref(), Some(why), "the worktree, not the harness, is why");
         assert_eq!(d.resume(&sessions, &tree()), Then::Say(format!("it cannot be resumed: {why}")));
         assert_eq!(d.choose(&sessions, &tree()), Then::Nothing);
+    }
+
+    /// `held`'s listing with what `id` said read: two turns, each answered.
+    fn read(id: &str) -> Sessions {
+        let mut status = StatusBar::new(false);
+        status.connected(Some(Hello { capabilities: vec![SESSIONS.into()], ..Hello::this_build() }), None);
+        let mut sessions = held(listing());
+        let wanted = listing().into_iter().find(|s| s.session_id == id).unwrap();
+        sessions.read(&status, &wanted, 9);
+        let transcript = Transcript {
+            entries: vec![
+                Entry::User { text: "Fix the build".into(), at: Some("2026-10-14T12:40:00Z".into()) },
+                Entry::Agent { text: "Fixed.".into(), at: None },
+                Entry::User { text: "Commit it".into(), at: Some("2026-10-14T13:50:00Z".into()) },
+                Entry::Agent { text: "Committed.".into(), at: None },
+            ],
+            ..Transcript::default()
+        };
+        sessions.receive(ServerMsg::SessionTranscript {
+            request_id: 9,
+            session_id: id.into(),
+            conversation: Box::new(Conversation::Read(transcript)),
+        });
+        sessions
+    }
+
+    #[test]
+    fn the_full_transcript_opens_in_place_of_the_list_and_escape_gives_the_list_back() {
+        let sessions = read("old");
+        let mut d = dialog();
+        d.move_by(1, &sessions, &tree());
+        assert_eq!(d.open_reader(&sessions, &tree()), Then::Nothing);
+        let page = d.page(&sessions, &tree(), 0);
+        let reader = page.reader.expect("open");
+        assert!(page.preview.is_none(), "drawn once, as the reader");
+        assert_eq!((reader.session.session_id.as_str(), reader.repository.as_str()), ("old", "argus"));
+        assert_eq!(reader.jumps.iter().map(|j| j.text.as_str()).collect::<Vec<_>>(), ["Fix the build", "Commit it"]);
+        assert_eq!(reader.jumps[1].at.as_deref(), Some("2026-10-14T13:50:00Z"));
+        assert!(d.close_reader());
+        let page = d.page(&sessions, &tree(), 0);
+        assert!(page.reader.is_none());
+        assert_eq!(page.rows.iter().find(|r| r.on).map(|r| r.title.as_str()), Some("old work"), "the cursor stayed");
+    }
+
+    #[test]
+    fn the_reader_jumps_between_turns_finds_copies_and_resumes_its_session() {
+        let sessions = read("old");
+        let mut d = dialog();
+        d.move_by(1, &sessions, &tree());
+        d.open_reader(&sessions, &tree());
+        let target = |d: &SessionsDialog| d.page(&sessions, &tree(), 0).reader.unwrap().target;
+        d.reader_action(Action::Next, None, &sessions, &tree());
+        assert_eq!(target(&d), Some(0));
+        d.reader_action(Action::Last, None, &sessions, &tree());
+        assert_eq!(target(&d), Some(2));
+        d.reader_action(Action::Next, Some(0), &sessions, &tree());
+        assert_eq!(target(&d), Some(0), "a click on the jump list");
+        d.find("committed".into(), &sessions);
+        assert_eq!(target(&d), Some(3));
+        d.reader_action(Action::NextMatch, None, &sessions, &tree());
+        assert_eq!(target(&d), Some(3), "the only match");
+        assert_eq!(d.reader_action(Action::CopyId, None, &sessions, &tree()), Then::Copy("old".into()));
+        assert_eq!(d.reader_action(Action::Choose, None, &sessions, &tree()), Then::Nothing, "an ended one has no pane");
+        assert!(matches!(
+            d.reader_action(Action::Resume, None, &sessions, &tree()),
+            Then::Resume { ref session_id, .. } if session_id == "old"
+        ));
+    }
+
+    #[test]
+    fn the_reader_of_a_live_session_goes_to_its_pane() {
+        let sessions = read("live");
+        let mut d = dialog();
+        d.open_reader(&sessions, &tree());
+        assert_eq!(d.page(&sessions, &tree(), 0).reader.unwrap().session.offer, "go");
+        assert_eq!(d.reader_action(Action::Choose, None, &sessions, &tree()), Then::GoTo(PaneId(7)));
+    }
+
+    #[test]
+    fn the_reader_of_a_session_that_cannot_resume_says_why_and_still_copies_its_id() {
+        let sessions = read("plain");
+        let mut d = dialog();
+        d.set_search("plain".into());
+        d.open_reader(&sessions, &tree());
+        let reader = d.page(&sessions, &tree(), 0).reader.expect("open");
+        assert_eq!(reader.session.offer, "transcript");
+        assert_eq!(reader.session.why.as_deref(), Some("generic cannot resume a session by its id"));
+        assert!(matches!(d.reader_action(Action::Resume, None, &sessions, &tree()), Then::Say(_)));
+        assert_eq!(d.reader_action(Action::CopyId, None, &sessions, &tree()), Then::Copy("plain".into()));
+    }
+
+    #[test]
+    fn a_session_without_a_transcript_is_listed_but_has_nothing_to_open() {
+        let mut status = StatusBar::new(false);
+        status.connected(Some(Hello { capabilities: vec![SESSIONS.into()], ..Hello::this_build() }), None);
+        let mut sessions = held(listing());
+        let d0 = dialog();
+        assert!(d0.page(&sessions, &tree(), 0).preview.unwrap().readable, "not known to be bare until read");
+        for (conversation, why) in [
+            (Conversation::NoTranscript, "codex keeps no transcript Argus can read"),
+            (Conversation::Missing, "its transcript is missing: moved, cleaned up, or never written"),
+        ] {
+            let mut d = dialog();
+            let wanted = d.wants_read(&sessions, &tree()).cloned().unwrap_or_else(|| listing()[1].clone());
+            sessions.read(&status, &wanted, 5);
+            sessions.receive(ServerMsg::SessionTranscript { request_id: 5, session_id: "live".into(), conversation: Box::new(conversation) });
+            assert!(!d.page(&sessions, &tree(), 0).preview.unwrap().readable);
+            assert_eq!(d.open_reader(&sessions, &tree()), Then::Say(why.into()));
+            assert!(!d.reading());
+        }
     }
 
     #[test]

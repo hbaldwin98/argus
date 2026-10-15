@@ -11,4 +11,8 @@ text: string,
 /**
  * The tool's name; empty for a turn or a reply.
  */
-tool: string, failed: boolean, };
+tool: string, failed: boolean, 
+/**
+ * When it happened, as the harness wrote it.
+ */
+at: string | null, };

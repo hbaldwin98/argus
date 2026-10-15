@@ -3,11 +3,20 @@
 //! holds of the answers. Only the latest of each is wanted: an answer to a
 //! request since replaced is dropped. Asked only of a daemon that listed
 //! `SESSIONS`, since an older one hangs up on a message it does not know.
+//!
+//! It also holds what each pane this window resumed a session in was
+//! resumed from. The tree does not carry it, and need not: the pane is the
+//! one `Created` named in answer to this window's own resume, and the
+//! session's time and turns are the daemon's listing of it, so nothing
+//! here is a guess. Another client, or this one restarted, does not know.
+
+use std::collections::HashMap;
 
 use argus_protocol::sessions::{is_plain_session_id, Resume, Session};
-use argus_protocol::transcript::Conversation;
-use argus_protocol::{ClientMsg, RepositoryId, ServerMsg, SESSIONS};
+use argus_protocol::transcript::{rfc3339, Conversation};
+use argus_protocol::{ClientMsg, PaneId, RepositoryId, ServerMsg, SESSIONS};
 
+use crate::page::Resumed;
 use crate::status::StatusBar;
 
 #[derive(Debug, Default)]
@@ -21,6 +30,9 @@ pub struct Sessions {
     /// Each harness that resumes a session by id, with the argv it would
     /// run, `{session_id}` unfilled; `None` until the daemon has said.
     resumes: Option<Vec<Resume>>,
+    /// The panes a session was resumed in, by this window, while each
+    /// lasts.
+    resumed: HashMap<PaneId, Resumed>,
 }
 
 impl Sessions {
@@ -100,12 +112,36 @@ impl Sessions {
         let resume = self.resumes.as_ref()?.iter().find(|r| r.harness == harness)?;
         Some(resume.argv.iter().map(|arg| arg.replace("{session_id}", session_id)).collect())
     }
+
+    /// `pane` is the one the daemon made resuming `from`, and the tree
+    /// holds it.
+    pub fn resumed_in(&mut self, pane: PaneId, from: Resumed) {
+        self.resumed.insert(pane, from);
+    }
+
+    pub fn resumed_from(&self, pane: PaneId) -> Option<&Resumed> {
+        self.resumed.get(&pane)
+    }
+
+    /// Forgets the panes `holds` says are gone.
+    pub fn forget_resumed(&mut self, holds: impl Fn(PaneId) -> bool) {
+        self.resumed.retain(|&pane, _| holds(pane));
+    }
+}
+
+/// What a session resumed now would be resumed from: its last time and
+/// its turns, as the daemon listed it.
+pub fn resumed_from(session: &Session) -> Resumed {
+    Resumed {
+        at: session.ended.clone().or_else(|| session.modified.map(|ms| rfc3339(ms / 1000))),
+        turns: session.turns,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use argus_protocol::transcript::{Entry, Transcript};
-    use argus_protocol::{read_msg, write_msg, CheckoutId, Hello, PaneId};
+    use argus_protocol::{read_msg, write_msg, CheckoutId, Hello};
 
     use super::*;
 
@@ -209,5 +245,30 @@ mod tests {
         assert_eq!(sessions.resume_command("claude", "s1").unwrap(), ["claude", "--resume", "s1"]);
         assert_eq!(sessions.resume_command("generic", "s1"), None);
         assert_eq!(sessions.resume_command("claude", "s1 & calc"), None, "never offered to the daemon");
+    }
+
+    #[test]
+    fn a_resumed_session_is_said_by_its_last_time_and_its_turns() {
+        let listed = session("s1");
+        assert_eq!(
+            resumed_from(&Session { ended: Some("2026-10-14T13:52:00Z".into()), ..listed.clone() }),
+            Resumed { at: Some("2026-10-14T13:52:00Z".into()), turns: Some(4) }
+        );
+        // No time read from the transcript: when its file was last written.
+        assert_eq!(resumed_from(&listed).at.as_deref(), Some("2027-01-15T08:00:00Z"));
+        let bare = Session { modified: None, turns: None, ..listed };
+        assert_eq!(resumed_from(&bare), Resumed { at: None, turns: None });
+    }
+
+    #[test]
+    fn what_a_pane_was_resumed_from_is_kept_while_the_pane_lasts() {
+        let mut sessions = Sessions::default();
+        let from = Resumed { at: None, turns: Some(4) };
+        sessions.resumed_in(PaneId(9), from.clone());
+        sessions.resumed_in(PaneId(10), from.clone());
+        assert_eq!(sessions.resumed_from(PaneId(9)), Some(&from));
+        sessions.forget_resumed(|pane| pane == PaneId(10));
+        assert_eq!(sessions.resumed_from(PaneId(9)), None);
+        assert_eq!(sessions.resumed_from(PaneId(10)), Some(&from));
     }
 }

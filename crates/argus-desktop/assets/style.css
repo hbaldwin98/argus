@@ -3048,6 +3048,54 @@ body.console-fullscreen #bar {
   color: var(--danger);
 }
 
+/* ---- A session's full transcript ---------------------------------------- */
+
+.reader-what {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.reader-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  min-width: 0;
+}
+.reader-turns {
+  width: 300px;
+  flex: none;
+  border-right: 1px solid var(--line);
+  padding: var(--sp-12);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.reader-turns .label {
+  padding-bottom: var(--sp-6);
+}
+.reader-turns .ttl {
+  font-size: var(--fs-sm);
+}
+.reader-note {
+  margin-top: auto;
+  padding-top: var(--sp-12);
+}
+.tline {
+  scroll-margin-top: var(--sp-12);
+  border-radius: var(--r-sm);
+}
+.tline.matched {
+  box-shadow: 0 0 0 1px var(--line-strong);
+}
+.tline.found {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+@media (max-width: 1100px) {
+  .reader-turns {
+    width: 220px;
+  }
+}
+
 /* ---- Projects: the switcher and the add dialog ---------------------------- */
 
 .projmenu .projects-menu {

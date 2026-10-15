@@ -64,7 +64,7 @@ use crate::switcher::Switcher;
 
 /// What to do with a thing the daemon made for this window, once the tree
 /// holds it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Made {
     /// Show the new pane.
     Show,
@@ -75,8 +75,9 @@ enum Made {
     /// Select the new worktree's row in the Checkouts stage.
     SelectRow,
     /// Show the pane a session was resumed in, putting the sessions
-    /// dialog away with whichever stage is up.
-    Resumed,
+    /// dialog away with whichever stage is up, and say in its header what
+    /// it was resumed from.
+    Resumed(page::Resumed),
     /// Put the added project on the rail, closing the dialog that added it.
     SelectProject,
     /// Show the new console in the console, which shows itself for it.
@@ -114,6 +115,9 @@ pub struct Session {
     /// The recent-sessions dialog, while open.
     recent: Option<SessionsDialog>,
     recent_sent: Sent<page::SessionsPage>,
+    /// Text a gesture asked to put on the clipboard, which the window
+    /// writes once the change is made.
+    copied: Option<String>,
     switcher: Switcher,
     /// The add-a-project dialog, while open.
     adding: Option<AddProject>,
@@ -168,6 +172,7 @@ impl Session {
             sessions: Sessions::default(),
             recent: None,
             recent_sent: Sent::default(),
+            copied: None,
             switcher: Switcher::default(),
             adding: None,
             adding_sent: Sent::default(),
@@ -336,6 +341,8 @@ impl Session {
         for pane in self.ended() {
             self.shown.gone(pane, &mut self.out);
         }
+        let tree = &self.tree;
+        self.sessions.forget_resumed(|pane| tree.panes().any(|p| p.id == pane));
         self.settle_made();
     }
 
@@ -372,12 +379,12 @@ impl Session {
             argus_protocol::awaited::holds(tree, created) || matches!(created, Created::Pane(pane) if console.holds(pane))
         };
         for (created, then) in self.awaited.settle_by(seen) {
+            let over_stages = then == Made::ShowOverStages;
             match (created, then) {
-                (Created::Pane(pane), Made::Show | Made::ShowOverStages) => {
-                    self.show_made(pane, then == Made::ShowOverStages);
-                }
-                (Created::Pane(pane), Made::Resumed) => {
+                (Created::Pane(pane), Made::Show | Made::ShowOverStages) => self.show_made(pane, over_stages),
+                (Created::Pane(pane), Made::Resumed(from)) => {
                     self.recent = None;
+                    self.sessions.resumed_in(pane, from);
                     self.show_made(pane, true);
                 }
                 // A worktree made from the Checkouts stage is the row it
@@ -462,6 +469,7 @@ impl Session {
             Call::OpenSessions { repository } => self.open_sessions(RepositoryId(repository)),
             Call::SessionsAction { action, row } => self.sessions_action(action, row),
             Call::SearchSessions { search } => self.search_sessions(search),
+            Call::FindInTranscript { find } => self.find_in_transcript(find),
             Call::FilterSessions { harness, checkout } => self.filter_sessions(harness, checkout),
             Call::Peek { slug } => self.peek(&slug),
             Call::SetLayout { layout } => self.set_layout(layout),
@@ -1497,6 +1505,10 @@ impl Session {
         };
         let (sessions, tree) = (&self.sessions, self.tree.as_slice());
         let then = match (action, row) {
+            // The full transcript holds the keys until Escape gives the
+            // list back.
+            (Action::CloseLayer, _) if dialog.close_reader() => SessionsThen::Nothing,
+            _ if dialog.reading() => dialog.reader_action(action, row, sessions, tree),
             (_, Some(row)) => {
                 dialog.select_row(row, sessions, tree);
                 SessionsThen::Nothing
@@ -1517,10 +1529,7 @@ impl Session {
                 dialog.cycle_checkout(sessions, tree);
                 SessionsThen::Nothing
             }
-            (Action::Transcript, _) => {
-                dialog.toggle_full();
-                SessionsThen::Nothing
-            }
+            (Action::Transcript, _) => dialog.open_reader(sessions, tree),
             (Action::Choose, _) => dialog.choose(sessions, tree),
             (Action::Resume, _) => dialog.resume(sessions, tree),
             (Action::CloseLayer, _) => {
@@ -1532,6 +1541,7 @@ impl Session {
         match then {
             SessionsThen::Nothing => {}
             SessionsThen::Say(text) => self.passing.push(Event::Notice { text }),
+            SessionsThen::Copy(text) => self.copied = Some(text),
             // Only a pane the tree still holds: the listing may be older
             // than the pane's end.
             SessionsThen::GoTo(pane) if self.project_of(pane).is_some() => {
@@ -1542,8 +1552,8 @@ impl Session {
             SessionsThen::GoTo(_) => self.passing.push(Event::Notice { text: "that session's pane has ended".into() }),
             // The dialog stays up until the pane is made and the tree
             // holds it, so a refused resume leaves it where it was.
-            SessionsThen::Resume { checkout, harness, session_id } => {
-                let request_id = self.awaited.ask(Made::Resumed);
+            SessionsThen::Resume { checkout, harness, session_id, from } => {
+                let request_id = self.awaited.ask(Made::Resumed(from));
                 self.out.push(ClientMsg::ResumeSession { request_id, checkout, harness, session_id });
             }
         }
@@ -1556,6 +1566,19 @@ impl Session {
             dialog.set_search(search);
         }
         self.finish()
+    }
+
+    fn find_in_transcript(&mut self, find: String) -> Vec<ClientMsg> {
+        if let Some(dialog) = &mut self.recent {
+            dialog.find(find, &self.sessions);
+        }
+        self.finish()
+    }
+
+    /// What a gesture asked to put on the clipboard, once: the clipboard
+    /// is the window's to write, not the session's.
+    pub fn take_copied(&mut self) -> Option<String> {
+        self.copied.take()
     }
 
     fn filter_sessions(&mut self, harness: Option<String>, checkout: Option<String>) -> Vec<ClientMsg> {
@@ -1929,6 +1952,9 @@ impl Session {
         rail.templates = self.agents.offered();
         rail.workspaces = self.switcher.workspaces();
         rail.removing = self.switcher.removing(&self.tree);
+        if let Some(shown) = &mut rail.shown {
+            shown.resumed = self.sessions.resumed_from(PaneId(shown.pane)).cloned();
+        }
         rail
     }
 
@@ -2943,7 +2969,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 75] = [
+    const CALLS: [&str; 76] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -2988,6 +3014,7 @@ mod tests {
         r#"{"call":"open_sessions","repository":10}"#,
         r#"{"call":"sessions_action","action":"next","row":null}"#,
         r#"{"call":"search_sessions","search":"fix"}"#,
+        r#"{"call":"find_in_transcript","find":"notify"}"#,
         r#"{"call":"filter_sessions","harness":"claude","checkout":null}"#,
         r#"{"call":"peek","slug":"trim"}"#,
         r#"{"call":"set_layout","layout":"board"}"#,
@@ -3145,9 +3172,9 @@ mod tests {
             removed_worktree: None,
             title: Some(format!("{id} work")),
             started: None,
-            ended: None,
+            ended: Some("2026-10-14T13:52:00Z".into()),
             modified: None,
-            turns: None,
+            turns: Some(48),
             pane: pane.map(PaneId),
         }
     }
@@ -3222,6 +3249,69 @@ mod tests {
         s.receive(with_tree(grown));
         assert_eq!(s.shown.pane(), Some(PaneId(9)));
         assert!(s.recent.is_none());
+    }
+
+    #[test]
+    fn a_resumed_pane_says_what_it_was_resumed_from_once_the_tree_holds_it() {
+        let mut s = listing_sessions();
+        s.call(Call::SessionsAction { action: Action::Next, row: None });
+        let sent = s.call(Call::SessionsAction { action: Action::Resume, row: None });
+        let [ClientMsg::ResumeSession { request_id, .. }] = sent.as_slice() else {
+            panic!("{sent:?}");
+        };
+        s.receive(ServerMsg::Created { request_id: *request_id, created: Some(Created::Pane(PaneId(9))) });
+        let mut grown = tree();
+        grown[0].repositories[0].checkouts[0].panes.push(pane(9, PaneKind::Agent, "claude", PaneStatus::Working));
+        s.receive(with_tree(grown.clone()));
+        let shown = s.rail(0).shown.expect("the new pane is on screen");
+        let from = page::Resumed { at: Some("2026-10-14T13:52:00Z".into()), turns: Some(48) };
+        assert_eq!((shown.pane, shown.resumed), (9, Some(from)));
+        assert!(
+            s.rail(0).project.unwrap().repositories[0].checkouts[0].panes.iter().any(|p| p.id == 9 && p.on),
+            "under its checkout, selected"
+        );
+
+        // Another pane says nothing of it, and once the pane is gone so is
+        // what it was resumed from.
+        s.select(PaneId(1));
+        assert_eq!(s.rail(0).shown.unwrap().resumed, None);
+        grown[0].repositories[0].checkouts[0].panes.retain(|p| p.id != PaneId(9));
+        s.receive(with_tree(grown));
+        assert_eq!(s.sessions.resumed_from(PaneId(9)), None);
+    }
+
+    #[test]
+    fn the_full_transcript_holds_the_keys_and_escape_gives_the_list_back() {
+        let mut s = listing_sessions();
+        let sent = s.call(Call::SessionsAction { action: Action::Next, row: None });
+        let [ClientMsg::ReadSession { request_id, .. }] = sent.as_slice() else {
+            panic!("{sent:?}");
+        };
+        let entries = vec![
+            argus_protocol::transcript::Entry::User { text: "Fix the build".into(), at: None },
+            argus_protocol::transcript::Entry::Agent { text: "Fixed.".into(), at: None },
+        ];
+        let transcript = argus_protocol::transcript::Transcript { entries, ..Default::default() };
+        s.receive(ServerMsg::SessionTranscript {
+            request_id: *request_id,
+            session_id: "ended".into(),
+            conversation: Box::new(argus_protocol::transcript::Conversation::Read(transcript)),
+        });
+        s.call(Call::SessionsAction { action: Action::Transcript, row: None });
+        let reader = sessions_page(&mut s).and_then(|p| p.reader).expect("the reader is open");
+        assert_eq!(reader.session.session_id, "ended");
+        s.call(Call::SessionsAction { action: Action::Next, row: None });
+        assert_eq!(sessions_page(&mut s).and_then(|p| p.reader).and_then(|r| r.target), Some(0), "j is the reader's");
+        s.call(Call::FindInTranscript { find: "fixed".into() });
+        assert_eq!(sessions_page(&mut s).and_then(|p| p.reader).map(|r| r.matches), Some(vec![1]));
+        s.call(Call::SessionsAction { action: Action::CopyId, row: None });
+        assert_eq!(s.take_copied().as_deref(), Some("ended"));
+        assert_eq!(s.take_copied(), None, "once");
+        s.call(Call::SessionsAction { action: Action::CloseLayer, row: None });
+        let page = sessions_page(&mut s).expect("the list again");
+        assert!(page.open && page.reader.is_none());
+        s.call(Call::SessionsAction { action: Action::CloseLayer, row: None });
+        assert!(s.recent.is_none(), "and a second Escape closes the dialog");
     }
 
     #[test]
