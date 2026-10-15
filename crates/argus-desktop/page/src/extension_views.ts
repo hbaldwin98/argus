@@ -195,6 +195,10 @@ function asBlock(view: ExtTable): TableBlock {
     status ? [row.status ? { kind: 'chip', chip: row.status } : { kind: 'empty' }] : [];
   return {
     kind: 'table',
+    row_keys: [],
+    select: 'none',
+    actions: [],
+    details: [],
     columns: [
       ...(status ? [{ title: 'Status', numeric: false, optional: false }] : []),
       ...view.columns,

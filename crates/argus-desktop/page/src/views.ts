@@ -167,7 +167,7 @@ function body(v: PageView): HTMLElement {
   return el(
     'div',
     { class: 'vpanel-body', 'data-for': key(v) },
-    blocks(v.view.blocks, key(v), drawn),
+    blocks(v.view.blocks, { pane: v.pane, id: v.view.id, path: key(v), drawn }),
   );
 }
 

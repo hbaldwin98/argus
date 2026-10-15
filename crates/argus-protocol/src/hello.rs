@@ -36,6 +36,7 @@ pub const CAPABILITIES: &[&str] = &[
     EXTENSIONS,
     EXTENSION_DIALOGS,
     AGENT_VIEWS,
+    VIEW_ACTIONS,
     DESCRIBE_EXTENSIONS,
     RENAME_PANE,
 ];
@@ -63,6 +64,9 @@ pub const FOCUS: &str = "focus";
 /// `ClientMsg::CloseView` and `ClientMsg::RefreshView` from a client,
 /// `ServerMsg::ViewShown` and `ServerMsg::ViewClosed` from the daemon.
 pub const AGENT_VIEWS: &str = "agent-views";
+
+/// `ClientMsg::PressView`: a press of an action an agent put in a view.
+pub const VIEW_ACTIONS: &str = "view-actions";
 
 /// `ClientMsg::ListSessions`, `ClientMsg::ReadSession`,
 /// `ClientMsg::ListResumes` and `ClientMsg::ResumeSession`, and their

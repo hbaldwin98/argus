@@ -9,6 +9,7 @@
 
 pub mod adr;
 pub mod agent_view;
+pub mod view_patch;
 pub mod ago;
 pub mod artifacts;
 pub mod awaited;
@@ -56,8 +57,12 @@ pub mod tree;
 
 pub use ago::ago;
 pub use agent_view::{
-    AgentView, Block, Chip, Column, Field, Item, ShownView, Stat, Tab, Tone, Value, ViewChange, MAX_BLOCK_DEPTH,
-    MAX_TABLE_ROWS, MAX_VIEWS_PER_PANE, MAX_VIEW_BYTES, MAX_VIEW_ID_BYTES, MAX_VIEW_TITLE_BYTES,
+    AgentView, Answer, AnswerValue, Block, BoardCard, BoardColumn, ChartShape, CheckItem, Chip, Column, Field,
+    FormField, FormInput, GraphDirection, GraphEdge, GraphNode, GridMin, Item, LogLevel, LogLine, MatrixCell,
+    RowAlign, RowItem, RowSelect, Series, ShownView, Stat, Tab, TimelineEvent, Tone, TreeNode, Value,
+    ViewAction, ViewChange, ViewPress, MAX_BLOCK_DEPTH, MAX_CHART_POINTS, MAX_CHART_SERIES, MAX_FORM_FIELDS,
+    MAX_GRAPH_NODES, MAX_LOG_LINES, MAX_TABLE_ROWS, MAX_TREE_DEPTH, MAX_TREE_NODES, MAX_VIEWS_PER_PANE,
+    MAX_VIEW_BYTES, MAX_VIEW_ID_BYTES, MAX_VIEW_ACTIONS, MAX_VIEW_TITLE_BYTES, MIN_REFRESH_SECS,
 };
 pub use artifacts::ArtifactScope;
 pub use board_follower::{BoardFollower, BoardScope, Received};
@@ -90,7 +95,7 @@ pub use focus::{Focus, FocusCheckout, FocusPane, FocusProject, FocusRepository, 
 pub use framing::{read_known_msg, read_msg, write_frame, write_msg, FramingError};
 pub use held_tree::{transitions, HeldTree, Transition};
 pub use hello::{
-    ADD_PROJECT, AGENT_VIEWS, Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
+    ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, Greeting, Hello, Refusal, CAPABILITIES, CELL_RUNS, FOCUS, GREETING_WAIT, PASTE_FILE,
     PANE_TELEMETRY, PROTOCOL, SESSIONS, CONSOLES, EXTENSIONS, EXTENSION_DIALOGS, DESCRIBE_EXTENSIONS,
     RENAME_PANE,
 };

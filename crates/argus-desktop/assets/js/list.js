@@ -4,7 +4,8 @@ import { chip } from './chip.js';
 import { el } from './dom.js';
 import { markdown } from './markdown.js';
 import { ago, person } from './values.js';
-export function list(items) {
+export function list(items, ctx = null) {
+    void ctx;
     if (items.length === 0)
         return el('div', { class: 'vlist vlist-empty' }, 'Nothing yet');
     return el('div', { class: 'vlist' }, items.map(row));

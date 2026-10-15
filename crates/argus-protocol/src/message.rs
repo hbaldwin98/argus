@@ -447,6 +447,10 @@ pub enum ClientMsg {
     /// Ask the agent that showed a view to read it again and show it anew.
     /// The view stays as it is until it does.
     RefreshView { pane: PaneId, id: String },
+    /// The person pressed one of a view's actions. The agent is told, as a
+    /// refresh is asked of it, and the view stays as it is until it shows
+    /// it again.
+    PressView { pane: PaneId, press: crate::agent_view::ViewPress },
     /// An action taken in an extension's view, on `row` unless the action
     /// is view-wide. Forwarded to the extension as it stands; the view
     /// changes only when the extension publishes it again. Only to a daemon

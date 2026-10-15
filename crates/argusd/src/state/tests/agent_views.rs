@@ -219,9 +219,7 @@ fn a_view_change_round_trips_as_the_agent_writes_it() {
     let view = AgentView {
         id: "a".into(),
         title: "t".into(),
-        status: None,
-        subject: None,
-        blocks: Vec::new(),
+        ..Default::default()
     };
     let json = serde_json::to_string(&ViewChange::Show { view: view.clone() }).unwrap();
     assert_eq!(serde_json::from_str::<ViewChange>(&json).unwrap(), ViewChange::Show { view });

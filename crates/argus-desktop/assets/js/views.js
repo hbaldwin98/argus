@@ -91,7 +91,7 @@ function header(v) {
 }
 function body(v) {
     const drawn = (source) => v.diagrams.find((d) => d.source === source);
-    return el('div', { class: 'vpanel-body', 'data-for': key(v) }, blocks(v.view.blocks, key(v), drawn));
+    return el('div', { class: 'vpanel-body', 'data-for': key(v) }, blocks(v.view.blocks, { pane: v.pane, id: v.view.id, path: key(v), drawn }));
 }
 /** The newest view of a ticket, matched by its URL or its tracker and key. */
 export function viewOf(link) {

@@ -140,13 +140,12 @@ fn diagrams(blocks: &[Block]) -> Vec<PageDiagram> {
 
 fn collect(blocks: &[Block], found: &mut Vec<PageDiagram>) {
     for block in blocks {
-        match block {
-            Block::Diagram { source } if !found.iter().any(|d| &d.source == source) => found.push(read(source)),
-            Block::Section { blocks, .. } => collect(blocks, found),
-            Block::Columns { columns } => columns.iter().for_each(|c| collect(c, found)),
-            Block::Tabs { tabs } => tabs.iter().for_each(|t| collect(&t.blocks, found)),
-            _ => {}
+        if let Block::Diagram { source } = block {
+            if !found.iter().any(|d| &d.source == source) {
+                found.push(read(source));
+            }
         }
+        block.nested().into_iter().for_each(|inner| collect(inner, found));
     }
 }
 
@@ -177,7 +176,7 @@ mod tests {
             pane: PaneId(pane),
             at: 1,
             subject: None,
-            view: AgentView { id: id.into(), title: id.into(), status: None, subject: None, blocks: Vec::new() },
+            view: AgentView { id: id.into(), title: id.into(), ..Default::default() },
         }
     }
 

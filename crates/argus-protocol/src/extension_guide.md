@@ -451,12 +451,23 @@ A cell is one of these, chosen by `kind`. Values do not nest, apart from the chi
   {"kind": "link", "label": "dashboard", "url": "https://example.com/d/1"},
   {"kind": "ticket", "key": "OPS-12", "title": "Disk full", "url": "https://example.com/OPS-12",
    "status": {"label": "open", "tone": "warn"}},
+  {"kind": "progress", "value": 41, "max": 100, "tone": "active"},
+  {"kind": "duration", "ms": 252000},
+  {"kind": "code", "text": "ranking.fresh"},
+  {"kind": "path", "path": "src/main.rs", "line": 12},
+  {"kind": "commit", "sha": "a41c9e2", "title": "Keep units on import"},
+  {"kind": "feature", "number": 12},
+  {"kind": "pane", "pane": 3, "label": "CI triage"},
   {"kind": "empty"}
 ]
 ```
 
 - `number` is a JSON number, with an optional `unit` drawn after it.
 - `date` is `YYYY-MM-DD`; `date_time` is RFC 3339.
+- `progress` is a meter, `value` out of a `max` above 0; `duration` is milliseconds, drawn as `4m 12s`.
+- `path`, `commit`, `feature` and `pane` point into Argus rather than out of it: a click opens the
+  file in the person's editor, the commit in History, the feature, or the pane. A path is relative
+  to the root of the checkout the person is at.
 - A `link`'s `url`, and a `ticket`'s when it has one, must be `http` or `https`. Anything else is
   refused with a `409`.
 - A chip is `{"label", "tone"}`. The tone is the only colour an extension picks, and it picks a

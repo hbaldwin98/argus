@@ -5,4 +5,8 @@ export type Stat = { label: string,
 /**
  * Already formatted: `4m 12s`, `70%`.
  */
-value: string, delta: string | null, tone: Tone, };
+value: string, delta: string | null, tone: Tone, 
+/**
+ * Recent values, oldest first, drawn as a spark line under the value.
+ */
+trend: Array<number>, };

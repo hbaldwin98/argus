@@ -826,9 +826,7 @@ mod tests {
             view: argus_protocol::AgentView {
                 id: id.into(),
                 title: id.into(),
-                status: None,
-                subject: None,
-                blocks: Vec::new(),
+                ..Default::default()
             },
         }
     }

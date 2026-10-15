@@ -30,6 +30,20 @@ function sortKey(v) {
             return v.label.toLowerCase();
         case 'ticket':
             return v.key.toLowerCase();
+        case 'progress':
+            return v.value / v.max;
+        case 'duration':
+            return v.ms;
+        case 'code':
+            return v.text.toLowerCase();
+        case 'path':
+            return v.path.toLowerCase();
+        case 'commit':
+            return v.sha.toLowerCase();
+        case 'feature':
+            return v.number;
+        case 'pane':
+            return (v.label ?? String(v.pane)).toLowerCase();
         case 'empty':
             return '';
     }
@@ -48,7 +62,7 @@ function compare(a, b) {
     }
     return String(a).localeCompare(String(b));
 }
-export function table(block, picks = null) {
+export function table(block, picks = null, ctx = null) {
     if (block.rows.length === 0)
         return el('div', { class: 'vtable-empty' }, 'No rows');
     const rows = block.rows.map((cells, index) => {
@@ -65,7 +79,7 @@ export function table(block, picks = null) {
             const cell = cells[c];
             const td = el('td', { class: classes(col) });
             if (cell) {
-                td.appendChild(value(cell));
+                td.appendChild(value(cell, ctx));
                 // Long text truncates in CSS, so the full text rides along as a tooltip.
                 if (cell.kind === 'text' && cell.text.length > 24) {
                     td.classList.add('vtable-long');

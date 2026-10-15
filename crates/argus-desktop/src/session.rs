@@ -34,7 +34,7 @@ use argus_protocol::pane_view::{Effect, PaneView};
 use argus_protocol::paste;
 use argus_protocol::{
     transitions, CheckoutId, ClientMsg, Created, Hello, HeldTree, PaneId, ProjectId, ProjectInfo,
-    RepositoryId, ServerMsg, View, WorkspaceId, ADD_PROJECT, AGENT_VIEWS, CONSOLES, FOCUS, PASTE_FILE,
+    RepositoryId, ServerMsg, View, WorkspaceId, ADD_PROJECT, AGENT_VIEWS, VIEW_ACTIONS, CONSOLES, FOCUS, PASTE_FILE,
     RENAME_PANE,
 };
 
@@ -639,6 +639,12 @@ impl Session {
             }
             Call::RefreshView { pane, id } => {
                 self.views.refresh(PaneId(pane), id, &mut self.out);
+                self.finish()
+            }
+            Call::PressView { pane, press } => {
+                if self.status.daemon_can(VIEW_ACTIONS) {
+                    self.out.push(ClientMsg::PressView { pane: PaneId(pane), press });
+                }
                 self.finish()
             }
             Call::OpenExtensionView { extension, view } => self.open_extension_view(&extension, &view),
@@ -2993,9 +2999,7 @@ mod tests {
         let view = argus_protocol::AgentView {
             id: "ci".into(),
             title: "CI on main".into(),
-            status: None,
-            subject: None,
-            blocks: Vec::new(),
+            ..Default::default()
         };
         s.receive(ServerMsg::ViewShown(Box::new(argus_protocol::ShownView { pane: PaneId(1), at: 5, subject: None, view })));
         let events = s.events(0);
@@ -3759,7 +3763,7 @@ mod tests {
     }
 
     /// Every call the page can make, written as the page writes it.
-    const CALLS: [&str; 108] = [
+    const CALLS: [&str; 109] = [
         r#"{"call":"select","pane":1}"#,
         r#"{"call":"resize","side":"first","rows":30,"cols":100}"#,
         r#"{"call":"key","key":{"key":"a","code":"KeyA","ctrl":false,"alt":false,"shift":false,"meta":false}}"#,
@@ -3861,6 +3865,7 @@ mod tests {
         r#"{"call":"outline_width","width":480}"#,
         r#"{"call":"brief_height","height":160}"#,
         r#"{"call":"refresh_view","pane":1,"id":"ci"}"#,
+        r#"{"call":"press_view","pane":1,"press":{"view":"ci","action":"rerun","rows":[],"form":null,"answers":[]}}"#,
         r#"{"call":"close_view","pane":1,"id":"ci"}"#,
         r#"{"call":"open_link","map":false}"#,
         r#"{"call":"link","gesture":{"on":"fields","url":"https://linear.app/a/issue/ENG-1/x","role":"the work"}}"#,
@@ -4789,7 +4794,7 @@ mod tests {
     }
 
     fn agents_view(s: &mut Session, pane: u64) {
-        let view = argus_protocol::AgentView { id: "ci".into(), title: "CI".into(), status: None, subject: None, blocks: Vec::new() };
+        let view = argus_protocol::AgentView { id: "ci".into(), title: "CI".into(), ..Default::default() };
         s.receive(ServerMsg::ViewShown(Box::new(argus_protocol::ShownView { pane: PaneId(pane), at: 5, subject: None, view })));
     }
 

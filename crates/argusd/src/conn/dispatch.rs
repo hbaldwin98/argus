@@ -112,6 +112,10 @@ pub(super) fn dispatch(
             daemon.refresh_view(pane, &id);
             Ok(())
         }
+        ClientMsg::PressView { pane, press } => {
+            daemon.press_view(pane, press);
+            Ok(())
+        }
         ClientMsg::OpenInEditor {
             checkout,
             path,

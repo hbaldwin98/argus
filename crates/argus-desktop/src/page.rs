@@ -178,6 +178,8 @@ pub enum Call {
     BriefHeight { height: Option<u32> },
     /// Asks the agent that showed a view to read it again.
     RefreshView { pane: u64, id: String },
+    /// A press of an action an agent put in its view.
+    PressView { pane: u64, press: argus_protocol::ViewPress },
     /// Closes a view for every client.
     CloseView { pane: u64, id: String },
     /// Brings an extension's view out where it is: its dock, or a page.

@@ -5003,3 +5003,25 @@ body.resizing:has(.brief-sash.held) {
   flex: none;
   align-self: center;
 }
+
+/* A view block whose kind is not drawn yet: its kind, quietly. */
+.vpending {
+  color: var(--fg-faint);
+  font: var(--type-small);
+}
+
+/* Agent views: containers (card, grid, details, row, divider). */
+
+/* Agent views: charts (chart, progress, a stat's trend). */
+
+/* Agent views: actions and forms. */
+
+/* Agent views: shapes (timeline, tree, checklist, log, board, matrix). */
+
+/* Agent views: diff and graph. */
+
+/* Agent views: references into Argus. */
+
+/* Agent views: live updates (a block changed since it was seen). */
+
+/* Agent views: the panel (copy, filter, row details, pop-out, feature views). */

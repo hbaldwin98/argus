@@ -5,6 +5,9 @@ import type { Tone } from './bindings/Tone';
 import type { Value } from './bindings/Value';
 import { chip, toneClass } from './chip.js';
 import { el } from './dom.js';
+import { progressValue } from './progress.js';
+import { refValue } from './refs.js';
+import type { ViewCtx } from './viewctx.js';
 import { viewLink } from './viewlink.js';
 
 const SHOWN_PEOPLE = 3;
@@ -84,8 +87,9 @@ function shortDate(raw: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-/** One value, as a field, a cell or a list item shows it. */
-export function value(v: Value): HTMLElement {
+/** One value, as a field, a cell or a list item shows it. `ctx` is the
+ *  agent view it is in; an extension's table has none. */
+export function value(v: Value, ctx: ViewCtx | null = null): HTMLElement {
   switch (v.kind) {
     case 'text':
       return el('span', null, v.text);
@@ -124,6 +128,15 @@ export function value(v: Value): HTMLElement {
         v.status && chip(v.status),
       );
     }
+    case 'progress':
+      return progressValue(v);
+    case 'duration':
+    case 'code':
+    case 'path':
+    case 'commit':
+    case 'feature':
+    case 'pane':
+      return refValue(v, ctx?.pane ?? null);
     case 'empty':
       return el('span', { class: 'vempty' }, '—');
   }

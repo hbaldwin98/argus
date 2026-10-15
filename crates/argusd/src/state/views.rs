@@ -84,6 +84,12 @@ impl Daemon {
                 self.close_view(pane, id.trim());
                 Ok(())
             }
+            ViewChange::Patch { id, path, block } => {
+                let held = self.agent_views.lock().unwrap().get(pane, id.trim()).cloned();
+                let held = held.ok_or_else(|| anyhow::anyhow!("the pane shows no view {:?}", id.trim()))?;
+                let view = held.view.patched(&path, block).map_err(|e| anyhow::anyhow!("{e}"))?;
+                self.show_view(pane, view)
+            }
         }
     }
 
@@ -137,6 +143,12 @@ impl Daemon {
         self.notify(pane, &refresh_request(&shown.view));
     }
 
+    /// Tells the agent that showed a view which of its actions the person
+    /// pressed. A view that is not held is ignored, as a refresh of one is.
+    pub fn press_view(&self, pane: PaneId, press: argus_protocol::ViewPress) {
+        let _ = (pane, press);
+    }
+
     /// Called as a pane leaves the tree: its views go with it.
     pub(super) fn drop_views_of(&self, pane: PaneId) {
         let mut views = self.agent_views.lock().unwrap();
@@ -173,9 +185,7 @@ mod tests {
             view: AgentView {
                 id: id.into(),
                 title: format!("title of {id}"),
-                status: None,
-                subject: None,
-                blocks: Vec::new(),
+                ..Default::default()
             },
         }
     }

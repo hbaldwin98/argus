@@ -2,6 +2,8 @@
 // is an agent's, read from a ticket, so it goes in as text and nothing else.
 import { chip, toneClass } from './chip.js';
 import { el } from './dom.js';
+import { progressValue } from './progress.js';
+import { refValue } from './refs.js';
 import { viewLink } from './viewlink.js';
 const SHOWN_PEOPLE = 3;
 // Avatar tints are drawn from the tones so they follow the theme.
@@ -73,8 +75,9 @@ function shortDate(raw) {
         return raw;
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
-/** One value, as a field, a cell or a list item shows it. */
-export function value(v) {
+/** One value, as a field, a cell or a list item shows it. `ctx` is the
+ *  agent view it is in; an extension's table has none. */
+export function value(v, ctx = null) {
     switch (v.kind) {
         case 'text':
             return el('span', null, v.text);
@@ -102,6 +105,15 @@ export function value(v) {
             const key = el('span', { class: 'vkey' }, v.key);
             return el('span', { class: 'vticket' }, v.url ? viewLink(v.url, key) : key, v.title && el('span', { class: 'vmuted' }, v.title), v.status && chip(v.status));
         }
+        case 'progress':
+            return progressValue(v);
+        case 'duration':
+        case 'code':
+        case 'path':
+        case 'commit':
+        case 'feature':
+        case 'pane':
+            return refValue(v, ctx?.pane ?? null);
         case 'empty':
             return el('span', { class: 'vempty' }, '—');
     }
